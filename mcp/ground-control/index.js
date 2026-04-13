@@ -209,6 +209,8 @@ import {
   PR_BODY_SUMMARY_MAX,
   FINAL_REPORT_SUMMARY_MAX,
   FINAL_REPORT_REVIEW_SUMMARY_MAX,
+  KNOWLEDGE_SOURCE_TYPES,
+  writeKnowledgeInbox,
 } from "./lib.js";
 import {
   executeGcQuery,
@@ -496,6 +498,44 @@ const ASYNC_REVIEW_PARAM_DESC =
   "Poll the job with gc_codex_job (action='poll') until status='done', then dispatch " +
   "on result.next_action exactly as for the synchronous call. Use this in the /implement " +
   "workflow so a multi-minute review never trips the MCP client's tool-call timeout (issue #937).";
+
+server.tool(
+  "gc_remember",
+  "Capture a knowledge-base observation from the calling agent. Writes a structured inbox file in the repository's knowledge base and spawns a detached ingest subprocess that integrates the observation into the wiki. Synchronous success means the inbox entry was durably written; wiki integration happens asynchronously and may be retried by later real-time or scheduled runs. Requires the repository's .ground-control.yaml to declare a knowledge block.",
+  {
+    repo_path: z.string().describe("Absolute path to the target Git repository"),
+    note: z.string().min(1).describe("The observation to capture, as free-form text"),
+    source_type: z
+      .enum(KNOWLEDGE_SOURCE_TYPES)
+      .describe(
+        "Source citation type (must match the vocabulary in docs/knowledge/SCHEMA.md)",
+      ),
+    source_ref: z
+      .string()
+      .min(1)
+      .describe(
+        "Source citation reference (short SHA for commit, number for pr/issue, comment id for review, etc.)",
+      ),
+    tags: z
+      .array(z.string())
+      .optional()
+      .describe("Optional list of tags used for index discovery"),
+  },
+  async ({ repo_path, note, source_type, source_ref, tags }) => {
+    try {
+      const result = await writeKnowledgeInbox({
+        repoPath: repo_path,
+        note,
+        sourceType: source_type,
+        sourceRef: source_ref,
+        tags,
+      });
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) {
+      return err(e);
+    }
+  },
+);
 
 server.tool(
   "gc_codex_architecture_preflight",

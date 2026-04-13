@@ -1046,6 +1046,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   delegates to `docs/operations/backup-restore.md`, records the new
   cadence / retention / verification defaults, and enumerates the AGE
   verification checks.
+## [0.114.0] - 2026-04-13
+
+### Added
+
+- Knowledge base capture primitive and real-time ingest engine (GC-X006,
+  GC-X007, GC-X008, GC-X009, GC-X010, GC-X011): the new `gc_remember` MCP
+  tool writes a structured inbox file under `<knowledge.inbox>/` and
+  spawns a detached ingest subprocess that integrates the observation
+  into the wiki. Synchronous success means the inbox entry is durably
+  written; wiki integration is asynchronous and retried by later runs.
+- `mcp/ground-control/knowledge_ingest.js` — shared ingest engine. Reads
+  the inbox item, invokes **Claude Code** in headless mode
+  (`claude --print --bare --add-dir <repo> --allowed-tools ...`) as the
+  ingest agent for the update-vs-create decision and wiki edits,
+  validates commit isolation against the knowledge tree, and
+  stages/commits only the allowed paths. Injectable `ingestAgent`
+  parameter lets unit tests script the full transaction without
+  shelling out to the real Claude Code CLI. Codex is deliberately NOT
+  involved in knowledge ingest; see ADR-025 for the boundary.
+- `mcp/ground-control/knowledge_ingest_cli.js` — thin argv-driven entry
+  point that `gc_remember` spawns as the detached subprocess.
+- Canonical source-citation formatter (`formatSourceCitation`) and
+  vocabulary (`KNOWLEDGE_SOURCE_TYPES`) in `mcp/ground-control/lib.js`.
+  One formatter produces the citation string reused across inbox
+  frontmatter, page frontmatter, `log.md` bullets, and git commit
+  messages so terminology cannot drift.
+- Interprocess knowledge-base lock via `proper-lockfile`, keyed by the
+  canonical realpath of the knowledge directory so symlinked or
+  differently-spelled checkouts contend on the same lock.
+  `acquireKnowledgeLock` defaults to fail-fast and accepts a retry
+  policy; `runIngest` passes a bounded exponential backoff so two rapid
+  captures queue up instead of rejecting.
+- Atomic inbox write (`writeKnowledgeInbox`): temp-file + fsync + rename,
+  lazy inbox-dir creation, timestamp-prefixed filenames with random
+  collision-resistance suffix, spawn-failure-tolerant synchronous return.
+- [ADR-025](../architecture/adrs/025-knowledge-ingest-engine.md): captures
+  the engine location (co-located with the MCP server, not
+  `tools/ground_control/knowledge/`), Claude-Code-as-ingest-agent (with
+  an explicit "codex is NOT used for knowledge maintenance" boundary),
+  interprocess lock choice, strict commit-isolation rule, and the "no
+  Spring backend surface" boundary.
+- `docs/architecture/ARCHITECTURE.md` gains a short "Knowledge Ingest
+  Engine" section pointing at ADR-025.
+
+### Changed
+
+- `docs/notes/agent-knowledge-system-design.md` hot-path guardrails
+  section expanded: item-addressed subprocess contract (no inbox
+  rescanning), success-only inbox lifecycle, interprocess lock ownership,
+  canonical-path lock identity, detached-HEAD failure mode, measurable
+  real-time latency, no `git commit --no-verify` bypass.
+- `docs/knowledge/SCHEMA.md` gains an "Ingest consistency contract"
+  section (existing page file path is page identity, index.md is only a
+  shortlist, updates are incremental edits, renames/splits/merges are
+  exceptional) and an inbox-lifecycle clause (success-only archival).
+
+### Dependencies
+
+- Added `proper-lockfile@^4.1.2` to `mcp/ground-control/package.json`.
+- Bumped transitive `hono` (4.12.7 → 4.12.12) and `@hono/node-server`
+  (1.19.11 → 1.19.14) via `npm audit fix` to clear moderate advisories.
 
 ## [0.113.0] - 2026-04-12
 
@@ -1071,6 +1132,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mcp/ground-control/README.md` no longer describes
   `gc_get_repo_ground_control_context` as reading from `AGENTS.md`; the
   tool reads `.ground-control.yaml` at the repo root.
+
+### Changed
+
+- Agent knowledge system design note now makes the phase-2 hot-path
+  guardrails explicit: the ingest engine stays in repo-local tooling (not
+  the Java backend), `gc_remember` owns only synchronous inbox capture, the
+  real-time path reuses the resolved `knowledge` config from
+  `gc_get_repo_ground_control_context`, the per-repo lock is a shared
+  interprocess guard keyed by canonical knowledge-base paths and covers the
+  full ingest transaction, failed ingest keeps the original inbox item in
+  place for retry until the commit succeeds, and ingest commits must stage
+  only knowledge-tree files plus the specific inbox item being processed.
 
 ## [0.112.0] - 2026-04-12
 
