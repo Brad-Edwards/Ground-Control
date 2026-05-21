@@ -400,3 +400,44 @@ toward GC-O009 — moving repeated loops into MCP boundaries that return one
 terminal envelope per invocation, instead of having the agent drive each
 iteration. No Temporal adoption, no DB tables, no branch-keyed counters, no
 new workflow DSL; the issue thread on GitHub remains the durable record.
+
+**2026-05-21 (issue #937).** Closes the MCP tool-call boundary timeout that
+made the codex-driven governance gates unreliable. `gc_codex_review`,
+`gc_codex_review_cycle`, `gc_codex_architecture_preflight`,
+`gc_test_quality_review`, and `gc_test_quality_review_cycle` each spawn a
+`codex exec` / `claude --print` child that legitimately runs for several
+minutes (the child cap is `DEFAULT_CODEX_TIMEOUT_MS`, 20 min). Run
+synchronously, a single MCP tool call blocked far longer than the MCP
+client's per-call timeout — the client abandoned the call, the child was left
+running with no result handle, and the workflow never received a review
+envelope (first observed in issue #893). No change to the GC-O007 gate
+contract, the cycle caps, the marker families, or the decision-record shape.
+
+Two coordinated changes:
+
+1. **Client timeout alignment.** `.claude/settings.json` now sets
+   `MCP_TOOL_TIMEOUT` (3,600,000 ms) and `MCP_TIMEOUT` (30,000 ms) explicitly,
+   in the checked-in repo settings, so every Claude Code session in the repo
+   gives long-running MCP tools the headroom they need. This also covers the
+   `gc_watch_ci_run` (2700 s) and `gc_watch_sonar_analysis` (1800 s)
+   server-side-hold tools added in the #934 amendment, which previously relied
+   on an unset client default.
+
+2. **Async job model.** The five review/preflight tools gain an opt-in
+   `async` boolean (default `false`; synchronous behavior and every direct
+   caller are unchanged). With `async: true` the tool starts the work as a
+   background job and returns `{ok, status: "running", job_id}` immediately. A
+   new tool, `gc_codex_job`, polls the job (`action: "poll"` → a running
+   envelope, or `{status: "done", result: <review envelope>}` once finished)
+   and cancels it (`action: "cancel"`). The job registry is in-memory in the
+   long-lived MCP server process; jobs are reaped 30 min after completion;
+   poll for an unknown id returns `job_not_found` and the agent re-runs.
+   Cancellation aborts an `AbortController` whose signal is threaded down to
+   the child process exec, so a cancelled job leaves no orphan. The /implement
+   step files (2.5, 6.5, 6.6 and `_review-loop-rules.md`) drive the
+   start-then-poll pattern; `result.next_action` is dispatched exactly as the
+   synchronous envelope was.
+
+`gc_codex_job` is the sixth tool in this ADR's surface family and, like the
+cycle wrappers and watch tools, is bridge work toward GC-O009 — the
+start/poll/cancel triple is the shape a Temporal activity handle takes.

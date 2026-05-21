@@ -240,3 +240,16 @@ engineer motivation: a clean review now returns `verdict: ship` as a
 first-class outcome rather than the reviewer being structurally pushed to
 manufacture findings. See issue #931 and the preflight note at
 `architecture/notes/ai-review-recalibration-preflight.md`.
+
+**2026-05-21 (issue #937): codex review runs as an async job.** `gc_codex_review`
+and the `gc_codex_review_cycle` wrapper gain an opt-in `async` mode: the tool
+spawns the `codex exec` child as a background job and returns a `job_id`
+immediately; the new `gc_codex_job` tool polls for the verdict envelope or
+cancels the job (the cancel aborts an `AbortController` whose signal kills the
+child, so nothing is orphaned). Run synchronously, the call blocked past the
+MCP client's per-call timeout and the client abandoned it while the child ran
+on (issue #893). The stopping model this ADR defines is **unchanged** — the
+per-issue cycle cap, the `gc:codex-review-cycle` marker family, the
+`override_cap` semantics, and the `verdict: ship` clean outcome all behave
+exactly as before. Async changes only how the agent waits for a cycle's
+result, never when the loop stops. See ADR-036 (amendments) for the job model.

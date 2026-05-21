@@ -3074,6 +3074,7 @@ export async function runCodexArchitecturePreflight({
   repoPath,
   issueNumber,
   repo,
+  signal = undefined,
 }) {
   // The /implement workflow supports two entry points: UID-first (a formal
   // Ground Control requirement) and issue-first (a requirement-free issue
@@ -3162,6 +3163,7 @@ export async function runCodexArchitecturePreflight({
         maxBuffer: 10 * 1024 * 1024,
         env: { ...process.env, NO_COLOR: "1" },
         timeoutMs: DEFAULT_CODEX_TIMEOUT_MS,
+        signal,
       },
     );
 
@@ -5575,7 +5577,7 @@ export function selectDiffMode({ diffText, maxBytes = DEFAULT_CODEX_REVIEW_MAX_D
   return "inline";
 }
 
-async function runSingleCodexReview({ repoRoot, prompt }) {
+async function runSingleCodexReview({ repoRoot, prompt, signal = undefined }) {
   const tempDir = mkdtempSync(join(tmpdir(), "gc-codex-review-"));
   const outputPath = join(tempDir, "codex-last-message.txt");
   try {
@@ -5588,6 +5590,7 @@ async function runSingleCodexReview({ repoRoot, prompt }) {
         maxBuffer: 10 * 1024 * 1024,
         env: { ...process.env, NO_COLOR: "1" },
         timeoutMs: DEFAULT_CODEX_TIMEOUT_MS,
+        signal,
       },
     );
     return readGeneratedCodexSummary(outputPath);
@@ -6146,6 +6149,7 @@ export async function runSingleClaudeTestQualityReview({
   model = TEST_QUALITY_REVIEW_DEFAULT_MODEL,
   schema = TEST_QUALITY_REVIEW_FINDINGS_SCHEMA,
   timeoutMs = TEST_QUALITY_REVIEW_TIMEOUT_MS,
+  signal = undefined,
 }) {
   const args = [
     "--print",
@@ -6170,6 +6174,7 @@ export async function runSingleClaudeTestQualityReview({
     env: childEnv,
     maxBuffer: 10 * 1024 * 1024,
     timeoutMs,
+    signal,
   });
   return stdout;
 }
@@ -6220,6 +6225,7 @@ export async function runTestQualityReview({
   overrideCap = false,
   overrideReason = null,
   model = TEST_QUALITY_REVIEW_DEFAULT_MODEL,
+  signal = undefined,
 }) {
   const repoRoot = await ensureGitRepo(repoPath);
 
@@ -6400,6 +6406,7 @@ export async function runTestQualityReview({
       repoRoot,
       prompt,
       model,
+      signal,
     });
   } catch (err) {
     return {
@@ -6748,6 +6755,7 @@ export async function runCodexReview({
   overrideReason = null,
   overridePhaseGate = false,
   overridePhaseReason = null,
+  signal = undefined,
 }) {
   const repoRoot = await ensureGitRepo(repoPath);
 
@@ -7030,12 +7038,12 @@ export async function runCodexReview({
   try {
     if (DEFAULT_CODEX_REVIEW_PARALLEL === 2) {
       [coreOutput, securityOutput] = await Promise.all([
-        runSingleCodexReview({ repoRoot, prompt: corePrompt }),
-        runSingleCodexReview({ repoRoot, prompt: securityPrompt }),
+        runSingleCodexReview({ repoRoot, prompt: corePrompt, signal }),
+        runSingleCodexReview({ repoRoot, prompt: securityPrompt, signal }),
       ]);
     } else {
-      coreOutput = await runSingleCodexReview({ repoRoot, prompt: corePrompt });
-      securityOutput = await runSingleCodexReview({ repoRoot, prompt: securityPrompt });
+      coreOutput = await runSingleCodexReview({ repoRoot, prompt: corePrompt, signal });
+      securityOutput = await runSingleCodexReview({ repoRoot, prompt: securityPrompt, signal });
     }
   } catch (error) {
     throw new Error(`Codex review failed: ${formatCommandFailure("codex", error)}`);
@@ -12258,6 +12266,7 @@ export async function runCodexReviewCycle({
   uncommitted = true,
   overrideCap = false,
   overrideReason = null,
+  signal = undefined,
 }) {
   if (typeof repoPath !== "string" || repoPath.length === 0) {
     return {
@@ -12294,6 +12303,7 @@ export async function runCodexReviewCycle({
     issueNumber,
     overrideCap,
     overrideReason,
+    signal,
   });
 
   return _runReviewCycleShared({
@@ -12311,6 +12321,7 @@ export async function runTestQualityReviewCycle({
   overrideCap = false,
   overrideReason = null,
   model = undefined,
+  signal = undefined,
 }) {
   if (typeof repoPath !== "string" || repoPath.length === 0) {
     return {
@@ -12337,6 +12348,7 @@ export async function runTestQualityReviewCycle({
     issueNumber,
     overrideCap,
     overrideReason,
+    signal,
   };
   if (model !== undefined) reviewParams.model = model;
   const reviewResult = await runTestQualityReview(reviewParams);
@@ -12347,6 +12359,163 @@ export async function runTestQualityReviewCycle({
     repoPath,
     issueNumber,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Async review-job registry (gc_codex_job, issue #937)
+// ---------------------------------------------------------------------------
+//
+// The codex/claude-backed review + preflight tools spawn a child process that
+// legitimately runs for several minutes. Run synchronously, a single MCP tool
+// call blocks longer than the MCP client's per-call timeout — the client
+// abandons the call, the child is orphaned, and the workflow never receives a
+// review envelope (issue #893). The async path decouples the long-lived child
+// from any one MCP call: a `start*` returns a job id immediately, then
+// `gc_codex_job` polls for the terminal envelope or cancels a running job.
+// Cancel aborts an AbortController whose signal is threaded down to the child
+// process exec, so a cancelled job leaves no orphan.
+//
+// In-memory is sufficient: the MCP server is a single long-lived stdio process
+// per workflow run, so the registry persists across the start + poll calls. If
+// the server restarts, jobs are lost and poll returns `job_not_found` — the
+// agent re-runs, the same cold-start fallback as any other tool call. Terminal
+// jobs are reaped REVIEW_JOB_TTL_MS after they finish so the registry cannot
+// grow without bound.
+
+export const REVIEW_JOB_TTL_MS = 30 * 60 * 1000;
+const _reviewJobs = new Map();
+let _reviewJobSeq = 0;
+
+function _reapExpiredReviewJobs() {
+  const now = Date.now();
+  for (const [id, job] of _reviewJobs) {
+    if (job.finishedAt != null && now - job.finishedAt > REVIEW_JOB_TTL_MS) {
+      _reviewJobs.delete(id);
+    }
+  }
+}
+
+// Start an async review job. `kind` is a stable label echoed in poll
+// responses; `runFn` receives an AbortSignal and MUST thread it to the child
+// process exec so a cancel actually kills the child. The start envelope is
+// returned synchronously; the job's promise settles the registry record in
+// the background.
+export function startReviewJob(kind, runFn) {
+  if (typeof runFn !== "function") {
+    throw new Error("startReviewJob: runFn must be a function");
+  }
+  _reapExpiredReviewJobs();
+  _reviewJobSeq += 1;
+  const id = `rjob-${Date.now().toString(36)}-${_reviewJobSeq}`;
+  const controller = new AbortController();
+  const job = {
+    id,
+    kind: typeof kind === "string" && kind.length > 0 ? kind : "review",
+    status: "running",
+    startedAt: Date.now(),
+    finishedAt: null,
+    result: null,
+    error: null,
+    controller,
+  };
+  _reviewJobs.set(id, job);
+  Promise.resolve()
+    .then(() => runFn(controller.signal))
+    .then((result) => {
+      job.result = result;
+      job.status = "done";
+    })
+    .catch((e) => {
+      job.error = e;
+      job.status = controller.signal.aborted ? "cancelled" : "failed";
+    })
+    .finally(() => {
+      job.finishedAt = Date.now();
+    });
+  return { ok: true, status: "running", job_id: id, kind: job.kind };
+}
+
+// Poll a review job. While running, returns a compact running envelope. On
+// `done`, the full underlying review envelope is returned under `result` —
+// dispatch on `result.next_action` exactly as for the synchronous tool. On
+// `failed` / `cancelled`, returns an ok=false envelope.
+export function pollReviewJob(jobId) {
+  _reapExpiredReviewJobs();
+  const job = _reviewJobs.get(jobId);
+  if (!job) {
+    return {
+      ok: false,
+      error: "job_not_found",
+      message:
+        `No review job '${jobId}'. It may have finished and expired (terminal jobs are ` +
+        `reaped ${REVIEW_JOB_TTL_MS} ms after completion), or the MCP server restarted. ` +
+        `Re-run the review with async=true to start a fresh job.`,
+    };
+  }
+  const base = {
+    job_id: job.id,
+    kind: job.kind,
+    elapsed_ms: (job.finishedAt ?? Date.now()) - job.startedAt,
+  };
+  if (job.status === "running") {
+    return { ok: true, status: "running", ...base };
+  }
+  if (job.status === "done") {
+    return { ok: true, status: "done", ...base, result: job.result };
+  }
+  if (job.status === "cancelled") {
+    return {
+      ok: false,
+      status: "cancelled",
+      error: "job_cancelled",
+      message: "Review job was cancelled via gc_codex_job before it completed.",
+      ...base,
+    };
+  }
+  return {
+    ok: false,
+    status: "failed",
+    error: "job_failed",
+    message: String(job.error?.message ?? job.error ?? "review job failed"),
+    ...base,
+  };
+}
+
+// Cancel a running review job. Aborts the AbortController, which kills the
+// threaded child process. Terminal jobs are returned as-is (idempotent).
+export function cancelReviewJob(jobId) {
+  const job = _reviewJobs.get(jobId);
+  if (!job) {
+    return {
+      ok: false,
+      error: "job_not_found",
+      message: `No review job '${jobId}' to cancel.`,
+    };
+  }
+  if (job.status !== "running") {
+    return {
+      ok: true,
+      status: job.status,
+      job_id: job.id,
+      kind: job.kind,
+      message: `Review job '${jobId}' is already terminal (${job.status}); nothing to cancel.`,
+    };
+  }
+  job.controller.abort();
+  return {
+    ok: true,
+    status: "cancelling",
+    job_id: job.id,
+    kind: job.kind,
+    message:
+      "Abort signalled; the codex/claude child is being terminated. Poll once more to confirm the cancelled state.",
+  };
+}
+
+// Test-only: clear the registry between cases.
+export function _resetReviewJobsForTest() {
+  _reviewJobs.clear();
+  _reviewJobSeq = 0;
 }
 
 // ---------------------------------------------------------------------------

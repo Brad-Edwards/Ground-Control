@@ -352,3 +352,15 @@ mutation testing (`make test-quality`), CI gate on new CRITICAL OSV-scanner
 CVEs, ADR-051 (PROPOSED) drafting a SonarCloud gate recalibration. See
 `skills/implement/SKILL.md` Step 2.5 / 6.5 / 6.6 and the binding preflight
 note at `architecture/notes/ai-review-recalibration-preflight.md`.
+
+**2026-05-21 (issue #937).** The codex review, codex architecture preflight,
+and test-quality review MCP tools gain an opt-in `async` mode. Each spawns a
+child process that legitimately runs for minutes; run synchronously a single
+MCP tool-call blocked past the MCP client's per-call timeout, orphaning the
+child with no result handle (issue #893). With `async: true` the tool returns
+a `job_id` immediately and the workflow polls the new `gc_codex_job` tool for
+the result envelope or cancels a stuck job. `.claude/settings.json` also sets
+`MCP_TOOL_TIMEOUT` / `MCP_TIMEOUT` so long-running MCP tools have headroom.
+The gate contract, cycle caps, and durable-record posting are unchanged. See
+ADR-036 (amendments) for the job model and `skills/implement/steps/step-02.5
+/ 06.5 / 06.6` for the operative loop prose.

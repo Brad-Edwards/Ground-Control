@@ -77,6 +77,7 @@ import {
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
   runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
   runCodexReviewCycle, runTestQualityReviewCycle,
+  startReviewJob, pollReviewJob, cancelReviewJob,
   runResolveWorkflowRoute,
   DECISION_RECORD_REVIEWERS, DECISION_RECORD_DECISIONS, DECISION_RECORD_CLASSIFICATIONS,
   PR_BODY_CHANGE_CLASSES, PR_REQUIREMENT_RE, EXACT_REQUIREMENT_UID_RE,
@@ -473,22 +474,39 @@ server.tool(
   },
 );
 
+// Shared description for the opt-in `async` parameter on the codex/claude
+// review + preflight tools (issue #937).
+const ASYNC_REVIEW_PARAM_DESC =
+  "When true, start the review/preflight as a background job and return " +
+  "{ok,status:'running',job_id} immediately instead of blocking the MCP call. " +
+  "Poll the job with gc_codex_job (action='poll') until status='done', then dispatch " +
+  "on result.next_action exactly as for the synchronous call. Use this in the /implement " +
+  "workflow so a multi-minute review never trips the MCP client's tool-call timeout (issue #937).";
+
 server.tool(
   "gc_codex_architecture_preflight",
-  "Run Codex architecture preflight before implementation. Codex inspects the requirement and/or issue plus the repository, updates ADRs/design guidance when needed, and returns guardrails and changed files. At least one of requirement_uid or issue_number must be supplied.",
+  "Run Codex architecture preflight before implementation. Codex inspects the requirement and/or issue plus the repository, updates ADRs/design guidance when needed, and returns guardrails and changed files. At least one of requirement_uid or issue_number must be supplied. Pass async=true to run it as a background job polled via gc_codex_job.",
   {
     requirement_uid: z.string().optional(),
     repo_path: z.string(),
     project: z.string().optional(),
     issue_number: z.number().int().positive().optional(),
     repo: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/).optional(),
+    async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ requirement_uid, repo_path, project, issue_number, repo }) => {
+  async ({ requirement_uid, repo_path, project, issue_number, repo, async: asyncMode }) => {
     try {
-      return ok(JSON.stringify(await runCodexArchitecturePreflight({
+      const params = {
         requirementUid: requirement_uid, repoPath: repo_path, project,
         issueNumber: issue_number ?? null, repo: repo ?? null,
-      }), null, 2));
+      };
+      if (asyncMode) {
+        return ok(JSON.stringify(startReviewJob(
+          "architecture_preflight",
+          (signal) => runCodexArchitecturePreflight({ ...params, signal }),
+        ), null, 2));
+      }
+      return ok(JSON.stringify(await runCodexArchitecturePreflight(params), null, 2));
     } catch (e) { return err(e); }
   },
 );
@@ -528,10 +546,11 @@ server.tool(
     override_reason: z.string().optional().describe(buildCodexReviewOverrideReasonDescription(CODEX_REVIEW_CAPS)),
     override_phase_gate: z.boolean().optional(),
     override_phase_reason: z.string().optional(),
+    async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, base_branch, uncommitted, pr_number, issue_number, override_cap, override_reason, override_phase_gate, override_phase_reason }) => {
+  async ({ repo_path, base_branch, uncommitted, pr_number, issue_number, override_cap, override_reason, override_phase_gate, override_phase_reason, async: asyncMode }) => {
     try {
-      return ok(JSON.stringify(await runCodexReview({
+      const params = {
         repoPath: repo_path, baseBranch: base_branch ?? null,
         uncommitted: Boolean(uncommitted),
         prNumber: pr_number != null ? pr_number : null,
@@ -540,7 +559,14 @@ server.tool(
         overrideReason: override_reason ?? null,
         overridePhaseGate: Boolean(override_phase_gate),
         overridePhaseReason: override_phase_reason ?? null,
-      }), null, 2));
+      };
+      if (asyncMode) {
+        return ok(JSON.stringify(startReviewJob(
+          "codex_review",
+          (signal) => runCodexReview({ ...params, signal }),
+        ), null, 2));
+      }
+      return ok(JSON.stringify(await runCodexReview(params), null, 2));
     } catch (e) { return err(e); }
   },
 );
@@ -573,10 +599,11 @@ server.tool(
     override_cap: z.boolean().optional(),
     override_reason: z.string().optional(),
     model: z.string().optional(),
+    async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, base_branch, issue_number, pr_number, override_cap, override_reason, model }) => {
+  async ({ repo_path, base_branch, issue_number, pr_number, override_cap, override_reason, model, async: asyncMode }) => {
     try {
-      return ok(JSON.stringify(await runTestQualityReview({
+      const params = {
         repoPath: repo_path,
         // Pass null when not supplied so the runner resolves from
         // .ground-control.yaml; the runner falls back to "dev" only if
@@ -587,7 +614,14 @@ server.tool(
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
         ...(model ? { model } : {}),
-      }), null, 2));
+      };
+      if (asyncMode) {
+        return ok(JSON.stringify(startReviewJob(
+          "test_quality_review",
+          (signal) => runTestQualityReview({ ...params, signal }),
+        ), null, 2));
+      }
+      return ok(JSON.stringify(await runTestQualityReview(params), null, 2));
     } catch (e) { return err(e); }
   },
 );
@@ -818,17 +852,25 @@ server.tool(
     uncommitted: z.boolean().optional(),
     override_cap: z.boolean().optional(),
     override_reason: z.string().nullable().optional(),
+    async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, issue_number, base_branch, uncommitted, override_cap, override_reason }) => {
+  async ({ repo_path, issue_number, base_branch, uncommitted, override_cap, override_reason, async: asyncMode }) => {
     try {
-      return ok(JSON.stringify(await runCodexReviewCycle({
+      const params = {
         repoPath: repo_path,
         issueNumber: issue_number,
         baseBranch: base_branch ?? null,
         uncommitted: uncommitted ?? true,
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
-      }), null, 2));
+      };
+      if (asyncMode) {
+        return ok(JSON.stringify(startReviewJob(
+          "codex_review_cycle",
+          (signal) => runCodexReviewCycle({ ...params, signal }),
+        ), null, 2));
+      }
+      return ok(JSON.stringify(await runCodexReviewCycle(params), null, 2));
     } catch (e) { return err(e); }
   },
 );
@@ -843,17 +885,47 @@ server.tool(
     override_cap: z.boolean().optional(),
     override_reason: z.string().nullable().optional(),
     model: z.string().optional(),
+    async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, issue_number, base_branch, override_cap, override_reason, model }) => {
+  async ({ repo_path, issue_number, base_branch, override_cap, override_reason, model, async: asyncMode }) => {
     try {
-      return ok(JSON.stringify(await runTestQualityReviewCycle({
+      const params = {
         repoPath: repo_path,
         issueNumber: issue_number,
         baseBranch: base_branch ?? null,
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
         model,
-      }), null, 2));
+      };
+      if (asyncMode) {
+        return ok(JSON.stringify(startReviewJob(
+          "test_quality_review_cycle",
+          (signal) => runTestQualityReviewCycle({ ...params, signal }),
+        ), null, 2));
+      }
+      return ok(JSON.stringify(await runTestQualityReviewCycle(params), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_codex_job",
+  "Poll or cancel an async review/preflight job started by gc_codex_review, gc_codex_review_cycle, " +
+    "gc_codex_architecture_preflight, gc_test_quality_review, or gc_test_quality_review_cycle when those " +
+    "tools are called with async=true (issue #937). action='poll' returns {ok:true,status:'running'} while " +
+    "the codex/claude child is still running, and {ok:true,status:'done',result:<review envelope>} once it " +
+    "finishes — dispatch on result.next_action exactly as for the synchronous tool. A failed or cancelled " +
+    "job returns ok=false. action='cancel' aborts a running job and kills its child process (no orphan). " +
+    "Jobs are reaped 30 minutes after they finish; a poll for an unknown or expired job_id returns " +
+    "error='job_not_found', at which point re-run the review.",
+  {
+    action: z.enum(["poll", "cancel"]),
+    job_id: z.string().min(1),
+  },
+  async ({ action, job_id }) => {
+    try {
+      const result = action === "cancel" ? cancelReviewJob(job_id) : pollReviewJob(job_id);
+      return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },
 );
