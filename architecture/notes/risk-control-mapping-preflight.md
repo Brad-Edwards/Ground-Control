@@ -1,6 +1,7 @@
 # Risk-Control Mapping Preflight
 
-Issue: #824
+Implementation issue: #258
+Verification issue: #824
 Requirement: GC-T003
 
 This is architecture guardrail guidance for the implementation that verifies or
@@ -35,9 +36,9 @@ evidence, they are not the control-to-risk relationship.
   repositories, service-owned semantic validation, and Envers-audited JPA
   entities extending `BaseEntity`.
 - Project-scoped target validation: extend or reuse `GraphTargetResolverService`
-  for internal targets. `RiskScenarioLinkService` already uses it; `ControlLink`
-  currently does not, so do not model a new GC-T003 path after the looser control
-  link behavior without correcting that validation gap.
+  for internal targets. `RiskScenarioLinkService` and `ControlLinkService` both
+  route internal targets through it; any canonical GC-T003 mapping owner or
+  projection must preserve that same same-project validation boundary.
 - Link persistence: reuse the existing internal-target pattern
   (`targetEntityId` for first-class entities, `targetIdentifier` only for
   external or not-yet-modeled artifacts), unique constraints, and reverse lookup
@@ -58,10 +59,14 @@ evidence, they are not the control-to-risk relationship.
   Alternatively, narrow C8 so observations/evidence feed assessments without
   going through a mapping. See `risk-control-mapping-verification.md` §C8 for
   the three-decision breakdown.
-- GC-I013 dependency: until a first-class control effectiveness assessment model
-  exists, do not pretend `VerificationResult` satisfies GC-I013. It is currently
-  a prover/result artifact tied to requirements and traceability links, not a
-  control evaluation aggregate.
+- GC-I013 dependency: `ControlEffectivenessAssessment` is now the first-class
+  control evaluation aggregate, with project-scoped service/repository/API/MCP
+  surfaces and `operatingEffectiveness` as the stable risk-consumption input.
+  GC-T003 must consume those rows through a project-scoped, as-of-aware service
+  path; do not use `VerificationResult`, `ControlStatus`, or catalog-level
+  control summary fields as substitutes. Current `RiskAssessmentResult` rows do
+  not yet record which control effectiveness assessments influenced them, so the
+  implementation still needs an explicit feed/provenance edge or snapshot.
 - Graph: update `GraphEntityType`, `GraphIds`, and the relevant
   `GraphProjectionContributor` path. Do not add controller/service direct AGE
   writes or feature-specific graph endpoints.
@@ -79,6 +84,12 @@ evidence, they are not the control-to-risk relationship.
   DTO shape. Semantic rules such as same-project target ownership, duplicate
   mappings, internal-vs-external target shape, valid method influence fields, and
   scenario/register consistency belong in services.
+- Methodology validation: `MethodologyProfile.inputSchema` / `outputSchema`
+  provide the profile boundary, but there is not yet one repo-wide JSON Schema
+  validator service for every methodology payload. If GC-T003 validates
+  influence factors, put that behind one reusable service keyed by methodology
+  profile and payload role; do not branch per methodology in controllers or add a
+  mapping-local parser.
 - Error envelope: throw existing domain exceptions
   (`NotFoundException`, `ConflictException`, `DomainValidationException`) and let
   `GlobalExceptionHandler` / `ErrorResponse` serialize them. Do not create a
@@ -107,9 +118,10 @@ evidence, they are not the control-to-risk relationship.
 The extension seam is a method-aware mapping context keyed by project, control
 or scoped implementation, risk scenario or register record, and asset or
 boundary context. Method-specific influence should be parameterized by
-methodology family/profile and stored as a structured payload validated against
-the relevant profile semantics, so adding another methodology or influence
-dimension does not require another link table or a second assessment model.
+methodology family/profile, factor key, payload role, and effective/as-of date,
+and stored as a structured payload validated against the relevant profile
+semantics, so adding another methodology or influence dimension does not require
+another link table or a second assessment model.
 
 The read side for "unmapped scenarios/records" and "controls not mapped to any
 relevant scenario" should be queryable by project and, where applicable, by
@@ -136,12 +148,13 @@ by API, MCP, graph, and policy/live verification surfaces.
   writer, auth guard, logging channel, graph materializer, or workflow engine.
 - Do not transition GC-T003 to ACTIVE solely because partial link CRUD exists;
   the methodology influence, unmapped coverage, observations/evidence feed, and
-  GC-I013 dependency clauses must be explicitly accounted for.
+  GC-I013 control-effectiveness feed clauses must be explicitly accounted for.
 
 ## Non-Goals
 
-- No implementation of GC-I001 control catalog or GC-I013 control effectiveness
-  assessment inside GC-T003 unless those requirements are explicitly taken on.
+- No expansion of GC-I001 control catalog or GC-I013 control effectiveness
+  assessment behavior inside GC-T003 unless those requirements are explicitly
+  taken on.
 - No replacement of `RiskScenarioLink`, `ControlLink`, `RiskAssessmentResult`,
   `Observation`, or `MethodologyProfile` with a generic all-purpose relation
   table.
