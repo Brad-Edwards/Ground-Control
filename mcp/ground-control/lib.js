@@ -4503,6 +4503,19 @@ const FINDING_CATEGORY_SHAPE_MAX = 300;
 const FINDING_CLASSIFICATIONS = new Set(["one-off", "class"]);
 const FINDING_SWEEP_EVIDENCE_MAX = 500;
 const REVIEW_NOTE_TEXT_MAX = 300;
+// An advisory review note (codex or test-quality) that overruns the
+// length cap is truncated to the cap — last char replaced with an
+// ellipsis — rather than thrown. The note is non-blocking prose from
+// an LLM reviewer, which cannot be relied on to honour a hard char
+// budget; discarding an entire completed review over note length was
+// a brittle failure mode (surfaced by aptl issue #293). Verbatim
+// durability is unaffected: the full reviewer text is preserved
+// separately via buildCodexReviewFindingsComments' chunked comments;
+// notes[] is the parsed, already-capped structured summary.
+function truncateReviewNoteText(text) {
+  if (text.length <= REVIEW_NOTE_TEXT_MAX) return text;
+  return text.slice(0, REVIEW_NOTE_TEXT_MAX - 1) + "…";
+}
 // Block delimiter renamed from ===FINDINGS=== to ===REVIEW=== with the
 // verdict-envelope migration (issue #931). The new contract emits a JSON
 // object (verdict + architectural_read + blocking + notes), not a JSON array.
@@ -4685,10 +4698,7 @@ export function validateReviewEnvelope(raw, repoRoot) {
       if (typeof entry.text !== "string" || entry.text.trim() === "") {
         throw new Error(`notes[${idx}].text must be a non-empty string`);
       }
-      if (entry.text.length > REVIEW_NOTE_TEXT_MAX) {
-        throw new Error(`notes[${idx}].text must be ≤${REVIEW_NOTE_TEXT_MAX} chars (got ${entry.text.length})`);
-      }
-      return { text: entry.text };
+      return { text: truncateReviewNoteText(entry.text) };
     });
   }
   // Verdict / blocking consistency rules — shared with the decision-record
@@ -5882,10 +5892,7 @@ export function parseTestQualityReviewEnvelope(stdout) {
       if (typeof entry.text !== "string" || entry.text.trim() === "") {
         throw new Error(`test-quality review notes[${idx}].text must be a non-empty string`);
       }
-      if (entry.text.length > REVIEW_NOTE_TEXT_MAX) {
-        throw new Error(`test-quality review notes[${idx}].text must be ≤${REVIEW_NOTE_TEXT_MAX} chars`);
-      }
-      return { text: entry.text };
+      return { text: truncateReviewNoteText(entry.text) };
     });
   }
 

@@ -2617,6 +2617,24 @@ describe("parseCodexReviewFindingsTail (verdict envelope, #931)", () => {
     assert.throws(() => parseCodexReviewFindingsTail(stdout, repoRoot), /notes.*cap/i);
   });
 
+  it("truncates an over-long note instead of discarding the whole review (aptl #293)", () => {
+    // An LLM reviewer cannot be relied on to honour a hard char budget
+    // for advisory prose. A note that overruns REVIEW_NOTE_TEXT_MAX is
+    // truncated (ellipsis-terminated) so a completed review still
+    // parses, rather than throwing and losing the entire review.
+    const envelope = {
+      verdict: "ship",
+      architectural_read: "Reviewed.",
+      blocking: [],
+      notes: [{ text: "x".repeat(450) }],
+    };
+    const stdout = `===REVIEW===\n${JSON.stringify(envelope)}\n===END===`;
+    const { envelope: parsed } = parseCodexReviewFindingsTail(stdout, repoRoot);
+    assert.equal(parsed.notes.length, 1);
+    assert.equal(parsed.notes[0].text.length, 300);
+    assert.ok(parsed.notes[0].text.endsWith("…"));
+  });
+
   it("requires sweep_evidence on one-off findings (#931)", () => {
     // Note: this test deliberately omits sweep_evidence to exercise the
     // required-field check.
@@ -8091,6 +8109,22 @@ describe("parseTestQualityReviewFindings (verdict envelope, #931)", () => {
     const r = parseTestQualityReviewFindings(stdout);
     assert.deepEqual(r.findings, []);
     assert.equal(r.envelope.verdict, "ship");
+  });
+
+  it("truncates an over-long note instead of discarding the whole review (aptl #293)", () => {
+    // Regression: a test-quality review whose advisory note overran
+    // the char cap was thrown away wholesale, blocking the /implement
+    // workflow on a parse error despite a completed review.
+    const stdout = JSON.stringify({
+      verdict: "ship",
+      architectural_read: "Reviewed the test file.",
+      blocking: [],
+      notes: [{ text: "x".repeat(450) }],
+    });
+    const r = parseTestQualityReviewFindings(stdout);
+    assert.equal(r.envelope.notes.length, 1);
+    assert.equal(r.envelope.notes[0].text.length, 300);
+    assert.ok(r.envelope.notes[0].text.endsWith("…"));
   });
 
   it("parses a warning severity finding", () => {
