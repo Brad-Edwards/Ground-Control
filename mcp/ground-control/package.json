@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node --test lib.test.js gc-query.test.js gc-threat-model.test.js gc-risk-scenario.test.js gc-risk-governance.test.js gc-control.test.js gc-finding.test.js gc-evidence.test.js gc-analyze.test.js link-create.test.js test-case-tools.test.js traceability-tools.test.js",
+    "test": "node --test lib.test.js gc-query.test.js gc-threat-model.test.js gc-risk-scenario.test.js gc-risk-governance.test.js gc-control.test.js gc-finding.test.js gc-evidence.test.js gc-analyze.test.js link-create.test.js test-case-tools.test.js traceability-tools.test.js gc-asset.test.js gc-observation.test.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
