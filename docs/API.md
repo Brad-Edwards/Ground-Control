@@ -920,6 +920,7 @@ must be non-blank), `reason` (optional, max 500).
 | PUT | `/threat-models/{id}` | UpdateThreatModelRequest | 200 | Update mutable fields |
 | DELETE | `/threat-models/{id}` | — | 204 | Delete threat model (cascades to links) |
 | PUT | `/threat-models/{id}/status` | `{"status": "ACTIVE"}` | 200 | Transition lifecycle status |
+| GET | `/threat-models/{id}/requirements` | — | 200 | List requirements linked to a threat model |
 | POST | `/threat-models/{id}/links` | ThreatModelLinkRequest | 201 | Create threat-model link |
 | GET | `/threat-models/{id}/links` | — | 200 | List links for a threat model |
 | DELETE | `/threat-models/{id}/links/{linkId}` | — | 204 | Delete threat-model link |

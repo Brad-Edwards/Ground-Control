@@ -9,7 +9,8 @@ import {
   THREAT_MODEL_STATUSES, STRIDE_CATEGORIES,
   THREAT_MODEL_LINK_TARGET_TYPES, THREAT_MODEL_LINK_TYPES,
   createThreatModel, updateThreatModel, deleteThreatModel,
-  transitionThreatModelStatus, createThreatModelLink, deleteThreatModelLink,
+  transitionThreatModelStatus, getThreatModelLinkedRequirements,
+  createThreatModelLink, deleteThreatModelLink,
   pick, reqArg,
 } from "./lib.js";
 import {
@@ -18,7 +19,7 @@ import {
 } from "./link-create.js";
 
 export const GC_THREAT_MODEL_ACTIONS = [
-  "create", "update", "delete", "transition", "link_create", "link_delete",
+  "create", "update", "delete", "transition", "requirements", "link_create", "link_delete",
 ];
 
 // Snake_case body fields accepted by gc_threat_model.create — mirrors
@@ -70,6 +71,7 @@ export const GC_THREAT_MODEL_DESCRIPTION =
   `optional stride_category, narrative). update accepts the same fields minus uid plus ` +
   `clear_stride / clear_narrative to explicitly null optional fields. ` +
   `status is consumed only by the transition action (creation defaults to DRAFT). ` +
+  `requirements returns all requirements linked to the threat model (requires id). ` +
   `link_create requires target_type + link_type; for internal target types ` +
   `(ASSET / REQUIREMENT / CONTROL / RISK_SCENARIO / OBSERVATION / RISK_ASSESSMENT_RESULT / ` +
   `VERIFICATION_RESULT / FINDING / EVIDENCE) pass target_entity_id, ` +
@@ -102,6 +104,10 @@ export async function gcThreatModelToolHandler(args) {
       reqArg(args, "id", "transition");
       reqArg(args, "status", "transition");
       return transitionThreatModelStatus(args.id, args.status, args.project);
+    }
+    case "requirements": {
+      reqArg(args, "id", "requirements");
+      return getThreatModelLinkedRequirements(args.id, args.project);
     }
     case "link_create": {
       return performLinkCreate(args, "threat_model_id", createThreatModelLink);

@@ -6,16 +6,20 @@ import com.keplerops.groundcontrol.domain.audit.ActorHolder;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
+import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkTargetType;
 import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel;
 import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelLinkRepository;
 import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelRepository;
+import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelLinkTargetType;
 import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelStatus;
 import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,18 +37,21 @@ public class ThreatModelService {
     private final ProjectService projectService;
     private final AssetLinkRepository assetLinkRepository;
     private final RiskScenarioLinkRepository riskScenarioLinkRepository;
+    private final RequirementRepository requirementRepository;
 
     public ThreatModelService(
             ThreatModelRepository threatModelRepository,
             ThreatModelLinkRepository threatModelLinkRepository,
             ProjectService projectService,
             AssetLinkRepository assetLinkRepository,
-            RiskScenarioLinkRepository riskScenarioLinkRepository) {
+            RiskScenarioLinkRepository riskScenarioLinkRepository,
+            RequirementRepository requirementRepository) {
         this.threatModelRepository = threatModelRepository;
         this.threatModelLinkRepository = threatModelLinkRepository;
         this.projectService = projectService;
         this.assetLinkRepository = assetLinkRepository;
         this.riskScenarioLinkRepository = riskScenarioLinkRepository;
+        this.requirementRepository = requirementRepository;
     }
 
     public ThreatModel create(CreateThreatModelCommand command) {
@@ -191,6 +198,18 @@ public class ThreatModelService {
                 threatModel.getId(),
                 threatModel.getUid(),
                 outboundLinks.size());
+    }
+
+    @Transactional(readOnly = true)
+    public List<Requirement> findLinkedRequirements(UUID projectId, UUID id) {
+        findByIdOrThrow(projectId, id);
+        var links =
+                threatModelLinkRepository.findByThreatModelIdAndTargetType(id, ThreatModelLinkTargetType.REQUIREMENT);
+        return links.stream()
+                .map(link -> requirementRepository.findByIdAndProjectId(link.getTargetEntityId(), projectId))
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .toList();
     }
 
     private ThreatModel findByIdOrThrow(UUID projectId, UUID id) {

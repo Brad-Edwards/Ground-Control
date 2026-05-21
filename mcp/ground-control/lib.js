@@ -8586,6 +8586,10 @@ export async function transitionThreatModelStatus(id, status, project) {
   });
 }
 
+export async function getThreatModelLinkedRequirements(id, project) {
+  return request("GET", `/api/v1/threat-models/${encodeURIComponent(id)}/requirements`, { params: { project } });
+}
+
 export async function createThreatModelLink(threatModelId, data, project) {
   return request("POST", `/api/v1/threat-models/${encodeURIComponent(threatModelId)}/links`, {
     body: data,

@@ -119,7 +119,7 @@ import {
   deleteRiskScenario, transitionRiskScenarioStatus, getRiskScenarioRequirements,
   createRiskScenarioLink, listRiskScenarioLinks, deleteRiskScenarioLink,
   createThreatModel, listThreatModels, getThreatModel, updateThreatModel,
-  deleteThreatModel, transitionThreatModelStatus,
+  deleteThreatModel, transitionThreatModelStatus, getThreatModelLinkedRequirements,
   createThreatModelLink, listThreatModelLinks, deleteThreatModelLink,
   createMethodologyProfile, listMethodologyProfiles, getMethodologyProfile,
   updateMethodologyProfile, deleteMethodologyProfile,

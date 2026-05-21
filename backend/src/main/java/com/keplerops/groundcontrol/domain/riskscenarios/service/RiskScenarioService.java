@@ -10,13 +10,14 @@ import com.keplerops.groundcontrol.domain.findings.repository.FindingLinkReposit
 import com.keplerops.groundcontrol.domain.findings.state.FindingLinkTargetType;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
-import com.keplerops.groundcontrol.domain.requirements.repository.TraceabilityLinkRepository;
-import com.keplerops.groundcontrol.domain.requirements.state.ArtifactType;
+import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkTargetType;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioStatus;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +35,7 @@ public class RiskScenarioService {
     private final FindingLinkRepository findingLinkRepository;
     private final AuditLinkRepository auditLinkRepository;
     private final ProjectService projectService;
-    private final TraceabilityLinkRepository traceabilityLinkRepository;
+    private final RequirementRepository requirementRepository;
 
     public RiskScenarioService(
             RiskScenarioRepository riskScenarioRepository,
@@ -42,13 +43,13 @@ public class RiskScenarioService {
             FindingLinkRepository findingLinkRepository,
             AuditLinkRepository auditLinkRepository,
             ProjectService projectService,
-            TraceabilityLinkRepository traceabilityLinkRepository) {
+            RequirementRepository requirementRepository) {
         this.riskScenarioRepository = riskScenarioRepository;
         this.riskScenarioLinkRepository = riskScenarioLinkRepository;
         this.findingLinkRepository = findingLinkRepository;
         this.auditLinkRepository = auditLinkRepository;
         this.projectService = projectService;
-        this.traceabilityLinkRepository = traceabilityLinkRepository;
+        this.requirementRepository = requirementRepository;
     }
 
     public RiskScenario create(CreateRiskScenarioCommand command) {
@@ -243,10 +244,14 @@ public class RiskScenarioService {
 
     @Transactional(readOnly = true)
     public List<Requirement> findLinkedRequirements(UUID projectId, UUID id) {
-        var scenario = findByIdOrThrow(projectId, id);
-        var links = traceabilityLinkRepository.findByArtifactTypeAndArtifactIdentifierWithRequirement(
-                ArtifactType.RISK_SCENARIO, scenario.getUid());
-        return links.stream().map(link -> link.getRequirement()).toList();
+        findByIdOrThrow(projectId, id);
+        var links = riskScenarioLinkRepository.findByRiskScenarioIdAndTargetType(
+                id, RiskScenarioLinkTargetType.REQUIREMENT);
+        return links.stream()
+                .map(link -> requirementRepository.findByIdAndProjectId(link.getTargetEntityId(), projectId))
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .toList();
     }
 
     @Deprecated(forRemoval = false)
