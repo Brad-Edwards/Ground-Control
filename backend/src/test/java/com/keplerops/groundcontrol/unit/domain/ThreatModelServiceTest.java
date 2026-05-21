@@ -15,14 +15,20 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
+import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkTargetType;
 import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel;
+import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModelLink;
+import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelLinkRepository;
 import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelRepository;
 import com.keplerops.groundcontrol.domain.threatmodels.service.CreateThreatModelCommand;
 import com.keplerops.groundcontrol.domain.threatmodels.service.ThreatModelService;
 import com.keplerops.groundcontrol.domain.threatmodels.service.UpdateThreatModelCommand;
 import com.keplerops.groundcontrol.domain.threatmodels.state.StrideCategory;
+import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelLinkTargetType;
+import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelLinkType;
 import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelStatus;
 import java.time.Instant;
 import java.util.List;
@@ -43,8 +49,10 @@ class ThreatModelServiceTest {
     private ThreatModelRepository threatModelRepository;
 
     @Mock
-    private com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelLinkRepository
-            threatModelLinkRepository;
+    private ThreatModelLinkRepository threatModelLinkRepository;
+
+    @Mock
+    private RequirementRepository requirementRepository;
 
     @Mock
     private ProjectService projectService;
@@ -203,6 +211,32 @@ class ThreatModelServiceTest {
         }
 
         @Test
+        void rejectsBlankThreatSource() {
+            var tm = makeThreatModel();
+            when(threatModelRepository.findByIdAndProjectId(tm.getId(), projectId))
+                    .thenReturn(Optional.of(tm));
+
+            var command = new UpdateThreatModelCommand(null, " ", null, null, null, null, false, false);
+
+            assertThatThrownBy(() -> threatModelService.update(projectId, tm.getId(), command))
+                    .isInstanceOf(DomainValidationException.class)
+                    .hasMessageContaining("threatSource");
+        }
+
+        @Test
+        void rejectsBlankEffect() {
+            var tm = makeThreatModel();
+            when(threatModelRepository.findByIdAndProjectId(tm.getId(), projectId))
+                    .thenReturn(Optional.of(tm));
+
+            var command = new UpdateThreatModelCommand(null, null, null, " ", null, null, false, false);
+
+            assertThatThrownBy(() -> threatModelService.update(projectId, tm.getId(), command))
+                    .isInstanceOf(DomainValidationException.class)
+                    .hasMessageContaining("effect");
+        }
+
+        @Test
         void clearsStrideWhenFlagSet() {
             var tm = makeThreatModel();
             assertThat(tm.getStride()).isNotNull();
@@ -345,6 +379,82 @@ class ThreatModelServiceTest {
             var result = threatModelService.listByProject(projectId);
 
             assertThat(result).hasSize(1);
+        }
+    }
+
+    @Nested
+    class FindLinkedRequirements {
+
+        @Test
+        void returnsRequirementsForREQUIREMENTTypedLinks() {
+            var tm = makeThreatModel();
+            var reqId = UUID.randomUUID();
+            var req = new Requirement(project, "GC-H002", "Threat linking", "System shall link");
+            setField(req, "id", reqId);
+
+            var link = new ThreatModelLink(
+                    tm, ThreatModelLinkTargetType.REQUIREMENT, reqId, null, ThreatModelLinkType.AFFECTS);
+            setField(link, "id", UUID.randomUUID());
+
+            when(threatModelRepository.findByIdAndProjectId(tm.getId(), projectId))
+                    .thenReturn(Optional.of(tm));
+            when(threatModelLinkRepository.findByThreatModelIdAndTargetType(
+                            tm.getId(), ThreatModelLinkTargetType.REQUIREMENT))
+                    .thenReturn(List.of(link));
+            when(requirementRepository.findByIdAndProjectId(reqId, projectId)).thenReturn(Optional.of(req));
+
+            var results = threatModelService.findLinkedRequirements(projectId, tm.getId());
+
+            assertThat(results).hasSize(1);
+            assertThat(results.get(0).getUid()).isEqualTo("GC-H002");
+        }
+
+        @Test
+        void returnsEmptyWhenNoREQUIREMENTLinks() {
+            var tm = makeThreatModel();
+            when(threatModelRepository.findByIdAndProjectId(tm.getId(), projectId))
+                    .thenReturn(Optional.of(tm));
+            when(threatModelLinkRepository.findByThreatModelIdAndTargetType(
+                            tm.getId(), ThreatModelLinkTargetType.REQUIREMENT))
+                    .thenReturn(List.of());
+
+            var results = threatModelService.findLinkedRequirements(projectId, tm.getId());
+
+            assertThat(results).isEmpty();
+        }
+
+        @Test
+        void throws404WhenThreatModelNotInProject() {
+            var id = UUID.randomUUID();
+            when(threatModelRepository.findByIdAndProjectId(id, projectId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> threatModelService.findLinkedRequirements(projectId, id))
+                    .isInstanceOf(NotFoundException.class);
+        }
+
+        @Test
+        void skipsLinkWhenRequirementNotFoundInProject() {
+            // A link may reference a UUID that exists in another project but not
+            // in this one — the canonical project-scoped lookup must silently
+            // filter such links rather than throwing.
+            var tm = makeThreatModel();
+            var orphanReqId = UUID.randomUUID();
+
+            var link = new ThreatModelLink(
+                    tm, ThreatModelLinkTargetType.REQUIREMENT, orphanReqId, null, ThreatModelLinkType.AFFECTS);
+            setField(link, "id", UUID.randomUUID());
+
+            when(threatModelRepository.findByIdAndProjectId(tm.getId(), projectId))
+                    .thenReturn(Optional.of(tm));
+            when(threatModelLinkRepository.findByThreatModelIdAndTargetType(
+                            tm.getId(), ThreatModelLinkTargetType.REQUIREMENT))
+                    .thenReturn(List.of(link));
+            when(requirementRepository.findByIdAndProjectId(orphanReqId, projectId))
+                    .thenReturn(Optional.empty());
+
+            var results = threatModelService.findLinkedRequirements(projectId, tm.getId());
+
+            assertThat(results).isEmpty();
         }
     }
 

@@ -12,12 +12,17 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
+import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.TraceabilityLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenarioLink;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.CreateRiskScenarioCommand;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.RiskScenarioService;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.UpdateRiskScenarioCommand;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkTargetType;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkType;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioStatus;
 import java.time.Instant;
 import java.util.List;
@@ -53,6 +58,9 @@ class RiskScenarioServiceTest {
     @SuppressWarnings("UnusedVariable") // needed by @InjectMocks for constructor injection
     @Mock
     private TraceabilityLinkRepository traceabilityLinkRepository;
+
+    @Mock
+    private RequirementRepository requirementRepository;
 
     @InjectMocks
     private RiskScenarioService riskScenarioService;
@@ -345,6 +353,84 @@ class RiskScenarioServiceTest {
             var result = riskScenarioService.listByProject(projectId);
 
             assertThat(result).hasSize(1);
+        }
+    }
+
+    @Nested
+    class FindLinkedRequirements {
+
+        @Test
+        void returnsRequirementsViaCanonicalRiskScenarioLinkPath() {
+            var rs = makeScenario();
+            var reqId = UUID.randomUUID();
+            var req = new Requirement(project, "GC-H002", "Threat linking", "System shall link");
+            setField(req, "id", reqId);
+
+            var link = new RiskScenarioLink(
+                    rs, RiskScenarioLinkTargetType.REQUIREMENT, reqId, null, RiskScenarioLinkType.AFFECTS);
+            setField(link, "id", UUID.randomUUID());
+
+            when(riskScenarioRepository.findByIdAndProjectId(rs.getId(), projectId))
+                    .thenReturn(Optional.of(rs));
+            when(riskScenarioLinkRepository.findByRiskScenarioIdAndTargetType(
+                            rs.getId(), RiskScenarioLinkTargetType.REQUIREMENT))
+                    .thenReturn(List.of(link));
+            when(requirementRepository.findByIdAndProjectId(reqId, projectId)).thenReturn(Optional.of(req));
+
+            var results = riskScenarioService.findLinkedRequirements(projectId, rs.getId());
+
+            assertThat(results).hasSize(1);
+            assertThat(results.get(0).getUid()).isEqualTo("GC-H002");
+        }
+
+        @Test
+        void returnsEmptyWhenNoREQUIREMENTLinks() {
+            var rs = makeScenario();
+            when(riskScenarioRepository.findByIdAndProjectId(rs.getId(), projectId))
+                    .thenReturn(Optional.of(rs));
+            when(riskScenarioLinkRepository.findByRiskScenarioIdAndTargetType(
+                            rs.getId(), RiskScenarioLinkTargetType.REQUIREMENT))
+                    .thenReturn(List.of());
+
+            var results = riskScenarioService.findLinkedRequirements(projectId, rs.getId());
+
+            assertThat(results).isEmpty();
+        }
+
+        @Test
+        void isProjectScoped_crossProjectLinkNotReturned() {
+            // A RiskScenarioLink targeting a requirement UUID from another project
+            // must not appear in this project's result.
+            var rs = makeScenario();
+            var otherProjectReqId = UUID.randomUUID();
+
+            var link = new RiskScenarioLink(
+                    rs, RiskScenarioLinkTargetType.REQUIREMENT, otherProjectReqId, null, RiskScenarioLinkType.AFFECTS);
+            setField(link, "id", UUID.randomUUID());
+
+            when(riskScenarioRepository.findByIdAndProjectId(rs.getId(), projectId))
+                    .thenReturn(Optional.of(rs));
+            when(riskScenarioLinkRepository.findByRiskScenarioIdAndTargetType(
+                            rs.getId(), RiskScenarioLinkTargetType.REQUIREMENT))
+                    .thenReturn(List.of(link));
+            when(requirementRepository.findByIdAndProjectId(otherProjectReqId, projectId))
+                    .thenReturn(Optional.empty());
+
+            var results = riskScenarioService.findLinkedRequirements(projectId, rs.getId());
+
+            assertThat(results).isEmpty();
+            // The traceability-link repository must NOT be consulted — the canonical
+            // path is RiskScenarioLink, not TraceabilityLink (plan item 4).
+            org.mockito.Mockito.verifyNoInteractions(traceabilityLinkRepository);
+        }
+
+        @Test
+        void throws404WhenScenarioNotFound() {
+            var id = UUID.randomUUID();
+            when(riskScenarioRepository.findByIdAndProjectId(id, projectId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> riskScenarioService.findLinkedRequirements(projectId, id))
+                    .isInstanceOf(NotFoundException.class);
         }
     }
 

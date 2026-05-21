@@ -143,7 +143,7 @@ describe("GC_THREAT_MODEL_ACTIONS", () => {
   it("matches the action verbs the handler dispatches", () => {
     assert.deepEqual(
       [...GC_THREAT_MODEL_ACTIONS].sort(),
-      ["create", "delete", "link_create", "link_delete", "transition", "update"],
+      ["create", "delete", "link_create", "link_delete", "requirements", "transition", "update"],
     );
   });
 });
@@ -407,6 +407,23 @@ describe("gcThreatModelToolHandler other actions", () => {
     assert.equal(calls.length, 1);
     assert.equal(calls[0].method, "DELETE");
     assert.match(calls[0].url, new RegExp(`/api/v1/threat-models/${ID}/links/${LINK_ID}`));
+  });
+
+  it("requirements GETs the requirements sub-resource", async () => {
+    const calls = makeFetchSpy({ body: [] });
+    await gcThreatModelToolHandler({ action: "requirements", id: ID });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "GET");
+    assert.match(calls[0].url, new RegExp(`/api/v1/threat-models/${ID}/requirements`));
+  });
+
+  it("requirements rejects missing id before any HTTP call", async () => {
+    const calls = makeFetchSpy();
+    await assert.rejects(
+      () => gcThreatModelToolHandler({ action: "requirements" }),
+      (e) => e.message.includes("'id' is required"),
+    );
+    assert.equal(calls.length, 0);
   });
 
   it("throws on an unknown action without issuing an HTTP call", async () => {
