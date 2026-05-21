@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.api.riskscenarios;
 
 import com.keplerops.groundcontrol.api.requirements.RequirementResponse;
+import com.keplerops.groundcontrol.api.trace.SecurityTraceResponse;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.CreateRiskScenarioCommand;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.RiskScenarioService;
@@ -110,5 +111,11 @@ public class RiskScenarioController {
         return riskScenarioService.findLinkedRequirements(projectId, id).stream()
                 .map(RequirementResponse::from)
                 .toList();
+    }
+
+    @GetMapping("/{id}/trace")
+    public SecurityTraceResponse getTrace(@PathVariable UUID id, @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return SecurityTraceResponse.from(riskScenarioService.findTrace(projectId, id));
     }
 }

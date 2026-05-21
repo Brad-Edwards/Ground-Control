@@ -1,13 +1,19 @@
 package com.keplerops.groundcontrol.domain.threatmodels.service;
 
+import com.keplerops.groundcontrol.domain.assets.model.OperationalAsset;
 import com.keplerops.groundcontrol.domain.assets.repository.AssetLinkRepository;
+import com.keplerops.groundcontrol.domain.assets.repository.OperationalAssetRepository;
 import com.keplerops.groundcontrol.domain.assets.state.AssetLinkTargetType;
 import com.keplerops.groundcontrol.domain.audit.ActorHolder;
+import com.keplerops.groundcontrol.domain.controls.model.Control;
+import com.keplerops.groundcontrol.domain.controls.repository.ControlRepository;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
+import com.keplerops.groundcontrol.domain.requirements.model.TraceabilityLink;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
+import com.keplerops.groundcontrol.domain.requirements.repository.TraceabilityLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkTargetType;
 import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel;
@@ -15,12 +21,15 @@ import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelLin
 import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelRepository;
 import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelLinkTargetType;
 import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelStatus;
+import com.keplerops.groundcontrol.domain.trace.SecurityTrace;
+import com.keplerops.groundcontrol.domain.trace.SecurityTraceSourceType;
 import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -38,6 +47,9 @@ public class ThreatModelService {
     private final AssetLinkRepository assetLinkRepository;
     private final RiskScenarioLinkRepository riskScenarioLinkRepository;
     private final RequirementRepository requirementRepository;
+    private final OperationalAssetRepository operationalAssetRepository;
+    private final ControlRepository controlRepository;
+    private final TraceabilityLinkRepository traceabilityLinkRepository;
 
     public ThreatModelService(
             ThreatModelRepository threatModelRepository,
@@ -45,13 +57,19 @@ public class ThreatModelService {
             ProjectService projectService,
             AssetLinkRepository assetLinkRepository,
             RiskScenarioLinkRepository riskScenarioLinkRepository,
-            RequirementRepository requirementRepository) {
+            RequirementRepository requirementRepository,
+            OperationalAssetRepository operationalAssetRepository,
+            ControlRepository controlRepository,
+            TraceabilityLinkRepository traceabilityLinkRepository) {
         this.threatModelRepository = threatModelRepository;
         this.threatModelLinkRepository = threatModelLinkRepository;
         this.projectService = projectService;
         this.assetLinkRepository = assetLinkRepository;
         this.riskScenarioLinkRepository = riskScenarioLinkRepository;
         this.requirementRepository = requirementRepository;
+        this.operationalAssetRepository = operationalAssetRepository;
+        this.controlRepository = controlRepository;
+        this.traceabilityLinkRepository = traceabilityLinkRepository;
     }
 
     public ThreatModel create(CreateThreatModelCommand command) {
@@ -210,6 +228,57 @@ public class ThreatModelService {
                 .filter(Optional::isPresent)
                 .map(Optional::get)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public SecurityTrace findTrace(UUID projectId, UUID id) {
+        var threatModel = findByIdOrThrow(projectId, id);
+
+        List<OperationalAsset> assets =
+                threatModelLinkRepository.findByThreatModelIdAndTargetType(id, ThreatModelLinkTargetType.ASSET).stream()
+                        .map(link ->
+                                operationalAssetRepository.findByIdAndProjectId(link.getTargetEntityId(), projectId))
+                        .filter(Optional::isPresent)
+                        .map(Optional::get)
+                        .toList();
+
+        List<Control> controls =
+                threatModelLinkRepository
+                        .findByThreatModelIdAndTargetType(id, ThreatModelLinkTargetType.CONTROL)
+                        .stream()
+                        .map(link -> controlRepository.findByIdAndProjectId(link.getTargetEntityId(), projectId))
+                        .filter(Optional::isPresent)
+                        .map(Optional::get)
+                        .toList();
+
+        List<Requirement> reqs =
+                threatModelLinkRepository
+                        .findByThreatModelIdAndTargetType(id, ThreatModelLinkTargetType.REQUIREMENT)
+                        .stream()
+                        .map(link -> requirementRepository.findByIdAndProjectId(link.getTargetEntityId(), projectId))
+                        .filter(Optional::isPresent)
+                        .map(Optional::get)
+                        .toList();
+
+        List<UUID> reqIds = reqs.stream().map(Requirement::getId).toList();
+        Map<UUID, List<TraceabilityLink>> artifactsByReqId =
+                traceabilityLinkRepository.findByRequirementIdIn(reqIds).stream()
+                        .collect(Collectors.groupingBy(
+                                link -> link.getRequirement().getId()));
+
+        List<SecurityTrace.RequirementTrace> requirementTraces = reqs.stream()
+                .map(req ->
+                        new SecurityTrace.RequirementTrace(req, artifactsByReqId.getOrDefault(req.getId(), List.of())))
+                .toList();
+
+        return new SecurityTrace(
+                SecurityTraceSourceType.THREAT_MODEL,
+                threatModel.getId(),
+                threatModel.getUid(),
+                threatModel.getTitle(),
+                assets,
+                controls,
+                requirementTraces);
     }
 
     private ThreatModel findByIdOrThrow(UUID projectId, UUID id) {

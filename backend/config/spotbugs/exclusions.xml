@@ -129,4 +129,14 @@
         <Package name="~com\.keplerops\.groundcontrol\.domain\..*\.service" />
         <Bug pattern="EI_EXPOSE_REP" />
     </Match>
+
+    <!-- SecurityTrace records expose immutable domain model references by design -->
+    <Match>
+        <Class name="com.keplerops.groundcontrol.domain.trace.SecurityTrace" />
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2" />
+    </Match>
+    <Match>
+        <Class name="com.keplerops.groundcontrol.domain.trace.SecurityTrace$RequirementTrace" />
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2" />
+    </Match>
 </FindBugsFilter>

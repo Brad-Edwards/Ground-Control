@@ -15,17 +15,25 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.keplerops.groundcontrol.api.threatmodels.ThreatModelController;
+import com.keplerops.groundcontrol.domain.assets.model.OperationalAsset;
+import com.keplerops.groundcontrol.domain.controls.model.Control;
+import com.keplerops.groundcontrol.domain.controls.state.ControlFunction;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
+import com.keplerops.groundcontrol.domain.requirements.model.TraceabilityLink;
+import com.keplerops.groundcontrol.domain.requirements.state.ArtifactType;
+import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
 import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel;
 import com.keplerops.groundcontrol.domain.threatmodels.service.CreateThreatModelCommand;
 import com.keplerops.groundcontrol.domain.threatmodels.service.ThreatModelService;
 import com.keplerops.groundcontrol.domain.threatmodels.service.UpdateThreatModelCommand;
 import com.keplerops.groundcontrol.domain.threatmodels.state.StrideCategory;
 import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelStatus;
+import com.keplerops.groundcontrol.domain.trace.SecurityTrace;
+import com.keplerops.groundcontrol.domain.trace.SecurityTraceSourceType;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -328,6 +336,68 @@ class ThreatModelControllerTest {
                 .thenThrow(new NotFoundException("Threat model not found: " + TM_ID));
 
         mockMvc.perform(get("/api/v1/threat-models/{id}/requirements", TM_ID).param("project", "ground-control"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getTraceReturnsSecurityTrace() throws Exception {
+        var project = new Project("ground-control", "Ground Control");
+        setField(project, "id", PROJECT_ID);
+
+        var asset = new OperationalAsset(project, "ASSET-001", "Auth Service");
+        setField(asset, "id", UUID.fromString("00000000-0000-0000-0000-000000000010"));
+        setField(asset, "createdAt", NOW);
+        setField(asset, "updatedAt", NOW);
+
+        var control = new Control(project, "CTL-001", "MFA Control", ControlFunction.PREVENTIVE);
+        setField(control, "id", UUID.fromString("00000000-0000-0000-0000-000000000020"));
+        setField(control, "createdAt", NOW);
+        setField(control, "updatedAt", NOW);
+
+        var req = new Requirement(project, "GC-H003", "Threat tracing", "System shall trace threats");
+        setField(req, "id", UUID.fromString("00000000-0000-0000-0000-000000000300"));
+        setField(req, "createdAt", NOW);
+        setField(req, "updatedAt", NOW);
+
+        var artifact = new TraceabilityLink(req, ArtifactType.PULL_REQUEST, "PR-42", LinkType.IMPLEMENTS);
+        setField(artifact, "id", UUID.fromString("00000000-0000-0000-0000-000000000400"));
+        setField(artifact, "createdAt", NOW);
+        setField(artifact, "updatedAt", NOW);
+
+        var reqTrace = new SecurityTrace.RequirementTrace(req, List.of(artifact));
+        var trace = new SecurityTrace(
+                SecurityTraceSourceType.THREAT_MODEL,
+                TM_ID,
+                "TM-001",
+                "Credential stuffing",
+                List.of(asset),
+                List.of(control),
+                List.of(reqTrace));
+
+        when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
+        when(threatModelService.findTrace(PROJECT_ID, TM_ID)).thenReturn(trace);
+
+        mockMvc.perform(get("/api/v1/threat-models/{id}/trace", TM_ID).param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sourceType", is("THREAT_MODEL")))
+                .andExpect(jsonPath("$.sourceUid", is("TM-001")))
+                .andExpect(jsonPath("$.assets", hasSize(1)))
+                .andExpect(jsonPath("$.assets[0].uid", is("ASSET-001")))
+                .andExpect(jsonPath("$.controls", hasSize(1)))
+                .andExpect(jsonPath("$.controls[0].uid", is("CTL-001")))
+                .andExpect(jsonPath("$.requirements", hasSize(1)))
+                .andExpect(jsonPath("$.requirements[0].requirement.uid", is("GC-H003")))
+                .andExpect(jsonPath("$.requirements[0].artifacts", hasSize(1)))
+                .andExpect(jsonPath("$.requirements[0].artifacts[0].artifactIdentifier", is("PR-42")));
+    }
+
+    @Test
+    void getTraceReturns404WhenThreatModelUnknown() throws Exception {
+        when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
+        when(threatModelService.findTrace(PROJECT_ID, TM_ID))
+                .thenThrow(new NotFoundException("Threat model not found: " + TM_ID));
+
+        mockMvc.perform(get("/api/v1/threat-models/{id}/trace", TM_ID).param("project", "ground-control"))
                 .andExpect(status().isNotFound());
     }
 
