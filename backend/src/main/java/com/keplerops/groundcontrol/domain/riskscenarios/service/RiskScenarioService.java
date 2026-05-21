@@ -1,8 +1,12 @@
 package com.keplerops.groundcontrol.domain.riskscenarios.service;
 
+import com.keplerops.groundcontrol.domain.assets.model.OperationalAsset;
+import com.keplerops.groundcontrol.domain.assets.repository.OperationalAssetRepository;
 import com.keplerops.groundcontrol.domain.audit.ActorHolder;
 import com.keplerops.groundcontrol.domain.audits.repository.AuditLinkRepository;
 import com.keplerops.groundcontrol.domain.audits.state.AuditLinkTargetType;
+import com.keplerops.groundcontrol.domain.controls.model.Control;
+import com.keplerops.groundcontrol.domain.controls.repository.ControlRepository;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
@@ -10,15 +14,21 @@ import com.keplerops.groundcontrol.domain.findings.repository.FindingLinkReposit
 import com.keplerops.groundcontrol.domain.findings.state.FindingLinkTargetType;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
+import com.keplerops.groundcontrol.domain.requirements.model.TraceabilityLink;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
+import com.keplerops.groundcontrol.domain.requirements.repository.TraceabilityLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkTargetType;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioStatus;
+import com.keplerops.groundcontrol.domain.trace.SecurityTrace;
+import com.keplerops.groundcontrol.domain.trace.SecurityTraceSourceType;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -36,6 +46,9 @@ public class RiskScenarioService {
     private final AuditLinkRepository auditLinkRepository;
     private final ProjectService projectService;
     private final RequirementRepository requirementRepository;
+    private final OperationalAssetRepository operationalAssetRepository;
+    private final ControlRepository controlRepository;
+    private final TraceabilityLinkRepository traceabilityLinkRepository;
 
     public RiskScenarioService(
             RiskScenarioRepository riskScenarioRepository,
@@ -43,13 +56,19 @@ public class RiskScenarioService {
             FindingLinkRepository findingLinkRepository,
             AuditLinkRepository auditLinkRepository,
             ProjectService projectService,
-            RequirementRepository requirementRepository) {
+            RequirementRepository requirementRepository,
+            OperationalAssetRepository operationalAssetRepository,
+            ControlRepository controlRepository,
+            TraceabilityLinkRepository traceabilityLinkRepository) {
         this.riskScenarioRepository = riskScenarioRepository;
         this.riskScenarioLinkRepository = riskScenarioLinkRepository;
         this.findingLinkRepository = findingLinkRepository;
         this.auditLinkRepository = auditLinkRepository;
         this.projectService = projectService;
         this.requirementRepository = requirementRepository;
+        this.operationalAssetRepository = operationalAssetRepository;
+        this.controlRepository = controlRepository;
+        this.traceabilityLinkRepository = traceabilityLinkRepository;
     }
 
     public RiskScenario create(CreateRiskScenarioCommand command) {
@@ -259,6 +278,59 @@ public class RiskScenarioService {
     public List<Requirement> findLinkedRequirements(UUID id) {
         var scenario = getById(id);
         return findLinkedRequirements(scenario.getProject().getId(), id);
+    }
+
+    @Transactional(readOnly = true)
+    public SecurityTrace findTrace(UUID projectId, UUID id) {
+        var scenario = findByIdOrThrow(projectId, id);
+
+        List<OperationalAsset> assets =
+                riskScenarioLinkRepository
+                        .findByRiskScenarioIdAndTargetType(id, RiskScenarioLinkTargetType.ASSET)
+                        .stream()
+                        .map(link ->
+                                operationalAssetRepository.findByIdAndProjectId(link.getTargetEntityId(), projectId))
+                        .filter(Optional::isPresent)
+                        .map(Optional::get)
+                        .toList();
+
+        List<Control> controls =
+                riskScenarioLinkRepository
+                        .findByRiskScenarioIdAndTargetType(id, RiskScenarioLinkTargetType.CONTROL)
+                        .stream()
+                        .map(link -> controlRepository.findByIdAndProjectId(link.getTargetEntityId(), projectId))
+                        .filter(Optional::isPresent)
+                        .map(Optional::get)
+                        .toList();
+
+        List<Requirement> reqs =
+                riskScenarioLinkRepository
+                        .findByRiskScenarioIdAndTargetType(id, RiskScenarioLinkTargetType.REQUIREMENT)
+                        .stream()
+                        .map(link -> requirementRepository.findByIdAndProjectId(link.getTargetEntityId(), projectId))
+                        .filter(Optional::isPresent)
+                        .map(Optional::get)
+                        .toList();
+
+        List<UUID> reqIds = reqs.stream().map(Requirement::getId).toList();
+        Map<UUID, List<TraceabilityLink>> artifactsByReqId =
+                traceabilityLinkRepository.findByRequirementIdIn(reqIds).stream()
+                        .collect(Collectors.groupingBy(
+                                link -> link.getRequirement().getId()));
+
+        List<SecurityTrace.RequirementTrace> requirementTraces = reqs.stream()
+                .map(req ->
+                        new SecurityTrace.RequirementTrace(req, artifactsByReqId.getOrDefault(req.getId(), List.of())))
+                .toList();
+
+        return new SecurityTrace(
+                SecurityTraceSourceType.RISK_SCENARIO,
+                scenario.getId(),
+                scenario.getUid(),
+                scenario.getTitle(),
+                assets,
+                controls,
+                requirementTraces);
     }
 
     private RiskScenario findByIdOrThrow(UUID projectId, UUID id) {

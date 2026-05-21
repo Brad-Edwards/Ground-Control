@@ -8,15 +8,24 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.keplerops.groundcontrol.domain.assets.model.OperationalAsset;
 import com.keplerops.groundcontrol.domain.assets.repository.AssetLinkRepository;
+import com.keplerops.groundcontrol.domain.assets.repository.OperationalAssetRepository;
 import com.keplerops.groundcontrol.domain.assets.state.AssetLinkTargetType;
+import com.keplerops.groundcontrol.domain.controls.model.Control;
+import com.keplerops.groundcontrol.domain.controls.repository.ControlRepository;
+import com.keplerops.groundcontrol.domain.controls.state.ControlFunction;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
+import com.keplerops.groundcontrol.domain.requirements.model.TraceabilityLink;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
+import com.keplerops.groundcontrol.domain.requirements.repository.TraceabilityLinkRepository;
+import com.keplerops.groundcontrol.domain.requirements.state.ArtifactType;
+import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkTargetType;
 import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel;
@@ -30,6 +39,7 @@ import com.keplerops.groundcontrol.domain.threatmodels.state.StrideCategory;
 import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelLinkTargetType;
 import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelLinkType;
 import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelStatus;
+import com.keplerops.groundcontrol.domain.trace.SecurityTrace;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -62,6 +72,15 @@ class ThreatModelServiceTest {
 
     @Mock
     private RiskScenarioLinkRepository riskScenarioLinkRepository;
+
+    @Mock
+    private OperationalAssetRepository operationalAssetRepository;
+
+    @Mock
+    private ControlRepository controlRepository;
+
+    @Mock
+    private TraceabilityLinkRepository traceabilityLinkRepository;
 
     @InjectMocks
     private ThreatModelService threatModelService;
@@ -455,6 +474,138 @@ class ThreatModelServiceTest {
             var results = threatModelService.findLinkedRequirements(projectId, tm.getId());
 
             assertThat(results).isEmpty();
+        }
+    }
+
+    @Nested
+    class FindTrace {
+
+        @Test
+        void composesAssetsControlsRequirementsAndArtifacts() {
+            var tm = makeThreatModel();
+            var assetId = UUID.randomUUID();
+            var controlId = UUID.randomUUID();
+            var reqId = UUID.randomUUID();
+
+            var asset = new OperationalAsset(project, "ASSET-001", "Auth Service");
+            setField(asset, "id", assetId);
+
+            var control = new Control(project, "CTL-001", "MFA Control", ControlFunction.PREVENTIVE);
+            setField(control, "id", controlId);
+
+            var req = new Requirement(project, "GC-H003", "Threat traceability", "System shall trace threats");
+            setField(req, "id", reqId);
+
+            var assetLink = new ThreatModelLink(
+                    tm, ThreatModelLinkTargetType.ASSET, assetId, null, ThreatModelLinkType.AFFECTS);
+            setField(assetLink, "id", UUID.randomUUID());
+
+            var controlLink = new ThreatModelLink(
+                    tm, ThreatModelLinkTargetType.CONTROL, controlId, null, ThreatModelLinkType.MITIGATED_BY);
+            setField(controlLink, "id", UUID.randomUUID());
+
+            var reqLink = new ThreatModelLink(
+                    tm, ThreatModelLinkTargetType.REQUIREMENT, reqId, null, ThreatModelLinkType.AFFECTS);
+            setField(reqLink, "id", UUID.randomUUID());
+
+            var artifact = new TraceabilityLink(req, ArtifactType.PULL_REQUEST, "PR-42", LinkType.IMPLEMENTS);
+            setField(artifact, "id", UUID.randomUUID());
+
+            when(threatModelRepository.findByIdAndProjectId(tm.getId(), projectId))
+                    .thenReturn(Optional.of(tm));
+            when(threatModelLinkRepository.findByThreatModelIdAndTargetType(
+                            tm.getId(), ThreatModelLinkTargetType.ASSET))
+                    .thenReturn(List.of(assetLink));
+            when(threatModelLinkRepository.findByThreatModelIdAndTargetType(
+                            tm.getId(), ThreatModelLinkTargetType.CONTROL))
+                    .thenReturn(List.of(controlLink));
+            when(threatModelLinkRepository.findByThreatModelIdAndTargetType(
+                            tm.getId(), ThreatModelLinkTargetType.REQUIREMENT))
+                    .thenReturn(List.of(reqLink));
+            when(operationalAssetRepository.findByIdAndProjectId(assetId, projectId))
+                    .thenReturn(Optional.of(asset));
+            when(controlRepository.findByIdAndProjectId(controlId, projectId)).thenReturn(Optional.of(control));
+            when(requirementRepository.findByIdAndProjectId(reqId, projectId)).thenReturn(Optional.of(req));
+            when(traceabilityLinkRepository.findByRequirementIdIn(List.of(reqId)))
+                    .thenReturn(List.of(artifact));
+
+            SecurityTrace trace = threatModelService.findTrace(projectId, tm.getId());
+
+            assertThat(trace.sourceType().name()).isEqualTo("THREAT_MODEL");
+            assertThat(trace.sourceId()).isEqualTo(tm.getId());
+            assertThat(trace.sourceUid()).isEqualTo(tm.getUid());
+            assertThat(trace.sourceTitle()).isEqualTo(tm.getTitle());
+            assertThat(trace.assets()).hasSize(1);
+            assertThat(trace.assets().get(0).getUid()).isEqualTo("ASSET-001");
+            assertThat(trace.controls()).hasSize(1);
+            assertThat(trace.controls().get(0).getUid()).isEqualTo("CTL-001");
+            assertThat(trace.requirements()).hasSize(1);
+            assertThat(trace.requirements().get(0).requirement().getUid()).isEqualTo("GC-H003");
+            assertThat(trace.requirements().get(0).artifacts()).hasSize(1);
+            assertThat(trace.requirements().get(0).artifacts().get(0).getArtifactIdentifier())
+                    .isEqualTo("PR-42");
+        }
+
+        @Test
+        void throws404WhenThreatModelNotFound() {
+            var id = UUID.randomUUID();
+            when(threatModelRepository.findByIdAndProjectId(id, projectId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> threatModelService.findTrace(projectId, id))
+                    .isInstanceOf(NotFoundException.class);
+        }
+
+        @Test
+        void skipsLinkWhenTargetEntityAbsent() {
+            var tm = makeThreatModel();
+            var missingAssetId = UUID.randomUUID();
+            var assetLink = new ThreatModelLink(
+                    tm, ThreatModelLinkTargetType.ASSET, missingAssetId, null, ThreatModelLinkType.AFFECTS);
+            setField(assetLink, "id", UUID.randomUUID());
+
+            when(threatModelRepository.findByIdAndProjectId(tm.getId(), projectId))
+                    .thenReturn(Optional.of(tm));
+            when(threatModelLinkRepository.findByThreatModelIdAndTargetType(
+                            tm.getId(), ThreatModelLinkTargetType.ASSET))
+                    .thenReturn(List.of(assetLink));
+            when(threatModelLinkRepository.findByThreatModelIdAndTargetType(
+                            tm.getId(), ThreatModelLinkTargetType.CONTROL))
+                    .thenReturn(List.of());
+            when(threatModelLinkRepository.findByThreatModelIdAndTargetType(
+                            tm.getId(), ThreatModelLinkTargetType.REQUIREMENT))
+                    .thenReturn(List.of());
+            when(operationalAssetRepository.findByIdAndProjectId(missingAssetId, projectId))
+                    .thenReturn(Optional.empty());
+            when(traceabilityLinkRepository.findByRequirementIdIn(List.of())).thenReturn(List.of());
+
+            SecurityTrace trace = threatModelService.findTrace(projectId, tm.getId());
+
+            assertThat(trace.assets()).isEmpty();
+            assertThat(trace.controls()).isEmpty();
+            assertThat(trace.requirements()).isEmpty();
+        }
+
+        @Test
+        void returnsEmptyTraceWhenNoLinks() {
+            var tm = makeThreatModel();
+            when(threatModelRepository.findByIdAndProjectId(tm.getId(), projectId))
+                    .thenReturn(Optional.of(tm));
+            when(threatModelLinkRepository.findByThreatModelIdAndTargetType(
+                            tm.getId(), ThreatModelLinkTargetType.ASSET))
+                    .thenReturn(List.of());
+            when(threatModelLinkRepository.findByThreatModelIdAndTargetType(
+                            tm.getId(), ThreatModelLinkTargetType.CONTROL))
+                    .thenReturn(List.of());
+            when(threatModelLinkRepository.findByThreatModelIdAndTargetType(
+                            tm.getId(), ThreatModelLinkTargetType.REQUIREMENT))
+                    .thenReturn(List.of());
+            when(traceabilityLinkRepository.findByRequirementIdIn(List.of())).thenReturn(List.of());
+
+            SecurityTrace trace = threatModelService.findTrace(projectId, tm.getId());
+
+            assertThat(trace.assets()).isEmpty();
+            assertThat(trace.controls()).isEmpty();
+            assertThat(trace.requirements()).isEmpty();
         }
     }
 

@@ -153,7 +153,7 @@ describe("GC_RISK_SCENARIO_ACTIONS", () => {
   it("matches the action verbs the handler dispatches", () => {
     assert.deepEqual(
       [...GC_RISK_SCENARIO_ACTIONS].sort(),
-      ["create", "delete", "link_create", "link_delete", "requirements", "transition", "update"],
+      ["create", "delete", "link_create", "link_delete", "requirements", "trace", "transition", "update"],
     );
   });
 });
@@ -430,6 +430,23 @@ describe("gcRiskScenarioToolHandler other actions", () => {
     assert.equal(calls.length, 1);
     assert.equal(calls[0].method, "DELETE");
     assert.match(calls[0].url, new RegExp(`/api/v1/risk-scenarios/${ID}/links/${LINK_ID}`));
+  });
+
+  it("trace GETs the trace sub-resource", async () => {
+    const calls = makeFetchSpy({ body: {} });
+    await gcRiskScenarioToolHandler({ action: "trace", id: ID });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "GET");
+    assert.match(calls[0].url, new RegExp(`/api/v1/risk-scenarios/${ID}/trace`));
+  });
+
+  it("trace rejects missing id before any HTTP call", async () => {
+    const calls = makeFetchSpy();
+    await assert.rejects(
+      () => gcRiskScenarioToolHandler({ action: "trace" }),
+      (e) => e.message.includes("'id' is required"),
+    );
+    assert.equal(calls.length, 0);
   });
 
   it("throws on an unknown action without issuing an HTTP call", async () => {

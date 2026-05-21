@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.api.threatmodels;
 
 import com.keplerops.groundcontrol.api.requirements.RequirementResponse;
+import com.keplerops.groundcontrol.api.trace.SecurityTraceResponse;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.threatmodels.service.CreateThreatModelCommand;
 import com.keplerops.groundcontrol.domain.threatmodels.service.ThreatModelService;
@@ -101,6 +102,12 @@ public class ThreatModelController {
         return threatModelService.findLinkedRequirements(projectId, id).stream()
                 .map(RequirementResponse::from)
                 .toList();
+    }
+
+    @GetMapping("/{id}/trace")
+    public SecurityTraceResponse getTrace(@PathVariable UUID id, @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return SecurityTraceResponse.from(threatModelService.findTrace(projectId, id));
     }
 
     @PutMapping("/{id}/status")

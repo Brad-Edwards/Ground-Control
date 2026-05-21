@@ -8519,6 +8519,10 @@ export async function getRiskScenarioRequirements(id, project) {
   return request("GET", `/api/v1/risk-scenarios/${encodeURIComponent(id)}/requirements`, { params: { project } });
 }
 
+export async function getRiskScenarioTrace(id, project) {
+  return request("GET", `/api/v1/risk-scenarios/${encodeURIComponent(id)}/trace`, { params: { project } });
+}
+
 // ---------------------------------------------------------------------------
 // Risk Scenario Link API functions
 // ---------------------------------------------------------------------------
@@ -8588,6 +8592,10 @@ export async function transitionThreatModelStatus(id, status, project) {
 
 export async function getThreatModelLinkedRequirements(id, project) {
   return request("GET", `/api/v1/threat-models/${encodeURIComponent(id)}/requirements`, { params: { project } });
+}
+
+export async function getThreatModelTrace(id, project) {
+  return request("GET", `/api/v1/threat-models/${encodeURIComponent(id)}/trace`, { params: { project } });
 }
 
 export async function createThreatModelLink(threatModelId, data, project) {
