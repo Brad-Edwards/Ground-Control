@@ -4503,18 +4503,22 @@ const FINDING_CATEGORY_SHAPE_MAX = 300;
 const FINDING_CLASSIFICATIONS = new Set(["one-off", "class"]);
 const FINDING_SWEEP_EVIDENCE_MAX = 500;
 const REVIEW_NOTE_TEXT_MAX = 300;
-// An advisory review note (codex or test-quality) that overruns the
-// length cap is truncated to the cap — last char replaced with an
-// ellipsis — rather than thrown. The note is non-blocking prose from
-// an LLM reviewer, which cannot be relied on to honour a hard char
-// budget; discarding an entire completed review over note length was
-// a brittle failure mode (surfaced by aptl issue #293). Verbatim
-// durability is unaffected: the full reviewer text is preserved
-// separately via buildCodexReviewFindingsComments' chunked comments;
-// notes[] is the parsed, already-capped structured summary.
-function truncateReviewNoteText(text) {
-  if (text.length <= REVIEW_NOTE_TEXT_MAX) return text;
-  return text.slice(0, REVIEW_NOTE_TEXT_MAX - 1) + "…";
+// LLM-authored prose fields in a review envelope — advisory notes plus
+// the per-finding `title`, `body`, `category.shape`, and
+// `sweep_evidence` — are truncated to their cap (last char replaced
+// with an ellipsis) rather than thrown on. An LLM reviewer cannot be
+// relied on to honour a hard char budget for prose; discarding an
+// entire completed review because one field overran by a few
+// characters was a brittle failure mode that blocked the /implement
+// workflow (surfaced by aptl issue #293). Structural fields — paths,
+// line numbers, enums, instance locators — still throw, because those
+// are correctness constraints, not prose length. Verbatim durability
+// is unaffected: the full reviewer text is preserved separately via
+// buildCodexReviewFindingsComments' chunked comments; the envelope
+// carries the parsed, already-capped structured summary.
+function truncateReviewProse(text, max) {
+  if (text.length <= max) return text;
+  return text.slice(0, max - 1) + "…";
 }
 // Block delimiter renamed from ===FINDINGS=== to ===REVIEW=== with the
 // verdict-envelope migration (issue #931). The new contract emits a JSON
@@ -4698,7 +4702,7 @@ export function validateReviewEnvelope(raw, repoRoot) {
       if (typeof entry.text !== "string" || entry.text.trim() === "") {
         throw new Error(`notes[${idx}].text must be a non-empty string`);
       }
-      return { text: truncateReviewNoteText(entry.text) };
+      return { text: truncateReviewProse(entry.text, REVIEW_NOTE_TEXT_MAX) };
     });
   }
   // Verdict / blocking consistency rules — shared with the decision-record
@@ -4745,18 +4749,8 @@ function validateFinding(raw, idx, repoRoot) {
   if (typeof raw.title !== "string" || raw.title.trim() === "") {
     throw new Error(`finding at index ${idx} is missing required field 'title' (must be a non-empty string)`);
   }
-  if (raw.title.length > FINDING_TITLE_MAX) {
-    throw new Error(
-      `finding at index ${idx} has 'title' longer than ${FINDING_TITLE_MAX} chars (${raw.title.length})`,
-    );
-  }
   if (typeof raw.body !== "string" || raw.body.trim() === "") {
     throw new Error(`finding at index ${idx} is missing required field 'body' (must be a non-empty string)`);
-  }
-  if (raw.body.length > FINDING_BODY_MAX) {
-    throw new Error(
-      `finding at index ${idx} has 'body' longer than ${FINDING_BODY_MAX} chars (${raw.body.length})`,
-    );
   }
   // classification (#830): every finding declares whether it is a one-off or
   // one instance of a recurring category, so the agent designs the fix at the
@@ -4781,11 +4775,6 @@ function validateFinding(raw, idx, repoRoot) {
     if (typeof raw.category.shape !== "string" || raw.category.shape.trim() === "") {
       throw new Error(
         `finding at index ${idx} 'category.shape' must be a non-empty string`,
-      );
-    }
-    if (raw.category.shape.length > FINDING_CATEGORY_SHAPE_MAX) {
-      throw new Error(
-        `finding at index ${idx} 'category.shape' longer than ${FINDING_CATEGORY_SHAPE_MAX} chars (${raw.category.shape.length})`,
       );
     }
     if (!Array.isArray(raw.category.instances) || raw.category.instances.length === 0) {
@@ -4836,7 +4825,10 @@ function validateFinding(raw, idx, repoRoot) {
         `finding at index ${idx} 'category.instances' must include this finding's own site ${JSON.stringify(ownSite)}`,
       );
     }
-    category = { shape: raw.category.shape, instances: normalized };
+    category = {
+      shape: truncateReviewProse(raw.category.shape, FINDING_CATEGORY_SHAPE_MAX),
+      instances: normalized,
+    };
   } else if (raw.category !== undefined && raw.category !== null) {
     throw new Error(
       `finding at index ${idx} has classification "one-off" but also carries a 'category' — omit it (or set null) for one-off findings`,
@@ -4853,12 +4845,7 @@ function validateFinding(raw, idx, repoRoot) {
         `finding at index ${idx} has classification "one-off" but is missing required field 'sweep_evidence' (a one-line statement of what you grepped/scanned and what you did NOT find — see the prompt's sweep-evidence rule)`,
       );
     }
-    if (raw.sweep_evidence.length > FINDING_SWEEP_EVIDENCE_MAX) {
-      throw new Error(
-        `finding at index ${idx} 'sweep_evidence' longer than ${FINDING_SWEEP_EVIDENCE_MAX} chars (${raw.sweep_evidence.length})`,
-      );
-    }
-    sweepEvidence = raw.sweep_evidence.trim();
+    sweepEvidence = truncateReviewProse(raw.sweep_evidence.trim(), FINDING_SWEEP_EVIDENCE_MAX);
   } else if (raw.sweep_evidence !== undefined && raw.sweep_evidence !== null) {
     // class findings carry their evidence in category.instances; sweep_evidence
     // is reserved for one-off so the two paths don't drift.
@@ -4883,7 +4870,13 @@ function validateFinding(raw, idx, repoRoot) {
     }
     structuralBlocker = raw.structural_blocker === true;
   }
-  const finding = { path, line, title: raw.title, body: raw.body, classification: raw.classification };
+  const finding = {
+    path,
+    line,
+    title: truncateReviewProse(raw.title, FINDING_TITLE_MAX),
+    body: truncateReviewProse(raw.body, FINDING_BODY_MAX),
+    classification: raw.classification,
+  };
   if (category !== null) finding.category = category;
   if (sweepEvidence !== null) finding.sweep_evidence = sweepEvidence;
   if (structuralBlocker) finding.structural_blocker = true;
@@ -5892,7 +5885,7 @@ export function parseTestQualityReviewEnvelope(stdout) {
       if (typeof entry.text !== "string" || entry.text.trim() === "") {
         throw new Error(`test-quality review notes[${idx}].text must be a non-empty string`);
       }
-      return { text: truncateReviewNoteText(entry.text) };
+      return { text: truncateReviewProse(entry.text, REVIEW_NOTE_TEXT_MAX) };
     });
   }
 
@@ -5981,11 +5974,6 @@ function validateTestQualityFinding(raw, i) {
         `test-quality review blocking[${i}] has classification 'one-off' but is missing required 'sweep_evidence' (one-line statement of what you swept)`,
       );
     }
-    if (raw.sweep_evidence.length > FINDING_SWEEP_EVIDENCE_MAX) {
-      throw new Error(
-        `test-quality review blocking[${i}].sweep_evidence longer than ${FINDING_SWEEP_EVIDENCE_MAX} chars`,
-      );
-    }
   }
 
   let structuralBlocker = false;
@@ -6011,7 +5999,7 @@ function validateTestQualityFinding(raw, i) {
   };
   if (category !== null) finding.category = category;
   if (raw.sweep_evidence != null && classification === "one-off") {
-    finding.sweep_evidence = raw.sweep_evidence.trim();
+    finding.sweep_evidence = truncateReviewProse(raw.sweep_evidence.trim(), FINDING_SWEEP_EVIDENCE_MAX);
   }
   if (structuralBlocker) finding.structural_blocker = true;
   return finding;
