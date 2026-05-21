@@ -213,12 +213,12 @@ class ThreatModelServiceTest {
         @Test
         void rejectsBlankThreatSource() {
             var tm = makeThreatModel();
-            when(threatModelRepository.findByIdAndProjectId(tm.getId(), projectId))
-                    .thenReturn(Optional.of(tm));
+            var tmId = tm.getId();
+            when(threatModelRepository.findByIdAndProjectId(tmId, projectId)).thenReturn(Optional.of(tm));
 
             var command = new UpdateThreatModelCommand(null, " ", null, null, null, null, false, false);
 
-            assertThatThrownBy(() -> threatModelService.update(projectId, tm.getId(), command))
+            assertThatThrownBy(() -> threatModelService.update(projectId, tmId, command))
                     .isInstanceOf(DomainValidationException.class)
                     .hasMessageContaining("threatSource");
         }
@@ -226,12 +226,12 @@ class ThreatModelServiceTest {
         @Test
         void rejectsBlankEffect() {
             var tm = makeThreatModel();
-            when(threatModelRepository.findByIdAndProjectId(tm.getId(), projectId))
-                    .thenReturn(Optional.of(tm));
+            var tmId = tm.getId();
+            when(threatModelRepository.findByIdAndProjectId(tmId, projectId)).thenReturn(Optional.of(tm));
 
             var command = new UpdateThreatModelCommand(null, null, null, " ", null, null, false, false);
 
-            assertThatThrownBy(() -> threatModelService.update(projectId, tm.getId(), command))
+            assertThatThrownBy(() -> threatModelService.update(projectId, tmId, command))
                     .isInstanceOf(DomainValidationException.class)
                     .hasMessageContaining("effect");
         }

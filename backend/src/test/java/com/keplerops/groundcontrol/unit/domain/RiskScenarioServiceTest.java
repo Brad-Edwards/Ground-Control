@@ -14,7 +14,6 @@ import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
-import com.keplerops.groundcontrol.domain.requirements.repository.TraceabilityLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenarioLink;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
@@ -54,10 +53,6 @@ class RiskScenarioServiceTest {
 
     @Mock
     private ProjectService projectService;
-
-    @SuppressWarnings("UnusedVariable") // needed by @InjectMocks for constructor injection
-    @Mock
-    private TraceabilityLinkRepository traceabilityLinkRepository;
 
     @Mock
     private RequirementRepository requirementRepository;
@@ -419,9 +414,6 @@ class RiskScenarioServiceTest {
             var results = riskScenarioService.findLinkedRequirements(projectId, rs.getId());
 
             assertThat(results).isEmpty();
-            // The traceability-link repository must NOT be consulted — the canonical
-            // path is RiskScenarioLink, not TraceabilityLink (plan item 4).
-            org.mockito.Mockito.verifyNoInteractions(traceabilityLinkRepository);
         }
 
         @Test

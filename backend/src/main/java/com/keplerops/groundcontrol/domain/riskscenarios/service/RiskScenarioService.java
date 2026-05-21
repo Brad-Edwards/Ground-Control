@@ -11,7 +11,6 @@ import com.keplerops.groundcontrol.domain.findings.state.FindingLinkTargetType;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
-import com.keplerops.groundcontrol.domain.requirements.repository.TraceabilityLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
@@ -36,7 +35,6 @@ public class RiskScenarioService {
     private final FindingLinkRepository findingLinkRepository;
     private final AuditLinkRepository auditLinkRepository;
     private final ProjectService projectService;
-    private final TraceabilityLinkRepository traceabilityLinkRepository;
     private final RequirementRepository requirementRepository;
 
     public RiskScenarioService(
@@ -45,14 +43,12 @@ public class RiskScenarioService {
             FindingLinkRepository findingLinkRepository,
             AuditLinkRepository auditLinkRepository,
             ProjectService projectService,
-            TraceabilityLinkRepository traceabilityLinkRepository,
             RequirementRepository requirementRepository) {
         this.riskScenarioRepository = riskScenarioRepository;
         this.riskScenarioLinkRepository = riskScenarioLinkRepository;
         this.findingLinkRepository = findingLinkRepository;
         this.auditLinkRepository = auditLinkRepository;
         this.projectService = projectService;
-        this.traceabilityLinkRepository = traceabilityLinkRepository;
         this.requirementRepository = requirementRepository;
     }
 
