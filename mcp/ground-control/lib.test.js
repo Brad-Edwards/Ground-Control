@@ -4996,9 +4996,11 @@ process.stdin.on("end", () => {
     const end = "-----";
     const keyTail = "PRIVATE " + "KEY" + end;
     const sensitiveBody = `Reviewer prose ... ${begin}${keyTail}\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQ...`;
-    // The codex shim emits a security review with secret-shaped content,
-    // forcing the security_review_text into the findings body.
-    const codexTail = `${sensitiveBody}\n\n===REVIEW===\n{"verdict":"ship","architectural_read":"Reviewed.","blocking":[]}\n===END===\n`;
+    // The codex shim emits a review whose architectural_read carries
+    // secret-shaped content. Post-#966 the findings-record renderer renders
+    // the parsed verdict envelope (architectural_read + blocking findings) —
+    // the sensitive text must be caught there before the record is posted.
+    const codexTail = `===REVIEW===\n${JSON.stringify({ verdict: "ship", architectural_read: `Reviewed. ${sensitiveBody}`, blocking: [] })}\n===END===\n`;
 
     const shim = makeFullShimRepo({
       branch: "998-add-thing",
@@ -10930,5 +10932,108 @@ describe("async review-job registry (gc_codex_job, issue #937)", () => {
     const { startReviewJob, _resetReviewJobsForTest } = await import("./lib.js");
     _resetReviewJobsForTest();
     assert.throws(() => startReviewJob("codex_review", null), /runFn must be a function/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reviewCycleFindings — codex/test-quality field reconciliation (issue #966)
+// ---------------------------------------------------------------------------
+
+describe("reviewCycleFindings — cycle-seam field reconciliation (issue #966)", () => {
+  it("reads test-quality findings from .findings", async () => {
+    const { reviewCycleFindings } = await import("./lib.js");
+    const r = reviewCycleFindings({ ok: true, findings: [{ title: "a" }, { title: "b" }] });
+    assert.equal(r.length, 2);
+  });
+
+  it("reads codex findings from .comments when .findings is absent", async () => {
+    const { reviewCycleFindings } = await import("./lib.js");
+    // runCodexReview returns its findings array under `comments`, not
+    // `findings`. Before #966 the cycle seam read only `.findings`, so every
+    // codex review was flattened to "0 findings" and the review was a no-op.
+    const r = reviewCycleFindings({ ok: true, comments: [{ title: "x" }, { title: "y" }, { title: "z" }] });
+    assert.equal(r.length, 3);
+  });
+
+  it("prefers .findings when both are present", async () => {
+    const { reviewCycleFindings } = await import("./lib.js");
+    const r = reviewCycleFindings({ findings: [{ title: "a" }], comments: [{ title: "b" }, { title: "c" }] });
+    assert.equal(r.length, 1);
+    assert.equal(r[0].title, "a");
+  });
+
+  it("returns [] when neither field is present or input is nullish", async () => {
+    const { reviewCycleFindings } = await import("./lib.js");
+    assert.deepEqual(reviewCycleFindings({ ok: true }), []);
+    assert.deepEqual(reviewCycleFindings(null), []);
+    assert.deepEqual(reviewCycleFindings(undefined), []);
+  });
+});
+
+describe("renderReviewerEnvelope — findings-record renderer (issue #966)", () => {
+  it("renders verdict, architectural read, and blocking findings from the envelope", async () => {
+    const { renderReviewerEnvelope } = await import("./lib.js");
+    const out = renderReviewerEnvelope({
+      body: "",
+      envelope: {
+        verdict: "ship-with-fixes",
+        architectural_read: "The change is sound but leaks an envelope.",
+        blocking: [
+          { classification: "one-off", title: "Null deref", path: "a.js", line: 12, body: "fix it" },
+          { classification: "class", title: "Unvalidated input", path: "b.js" },
+        ],
+      },
+    });
+    assert.match(out, /ship-with-fixes/);
+    assert.match(out, /leaks an envelope/);
+    assert.match(out, /Blocking findings \(2\)/);
+    assert.match(out, /\[one-off\]\*\* Null deref — `a\.js:12`/);
+    assert.match(out, /\[class\]\*\* Unvalidated input/);
+  });
+
+  it("shows the architectural read and 'no blocking findings' on a clean review", async () => {
+    const { renderReviewerEnvelope } = await import("./lib.js");
+    const out = renderReviewerEnvelope({
+      body: "",
+      envelope: { verdict: "ship", architectural_read: "Clean — well-scoped.", blocking: [] },
+    });
+    assert.match(out, /Clean — well-scoped\./);
+    assert.match(out, /No blocking findings/);
+    assert.doesNotMatch(out, /_\(empty\)_/);
+  });
+
+  it("falls back to the raw body when the envelope is absent (parse failure)", async () => {
+    const { renderReviewerEnvelope } = await import("./lib.js");
+    assert.equal(renderReviewerEnvelope({ body: "raw prose" }), "raw prose");
+    assert.equal(renderReviewerEnvelope({}), "");
+    assert.equal(renderReviewerEnvelope(null), "");
+  });
+});
+
+describe("mergeReviewerArchitecturalReads — decision-record read (issue #966)", () => {
+  it("merges both reviewers' reads with labels", async () => {
+    const { mergeReviewerArchitecturalReads } = await import("./lib.js");
+    const out = mergeReviewerArchitecturalReads(
+      { envelope: { architectural_read: "core says ok" } },
+      { envelope: { architectural_read: "security flags a token" } },
+    );
+    assert.match(out, /\*\*Core reviewer:\*\* core says ok/);
+    assert.match(out, /\*\*Security reviewer:\*\* security flags a token/);
+  });
+
+  it("returns just the present reviewer when one envelope is missing", async () => {
+    const { mergeReviewerArchitecturalReads } = await import("./lib.js");
+    const out = mergeReviewerArchitecturalReads(
+      { envelope: { architectural_read: "core only" } },
+      { body: "parse failed" },
+    );
+    assert.match(out, /\*\*Core reviewer:\*\* core only/);
+    assert.doesNotMatch(out, /Security reviewer/);
+  });
+
+  it("returns undefined when neither envelope parsed", async () => {
+    const { mergeReviewerArchitecturalReads } = await import("./lib.js");
+    assert.equal(mergeReviewerArchitecturalReads({ body: "x" }, { body: "y" }), undefined);
+    assert.equal(mergeReviewerArchitecturalReads(null, null), undefined);
   });
 });
