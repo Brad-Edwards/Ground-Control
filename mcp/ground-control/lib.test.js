@@ -2635,6 +2635,46 @@ describe("parseCodexReviewFindingsTail (verdict envelope, #931)", () => {
     assert.ok(parsed.notes[0].text.endsWith("…"));
   });
 
+  it("truncates over-long finding prose (title/body/sweep_evidence) instead of discarding the review (aptl #293)", () => {
+    // Same brittleness as notes[]: an LLM reviewer overrunning a hard
+    // char budget on a finding's prose fields must not discard the
+    // whole completed review. Structural fields still throw.
+    const stdout = makeReviewTail([
+      {
+        path: "src/foo.java",
+        line: 42,
+        title: "T".repeat(900),
+        body: "B".repeat(70000),
+        classification: "one-off",
+        sweep_evidence: "S".repeat(900),
+      },
+    ]);
+    const { envelope } = parseCodexReviewFindingsTail(stdout, repoRoot);
+    const f = envelope.blocking[0];
+    assert.equal(f.title.length, 200);
+    assert.ok(f.title.endsWith("…"));
+    assert.equal(f.body.length, 65535 - 213 - 800);
+    assert.ok(f.body.endsWith("…"));
+    assert.equal(f.sweep_evidence.length, 500);
+    assert.ok(f.sweep_evidence.endsWith("…"));
+  });
+
+  it("truncates an over-long category.shape on a class finding (aptl #293)", () => {
+    const stdout = makeReviewTail([
+      {
+        path: "src/foo.java",
+        line: 42,
+        title: "x",
+        body: "y",
+        classification: "class",
+        category: { shape: "C".repeat(600), instances: ["src/foo.java:42"] },
+      },
+    ]);
+    const { envelope } = parseCodexReviewFindingsTail(stdout, repoRoot);
+    assert.equal(envelope.blocking[0].category.shape.length, 300);
+    assert.ok(envelope.blocking[0].category.shape.endsWith("…"));
+  });
+
   it("requires sweep_evidence on one-off findings (#931)", () => {
     // Note: this test deliberately omits sweep_evidence to exercise the
     // required-field check.
@@ -2700,18 +2740,8 @@ describe("parseCodexReviewFindingsTail (verdict envelope, #931)", () => {
     assert.throws(() => parseCodexReviewFindingsTail(stdout, repoRoot), /title/);
   });
 
-  it("throws when `title` exceeds 200 chars", () => {
-    const stdout = makeReviewTail([{ path: "src/foo.java", line: 42, title: "x".repeat(201), body: "y", classification: "one-off", sweep_evidence: SWEEP }]);
-    assert.throws(() => parseCodexReviewFindingsTail(stdout, repoRoot), /title/);
-  });
-
   it("throws when `body` is empty", () => {
     const stdout = makeReviewTail([{ path: "src/foo.java", line: 42, title: "x", body: "", classification: "one-off", sweep_evidence: SWEEP }]);
-    assert.throws(() => parseCodexReviewFindingsTail(stdout, repoRoot), /body/);
-  });
-
-  it("throws when `body` exceeds the cap", () => {
-    const stdout = makeReviewTail([{ path: "src/foo.java", line: 42, title: "x", body: "y".repeat(65336), classification: "one-off", sweep_evidence: SWEEP }]);
     assert.throws(() => parseCodexReviewFindingsTail(stdout, repoRoot), /body/);
   });
 
@@ -8125,6 +8155,28 @@ describe("parseTestQualityReviewFindings (verdict envelope, #931)", () => {
     assert.equal(r.envelope.notes.length, 1);
     assert.equal(r.envelope.notes[0].text.length, 300);
     assert.ok(r.envelope.notes[0].text.endsWith("…"));
+  });
+
+  it("truncates an over-long finding sweep_evidence instead of discarding the review (aptl #293)", () => {
+    const stdout = JSON.stringify({
+      verdict: "ship-with-fixes",
+      architectural_read: "Reviewed the test file.",
+      blocking: [
+        {
+          severity: "warning",
+          location: "tests/test_x.py::test_y",
+          problem: "weak assertion",
+          why_it_matters: "would not catch a regression",
+          fix: "assert on the value",
+          classification: "one-off",
+          sweep_evidence: "S".repeat(900),
+        },
+      ],
+    });
+    const r = parseTestQualityReviewFindings(stdout);
+    assert.equal(r.findings.length, 1);
+    assert.equal(r.findings[0].sweep_evidence.length, 500);
+    assert.ok(r.findings[0].sweep_evidence.endsWith("…"));
   });
 
   it("parses a warning severity finding", () => {
