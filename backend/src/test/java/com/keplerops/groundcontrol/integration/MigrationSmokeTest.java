@@ -52,7 +52,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "066", "067", "068", "069", "070", "071", "072", "073", "074", "075", "076", "077", "078",
                         "079", "080", "081", "082", "083", "084", "085", "086", "087", "088", "089", "090", "091",
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
-                        "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122");
+                        "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
+                        "123");
     }
 
     @Test
@@ -969,5 +970,16 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         entityManager
                 .createNativeQuery("SELECT 1 FROM mapping_evidence LIMIT 1")
                 .getResultList();
+        // V123: mapping_evidence_audit — Envers @ElementCollection shadow for evidenceRefs.
+        // The SETORDINAL column (quoted — Envers default, uppercase) tracks list position.
+        entityManager
+                .createNativeQuery("SELECT 1 FROM mapping_evidence_audit LIMIT 1")
+                .getResultList();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT risk_control_mapping_id, rev, revtype,"
+                                + " \"SETORDINAL\", evidence_ref, evidence_note, evidence_artifact_id"
+                                + " FROM mapping_evidence_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
     }
 }

@@ -7,8 +7,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.keplerops.groundcontrol.domain.assets.model.Observation;
 import com.keplerops.groundcontrol.domain.assets.model.OperationalAsset;
+import com.keplerops.groundcontrol.domain.assets.repository.ObservationRepository;
 import com.keplerops.groundcontrol.domain.assets.repository.OperationalAssetRepository;
+import com.keplerops.groundcontrol.domain.assets.state.ObservationCategory;
 import com.keplerops.groundcontrol.domain.controls.model.Control;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlRepository;
 import com.keplerops.groundcontrol.domain.controls.state.ControlFunction;
@@ -23,8 +26,10 @@ import com.keplerops.groundcontrol.domain.riskcontrol.service.CreateRiskControlM
 import com.keplerops.groundcontrol.domain.riskcontrol.service.RiskControlMappingService;
 import com.keplerops.groundcontrol.domain.riskcontrol.service.UpdateRiskControlMappingCommand;
 import com.keplerops.groundcontrol.domain.riskcontrol.state.MappingControlRole;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -62,6 +67,9 @@ class RiskControlMappingServiceTest {
 
     @Mock
     private OperationalAssetRepository operationalAssetRepository;
+
+    @Mock
+    private ObservationRepository observationRepository;
 
     @Mock
     private com.keplerops.groundcontrol.domain.riskscenarios.repository.MethodologyProfileRepository
@@ -420,6 +428,23 @@ class RiskControlMappingServiceTest {
         }
 
         @Test
+        void updatesMappingScope() {
+            var mappingId = UUID.randomUUID();
+            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            setField(mapping, "id", mappingId);
+
+            when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.of(mapping));
+            when(repository.save(any(RiskControlMapping.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var cmd = new UpdateRiskControlMappingCommand(
+                    projectId, mappingId, null, null, "Email perimeter only", null, null);
+
+            var result = service.update(cmd);
+
+            assertThat(result.getMappingScope()).isEqualTo("Email perimeter only");
+        }
+
+        @Test
         void throwsNotFound_whenMappingNotInProject() {
             var mappingId = UUID.randomUUID();
             when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.empty());
@@ -427,6 +452,336 @@ class RiskControlMappingServiceTest {
             var cmd = new UpdateRiskControlMappingCommand(projectId, mappingId, null, null, null, null, null);
 
             assertThatThrownBy(() -> service.update(cmd)).isInstanceOf(NotFoundException.class);
+        }
+    }
+
+    @Nested
+    class CreateWithRecord {
+
+        @Test
+        void createsMapping_controlToRecord() {
+            var record = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
+            var recordId = UUID.randomUUID();
+            setField(record, "id", recordId);
+
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(controlRepository.findByIdAndProjectId(controlId, projectId)).thenReturn(Optional.of(control));
+            when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                    .thenReturn(Optional.of(record));
+            when(repository.existsByControlIdAndRiskRegisterRecordIdAndOperationalAssetId(controlId, recordId, null))
+                    .thenReturn(false);
+            when(repository.save(any(RiskControlMapping.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var cmd = new CreateRiskControlMappingCommand(
+                    projectId,
+                    controlId,
+                    null,
+                    null,
+                    recordId,
+                    null,
+                    null,
+                    MappingControlRole.PREVENTIVE,
+                    null,
+                    null,
+                    null);
+
+            var result = service.create(cmd);
+
+            assertThat(result.getControl()).isEqualTo(control);
+            assertThat(result.getRiskRegisterRecord()).isEqualTo(record);
+            verify(repository).save(any(RiskControlMapping.class));
+        }
+
+        @Test
+        void createsMapping_scopedImplToRecord() {
+            var record = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
+            var recordId = UUID.randomUUID();
+            setField(record, "id", recordId);
+
+            var sciId = UUID.randomUUID();
+            var sci = new com.keplerops.groundcontrol.domain.riskcontrol.model.ScopedControlImplementation(
+                    project, "SCI-001", control, "Email Gateway");
+            setField(sci, "id", sciId);
+
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(scopedControlImplementationRepository.findByIdAndProjectId(sciId, projectId))
+                    .thenReturn(Optional.of(sci));
+            when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                    .thenReturn(Optional.of(record));
+            when(repository.existsByScopedImplementationIdAndRiskRegisterRecordIdAndOperationalAssetId(
+                            sciId, recordId, null))
+                    .thenReturn(false);
+            when(repository.save(any(RiskControlMapping.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var cmd = new CreateRiskControlMappingCommand(
+                    projectId,
+                    null,
+                    sciId,
+                    null,
+                    recordId,
+                    null,
+                    null,
+                    MappingControlRole.CORRECTIVE,
+                    null,
+                    null,
+                    null);
+
+            var result = service.create(cmd);
+
+            assertThat(result.getScopedImplementation()).isEqualTo(sci);
+            assertThat(result.getRiskRegisterRecord()).isEqualTo(record);
+        }
+
+        @Test
+        void throwsNotFound_whenRecordNotInProject() {
+            var recordId = UUID.randomUUID();
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(controlRepository.findByIdAndProjectId(controlId, projectId)).thenReturn(Optional.of(control));
+            when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                    .thenReturn(Optional.empty());
+
+            var cmd = new CreateRiskControlMappingCommand(
+                    projectId,
+                    controlId,
+                    null,
+                    null,
+                    recordId,
+                    null,
+                    null,
+                    MappingControlRole.PREVENTIVE,
+                    null,
+                    null,
+                    null);
+
+            assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(NotFoundException.class);
+        }
+
+        @Test
+        void throwsConflict_whenDuplicateScopedToRecordExists() {
+            var record = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
+            var recordId = UUID.randomUUID();
+            setField(record, "id", recordId);
+
+            var sciId = UUID.randomUUID();
+            var sci = new com.keplerops.groundcontrol.domain.riskcontrol.model.ScopedControlImplementation(
+                    project, "SCI-001", control, "Email Gateway");
+            setField(sci, "id", sciId);
+
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(scopedControlImplementationRepository.findByIdAndProjectId(sciId, projectId))
+                    .thenReturn(Optional.of(sci));
+            when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                    .thenReturn(Optional.of(record));
+            when(repository.existsByScopedImplementationIdAndRiskRegisterRecordIdAndOperationalAssetId(
+                            sciId, recordId, null))
+                    .thenReturn(true);
+
+            var cmd = new CreateRiskControlMappingCommand(
+                    projectId,
+                    null,
+                    sciId,
+                    null,
+                    recordId,
+                    null,
+                    null,
+                    MappingControlRole.CORRECTIVE,
+                    null,
+                    null,
+                    null);
+
+            assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(ConflictException.class);
+        }
+    }
+
+    @Nested
+    class DeleteAndRead {
+
+        @Test
+        void deleteRemovesMapping() {
+            var mappingId = UUID.randomUUID();
+            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            setField(mapping, "id", mappingId);
+
+            when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.of(mapping));
+
+            service.delete(projectId, mappingId);
+
+            verify(repository).delete(mapping);
+        }
+
+        @Test
+        void delete_throwsNotFound_whenAbsent() {
+            var mappingId = UUID.randomUUID();
+            when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.delete(projectId, mappingId)).isInstanceOf(NotFoundException.class);
+        }
+
+        @Test
+        void getById_returnsMapping() {
+            var mappingId = UUID.randomUUID();
+            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            setField(mapping, "id", mappingId);
+
+            when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.of(mapping));
+
+            var result = service.getById(projectId, mappingId);
+
+            assertThat(result).isEqualTo(mapping);
+        }
+
+        @Test
+        void getById_throwsNotFound_whenAbsent() {
+            var mappingId = UUID.randomUUID();
+            when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.getById(projectId, mappingId)).isInstanceOf(NotFoundException.class);
+        }
+
+        @Test
+        void listByProject_delegatesToRepository() {
+            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            when(repository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(mapping));
+
+            var result = service.listByProject(projectId);
+
+            assertThat(result).containsExactly(mapping);
+        }
+
+        @Test
+        void listByRecord_delegatesToRepository() {
+            var recordId = UUID.randomUUID();
+            var record = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
+            setField(record, "id", recordId);
+            var mapping = new RiskControlMapping(project, control, record, MappingControlRole.PREVENTIVE, true);
+
+            when(repository.findByProjectIdAndRiskRegisterRecordId(projectId, recordId))
+                    .thenReturn(List.of(mapping));
+
+            var result = service.listByRecord(projectId, recordId);
+
+            assertThat(result).containsExactly(mapping);
+        }
+
+        @Test
+        void listByScopedImplementation_delegatesToRepository() {
+            var sciId = UUID.randomUUID();
+            var sci = new com.keplerops.groundcontrol.domain.riskcontrol.model.ScopedControlImplementation(
+                    project, "SCI-001", control, "Email Gateway");
+            setField(sci, "id", sciId);
+            var mapping = new RiskControlMapping(project, sci, scenario, MappingControlRole.PREVENTIVE, true);
+
+            when(repository.findByProjectIdAndScopedImplementationId(projectId, sciId))
+                    .thenReturn(List.of(mapping));
+
+            var result = service.listByScopedImplementation(projectId, sciId);
+
+            assertThat(result).containsExactly(mapping);
+        }
+    }
+
+    @Nested
+    class C8ObservationsAndEvidence {
+
+        @Test
+        void attachObservation_addsObservationToMapping() {
+            var mappingId = UUID.randomUUID();
+            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            setField(mapping, "id", mappingId);
+
+            var asset = new OperationalAsset(project, "ASSET-001", "Server");
+            setField(asset, "id", UUID.randomUUID());
+
+            var observationId = UUID.randomUUID();
+            var observation = new Observation(
+                    asset,
+                    ObservationCategory.CONFIGURATION,
+                    "key",
+                    "value",
+                    "scanner",
+                    Instant.parse("2026-05-01T00:00:00Z"));
+            setField(observation, "id", observationId);
+
+            when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.of(mapping));
+            when(observationRepository.findByIdWithAssetAndProjectId(observationId, projectId))
+                    .thenReturn(Optional.of(observation));
+            when(repository.save(any(RiskControlMapping.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = service.attachObservation(projectId, mappingId, observationId);
+
+            assertThat(result.getObservations()).contains(observation);
+            verify(repository).save(mapping);
+        }
+
+        @Test
+        void detachObservation_removesObservationFromMapping() {
+            var mappingId = UUID.randomUUID();
+            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            setField(mapping, "id", mappingId);
+
+            var asset = new OperationalAsset(project, "ASSET-001", "Server");
+            setField(asset, "id", UUID.randomUUID());
+
+            var observationId = UUID.randomUUID();
+            var observation = new Observation(
+                    asset,
+                    ObservationCategory.CONFIGURATION,
+                    "key",
+                    "value",
+                    "scanner",
+                    Instant.parse("2026-05-01T00:00:00Z"));
+            setField(observation, "id", observationId);
+            mapping.addObservation(observation);
+
+            when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.of(mapping));
+            when(observationRepository.findByIdWithAssetAndProjectId(observationId, projectId))
+                    .thenReturn(Optional.of(observation));
+            when(repository.save(any(RiskControlMapping.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = service.detachObservation(projectId, mappingId, observationId);
+
+            assertThat(result.getObservations()).doesNotContain(observation);
+        }
+
+        @Test
+        void addEvidenceRef_addsRefToMapping() {
+            var mappingId = UUID.randomUUID();
+            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            setField(mapping, "id", mappingId);
+
+            when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.of(mapping));
+            when(repository.save(any(RiskControlMapping.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var result =
+                    service.addEvidenceRef(projectId, mappingId, "https://evidence.example.com", "Test note", null);
+
+            assertThat(result.getEvidenceRefs()).hasSize(1);
+            assertThat(result.getEvidenceRefs().get(0).getEvidenceRef()).isEqualTo("https://evidence.example.com");
+            assertThat(result.getEvidenceRefs().get(0).getEvidenceNote()).isEqualTo("Test note");
+        }
+
+        @Test
+        void attachObservation_throwsNotFound_whenMappingAbsent() {
+            var mappingId = UUID.randomUUID();
+            when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.attachObservation(projectId, mappingId, UUID.randomUUID()))
+                    .isInstanceOf(NotFoundException.class);
+        }
+
+        @Test
+        void attachObservation_throwsNotFound_whenObservationAbsent() {
+            var mappingId = UUID.randomUUID();
+            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            setField(mapping, "id", mappingId);
+            var observationId = UUID.randomUUID();
+
+            when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.of(mapping));
+            when(observationRepository.findByIdWithAssetAndProjectId(observationId, projectId))
+                    .thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.attachObservation(projectId, mappingId, observationId))
+                    .isInstanceOf(NotFoundException.class);
         }
     }
 }

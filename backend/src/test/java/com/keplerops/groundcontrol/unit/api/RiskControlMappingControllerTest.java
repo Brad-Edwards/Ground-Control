@@ -166,4 +166,51 @@ class RiskControlMappingControllerTest {
                                 """))
                 .andExpect(status().isUnprocessableEntity());
     }
+
+    @Test
+    void attachObservationReturns200() throws Exception {
+        var observationId = UUID.fromString("00000000-0000-0000-0000-000000000800");
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(service.attachObservation(PROJECT_ID, MAPPING_ID, observationId)).thenReturn(makeMapping());
+
+        mockMvc.perform(post("/api/v1/risk-control-mappings/{id}/observations", MAPPING_ID)
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"observationId\": \"00000000-0000-0000-0000-000000000800\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id", is(MAPPING_ID.toString())));
+    }
+
+    @Test
+    void detachObservationReturns200() throws Exception {
+        var observationId = UUID.fromString("00000000-0000-0000-0000-000000000800");
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(service.detachObservation(PROJECT_ID, MAPPING_ID, observationId)).thenReturn(makeMapping());
+
+        mockMvc.perform(delete("/api/v1/risk-control-mappings/{id}/observations/{obsId}", MAPPING_ID, observationId)
+                        .param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id", is(MAPPING_ID.toString())));
+    }
+
+    @Test
+    void addEvidenceRefReturns200() throws Exception {
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(service.addEvidenceRef(PROJECT_ID, MAPPING_ID, "https://evidence.example.com", "Test note", null))
+                .thenReturn(makeMapping());
+
+        mockMvc.perform(
+                        post("/api/v1/risk-control-mappings/{id}/evidence", MAPPING_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "evidenceRef": "https://evidence.example.com",
+                                  "evidenceNote": "Test note"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id", is(MAPPING_ID.toString())));
+    }
 }

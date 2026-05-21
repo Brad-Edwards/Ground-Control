@@ -515,6 +515,7 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "119", // V119: create scoped_control_implementation (GC-T003 C1)
                         "120", // V120: create scoped_control_implementation_audit
                         "121", // V121: create risk_control_mapping + mapping_observation + mapping_evidence
-                        "122"); // V122: create risk_control_mapping_audit
+                        "122", // V122: create risk_control_mapping_audit
+                        "123"); // V123: create mapping_evidence_audit (Envers @ElementCollection shadow)
     }
 }

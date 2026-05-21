@@ -13,6 +13,7 @@ import com.keplerops.groundcontrol.domain.controls.model.Control;
 import com.keplerops.groundcontrol.domain.controls.state.ControlFunction;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.riskcontrol.model.MappingEvidenceRef;
 import com.keplerops.groundcontrol.domain.riskcontrol.service.RiskControlCoverageService;
 import com.keplerops.groundcontrol.domain.riskcontrol.service.RiskControlMappingFeedService;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
@@ -114,5 +115,21 @@ class RiskControlAnalysisControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.effectivenessInputs", hasSize(1)))
                 .andExpect(jsonPath("$.effectivenessInputs[0].operatingEffectiveness", is("PARTIALLY_EFFECTIVE")));
+    }
+
+    @Test
+    void assessmentFeed_C8_mapsEvidenceRefs() throws Exception {
+        var assessmentResultId = UUID.randomUUID();
+        var ref = new MappingEvidenceRef("https://evidence.example.com", "Test note");
+        var feed = new RiskControlMappingFeedService.AssessmentFeedResult(List.of(), List.of(), List.of(ref));
+
+        when(feedService.feedForAssessment(PROJECT_ID, assessmentResultId)).thenReturn(feed);
+
+        mockMvc.perform(get("/api/v1/analysis/risk-control/assessment-feed/{id}", assessmentResultId)
+                        .param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.evidenceRefs", hasSize(1)))
+                .andExpect(jsonPath("$.evidenceRefs[0].evidenceRef", is("https://evidence.example.com")))
+                .andExpect(jsonPath("$.evidenceRefs[0].evidenceNote", is("Test note")));
     }
 }
