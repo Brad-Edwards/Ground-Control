@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.api.threatmodels;
 
+import com.keplerops.groundcontrol.api.requirements.RequirementResponse;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.threatmodels.service.CreateThreatModelCommand;
 import com.keplerops.groundcontrol.domain.threatmodels.service.ThreatModelService;
@@ -91,6 +92,15 @@ public class ThreatModelController {
     public void delete(@PathVariable UUID id, @RequestParam(required = false) String project) {
         var projectId = projectService.resolveProjectId(project);
         threatModelService.delete(projectId, id);
+    }
+
+    @GetMapping("/{id}/requirements")
+    public List<RequirementResponse> getLinkedRequirements(
+            @PathVariable UUID id, @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return threatModelService.findLinkedRequirements(projectId, id).stream()
+                .map(RequirementResponse::from)
+                .toList();
     }
 
     @PutMapping("/{id}/status")

@@ -77,6 +77,7 @@ import {
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
   runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
   runCodexReviewCycle, runTestQualityReviewCycle,
+  startReviewJob, pollReviewJob, cancelReviewJob,
   runResolveWorkflowRoute,
   DECISION_RECORD_REVIEWERS, DECISION_RECORD_DECISIONS, DECISION_RECORD_CLASSIFICATIONS,
   PR_BODY_CHANGE_CLASSES, PR_REQUIREMENT_RE, EXACT_REQUIREMENT_UID_RE,
@@ -118,7 +119,7 @@ import {
   deleteRiskScenario, transitionRiskScenarioStatus, getRiskScenarioRequirements,
   createRiskScenarioLink, listRiskScenarioLinks, deleteRiskScenarioLink,
   createThreatModel, listThreatModels, getThreatModel, updateThreatModel,
-  deleteThreatModel, transitionThreatModelStatus,
+  deleteThreatModel, transitionThreatModelStatus, getThreatModelLinkedRequirements,
   createThreatModelLink, listThreatModelLinks, deleteThreatModelLink,
   createMethodologyProfile, listMethodologyProfiles, getMethodologyProfile,
   updateMethodologyProfile, deleteMethodologyProfile,
@@ -243,6 +244,16 @@ import {
   linkCreateOptionalSharedZodFields,
   performLinkCreate,
 } from "./link-create.js";
+import {
+  gcAssetZodShape,
+  gcAssetToolHandler,
+  GC_ASSET_DESCRIPTION,
+} from "./gc-asset.js";
+import {
+  gcObservationZodShape,
+  gcObservationToolHandler,
+  GC_OBSERVATION_DESCRIPTION,
+} from "./gc-observation.js";
 
 // Load .env from cwd before any auth header is composed.
 function loadDotenvFromCwd() {
@@ -463,22 +474,39 @@ server.tool(
   },
 );
 
+// Shared description for the opt-in `async` parameter on the codex/claude
+// review + preflight tools (issue #937).
+const ASYNC_REVIEW_PARAM_DESC =
+  "When true, start the review/preflight as a background job and return " +
+  "{ok,status:'running',job_id} immediately instead of blocking the MCP call. " +
+  "Poll the job with gc_codex_job (action='poll') until status='done', then dispatch " +
+  "on result.next_action exactly as for the synchronous call. Use this in the /implement " +
+  "workflow so a multi-minute review never trips the MCP client's tool-call timeout (issue #937).";
+
 server.tool(
   "gc_codex_architecture_preflight",
-  "Run Codex architecture preflight before implementation. Codex inspects the requirement and/or issue plus the repository, updates ADRs/design guidance when needed, and returns guardrails and changed files. At least one of requirement_uid or issue_number must be supplied.",
+  "Run Codex architecture preflight before implementation. Codex inspects the requirement and/or issue plus the repository, updates ADRs/design guidance when needed, and returns guardrails and changed files. At least one of requirement_uid or issue_number must be supplied. Pass async=true to run it as a background job polled via gc_codex_job.",
   {
     requirement_uid: z.string().optional(),
     repo_path: z.string(),
     project: z.string().optional(),
     issue_number: z.number().int().positive().optional(),
     repo: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/).optional(),
+    async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ requirement_uid, repo_path, project, issue_number, repo }) => {
+  async ({ requirement_uid, repo_path, project, issue_number, repo, async: asyncMode }) => {
     try {
-      return ok(JSON.stringify(await runCodexArchitecturePreflight({
+      const params = {
         requirementUid: requirement_uid, repoPath: repo_path, project,
         issueNumber: issue_number ?? null, repo: repo ?? null,
-      }), null, 2));
+      };
+      if (asyncMode) {
+        return ok(JSON.stringify(startReviewJob(
+          "architecture_preflight",
+          (signal) => runCodexArchitecturePreflight({ ...params, signal }),
+        ), null, 2));
+      }
+      return ok(JSON.stringify(await runCodexArchitecturePreflight(params), null, 2));
     } catch (e) { return err(e); }
   },
 );
@@ -518,10 +546,11 @@ server.tool(
     override_reason: z.string().optional().describe(buildCodexReviewOverrideReasonDescription(CODEX_REVIEW_CAPS)),
     override_phase_gate: z.boolean().optional(),
     override_phase_reason: z.string().optional(),
+    async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, base_branch, uncommitted, pr_number, issue_number, override_cap, override_reason, override_phase_gate, override_phase_reason }) => {
+  async ({ repo_path, base_branch, uncommitted, pr_number, issue_number, override_cap, override_reason, override_phase_gate, override_phase_reason, async: asyncMode }) => {
     try {
-      return ok(JSON.stringify(await runCodexReview({
+      const params = {
         repoPath: repo_path, baseBranch: base_branch ?? null,
         uncommitted: Boolean(uncommitted),
         prNumber: pr_number != null ? pr_number : null,
@@ -530,7 +559,14 @@ server.tool(
         overrideReason: override_reason ?? null,
         overridePhaseGate: Boolean(override_phase_gate),
         overridePhaseReason: override_phase_reason ?? null,
-      }), null, 2));
+      };
+      if (asyncMode) {
+        return ok(JSON.stringify(startReviewJob(
+          "codex_review",
+          (signal) => runCodexReview({ ...params, signal }),
+        ), null, 2));
+      }
+      return ok(JSON.stringify(await runCodexReview(params), null, 2));
     } catch (e) { return err(e); }
   },
 );
@@ -563,10 +599,11 @@ server.tool(
     override_cap: z.boolean().optional(),
     override_reason: z.string().optional(),
     model: z.string().optional(),
+    async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, base_branch, issue_number, pr_number, override_cap, override_reason, model }) => {
+  async ({ repo_path, base_branch, issue_number, pr_number, override_cap, override_reason, model, async: asyncMode }) => {
     try {
-      return ok(JSON.stringify(await runTestQualityReview({
+      const params = {
         repoPath: repo_path,
         // Pass null when not supplied so the runner resolves from
         // .ground-control.yaml; the runner falls back to "dev" only if
@@ -577,7 +614,14 @@ server.tool(
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
         ...(model ? { model } : {}),
-      }), null, 2));
+      };
+      if (asyncMode) {
+        return ok(JSON.stringify(startReviewJob(
+          "test_quality_review",
+          (signal) => runTestQualityReview({ ...params, signal }),
+        ), null, 2));
+      }
+      return ok(JSON.stringify(await runTestQualityReview(params), null, 2));
     } catch (e) { return err(e); }
   },
 );
@@ -808,17 +852,25 @@ server.tool(
     uncommitted: z.boolean().optional(),
     override_cap: z.boolean().optional(),
     override_reason: z.string().nullable().optional(),
+    async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, issue_number, base_branch, uncommitted, override_cap, override_reason }) => {
+  async ({ repo_path, issue_number, base_branch, uncommitted, override_cap, override_reason, async: asyncMode }) => {
     try {
-      return ok(JSON.stringify(await runCodexReviewCycle({
+      const params = {
         repoPath: repo_path,
         issueNumber: issue_number,
         baseBranch: base_branch ?? null,
         uncommitted: uncommitted ?? true,
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
-      }), null, 2));
+      };
+      if (asyncMode) {
+        return ok(JSON.stringify(startReviewJob(
+          "codex_review_cycle",
+          (signal) => runCodexReviewCycle({ ...params, signal }),
+        ), null, 2));
+      }
+      return ok(JSON.stringify(await runCodexReviewCycle(params), null, 2));
     } catch (e) { return err(e); }
   },
 );
@@ -833,17 +885,47 @@ server.tool(
     override_cap: z.boolean().optional(),
     override_reason: z.string().nullable().optional(),
     model: z.string().optional(),
+    async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, issue_number, base_branch, override_cap, override_reason, model }) => {
+  async ({ repo_path, issue_number, base_branch, override_cap, override_reason, model, async: asyncMode }) => {
     try {
-      return ok(JSON.stringify(await runTestQualityReviewCycle({
+      const params = {
         repoPath: repo_path,
         issueNumber: issue_number,
         baseBranch: base_branch ?? null,
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
         model,
-      }), null, 2));
+      };
+      if (asyncMode) {
+        return ok(JSON.stringify(startReviewJob(
+          "test_quality_review_cycle",
+          (signal) => runTestQualityReviewCycle({ ...params, signal }),
+        ), null, 2));
+      }
+      return ok(JSON.stringify(await runTestQualityReviewCycle(params), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_codex_job",
+  "Poll or cancel an async review/preflight job started by gc_codex_review, gc_codex_review_cycle, " +
+    "gc_codex_architecture_preflight, gc_test_quality_review, or gc_test_quality_review_cycle when those " +
+    "tools are called with async=true (issue #937). action='poll' returns {ok:true,status:'running'} while " +
+    "the codex/claude child is still running, and {ok:true,status:'done',result:<review envelope>} once it " +
+    "finishes — dispatch on result.next_action exactly as for the synchronous tool. A failed or cancelled " +
+    "job returns ok=false. action='cancel' aborts a running job and kills its child process (no orphan). " +
+    "Jobs are reaped 30 minutes after they finish; a poll for an unknown or expired job_id returns " +
+    "error='job_not_found', at which point re-run the review.",
+  {
+    action: z.enum(["poll", "cancel"]),
+    job_id: z.string().min(1),
+  },
+  async ({ action, job_id }) => {
+    try {
+      const result = action === "cancel" ? cancelReviewJob(job_id) : pollReviewJob(job_id);
+      return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },
 );
@@ -1422,299 +1504,34 @@ server.tool(
   },
 );
 
-const ASSET_ACTIONS = [
-  "create", "update", "delete", "archive",
-  "relation_create", "relation_delete", "detect_cycles", "impact_analysis", "extract_subgraph",
-  "link_create", "link_delete",
-  "external_id_create", "external_id_update", "external_id_delete",
-  // GC-M011 subtype-schema registry actions.
-  "subtype_schema_create", "subtype_schema_update", "subtype_schema_deprecate",
-  "subtype_schema_get", "subtype_schema_get_active", "subtype_schema_list",
-];
-
+// gc_asset: GC-L008. Operational asset operations incl. relations (incl.
+// relation_update — Defect-3 fix), links, external IDs, and subtype-schema
+// registry. Handler logic lives in gc-asset.js for testability.
 server.tool(
   "gc_asset",
-  `Operational asset operations incl. relations, links, external IDs. Actions: ${ASSET_ACTIONS.join(", ")}. ` +
-    `link_create requires target_type + link_type; pass target_entity_id for internal target types ` +
-    `or target_identifier for external types. target_url / target_title are optional. ` +
-    `Reads (list, get, get_by_uid, find_by_external_id, links, external_ids) route through gc_query.`,
-  {
-    action: z.enum(ASSET_ACTIONS),
-    id: z.string().uuid().optional(),
-    uid: z.string().optional(),
-    project: z.string().optional(),
-    name: z.string().optional(),
-    description: z.string().optional(),
-    asset_type: z.enum(ASSET_TYPES).optional(),
-    // GC-M012 metadata: ownership, stewardship, environment, criticality,
-    // business/mission context, and assurance scope.
-    owner: z.string().optional(),
-    steward: z.string().optional(),
-    environment: z.enum(ASSET_ENVIRONMENTS).optional(),
-    criticality: z.enum(ASSET_CRITICALITIES).optional(),
-    business_context: z.string().optional(),
-    scope_designation: z.enum(ASSET_SCOPES).optional(),
-    // GC-M012 clear flags: reset a previously-designated metadata field back
-    // to NULL ("not designated") on update. Clear wins over a same-payload
-    // assignment to keep the semantic unambiguous; see UpdateAssetCommand.
-    clear_owner: z.boolean().optional(),
-    clear_steward: z.boolean().optional(),
-    clear_environment: z.boolean().optional(),
-    clear_criticality: z.boolean().optional(),
-    clear_business_context: z.boolean().optional(),
-    clear_scope_designation: z.boolean().optional(),
-    // GC-M011: subtype discriminator + extensible metadata bag.
-    subtype: z.string().optional(),
-    metadata: z.record(z.any()).optional(),
-    clear_subtype: z.boolean().optional(),
-    clear_metadata: z.boolean().optional(),
-    // GC-M018: knowledge / completeness dimension on asset AND relation.
-    // Distinct from confidence; see the preflight note. There is no
-    // clear flag — the underlying column is NOT NULL and null on
-    // update means "leave unchanged".
-    knowledge_state: z.enum(KNOWLEDGE_STATES).optional(),
-    // GC-M011: subtype-schema registry parameters. Schema body is an
-    // any-shape object so callers can mint registry entries without the
-    // MCP enforcing the validator's wire shape — the backend validator is
-    // the authority.
-    schema_id: z.string().uuid().optional(),
-    schema_version: z.string().optional(),
-    schema_body: z.record(z.any()).optional(),
-    schema_description: z.string().optional(),
-    clear_schema_description: z.boolean().optional(),
-    clear_schema_body: z.boolean().optional(),
-    parent_id: z.string().uuid().nullable().optional(),
-    // relations
-    source_id: z.string().uuid().optional(),
-    target_id: z.string().uuid().optional(),
-    relation_type: z.enum(ASSET_RELATION_TYPES).optional(),
-    relation_id: z.string().uuid().optional(),
-    // links
-    asset_id: z.string().uuid().optional(),
-    target_type: z.enum(ASSET_LINK_TARGET_TYPES).optional(),
-    link_type: z.enum(ASSET_LINK_TYPES).optional(),
-    ...linkCreateOptionalSharedZodFields,
-    link_id: z.string().uuid().optional(),
-    // external IDs
-    namespace: z.string().optional(),
-    external_id: z.string().optional(),
-    external_id_record_id: z.string().uuid().optional(),
-    roots: z.array(z.string()).optional(),
-    max_depth: z.number().int().optional(),
-  },
+  GC_ASSET_DESCRIPTION,
+  gcAssetZodShape,
   async (args) => {
     try {
-      const ASSET_FIELDS = [
-        // `uid` is @NotBlank on the backend AssetRequest; without it on the
-        // forwarded field list, the create path drops the caller-supplied
-        // uid and the backend rejects the body (codex cycle-3 finding 1).
-        "uid",
-        "name",
-        "description",
-        "asset_type",
-        "parent_id",
-        // GC-M012 ownership/criticality/scope metadata + clear flags.
-        "owner",
-        "steward",
-        "environment",
-        "criticality",
-        "business_context",
-        "scope_designation",
-        "clear_owner",
-        "clear_steward",
-        "clear_environment",
-        "clear_criticality",
-        "clear_business_context",
-        "clear_scope_designation",
-        // GC-M011 subtype + metadata + clear flags.
-        "subtype",
-        "metadata",
-        "clear_subtype",
-        "clear_metadata",
-        // GC-M018 knowledge / completeness state. Pinned to the
-        // forwarded fields so create / update paths thread the value
-        // through to the backend's CreateAssetCommand /
-        // UpdateAssetCommand.
-        "knowledge_state",
-      ];
-      const RELATION_FIELDS = ["source_id", "target_id", "relation_type", "knowledge_state"];
-      const EXT_ID_FIELDS = ["namespace", "external_id"];
-      switch (args.action) {
-        case "create": {
-          reqArg(args, "uid", "create"); reqArg(args, "name", "create"); reqArg(args, "asset_type", "create");
-          return ok(JSON.stringify(await createAsset(pick(args, ASSET_FIELDS), args.project), null, 2));
-        }
-        case "update": {
-          reqArg(args, "id", "update");
-          return ok(JSON.stringify(await updateAsset(args.id, pick(args, ASSET_FIELDS), args.project), null, 2));
-        }
-        case "delete": {
-          reqArg(args, "id", "delete");
-          await deleteAsset(args.id, args.project);
-          return ok("Deleted");
-        }
-        case "archive": {
-          reqArg(args, "id", "archive");
-          return ok(JSON.stringify(await archiveAsset(args.id, args.project), null, 2));
-        }
-        case "relation_create": {
-          // lib.js: createAssetRelation(assetId, data, project)
-          reqArg(args, "source_id", "relation_create"); reqArg(args, "target_id", "relation_create"); reqArg(args, "relation_type", "relation_create");
-          return ok(JSON.stringify(await createAssetRelation(args.source_id, pick(args, RELATION_FIELDS), args.project), null, 2));
-        }
-        case "relation_delete": {
-          // lib.js: deleteAssetRelation(assetId, relationId, project)
-          reqArg(args, "asset_id", "relation_delete"); reqArg(args, "relation_id", "relation_delete");
-          await deleteAssetRelation(args.asset_id, args.relation_id, args.project);
-          return ok("Deleted");
-        }
-        case "detect_cycles": return ok(JSON.stringify(await detectAssetCycles(args.project), null, 2));
-        case "impact_analysis": {
-          reqArg(args, "id", "impact_analysis");
-          return ok(JSON.stringify(await assetImpactAnalysis(args.id, args.project), null, 2));
-        }
-        case "extract_subgraph": {
-          reqArg(args, "roots", "extract_subgraph");
-          return ok(JSON.stringify(await extractAssetSubgraph({ roots: args.roots, maxDepth: args.max_depth }, args.project), null, 2));
-        }
-        case "link_create": {
-          // lib.js: createAssetLink(assetId, data, project). Body shape +
-          // target_type/link_type preconditions live in link-create.js so
-          // every consolidated link_create surface stays in sync with the
-          // backend link DTO (target_entity_id, target_identifier, target_url,
-          // target_title are all forwarded).
-          return ok(JSON.stringify(await performLinkCreate(args, "asset_id", createAssetLink), null, 2));
-        }
-        case "link_delete": {
-          // lib.js: deleteAssetLink(assetId, linkId, project)
-          reqArg(args, "asset_id", "link_delete"); reqArg(args, "link_id", "link_delete");
-          await deleteAssetLink(args.asset_id, args.link_id, args.project);
-          return ok("Deleted");
-        }
-        case "external_id_create": {
-          // lib.js: createAssetExternalId(assetId, data, project)
-          reqArg(args, "asset_id", "external_id_create"); reqArg(args, "namespace", "external_id_create"); reqArg(args, "external_id", "external_id_create");
-          return ok(JSON.stringify(await createAssetExternalId(args.asset_id, pick(args, EXT_ID_FIELDS), args.project), null, 2));
-        }
-        case "external_id_update": {
-          // lib.js: updateAssetExternalId(assetId, extIdId, data, project)
-          reqArg(args, "asset_id", "external_id_update"); reqArg(args, "external_id_record_id", "external_id_update");
-          return ok(JSON.stringify(await updateAssetExternalId(args.asset_id, args.external_id_record_id, pick(args, EXT_ID_FIELDS), args.project), null, 2));
-        }
-        case "external_id_delete": {
-          // lib.js: deleteAssetExternalId(assetId, extIdId, project)
-          reqArg(args, "asset_id", "external_id_delete"); reqArg(args, "external_id_record_id", "external_id_delete");
-          await deleteAssetExternalId(args.asset_id, args.external_id_record_id, args.project);
-          return ok("Deleted");
-        }
-        case "subtype_schema_create": {
-          reqArg(args, "asset_type", "subtype_schema_create");
-          reqArg(args, "subtype", "subtype_schema_create");
-          reqArg(args, "schema_version", "subtype_schema_create");
-          // schema_body is required at the MCP boundary too — the backend
-          // rejects ACTIVE registry rows without a non-empty `fields` map
-          // (AssetService.registerSubtypeSchema invokes validateSchemaBody
-          // with requireFields=true). Failing fast here surfaces the
-          // contract instead of round-tripping a 422 (codex cycle-3 #1).
-          reqArg(args, "schema_body", "subtype_schema_create");
-          const body = {
-            assetType: args.asset_type,
-            subtype: args.subtype,
-            schemaVersion: args.schema_version,
-            description: args.schema_description,
-            schemaBody: args.schema_body,
-          };
-          return ok(JSON.stringify(await registerAssetSubtypeSchema(body, args.project), null, 2));
-        }
-        case "subtype_schema_update": {
-          reqArg(args, "schema_id", "subtype_schema_update");
-          const body = {
-            description: args.schema_description,
-            schemaBody: args.schema_body,
-            clearDescription: args.clear_schema_description,
-            clearSchemaBody: args.clear_schema_body,
-          };
-          return ok(JSON.stringify(await updateAssetSubtypeSchema(args.schema_id, body, args.project), null, 2));
-        }
-        case "subtype_schema_deprecate": {
-          reqArg(args, "schema_id", "subtype_schema_deprecate");
-          return ok(JSON.stringify(await deprecateAssetSubtypeSchema(args.schema_id, args.project), null, 2));
-        }
-        case "subtype_schema_get": {
-          reqArg(args, "schema_id", "subtype_schema_get");
-          return ok(JSON.stringify(await getAssetSubtypeSchema(args.schema_id, args.project), null, 2));
-        }
-        case "subtype_schema_get_active": {
-          reqArg(args, "asset_type", "subtype_schema_get_active");
-          reqArg(args, "subtype", "subtype_schema_get_active");
-          return ok(JSON.stringify(
-            await getActiveAssetSubtypeSchema(args.asset_type, args.subtype, args.project),
-            null,
-            2,
-          ));
-        }
-        case "subtype_schema_list": {
-          return ok(JSON.stringify(
-            await listAssetSubtypeSchemas({
-              project: args.project,
-              assetType: args.asset_type,
-              subtype: args.subtype,
-            }),
-            null,
-            2,
-          ));
-        }
-        default: return err(new Error(`Unknown action: ${args.action}`));
-      }
+      const result = await gcAssetToolHandler(args);
+      return result === null ? ok("Deleted") : ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },
 );
 
-const OBSERVATION_ACTIONS = ["create", "update", "delete", "latest"];
-
+// gc_observation: GC-L008. Time-bounded state observations about an asset.
+// Defect-1 fix: uses correct ObservationRequest field names (observationKey,
+// observationValue, source, observedAt, expiresAt, confidence, evidenceRef)
+// instead of old title/statement/valid_until/metadata names. Handler logic
+// lives in gc-observation.js for testability.
 server.tool(
   "gc_observation",
-  `Time-bounded state observations. Actions: ${OBSERVATION_ACTIONS.join(", ")}. ` +
-    `Reads (list, get) route through gc_query.`,
-  {
-    action: z.enum(OBSERVATION_ACTIONS),
-    id: z.string().uuid().optional(),
-    project: z.string().optional(),
-    asset_id: z.string().uuid().optional(),
-    category: z.enum(OBSERVATION_CATEGORIES).optional(),
-    title: z.string().optional(),
-    statement: z.string().optional(),
-    observed_at: z.string().optional(),
-    valid_until: z.string().optional(),
-    metadata: z.record(z.any()).optional(),
-  },
+  GC_OBSERVATION_DESCRIPTION,
+  gcObservationZodShape,
   async (args) => {
     try {
-      const ENTITY_FIELDS = ["category", "title", "statement", "observed_at", "valid_until", "metadata"];
-      switch (args.action) {
-        case "create": {
-          // lib.js: createObservation(assetId, data, project)
-          reqArg(args, "asset_id", "create"); reqArg(args, "category", "create"); reqArg(args, "title", "create");
-          return ok(JSON.stringify(await createObservation(args.asset_id, pick(args, ENTITY_FIELDS), args.project), null, 2));
-        }
-        case "update": {
-          // lib.js: updateObservation(assetId, observationId, data, project)
-          reqArg(args, "asset_id", "update"); reqArg(args, "id", "update");
-          return ok(JSON.stringify(await updateObservation(args.asset_id, args.id, pick(args, ENTITY_FIELDS), args.project), null, 2));
-        }
-        case "delete": {
-          // lib.js: deleteObservation(assetId, observationId, project)
-          reqArg(args, "asset_id", "delete"); reqArg(args, "id", "delete");
-          await deleteObservation(args.asset_id, args.id, args.project);
-          return ok("Deleted");
-        }
-        case "latest": {
-          // lib.js: listLatestObservations(assetId, project) — requires assetId
-          reqArg(args, "asset_id", "latest");
-          return ok(JSON.stringify(await listLatestObservations(args.asset_id, args.project), null, 2));
-        }
-        default: return err(new Error(`Unknown action: ${args.action}`));
-      }
+      const result = await gcObservationToolHandler(args);
+      return result === null ? ok("Deleted") : ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },
 );

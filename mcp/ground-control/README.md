@@ -127,7 +127,7 @@ skills' SKILL.md prose, kept unchanged):
 | `gc_adr` | create, update, delete, transition, requirements |
 | `gc_document` | create, update, delete, grammar_set, grammar_delete, reading_order |
 | `gc_section` | create, update, delete, tree, content_add, content_update, content_delete |
-| `gc_asset` | create, update, delete, archive, relation_*, link_*, external_id_* |
+| `gc_asset` | create, update, delete, archive, relation_create, relation_update, relation_delete, link_*, external_id_*, subtype_schema_*, detect_cycles, impact_analysis, extract_subgraph |
 | `gc_observation` | create, update, delete, latest |
 | `gc_risk_scenario` | create, update, delete, transition, requirements, link_* |
 | `gc_threat_model` | create, update, delete, transition, link_* |

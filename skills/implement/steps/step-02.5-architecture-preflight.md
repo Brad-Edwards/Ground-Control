@@ -19,7 +19,8 @@ Preflight MUST cover every in-scope requirement, not just the first one. The pre
    - `repo_path`: absolute path from Step 1
    - `project`: `cfg.project`
    - `requirement_uid`: the UID being preflighted in this call (omit entirely on requirement-free runs).
-4. After every call in the set has returned, read any ADRs, design notes, or workflow guidance that Codex created or updated. Multiple calls may touch overlapping files — that is fine; treat the union of all guardrails as binding.
+   - `async`: `true` — preflight runs codex against the whole repo and legitimately takes minutes. With `async=true` the tool returns `{ok:true, status:"running", job_id}` immediately; poll `gc_codex_job` (`action="poll"`, `job_id=<job_id>`) every ~60s until `status:"done"`, then read the preflight result from the poll response's `result` field. A `job_not_found` poll means the job expired or the MCP server restarted — re-run the call. This keeps the multi-minute preflight from tripping the MCP client tool-call timeout (issue #937).
+4. After every call in the set has returned (polled to `status:"done"`), read any ADRs, design notes, or workflow guidance that Codex created or updated. Multiple calls may touch overlapping files — that is fine; treat the union of all guardrails as binding.
 5. Treat the returned guardrails, cross-cutting concerns, and non-goals as binding unless they are clearly wrong.
 6. Do NOT revert or ignore Codex-added design guidance just because implementation looks possible without it.
 

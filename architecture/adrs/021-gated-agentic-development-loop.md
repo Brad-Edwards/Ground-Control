@@ -85,3 +85,23 @@ return clean before push — but a clean cycle now emits `verdict: ship` as a
 first-class outcome instead of an empty findings array. See ADR-029
 (amendments) and ADR-031 (amendments) for the envelope shape; see
 `skills/implement/SKILL.md` Step 6.5 / 6.6 for the operative loop prose.
+
+**2026-05-21 (issue #937).** The codex/claude-backed review and preflight
+gates — `gc_codex_architecture_preflight` (Step 2.5), `gc_codex_review` /
+`gc_codex_review_cycle` (Step 6.5), and `gc_test_quality_review` /
+`gc_test_quality_review_cycle` (Step 6.6) — gain an opt-in async execution
+mode. Each spawns a child process (`codex exec` / `claude --print`) that
+legitimately runs for several minutes; run synchronously, a single MCP
+tool-call blocked past the MCP client's per-call timeout, the client
+abandoned the call, and the orphaned child left the workflow with no result
+handle (issue #893). With `async: true` the tool starts a background job and
+returns a `job_id` immediately; the workflow polls the new `gc_codex_job`
+tool for the result envelope, or cancels a stuck job (the cancel aborts an
+`AbortController` whose signal kills the child, so nothing is orphaned). The
+GC-O007 gate contract is **unchanged** — the same gates run, the same caps
+apply, the same durable records post to the issue thread; async changes only
+how the agent waits for a result. Client-side, `.claude/settings.json` now
+sets `MCP_TOOL_TIMEOUT` / `MCP_TIMEOUT` explicitly so long-running MCP tools
+have headroom. See ADR-036 (amendments) for the async job model and
+`skills/implement/steps/step-02.5 / 06.5 / 06.6` plus `_review-loop-rules.md`
+for the operative start-then-poll loop prose.

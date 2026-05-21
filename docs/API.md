@@ -593,6 +593,8 @@ Validation errors return HTTP `422` with the canonical `ErrorResponse` envelope 
 
 Relation types: `CONTAINS`, `DEPENDS_ON`, `COMMUNICATES_WITH`, `TRUST_BOUNDARY`, `SUPPORTS`, `ACCESSES`, `DATA_FLOW`
 
+MCP surface: `gc_asset` with actions `relation_create`, `relation_update`, `relation_delete`. `relation_create` requires `source_id`, `target_id`, `relation_type`; optional body fields are `description`, `source_system`, `external_source_id`, `collected_at`, `confidence`, `knowledge_state`. `relation_update` requires `asset_id`, `relation_id`; accepts the same optional fields (excludes `target_id` and `relation_type` which are immutable after creation). `source_id` is a path parameter, not a body field.
+
 ### Asset Links (Cross-Entity Linking)
 
 | Method | Path | Body | Status | Purpose |
@@ -642,6 +644,51 @@ Link types: `IMPLEMENTS`, `MITIGATES`, `SUBJECT_OF`, `EVIDENCED_BY`, `GOVERNED_B
   "relations": [{ "id": "uuid", "sourceUid": "ASSET-001", "targetUid": "ASSET-002", "relationType": "DEPENDS_ON" }]
 }
 ```
+
+### Observations
+
+Time-bounded state facts about an asset. Each observation records a discrete
+observed value at a point in time; the `/observations/latest` projection surfaces
+the most recent non-expired observation per key.
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/assets/{id}/observations?project=` | ObservationRequest | 201 | Create observation |
+| GET | `/assets/{id}/observations?project=` | — | 200 | List observations |
+| GET | `/assets/{id}/observations/{obsId}` | — | 200 | Get observation by UUID |
+| PUT | `/assets/{id}/observations/{obsId}` | UpdateObservationRequest | 200 | Update mutable fields |
+| DELETE | `/assets/{id}/observations/{obsId}` | — | 204 | Delete observation |
+| GET | `/assets/{id}/observations/latest?project=` | — | 200 | Latest non-expired observation per key |
+
+**ObservationRequest** (`category`, `observationKey`, `observationValue`, `source`, `observedAt` are required):
+
+```json
+{
+  "category": "CONFIGURATION",
+  "observationKey": "cis.1.1.patch_state",
+  "observationValue": "compliant",
+  "source": "vuln-scanner-v2",
+  "observedAt": "2026-05-01T12:00:00Z",
+  "expiresAt": "2026-11-01T12:00:00Z",
+  "confidence": "0.95",
+  "evidenceRef": "EVD-0042"
+}
+```
+
+**UpdateObservationRequest** (all fields optional):
+
+```json
+{
+  "observationValue": "non-compliant",
+  "expiresAt": "2026-08-01T12:00:00Z",
+  "confidence": "0.80",
+  "evidenceRef": "EVD-0043"
+}
+```
+
+Observation categories: `CONFIGURATION`, `EXPOSURE`, `IDENTITY`, `DEPLOYMENT`, `PATCH_STATE`, `RELATIONSHIP`, `OTHER`
+
+MCP surface: `gc_observation` with actions `create`, `update`, `delete`, `latest`. Snake_case MCP args map to camelCase DTO fields via the adapter's `TO_CAMEL` table — `observation_key` → `observationKey`, `observation_value` → `observationValue`, `observed_at` → `observedAt`, `expires_at` → `expiresAt`, `evidence_ref` → `evidenceRef`. The old field names (`title`, `statement`, `valid_until`, `metadata`) were removed in GC-L008.
 
 ### Quality Gates
 
@@ -873,6 +920,7 @@ must be non-blank), `reason` (optional, max 500).
 | PUT | `/threat-models/{id}` | UpdateThreatModelRequest | 200 | Update mutable fields |
 | DELETE | `/threat-models/{id}` | — | 204 | Delete threat model (cascades to links) |
 | PUT | `/threat-models/{id}/status` | `{"status": "ACTIVE"}` | 200 | Transition lifecycle status |
+| GET | `/threat-models/{id}/requirements` | — | 200 | List requirements linked to a threat model |
 | POST | `/threat-models/{id}/links` | ThreatModelLinkRequest | 201 | Create threat-model link |
 | GET | `/threat-models/{id}/links` | — | 200 | List links for a threat model |
 | DELETE | `/threat-models/{id}/links/{linkId}` | — | 204 | Delete threat-model link |

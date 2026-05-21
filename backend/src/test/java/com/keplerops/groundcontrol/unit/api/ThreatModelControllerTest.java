@@ -19,6 +19,7 @@ import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel;
 import com.keplerops.groundcontrol.domain.threatmodels.service.CreateThreatModelCommand;
 import com.keplerops.groundcontrol.domain.threatmodels.service.ThreatModelService;
@@ -299,6 +300,35 @@ class ThreatModelControllerTest {
                 .andExpect(status().isNoContent());
 
         verify(threatModelService).delete(PROJECT_ID, TM_ID);
+    }
+
+    @Test
+    void getLinkedRequirementsReturnsRequirementList() throws Exception {
+        var project = new Project("ground-control", "Ground Control");
+        setField(project, "id", PROJECT_ID);
+        var req = new Requirement(
+                project, "GC-H002", "Threat linking", "System shall link threat models to requirements");
+        setField(req, "id", UUID.fromString("00000000-0000-0000-0000-000000000300"));
+        setField(req, "createdAt", NOW);
+        setField(req, "updatedAt", NOW);
+
+        when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
+        when(threatModelService.findLinkedRequirements(PROJECT_ID, TM_ID)).thenReturn(List.of(req));
+
+        mockMvc.perform(get("/api/v1/threat-models/{id}/requirements", TM_ID).param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].uid", is("GC-H002")));
+    }
+
+    @Test
+    void getLinkedRequirementsReturns404WhenThreatModelUnknown() throws Exception {
+        when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
+        when(threatModelService.findLinkedRequirements(PROJECT_ID, TM_ID))
+                .thenThrow(new NotFoundException("Threat model not found: " + TM_ID));
+
+        mockMvc.perform(get("/api/v1/threat-models/{id}/requirements", TM_ID).param("project", "ground-control"))
+                .andExpect(status().isNotFound());
     }
 
     @Test
