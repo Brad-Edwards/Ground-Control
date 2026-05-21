@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ScopedControlImplementationService {
 
     private static final Logger log = LoggerFactory.getLogger(ScopedControlImplementationService.class);
+    private static final String SCI_NOT_FOUND = "ScopedControlImplementation not found: ";
 
     private final ScopedControlImplementationRepository repository;
     private final ProjectService projectService;
@@ -69,7 +70,7 @@ public class ScopedControlImplementationService {
     public ScopedControlImplementation update(UpdateScopedControlImplementationCommand command) {
         var sci = repository
                 .findByIdAndProjectId(command.sciId(), command.projectId())
-                .orElseThrow(() -> new NotFoundException("ScopedControlImplementation not found: " + command.sciId()));
+                .orElseThrow(() -> new NotFoundException(SCI_NOT_FOUND + command.sciId()));
 
         if (command.name() != null) {
             sci.setName(command.name());
@@ -93,7 +94,7 @@ public class ScopedControlImplementationService {
     public void delete(UUID projectId, UUID sciId) {
         var sci = repository
                 .findByIdAndProjectId(sciId, projectId)
-                .orElseThrow(() -> new NotFoundException("ScopedControlImplementation not found: " + sciId));
+                .orElseThrow(() -> new NotFoundException(SCI_NOT_FOUND + sciId));
         repository.delete(sci);
         log.info("scoped_control_implementation_deleted: id={} project={}", sciId, projectId);
     }
@@ -102,7 +103,7 @@ public class ScopedControlImplementationService {
     public ScopedControlImplementation getById(UUID projectId, UUID sciId) {
         return repository
                 .findByIdAndProjectId(sciId, projectId)
-                .orElseThrow(() -> new NotFoundException("ScopedControlImplementation not found: " + sciId));
+                .orElseThrow(() -> new NotFoundException(SCI_NOT_FOUND + sciId));
     }
 
     @Transactional(readOnly = true)

@@ -144,59 +144,54 @@ public class RiskControlMapping extends BaseEntity {
         // JPA
     }
 
-    /**
-     * Creates a mapping with a catalog control and a risk scenario.
-     */
-    public RiskControlMapping(
+    /** Creates a mapping with a catalog control and a risk scenario. */
+    public static RiskControlMapping forControlScenario(
             Project project, Control control, RiskScenario riskScenario, MappingControlRole controlRole) {
-        this.project = project;
-        this.control = control;
-        this.riskScenario = riskScenario;
-        this.controlRole = controlRole;
+        RiskControlMapping m = new RiskControlMapping();
+        m.project = project;
+        m.control = control;
+        m.riskScenario = riskScenario;
+        m.controlRole = controlRole;
+        return m;
     }
 
-    /**
-     * Creates a mapping with a catalog control and a risk register record.
-     */
-    public RiskControlMapping(
-            Project project,
-            Control control,
-            RiskRegisterRecord riskRegisterRecord,
-            MappingControlRole controlRole,
-            boolean recordSide) {
-        this.project = project;
-        this.control = control;
-        this.riskRegisterRecord = riskRegisterRecord;
-        this.controlRole = controlRole;
+    /** Creates a mapping with a catalog control and a risk register record. */
+    public static RiskControlMapping forControlRecord(
+            Project project, Control control, RiskRegisterRecord riskRegisterRecord, MappingControlRole controlRole) {
+        RiskControlMapping m = new RiskControlMapping();
+        m.project = project;
+        m.control = control;
+        m.riskRegisterRecord = riskRegisterRecord;
+        m.controlRole = controlRole;
+        return m;
     }
 
-    /**
-     * Creates a mapping with a scoped implementation and a risk scenario.
-     */
-    public RiskControlMapping(
+    /** Creates a mapping with a scoped implementation and a risk scenario. */
+    public static RiskControlMapping forScopedScenario(
             Project project,
             ScopedControlImplementation scopedImplementation,
             RiskScenario riskScenario,
-            MappingControlRole controlRole,
-            boolean scopedSide) {
-        this.project = project;
-        this.scopedImplementation = scopedImplementation;
-        this.riskScenario = riskScenario;
-        this.controlRole = controlRole;
+            MappingControlRole controlRole) {
+        RiskControlMapping m = new RiskControlMapping();
+        m.project = project;
+        m.scopedImplementation = scopedImplementation;
+        m.riskScenario = riskScenario;
+        m.controlRole = controlRole;
+        return m;
     }
 
-    /**
-     * Creates a mapping with a scoped implementation and a risk register record.
-     */
-    public RiskControlMapping(
+    /** Creates a mapping with a scoped implementation and a risk register record. */
+    public static RiskControlMapping forScopedRecord(
             Project project,
             ScopedControlImplementation scopedImplementation,
             RiskRegisterRecord riskRegisterRecord,
             MappingControlRole controlRole) {
-        this.project = project;
-        this.scopedImplementation = scopedImplementation;
-        this.riskRegisterRecord = riskRegisterRecord;
-        this.controlRole = controlRole;
+        RiskControlMapping m = new RiskControlMapping();
+        m.project = project;
+        m.scopedImplementation = scopedImplementation;
+        m.riskRegisterRecord = riskRegisterRecord;
+        m.controlRole = controlRole;
+        return m;
     }
 
     // ---- Control-side endpoint type (computed) ----

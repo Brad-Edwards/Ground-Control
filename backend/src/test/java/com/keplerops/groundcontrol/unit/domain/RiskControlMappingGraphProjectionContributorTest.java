@@ -63,7 +63,7 @@ class RiskControlMappingGraphProjectionContributorTest {
         var scenario = new RiskScenario(project, "RS-001", "Phishing", "A", "B", "C", "D");
         setField(scenario, "id", UUID.randomUUID());
 
-        var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+        var mapping = RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
         var mappingId = UUID.randomUUID();
         setField(mapping, "id", mappingId);
         mapping.setMappingObjective("Prevent attacks");
@@ -104,7 +104,7 @@ class RiskControlMappingGraphProjectionContributorTest {
         var scenarioId = UUID.randomUUID();
         setField(scenario, "id", scenarioId);
 
-        var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+        var mapping = RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
         var mappingId = UUID.randomUUID();
         setField(mapping, "id", mappingId);
 
@@ -127,15 +127,15 @@ class RiskControlMappingGraphProjectionContributorTest {
 
     @Test
     void contributeEdges_mapsScopedImplToRecord() {
-        var record = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
+        var riskRecord = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
         var recordId = UUID.randomUUID();
-        setField(record, "id", recordId);
+        setField(riskRecord, "id", recordId);
 
         var sci = new ScopedControlImplementation(project, "SCI-001", control, "Email Gateway");
         var sciId = UUID.randomUUID();
         setField(sci, "id", sciId);
 
-        var mapping = new RiskControlMapping(project, sci, record, MappingControlRole.DETECTIVE);
+        var mapping = RiskControlMapping.forScopedRecord(project, sci, riskRecord, MappingControlRole.DETECTIVE);
         var mappingId = UUID.randomUUID();
         setField(mapping, "id", mappingId);
 
@@ -157,7 +157,7 @@ class RiskControlMappingGraphProjectionContributorTest {
         var assetId = UUID.randomUUID();
         setField(asset, "id", assetId);
 
-        var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+        var mapping = RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
         setField(mapping, "id", UUID.randomUUID());
         mapping.setOperationalAsset(asset);
 
@@ -187,7 +187,7 @@ class RiskControlMappingGraphProjectionContributorTest {
                 Instant.parse("2026-05-01T00:00:00Z"));
         setField(observation, "id", UUID.randomUUID());
 
-        var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+        var mapping = RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
         setField(mapping, "id", UUID.randomUUID());
         mapping.addObservation(observation);
 
@@ -223,7 +223,7 @@ class RiskControlMappingGraphProjectionContributorTest {
         var scenario = new RiskScenario(project, "RS-001", "Phishing", "A", "B", "C", "D");
         setField(scenario, "id", UUID.randomUUID());
 
-        var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.DETECTIVE);
+        var mapping = RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.DETECTIVE);
         setField(mapping, "id", UUID.randomUUID());
 
         when(mappingRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(mapping));

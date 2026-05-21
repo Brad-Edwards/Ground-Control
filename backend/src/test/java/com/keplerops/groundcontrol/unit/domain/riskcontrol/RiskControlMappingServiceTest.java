@@ -383,7 +383,8 @@ class RiskControlMappingServiceTest {
 
         @Test
         void listByScenario_delegatesToRepository() {
-            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            var mapping =
+                    RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
             when(repository.findByProjectIdAndRiskScenarioId(projectId, scenarioId))
                     .thenReturn(List.of(mapping));
 
@@ -395,7 +396,8 @@ class RiskControlMappingServiceTest {
 
         @Test
         void listByControl_delegatesToRepository() {
-            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.DETECTIVE);
+            var mapping =
+                    RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.DETECTIVE);
             when(repository.findByProjectIdAndControlId(projectId, controlId)).thenReturn(List.of(mapping));
 
             var result = service.listByControl(projectId, controlId);
@@ -411,7 +413,8 @@ class RiskControlMappingServiceTest {
         @Test
         void updatesObjectiveAndRole() {
             var mappingId = UUID.randomUUID();
-            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            var mapping =
+                    RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
             setField(mapping, "id", mappingId);
 
             when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.of(mapping));
@@ -430,7 +433,8 @@ class RiskControlMappingServiceTest {
         @Test
         void updatesMappingScope() {
             var mappingId = UUID.randomUUID();
-            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            var mapping =
+                    RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
             setField(mapping, "id", mappingId);
 
             when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.of(mapping));
@@ -460,14 +464,14 @@ class RiskControlMappingServiceTest {
 
         @Test
         void createsMapping_controlToRecord() {
-            var record = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
+            var riskRecord = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
             var recordId = UUID.randomUUID();
-            setField(record, "id", recordId);
+            setField(riskRecord, "id", recordId);
 
             when(projectService.getById(projectId)).thenReturn(project);
             when(controlRepository.findByIdAndProjectId(controlId, projectId)).thenReturn(Optional.of(control));
             when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
-                    .thenReturn(Optional.of(record));
+                    .thenReturn(Optional.of(riskRecord));
             when(repository.existsByControlIdAndRiskRegisterRecordIdAndOperationalAssetId(controlId, recordId, null))
                     .thenReturn(false);
             when(repository.save(any(RiskControlMapping.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -488,15 +492,15 @@ class RiskControlMappingServiceTest {
             var result = service.create(cmd);
 
             assertThat(result.getControl()).isEqualTo(control);
-            assertThat(result.getRiskRegisterRecord()).isEqualTo(record);
+            assertThat(result.getRiskRegisterRecord()).isEqualTo(riskRecord);
             verify(repository).save(any(RiskControlMapping.class));
         }
 
         @Test
         void createsMapping_scopedImplToRecord() {
-            var record = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
+            var riskRecord = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
             var recordId = UUID.randomUUID();
-            setField(record, "id", recordId);
+            setField(riskRecord, "id", recordId);
 
             var sciId = UUID.randomUUID();
             var sci = new com.keplerops.groundcontrol.domain.riskcontrol.model.ScopedControlImplementation(
@@ -507,7 +511,7 @@ class RiskControlMappingServiceTest {
             when(scopedControlImplementationRepository.findByIdAndProjectId(sciId, projectId))
                     .thenReturn(Optional.of(sci));
             when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
-                    .thenReturn(Optional.of(record));
+                    .thenReturn(Optional.of(riskRecord));
             when(repository.existsByScopedImplementationIdAndRiskRegisterRecordIdAndOperationalAssetId(
                             sciId, recordId, null))
                     .thenReturn(false);
@@ -529,7 +533,7 @@ class RiskControlMappingServiceTest {
             var result = service.create(cmd);
 
             assertThat(result.getScopedImplementation()).isEqualTo(sci);
-            assertThat(result.getRiskRegisterRecord()).isEqualTo(record);
+            assertThat(result.getRiskRegisterRecord()).isEqualTo(riskRecord);
         }
 
         @Test
@@ -558,9 +562,9 @@ class RiskControlMappingServiceTest {
 
         @Test
         void throwsConflict_whenDuplicateScopedToRecordExists() {
-            var record = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
+            var riskRecord = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
             var recordId = UUID.randomUUID();
-            setField(record, "id", recordId);
+            setField(riskRecord, "id", recordId);
 
             var sciId = UUID.randomUUID();
             var sci = new com.keplerops.groundcontrol.domain.riskcontrol.model.ScopedControlImplementation(
@@ -571,7 +575,7 @@ class RiskControlMappingServiceTest {
             when(scopedControlImplementationRepository.findByIdAndProjectId(sciId, projectId))
                     .thenReturn(Optional.of(sci));
             when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
-                    .thenReturn(Optional.of(record));
+                    .thenReturn(Optional.of(riskRecord));
             when(repository.existsByScopedImplementationIdAndRiskRegisterRecordIdAndOperationalAssetId(
                             sciId, recordId, null))
                     .thenReturn(true);
@@ -599,7 +603,8 @@ class RiskControlMappingServiceTest {
         @Test
         void deleteRemovesMapping() {
             var mappingId = UUID.randomUUID();
-            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            var mapping =
+                    RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
             setField(mapping, "id", mappingId);
 
             when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.of(mapping));
@@ -620,7 +625,8 @@ class RiskControlMappingServiceTest {
         @Test
         void getById_returnsMapping() {
             var mappingId = UUID.randomUUID();
-            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            var mapping =
+                    RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
             setField(mapping, "id", mappingId);
 
             when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.of(mapping));
@@ -640,7 +646,8 @@ class RiskControlMappingServiceTest {
 
         @Test
         void listByProject_delegatesToRepository() {
-            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            var mapping =
+                    RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
             when(repository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(mapping));
 
             var result = service.listByProject(projectId);
@@ -651,9 +658,10 @@ class RiskControlMappingServiceTest {
         @Test
         void listByRecord_delegatesToRepository() {
             var recordId = UUID.randomUUID();
-            var record = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
-            setField(record, "id", recordId);
-            var mapping = new RiskControlMapping(project, control, record, MappingControlRole.PREVENTIVE, true);
+            var riskRecord = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
+            setField(riskRecord, "id", recordId);
+            var mapping =
+                    RiskControlMapping.forControlRecord(project, control, riskRecord, MappingControlRole.PREVENTIVE);
 
             when(repository.findByProjectIdAndRiskRegisterRecordId(projectId, recordId))
                     .thenReturn(List.of(mapping));
@@ -669,7 +677,7 @@ class RiskControlMappingServiceTest {
             var sci = new com.keplerops.groundcontrol.domain.riskcontrol.model.ScopedControlImplementation(
                     project, "SCI-001", control, "Email Gateway");
             setField(sci, "id", sciId);
-            var mapping = new RiskControlMapping(project, sci, scenario, MappingControlRole.PREVENTIVE, true);
+            var mapping = RiskControlMapping.forScopedScenario(project, sci, scenario, MappingControlRole.PREVENTIVE);
 
             when(repository.findByProjectIdAndScopedImplementationId(projectId, sciId))
                     .thenReturn(List.of(mapping));
@@ -686,7 +694,8 @@ class RiskControlMappingServiceTest {
         @Test
         void attachObservation_addsObservationToMapping() {
             var mappingId = UUID.randomUUID();
-            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            var mapping =
+                    RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
             setField(mapping, "id", mappingId);
 
             var asset = new OperationalAsset(project, "ASSET-001", "Server");
@@ -716,7 +725,8 @@ class RiskControlMappingServiceTest {
         @Test
         void detachObservation_removesObservationFromMapping() {
             var mappingId = UUID.randomUUID();
-            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            var mapping =
+                    RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
             setField(mapping, "id", mappingId);
 
             var asset = new OperationalAsset(project, "ASSET-001", "Server");
@@ -740,13 +750,14 @@ class RiskControlMappingServiceTest {
 
             var result = service.detachObservation(projectId, mappingId, observationId);
 
-            assertThat(result.getObservations()).doesNotContain(observation);
+            assertThat(result.getObservations()).isEmpty();
         }
 
         @Test
         void addEvidenceRef_addsRefToMapping() {
             var mappingId = UUID.randomUUID();
-            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            var mapping =
+                    RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
             setField(mapping, "id", mappingId);
 
             when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.of(mapping));
@@ -763,16 +774,18 @@ class RiskControlMappingServiceTest {
         @Test
         void attachObservation_throwsNotFound_whenMappingAbsent() {
             var mappingId = UUID.randomUUID();
+            var observationId = UUID.randomUUID();
             when(repository.findByIdAndProjectId(mappingId, projectId)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.attachObservation(projectId, mappingId, UUID.randomUUID()))
+            assertThatThrownBy(() -> service.attachObservation(projectId, mappingId, observationId))
                     .isInstanceOf(NotFoundException.class);
         }
 
         @Test
         void attachObservation_throwsNotFound_whenObservationAbsent() {
             var mappingId = UUID.randomUUID();
-            var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+            var mapping =
+                    RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
             setField(mapping, "id", mappingId);
             var observationId = UUID.randomUUID();
 

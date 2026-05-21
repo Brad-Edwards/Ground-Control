@@ -90,15 +90,15 @@ class RiskControlCoverageServiceTest {
         @Test
         void directMode_returnsDirectlyUnmappedRecords() {
             var recordId = UUID.randomUUID();
-            var record = makeRecord("RR-001");
-            setField(record, "id", recordId);
+            var riskRecord = makeRecord("RR-001");
+            setField(riskRecord, "id", recordId);
 
             when(mappingRepository.findDirectlyUnmappedRecordIds(projectId)).thenReturn(List.of(recordId));
             when(recordRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
-                    .thenReturn(List.of(record));
+                    .thenReturn(List.of(riskRecord));
 
             var result = service.findUnmappedRecords(projectId, false);
-            assertThat(result).containsExactly(record);
+            assertThat(result).containsExactly(riskRecord);
         }
 
         @Test
@@ -133,13 +133,13 @@ class RiskControlCoverageServiceTest {
             setField(scenario, "id", scenarioId);
 
             var recordId = UUID.randomUUID();
-            var record = makeRecord("RR-001");
-            setField(record, "id", recordId);
-            record.replaceRiskScenarios(List.of(scenario));
+            var riskRecord = makeRecord("RR-001");
+            setField(riskRecord, "id", recordId);
+            riskRecord.replaceRiskScenarios(List.of(scenario));
 
             when(mappingRepository.findDirectlyUnmappedRecordIds(projectId)).thenReturn(List.of(recordId));
             when(recordRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
-                    .thenReturn(List.of(record));
+                    .thenReturn(List.of(riskRecord));
             // Scenario IS mapped — not in unmapped list
             when(mappingRepository.findUnmappedScenarioIds(projectId)).thenReturn(List.of());
 
@@ -155,18 +155,18 @@ class RiskControlCoverageServiceTest {
             setField(scenario, "id", scenarioId);
 
             var recordId = UUID.randomUUID();
-            var record = makeRecord("RR-001");
-            setField(record, "id", recordId);
-            record.replaceRiskScenarios(List.of(scenario));
+            var riskRecord = makeRecord("RR-001");
+            setField(riskRecord, "id", recordId);
+            riskRecord.replaceRiskScenarios(List.of(scenario));
 
             when(mappingRepository.findDirectlyUnmappedRecordIds(projectId)).thenReturn(List.of(recordId));
             when(recordRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
-                    .thenReturn(List.of(record));
+                    .thenReturn(List.of(riskRecord));
             // Scenario is NOT mapped — still in unmapped list
             when(mappingRepository.findUnmappedScenarioIds(projectId)).thenReturn(List.of(scenarioId));
 
             var result = service.findUnmappedRecords(projectId, true);
-            assertThat(result).containsExactly(record);
+            assertThat(result).containsExactly(riskRecord);
         }
     }
 

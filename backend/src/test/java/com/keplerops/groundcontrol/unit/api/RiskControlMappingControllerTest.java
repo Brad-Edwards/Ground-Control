@@ -62,7 +62,7 @@ class RiskControlMappingControllerTest {
                 new RiskScenario(project, "RS-001", "Phishing", "Attacker", "Phishing email", "Users", "Data breach");
         setField(scenario, "id", SCENARIO_ID);
 
-        var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+        var mapping = RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
         mapping.setMappingObjective("Prevent credential theft");
         mapping.setMappingScope("Email gateway only");
         setField(mapping, "id", MAPPING_ID);

@@ -71,10 +71,10 @@ class RiskControlAnalysisControllerTest {
 
     @Test
     void unmappedRecords_C5b_returnsRecordList() throws Exception {
-        var record = new RiskRegisterRecord(project, "RR-001", "Risk Register Entry 1");
-        setField(record, "id", UUID.randomUUID());
+        var riskRecord = new RiskRegisterRecord(project, "RR-001", "Risk Register Entry 1");
+        setField(riskRecord, "id", UUID.randomUUID());
 
-        when(coverageService.findUnmappedRecords(PROJECT_ID, true)).thenReturn(List.of(record));
+        when(coverageService.findUnmappedRecords(PROJECT_ID, true)).thenReturn(List.of(riskRecord));
 
         mockMvc.perform(get("/api/v1/analysis/risk-control/unmapped-records")
                         .param("project", "ground-control")

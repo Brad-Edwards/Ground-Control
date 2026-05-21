@@ -55,7 +55,8 @@ class MethodologyInfluenceValidatorTest {
                                 "threatEventFrequency", Map.of("type", "number"),
                                 "lossEventFrequency", Map.of("type", "number"))));
 
-        assertThatThrownBy(() -> validator.validate(profile, Map.of("threatEventFrequency", 0.5)))
+        var influence = Map.<String, Object>of("threatEventFrequency", 0.5);
+        assertThatThrownBy(() -> validator.validate(profile, influence))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("lossEventFrequency");
     }
@@ -64,8 +65,8 @@ class MethodologyInfluenceValidatorTest {
     void unknownFieldThrowsValidationException() {
         profile.setInputSchema(Map.of("properties", Map.of("threatEventFrequency", Map.of("type", "number"))));
 
-        assertThatThrownBy(
-                        () -> validator.validate(profile, Map.of("threatEventFrequency", 0.5, "unknownField", "bad")))
+        var influence = Map.<String, Object>of("threatEventFrequency", 0.5, "unknownField", "bad");
+        assertThatThrownBy(() -> validator.validate(profile, influence))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("unknownField");
     }

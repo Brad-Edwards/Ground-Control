@@ -43,32 +43,37 @@ public class MethodologyInfluenceValidator {
         }
 
         var errors = new ArrayList<String>();
-
-        // Check required fields
-        if (schema.containsKey("required")) {
-            var required = (List<Object>) schema.get("required");
-            for (var req : required) {
-                if (!influence.containsKey(req.toString())) {
-                    errors.add("Missing required influence field: " + req);
-                }
-            }
-        }
-
-        // Check unknown keys (only when schema declares properties)
-        if (schema.containsKey("properties")) {
-            var properties = (Map<String, Object>) schema.get("properties");
-            for (var key : influence.keySet()) {
-                if (!properties.containsKey(key)) {
-                    errors.add("Unknown influence field not declared in schema: " + key);
-                }
-            }
-        }
+        checkRequiredFields((List<Object>) schema.get("required"), influence, errors);
+        checkUnknownFields((Map<String, Object>) schema.get("properties"), influence, errors);
 
         if (!errors.isEmpty()) {
             throw new DomainValidationException(
                     "Methodology influence payload failed schema validation: " + errors,
                     "methodology_influence_validation_error",
                     Map.of("errors", String.join("; ", errors), "profileKey", profile.getProfileKey()));
+        }
+    }
+
+    private void checkRequiredFields(List<Object> required, Map<String, Object> influence, List<String> errors) {
+        if (required == null) {
+            return;
+        }
+        for (var req : required) {
+            if (!influence.containsKey(req.toString())) {
+                errors.add("Missing required influence field: " + req);
+            }
+        }
+    }
+
+    private void checkUnknownFields(
+            Map<String, Object> properties, Map<String, Object> influence, List<String> errors) {
+        if (properties == null) {
+            return;
+        }
+        for (var key : influence.keySet()) {
+            if (!properties.containsKey(key)) {
+                errors.add("Unknown influence field not declared in schema: " + key);
+            }
         }
     }
 }

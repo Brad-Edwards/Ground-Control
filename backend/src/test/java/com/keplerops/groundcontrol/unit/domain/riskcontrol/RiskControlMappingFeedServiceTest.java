@@ -82,7 +82,7 @@ class RiskControlMappingFeedServiceTest {
         var assessmentResultId = UUID.randomUUID();
         var result = makeAssessmentResult(assessmentResultId);
 
-        var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+        var mapping = RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
         var mappingId = UUID.randomUUID();
         setField(mapping, "id", mappingId);
         setField(mapping, "createdAt", Instant.now());
@@ -140,7 +140,7 @@ class RiskControlMappingFeedServiceTest {
         var assessmentResultId = UUID.randomUUID();
         var result = makeAssessmentResult(assessmentResultId);
 
-        var mapping = new RiskControlMapping(project, control, scenario, MappingControlRole.PREVENTIVE);
+        var mapping = RiskControlMapping.forControlScenario(project, control, scenario, MappingControlRole.PREVENTIVE);
         var mappingId = UUID.randomUUID();
         setField(mapping, "id", mappingId);
         setField(mapping, "createdAt", Instant.now());

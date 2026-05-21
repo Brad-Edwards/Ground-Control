@@ -35,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class RiskControlMappingService {
 
     private static final Logger log = LoggerFactory.getLogger(RiskControlMappingService.class);
+    private static final String MAPPING_NOT_FOUND = "RiskControlMapping not found: ";
 
     private final RiskControlMappingRepository repository;
     private final ScopedControlImplementationRepository sciRepository;
@@ -89,19 +90,18 @@ public class RiskControlMappingService {
                         .orElseThrow(() -> new NotFoundException(
                                 "RiskScenario not found in project: " + command.riskScenarioId()));
 
-                checkDuplicate(command.controlId(), null, command.riskScenarioId(), null, command.operationalAssetId());
+                checkDuplicate(command.controlId(), command.riskScenarioId(), null, command.operationalAssetId());
 
-                mapping = new RiskControlMapping(project, control, scenario, command.controlRole());
+                mapping = RiskControlMapping.forControlScenario(project, control, scenario, command.controlRole());
             } else {
-                var record = riskRegisterRecordRepository
+                var riskRecord = riskRegisterRecordRepository
                         .findByIdAndProjectIdWithScenarios(command.riskRegisterRecordId(), project.getId())
                         .orElseThrow(() -> new NotFoundException(
                                 "RiskRegisterRecord not found in project: " + command.riskRegisterRecordId()));
 
-                checkDuplicate(
-                        command.controlId(), null, null, command.riskRegisterRecordId(), command.operationalAssetId());
+                checkDuplicate(command.controlId(), null, command.riskRegisterRecordId(), command.operationalAssetId());
 
-                mapping = new RiskControlMapping(project, control, record, command.controlRole(), true);
+                mapping = RiskControlMapping.forControlRecord(project, control, riskRecord, command.controlRole());
             }
         } else {
             var sci = sciRepository
@@ -118,9 +118,9 @@ public class RiskControlMappingService {
                 checkDuplicateScoped(
                         command.scopedImplementationId(), command.riskScenarioId(), null, command.operationalAssetId());
 
-                mapping = new RiskControlMapping(project, sci, scenario, command.controlRole(), true);
+                mapping = RiskControlMapping.forScopedScenario(project, sci, scenario, command.controlRole());
             } else {
-                var record = riskRegisterRecordRepository
+                var riskRecord = riskRegisterRecordRepository
                         .findByIdAndProjectIdWithScenarios(command.riskRegisterRecordId(), project.getId())
                         .orElseThrow(() -> new NotFoundException(
                                 "RiskRegisterRecord not found in project: " + command.riskRegisterRecordId()));
@@ -131,7 +131,7 @@ public class RiskControlMappingService {
                         command.riskRegisterRecordId(),
                         command.operationalAssetId());
 
-                mapping = new RiskControlMapping(project, sci, record, command.controlRole());
+                mapping = RiskControlMapping.forScopedRecord(project, sci, riskRecord, command.controlRole());
             }
         }
 
@@ -176,7 +176,7 @@ public class RiskControlMappingService {
     public RiskControlMapping update(UpdateRiskControlMappingCommand command) {
         var mapping = repository
                 .findByIdAndProjectId(command.mappingId(), command.projectId())
-                .orElseThrow(() -> new NotFoundException("RiskControlMapping not found: " + command.mappingId()));
+                .orElseThrow(() -> new NotFoundException(MAPPING_NOT_FOUND + command.mappingId()));
 
         if (command.controlRole() != null) {
             mapping.setControlRole(command.controlRole());
@@ -209,7 +209,7 @@ public class RiskControlMappingService {
     public void delete(UUID projectId, UUID mappingId) {
         var mapping = repository
                 .findByIdAndProjectId(mappingId, projectId)
-                .orElseThrow(() -> new NotFoundException("RiskControlMapping not found: " + mappingId));
+                .orElseThrow(() -> new NotFoundException(MAPPING_NOT_FOUND + mappingId));
         repository.delete(mapping);
         log.info("risk_control_mapping_deleted: id={} project={}", mappingId, projectId);
     }
@@ -218,7 +218,7 @@ public class RiskControlMappingService {
     public RiskControlMapping getById(UUID projectId, UUID mappingId) {
         return repository
                 .findByIdAndProjectId(mappingId, projectId)
-                .orElseThrow(() -> new NotFoundException("RiskControlMapping not found: " + mappingId));
+                .orElseThrow(() -> new NotFoundException(MAPPING_NOT_FOUND + mappingId));
     }
 
     @Transactional(readOnly = true)
@@ -251,7 +251,7 @@ public class RiskControlMappingService {
     public RiskControlMapping attachObservation(UUID projectId, UUID mappingId, UUID observationId) {
         var mapping = repository
                 .findByIdAndProjectId(mappingId, projectId)
-                .orElseThrow(() -> new NotFoundException("RiskControlMapping not found: " + mappingId));
+                .orElseThrow(() -> new NotFoundException(MAPPING_NOT_FOUND + mappingId));
         var observation = observationRepository
                 .findByIdWithAssetAndProjectId(observationId, projectId)
                 .orElseThrow(() -> new NotFoundException("Observation not found in project: " + observationId));
@@ -262,7 +262,7 @@ public class RiskControlMappingService {
     public RiskControlMapping detachObservation(UUID projectId, UUID mappingId, UUID observationId) {
         var mapping = repository
                 .findByIdAndProjectId(mappingId, projectId)
-                .orElseThrow(() -> new NotFoundException("RiskControlMapping not found: " + mappingId));
+                .orElseThrow(() -> new NotFoundException(MAPPING_NOT_FOUND + mappingId));
         var observation = observationRepository
                 .findByIdWithAssetAndProjectId(observationId, projectId)
                 .orElseThrow(() -> new NotFoundException("Observation not found in project: " + observationId));
@@ -275,7 +275,7 @@ public class RiskControlMappingService {
     public RiskControlMapping addEvidenceRef(UUID projectId, UUID mappingId, MappingEvidenceRef ref) {
         var mapping = repository
                 .findByIdAndProjectId(mappingId, projectId)
-                .orElseThrow(() -> new NotFoundException("RiskControlMapping not found: " + mappingId));
+                .orElseThrow(() -> new NotFoundException(MAPPING_NOT_FOUND + mappingId));
         mapping.addEvidenceRef(ref);
         return repository.save(mapping);
     }
@@ -318,7 +318,7 @@ public class RiskControlMappingService {
         }
     }
 
-    private void checkDuplicate(UUID controlId, UUID scopedId, UUID scenarioId, UUID recordId, UUID assetId) {
+    private void checkDuplicate(UUID controlId, UUID scenarioId, UUID recordId, UUID assetId) {
         boolean exists = false;
         if (controlId != null && scenarioId != null) {
             exists = repository.existsByControlIdAndRiskScenarioIdAndOperationalAssetId(controlId, scenarioId, assetId);
