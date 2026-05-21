@@ -10,7 +10,7 @@ import {
   RISK_SCENARIO_STATUSES,
   RISK_SCENARIO_LINK_TARGET_TYPES, RISK_SCENARIO_LINK_TYPES,
   createRiskScenario, updateRiskScenario, deleteRiskScenario,
-  transitionRiskScenarioStatus, getRiskScenarioRequirements,
+  transitionRiskScenarioStatus, getRiskScenarioRequirements, getRiskScenarioTrace,
   createRiskScenarioLink, deleteRiskScenarioLink,
   pick, reqArg,
 } from "./lib.js";
@@ -20,7 +20,7 @@ import {
 } from "./link-create.js";
 
 export const GC_RISK_SCENARIO_ACTIONS = [
-  "create", "update", "delete", "transition", "requirements",
+  "create", "update", "delete", "transition", "requirements", "trace",
   "link_create", "link_delete",
 ];
 
@@ -74,6 +74,9 @@ export const GC_RISK_SCENARIO_DESCRIPTION =
   `create requires: ${GC_RISK_SCENARIO_CREATE_REQUIRED_FIELDS.join(", ")} ` +
   `(and accepts optional vulnerability). update accepts the same fields minus uid, all optional. ` +
   `status is consumed only by the transition action (creation defaults to DRAFT). ` +
+  `requirements returns all requirements linked to the risk scenario (requires id). ` +
+  `trace returns the full end-to-end trace: assets, controls, requirements, and per-requirement ` +
+  `implementing artifacts (requires id). ` +
   `link_create requires target_type + link_type; for internal target types ` +
   `(OBSERVATION / ASSET / REQUIREMENT / RISK_REGISTER_RECORD / RISK_ASSESSMENT_RESULT / ` +
   `TREATMENT_PLAN / METHODOLOGY_PROFILE / CONTROL / THREAT_MODEL / FINDING / AUDIT_RECORD / ` +
@@ -110,6 +113,10 @@ export async function gcRiskScenarioToolHandler(args) {
     case "requirements": {
       reqArg(args, "id", "requirements");
       return getRiskScenarioRequirements(args.id, args.project);
+    }
+    case "trace": {
+      reqArg(args, "id", "trace");
+      return getRiskScenarioTrace(args.id, args.project);
     }
     case "link_create": {
       return performLinkCreate(args, "scenario_id", createRiskScenarioLink);

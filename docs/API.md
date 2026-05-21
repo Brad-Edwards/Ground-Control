@@ -921,6 +921,7 @@ must be non-blank), `reason` (optional, max 500).
 | DELETE | `/threat-models/{id}` | — | 204 | Delete threat model (cascades to links) |
 | PUT | `/threat-models/{id}/status` | `{"status": "ACTIVE"}` | 200 | Transition lifecycle status |
 | GET | `/threat-models/{id}/requirements` | — | 200 | List requirements linked to a threat model |
+| GET | `/threat-models/{id}/trace` | — | 200 | End-to-end security trace: assets, controls, requirements, and per-requirement implementing artifacts |
 | POST | `/threat-models/{id}/links` | ThreatModelLinkRequest | 201 | Create threat-model link |
 | GET | `/threat-models/{id}/links` | — | 200 | List links for a threat model |
 | DELETE | `/threat-models/{id}/links/{linkId}` | — | 204 | Delete threat-model link |
@@ -933,6 +934,11 @@ if absent.
 Threat models are a separate aggregate from risk scenarios per ADR-024. They capture
 upstream security analysis (source, event, effect) and do not carry quantified risk,
 treatment, or governance state.
+
+`GET /{id}/trace` returns a `SecurityTraceResponse` with `sourceType` (`THREAT_MODEL`), `sourceId`, `sourceUid`,
+`sourceTitle`, `assets[]`, `controls[]`, and `requirements[]`. Each requirement entry carries `requirement`
+(full requirement record) and `artifacts[]` (the `TraceabilityLink` rows recording implementing code, PRs,
+issues, and controls). Unknown `id` → 404 `not_found`.
 
 `DELETE /threat-models/{id}` is rejected with 409 `threat_model_referenced` while any
 `AssetLink` (`THREAT_MODEL_ENTRY` target) or `RiskScenarioLink` (`THREAT_MODEL` target)
@@ -979,6 +985,32 @@ ASSESSED_IN (threat feeds a risk scenario or assessment), OBSERVED_IN (threat
 evidenced by an observation, verification, or vulnerability finding), DOCUMENTED_IN
 (threat documented in an architecture model, code, or issue), ASSOCIATED (generic
 association).
+
+**Lifecycle states:** DRAFT → ACTIVE → ARCHIVED (and DRAFT → ARCHIVED directly).
+
+### Risk Scenarios
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/risk-scenarios` | RiskScenarioRequest | 201 | Create risk scenario |
+| GET | `/risk-scenarios` | — | 200 | List risk scenarios for a project |
+| GET | `/risk-scenarios/{id}` | — | 200 | Get risk scenario by UUID |
+| GET | `/risk-scenarios/uid/{uid}` | — | 200 | Get risk scenario by UID |
+| PUT | `/risk-scenarios/{id}` | UpdateRiskScenarioRequest | 200 | Update mutable fields |
+| DELETE | `/risk-scenarios/{id}` | — | 204 | Delete risk scenario |
+| PUT | `/risk-scenarios/{id}/status` | `{"status": "ACTIVE"}` | 200 | Transition lifecycle status |
+| GET | `/risk-scenarios/{id}/requirements` | — | 200 | List requirements linked to a risk scenario |
+| GET | `/risk-scenarios/{id}/trace` | — | 200 | End-to-end security trace: assets, controls, requirements, and per-requirement implementing artifacts |
+| POST | `/risk-scenarios/{id}/links` | RiskScenarioLinkRequest | 201 | Create risk-scenario link |
+| GET | `/risk-scenarios/{id}/links` | — | 200 | List links for a risk scenario |
+| DELETE | `/risk-scenarios/{id}/links/{linkId}` | — | 204 | Delete risk-scenario link |
+
+All endpoints accept an optional `project` query parameter (required in multi-project deployments).
+
+`GET /{id}/trace` returns a `SecurityTraceResponse` with `sourceType` (`RISK_SCENARIO`), `sourceId`, `sourceUid`,
+`sourceTitle`, `assets[]`, `controls[]`, and `requirements[]`. Each requirement entry carries `requirement`
+(full requirement record) and `artifacts[]` (the `TraceabilityLink` rows recording implementing code, PRs,
+issues, and controls). Unknown `id` → 404 `not_found`.
 
 **Lifecycle states:** DRAFT → ACTIVE → ARCHIVED (and DRAFT → ARCHIVED directly).
 
