@@ -9390,6 +9390,107 @@ export async function deleteTreatmentPlan(id, project) {
 }
 
 // ---------------------------------------------------------------------------
+// Risk-Control Mapping API functions (GC-T003 / ADR-052)
+// ---------------------------------------------------------------------------
+
+export const MAPPING_CONTROL_ROLES = [
+  "PREVENTIVE", "DETECTIVE", "CORRECTIVE", "DETERRENT",
+  "COMPENSATING", "RECOVERY", "DIRECTIVE",
+];
+
+// --- Scoped Control Implementations ---
+
+export async function createScopedControlImplementation(data, project) {
+  return request("POST", "/api/v1/scoped-control-implementations", { body: data, params: { project } });
+}
+
+export async function listScopedControlImplementations(project) {
+  return request("GET", "/api/v1/scoped-control-implementations", { params: { project } });
+}
+
+export async function getScopedControlImplementation(id, project) {
+  return request("GET", `/api/v1/scoped-control-implementations/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function updateScopedControlImplementation(id, data, project) {
+  return request("PUT", `/api/v1/scoped-control-implementations/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function deleteScopedControlImplementation(id, project) {
+  await request("DELETE", `/api/v1/scoped-control-implementations/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+// --- Risk-Control Mappings ---
+
+export async function createRiskControlMapping(data, project) {
+  return request("POST", "/api/v1/risk-control-mappings", { body: data, params: { project } });
+}
+
+export async function listRiskControlMappings(project) {
+  return request("GET", "/api/v1/risk-control-mappings", { params: { project } });
+}
+
+export async function getRiskControlMapping(id, project) {
+  return request("GET", `/api/v1/risk-control-mappings/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function updateRiskControlMapping(id, data, project) {
+  return request("PUT", `/api/v1/risk-control-mappings/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function deleteRiskControlMapping(id, project) {
+  await request("DELETE", `/api/v1/risk-control-mappings/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function attachMappingObservation(mappingId, observationId, project) {
+  return request("POST", `/api/v1/risk-control-mappings/${encodeURIComponent(mappingId)}/observations`, {
+    body: { observationId },
+    params: { project },
+  });
+}
+
+export async function detachMappingObservation(mappingId, observationId, project) {
+  return request("DELETE",
+    `/api/v1/risk-control-mappings/${encodeURIComponent(mappingId)}/observations/${encodeURIComponent(observationId)}`,
+    { params: { project } });
+}
+
+export async function addMappingEvidenceRef(mappingId, data, project) {
+  return request("POST", `/api/v1/risk-control-mappings/${encodeURIComponent(mappingId)}/evidence`, {
+    body: data,
+    params: { project },
+  });
+}
+
+// --- Risk-Control Coverage Analysis ---
+
+export async function getUnmappedScenarios(project) {
+  return request("GET", "/api/v1/analysis/risk-control/unmapped-scenarios", { params: { project } });
+}
+
+export async function getUnmappedRecords(project, transitive = true) {
+  return request("GET", "/api/v1/analysis/risk-control/unmapped-records", {
+    params: { project, transitive },
+  });
+}
+
+export async function getUnmappedControls(project) {
+  return request("GET", "/api/v1/analysis/risk-control/unmapped-controls", { params: { project } });
+}
+
+export async function getAssessmentFeed(assessmentResultId, project) {
+  return request("GET", `/api/v1/analysis/risk-control/assessment-feed/${encodeURIComponent(assessmentResultId)}`, {
+    params: { project },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Verification Result constants & API functions
 // ---------------------------------------------------------------------------
 

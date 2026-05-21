@@ -16,6 +16,9 @@ public interface RiskAssessmentResultRepository extends JpaRepository<RiskAssess
     Optional<RiskAssessmentResult> findByIdAndProjectIdWithObservations(
             @Param("id") UUID id, @Param("projectId") UUID projectId);
 
+    @Query("SELECT r FROM RiskAssessmentResult r WHERE r.id = :id AND r.project.id = :projectId")
+    Optional<RiskAssessmentResult> findByIdAndProjectId(@Param("id") UUID id, @Param("projectId") UUID projectId);
+
     @Query("SELECT (COUNT(r) > 0) FROM RiskAssessmentResult r WHERE r.id = :id AND r.project.id = :projectId")
     boolean existsByIdAndProjectId(@Param("id") UUID id, @Param("projectId") UUID projectId);
 

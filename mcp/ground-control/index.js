@@ -31,7 +31,7 @@
 //   Consolidated entity tools (one per entity, action-discriminated):
 //     gc_requirement, gc_relation, gc_adr, gc_document, gc_section,
 //     gc_asset, gc_observation, gc_risk_scenario, gc_threat_model,
-//     gc_control, gc_risk_governance, gc_analyze, gc_graph, gc_baseline,
+//     gc_control, gc_risk_governance, gc_risk_control_mapping, gc_analyze, gc_graph, gc_baseline,
 //     gc_quality_gate, gc_admin, gc_pack
 //
 // Pure GETs (history, timeline, exports, list-by-X) are NOT registered as
@@ -132,6 +132,15 @@ import {
   deleteRiskAssessmentResult,
   createTreatmentPlan, listTreatmentPlans, getTreatmentPlan, updateTreatmentPlan,
   transitionTreatmentPlanStatus, deleteTreatmentPlan,
+  // ---- risk-control mapping (GC-T003 / ADR-052) ----
+  createScopedControlImplementation, listScopedControlImplementations,
+  getScopedControlImplementation, updateScopedControlImplementation,
+  deleteScopedControlImplementation,
+  createRiskControlMapping, listRiskControlMappings, getRiskControlMapping,
+  updateRiskControlMapping, deleteRiskControlMapping,
+  attachMappingObservation, detachMappingObservation, addMappingEvidenceRef,
+  getUnmappedScenarios, getUnmappedRecords, getUnmappedControls, getAssessmentFeed,
+  MAPPING_CONTROL_ROLES,
   createVerificationResult, listVerificationResults, getVerificationResult,
   updateVerificationResult, deleteVerificationResult,
   // ---- packs + plugins ----
@@ -2357,6 +2366,132 @@ server.tool(
   async (args) => {
     try {
       const result = await gcRiskGovernanceToolHandler(args);
+      return ok(result === null ? "Deleted" : JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_risk_control_mapping: risk-control mapping aggregate (GC-T003 / ADR-052).
+// Covers ScopedControlImplementation CRUD, RiskControlMapping CRUD + observation/evidence
+// management, and coverage-analysis queries (C5a, C5b, C6, C7/C8 feed).
+const RISK_CONTROL_MAPPING_ACTIONS = [
+  // SCI
+  "sci-create", "sci-update", "sci-delete",
+  // Mapping CRUD
+  "create", "update", "delete",
+  // Mapping observation/evidence (C8)
+  "attach-observation", "detach-observation", "add-evidence",
+  // Coverage queries
+  "unmapped-scenarios", "unmapped-records", "unmapped-controls", "assessment-feed",
+];
+server.tool(
+  "gc_risk_control_mapping",
+  `Risk-control mapping operations (GC-T003 / ADR-052). ` +
+    `Actions: ${RISK_CONTROL_MAPPING_ACTIONS.join(", ")}. ` +
+    `Reads (list, get) route through gc_query. ` +
+    `control_role values: ${MAPPING_CONTROL_ROLES.join(", ")}.`,
+  {
+    action: z.enum(RISK_CONTROL_MAPPING_ACTIONS),
+    id: z.string().uuid().optional(),
+    project: z.string().optional(),
+    // SCI fields
+    uid: z.string().max(50).optional(),
+    control_id: z.string().uuid().optional(),
+    name: z.string().max(200).optional(),
+    implementation_scope: z.string().optional(),
+    // Mapping fields
+    scoped_implementation_id: z.string().uuid().optional(),
+    risk_scenario_id: z.string().uuid().optional(),
+    risk_register_record_id: z.string().uuid().optional(),
+    operational_asset_id: z.string().uuid().optional(),
+    control_role: z.enum(MAPPING_CONTROL_ROLES).optional(),
+    mapping_objective: z.string().optional(),
+    mapping_scope: z.string().optional(),
+    methodology_profile_id: z.string().uuid().optional(),
+    methodology_influence: z.record(z.unknown()).optional(),
+    // C8 fields
+    observation_id: z.string().uuid().optional(),
+    evidence_ref: z.string().optional(),
+    evidence_note: z.string().optional(),
+    evidence_artifact_id: z.string().uuid().optional(),
+    // Coverage query options
+    transitive: z.boolean().optional(),
+    assessment_result_id: z.string().uuid().optional(),
+  },
+  async (args) => {
+    try {
+      const p = args.project;
+      let result;
+      switch (args.action) {
+        // ---- SCI ----
+        case "sci-create":
+          result = await createScopedControlImplementation({
+            uid: reqArg(args, "uid"), controlId: reqArg(args, "control_id"),
+            name: reqArg(args, "name"), implementationScope: args.implementation_scope,
+            operationalAssetId: args.operational_asset_id,
+          }, p);
+          break;
+        case "sci-update":
+          result = await updateScopedControlImplementation(reqArg(args, "id"), pick(args, {
+            name: "name", implementationScope: "implementation_scope",
+            operationalAssetId: "operational_asset_id",
+          }), p);
+          break;
+        case "sci-delete":
+          await deleteScopedControlImplementation(reqArg(args, "id"), p);
+          return ok("Deleted");
+        // ---- Mapping CRUD ----
+        case "create":
+          result = await createRiskControlMapping({
+            controlId: args.control_id, scopedImplementationId: args.scoped_implementation_id,
+            riskScenarioId: args.risk_scenario_id, riskRegisterRecordId: args.risk_register_record_id,
+            operationalAssetId: args.operational_asset_id,
+            controlRole: reqArg(args, "control_role"),
+            mappingObjective: args.mapping_objective, mappingScope: args.mapping_scope,
+            methodologyProfileId: args.methodology_profile_id,
+            methodologyInfluence: args.methodology_influence,
+          }, p);
+          break;
+        case "update":
+          result = await updateRiskControlMapping(reqArg(args, "id"), pick(args, {
+            controlRole: "control_role", mappingObjective: "mapping_objective",
+            mappingScope: "mapping_scope", methodologyProfileId: "methodology_profile_id",
+            methodologyInfluence: "methodology_influence",
+          }), p);
+          break;
+        case "delete":
+          await deleteRiskControlMapping(reqArg(args, "id"), p);
+          return ok("Deleted");
+        // ---- C8 ----
+        case "attach-observation":
+          result = await attachMappingObservation(reqArg(args, "id"), reqArg(args, "observation_id"), p);
+          break;
+        case "detach-observation":
+          result = await detachMappingObservation(reqArg(args, "id"), reqArg(args, "observation_id"), p);
+          break;
+        case "add-evidence":
+          result = await addMappingEvidenceRef(reqArg(args, "id"), {
+            evidenceRef: reqArg(args, "evidence_ref"),
+            evidenceNote: args.evidence_note,
+            evidenceArtifactId: args.evidence_artifact_id,
+          }, p);
+          break;
+        // ---- Coverage queries ----
+        case "unmapped-scenarios":
+          result = await getUnmappedScenarios(p);
+          break;
+        case "unmapped-records":
+          result = await getUnmappedRecords(p, args.transitive !== false);
+          break;
+        case "unmapped-controls":
+          result = await getUnmappedControls(p);
+          break;
+        case "assessment-feed":
+          result = await getAssessmentFeed(reqArg(args, "assessment_result_id"), p);
+          break;
+        default:
+          throw new Error(`Unknown action: ${args.action}`);
+      }
       return ok(result === null ? "Deleted" : JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },

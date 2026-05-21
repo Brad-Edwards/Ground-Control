@@ -20,6 +20,23 @@ export const CONTROL_FUNCTIONS: ControlFunction[] = [
   "CORRECTIVE",
   "COMPENSATING",
 ];
+export type MappingControlRole =
+  | "PREVENTIVE"
+  | "DETECTIVE"
+  | "CORRECTIVE"
+  | "DETERRENT"
+  | "COMPENSATING"
+  | "RECOVERY"
+  | "DIRECTIVE";
+export const MAPPING_CONTROL_ROLES: MappingControlRole[] = [
+  "PREVENTIVE",
+  "DETECTIVE",
+  "CORRECTIVE",
+  "DETERRENT",
+  "COMPENSATING",
+  "RECOVERY",
+  "DIRECTIVE",
+];
 export type RequirementType =
   | "FUNCTIONAL"
   | "NON_FUNCTIONAL"
