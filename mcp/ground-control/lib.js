@@ -6508,6 +6508,7 @@ export async function runTestQualityReview({
     cap: decision.cap,
     finding_count: findings.length,
     findings,
+    architectural_read: parsed.envelope?.architectural_read,
     next_action: nextAction,
     findings_comment_url: markerWriteResult.recordUrl,
     changed_test_files: changedTestFiles,
@@ -7162,8 +7163,8 @@ export async function runCodexReview({
         issueNumber: recordIssueNumber,
         prNumber: uncommitted ? null : effectivePr,
         branch: prePushOwnership ? prePushOwnership.branchName : null,
-        coreReviewText: core.body,
-        securityReviewText: security.body,
+        coreReviewText: renderReviewerEnvelope(core),
+        securityReviewText: renderReviewerEnvelope(security),
         postedComments: comments,
       });
       // #804 review-cycle-1 finding 2: route the rendered body through the
@@ -7344,6 +7345,13 @@ export async function runCodexReview({
     error: partialFailure ? "review_partial_failure" : undefined,
     finding_count: comments.length,
     comments,
+    // architectural_read merges both reviewers' reads for the decision record
+    // (issue #966). `verdict` is intentionally NOT surfaced for the cycle
+    // wrapper: the decision-record consistency validator keys structural
+    // blocking on `classification === "class"` only, so a codex `don't-ship`
+    // justified by a one-off structural_blocker would fail validation. The
+    // findings list already conveys the outcome.
+    architectural_read: mergeReviewerArchitecturalReads(core, security),
     post_failures: postFailures,
     parse_errors: parseErrors,
     core_review_text: core.body,
@@ -7514,6 +7522,62 @@ function chunkText(text, chunkSize) {
 // a continuation header.
 //
 // Pure function: testable without IO.
+// Render a parsed reviewer envelope ({verdict, architectural_read, blocking,
+// notes}) into the Markdown the durable findings record shows. Post-#931 codex
+// writes its substance INSIDE the ===REVIEW=== block, so `body` (the prose
+// before the block) is ~always empty — feeding `body` to the findings-record
+// renderer made the comment show `## Core review _(empty)_` regardless of what
+// codex returned (issue #966, ex-#965). Rendering the parsed envelope is what
+// makes the findings comment actually show the review. Falls back to the raw
+// `body` when the envelope is absent (parse failure).
+export function renderReviewerEnvelope(reviewer) {
+  const env = reviewer?.envelope;
+  if (!env || typeof env !== "object") {
+    return typeof reviewer?.body === "string" ? reviewer.body.trim() : "";
+  }
+  const lines = [];
+  if (typeof env.verdict === "string" && env.verdict !== "") {
+    lines.push(`**Verdict:** \`${env.verdict}\``, "");
+  }
+  if (typeof env.architectural_read === "string" && env.architectural_read.trim() !== "") {
+    lines.push(env.architectural_read.trim(), "");
+  }
+  const blocking = Array.isArray(env.blocking) ? env.blocking : [];
+  if (blocking.length === 0) {
+    lines.push("_No blocking findings._");
+  } else {
+    lines.push(`**Blocking findings (${blocking.length}):**`, "");
+    blocking.forEach((f, i) => {
+      const cls = f?.classification === "class" ? "class" : "one-off";
+      let loc = "";
+      if (typeof f?.path === "string" && f.path !== "") {
+        loc = typeof f?.line === "number" ? ` — \`${f.path}:${f.line}\`` : ` — \`${f.path}\``;
+      }
+      lines.push(`${i + 1}. **[${cls}]** ${f?.title ?? "(no title)"}${loc}`);
+      if (typeof f?.body === "string" && f.body.trim() !== "") {
+        lines.push(`   ${f.body.trim().replace(/\n/g, "\n   ")}`);
+      }
+    });
+  }
+  return lines.join("\n").trim();
+}
+
+// Merge the core + security reviewers' architectural_read into one string for
+// the decision record. Each reviewer's read is required-non-empty by
+// validateReviewEnvelope; returns undefined only when neither envelope parsed.
+export function mergeReviewerArchitecturalReads(core, security) {
+  const parts = [];
+  const coreRead = core?.envelope?.architectural_read;
+  const secRead = security?.envelope?.architectural_read;
+  if (typeof coreRead === "string" && coreRead.trim() !== "") {
+    parts.push(`**Core reviewer:** ${coreRead.trim()}`);
+  }
+  if (typeof secRead === "string" && secRead.trim() !== "") {
+    parts.push(`**Security reviewer:** ${secRead.trim()}`);
+  }
+  return parts.length > 0 ? parts.join("\n\n") : undefined;
+}
+
 export function buildCodexReviewFindingsComments({
   cycleNumber,
   cap,
@@ -9387,6 +9451,107 @@ export async function transitionTreatmentPlanStatus(id, status, project) {
 
 export async function deleteTreatmentPlan(id, project) {
   await request("DELETE", `/api/v1/treatment-plans/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+// ---------------------------------------------------------------------------
+// Risk-Control Mapping API functions (GC-T003 / ADR-052)
+// ---------------------------------------------------------------------------
+
+export const MAPPING_CONTROL_ROLES = [
+  "PREVENTIVE", "DETECTIVE", "CORRECTIVE", "DETERRENT",
+  "COMPENSATING", "RECOVERY", "DIRECTIVE",
+];
+
+// --- Scoped Control Implementations ---
+
+export async function createScopedControlImplementation(data, project) {
+  return request("POST", "/api/v1/scoped-control-implementations", { body: data, params: { project } });
+}
+
+export async function listScopedControlImplementations(project) {
+  return request("GET", "/api/v1/scoped-control-implementations", { params: { project } });
+}
+
+export async function getScopedControlImplementation(id, project) {
+  return request("GET", `/api/v1/scoped-control-implementations/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function updateScopedControlImplementation(id, data, project) {
+  return request("PUT", `/api/v1/scoped-control-implementations/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function deleteScopedControlImplementation(id, project) {
+  await request("DELETE", `/api/v1/scoped-control-implementations/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+// --- Risk-Control Mappings ---
+
+export async function createRiskControlMapping(data, project) {
+  return request("POST", "/api/v1/risk-control-mappings", { body: data, params: { project } });
+}
+
+export async function listRiskControlMappings(project) {
+  return request("GET", "/api/v1/risk-control-mappings", { params: { project } });
+}
+
+export async function getRiskControlMapping(id, project) {
+  return request("GET", `/api/v1/risk-control-mappings/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function updateRiskControlMapping(id, data, project) {
+  return request("PUT", `/api/v1/risk-control-mappings/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function deleteRiskControlMapping(id, project) {
+  await request("DELETE", `/api/v1/risk-control-mappings/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function attachMappingObservation(mappingId, observationId, project) {
+  return request("POST", `/api/v1/risk-control-mappings/${encodeURIComponent(mappingId)}/observations`, {
+    body: { observationId },
+    params: { project },
+  });
+}
+
+export async function detachMappingObservation(mappingId, observationId, project) {
+  return request("DELETE",
+    `/api/v1/risk-control-mappings/${encodeURIComponent(mappingId)}/observations/${encodeURIComponent(observationId)}`,
+    { params: { project } });
+}
+
+export async function addMappingEvidenceRef(mappingId, data, project) {
+  return request("POST", `/api/v1/risk-control-mappings/${encodeURIComponent(mappingId)}/evidence`, {
+    body: data,
+    params: { project },
+  });
+}
+
+// --- Risk-Control Coverage Analysis ---
+
+export async function getUnmappedScenarios(project) {
+  return request("GET", "/api/v1/analysis/risk-control/unmapped-scenarios", { params: { project } });
+}
+
+export async function getUnmappedRecords(project, transitive = true) {
+  return request("GET", "/api/v1/analysis/risk-control/unmapped-records", {
+    params: { project, transitive },
+  });
+}
+
+export async function getUnmappedControls(project) {
+  return request("GET", "/api/v1/analysis/risk-control/unmapped-controls", { params: { project } });
+}
+
+export async function getAssessmentFeed(assessmentResultId, project) {
+  return request("GET", `/api/v1/analysis/risk-control/assessment-feed/${encodeURIComponent(assessmentResultId)}`, {
+    params: { project },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -12165,6 +12330,20 @@ export function normalizeReviewCycleNextAction(reviewerAction, status) {
   return reviewerAction;
 }
 
+// Both cycle wrappers feed _runReviewCycleShared, but the two underlying
+// review tools name their findings array differently: runTestQualityReview
+// returns it as `findings`, while runCodexReview returns it as `comments` (a
+// legacy name from when codex review posted PR inline comments). The shared
+// seam must read whichever the tool produced — without this reconciliation
+// gc_codex_review_cycle saw `reviewResult.findings === undefined`, flattened
+// every codex review to "0 findings / clean", and the codex implementation
+// review was a silent no-op (issue #966).
+export function reviewCycleFindings(reviewResult) {
+  if (Array.isArray(reviewResult?.findings)) return reviewResult.findings;
+  if (Array.isArray(reviewResult?.comments)) return reviewResult.comments;
+  return [];
+}
+
 async function _runReviewCycleShared({
   reviewer,
   reviewResult,
@@ -12180,7 +12359,7 @@ async function _runReviewCycleShared({
   const cycle =
     typeof reviewResult.cycle === "number" ? reviewResult.cycle : null;
   const cap = typeof reviewResult.cap === "number" ? reviewResult.cap : null;
-  const findings = Array.isArray(reviewResult.findings) ? reviewResult.findings : [];
+  const findings = reviewCycleFindings(reviewResult);
   const nextAction =
     typeof reviewResult.next_action === "string" ? reviewResult.next_action : "";
   const status = _statusForReviewerAction(nextAction, findings.length > 0);
@@ -12223,6 +12402,13 @@ async function _runReviewCycleShared({
       cycle: cycle ?? 1,
       reviewer,
       findings: decisionFindings,
+      // Forward the reviewer's architectural read so the decision record
+      // carries the review's reasoning, not just a finding count (issue #966).
+      // Omitted when absent so the record falls back to the legacy shape.
+      ...(typeof reviewResult.architectural_read === "string"
+        && reviewResult.architectural_read.trim() !== ""
+        ? { architectural_read: reviewResult.architectural_read }
+        : {}),
     });
   } catch (e) {
     return {

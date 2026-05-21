@@ -1209,6 +1209,50 @@ the existing list wholesale; pass `null` to leave it unchanged or an empty list 
 keep AGE materialization safe. `ControlTest` deletion is rejected with HTTP 409
 `control_test_referenced` while any assessment still references the test.
 
+### Risk-Control Mapping (GC-T003 / ADR-052)
+
+Bidirectional many-to-many link between controls (catalog `Control` or `ScopedControlImplementation`) and risk items (`RiskScenario` or `RiskRegisterRecord`). The mapping is the canonical aggregation point for control role, objective, scope, methodology influence (C4), anchored observations, and evidence provenance (C8).
+
+#### Scoped Control Implementations
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/scoped-control-implementations` | ScopedControlImplementationRequest | 201 | Create a project-scoped implementation record for a catalog control |
+| GET | `/scoped-control-implementations` | — | 200 | List SCIs for the project |
+| GET | `/scoped-control-implementations/{id}` | — | 200 | Get SCI by UUID |
+| PUT | `/scoped-control-implementations/{id}` | UpdateScopedControlImplementationRequest | 200 | Update mutable fields |
+| DELETE | `/scoped-control-implementations/{id}` | — | 204 | Delete SCI |
+
+**ScopedControlImplementationRequest fields:** `uid` (required, max 50), `controlId` (required UUID), `name` (required, max 200), `implementationScope` (optional TEXT), `operationalAssetId` (optional UUID — boundary context).
+
+#### Risk-Control Mappings
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/risk-control-mappings` | RiskControlMappingRequest | 201 | Create a mapping between a control/SCI and a risk scenario/register record |
+| GET | `/risk-control-mappings` | — | 200 | List mappings for the project |
+| GET | `/risk-control-mappings/{id}` | — | 200 | Get mapping by UUID |
+| PUT | `/risk-control-mappings/{id}` | UpdateRiskControlMappingRequest | 200 | Update mutable fields (role, objective, scope, methodology influence) |
+| DELETE | `/risk-control-mappings/{id}` | — | 204 | Delete mapping |
+| POST | `/risk-control-mappings/{id}/observations` | `{"observationId": "<uuid>"}` | 200 | Attach an observation (C8 provenance) |
+| DELETE | `/risk-control-mappings/{id}/observations/{observationId}` | — | 200 | Detach an observation |
+| POST | `/risk-control-mappings/{id}/evidence` | AddEvidenceRefRequest | 200 | Add an evidence reference (C8 provenance) |
+
+**RiskControlMappingRequest fields:** Exactly one of `controlId` / `scopedImplementationId` (control-side); exactly one of `riskScenarioId` / `riskRegisterRecordId` (risk-side); `controlRole` (required, `MappingControlRole`: `PREVENTIVE`, `DETECTIVE`, `CORRECTIVE`, `DETERRENT`, `COMPENSATING`, `RECOVERY`, `DIRECTIVE`); `mappingObjective` (optional TEXT); `mappingScope` (optional TEXT); `operationalAssetId` (optional UUID — C2 boundary context); `methodologyProfileId` (optional UUID — C4 profile); `methodologyInfluence` (optional JSON object — C4 validated against profile schema if profile provided). Violations of the exactly-one rules return 422.
+
+**AddEvidenceRefRequest fields:** `evidenceRef` (required, opaque reference string), `evidenceNote` (optional TEXT), `evidenceArtifactId` (optional UUID to a formal `EvidenceArtifact`).
+
+#### Risk-Control Analysis (Coverage Queries)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/analysis/risk-control/unmapped-scenarios` | — | 200 | C5a — Scenarios with no mapped controls |
+| GET | `/analysis/risk-control/unmapped-records` | — | 200 | C5b — Register records with no mapped controls (add `?transitive=true` for transitive form) |
+| GET | `/analysis/risk-control/unmapped-controls` | — | 200 | C6 — Controls not mapped to any relevant scenario (transitive-through-record) |
+| GET | `/analysis/risk-control/assessment-feed/{assessmentResultId}` | — | 200 | C7/C8 — Feed of effectiveness inputs and observation/evidence provenance for a risk assessment result |
+
+The `unmapped-records` endpoint accepts `transitive` (boolean, default `true`). In transitive mode, a record is considered covered if all its linked scenarios have at least one mapped control; records with zero scenarios always appear in the result. The `assessment-feed` endpoint requires `?project=<slug>` and the assessment-result UUID in the path.
+
 ### Evidence Artifacts (GC-M016 / ADR-045)
 
 | Method | Path | Body | Status | Purpose |

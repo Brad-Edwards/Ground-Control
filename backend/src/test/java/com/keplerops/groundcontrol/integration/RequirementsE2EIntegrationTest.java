@@ -511,6 +511,11 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "115", // V115: create test_run_case_result_audit
                         "116", // V116: create test_run_step_result (TC-009 / ADR-050)
                         "117", // V117: create test_run_step_result_audit
-                        "118"); // V118: add test_run cursor columns
+                        "118", // V118: add test_run cursor columns
+                        "119", // V119: create scoped_control_implementation (GC-T003 C1)
+                        "120", // V120: create scoped_control_implementation_audit
+                        "121", // V121: create risk_control_mapping + mapping_observation + mapping_evidence
+                        "122", // V122: create risk_control_mapping_audit
+                        "123"); // V123: create mapping_evidence_audit (Envers @ElementCollection shadow)
     }
 }

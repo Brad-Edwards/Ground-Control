@@ -52,7 +52,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "066", "067", "068", "069", "070", "071", "072", "073", "074", "075", "076", "077", "078",
                         "079", "080", "081", "082", "083", "084", "085", "086", "087", "088", "089", "090", "091",
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
-                        "110", "111", "112", "113", "114", "115", "116", "117", "118");
+                        "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
+                        "123");
     }
 
     @Test
@@ -915,5 +916,70 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         + " WHERE table_name = 'test_run'"
                         + " AND column_name = 'current_step_result_id'")
                 .getSingleResult();
+        // V119-V122 scoped_control_implementation + risk_control_mapping + audits (GC-T003).
+        // The audit tables are not Hibernate-managed entities, so ddl-auto: validate does not
+        // inspect them. Pin the column shape via information_schema so a copy-paste regression
+        // that drops a payload column or the BaseEntity timestamps is caught here rather than
+        // as a flush-time Envers failure in production.
+        entityManager
+                .createNativeQuery("SELECT 1 FROM scoped_control_implementation LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM scoped_control_implementation_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.table_constraints"
+                        + " WHERE table_name = 'scoped_control_implementation'"
+                        + " AND constraint_name = 'uq_scoped_control_implementation_uid'")
+                .getSingleResult();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT uid, control_id, name, implementation_scope,"
+                                + " created_at, updated_at"
+                                + " FROM scoped_control_implementation_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM risk_control_mapping LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM risk_control_mapping_audit LIMIT 1")
+                .getResultList();
+        // The polymorphic endpoint CHECK constraints are the structural invariant for C1.
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.table_constraints"
+                        + " WHERE table_name = 'risk_control_mapping'"
+                        + " AND constraint_name = 'ck_rcm_control_side'")
+                .getSingleResult();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.table_constraints"
+                        + " WHERE table_name = 'risk_control_mapping'"
+                        + " AND constraint_name = 'ck_rcm_risk_side'")
+                .getSingleResult();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT control_id, scoped_implementation_id,"
+                                + " risk_scenario_id, risk_register_record_id,"
+                                + " mapping_objective, control_role, mapping_scope,"
+                                + " methodology_influence, created_at, updated_at"
+                                + " FROM risk_control_mapping_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        // C8 provenance tables: mapping_observation + mapping_evidence.
+        entityManager
+                .createNativeQuery("SELECT 1 FROM mapping_observation LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM mapping_evidence LIMIT 1")
+                .getResultList();
+        // V123: mapping_evidence_audit — Envers @ElementCollection shadow for evidenceRefs.
+        // The SETORDINAL column (quoted — Envers default, uppercase) tracks list position.
+        entityManager
+                .createNativeQuery("SELECT 1 FROM mapping_evidence_audit LIMIT 1")
+                .getResultList();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT risk_control_mapping_id, rev, revtype,"
+                                + " \"SETORDINAL\", evidence_ref, evidence_note, evidence_artifact_id"
+                                + " FROM mapping_evidence_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
     }
 }
