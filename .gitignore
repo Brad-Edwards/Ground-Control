@@ -246,3 +246,7 @@ docs/notes
 # /implement per-step telemetry (ADR-036) — operational measurement only,
 # never workflow state. Each /implement run appends to one file under here.
 .gc/telemetry/
+
+# /implement Step 11 SonarCloud issue/hotspot exports — operational drilldown
+# artifacts written per-PR by gc_watch_sonar_analysis, never source.
+.gc/sonar/
