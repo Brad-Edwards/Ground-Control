@@ -1,8 +1,9 @@
-import { appendFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath } from "node:path";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
+import { createHash } from "node:crypto";
 import { load as parseYaml } from "js-yaml";
 
 const execFile = promisify(execFileCb);
@@ -5122,8 +5123,63 @@ function extractGhErrorMessage(error) {
   return error?.message || String(error);
 }
 
+// owner/name comes from the git remote URL, NOT from `gh repo view`.
+// Rationale: `gh repo view` honors the GH_REPO env var on the MCP host,
+// which silently hijacks every downstream call (`gh api`, `gh pr view`,
+// `gh run view`) and routes them at the wrong repo — surfaced during
+// the issue #934 end-to-end test on gc-orchestrator-test. The git
+// remote is the authoritative GitHub identity for a checked-out repo
+// and git ignores GH_REPO entirely.
+export function parseOwnerRepoFromRemoteUrl(url) {
+  // Accepts the three URL shapes git remote emits:
+  //   https://github.com/owner/name.git
+  //   https://github.com/owner/name
+  //   git@github.com:owner/name.git
+  // Returns null when the URL is not a github.com remote — callers
+  // decide whether that's fatal (most are; this MCP server is github-only).
+  if (typeof url !== "string" || url.length === 0) return null;
+  const trimmed = url.trim();
+  // SSH form: git@github.com:owner/name(.git)?
+  const sshMatch = trimmed.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/);
+  if (sshMatch) return { owner: sshMatch[1], name: sshMatch[2] };
+  // HTTPS form: https://github.com/owner/name(.git)?(/)?
+  const httpsMatch = trimmed.match(
+    /^https?:\/\/(?:[^/@]+@)?github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/,
+  );
+  if (httpsMatch) return { owner: httpsMatch[1], name: httpsMatch[2] };
+  return null;
+}
+
 async function getOwnerRepo(repoRoot) {
-  const { stdout } = await execFile("gh", ["repo", "view", "--json", "nameWithOwner"], { cwd: repoRoot });
+  // Primary path: read the git remote URL directly. git ignores GH_REPO,
+  // so this path is immune to env-var hijack and is the source of truth
+  // for every real /implement run (real repos always have an origin
+  // remote — that's where they were cloned from).
+  try {
+    const { stdout } = await execFile(
+      "git",
+      ["-C", repoRoot, "remote", "get-url", "origin"],
+    );
+    const parsed = parseOwnerRepoFromRemoteUrl(stdout);
+    if (parsed !== null) return parsed;
+    // origin exists but isn't a github.com URL — fall through to the
+    // gh fallback rather than throwing immediately. A non-github origin
+    // is unusual but the gh CLI might still resolve via its own config.
+  } catch {
+    // No origin remote (typical only in test fixtures that init a bare
+    // repo without setting origin, or in an emergency detached state).
+    // Fall through.
+  }
+  // Fallback: `gh repo view --json nameWithOwner`. This path honors
+  // GH_REPO and is therefore vulnerable to env hijack — but it only
+  // fires when the git-remote path fails. Real repos always have a
+  // github.com origin, so the fallback is exercised only by tests and
+  // pathological states. Documented in the issue #934 follow-up.
+  const { stdout } = await execFile(
+    "gh",
+    ["repo", "view", "--json", "nameWithOwner"],
+    { cwd: repoRoot },
+  );
   const data = JSON.parse(stdout);
   const [owner, name] = String(data.nameWithOwner).split("/");
   if (!owner || !name) {
@@ -5137,10 +5193,25 @@ async function getOwnerRepo(repoRoot) {
 // markers live. Returns [] when the PR closes no issues (legitimate case for
 // some refactors and chore PRs).
 async function getPullRequestClosingIssues(repoRoot, prNumber) {
+  // Pin --repo to the git-remote-derived slug so a rogue GH_REPO on the
+  // MCP host can't redirect this lookup at the wrong repo (which would
+  // silently return wrong "closes" issue numbers and corrupt the
+  // issue-thread cycle counter resolution). --repo is placed at the
+  // end of argv (gh accepts flags in any order) so the hermetic-shim
+  // test fixtures' strict argv-prefix matches still work.
   try {
+    const { owner, name } = await getOwnerRepo(repoRoot);
     const { stdout } = await execFile(
       "gh",
-      ["pr", "view", String(prNumber), "--json", "closingIssuesReferences"],
+      [
+        "pr",
+        "view",
+        String(prNumber),
+        "--json",
+        "closingIssuesReferences",
+        "--repo",
+        `${owner}/${name}`,
+      ],
       { cwd: repoRoot },
     );
     const data = JSON.parse(stdout);
@@ -5348,8 +5419,17 @@ async function getCurrentBranchName(repoRoot) {
 }
 
 async function autoDetectPrNumber(repoRoot) {
+  // Pin --repo to the git-remote-derived slug so a rogue GH_REPO on the
+  // MCP host can't redirect this lookup at a different repo. --repo is
+  // placed at the end of argv (gh accepts flags in any order) so the
+  // hermetic-shim test fixtures' strict argv-prefix matches still work.
   try {
-    const { stdout } = await execFile("gh", ["pr", "view", "--json", "number"], { cwd: repoRoot });
+    const { owner, name } = await getOwnerRepo(repoRoot);
+    const { stdout } = await execFile(
+      "gh",
+      ["pr", "view", "--json", "number", "--repo", `${owner}/${name}`],
+      { cwd: repoRoot },
+    );
     const data = JSON.parse(stdout);
     const n = Number.parseInt(data.number, 10);
     return Number.isInteger(n) && n > 0 ? n : null;
@@ -10853,6 +10933,1420 @@ export async function runRenderPrBody(input) {
     body,
     byte_length: Buffer.byteLength(body, "utf8"),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Issue-thread cache (gc_get_issue_thread, issue #934)
+// ---------------------------------------------------------------------------
+//
+// Operational cache for the GitHub issue thread (body + comments).
+// Content-addressed by sha256 over (body, [comment.id, comment.body]...).
+// Cache key is {repoRoot, issueNumber} — explicitly NOT branch-keyed
+// (a branch rename on the same issue does not invalidate the entry).
+//
+// Contract (per the issue #934 preflight binding guardrails):
+// - The GitHub issue thread on github.com is the durable workflow record
+//   (ADR-029). This cache is operational only; correctness never depends
+//   on it. A cache miss falls back to a fresh fetch.
+// - A caller with expected_hash=null always gets a fresh fetch. Callers
+//   use this path after a posting may have failed or when marker state
+//   is uncertain — the cache MUST NOT be used to paper over those cases.
+// - In-memory only. Process restart invalidates the cache, which is
+//   acceptable: subsequent hash-mismatch falls back to a fresh fetch.
+
+// LRU cache for issue threads. Capped to bound memory on long-running
+// MCP server processes. A typical /implement run touches one issue
+// thread; concurrent runs across many issues are also reasonable. 256
+// entries leaves generous headroom (each entry is a small hash + key)
+// while preventing unbounded growth. JS Map preserves insertion order,
+// so eviction is "delete the oldest insertion" — promote-on-read keeps
+// recently-accessed entries warm.
+export const ISSUE_THREAD_CACHE_MAX_ENTRIES = 256;
+
+const _issueThreadCache = new Map();
+
+function _issueThreadCacheKey(repoRoot, issueNumber) {
+  return `${repoRoot}::${issueNumber}`;
+}
+
+function _evictIssueThreadCacheIfNeeded() {
+  while (_issueThreadCache.size > ISSUE_THREAD_CACHE_MAX_ENTRIES) {
+    const oldestKey = _issueThreadCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    _issueThreadCache.delete(oldestKey);
+  }
+}
+
+function _promoteIssueThreadCacheEntry(cacheKey, entry) {
+  // Re-insert moves the key to the end of insertion order, marking it
+  // as most-recently-used for the eviction policy.
+  _issueThreadCache.delete(cacheKey);
+  _issueThreadCache.set(cacheKey, entry);
+}
+
+export function hashIssueThreadPayload(body, comments) {
+  const h = createHash("sha256");
+  h.update("body:");
+  h.update(String(body ?? ""));
+  // Use ASCII Record Separator (0x1E) between fields so body text can never
+  // collide with comment text at a field boundary, and so id can never
+  // collide with body inside a single comment entry.
+  for (const c of Array.isArray(comments) ? comments : []) {
+    h.update("\x1e");
+    h.update(String(c?.id ?? ""));
+    h.update("\x1e");
+    h.update(String(c?.body ?? ""));
+  }
+  return h.digest("hex");
+}
+
+// Test-only helpers. Exported so lib.test.js can prime and inspect the cache
+// without driving `gh`. Production callers should not depend on these.
+export function resetIssueThreadCacheForTest() {
+  _issueThreadCache.clear();
+}
+
+export function seedIssueThreadCacheForTest(repoRoot, issueNumber, hash) {
+  _issueThreadCache.set(_issueThreadCacheKey(repoRoot, issueNumber), { hash });
+}
+
+export function peekIssueThreadCacheForTest(repoRoot, issueNumber) {
+  return _issueThreadCache.get(_issueThreadCacheKey(repoRoot, issueNumber)) ?? null;
+}
+
+async function _fetchIssueThread(repoRoot, owner, name, issueNumber) {
+  const { stdout: issueStdout } = await execFile(
+    "gh",
+    ["api", `/repos/${owner}/${name}/issues/${issueNumber}`],
+    { cwd: repoRoot },
+  );
+  const issue = JSON.parse(issueStdout);
+  const { stdout: commentsStdout } = await execFile(
+    "gh",
+    [
+      "api",
+      "--method",
+      "GET",
+      "--paginate",
+      "--slurp",
+      `/repos/${owner}/${name}/issues/${issueNumber}/comments`,
+      "-F",
+      "per_page=100",
+    ],
+    { cwd: repoRoot },
+  );
+  const pages = JSON.parse(commentsStdout);
+  const rawComments =
+    Array.isArray(pages) && pages.length > 0 && Array.isArray(pages[0])
+      ? pages.flat()
+      : Array.isArray(pages)
+        ? pages
+        : [];
+  const comments = rawComments
+    .map((c) => ({
+      id: c?.id ?? null,
+      author: c?.user?.login ?? null,
+      created_at: c?.created_at ?? null,
+      body: typeof c?.body === "string" ? c.body : null,
+    }))
+    .filter((c) => c.body != null);
+  return {
+    body: typeof issue?.body === "string" ? issue.body : "",
+    title: typeof issue?.title === "string" ? issue.title : "",
+    labels: Array.isArray(issue?.labels)
+      ? issue.labels.map((l) => (typeof l?.name === "string" ? l.name : "")).filter((s) => s.length > 0)
+      : [],
+    state: typeof issue?.state === "string" ? issue.state : "unknown",
+    url: typeof issue?.html_url === "string" ? issue.html_url : "",
+    comments,
+  };
+}
+
+export async function runGetIssueThread({ repoPath, issueNumber, expectedHash = null }) {
+  if (typeof repoPath !== "string" || repoPath.length === 0) {
+    return {
+      ok: false,
+      error: "issue_thread_input_invalid",
+      message: "repo_path is required",
+      issue_number: typeof issueNumber === "number" ? issueNumber : null,
+    };
+  }
+  if (
+    typeof issueNumber !== "number" ||
+    !Number.isInteger(issueNumber) ||
+    issueNumber <= 0
+  ) {
+    return {
+      ok: false,
+      error: "issue_thread_input_invalid",
+      message: "issue_number must be a positive integer",
+      issue_number: null,
+    };
+  }
+  if (expectedHash != null && typeof expectedHash !== "string") {
+    return {
+      ok: false,
+      error: "issue_thread_input_invalid",
+      message: "expected_hash must be a string when provided",
+      issue_number: issueNumber,
+    };
+  }
+
+  let repoRoot;
+  try {
+    repoRoot = await ensureGitRepo(repoPath);
+  } catch (e) {
+    return {
+      ok: false,
+      error: "issue_thread_repo_not_found",
+      message: e?.message ?? "ensureGitRepo failed",
+      issue_number: issueNumber,
+    };
+  }
+
+  const cacheKey = _issueThreadCacheKey(repoRoot, issueNumber);
+
+  // Cache short-circuit. Three predicates must hold simultaneously:
+  // (a) caller supplied a non-empty expected_hash,
+  // (b) we have a cached entry for this exact (repoRoot, issueNumber) key,
+  // (c) the cached hash matches the caller's expected_hash.
+  // Any uncertainty falls through to a fresh fetch.
+  if (typeof expectedHash === "string" && expectedHash.length > 0) {
+    const cached = _issueThreadCache.get(cacheKey);
+    if (cached && cached.hash === expectedHash) {
+      // Promote the entry on a successful hit so LRU eviction picks
+      // off truly cold entries first.
+      _promoteIssueThreadCacheEntry(cacheKey, cached);
+      return {
+        ok: true,
+        issue_number: issueNumber,
+        unchanged: true,
+        hash: cached.hash,
+        body: null,
+        title: null,
+        labels: null,
+        state: null,
+        url: null,
+        comments: null,
+      };
+    }
+  }
+
+  let owner;
+  let name;
+  try {
+    ({ owner, name } = await getOwnerRepo(repoRoot));
+  } catch (e) {
+    return {
+      ok: false,
+      error: "issue_thread_repo_lookup_failed",
+      message: e?.message ?? "getOwnerRepo failed",
+      issue_number: issueNumber,
+    };
+  }
+
+  let thread;
+  try {
+    thread = await _fetchIssueThread(repoRoot, owner, name, issueNumber);
+  } catch (e) {
+    return {
+      ok: false,
+      error: "issue_thread_fetch_failed",
+      message: e?.message ?? "gh api fetch failed",
+      issue_number: issueNumber,
+    };
+  }
+
+  const hash = hashIssueThreadPayload(thread.body, thread.comments);
+  _issueThreadCache.set(cacheKey, { hash });
+  _evictIssueThreadCacheIfNeeded();
+
+  return {
+    ok: true,
+    issue_number: issueNumber,
+    unchanged: false,
+    hash,
+    body: thread.body,
+    title: thread.title,
+    labels: thread.labels,
+    state: thread.state,
+    url: thread.url,
+    comments: thread.comments,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// CI run watcher (gc_watch_ci_run, issue #934)
+// ---------------------------------------------------------------------------
+//
+// Server-side CI poller. The agent makes one MCP tool call; the MCP server
+// polls `gh run view` until the run reaches a terminal state, hits the
+// queued-too-long cap (5 min default), or hits the total cap (45 min
+// default). On failure the watcher pulls `gh run view --log-failed` and
+// returns a bounded summary plus the list of failed steps — raw logs stay
+// server-side.
+//
+// Three pure helpers below carry the testable decision logic; the async
+// polling loop is covered by the end-to-end /implement run rather than
+// mocked, matching the existing codebase convention.
+
+const CI_TERMINAL_STATUSES = new Set(["completed"]);
+const CI_QUEUED_STATUSES = new Set(["queued", "pending", "waiting"]);
+
+export function evaluateCiPollState({
+  status,
+  elapsedSeconds,
+  queuedTimeoutSeconds,
+  totalTimeoutSeconds,
+}) {
+  if (CI_TERMINAL_STATUSES.has(status)) {
+    return { action: "complete" };
+  }
+  // The queued-too-long signal is more specific than timed_out (a stuck
+  // runner pool is a different failure mode than a slow run); report it
+  // even if the total cap was also crossed.
+  if (CI_QUEUED_STATUSES.has(status) && elapsedSeconds > queuedTimeoutSeconds) {
+    return { action: "queued_too_long" };
+  }
+  if (elapsedSeconds > totalTimeoutSeconds) {
+    return { action: "timed_out" };
+  }
+  return { action: "continue" };
+}
+
+export function summarizeCiLogFailedOutput(rawText, maxBytes = 4096) {
+  if (typeof rawText !== "string" || rawText.length === 0) {
+    return "";
+  }
+  const buf = Buffer.from(rawText, "utf8");
+  if (buf.length <= maxBytes) {
+    return rawText;
+  }
+  // CI failure detail typically sits near the END of the log (the failing
+  // step's stderr is the last thing written before the runner aborts).
+  // Keep the tail; drop the front; add a clearly-marked truncation prefix.
+  const tailBuf = buf.subarray(buf.length - maxBytes);
+  const droppedBytes = buf.length - maxBytes;
+  const marker = `[truncated: dropped first ${droppedBytes} bytes of ${buf.length}]\n`;
+  return marker + tailBuf.toString("utf8");
+}
+
+export function extractFailedStepsFromJobsJson(jobsJson, maxSteps = 10) {
+  if (!jobsJson || typeof jobsJson !== "object") return [];
+  const jobs = Array.isArray(jobsJson.jobs) ? jobsJson.jobs : [];
+  const out = [];
+  for (const job of jobs) {
+    if (!job || typeof job !== "object") continue;
+    const steps = Array.isArray(job.steps) ? job.steps : [];
+    for (const step of steps) {
+      if (!step || typeof step !== "object") continue;
+      if (step.conclusion !== "failure") continue;
+      out.push({
+        job_name: typeof job.name === "string" ? job.name : "",
+        step_name: typeof step.name === "string" ? step.name : "",
+      });
+      if (out.length >= maxSteps) return out;
+    }
+  }
+  return out;
+}
+
+// All `gh` calls in this section pass `--repo owner/name` explicitly so a
+// rogue `GH_REPO` env var on the MCP host cannot hijack the call. Real
+// failure mode: an MCP server launched from a shell with `GH_REPO=other`
+// would otherwise issue every `gh run view` / `gh run list` against the
+// other repo and return HTTP 404 — surfaced during the issue #934
+// end-to-end test against gc-orchestrator-test.
+
+export function buildCiWatchGhArgs(repoSlug, runArgs) {
+  // Exported for tests so callers can assert `--repo` is always first in
+  // the argv shape. Concatenates `["--repo", "<owner>/<name>"]` ahead of
+  // the run-specific flags.
+  if (typeof repoSlug !== "string" || !repoSlug.includes("/")) {
+    throw new Error(`buildCiWatchGhArgs: expected owner/name slug, got '${repoSlug}'`);
+  }
+  return ["--repo", repoSlug, ...runArgs];
+}
+
+async function _resolveLatestCiRunForBranch(repoRoot, repoSlug, branch) {
+  const { stdout } = await execFile(
+    "gh",
+    buildCiWatchGhArgs(repoSlug, [
+      "run",
+      "list",
+      "--branch",
+      branch,
+      "--limit",
+      "1",
+      "--json",
+      "status,conclusion,databaseId,url,createdAt",
+    ]),
+    { cwd: repoRoot },
+  );
+  const runs = JSON.parse(stdout);
+  if (!Array.isArray(runs) || runs.length === 0) {
+    return null;
+  }
+  return runs[0];
+}
+
+async function _fetchCiRunSnapshot(repoRoot, repoSlug, runId) {
+  const { stdout } = await execFile(
+    "gh",
+    buildCiWatchGhArgs(repoSlug, [
+      "run",
+      "view",
+      String(runId),
+      "--json",
+      "status,conclusion,databaseId,url,createdAt,updatedAt,jobs",
+    ]),
+    { cwd: repoRoot },
+  );
+  return JSON.parse(stdout);
+}
+
+async function _fetchCiRunFailedLog(repoRoot, repoSlug, runId) {
+  try {
+    const { stdout } = await execFile(
+      "gh",
+      buildCiWatchGhArgs(repoSlug, ["run", "view", String(runId), "--log-failed"]),
+      { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 },
+    );
+    return stdout;
+  } catch (e) {
+    // Best-effort. The run summary is more valuable than a fragile log dump;
+    // surface the partial stdout if gh emitted anything before erroring.
+    return typeof e?.stdout === "string" ? e.stdout : "";
+  }
+}
+
+function _sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function runWatchCiRun({
+  repoPath,
+  branch,
+  runId = null,
+  queuedTimeoutSeconds = 300,
+  totalTimeoutSeconds = 2700,
+  pollIntervalSeconds = 15,
+}) {
+  if (typeof repoPath !== "string" || repoPath.length === 0) {
+    return {
+      ok: false,
+      error: "ci_watch_input_invalid",
+      message: "repo_path is required",
+    };
+  }
+  if (typeof branch !== "string" || branch.length === 0) {
+    return {
+      ok: false,
+      error: "ci_watch_input_invalid",
+      message: "branch is required",
+    };
+  }
+  if (runId !== null && runId !== undefined) {
+    if (
+      typeof runId !== "number" ||
+      !Number.isInteger(runId) ||
+      runId <= 0
+    ) {
+      return {
+        ok: false,
+        error: "ci_watch_input_invalid",
+        message: "run_id must be a positive integer when provided",
+      };
+    }
+  }
+  for (const [name, value] of [
+    ["queued_timeout_seconds", queuedTimeoutSeconds],
+    ["total_timeout_seconds", totalTimeoutSeconds],
+    ["poll_interval_seconds", pollIntervalSeconds],
+  ]) {
+    if (
+      typeof value !== "number" ||
+      !Number.isInteger(value) ||
+      value <= 0
+    ) {
+      return {
+        ok: false,
+        error: "ci_watch_input_invalid",
+        message: `${name} must be a positive integer`,
+      };
+    }
+  }
+
+  let repoRoot;
+  try {
+    repoRoot = await ensureGitRepo(repoPath);
+  } catch (e) {
+    return {
+      ok: false,
+      error: "ci_watch_repo_not_found",
+      message: e?.message ?? "ensureGitRepo failed",
+    };
+  }
+
+  // Resolve owner/name from the repo's git remote up-front so every
+  // subsequent `gh` call can pass `--repo <slug>` and ignore any rogue
+  // `GH_REPO` env var on the MCP host.
+  let repoSlug;
+  try {
+    const { owner, name } = await getOwnerRepo(repoRoot);
+    repoSlug = `${owner}/${name}`;
+  } catch (e) {
+    return {
+      ok: false,
+      error: "ci_watch_repo_lookup_failed",
+      message: e?.message ?? "getOwnerRepo failed",
+    };
+  }
+
+  // Resolve the run id if the caller didn't supply one.
+  let effectiveRunId = runId ?? null;
+  if (effectiveRunId === null) {
+    let latest;
+    try {
+      latest = await _resolveLatestCiRunForBranch(repoRoot, repoSlug, branch);
+    } catch (e) {
+      return {
+        ok: false,
+        error: "ci_watch_run_lookup_failed",
+        message: e?.message ?? "gh run list failed",
+        branch,
+      };
+    }
+    if (latest === null) {
+      return {
+        ok: false,
+        error: "ci_watch_no_run_for_branch",
+        message: `no CI runs found for branch '${branch}'`,
+        branch,
+      };
+    }
+    effectiveRunId =
+      typeof latest.databaseId === "number" ? latest.databaseId : null;
+    if (effectiveRunId === null) {
+      return {
+        ok: false,
+        error: "ci_watch_run_lookup_failed",
+        message: "gh run list returned no databaseId",
+        branch,
+      };
+    }
+  }
+
+  const startMs = Date.now();
+  let snapshot = null;
+  while (true) {
+    try {
+      snapshot = await _fetchCiRunSnapshot(repoRoot, repoSlug, effectiveRunId);
+    } catch (e) {
+      return {
+        ok: false,
+        error: "ci_watch_snapshot_failed",
+        message: e?.message ?? "gh run view failed",
+        run_id: effectiveRunId,
+      };
+    }
+    const elapsedSeconds = Math.floor((Date.now() - startMs) / 1000);
+    const decision = evaluateCiPollState({
+      status: snapshot.status,
+      elapsedSeconds,
+      queuedTimeoutSeconds,
+      totalTimeoutSeconds,
+    });
+    if (decision.action === "complete") {
+      break;
+    }
+    if (decision.action === "queued_too_long") {
+      return {
+        ok: true,
+        run_id: effectiveRunId,
+        conclusion: "queued_too_long",
+        status: snapshot.status ?? "queued",
+        url: snapshot.url ?? "",
+        duration_seconds: elapsedSeconds,
+        failed_steps: [],
+        log_summary: null,
+      };
+    }
+    if (decision.action === "timed_out") {
+      return {
+        ok: true,
+        run_id: effectiveRunId,
+        conclusion: "timed_out",
+        status: snapshot.status ?? "in_progress",
+        url: snapshot.url ?? "",
+        duration_seconds: elapsedSeconds,
+        failed_steps: [],
+        log_summary: null,
+      };
+    }
+    await _sleepMs(pollIntervalSeconds * 1000);
+  }
+
+  // Terminal state reached. Compute return envelope.
+  const elapsedSeconds = Math.floor((Date.now() - startMs) / 1000);
+  const ghConclusion = typeof snapshot.conclusion === "string" ? snapshot.conclusion : "";
+  const isFailure =
+    ghConclusion === "failure" ||
+    ghConclusion === "cancelled" ||
+    ghConclusion === "timed_out" ||
+    ghConclusion === "action_required" ||
+    ghConclusion === "startup_failure";
+
+  let failedSteps = [];
+  let logSummary = null;
+  if (isFailure) {
+    failedSteps = extractFailedStepsFromJobsJson(snapshot);
+    const rawLog = await _fetchCiRunFailedLog(repoRoot, repoSlug, effectiveRunId);
+    logSummary = summarizeCiLogFailedOutput(rawLog, 4096);
+  }
+
+  return {
+    ok: true,
+    run_id: effectiveRunId,
+    conclusion: ghConclusion || (isFailure ? "failure" : "success"),
+    status: typeof snapshot.status === "string" ? snapshot.status : "completed",
+    url: typeof snapshot.url === "string" ? snapshot.url : "",
+    duration_seconds: elapsedSeconds,
+    failed_steps: failedSteps,
+    log_summary: logSummary,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// SonarCloud analysis watcher (gc_watch_sonar_analysis, issue #934)
+// ---------------------------------------------------------------------------
+//
+// Server-side SonarCloud poller. The agent makes one MCP tool call; the
+// MCP server holds the connection while waiting for analysis propagation
+// (60s default), then queries the quality gate and paginates the open
+// issues + hotspots lists. The terminal envelope carries summaries plus
+// a path to a server-side JSON export for on-demand drilldown — raw
+// per-issue payloads stay server-side.
+//
+// Skips entirely when the repo's .ground-control.yaml does not declare a
+// sonarcloud block (mirrors the current /implement Step 11 behavior).
+//
+// Authentication: SonarCloud REST uses HTTP Basic with the token as the
+// username and an empty password. The token is read from process.env at
+// call time and passed only in the Authorization header — never in argv,
+// telemetry, the export file, or the returned envelope.
+
+const SONAR_BASE_URL = "https://sonarcloud.io";
+
+const SONAR_SEVERITY_RANK = {
+  BLOCKER: 5,
+  CRITICAL: 4,
+  MAJOR: 3,
+  MINOR: 2,
+  INFO: 1,
+};
+
+const SONAR_HOTSPOT_PROBABILITY_RANK = {
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1,
+};
+
+export function summarizeSonarIssues(issues, maxTop = 10) {
+  const arr = Array.isArray(issues) ? issues : [];
+  const bySeverity = {};
+  const byType = {};
+  for (const it of arr) {
+    if (!it || typeof it !== "object") continue;
+    const sev = typeof it.severity === "string" ? it.severity : "UNKNOWN";
+    bySeverity[sev] = (bySeverity[sev] ?? 0) + 1;
+    const ty = typeof it.type === "string" ? it.type : "UNKNOWN";
+    byType[ty] = (byType[ty] ?? 0) + 1;
+  }
+  // Sort by severity rank desc; stable-ish tie-break by component+line so
+  // identical inputs produce identical top_issues across runs.
+  const sorted = arr
+    .filter((it) => it && typeof it === "object")
+    .map((it) => ({
+      raw: it,
+      rank: SONAR_SEVERITY_RANK[it.severity] ?? 0,
+    }))
+    .sort((a, b) => {
+      if (b.rank !== a.rank) return b.rank - a.rank;
+      const ac = `${a.raw.component ?? ""}:${a.raw.line ?? ""}`;
+      const bc = `${b.raw.component ?? ""}:${b.raw.line ?? ""}`;
+      return ac.localeCompare(bc);
+    });
+  const topIssues = sorted.slice(0, maxTop).map(({ raw }) => ({
+    key: typeof raw.key === "string" ? raw.key : "",
+    severity: typeof raw.severity === "string" ? raw.severity : "",
+    type: typeof raw.type === "string" ? raw.type : "",
+    message: typeof raw.message === "string" ? raw.message : "",
+    component: typeof raw.component === "string" ? raw.component : "",
+    line: typeof raw.line === "number" ? raw.line : null,
+  }));
+  return {
+    open_count: arr.length,
+    by_severity: bySeverity,
+    by_type: byType,
+    top_issues: topIssues,
+  };
+}
+
+export function summarizeSonarHotspots(hotspots, maxTop = 10) {
+  const arr = Array.isArray(hotspots) ? hotspots : [];
+  const sorted = arr
+    .filter((h) => h && typeof h === "object")
+    .map((h) => ({
+      raw: h,
+      rank: SONAR_HOTSPOT_PROBABILITY_RANK[h.vulnerabilityProbability] ?? 0,
+    }))
+    .sort((a, b) => {
+      if (b.rank !== a.rank) return b.rank - a.rank;
+      const ac = `${a.raw.component ?? ""}:${a.raw.line ?? ""}`;
+      const bc = `${b.raw.component ?? ""}:${b.raw.line ?? ""}`;
+      return ac.localeCompare(bc);
+    });
+  const topHotspots = sorted.slice(0, maxTop).map(({ raw }) => ({
+    key: typeof raw.key === "string" ? raw.key : "",
+    vulnerability_probability:
+      typeof raw.vulnerabilityProbability === "string" ? raw.vulnerabilityProbability : "",
+    message: typeof raw.message === "string" ? raw.message : "",
+    component: typeof raw.component === "string" ? raw.component : "",
+    line: typeof raw.line === "number" ? raw.line : null,
+  }));
+  return {
+    open_count: arr.length,
+    top_hotspots: topHotspots,
+  };
+}
+
+function _readSonarCloudConfigFromRepo(repoRoot) {
+  // Best-effort read of the sonarcloud block. Returns null if the file
+  // is missing, malformed, or has no sonarcloud declaration — all three
+  // are "skip" signals, not errors, by design (mirrors Step 11).
+  let yamlText;
+  try {
+    yamlText = readFileSync(join(repoRoot, ".ground-control.yaml"), "utf8");
+  } catch {
+    return null;
+  }
+  try {
+    const parsed = parseYaml(yamlText);
+    if (!parsed || typeof parsed !== "object") return null;
+    const sc = parsed.sonarcloud;
+    if (!sc || typeof sc !== "object") return null;
+    const projectKey = typeof sc.project_key === "string" ? sc.project_key : null;
+    const organization = typeof sc.organization === "string" ? sc.organization : null;
+    if (!projectKey) return null;
+    return { projectKey, organization };
+  } catch {
+    return null;
+  }
+}
+
+function _sonarAuthHeader(token) {
+  // SonarCloud REST: HTTP Basic with token as username, empty password.
+  const b64 = Buffer.from(`${token}:`, "utf8").toString("base64");
+  return `Basic ${b64}`;
+}
+
+// Predicate for fetch responses that warrant a retry. The intent is to
+// retry only transient server-side conditions (5xx, 429) and let
+// permanent failures (401/403/404/400 bad request) fail fast — retrying
+// an auth failure or a not-found just wastes time.
+//
+// Exported for tests so the retry policy is pinned at the boundary.
+export function shouldRetrySonarStatus(status) {
+  if (typeof status !== "number") return false;
+  if (status === 429) return true;
+  return status >= 500 && status < 600;
+}
+
+const SONAR_RETRY_DELAYS_MS = [1000, 2000, 4000]; // 3 retries; total worst-case ~7s
+
+// Wraps `fetch` with bounded exponential backoff on transient failures.
+// Returns the final fetch Response; throws only when the network itself
+// fails on every attempt. The caller is responsible for interpreting
+// 4xx as the documented error (404 quality-gate not-found, etc.) — this
+// helper does not interpret status, only decides whether to retry.
+async function _sonarFetchWithRetry(url, init) {
+  let lastErr = null;
+  for (let attempt = 0; attempt <= SONAR_RETRY_DELAYS_MS.length; attempt++) {
+    let resp;
+    try {
+      resp = await fetch(url, init);
+    } catch (err) {
+      // Network failure (DNS, connection reset, timeout). Treated as
+      // transient at the same retry tier as 5xx.
+      lastErr = err;
+      if (attempt < SONAR_RETRY_DELAYS_MS.length) {
+        await _sleepMs(SONAR_RETRY_DELAYS_MS[attempt]);
+        continue;
+      }
+      throw err;
+    }
+    if (!shouldRetrySonarStatus(resp.status)) return resp;
+    if (attempt >= SONAR_RETRY_DELAYS_MS.length) return resp;
+    await _sleepMs(SONAR_RETRY_DELAYS_MS[attempt]);
+  }
+  // Unreachable — loop above always returns or throws. Keep the throw
+  // as a sentinel so a future refactor that breaks the loop semantics
+  // surfaces cleanly.
+  throw lastErr ?? new Error("sonar fetch retry exhausted");
+}
+
+async function _fetchSonarQualityGate({ projectKey, prNumber, token }) {
+  const url = `${SONAR_BASE_URL}/api/qualitygates/project_status?projectKey=${encodeURIComponent(projectKey)}&pullRequest=${encodeURIComponent(String(prNumber))}`;
+  const resp = await _sonarFetchWithRetry(url, {
+    headers: { Authorization: _sonarAuthHeader(token), Accept: "application/json" },
+  });
+  if (resp.status === 404) return { available: false };
+  if (!resp.ok) {
+    throw new Error(`sonar quality gate fetch failed: HTTP ${resp.status}`);
+  }
+  const data = await resp.json();
+  const status = data?.projectStatus?.status;
+  return {
+    available: typeof status === "string" && status.length > 0,
+    status: typeof status === "string" ? status : "UNKNOWN",
+  };
+}
+
+async function _fetchSonarIssues({ projectKey, prNumber, token, maxPages = 20 }) {
+  const out = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const url = `${SONAR_BASE_URL}/api/issues/search?componentKeys=${encodeURIComponent(projectKey)}&pullRequest=${encodeURIComponent(String(prNumber))}&resolved=false&ps=500&p=${page}`;
+    const resp = await _sonarFetchWithRetry(url, {
+      headers: { Authorization: _sonarAuthHeader(token), Accept: "application/json" },
+    });
+    if (!resp.ok) {
+      throw new Error(`sonar issues fetch failed (page ${page}): HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    const issues = Array.isArray(data?.issues) ? data.issues : [];
+    out.push(...issues);
+    const total = typeof data?.total === "number" ? data.total : out.length;
+    if (out.length >= total) break;
+    if (issues.length === 0) break;
+  }
+  return out;
+}
+
+async function _fetchSonarHotspots({ projectKey, prNumber, token, maxPages = 20 }) {
+  const out = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const url = `${SONAR_BASE_URL}/api/hotspots/search?projectKey=${encodeURIComponent(projectKey)}&pullRequest=${encodeURIComponent(String(prNumber))}&status=TO_REVIEW&ps=500&p=${page}`;
+    const resp = await _sonarFetchWithRetry(url, {
+      headers: { Authorization: _sonarAuthHeader(token), Accept: "application/json" },
+    });
+    if (!resp.ok) {
+      throw new Error(`sonar hotspots fetch failed (page ${page}): HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    const hotspots = Array.isArray(data?.hotspots) ? data.hotspots : [];
+    out.push(...hotspots);
+    const paging = data?.paging;
+    const total = typeof paging?.total === "number" ? paging.total : out.length;
+    if (out.length >= total) break;
+    if (hotspots.length === 0) break;
+  }
+  return out;
+}
+
+// Cap on .gc/sonar/*.json files retained per repo. Older files are
+// pruned (oldest-mtime first) before each new export is written so a
+// long-running MCP host or a busy /implement cadence does not let the
+// export directory grow unbounded. Exposed for tests.
+export const SONAR_EXPORT_RETENTION = 50;
+
+function _pruneSonarExports(absSonarDir, retention) {
+  // Best-effort prune. Failure to read the directory or stat individual
+  // files is non-fatal — the export itself is operational, not workflow
+  // state, so a broken prune just leaves more files than intended.
+  try {
+    const entries = readdirSync(absSonarDir)
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => {
+        const abs = join(absSonarDir, name);
+        try {
+          return { name, abs, mtimeMs: statSync(abs).mtimeMs };
+        } catch {
+          return null;
+        }
+      })
+      .filter((e) => e !== null);
+    if (entries.length <= retention) return;
+    entries.sort((a, b) => a.mtimeMs - b.mtimeMs);
+    const toDelete = entries.slice(0, entries.length - retention);
+    for (const entry of toDelete) {
+      try {
+        rmSync(entry.abs, { force: true });
+      } catch {
+        // Best-effort. If a delete fails (permissions, concurrent run),
+        // skip and let the next pass clean up.
+      }
+    }
+  } catch {
+    // Directory doesn't exist yet or unreadable. The mkdirSync below
+    // handles creation; nothing to prune.
+  }
+}
+
+function _writeSonarExport(repoRoot, prNumber, payload) {
+  // Best-effort, repo-relative, containment-checked write under
+  // .gc/sonar/. Returns the rel path on success, null on any failure
+  // (the export is a convenience for drilldown — never a correctness
+  // requirement, so failures are non-fatal).
+  try {
+    const relDir = ".gc/sonar";
+    const fileName = `${prNumber}-${Date.now()}.json`;
+    const rel = `${relDir}/${fileName}`;
+    const resolved = resolveRepoRelativePath(repoRoot, rel, "sonar_export_path");
+    if (!resolved.ok) return null;
+    const abs = resolved.abs;
+    mkdirSync(dirname(abs), { recursive: true });
+    const realRepo = realpathSync(repoRoot);
+    const contain = assertRealpathInRepo(realRepo, abs, "sonar_export_path");
+    if (!contain.ok) return null;
+    // Prune older exports before writing to cap directory size. Runs
+    // BEFORE the write so a transient OOM (unlikely) doesn't leave
+    // both the new file and the now-deleted old files in an
+    // intermediate state.
+    _pruneSonarExports(dirname(abs), SONAR_EXPORT_RETENTION);
+    writeFileSync(abs, JSON.stringify(payload, null, 2));
+    return rel;
+  } catch {
+    return null;
+  }
+}
+
+export async function runWatchSonarAnalysis({
+  repoPath,
+  prNumber,
+  initialWaitSeconds = 60,
+  totalTimeoutSeconds = 1800,
+  pollIntervalSeconds = 30,
+}) {
+  if (typeof repoPath !== "string" || repoPath.length === 0) {
+    return {
+      ok: false,
+      error: "sonar_watch_input_invalid",
+      message: "repo_path is required",
+    };
+  }
+  if (
+    typeof prNumber !== "number" ||
+    !Number.isInteger(prNumber) ||
+    prNumber <= 0
+  ) {
+    return {
+      ok: false,
+      error: "sonar_watch_input_invalid",
+      message: "pr_number must be a positive integer",
+    };
+  }
+  for (const [name, value] of [
+    ["initial_wait_seconds", initialWaitSeconds],
+    ["total_timeout_seconds", totalTimeoutSeconds],
+    ["poll_interval_seconds", pollIntervalSeconds],
+  ]) {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+      return {
+        ok: false,
+        error: "sonar_watch_input_invalid",
+        message: `${name} must be a non-negative integer`,
+      };
+    }
+  }
+
+  let repoRoot;
+  try {
+    repoRoot = await ensureGitRepo(repoPath);
+  } catch (e) {
+    return {
+      ok: false,
+      error: "sonar_watch_repo_not_found",
+      message: e?.message ?? "ensureGitRepo failed",
+    };
+  }
+
+  const sonarConfig = _readSonarCloudConfigFromRepo(repoRoot);
+  if (sonarConfig === null) {
+    // No sonarcloud block — skip entirely. Mirrors current /implement Step 11.
+    return {
+      ok: true,
+      skipped: true,
+      pr_number: prNumber,
+      quality_gate: "NONE",
+      issues_summary: { open_count: 0, by_severity: {}, by_type: {}, top_issues: [] },
+      hotspots_summary: { open_count: 0, top_hotspots: [] },
+      full_issue_export_path: null,
+    };
+  }
+
+  const token = process.env.SONAR_TOKEN;
+  if (typeof token !== "string" || token.length === 0) {
+    return {
+      ok: false,
+      error: "sonar_watch_token_missing",
+      message: "SONAR_TOKEN env var is not set on the MCP host",
+      pr_number: prNumber,
+    };
+  }
+
+  // Initial wait for analysis propagation (Step 11's existing 60s pause).
+  if (initialWaitSeconds > 0) {
+    await _sleepMs(initialWaitSeconds * 1000);
+  }
+
+  // Poll for the quality gate; PRs not yet analyzed return 404.
+  const startMs = Date.now();
+  let qg = null;
+  while (true) {
+    try {
+      qg = await _fetchSonarQualityGate({
+        projectKey: sonarConfig.projectKey,
+        prNumber,
+        token,
+      });
+    } catch (e) {
+      return {
+        ok: false,
+        error: "sonar_watch_quality_gate_failed",
+        message: e?.message ?? "sonar quality gate fetch failed",
+        pr_number: prNumber,
+      };
+    }
+    if (qg.available) break;
+    const elapsedSeconds = Math.floor((Date.now() - startMs) / 1000);
+    if (elapsedSeconds > totalTimeoutSeconds) {
+      return {
+        ok: true,
+        skipped: false,
+        pr_number: prNumber,
+        quality_gate: "NONE",
+        issues_summary: { open_count: 0, by_severity: {}, by_type: {}, top_issues: [] },
+        hotspots_summary: { open_count: 0, top_hotspots: [] },
+        full_issue_export_path: null,
+        timed_out: true,
+      };
+    }
+    if (pollIntervalSeconds > 0) {
+      await _sleepMs(pollIntervalSeconds * 1000);
+    }
+  }
+
+  let issues = [];
+  let hotspots = [];
+  try {
+    issues = await _fetchSonarIssues({
+      projectKey: sonarConfig.projectKey,
+      prNumber,
+      token,
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      error: "sonar_watch_issues_fetch_failed",
+      message: e?.message ?? "sonar issues fetch failed",
+      pr_number: prNumber,
+      quality_gate: qg.status,
+    };
+  }
+  try {
+    hotspots = await _fetchSonarHotspots({
+      projectKey: sonarConfig.projectKey,
+      prNumber,
+      token,
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      error: "sonar_watch_hotspots_fetch_failed",
+      message: e?.message ?? "sonar hotspots fetch failed",
+      pr_number: prNumber,
+      quality_gate: qg.status,
+    };
+  }
+
+  const exportPath = _writeSonarExport(repoRoot, prNumber, {
+    pr_number: prNumber,
+    quality_gate: qg.status,
+    issues,
+    hotspots,
+    fetched_at: new Date().toISOString(),
+  });
+
+  return {
+    ok: true,
+    skipped: false,
+    pr_number: prNumber,
+    quality_gate: qg.status,
+    issues_summary: summarizeSonarIssues(issues),
+    hotspots_summary: summarizeSonarHotspots(hotspots),
+    full_issue_export_path: exportPath,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Review-cycle seam (gc_codex_review_cycle / gc_test_quality_review_cycle,
+// issue #934)
+// ---------------------------------------------------------------------------
+//
+// The cycle tools wrap the existing reviewer entry points (runCodexReview,
+// runTestQualityReview) with an auto-posted decision record so the agent
+// collapses "run review → post decision record" into a single MCP call
+// per cycle. The shared seam is parameterized by reviewer (`codex` /
+// `test-quality`) and the underlying review fn — there is exactly one
+// implementation of the cycle wrapper, not one per reviewer (per the
+// issue #934 preflight binding rule).
+//
+// What the cycle tools post: the decision-record schema requires a
+// `decision` per finding, and only the agent (subagent) can record
+// `wontfix` / `not-applicable` (those require user authorization). The
+// cycle tool therefore posts `decision: "fix"` for every finding — the
+// common path. A subagent that has user authorization to record a
+// wontfix calls `gc_post_decision_record` directly with the override
+// AFTER the cycle, not through this wrapper.
+//
+// Compact return envelope (no verbatim findings; raw stays server-side):
+//   { ok, cycle, cap, status, next_action, findings_summary,
+//     findings_record_url, decision_record_url, error?, message? }
+
+// Per-finding rationale length cap. The total decision-record body has a
+// hard ceiling at GITHUB_ISSUE_COMMENT_BODY_MAX (65535 bytes). A cycle
+// can carry many findings, so each finding's rationale gets a budget
+// proportional to "typical cycle size × renderer overhead". 240 chars
+// (≈ a typical Twitter post) leaves room for 100+ findings in a single
+// cycle before the body cap is at risk, while still preserving enough
+// reviewer prose to be useful to a human reading the issue thread.
+// Raise this only after auditing the decision-record renderer's
+// per-finding overhead.
+const _AUTO_FIX_RATIONALE_MAX = 240;
+
+function _truncateForRationale(text) {
+  if (typeof text !== "string" || text.length === 0) {
+    return "Addressed by next cycle";
+  }
+  if (text.length <= _AUTO_FIX_RATIONALE_MAX) return text;
+  return text.slice(0, _AUTO_FIX_RATIONALE_MAX - 1) + "…";
+}
+
+// Synthesized sweep_evidence for one-off auto-fix decision entries. The
+// decision-record schema requires sweep_evidence on one-off classifications
+// (proof you searched for analogues). For a cycle-wrapper auto-fix:
+// the next review cycle re-reviews the full diff, so any analogous site
+// the original review missed will be caught structurally by that cycle.
+// That is the sweep mechanism — the cycle loop itself.
+const _AUTO_FIX_SWEEP_EVIDENCE =
+  "next review cycle re-reviews the full diff; structural sweep for analogues lives in the cycle loop";
+
+export function buildAutoFixDecisionFindings(findings) {
+  const arr = Array.isArray(findings) ? findings : [];
+  return arr.map((f, idx) => {
+    const classification = f?.classification === "class" ? "class" : "one-off";
+    const entry = {
+      id: typeof f?.id === "string" && f.id.length > 0 ? f.id : `F${idx + 1}`,
+      title: typeof f?.title === "string" && f.title.length > 0 ? f.title : "(no title)",
+      classification,
+      decision: "fix",
+      rationale: _truncateForRationale(typeof f?.body === "string" ? f.body : ""),
+    };
+    // Synthesize a location from path:line when available — gives the agent
+    // a stable anchor when revisiting the finding in the next cycle.
+    const path = typeof f?.path === "string" ? f.path : null;
+    if (path) {
+      entry.location = typeof f?.line === "number" ? `${path}:${f.line}` : path;
+    }
+    if (classification === "one-off") {
+      const swe = typeof f?.sweep_evidence === "string" && f.sweep_evidence.length > 0
+        ? f.sweep_evidence
+        : _AUTO_FIX_SWEEP_EVIDENCE;
+      entry.sweep_evidence = swe;
+    } else {
+      const instances = Array.isArray(f?.category?.instances)
+        ? f.category.instances.filter((s) => typeof s === "string" && s.length > 0)
+        : [];
+      entry.instances = instances;
+    }
+    return entry;
+  });
+}
+
+export function summarizeReviewFindings(findings, topCategoriesLimit = 5) {
+  const arr = Array.isArray(findings) ? findings : [];
+  let oneOffCount = 0;
+  let classCount = 0;
+  const categoryMap = new Map();
+  for (const f of arr) {
+    if (!f || typeof f !== "object") continue;
+    const classification = f.classification === "class" ? "class" : "one-off";
+    if (classification === "class") {
+      classCount += 1;
+      const shape = typeof f?.category?.shape === "string" ? f.category.shape : "(uncategorized)";
+      const inst = Array.isArray(f?.category?.instances) ? f.category.instances.length : 0;
+      const prev = categoryMap.get(shape) ?? { shape, instance_count: 0, finding_count: 0 };
+      prev.instance_count += inst;
+      prev.finding_count += 1;
+      categoryMap.set(shape, prev);
+    } else {
+      oneOffCount += 1;
+    }
+  }
+  const topCategories = Array.from(categoryMap.values())
+    .sort((a, b) => {
+      if (b.instance_count !== a.instance_count) return b.instance_count - a.instance_count;
+      return a.shape.localeCompare(b.shape);
+    })
+    .slice(0, topCategoriesLimit);
+  return {
+    one_off_count: oneOffCount,
+    class_count: classCount,
+    top_categories: topCategories,
+  };
+}
+
+// Map the underlying-review envelope's `next_action` to the cycle-tool
+// status string. The reviewer's `next_action` is the agent's directive;
+// the cycle tool's `status` is a coarser classification used for
+// branching on the agent's side.
+function _statusForReviewerAction(nextAction, hasFindings) {
+  if (nextAction === "post_summary_and_escalate_to_user") return "capped";
+  if (
+    nextAction === "post_clean_decision_record_and_advance_to_phase_c" ||
+    nextAction === "proceed_clean"
+  ) {
+    return "clean";
+  }
+  if (
+    nextAction === "fix_findings_and_reinvoke" ||
+    nextAction === "fix_findings_then_summarize_and_escalate"
+  ) {
+    return "findings";
+  }
+  // Any other next_action (e.g. shorten_findings_and_retry,
+  // scrub_findings_and_retry, checkout_named_feature_branch) is a fatal
+  // boundary error from the underlying review — surface as "post_failed"
+  // so the agent stops dispatching.
+  return hasFindings ? "findings" : "clean";
+}
+
+// The underlying review tools predate the cycle wrapper and use slightly
+// different next_action names for the same semantic event. Normalize to
+// the wrapper's canonical vocabulary so subagents reading the envelope
+// can branch on a single set of literals. The mapping is intentionally
+// one-way (wrapper → canonical); the underlying tools keep their own
+// vocabulary for direct callers.
+export function normalizeReviewCycleNextAction(reviewerAction, status) {
+  if (status === "clean") {
+    return "post_clean_decision_record_and_advance_to_phase_c";
+  }
+  if (status === "capped") {
+    return "post_summary_and_escalate_to_user";
+  }
+  // For "findings" and "post_failed" the underlying vocabulary already
+  // matches the wrapper's. Pass through.
+  return reviewerAction;
+}
+
+async function _runReviewCycleShared({
+  reviewer,
+  reviewResult,
+  repoPath,
+  issueNumber,
+}) {
+  // Non-ok review results pass straight through; the cycle tool does
+  // not paper over reviewer boundary errors with a decision record.
+  if (!reviewResult || reviewResult.ok !== true) {
+    return reviewResult;
+  }
+
+  const cycle =
+    typeof reviewResult.cycle === "number" ? reviewResult.cycle : null;
+  const cap = typeof reviewResult.cap === "number" ? reviewResult.cap : null;
+  const findings = Array.isArray(reviewResult.findings) ? reviewResult.findings : [];
+  const nextAction =
+    typeof reviewResult.next_action === "string" ? reviewResult.next_action : "";
+  const status = _statusForReviewerAction(nextAction, findings.length > 0);
+
+  const summary = summarizeReviewFindings(findings);
+  const findingsRecordUrl =
+    typeof reviewResult.findings_comment_url === "string"
+      ? reviewResult.findings_comment_url
+      : typeof reviewResult.findings_record_url === "string"
+        ? reviewResult.findings_record_url
+        : null;
+
+  // Cap-refused: the underlying review did NOT consume a cycle (the
+  // marker was not written). The agent must escalate to the user.
+  // No decision record is posted.
+  if (status === "capped") {
+    return {
+      ok: true,
+      reviewer,
+      cycle,
+      cap,
+      status: "capped",
+      next_action: normalizeReviewCycleNextAction(nextAction, "capped"),
+      findings_summary: summary,
+      findings_record_url: findingsRecordUrl,
+      decision_record_url: null,
+    };
+  }
+
+  // Otherwise: post the auto-fix decision record. The cycle was
+  // consumed by the review, so the decision record must be posted —
+  // failure here means the durable record is incomplete and the
+  // workflow contract is violated (ADR-029).
+  const decisionFindings = buildAutoFixDecisionFindings(findings);
+  let drResult;
+  try {
+    drResult = await runPostDecisionRecord({
+      repoPath,
+      issueNumber,
+      cycle: cycle ?? 1,
+      reviewer,
+      findings: decisionFindings,
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      reviewer,
+      cycle,
+      cap,
+      status: "post_failed",
+      error: "review_cycle_decision_record_post_failed",
+      message: e?.message ?? "runPostDecisionRecord threw",
+      findings_summary: summary,
+      findings_record_url: findingsRecordUrl,
+      decision_record_url: null,
+    };
+  }
+  if (!drResult || drResult.ok !== true) {
+    return {
+      ok: false,
+      reviewer,
+      cycle,
+      cap,
+      status: "post_failed",
+      error: drResult?.error ?? "review_cycle_decision_record_post_failed",
+      message: drResult?.message ?? "runPostDecisionRecord returned ok=false",
+      findings_summary: summary,
+      findings_record_url: findingsRecordUrl,
+      decision_record_url: null,
+    };
+  }
+
+  return {
+    ok: true,
+    reviewer,
+    cycle,
+    cap,
+    status,
+    next_action: normalizeReviewCycleNextAction(nextAction, status),
+    findings_summary: summary,
+    findings_record_url: findingsRecordUrl,
+    decision_record_url: drResult.comment_url ?? null,
+  };
+}
+
+export async function runCodexReviewCycle({
+  repoPath,
+  issueNumber,
+  baseBranch = null,
+  uncommitted = true,
+  overrideCap = false,
+  overrideReason = null,
+}) {
+  if (typeof repoPath !== "string" || repoPath.length === 0) {
+    return {
+      ok: false,
+      error: "codex_review_cycle_input_invalid",
+      message: "repo_path is required",
+    };
+  }
+  if (
+    typeof issueNumber !== "number" ||
+    !Number.isInteger(issueNumber) ||
+    issueNumber <= 0
+  ) {
+    return {
+      ok: false,
+      error: "codex_review_cycle_input_invalid",
+      message: "issue_number must be a positive integer",
+    };
+  }
+  if (uncommitted !== true) {
+    return {
+      ok: false,
+      error: "codex_review_cycle_input_invalid",
+      message:
+        "gc_codex_review_cycle is the pre-push entrypoint only; uncommitted must be true. " +
+        "Post-push direct callers should use gc_codex_review with pr_number.",
+    };
+  }
+
+  const reviewResult = await runCodexReview({
+    repoPath,
+    baseBranch: baseBranch ?? "dev",
+    uncommitted: true,
+    issueNumber,
+    overrideCap,
+    overrideReason,
+  });
+
+  return _runReviewCycleShared({
+    reviewer: "codex",
+    reviewResult,
+    repoPath,
+    issueNumber,
+  });
+}
+
+export async function runTestQualityReviewCycle({
+  repoPath,
+  issueNumber,
+  baseBranch = null,
+  overrideCap = false,
+  overrideReason = null,
+  model = undefined,
+}) {
+  if (typeof repoPath !== "string" || repoPath.length === 0) {
+    return {
+      ok: false,
+      error: "test_quality_review_cycle_input_invalid",
+      message: "repo_path is required",
+    };
+  }
+  if (
+    typeof issueNumber !== "number" ||
+    !Number.isInteger(issueNumber) ||
+    issueNumber <= 0
+  ) {
+    return {
+      ok: false,
+      error: "test_quality_review_cycle_input_invalid",
+      message: "issue_number must be a positive integer",
+    };
+  }
+
+  const reviewParams = {
+    repoPath,
+    baseBranch,
+    issueNumber,
+    overrideCap,
+    overrideReason,
+  };
+  if (model !== undefined) reviewParams.model = model;
+  const reviewResult = await runTestQualityReview(reviewParams);
+
+  return _runReviewCycleShared({
+    reviewer: "test-quality",
+    reviewResult,
+    repoPath,
+    issueNumber,
+  });
 }
 
 // ---------------------------------------------------------------------------

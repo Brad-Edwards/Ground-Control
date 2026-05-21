@@ -302,3 +302,101 @@ The renderer contract (canonical Markdown, sensitive-content scrub,
 reserved-marker rejection, marker family `gc:decision-record`, defer
 rejection) is unchanged. See ADR-029 (amendments) for the envelope shape and
 issue #931 for the principal-engineer recalibration motivation.
+
+**2026-05-19 (issue #934).** Extends the routing design from "cheap workers
+for cheap steps" toward "subagents as context boundaries plus MCP tools as
+loop drivers". No change to the routing stage names, the tier-to-model
+mapping, the telemetry record shape, or the GC-O007 gate contract. What
+changes is the **packaging of the workflow prose** and the **boundary at
+which loops execute**.
+
+1. **Thin orchestrator + per-step files.** `skills/implement/SKILL.md` is
+   reduced from a monolithic 716-line script to a ~100-line orchestrator
+   that enumerates step ids and delegates per-step work to subagents.
+   Per-step prose lives at `skills/implement/steps/step-NN-<id>.md`, one
+   file per step. The canonical Review loop rules live at
+   `skills/implement/steps/_review-loop-rules.md`; Steps 6.5 and 6.6
+   reference it by path (the duplicated prose at the bottom of the old
+   SKILL.md and across the two step bodies is removed). Per-step files are
+   workflow prose packaging only — the executable schema remains
+   `.ground-control.yaml` + `gc_get_repo_ground_control_context`; stage
+   ids are unchanged.
+
+2. **Subagents as context boundaries.** For every step whose route resolves
+   to `agent: subagent`, the parent spawns a subagent whose prompt is
+   verbatim "Execute `skills/implement/steps/step-NN-<id>.md` against issue
+   N; return `{status, cached_for_next_step}`". The parent never loads the
+   step file. The subagent's return envelope is structured — never raw
+   `gh`/`git` output, never full file contents, never verbatim review
+   prose. The savings target is the parent-orchestrator context, which
+   used to carry the full SKILL prose for the entire 1–2 hour run.
+
+3. **MCP tools drive loops, not the agent.** Four new tools land:
+
+   - `gc_codex_review_cycle` — wraps the existing `gc_codex_review` AND
+     auto-posts the per-cycle decision record. Returns a compact terminal
+     envelope: `{ok, reviewer, cycle, cap, status, next_action,
+     findings_summary, findings_record_url, decision_record_url}`.
+     Verbatim review prose stays server-side via the underlying findings
+     record. Auto-posted decisions are always `decision: "fix"` — the only
+     decision the cycle tool can record without user authorization. A
+     subagent that has obtained user authorization for a wontfix calls
+     `gc_post_decision_record` directly with the override AFTER the cycle.
+   - `gc_test_quality_review_cycle` — same shape as the codex wrapper, for
+     test-quality reviews. Both cycle wrappers share one parameterized
+     internal seam (`_runReviewCycleShared`) parameterized by reviewer and
+     cap source; there is exactly one cycle implementation, not one per
+     reviewer.
+   - `gc_watch_ci_run` — server-side GitHub Actions poller. Replaces the
+     per-poll agent turn cost of /implement Step 10. Returns one terminal
+     envelope `{conclusion, failed_steps[], log_summary}` after the run
+     reaches a terminal state, hits the queued-too-long cap (5 min
+     default), or hits the total cap (45 min default). Raw CI logs stay
+     server-side; only the bounded UTF-8 tail of `gh run view --log-failed`
+     is returned.
+   - `gc_watch_sonar_analysis` — server-side SonarCloud poller. Returns
+     `{quality_gate, issues_summary, hotspots_summary,
+     full_issue_export_path}` after the analysis is fetched and
+     paginated. The `SONAR_TOKEN` is read at call time and passed only in
+     the Authorization HTTP header — never in argv, telemetry, exports,
+     or returned envelopes (the issue #934 preflight binding rule).
+
+4. **Issue-thread cache.** `gc_get_issue_thread` returns the body +
+   comments + a sha256 content hash on first call. Subsequent calls with
+   the same `expected_hash` return `{unchanged: true}` without re-fetching
+   from GitHub. The cache is keyed by `(repoRoot, issueNumber)` —
+   explicitly NOT branch-keyed — and is operational only; the GitHub
+   issue thread remains the durable record per ADR-029. `expected_hash=null`
+   always forces a fresh fetch, used by callers after a posting may have
+   failed or when marker state is uncertain.
+
+5. **Telemetry actually writes.** The `gc_log_step_telemetry` tool was
+   correctly implemented from #868 but never called by the SKILL prose.
+   The new orchestrator calls it at the end of every routed step from
+   one place (the per-step harness), producing one JSONL line per
+   step in `.gc/telemetry/<issue>-<sanitized-branch>.jsonl`. Schema
+   unchanged.
+
+6. **Policy follows the new layout.** The
+   `tools/policy/checks.py::run_test_quality_decision_record_contract`
+   check, which used to read `skills/implement/SKILL.md` directly, now
+   reads `skills/implement/steps/step-06.6-test-quality-review.md` as
+   the primary contract source and falls back to SKILL.md for backward
+   compatibility. The step heading regex accepts H1 in addition to
+   H2–H4 to match the per-step file convention. The Step 6.6 file
+   explicitly restates the required contract markers
+   (`gc_post_decision_record`, `findings: []`, `ok: true`,
+   findings-fix-in-same-turn directive) — the cycle wrapper auto-implements
+   them, but the step file documents them for the policy check.
+
+The four new tools are additive — `gc_codex_review`, `gc_test_quality_review`,
+`gc_post_decision_record`, and the rest stay unchanged in shape and signature
+so direct callers (including `/quickfix` and external scripts) keep working.
+
+The cycle wrappers, watch tools, and issue-thread cache are the substrate
+GC-O009 (Workflow Orchestration via Temporal) will eventually formalize as
+Temporal **activities** with typed inputs/outputs. This work is bridge work
+toward GC-O009 — moving repeated loops into MCP boundaries that return one
+terminal envelope per invocation, instead of having the agent drive each
+iteration. No Temporal adoption, no DB tables, no branch-keyed counters, no
+new workflow DSL; the issue thread on GitHub remains the durable record.

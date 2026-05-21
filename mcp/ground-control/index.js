@@ -75,6 +75,8 @@ import {
   runTestQualityReview, TEST_QUALITY_REVIEW_HARD_CAP,
   runPostImplementationPlan,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
+  runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
+  runCodexReviewCycle, runTestQualityReviewCycle,
   runResolveWorkflowRoute,
   DECISION_RECORD_REVIEWERS, DECISION_RECORD_DECISIONS, DECISION_RECORD_CLASSIFICATIONS,
   PR_BODY_CHANGE_CLASSES, PR_REQUIREMENT_RE, EXACT_REQUIREMENT_UID_RE,
@@ -757,6 +759,123 @@ server.tool(
         outputTokens: output_tokens ?? null,
         outcome,
         ts: ts ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_get_issue_thread",
+  "Fetch the GitHub issue body + comments with an in-memory content-addressed cache. First call returns the full payload + a sha256 hash; subsequent calls passing `expected_hash` return `{unchanged: true}` without re-fetching when the hash matches. Cache is keyed by (repo, issue_number) — NOT branch-keyed — and is operational only (the GitHub issue thread remains the durable record per ADR-029). Pass expected_hash=null to force a fresh fetch (use after a posting may have failed or when marker state is uncertain).",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    expected_hash: z.string().min(1).nullable().optional(),
+  },
+  async ({ repo_path, issue_number, expected_hash }) => {
+    try {
+      return ok(JSON.stringify(await runGetIssueThread({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        expectedHash: expected_hash ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_watch_ci_run",
+  "Poll a GitHub Actions run to a terminal state server-side and return one compact terminal envelope (conclusion, failed steps, bounded log summary). Designed for the /implement Step 10 monitor: the agent makes one tool call; the MCP server holds the connection while polling so the agent's context is not burned by per-poll turns. Defaults: queued cap 5 min, total cap 45 min, poll every 15s. On queued-too-long or timeout the tool returns ok=true with conclusion='queued_too_long' or 'timed_out' so the caller can decide policy. If run_id is omitted, the latest run for the branch is resolved via `gh run list`. Raw CI logs stay server-side; only a bounded UTF-8 summary (default 4096 bytes from the tail of `--log-failed`) reaches the caller.",
+  {
+    repo_path: z.string(),
+    branch: z.string().min(1),
+    run_id: z.number().int().positive().nullable().optional(),
+    queued_timeout_seconds: z.number().int().positive().optional(),
+    total_timeout_seconds: z.number().int().positive().optional(),
+    poll_interval_seconds: z.number().int().positive().optional(),
+  },
+  async ({ repo_path, branch, run_id, queued_timeout_seconds, total_timeout_seconds, poll_interval_seconds }) => {
+    try {
+      return ok(JSON.stringify(await runWatchCiRun({
+        repoPath: repo_path,
+        branch,
+        runId: run_id ?? null,
+        queuedTimeoutSeconds: queued_timeout_seconds ?? 300,
+        totalTimeoutSeconds: total_timeout_seconds ?? 2700,
+        pollIntervalSeconds: poll_interval_seconds ?? 15,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_codex_review_cycle",
+  "Pre-push codex-review cycle wrapper. Runs gc_codex_review (uncommitted=true) AND auto-posts the canonical per-cycle decision record (every finding gets decision='fix' with auto-rationale, the only decision the cycle tool can record without user authorization). Returns a compact envelope: {ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url}. Verbatim review prose and per-finding bodies stay server-side via the underlying review's findings record — they never reach the agent through this tool. The subagent that drives the loop calls this tool once per cycle; on next_action='fix_findings_and_reinvoke' it fixes, self-verifies locally, re-stages, and re-invokes. wontfix / not-applicable decisions still require an explicit gc_post_decision_record call after user authorization.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    base_branch: z.string().nullable().optional(),
+    uncommitted: z.boolean().optional(),
+    override_cap: z.boolean().optional(),
+    override_reason: z.string().nullable().optional(),
+  },
+  async ({ repo_path, issue_number, base_branch, uncommitted, override_cap, override_reason }) => {
+    try {
+      return ok(JSON.stringify(await runCodexReviewCycle({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        baseBranch: base_branch ?? null,
+        uncommitted: uncommitted ?? true,
+        overrideCap: Boolean(override_cap),
+        overrideReason: override_reason ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_test_quality_review_cycle",
+  "Pre-push test-quality review cycle wrapper. Runs gc_test_quality_review AND auto-posts the canonical per-cycle decision record (reviewer='test-quality', every finding decision='fix' with auto-rationale). Same compact envelope shape as gc_codex_review_cycle. Verbatim reviewer prose stays server-side. Skips automatically when the diff has no test files (the underlying review handles that).",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    base_branch: z.string().nullable().optional(),
+    override_cap: z.boolean().optional(),
+    override_reason: z.string().nullable().optional(),
+    model: z.string().optional(),
+  },
+  async ({ repo_path, issue_number, base_branch, override_cap, override_reason, model }) => {
+    try {
+      return ok(JSON.stringify(await runTestQualityReviewCycle({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        baseBranch: base_branch ?? null,
+        overrideCap: Boolean(override_cap),
+        overrideReason: override_reason ?? null,
+        model,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_watch_sonar_analysis",
+  "Poll SonarCloud for a PR's quality gate and open issues / hotspots server-side. Returns one compact terminal envelope: {quality_gate, issues_summary, hotspots_summary, full_issue_export_path}. Designed for /implement Step 11: the agent makes one tool call; the MCP server holds the connection through the analysis propagation wait (60s default) and quality-gate polling (30 min default). When the repo has no sonarcloud block in .ground-control.yaml the tool returns ok=true skipped=true quality_gate='NONE' (mirrors the existing skip behavior). SonarCloud REST authentication uses HTTP Basic with the SONAR_TOKEN env var as the username — the token is read at call time and passed only in the Authorization header (never argv, telemetry, export, or returned envelope). The full per-issue + per-hotspot payload is written server-side under `.gc/sonar/<pr>-<ts>.json` for on-demand drilldown; only summaries reach the caller.",
+  {
+    repo_path: z.string(),
+    pr_number: z.number().int().positive(),
+    initial_wait_seconds: z.number().int().nonnegative().optional(),
+    total_timeout_seconds: z.number().int().nonnegative().optional(),
+    poll_interval_seconds: z.number().int().nonnegative().optional(),
+  },
+  async ({ repo_path, pr_number, initial_wait_seconds, total_timeout_seconds, poll_interval_seconds }) => {
+    try {
+      return ok(JSON.stringify(await runWatchSonarAnalysis({
+        repoPath: repo_path,
+        prNumber: pr_number,
+        initialWaitSeconds: initial_wait_seconds ?? 60,
+        totalTimeoutSeconds: total_timeout_seconds ?? 1800,
+        pollIntervalSeconds: poll_interval_seconds ?? 30,
       }), null, 2));
     } catch (e) { return err(e); }
   },

@@ -1623,16 +1623,19 @@ class TestQualityDecisionRecordContractTest(unittest.TestCase):
                 )
 
     def test_real_skill_passes_contract(self):
-        # The repo's SKILL.md MUST satisfy the contract (this is the
-        # regression target for issue #884). If this fails the SKILL has
-        # drifted and the workflow is back to halting on clean cycles.
-        skill_path = REPO_ROOT / "skills" / "implement" / "SKILL.md"
-        text = skill_path.read_text(encoding="utf-8")
-        violations = run_test_quality_decision_record_contract(text=text)
+        # The repo's test-quality contract source MUST satisfy the
+        # gc_post_decision_record contract (regression target for issue
+        # #884). After issue #934 split the monolithic SKILL.md into a
+        # thin orchestrator + per-step files, the Step 6.6 section lives
+        # at skills/implement/steps/step-06.6-test-quality-review.md.
+        # Passing no `text=` argument lets run_test_quality_decision_record_contract
+        # discover the right source path itself (step file first, with a
+        # fallback to SKILL.md for backward compatibility).
+        violations = run_test_quality_decision_record_contract()
         self.assertEqual(
             violations,
             [],
-            "skills/implement/SKILL.md Step 13 must mandate the "
+            "The test-quality contract source must mandate the "
             "gc_post_decision_record contract for test-quality cycles "
             "(issue #884 regression target).",
         )

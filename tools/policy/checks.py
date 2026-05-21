@@ -1195,11 +1195,21 @@ def check_pr_body(body: str) -> list[Violation]:
 # ---------------------------------------------------------------------------
 
 IMPLEMENT_SKILL_PATH = "skills/implement/SKILL.md"
+# After issue #934 the monolithic SKILL.md is a thin orchestrator and the
+# per-step prose lives at `skills/implement/steps/step-NN-<id>.md`. The
+# test-quality contract check reads from the step file when the
+# orchestrator no longer carries the Step 6.6 heading inline.
+IMPLEMENT_STEP_TEST_QUALITY_PATH = (
+    "skills/implement/steps/step-06.6-test-quality-review.md"
+)
 
-# Matches a Markdown step heading at any level (`##` through `####`) whose
+# Matches a Markdown step heading at any level (`#` through `####`) whose
 # text starts with the given step label (e.g. `Step 13`). Captures the
-# heading line so the splitter knows where the section begins.
-_STEP_HEADING_RE = re.compile(r"^#{2,4}\s+(Step\s+\d+(?:\.\d+)?)\b.*$", re.MULTILINE)
+# heading line so the splitter knows where the section begins. The H1
+# branch covers per-step files split out of SKILL.md by issue #934 — each
+# step file uses an H1 step heading rather than the H3 used inline in
+# the monolithic SKILL.
+_STEP_HEADING_RE = re.compile(r"^#{1,4}\s+(Step\s+\d+(?:\.\d+)?)\b.*$", re.MULTILINE)
 
 
 def extract_step_section(body: str, step_label: str) -> str | None:
@@ -1245,28 +1255,46 @@ def run_test_quality_decision_record_contract(
       ``test-quality-decision-record-contract`` — section present, contract not.
     """
     if text is None:
+        # The Step 6.6 section moved from inline in SKILL.md to its own
+        # per-step file under skills/implement/steps/ when issue #934
+        # split the monolithic SKILL into a thin orchestrator + per-step
+        # prose. Prefer reading from the orchestrator's per-step file
+        # directly; fall back to the orchestrator itself (covering both
+        # the new layout and the older inline layout).
+        step_path = root / IMPLEMENT_STEP_TEST_QUALITY_PATH
         skill_path = root / IMPLEMENT_SKILL_PATH
-        if not skill_path.exists():
+        if step_path.exists():
+            text = step_path.read_text(encoding="utf-8")
+        elif skill_path.exists():
+            text = skill_path.read_text(encoding="utf-8")
+        else:
             return [
                 Violation(
                     code="test-quality-skill-missing",
-                    message=f"{IMPLEMENT_SKILL_PATH} is missing — test-quality contract cannot be verified.",
-                    details=[f"expected at {IMPLEMENT_SKILL_PATH}"],
+                    message=(
+                        f"Neither {IMPLEMENT_STEP_TEST_QUALITY_PATH} nor "
+                        f"{IMPLEMENT_SKILL_PATH} exists — test-quality "
+                        "contract cannot be verified."
+                    ),
+                    details=[
+                        f"expected at {IMPLEMENT_STEP_TEST_QUALITY_PATH}",
+                        f"or at {IMPLEMENT_SKILL_PATH}",
+                    ],
                 )
             ]
-        text = skill_path.read_text(encoding="utf-8")
 
     section = extract_step_section(text, "Step 6.6")
     if section is None:
         return [
             Violation(
                 code="test-quality-section-missing",
-                message="`### Step 6.6: ...` section is missing from the SKILL.",
+                message="`Step 6.6: ...` section is missing from the test-quality contract source.",
                 details=[
                     "Step 6.6 is the pre-push test-quality review phase "
                     "(moved from former Step 13 by issue #906); the section "
                     "must exist and must mandate the gc_post_decision_record "
-                    "contract per issue #884.",
+                    "contract per issue #884. After issue #934 the section "
+                    f"lives at {IMPLEMENT_STEP_TEST_QUALITY_PATH}.",
                 ],
             )
         ]
