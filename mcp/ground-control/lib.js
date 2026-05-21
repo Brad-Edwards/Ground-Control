@@ -8225,6 +8225,14 @@ export async function deleteAssetRelation(assetId, relationId, project) {
   );
 }
 
+export async function updateAssetRelation(assetId, relationId, data, project) {
+  return request(
+    "PUT",
+    `/api/v1/assets/${encodeURIComponent(assetId)}/relations/${encodeURIComponent(relationId)}`,
+    { body: data, params: { project } },
+  );
+}
+
 export async function detectAssetCycles(project) {
   return request("GET", "/api/v1/assets/topology/cycles", { params: { project } });
 }
