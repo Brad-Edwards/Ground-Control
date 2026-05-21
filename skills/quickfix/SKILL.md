@@ -220,3 +220,14 @@ invoked from /quickfix, it returns the same verdict envelope as the
 traceability sections. The /quickfix lane does NOT consume
 `.ground-control.yaml::architecture.vocabulary` itself; that block is
 consumed only by the pre-push reviewers and the preflight (when invoked).
+
+**2026-05-21 (issue #937).** When `--review` is supplied, the optional codex
+and test-quality pre-push reviews (Steps Q6.5 / Q6.6) run as async background
+jobs: `gc_codex_review` / `gc_test_quality_review` are called with
+`async: true` and the job is polled via the new `gc_codex_job` tool, exactly
+as the /implement Step 6.5 / 6.6 prose this lane defers to now describes. The
+cap-1 default, `override_cap` semantics, and the `gc_post_decision_record`
+contract this lane inherits are unchanged — async only changes how the agent
+waits for a review cycle's result, so the multi-minute child process is not
+orphaned by the MCP client's tool-call timeout (issue #893). See ADR-036
+(amendments) for the job model.
