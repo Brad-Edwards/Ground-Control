@@ -6508,6 +6508,7 @@ export async function runTestQualityReview({
     cap: decision.cap,
     finding_count: findings.length,
     findings,
+    architectural_read: parsed.envelope?.architectural_read,
     next_action: nextAction,
     findings_comment_url: markerWriteResult.recordUrl,
     changed_test_files: changedTestFiles,
@@ -7162,8 +7163,8 @@ export async function runCodexReview({
         issueNumber: recordIssueNumber,
         prNumber: uncommitted ? null : effectivePr,
         branch: prePushOwnership ? prePushOwnership.branchName : null,
-        coreReviewText: core.body,
-        securityReviewText: security.body,
+        coreReviewText: renderReviewerEnvelope(core),
+        securityReviewText: renderReviewerEnvelope(security),
         postedComments: comments,
       });
       // #804 review-cycle-1 finding 2: route the rendered body through the
@@ -7344,6 +7345,13 @@ export async function runCodexReview({
     error: partialFailure ? "review_partial_failure" : undefined,
     finding_count: comments.length,
     comments,
+    // architectural_read merges both reviewers' reads for the decision record
+    // (issue #966). `verdict` is intentionally NOT surfaced for the cycle
+    // wrapper: the decision-record consistency validator keys structural
+    // blocking on `classification === "class"` only, so a codex `don't-ship`
+    // justified by a one-off structural_blocker would fail validation. The
+    // findings list already conveys the outcome.
+    architectural_read: mergeReviewerArchitecturalReads(core, security),
     post_failures: postFailures,
     parse_errors: parseErrors,
     core_review_text: core.body,
@@ -7514,6 +7522,62 @@ function chunkText(text, chunkSize) {
 // a continuation header.
 //
 // Pure function: testable without IO.
+// Render a parsed reviewer envelope ({verdict, architectural_read, blocking,
+// notes}) into the Markdown the durable findings record shows. Post-#931 codex
+// writes its substance INSIDE the ===REVIEW=== block, so `body` (the prose
+// before the block) is ~always empty — feeding `body` to the findings-record
+// renderer made the comment show `## Core review _(empty)_` regardless of what
+// codex returned (issue #966, ex-#965). Rendering the parsed envelope is what
+// makes the findings comment actually show the review. Falls back to the raw
+// `body` when the envelope is absent (parse failure).
+export function renderReviewerEnvelope(reviewer) {
+  const env = reviewer?.envelope;
+  if (!env || typeof env !== "object") {
+    return typeof reviewer?.body === "string" ? reviewer.body.trim() : "";
+  }
+  const lines = [];
+  if (typeof env.verdict === "string" && env.verdict !== "") {
+    lines.push(`**Verdict:** \`${env.verdict}\``, "");
+  }
+  if (typeof env.architectural_read === "string" && env.architectural_read.trim() !== "") {
+    lines.push(env.architectural_read.trim(), "");
+  }
+  const blocking = Array.isArray(env.blocking) ? env.blocking : [];
+  if (blocking.length === 0) {
+    lines.push("_No blocking findings._");
+  } else {
+    lines.push(`**Blocking findings (${blocking.length}):**`, "");
+    blocking.forEach((f, i) => {
+      const cls = f?.classification === "class" ? "class" : "one-off";
+      let loc = "";
+      if (typeof f?.path === "string" && f.path !== "") {
+        loc = typeof f?.line === "number" ? ` — \`${f.path}:${f.line}\`` : ` — \`${f.path}\``;
+      }
+      lines.push(`${i + 1}. **[${cls}]** ${f?.title ?? "(no title)"}${loc}`);
+      if (typeof f?.body === "string" && f.body.trim() !== "") {
+        lines.push(`   ${f.body.trim().replace(/\n/g, "\n   ")}`);
+      }
+    });
+  }
+  return lines.join("\n").trim();
+}
+
+// Merge the core + security reviewers' architectural_read into one string for
+// the decision record. Each reviewer's read is required-non-empty by
+// validateReviewEnvelope; returns undefined only when neither envelope parsed.
+export function mergeReviewerArchitecturalReads(core, security) {
+  const parts = [];
+  const coreRead = core?.envelope?.architectural_read;
+  const secRead = security?.envelope?.architectural_read;
+  if (typeof coreRead === "string" && coreRead.trim() !== "") {
+    parts.push(`**Core reviewer:** ${coreRead.trim()}`);
+  }
+  if (typeof secRead === "string" && secRead.trim() !== "") {
+    parts.push(`**Security reviewer:** ${secRead.trim()}`);
+  }
+  return parts.length > 0 ? parts.join("\n\n") : undefined;
+}
+
 export function buildCodexReviewFindingsComments({
   cycleNumber,
   cap,
@@ -12237,6 +12301,13 @@ async function _runReviewCycleShared({
       cycle: cycle ?? 1,
       reviewer,
       findings: decisionFindings,
+      // Forward the reviewer's architectural read so the decision record
+      // carries the review's reasoning, not just a finding count (issue #966).
+      // Omitted when absent so the record falls back to the legacy shape.
+      ...(typeof reviewResult.architectural_read === "string"
+        && reviewResult.architectural_read.trim() !== ""
+        ? { architectural_read: reviewResult.architectural_read }
+        : {}),
     });
   } catch (e) {
     return {
