@@ -10932,3 +10932,38 @@ describe("async review-job registry (gc_codex_job, issue #937)", () => {
     assert.throws(() => startReviewJob("codex_review", null), /runFn must be a function/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// reviewCycleFindings — codex/test-quality field reconciliation (issue #966)
+// ---------------------------------------------------------------------------
+
+describe("reviewCycleFindings — cycle-seam field reconciliation (issue #966)", () => {
+  it("reads test-quality findings from .findings", async () => {
+    const { reviewCycleFindings } = await import("./lib.js");
+    const r = reviewCycleFindings({ ok: true, findings: [{ title: "a" }, { title: "b" }] });
+    assert.equal(r.length, 2);
+  });
+
+  it("reads codex findings from .comments when .findings is absent", async () => {
+    const { reviewCycleFindings } = await import("./lib.js");
+    // runCodexReview returns its findings array under `comments`, not
+    // `findings`. Before #966 the cycle seam read only `.findings`, so every
+    // codex review was flattened to "0 findings" and the review was a no-op.
+    const r = reviewCycleFindings({ ok: true, comments: [{ title: "x" }, { title: "y" }, { title: "z" }] });
+    assert.equal(r.length, 3);
+  });
+
+  it("prefers .findings when both are present", async () => {
+    const { reviewCycleFindings } = await import("./lib.js");
+    const r = reviewCycleFindings({ findings: [{ title: "a" }], comments: [{ title: "b" }, { title: "c" }] });
+    assert.equal(r.length, 1);
+    assert.equal(r[0].title, "a");
+  });
+
+  it("returns [] when neither field is present or input is nullish", async () => {
+    const { reviewCycleFindings } = await import("./lib.js");
+    assert.deepEqual(reviewCycleFindings({ ok: true }), []);
+    assert.deepEqual(reviewCycleFindings(null), []);
+    assert.deepEqual(reviewCycleFindings(undefined), []);
+  });
+});

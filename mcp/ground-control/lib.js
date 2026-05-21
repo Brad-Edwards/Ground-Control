@@ -12165,6 +12165,20 @@ export function normalizeReviewCycleNextAction(reviewerAction, status) {
   return reviewerAction;
 }
 
+// Both cycle wrappers feed _runReviewCycleShared, but the two underlying
+// review tools name their findings array differently: runTestQualityReview
+// returns it as `findings`, while runCodexReview returns it as `comments` (a
+// legacy name from when codex review posted PR inline comments). The shared
+// seam must read whichever the tool produced — without this reconciliation
+// gc_codex_review_cycle saw `reviewResult.findings === undefined`, flattened
+// every codex review to "0 findings / clean", and the codex implementation
+// review was a silent no-op (issue #966).
+export function reviewCycleFindings(reviewResult) {
+  if (Array.isArray(reviewResult?.findings)) return reviewResult.findings;
+  if (Array.isArray(reviewResult?.comments)) return reviewResult.comments;
+  return [];
+}
+
 async function _runReviewCycleShared({
   reviewer,
   reviewResult,
@@ -12180,7 +12194,7 @@ async function _runReviewCycleShared({
   const cycle =
     typeof reviewResult.cycle === "number" ? reviewResult.cycle : null;
   const cap = typeof reviewResult.cap === "number" ? reviewResult.cap : null;
-  const findings = Array.isArray(reviewResult.findings) ? reviewResult.findings : [];
+  const findings = reviewCycleFindings(reviewResult);
   const nextAction =
     typeof reviewResult.next_action === "string" ? reviewResult.next_action : "";
   const status = _statusForReviewerAction(nextAction, findings.length > 0);
