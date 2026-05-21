@@ -10737,3 +10737,112 @@ describe("runTestQualityReviewCycle input validation (issue #934)", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Async review-job registry (gc_codex_job, issue #937)
+// ---------------------------------------------------------------------------
+
+describe("async review-job registry (gc_codex_job, issue #937)", () => {
+  const flush = () => new Promise((r) => setImmediate(r));
+
+  it("startReviewJob returns a running envelope with a job id and echoes kind", async () => {
+    const { startReviewJob, _resetReviewJobsForTest } = await import("./lib.js");
+    _resetReviewJobsForTest();
+    let resolveRun;
+    const start = startReviewJob("codex_review", () => new Promise((r) => { resolveRun = r; }));
+    assert.equal(start.ok, true);
+    assert.equal(start.status, "running");
+    assert.equal(start.kind, "codex_review");
+    assert.match(start.job_id, /^rjob-/);
+    await flush();
+    resolveRun({ ok: true });
+  });
+
+  it("pollReviewJob reports running, then done carrying the result envelope", async () => {
+    const { startReviewJob, pollReviewJob, _resetReviewJobsForTest } = await import("./lib.js");
+    _resetReviewJobsForTest();
+    let resolveRun;
+    const start = startReviewJob("codex_review_cycle", () => new Promise((r) => { resolveRun = r; }));
+    // runFn runs one microtask after start; flush so its executor binds resolveRun.
+    await flush();
+
+    const running = pollReviewJob(start.job_id);
+    assert.equal(running.ok, true);
+    assert.equal(running.status, "running");
+    assert.equal(running.job_id, start.job_id);
+
+    const envelope = { ok: true, next_action: "post_clean_decision_record_and_advance_to_phase_c" };
+    resolveRun(envelope);
+    await flush();
+
+    const done = pollReviewJob(start.job_id);
+    assert.equal(done.ok, true);
+    assert.equal(done.status, "done");
+    assert.deepEqual(done.result, envelope);
+  });
+
+  it("pollReviewJob returns job_not_found for an unknown id", async () => {
+    const { pollReviewJob, _resetReviewJobsForTest } = await import("./lib.js");
+    _resetReviewJobsForTest();
+    const r = pollReviewJob("rjob-does-not-exist");
+    assert.equal(r.ok, false);
+    assert.equal(r.error, "job_not_found");
+  });
+
+  it("a runFn that rejects surfaces as a failed job", async () => {
+    const { startReviewJob, pollReviewJob, _resetReviewJobsForTest } = await import("./lib.js");
+    _resetReviewJobsForTest();
+    const start = startReviewJob(
+      "test_quality_review",
+      () => Promise.reject(new Error("codex exec blew up")),
+    );
+    await flush();
+    const done = pollReviewJob(start.job_id);
+    assert.equal(done.ok, false);
+    assert.equal(done.status, "failed");
+    assert.equal(done.error, "job_failed");
+    assert.match(done.message, /codex exec blew up/);
+  });
+
+  it("cancelReviewJob aborts the signal and the job ends cancelled", async () => {
+    const { startReviewJob, pollReviewJob, cancelReviewJob, _resetReviewJobsForTest } =
+      await import("./lib.js");
+    _resetReviewJobsForTest();
+    let sawAbort = false;
+    const start = startReviewJob("codex_review", (signal) => new Promise((resolve, reject) => {
+      const onAbort = () => { sawAbort = true; reject(new Error("aborted")); };
+      if (signal.aborted) { onAbort(); return; }
+      signal.addEventListener("abort", onAbort);
+    }));
+    // Let runFn run and register its abort listener before cancelling.
+    await flush();
+    const cancel = cancelReviewJob(start.job_id);
+    assert.equal(cancel.ok, true);
+    assert.equal(cancel.status, "cancelling");
+    await flush();
+    assert.equal(sawAbort, true, "runFn must observe the abort signal so the child is killed");
+    const done = pollReviewJob(start.job_id);
+    assert.equal(done.ok, false);
+    assert.equal(done.status, "cancelled");
+    assert.equal(done.error, "job_cancelled");
+  });
+
+  it("cancelReviewJob is idempotent on a terminal job and 404s an unknown id", async () => {
+    const { startReviewJob, cancelReviewJob, _resetReviewJobsForTest } = await import("./lib.js");
+    _resetReviewJobsForTest();
+    const start = startReviewJob("codex_review", () => Promise.resolve({ ok: true }));
+    await flush();
+    const cancelTerminal = cancelReviewJob(start.job_id);
+    assert.equal(cancelTerminal.ok, true);
+    assert.equal(cancelTerminal.status, "done");
+    const cancelMissing = cancelReviewJob("rjob-nope");
+    assert.equal(cancelMissing.ok, false);
+    assert.equal(cancelMissing.error, "job_not_found");
+  });
+
+  it("startReviewJob rejects a non-function runFn", async () => {
+    const { startReviewJob, _resetReviewJobsForTest } = await import("./lib.js");
+    _resetReviewJobsForTest();
+    assert.throws(() => startReviewJob("codex_review", null), /runFn must be a function/);
+  });
+});

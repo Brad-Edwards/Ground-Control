@@ -20,9 +20,9 @@ The orchestrator spawns the subagent with this prompt (substituting `{issue_numb
 >
 > Loop:
 > 1. Stage everything with `git add -A`.
-> 2. Call the `gc_codex_review_cycle` MCP tool with `repo_path={repo_path}`, `issue_number={issue_number}`, `uncommitted=true`. The tool runs the dual reviewers (core + security) AND auto-posts the per-cycle decision record.
-> 3. Read the returned envelope (`{ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url}`). Do NOT echo verbatim review prose — that stays server-side in the underlying review's findings record.
-> 4. Dispatch on `next_action`:
+> 2. Call the `gc_codex_review_cycle` MCP tool with `repo_path={repo_path}`, `issue_number={issue_number}`, `uncommitted=true`, `async=true`. It returns immediately with `{ok:true, status:"running", job_id}` — the dual reviewers (core + security) run in a background job so the multi-minute review never trips the MCP client tool-call timeout (issue #937).
+> 3. Poll the job: call `gc_codex_job` with `action="poll"`, `job_id=<the job_id from step 2>`. While it returns `status:"running"`, sleep ~60s and poll again (a codex review legitimately runs several minutes). When it returns `status:"done"`, the cycle envelope is in the response's `result` field. If a poll returns `error:"job_not_found"` (job expired or MCP server restarted), restart from step 2. To abandon a stuck job, call `gc_codex_job` with `action="cancel"`.
+> 4. Read the cycle envelope from the poll response's `result` (`{ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url}`). Do NOT echo verbatim review prose — that stays server-side in the underlying review's findings record. Dispatch on `next_action`:
 >    - `post_clean_decision_record_and_advance_to_phase_c` → return `status: "clean"`. The decision record was auto-posted.
 >    - `fix_findings_and_reinvoke` → classify findings (one-off vs class), fix them per the loop rules, self-verify locally (`cfg.workflow.completion_command`, `make policy`, the relevant test suite), `git add -A`, then re-invoke the cycle tool.
 >    - `fix_findings_then_summarize_and_escalate` (last-in-cap) → fix and self-verify, but do NOT re-invoke; return `status: "escalated"`.
