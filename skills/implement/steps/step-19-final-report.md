@@ -18,7 +18,7 @@ Per ADR-036, the final summary is posted via the deterministic **`gc_post_final_
 - `ci_status`: `"green"` (or `"red"`; never `"skipped"` for a real PR).
 - `sonar_status`: `"passed"`, `"failed"`, or `"skipped"` (when `cfg.sonarcloud` is null).
 - `plan_comment_url`: the URL cached in Step 4 from `gc_post_implementation_plan`.
-- `summary` (optional): one extra paragraph if there is something the structured fields don't cover.
+- `summary` (optional): one extra paragraph if there is something the structured fields don't cover. Update length follows the canonical succinctness rule in `skills/implement/steps/_review-loop-rules.md`.
 
 The tool renders the canonical final-report Markdown, filters sensitive content, posts to the issue thread under a `gc:final-report` marker, and returns `{ ok, comment_url, comment_id }`. Cache the URL.
 

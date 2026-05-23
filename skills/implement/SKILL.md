@@ -19,7 +19,7 @@ The workflow handles the entire lifecycle: plan, implement, verify, commit, push
 
 ## Step contract (issue #934)
 
-This SKILL is a thin orchestrator. The 716-line monolithic prose that used to live here now lives one file per step under `skills/implement/steps/step-NN-<id>.md`. The canonical review-loop rules live at `skills/implement/steps/_review-loop-rules.md` (Step 6.5 and Step 6.6 reference it; do not restate elsewhere).
+This SKILL is a thin orchestrator. The 716-line monolithic prose that used to live here now lives one file per step under `skills/implement/steps/step-NN-<id>.md`. The canonical review-loop rules live at `skills/implement/steps/_review-loop-rules.md` (Step 6.5 and Step 6.6 reference it; do not restate elsewhere). Update length follows the canonical succinctness rule in `skills/implement/steps/_review-loop-rules.md`.
 
 **For each step in the list below**, the orchestrator does the following:
 

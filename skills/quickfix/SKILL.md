@@ -156,7 +156,7 @@ If a `/quickfix` run touches files in a way that warrants requirement transition
 The slim payload should populate:
 
 - `lane`: `"quickfix"` (required to unlock the empty-reviews relaxation).
-- `summary`: one-paragraph description of the fix (what broke, what now works).
+- `summary`: one-paragraph description of the fix (what broke, what now works). Update length follows the canonical succinctness rule in `skills/implement/steps/_review-loop-rules.md`.
 - `reviews`: one entry per reviewer that ran (e.g. `{reviewer: "codex", summary: "1 cycle, 0 findings"}`). Empty array when `--review` was not supplied.
 - `requirements`: empty array (`/quickfix` is requirement-free by precondition; if link maintenance touched a UID per the Q15–Q17 exception, mention the UID(s) in `summary` rather than fabricating a requirement entry).
 - `pr_number`: the **open** PR number from Step Q9 — the comment is posted before the user-owned merge, so do NOT wait for the PR to be merged before calling this. The PR URL is rendered into the comment body by the tool.

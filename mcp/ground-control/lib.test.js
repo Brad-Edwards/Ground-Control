@@ -106,6 +106,9 @@ import {
   importStrictdoc,
   importReqif,
   importPackRegistryEntry,
+  PR_BODY_SUMMARY_MAX,
+  FINAL_REPORT_SUMMARY_MAX,
+  FINAL_REPORT_REVIEW_SUMMARY_MAX,
 } from "./lib.js";
 
 // ---------------------------------------------------------------------------
@@ -6267,6 +6270,30 @@ describe("buildFinalReportMarker", () => {
   });
 });
 
+/**
+ * Assert the summary byte-cap boundary for a validator that accepts a `summary` field.
+ * @param {Function} validator - function that takes an input object and returns {ok, errors}
+ * @param {number} cap - the byte cap constant being tested
+ * @param {Function} baseInputFn - zero-arg factory producing a valid base input for the validator
+ */
+function assertSummaryByteCap(validator, cap, baseInputFn) {
+  it(`rejects summary > ${cap} bytes`, () => {
+    const oversized = "x".repeat(cap + 1);
+    const r = validator(baseInputFn({ summary: oversized }));
+    assert.equal(r.ok, false);
+    assert.ok(
+      r.errors.some((e) => /summary/.test(e) && new RegExp(String(cap)).test(e)),
+      `expected error mentioning 'summary' and cap value ${cap}, got: ${r.errors.join("; ")}`,
+    );
+  });
+
+  it(`accepts summary at exactly ${cap} bytes`, () => {
+    const atCap = "x".repeat(cap);
+    const r = validator(baseInputFn({ summary: atCap }));
+    assert.equal(r.ok, true, `errors=${r.errors?.join("; ")}`);
+  });
+}
+
 describe("validateFinalReportInput", () => {
   function baseInput(overrides = {}) {
     return {
@@ -6296,6 +6323,24 @@ describe("validateFinalReportInput", () => {
     const r = validateFinalReportInput(baseInput({ reviews: [{ reviewer: "codex" }] }));
     assert.equal(r.ok, false);
     assert.ok(r.errors.some((e) => /summary/.test(e)));
+  });
+
+  assertSummaryByteCap(validateFinalReportInput, FINAL_REPORT_SUMMARY_MAX, baseInput);
+
+  it("rejects reviews[i].summary > FINAL_REPORT_REVIEW_SUMMARY_MAX bytes", () => {
+    const short = "1 cycle, 0 findings.";
+    const oversized = "x".repeat(FINAL_REPORT_REVIEW_SUMMARY_MAX + 1);
+    const r = validateFinalReportInput(baseInput({
+      reviews: [
+        { reviewer: "codex", summary: short },
+        { reviewer: "test-quality", summary: oversized },
+      ],
+    }));
+    assert.equal(r.ok, false);
+    assert.ok(
+      r.errors.some((e) => /reviews\[1\]/.test(e) && new RegExp(String(FINAL_REPORT_REVIEW_SUMMARY_MAX)).test(e)),
+      `expected error mentioning 'reviews[1]' and cap ${FINAL_REPORT_REVIEW_SUMMARY_MAX}, got: ${r.errors.join("; ")}`,
+    );
   });
 });
 
@@ -6351,12 +6396,32 @@ describe("buildFinalReport", () => {
     assert.match(body, /SonarCloud: skipped \(no sonarcloud config\)/);
   });
 
-  it("renders requirement-free runs cleanly", () => {
+  it("omits the In-scope requirements section when requirements is empty, and retains populated sections", () => {
+    // Covers both the requirement-free omission and the invariant that other sections
+    // (e.g. Reviews) are not suppressed when requirements is empty.
     const body = buildFinalReport({
-      issueNumber: 1, prNumber: 2, requirements: [], reviews: [],
+      issueNumber: 1, prNumber: 2,
+      requirements: [],
+      reviews: [{ reviewer: "codex", summary: "1 cycle, 0 findings." }],
       ciStatus: "green", sonarStatus: "passed",
     });
-    assert.match(body, /\(none — bug\/refactor\/maintenance run\)/);
+    assert.ok(!body.includes("### In-scope requirements"), "heading must not appear when requirements is empty");
+    assert.ok(!body.includes("bug/refactor/maintenance run"), "placeholder must not appear when requirements is empty");
+    // Reviews section should still appear since reviews is non-empty.
+    assert.match(body, /### Reviews/);
+  });
+
+  it("omits the Reviews section when reviews is empty", () => {
+    const body = buildFinalReport({
+      issueNumber: 1, prNumber: 2,
+      requirements: [{ uid: "GC-O007", title: "Gated Loop", status: "ACTIVE" }],
+      reviews: [],
+      ciStatus: "green", sonarStatus: "passed",
+    });
+    assert.ok(!body.includes("### Reviews"), "Reviews heading must not appear when reviews is empty");
+    // In-scope requirements section should still appear.
+    assert.match(body, /### In-scope requirements/);
+    assert.match(body, /GC-O007/);
   });
 });
 
@@ -6421,6 +6486,8 @@ describe("validatePrBodyInput", () => {
       assert.equal(r.ok, true, `should accept ${good}; errors=${r.errors?.join(";")}`);
     }
   });
+
+  assertSummaryByteCap(validatePrBodyInput, PR_BODY_SUMMARY_MAX, baseInput);
 });
 
 describe("buildPrBody", () => {
@@ -7382,7 +7449,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
     const { buildFinalReport } = await import("./lib.js");
     const body = buildFinalReport({
       issueNumber: 1, prNumber: 2,
-      requirements: [],
+      requirements: [{ uid: "GC-O007", title: "Gated Loop", status: "ACTIVE" }],
       files: { modified: ["foo.js"] },
       reviews: [{ reviewer: "codex", summary: "1 cycle, 0 findings" }],
       ciStatus: "green", sonarStatus: "passed",
@@ -7560,17 +7627,24 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
     // Same shape as the decision-record body_too_large test. Without this,
     // a regression that removed the cap from final-report only would not
     // fail any test (the cap was added in cycle-2 F3 to BOTH runners).
+    // Use many requirements with long notes to exceed the GitHub body cap
+    // (summary is capped at FINAL_REPORT_SUMMARY_MAX so it can't be used here).
     const dir = makeTempRepo();
     try {
-      const big = "a".repeat(70_000);
+      const longNote = "a".repeat(2000);
+      const manyReqs = Array.from({ length: 40 }, (_, i) => ({
+        uid: `GC-O${String(i + 1).padStart(3, "0")}`,
+        title: "Long requirement title".repeat(10),
+        status: "ACTIVE",
+        note: longNote,
+      }));
       const r = await import("./lib.js").then(({ runPostFinalReport }) =>
         runPostFinalReport({
           repoPath: dir,
           issueNumber: 1, prNumber: 1,
-          requirements: [{ uid: "GC-O007", title: "t", status: "ACTIVE" }],
+          requirements: manyReqs,
           reviews: [{ reviewer: "codex", summary: "ok" }],
           ciStatus: "green", sonarStatus: "passed",
-          summary: big,
         })
       );
       assert.equal(r.ok, false);

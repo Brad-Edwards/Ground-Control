@@ -206,6 +206,9 @@ import {
   pick, reqArg,
   validateGovernanceStatus,
   GOVERNANCE_FIELDS,
+  PR_BODY_SUMMARY_MAX,
+  FINAL_REPORT_SUMMARY_MAX,
+  FINAL_REPORT_REVIEW_SUMMARY_MAX,
 } from "./lib.js";
 import {
   executeGcQuery,
@@ -639,7 +642,7 @@ server.tool(
 
 server.tool(
   "gc_post_decision_record",
-  "Post the canonical review-cycle decision record as a comment on the GitHub issue (per ADR-029, the issue thread is the durable record). Renders the verdict envelope (verdict, architectural_read, blocking, notes) into the standard decision-record Markdown layout; rejects 'defer' decisions and any body containing detected secrets. Replaces free-prose decision comments from the Step 6.5 / 6.6 review loops. The verdict + architectural_read fields are optional for back-compat; new callers (issue #931) populate them. Returns the posted comment's URL and id.",
+  "Post the canonical review-cycle decision record as a comment on the GitHub issue (per ADR-029, the issue thread is the durable record). Renders the verdict envelope (verdict, architectural_read, blocking, notes) into the standard decision-record Markdown layout; rejects 'defer' decisions and any body containing detected secrets. Replaces free-prose decision comments from the Step 6.5 / 6.6 review loops. The verdict + architectural_read fields are optional for back-compat; new callers (issue #931) populate them. Returns the posted comment's URL and id. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -681,7 +684,7 @@ server.tool(
 
 server.tool(
   "gc_post_final_report",
-  "Post the canonical /implement Step 19 final report (or the /quickfix Step Q19 slim close comment) as a comment on the GitHub issue. Renders structured input (in-scope requirements, files-by-change-kind, reviews, traceability reconciliation, CI/SonarCloud status) into the standard final-report Markdown layout. Pass lane='quickfix' (issue #906) to enable the slim payload — empty reviews[] and no codex-entry requirement — for the /quickfix lane where AI-assisted reviews are opt-in; every other gate (CI green, Sonar pass-or-legit-skipped, sensitive-content / no-defer / reserved-marker scrubs) still applies. Replaces free-prose Step 19 comments. Returns the posted comment's URL and id.",
+  "Post the canonical /implement Step 19 final report (or the /quickfix Step Q19 slim close comment) as a comment on the GitHub issue. Renders structured input (in-scope requirements, files-by-change-kind, reviews, traceability reconciliation, CI/SonarCloud status) into the standard final-report Markdown layout. Pass lane='quickfix' (issue #906) to enable the slim payload — empty reviews[] and no codex-entry requirement — for the /quickfix lane where AI-assisted reviews are opt-in; every other gate (CI green, Sonar pass-or-legit-skipped, sensitive-content / no-defer / reserved-marker scrubs) still applies. Replaces free-prose Step 19 comments. Returns the posted comment's URL and id. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -701,7 +704,7 @@ server.tool(
     }).optional(),
     reviews: z.array(z.object({
       reviewer: z.string().min(1),
-      summary: z.string().min(1),
+      summary: z.string().min(1).max(FINAL_REPORT_REVIEW_SUMMARY_MAX),
     })),
     traceability: z.object({
       added: z.array(z.string()).optional(),
@@ -712,7 +715,7 @@ server.tool(
     ci_status: z.enum(["green", "red", "skipped"]),
     sonar_status: z.enum(["passed", "failed", "skipped"]),
     plan_comment_url: z.string().optional(),
-    summary: z.string().optional(),
+    summary: z.string().max(FINAL_REPORT_SUMMARY_MAX).optional(),
     lane: z.enum(["implement", "quickfix"]).optional(),
   },
   async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, lane }) => {
@@ -737,7 +740,7 @@ server.tool(
 
 server.tool(
   "gc_render_pr_body",
-  "Render a PR body that satisfies the Ground Control policy gates (template sections, requirement UIDs, ADR impact, three Ground Control Checks, IMPLEMENTS/TESTS markers, no defer language). Returns the rendered body string for the caller to pass to `gh pr create --body`. change_class shapes a few cells: doc-only marks integration tests / changelog fragment N/A; source requires changelog fragment; source+migration adds the MigrationSmokeTest reminder.",
+  "Render a PR body that satisfies the Ground Control policy gates (template sections, requirement UIDs, ADR impact, three Ground Control Checks, IMPLEMENTS/TESTS markers, no defer language). Returns the rendered body string for the caller to pass to `gh pr create --body`. change_class shapes a few cells: doc-only marks integration tests / changelog fragment N/A; source requires changelog fragment; source+migration adds the MigrationSmokeTest reminder. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -747,7 +750,7 @@ server.tool(
     // predicate; here each array element must BE a UID, not contain one.
     requirement_uids: z.array(z.string().regex(EXACT_REQUIREMENT_UID_RE)),
     adr_refs: z.array(z.string().min(1)),
-    summary: z.string().min(1),
+    summary: z.string().min(1).max(PR_BODY_SUMMARY_MAX),
     changes: z.array(z.string().min(1)),
     traceability: z.object({
       implements: z.array(z.string()),
