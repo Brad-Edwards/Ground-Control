@@ -143,14 +143,14 @@ class TreatmentPlanResponseTest {
         void mapsMethodologyProfileIdAndStrategyKey() {
             setField(project, "id", projectId);
 
-            var record = new RiskRegisterRecord(project, "RR-4", "Record 4");
-            setField(record, "id", UUID.randomUUID());
+            var registerRecord = new RiskRegisterRecord(project, "RR-4", "Record 4");
+            setField(registerRecord, "id", UUID.randomUUID());
 
             var profile = new MethodologyProfile(project, "CUSTOM", "Custom", "1.0", MethodologyFamily.CUSTOM);
             var profileId = UUID.randomUUID();
             setField(profile, "id", profileId);
 
-            var plan = new TreatmentPlan(project, "TP-4", "Other plan", record, TreatmentStrategy.OTHER);
+            var plan = new TreatmentPlan(project, "TP-4", "Other plan", registerRecord, TreatmentStrategy.OTHER);
             setField(plan, "id", UUID.randomUUID());
             plan.setMethodologyProfile(profile);
             plan.setMethodologyStrategyKey("RESIDUAL_TRANSFER");
@@ -168,10 +168,10 @@ class TreatmentPlanResponseTest {
         void setsMethodologyProfileIdToNullWhenProfileIsAbsent() {
             setField(project, "id", projectId);
 
-            var record = new RiskRegisterRecord(project, "RR-5", "Record 5");
-            setField(record, "id", UUID.randomUUID());
+            var registerRecord = new RiskRegisterRecord(project, "RR-5", "Record 5");
+            setField(registerRecord, "id", UUID.randomUUID());
 
-            var plan = new TreatmentPlan(project, "TP-5", "Canonical plan", record, TreatmentStrategy.MITIGATE);
+            var plan = new TreatmentPlan(project, "TP-5", "Canonical plan", registerRecord, TreatmentStrategy.MITIGATE);
             setField(plan, "id", UUID.randomUUID());
             var now = Instant.now();
             setField(plan, "createdAt", now);

@@ -272,7 +272,8 @@ class TreatmentPlanServiceTest {
         when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
                 .thenReturn(Optional.of(record));
 
-        assertThatThrownBy(() -> service.create(createOtherCommand(null, "KEY")))
+        var command = createOtherCommand(null, "KEY");
+        assertThatThrownBy(() -> service.create(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("methodologyProfileId");
     }
@@ -288,7 +289,8 @@ class TreatmentPlanServiceTest {
         when(methodologyProfileRepository.findByIdAndProjectId(profileId, projectId))
                 .thenReturn(Optional.of(profile));
 
-        assertThatThrownBy(() -> service.create(createOtherCommand(profileId, null)))
+        var command = createOtherCommand(profileId, null);
+        assertThatThrownBy(() -> service.create(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("methodologyProfileId");
     }
@@ -304,7 +306,8 @@ class TreatmentPlanServiceTest {
         when(methodologyProfileRepository.findByIdAndProjectId(profileId, projectId))
                 .thenReturn(Optional.of(profile));
 
-        assertThatThrownBy(() -> service.create(createOtherCommand(profileId, "  ")))
+        var command = createOtherCommand(profileId, "  ");
+        assertThatThrownBy(() -> service.create(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("methodologyProfileId");
     }
@@ -320,7 +323,8 @@ class TreatmentPlanServiceTest {
         when(methodologyProfileRepository.findByIdAndProjectId(profileId, projectId))
                 .thenReturn(Optional.of(profile));
 
-        assertThatThrownBy(() -> service.create(createOtherCommand(profileId, "UNKNOWN_KEY")))
+        var command = createOtherCommand(profileId, "UNKNOWN_KEY");
+        assertThatThrownBy(() -> service.create(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("UNKNOWN_KEY");
     }
@@ -338,7 +342,8 @@ class TreatmentPlanServiceTest {
         when(methodologyProfileRepository.findByIdAndProjectId(profileId, projectId))
                 .thenReturn(Optional.of(profile));
 
-        assertThatThrownBy(() -> service.create(createOtherCommand(profileId, "KEY")))
+        var command = createOtherCommand(profileId, "KEY");
+        assertThatThrownBy(() -> service.create(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("KEY");
     }
@@ -353,7 +358,8 @@ class TreatmentPlanServiceTest {
         when(methodologyProfileRepository.findByIdAndProjectId(profileId, projectId))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.create(createOtherCommand(profileId, "KEY")))
+        var command = createOtherCommand(profileId, "KEY");
+        assertThatThrownBy(() -> service.create(command))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessageContaining(profileId.toString());
     }
@@ -462,7 +468,6 @@ class TreatmentPlanServiceTest {
     @Test
     void updateChangingKeyOnOtherPlanSucceeds() {
         var profile = makeProfileWithVocabulary("KEY_A", "KEY_B");
-        var profileId = profile.getId();
         var plan = new TreatmentPlan(project, "TP-1", "Plan", record, TreatmentStrategy.OTHER);
         var planId = UUID.randomUUID();
         setField(plan, "id", planId);
