@@ -211,6 +211,7 @@ import {
   FINAL_REPORT_REVIEW_SUMMARY_MAX,
   KNOWLEDGE_SOURCE_TYPES,
   writeKnowledgeInbox,
+  classifyChangedSurface,
 } from "./lib.js";
 import {
   executeGcQuery,
@@ -848,6 +849,23 @@ server.tool(
         outcome,
         ts: ts ?? null,
       }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_documentation_coverage",
+  "Classify a list of repo-relative changed paths into surface classes and return their documentation targets. Surface classes: workflow, mcp_tool, config_parser, policy, adr, public_api, user_visible, doc, unclassified. outcome_required is true when any path belongs to a class that requires a documented outcome (workflow/mcp_tool/config_parser/policy/adr/public_api/user_visible). suggested_doc_targets is the deduped union of doc_targets across all classifications. Paths are validated for repo-containment — absolute paths and '..' escapes are rejected.",
+  {
+    repo_path: z.string().describe("Absolute path to the target Git repository"),
+    changed_paths: z.array(z.string()).describe("Repo-relative paths to classify"),
+  },
+  ({ repo_path, changed_paths }) => {
+    try {
+      const result = classifyChangedSurface(changed_paths, repo_path);
+      const allTargets = result.classifications.flatMap((c) => c.doc_targets);
+      const suggested_doc_targets = [...new Set(allTargets)];
+      return ok(JSON.stringify({ ok: true, ...result, suggested_doc_targets }, null, 2));
     } catch (e) { return err(e); }
   },
 );
