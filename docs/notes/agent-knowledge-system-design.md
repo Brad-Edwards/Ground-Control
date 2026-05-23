@@ -60,7 +60,7 @@ The scheduled sweep handles all three. It runs on a timer (systemd user unit / l
 - Computes "new material since the last successful sweep" via a per-repo watermark (last merged PR processed, last inbox file mtime).
 - Pulls metadata for merged PRs newer than the watermark via `gh api` — review comments, fix-review commit messages, linked CI runs.
 - Retries any inbox files that are still sitting in `inbox/`.
-- Feeds the aggregated new material to the same ingest engine the hot path uses. One codex subprocess per item, under the same per-repo lock, serialized with any concurrent real-time ingest.
+- Feeds the aggregated new material to the same ingest engine the hot path uses. One ingest-agent subprocess per item, under the same per-repo lock, serialized with any concurrent real-time ingest. The ingest agent is Claude Code (see ADR-025); codex is deliberately not involved in knowledge maintenance.
 - Updates the watermark state and commits + pushes.
 
 The sweep is the safety net, not the main road. In a repo where `gc_remember` is used diligently, the sweep rarely finds fresh material — it mostly runs the lint. In a repo where nobody uses `gc_remember`, the sweep is the only capture mechanism and the cold path carries the whole load.
@@ -96,7 +96,7 @@ The boundary we landed on is clean:
 - `gc knowledge ingest-inbox [--repo X]` — manual re-processing of the inbox (same engine as real-time, different entry point).
 - `gc knowledge lint [--repo X | --all]` — manual lint pass.
 
-The per-repo ingest engine is a shared Python module (`tools/ground_control/knowledge/ingest.py` or similar). Both the CLI entry points and the `gc_remember` subprocess call it. The MCP server does not orchestrate cross-repo work — cross-repo work is strictly the CLI / scheduler concern.
+The per-repo ingest engine is a shared repo-local tooling module (`tools/ground_control/knowledge/ingest.*` or similar), not a Java backend service. Both the CLI entry points and the `gc_remember` subprocess call it. The MCP server does not orchestrate cross-repo work — cross-repo work is strictly the CLI / scheduler concern.
 
 Rationale for this split:
 - MCP is designed for in-session tool calls. Multi-repo orchestration and scheduling belong at a layer that doesn't require a Claude Code session to exist.
@@ -126,6 +126,24 @@ Config guardrails for implementation:
 - All `knowledge.*` paths are repo-relative author input resolved against the Git repo root. Absolute paths and repo-escaping traversal (`..`) are rejected. Use one shared repo-scoped path resolver for repo-local config paths rather than open-coding separate `join(repoRoot, rawPath)` logic for each field.
 - `knowledge.dir` is the single knowledge-base root. `knowledge.schema` and `knowledge.inbox` are overrides for locations inside that root, not a way to declare a second store elsewhere in the repo. `index.md` and `log.md` stay anchored under `knowledge.dir`.
 - Absence of `knowledge` means "this repo has no configured knowledge base yet", not "fall back to an implicit global default". Registration and sweep flows fail clearly; implementation workflows degrade gracefully and continue without knowledge capture.
+- The real-time path should reuse the resolved knowledge block returned by `gc_get_repo_ground_control_context` (or the same helper chain) and pass resolved repo / knowledge paths into the ingest subprocess. Do not make the subprocess re-open `.ground-control.yaml` through a second parser with slightly different containment or defaulting rules.
+
+## Hot-path guardrails for implementation
+
+- `gc_remember` owns only synchronous capture: validate the fixed input shape, canonicalize the source citation once, append an immutable inbox file, trigger ingest, and return the stored location. It does not read `index.md`, choose a target page, deduplicate content, or write wiki files directly.
+- `source_type` is not a second citation vocabulary. Its allowed values must match the source-citation prefixes documented in `docs/knowledge/SCHEMA.md`, and one canonical formatter / validator should turn `{source_type, source_ref}` into the citation string reused in inbox payloads, page frontmatter, `log.md`, and commit messages.
+- Success for the synchronous MCP call means "the inbox entry was durably written", not "the wiki ingest finished". If subprocess launch fails after the write, the inbox file stays in place for retry and the failure is surfaced without deleting or rewriting the source material.
+- The detached ingest contract is item-addressed, not inbox-scanning. `gc_remember` passes the exact inbox file path plus the already-resolved repo / knowledge paths into the subprocess, and the subprocess processes that specific item. Do not have the child rescan the inbox for "the newest file", and do not tie correctness to the parent MCP call staying alive after spawn.
+- Source lifecycle is success-only: the ingest engine may archive or delete the inbox item only after the wiki update, `index.md` / `log.md` update, and git commit all succeed. Failed attempts leave the original bytes at the same inbox path so later runs can discover and retry the item automatically; do not quarantine failures under `inbox/failed/`, rename them out of the inbox pre-commit, or mutate the file to record retry state.
+- The per-repo lock covers the whole ingest transaction: read current wiki state, decide update-vs-create, write page / `index.md` / `log.md` changes, move the inbox file, and create the git commit while holding the same lock. Locking only the final file write is insufficient.
+- The lock must be an interprocess file lock owned by the shared ingest engine, not an in-memory mutex in the MCP server. `gc_remember`, manual inbox retry, and the future scheduled sweep all need to serialize through the same mechanism even when they run in different OS processes.
+- Lock identity comes from the canonicalized repo / knowledge-base path returned by the existing config-resolution chain, not from the raw `repo_path` string the caller supplied. Different path spellings or symlinked checkout roots must still contend on the same lock.
+- Git commit isolation is strict. Ingest stages and commits only files inside the knowledge base plus the specific inbox item being processed. Never `git add -A`, never include unrelated working-tree changes, and fail safely if pre-existing edits in the knowledge tree would be overwritten.
+- GC-X010 commit messages come from one canonical formatter and must identify the integrated source material directly (for example the normalized citation string), not from ad hoc per-call wording. The same canonical source formatter used for page citations should drive the commit-message fragment so inbox payloads, `log.md`, and git history cannot drift in terminology.
+- "Active branch at processing time" means the current symbolic branch name of the checkout that owns the knowledge base. If the repo is in detached HEAD, an unborn branch state, or any other non-branch checkout, ingest fails clearly and leaves the inbox item in place for retry; it must not invent a fallback branch, auto-checkout another ref, or silently skip the commit.
+- GC-X011 latency must be measured on the real write path, not inferred from process launch. The canonical measure is capture timestamp to successful knowledge-base commit completion for that inbox item; emit it in structured logs (including source citation / inbox path) so "available within seconds" is observable and testable under normal conditions.
+- Do not silently bypass repo-native commit policy with `git commit --no-verify` just to keep ingest fast. If existing hooks or signing requirements need a knowledge-commit carve-out, make that carve-out explicit in repo-native policy / hook logic so the behavior is auditable and consistent between manual and automated commits.
+- This slice stays out of the Spring backend product model. No REST controller, DTO, migration, graph node, or domain aggregate should be added for capture / ingest unless a later requirement explicitly moves knowledge into the server-backed product surface.
 
 ## Invariants worth stating explicitly
 
@@ -189,7 +207,7 @@ None of these are on the critical path. They are directions that become easier o
 | Knowledge base per repo, never merged | Cross-repo unified knowledge | Repos have different conventions, vocabularies, and lifecycles. Cross-repo merging is a different problem layer. |
 | Sweep is global, MCP is per-project | Put sweep in MCP (`gc_knowledge_sweep`) | MCP tools are in-session per-repo. Multi-repo orchestration and scheduling don't fit that shape. Sweep lives in the CLI. |
 | One `gc_remember` MCP tool, nothing else | Multiple MCP tools for capture, ingest, query, etc. | Capture is the only per-session, per-project agent action. Ingest is always async. Query is grep + read. No need for more MCP surface. |
-| Per-repo ingest engine is shared Python module | Duplicate engines in MCP (Node) and CLI (Python); or invoke MCP from CLI | MCP protocol is wrong for batch work. Duplicating is worse than sharing. Python wins because the CLI is naturally Python. |
+| Per-repo ingest engine is shared repo-local tooling module | Duplicate engines in MCP and CLI; or invoke MCP from CLI | MCP protocol is wrong for batch work. Duplicating is worse than sharing. Keep one engine under repo-local tooling and let both entry points call it. |
 | Real-time and scheduled paths use the same engine | Separate engines | Consistency of behavior. Same lock, same commit semantics, same failure modes. |
 | Scheduler is systemd user unit / launchd plist / cron, not a daemon | Long-running daemon with IPC | Zero infra. Reboot-safe. Nothing to maintain. Timer fires the CLI, CLI runs, exits. |
 | Registry lives in local JSON (v1) | Ground Control Postgres (v2 direction) | v1 is one user, one machine. GC-backed registry is the migration target for multi-host. |
