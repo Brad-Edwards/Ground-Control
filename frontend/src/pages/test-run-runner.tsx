@@ -42,10 +42,17 @@ export function TestRunRunner() {
   const { runId } = useParams<{ runId: string }>();
   const { activeProject } = useProjectContext();
 
-  const { data: run, isLoading: runLoading, isError: runError } = useTestRun(runId);
-  const { data: caseResults, isLoading: casesLoading } = useTestRunCaseResults(runId);
+  const {
+    data: run,
+    isLoading: runLoading,
+    isError: runError,
+  } = useTestRun(runId);
+  const { data: caseResults, isLoading: casesLoading } =
+    useTestRunCaseResults(runId);
 
-  const [activeCaseResultId, setActiveCaseResultId] = useState<string | null>(null);
+  const [activeCaseResultId, setActiveCaseResultId] = useState<string | null>(
+    null,
+  );
 
   // Initial cursor resolution. Once both the run and its case results have
   // loaded, pick the active case from the persisted cursor, falling back to
@@ -53,7 +60,9 @@ export function TestRunRunner() {
   // blank viewport.
   useEffect(() => {
     if (activeCaseResultId || !caseResults?.length) return;
-    const fromCursor = caseResults.find((c) => c.id === run?.currentCaseResultId);
+    const fromCursor = caseResults.find(
+      (c) => c.id === run?.currentCaseResultId,
+    );
     const target = fromCursor ?? caseResults[0];
     if (target) setActiveCaseResultId(target.id);
   }, [activeCaseResultId, caseResults, run?.currentCaseResultId]);
@@ -78,7 +87,10 @@ export function TestRunRunner() {
     return (
       <div className="py-12 text-center text-destructive">
         Failed to load test run.{" "}
-        <Link to={`/p/${activeProject.identifier}/test-runs`} className="text-primary underline">
+        <Link
+          to={`/p/${activeProject.identifier}/test-runs`}
+          className="text-primary underline"
+        >
           Back to test runs
         </Link>
       </div>
@@ -120,12 +132,18 @@ export function TestRunRunner() {
 
 function statusClass(status: TestRunStatus): string {
   switch (status) {
-    case "PLANNED": return "bg-muted text-muted-foreground";
-    case "IN_PROGRESS": return "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200";
-    case "COMPLETED": return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200";
-    case "ABORTED": return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200";
-    case "ARCHIVED": return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
-    default: return "bg-muted text-muted-foreground";
+    case "PLANNED":
+      return "bg-muted text-muted-foreground";
+    case "IN_PROGRESS":
+      return "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200";
+    case "COMPLETED":
+      return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200";
+    case "ABORTED":
+      return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200";
+    case "ARCHIVED":
+      return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
+    default:
+      return "bg-muted text-muted-foreground";
   }
 }
 
@@ -157,14 +175,19 @@ function RunHeader({
         </Link>
         <div>
           <div className="flex items-center gap-2">
-            <span className="font-mono text-xs text-muted-foreground">{run.uid}</span>
+            <span className="font-mono text-xs text-muted-foreground">
+              {run.uid}
+            </span>
             <h1 className="text-lg font-semibold">{run.name}</h1>
-            <span className={`rounded px-2 py-0.5 text-xs font-medium ${statusClass(run.status)}`}>
+            <span
+              className={`rounded px-2 py-0.5 text-xs font-medium ${statusClass(run.status)}`}
+            >
               {run.status}
             </span>
           </div>
           <p className="text-xs text-muted-foreground">
-            {observed} of {totalCases} case{totalCases === 1 ? "" : "s"} observed
+            {observed} of {totalCases} case{totalCases === 1 ? "" : "s"}{" "}
+            observed
           </p>
         </div>
       </div>
@@ -202,12 +225,18 @@ function RunHeader({
 
 function resultStatusClass(status: TestRunCaseResultStatus): string {
   switch (status) {
-    case "NOT_RUN": return "bg-muted text-muted-foreground";
-    case "PASSED": return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200";
-    case "FAILED": return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200";
-    case "BLOCKED": return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200";
-    case "SKIPPED": return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
-    default: return "bg-muted text-muted-foreground";
+    case "NOT_RUN":
+      return "bg-muted text-muted-foreground";
+    case "PASSED":
+      return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200";
+    case "FAILED":
+      return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200";
+    case "BLOCKED":
+      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200";
+    case "SKIPPED":
+      return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
+    default:
+      return "bg-muted text-muted-foreground";
   }
 }
 
@@ -238,10 +267,14 @@ function CaseSidebar({
                 }`}
               >
                 <span className="flex flex-col">
-                  <span className="font-mono text-xs text-muted-foreground">{c.testCaseUid}</span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {c.testCaseUid}
+                  </span>
                   <span className="truncate">{c.testCaseTitle}</span>
                 </span>
-                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${resultStatusClass(c.status)}`}>
+                <span
+                  className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${resultStatusClass(c.status)}`}
+                >
                   {c.status}
                 </span>
               </button>
@@ -259,15 +292,28 @@ function ActiveCasePanel({
   run,
   caseResult,
 }: {
-  run: { id: string; status: TestRunStatus; currentStepResultId: string | null };
+  run: {
+    id: string;
+    status: TestRunStatus;
+    currentStepResultId: string | null;
+  };
   caseResult: TestRunCaseResultResponse;
 }) {
-  const { data: stepResults, isLoading } = useTestRunStepResults(run.id, caseResult.id);
-  const updateCaseResult = useUpdateTestRunCaseResult(run.id, caseResult.testCaseId);
+  const { data: stepResults, isLoading } = useTestRunStepResults(
+    run.id,
+    caseResult.id,
+  );
+  const updateCaseResult = useUpdateTestRunCaseResult(
+    run.id,
+    caseResult.testCaseId,
+  );
   const updateCursor = useUpdateTestRunCursor(run.id);
 
   const [notesDraft, setNotesDraft] = useState(caseResult.notes ?? "");
-  useEffect(() => setNotesDraft(caseResult.notes ?? ""), [caseResult.id, caseResult.notes]);
+  useEffect(
+    () => setNotesDraft(caseResult.notes ?? ""),
+    [caseResult.id, caseResult.notes],
+  );
 
   const steps = stepResults ?? [];
   const activeStepIndex = useMemo(() => {
@@ -288,8 +334,13 @@ function ActiveCasePanel({
   useEffect(() => {
     if (isLoading) return;
     const desiredStepId = activeStep?.id ?? null;
-    const currentCase = (run as unknown as { currentCaseResultId: string | null }).currentCaseResultId;
-    if (currentCase === caseResult.id && run.currentStepResultId === desiredStepId) {
+    const currentCase = (
+      run as unknown as { currentCaseResultId: string | null }
+    ).currentCaseResultId;
+    if (
+      currentCase === caseResult.id &&
+      run.currentStepResultId === desiredStepId
+    ) {
       return;
     }
     updateCursor.mutate({
@@ -325,7 +376,9 @@ function ActiveCasePanel({
       <div className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-base font-semibold">
-            <span className="mr-2 font-mono text-xs text-muted-foreground">{caseResult.testCaseUid}</span>
+            <span className="mr-2 font-mono text-xs text-muted-foreground">
+              {caseResult.testCaseUid}
+            </span>
             {caseResult.testCaseTitle}
           </h2>
           <CaseStatusControls
@@ -389,7 +442,13 @@ function CaseStatusControls({
   onSelect: (s: TestRunCaseResultStatus) => void;
   disabled: boolean;
 }) {
-  const options: TestRunCaseResultStatus[] = ["NOT_RUN", "PASSED", "FAILED", "BLOCKED", "SKIPPED"];
+  const options: TestRunCaseResultStatus[] = [
+    "NOT_RUN",
+    "PASSED",
+    "FAILED",
+    "BLOCKED",
+    "SKIPPED",
+  ];
   return (
     <div className="flex gap-1">
       {options.map((opt) => {
@@ -401,7 +460,9 @@ function CaseStatusControls({
             disabled={disabled}
             onClick={() => onSelect(opt)}
             className={`rounded px-2 py-1 text-xs font-medium transition ${
-              active ? resultStatusClass(opt) : "bg-muted text-muted-foreground hover:bg-muted/70"
+              active
+                ? resultStatusClass(opt)
+                : "bg-muted text-muted-foreground hover:bg-muted/70"
             } disabled:cursor-not-allowed disabled:opacity-50`}
           >
             {opt.replace("_", " ")}
@@ -470,12 +531,20 @@ function StepViewport({
 
       <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
         <div>
-          <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Action</div>
-          <p className="mt-1 whitespace-pre-wrap rounded bg-muted/30 p-2">{step.actionSnapshot}</p>
+          <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Action
+          </div>
+          <p className="mt-1 whitespace-pre-wrap rounded bg-muted/30 p-2">
+            {step.actionSnapshot}
+          </p>
         </div>
         <div>
-          <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Expected result</div>
-          <p className="mt-1 whitespace-pre-wrap rounded bg-muted/30 p-2">{step.expectedResultSnapshot}</p>
+          <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Expected result
+          </div>
+          <p className="mt-1 whitespace-pre-wrap rounded bg-muted/30 p-2">
+            {step.expectedResultSnapshot}
+          </p>
         </div>
       </div>
 
@@ -496,7 +565,9 @@ function StepViewport({
 
       <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
         <span>
-          {step.executedAt ? `Executed at ${step.executedAt}` : "Not executed yet"}
+          {step.executedAt
+            ? `Executed at ${step.executedAt}`
+            : "Not executed yet"}
         </span>
         <span className="flex gap-2">
           <button
@@ -512,7 +583,9 @@ function StepViewport({
           </button>
           <button
             type="button"
-            disabled={activeStepIndex >= steps.length - 1 || !steps[activeStepIndex + 1]}
+            disabled={
+              activeStepIndex >= steps.length - 1 || !steps[activeStepIndex + 1]
+            }
             onClick={() => {
               const next = steps[activeStepIndex + 1];
               if (next) onSelectStep(next.id);
@@ -540,7 +613,13 @@ function StepStatusControls({
   // by accident can return the step to its initial state from the browser.
   // ADR-050 §2 names step-status flips as unconstrained — the runner must
   // expose every value the backend accepts.
-  const options: TestRunCaseResultStatus[] = ["NOT_RUN", "PASSED", "FAILED", "BLOCKED", "SKIPPED"];
+  const options: TestRunCaseResultStatus[] = [
+    "NOT_RUN",
+    "PASSED",
+    "FAILED",
+    "BLOCKED",
+    "SKIPPED",
+  ];
   return (
     <div className="flex gap-1">
       {options.map((opt) => {
@@ -552,7 +631,9 @@ function StepStatusControls({
             disabled={disabled}
             onClick={() => onSelect(opt)}
             className={`rounded px-2 py-1 text-xs font-medium transition ${
-              active ? resultStatusClass(opt) : "bg-muted text-muted-foreground hover:bg-muted/70"
+              active
+                ? resultStatusClass(opt)
+                : "bg-muted text-muted-foreground hover:bg-muted/70"
             } disabled:cursor-not-allowed disabled:opacity-50`}
           >
             {opt.replace("_", " ")}

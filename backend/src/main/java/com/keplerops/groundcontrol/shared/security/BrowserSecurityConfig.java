@@ -35,6 +35,15 @@ import org.springframework.security.web.util.matcher.NegatedRequestMatcher;
  * Spring Security's standard form-login machinery against a JDBC-backed user store with BCrypt
  * password hashes.
  *
+ * <p>The SPA owns {@code GET /login}: {@code .loginPage("/login")} disables Spring's
+ * {@code DefaultLoginPageGeneratingFilter} so the React login page is served by
+ * {@link com.keplerops.groundcontrol.infrastructure.web.SpaController} (which forwards to
+ * {@code index.html}). Spring still processes {@code POST /login}
+ * form-urlencoded via {@code UsernamePasswordAuthenticationFilter} at
+ * {@code loginProcessingUrl("/login")}. The {@code XSRF-TOKEN} cookie written by
+ * {@link CookieCsrfTokenRepository} on the GET is echoed as {@code X-XSRF-TOKEN} by the React
+ * login form, satisfying the CSRF gate on the POST.
+ *
  * <p>State-changing browser requests (POST/PUT/PATCH/DELETE) carry the {@code GC_SESSION}
  * cookie; CSRF protection is enabled through a {@link CookieCsrfTokenRepository} configured
  * with {@code HttpOnly=false} so the SPA can read the {@code XSRF-TOKEN} cookie and echo
@@ -70,7 +79,9 @@ public class BrowserSecurityConfig {
      * session-fixation-by-credential-swap attack — an attacker hosts an auto-submitting form
      * to {@code /login} with credentials they control, the victim's browser POSTs without a
      * CSRF check, and the victim's subsequent SPA activity is attributed to the attacker's
-     * principal.
+     * principal. The SPA login form reads the {@code XSRF-TOKEN} cookie (written by
+     * {@link CookieCsrfTokenRepository} on the GET) and echoes it as {@code X-XSRF-TOKEN},
+     * satisfying this gate.
      *
      * <p>Rules now:
      *
@@ -213,7 +224,16 @@ public class BrowserSecurityConfig {
         requestCache.setRequestMatcher(new NegatedRequestMatcher(ApiRequestPaths.matcher()));
         http.requestCache(cache -> cache.requestCache(requestCache));
 
-        http.formLogin(form -> form.loginProcessingUrl(LOGIN_PATH).permitAll())
+        // .loginPage(LOGIN_PATH) disables DefaultLoginPageGeneratingFilter so the SPA owns
+        // GET /login. Spring still runs UsernamePasswordAuthenticationFilter at
+        // loginProcessingUrl("/login"), so POST /login form-urlencoded continues to work.
+        // .failureUrl and .defaultSuccessUrl make the redirect targets explicit so the
+        // behaviour is not silently altered by future Spring Security upgrades.
+        http.formLogin(form -> form.loginPage(LOGIN_PATH)
+                        .loginProcessingUrl(LOGIN_PATH)
+                        .failureUrl(LOGIN_PATH + "?error")
+                        .defaultSuccessUrl("/", false)
+                        .permitAll())
                 .logout(logout -> logout.logoutUrl(LOGOUT_PATH)
                         .logoutSuccessHandler((request, response, authentication) ->
                                 // Return 204 on logout. SPA-initiated XHR logouts can clear

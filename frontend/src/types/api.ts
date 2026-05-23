@@ -336,7 +336,10 @@ export interface TestPlanStatusTransitionRequest {
 // AddTestSuiteMemberRequest / etc. The enum is single-sourced per ADR-034
 // convention (today the policy gate scope is requirement/state enums; the
 // test-management enums follow the same pattern manually).
-export type TestSuitePopulationMode = "STATIC" | "REQUIREMENTS_BASED" | "QUERY_BASED";
+export type TestSuitePopulationMode =
+  | "STATIC"
+  | "REQUIREMENTS_BASED"
+  | "QUERY_BASED";
 export const TEST_SUITE_POPULATION_MODES: TestSuitePopulationMode[] = [
   "STATIC",
   "REQUIREMENTS_BASED",
@@ -430,7 +433,12 @@ export interface AddTestSuiteSourceRequirementRequest {
 // in the domain `state/` package per ADR-034 and mirrored here for typed UI
 // access.
 
-export type TestRunStatus = "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "ABORTED" | "ARCHIVED";
+export type TestRunStatus =
+  | "PLANNED"
+  | "IN_PROGRESS"
+  | "COMPLETED"
+  | "ABORTED"
+  | "ARCHIVED";
 
 export const TEST_RUN_STATUSES: TestRunStatus[] = [
   "PLANNED",
@@ -440,7 +448,12 @@ export const TEST_RUN_STATUSES: TestRunStatus[] = [
   "ARCHIVED",
 ];
 
-export type TestRunCaseResultStatus = "NOT_RUN" | "PASSED" | "FAILED" | "BLOCKED" | "SKIPPED";
+export type TestRunCaseResultStatus =
+  | "NOT_RUN"
+  | "PASSED"
+  | "FAILED"
+  | "BLOCKED"
+  | "SKIPPED";
 
 export const TEST_RUN_CASE_RESULT_STATUSES: TestRunCaseResultStatus[] = [
   "NOT_RUN",
@@ -651,7 +664,11 @@ export const AUDIT_STATUSES: AuditStatus[] = [
   "CLOSED",
 ];
 
-export type AuditPhaseKind = "PLANNING" | "FIELDWORK" | "REPORTING" | "FOLLOWUP";
+export type AuditPhaseKind =
+  | "PLANNING"
+  | "FIELDWORK"
+  | "REPORTING"
+  | "FOLLOWUP";
 export const AUDIT_PHASE_KINDS: AuditPhaseKind[] = [
   "PLANNING",
   "FIELDWORK",
