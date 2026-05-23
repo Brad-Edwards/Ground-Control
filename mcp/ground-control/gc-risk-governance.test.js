@@ -393,6 +393,7 @@ describe("treatment_plan create allowlist (#880)", () => {
       "uid", "title", "risk_scenario_id", "risk_register_record_id",
       "strategy", "owner", "rationale", "due_date", "status",
       "action_items", "reassessment_triggers",
+      "methodology_profile_id", "methodology_strategy_key",
     ]) {
       assert.ok(list().includes(f), `${f} missing from treatment_plan.create`);
     }
@@ -422,6 +423,7 @@ describe("treatment_plan update allowlist (#880)", () => {
     for (const f of [
       "title", "risk_scenario_id", "strategy", "owner",
       "rationale", "due_date", "action_items", "reassessment_triggers",
+      "methodology_profile_id", "methodology_strategy_key",
     ]) {
       assert.ok(list().includes(f), `${f} missing from treatment_plan.update`);
     }
@@ -534,5 +536,43 @@ describe("treatment_plan wire body (#880)", () => {
     }
     assert.equal(calls[0].body.title, "rename");
     assert.equal(calls[0].body.dueDate, "2026-07-01T00:00:00Z");
+  });
+
+  it("handler sends methodologyProfileId and methodologyStrategyKey on create with strategy OTHER", async () => {
+    const calls = makeFetchSpy();
+    const PROF = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    await callHandler({
+      entity: "treatment_plan",
+      action: "create",
+      project: "proj-a",
+      uid: "TP-OTHER",
+      title: "Custom strategy",
+      risk_register_record_id: REG,
+      strategy: "OTHER",
+      methodology_profile_id: PROF,
+      methodology_strategy_key: "RESIDUAL_TRANSFER",
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].body.methodologyProfileId, PROF);
+    assert.equal(calls[0].body.methodologyStrategyKey, "RESIDUAL_TRANSFER");
+  });
+
+  it("handler sends methodologyProfileId and methodologyStrategyKey on update", async () => {
+    const calls = makeFetchSpy();
+    const PROF = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    await callHandler({
+      entity: "treatment_plan",
+      action: "update",
+      id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+      project: "proj-a",
+      strategy: "OTHER",
+      methodology_profile_id: PROF,
+      methodology_strategy_key: "UPDATED_KEY",
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "PUT");
+    assert.equal(calls[0].body.methodologyProfileId, PROF);
+    assert.equal(calls[0].body.methodologyStrategyKey, "UPDATED_KEY");
   });
 });

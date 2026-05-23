@@ -71,6 +71,13 @@ public class TreatmentPlan extends BaseEntity {
     @Column(name = "reassessment_triggers", columnDefinition = "TEXT")
     private List<String> reassessmentTriggers;
 
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "methodology_profile_id")
+    private MethodologyProfile methodologyProfile;
+
+    @Column(name = "methodology_strategy_key", length = 100)
+    private String methodologyStrategyKey;
+
     protected TreatmentPlan() {
         // JPA
     }
@@ -173,5 +180,21 @@ public class TreatmentPlan extends BaseEntity {
 
     public void setReassessmentTriggers(List<String> reassessmentTriggers) {
         this.reassessmentTriggers = reassessmentTriggers;
+    }
+
+    public MethodologyProfile getMethodologyProfile() {
+        return methodologyProfile;
+    }
+
+    public void setMethodologyProfile(MethodologyProfile methodologyProfile) {
+        this.methodologyProfile = methodologyProfile;
+    }
+
+    public String getMethodologyStrategyKey() {
+        return methodologyStrategyKey;
+    }
+
+    public void setMethodologyStrategyKey(String methodologyStrategyKey) {
+        this.methodologyStrategyKey = methodologyStrategyKey;
     }
 }

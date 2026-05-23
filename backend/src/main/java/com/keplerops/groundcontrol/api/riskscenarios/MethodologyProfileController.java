@@ -46,7 +46,8 @@ public class MethodologyProfileController {
                 request.description(),
                 request.inputSchema(),
                 request.outputSchema(),
-                request.status())));
+                request.status(),
+                request.treatmentStrategyVocabulary())));
     }
 
     @GetMapping
@@ -79,7 +80,8 @@ public class MethodologyProfileController {
                         request.description(),
                         request.inputSchema(),
                         request.outputSchema(),
-                        request.status())));
+                        request.status(),
+                        request.treatmentStrategyVocabulary())));
     }
 
     @DeleteMapping("/{id}")

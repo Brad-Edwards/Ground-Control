@@ -48,7 +48,9 @@ public class TreatmentPlanController {
                 request.dueDate(),
                 request.status(),
                 request.actionItems(),
-                request.reassessmentTriggers())));
+                request.reassessmentTriggers(),
+                request.methodologyProfileId(),
+                request.methodologyStrategyKey())));
     }
 
     @GetMapping
@@ -88,7 +90,9 @@ public class TreatmentPlanController {
                         request.rationale(),
                         request.dueDate(),
                         request.actionItems(),
-                        request.reassessmentTriggers())));
+                        request.reassessmentTriggers(),
+                        request.methodologyProfileId(),
+                        request.methodologyStrategyKey())));
     }
 
     @PutMapping("/{id}/status")

@@ -429,7 +429,13 @@ public class MethodologyProfileService {
         }
         var profile = new MethodologyProfile(
                 project, command.profileKey(), command.name(), command.version(), command.family());
-        applyUpdates(profile, command.description(), command.inputSchema(), command.outputSchema(), command.status());
+        applyUpdates(
+                profile,
+                command.description(),
+                command.inputSchema(),
+                command.outputSchema(),
+                command.status(),
+                command.treatmentStrategyVocabulary());
         return repository.save(profile);
     }
 
@@ -457,7 +463,13 @@ public class MethodologyProfileService {
         if (command.family() != null) {
             profile.setFamily(command.family());
         }
-        applyUpdates(profile, command.description(), command.inputSchema(), command.outputSchema(), command.status());
+        applyUpdates(
+                profile,
+                command.description(),
+                command.inputSchema(),
+                command.outputSchema(),
+                command.status(),
+                command.treatmentStrategyVocabulary());
         return repository.save(profile);
     }
 
@@ -541,7 +553,8 @@ public class MethodologyProfileService {
             String description,
             Map<String, Object> inputSchema,
             Map<String, Object> outputSchema,
-            MethodologyProfileStatus status) {
+            MethodologyProfileStatus status,
+            Map<String, Object> treatmentStrategyVocabulary) {
         if (description != null) {
             profile.setDescription(description);
         }
@@ -553,6 +566,9 @@ public class MethodologyProfileService {
         }
         if (status != null) {
             profile.setStatus(status);
+        }
+        if (treatmentStrategyVocabulary != null) {
+            profile.setTreatmentStrategyVocabulary(treatmentStrategyVocabulary);
         }
     }
 }

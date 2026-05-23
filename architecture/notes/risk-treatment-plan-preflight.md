@@ -74,6 +74,71 @@ link surfaces.
   Flyway migrations, audit-table parity, project scope, and unique constraints
   consistent with the existing risk, asset, and control models.
 
+## Methodology Strategy Binding (#861)
+
+`TreatmentStrategy` remains the canonical API/persistence enum. The five
+canonical strategies (`MITIGATE`, `ACCEPT`, `TRANSFER`, `SHARE`, `AVOID`) stay
+direct enum values; methodology-specific equivalents must flow through
+`strategy = OTHER` plus a typed profile-scoped binding.
+
+The binding should be explicit on `TreatmentPlan`: a nullable
+`methodologyProfile` reference plus a bounded `methodologyStrategyKey` scalar.
+Do not infer the profile from `RiskAssessmentResult`, `RiskScenario`, or
+`RiskRegisterRecord`; those surfaces can have zero, one, or many methodology
+contexts over time, and inference would make treatment semantics depend on a
+mutable assessment history instead of the treatment decision itself.
+
+`MethodologyProfile` should expose treatment strategy vocabulary as its own
+field, not as `inputSchema`, `outputSchema`, `methodologyInfluence`, action-item
+metadata, or a new treatment-plan-local schema. A JSON object keyed by stable
+strategy key is the smallest extension that matches the existing profile JSON
+column pattern (`JacksonTextCollectionConverters.StringObjectMapConverter`) and
+keeps profile/pack authors responsible for vocabulary content. If the
+vocabulary later needs lifecycle, translations, or cross-profile queries, the
+extension seam is a first-class profile vocabulary table behind the same
+profile-scoped key contract, not another treatment-plan field.
+
+`TreatmentPlanService` owns the cross-field invariant after create/update
+commands are merged into the plan's resulting state:
+
+- When the resulting strategy is `OTHER`, both `methodologyProfileId` and a
+  non-blank `methodologyStrategyKey` are required.
+- The profile must resolve through `MethodologyProfileRepository` under the
+  same project; cross-project and non-existent profile IDs must not fall back to
+  family, profile key, or global lookup.
+- The strategy key must exist in the resolved profile's strategy vocabulary.
+  Missing vocabulary, a non-strategy key, or a blank key is a
+  `DomainValidationException` routed through `GlobalExceptionHandler`.
+- When the resulting strategy is one of the canonical five, the service clears
+  any stored profile/key pair. Do not persist stale methodology bindings beside
+  canonical strategy values, and do not reject canonical requests merely because
+  a caller supplied ignored methodology fields.
+
+Do not reuse `MethodologyInfluenceValidator` for this check. It validates
+risk-control mapping influence payloads against `MethodologyProfile.inputSchema`
+(GC-T003 C4), which is assessment/input-factor vocabulary, not treatment
+strategy vocabulary. Keep #861 validation local to `TreatmentPlanService` unless
+another real consumer appears; only then extract a small profile-vocabulary
+lookup helper.
+
+The REST and MCP contracts must move together. If the backend treatment-plan
+request/response records gain `methodologyProfileId` and
+`methodologyStrategyKey`, `gc_risk_governance` must add the corresponding
+snake_case fields to the Zod shape, `TO_CAMEL`, `GOVERNANCE_FIELDS`, and
+adapter tests. `MethodologyProfileRequest` / response must expose the profile
+strategy vocabulary. Do not tunnel these values through `metadata`, action
+items, rationale, or generic description fields.
+
+Persistence must add parent and audit columns in lockstep:
+`methodology_profile_id` and `methodology_strategy_key` on `treatment_plan`,
+matching audit-table columns on `treatment_plan_audit`, and the profile
+vocabulary column on `methodology_profile` plus `methodology_profile_audit`.
+Prefer a normal FK from `treatment_plan.methodology_profile_id` to
+`methodology_profile(id)` rather than `ON DELETE SET NULL`; silently nulling the
+profile would leave `strategy = OTHER` without the vocabulary that gives it
+meaning. Any migration versions added here must be listed in
+`MigrationSmokeTest` and `RequirementsE2EIntegrationTest` per `.gc/plan-rules.md`.
+
 ## Cross-Cutting Layers
 
 - Security: `/api/v1/treatment-plans/**` stays inside the `ApiSecurityConfig`

@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.unit.api;
 
 import static com.keplerops.groundcontrol.TestUtil.setField;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
@@ -17,12 +18,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.keplerops.groundcontrol.api.riskscenarios.TreatmentPlanController;
+import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
+import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
+import com.keplerops.groundcontrol.domain.riskscenarios.service.CreateTreatmentPlanCommand;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.TreatmentPlanService;
+import com.keplerops.groundcontrol.domain.riskscenarios.service.UpdateTreatmentPlanCommand;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import java.time.Instant;
@@ -54,6 +61,7 @@ class TreatmentPlanControllerTest {
     private static final UUID PLAN_ID = UUID.fromString("00000000-0000-0000-0000-000000000200");
     private static final UUID RECORD_ID = UUID.fromString("00000000-0000-0000-0000-000000000300");
     private static final UUID SCENARIO_ID = UUID.fromString("00000000-0000-0000-0000-000000000400");
+    private static final UUID PROFILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000500");
     private static final Instant NOW = Instant.parse("2026-04-01T12:00:00Z");
     private static final Instant DUE = Instant.parse("2026-06-01T00:00:00Z");
 
@@ -315,7 +323,10 @@ class TreatmentPlanControllerTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id", is(PLAN_ID.toString())));
+                .andExpect(jsonPath("$.id", is(PLAN_ID.toString())))
+                .andExpect(jsonPath("$.uid", is("TP-001")))
+                .andExpect(jsonPath("$.title", is("Enforce MFA")))
+                .andExpect(jsonPath("$.strategy", is("MITIGATE")));
     }
 
     @Test
@@ -356,5 +367,145 @@ class TreatmentPlanControllerTest {
                 .andExpect(status().isNoContent());
 
         verify(treatmentPlanService).delete(PROJECT_ID, PLAN_ID);
+    }
+
+    // -------------------------------------------------------------------------
+    // C5: methodology binding fields plumb through create/update
+    // -------------------------------------------------------------------------
+
+    @Test
+    void createPlumbsMethodologyBindingFieldsIntoCommand() throws Exception {
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(treatmentPlanService.create(any())).thenReturn(makePlan(false));
+
+        mockMvc.perform(post("/api/v1/treatment-plans")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                """
+                                {
+                                  "uid": "TP-001",
+                                  "title": "Custom plan",
+                                  "riskRegisterRecordId": "%s",
+                                  "strategy": "OTHER",
+                                  "methodologyProfileId": "%s",
+                                  "methodologyStrategyKey": "CUSTOM_RESIDUAL"
+                                }
+                                """
+                                        .formatted(RECORD_ID, PROFILE_ID)))
+                .andExpect(status().isCreated());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(CreateTreatmentPlanCommand.class);
+        verify(treatmentPlanService).create(captor.capture());
+        assertThat(captor.getValue().methodologyProfileId()).isEqualTo(PROFILE_ID);
+        assertThat(captor.getValue().methodologyStrategyKey()).isEqualTo("CUSTOM_RESIDUAL");
+    }
+
+    @Test
+    void updatePlumbsMethodologyBindingFieldsIntoCommand() throws Exception {
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(treatmentPlanService.update(any(), any(), any())).thenReturn(makePlan(false));
+
+        mockMvc.perform(put("/api/v1/treatment-plans/{id}", PLAN_ID)
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                """
+                                {
+                                  "strategy": "OTHER",
+                                  "methodologyProfileId": "%s",
+                                  "methodologyStrategyKey": "UPDATED_KEY"
+                                }
+                                """
+                                        .formatted(PROFILE_ID)))
+                .andExpect(status().isOk());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(UpdateTreatmentPlanCommand.class);
+        verify(treatmentPlanService).update(any(), any(), captor.capture());
+        assertThat(captor.getValue().methodologyProfileId()).isEqualTo(PROFILE_ID);
+        assertThat(captor.getValue().methodologyStrategyKey()).isEqualTo("UPDATED_KEY");
+    }
+
+    @Test
+    void createReturns422WhenServiceThrowsDomainValidationException() throws Exception {
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(treatmentPlanService.create(any()))
+                .thenThrow(new DomainValidationException(
+                        "Treatment plan with strategy OTHER requires methodologyProfileId and methodologyStrategyKey"));
+
+        mockMvc.perform(post("/api/v1/treatment-plans")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                """
+                                {
+                                  "uid": "TP-001",
+                                  "title": "Custom plan",
+                                  "riskRegisterRecordId": "%s",
+                                  "strategy": "OTHER"
+                                }
+                                """
+                                        .formatted(RECORD_ID)))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void createReturns404WhenServiceThrowsNotFoundException() throws Exception {
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(treatmentPlanService.create(any()))
+                .thenThrow(new NotFoundException("Methodology profile not found: " + PROFILE_ID));
+
+        mockMvc.perform(post("/api/v1/treatment-plans")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                """
+                                {
+                                  "uid": "TP-001",
+                                  "title": "Custom plan",
+                                  "riskRegisterRecordId": "%s",
+                                  "strategy": "OTHER",
+                                  "methodologyProfileId": "%s",
+                                  "methodologyStrategyKey": "KEY"
+                                }
+                                """
+                                        .formatted(RECORD_ID, PROFILE_ID)))
+                .andExpect(status().isNotFound());
+    }
+
+    private TreatmentPlan makePlanWithBinding() {
+        var plan = makePlan(false);
+        var project = new Project("ground-control", "Ground Control");
+        setField(project, "id", PROJECT_ID);
+        var profile = new MethodologyProfile(project, "CUSTOM", "Custom", "1.0", MethodologyFamily.CUSTOM);
+        setField(profile, "id", PROFILE_ID);
+        plan.setMethodologyProfile(profile);
+        plan.setMethodologyStrategyKey("CUSTOM_RESIDUAL");
+        return plan;
+    }
+
+    @Test
+    void createResponseIncludesMethodologyBindingFields() throws Exception {
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(treatmentPlanService.create(any())).thenReturn(makePlanWithBinding());
+
+        mockMvc.perform(post("/api/v1/treatment-plans")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                """
+                                {
+                                  "uid": "TP-001",
+                                  "title": "Custom plan",
+                                  "riskRegisterRecordId": "%s",
+                                  "strategy": "OTHER",
+                                  "methodologyProfileId": "%s",
+                                  "methodologyStrategyKey": "CUSTOM_RESIDUAL"
+                                }
+                                """
+                                        .formatted(RECORD_ID, PROFILE_ID)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.methodologyProfileId", is(PROFILE_ID.toString())))
+                .andExpect(jsonPath("$.methodologyStrategyKey", is("CUSTOM_RESIDUAL")));
     }
 }

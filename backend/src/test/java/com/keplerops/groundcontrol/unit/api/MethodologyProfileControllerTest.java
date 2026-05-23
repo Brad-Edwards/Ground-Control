@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.unit.api;
 
 import static com.keplerops.groundcontrol.TestUtil.setField;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
@@ -142,5 +143,76 @@ class MethodologyProfileControllerTest {
                 .andExpect(status().isNoContent());
 
         verify(methodologyProfileService).delete(PROJECT_ID, PROFILE_ID);
+    }
+
+    // -------------------------------------------------------------------------
+    // C5: treatmentStrategyVocabulary plumbs through create/update/response
+    // -------------------------------------------------------------------------
+
+    @Test
+    void createPlumbsTreatmentStrategyVocabularyIntoCommand() throws Exception {
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        var profile = makeProfile();
+        profile.setTreatmentStrategyVocabulary(
+                Map.of("RESIDUAL_TRANSFER", Map.of("description", "transfer residual risk")));
+        when(methodologyProfileService.create(any())).thenReturn(profile);
+
+        mockMvc.perform(
+                        post("/api/v1/methodology-profiles")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "profileKey": "FAIR_V3_0",
+                                  "name": "FAIR",
+                                  "version": "3.0",
+                                  "family": "FAIR",
+                                  "treatmentStrategyVocabulary": {"RESIDUAL_TRANSFER": {"description": "transfer residual risk"}}
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.treatmentStrategyVocabulary.RESIDUAL_TRANSFER")
+                        .exists());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(
+                com.keplerops.groundcontrol.domain.riskscenarios.service.CreateMethodologyProfileCommand.class);
+        verify(methodologyProfileService).create(captor.capture());
+        assertThat(captor.getValue().treatmentStrategyVocabulary()).containsKey("RESIDUAL_TRANSFER");
+    }
+
+    @Test
+    void updatePlumbsTreatmentStrategyVocabularyIntoCommand() throws Exception {
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        var profile = makeProfile();
+        profile.setTreatmentStrategyVocabulary(Map.of("NEW_KEY", Map.of()));
+        when(methodologyProfileService.update(eq(PROJECT_ID), eq(PROFILE_ID), any()))
+                .thenReturn(profile);
+
+        mockMvc.perform(
+                        put("/api/v1/methodology-profiles/{id}", PROFILE_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {"treatmentStrategyVocabulary": {"NEW_KEY": {}}}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.treatmentStrategyVocabulary.NEW_KEY").exists());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(
+                com.keplerops.groundcontrol.domain.riskscenarios.service.UpdateMethodologyProfileCommand.class);
+        verify(methodologyProfileService).update(any(), any(), captor.capture());
+        assertThat(captor.getValue().treatmentStrategyVocabulary()).containsKey("NEW_KEY");
+    }
+
+    @Test
+    void responseIncludesNullTreatmentStrategyVocabularyWhenAbsent() throws Exception {
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(methodologyProfileService.getById(PROJECT_ID, PROFILE_ID)).thenReturn(makeProfile());
+
+        mockMvc.perform(get("/api/v1/methodology-profiles/{id}", PROFILE_ID).param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.treatmentStrategyVocabulary").doesNotExist());
     }
 }

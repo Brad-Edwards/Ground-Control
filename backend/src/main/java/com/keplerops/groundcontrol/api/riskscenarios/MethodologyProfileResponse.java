@@ -21,6 +21,7 @@ public record MethodologyProfileResponse(
         Map<String, Object> inputSchema,
         Map<String, Object> outputSchema,
         MethodologyProfileStatus status,
+        Map<String, Object> treatmentStrategyVocabulary,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -37,6 +38,7 @@ public record MethodologyProfileResponse(
                 profile.getInputSchema(),
                 profile.getOutputSchema(),
                 profile.getStatus(),
+                profile.getTreatmentStrategyVocabulary(),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt());
     }
