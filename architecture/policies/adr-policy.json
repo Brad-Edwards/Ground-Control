@@ -71,6 +71,29 @@
           "message": "Formal methods surfaces changed without syncing ADR-012 and coding standards."
         }
       ]
+    },
+    {
+      "id": "ADR-054",
+      "title": "Documentation Coverage Gate",
+      "adrPath": "architecture/adrs/054-documentation-coverage-gate.md",
+      "rules": [
+        {
+          "id": "doc-coverage-gate-sync",
+          "whenAny": [
+            "mcp/ground-control/lib.js",
+            "mcp/ground-control/index.js",
+            "tools/policy/checks.py",
+            "tools/install-vale.sh",
+            ".vale.ini",
+            "docs/DOC_STYLE.md"
+          ],
+          "requireAll": [
+            "architecture/adrs/054-documentation-coverage-gate.md",
+            "docs/DOC_STYLE.md"
+          ],
+          "message": "Documentation coverage gate surfaces changed without syncing ADR-054 and DOC_STYLE.md."
+        }
+      ]
     }
   ]
 }

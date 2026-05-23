@@ -52,6 +52,17 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#   completion_command: <how to run the full CI gate>",
     "#   lint_command: <how to run the linter>",
     "#   format_command: <how to run the formatter>",
+    "#   # Per-reviewer pre-push caps (issue #906). Omit to use MCP-tool defaults.",
+    "#   codex_review:",
+    "#     pre_push_cap: 1",
+    "#   test_quality_review:",
+    "#     pre_push_cap: 1",
+    "#   # PR title validation (issue #896). Omit to use /implement skill defaults.",
+    "#   pr_title:",
+    "#     types: [security, added, changed, deprecated, removed, fixed,",
+    "#             feat, fix, chore, docs, refactor, test, ci, build, perf, revert]",
+    "#     subject_pattern: \"^[a-z].*$\"",
+    "#     require_scope: false",
     "# sonarcloud:",
     "#   project_key: <sonar-project-key>",
     "#   organization: <sonar-org>",
@@ -1751,7 +1762,67 @@ function emptyWorkflowConfig() {
     // want the old behavior set `pre_push_cap: 3` explicitly).
     codex_review: { pre_push_cap: null },
     test_quality_review: { pre_push_cap: null },
+    // PR title validation config (issue #896). `null` means "use the canonical
+    // defaults declared in step-09-pr-body.md".
+    pr_title: null,
   };
+}
+
+// Normalize a workflow.pr_title block.  Allowed keys: types, subject_pattern,
+// require_scope.  All are optional; absence means "use the skill's canonical
+// defaults".  Unknown keys are rejected (strict mode mirrors normalizeReviewerConfig).
+function normalizePrTitleConfig(raw) {
+  if (raw == null) {
+    return { ok: true, value: null };
+  }
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, errors: ["workflow.pr_title must be a mapping when set"] };
+  }
+  const allowed = ["types", "subject_pattern", "require_scope"];
+  const errors = [];
+  for (const key of Object.keys(raw)) {
+    if (!allowed.includes(key)) {
+      errors.push(`workflow.pr_title has unknown key '${key}'`);
+    }
+  }
+  const value = {};
+  if (raw.types != null) {
+    if (!Array.isArray(raw.types)) {
+      errors.push("workflow.pr_title.types must be a list of strings");
+    } else {
+      for (const t of raw.types) {
+        if (typeof t !== "string" || t.trim() === "") {
+          errors.push("workflow.pr_title.types entries must be non-empty strings");
+          break;
+        }
+      }
+      if (!errors.some((e) => e.includes("types"))) {
+        value.types = [...raw.types];
+      }
+    }
+  } else {
+    value.types = null;
+  }
+  if (raw.subject_pattern != null) {
+    if (typeof raw.subject_pattern !== "string" || raw.subject_pattern.trim() === "") {
+      errors.push("workflow.pr_title.subject_pattern must be a non-empty string when set");
+    } else {
+      value.subject_pattern = raw.subject_pattern;
+    }
+  } else {
+    value.subject_pattern = null;
+  }
+  if (raw.require_scope != null) {
+    if (typeof raw.require_scope !== "boolean") {
+      errors.push("workflow.pr_title.require_scope must be a boolean when set");
+    } else {
+      value.require_scope = raw.require_scope;
+    }
+  } else {
+    value.require_scope = null;
+  }
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value };
 }
 
 // Bounds for the per-reviewer pre-push cap. Lower bound 1: a cap of 0 would
@@ -1821,7 +1892,7 @@ function normalizeWorkflowConfig(raw) {
   // Scalar string-typed keys handled inline; nested-mapping keys delegated to
   // their own normalizers below.
   const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "base_branch"];
-  const allowedNested = ["codex_review", "test_quality_review"];
+  const allowedNested = ["codex_review", "test_quality_review", "pr_title"];
   const allowed = [...allowedScalar, ...allowedNested];
   const value = emptyWorkflowConfig();
   const errors = [];
@@ -1851,6 +1922,9 @@ function normalizeWorkflowConfig(raw) {
   const testQualityResult = normalizeReviewerConfig(raw.test_quality_review, "workflow.test_quality_review");
   if (!testQualityResult.ok) errors.push(...testQualityResult.errors);
   else value.test_quality_review = testQualityResult.value;
+  const prTitleResult = normalizePrTitleConfig(raw.pr_title);
+  if (!prTitleResult.ok) errors.push(...prTitleResult.errors);
+  else value.pr_title = prTitleResult.value;
   if (errors.length) return { ok: false, errors };
   return { ok: true, value };
 }
@@ -10236,6 +10310,195 @@ const FINAL_REPORT_FILE_KINDS = Object.freeze(["added", "modified", "renamed", "
 const FINAL_REPORT_CI_STATUSES = Object.freeze(["green", "red", "skipped"]);
 const FINAL_REPORT_SONAR_STATUSES = Object.freeze(["passed", "failed", "skipped"]);
 
+// ---------------------------------------------------------------------------
+// Documentation coverage gate (issue #896, ADR-054)
+// ---------------------------------------------------------------------------
+
+// Closed outcome enum for the documentation_outcome field.
+const DOCUMENTATION_OUTCOMES = Object.freeze(["updated", "verified_unchanged", "not_updated_authorized"]);
+
+// Maximum length for a not_updated_authorized rationale string (characters).
+const DOCUMENTATION_RATIONALE_MAX_CHARS = 2000;
+
+/**
+ * Validate a documentation_outcome value.
+ *
+ * @param {*} input - Expected shape: { outcome: string, rationale?: string }
+ * @returns {{ ok: boolean, value?: { outcome, rationale }, errors?: string[] }}
+ */
+export function validateDocumentationOutcome(input) {
+  if (input == null || typeof input !== "object") {
+    return { ok: false, errors: ["documentation_outcome must be an object"] };
+  }
+  const errors = [];
+  const { outcome, rationale } = input;
+  if (typeof outcome !== "string" || !DOCUMENTATION_OUTCOMES.includes(outcome)) {
+    errors.push(`documentation_outcome.outcome must be one of: ${DOCUMENTATION_OUTCOMES.join(", ")}`);
+  }
+  // Rationale rules: only `not_updated_authorized` may have a rationale; it is
+  // required and bounded. Other outcomes must NOT supply one (strict).
+  if (outcome === "not_updated_authorized") {
+    if (typeof rationale !== "string" || rationale.trim() === "") {
+      errors.push("documentation_outcome.rationale is required for outcome=not_updated_authorized and must be non-empty");
+    } else if (rationale.length > DOCUMENTATION_RATIONALE_MAX_CHARS) {
+      errors.push(
+        `documentation_outcome.rationale exceeds the ${DOCUMENTATION_RATIONALE_MAX_CHARS}-character limit (got ${rationale.length})`,
+      );
+    }
+  } else if (rationale != null) {
+    errors.push(`documentation_outcome.rationale must not be supplied for outcome=${outcome} (strict)`);
+  }
+  if (errors.length) return { ok: false, errors };
+  return {
+    ok: true,
+    value: {
+      outcome,
+      ...(rationale != null ? { rationale } : {}),
+    },
+  };
+}
+
+// Closed surface-class vocabulary. Maps a surface class name to the
+// repo-relative documentation targets it governs.
+//
+// `outcome_required` is true for the first seven non-doc surfaces: any change
+// to one of those surfaces must carry a documentation_outcome field.
+const SURFACE_CLASS_MAP = [
+  {
+    surface_class: "workflow",
+    prefix_patterns: ["skills/implement/", "skills/quickfix/"],
+    doc_targets: ["architecture/adrs/", "docs/DEVELOPMENT_WORKFLOW.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "mcp_tool",
+    exact_patterns: ["mcp/ground-control/index.js"],
+    doc_targets: ["docs/DEVELOPMENT_WORKFLOW.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "config_parser",
+    exact_patterns: ["mcp/ground-control/lib.js"],
+    doc_targets: ["docs/DEVELOPMENT_WORKFLOW.md", "architecture/adrs/027-ground-control-yaml-context-contract.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "policy",
+    prefix_patterns: ["tools/policy/", "tools/tests/", "bin/policy", "architecture/policies/"],
+    doc_targets: ["docs/DEVELOPMENT_WORKFLOW.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "adr",
+    prefix_patterns: ["architecture/adrs/"],
+    doc_targets: ["architecture/adrs/README.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "public_api",
+    prefix_patterns: ["backend/src/main/java/com/keplerops/groundcontrol/api/"],
+    doc_targets: ["docs/architecture/ARCHITECTURE.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "user_visible",
+    prefix_patterns: ["frontend/src/"],
+    doc_targets: ["docs/architecture/ARCHITECTURE.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "doc",
+    prefix_patterns: ["docs/", "architecture/"],
+    doc_targets: [],
+    outcome_required: false,
+  },
+];
+
+/**
+ * Classify a list of repo-relative changed paths into surface classes.
+ *
+ * Security: paths are validated with resolveRepoRelativePath (lexical
+ * containment) before classification.  Absolute paths or `..` escapes throw
+ * a TypeError.
+ *
+ * @param {string[]} changedPaths - Repo-relative paths (no leading /).
+ * @param {string} repoRoot - Absolute path to the repo root.
+ * @returns {{ classifications: Array<{path, surface_class, doc_targets}>, outcome_required: boolean }}
+ */
+export function classifyChangedSurface(changedPaths, repoRoot) {
+  if (!Array.isArray(changedPaths)) {
+    throw new TypeError("classifyChangedSurface: changedPaths must be an array");
+  }
+  const classifications = [];
+  let outcome_required = false;
+
+  for (const rawPath of changedPaths) {
+    // Lexical containment check — reuses the existing helper.
+    const check = resolveRepoRelativePath(repoRoot, rawPath, "changed_path");
+    if (!check.ok) {
+      throw new TypeError(`classifyChangedSurface: ${check.error}`);
+    }
+    const normalizedPath = check.rel;
+
+    let matched = null;
+    for (const entry of SURFACE_CLASS_MAP) {
+      // Check exact patterns first
+      if (entry.exact_patterns) {
+        for (const exact of entry.exact_patterns) {
+          if (normalizedPath === exact) {
+            matched = entry;
+            break;
+          }
+        }
+        if (matched) break;
+      }
+      // Then prefix patterns
+      if (entry.prefix_patterns) {
+        for (const prefix of entry.prefix_patterns) {
+          if (normalizedPath.startsWith(prefix)) {
+            matched = entry;
+            break;
+          }
+        }
+        if (matched) break;
+      }
+    }
+
+    if (matched === null) {
+      classifications.push({ path: rawPath, surface_class: "unclassified", doc_targets: [] });
+    } else {
+      classifications.push({ path: rawPath, surface_class: matched.surface_class, doc_targets: [...matched.doc_targets] });
+      if (matched.outcome_required) {
+        outcome_required = true;
+      }
+    }
+  }
+
+  return { classifications, outcome_required };
+}
+
+/**
+ * Render a ## Documentation section string for a given documentation_outcome.
+ * Used by both buildPrBody and buildFinalReport.
+ *
+ * @param {{ outcome: string, rationale?: string }} docOutcome
+ * @returns {string[]} Lines to push into a body builder.
+ */
+function renderDocumentationSection(docOutcome) {
+  const lines = [];
+  lines.push("## Documentation");
+  lines.push("");
+  if (docOutcome.outcome === "updated") {
+    lines.push("Updated: see diff.");
+  } else if (docOutcome.outcome === "verified_unchanged") {
+    lines.push("Verified unchanged: no documentation surface in scope.");
+  } else {
+    // not_updated_authorized
+    lines.push(`Not updated (authorized): ${docOutcome.rationale}`);
+  }
+  return lines;
+}
+
 export function buildFinalReportMarker({ issueNumber, prNumber }) {
   return `<!-- gc:final-report issue="${issueNumber}" pr="${prNumber}" -->`;
 }
@@ -10336,6 +10599,13 @@ export function validateFinalReportInput(input) {
       `summary exceeds the final-report summary cap of ${FINAL_REPORT_SUMMARY_MAX} bytes (got ${Buffer.byteLength(summary, "utf8")}). A final-report summary is one tight paragraph — restated context and hedging are the usual offenders.`,
     );
   }
+  // Optional documentation_outcome field (issue #896, ADR-054).
+  if (input.documentation_outcome != null) {
+    const docResult = validateDocumentationOutcome(input.documentation_outcome);
+    if (!docResult.ok) {
+      for (const e of docResult.errors) errors.push(`documentation_outcome: ${e}`);
+    }
+  }
   if (errors.length) return { ok: false, errors };
   return { ok: true };
 }
@@ -10417,6 +10687,11 @@ export function buildFinalReport(input) {
   lines.push(`- CI: ${renderCiStatus(ciStatus)}`);
   lines.push(`- SonarCloud: ${renderSonarStatus(sonarStatus)}`);
   lines.push(`- PR ready for user review and merge.`);
+  // Optional documentation outcome section (issue #896, ADR-054).
+  if (input.documentation_outcome != null) {
+    lines.push("");
+    for (const l of renderDocumentationSection(input.documentation_outcome)) lines.push(l);
+  }
   return lines.join("\n");
 }
 
@@ -10968,6 +11243,13 @@ export function validatePrBodyInput(input) {
   if (testNotes != null && typeof testNotes !== "string") {
     errors.push("testNotes must be a string when set");
   }
+  // Optional documentation_outcome field (issue #896, ADR-054).
+  if (input.documentation_outcome != null) {
+    const docResult = validateDocumentationOutcome(input.documentation_outcome);
+    if (!docResult.ok) {
+      for (const e of docResult.errors) errors.push(`documentation_outcome: ${e}`);
+    }
+  }
   if (errors.length) return { ok: false, errors };
   return { ok: true };
 }
@@ -11072,6 +11354,11 @@ export function buildPrBody(input) {
     lines.push(`- [x] Changelog fragment added at \`${changelogFragment}\``);
   }
   lines.push("- [x] Architectural docs updated if stack, package structure, or key behaviors changed");
+  // Optional documentation outcome section (issue #896, ADR-054).
+  if (input.documentation_outcome != null) {
+    lines.push("");
+    for (const l of renderDocumentationSection(input.documentation_outcome)) lines.push(l);
+  }
   return lines.join("\n");
 }
 

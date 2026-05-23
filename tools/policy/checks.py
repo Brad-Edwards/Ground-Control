@@ -750,6 +750,120 @@ def run_changelog_fragment_check(
     return violations
 
 
+_DOCUMENTATION_COVERAGE_FIXTURE = REPO_ROOT / "tools" / "documentation_coverage_fixture.mjs"
+_DOCUMENTATION_SECTION_RE = re.compile(r"^##\s+Documentation\b", re.MULTILINE)
+
+
+def run_documentation_coverage_check(
+    changed_files: list[str],
+    root: Path = REPO_ROOT,
+    pr_body: str | None = None,
+) -> list[Violation]:
+    """Classify the diff and verify the PR body carries a documentation outcome.
+
+    Violation codes:
+    - ``doc-coverage-outcome-missing``: a classified surface requires a
+      documentation outcome but the PR body has no ``## Documentation`` section.
+    - ``doc-coverage-fixture-error``: the Node classifier fixture failed
+      (treat as a drift signal, not a pass).
+
+    The check skips gracefully when ``node`` is unavailable or the PR body
+    cannot be resolved (matches the changelog-fragment check style).
+    """
+    import shutil
+
+    if shutil.which("node") is None:
+        return []
+
+    if not _DOCUMENTATION_COVERAGE_FIXTURE.exists():
+        return [
+            Violation(
+                code="doc-coverage-fixture-error",
+                message=(
+                    "documentation_coverage_fixture.mjs not found — "
+                    "documentation coverage check cannot run."
+                ),
+                details=[f"expected at {_DOCUMENTATION_COVERAGE_FIXTURE}"],
+            )
+        ]
+
+    fixture_input = {
+        "repo_path": str(root),
+        "changed_paths": list(changed_files),
+    }
+    try:
+        proc = subprocess.run(
+            ["node", str(_DOCUMENTATION_COVERAGE_FIXTURE)],
+            input=json.dumps(fixture_input),
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+            timeout=30,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return [
+            Violation(
+                code="doc-coverage-fixture-error",
+                message=f"documentation_coverage_fixture.mjs failed to execute: {exc}",
+                details=[],
+            )
+        ]
+
+    if proc.returncode != 0:
+        return [
+            Violation(
+                code="doc-coverage-fixture-error",
+                message="documentation_coverage_fixture.mjs exited with non-zero status.",
+                details=[f"stderr: {proc.stderr.strip()[:500]}"] if proc.stderr.strip() else [],
+            )
+        ]
+
+    try:
+        result = json.loads(proc.stdout)
+    except Exception:  # noqa: BLE001
+        return [
+            Violation(
+                code="doc-coverage-fixture-error",
+                message="documentation_coverage_fixture.mjs produced invalid JSON output.",
+                details=[],
+            )
+        ]
+
+    if not result.get("outcome_required"):
+        return []
+
+    # outcome_required is true — check the PR body for a ## Documentation section.
+    if pr_body is None:
+        # No PR body available; skip gracefully (mirrors changelog check style).
+        return []
+
+    if not _DOCUMENTATION_SECTION_RE.search(pr_body):
+        surface_classes = sorted({
+            c["surface_class"]
+            for c in result.get("classifications", [])
+            if c.get("surface_class") not in ("doc", "unclassified")
+        })
+        suggested = result.get("suggested_doc_targets", [])
+        details = []
+        if surface_classes:
+            details.append(f"classified surfaces: {', '.join(surface_classes)}")
+        if suggested:
+            details.append(f"suggested doc targets: {', '.join(suggested)}")
+        return [
+            Violation(
+                code="doc-coverage-outcome-missing",
+                message=(
+                    "Diff touches a documented surface but the PR body has no "
+                    "## Documentation section. Add a documentation_outcome field "
+                    "when calling gc_render_pr_body (ADR-054)."
+                ),
+                details=details,
+            )
+        ]
+
+    return []
+
+
 def run_deploy_compose_credential_passthrough(root: Path = REPO_ROOT) -> list[Violation]:
     """Assert the production compose file enumerates ADR-026 credential env vars.
 
@@ -1640,6 +1754,11 @@ def main(argv: list[str] | None = None) -> int:
             # check_pr_body composes the no-deferral check (ADR-029) so all
             # PR-body validation routes share the same contract.
             violations.extend(check_pr_body(body))
+            violations.extend(run_documentation_coverage_check(changed_files, pr_body=body))
+        else:
+            violations.extend(run_documentation_coverage_check(changed_files, pr_body=None))
+    else:
+        violations.extend(run_documentation_coverage_check(changed_files, pr_body=None))
 
     return render_and_exit(violations)
 

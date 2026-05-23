@@ -23,6 +23,7 @@ from tools.policy.checks import (
     run_changelog_fragment_check,
     run_controller_contracts,
     run_deploy_compose_credential_passthrough,
+    run_documentation_coverage_check,
     run_enum_contract_check,
     run_migration_policy,
     run_no_deferral_disposition_check,
@@ -1665,6 +1666,73 @@ class TestQualityDecisionRecordContractTest(unittest.TestCase):
             "gc_post_decision_record contract for test-quality cycles "
             "(issue #884 regression target).",
         )
+
+
+    # ------------------------------------------------------------------
+    # Documentation coverage check (issue #896, ADR-054)
+    # ------------------------------------------------------------------
+
+    def test_doc_coverage_passes_when_outcome_present(self):
+        """A PR body with ## Documentation passes even for classified surfaces."""
+        pr_body = (
+            "## Summary\nAdded classifier.\n\n"
+            "## Requirement UIDs\n- ADR-054\n\n"
+            "## Related Issues\nCloses #896\n\n"
+            "## ADR Impact\n- ADR-054\n\n"
+            "## Changes\n- Added classifyChangedSurface\n\n"
+            "## Documentation\n\nUpdated: see diff.\n"
+        )
+        # mcp/ground-control/lib.js is a config_parser surface → outcome_required
+        violations = run_documentation_coverage_check(
+            ["mcp/ground-control/lib.js"],
+            pr_body=pr_body,
+        )
+        codes = [v.code for v in violations]
+        self.assertNotIn("doc-coverage-outcome-missing", codes)
+
+    def test_doc_coverage_fails_when_outcome_missing_and_surface_classified(self):
+        """A PR body without ## Documentation fails for classified surfaces."""
+        pr_body = (
+            "## Summary\nAdded classifier.\n\n"
+            "## Requirement UIDs\n- ADR-054\n\n"
+            "## Related Issues\nCloses #896\n\n"
+            "## ADR Impact\n- ADR-054\n\n"
+            "## Changes\n- Added classifyChangedSurface\n"
+        )
+        # mcp/ground-control/lib.js is a config_parser surface → outcome_required
+        violations = run_documentation_coverage_check(
+            ["mcp/ground-control/lib.js"],
+            pr_body=pr_body,
+        )
+        codes = [v.code for v in violations]
+        self.assertIn("doc-coverage-outcome-missing", codes)
+
+    def test_doc_coverage_docs_only_diff_passes_without_outcome(self):
+        """A docs-only diff does not require a ## Documentation section."""
+        pr_body = (
+            "## Summary\nDoc update.\n\n"
+            "## Requirement UIDs\n- ADR-054\n\n"
+            "## Related Issues\nCloses #896\n\n"
+            "## ADR Impact\n- ADR-054\n\n"
+            "## Changes\n- Updated DOC_STYLE.md\n"
+        )
+        # docs/ paths are doc surface → outcome_required=false
+        violations = run_documentation_coverage_check(
+            ["docs/DOC_STYLE.md"],
+            pr_body=pr_body,
+        )
+        codes = [v.code for v in violations]
+        self.assertNotIn("doc-coverage-outcome-missing", codes)
+
+    def test_doc_coverage_skips_gracefully_when_pr_body_unavailable(self):
+        """When pr_body is None the check skips without raising."""
+        violations = run_documentation_coverage_check(
+            ["mcp/ground-control/lib.js"],
+            pr_body=None,
+        )
+        # Graceful skip — no hard fail, no fixture-error either
+        codes = [v.code for v in violations]
+        self.assertNotIn("doc-coverage-outcome-missing", codes)
 
 
 if __name__ == "__main__":
