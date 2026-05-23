@@ -55,6 +55,10 @@ public class MethodologyProfile extends BaseEntity {
     @Column(name = "output_schema", columnDefinition = "TEXT")
     private Map<String, Object> outputSchema;
 
+    @Convert(converter = JacksonTextCollectionConverters.StringObjectMapConverter.class)
+    @Column(name = "treatment_strategy_vocabulary", columnDefinition = "TEXT")
+    private Map<String, Object> treatmentStrategyVocabulary;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private MethodologyProfileStatus status = MethodologyProfileStatus.ACTIVE;
@@ -126,6 +130,14 @@ public class MethodologyProfile extends BaseEntity {
 
     public void setOutputSchema(Map<String, Object> outputSchema) {
         this.outputSchema = outputSchema;
+    }
+
+    public Map<String, Object> getTreatmentStrategyVocabulary() {
+        return treatmentStrategyVocabulary;
+    }
+
+    public void setTreatmentStrategyVocabulary(Map<String, Object> treatmentStrategyVocabulary) {
+        this.treatmentStrategyVocabulary = treatmentStrategyVocabulary;
     }
 
     public MethodologyProfileStatus getStatus() {

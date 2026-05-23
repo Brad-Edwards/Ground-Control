@@ -12,15 +12,18 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
+import com.keplerops.groundcontrol.domain.riskscenarios.repository.MethodologyProfileRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskRegisterRecordRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.TreatmentPlanRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.CreateTreatmentPlanCommand;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.TreatmentPlanService;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.UpdateTreatmentPlanCommand;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import java.time.Instant;
@@ -46,6 +49,9 @@ class TreatmentPlanServiceTest {
 
     @Mock
     private RiskScenarioRepository riskScenarioRepository;
+
+    @Mock
+    private MethodologyProfileRepository methodologyProfileRepository;
 
     @Mock
     private ProjectService projectService;
@@ -75,6 +81,49 @@ class TreatmentPlanServiceTest {
         setField(record, "id", recordId);
     }
 
+    // -------------------------------------------------------------------------
+    // helpers
+    // -------------------------------------------------------------------------
+
+    private MethodologyProfile makeProfileWithVocabulary(String... keys) {
+        var profile = new MethodologyProfile(project, "CUSTOM_KEY", "Custom", "1.0", MethodologyFamily.CUSTOM);
+        var profileId = UUID.randomUUID();
+        setField(profile, "id", profileId);
+        var vocab = new java.util.HashMap<String, Object>();
+        for (var k : keys) {
+            vocab.put(k, Map.of("description", k));
+        }
+        profile.setTreatmentStrategyVocabulary(vocab);
+        return profile;
+    }
+
+    private CreateTreatmentPlanCommand createOtherCommand(UUID profileId, String strategyKey) {
+        return new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Custom plan",
+                recordId,
+                null,
+                TreatmentStrategy.OTHER,
+                "Owner",
+                "Rationale",
+                null,
+                null,
+                null,
+                null,
+                profileId,
+                strategyKey);
+    }
+
+    private UpdateTreatmentPlanCommand updateOtherCommand(UUID profileId, String strategyKey) {
+        return new UpdateTreatmentPlanCommand(
+                null, null, TreatmentStrategy.OTHER, null, null, null, null, null, profileId, strategyKey);
+    }
+
+    // -------------------------------------------------------------------------
+    // existing tests (updated command constructors)
+    // -------------------------------------------------------------------------
+
     @Test
     void createBuildsPlanAndTransitionsRequestedStatus() {
         when(projectService.getById(projectId)).thenReturn(project);
@@ -96,7 +145,9 @@ class TreatmentPlanServiceTest {
                 Instant.parse("2026-06-01T00:00:00Z"),
                 TreatmentPlanStatus.IN_PROGRESS,
                 List.of(Map.of("step", "Enable WAF")),
-                List.of("New exposure")));
+                List.of("New exposure"),
+                null,
+                null));
 
         assertThat(result.getUid()).isEqualTo("TP-1");
         assertThat(result.getStatus()).isEqualTo(TreatmentPlanStatus.IN_PROGRESS);
@@ -116,6 +167,8 @@ class TreatmentPlanServiceTest {
                         recordId,
                         null,
                         TreatmentStrategy.MITIGATE,
+                        null,
+                        null,
                         null,
                         null,
                         null,
@@ -158,7 +211,9 @@ class TreatmentPlanServiceTest {
                                 "Rationale",
                                 Instant.parse("2026-06-01T00:00:00Z"),
                                 List.of(),
-                                List.of())))
+                                List.of(),
+                                null,
+                                null)))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("must belong");
     }
@@ -186,5 +241,244 @@ class TreatmentPlanServiceTest {
         service.delete(projectId, planId);
 
         verify(repository).delete(plan);
+    }
+
+    // -------------------------------------------------------------------------
+    // C5: methodology binding — create path
+    // -------------------------------------------------------------------------
+
+    @Test
+    void createOtherWithValidBindingPersistsBinding() {
+        var profile = makeProfileWithVocabulary("RESIDUAL_TRANSFER");
+        var profileId = profile.getId();
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+        when(methodologyProfileRepository.findByIdAndProjectId(profileId, projectId))
+                .thenReturn(Optional.of(profile));
+        when(repository.save(any(TreatmentPlan.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.create(createOtherCommand(profileId, "RESIDUAL_TRANSFER"));
+
+        assertThat(result.getMethodologyProfile()).isSameAs(profile);
+        assertThat(result.getMethodologyStrategyKey()).isEqualTo("RESIDUAL_TRANSFER");
+    }
+
+    @Test
+    void createOtherWithoutProfileIdThrowsDomainValidation() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        assertThatThrownBy(() -> service.create(createOtherCommand(null, "KEY")))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("methodologyProfileId");
+    }
+
+    @Test
+    void createOtherWithoutStrategyKeyThrowsDomainValidation() {
+        var profile = makeProfileWithVocabulary("KEY");
+        var profileId = profile.getId();
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+        when(methodologyProfileRepository.findByIdAndProjectId(profileId, projectId))
+                .thenReturn(Optional.of(profile));
+
+        assertThatThrownBy(() -> service.create(createOtherCommand(profileId, null)))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("methodologyProfileId");
+    }
+
+    @Test
+    void createOtherWithBlankStrategyKeyThrowsDomainValidation() {
+        var profile = makeProfileWithVocabulary("KEY");
+        var profileId = profile.getId();
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+        when(methodologyProfileRepository.findByIdAndProjectId(profileId, projectId))
+                .thenReturn(Optional.of(profile));
+
+        assertThatThrownBy(() -> service.create(createOtherCommand(profileId, "  ")))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("methodologyProfileId");
+    }
+
+    @Test
+    void createOtherWithKeyAbsentFromVocabularyThrowsDomainValidation() {
+        var profile = makeProfileWithVocabulary("KEY_A", "KEY_B");
+        var profileId = profile.getId();
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+        when(methodologyProfileRepository.findByIdAndProjectId(profileId, projectId))
+                .thenReturn(Optional.of(profile));
+
+        assertThatThrownBy(() -> service.create(createOtherCommand(profileId, "UNKNOWN_KEY")))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("UNKNOWN_KEY");
+    }
+
+    @Test
+    void createOtherWithNullVocabularyThrowsDomainValidation() {
+        var profile = new MethodologyProfile(project, "CUSTOM", "Custom", "1.0", MethodologyFamily.CUSTOM);
+        var profileId = UUID.randomUUID();
+        setField(profile, "id", profileId);
+        // treatmentStrategyVocabulary left null
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+        when(methodologyProfileRepository.findByIdAndProjectId(profileId, projectId))
+                .thenReturn(Optional.of(profile));
+
+        assertThatThrownBy(() -> service.create(createOtherCommand(profileId, "KEY")))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("KEY");
+    }
+
+    @Test
+    void createOtherWithCrossProjectProfileIdThrowsNotFoundException() {
+        var profileId = UUID.randomUUID();
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+        when(methodologyProfileRepository.findByIdAndProjectId(profileId, projectId))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.create(createOtherCommand(profileId, "KEY")))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining(profileId.toString());
+    }
+
+    @Test
+    void createCanonicalStrategyClearsBinding() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+        when(repository.save(any(TreatmentPlan.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.create(new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Mitigate",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
+
+        assertThat(result.getMethodologyProfile()).isNull();
+        assertThat(result.getMethodologyStrategyKey()).isNull();
+    }
+
+    @Test
+    void createCanonicalStrategyWithMethodologyFieldsIgnoresFields() {
+        // canonical strategy + methodology fields supplied → accepted, fields ignored
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+        when(repository.save(any(TreatmentPlan.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        var ignoredProfileId = UUID.randomUUID();
+
+        var result = service.create(new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Mitigate",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                ignoredProfileId,
+                "IGNORED_KEY"));
+
+        assertThat(result.getMethodologyProfile()).isNull();
+        assertThat(result.getMethodologyStrategyKey()).isNull();
+    }
+
+    // -------------------------------------------------------------------------
+    // C5: methodology binding — update path
+    // -------------------------------------------------------------------------
+
+    @Test
+    void updateOtherWithValidBindingPersistsBinding() {
+        var profile = makeProfileWithVocabulary("CUSTOM_TRANSFER");
+        var profileId = profile.getId();
+        var plan = new TreatmentPlan(project, "TP-1", "Plan", record, TreatmentStrategy.MITIGATE);
+        var planId = UUID.randomUUID();
+        setField(plan, "id", planId);
+        when(repository.findByIdAndProjectId(planId, projectId)).thenReturn(Optional.of(plan));
+        when(methodologyProfileRepository.findByIdAndProjectId(profileId, projectId))
+                .thenReturn(Optional.of(profile));
+        when(repository.save(any(TreatmentPlan.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.update(projectId, planId, updateOtherCommand(profileId, "CUSTOM_TRANSFER"));
+
+        assertThat(result.getMethodologyProfile()).isSameAs(profile);
+        assertThat(result.getMethodologyStrategyKey()).isEqualTo("CUSTOM_TRANSFER");
+    }
+
+    @Test
+    void updateSwitchingOtherToMitigateClearsBinding() {
+        var profile = makeProfileWithVocabulary("K");
+        var plan = new TreatmentPlan(project, "TP-1", "Plan", record, TreatmentStrategy.OTHER);
+        var planId = UUID.randomUUID();
+        setField(plan, "id", planId);
+        plan.setMethodologyProfile(profile);
+        plan.setMethodologyStrategyKey("K");
+        when(repository.findByIdAndProjectId(planId, projectId)).thenReturn(Optional.of(plan));
+        when(repository.save(any(TreatmentPlan.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.update(
+                projectId,
+                planId,
+                new UpdateTreatmentPlanCommand(
+                        null, null, TreatmentStrategy.MITIGATE, null, null, null, null, null, null, null));
+
+        assertThat(result.getMethodologyProfile()).isNull();
+        assertThat(result.getMethodologyStrategyKey()).isNull();
+    }
+
+    @Test
+    void updateChangingKeyOnOtherPlanSucceeds() {
+        var profile = makeProfileWithVocabulary("KEY_A", "KEY_B");
+        var profileId = profile.getId();
+        var plan = new TreatmentPlan(project, "TP-1", "Plan", record, TreatmentStrategy.OTHER);
+        var planId = UUID.randomUUID();
+        setField(plan, "id", planId);
+        plan.setMethodologyProfile(profile);
+        plan.setMethodologyStrategyKey("KEY_A");
+        when(repository.findByIdAndProjectId(planId, projectId)).thenReturn(Optional.of(plan));
+        // no new profileId supplied — reuse existing profile
+        when(repository.save(any(TreatmentPlan.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.update(
+                projectId,
+                planId,
+                new UpdateTreatmentPlanCommand(
+                        null, null, TreatmentStrategy.OTHER, null, null, null, null, null, null, "KEY_B"));
+
+        assertThat(result.getMethodologyStrategyKey()).isEqualTo("KEY_B");
+        assertThat(result.getMethodologyProfile()).isSameAs(profile);
     }
 }

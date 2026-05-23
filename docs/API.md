@@ -1014,6 +1014,45 @@ issues, and controls). Unknown `id` → 404 `not_found`.
 
 **Lifecycle states:** DRAFT → ACTIVE → ARCHIVED (and DRAFT → ARCHIVED directly).
 
+### Methodology Profiles
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/methodology-profiles` | MethodologyProfileRequest | 201 | Create methodology profile |
+| GET | `/methodology-profiles` | — | 200 | List methodology profiles for a project (auto-seeds defaults on first read) |
+| GET | `/methodology-profiles/{id}` | — | 200 | Get methodology profile by UUID |
+| PUT | `/methodology-profiles/{id}` | UpdateMethodologyProfileRequest | 200 | Update mutable fields |
+| DELETE | `/methodology-profiles/{id}` | — | 204 | Delete methodology profile |
+
+All endpoints accept an optional `project` query parameter (required in multi-project deployments).
+
+**MethodologyProfileRequest fields:** `profileKey` (required, max 100), `name` (required, max 200), `version` (required, max 50), `family` (required, enum: FAIR, NIST_SP800_30_R1, ISO_27005, CUSTOM), `description` (optional), `inputSchema` (optional JSON object — methodology assessment input vocabulary), `outputSchema` (optional JSON object — methodology assessment output vocabulary), `treatmentStrategyVocabulary` (optional JSON object — strategy vocabulary keyed by stable strategy key; the value object is profile/pack-defined and may carry display labels, semantics, or other metadata), `status` (optional, enum: ACTIVE, DEPRECATED; defaults to ACTIVE).
+
+`UpdateMethodologyProfileRequest` carries the same field set minus `profileKey`; null fields are left unchanged.
+
+`(project_id, profile_key, version)` is unique. Conflict on duplicate create returns 409 `conflict`.
+
+### Treatment Plans
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/treatment-plans` | TreatmentPlanRequest | 201 | Create treatment plan |
+| GET | `/treatment-plans` | — | 200 | List treatment plans for a project (optional `riskRegisterRecordId` filter) |
+| GET | `/treatment-plans/{id}` | — | 200 | Get treatment plan by UUID |
+| PUT | `/treatment-plans/{id}` | UpdateTreatmentPlanRequest | 200 | Update mutable fields |
+| PUT | `/treatment-plans/{id}/status` | `{"status": "IN_PROGRESS"}` | 200 | Transition lifecycle status |
+| DELETE | `/treatment-plans/{id}` | — | 204 | Delete treatment plan |
+
+All endpoints accept an optional `project` query parameter (required in multi-project deployments).
+
+**TreatmentPlanRequest fields:** `uid` (required, max 50, unique per project), `title` (required, max 200), `riskRegisterRecordId` (required, UUID), `riskScenarioId` (optional, UUID; must belong to the linked register record's scenarios), `strategy` (required, enum: MITIGATE, ACCEPT, TRANSFER, SHARE, AVOID, OTHER), `methodologyProfileId` (optional, UUID; required when `strategy = OTHER`), `methodologyStrategyKey` (optional, max 100; required when `strategy = OTHER`, must exist in the resolved profile's `treatmentStrategyVocabulary`), `owner` (optional, max 200), `rationale` (optional), `dueDate` (optional, ISO-8601 instant), `status` (optional, defaults to PLANNED), `actionItems` (optional list of JSON objects), `reassessmentTriggers` (optional list of strings).
+
+`UpdateTreatmentPlanRequest` carries the mutable subset; null fields are left unchanged.
+
+**Methodology binding (GC-T004 / C5):** when the resulting `strategy` is `OTHER`, the request must resolve a `methodologyProfileId` (same-project lookup; cross-project or non-existent → 404 `not_found`) and a `methodologyStrategyKey` that exists in that profile's `treatmentStrategyVocabulary` (missing/blank/non-member → 400 `validation_error`). When the resulting strategy is one of the canonical five, the service silently clears any stored profile/key pair — supplied methodology fields are ignored rather than rejected.
+
+**Lifecycle states:** PLANNED → IN_PROGRESS → {BLOCKED, COMPLETED, CANCELED}; BLOCKED → IN_PROGRESS or CANCELED; PLANNED → CANCELED. COMPLETED and CANCELED are terminal.
+
 ### Findings
 
 | Method | Path | Body | Status | Purpose |

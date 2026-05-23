@@ -166,6 +166,32 @@ class PolicyChecksTest(unittest.TestCase):
             self.assertIn("controller-parity", codes)
             self.assertIn("controller-webmvctest-update", codes)
 
+    def test_controller_contracts_accept_gc_risk_governance_as_mcp_adapter(self):
+        """gc-risk-governance.js satisfies the MCP-adapter companion (in lieu of index.js)."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            test_file = (
+                root
+                / "backend/src/test/java/com/keplerops/groundcontrol/unit/api/FooControllerTest.java"
+            )
+            test_file.parent.mkdir(parents=True, exist_ok=True)
+            test_file.write_text(
+                "@WebMvcTest(FooController.class)\nclass FooControllerTest {}\n",
+                encoding="utf-8",
+            )
+            violations = run_controller_contracts(
+                [
+                    "backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java",
+                    "docs/API.md",
+                    "mcp/ground-control/lib.js",
+                    "mcp/ground-control/gc-risk-governance.js",
+                    "backend/src/test/java/com/keplerops/groundcontrol/unit/api/FooControllerTest.java",
+                ],
+                root=root,
+            )
+            codes = {item.code for item in violations}
+            self.assertNotIn("controller-parity", codes)
+
     def test_migration_policy_requires_smoke_and_e2e_updates(self):
         violations = run_migration_policy(
             ["backend/src/main/resources/db/migration/V999__example.sql"],

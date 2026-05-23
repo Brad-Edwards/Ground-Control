@@ -26,6 +26,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -63,7 +64,8 @@ class MethodologyProfileServiceTest {
                 "Quantitative method",
                 Map.of("type", "object"),
                 Map.of("result", "object"),
-                MethodologyProfileStatus.DEPRECATED);
+                MethodologyProfileStatus.DEPRECATED,
+                Map.of("RESIDUAL_TRANSFER", Map.of()));
         when(projectService.getById(projectId)).thenReturn(project);
         when(repository.existsByProjectIdAndProfileKeyAndVersion(projectId, "FAIR_V3_0", "3.0"))
                 .thenReturn(false);
@@ -75,6 +77,7 @@ class MethodologyProfileServiceTest {
         assertThat(result.getProfileKey()).isEqualTo("FAIR_V3_0");
         assertThat(result.getDescription()).isEqualTo("Quantitative method");
         assertThat(result.getStatus()).isEqualTo(MethodologyProfileStatus.DEPRECATED);
+        assertThat(result.getTreatmentStrategyVocabulary()).containsKey("RESIDUAL_TRANSFER");
     }
 
     @Test
@@ -84,7 +87,7 @@ class MethodologyProfileServiceTest {
                 .thenReturn(true);
 
         assertThatThrownBy(() -> service.create(new CreateMethodologyProfileCommand(
-                        projectId, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR, null, null, null, null)))
+                        projectId, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR, null, null, null, null, null)))
                 .isInstanceOf(ConflictException.class);
     }
 
@@ -98,7 +101,13 @@ class MethodologyProfileServiceTest {
         var result = service.listByProject(projectId);
 
         assertThat(result).isEmpty();
-        verify(repository, times(4)).save(any(MethodologyProfile.class));
+        var savedCaptor = ArgumentCaptor.forClass(MethodologyProfile.class);
+        verify(repository, times(4)).save(savedCaptor.capture());
+        assertThat(savedCaptor.getAllValues())
+                .extracting(MethodologyProfile::getProfileKey)
+                .containsExactlyInAnyOrder("LEGACY_QUALITATIVE_V1", "FAIR_V3_0", "NIST_SP800_30_R1", "ISO_27005_V2022");
+        assertThat(savedCaptor.getAllValues())
+                .allSatisfy(saved -> assertThat(saved.getProject()).isSameAs(project));
         verify(repository).findByProjectIdOrderByNameAscVersionDesc(projectId);
     }
 
@@ -128,13 +137,15 @@ class MethodologyProfileServiceTest {
                         "Updated description",
                         Map.of("factor", "schema"),
                         Map.of("output", "schema"),
-                        MethodologyProfileStatus.DEPRECATED));
+                        MethodologyProfileStatus.DEPRECATED,
+                        Map.of("RESIDUAL_TRANSFER", Map.of())));
 
         assertThat(updated.getName()).isEqualTo("Updated FAIR");
         assertThat(updated.getVersion()).isEqualTo("3.1");
         assertThat(updated.getFamily()).isEqualTo(MethodologyFamily.CUSTOM);
         assertThat(updated.getInputSchema()).containsEntry("factor", "schema");
         assertThat(updated.getStatus()).isEqualTo(MethodologyProfileStatus.DEPRECATED);
+        assertThat(updated.getTreatmentStrategyVocabulary()).containsKey("RESIDUAL_TRANSFER");
     }
 
     @Test

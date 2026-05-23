@@ -678,6 +678,7 @@ const TO_CAMEL = {
   threat_model_id: "threatModelId",
   risk_register_record_id: "riskRegisterRecordId",
   methodology_profile_id: "methodologyProfileId",
+  methodology_strategy_key: "methodologyStrategyKey",
   profile_key: "profileKey",
   input_schema: "inputSchema",
   output_schema: "outputSchema",
@@ -12944,10 +12945,12 @@ export const GOVERNANCE_FIELDS = {
       "uid", "title", "risk_scenario_id", "risk_register_record_id",
       "strategy", "owner", "rationale", "due_date", "status",
       "action_items", "reassessment_triggers",
+      "methodology_profile_id", "methodology_strategy_key",
     ],
     update: [
       "title", "risk_scenario_id", "strategy", "owner",
       "rationale", "due_date", "action_items", "reassessment_triggers",
+      "methodology_profile_id", "methodology_strategy_key",
     ],
   },
   verification_result: {

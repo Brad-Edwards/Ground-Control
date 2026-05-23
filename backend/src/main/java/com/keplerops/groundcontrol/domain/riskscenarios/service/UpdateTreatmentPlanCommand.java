@@ -14,4 +14,6 @@ public record UpdateTreatmentPlanCommand(
         String rationale,
         Instant dueDate,
         List<Map<String, Object>> actionItems,
-        List<String> reassessmentTriggers) {}
+        List<String> reassessmentTriggers,
+        UUID methodologyProfileId,
+        String methodologyStrategyKey) {}

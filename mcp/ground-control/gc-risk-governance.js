@@ -58,6 +58,7 @@ export const gcRiskGovernanceZodShape = {
   risk_scenario_ids: z.array(z.string().uuid()).optional(),
   risk_register_record_id: z.string().uuid().optional(),
   methodology_profile_id: z.string().uuid().optional(),
+  methodology_strategy_key: z.string().optional(),
   owner: z.string().optional(),
   review_cadence: z.string().optional(),
   next_review_at: z.string().optional(),
@@ -94,7 +95,7 @@ export const GC_RISK_GOVERNANCE_DESCRIPTION =
   `Per-entity create fields (snake_case; round-trip to backend camelCase): ` +
   `risk_register_record={uid,title,owner,review_cadence,next_review_at,category_tags,decision_metadata,asset_scope_summary,risk_scenario_ids}; ` +
   `risk_assessment_result={risk_scenario_id,risk_register_record_id,methodology_profile_id,analyst_identity,assumptions,input_factors,observation_date,assessment_at,time_horizon,confidence,uncertainty_metadata,computed_outputs,evidence_refs,notes,observation_ids}; ` +
-  `treatment_plan={uid,title,risk_scenario_id,risk_register_record_id,strategy,owner,rationale,due_date,status,action_items,reassessment_triggers}. ` +
+  `treatment_plan={uid,title,risk_scenario_id,risk_register_record_id,strategy,owner,rationale,due_date,status,action_items,reassessment_triggers,methodology_profile_id,methodology_strategy_key}. ` +
   `Update DTOs drop create-only foreign keys (uid; risk_register_record_id for treatment_plan; risk_scenario_id for risk_assessment_result) and status fields whose changes go through the transition action. ` +
   `Unknown fields are dropped — never tunneled through metadata.`;
 

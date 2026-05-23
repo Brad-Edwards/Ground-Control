@@ -53,7 +53,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "079", "080", "081", "082", "083", "084", "085", "086", "087", "088", "089", "090", "091",
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
-                        "123");
+                        "123", "124", "125");
     }
 
     @Test
@@ -979,6 +979,32 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT risk_control_mapping_id, rev, revtype,"
                                 + " \"SETORDINAL\", evidence_ref, evidence_note, evidence_artifact_id"
                                 + " FROM mapping_evidence_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        // V124-V125: typed methodology-strategy binding (GC-T004 / C5, #861).
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_name = 'treatment_plan'"
+                        + " AND column_name = 'methodology_profile_id'")
+                .getSingleResult();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_name = 'treatment_plan'"
+                        + " AND column_name = 'methodology_strategy_key'")
+                .getSingleResult();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT methodology_profile_id, methodology_strategy_key"
+                                + " FROM treatment_plan_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_name = 'methodology_profile'"
+                        + " AND column_name = 'treatment_strategy_vocabulary'")
+                .getSingleResult();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery(
+                                "SELECT treatment_strategy_vocabulary" + " FROM methodology_profile_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }
