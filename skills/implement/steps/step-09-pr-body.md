@@ -12,7 +12,7 @@ tier: low
    - `change_class`: `doc-only` if the diff is entirely documentation per Step 6's two-check sweep; `source+migration` if the diff includes a database migration; otherwise `source`.
    - `requirement_uids`: the in-scope UIDs from Step 1.
    - `adr_refs`: the ADR identifiers this PR touches (e.g. `ADR-036`, `ADR-021 (amended)`); pass an empty array to render "No ADR required".
-   - `summary`: one paragraph.
+   - `summary`: one paragraph. Update length follows the canonical succinctness rule in `skills/implement/steps/_review-loop-rules.md`.
    - `changes`: array of bullet strings describing each change.
    - `traceability`: `{ implements: [...], tests: [...] }` strings — typically `<UID> ← <file path>` shape; the tool emits the IMPLEMENTS / TESTS markers `check_pr_body` requires.
    - `changelog_fragment`: path under `changelog.d/` (required for `source` / `source+migration`; omit for `doc-only`).

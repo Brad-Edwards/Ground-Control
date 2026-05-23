@@ -9822,6 +9822,15 @@ const DECISION_RECORD_MARKER_PREFIX = "<!-- gc:decision-record";
 // downstream truncation.
 const GITHUB_ISSUE_COMMENT_BODY_MAX = 65535;
 
+// Byte caps for caller-controlled summary fields in the renderer tools.
+// Reject-not-truncate: the tool returns an error so the caller can tighten
+// the prose rather than silently shipping a truncated record.
+// Bytes are measured with Buffer.byteLength(text, "utf8") — same unit as
+// GITHUB_ISSUE_COMMENT_BODY_MAX.
+export const PR_BODY_SUMMARY_MAX = 1200;
+export const FINAL_REPORT_SUMMARY_MAX = 800;
+export const FINAL_REPORT_REVIEW_SUMMARY_MAX = 240;
+
 // Caller-controlled text fields are rendered into GitHub issue-comment bodies
 // alongside server-owned phase / decision / final-report markers. An attacker
 // (prompt-injection source, lower-trust agent, malicious issue input) who can
@@ -10288,7 +10297,13 @@ export function validateFinalReportInput(input) {
         return;
       }
       if (typeof r.reviewer !== "string" || r.reviewer.trim() === "") errors.push(`reviews[${i}].reviewer must be a non-empty string`);
-      if (typeof r.summary !== "string" || r.summary.trim() === "") errors.push(`reviews[${i}].summary must be a non-empty string`);
+      if (typeof r.summary !== "string" || r.summary.trim() === "") {
+        errors.push(`reviews[${i}].summary must be a non-empty string`);
+      } else if (Buffer.byteLength(r.summary, "utf8") > FINAL_REPORT_REVIEW_SUMMARY_MAX) {
+        errors.push(
+          `reviews[${i}].summary exceeds the final-report review-summary cap of ${FINAL_REPORT_REVIEW_SUMMARY_MAX} bytes (got ${Buffer.byteLength(r.summary, "utf8")}). A review summary is one tight line — restated context and hedging are the usual offenders.`,
+        );
+      }
     });
   }
   if (traceability != null) {
@@ -10313,6 +10328,10 @@ export function validateFinalReportInput(input) {
   }
   if (summary != null && typeof summary !== "string") {
     errors.push("summary must be a string when set");
+  } else if (typeof summary === "string" && Buffer.byteLength(summary, "utf8") > FINAL_REPORT_SUMMARY_MAX) {
+    errors.push(
+      `summary exceeds the final-report summary cap of ${FINAL_REPORT_SUMMARY_MAX} bytes (got ${Buffer.byteLength(summary, "utf8")}). A final-report summary is one tight paragraph — restated context and hedging are the usual offenders.`,
+    );
   }
   if (errors.length) return { ok: false, errors };
   return { ok: true };
@@ -10345,12 +10364,10 @@ export function buildFinalReport(input) {
     lines.push("");
     lines.push(summary.trim());
   }
-  lines.push("");
-  lines.push(`### In-scope requirements`);
-  lines.push("");
-  if (requirements.length === 0) {
-    lines.push("- (none — bug/refactor/maintenance run)");
-  } else {
+  if (requirements.length > 0) {
+    lines.push("");
+    lines.push(`### In-scope requirements`);
+    lines.push("");
     for (const r of requirements) {
       const note = r.note ? ` — ${r.note}` : "";
       lines.push(`- \`${r.uid}\` (${r.title}) — ${r.status}${note}`);
@@ -10373,14 +10390,12 @@ export function buildFinalReport(input) {
     lines.push("- (none)");
     lines.push("");
   }
-  lines.push(`### Reviews`);
-  lines.push("");
-  if (reviews.length === 0) {
-    lines.push("- (no review records — bug/refactor/maintenance run)");
-  } else {
+  if (reviews.length > 0) {
+    lines.push(`### Reviews`);
+    lines.push("");
     for (const r of reviews) lines.push(`- **${r.reviewer}:** ${r.summary}`);
+    lines.push("");
   }
-  lines.push("");
   lines.push(`### Traceability reconciliation`);
   lines.push("");
   const tAdded = Array.isArray(traceability.added) ? traceability.added : [];
@@ -10908,6 +10923,10 @@ export function validatePrBodyInput(input) {
   }
   if (typeof summary !== "string" || summary.trim() === "") {
     errors.push("summary must be a non-empty string");
+  } else if (Buffer.byteLength(summary, "utf8") > PR_BODY_SUMMARY_MAX) {
+    errors.push(
+      `summary exceeds the PR-body summary cap of ${PR_BODY_SUMMARY_MAX} bytes (got ${Buffer.byteLength(summary, "utf8")}). A PR-body summary is one tight paragraph — restated context and hedging are the usual offenders.`,
+    );
   }
   if (!Array.isArray(changes)) {
     errors.push("changes must be an array of bullet strings");

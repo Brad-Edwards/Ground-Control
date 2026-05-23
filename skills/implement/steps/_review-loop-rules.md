@@ -34,6 +34,12 @@ Both AI-assisted reviews run **pre-push**: codex review at Step 6.5, test-qualit
 
    On `next_action: "post_summary_and_escalate_to_user"` (`status: "capped"`), the cycle tool did NOT run a review (the cap was already reached). No fix work to do; summarize the cap state to the user and let them decide whether to authorize an over-cap cycle.
 
+## Update succinctness (canonical)
+
+A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.
+
+This rule is mechanically enforced by byte caps on the three renderer tools in `mcp/ground-control/lib.js` (`PR_BODY_SUMMARY_MAX`, `FINAL_REPORT_SUMMARY_MAX`, `FINAL_REPORT_REVIEW_SUMMARY_MAX`). Prose elsewhere that references this rule does so by path pointer — do not duplicate the rule body.
+
 ## Local-only iteration
 
 For every cycle, after applying fixes the agent must update the tree the reviewer sees BEFORE re-running:

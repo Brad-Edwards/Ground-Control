@@ -105,3 +105,5 @@ sets `MCP_TOOL_TIMEOUT` / `MCP_TIMEOUT` explicitly so long-running MCP tools
 have headroom. See ADR-036 (amendments) for the async job model and
 `skills/implement/steps/step-02.5 / 06.5 / 06.6` plus `_review-loop-rules.md`
 for the operative start-then-poll loop prose.
+
+**Amendment — renderer summary byte caps (#964).** `gc_render_pr_body` and `gc_post_final_report` now enforce reject-not-truncate byte caps on their caller-controlled summary fields (`PR_BODY_SUMMARY_MAX = 1200`, `FINAL_REPORT_SUMMARY_MAX = 800`, `FINAL_REPORT_REVIEW_SUMMARY_MAX = 240` for `reviews[].summary`). `gc_post_decision_record`'s schema is unchanged — its caller-controlled prose fields already carry per-field caps via `REVIEW_NOTES_MAX` / `REVIEW_NOTE_TEXT_MAX` / `FINDING_*_MAX`. The canonical succinctness rule is in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)` and is referenced from all three renderer tool descriptions. `buildFinalReport` omits the In-scope requirements and Reviews sections entirely when their inputs are empty (no placeholder lines).

@@ -253,3 +253,5 @@ per-issue cycle cap, the `gc:codex-review-cycle` marker family, the
 `override_cap` semantics, and the `verdict: ship` clean outcome all behave
 exactly as before. Async changes only how the agent waits for a cycle's
 result, never when the loop stops. See ADR-036 (amendments) for the job model.
+
+**Amendment — renderer summary byte caps (#964).** `gc_render_pr_body` and `gc_post_final_report` now enforce reject-not-truncate byte caps on their caller-controlled summary fields. `gc_post_decision_record` — the per-cycle decision-record surface this ADR's stopping model writes to — is unchanged at the schema layer; its caller-controlled prose fields (`notes[].text`, finding rationales, titles) already had per-field caps. The canonical succinctness rule lives in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)`.
