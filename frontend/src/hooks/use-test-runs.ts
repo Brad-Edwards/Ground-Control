@@ -57,10 +57,18 @@ export function useTestRunCaseResults(runId: string | undefined) {
   });
 }
 
-export function useTestRunStepResults(runId: string | undefined, caseResultId: string | undefined) {
+export function useTestRunStepResults(
+  runId: string | undefined,
+  caseResultId: string | undefined,
+) {
   const { activeProject } = useProjectContext();
   return useQuery({
-    queryKey: ["test-run-step-results", runId, caseResultId, activeProject?.identifier],
+    queryKey: [
+      "test-run-step-results",
+      runId,
+      caseResultId,
+      activeProject?.identifier,
+    ],
     queryFn: () =>
       apiFetch<TestRunStepResultResponse[]>(
         `/test-runs/${runId}/results/${caseResultId}/steps`,
@@ -105,18 +113,25 @@ export function useUpdateTestRunCaseResult(runId: string, testCaseId: string) {
   const { activeProject } = useProjectContext();
   return useMutation({
     mutationFn: (data: UpdateTestRunCaseResultRequest) =>
-      apiFetch<TestRunCaseResultResponse>(`/test-runs/${runId}/results/${testCaseId}`, {
-        method: "PUT",
-        body: data,
-        params: { project: activeProject?.identifier },
-      }),
+      apiFetch<TestRunCaseResultResponse>(
+        `/test-runs/${runId}/results/${testCaseId}`,
+        {
+          method: "PUT",
+          body: data,
+          params: { project: activeProject?.identifier },
+        },
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["test-run-results", runId] });
     },
   });
 }
 
-export function useUpdateTestRunStepResult(runId: string, caseResultId: string, stepResultId: string) {
+export function useUpdateTestRunStepResult(
+  runId: string,
+  caseResultId: string,
+  stepResultId: string,
+) {
   const { activeProject } = useProjectContext();
   return useMutation({
     mutationFn: (data: UpdateTestRunStepResultRequest) =>

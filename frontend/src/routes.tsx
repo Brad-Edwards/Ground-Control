@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/app-layout";
 import { ProjectProvider } from "@/contexts/project-context";
 import { useProjects } from "@/hooks/use-projects";
+import { Login } from "@/pages/login";
 import { Suspense, lazy } from "react";
 import { Link, Navigate, Route, Routes } from "react-router-dom";
 
@@ -76,6 +77,7 @@ export function AppRoutes() {
   return (
     <Suspense fallback={<PageSkeleton />}>
       <Routes>
+        <Route path="login" element={<Login />} />
         <Route path="/" element={<RootRedirect />} />
         <Route element={<AppLayout />}>
           <Route path="projects" element={<Projects />} />

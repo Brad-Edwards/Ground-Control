@@ -79,7 +79,8 @@ backend/src/main/java/com/keplerops/groundcontrol/
 │   └── web/                      # CORS config, SPA routing
 ├── shared/
 │   ├── logging/                  # RequestLoggingFilter (MDC request_id)
-│   ├── security/                 # ApiSecurityConfig, BearerTokenAuthFilter,
+│   ├── security/                 # ApiSecurityConfig, BrowserSecurityConfig,
+│   │                             # BearerTokenAuthFilter,
 │   │                             # IpAllowlistFilter, ApiAuthenticationEntryPoint,
 │   │                             # ApiAccessDeniedHandler, SecurityProperties (ADR-026)
 │   └── web/                      # ActorFilter (audit identity from SecurityContext)
@@ -108,21 +109,36 @@ Spring profiles drive environment-specific behavior:
 
 Environment variables use the `GC_` prefix (e.g., `GC_DATABASE_URL`, `GC_SERVER_PORT`). See `.env.example`.
 
-## Request filter chain
+## Request filter chains
 
 Once Spring Security is enabled (production default; `dev`/`test` profiles
-opt out), every request passes through:
+opt out), requests pass through two explicit, non-overlapping Spring Security
+chains:
 
 ```
+Bearer request chain (@Order(1), Authorization: Bearer ...)
 IpAllowlistFilter           # CIDR check (skipped if allowlist empty)
-  → BearerTokenAuthFilter   # Authorization: Bearer <token> → SecurityContext
+  → BearerTokenAuthFilter   # token → SecurityContext
     → AuthorizationFilter   # path-matrix / ROLE_USER / ROLE_ADMIN
       → ActorFilter         # populates ActorHolder + MDC actor_id=<principal>
         → controllers
+
+Browser/session chain (@Order(2), every non-bearer request)
+IpAllowlistFilter           # same network gate
+  → form login / session / CSRF
+    → AuthorizationFilter   # same API path matrix for /api/v1/**
+      → ActorFilter         # same audit actor projection
+        → controllers
 ```
 
-Authorization is centralized in `ApiSecurityConfig` (ADR-026); controllers
-do not perform per-method auth checks — the one deliberate exception,
+The shared API authorization matrix lives in `ApiPathMatrix` and is applied by
+both `ApiSecurityConfig` (bearer traffic) and `BrowserSecurityConfig`
+(session-authenticated browser traffic). The browser chain leaves `/login`,
+`/logout`, and required static assets anonymous, but the SPA shell (`/`,
+`/index.html`) and SPA client routes require a browser session; unauthenticated
+navigation redirects to `/login`, while API-shaped unauthenticated XHRs receive
+the standard JSON 401 envelope. Controllers do not perform per-method auth
+checks — the one deliberate exception,
 `PackRegistryAccessGuard`, is a defense-in-depth bridge that re-derives the
 admin principal from the same `SecurityContext` and re-asserts `ROLE_ADMIN`
 (see ADR-033 §4). `ActorFilter` runs after the security chain so audit

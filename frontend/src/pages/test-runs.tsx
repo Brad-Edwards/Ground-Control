@@ -46,7 +46,8 @@ export function TestRuns() {
         <div>
           <h1 className="text-2xl font-semibold">Test Runs</h1>
           <p className="text-sm text-muted-foreground">
-            Open a run to execute it step by step. Run creation is currently exposed via API and MCP.
+            Open a run to execute it step by step. Run creation is currently
+            exposed via API and MCP.
           </p>
         </div>
         <span className="text-sm text-muted-foreground">
@@ -104,20 +105,26 @@ function statusClass(status: TestRunStatus): string {
   }
 }
 
-function TestRunRow({ run, projectId }: { run: TestRunResponse; projectId: string }) {
-  const window = run.startAt && run.endAt
-    ? `${run.startAt.slice(0, 10)} → ${run.endAt.slice(0, 10)}`
-    : run.startAt
-      ? `from ${run.startAt.slice(0, 10)}`
-      : run.endAt
-        ? `until ${run.endAt.slice(0, 10)}`
-        : "—";
+function TestRunRow({
+  run,
+  projectId,
+}: { run: TestRunResponse; projectId: string }) {
+  const window =
+    run.startAt && run.endAt
+      ? `${run.startAt.slice(0, 10)} → ${run.endAt.slice(0, 10)}`
+      : run.startAt
+        ? `from ${run.startAt.slice(0, 10)}`
+        : run.endAt
+          ? `until ${run.endAt.slice(0, 10)}`
+          : "—";
   return (
     <tr className="hover:bg-muted/30">
       <td className="px-4 py-3 font-mono text-xs">{run.uid}</td>
       <td className="px-4 py-3">{run.name}</td>
       <td className="px-4 py-3">
-        <span className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${statusClass(run.status)}`}>
+        <span
+          className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${statusClass(run.status)}`}
+        >
           {run.status}
         </span>
       </td>

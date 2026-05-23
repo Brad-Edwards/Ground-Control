@@ -33,7 +33,10 @@ const STATE_DIR =
 const AUDIT_STATE_DIR =
   "../../../backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state";
 
-function javaEnumConstantsIn(stateDir: string, enumClassName: string): string[] {
+function javaEnumConstantsIn(
+  stateDir: string,
+  enumClassName: string,
+): string[] {
   const path = fileURLToPath(
     new URL(`${stateDir}/${enumClassName}.java`, import.meta.url),
   );
