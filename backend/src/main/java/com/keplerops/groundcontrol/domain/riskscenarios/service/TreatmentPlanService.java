@@ -4,11 +4,14 @@ import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
+import com.keplerops.groundcontrol.domain.riskscenarios.repository.MethodologyProfileRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskRegisterRecordRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.TreatmentPlanRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -21,16 +24,19 @@ public class TreatmentPlanService {
     private final TreatmentPlanRepository repository;
     private final RiskRegisterRecordRepository riskRegisterRecordRepository;
     private final RiskScenarioRepository riskScenarioRepository;
+    private final MethodologyProfileRepository methodologyProfileRepository;
     private final ProjectService projectService;
 
     public TreatmentPlanService(
             TreatmentPlanRepository repository,
             RiskRegisterRecordRepository riskRegisterRecordRepository,
             RiskScenarioRepository riskScenarioRepository,
+            MethodologyProfileRepository methodologyProfileRepository,
             ProjectService projectService) {
         this.repository = repository;
         this.riskRegisterRecordRepository = riskRegisterRecordRepository;
         this.riskScenarioRepository = riskScenarioRepository;
+        this.methodologyProfileRepository = methodologyProfileRepository;
         this.projectService = projectService;
     }
 
@@ -102,7 +108,9 @@ public class TreatmentPlanService {
                 command.rationale(),
                 command.dueDate(),
                 command.actionItems(),
-                command.reassessmentTriggers());
+                command.reassessmentTriggers(),
+                command.methodologyProfileId(),
+                command.methodologyStrategyKey());
     }
 
     private void applyUpdates(TreatmentPlan plan, UUID projectId, UpdateTreatmentPlanCommand command) {
@@ -115,19 +123,23 @@ public class TreatmentPlanService {
                 command.rationale(),
                 command.dueDate(),
                 command.actionItems(),
-                command.reassessmentTriggers());
+                command.reassessmentTriggers(),
+                command.methodologyProfileId(),
+                command.methodologyStrategyKey());
     }
 
     private void applySharedUpdates(
             TreatmentPlan plan,
             UUID projectId,
             UUID riskScenarioId,
-            com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy strategy,
+            TreatmentStrategy strategy,
             String owner,
             String rationale,
             java.time.Instant dueDate,
             List<java.util.Map<String, Object>> actionItems,
-            List<String> reassessmentTriggers) {
+            List<String> reassessmentTriggers,
+            UUID methodologyProfileId,
+            String methodologyStrategyKey) {
         if (riskScenarioId != null) {
             var scenario = riskScenarioRepository
                     .findByIdAndProjectId(riskScenarioId, projectId)
@@ -158,5 +170,40 @@ public class TreatmentPlanService {
         if (reassessmentTriggers != null) {
             plan.setReassessmentTriggers(reassessmentTriggers);
         }
+        applyMethodologyBinding(plan, projectId, methodologyProfileId, methodologyStrategyKey);
+    }
+
+    private void applyMethodologyBinding(
+            TreatmentPlan plan, UUID projectId, UUID methodologyProfileId, String methodologyStrategyKey) {
+        if (plan.getStrategy() != TreatmentStrategy.OTHER) {
+            plan.setMethodologyProfile(null);
+            plan.setMethodologyStrategyKey(null);
+            return;
+        }
+        // strategy == OTHER: resolve effective profile and key
+        MethodologyProfile effectiveProfile;
+        if (methodologyProfileId != null) {
+            effectiveProfile = methodologyProfileRepository
+                    .findByIdAndProjectId(methodologyProfileId, projectId)
+                    .orElseThrow(() -> new NotFoundException("Methodology profile not found: " + methodologyProfileId));
+        } else {
+            effectiveProfile = plan.getMethodologyProfile();
+        }
+        String effectiveKey =
+                methodologyStrategyKey != null ? methodologyStrategyKey : plan.getMethodologyStrategyKey();
+
+        if (effectiveProfile == null || effectiveKey == null || effectiveKey.isBlank()) {
+            throw new DomainValidationException(
+                    "Treatment plan with strategy OTHER requires methodologyProfileId and methodologyStrategyKey");
+        }
+        var vocabulary = effectiveProfile.getTreatmentStrategyVocabulary();
+        if (vocabulary == null || !vocabulary.containsKey(effectiveKey)) {
+            throw new DomainValidationException("Methodology strategy key '"
+                    + effectiveKey
+                    + "' is not defined in methodology profile "
+                    + effectiveProfile.getProfileKey());
+        }
+        plan.setMethodologyProfile(effectiveProfile);
+        plan.setMethodologyStrategyKey(effectiveKey);
     }
 }

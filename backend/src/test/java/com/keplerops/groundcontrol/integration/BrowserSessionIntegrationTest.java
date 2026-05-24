@@ -213,6 +213,53 @@ class BrowserSessionIntegrationTest extends BaseIntegrationTest {
                         .contains("error"));
     }
 
+    @Test
+    void getLoginReturnsSpaShellNotSpringDefaultForm() throws Exception {
+        // With .loginPage(LOGIN_PATH), Spring disables DefaultLoginPageGeneratingFilter. GET
+        // /login reaches SpaController which issues a Servlet forward to /index.html (the SPA
+        // shell).
+        //
+        // MockMvc's MockRequestDispatcher.forward() calls response.setForwardedUrl(path) and
+        // returns — it does not re-dispatch to ResourceHttpRequestHandler (so body is empty in
+        // tests). The forwarded URL IS captured by getForwardedUrl(). We use that as the
+        // structural gate:
+        //   - With DefaultLoginPageGeneratingFilter active: the filter writes HTML directly and
+        //     calls return without invoking chain.doFilter(), so DispatcherServlet is never
+        //     reached, no RequestDispatcher.forward() is called, and getForwardedUrl() is null.
+        //   - After .loginPage(LOGIN_PATH): the filter is removed, SpaController handles the
+        //     request, and getForwardedUrl() is "/index.html".
+        MvcResult result =
+                mockMvc.perform(get("/login")).andExpect(status().isOk()).andReturn();
+
+        assertThat(result.getResponse().getForwardedUrl())
+                .as("GET /login must be forwarded to /index.html by SpaController; "
+                        + "null means DefaultLoginPageGeneratingFilter is still active")
+                .isEqualTo("/index.html");
+    }
+
+    @Test
+    void postLoginFormEncodedStillAuthenticates() throws Exception {
+        // UsernamePasswordAuthenticationFilter runs at loginProcessingUrl("/login") regardless
+        // of whether DefaultLoginPageGeneratingFilter is disabled. A correct form POST must
+        // still issue a session and redirect to the default success URL.
+        MvcResult page = mockMvc.perform(get("/login")).andReturn();
+        Cookie csrf = page.getResponse().getCookie(CSRF_COOKIE);
+        assertThat(csrf).as("GET /login must still publish an XSRF cookie").isNotNull();
+
+        MockHttpSession session = new MockHttpSession();
+        mockMvc.perform(post("/login")
+                        .contentType("application/x-www-form-urlencoded")
+                        .param("username", ADMIN_USERNAME)
+                        .param("password", ADMIN_PASSWORD)
+                        .param("_csrf", csrf.getValue())
+                        .session(session)
+                        .cookie(csrf))
+                .andExpect(status().is3xxRedirection());
+
+        // The session must now be authenticated — confirmed by a successful API call.
+        mockMvc.perform(get("/api/v1/requirements").session(session)).andExpect(status().isOk());
+    }
+
     private AuthenticatedSession loginAndCaptureSession() throws Exception {
         // GET /login is anonymous, so Spring's session policy (IF_REQUIRED) does NOT create a
         // session here — the CSRF token lives in the XSRF-TOKEN cookie via

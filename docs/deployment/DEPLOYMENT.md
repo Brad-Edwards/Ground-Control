@@ -81,7 +81,8 @@ Authority matrix:
 | `/api/v1/trust-policies/**` | `ROLE_ADMIN` |
 | `/api/v1/pack-install-records/**` | `ROLE_ADMIN` |
 | Other `/api/v1/**` | authenticated (USER or ADMIN) |
-| SPA shell, static assets, SPA client routes (GET only, non-API non-actuator) | anonymous |
+| `/login`, `/logout`, and static assets needed to render the login/app shell | anonymous |
+| SPA shell (`/`, `/index.html`) and SPA client routes | authenticated browser session; unauthenticated navigation redirects to `/login` |
 | Anything else | denyAll |
 
 Clients send `Authorization: Bearer <token>` on every request. Tokens are

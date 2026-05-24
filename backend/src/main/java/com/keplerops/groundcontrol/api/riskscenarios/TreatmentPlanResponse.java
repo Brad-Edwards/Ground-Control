@@ -27,6 +27,8 @@ public record TreatmentPlanResponse(
         TreatmentPlanStatus status,
         List<Map<String, Object>> actionItems,
         List<String> reassessmentTriggers,
+        UUID methodologyProfileId,
+        String methodologyStrategyKey,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -48,6 +50,10 @@ public record TreatmentPlanResponse(
                 plan.getStatus(),
                 plan.getActionItems(),
                 plan.getReassessmentTriggers(),
+                plan.getMethodologyProfile() != null
+                        ? plan.getMethodologyProfile().getId()
+                        : null,
+                plan.getMethodologyStrategyKey(),
                 plan.getCreatedAt(),
                 plan.getUpdatedAt());
     }

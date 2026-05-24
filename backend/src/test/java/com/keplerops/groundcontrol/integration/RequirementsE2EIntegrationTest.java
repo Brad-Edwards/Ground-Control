@@ -516,6 +516,8 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "120", // V120: create scoped_control_implementation_audit
                         "121", // V121: create risk_control_mapping + mapping_observation + mapping_evidence
                         "122", // V122: create risk_control_mapping_audit
-                        "123"); // V123: create mapping_evidence_audit (Envers @ElementCollection shadow)
+                        "123", // V123: create mapping_evidence_audit (Envers @ElementCollection shadow)
+                        "124", // V124: add treatment_plan methodology binding columns (GC-T004 C5)
+                        "125"); // V125: add methodology_profile treatment_strategy_vocabulary (GC-T004 C5)
     }
 }

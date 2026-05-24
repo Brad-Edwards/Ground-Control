@@ -21,4 +21,6 @@ public record TreatmentPlanRequest(
         Instant dueDate,
         TreatmentPlanStatus status,
         List<Map<String, Object>> actionItems,
-        List<String> reassessmentTriggers) {}
+        List<String> reassessmentTriggers,
+        UUID methodologyProfileId,
+        @Size(max = 100) String methodologyStrategyKey) {}

@@ -4,6 +4,17 @@
 
 Accepted
 
+## Update — Issue #846 (2026-05-23)
+
+The React SPA login screen has shipped. `BrowserSecurityConfig` now calls
+`.loginPage("/login")`, which disables Spring's `DefaultLoginPageGeneratingFilter`
+so `GET /login` is forwarded to `SpaController → index.html` (the SPA shell).
+`POST /login` form-urlencoded continues to be processed by
+`UsernamePasswordAuthenticationFilter` at the same path. The SPA login form reads
+the `XSRF-TOKEN` cookie (written by `CookieCsrfTokenRepository` on the GET) and
+echoes it as `X-XSRF-TOKEN`, satisfying the CSRF gate. No Decision contracts in
+this ADR were changed.
+
 ## Date
 
 2026-05-11

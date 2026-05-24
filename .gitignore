@@ -251,3 +251,9 @@ docs/notes
 # (issue #934). The MCP envelope returns only summaries; the full per-issue
 # payload lands here for on-demand subagent drilldown. Operational only.
 .gc/sonar/
+
+# Vale prose linter binary (installed by tools/install-vale.sh).
+# .vale.ini and .vale/styles/Google/ (vendored package) are also excluded
+# — run `make vale-install` to restore them.
+.tools/
+.vale/styles/

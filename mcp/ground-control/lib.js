@@ -1,10 +1,12 @@
-import { appendFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath } from "node:path";
-import { execFile as execFileCb } from "node:child_process";
+import { execFile as execFileCb, spawn as spawnChild } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { createHash, randomBytes } from "node:crypto";
 import { promisify } from "node:util";
-import { createHash } from "node:crypto";
-import { load as parseYaml } from "js-yaml";
+import { dump as dumpYaml, load as parseYaml } from "js-yaml";
+import properLockfile from "proper-lockfile";
 
 const execFile = promisify(execFileCb);
 const GROUND_CONTROL_PROJECT_RE = /^[a-z0-9][a-z0-9-]*$/;
@@ -50,6 +52,17 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#   completion_command: <how to run the full CI gate>",
     "#   lint_command: <how to run the linter>",
     "#   format_command: <how to run the formatter>",
+    "#   # Per-reviewer pre-push caps (issue #906). Omit to use MCP-tool defaults.",
+    "#   codex_review:",
+    "#     pre_push_cap: 1",
+    "#   test_quality_review:",
+    "#     pre_push_cap: 1",
+    "#   # PR title validation (issue #896). Omit to use /implement skill defaults.",
+    "#   pr_title:",
+    "#     types: [security, added, changed, deprecated, removed, fixed,",
+    "#             feat, fix, chore, docs, refactor, test, ci, build, perf, revert]",
+    "#     subject_pattern: \"^[a-z].*$\"",
+    "#     require_scope: false",
     "# sonarcloud:",
     "#   project_key: <sonar-project-key>",
     "#   organization: <sonar-org>",
@@ -678,6 +691,7 @@ const TO_CAMEL = {
   threat_model_id: "threatModelId",
   risk_register_record_id: "riskRegisterRecordId",
   methodology_profile_id: "methodologyProfileId",
+  methodology_strategy_key: "methodologyStrategyKey",
   profile_key: "profileKey",
   input_schema: "inputSchema",
   output_schema: "outputSchema",
@@ -1748,7 +1762,67 @@ function emptyWorkflowConfig() {
     // want the old behavior set `pre_push_cap: 3` explicitly).
     codex_review: { pre_push_cap: null },
     test_quality_review: { pre_push_cap: null },
+    // PR title validation config (issue #896). `null` means "use the canonical
+    // defaults declared in step-09-pr-body.md".
+    pr_title: null,
   };
+}
+
+// Normalize a workflow.pr_title block.  Allowed keys: types, subject_pattern,
+// require_scope.  All are optional; absence means "use the skill's canonical
+// defaults".  Unknown keys are rejected (strict mode mirrors normalizeReviewerConfig).
+function normalizePrTitleConfig(raw) {
+  if (raw == null) {
+    return { ok: true, value: null };
+  }
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, errors: ["workflow.pr_title must be a mapping when set"] };
+  }
+  const allowed = ["types", "subject_pattern", "require_scope"];
+  const errors = [];
+  for (const key of Object.keys(raw)) {
+    if (!allowed.includes(key)) {
+      errors.push(`workflow.pr_title has unknown key '${key}'`);
+    }
+  }
+  const value = {};
+  if (raw.types != null) {
+    if (!Array.isArray(raw.types)) {
+      errors.push("workflow.pr_title.types must be a list of strings");
+    } else {
+      for (const t of raw.types) {
+        if (typeof t !== "string" || t.trim() === "") {
+          errors.push("workflow.pr_title.types entries must be non-empty strings");
+          break;
+        }
+      }
+      if (!errors.some((e) => e.includes("types"))) {
+        value.types = [...raw.types];
+      }
+    }
+  } else {
+    value.types = null;
+  }
+  if (raw.subject_pattern != null) {
+    if (typeof raw.subject_pattern !== "string" || raw.subject_pattern.trim() === "") {
+      errors.push("workflow.pr_title.subject_pattern must be a non-empty string when set");
+    } else {
+      value.subject_pattern = raw.subject_pattern;
+    }
+  } else {
+    value.subject_pattern = null;
+  }
+  if (raw.require_scope != null) {
+    if (typeof raw.require_scope !== "boolean") {
+      errors.push("workflow.pr_title.require_scope must be a boolean when set");
+    } else {
+      value.require_scope = raw.require_scope;
+    }
+  } else {
+    value.require_scope = null;
+  }
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value };
 }
 
 // Bounds for the per-reviewer pre-push cap. Lower bound 1: a cap of 0 would
@@ -1818,7 +1892,7 @@ function normalizeWorkflowConfig(raw) {
   // Scalar string-typed keys handled inline; nested-mapping keys delegated to
   // their own normalizers below.
   const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "base_branch"];
-  const allowedNested = ["codex_review", "test_quality_review"];
+  const allowedNested = ["codex_review", "test_quality_review", "pr_title"];
   const allowed = [...allowedScalar, ...allowedNested];
   const value = emptyWorkflowConfig();
   const errors = [];
@@ -1848,6 +1922,9 @@ function normalizeWorkflowConfig(raw) {
   const testQualityResult = normalizeReviewerConfig(raw.test_quality_review, "workflow.test_quality_review");
   if (!testQualityResult.ok) errors.push(...testQualityResult.errors);
   else value.test_quality_review = testQualityResult.value;
+  const prTitleResult = normalizePrTitleConfig(raw.pr_title);
+  if (!prTitleResult.ok) errors.push(...prTitleResult.errors);
+  else value.pr_title = prTitleResult.value;
   if (errors.length) return { ok: false, errors };
   return { ok: true, value };
 }
@@ -9822,6 +9899,15 @@ const DECISION_RECORD_MARKER_PREFIX = "<!-- gc:decision-record";
 // downstream truncation.
 const GITHUB_ISSUE_COMMENT_BODY_MAX = 65535;
 
+// Byte caps for caller-controlled summary fields in the renderer tools.
+// Reject-not-truncate: the tool returns an error so the caller can tighten
+// the prose rather than silently shipping a truncated record.
+// Bytes are measured with Buffer.byteLength(text, "utf8") — same unit as
+// GITHUB_ISSUE_COMMENT_BODY_MAX.
+export const PR_BODY_SUMMARY_MAX = 1200;
+export const FINAL_REPORT_SUMMARY_MAX = 800;
+export const FINAL_REPORT_REVIEW_SUMMARY_MAX = 240;
+
 // Caller-controlled text fields are rendered into GitHub issue-comment bodies
 // alongside server-owned phase / decision / final-report markers. An attacker
 // (prompt-injection source, lower-trust agent, malicious issue input) who can
@@ -10224,6 +10310,195 @@ const FINAL_REPORT_FILE_KINDS = Object.freeze(["added", "modified", "renamed", "
 const FINAL_REPORT_CI_STATUSES = Object.freeze(["green", "red", "skipped"]);
 const FINAL_REPORT_SONAR_STATUSES = Object.freeze(["passed", "failed", "skipped"]);
 
+// ---------------------------------------------------------------------------
+// Documentation coverage gate (issue #896, ADR-054)
+// ---------------------------------------------------------------------------
+
+// Closed outcome enum for the documentation_outcome field.
+const DOCUMENTATION_OUTCOMES = Object.freeze(["updated", "verified_unchanged", "not_updated_authorized"]);
+
+// Maximum length for a not_updated_authorized rationale string (characters).
+const DOCUMENTATION_RATIONALE_MAX_CHARS = 2000;
+
+/**
+ * Validate a documentation_outcome value.
+ *
+ * @param {*} input - Expected shape: { outcome: string, rationale?: string }
+ * @returns {{ ok: boolean, value?: { outcome, rationale }, errors?: string[] }}
+ */
+export function validateDocumentationOutcome(input) {
+  if (input == null || typeof input !== "object") {
+    return { ok: false, errors: ["documentation_outcome must be an object"] };
+  }
+  const errors = [];
+  const { outcome, rationale } = input;
+  if (typeof outcome !== "string" || !DOCUMENTATION_OUTCOMES.includes(outcome)) {
+    errors.push(`documentation_outcome.outcome must be one of: ${DOCUMENTATION_OUTCOMES.join(", ")}`);
+  }
+  // Rationale rules: only `not_updated_authorized` may have a rationale; it is
+  // required and bounded. Other outcomes must NOT supply one (strict).
+  if (outcome === "not_updated_authorized") {
+    if (typeof rationale !== "string" || rationale.trim() === "") {
+      errors.push("documentation_outcome.rationale is required for outcome=not_updated_authorized and must be non-empty");
+    } else if (rationale.length > DOCUMENTATION_RATIONALE_MAX_CHARS) {
+      errors.push(
+        `documentation_outcome.rationale exceeds the ${DOCUMENTATION_RATIONALE_MAX_CHARS}-character limit (got ${rationale.length})`,
+      );
+    }
+  } else if (rationale != null) {
+    errors.push(`documentation_outcome.rationale must not be supplied for outcome=${outcome} (strict)`);
+  }
+  if (errors.length) return { ok: false, errors };
+  return {
+    ok: true,
+    value: {
+      outcome,
+      ...(rationale != null ? { rationale } : {}),
+    },
+  };
+}
+
+// Closed surface-class vocabulary. Maps a surface class name to the
+// repo-relative documentation targets it governs.
+//
+// `outcome_required` is true for the first seven non-doc surfaces: any change
+// to one of those surfaces must carry a documentation_outcome field.
+const SURFACE_CLASS_MAP = [
+  {
+    surface_class: "workflow",
+    prefix_patterns: ["skills/implement/", "skills/quickfix/"],
+    doc_targets: ["architecture/adrs/", "docs/DEVELOPMENT_WORKFLOW.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "mcp_tool",
+    exact_patterns: ["mcp/ground-control/index.js"],
+    doc_targets: ["docs/DEVELOPMENT_WORKFLOW.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "config_parser",
+    exact_patterns: ["mcp/ground-control/lib.js"],
+    doc_targets: ["docs/DEVELOPMENT_WORKFLOW.md", "architecture/adrs/027-ground-control-yaml-context-contract.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "policy",
+    prefix_patterns: ["tools/policy/", "tools/tests/", "bin/policy", "architecture/policies/"],
+    doc_targets: ["docs/DEVELOPMENT_WORKFLOW.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "adr",
+    prefix_patterns: ["architecture/adrs/"],
+    doc_targets: ["architecture/adrs/README.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "public_api",
+    prefix_patterns: ["backend/src/main/java/com/keplerops/groundcontrol/api/"],
+    doc_targets: ["docs/architecture/ARCHITECTURE.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "user_visible",
+    prefix_patterns: ["frontend/src/"],
+    doc_targets: ["docs/architecture/ARCHITECTURE.md"],
+    outcome_required: true,
+  },
+  {
+    surface_class: "doc",
+    prefix_patterns: ["docs/", "architecture/"],
+    doc_targets: [],
+    outcome_required: false,
+  },
+];
+
+/**
+ * Classify a list of repo-relative changed paths into surface classes.
+ *
+ * Security: paths are validated with resolveRepoRelativePath (lexical
+ * containment) before classification.  Absolute paths or `..` escapes throw
+ * a TypeError.
+ *
+ * @param {string[]} changedPaths - Repo-relative paths (no leading /).
+ * @param {string} repoRoot - Absolute path to the repo root.
+ * @returns {{ classifications: Array<{path, surface_class, doc_targets}>, outcome_required: boolean }}
+ */
+export function classifyChangedSurface(changedPaths, repoRoot) {
+  if (!Array.isArray(changedPaths)) {
+    throw new TypeError("classifyChangedSurface: changedPaths must be an array");
+  }
+  const classifications = [];
+  let outcome_required = false;
+
+  for (const rawPath of changedPaths) {
+    // Lexical containment check — reuses the existing helper.
+    const check = resolveRepoRelativePath(repoRoot, rawPath, "changed_path");
+    if (!check.ok) {
+      throw new TypeError(`classifyChangedSurface: ${check.error}`);
+    }
+    const normalizedPath = check.rel;
+
+    let matched = null;
+    for (const entry of SURFACE_CLASS_MAP) {
+      // Check exact patterns first
+      if (entry.exact_patterns) {
+        for (const exact of entry.exact_patterns) {
+          if (normalizedPath === exact) {
+            matched = entry;
+            break;
+          }
+        }
+        if (matched) break;
+      }
+      // Then prefix patterns
+      if (entry.prefix_patterns) {
+        for (const prefix of entry.prefix_patterns) {
+          if (normalizedPath.startsWith(prefix)) {
+            matched = entry;
+            break;
+          }
+        }
+        if (matched) break;
+      }
+    }
+
+    if (matched === null) {
+      classifications.push({ path: rawPath, surface_class: "unclassified", doc_targets: [] });
+    } else {
+      classifications.push({ path: rawPath, surface_class: matched.surface_class, doc_targets: [...matched.doc_targets] });
+      if (matched.outcome_required) {
+        outcome_required = true;
+      }
+    }
+  }
+
+  return { classifications, outcome_required };
+}
+
+/**
+ * Render a ## Documentation section string for a given documentation_outcome.
+ * Used by both buildPrBody and buildFinalReport.
+ *
+ * @param {{ outcome: string, rationale?: string }} docOutcome
+ * @returns {string[]} Lines to push into a body builder.
+ */
+function renderDocumentationSection(docOutcome) {
+  const lines = [];
+  lines.push("## Documentation");
+  lines.push("");
+  if (docOutcome.outcome === "updated") {
+    lines.push("Updated: see diff.");
+  } else if (docOutcome.outcome === "verified_unchanged") {
+    lines.push("Verified unchanged: no documentation surface in scope.");
+  } else {
+    // not_updated_authorized
+    lines.push(`Not updated (authorized): ${docOutcome.rationale}`);
+  }
+  return lines;
+}
+
 export function buildFinalReportMarker({ issueNumber, prNumber }) {
   return `<!-- gc:final-report issue="${issueNumber}" pr="${prNumber}" -->`;
 }
@@ -10288,7 +10563,13 @@ export function validateFinalReportInput(input) {
         return;
       }
       if (typeof r.reviewer !== "string" || r.reviewer.trim() === "") errors.push(`reviews[${i}].reviewer must be a non-empty string`);
-      if (typeof r.summary !== "string" || r.summary.trim() === "") errors.push(`reviews[${i}].summary must be a non-empty string`);
+      if (typeof r.summary !== "string" || r.summary.trim() === "") {
+        errors.push(`reviews[${i}].summary must be a non-empty string`);
+      } else if (Buffer.byteLength(r.summary, "utf8") > FINAL_REPORT_REVIEW_SUMMARY_MAX) {
+        errors.push(
+          `reviews[${i}].summary exceeds the final-report review-summary cap of ${FINAL_REPORT_REVIEW_SUMMARY_MAX} bytes (got ${Buffer.byteLength(r.summary, "utf8")}). A review summary is one tight line — restated context and hedging are the usual offenders.`,
+        );
+      }
     });
   }
   if (traceability != null) {
@@ -10313,6 +10594,17 @@ export function validateFinalReportInput(input) {
   }
   if (summary != null && typeof summary !== "string") {
     errors.push("summary must be a string when set");
+  } else if (typeof summary === "string" && Buffer.byteLength(summary, "utf8") > FINAL_REPORT_SUMMARY_MAX) {
+    errors.push(
+      `summary exceeds the final-report summary cap of ${FINAL_REPORT_SUMMARY_MAX} bytes (got ${Buffer.byteLength(summary, "utf8")}). A final-report summary is one tight paragraph — restated context and hedging are the usual offenders.`,
+    );
+  }
+  // Optional documentation_outcome field (issue #896, ADR-054).
+  if (input.documentation_outcome != null) {
+    const docResult = validateDocumentationOutcome(input.documentation_outcome);
+    if (!docResult.ok) {
+      for (const e of docResult.errors) errors.push(`documentation_outcome: ${e}`);
+    }
   }
   if (errors.length) return { ok: false, errors };
   return { ok: true };
@@ -10345,12 +10637,10 @@ export function buildFinalReport(input) {
     lines.push("");
     lines.push(summary.trim());
   }
-  lines.push("");
-  lines.push(`### In-scope requirements`);
-  lines.push("");
-  if (requirements.length === 0) {
-    lines.push("- (none — bug/refactor/maintenance run)");
-  } else {
+  if (requirements.length > 0) {
+    lines.push("");
+    lines.push(`### In-scope requirements`);
+    lines.push("");
     for (const r of requirements) {
       const note = r.note ? ` — ${r.note}` : "";
       lines.push(`- \`${r.uid}\` (${r.title}) — ${r.status}${note}`);
@@ -10373,14 +10663,12 @@ export function buildFinalReport(input) {
     lines.push("- (none)");
     lines.push("");
   }
-  lines.push(`### Reviews`);
-  lines.push("");
-  if (reviews.length === 0) {
-    lines.push("- (no review records — bug/refactor/maintenance run)");
-  } else {
+  if (reviews.length > 0) {
+    lines.push(`### Reviews`);
+    lines.push("");
     for (const r of reviews) lines.push(`- **${r.reviewer}:** ${r.summary}`);
+    lines.push("");
   }
-  lines.push("");
   lines.push(`### Traceability reconciliation`);
   lines.push("");
   const tAdded = Array.isArray(traceability.added) ? traceability.added : [];
@@ -10399,6 +10687,11 @@ export function buildFinalReport(input) {
   lines.push(`- CI: ${renderCiStatus(ciStatus)}`);
   lines.push(`- SonarCloud: ${renderSonarStatus(sonarStatus)}`);
   lines.push(`- PR ready for user review and merge.`);
+  // Optional documentation outcome section (issue #896, ADR-054).
+  if (input.documentation_outcome != null) {
+    lines.push("");
+    for (const l of renderDocumentationSection(input.documentation_outcome)) lines.push(l);
+  }
   return lines.join("\n");
 }
 
@@ -10908,6 +11201,10 @@ export function validatePrBodyInput(input) {
   }
   if (typeof summary !== "string" || summary.trim() === "") {
     errors.push("summary must be a non-empty string");
+  } else if (Buffer.byteLength(summary, "utf8") > PR_BODY_SUMMARY_MAX) {
+    errors.push(
+      `summary exceeds the PR-body summary cap of ${PR_BODY_SUMMARY_MAX} bytes (got ${Buffer.byteLength(summary, "utf8")}). A PR-body summary is one tight paragraph — restated context and hedging are the usual offenders.`,
+    );
   }
   if (!Array.isArray(changes)) {
     errors.push("changes must be an array of bullet strings");
@@ -10945,6 +11242,13 @@ export function validatePrBodyInput(input) {
   }
   if (testNotes != null && typeof testNotes !== "string") {
     errors.push("testNotes must be a string when set");
+  }
+  // Optional documentation_outcome field (issue #896, ADR-054).
+  if (input.documentation_outcome != null) {
+    const docResult = validateDocumentationOutcome(input.documentation_outcome);
+    if (!docResult.ok) {
+      for (const e of docResult.errors) errors.push(`documentation_outcome: ${e}`);
+    }
   }
   if (errors.length) return { ok: false, errors };
   return { ok: true };
@@ -11050,6 +11354,11 @@ export function buildPrBody(input) {
     lines.push(`- [x] Changelog fragment added at \`${changelogFragment}\``);
   }
   lines.push("- [x] Architectural docs updated if stack, package structure, or key behaviors changed");
+  // Optional documentation outcome section (issue #896, ADR-054).
+  if (input.documentation_outcome != null) {
+    lines.push("");
+    for (const l of renderDocumentationSection(input.documentation_outcome)) lines.push(l);
+  }
   return lines.join("\n");
 }
 
@@ -13029,10 +13338,12 @@ export const GOVERNANCE_FIELDS = {
       "uid", "title", "risk_scenario_id", "risk_register_record_id",
       "strategy", "owner", "rationale", "due_date", "status",
       "action_items", "reassessment_triggers",
+      "methodology_profile_id", "methodology_strategy_key",
     ],
     update: [
       "title", "risk_scenario_id", "strategy", "owner",
       "rationale", "due_date", "action_items", "reassessment_triggers",
+      "methodology_profile_id", "methodology_strategy_key",
     ],
   },
   verification_result: {
@@ -13069,4 +13380,407 @@ export function validateGovernanceStatus(entity, status) {
         `Valid values: ${allowed.join(", ")}`,
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge base capture / ingest helpers — GC-X006..GC-X011
+// ---------------------------------------------------------------------------
+
+// The canonical vocabulary for source citations. This list IS the source of
+// truth: gc_remember's Zod input enum, the ingest engine's validation, and
+// the citation prefixes written into page frontmatter, log.md entries, and
+// git commit messages all draw from here. Keep in sync with
+// docs/knowledge/SCHEMA.md §"Source citation rule".
+export const KNOWLEDGE_SOURCE_TYPES = Object.freeze([
+  "commit",
+  "pr",
+  "review",
+  "issue",
+  "ci",
+  "user-correction",
+  "file",
+]);
+
+// Short SHA minimum length; git accepts 4 chars but anything under 7 is
+// ambiguous in practice. 40 chars is a full SHA-1 hash.
+const COMMIT_SHA_RE = /^[0-9a-f]{7,40}$/;
+const POSITIVE_INT_RE = /^[1-9][0-9]*$/;
+// Allow stricter path validation for `file:` citations: repo-relative only,
+// no leading slash, no `..` segments, no backslashes. This mirrors the
+// repo-relative containment rules enforced by resolveRepoRelativePath for
+// config paths so the citation vocabulary can't sneak repo-escaping paths
+// into log.md or commit messages.
+const REPO_RELATIVE_PATH_RE = /^(?!\.\.(\/|$))(?!.*\/\.\.(\/|$))(?!\/)(?!.*\\)[^\s].*$/;
+
+// Turn a structured {source_type, source_ref} pair into the canonical
+// citation string. Every place that needs to record WHERE an observation
+// came from goes through this single function, so the inbox payload, page
+// frontmatter `sources` list, `log.md` bullets, and git commit messages
+// cannot drift in terminology or validation.
+//
+// Returns { ok: true, citation: string } on success, or
+// { ok: false, error: string } on validation failure. Does not throw.
+export function formatSourceCitation({ sourceType, sourceRef } = {}) {
+  if (typeof sourceType !== "string" || sourceType.trim() === "") {
+    return { ok: false, error: "source_type is required and must be a non-empty string" };
+  }
+  if (!KNOWLEDGE_SOURCE_TYPES.includes(sourceType)) {
+    return {
+      ok: false,
+      error: `source_type must be one of ${KNOWLEDGE_SOURCE_TYPES.join(", ")} (got '${sourceType}')`,
+    };
+  }
+  if (typeof sourceRef !== "string" || sourceRef.trim() === "") {
+    return { ok: false, error: "source_ref is required and must be a non-empty string" };
+  }
+
+  // Normalize per type. Each branch produces a single-line canonical ref
+  // so the resulting citation is safe to embed in a YAML scalar, a markdown
+  // bullet, or a git commit message subject without escaping.
+  switch (sourceType) {
+    case "commit": {
+      const ref = sourceRef.trim().toLowerCase();
+      if (!COMMIT_SHA_RE.test(ref)) {
+        return {
+          ok: false,
+          error: `source_ref for 'commit' must be a 7–40 char hex SHA (got '${sourceRef}')`,
+        };
+      }
+      return { ok: true, citation: `commit:${ref}` };
+    }
+    case "pr":
+    case "issue": {
+      const ref = sourceRef.trim().replace(/^#/, "");
+      if (!POSITIVE_INT_RE.test(ref)) {
+        return {
+          ok: false,
+          error: `source_ref for '${sourceType}' must be a positive integer (got '${sourceRef}')`,
+        };
+      }
+      return { ok: true, citation: `${sourceType}:${ref}` };
+    }
+    case "review":
+    case "ci": {
+      // Review comment ids and CI run ids are opaque strings produced by
+      // GitHub. Collapse any internal whitespace to a single space and
+      // reject anything empty after trimming.
+      const ref = sourceRef.trim().replace(/\s+/g, " ");
+      if (ref === "") {
+        return { ok: false, error: `source_ref for '${sourceType}' must be a non-empty id` };
+      }
+      return { ok: true, citation: `${sourceType}:${ref}` };
+    }
+    case "user-correction": {
+      // User corrections are free-form short descriptions. Collapse
+      // whitespace runs (including newlines) into single spaces so the
+      // citation stays a single line safe for commit-message subjects.
+      const ref = sourceRef.replace(/\s+/g, " ").trim();
+      if (ref === "") {
+        return { ok: false, error: "source_ref for 'user-correction' must be a non-empty description" };
+      }
+      return { ok: true, citation: `user-correction:${ref}` };
+    }
+    case "file": {
+      const ref = sourceRef.trim();
+      if (isAbsolute(ref)) {
+        return { ok: false, error: `source_ref for 'file' must be a repo-relative path (got absolute path '${sourceRef}')` };
+      }
+      if (!REPO_RELATIVE_PATH_RE.test(ref)) {
+        return { ok: false, error: `source_ref for 'file' must be a repo-relative path with no '..' segments (got '${sourceRef}')` };
+      }
+      return { ok: true, citation: `file:${ref}` };
+    }
+    default: {
+      // Unreachable: KNOWLEDGE_SOURCE_TYPES is the only valid set and we
+      // already validated membership above. Kept for defensive completeness
+      // so a future addition to the list without a switch case fails fast.
+      return { ok: false, error: `unsupported source_type '${sourceType}'` };
+    }
+  }
+}
+
+// Slug a note title into a filesystem-safe, kebab-cased string bounded at
+// 40 chars. Used as the tail of inbox filenames so humans scanning
+// `docs/knowledge/inbox/` can tell entries apart without opening them.
+function buildInboxSlug(note) {
+  const trimmed = (note || "").slice(0, 200).toLowerCase();
+  const kebab = trimmed
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const bounded = kebab.slice(0, 40).replace(/-+$/g, "");
+  return bounded || "note";
+}
+
+// ISO timestamp suitable for filename prefixes: swaps out the `:` chars
+// that are illegal on Windows / awkward in URLs, and drops the milliseconds
+// so filenames are exactly `YYYY-MM-DDTHH-MM-SS`.
+function formatInboxTimestamp(date = new Date()) {
+  return date.toISOString().replace(/\.\d+Z$/, "").replace(/:/g, "-");
+}
+
+// Default spawn implementation for gc_remember's detached ingest
+// subprocess. The returned function accepts { repoRoot, inboxFilePath,
+// knowledge } and returns after the child has been fully detached. Any
+// spawn-layer exception propagates to the caller which converts it to a
+// warning on the synchronous return envelope.
+function defaultSpawnIngest({ repoRoot, inboxFilePath, knowledge }) {
+  const cliPath = fileURLToPath(new URL("./knowledge_ingest_cli.js", import.meta.url));
+  const args = [
+    cliPath,
+    "--repo", repoRoot,
+    "--inbox-file", inboxFilePath,
+    "--knowledge-dir", knowledge.dir,
+    "--knowledge-schema", knowledge.schema,
+    "--knowledge-inbox", knowledge.inbox,
+  ];
+  const child = spawnChild(process.execPath, args, {
+    cwd: repoRoot,
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+}
+
+// Append a knowledge-base observation to the repo's inbox. Synchronous
+// success means the inbox entry is durably written to disk; the ingest
+// subprocess that integrates the observation into the wiki is spawned
+// after the write but its result is asynchronous and may fail. Per
+// GC-X006, subprocess spawn failures surface as a warning in the return
+// envelope but do not fail the capture — a later sweep will discover the
+// untouched inbox file and retry.
+//
+// Parameters:
+//   repoPath     — absolute path to the target git repo
+//   note         — the observation body text (required, non-empty)
+//   sourceType   — one of KNOWLEDGE_SOURCE_TYPES (required)
+//   sourceRef    — source reference (validated per sourceType)
+//   tags         — optional list of discovery tags
+//   spawnIngest  — optional DI hook for tests; defaults to
+//                  defaultSpawnIngest which launches the real CLI
+//
+// Returns { ok: true, inbox_path, citation, warning? } on success, or
+// { ok: false, error } on validation / config failure. Does not throw.
+export async function writeKnowledgeInbox({
+  repoPath,
+  note,
+  sourceType,
+  sourceRef,
+  tags = [],
+  spawnIngest = defaultSpawnIngest,
+} = {}) {
+  if (typeof repoPath !== "string" || !isAbsolute(repoPath)) {
+    return { ok: false, error: "repo_path must be an absolute path to a Git repository" };
+  }
+  if (typeof note !== "string" || note.trim() === "") {
+    return { ok: false, error: "note is required and must be a non-empty string" };
+  }
+  if (tags != null && !Array.isArray(tags)) {
+    return { ok: false, error: "tags must be an array of strings when set" };
+  }
+
+  const citationResult = formatSourceCitation({ sourceType, sourceRef });
+  if (!citationResult.ok) return { ok: false, error: citationResult.error };
+
+  let context;
+  try {
+    context = await getRepoGroundControlContext(repoPath);
+  } catch (error) {
+    return { ok: false, error: `failed to resolve repo context: ${error.message}` };
+  }
+  if (context.status !== "ok") {
+    return {
+      ok: false,
+      error: `repository is not ready for knowledge capture: ${context.errors?.[0] || context.status}`,
+    };
+  }
+  if (context.knowledge == null) {
+    return {
+      ok: false,
+      error: "repository has no 'knowledge' block in .ground-control.yaml — capture is not configured",
+    };
+  }
+
+  const repoRoot = context.repo_path;
+  const knowledge = context.knowledge;
+  const inboxRel = knowledge.inbox;
+  const absInboxDir = resolvePath(repoRoot, inboxRel);
+
+  // Lazy-create the inbox directory on first capture. The inbox is
+  // deliberately not committed as part of the #522 skeleton because an
+  // empty directory has nothing to commit.
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- absInboxDir derives from a realpath-contained, resolved knowledge.inbox
+    mkdirSync(absInboxDir, { recursive: true });
+  } catch (error) {
+    return { ok: false, error: `failed to create inbox directory ${inboxRel}: ${error.message}` };
+  }
+
+  // Compose the filename: ISO timestamp + 4-char random suffix + slug.
+  // The random suffix protects against sub-second concurrent captures
+  // producing identical timestamps; the slug keeps the file human-scanable.
+  const timestamp = formatInboxTimestamp();
+  const slug = buildInboxSlug(note);
+  const rand = randomBytes(3).toString("hex").slice(0, 4);
+  const filename = `${timestamp}-${rand}-${slug}.md`;
+  const absInboxFile = join(absInboxDir, filename);
+
+  // Build the frontmatter + body. js-yaml dump auto-quotes scalars that
+  // need escaping so citations containing `:` or special chars are safe.
+  const frontmatter = {
+    captured_at: new Date().toISOString(),
+    source: citationResult.citation,
+  };
+  if (tags && tags.length > 0) {
+    frontmatter.tags = tags;
+  }
+  const yamlBlock = dumpYaml(frontmatter, { lineWidth: -1, noRefs: true });
+  const fileContent = `---\n${yamlBlock}---\n\n${note.trim()}\n`;
+
+  // Atomic write: temp file + fsync + rename. A crash between the write
+  // and the rename leaves a .tmp sidecar but no partial file at the final
+  // path, so readers never observe a half-written inbox entry.
+  const tmpPath = `${absInboxFile}.tmp`;
+  let fd;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- tmpPath derives from inboxDir which is repo-relative
+    fd = openSync(tmpPath, "wx");
+    writeSync(fd, fileContent);
+    fsyncSync(fd);
+  } catch (error) {
+    if (fd != null) {
+      try { closeSync(fd); } catch { /* best-effort */ }
+    }
+    try {
+      rmSync(tmpPath, { force: true });
+    } catch { /* best-effort cleanup */ }
+    return { ok: false, error: `failed to write inbox tmp file: ${error.message}` };
+  }
+  try {
+    closeSync(fd);
+  } catch (error) {
+    return { ok: false, error: `failed to close inbox tmp file: ${error.message}` };
+  }
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- both paths are under absInboxDir which is realpath-contained within repoRoot
+    renameSync(tmpPath, absInboxFile);
+  } catch (error) {
+    try {
+      rmSync(tmpPath, { force: true });
+    } catch { /* best-effort cleanup */ }
+    return { ok: false, error: `failed to rename inbox tmp file: ${error.message}` };
+  }
+
+  const inboxRelFromRepo = relative(repoRoot, absInboxFile);
+
+  // Spawn the detached ingest subprocess. Spawn failures do not fail the
+  // capture — the inbox entry is durable and will be retried by a later
+  // real-time call, manual retry, or scheduled sweep.
+  let warning = null;
+  try {
+    spawnIngest({
+      repoRoot,
+      inboxFilePath: absInboxFile,
+      knowledge,
+    });
+  } catch (error) {
+    warning = `ingest_spawn_failed: ${error.message}`;
+  }
+
+  const result = {
+    ok: true,
+    inbox_path: inboxRelFromRepo,
+    citation: citationResult.citation,
+  };
+  if (warning) result.warning = warning;
+  return result;
+}
+
+// Acquire an interprocess lock on a knowledge base, keyed by the canonical
+// realpath of the knowledge directory. Different path spellings (symlinks,
+// `..`-normalized forms) that point at the same inode contend on the same
+// lock, which is required by GC-X008's invariant that "concurrent ingest
+// against the same knowledge base" serializes even if the callers supplied
+// different strings for the path.
+//
+// Uses `proper-lockfile`'s filesystem-based lock with stale detection:
+//   - stale  — lock is considered abandoned after this many ms if its
+//              refresh timestamp has not been updated. 60 s is long enough
+//              to survive normal ingest runs and short enough to recover
+//              from a crashed subprocess without blocking forever.
+//   - update — the holder refreshes the lock's mtime this often while
+//              work is in progress. 10 s gives a large margin under `stale`.
+//
+// By default `retries: 0` — contention fails fast so callers like
+// administrative tools can report a clean "locked, try again later"
+// error. Callers that want to wait (like `runIngest`, which serializes
+// two concurrent captures into a single sequential queue) pass a
+// `retries` option that matches proper-lockfile's retry shape.
+//
+// Returns an async release function. The returned function is
+// idempotent — calling it twice is safe but will no-op on the second call
+// (proper-lockfile throws if the lock is not actually held, so we swallow
+// that specific error).
+//
+// Throws on invalid input (non-absolute path, nonexistent directory) and
+// on contention. Errors carry a message that includes the canonical path
+// so debugging shows exactly which knowledge base is contended.
+export async function acquireKnowledgeLock(knowledgeDir, { retries = 0 } = {}) {
+  if (typeof knowledgeDir !== "string" || !isAbsolute(knowledgeDir)) {
+    throw new Error("acquireKnowledgeLock: path must be an absolute directory path");
+  }
+  let canonical;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- absolute path validated above
+    canonical = realpathSync(knowledgeDir);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      throw new Error(`acquireKnowledgeLock: path does not exist: ${knowledgeDir}`);
+    }
+    throw error;
+  }
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- canonical is a realpath
+  const stat = statSync(canonical);
+  if (!stat.isDirectory()) {
+    throw new Error(`acquireKnowledgeLock: path is not a directory: ${knowledgeDir}`);
+  }
+
+  let release;
+  try {
+    release = await properLockfile.lock(canonical, {
+      stale: 60_000,
+      update: 10_000,
+      retries,
+      // Store the lockfile INSIDE the knowledge directory as `.gc-lock`
+      // rather than next to it, so rm'ing the knowledge directory also
+      // cleans up the lock. This keeps the host filesystem tidy on test
+      // teardown and stale-repo cleanup.
+      lockfilePath: join(canonical, ".gc-lock"),
+      realpath: false,
+    });
+  } catch (error) {
+    // proper-lockfile maps contention to `ELOCKED`. Rewrite as a clear
+    // message so callers do not need to know about the underlying code.
+    if (error.code === "ELOCKED") {
+      const contended = new Error(`knowledge base is already held by another process: ${canonical}`);
+      contended.code = "ELOCKED";
+      contended.path = canonical;
+      throw contended;
+    }
+    throw error;
+  }
+
+  let released = false;
+  return async function releaseHandle() {
+    if (released) return;
+    released = true;
+    try {
+      await release();
+    } catch (error) {
+      // "Lock is already released" is fine — we just observed the release
+      // through a different path. Anything else is a real error.
+      if (error.code !== "ENOTACQUIRED" && !/already released/i.test(error.message)) {
+        throw error;
+      }
+    }
+  };
 }

@@ -64,6 +64,28 @@ summary and optionally tags. Before creating a new page, an agent MUST read
 topic — if so, update the existing page rather than creating a duplicate
 (read-before-write invariant from the design note).
 
+### Ingest consistency contract
+
+When ingest integrates a new observation into the wiki (GC-X007), it treats
+an existing page's current file path as that page's identity. If the
+observation refines or extends a page already represented in `index.md`,
+ingest updates that file in place rather than creating a second page with a
+new slug, source-specific suffix, or timestamped variant.
+
+`index.md` is the discovery shortlist, not the whole decision. Ingest reads
+the candidate pages themselves before deciding whether the observation
+belongs on one of them or truly requires a new page.
+
+When updating an existing page, ingest uses the current page contents as the
+base document. Preserve existing frontmatter, source coverage, and
+cross-references unless the new evidence explicitly corrects them. The goal
+is to refine the current page, not re-summarize the topic from scratch.
+
+Renames, splits, and merges are exceptional maintenance operations, not the
+default ingest path. If one is truly required, update `index.md` and any
+affected intra-wiki links in the same transaction so the knowledge base
+never points at stale paths.
+
 ### `log.md` contract
 
 `log.md` is the append-only chronological record of knowledge-base activity
@@ -78,6 +100,17 @@ The inbox is a staging area for raw captures from the capture primitive
 (`gc_remember`). It does not exist yet — it is created by a later slice of
 the agent knowledge system rollout (issues 2–6). Until then, do not write
 to `inbox/`.
+
+When the inbox ships, each inbox file is the retry surface for ingest. A
+failed ingest leaves the source file's bytes untouched at its inbox path so
+later real-time, manual, or scheduled processing can retry it
+automatically. Do not move failed items to a `failed/` directory, rename
+them out of `inbox/`, or mutate the file to track retry state.
+
+An inbox file may be archived under a success-only location such as
+`inbox/processed/` or deleted only after the full ingest transaction has
+succeeded: page update or creation, `index.md` update, `log.md` append, and
+the git commit that records the change.
 
 ## Content page types
 

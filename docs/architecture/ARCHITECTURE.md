@@ -79,7 +79,8 @@ backend/src/main/java/com/keplerops/groundcontrol/
 │   └── web/                      # CORS config, SPA routing
 ├── shared/
 │   ├── logging/                  # RequestLoggingFilter (MDC request_id)
-│   ├── security/                 # ApiSecurityConfig, BearerTokenAuthFilter,
+│   ├── security/                 # ApiSecurityConfig, BrowserSecurityConfig,
+│   │                             # BearerTokenAuthFilter,
 │   │                             # IpAllowlistFilter, ApiAuthenticationEntryPoint,
 │   │                             # ApiAccessDeniedHandler, SecurityProperties (ADR-026)
 │   └── web/                      # ActorFilter (audit identity from SecurityContext)
@@ -108,21 +109,36 @@ Spring profiles drive environment-specific behavior:
 
 Environment variables use the `GC_` prefix (e.g., `GC_DATABASE_URL`, `GC_SERVER_PORT`). See `.env.example`.
 
-## Request filter chain
+## Request filter chains
 
 Once Spring Security is enabled (production default; `dev`/`test` profiles
-opt out), every request passes through:
+opt out), requests pass through two explicit, non-overlapping Spring Security
+chains:
 
 ```
+Bearer request chain (@Order(1), Authorization: Bearer ...)
 IpAllowlistFilter           # CIDR check (skipped if allowlist empty)
-  → BearerTokenAuthFilter   # Authorization: Bearer <token> → SecurityContext
+  → BearerTokenAuthFilter   # token → SecurityContext
     → AuthorizationFilter   # path-matrix / ROLE_USER / ROLE_ADMIN
       → ActorFilter         # populates ActorHolder + MDC actor_id=<principal>
         → controllers
+
+Browser/session chain (@Order(2), every non-bearer request)
+IpAllowlistFilter           # same network gate
+  → form login / session / CSRF
+    → AuthorizationFilter   # same API path matrix for /api/v1/**
+      → ActorFilter         # same audit actor projection
+        → controllers
 ```
 
-Authorization is centralized in `ApiSecurityConfig` (ADR-026); controllers
-do not perform per-method auth checks — the one deliberate exception,
+The shared API authorization matrix lives in `ApiPathMatrix` and is applied by
+both `ApiSecurityConfig` (bearer traffic) and `BrowserSecurityConfig`
+(session-authenticated browser traffic). The browser chain leaves `/login`,
+`/logout`, and required static assets anonymous, but the SPA shell (`/`,
+`/index.html`) and SPA client routes require a browser session; unauthenticated
+navigation redirects to `/login`, while API-shaped unauthenticated XHRs receive
+the standard JSON 401 envelope. Controllers do not perform per-method auth
+checks — the one deliberate exception,
 `PackRegistryAccessGuard`, is a defense-in-depth bridge that re-derives the
 admin principal from the same `SecurityContext` and re-asserts `ROLE_ADMIN`
 (see ADR-033 §4). `ActorFilter` runs after the security chain so audit
@@ -176,3 +192,9 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 - Verification result storage (VerificationResult entity with eager-loaded target/requirement, enums, CRUD API, MCP tools) — ADR-014 §2 common schema
 - Pluggable verifier adapter interface (`VerifierAdapter`, `VerificationRequest`, `VerificationOutcome`) — ADR-014 §6 port contract for multi-tool integration
 - Self-referential traceability enforcement — `check_live_policy.mjs` verifies substantive code files have reverse traceability links to requirements (GC-O002), using the `GET /requirements/traceability/by-artifact` reverse lookup endpoint. Lookup errors are tracked separately for debuggability when the endpoint is unavailable.
+
+## Knowledge Ingest Engine (repo-local, out of the product model)
+
+Each repository that uses Ground Control can declare an agent-maintained knowledge base under `docs/knowledge/` via the `knowledge` section of its `.ground-control.yaml`. The `gc_remember` MCP tool captures observations into that repo's inbox; a detached ingest subprocess reads the inbox item, decides update-vs-create via codex, writes the wiki page, and commits the change under a per-repo interprocess lock. The engine lives at `mcp/ground-control/knowledge_ingest.js` with a thin CLI entry at `mcp/ground-control/knowledge_ingest_cli.js`.
+
+The knowledge subsystem is deliberately repo-local tooling — not a Spring backend product feature. No REST controller, DTO, JPA entity, migration, or graph node is added by issues #522–#527. See [ADR-025](../../architecture/adrs/025-knowledge-ingest-engine.md) for the decision to co-locate the engine with the MCP server, use codex as the ingest agent, and serialize via `proper-lockfile`. Rollout phasing lives in `docs/notes/agent-knowledge-system-design.md`.

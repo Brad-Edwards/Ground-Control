@@ -23,6 +23,7 @@ from tools.policy.checks import (
     run_changelog_fragment_check,
     run_controller_contracts,
     run_deploy_compose_credential_passthrough,
+    run_documentation_coverage_check,
     run_enum_contract_check,
     run_migration_policy,
     run_no_deferral_disposition_check,
@@ -165,6 +166,32 @@ class PolicyChecksTest(unittest.TestCase):
             codes = {item.code for item in violations}
             self.assertIn("controller-parity", codes)
             self.assertIn("controller-webmvctest-update", codes)
+
+    def test_controller_contracts_accept_gc_risk_governance_as_mcp_adapter(self):
+        """gc-risk-governance.js satisfies the MCP-adapter companion (in lieu of index.js)."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            test_file = (
+                root
+                / "backend/src/test/java/com/keplerops/groundcontrol/unit/api/FooControllerTest.java"
+            )
+            test_file.parent.mkdir(parents=True, exist_ok=True)
+            test_file.write_text(
+                "@WebMvcTest(FooController.class)\nclass FooControllerTest {}\n",
+                encoding="utf-8",
+            )
+            violations = run_controller_contracts(
+                [
+                    "backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java",
+                    "docs/API.md",
+                    "mcp/ground-control/lib.js",
+                    "mcp/ground-control/gc-risk-governance.js",
+                    "backend/src/test/java/com/keplerops/groundcontrol/unit/api/FooControllerTest.java",
+                ],
+                root=root,
+            )
+            codes = {item.code for item in violations}
+            self.assertNotIn("controller-parity", codes)
 
     def test_migration_policy_requires_smoke_and_e2e_updates(self):
         violations = run_migration_policy(
@@ -1639,6 +1666,73 @@ class TestQualityDecisionRecordContractTest(unittest.TestCase):
             "gc_post_decision_record contract for test-quality cycles "
             "(issue #884 regression target).",
         )
+
+
+    # ------------------------------------------------------------------
+    # Documentation coverage check (issue #896, ADR-054)
+    # ------------------------------------------------------------------
+
+    def test_doc_coverage_passes_when_outcome_present(self):
+        """A PR body with ## Documentation passes even for classified surfaces."""
+        pr_body = (
+            "## Summary\nAdded classifier.\n\n"
+            "## Requirement UIDs\n- ADR-054\n\n"
+            "## Related Issues\nCloses #896\n\n"
+            "## ADR Impact\n- ADR-054\n\n"
+            "## Changes\n- Added classifyChangedSurface\n\n"
+            "## Documentation\n\nUpdated: see diff.\n"
+        )
+        # mcp/ground-control/lib.js is a config_parser surface → outcome_required
+        violations = run_documentation_coverage_check(
+            ["mcp/ground-control/lib.js"],
+            pr_body=pr_body,
+        )
+        codes = [v.code for v in violations]
+        self.assertNotIn("doc-coverage-outcome-missing", codes)
+
+    def test_doc_coverage_fails_when_outcome_missing_and_surface_classified(self):
+        """A PR body without ## Documentation fails for classified surfaces."""
+        pr_body = (
+            "## Summary\nAdded classifier.\n\n"
+            "## Requirement UIDs\n- ADR-054\n\n"
+            "## Related Issues\nCloses #896\n\n"
+            "## ADR Impact\n- ADR-054\n\n"
+            "## Changes\n- Added classifyChangedSurface\n"
+        )
+        # mcp/ground-control/lib.js is a config_parser surface → outcome_required
+        violations = run_documentation_coverage_check(
+            ["mcp/ground-control/lib.js"],
+            pr_body=pr_body,
+        )
+        codes = [v.code for v in violations]
+        self.assertIn("doc-coverage-outcome-missing", codes)
+
+    def test_doc_coverage_docs_only_diff_passes_without_outcome(self):
+        """A docs-only diff does not require a ## Documentation section."""
+        pr_body = (
+            "## Summary\nDoc update.\n\n"
+            "## Requirement UIDs\n- ADR-054\n\n"
+            "## Related Issues\nCloses #896\n\n"
+            "## ADR Impact\n- ADR-054\n\n"
+            "## Changes\n- Updated DOC_STYLE.md\n"
+        )
+        # docs/ paths are doc surface → outcome_required=false
+        violations = run_documentation_coverage_check(
+            ["docs/DOC_STYLE.md"],
+            pr_body=pr_body,
+        )
+        codes = [v.code for v in violations]
+        self.assertNotIn("doc-coverage-outcome-missing", codes)
+
+    def test_doc_coverage_skips_gracefully_when_pr_body_unavailable(self):
+        """When pr_body is None the check skips without raising."""
+        violations = run_documentation_coverage_check(
+            ["mcp/ground-control/lib.js"],
+            pr_body=None,
+        )
+        # Graceful skip — no hard fail, no fixture-error either
+        codes = [v.code for v in violations]
+        self.assertNotIn("doc-coverage-outcome-missing", codes)
 
 
 if __name__ == "__main__":

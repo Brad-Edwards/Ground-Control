@@ -7,9 +7,11 @@ import com.keplerops.groundcontrol.api.riskscenarios.TreatmentPlanResponse;
 import com.keplerops.groundcontrol.domain.graph.model.GraphEntityType;
 import com.keplerops.groundcontrol.domain.graph.model.GraphIds;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import java.time.Instant;
@@ -131,6 +133,55 @@ class TreatmentPlanResponseTest {
             assertThat(response.dueDate()).isNull();
             assertThat(response.actionItems()).isNull();
             assertThat(response.reassessmentTriggers()).isNull();
+        }
+    }
+
+    @Nested
+    class FromWithMethodologyBinding {
+
+        @Test
+        void mapsMethodologyProfileIdAndStrategyKey() {
+            setField(project, "id", projectId);
+
+            var registerRecord = new RiskRegisterRecord(project, "RR-4", "Record 4");
+            setField(registerRecord, "id", UUID.randomUUID());
+
+            var profile = new MethodologyProfile(project, "CUSTOM", "Custom", "1.0", MethodologyFamily.CUSTOM);
+            var profileId = UUID.randomUUID();
+            setField(profile, "id", profileId);
+
+            var plan = new TreatmentPlan(project, "TP-4", "Other plan", registerRecord, TreatmentStrategy.OTHER);
+            setField(plan, "id", UUID.randomUUID());
+            plan.setMethodologyProfile(profile);
+            plan.setMethodologyStrategyKey("RESIDUAL_TRANSFER");
+            var now = Instant.now();
+            setField(plan, "createdAt", now);
+            setField(plan, "updatedAt", now);
+
+            var response = TreatmentPlanResponse.from(plan);
+
+            assertThat(response.methodologyProfileId()).isEqualTo(profileId);
+            assertThat(response.methodologyStrategyKey()).isEqualTo("RESIDUAL_TRANSFER");
+        }
+
+        @Test
+        void setsMethodologyProfileIdToNullWhenProfileIsAbsent() {
+            setField(project, "id", projectId);
+
+            var registerRecord = new RiskRegisterRecord(project, "RR-5", "Record 5");
+            setField(registerRecord, "id", UUID.randomUUID());
+
+            var plan = new TreatmentPlan(project, "TP-5", "Canonical plan", registerRecord, TreatmentStrategy.MITIGATE);
+            setField(plan, "id", UUID.randomUUID());
+            var now = Instant.now();
+            setField(plan, "createdAt", now);
+            setField(plan, "updatedAt", now);
+            // methodologyProfile left null (default)
+
+            var response = TreatmentPlanResponse.from(plan);
+
+            assertThat(response.methodologyProfileId()).isNull();
+            assertThat(response.methodologyStrategyKey()).isNull();
         }
     }
 }

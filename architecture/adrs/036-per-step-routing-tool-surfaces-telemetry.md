@@ -441,3 +441,5 @@ Two coordinated changes:
 `gc_codex_job` is the sixth tool in this ADR's surface family and, like the
 cycle wrappers and watch tools, is bridge work toward GC-O009 — the
 start/poll/cancel triple is the shape a Temporal activity handle takes.
+
+**Amendment — renderer summary byte caps (#964).** Two of the three durable-record renderer tools in this ADR's surface family — `gc_render_pr_body` and `gc_post_final_report` — now enforce reject-not-truncate byte caps on their caller-controlled summary fields (`PR_BODY_SUMMARY_MAX = 1200`, `FINAL_REPORT_SUMMARY_MAX = 800`, `FINAL_REPORT_REVIEW_SUMMARY_MAX = 240` for `reviews[].summary`). `gc_post_decision_record`'s schema is unchanged — its caller-controlled prose fields already had per-field caps. The canonical succinctness rule is in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)` and is referenced from all three renderer tool descriptions. `buildFinalReport` no longer emits placeholder lines in the In-scope requirements or Reviews sections when those inputs are empty.

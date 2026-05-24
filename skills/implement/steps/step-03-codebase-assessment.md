@@ -17,7 +17,7 @@ Explore the codebase to determine whether the work described in the issue is alr
 
   Grep these for keywords matching the issue's subject area and read any pages that match before designing changes.
 - Check if the described behavior already exists.
-- **Before designing new code, inventory the existing cross-cutting concerns the change will need.** Do not skip this — it is the single biggest defense against re-implementing helpers that already exist. Where the repo has supplied a hint:
+- **Before designing new code, inventory the existing cross-cutting concerns the change will need.** Do not skip this—it is the single biggest defense against re-implementing helpers that already exist. Where the repo has supplied a hint:
 
   ```
   {cfg.cross_cutting_concerns.description|default
@@ -31,9 +31,10 @@ Explore the codebase to determine whether the work described in the issue is alr
   }
   ```
 
-  For each concern the new code will touch, find and read the project's existing implementation. Use the existing helper. If you genuinely need a new one, justify the new helper in the plan (Step 4) and note why the existing one didn't fit. Re-implementing what's already there is the failure mode the Step 6.5 codex review is designed to catch — catch it here first so you don't spend a review cycle on it.
+  For each concern the new code will touch, find and read the project's existing implementation. Use the existing helper. If you genuinely need a new one, justify the new helper in the plan (Step 4) and note why the existing one didn't fit. Re-implementing what's already there is the failure mode the Step 6.5 codex review is designed to catch—catch it here first so you don't spend a review cycle on it.
 - For each requirement in `in_scope_requirements[]`, review its existing traceability links (IMPLEMENTS, TESTS) via `gc_get_traceability` on the requirement UUID. Some or all clauses may already be satisfied.
 - Reuse the architecture-preflight guidance from Step 2.5 while assessing existing coverage and planning changes.
+- **Documentation coverage (ADR-054).** Call `gc_documentation_coverage` with `repo_path` and the list of paths likely to change. When `outcome_required` is true, include the returned `suggested_doc_targets` in the Step 4 plan so the implementation addresses documentation alongside code.
 
 ## Return contract
 

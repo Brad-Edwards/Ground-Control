@@ -12,4 +12,5 @@ public record UpdateMethodologyProfileRequest(
         String description,
         Map<String, Object> inputSchema,
         Map<String, Object> outputSchema,
-        MethodologyProfileStatus status) {}
+        MethodologyProfileStatus status,
+        Map<String, Object> treatmentStrategyVocabulary) {}
