@@ -177,19 +177,33 @@ class BrowserHttpFlowIntegrationTest extends BaseIntegrationTest {
         assertThat(loginTarget).asString().doesNotContain("error");
         addCookies(loginPost.getHeaders().get(HttpHeaders.SET_COOKIE), cookies);
 
-        // 3. Follow the redirect to / with the session cookie. Anonymous would 302 here.
+        // 3. Confirm the main SPA shell is reachable with the session cookie. We target
+        //    /index.html explicitly rather than /, because ApiSecurityConfigTest's nested
+        //    @RestController stub maps `/` to "spa-shell" and registers via component scan in
+        //    every @SpringBootTest context — that would mask the actual static-resource path
+        //    the production deployment uses for the SPA shell. /index.html is served by
+        //    Spring's ResourceHttpRequestHandler against static/index.html and the path
+        //    matrix's .anyRequest().authenticated() (so anonymous would redirect to /login).
         HttpHeaders followHeaders = new HttpHeaders();
         followHeaders.add(HttpHeaders.COOKIE, renderCookieHeader(cookies));
-        URI rootTarget = loginTarget == null ? URI.create(url("/")) : URI.create(url(loginTarget.getPath()));
         ResponseEntity<String> shell =
-                http.exchange(rootTarget, HttpMethod.GET, new HttpEntity<>(followHeaders), String.class);
+                http.exchange(url("/index.html"), HttpMethod.GET, new HttpEntity<>(followHeaders), String.class);
         assertThat(shell.getStatusCode())
-                .as("Authenticated GET / must serve the SPA shell, not redirect")
+                .as("Authenticated GET /index.html must serve the SPA shell, not redirect")
                 .isEqualTo(HttpStatus.OK);
         assertThat(shell.getBody())
                 .as("Authenticated SPA shell must include the main bundle marker, not the login marker")
                 .contains("gc-test-marker: main spa shell")
                 .doesNotContain("gc-test-marker: login bundle");
+
+        // Also confirm GET /index.html anonymously redirects to /login (the gate is still on).
+        // We can't ride the existing `cookies` jar — they're authenticated now. Use a fresh
+        // empty header set so the redirect target reflects an unauthenticated request.
+        ResponseEntity<String> anon = http.getForEntity(url("/index.html"), String.class);
+        assertThat(anon.getStatusCode())
+                .as("/index.html stays gated even after a successful login in another session")
+                .isEqualTo(HttpStatus.FOUND);
+        assertThat(anon.getHeaders().getLocation()).asString().contains("/login");
     }
 
     // --- cookie helpers (TestRestTemplate has no cookie jar of its own) -----------------
