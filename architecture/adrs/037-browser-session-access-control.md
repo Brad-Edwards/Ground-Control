@@ -4,16 +4,48 @@
 
 Accepted
 
-## Update — Issue #846 (2026-05-23)
+## Update — Issue #846, dual-bundle correction (2026-05-24)
 
-The React SPA login screen has shipped. `BrowserSecurityConfig` now calls
-`.loginPage("/login")`, which disables Spring's `DefaultLoginPageGeneratingFilter`
-so `GET /login` is forwarded to `SpaController → index.html` (the SPA shell).
-`POST /login` form-urlencoded continues to be processed by
-`UsernamePasswordAuthenticationFilter` at the same path. The SPA login form reads
-the `XSRF-TOKEN` cookie (written by `CookieCsrfTokenRepository` on the GET) and
-echoes it as `X-XSRF-TOKEN`, satisfying the CSRF gate. No Decision contracts in
-this ADR were changed.
+The original Issue #846 update routed `GET /login` through
+`SpaController.forward("/index.html")`, which silently re-entered the security
+filter chain on the forwarded path. `/index.html` is `.anyRequest().authenticated()`
+per §2, so the entry point redirected back to `/login` and the loop closed at the
+HTTP layer. The MockMvc integration test passed because
+`MockRequestDispatcher.forward()` captures the target via `getForwardedUrl()`
+without re-dispatching. The bug shipped to the deployed instance.
+
+The follow-up PR amends the implementation of §3 to the **dual-bundle** pattern:
+
+- The React login screen ships as its own Vite build (`frontend/login.html` +
+  `frontend/src/login-main.tsx`), output to `static/login.html` and
+  `static/login-assets/`. The bundle imports only itself and React; it knows
+  nothing about the application's routes, contracts, or components.
+- A `LoginPageController` serves `GET /login` by streaming
+  `static/login.html` via `ResponseEntity<Resource>` (no `forward:`, so the
+  filter chain runs once and is done). `POST /login` continues to hit
+  `UsernamePasswordAuthenticationFilter` at the same path.
+- The path matrix moves `/assets/**` (the main app bundle) from `permitAll` to
+  `authenticated()`, and adds `/login-assets/**` as the single anonymous
+  bundle-serving prefix. The main app shell (`/`, `/index.html`) stays gated
+  per §2.
+- Integration coverage is split: `BrowserHttpFlowIntegrationTest` uses
+  `TestRestTemplate` against `RANDOM_PORT` so a real servlet container
+  dispatches forwards and the no-loop contract is exercised end-to-end.
+  `BrowserSessionIntegrationTest` keeps the MockMvc tests for chain semantics
+  that don't depend on container dispatching.
+
+No Decision contracts in this ADR are loosened. §2's "SPA shell is not
+anonymous" invariant is now actually upheld in practice (the prior
+implementation that permitted `/assets/**` also leaked the SPA bundle, even
+before #846's loop). The dual-bundle is the seam §3 envisioned for "when the
+React login flow is added."
+
+The non-goal in §3 against making CSRF dependent on the SPA's involvement is
+unchanged: `CookieCsrfTokenRepository` writes the cookie on the GET that loads
+the login bundle, the login bundle echoes it as `X-XSRF-TOKEN` on `POST /login`,
+and the existing form-login machinery validates the gate. ADR-029's "GitHub
+issue thread is the durable record" applies: the regression analysis and
+recovery decision are on Issue #846.
 
 ## Date
 

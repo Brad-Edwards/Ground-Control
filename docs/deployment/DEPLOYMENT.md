@@ -1,5 +1,31 @@
 # Ground Control — Deployment
 
+## ⚠ Auth surface is Tailscale-internal only — do NOT expose directly to the internet
+
+The auth surface shipped today (ADR-037: Spring form-login + JDBC users + BCrypt
++ session cookie + CSRF) is fit for an installation reachable only over a private
+network like Tailscale, where the transport is already encrypted and the host is
+unreachable from the open internet. It is **not** safe to expose directly to the
+internet because:
+
+- Session cookies are issued with the `Secure` attribute, which browsers refuse
+  to store over plain HTTP. Without TLS termination in front, every request is
+  treated as anonymous and the entire UI becomes inoperable (the redirect chain
+  loops on `/login`).
+- The form post sends `username` / `password` in plaintext form-encoded body —
+  acceptable only over an encrypted transport.
+- There is no per-attempt rate limiting, account lockout, MFA, SSO, audit
+  logging of failed attempts, or password policy beyond a 12–200 char length
+  check.
+- The deployment template assumes a single operator on a trusted internal
+  network. Multi-tenant, federated, or internet-exposed deployments need the
+  larger auth surface tracked in issue [#983](https://github.com/KeplerOps/Ground-Control/issues/983).
+
+If you need to expose Ground Control beyond Tailscale today, terminate TLS in
+front of it (Caddy / Traefik / nginx) AND understand that the auth controls
+above are still single-tenant best-effort, not internet-hardened. Track #983
+for the proper auth surface.
+
 ## Local Development
 
 ### Prerequisites

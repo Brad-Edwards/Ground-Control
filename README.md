@@ -17,6 +17,16 @@ stale spreadsheets, no traceability theater.
 management, DAG-based dependency tracking, graph analysis, GitHub sync, and
 MCP-driven AI workflows. The rest of the factory is coming.
 
+> ⚠ **Tailscale-only auth.** The current login surface (ADR-037) is sized for a
+> single-operator install reachable only over a private network like Tailscale.
+> It is **not** safe to expose directly to the internet — the session cookie is
+> `Secure`-flagged (browsers refuse it over plain HTTP, login loops forever),
+> the form post is plaintext, and there's no rate limit, MFA, SSO, or audit of
+> failed attempts. Track issue
+> [#983](https://github.com/KeplerOps/Ground-Control/issues/983) for the proper
+> internet-exposed auth surface. See `docs/deployment/DEPLOYMENT.md` for the
+> full constraint.
+
 <p align="center">
   <img src="assets/interactive_graph_example.png" alt="Interactive requirements graph showing DAG layout with dependency edges, status coloring, and requirement details" width="720">
 </p>
