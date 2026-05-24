@@ -4,11 +4,11 @@
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=KeplerOps_Ground-Control&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=KeplerOps_Ground-Control)
 
 An automated software factory that connects requirements, code, controls, and
-observability over a single data layer — with traceability throughout.
+observability over a single data layer—with traceability throughout.
 
 Ground Control unifies the software lifecycle into one graph-native platform.
-Every artifact — requirement, code file, test, ADR, verification result,
-security control — is a node. Every relationship is an edge. One query can
+Every artifact—requirement, code file, test, ADR, verification result,
+security control—is a node. Every relationship is an edge. One query can
 answer "which security requirements have no formal verification in the last
 30 days?" or "what breaks if this interface changes?" No tool-hopping, no
 stale spreadsheets, no traceability theater.
@@ -19,7 +19,7 @@ MCP-driven AI workflows. The rest of the factory is coming.
 
 > ⚠ **Tailscale-only auth.** The current login surface (ADR-037) is sized for a
 > single-operator install reachable only over a private network like Tailscale.
-> It is **not** safe to expose directly to the internet — the session cookie is
+> It is **not** safe to expose directly to the internet—the session cookie is
 > `Secure`-flagged (browsers refuse it over plain HTTP, login loops forever),
 > the form post is plaintext, and there's no rate limit, MFA, SSO, or audit of
 > failed attempts. Track issue
@@ -33,19 +33,19 @@ MCP-driven AI workflows. The rest of the factory is coming.
 
 ## What's Live
 
-- **Requirements lifecycle** — DRAFT → ACTIVE → DEPRECATED → ARCHIVED, with MoSCoW priority and wave-based planning
-- **Traceability links** — Connect requirements to GitHub issues, code files, tests, ADRs, verification results, and other artifacts
-- **Graph analysis** — Cycle detection, orphan detection, coverage gaps, transitive impact analysis, cross-wave validation
-- **Pluggable verification** — Prover-agnostic architecture for design-level (TLA+, Alloy) and code-level (OpenJML, Frama-C, Verus) verification, with results stored as first-class graph nodes
-- **GitHub integration** — Sync issues into the traceability graph, or create issues from requirements with one command
-- **StrictDoc import** — Bulk-import from `.sdoc` files, idempotent
-- **ReqIF import** — Bulk-import from ReqIF 1.2 `.reqif` files (IBM DOORS, Polarion, Jama), idempotent
-- **Text embeddings** — Pluggable vector embedding of requirement text with content-hash staleness detection, batch embedding, and graceful degradation when no provider is configured
-- **Semantic similarity** — Pairwise cosine similarity analysis across requirement embeddings to detect near-duplicate requirements with configurable threshold
-- **MCP server** — 30 tools for Claude Code: manage requirements, baselines, run analysis, embed text, and build traceability without leaving your editor
-- **Baseline management** — Named point-in-time snapshots of the requirement set for release management and specification evolution tracking
-- **Audit trail** — Every change to every entity is versioned via Hibernate Envers
-- **Web UI** — React 19 / TypeScript SPA served by the backend: Dashboard, Requirements Explorer, Requirement Detail with local dependency graph
+- **Requirements lifecycle**—DRAFT → ACTIVE → DEPRECATED → ARCHIVED, with MoSCoW priority and wave-based planning
+- **Traceability links**—Connect requirements to GitHub issues, code files, tests, ADRs, verification results, and other artifacts
+- **Graph analysis**—Cycle detection, orphan detection, coverage gaps, transitive impact analysis, cross-wave validation
+- **Pluggable verification**—Prover-agnostic architecture for design-level (TLA+, Alloy) and code-level (OpenJML, Frama-C, Verus) verification, with results stored as first-class graph nodes
+- **GitHub integration**—Sync issues into the traceability graph, or create issues from requirements with one command
+- **StrictDoc import**—Bulk-import from `.sdoc` files, idempotent
+- **ReqIF import**—Bulk-import from ReqIF 1.2 `.reqif` files (IBM DOORS, Polarion, Jama), idempotent
+- **Text embeddings**—Pluggable vector embedding of requirement text with content-hash staleness detection, batch embedding, and graceful degradation when no provider is configured
+- **Semantic similarity**—Pairwise cosine similarity analysis across requirement embeddings to detect near-duplicate requirements with configurable threshold
+- **MCP server**—30 tools for Claude Code: manage requirements, baselines, run analysis, embed text, and build traceability without leaving your editor
+- **Baseline management**—Named point-in-time snapshots of the requirement set for release management and specification evolution tracking
+- **Audit trail**—Every change to every entity is versioned via Hibernate Envers
+- **Web UI**—React 19 / TypeScript SPA served by the backend: Dashboard, Requirements Explorer, Requirement Detail with local dependency graph
 
 ## Near-Term Roadmap
 
@@ -70,10 +70,10 @@ make dev      # Spring Boot on http://localhost:8000
 
 Then visit:
 
-- **Web UI** — `http://localhost:8000/` (React SPA — Dashboard, Explorer, Dependency Graph)
-- **API** — `http://localhost:8000/api/v1/requirements`
-- **Swagger UI** — `http://localhost:8000/api/docs`
-- **OpenAPI spec** — `http://localhost:8000/api/openapi.json`
+- **Web UI**: `http://localhost:8000/` (React SPA covering Dashboard, Explorer, Dependency Graph)
+- **API**: `http://localhost:8000/api/v1/requirements`
+- **Swagger UI**: `http://localhost:8000/api/docs`
+- **OpenAPI spec**: `http://localhost:8000/api/openapi.json`
 
 For frontend development with hot reload:
 
@@ -99,7 +99,7 @@ full configuration reference.
 Configured in `.mcp.json`, works automatically with Claude Code. Start the
 backend, then call MCP tools from your conversation. The surface is ~30
 named tools (down from 215 in earlier versions per ADR-035) consolidated
-by entity with an `action` discriminator — `gc_requirement`, `gc_asset`,
+by entity with an `action` discriminator—`gc_requirement`, `gc_asset`,
 `gc_analyze`, `gc_graph`, etc. Workflow primitives the `/implement` and
 `/ship` skills use (`gc_get_requirement`, `gc_create_traceability_link`,
 `gc_transition_status`, the codex tools, etc.) are unchanged. The read-only

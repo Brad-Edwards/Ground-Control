@@ -4,7 +4,7 @@
 
 Accepted
 
-## Update — Issue #846, dual-bundle correction (2026-05-24)
+## Update—Issue #846, dual-bundle correction (2026-05-24)
 
 The original Issue #846 update routed `GET /login` through
 `SpaController.forward("/index.html")`, which silently re-entered the security
@@ -196,7 +196,7 @@ never be logged.
 - A browser chain scoped only to `/`, `/login`, `/logout`, and static assets is
   incomplete unless `/api/v1/**` also accepts the browser session.
 - A catch-all browser chain placed before the bearer chain can accidentally turn
-  API 401s into login redirects and can break agents.
+  API 401 responses into login redirects and can break agents.
 - A catch-all bearer chain placed before the browser chain can swallow `/login`
   and keep humans locked out.
 - `X-Actor` remains a dev/test fallback only. Do not resurrect it as a login,

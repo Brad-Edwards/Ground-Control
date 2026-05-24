@@ -1,6 +1,6 @@
-# Ground Control — Deployment
+# Ground Control—Deployment
 
-## ⚠ Auth surface is Tailscale-internal only — do NOT expose directly to the internet
+## ⚠ Auth surface is Tailscale-internal only—do NOT expose directly to the internet
 
 The auth surface shipped today (ADR-037: Spring form-login + JDBC users + BCrypt
 + session cookie + CSRF) is fit for an installation reachable only over a private
@@ -12,8 +12,7 @@ internet because:
   to store over plain HTTP. Without TLS termination in front, every request is
   treated as anonymous and the entire UI becomes inoperable (the redirect chain
   loops on `/login`).
-- The form post sends `username` / `password` in plaintext form-encoded body —
-  acceptable only over an encrypted transport.
+- The form post sends `username` / `password` in plaintext form-encoded body—acceptable only over an encrypted transport.
 - There is no per-attempt rate limiting, account lockout, MFA, SSO, audit
   logging of failed attempts, or password policy beyond a 12–200 char length
   check.
@@ -32,7 +31,7 @@ for the proper auth surface.
 
 - Java 21 (Eclipse Temurin recommended)
 - Docker Engine 24+ and Docker Compose v2
-- Gradle wrapper included (`backend/gradlew`) — no global Gradle install needed
+- Gradle wrapper included (`backend/gradlew`)—no global Gradle install needed
 
 ### Setup
 
@@ -45,7 +44,7 @@ make rapid                         # Format + compile (~1s with warm daemon)
 make dev                           # Spring Boot dev server on :8000
 ```
 
-Flyway migrations run automatically on application startup — there is no separate migration step.
+Flyway migrations run automatically on application startup—there is no separate migration step.
 
 ### Docker Compose Services
 
@@ -84,7 +83,7 @@ All settings use the `GC_` prefix. See `.env.example`.
 | `GROUNDCONTROL_SECURITY_CREDENTIALS_<N>_PRINCIPAL_NAME` | _(unset)_ | Principal name written to audit fields when this token authenticates. |
 | `GROUNDCONTROL_SECURITY_CREDENTIALS_<N>_TOKEN` | _(unset)_ | Bearer token presented as `Authorization: Bearer <token>`. |
 | `GROUNDCONTROL_SECURITY_CREDENTIALS_<N>_ROLE` | _(unset)_ | `USER` or `ADMIN`. Admin roles are required for `/api/v1/admin/**`, `/api/v1/embeddings/**`, `/api/v1/analysis/sweep/**`, `/api/v1/pack-registry/**`. |
-| `GROUNDCONTROL_SECURITY_IP_ALLOWLIST_<N>` | _(unset)_ | Optional CIDR. Empty list = no IP gating. `X-Forwarded-For` is NOT honored — proxies must terminate the IP gate or set the source IP via `RemoteIpFilter`. |
+| `GROUNDCONTROL_SECURITY_IP_ALLOWLIST_<N>` | _(unset)_ | Optional CIDR. Empty list = no IP gating. `X-Forwarded-For` is NOT honored—proxies must terminate the IP gate or set the source IP via `RemoteIpFilter`. |
 
 ### Authentication & Network Access (ADR-026)
 
@@ -145,15 +144,14 @@ review, not an `.env` flag.
 CSRF protection is on for the browser chain (Spring's
 `CookieCsrfTokenRepository` with `HttpOnly=false`, so the SPA's
 `fetch` wrapper can read the `XSRF-TOKEN` cookie and echo it via the
-`X-XSRF-TOKEN` header). The bearer chain remains CSRF-disabled —
-agents do not need to send a CSRF token.
+`X-XSRF-TOKEN` header). The bearer chain remains CSRF-disabled—agents do not need to send a CSRF token.
 
 #### First-admin bootstrap
 
 A fresh install has zero users in the JDBC store, so the first admin
 must be created out-of-band. Run the bootstrap on the deployment host:
 
-**Preferred — mode-600 password file** (works headless, no secret in any
+**Preferred—mode-600 password file** (works headless, no secret in any
 command line):
 
 ```bash
@@ -167,7 +165,7 @@ The runner refuses any file that is group/others-readable OR
 group/others-writable on a POSIX filesystem, so the `chmod 600` (via
 `install -m 600`) is mandatory, not advisory.
 
-**TTY prompt** (interactive operator at a console — the password is
+**TTY prompt** (interactive operator at a console—the password is
 read with echo off and never lands on a command line):
 
 ```bash
@@ -178,11 +176,11 @@ read with echo off and never lands on a command line):
 **Env-var path** is only safe when the value is supplied out-of-band by
 a secret manager (systemd `LoadCredential=`, AWS / GCP Secret Manager,
 HashiCorp Vault agent, Kubernetes mounted secret env). **Do not** put
-the value inline on the command line — that leaks through shell
+the value inline on the command line—that leaks through shell
 history, terminal recorders, and CI logs the same way `--password=...`
 would. For ad-hoc operator runs prefer the file or TTY paths above.
 
-The runner is idempotent — running it a second time with the same
+The runner is idempotent—running it a second time with the same
 username logs a "user already present" message and exits 0.
 
 > **Do not** pass the password via `--password=...` argv. The bootstrap
@@ -192,7 +190,7 @@ username logs a "user already present" message and exits 0.
 
 Subsequent admins are created via the session/CSRF curl flow below.
 Ground Control's SPA shell does not include a user-management page in
-this iteration — the REST endpoints under `/api/v1/admin/users` are the
+this iteration—the REST endpoints under `/api/v1/admin/users` are the
 single supported surface. The bearer chain refuses non-`Bearer`
 schemes, so HTTP Basic against `/api/v1/**` is not an option; a
 session login is required.
@@ -240,7 +238,7 @@ string `@/path` as the password. The same flow drives the MCP
 delete_user); MCP intentionally does not accept passwords as tool
 arguments, so user creation always goes through this curl path.
 
-The last enabled admin cannot be demoted, disabled, or deleted — the
+The last enabled admin cannot be demoted, disabled, or deleted—the
 service returns `409 last_admin` and the operation is refused. Provision
 a second admin before retiring the first.
 
@@ -281,7 +279,7 @@ byte-for-byte. Operator-local secret material remains only in `/opt/gc/.env`.
 
 The production compose file publishes the backend on `${GC_BIND_IP:-0.0.0.0}:8000:8000`.
 On red-dragon, set `GC_BIND_IP=100.98.28.66` (the host's tailnet IP) in
-`/opt/gc/.env` so docker-proxy listens only on the tailnet interface — public
+`/opt/gc/.env` so docker-proxy listens only on the tailnet interface—public
 IPv4 / IPv6 attempts to reach the API never even establish a TCP connection
 to the proxy. Defense in depth on top of ADR-026 bearer auth: even if the
 backend has a future auth bypass, an attacker would need a tailnet identity
@@ -299,14 +297,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now gc-firewall.service
 ```
 
-Verify with `sudo iptables -L INPUT -n -v | head` — rule 1 should be
+Verify with `sudo iptables -L INPUT -n -v | head`—rule 1 should be
 `DROP -i enp8s0 tcp dport 8000`. The unit reads the public interface name
 from the rule itself (`enp8s0` matches red-dragon); change the unit if your
 deployment uses a different public NIC. Tailnet traffic enters via
 `tailscale0` (or via `lo` when the host talks to itself by its tailnet IP)
 and is unaffected.
 
-Both layers are idempotent and stateless — re-running `up -d` or
+Both layers are idempotent and stateless—re-running `up -d` or
 `systemctl restart gc-firewall` is safe.
 
 ### Migrating an existing deployment to ADR-026 auth
@@ -326,17 +324,16 @@ within seconds. Order matters; do not skip ahead.
      `tools/ground_control/sync_policy.mjs`,
      `tools/packs/sync_packs.mjs`).
    - Long-running agent processes that inherited `GC_BASE_URL` from the
-     operator's shell (each one needs a token of its own logical class —
-     consumer-classes share a single token, individual processes do not
+     operator's shell (each one needs a token of its own logical class—consumer-classes share a single token, individual processes do not
      each need a unique one).
    - Ad-hoc `curl`, `gh api`, or scripted callers.
    Every entry on the list needs a token before step 6 happens.
 
-2. **Provision tokens — one principal per logical consumer-class.** Generate
-   long random tokens (e.g. `openssl rand -hex 32`). Typical layout:
-   - slot 0: `ground-control-mcp` / `USER` — every MCP / agent caller.
-   - slot 1: `operator-admin` / `ADMIN` — the human operator's CLI.
-   - slot 2: `automation` / `ADMIN` — CI live-policy + pack-sync jobs.
+2. **Provision tokens—one principal per logical consumer-class.** Generate
+   long random tokens (for example `openssl rand -hex 32`). Typical layout:
+   - slot 0: `ground-control-mcp` / `USER`—every MCP / agent caller.
+   - slot 1: `operator-admin` / `ADMIN`—the human operator's CLI.
+   - slot 2: `automation` / `ADMIN`—CI live-policy + pack-sync jobs.
    Reserve slots 3-4 for unforeseen consumers without re-editing the compose
    file. Tokens NEVER land in git or transcripts.
 
@@ -358,17 +355,17 @@ within seconds. Order matters; do not skip ahead.
    work for pack-sync since `mcp/ground-control/lib.js` maps it onto the
    unified ADR-026 bearer scheme.
 
-4. **Verify each consumer is actually sending its bearer token — not just
+4. **Verify each consumer is actually sending its bearer token—not just
    that it can reach the API.** A `200` against the pre-ADR-026 production
    image only proves reachability; a consumer with no `Authorization` header
    at all also returns `200` there, then immediately `401` after cutover.
    The root `docker-compose.yml` uses `SPRING_PROFILES_ACTIVE=dev`, which
-   sets `groundcontrol.security.enabled=false` — running consumers against
+   sets `groundcontrol.security.enabled=false`—running consumers against
    that local stack would also produce a false green for the same reason.
    Use one of these dry-runs instead:
    - **Security-enabled local instance using the candidate ADR-026 image.**
      The dry-run MUST use the candidate image (the one targeted by the
-     cutover) — running the pre-ADR image locally reproduces the
+     cutover)—running the pre-ADR image locally reproduces the
      reachability-only false green this step is designed to prevent.
 
      **Resolving the candidate image.** `:latest` only updates on push to
@@ -389,7 +386,7 @@ within seconds. Order matters; do not skip ahead.
      `db` service bind-mounts `/data/postgres/`. To keep prod's schema
      untouched, run the dry-run with a separate compose project name and
      swap the bind-mount for an isolated Docker named volume. Use a
-     non-default port (e.g. `18000:8000`) so it does not collide with the
+     non-default port (for example `18000:8000`) so it does not collide with the
      running production backend on `:8000`. Tear down with `down -v` to
      destroy the throwaway DB volume when finished.
      ```bash
@@ -433,24 +430,24 @@ within seconds. Order matters; do not skip ahead.
        --env-file "${dryrun_env}" logs --tail=200 backend | \
        grep '"actor_id"'
      ```
-   Do NOT capture wire-level traces (e.g. `curl --trace-ascii`,
+   Do NOT capture wire-level traces (for example `curl --trace-ascii`,
    `tcpdump`, agent debug stdout) for this verification: those formats
    embed the literal `Authorization: Bearer <token>` header, and any
-   resulting file or transcript becomes a credential leak — anyone who
+   resulting file or transcript becomes a credential leak—anyone who
    can read the saved capture can replay the token. Status-code +
    server-side principal-name verification covers the same property
    without that exposure.
 
    A consumer that gets `200` against the pre-ADR-026 production but fails
    the candidate-image dry-run is exactly the regression this step
-   prevents — its bearer header is missing or wrong, and it will 401 the
+   prevents—its bearer header is missing or wrong, and it will 401 the
    moment the new image starts.
 
    **Important precedence note:** `SPRING_APPLICATION_JSON` is also
    forwarded to the container (legacy support for the pack-registry
    bootstrap path in `deploy/scripts/enable_pack_registry_auth.sh`). When
    it carries a `groundcontrol.security.credentials` block, Spring
-   *replaces* the indexed env-var list rather than merging — the new env
+   *replaces* the indexed env-var list rather than merging—the new env
    vars are silently ignored. Before the cutover, confirm
    `SPRING_APPLICATION_JSON` either does NOT include
    `groundcontrol.security.credentials` at all, or contains the same
@@ -459,7 +456,7 @@ within seconds. Order matters; do not skip ahead.
    under indexed env vars but fails inside the dry-run container is
    most likely losing to a stale `SPRING_APPLICATION_JSON` block.
 
-5. **`pg_dump -Fc` snapshot.** Defensive — the new image carries V055-V058
+5. **`pg_dump -Fc` snapshot.** Defensive—the new image carries V055-V058
    forward-only migrations:
    ```bash
    ssh red-dragon /opt/gc/backup.sh
@@ -472,7 +469,7 @@ within seconds. Order matters; do not skip ahead.
    digest.** Use the indexed `GROUNDCONTROL_SECURITY_CREDENTIALS_*` shape
    (matches the env-var table above and `deploy/docker/.env.template`).
    The same digest you dry-ran against in step 4 belongs in `GC_IMAGE`
-   here — pinning by digest (`ghcr.io/keplerops/ground-control@sha256:...`)
+   here—pinning by digest (`ghcr.io/keplerops/ground-control@sha256:...`)
    guarantees the cutover rolls the image you tested, not whatever has
    moved under `:dev` since. After editing, `chmod 600`.
 
@@ -510,22 +507,22 @@ within seconds. Order matters; do not skip ahead.
    ```
 
 10. **Re-verify every consumer from step 1 returns `200` (or its expected
-    status, e.g. `404` for a not-found lookup) — never `401`.** Hit the
+    status, for example `404` for a not-found lookup)—never `401`.** Hit the
     threat-model MCP path explicitly (`gc_list_threat_models`,
     `gc_create_threat_model`, `gc_get_threat_model`) since that is the
     surface this whole migration was meant to enable. A `401` from any
     consumer at this point means the token was not delivered (back to
-    step 3) — do NOT roll back the image; rollback is reserved for
+    step 3)—do NOT roll back the image; rollback is reserved for
     actual schema/data damage.
 
 If any step fails, stop and surface the failure to the operator before
-continuing — every later step assumes the earlier one succeeded.
+continuing—every later step assumes the earlier one succeeded.
 
 ### Makefile Targets
 
 | Target | Description |
 |--------|-------------|
-| `make rapid` | Format + compile, no tests or static analysis (~1s warm) |
+| `make rapid` | Format + compile, no tests or static analysis (~1 second warm) |
 | `make build` | Build the project (no tests) |
 | `make test` | Run unit tests (no static analysis) |
 | `make test-cov` | Run tests with JaCoCo coverage report |
@@ -567,7 +564,7 @@ docker run --rm -p 8000:8000 \
   ghcr.io/keplerops/ground-control:latest
 ```
 
-Flyway migrations run automatically on startup — no separate migration step needed.
+Flyway migrations run automatically on startup—no separate migration step needed.
 
 #### Smoke test
 
@@ -601,7 +598,7 @@ Ground Control runs on `red-dragon` (Hetzner dedicated, AMD Ryzen 7 3700X / 128 
 ### Architecture
 
 - **Host**: `red-dragon` (single tailnet-resident host, Ubuntu, Docker Engine 29.x, Compose v5.x).
-- **Access**: Tailscale only. sshd binds to `100.98.28.66:22` (the tailnet IP) — no public ingress. Application reachable on tailnet at `http://red-dragon:8000`.
+- **Access**: Tailscale only. sshd binds to `100.98.28.66:22` (the tailnet IP)—no public ingress. Application reachable on tailnet at `http://red-dragon:8000`.
 - **Storage**: `/data/postgres` (bind-mounted into the db container) and `/data/backups` (pg_dump artifacts). Both on red-dragon's main NVMe.
 - **Image registry**: GHCR (`ghcr.io/keplerops/ground-control`). Pulled by `docker compose pull` on each deploy.
 - **Backups**: 3×/day `pg_dump` cron to `/data/backups/`, 30-day local retention. Off-box copy via rsync over the tailnet to `aurora`. Policy is GC-P021 / [ADR-025](../../architecture/adrs/025-backup-policy.md).
@@ -629,12 +626,12 @@ Every push to `main` that passes CI + smoke triggers the `deploy` job in `.githu
 command="/opt/gc/deploy.sh",restrict <ed25519-pubkey>
 ```
 
-`restrict` disables PTY, port forwarding, X11, agent forwarding, user-rc — the deploy key cannot do anything except run the deploy script. SSH exit code is the deploy script's exit code.
+`restrict` disables PTY, port forwarding, X11, agent forwarding, user-rc—the deploy key cannot do anything except run the deploy script. SSH exit code is the deploy script's exit code.
 
 The two GitHub repo secrets that drive this:
 
-- `RED_DRAGON_DEPLOY_KEY` — the ed25519 private key for `gc-deploy`.
-- `RED_DRAGON_KNOWN_HOSTS` — host-key fingerprints for `red-dragon` (`StrictHostKeyChecking=yes`).
+- `RED_DRAGON_DEPLOY_KEY`—the ed25519 private key for `gc-deploy`.
+- `RED_DRAGON_KNOWN_HOSTS`—host-key fingerprints for `red-dragon` (`StrictHostKeyChecking=yes`).
 
 The `tag:fabricator-runner` → `tag:gc-host:tcp:22` tailnet ACL constrains the runner's reach to the deploy port. No other tailnet device is reachable from a runner.
 
@@ -665,7 +662,7 @@ docker cp /data/backups/gc-cutover.dump gc-db-1:/tmp/cutover.dump
 docker exec gc-db-1 pg_restore -U gc -d ground_control --clean --if-exists --no-owner --no-acl -j 4 /tmp/cutover.dump
 ```
 
-Apache AGE extension state (`ag_graph`, `ag_label`) emits ignorable duplicate-key errors during restore — those tables are pre-populated by the AGE extension at db init. Application data restores cleanly.
+Apache AGE extension state (`ag_graph`, `ag_label`) emits ignorable duplicate-key errors during restore—those tables are pre-populated by the AGE extension at db init. Application data restores cleanly.
 
 ### Backup and Recovery
 
@@ -690,9 +687,9 @@ ssh red-dragon /opt/gc/test-restore.sh            # verify newest dump against a
 
 ### Monitoring
 
-- **Container health** — `docker compose ps` on `/opt/gc/` shows `(healthy)` for both `db` (`pg_isready`) and `backend` (`/actuator/health`).
-- **Logs** — `docker compose logs backend` / `db`. Compose's default log driver retains in-memory; for persistence, the host's journald captures the docker daemon output.
-- **Restart policy** — `restart: unless-stopped` on both services covers the container-crash case. There is no separate watchdog cron; the legacy ADR-018 watchdog was AWS-specific and has not been ported. If health degrades without the container exiting, the next deploy's health gate or operator inspection will catch it.
+- **Container health**: `docker compose ps` on `/opt/gc/` shows `(healthy)` for both `db` (`pg_isready`) and `backend` (`/actuator/health`).
+- **Logs**: `docker compose logs backend` / `db`. Compose's default log driver retains in-memory; for persistence, the host's journald captures the docker daemon output.
+- **Restart policy**: `restart: unless-stopped` on both services covers the container-crash case. There is no separate watchdog cron; the legacy ADR-018 watchdog was AWS-specific and has not been ported. If health degrades without the container exiting, the next deploy's health gate or operator inspection will catch it.
 
 ### Initial host setup (one-time, historical)
 
