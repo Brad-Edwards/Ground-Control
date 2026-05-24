@@ -1,12 +1,8 @@
-import {
-  FormField,
-  inputClass,
-  primaryButton,
-} from "@/components/ui/form-field";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 
 const CSRF_COOKIE = "XSRF-TOKEN";
 const CSRF_HEADER = "X-XSRF-TOKEN";
+const LOGIN_PATH = "/login";
 
 type Redirector = (url: string) => void;
 
@@ -28,9 +24,43 @@ function readCookie(name: string): string | undefined {
   return undefined;
 }
 
+interface FieldProps {
+  label: string;
+  children: ReactNode;
+}
+
+function Field({ label, children }: FieldProps) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const inputClass =
+  "w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 focus:ring-offset-background";
+
+const submitButtonClass =
+  "w-full inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 focus:ring-offset-background disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90";
+
 interface LoginProps {
   /** Test-only: replace the redirect function so tests can spy on navigations. */
   setRedirectorForTests?: Redirector;
+}
+
+// Spring's `formLogin().failureUrl(/login?error)` returns the user to /login with
+// an `error` query param. `response.url` after fetch with `redirect: "follow"`
+// reflects the final URL the browser landed on. Parse rather than string-match —
+// a successful login may legitimately redirect to a saved request whose own URL
+// happens to contain "error" in its query.
+function isFailureRedirect(finalUrl: string): boolean {
+  try {
+    const parsed = new URL(finalUrl);
+    return parsed.pathname === LOGIN_PATH && parsed.searchParams.has("error");
+  } catch {
+    return false;
+  }
 }
 
 export function Login({ setRedirectorForTests }: LoginProps) {
@@ -56,7 +86,6 @@ export function Login({ setRedirectorForTests }: LoginProps) {
       .value;
 
     const csrfToken = readCookie(CSRF_COOKIE);
-
     const headers: Record<string, string> = {
       "Content-Type": "application/x-www-form-urlencoded",
     };
@@ -66,7 +95,7 @@ export function Login({ setRedirectorForTests }: LoginProps) {
 
     try {
       const body = new URLSearchParams({ username, password });
-      const response = await fetch("/login", {
+      const response = await fetch(LOGIN_PATH, {
         method: "POST",
         headers,
         body: body.toString(),
@@ -74,11 +103,10 @@ export function Login({ setRedirectorForTests }: LoginProps) {
         redirect: "follow",
       });
 
-      if (response.ok && !response.url.endsWith("?error")) {
+      if (response.ok && !isFailureRedirect(response.url)) {
         redirector(response.url);
         return;
       }
-
       setHasError(true);
     } catch {
       setHasError(true);
@@ -102,7 +130,7 @@ export function Login({ setRedirectorForTests }: LoginProps) {
           </div>
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <FormField label="Username">
+          <Field label="Username">
             <input
               id="username"
               name="username"
@@ -111,8 +139,8 @@ export function Login({ setRedirectorForTests }: LoginProps) {
               required
               className={inputClass}
             />
-          </FormField>
-          <FormField label="Password">
+          </Field>
+          <Field label="Password">
             <input
               id="password"
               name="password"
@@ -121,11 +149,11 @@ export function Login({ setRedirectorForTests }: LoginProps) {
               required
               className={inputClass}
             />
-          </FormField>
+          </Field>
           <button
             type="submit"
             disabled={submitting}
-            className={`w-full ${primaryButton}`}
+            className={submitButtonClass}
           >
             {submitting ? "Signing in…" : "Sign in"}
           </button>
