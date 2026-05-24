@@ -54,12 +54,24 @@ third value permits a rationale string (1-2000 characters); the other two
 reject it (strict). When `outcome_required` is true and the field is absent,
 the renderer rejects the input rather than posting an incomplete record.
 
-**Layer 3—Vale prose linter wired into `make policy`.**
+**Layer 3—Vale prose linter wired into `make policy`, CI, and pre-commit.**
 Vale with the `errata-ai/Google` package enforces the Google Developer
 Documentation Style Guide on docs modified in the current diff. The binary is
 pinned to a specific version, verified by SHA-256 checksum, and installed by
-`tools/install-vale.sh` to `.tools/vale/` (gitignored). Only diff-modified docs
-are linted, not the whole tree, to enable organic migration of existing content.
+`tools/install-vale.sh` to `.tools/vale/` (gitignored). The pre-commit hook
+installs Vale automatically on first need rather than skipping; agents and
+contributors do not bypass the gate by virtue of a fresh clone.
+
+**Scope: whole file on first touch.** Vale lints any `.md` / `.markdown` file
+that appears in the current diff (added, copied, modified, or renamed vs the
+base ref) in its entirety, not line-by-line. A one-line edit to a previously
+untouched document brings the whole file into scope; all of its style
+violations must be fixed in that PR. Untouched docs are not linted. This
+"ratchet on touch" produces a finite migration trajectory: each touched file
+becomes permanently compliant, and the codebase converges as docs are edited
+in the normal course of work. Line-range / hunk-aware linting, for example
+via reviewdog, was considered and rejected; it permits prose rot to persist in
+touched files indefinitely.
 
 The canonical documentation style is: Google Developer Documentation Style
 Guide for voice, tense, and concision; Diátaxis (`tutorial / how-to / reference
@@ -96,6 +108,14 @@ input `{ repo_path, changed_paths[] }`, output
 - **Lint the whole doc tree on every run**: rejected. Bulk rewrites risk losing
   intent in existing prose. Diff-scoped linting achieves organic migration
   without the risk.
+- **Hunk-aware linting (reviewdog or line-range Vale)**: rejected. Reduces the
+  migration cost of touching old docs but lets pre-existing prose rot stay
+  in touched files forever, defeating the ratchet. Whole-file-on-touch is the
+  deliberate cost.
+- **Graceful skip when Vale is not installed locally**: rejected. Lets agents
+  and contributors commit unlinted prose on fresh clones, which is the
+  failure mode the gate exists to prevent. The pre-commit hook installs Vale
+  via `tools/install-vale.sh` on first need.
 
 ## References
 

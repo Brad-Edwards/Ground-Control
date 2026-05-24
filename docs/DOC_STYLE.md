@@ -28,10 +28,23 @@ Strip:
 ## Enforcement
 
 Vale with the `errata-ai/Google` package runs on docs touched in the current
-diff via `make policy`. Install the Vale binary with `make vale-install`.
+diff via `make policy`, the CI `policy` job, and the pre-commit `vale-prose-lint`
+hook. The hook installs Vale via `tools/install-vale.sh` on first need; no
+manual `make vale-install` step is required.
 
-New content must pass Vale before the completion gate (Step 6) clears.
-Existing docs migrate organically when touched; no bulk rewrite is required.
+## Scope: whole file on first touch
+
+When a `.md` / `.markdown` file appears in the current diff (added, copied,
+modified, or renamed vs the base ref), Vale lints it in its entirety—not just
+the changed lines. A one-line edit to a previously untouched document brings
+the whole file into scope; all of its style violations must be fixed in that
+PR. Untouched docs are not linted.
+
+The model is "ratchet on touch": each touched file becomes permanently
+compliant, and the codebase converges as docs are edited in the normal course
+of work. There is no line-range or hunk-aware mode, and there is no carve-out
+for "I only changed one paragraph"; if you touch a doc, you own its full
+style compliance. See ADR-054 for the rationale behind this trade-off.
 
 ## Temporal context
 
