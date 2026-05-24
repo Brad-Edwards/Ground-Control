@@ -46,6 +46,13 @@ jobs:
       - name: Repo policy checks (push)
         if: github.event_name != 'pull_request'
         run: python3 bin/policy --skip-pr-body
+      # Vale prose linting (ADR-054). Lints only docs touched in this PR's diff
+      # — untouched docs migrate organically per #896. Skipped on push events
+      # because there's no base ref to diff against; the on-PR pass is the
+      # authoritative gate (a doc only reaches main via a PR).
+      - name: Vale prose lint (changed docs)
+        if: github.event_name == 'pull_request'
+        run: make vale-lint BASE_REF=origin/${{ github.base_ref }}
 
   policy-live:
     # Deliberate exception to the github-hosted default. `vars.GC_BASE_URL`
