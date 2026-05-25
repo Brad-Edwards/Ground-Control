@@ -27,13 +27,13 @@ repos:
         name: bash -n (deploy + ops scripts)
         entry: bash -c 'for f in "$@"; do bash -n "$f" || exit 1; done' --
         language: system
-        files: ^(deploy/scripts/.*\.sh|scripts/(assert-backup-policy|test-backup-restore-locally)\.sh)$
+        files: ^(deploy/scripts/.*\.sh|scripts/(assert-backup-policy|deploy)\.sh)$
 
       - id: assert-backup-policy
         name: assert GC-P021 backup policy defaults
         entry: scripts/assert-backup-policy.sh
         language: system
-        files: ^(\.github/workflows/ci\.yml|deploy/terraform/modules/(backup|compute)/|deploy/terraform/environments/dev/(variables\.tf|terraform\.tfvars\.example)|deploy/scripts/(backup|test-restore|install-ops-scripts)\.sh|scripts/assert-backup-policy\.sh)
+        files: ^(deploy/scripts/(backup|install-gc-backup|aurora-setup-gc-backup)\.sh|deploy/systemd/gc-backup\.(service|timer)|scripts/assert-backup-policy\.sh)$
         pass_filenames: false
 
   # Java formatting (Spotless via Gradle — auto-fix mode)
@@ -46,27 +46,9 @@ repos:
         files: ^backend/.*\.java$
         pass_filenames: false
 
-  # Terraform formatting and validation
-  - repo: https://github.com/antonbabenko/pre-commit-terraform
-    rev: v1.105.0
-    hooks:
-      - id: terraform_fmt
-        files: ^deploy/terraform/
-      - id: terraform_validate
-        files: ^deploy/terraform/
-
   # =============================================================================
   # STAGE 2: Security
   # =============================================================================
-
-  # IaC security (Terraform)
-  - repo: https://github.com/bridgecrewio/checkov
-    rev: 3.2.508
-    hooks:
-      - id: checkov
-        files: ^deploy/terraform/
-        args:
-          [--quiet, --compact, --directory, deploy/terraform/, --soft-fail]
 
   # Secrets detection
   - repo: https://github.com/gitleaks/gitleaks

@@ -1,0 +1,16 @@
+[Unit]
+Description=Ground Control DB backup timer (GC-P021: ≥ 3×/day)
+Documentation=https://github.com/Brad-Edwards/Ground-Control/blob/main/docs/operations/backup-restore.md
+
+[Timer]
+# 03:00, 11:00, 19:00 UTC — the GC-P021 ≥ 3×/day cadence. Persistent=true
+# fires a catch-up run if the system was off when a slot elapsed.
+# RandomizedDelaySec smooths the load across a small window so multiple
+# tailnet hosts running on the same schedule don't all hit aurora at the
+# same instant.
+OnCalendar=*-*-* 03,11,19:00:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
