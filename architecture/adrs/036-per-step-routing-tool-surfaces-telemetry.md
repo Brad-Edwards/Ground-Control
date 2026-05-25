@@ -11,7 +11,7 @@ Accepted
 ## Context
 
 ADR-021 ("Gated Agentic Development Loop") and ADR-029 ("Issue-Thread Gate Model")
-codify GC-O007 — the four-phase `/implement` workflow with one human touchpoint
+codify GC-O007—the four-phase `/implement` workflow with one human touchpoint
 (PR merge), one Codex review pass (pre-push, hard-capped at three cycles), and
 the GitHub issue thread as the durable record. The workflow contract is sound;
 the cost profile of running it is not.
@@ -21,7 +21,7 @@ surface and identified three structural changes that reduce cost without
 weakening any gate:
 
 1. **Per-step model routing.** Today every step in a `/implement` run executes
-   on the parent session's model — typically Opus-class. Most steps don't need
+   on the parent session's model—typically Opus-class. Most steps don't need
    Opus-class reasoning: polling CI, parsing preflight output, drafting
    structured comments, and applying a fix that codex already designed are
    firmly in haiku/sonnet-tier territory. Without explicit routing, the entire
@@ -67,7 +67,7 @@ The `/implement` SKILL declares a stable **workflow step id** plus a
 Drivers map tier to a concrete model. Claude Code drivers spawn an `Agent`
 subagent with the corresponding model for routed steps. Codex drivers have no
 equivalent surface today; they ignore the tier annotation and run all steps
-on the session model. The architecture is forward-compatible — a future
+on the session model. The architecture is forward-compatible—a future
 Codex-side router consumes the same step-id+tier contract without further ADR
 work.
 
@@ -89,17 +89,17 @@ bounded; otherwise the parent absorbs them.
 
 Three new MCP tools replace agent-authored long-form comments:
 
-- **`gc_post_decision_record(issue_number, cycle, reviewer, findings[])`** —
+- **`gc_post_decision_record(issue_number, cycle, reviewer, findings[])`:**
   renders the canonical Step 6.5 decision-record Markdown from structured
   input, filters secrets via `detectSensitiveBodyContent`, posts to the
   issue thread with a `gc:decision-record` marker, returns `{ ok, comment_url,
   comment_id, finding_count }`. Rejects `decision: "defer"` server-side
   (defense in depth on top of the `block-defer-language.py` PreToolUse hook).
-- **`gc_post_final_report(issue_number, pr_number, ...)`** — same pattern for
+- **`gc_post_final_report(issue_number, pr_number, ...)`**—same pattern for
   Step 19. Structured input (in-scope requirements, files by change kind,
   reviews per reviewer, traceability reconciliation, CI/SonarCloud status) →
   canonical Markdown → issue thread → `gc:final-report` marker.
-- **`gc_render_pr_body(issue_number, change_class, ...)`** — renders a PR
+- **`gc_render_pr_body(issue_number, change_class, ...)`**—renders a PR
   body that satisfies `check_pr_body`'s policy gates (template sections,
   requirement UIDs, ADR impact, three Ground Control Checks, IMPLEMENTS/TESTS
   markers, no defer language). Returns the body string for the caller to
@@ -118,13 +118,13 @@ path; no new GitHub client, no new marker family beyond the two listed above.
 The SKILL stops `gh issue comment`-ing decision records and final reports
 once these tools land. Step 9 calls `gc_render_pr_body` and uses the returned
 body; **per issue #901, Step 9 also validates the PR *title* locally against
-two stable conventional-commit rules before `gh pr create` — single
+two stable conventional-commit rules before `gh pr create`: single
 `<type>(<optional-scope>): <subject>` (no compound `security/docs:` prefixes)
 and a lowercase-leading subject (`^[a-z].*$`, uppercase acronyms reshaped).
 The body renderer and the title validator are independent concerns living in
-the same Step 9 — the renderer is an MCP tool, the title rule is a local
+the same Step 9; the renderer is an MCP tool, the title rule is a local
 predicate the agent re-applies on every reshape.** Step 6.5 calls `gc_post_decision_record` for every cycle; **Step 6.6
-calls `gc_test_quality_review`** (per #884 v2 — the prior `Skill("review-tests")`
+calls `gc_test_quality_review`** (per #884 v2; the prior `Skill("review-tests")`
 boundary returned prose findings that the autoregressive parent agent
 kept echoing back to the user instead of fixing in-turn, defeating the
 SKILL.md prose rule; the MCP tool returns a structured envelope with
@@ -133,7 +133,7 @@ call pre-push (former Step 13 → new Step 6.6) so the PR opens with both
 AI-assisted reviewers clean; the same #906 amendment dropped the default
 pre-push cap for both reviewers from 3 to 1, configurable per repo via
 `workflow.codex_review.pre_push_cap` and `workflow.test_quality_review.pre_push_cap`.
-The MCP tool itself is unchanged — only its workflow placement and default
+The MCP tool itself is unchanged; only its workflow placement and default
 cap value shifted. After Step 6.6's
 cycle the parent calls `gc_post_decision_record` with the
 `fix`/`wontfix`/`not-applicable` dispositions (cycle counter, durable
@@ -147,7 +147,7 @@ cycle markers, failure modes). Step 19 calls `gc_post_final_report`.
 
 ### Telemetry contract
 
-Operational measurement only — **not** workflow state, not a cycle counter,
+Operational measurement only—**not** workflow state, not a cycle counter,
 not compliance evidence. The issue thread and Ground Control traceability
 remain the audit record.
 
@@ -171,7 +171,7 @@ Each routed step writes one JSONL line via `gc_log_step_telemetry` to
 ```
 
 - `wall_time_ms` is mandatory; the agent measures around its delegation calls.
-- `input_tokens` and `output_tokens` are optional — Claude Code's `Agent` tool
+- `input_tokens` and `output_tokens` are optional—Claude Code's `Agent` tool
   does not surface per-call counts today, so the writer accepts `null`. When
   token counts are absent, the summarizer reports wall time and the per-step /
   per-model call counts; dollar-cost translation is **not** in v1's scope and
@@ -273,31 +273,31 @@ list so future SKILL changes must keep it in sync.
 
 ## Implementation references
 
-- `architecture/notes/implement-cost-routing-tool-surfaces-preflight.md` — preflight
+- `architecture/notes/implement-cost-routing-tool-surfaces-preflight.md`—preflight
   design context for this ADR.
-- `mcp/ground-control/lib.js` and `mcp/ground-control/index.js` — the four
+- `mcp/ground-control/lib.js` and `mcp/ground-control/index.js`—the four
   new tool implementations and registrations.
-- `mcp/ground-control/lib.test.js` — renderer / validator / containment tests.
-- `skills/implement/SKILL.md` — the routing matrix and Step 6.5 / 9 / 19
+- `mcp/ground-control/lib.test.js`—renderer / validator / containment tests.
+- `skills/implement/SKILL.md`—the routing matrix and Step 6.5 / 9 / 19
   wiring.
-- `docs/WORKFLOW.md` and `docs/DEVELOPMENT_WORKFLOW.md` — the workflow-side
+- `docs/WORKFLOW.md` and `docs/DEVELOPMENT_WORKFLOW.md`—the workflow-side
   documentation of the routing seam, tool boundary, and telemetry contract.
-- `tools/policy/checks.py` and `tools/tests/test_policy.py` — the
+- `tools/policy/checks.py` and `tools/tests/test_policy.py`—the
   renderer-vs-policy compose test and the workflow-guardrail-sync rule that
   pins this ADR to future SKILL edits.
-- `Makefile`, `tools/summarize_implement_telemetry.py` — the summarizer
+- `Makefile`, `tools/summarize_implement_telemetry.py`—the summarizer
   target.
-- `.ground-control.yaml` (this repo) — opts in to `routing.enabled: true`
+- `.ground-control.yaml` (this repo)—opts in to `routing.enabled: true`
   and `telemetry.enabled: true` so the change is dogfooded.
-- `changelog.d/868.changed.md` — release note fragment.
+- `changelog.d/868.changed.md`—release note fragment.
 
 ## Amendments
 
 **2026-05-19 (issue #931).** No change to the routing stage names, tier
 semantics, or telemetry record shape. The downstream deterministic tools
 (`gc_post_decision_record`, `gc_post_final_report`, `gc_render_pr_body`) gain
-optional verdict-envelope fields on `gc_post_decision_record` — `verdict`,
-`architectural_read`, `notes[]` — alongside the existing `findings[]` input.
+optional verdict-envelope fields on `gc_post_decision_record`: `verdict`,
+`architectural_read`, `notes[]`—alongside the existing `findings[]` input.
 The renderer contract (canonical Markdown, sensitive-content scrub,
 reserved-marker rejection, marker family `gc:decision-record`, defer
 rejection) is unchanged. See ADR-029 (amendments) for the envelope shape and
@@ -305,7 +305,7 @@ issue #931 for the principal-engineer recalibration motivation.
 
 **2026-05-19 (issue #934).** Extends the routing design from "cheap workers
 for cheap steps" toward "subagents as context boundaries plus MCP tools as
-loop drivers". No change to the routing stage names, the tier-to-model
+loop drivers." No change to the routing stage names, the tier-to-model
 mapping, the telemetry record shape, or the GC-O007 gate contract. What
 changes is the **packaging of the workflow prose** and the **boundary at
 which loops execute**.
@@ -318,7 +318,7 @@ which loops execute**.
    `skills/implement/steps/_review-loop-rules.md`; Steps 6.5 and 6.6
    reference it by path (the duplicated prose at the bottom of the old
    SKILL.md and across the two step bodies is removed). Per-step files are
-   workflow prose packaging only — the executable schema remains
+   workflow prose packaging only—the executable schema remains
    `.ground-control.yaml` + `gc_get_repo_ground_control_context`; stage
    ids are unchanged.
 
@@ -326,46 +326,46 @@ which loops execute**.
    to `agent: subagent`, the parent spawns a subagent whose prompt is
    verbatim "Execute `skills/implement/steps/step-NN-<id>.md` against issue
    N; return `{status, cached_for_next_step}`". The parent never loads the
-   step file. The subagent's return envelope is structured — never raw
+   step file. The subagent's return envelope is structured—never raw
    `gh`/`git` output, never full file contents, never verbatim review
    prose. The savings target is the parent-orchestrator context, which
    used to carry the full SKILL prose for the entire 1–2 hour run.
 
 3. **MCP tools drive loops, not the agent.** Four new tools land:
 
-   - `gc_codex_review_cycle` — wraps the existing `gc_codex_review` AND
+   - `gc_codex_review_cycle`—wraps the existing `gc_codex_review` AND
      auto-posts the per-cycle decision record. Returns a compact terminal
      envelope: `{ok, reviewer, cycle, cap, status, next_action,
      findings_summary, findings_record_url, decision_record_url}`.
      Verbatim review prose stays server-side via the underlying findings
-     record. Auto-posted decisions are always `decision: "fix"` — the only
+     record. Auto-posted decisions are always `decision: "fix"`—the only
      decision the cycle tool can record without user authorization. A
      subagent that has obtained user authorization for a wontfix calls
      `gc_post_decision_record` directly with the override AFTER the cycle.
-   - `gc_test_quality_review_cycle` — same shape as the codex wrapper, for
+   - `gc_test_quality_review_cycle`—same shape as the codex wrapper, for
      test-quality reviews. Both cycle wrappers share one parameterized
      internal seam (`_runReviewCycleShared`) parameterized by reviewer and
      cap source; there is exactly one cycle implementation, not one per
      reviewer.
-   - `gc_watch_ci_run` — server-side GitHub Actions poller. Replaces the
+   - `gc_watch_ci_run`—server-side GitHub Actions poller. Replaces the
      per-poll agent turn cost of /implement Step 10. Returns one terminal
      envelope `{conclusion, failed_steps[], log_summary}` after the run
      reaches a terminal state, hits the queued-too-long cap (5 min
      default), or hits the total cap (45 min default). Raw CI logs stay
      server-side; only the bounded UTF-8 tail of `gh run view --log-failed`
      is returned.
-   - `gc_watch_sonar_analysis` — server-side SonarCloud poller. Returns
+   - `gc_watch_sonar_analysis`—server-side SonarCloud poller. Returns
      `{quality_gate, issues_summary, hotspots_summary,
      full_issue_export_path}` after the analysis is fetched and
      paginated. The `SONAR_TOKEN` is read at call time and passed only in
-     the Authorization HTTP header — never in argv, telemetry, exports,
+     the Authorization HTTP header—never in argv, telemetry, exports,
      or returned envelopes (the issue #934 preflight binding rule).
 
 4. **Issue-thread cache.** `gc_get_issue_thread` returns the body +
    comments + a sha256 content hash on first call. Subsequent calls with
    the same `expected_hash` return `{unchanged: true}` without re-fetching
-   from GitHub. The cache is keyed by `(repoRoot, issueNumber)` —
-   explicitly NOT branch-keyed — and is operational only; the GitHub
+   from GitHub. The cache is keyed by `(repoRoot, issueNumber)`
+   (explicitly NOT branch-keyed) and is operational only; the GitHub
    issue thread remains the durable record per ADR-029. `expected_hash=null`
    always forces a fresh fetch, used by callers after a posting may have
    failed or when marker state is uncertain.
@@ -386,17 +386,17 @@ which loops execute**.
    H2–H4 to match the per-step file convention. The Step 6.6 file
    explicitly restates the required contract markers
    (`gc_post_decision_record`, `findings: []`, `ok: true`,
-   findings-fix-in-same-turn directive) — the cycle wrapper auto-implements
+   findings-fix-in-same-turn directive)—the cycle wrapper auto-implements
    them, but the step file documents them for the policy check.
 
-The four new tools are additive — `gc_codex_review`, `gc_test_quality_review`,
+The four new tools are additive—`gc_codex_review`, `gc_test_quality_review`,
 `gc_post_decision_record`, and the rest stay unchanged in shape and signature
 so direct callers (including `/quickfix` and external scripts) keep working.
 
 The cycle wrappers, watch tools, and issue-thread cache are the substrate
 GC-O009 (Workflow Orchestration via Temporal) will eventually formalize as
 Temporal **activities** with typed inputs/outputs. This work is bridge work
-toward GC-O009 — moving repeated loops into MCP boundaries that return one
+toward GC-O009—moving repeated loops into MCP boundaries that return one
 terminal envelope per invocation, instead of having the agent drive each
 iteration. No Temporal adoption, no DB tables, no branch-keyed counters, no
 new workflow DSL; the issue thread on GitHub remains the durable record.
@@ -408,7 +408,7 @@ made the codex-driven governance gates unreliable. `gc_codex_review`,
 `codex exec` / `claude --print` child that legitimately runs for several
 minutes (the child cap is `DEFAULT_CODEX_TIMEOUT_MS`, 20 min). Run
 synchronously, a single MCP tool call blocked far longer than the MCP
-client's per-call timeout — the client abandoned the call, the child was left
+client's per-call timeout—the client abandoned the call, the child was left
 running with no result handle, and the workflow never received a review
 envelope (first observed in issue #893). No change to the GC-O007 gate
 contract, the cycle caps, the marker families, or the decision-record shape.
@@ -439,7 +439,9 @@ Two coordinated changes:
    synchronous envelope was.
 
 `gc_codex_job` is the sixth tool in this ADR's surface family and, like the
-cycle wrappers and watch tools, is bridge work toward GC-O009 — the
+cycle wrappers and watch tools, is bridge work toward GC-O009—the
 start/poll/cancel triple is the shape a Temporal activity handle takes.
 
-**Amendment — renderer summary byte caps (#964).** Two of the three durable-record renderer tools in this ADR's surface family — `gc_render_pr_body` and `gc_post_final_report` — now enforce reject-not-truncate byte caps on their caller-controlled summary fields (`PR_BODY_SUMMARY_MAX = 1200`, `FINAL_REPORT_SUMMARY_MAX = 800`, `FINAL_REPORT_REVIEW_SUMMARY_MAX = 240` for `reviews[].summary`). `gc_post_decision_record`'s schema is unchanged — its caller-controlled prose fields already had per-field caps. The canonical succinctness rule is in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)` and is referenced from all three renderer tool descriptions. `buildFinalReport` no longer emits placeholder lines in the In-scope requirements or Reviews sections when those inputs are empty.
+**Amendment: renderer summary byte caps (#964).** Two of the three durable-record renderer tools in this ADR's surface family (`gc_render_pr_body` and `gc_post_final_report`) now enforce reject-not-truncate byte caps on their caller-controlled summary fields (`PR_BODY_SUMMARY_MAX = 1200`, `FINAL_REPORT_SUMMARY_MAX = 800`, `FINAL_REPORT_REVIEW_SUMMARY_MAX = 240` for `reviews[].summary`). `gc_post_decision_record`'s schema is unchanged; its caller-controlled prose fields already had per-field caps. The canonical succinctness rule is in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)` and is referenced from all three renderer tool descriptions. `buildFinalReport` no longer emits placeholder lines in the In-scope requirements or Reviews sections when those inputs are empty.
+
+**Amendment: issue close mechanism (#862 typed-action-items PR).** The /implement Step 18 no longer runs `gh issue close`. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step 9) when the user merges the PR. Step 18 only removes the `in-progress` label set in Step 1. Closing from the agent decoupled the close event from the merge: an unmerged or rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open issues on revert). Step 19 (final report) is correspondingly tightened: traceability reconciliation (Steps 15 through 17) is an explicit precondition, and no earlier step surfaces a user-facing "complete" signal (prior escalations are for input, not for "done"). The /quickfix sibling lane is updated in lockstep.

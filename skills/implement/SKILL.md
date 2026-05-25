@@ -1,6 +1,6 @@
 ---
 name: implement
-description: End-to-end issue implementation — from plan through merged PR. Agent-neutral (Claude Code, Codex). Parameterized by .ground-control.yaml. Thin orchestrator that delegates per-step work to subagents per ADR-036 + issue #934.
+description: End-to-end issue implementation—from plan through merged PR. Agent-neutral (Claude Code, Codex). Parameterized by .ground-control.yaml. Thin orchestrator that delegates per-step work to subagents per ADR-036 + issue #934.
 argument-hint: <issue-number | requirement-uid>
 disable-model-invocation: true
 ---
@@ -24,12 +24,12 @@ This SKILL is a thin orchestrator. The 716-line monolithic prose that used to li
 **For each step in the list below**, the orchestrator does the following:
 
 1. Resolve the route through the `gc_resolve_workflow_route` MCP tool using the stage id (left column of the table). The resolver reads `.ground-control.yaml` and returns `{provider, agent, model, tier, fallback_policy}`. If routing is disabled or unavailable, follow the returned fallback policy.
-2. **If `agent: subagent`** — spawn an `Agent` (or driver-equivalent) subagent with the resolved model. The subagent's prompt is verbatim: *"Execute `skills/implement/steps/step-NN-<id>.md` against issue {issue_number}. Cached state from prior steps: `{cached_state_json}`. Return a single short envelope `{status, cached_for_next_step}` and nothing else."* Await the envelope.
-3. **If `agent: parent`** — read the step file inline and execute. The parent runs the step locally.
+2. **If `agent: subagent`**: spawn an `Agent` (or driver-equivalent) subagent with the resolved model. The subagent's prompt is verbatim: *"Execute `skills/implement/steps/step-NN-<id>.md` against issue {issue_number}. Cached state from prior steps: `{cached_state_json}`. Return a single short envelope `{status, cached_for_next_step}` and nothing else."* Await the envelope.
+3. **If `agent: parent`**: read the step file inline and execute. The parent runs the step locally.
 4. **Telemetry**: when `cfg.telemetry.enabled` is true, call `gc_log_step_telemetry` at the end of the step with `{step, tier, model, wall_time_ms, outcome, input_tokens: null, output_tokens: null}`. `wall_time_ms` is measured around the dispatch.
 5. Merge the returned `cached_for_next_step` fields into the running state passed to the next step.
 
-The parent never sees verbatim subagent prose, raw `gh`/`git` output, full file contents, raw CI logs, raw Sonar payloads, or per-finding review bodies — those stay in the subagent's context or server-side in the MCP tool layer.
+The parent never sees verbatim subagent prose, raw `gh`/`git` output, full file contents, raw CI logs, raw Sonar payloads, or per-finding review bodies; those stay in the subagent's context or server-side in the MCP tool layer.
 
 ## Step list (in order)
 
@@ -64,8 +64,10 @@ Steps 12, 13, 14 are intentional tombstones (post-push Codex review collapsed in
 - **Phase A** (Steps 1 → 4.5) and **Phase B** (Steps 5 → 6.6) and **Phase C** (Steps 7 → 8) and **Phase D** (Steps 9 → 19) run in fixed order.
 - **Step 4 work-already-complete branch**: when Step 4's envelope returns `work_already_complete: true`, skip Steps 4.4 / 4.5 / 5 / 6 / 6.5 / 6.6 / 7 / 8 / 9 / 10 / 11 (there's no diff to push) and jump to Step 15 to reconcile Ground Control state.
 - **Step 10 CI failure**: on `ci_conclusion != "success"`, fix locally, return to Step 7 (re-stage), Step 8 (commit + push), then Step 10 again.
-- **Step 11 SonarCloud findings**: same loop — fix, push, re-run Step 10, then Step 11. Cap: 5 SonarCloud iterations.
+- **Step 11 SonarCloud findings**: same loop—fix, push, re-run Step 10, then Step 11. Cap: 5 SonarCloud iterations.
 - **Steps 6.5 / 6.6 escalated or capped**: STOP and wait for the user. The label set in Step 1 stays until Step 18 clears it. Do not push commits while waiting.
+- **Traceability before report (Steps 15 → 17 → 19)**: Ground Control state reconciliation (status transitions in Step 15, IMPLEMENTS/TESTS link reconciliation in Step 16, verification in Step 17) is a precondition for the final report. The Step 19 report is the user-facing "this is done—review and merge" signal; it must reflect the reconciled Ground Control graph, not the pre-reconciliation state. Do not surface any earlier user-facing "complete" message—prior steps that escalate to the user escalate because input is needed, not because the workflow is finished.
+- **Issue close mechanism**: the GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step 9) at PR merge. Step 18 only removes the `in-progress` label; it does NOT run `gh issue close`. Closing from the agent decouples the close from the merge—an unmerged or rolled-back PR would leave a closed issue with no shipped code behind it, and GitHub does not re-open on revert.
 - **Single human touchpoint**: PR merge (after Step 19). The orchestrator never runs `gh pr merge`.
 
 ## Review-cycle subagent contract (Steps 6.5 and 6.6)
@@ -89,10 +91,10 @@ Verbatim review prose, per-finding bodies, and raw cycle-tool envelopes never re
 
 Routing is opt-in per repo via `routing.enabled` in `.ground-control.yaml` (default `false`). When the knob is off, every step runs on the parent session's model and this section is advisory. The `tier` annotation on each step file is the provider-neutral capability hint; the resolver maps it to a concrete model.
 
-**Claude tier mapping** (canonical): `low` → `claude-haiku-4-5`, `medium` → `claude-sonnet-4-6`, `high` → `claude-opus-4-7` (the parent — no subagent spawn).
+**Claude tier mapping** (canonical): `low` → `claude-haiku-4-5`, `medium` → `claude-sonnet-4-6`, `high` → `claude-opus-4-7` (the parent—no subagent spawn).
 
-**Codex** (and other drivers without subagent-with-model support): ignore the tier annotation and run every step on the session model. The contract is forward-compatible — a future router consumes the same step-id + tier hints without changing this SKILL.
+**Codex** (and other drivers without subagent-with-model support): ignore the tier annotation and run every step on the session model. The contract is forward-compatible—a future router consumes the same step-id + tier hints without changing this SKILL.
 
 ## Telemetry (ADR-036)
 
-When `telemetry.enabled` is true, the orchestrator calls `gc_log_step_telemetry` at the end of every routed step. The writer appends one JSONL line to `.gc/telemetry/<issue>-<sanitized-branch>.jsonl` (gitignored, repo-relative, containment-validated). `wall_time_ms` is mandatory and measured by the orchestrator around its dispatch. `input_tokens` / `output_tokens` are `null` when the harness does not surface them (Claude Code today). Telemetry is operational measurement only — it never gates any phase, never replaces the issue thread as the durable record, and never feeds back into the cycle-cap counter.
+When `telemetry.enabled` is true, the orchestrator calls `gc_log_step_telemetry` at the end of every routed step. The writer appends one JSONL line to `.gc/telemetry/<issue>-<sanitized-branch>.jsonl` (gitignored, repo-relative, containment-validated). `wall_time_ms` is mandatory and measured by the orchestrator around its dispatch. `input_tokens` / `output_tokens` are `null` when the harness does not surface them (Claude Code today). Telemetry is operational measurement only—it never gates any phase, never replaces the issue thread as the durable record, and never feeds back into the cycle-cap counter.
