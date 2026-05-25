@@ -1,16 +1,18 @@
 // @vitest-environment jsdom
 /**
- * Vitest coverage for the Login page.
+ * Vitest coverage for the standalone Login bundle.
  *
  * Contract under test:
  * - The login form renders username and password fields plus a submit button.
  * - On submit the form posts application/x-www-form-urlencoded to /login.
  * - The XSRF-TOKEN cookie value is echoed as X-XSRF-TOKEN on the POST.
- * - On a successful login (response.ok, final URL does not end with /login?error)
- *   the page navigates to response.url.
+ * - On a successful login (response.ok, final URL pathname/query not the failure
+ *   marker) the page navigates to response.url.
  * - When the server redirects back to /login?error the page shows a generic
  *   error message that does NOT echo the submitted username.
  * - When the page is loaded at /login?error the error message is shown immediately.
+ * - Failure detection is URL-pathname-aware: a saved-request redirect whose URL
+ *   has its own `error=` query but a different pathname is treated as success.
  */
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -109,6 +111,34 @@ describe("Login page — form submission", () => {
     await waitFor(() =>
       expect(redirectSpy).toHaveBeenCalledWith("http://localhost/"),
     );
+  });
+
+  it("treats a redirect to a non-/login path with ?error in the query as success", async () => {
+    // Saved-request redirect to /projects?error=stale — this is NOT the Spring
+    // failure URL (which is exactly /login?error). The earlier endsWith("?error")
+    // heuristic would misclassify this. Pathname-aware detection treats it as
+    // success and navigates.
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        url: "http://localhost/projects?error=stale",
+      } as Response),
+    );
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+    const redirectSpy = vi.fn();
+    render(<Login setRedirectorForTests={redirectSpy} />);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/username/i), "alice");
+    await user.type(screen.getByLabelText(/password/i), "secret");
+    await user.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await waitFor(() =>
+      expect(redirectSpy).toHaveBeenCalledWith(
+        "http://localhost/projects?error=stale",
+      ),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
 

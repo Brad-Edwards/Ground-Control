@@ -87,6 +87,13 @@ repos:
         files: ^(AGENTS\.md|\.claude/|\.github/|architecture/|backend/|docs/|mcp/|specs/|tools/)
         pass_filenames: false
 
+      - id: vale-prose-lint
+        name: Vale prose lint (ADR-054)
+        entry: tools/vale-lint-hook.sh
+        language: system
+        types_or: [markdown]
+        exclude: ^(CHANGELOG\.md|node_modules/|\.tools/|\.vale/)
+
       - id: pr-body-policy
         name: pr body template (only on push, when a PR exists)
         entry: scripts/check-pr-body.sh

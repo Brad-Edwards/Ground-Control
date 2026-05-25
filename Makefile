@@ -1,5 +1,5 @@
 .PHONY: rapid build test test-cov test-quality format lint check integration verify policy policy-tests policy-live \
-       assert-backup-policy test-backup-restore-local vale-install \
+       assert-backup-policy test-backup-restore-local vale-install vale-lint \
        ground-control-mcp-install sync-ground-control-policy scaffold-controller scaffold-audited-entity \
        scaffold-l2-state-machine sync-packs trigger-pack-sync dev clean up down docker-build smoke frontend-install frontend-dev \
        frontend-build frontend-lint frontend-format frontend-test deploy deploy-infra
@@ -46,12 +46,23 @@ policy-tests: ## Run unit tests for repo policy tooling
 vale-install: ## Install Vale prose linter (tools/install-vale.sh → .tools/vale/)
 	bash tools/install-vale.sh
 
-policy: policy-tests assert-backup-policy vale-install ## Run repo-native policy checks shared by Claude and Codex
+# BASE_REF defaults to origin/dev for local invocation. CI sets it to
+# origin/<base-branch> for the current pull_request event.
+vale-lint: vale-install ## Run Vale on .md docs touched in the diff vs BASE_REF (default origin/dev)
+	@BASE_REF="$${BASE_REF:-origin/dev}"; \
+	CHANGED_DOCS=$$(git diff --name-only --diff-filter=ACMR $$BASE_REF...HEAD 2>/dev/null | grep -E '\.(md|markdown)$$' || true); \
+	if [ -z "$$CHANGED_DOCS" ]; then \
+	  echo "vale-lint: no changed docs vs $$BASE_REF"; \
+	  exit 0; \
+	fi; \
+	if [ ! -x .tools/vale/current/vale ]; then \
+	  echo "vale-lint: Vale not installed at .tools/vale/current/vale; run 'make vale-install'" >&2; \
+	  exit 1; \
+	fi; \
+	.tools/vale/current/vale --config=.vale.ini $$CHANGED_DOCS
+
+policy: policy-tests assert-backup-policy vale-lint ## Run repo-native policy checks shared by Claude and Codex
 	python3 bin/policy --skip-pr-body
-	@CHANGED_DOCS=$$(git diff --name-only --diff-filter=ACMR origin/dev...HEAD 2>/dev/null | grep -E '\.(md|markdown)$$' || true); \
-	if [ -n "$$CHANGED_DOCS" ] && [ -x .tools/vale/current/vale ]; then \
-	  .tools/vale/current/vale --config=.vale.ini $$CHANGED_DOCS; \
-	fi
 
 assert-backup-policy: ## Assert GC-P021 backup cadence / retention / verification defaults are intact
 	bash scripts/assert-backup-policy.sh

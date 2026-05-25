@@ -266,10 +266,16 @@ public class BrowserSecurityConfig {
                                 new PathAwareSessionExpiredStrategy(apiAuthenticationEntryPoint, LOGIN_PATH)));
 
         http.authorizeHttpRequests(auth -> {
-            // Anonymous: login, logout, error page, static assets needed to render the form.
-            // ADR-037 §2: the SPA shell (`/`, `/index.html`) and SPA client-side routes are
-            // NOT anonymous — Spring's entry point sends an unauthenticated browser through
-            // /login first, and the request cache restores the original URL after login.
+            // Anonymous: login, logout, the login bundle's own JS/CSS, browser-required
+            // top-level assets (favicons, manifest, robots).
+            //
+            // ADR-037 §2 / §3 (amended): the SPA shell (`/`, `/index.html`) and the main
+            // app bundle (`/assets/**`) are NOT anonymous, because the bundle enumerates
+            // the application's UI surface area (route names, role-gated components,
+            // controller paths) and that's recon-friendly metadata. The login screen
+            // ships as a separate bundle at `/login-assets/**` that knows nothing about
+            // the app; only that bundle is anonymously fetchable. See the dual-bundle
+            // amendment in ADR-037.
             auth.requestMatchers(LOGIN_PATH, LOGOUT_PATH)
                     .permitAll()
                     .requestMatchers(
@@ -278,13 +284,13 @@ public class BrowserSecurityConfig {
                             "/favicon.svg",
                             "/manifest.json",
                             "/robots.txt",
-                            "/assets/**",
-                            "/static/**")
+                            "/login-assets/**")
                     .permitAll();
             ApiPathMatrix.applySharedRules(auth, properties);
-            // Everything else — root, /index.html, and SPA client routes — requires a session.
-            // Spring's DelegatingAuthenticationEntryPoint redirects to /login for non-API
-            // paths and emits JSON 401 for /api/v1/** (covered by the shared matrix above).
+            // Everything else — root, /index.html, /assets/**, and SPA client routes —
+            // requires a session. Spring's DelegatingAuthenticationEntryPoint redirects
+            // to /login for non-API paths and emits JSON 401 for /api/v1/** (covered by
+            // the shared matrix above).
             auth.anyRequest().authenticated();
         });
 

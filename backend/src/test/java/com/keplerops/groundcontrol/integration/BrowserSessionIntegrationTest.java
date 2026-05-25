@@ -214,27 +214,59 @@ class BrowserSessionIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void getLoginReturnsSpaShellNotSpringDefaultForm() throws Exception {
-        // With .loginPage(LOGIN_PATH), Spring disables DefaultLoginPageGeneratingFilter. GET
-        // /login reaches SpaController which issues a Servlet forward to /index.html (the SPA
-        // shell).
+    void getLoginReturnsLoginBundleShellNotSpringDefaultFormOrSpaShell() throws Exception {
+        // Per ADR-037 §3 (amended), GET /login is served by LoginPageController which streams
+        // the standalone login bundle's HTML (static/login.html). The body MUST be the login
+        // bundle marker — not Spring's DefaultLoginPageGeneratingFilter output (which
+        // .loginPage(LOGIN_PATH) disables) and not the main SPA shell (which carries the app
+        // bundle and would leak the application's UI surface per §2).
         //
-        // MockMvc's MockRequestDispatcher.forward() calls response.setForwardedUrl(path) and
-        // returns — it does not re-dispatch to ResourceHttpRequestHandler (so body is empty in
-        // tests). The forwarded URL IS captured by getForwardedUrl(). We use that as the
-        // structural gate:
-        //   - With DefaultLoginPageGeneratingFilter active: the filter writes HTML directly and
-        //     calls return without invoking chain.doFilter(), so DispatcherServlet is never
-        //     reached, no RequestDispatcher.forward() is called, and getForwardedUrl() is null.
-        //   - After .loginPage(LOGIN_PATH): the filter is removed, SpaController handles the
-        //     request, and getForwardedUrl() is "/index.html".
+        // Earlier shipping of this surface used SpaController.forward("/index.html"). That
+        // appeared green under MockMvc's getForwardedUrl() assertion because MockMvc captures
+        // the forward target without re-dispatching, but at runtime the servlet container's
+        // forward re-runs the security filter chain on the forwarded /index.html path, which
+        // is authenticated() and redirects back to /login — a hard infinite loop. The
+        // ResponseEntity<Resource> path that LoginPageController uses streams bytes in the
+        // same request and never re-enters the filter chain.
         MvcResult result =
                 mockMvc.perform(get("/login")).andExpect(status().isOk()).andReturn();
 
+        String body = result.getResponse().getContentAsString();
+        assertThat(body)
+                .as("GET /login must return the login bundle's HTML")
+                .contains("gc-test-marker: login bundle")
+                .doesNotContain("gc-test-marker: main spa shell")
+                .doesNotContain("name=\"username\" type=\"text\"");
+        assertThat(result.getResponse().getContentType())
+                .as("Body must be served as HTML")
+                .startsWith("text/html");
         assertThat(result.getResponse().getForwardedUrl())
-                .as("GET /login must be forwarded to /index.html by SpaController; "
-                        + "null means DefaultLoginPageGeneratingFilter is still active")
-                .isEqualTo("/index.html");
+                .as("LoginPageController must stream the bundle directly, NOT via a forward "
+                        + "that would re-enter the security chain")
+                .isNull();
+    }
+
+    @Test
+    void mainBundleAssetRequiresAuthentication() throws Exception {
+        // ADR-037 §2 / §3 (amended): /assets/** carries the main SPA bundle which enumerates
+        // the application's UI surface (route names, role-gated components, API contracts).
+        // Anonymous fetch must be denied so the bundle is not recon material for an attacker.
+        mockMvc.perform(get("/assets/main-test.js"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(result -> assertThat(result.getResponse().getRedirectedUrl())
+                        .as("Anonymous /assets/** fetch must redirect to /login")
+                        .contains("/login"));
+    }
+
+    @Test
+    void loginBundleAssetIsAnonymous() throws Exception {
+        // The login bundle ships separately at /login-assets/** so an unauthenticated browser
+        // can render the React login screen. It deliberately knows nothing about the app, so
+        // exposing it anonymously discloses nothing beyond "a login screen exists."
+        mockMvc.perform(get("/login-assets/login-test.js"))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("gc-test-marker: login bundle js"));
     }
 
     @Test
