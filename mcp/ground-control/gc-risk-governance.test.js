@@ -461,7 +461,7 @@ describe("treatment_plan wire body (#880)", () => {
       rationale: "Cost-benefit favors mitigation",
       due_date: "2026-06-30T00:00:00Z",
       status: "PLANNED",
-      action_items: [{ what: "patch", who: "team-y" }],
+      action_items: [{ owner: "team-y", due_date: "2026-07-15T00:00:00Z", status: "PLANNED" }],
       reassessment_triggers: ["new evidence", "control change"],
     });
     assert.equal(calls.length, 1);
@@ -477,7 +477,7 @@ describe("treatment_plan wire body (#880)", () => {
       rationale: "Cost-benefit favors mitigation",
       dueDate: "2026-06-30T00:00:00Z",
       status: "PLANNED",
-      actionItems: [{ what: "patch", who: "team-y" }],
+      actionItems: [{ owner: "team-y", dueDate: "2026-07-15T00:00:00Z", status: "PLANNED" }],
       reassessmentTriggers: ["new evidence", "control change"],
     });
   });
@@ -574,5 +574,30 @@ describe("treatment_plan wire body (#880)", () => {
     assert.equal(calls[0].method, "PUT");
     assert.equal(calls[0].body.methodologyProfileId, PROF);
     assert.equal(calls[0].body.methodologyStrategyKey, "UPDATED_KEY");
+  });
+
+  it("nested due_date in action_item maps to dueDate via recursive toCamelCase", async () => {
+    const calls = makeFetchSpy();
+    await callHandler({
+      entity: "treatment_plan",
+      action: "create",
+      project: "proj-a",
+      uid: "TP-CAMEL",
+      title: "Camel test",
+      risk_register_record_id: REG,
+      strategy: "MITIGATE",
+      action_items: [
+        { owner: "bob", due_date: "2026-08-01T00:00:00Z", status: "IN_PROGRESS", description: "Patch firewall" },
+      ],
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "POST");
+    // Verify recursive toCamelCase converted due_date → dueDate inside the nested object
+    const item = calls[0].body.actionItems[0];
+    assert.equal(item.dueDate, "2026-08-01T00:00:00Z", "due_date should be recursively camelCased to dueDate");
+    assert.ok(!("due_date" in item), "due_date (snake_case) must not appear in the wire body");
+    assert.equal(item.owner, "bob");
+    assert.equal(item.status, "IN_PROGRESS");
+    assert.equal(item.description, "Patch firewall");
   });
 });

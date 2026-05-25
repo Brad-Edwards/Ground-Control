@@ -2,12 +2,12 @@ package com.keplerops.groundcontrol.api.riskscenarios;
 
 import com.keplerops.groundcontrol.domain.graph.model.GraphEntityType;
 import com.keplerops.groundcontrol.domain.graph.model.GraphIds;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public record TreatmentPlanResponse(
@@ -25,7 +25,7 @@ public record TreatmentPlanResponse(
         String rationale,
         Instant dueDate,
         TreatmentPlanStatus status,
-        List<Map<String, Object>> actionItems,
+        List<ActionItem> actionItems,
         List<String> reassessmentTriggers,
         UUID methodologyProfileId,
         String methodologyStrategyKey,

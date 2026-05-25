@@ -4,6 +4,7 @@ import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.MethodologyProfileRepository;
@@ -136,7 +137,7 @@ public class TreatmentPlanService {
             String owner,
             String rationale,
             java.time.Instant dueDate,
-            List<java.util.Map<String, Object>> actionItems,
+            List<ActionItem> actionItems,
             List<String> reassessmentTriggers,
             UUID methodologyProfileId,
             String methodologyStrategyKey) {
@@ -165,12 +166,50 @@ public class TreatmentPlanService {
             plan.setDueDate(dueDate);
         }
         if (actionItems != null) {
+            validateActionItems(actionItems);
             plan.setActionItems(actionItems);
         }
         if (reassessmentTriggers != null) {
             plan.setReassessmentTriggers(reassessmentTriggers);
         }
         applyMethodologyBinding(plan, projectId, methodologyProfileId, methodologyStrategyKey);
+    }
+
+    private static final int ACTION_ITEM_OWNER_MAX = 200;
+    private static final int ACTION_ITEM_ASSIGNEE_MAX = 200;
+    private static final int ACTION_ITEM_DESCRIPTION_MAX = 4000;
+
+    private void validateActionItems(List<ActionItem> actionItems) {
+        for (int i = 0; i < actionItems.size(); i++) {
+            var item = actionItems.get(i);
+            if (item == null) {
+                throw new DomainValidationException("Action item at index " + i + " must not be null");
+            }
+            if (item.owner() == null || item.owner().isBlank()) {
+                throw new DomainValidationException(
+                        "Action item at index " + i + " has invalid owner: must not be blank");
+            }
+            if (item.owner().length() > ACTION_ITEM_OWNER_MAX) {
+                throw new DomainValidationException(
+                        "Action item at index " + i + " has invalid owner: length exceeds " + ACTION_ITEM_OWNER_MAX);
+            }
+            if (item.dueDate() == null) {
+                throw new DomainValidationException(
+                        "Action item at index " + i + " has invalid dueDate: must not be null");
+            }
+            if (item.status() == null) {
+                throw new DomainValidationException(
+                        "Action item at index " + i + " has invalid status: must not be null");
+            }
+            if (item.assignee() != null && item.assignee().length() > ACTION_ITEM_ASSIGNEE_MAX) {
+                throw new DomainValidationException("Action item at index " + i
+                        + " has invalid assignee: length exceeds " + ACTION_ITEM_ASSIGNEE_MAX);
+            }
+            if (item.description() != null && item.description().length() > ACTION_ITEM_DESCRIPTION_MAX) {
+                throw new DomainValidationException("Action item at index " + i
+                        + " has invalid description: length exceeds " + ACTION_ITEM_DESCRIPTION_MAX);
+            }
+        }
     }
 
     private void applyMethodologyBinding(

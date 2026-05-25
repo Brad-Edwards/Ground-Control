@@ -189,8 +189,8 @@ requirements or creates links). Query parameters:
 Evidence signals, strongest first: `IMPLEMENTS_LINK_ON_DRAFT` (`HIGH`);
 `ACCEPTED_ADR_DOCUMENTS_LINK`, `LINKED_GITHUB_ISSUE`, `LINKED_PULL_REQUEST`
 (`MEDIUM`); `LINKED_CODE_ARTIFACT`, `LINKED_DOC_ARTIFACT` (`LOW`). All signals are
-derived from the requirement's own project—its canonical traceability links and
-accepted ADR records—so the endpoint never reads the project-unscoped GitHub
+derived from the requirement's own project (its canonical traceability links and
+accepted ADR records), so the endpoint never reads the project-unscoped GitHub
 issue/PR sync tables or the filesystem. A finding's `confidence` is the strongest
 band across its `evidence`. Status drift is also surfaced inside
 `POST /analysis/sweep` as a new problem class (`statusDrift` array, counted in
@@ -223,8 +223,8 @@ substrates: `EvidenceArtifact` (derivedAt / supersededByArtifactId / sources),
 `Observation` (observedAt / expiresAt), `ControlTest` (testDate), and
 `OperationalAsset` (filtered by `AssetType.THIRD_PARTY` for vendor analyses).
 Every response is methodology-attributed and structured for agent
-consumption—`analysisKind`, `project`, `asOf`, `derivationMethod`,
-`inputs`/`outputs`/`limitations` sections—per
+consumption: `analysisKind`, `project`, `asOf`, `derivationMethod`,
+`inputs`/`outputs`/`limitations` sections, per
 `architecture/notes/mcp-grc-analysis-tools-preflight.md`. No generic
 `risk_score`; no executions of FAIR / FAIR-CAM / NIST methodology engines
 (those are tracked in GC-T011 / GC-I017 / GC-T014 and ship their own
@@ -505,9 +505,9 @@ The tree endpoint returns a nested JSON structure with `children` arrays.
 }
 ```
 
-`owner`, `steward`, and `businessContext` are free-text labels (≤ 200 chars on `owner`/`steward`; `businessContext` is `TEXT`). All six GC-M012 metadata fields are optional on `AssetRequest` and on `UpdateAssetRequest`. On the update path, `null` / absent means "leave field unchanged" (mirrors the existing `name`/`description`/`assetType` null-means-unchanged semantics). To reset a previously designated metadata field back to NULL ("not designated"), send the paired clear flag—`clearOwner`, `clearSteward`, `clearEnvironment`, `clearCriticality`, `clearBusinessContext`, or `clearScopeDesignation`—as `true`. The clear flag wins over a same-payload assignment so the wire semantics stay unambiguous (the assign loses). This mirrors the `clearRootCauseAnalysis` / `clearOwner` / `clearDueDate` pattern on `UpdateFindingRequest`.
+`owner`, `steward`, and `businessContext` are free-text labels (≤ 200 chars on `owner`/`steward`; `businessContext` is `TEXT`). All six GC-M012 metadata fields are optional on `AssetRequest` and on `UpdateAssetRequest`. On the update path, `null` / absent means "leave field unchanged" (mirrors the existing `name`/`description`/`assetType` null-means-unchanged semantics). To reset a previously designated metadata field back to NULL ("not designated"), send the paired clear flag (`clearOwner`, `clearSteward`, `clearEnvironment`, `clearCriticality`, `clearBusinessContext`, or `clearScopeDesignation`) as `true`. The clear flag wins over a same-payload assignment so the wire semantics stay unambiguous (the assign loses). This mirrors the `clearRootCauseAnalysis` / `clearOwner` / `clearDueDate` pattern on `UpdateFindingRequest`.
 
-GC-M011 fields (`subtype`, `metadata`) follow the same null-means-unchanged / `clearSubtype` / `clearMetadata` convention on the update path. `subtype` is a narrower, project-defined classification under `assetType` (≤ 100 chars). `metadata` is a bounded key→scalar map (≤ 50 keys, key ≤ 100 chars, string value ≤ 4096 chars, scalar values only—strings / numbers / booleans / null). When a matching ACTIVE `AssetSubtypeSchema` (project + assetType + subtype) is registered, the validator additionally enforces the schema's field types, required fields, and bounds; otherwise only the universal bounds apply. `metadata` replacement is atomic—non-null `metadata` in `UpdateAssetRequest` replaces the entire map.
+GC-M011 fields (`subtype`, `metadata`) follow the same null-means-unchanged / `clearSubtype` / `clearMetadata` convention on the update path. `subtype` is a narrower, project-defined classification under `assetType` (≤ 100 chars). `metadata` is a bounded key→scalar map (≤ 50 keys, key ≤ 100 chars, string value ≤ 4096 chars, scalar values only: strings / numbers / booleans / null). When a matching ACTIVE `AssetSubtypeSchema` (project + assetType + subtype) is registered, the validator additionally enforces the schema's field types, required fields, and bounds; otherwise only the universal bounds apply. `metadata` replacement is atomic—non-null `metadata` in `UpdateAssetRequest` replaces the entire map.
 
 Asset types: `APPLICATION`, `SERVICE`, `SYSTEM`, `DATABASE`, `NETWORK`, `HOST`, `CONTAINER`, `IDENTITY`, `DATA_STORE`, `ENDPOINT`, `INTEGRATION`, `WORKLOAD`, `THIRD_PARTY`, `BOUNDARY`, `OTHER`
 
@@ -1025,7 +1025,7 @@ issues, and controls). Unknown `id` → 404 `not_found`.
 
 All endpoints accept an optional `project` query parameter (required in multi-project deployments).
 
-**MethodologyProfileRequest fields:** `profileKey` (required, max 100), `name` (required, max 200), `version` (required, max 50), `family` (required, enum: FAIR, NIST_SP800_30_R1, ISO_27005, CUSTOM), `description` (optional), `inputSchema` (optional JSON object—methodology assessment input vocabulary), `outputSchema` (optional JSON object—methodology assessment output vocabulary), `treatmentStrategyVocabulary` (optional JSON object—strategy vocabulary keyed by stable strategy key; the value object is profile/pack-defined and may carry display labels, semantics, or other metadata), `status` (optional, enum: ACTIVE, DEPRECATED; defaults to ACTIVE).
+**MethodologyProfileRequest fields:** `profileKey` (required, max 100), `name` (required, max 200), `version` (required, max 50), `family` (required, enum: FAIR, NIST_SP800_30_R1, ISO_27005, CUSTOM), `description` (optional), `inputSchema` (optional JSON object: methodology assessment input vocabulary), `outputSchema` (optional JSON object: methodology assessment output vocabulary), `treatmentStrategyVocabulary` (optional JSON object—strategy vocabulary keyed by stable strategy key; the value object is profile/pack-defined and may carry display labels, semantics, or other metadata), `status` (optional, enum: ACTIVE, DEPRECATED; defaults to ACTIVE).
 
 `UpdateMethodologyProfileRequest` carries the same field set minus `profileKey`; null fields are left unchanged.
 
@@ -1044,7 +1044,7 @@ All endpoints accept an optional `project` query parameter (required in multi-pr
 
 All endpoints accept an optional `project` query parameter (required in multi-project deployments).
 
-**TreatmentPlanRequest fields:** `uid` (required, max 50, unique per project), `title` (required, max 200), `riskRegisterRecordId` (required, UUID), `riskScenarioId` (optional, UUID; must belong to the linked register record's scenarios), `strategy` (required, enum: MITIGATE, ACCEPT, TRANSFER, SHARE, AVOID, OTHER), `methodologyProfileId` (optional, UUID; required when `strategy = OTHER`), `methodologyStrategyKey` (optional, max 100; required when `strategy = OTHER`, must exist in the resolved profile's `treatmentStrategyVocabulary`), `owner` (optional, max 200), `rationale` (optional), `dueDate` (optional, ISO-8601 instant), `status` (optional, defaults to PLANNED), `actionItems` (optional list of JSON objects), `reassessmentTriggers` (optional list of strings).
+**TreatmentPlanRequest fields:** `uid` (required, max 50, unique per project), `title` (required, max 200), `riskRegisterRecordId` (required, UUID), `riskScenarioId` (optional, UUID; must belong to the linked register record's scenarios), `strategy` (required, enum: MITIGATE, ACCEPT, TRANSFER, SHARE, AVOID, OTHER), `methodologyProfileId` (optional, UUID; required when `strategy = OTHER`), `methodologyStrategyKey` (optional, max 100; required when `strategy = OTHER`, must exist in the resolved profile's `treatmentStrategyVocabulary`), `owner` (optional, max 200), `rationale` (optional), `dueDate` (optional, ISO-8601 instant), `status` (optional, defaults to PLANNED), `actionItems` (optional list of typed action items: each requires `owner` [max 200], `dueDate` [ISO-8601 instant], `status` [enum PLANNED/IN_PROGRESS/BLOCKED/DONE/CANCELED]; optional `assignee` [max 200] and `description` [max 4000]), `reassessmentTriggers` (optional list of strings).
 
 `UpdateTreatmentPlanRequest` carries the mutable subset; null fields are left unchanged.
 
@@ -1200,7 +1200,7 @@ against a {@link Control}; it is not the same thing as a `ControlEffectivenessAs
 
 **ControlTestRequest fields:** `controlId` (required UUID, must belong to the same project),
 `uid` (required, max 50), `methodology` (required, ControlTestMethodology enum: INQUIRY,
-OBSERVATION, INSPECTION, RE_PERFORMANCE—PCAOB AS 2201 vocabulary), `testSteps` (required
+OBSERVATION, INSPECTION, RE_PERFORMANCE, per PCAOB AS 2201 vocabulary), `testSteps` (required
 TEXT), `expectedResults` (required TEXT), `actualResults` (required TEXT), `conclusion`
 (required, ControlTestConclusion enum: EFFECTIVE, INEFFECTIVE, NOT_TESTED), `testerIdentity`
 (required, max 200—domain provenance; does **not** replace the authenticated audit actor),
@@ -1238,7 +1238,7 @@ duplicates are de-duplicated; null elements rejected with 422).
 
 **UpdateControlEffectivenessAssessmentRequest fields:** `designEffectiveness`,
 `operatingEffectiveness`, `assessedAt`, `assessor`, `rationale`, `notes`, `supportingTestIds`
-— all optional; `controlId` and `uid` are create-only. A non-null `supportingTestIds` replaces
+—all optional; `controlId` and `uid` are create-only. A non-null `supportingTestIds` replaces
 the existing list wholesale; pass `null` to leave it unchanged or an empty list to clear it.
 
 **Response includes `supportingTestIds`** as a `List<UUID>`. The graph projection emits one
@@ -1276,7 +1276,7 @@ Bidirectional many-to-many link between controls (catalog `Control` or `ScopedCo
 | DELETE | `/risk-control-mappings/{id}/observations/{observationId}` |—| 200 | Detach an observation |
 | POST | `/risk-control-mappings/{id}/evidence` | AddEvidenceRefRequest | 200 | Add an evidence reference (C8 provenance) |
 
-**RiskControlMappingRequest fields:** Exactly one of `controlId` / `scopedImplementationId` (control side); exactly one of `riskScenarioId` / `riskRegisterRecordId` (risk side); `controlRole` (required, `MappingControlRole`: `PREVENTIVE`, `DETECTIVE`, `CORRECTIVE`, `DETERRENT`, `COMPENSATING`, `RECOVERY`, `DIRECTIVE`); `mappingObjective` (optional TEXT); `mappingScope` (optional TEXT); `operationalAssetId` (optional UUID—C2 boundary context); `methodologyProfileId` (optional UUID—C4 profile); `methodologyInfluence` (optional JSON object—C4 validated against profile schema if profile provided). Violations of the "exactly one" rules return 422.
+**RiskControlMappingRequest fields:** Exactly one of `controlId` / `scopedImplementationId` (control side); exactly one of `riskScenarioId` / `riskRegisterRecordId` (risk side); `controlRole` (required, `MappingControlRole`: `PREVENTIVE`, `DETECTIVE`, `CORRECTIVE`, `DETERRENT`, `COMPENSATING`, `RECOVERY`, `DIRECTIVE`); `mappingObjective` (optional TEXT); `mappingScope` (optional TEXT); `operationalAssetId` (optional UUID: C2 boundary context); `methodologyProfileId` (optional UUID: C4 profile); `methodologyInfluence` (optional JSON object—C4 validated against profile schema if profile provided). Violations of the "exactly one" rules return 422.
 
 **AddEvidenceRefRequest fields:** `evidenceRef` (required, opaque reference string), `evidenceNote` (optional TEXT), `evidenceArtifactId` (optional UUID to a formal `EvidenceArtifact`).
 
@@ -1389,8 +1389,8 @@ binary storage (see ADR-041 §Rich text and inline images).
 **TestCaseStepRequest fields:** `stepNumber` (required positive `Integer`), `action` (required,
 max 10000), `expectedResult` (required, max 10000), `actualResult` (optional, max 10000).
 
-**UpdateTestCaseStepRequest fields:** `stepNumber`, `action`, `expectedResult`, `actualResult`
-— all optional with null-means-no-change—plus `clearActualResult: true` to wipe the
+**UpdateTestCaseStepRequest fields:** `stepNumber`, `action`, `expectedResult`, `actualResult`:
+all optional with null-means-no-change, plus `clearActualResult: true` to wipe the
 `actualResult` to null (same partial-update convention as `UpdateTestCaseRequest`).
 
 Duplicate `stepNumber` within a test case returns HTTP 409. Non-positive `stepNumber` and
@@ -1484,7 +1484,7 @@ the target container). Callers that want to clone in place must pass the source'
 explicitly. The copy clones every immutable definition field (title, description, preconditions,
 postconditions, priority, type, format, estimatedDurationSeconds), resets `status` to `DRAFT`,
 and clones authored children via their owning services (`TestCaseStepService.copyStepsToTestCase`,
-`TestCaseGherkinService.copyGherkinToTestCase`). Step `actualResult` is **not** copied—it is
+`TestCaseGherkinService.copyGherkinToTestCase`). Step `actualResult` is **not** copied; it is
 run-time evidence, not part of the definition.
 
 **TestCaseFolderResponse fields:** `id`, `projectIdentifier`, `parentFolderId`, `title`,
@@ -1527,7 +1527,7 @@ max 200), `description` (optional, max 8192), `product` (optional, max 200), `ve
 `endDate` (optional, ISO-8601 date; must be `>= startDate` when both are set).
 
 **UpdateTestPlanRequest fields:** `name`, `description`, `product`, `version`, `build`,
-`startDate`, `endDate`—all optional with null-means-no-change—plus
+`startDate`, `endDate`: all optional with null-means-no-change, plus
 `clearDescription`, `clearProduct`, `clearVersion`, `clearBuild`, `clearStartDate`,
 `clearEndDate` flags to wipe the matching field to null (same partial-update convention as
 `UpdateTestCaseRequest`). `uid` is create-only.
@@ -1592,8 +1592,8 @@ max 200), `description` (optional, max 8192), `populationMode` (required, one of
 `QUERY_BASED` (`criteriaStatus`, `criteriaType`, `criteriaPriority`, `criteriaFormat`,
 `criteriaFolderId`, `criteriaTextSearch`—max 200).
 
-**UpdateTestSuiteRequest fields:** `name`, `description`, all `criteriaXxx` fields—all
-optional with null-means-no-change—plus `clearDescription`, `clearCriteriaStatus`,
+**UpdateTestSuiteRequest fields:** `name`, `description`, all `criteriaXxx` fields: all
+optional with null-means-no-change, plus `clearDescription`, `clearCriteriaStatus`,
 `clearCriteriaType`, `clearCriteriaPriority`, `clearCriteriaFormat`,
 `clearCriteriaFolderId`, `clearCriteriaTextSearch` flags to wipe the matching field to
 null. `uid` and `populationMode` are create-only.
@@ -1660,7 +1660,7 @@ max 200), `testPlanId` (required, UUID), `testSuiteId` (required, UUID), `enviro
 `>= startAt` when both are set).
 
 **UpdateTestRunRequest fields:** `name`, `environment`, `version`, `build`, `startAt`,
-`endAt`—all optional with null-means-no-change—plus `clearEnvironment`, `clearVersion`,
+`endAt`: all optional with null-means-no-change, plus `clearEnvironment`, `clearVersion`,
 `clearBuild`, `clearStartAt`, `clearEndAt` flags to wipe the matching field to null.
 `uid`, `testPlanId`, and `testSuiteId` are create-only.
 
