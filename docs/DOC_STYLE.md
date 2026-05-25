@@ -17,6 +17,25 @@ Strip:
 - Meta-commentary: "this document explains," "the next section covers." If a
   choice needs explaining, the rationale lives in an ADR.
 
+### Em-dash density
+
+Prefer commas, semicolons, periods, or parentheses for clause breaks. Reach
+for an em-dash only when the construction genuinely demands the heavier break:
+a parenthetical that requires emphasis, or a sharp pivot that a comma or
+semicolon cannot carry.
+
+Soft budget: at most one em-dash per paragraph, typically zero. If a paragraph
+has two, rewrite one.
+
+Em-dash chains (`X — Y — Z`) should almost always be reordered into separate
+clauses.
+
+This pattern was surfaced in shifter #704, where agent-written prose accumulated
+56 em-dash occurrences across five documents in a single PR. The
+`GoogleProject.EmDashDensity` Vale rule enforces the per-paragraph budget
+mechanically at error level; touched docs that exceed the budget fail the
+prose-lint gate. See `.vale/styles/GoogleProject/EmDashDensity.yml`.
+
 ## Style anchors
 
 - **Voice and tense:** [Google Developer Documentation Style Guide](https://developers.google.com/style).
