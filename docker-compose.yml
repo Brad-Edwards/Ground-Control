@@ -1,3 +1,9 @@
+# Pin the compose project name so dev worktrees never collide with the
+# production stack at /opt/gc. Without this, `docker compose` derives the
+# project name from the worktree basename (`gc`), which matched the prod
+# project on 2026-05-24 and recreated `gc-db-1` against the dev volume.
+name: gc-dev
+
 services:
   db:
     image: apache/age:release_PG16_1.6.0
