@@ -55,7 +55,7 @@ link surfaces.
   link surface accepts first-class internal targets. `targetEntityId` is for
   modeled entities; `targetIdentifier` is only for external or not-yet-modeled
   artifacts.
-- JSON text columns: `actionItems` and `reassessmentTriggers` use
+- JSON text columns: structured treatment-plan collections use
   `JacksonTextCollectionConverters`. Do not add feature-local `ObjectMapper`
   parsing or a second JSON schema system.
 - MCP adapter shape: `gc_risk_governance` in
@@ -138,6 +138,58 @@ Prefer a normal FK from `treatment_plan.methodology_profile_id` to
 profile would leave `strategy = OTHER` without the vocabulary that gives it
 meaning. Any migration versions added here must be listed in
 `MigrationSmokeTest` and `RequirementsE2EIntegrationTest` per `.gc/plan-rules.md`.
+
+## Typed Action Items (#862 / C6)
+
+C6 should introduce one canonical treatment action-item value shape unless the
+implementation also introduces first-class per-item identity, direct per-item
+mutation endpoints, or independent per-item audit requirements. Current repo
+semantics point to the value-shape path: `action_items` is already a JSON text
+column on the audited `TreatmentPlan` aggregate, and callers update action items
+through the treatment-plan service boundary rather than by addressing an item
+row.
+
+The action-item shape is not a treatment-plan lifecycle state. Use a separate
+typed enum for item status (the issue names `PLANNED`, `IN_PROGRESS`,
+`BLOCKED`, `DONE`, and `CANCELED`) rather than reusing `TreatmentPlanStatus`,
+whose `COMPLETED` terminal state and transition rules describe the plan as a
+whole. Do not add item-status transition rules unless a requirement names them;
+C6 only needs typed current state, and C8 can later observe changes at the same
+canonical item-status field.
+
+Keep the field contract boring and shared across REST, service commands,
+persistence JSON, MCP, and docs: required `owner`, required `dueDate`, required
+`status`, and optional `assignee`. If legacy rows contain useful free text such
+as `description` or `action`, preserve it through one explicitly named optional
+field instead of keeping arbitrary maps alive. Do not tunnel assignee, status,
+or due dates through `metadata`, `rationale`, plan-level `owner`, plan-level
+`dueDate`, or methodology-specific strategy bindings.
+
+Request DTOs must put Bean Validation at the nested item boundary:
+`@Valid List<...> actionItems`, `@NotBlank`/bounded `owner`,
+`@NotNull dueDate`, and `@NotNull status`. The service must still reject invalid
+action-item writes that bypass controller validation, using the same
+`DomainValidationException`/`GlobalExceptionHandler` path as other domain
+validation failures. Invalid item-status enum values should continue to flow
+through Jackson enum binding and the existing invalid-enum handling in
+`GlobalExceptionHandler`; do not add treatment-plan-local error envelopes.
+
+For the JSON persistence path, extend `JacksonTextCollectionConverters` with a
+typed action-item list converter instead of adding a feature-local parser. The
+converter may be lenient when reading historic persisted rows, but write paths
+must emit only the canonical typed JSON shape. Existing rows are known to include
+legacy objects such as `{"description": ...}` from `V043` and ad hoc maps from
+older API writes; either normalize those rows with a Flyway repair before strict
+reads, or keep the read compatibility tightly scoped and covered by converter
+tests. Do not let the compatibility reader become permission to accept new
+untyped writes.
+
+The MCP `gc_risk_governance` treatment-plan contract must change in lockstep:
+replace `action_items: z.array(z.record(z.any()))` with the typed nested Zod
+shape, keep recursive snake_case-to-camelCase mapping for item `due_date`, and
+update adapter tests so create/update bodies preserve the canonical nested
+fields. The action-item schema should not be marked opaque in `lib.js`; unlike
+metadata, its keys are repo-owned contract fields.
 
 ## Cross-Cutting Layers
 
@@ -228,12 +280,11 @@ endpoint.
 
 ## Extensibility
 
-The extension seam is a typed treatment action item, not a new treatment-plan
-aggregate. If action items need richer lifecycle later, introduce one canonical
-action-item value shape or child entity with explicit `owner`, `dueDate`,
-`status`, and optional assignee identity, then map current JSON payloads into
-that shape. Avoid separate action schemas for FAIR, NIST, ISO, controls, and
-assets.
+The extension seam is the canonical typed treatment action item, not a new
+treatment-plan aggregate. If action items later need stable per-item identity,
+direct per-item mutation endpoints, or independent audit history, the seam is a
+child entity behind the same `owner`/`dueDate`/`status`/`assignee` contract. Do
+not add separate action schemas for FAIR, NIST, ISO, controls, and assets.
 
 Reassessment triggers should remain expressed as trigger categories plus target
 references when they become machine-actionable: treatment progress,
@@ -259,6 +310,11 @@ tool, a parallel DTO translator, or entity-specific request plumbing.
   modeled-target classification.
 - Do not hide methodology-specific strategy values in arbitrary action-item
   keys when the API enum or methodology profile should carry the contract.
+- Do not reuse `TreatmentPlanStatus` for per-action-item status; item progress
+  and plan lifecycle are different concepts.
+- Do not keep `actionItems` as `List<Map<String, Object>>` in REST, command, or
+  domain write paths after C6. Legacy-map compatibility belongs only at the
+  persistence/read-migration boundary.
 - Do not let a treatment plan reference a risk scenario outside the linked risk
   register record when the record already constrains scenarios.
 - Do not add workflow-engine concepts for the existing five-state

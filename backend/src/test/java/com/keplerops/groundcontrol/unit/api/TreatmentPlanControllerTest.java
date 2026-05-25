@@ -22,6 +22,7 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
@@ -29,12 +30,12 @@ import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.CreateTreatmentPlanCommand;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.TreatmentPlanService;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.UpdateTreatmentPlanCommand;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ActionItemStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -80,7 +81,7 @@ class TreatmentPlanControllerTest {
         plan.setOwner("Security Lead");
         plan.setRationale("Reduce credential theft risk");
         plan.setDueDate(DUE);
-        plan.setActionItems(List.of(Map.of("action", "Deploy MFA", "done", false)));
+        plan.setActionItems(List.of(new ActionItem("Security Lead", DUE, ActionItemStatus.PLANNED, null, null)));
         plan.setReassessmentTriggers(List.of("Quarterly review"));
         setField(plan, "id", PLAN_ID);
         setField(plan, "createdAt", NOW);
@@ -117,7 +118,7 @@ class TreatmentPlanControllerTest {
                                   "rationale": "Reduce credential theft risk",
                                   "dueDate": "2026-06-01T00:00:00Z",
                                   "status": "PLANNED",
-                                  "actionItems": [{"action": "Deploy MFA", "done": false}],
+                                  "actionItems": [{"owner": "Security Lead", "dueDate": "2026-06-01T00:00:00Z", "status": "PLANNED"}],
                                   "reassessmentTriggers": ["Quarterly review"]
                                 }
                                 """
@@ -137,6 +138,9 @@ class TreatmentPlanControllerTest {
                 .andExpect(jsonPath("$.rationale", is("Reduce credential theft risk")))
                 .andExpect(jsonPath("$.status", is("PLANNED")))
                 .andExpect(jsonPath("$.actionItems", hasSize(1)))
+                .andExpect(jsonPath("$.actionItems[0].owner", is("Security Lead")))
+                .andExpect(jsonPath("$.actionItems[0].dueDate", is("2026-06-01T00:00:00Z")))
+                .andExpect(jsonPath("$.actionItems[0].status", is("PLANNED")))
                 .andExpect(jsonPath("$.reassessmentTriggers", hasSize(1)))
                 .andExpect(jsonPath("$.reassessmentTriggers[0]", is("Quarterly review")));
     }
@@ -427,6 +431,83 @@ class TreatmentPlanControllerTest {
     }
 
     @Test
+    void createPlumbsActionItemsIntoCommand() throws Exception {
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(treatmentPlanService.create(any())).thenReturn(makePlan(false));
+
+        mockMvc.perform(post("/api/v1/treatment-plans")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                """
+                                {
+                                  "uid": "TP-001",
+                                  "title": "Enforce MFA",
+                                  "riskRegisterRecordId": "%s",
+                                  "strategy": "MITIGATE",
+                                  "actionItems": [
+                                    {
+                                      "owner": "Security Lead",
+                                      "dueDate": "2026-06-01T00:00:00Z",
+                                      "status": "PLANNED",
+                                      "assignee": "alice",
+                                      "description": "Roll out MFA"
+                                    }
+                                  ]
+                                }
+                                """
+                                        .formatted(RECORD_ID)))
+                .andExpect(status().isCreated());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(CreateTreatmentPlanCommand.class);
+        verify(treatmentPlanService).create(captor.capture());
+        var items = captor.getValue().actionItems();
+        assertThat(items).isNotNull().hasSize(1);
+        var item = items.get(0);
+        assertThat(item.owner()).isEqualTo("Security Lead");
+        assertThat(item.dueDate()).isEqualTo(Instant.parse("2026-06-01T00:00:00Z"));
+        assertThat(item.status()).isEqualTo(ActionItemStatus.PLANNED);
+        assertThat(item.assignee()).isEqualTo("alice");
+        assertThat(item.description()).isEqualTo("Roll out MFA");
+    }
+
+    @Test
+    void updatePlumbsActionItemsIntoCommand() throws Exception {
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(treatmentPlanService.update(any(), any(), any())).thenReturn(makePlan(false));
+
+        mockMvc.perform(
+                        put("/api/v1/treatment-plans/{id}", PLAN_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "actionItems": [
+                                    {
+                                      "owner": "Updated Owner",
+                                      "dueDate": "2026-07-15T00:00:00Z",
+                                      "status": "IN_PROGRESS",
+                                      "assignee": "bob"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(UpdateTreatmentPlanCommand.class);
+        verify(treatmentPlanService).update(any(), any(), captor.capture());
+        var items = captor.getValue().actionItems();
+        assertThat(items).isNotNull().hasSize(1);
+        var item = items.get(0);
+        assertThat(item.owner()).isEqualTo("Updated Owner");
+        assertThat(item.dueDate()).isEqualTo(Instant.parse("2026-07-15T00:00:00Z"));
+        assertThat(item.status()).isEqualTo(ActionItemStatus.IN_PROGRESS);
+        assertThat(item.assignee()).isEqualTo("bob");
+        assertThat(item.description()).isNull();
+    }
+
+    @Test
     void createReturns422WhenServiceThrowsDomainValidationException() throws Exception {
         when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
         when(treatmentPlanService.create(any()))
@@ -507,5 +588,166 @@ class TreatmentPlanControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.methodologyProfileId", is(PROFILE_ID.toString())))
                 .andExpect(jsonPath("$.methodologyStrategyKey", is("CUSTOM_RESIDUAL")));
+    }
+
+    // -------------------------------------------------------------------------
+    // C1: typed ActionItem Bean Validation (create path)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void createReturns422WhenActionItemOwnerIsNull() throws Exception {
+        mockMvc.perform(post("/api/v1/treatment-plans")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                """
+                                {
+                                  "uid": "TP-001",
+                                  "title": "Enforce MFA",
+                                  "riskRegisterRecordId": "%s",
+                                  "strategy": "MITIGATE",
+                                  "actionItems": [{"dueDate": "2026-06-01T00:00:00Z", "status": "PLANNED"}]
+                                }
+                                """
+                                        .formatted(RECORD_ID)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")));
+    }
+
+    @Test
+    void createReturns422WhenActionItemOwnerIsBlank() throws Exception {
+        mockMvc.perform(post("/api/v1/treatment-plans")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                """
+                                {
+                                  "uid": "TP-001",
+                                  "title": "Enforce MFA",
+                                  "riskRegisterRecordId": "%s",
+                                  "strategy": "MITIGATE",
+                                  "actionItems": [{"owner": "  ", "dueDate": "2026-06-01T00:00:00Z", "status": "PLANNED"}]
+                                }
+                                """
+                                        .formatted(RECORD_ID)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")));
+    }
+
+    @Test
+    void createReturns422WhenActionItemDueDateIsNull() throws Exception {
+        mockMvc.perform(post("/api/v1/treatment-plans")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                """
+                                {
+                                  "uid": "TP-001",
+                                  "title": "Enforce MFA",
+                                  "riskRegisterRecordId": "%s",
+                                  "strategy": "MITIGATE",
+                                  "actionItems": [{"owner": "Security Lead", "status": "PLANNED"}]
+                                }
+                                """
+                                        .formatted(RECORD_ID)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")));
+    }
+
+    @Test
+    void createReturns422WhenActionItemStatusIsInvalidEnum() throws Exception {
+        // Jackson InvalidFormatException for a typed enum surfaces through the dedicated
+        // handler in GlobalExceptionHandler.handleInvalidEnumFormat (422 with the
+        // validation_error envelope + validValues hint), not the generic 400 fallback.
+        mockMvc.perform(post("/api/v1/treatment-plans")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                """
+                                {
+                                  "uid": "TP-001",
+                                  "title": "Enforce MFA",
+                                  "riskRegisterRecordId": "%s",
+                                  "strategy": "MITIGATE",
+                                  "actionItems": [{"owner": "Security Lead", "dueDate": "2026-06-01T00:00:00Z", "status": "FOO"}]
+                                }
+                                """
+                                        .formatted(RECORD_ID)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")))
+                .andExpect(jsonPath("$.error.detail.validValues", hasItem("PLANNED")))
+                .andExpect(jsonPath("$.error.detail.validValues", hasItem("DONE")));
+    }
+
+    // -------------------------------------------------------------------------
+    // C1: typed ActionItem Bean Validation (update path)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void updateReturns422WhenActionItemOwnerIsNull() throws Exception {
+        mockMvc.perform(
+                        put("/api/v1/treatment-plans/{id}", PLAN_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "actionItems": [{"dueDate": "2026-06-01T00:00:00Z", "status": "PLANNED"}]
+                                }
+                                """))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")));
+    }
+
+    @Test
+    void updateReturns422WhenActionItemDueDateIsNull() throws Exception {
+        mockMvc.perform(
+                        put("/api/v1/treatment-plans/{id}", PLAN_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "actionItems": [{"owner": "Security Lead", "status": "PLANNED"}]
+                                }
+                                """))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")));
+    }
+
+    @Test
+    void createReturns422WhenActionItemElementIsNull() throws Exception {
+        mockMvc.perform(post("/api/v1/treatment-plans")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                """
+                                {
+                                  "uid": "TP-001",
+                                  "title": "Enforce MFA",
+                                  "riskRegisterRecordId": "%s",
+                                  "strategy": "MITIGATE",
+                                  "actionItems": [null]
+                                }
+                                """
+                                        .formatted(RECORD_ID)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")));
+    }
+
+    @Test
+    void updateReturns422WhenActionItemElementIsNull() throws Exception {
+        mockMvc.perform(
+                        put("/api/v1/treatment-plans/{id}", PLAN_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "actionItems": [null]
+                                }
+                                """))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")));
     }
 }

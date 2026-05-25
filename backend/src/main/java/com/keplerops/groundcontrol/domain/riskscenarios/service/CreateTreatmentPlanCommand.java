@@ -1,10 +1,10 @@
 package com.keplerops.groundcontrol.domain.riskscenarios.service;
 
+import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public record CreateTreatmentPlanCommand(
@@ -18,7 +18,7 @@ public record CreateTreatmentPlanCommand(
         String rationale,
         Instant dueDate,
         TreatmentPlanStatus status,
-        List<Map<String, Object>> actionItems,
+        List<ActionItem> actionItems,
         List<String> reassessmentTriggers,
         UUID methodologyProfileId,
         String methodologyStrategyKey) {}

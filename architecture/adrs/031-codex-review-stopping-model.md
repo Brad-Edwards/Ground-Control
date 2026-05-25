@@ -8,7 +8,7 @@ Proposed
 
 2026-05-09
 
-> **Amended by issue #906 (2026-05-13):** The "three pre-push cycles per issue" baseline this ADR builds on is now a **configurable default of 1 cycle**. The cap value lives on the MCP tool as `CODEX_REVIEW_PREPUSH_HARD_CAP` and is overridden per-repo via `.ground-control.yaml::workflow.codex_review.pre_push_cap` (bounds `[1, 10]`). Repos that want the historical 3-cycle baseline this ADR describes set the knob explicitly. The severity rubric, stopping model, and `override_cap` escape semantics this ADR proposes are **unchanged**; only the default-cap-value assumption shifts. Empirical observation behind the drop: cycles 2–3 historically compounded the agent's own fix-introduced bugs more than they caught net-new bugs (e.g., PR #903's 4-cycle run), and the catch-rate-vs-loop-cost tradeoff favors cycle-1 + CI / SonarCloud / human review for the typical diff. The "Sometimes a run goes 5+ cycles deep with real bugs every cycle" failure mode below still benefits from the `override_cap` escape; the "Sometimes a run reaches cycle 3 with all-Minor cosmetic findings" failure mode is moot under cap-1 (the cycle 3 boundary doesn't exist by default).
+> **Amended by issue #906 (2026-05-13):** The "three pre-push cycles per issue" baseline this ADR builds on is now a **configurable default of 1 cycle**. The cap value lives on the MCP tool as `CODEX_REVIEW_PREPUSH_HARD_CAP` and is overridden per-repo via `.ground-control.yaml::workflow.codex_review.pre_push_cap` (bounds `[1, 10]`). Repos that want the historical 3-cycle baseline this ADR describes set the knob explicitly. The severity rubric, stopping model, and `override_cap` escape semantics this ADR proposes are **unchanged**; only the default-cap-value assumption shifts. Empirical observation behind the drop: cycles 2 and 3 historically compounded the agent's own fix-introduced bugs more than they caught net-new bugs (for example, PR #903's 4-cycle run), and the catch-rate-vs-loop-cost tradeoff favors cycle-1 + CI / SonarCloud / human review for the typical diff. The "Sometimes a run goes 5+ cycles deep with real bugs every cycle" failure mode below still benefits from the `override_cap` escape; the "Sometimes a run reaches cycle 3 with all-Minor cosmetic findings" failure mode is moot under cap-1 (the cycle 3 boundary doesn't exist by default).
 
 ## Context
 
@@ -28,13 +28,13 @@ boundary:
 
 The problem is structural: the workflow has a cycle cap but no severity
 classification on findings, no pre-declared exit criteria for a given run,
-no within-cap early-stop signal, and no cross-model confirmation on the
+no within-cap early stop signal, and no cross-model confirmation on the
 highest-impact (`Critical`) findings. With none of those, the user's
 terminal authorization at cycle 3 is unavoidably gut-feel.
 
 The established software-engineering literature on this problem is mature.
 Inspection-era work prescribes pre-declared numeric exit gates (Fagan IBM
-Sys.J. 1976; Gilb & Graham, *Software Inspection*, 1993). Empirical studies
+Sys. J. 1976; Gilb & Graham, *Software Inspection*, 1993). Empirical studies
 of inspection effectiveness show diminishing returns past two independent
 passes (Porter, Siy, Mockus, Votta ACM TOSEM 7(1), 1998; Biffl & Halling
 IEEE TSE 29(5), 2003). Capture-recapture defect-population estimation uses
@@ -47,11 +47,11 @@ Two further bodies of work specifically address LLM-judge calibration. The
 rubric literature (Autorubric arXiv 2603.00077; LLM-Rubric
 arXiv 2501.00274) finds anchored few-shot examples per ordinal class are
 the strongest stabilizer. The bias literature documents systematic
-overcorrection (arXiv 2508.12358, 2025 — LLMs prompted to find defects
+overcorrection (arXiv 2508.12358, 2025: LLMs prompted to find defects
 flag conforming code at higher rates; richer prompts make it worse) and
-adversarial-framing instability (arXiv 2603.18740 — verdict flips in
+adversarial-framing instability (arXiv 2603.18740: verdict flips in
 88.2% of cases). Severity inter-rater reliability is empirically poor in
-human-rated bug data too (Tian, Ali, Lo, Hassan EMSE 2016 — 28.9–50.8%
+human-rated bug data too (Tian, Ali, Lo, Hassan EMSE 2016: 28.9 to 50.8%
 disagreement on duplicate-bug severity in OpenOffice / Mozilla / Eclipse).
 Implication: absolute severity counts are not trustworthy as stopping
 signals; deltas across cycles are.
@@ -80,13 +80,13 @@ are returned as `Minor` with `unclassified=true` rather than guessed.
 
 ### 2. Pre-declared exit gates per run (GC-X102)
 
-Each `/implement` run declares numeric gates before cycle 1 —
+Each `/implement` run declares numeric gates before cycle 1:
 `max_blocking=0`, `max_critical=0`, `max_major=N`,
-no-new-categories-in-final-cycle — recorded as a marker block in the plan
+no-new-categories-in-final-cycle. These are recorded as a marker block in the plan
 comment. Meeting all gates terminates the loop early; missing them at the
 existing three-cycle cap triggers escalation.
 
-### 3. Severity-weighted early-stop within the cap (GC-X103)
+### 3. Severity-weighted early stop within the cap (GC-X103)
 
 After each cycle, compute a weighted score (Blocking=10, Critical=10,
 Major=5, Minor=1) and compare to cycle N-1. If cycle N's score is strictly
@@ -147,12 +147,12 @@ per-project knob; the initial implementation hard-codes them.
   category novelty, projected yield, unconfirmed-Critical count,
   recommended action) instead of "should I do another cycle?" with no
   inputs. This was the explicit user-pain motivating the work.
-- Within-cap early-stop on severity decay eliminates the "cycle 2 was
+- Within-cap early stop on severity decay eliminates the "cycle 2 was
   trivial but we ran cycle 3 anyway" failure mode.
 - Independent confirmation of `Critical` findings absorbs the bulk of
   LLM-judge overcorrection bias (arXiv 2508.12358) before that
-  classification gates anything user-facing — the highest-leverage point
-  for false positives in the loop.
+  classification gates anything user-facing (the highest-leverage point
+  for false positives in the loop).
 - Pre-declared exit gates make termination criteria a property of the run,
   recorded in the issue thread per ADR-029, rather than an undocumented
   in-run agent judgment.
@@ -196,7 +196,7 @@ per-project knob; the initial implementation hard-codes them.
   come from the same model family with similar training, they may share
   the bias the second-reviewer step is supposed to correct for.
   Mitigation: requirement language specifies "different model family OR
-  separately-spawned session with no shared context"; implementation
+  separately spawned session with no shared context"; implementation
   should prefer the former where available.
 - **Audit-trail bloat.** Persisting both reviewer outputs for
   `Critical`/`Blocking` findings + structured decision-aid marker blocks
@@ -215,7 +215,7 @@ per-project knob; the initial implementation hard-codes them.
 - GC-X100 Codex review fix-the-class instruction (composes with GC-X101)
 - GC-X101 Severity classification of Codex review findings
 - GC-X102 Pre-declared exit gates for /implement Codex review loop
-- GC-X103 Severity-weighted early-stop within Codex review cycle cap
+- GC-X103 Severity-weighted early stop within Codex review cycle cap
 - GC-X104 Independent-reviewer confirmation for Critical findings
 - GC-X105 Structured cycle-3 escalation decision aid
 
@@ -248,10 +248,12 @@ immediately; the new `gc_codex_job` tool polls for the verdict envelope or
 cancels the job (the cancel aborts an `AbortController` whose signal kills the
 child, so nothing is orphaned). Run synchronously, the call blocked past the
 MCP client's per-call timeout and the client abandoned it while the child ran
-on (issue #893). The stopping model this ADR defines is **unchanged** — the
+on (issue #893). The stopping model this ADR defines is **unchanged**: the
 per-issue cycle cap, the `gc:codex-review-cycle` marker family, the
 `override_cap` semantics, and the `verdict: ship` clean outcome all behave
 exactly as before. Async changes only how the agent waits for a cycle's
 result, never when the loop stops. See ADR-036 (amendments) for the job model.
 
-**Amendment — renderer summary byte caps (#964).** `gc_render_pr_body` and `gc_post_final_report` now enforce reject-not-truncate byte caps on their caller-controlled summary fields. `gc_post_decision_record` — the per-cycle decision-record surface this ADR's stopping model writes to — is unchanged at the schema layer; its caller-controlled prose fields (`notes[].text`, finding rationales, titles) already had per-field caps. The canonical succinctness rule lives in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)`.
+**Amendment: renderer summary byte caps (#964).** `gc_render_pr_body` and `gc_post_final_report` now enforce reject-not-truncate byte caps on their caller-controlled summary fields. `gc_post_decision_record` (the per-cycle decision-record surface this ADR's stopping model writes to) is unchanged at the schema layer; its caller-controlled prose fields (`notes[].text`, finding rationales, titles) already had per-field caps. The canonical succinctness rule lives in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)`.
+
+**Amendment: issue close mechanism (#862 typed-action-items PR).** The /implement Step 18 no longer runs `gh issue close`. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step 9) when the user merges the PR. Step 18 only removes the `in-progress` label set in Step 1. Closing from the agent decoupled the close event from the merge: an unmerged or rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open issues on revert). Step 19 (final report) is correspondingly tightened: traceability reconciliation (Steps 15 through 17) is an explicit precondition, and no earlier step surfaces a user-facing "complete" signal (prior escalations are for input, not for "done"). The /quickfix sibling lane is updated in lockstep.

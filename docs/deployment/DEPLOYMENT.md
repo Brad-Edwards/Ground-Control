@@ -710,7 +710,7 @@ Restoring from a dump, rebuilding after host loss, and post-restore verification
 
 ### Initial deploy-host setup (required)
 
-These steps must be performed on any host that will serve as a Ground Control deploy target—red-dragon today, any future replacement host, or a disaster-recovery rebuild. They are not optional and they are not "one-time historical"—every new deploy host needs the same shape.
+These steps must be performed on any host that will serve as a Ground Control deploy target (red-dragon today, any future replacement host, or a disaster-recovery rebuild). They are not optional and they are not "one-time historical": every new deploy host needs the same shape.
 
 Step 4 below (the `gc-deploy` user and its forced-command `authorized_keys` entry) is the entry point `make deploy` uses from a remote tailnet host. Operator-side compose ops run as `atomik`; `gc-deploy` exists solely so SSH-authenticated deploys cannot do anything except run the deploy script.
 

@@ -1,13 +1,14 @@
 package com.keplerops.groundcontrol.api.riskscenarios;
 
+import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public record TreatmentPlanRequest(
@@ -20,7 +21,7 @@ public record TreatmentPlanRequest(
         String rationale,
         Instant dueDate,
         TreatmentPlanStatus status,
-        List<Map<String, Object>> actionItems,
+        @Valid List<@NotNull ActionItem> actionItems,
         List<String> reassessmentTriggers,
         UUID methodologyProfileId,
         @Size(max = 100) String methodologyStrategyKey) {}
