@@ -141,6 +141,22 @@ meaning. Any migration versions added here must be listed in
 
 ## Cross-Cutting Layers
 
+- Control-link target validation (#860 / C4): `ControlLinkService.create` must
+  keep using `GraphTargetResolverService.validateControlTarget` as the only
+  internal-vs-external dispatch point before duplicate detection and save.
+  `targetEntityId` is the persisted slot for every first-class target the
+  resolver currently treats as internal: `ASSET`, `RISK_SCENARIO`,
+  `RISK_REGISTER_RECORD`, `RISK_ASSESSMENT_RESULT`, `TREATMENT_PLAN`,
+  `METHODOLOGY_PROFILE`, `OBSERVATION`, `REQUIREMENT`, `FINDING`, and
+  `EVIDENCE`. `targetIdentifier` remains the slot for `CODE`, `CONFIGURATION`,
+  `OPERATIONAL_ARTIFACT`, and `EXTERNAL`.
+- Substrate drift guardrail: do not reclassify `FINDING` or `EVIDENCE` as
+  external just because older GC-T004 issue text names them that way. ADR-038
+  promotes inbound `FINDING` link targets to modeled graph nodes, and the
+  current evidence projection alignment treats `EVIDENCE` links as
+  `EvidenceArtifact` UUID references. Any future target-type classification
+  change belongs in `GraphTargetResolverService`, the matching graph projection
+  contributor, docs/API.md, and resolver/service tests together.
 - Security: `/api/v1/treatment-plans/**` stays inside the `ApiSecurityConfig`
   path matrix. In production the request must pass `IpAllowlistFilter`,
   `BearerTokenAuthFilter`, Spring authorization, and then `ActorFilter`.
@@ -238,6 +254,9 @@ tool, a parallel DTO translator, or entity-specific request plumbing.
   linkage merely because it has free-text action items.
 - Do not duplicate `AssetLink`, `ControlLink`, `RiskScenarioLink`, graph IDs,
   traceability links, or audit tables to make treatment-specific variants.
+- Do not persist an internal `ControlLinkTargetType` through the
+  `targetIdentifier` path to match stale issue text; use the resolver's current
+  modeled-target classification.
 - Do not hide methodology-specific strategy values in arbitrary action-item
   keys when the API enum or methodology profile should carry the contract.
 - Do not let a treatment plan reference a risk scenario outside the linked risk

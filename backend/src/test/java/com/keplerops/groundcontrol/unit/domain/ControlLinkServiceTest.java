@@ -4,6 +4,9 @@ import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -27,6 +30,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -105,23 +110,42 @@ class ControlLinkServiceTest {
             assertThat(result.getLinkType()).isEqualTo(ControlLinkType.PROTECTS);
         }
 
-        @Test
-        void rejectsCrossProjectInternalTarget() {
-            // Issue #875: ControlLinkService used to persist targetEntityId
-            // without validating project scope. GraphTargetResolverService now
-            // does the existence/project check; a target from another project
-            // surfaces as DomainValidationException with "not found".
-            var foreignAssetId = UUID.randomUUID();
+        // PR #875 security provenance: ControlLinkService used to persist targetEntityId
+        // without validating project scope. GraphTargetResolverService now owns the
+        // existence/project check for all internal types. At the service layer the
+        // resolver is mocked, so "non-existent UUID" and "cross-project UUID" are
+        // observationally identical — one parameterized test covers both per type
+        // without duplicating a 10× matrix.
+        @ParameterizedTest
+        @EnumSource(
+                value = ControlLinkTargetType.class,
+                names = {
+                    "ASSET",
+                    "REQUIREMENT",
+                    "RISK_SCENARIO",
+                    "RISK_REGISTER_RECORD",
+                    "RISK_ASSESSMENT_RESULT",
+                    "TREATMENT_PLAN",
+                    "METHODOLOGY_PROFILE",
+                    "OBSERVATION",
+                    "FINDING",
+                    "EVIDENCE"
+                })
+        void rejectsInternalTargetWhenResolverThrows(ControlLinkTargetType targetType) {
+            var targetEntityId = UUID.randomUUID();
             when(controlService.getById(projectId, controlId)).thenReturn(control);
             when(graphTargetResolverService.validateControlTarget(
-                            projectId, ControlLinkTargetType.ASSET, foreignAssetId, null))
-                    .thenThrow(new DomainValidationException("Asset target not found in the requested project"));
+                            eq(projectId), eq(targetType), any(UUID.class), isNull()))
+                    .thenThrow(new DomainValidationException(
+                            targetType.name() + " target not found in the requested project"));
 
             var command = new com.keplerops.groundcontrol.domain.controls.service.CreateControlLinkCommand(
-                    ControlLinkTargetType.ASSET, foreignAssetId, null, ControlLinkType.PROTECTS, null, null);
+                    targetType, targetEntityId, null, ControlLinkType.ASSOCIATED, null, null);
             assertThatThrownBy(() -> controlLinkService.create(projectId, controlId, command))
                     .isInstanceOf(DomainValidationException.class)
                     .hasMessageContaining("not found in the requested project");
+
+            verify(controlLinkRepository, never()).save(any());
         }
 
         @Test
