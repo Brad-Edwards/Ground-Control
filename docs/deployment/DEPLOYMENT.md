@@ -18,7 +18,7 @@ internet because:
   check.
 - The deployment template assumes a single operator on a trusted internal
   network. Multi-tenant, federated, or internet-exposed deployments need the
-  larger auth surface tracked in issue [#983](https://github.com/KeplerOps/Ground-Control/issues/983).
+  larger auth surface tracked in issue [#983](https://github.com/Brad-Edwards/Ground-Control/issues/983).
 
 If you need to expose Ground Control beyond Tailscale today, terminate TLS in
 front of it (Caddy / Traefik / nginx) AND understand that the auth controls
@@ -36,7 +36,7 @@ for the proper auth surface.
 ### Setup
 
 ```bash
-git clone https://github.com/KeplerOps/Ground-Control.git
+git clone https://github.com/Brad-Edwards/Ground-Control.git
 cd Ground-Control
 cp .env.example .env
 make up                            # Start PostgreSQL + AGE
@@ -144,7 +144,7 @@ review, not an `.env` flag.
 CSRF protection is on for the browser chain (Spring's
 `CookieCsrfTokenRepository` with `HttpOnly=false`, so the SPA's
 `fetch` wrapper can read the `XSRF-TOKEN` cookie and echo it via the
-`X-XSRF-TOKEN` header). The bearer chain remains CSRF-disabled—agents do not need to send a CSRF token.
+`X-XSRF-TOKEN` header). The bearer chain remains CSRF-disabled; agents do not need to send a CSRF token.
 
 #### First-admin bootstrap
 
@@ -324,13 +324,14 @@ within seconds. Order matters; do not skip ahead.
      `tools/ground_control/sync_policy.mjs`,
      `tools/packs/sync_packs.mjs`).
    - Long-running agent processes that inherited `GC_BASE_URL` from the
-     operator's shell (each one needs a token of its own logical class—consumer-classes share a single token, individual processes do not
+     operator's shell (each one needs a token of its own logical class;
+     consumer-classes share a single token, individual processes do not
      each need a unique one).
    - Ad-hoc `curl`, `gh api`, or scripted callers.
    Every entry on the list needs a token before step 6 happens.
 
 2. **Provision tokens—one principal per logical consumer-class.** Generate
-   long random tokens (for example `openssl rand -hex 32`). Typical layout:
+   long random tokens (for example, `openssl rand -hex 32`). Typical layout:
    - slot 0: `ground-control-mcp` / `USER`—every MCP / agent caller.
    - slot 1: `operator-admin` / `ADMIN`—the human operator's CLI.
    - slot 2: `automation` / `ADMIN`—CI live-policy + pack-sync jobs.
@@ -374,10 +375,10 @@ within seconds. Order matters; do not skip ahead.
      (immutable) to refer to the actual candidate. Resolve a stable digest
      from either with:
      ```bash
-     docker pull ghcr.io/keplerops/ground-control:dev
-     docker inspect ghcr.io/keplerops/ground-control:dev \
+     docker pull ghcr.io/brad-edwards/ground-control:dev
+     docker inspect ghcr.io/brad-edwards/ground-control:dev \
        --format '{{index .RepoDigests 0}}'
-     # → ghcr.io/keplerops/ground-control@sha256:<digest>
+     # → ghcr.io/brad-edwards/ground-control@sha256:<digest>
      ```
      Pin the dry-run AND the production `/opt/gc/.env` to that digest so
      the image you tested is the image you deploy.
@@ -386,7 +387,7 @@ within seconds. Order matters; do not skip ahead.
      `db` service bind-mounts `/data/postgres/`. To keep prod's schema
      untouched, run the dry-run with a separate compose project name and
      swap the bind-mount for an isolated Docker named volume. Use a
-     non-default port (for example `18000:8000`) so it does not collide with the
+     non-default port (for example, `18000:8000`) so it does not collide with the
      running production backend on `:8000`. Tear down with `down -v` to
      destroy the throwaway DB volume when finished.
      ```bash
@@ -400,7 +401,7 @@ within seconds. Order matters; do not skip ahead.
      # token values that will land in /opt/gc/.env. Set GC_IMAGE to the
      # candidate digest you resolved above. Run with a separate compose
      # project name (gc-dryrun) and rebind the prod port + DB volume:
-     GC_IMAGE=ghcr.io/keplerops/ground-control@sha256:<digest> \
+     GC_IMAGE=ghcr.io/brad-edwards/ground-control@sha256:<digest> \
        docker compose -p gc-dryrun --env-file "${dryrun_env}" \
        -f deploy/docker/docker-compose.prod.yml up -d
      # When done:
@@ -430,7 +431,7 @@ within seconds. Order matters; do not skip ahead.
        --env-file "${dryrun_env}" logs --tail=200 backend | \
        grep '"actor_id"'
      ```
-   Do NOT capture wire-level traces (for example `curl --trace-ascii`,
+   Do NOT capture wire-level traces (for example, `curl --trace-ascii`,
    `tcpdump`, agent debug stdout) for this verification: those formats
    embed the literal `Authorization: Bearer <token>` header, and any
    resulting file or transcript becomes a credential leak—anyone who
@@ -469,7 +470,7 @@ within seconds. Order matters; do not skip ahead.
    digest.** Use the indexed `GROUNDCONTROL_SECURITY_CREDENTIALS_*` shape
    (matches the env-var table above and `deploy/docker/.env.template`).
    The same digest you dry-ran against in step 4 belongs in `GC_IMAGE`
-   here—pinning by digest (`ghcr.io/keplerops/ground-control@sha256:...`)
+   here—pinning by digest (`ghcr.io/brad-edwards/ground-control@sha256:...`)
    guarantees the cutover rolls the image you tested, not whatever has
    moved under `:dev` since. After editing, `chmod 600`.
 
@@ -551,7 +552,7 @@ The backend ships as a multi-stage Docker image (`backend/Dockerfile`):
 ```bash
 make docker-build
 # or directly:
-docker build -f backend/Dockerfile -t ghcr.io/keplerops/ground-control:latest .
+docker build -f backend/Dockerfile -t ghcr.io/brad-edwards/ground-control:latest .
 ```
 
 #### Run locally
@@ -561,7 +562,7 @@ docker run --rm -p 8000:8000 \
   -e GC_DATABASE_URL=jdbc:postgresql://host:5432/ground_control \
   -e GC_DATABASE_USER=gc \
   -e GC_DATABASE_PASSWORD=gc \
-  ghcr.io/keplerops/ground-control:latest
+  ghcr.io/brad-edwards/ground-control:latest
 ```
 
 Flyway migrations run automatically on startup—no separate migration step needed.
@@ -600,7 +601,7 @@ Ground Control runs on `red-dragon` (Hetzner dedicated, AMD Ryzen 7 3700X / 128 
 - **Host**: `red-dragon` (single tailnet-resident host, Ubuntu, Docker Engine 29.x, Compose v5.x).
 - **Access**: Tailscale only. sshd binds to `100.98.28.66:22` (the tailnet IP)—no public ingress. Application reachable on tailnet at `http://red-dragon:8000`.
 - **Storage**: `/data/postgres` (bind-mounted into the db container) and `/data/backups` (pg_dump artifacts). Both on red-dragon's main NVMe.
-- **Image registry**: GHCR (`ghcr.io/keplerops/ground-control`). Pulled by `docker compose pull` on each deploy.
+- **Image registry**: GHCR (`ghcr.io/brad-edwards/ground-control`). Pulled by `docker compose pull` on each deploy.
 - **Backups**: 3×/day `pg_dump` cron to `/data/backups/`, 30-day local retention. Off-box copy via rsync over the tailnet to `aurora`. Policy is GC-P021 / [ADR-025](../../architecture/adrs/025-backup-policy.md).
 - **Cost**: $0 marginal (red-dragon is paid for unrelated reasons).
 
@@ -618,32 +619,36 @@ The compose stack on red-dragon lives at `/opt/gc/`:
 
 ### Deploy contract
 
-#### Automatic
+Deploys are operator-driven. A fresh image lands on `red-dragon` only when an operator runs the deploy; there is no push-to-main CI deploy job (see the comment block above the removed `deploy:` job in `.github/workflows/ci.yml` for context).
 
-Every push to `main` that passes CI + smoke triggers the `deploy` job in `.github/workflows/ci.yml`. The job runs on a fabricator-managed runner (which joins the tailnet at first boot via [`KeplerOps/fabricator` PR #14](https://github.com/KeplerOps/fabricator/pull/14)) and SSHes `gc-deploy@red-dragon`. The `gc-deploy` user's `authorized_keys` carries a single forced-command entry:
+#### Manual deploy (the default path)
 
-```
-command="/opt/gc/deploy.sh",restrict <ed25519-pubkey>
-```
-
-`restrict` disables PTY, port forwarding, X11, agent forwarding, user-rc—the deploy key cannot do anything except run the deploy script. SSH exit code is the deploy script's exit code.
-
-The two GitHub repo secrets that drive this:
-
-- `RED_DRAGON_DEPLOY_KEY`—the ed25519 private key for `gc-deploy`.
-- `RED_DRAGON_KNOWN_HOSTS`—host-key fingerprints for `red-dragon` (`StrictHostKeyChecking=yes`).
-
-The `tag:fabricator-runner` → `tag:gc-host:tcp:22` tailnet ACL constrains the runner's reach to the deploy port. No other tailnet device is reachable from a runner.
-
-#### Manual
-
-From any tailnet host:
+From any tailnet host with the deploy SSH key, or from `red-dragon` itself:
 
 ```bash
-# Deploy latest image
-ssh gc-deploy@red-dragon                     # forced command runs deploy.sh
+make deploy
+```
 
-# Operator-side compose ops (run as your normal tailnet identity, not gc-deploy)
+`make deploy` calls `scripts/deploy.sh`, which is host-aware:
+
+- **On red-dragon**: runs `sudo -u gc-deploy /opt/gc/deploy.sh`.
+- **From any other tailnet host**: SSHes `gc-deploy@red-dragon`. The `gc-deploy` user's `authorized_keys` carries a single forced-command entry:
+
+  ```
+  command="/opt/gc/deploy.sh",restrict <ed25519-pubkey>
+  ```
+
+  `restrict` disables PTY, port forwarding, X11, agent forwarding, user-rc—the deploy key cannot do anything except run the deploy script. SSH exit code is the deploy script's exit code.
+
+`/opt/gc/deploy.sh` pulls the GHCR image pinned by `GC_IMAGE` in `/opt/gc/.env` (a floating tag like `:main`), brings the compose stack up, and verifies `/actuator/health` from inside the backend container. On failure it tails the last 50 lines of backend logs and exits non-zero.
+
+The full operator runbook (rollback path, verification steps, things not to do) lives in `skills/deploy/SKILL.md` (`/deploy`).
+
+#### Other operator-side compose ops
+
+Run as your normal tailnet identity, not `gc-deploy` (the `gc-deploy` SSH session is restricted to the forced command and cannot run these):
+
+```bash
 ssh red-dragon 'cd /opt/gc && docker compose ps'
 ssh red-dragon 'cd /opt/gc && docker compose logs --tail=200 backend'
 ```
@@ -664,26 +669,38 @@ docker exec gc-db-1 pg_restore -U gc -d ground_control --clean --if-exists --no-
 
 Apache AGE extension state (`ag_graph`, `ag_label`) emits ignorable duplicate-key errors during restore—those tables are pre-populated by the AGE extension at db init. Application data restores cleanly.
 
-### Backup and Recovery
+### Backup and recovery
 
-The legacy AWS path (DLM snapshots + S3 dumps) is gone. The on-prem path is:
+The on-prem backup path is:
 
 | Layer | Mechanism | Cadence | Retention |
 |-------|-----------|---------|-----------|
-| Local logical | `pg_dump -Fc` from inside the db container → `/data/backups/` | 3×/day (03/11/19 UTC) | 30 days local |
-| Off-box logical | `rsync` over tailnet to `aurora:/var/backups/groundcontrol/` | After each pg_dump | per-aurora retention policy |
-| Restore drill | `pg_restore` of the newest dump into a throwaway db | Weekly | log retained 30 days |
+| Local logical dump | `pg_dump -Fc` from inside the `gc-db-1` container → `/data/backups/` | 03:00, 11:00, 19:00 UTC (`gc-backup.timer`) | 30 days (`GC_BACKUP_KEEP_DAYS`) |
+| Off-box copy | rsync over the tailnet to `gc-backup@aurora:/var/backups/groundcontrol/` via `rrsync` forced command | After each local dump | per-aurora retention |
 
-GC-P021 requires backup ≥ 3×/day with off-box durability. The `assert-backup-policy.sh` gate (pre-commit / `make policy`) enforces the policy floor on whatever values the repo declares; lowering cadence below 3×/day will fail the gate.
+GC-P021 requires backup ≥ 3×/day with off-box durability. The local cadence is set in `deploy/systemd/gc-backup.timer`. The off-box clause is satisfied by the rsync to aurora; if the rsync fails the local dump still succeeds and the `gc-backup.service` journal carries a `WARN: rsync to ... failed` line. Repeated `WARN` lines across timer slots mean the off-box durability clause is not met and aurora-side access has drifted.
 
-The operator runbook is [docs/operations/backup-restore.md](../operations/backup-restore.md). Manual ops:
+There is no automated restore drill in this iteration; the operator restores manually when needed (see the operator runbook). The `scripts/assert-backup-policy.sh` gate (pre-commit / `make policy`) enforces structural invariants on the in-repo backup scripts so the cadence and retention floors stay declared.
+
+The operator runbook is [docs/operations/backup-restore.md](../operations/backup-restore.md). Common operations:
 
 ```bash
-ssh red-dragon /opt/gc/backup.sh                  # ad-hoc backup
-ssh red-dragon /opt/gc/restore.sh --list          # enumerate
-ssh red-dragon /opt/gc/restore.sh /data/backups/<name>.dump
-ssh red-dragon /opt/gc/test-restore.sh            # verify newest dump against a throwaway db
+# Trigger an ad-hoc backup.
+ssh red-dragon 'sudo systemctl start gc-backup.service'
+ssh red-dragon 'sudo journalctl -u gc-backup.service --since "5 minutes ago" --no-pager | tail'
+
+# List local dumps.
+ssh red-dragon 'sudo ls -lht /data/backups/'
+
+# List off-box dumps.
+ssh aurora 'sudo ls -lht /var/backups/groundcontrol/'
+
+# Inspect the timer schedule and the most recent run.
+ssh red-dragon 'systemctl list-timers gc-backup.timer'
+ssh red-dragon 'sudo journalctl -u gc-backup.service --since "24 hours ago" --no-pager'
 ```
+
+Restoring from a dump, rebuilding after host loss, and post-restore verification all live in the operator runbook.
 
 ### Monitoring
 
@@ -691,17 +708,25 @@ ssh red-dragon /opt/gc/test-restore.sh            # verify newest dump against a
 - **Logs**: `docker compose logs backend` / `db`. Compose's default log driver retains in-memory; for persistence, the host's journald captures the docker daemon output.
 - **Restart policy**: `restart: unless-stopped` on both services covers the container-crash case. There is no separate watchdog cron; the legacy ADR-018 watchdog was AWS-specific and has not been ported. If health degrades without the container exiting, the next deploy's health gate or operator inspection will catch it.
 
-### Initial host setup (one-time, historical)
+### Initial deploy-host setup (required)
 
-The setup performed on red-dragon during cutover, captured for disaster-recovery reproduction:
+These steps must be performed on any host that will serve as a Ground Control deploy target—red-dragon today, any future replacement host, or a disaster-recovery rebuild. They are not optional and they are not "one-time historical"—every new deploy host needs the same shape.
+
+Step 4 below (the `gc-deploy` user and its forced-command `authorized_keys` entry) is the entry point `make deploy` uses from a remote tailnet host. Operator-side compose ops run as `atomik`; `gc-deploy` exists solely so SSH-authenticated deploys cannot do anything except run the deploy script.
+
+#### 1. Directory layout
 
 ```bash
-# Directory layout
 sudo mkdir -p /opt/gc /data/postgres /data/backups
 sudo chown -R 999:999 /data/postgres
 sudo chown atomik:atomik /opt/gc /data/backups
+```
 
-# Compose + env (env mirrors gc-dev's, but GC_IMAGE points at GHCR)
+The Postgres container runs as uid 999; bind-mounting `/data/postgres` to that uid avoids permission churn on first start.
+
+#### 2. Compose file + environment
+
+```bash
 sudo cp deploy/docker/docker-compose.prod.yml /opt/gc/docker-compose.yml
 sudo install -o atomik -g atomik -m 600 /dev/stdin /opt/gc/.env <<'EOF'
 GC_DATABASE_URL=jdbc:postgresql://db:5432/ground_control
@@ -713,37 +738,83 @@ JAVA_TOOL_OPTIONS=-Xmx512m -Xms256m
 POSTGRES_DB=ground_control
 POSTGRES_USER=gc
 POSTGRES_PASSWORD=...
-GC_IMAGE=ghcr.io/keplerops/ground-control:latest
+GC_IMAGE=ghcr.io/brad-edwards/ground-control:main
+GC_BIND_IP=<host's tailnet IP>
 GC_EMBEDDING_PROVIDER=openai
 GC_EMBEDDING_API_KEY=...
 EOF
+```
 
-# Deploy user (CI's SSH target, forced-command only)
+`GC_IMAGE` MUST be a floating tag like `:main` so `docker compose pull` resolves it to whatever the CI `docker` job most recently pushed. Pinning a digest here freezes the deploy on that image forever. `GC_BIND_IP` restricts the host port-binding to the tailnet interface only (per #828 / ADR-026 defense in depth); leaving it unset binds `0.0.0.0` and exposes port 8000 on the public interface.
+
+The credential block (`GROUNDCONTROL_SECURITY_CREDENTIALS_*`) and any other ADR-026 / GC-P011 access-control envs go in this same file. See the ADR-026 cutover playbook above for the full credential shape.
+
+#### 3. Deploy script
+
+```bash
+sudo install -o root -g root -m 755 deploy/docker/deploy.sh /opt/gc/deploy.sh
+```
+
+`/opt/gc/deploy.sh` is a byte-for-byte mirror of `deploy/docker/deploy.sh` in this repo. Drift policy: edit the repo copy, PR through dev → main, then re-copy the file onto the host.
+
+#### 4. `gc-deploy` user (required)
+
+`gc-deploy` is the SSH-forced-command entry point. `make deploy` from a remote tailnet host SSHes to `gc-deploy@<host>` and runs `/opt/gc/deploy.sh`. The user can do nothing else—port forwarding, PTY, X11, agent forwarding, and user-rc are all disabled via the `restrict` modifier in `authorized_keys`.
+
+```bash
 sudo useradd -m -s /bin/bash gc-deploy
 sudo usermod -aG docker gc-deploy
 sudo install -d -o gc-deploy -g gc-deploy -m 700 /home/gc-deploy/.ssh
 sudo install -o gc-deploy -g gc-deploy -m 600 /dev/stdin /home/gc-deploy/.ssh/authorized_keys <<EOF
 command="/opt/gc/deploy.sh",restrict <ed25519-pubkey>
 EOF
+```
 
-# Deploy script
-sudo install -o root -g root -m 755 /dev/stdin /opt/gc/deploy.sh <<'SH'
-#!/bin/bash
-set -euo pipefail
-cd /opt/gc
-docker compose --env-file .env pull
-docker compose --env-file .env up -d
-for i in $(seq 1 30); do
-  if curl -sf http://localhost:8000/actuator/health 2>/dev/null | grep -q '"UP"'; then
-    echo "Deploy complete - application is UP"; exit 0
-  fi; sleep 2
-done
-echo "ERROR: health check did not pass within 60s"
-docker compose --env-file .env logs --tail=50 backend
-exit 1
-SH
+Replace `<ed25519-pubkey>` with the public half of the keypair whose private half lives in the GitHub repo secret `RED_DRAGON_DEPLOY_KEY`. Sudoers must allow the operator's normal account (for example, `atomik`) to invoke `sudo -u gc-deploy /opt/gc/deploy.sh` without a password—`make deploy` from the host itself uses this path. A drop-in like `/etc/sudoers.d/gc-deploy` containing `atomik ALL=(gc-deploy) NOPASSWD: /opt/gc/deploy.sh` is enough.
 
-# First start
+Verify the `gc-deploy` user is wired correctly before declaring setup done:
+
+```bash
+# Forced command path (from a remote tailnet host with the deploy key):
+ssh gc-deploy@<host>     # should run /opt/gc/deploy.sh
+
+# Local-sudo path (on the host itself):
+sudo -u gc-deploy /opt/gc/deploy.sh
+```
+
+#### 5. First start
+
+```bash
 gh auth token | docker login ghcr.io -u <github-user> --password-stdin
 cd /opt/gc && docker compose --env-file .env up -d
 ```
+
+GHCR login is only needed if the image is in a private package; the `:main` image is public, but the docker daemon's auth cache still benefits from a one-time login. Subsequent deploys go through `/opt/gc/deploy.sh` (and `make deploy` from any tailnet host).
+
+#### 6. `gc-backup` user and timer (required)
+
+The backup mechanism is a system user (`gc-backup`) whose only job is to run `pg_dump` against the `gc-db-1` container and rsync the dump off-box to aurora. The installer creates the user, generates a fresh SSH key, copies `/opt/gc/backup.sh`, drops in the systemd unit + timer, and enables the timer:
+
+```bash
+sudo bash deploy/scripts/install-gc-backup.sh
+```
+
+The script prints the new pubkey on completion. Hand it to aurora-side setup:
+
+```bash
+# On aurora:
+sudo bash deploy/scripts/aurora-setup-gc-backup.sh '<pubkey-from-above>'
+```
+
+The aurora-side script creates the `gc-backup` user there, the `/var/backups/groundcontrol/` directory, and writes an `authorized_keys` entry locked to a single forced command (`rrsync /var/backups/groundcontrol/`). The key can do nothing else on aurora.
+
+After both sides run, verify end-to-end:
+
+```bash
+sudo systemctl start gc-backup.service
+sudo journalctl -u gc-backup.service --since "5 minutes ago" --no-pager | tail
+# Expect: "OK: local dump → /data/backups/gc-...dump (... bytes)"
+# and:    "OK: off-box copy → gc-backup@aurora:./"
+```
+
+The cadence is `03:00, 11:00, 19:00 UTC` per GC-P021 and is set in `deploy/systemd/gc-backup.timer`.

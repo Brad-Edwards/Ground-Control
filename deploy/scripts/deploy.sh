@@ -29,13 +29,13 @@ cd "${GC_DIR}"
 
 # Optional: rewrite GC_IMAGE to the supplied ref. The ref is taken
 # verbatim, so callers that want a digest pin pass the full
-# `ghcr.io/keplerops/ground-control@sha256:...` string; tag-style
-# `ghcr.io/keplerops/ground-control:dev` also works.
+# `ghcr.io/brad-edwards/ground-control@sha256:...` string; tag-style
+# `ghcr.io/brad-edwards/ground-control:dev` also works.
 if [ "${1:-}" != "" ]; then
   REF="$1"
   case "${REF}" in
     ghcr.io/*) ;;
-    *) REF="ghcr.io/keplerops/ground-control:${REF}" ;;
+    *) REF="ghcr.io/brad-edwards/ground-control:${REF}" ;;
   esac
   sed -i "s|^GC_IMAGE=.*|GC_IMAGE=${REF}|" .env
   echo "Pinned GC_IMAGE=${REF}"

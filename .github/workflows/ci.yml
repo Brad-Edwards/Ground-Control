@@ -96,7 +96,7 @@ jobs:
   # ---------------------------------------------------------------------------
   # Advisory security scanners — Trivy (image + IaC) and OSV-scanner (Java
   # deps). Both are non-blocking: findings produce SARIF artifacts but never
-  # fail CI or gate `docker`/`smoke`/`deploy`. Scope and guardrails are
+  # fail CI or gate `docker`/`smoke`. Scope and guardrails are
   # captured in `architecture/notes/security-scanner-ci-preflight.md`.
   # Gitleaks (pre-commit) and SonarCloud remain the authoritative controls
   # for secrets and code quality respectively; these jobs are additive.
@@ -447,61 +447,12 @@ jobs:
           exit 1
 
   # ---------------------------------------------------------------------------
-  # Deploy — pushes to main SSH into red-dragon (Hetzner, tailnet-only) and
-  # invoke a forced-command deploy script that pulls the latest GHCR image
-  # and brings the compose stack up. The runner reaches red-dragon over the
-  # tailnet via fabricator-side Tailscale integration — no public SSH on
-  # red-dragon. See ADR-030.
+  # Deploy — temporarily removed. The push-to-main → ssh `gc-deploy@red-dragon`
+  # → forced-command `/opt/gc/deploy.sh` flow (per ADR-030) is currently
+  # operator-driven only: run `make deploy` from any tailnet host (or on
+  # red-dragon itself). The CI deploy job will be reinstated once the
+  # auto-deploy ergonomics are revisited; the `RED_DRAGON_DEPLOY_KEY` /
+  # `RED_DRAGON_KNOWN_HOSTS` secrets and `environment: dev` registration
+  # remain in place against that return. See `skills/deploy/SKILL.md` and
+  # `docs/deployment/DEPLOYMENT.md` for the manual flow.
   # ---------------------------------------------------------------------------
-  deploy:
-    # Deliberate exception to the github-hosted default. The deploy job
-    # SSHes into red-dragon over the tailnet (per ADR-030); github-hosted
-    # runners aren't on the tailnet by default, so this stays on the
-    # fabricator-managed self-hosted runner pool that joins the tailnet
-    # via cloud-init. If/when we add `tailscale/github-action` and the
-    # required Tailscale OAuth secret to this repo, this job can move to
-    # ubuntu-latest too — until then, leave it on self-hosted.
-    runs-on: [self-hosted, linux, x64]
-    needs: [smoke]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: dev
-    steps:
-      - name: Install deploy SSH key
-        env:
-          DEPLOY_KEY: ${{ secrets.RED_DRAGON_DEPLOY_KEY }}
-          KNOWN_HOSTS: ${{ secrets.RED_DRAGON_KNOWN_HOSTS }}
-        run: |
-          install -d -m 700 ~/.ssh
-          umask 077
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/red-dragon-deploy
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/red-dragon-known-hosts
-
-      - name: Wait for tailnet readiness
-        # The runner VM joins the tailnet at first boot via fabricator's
-        # cloud-init; tailscaled is normally ready by the time this job
-        # starts, but cap the wait at 30s so a misconfigured runner fails
-        # loudly instead of stalling the deploy job.
-        run: |
-          for i in $(seq 1 30); do
-            if tailscale status >/dev/null 2>&1; then
-              echo "tailnet ready"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "ERROR: tailnet did not come up within 30s — runner may be missing the FABRICATOR_TAILSCALE_AUTHKEY env on aurora"
-          exit 1
-
-      - name: Deploy via SSH (gc-deploy@red-dragon, forced command)
-        run: |
-          ssh \
-            -i ~/.ssh/red-dragon-deploy \
-            -o UserKnownHostsFile=~/.ssh/red-dragon-known-hosts \
-            -o StrictHostKeyChecking=yes \
-            -o ConnectTimeout=15 \
-            -o ServerAliveInterval=15 \
-            gc-deploy@red-dragon
-          # No command argument is sent — the gc-deploy authorized_keys
-          # entry uses ``command="/opt/gc/deploy.sh",restrict``, which forces
-          # the deploy script and ignores any argv. SSH exit code is the
-          # deploy script's exit code.
