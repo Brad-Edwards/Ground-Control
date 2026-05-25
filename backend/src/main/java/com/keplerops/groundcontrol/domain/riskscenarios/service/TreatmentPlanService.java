@@ -13,8 +13,12 @@ import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioR
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.TreatmentPlanRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,18 +31,21 @@ public class TreatmentPlanService {
     private final RiskScenarioRepository riskScenarioRepository;
     private final MethodologyProfileRepository methodologyProfileRepository;
     private final ProjectService projectService;
+    private final Validator validator;
 
     public TreatmentPlanService(
             TreatmentPlanRepository repository,
             RiskRegisterRecordRepository riskRegisterRecordRepository,
             RiskScenarioRepository riskScenarioRepository,
             MethodologyProfileRepository methodologyProfileRepository,
-            ProjectService projectService) {
+            ProjectService projectService,
+            Validator validator) {
         this.repository = repository;
         this.riskRegisterRecordRepository = riskRegisterRecordRepository;
         this.riskScenarioRepository = riskScenarioRepository;
         this.methodologyProfileRepository = methodologyProfileRepository;
         this.projectService = projectService;
+        this.validator = validator;
     }
 
     public TreatmentPlan create(CreateTreatmentPlanCommand command) {
@@ -175,39 +182,26 @@ public class TreatmentPlanService {
         applyMethodologyBinding(plan, projectId, methodologyProfileId, methodologyStrategyKey);
     }
 
-    private static final int ACTION_ITEM_OWNER_MAX = 200;
-    private static final int ACTION_ITEM_ASSIGNEE_MAX = 200;
-    private static final int ACTION_ITEM_DESCRIPTION_MAX = 4000;
-
+    /**
+     * Bypass-write guard for action items. Controller writes traverse Bean Validation
+     * via {@code @Valid} on the request DTOs; service-layer writes (tests, future
+     * internal callers) hit this guard so they cannot persist out-of-contract data.
+     * Reuses the {@link ActionItem} constraint annotations programmatically so the
+     * service guard and the REST boundary share one source of truth.
+     */
     private void validateActionItems(List<ActionItem> actionItems) {
         for (int i = 0; i < actionItems.size(); i++) {
             var item = actionItems.get(i);
             if (item == null) {
                 throw new DomainValidationException("Action item at index " + i + " must not be null");
             }
-            if (item.owner() == null || item.owner().isBlank()) {
-                throw new DomainValidationException(
-                        "Action item at index " + i + " has invalid owner: must not be blank");
-            }
-            if (item.owner().length() > ACTION_ITEM_OWNER_MAX) {
-                throw new DomainValidationException(
-                        "Action item at index " + i + " has invalid owner: length exceeds " + ACTION_ITEM_OWNER_MAX);
-            }
-            if (item.dueDate() == null) {
-                throw new DomainValidationException(
-                        "Action item at index " + i + " has invalid dueDate: must not be null");
-            }
-            if (item.status() == null) {
-                throw new DomainValidationException(
-                        "Action item at index " + i + " has invalid status: must not be null");
-            }
-            if (item.assignee() != null && item.assignee().length() > ACTION_ITEM_ASSIGNEE_MAX) {
-                throw new DomainValidationException("Action item at index " + i
-                        + " has invalid assignee: length exceeds " + ACTION_ITEM_ASSIGNEE_MAX);
-            }
-            if (item.description() != null && item.description().length() > ACTION_ITEM_DESCRIPTION_MAX) {
-                throw new DomainValidationException("Action item at index " + i
-                        + " has invalid description: length exceeds " + ACTION_ITEM_DESCRIPTION_MAX);
+            Set<ConstraintViolation<ActionItem>> violations = validator.validate(item);
+            if (!violations.isEmpty()) {
+                String detail = violations.stream()
+                        .map(v -> v.getPropertyPath() + " " + v.getMessage())
+                        .sorted()
+                        .collect(Collectors.joining("; "));
+                throw new DomainValidationException("Action item at index " + i + " has invalid " + detail);
             }
         }
     }

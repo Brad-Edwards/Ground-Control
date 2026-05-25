@@ -37,7 +37,6 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -59,7 +58,6 @@ class TreatmentPlanServiceTest {
     @Mock
     private ProjectService projectService;
 
-    @InjectMocks
     private TreatmentPlanService service;
 
     private Project project;
@@ -71,6 +69,14 @@ class TreatmentPlanServiceTest {
 
     @BeforeEach
     void setUp() {
+        var validatorFactory = jakarta.validation.Validation.buildDefaultValidatorFactory();
+        service = new TreatmentPlanService(
+                repository,
+                riskRegisterRecordRepository,
+                riskScenarioRepository,
+                methodologyProfileRepository,
+                projectService,
+                validatorFactory.getValidator());
         project = new Project("ground-control", "Ground Control");
         projectId = UUID.randomUUID();
         setField(project, "id", projectId);
@@ -693,7 +699,7 @@ class TreatmentPlanServiceTest {
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("index 0")
                 .hasMessageContaining("owner")
-                .hasMessageContaining("length");
+                .hasMessageContaining("size");
     }
 
     @Test
@@ -726,7 +732,7 @@ class TreatmentPlanServiceTest {
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("index 0")
                 .hasMessageContaining("assignee")
-                .hasMessageContaining("length");
+                .hasMessageContaining("size");
     }
 
     @Test
@@ -759,6 +765,6 @@ class TreatmentPlanServiceTest {
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("index 0")
                 .hasMessageContaining("description")
-                .hasMessageContaining("length");
+                .hasMessageContaining("size");
     }
 }
