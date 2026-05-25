@@ -62,6 +62,18 @@ pinned to a specific version, verified by SHA-256 checksum, and installed by
 installs Vale automatically on first need rather than skipping; agents and
 contributors do not bypass the gate by virtue of a fresh clone.
 
+**House-style overrides (`GoogleProject/` namespace).** The `.vale/styles/GoogleProject/`
+directory is the registry for project-specific rules that augment the upstream
+`errata-ai/Google` package. The first such rule is `EmDashDensity`: an
+occurrence-based check scoped to paragraph, `max: 1`, `level: error`, that
+flags paragraphs containing more than one em-dash. The rule pairs with the
+em-dash density guidance in `docs/DOC_STYLE.md §Em-dash density` and runs at
+error level so the on-touch ratchet enforces density compliance the same way
+it enforces every other Google rule: any doc touched in a PR must satisfy the
+budget. Future house-style overrides (passive-voice budget, sentence length,
+hedging patterns) land as sibling YAML files in the same
+namespace with no additional plumbing.
+
 **Scope: whole file on first touch.** Vale lints any `.md` / `.markdown` file
 that appears in the current diff (added, copied, modified, or renamed vs the
 base ref) in its entirety, not line-by-line. A one-line edit to a previously
