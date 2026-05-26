@@ -9,11 +9,13 @@ import com.keplerops.groundcontrol.domain.graph.model.GraphIds;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.ActionItemStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerCategory;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import java.time.Instant;
@@ -53,7 +55,8 @@ class TreatmentPlanResponseTest {
             plan.setDueDate(dueDate);
             var actionItems = List.of(new ActionItem("alice", dueDate, ActionItemStatus.PLANNED, null, "deploy patch"));
             plan.setActionItems(actionItems);
-            var triggers = List.of("quarterly review");
+            var triggers = List.of(new ReassessmentTrigger(
+                    ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC, null, null, null, "quarterly review"));
             plan.setReassessmentTriggers(triggers);
             var now = Instant.now();
             setField(plan, "createdAt", now);
@@ -76,7 +79,10 @@ class TreatmentPlanResponseTest {
             assertThat(response.dueDate()).isEqualTo(dueDate);
             assertThat(response.status()).isEqualTo(TreatmentPlanStatus.PLANNED);
             assertThat(response.actionItems()).isEqualTo(actionItems);
-            assertThat(response.reassessmentTriggers()).containsExactly("quarterly review");
+            assertThat(response.reassessmentTriggers()).hasSize(1);
+            assertThat(response.reassessmentTriggers().get(0).category())
+                    .isEqualTo(ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC);
+            assertThat(response.reassessmentTriggers().get(0).note()).isEqualTo("quarterly review");
             assertThat(response.createdAt()).isEqualTo(now);
             assertThat(response.updatedAt()).isEqualTo(now);
         }

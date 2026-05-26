@@ -66,9 +66,9 @@ public class TreatmentPlan extends BaseEntity {
     @Column(name = "action_items", columnDefinition = "TEXT")
     private List<ActionItem> actionItems;
 
-    @Convert(converter = JacksonTextCollectionConverters.StringListConverter.class)
+    @Convert(converter = JacksonTextCollectionConverters.ReassessmentTriggerListConverter.class)
     @Column(name = "reassessment_triggers", columnDefinition = "TEXT")
-    private List<String> reassessmentTriggers;
+    private List<ReassessmentTrigger> reassessmentTriggers;
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "methodology_profile_id")
@@ -173,11 +173,11 @@ public class TreatmentPlan extends BaseEntity {
         this.actionItems = actionItems;
     }
 
-    public List<String> getReassessmentTriggers() {
+    public List<ReassessmentTrigger> getReassessmentTriggers() {
         return reassessmentTriggers;
     }
 
-    public void setReassessmentTriggers(List<String> reassessmentTriggers) {
+    public void setReassessmentTriggers(List<ReassessmentTrigger> reassessmentTriggers) {
         this.reassessmentTriggers = reassessmentTriggers;
     }
 

@@ -54,6 +54,9 @@ class ControlServiceTest {
     @Mock
     private ProjectService projectService;
 
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     @InjectMocks
     private ControlService controlService;
 
@@ -362,6 +365,70 @@ class ControlServiceTest {
             assertThatThrownBy(() -> controlService.delete(projectId, control.getId()))
                     .isInstanceOf(com.keplerops.groundcontrol.domain.exception.ConflictException.class)
                     .hasMessageContaining("dependent audit evidence");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // GC-T004 / C8 (#863): reassessment publisher coverage
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class ReassessmentEvents {
+
+        @Test
+        void transitionStatusPublishesControlStateChangedEvent() {
+            var control = makeControl();
+            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
+                    .thenReturn(Optional.of(control));
+            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            // DRAFT → PROPOSED is the only valid first hop from the default ControlStatus.
+            var result = controlService.transitionStatus(projectId, control.getId(), ControlStatus.PROPOSED);
+
+            // Assert the state change actually happened (test-quality cycle 1): a
+            // broken implementation that fires the event but fails to apply the
+            // transition would otherwise pass.
+            assertThat(result.getStatus()).isEqualTo(ControlStatus.PROPOSED);
+            verify(eventPublisher)
+                    .publishEvent(any(
+                            com.keplerops.groundcontrol.domain.riskscenarios.events.ControlStateChangedEvent.class));
+        }
+
+        @Test
+        void updateWithEffectivenessChangePublishes() {
+            var control = makeControl();
+            control.setEffectiveness(java.util.Map.of("rating", "LOW"));
+            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
+                    .thenReturn(Optional.of(control));
+            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var command = new UpdateControlCommand(
+                    null, null, null, null, null, null, null, java.util.Map.of("rating", "HIGH"), null, null);
+            var result = controlService.update(projectId, control.getId(), command);
+
+            // Capture-and-assert the state change (test-quality cycle 1): a broken
+            // implementation that fires the event but fails to set effectiveness
+            // would otherwise pass this and the integration test.
+            assertThat(result.getEffectiveness()).containsEntry("rating", "HIGH");
+            verify(eventPublisher)
+                    .publishEvent(any(
+                            com.keplerops.groundcontrol.domain.riskscenarios.events.ControlStateChangedEvent.class));
+        }
+
+        @Test
+        void updateWithoutEffectivenessChangeDoesNotPublish() {
+            var control = makeControl();
+            control.setEffectiveness(java.util.Map.of("rating", "HIGH"));
+            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
+                    .thenReturn(Optional.of(control));
+            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            // Description-only update — effectiveness unchanged, no event.
+            var command = new UpdateControlCommand(
+                    null, null, "Updated description", null, null, null, null, null, null, null);
+            controlService.update(projectId, control.getId(), command);
+
+            org.mockito.Mockito.verifyNoInteractions(eventPublisher);
         }
     }
 }

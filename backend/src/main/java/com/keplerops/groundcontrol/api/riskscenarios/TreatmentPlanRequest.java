@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.api.riskscenarios;
 
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import jakarta.validation.Valid;
@@ -22,6 +23,6 @@ public record TreatmentPlanRequest(
         Instant dueDate,
         TreatmentPlanStatus status,
         @Valid List<@NotNull ActionItem> actionItems,
-        List<String> reassessmentTriggers,
+        @Valid List<@NotNull ReassessmentTrigger> reassessmentTriggers,
         UUID methodologyProfileId,
         @Size(max = 100) String methodologyStrategyKey) {}

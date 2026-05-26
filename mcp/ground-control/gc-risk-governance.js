@@ -87,7 +87,66 @@ export const gcRiskGovernanceZodShape = {
     assignee: z.string().optional(),
     description: z.string().optional(),
   })).optional(),
-  reassessment_triggers: z.array(z.string()).optional(),
+  reassessment_triggers: z.array(z.object({
+    category: z.enum([
+      "TREATMENT_PROGRESS_CHANGED",
+      "ASSET_STATE_CHANGED",
+      "CONTROL_STATE_CHANGED",
+      "ASSESSMENT_REFRESH",
+      "METHODOLOGY_SPECIFIC",
+    ]),
+    target_type: z.enum([
+      "ASSET", "CONTROL", "RISK_SCENARIO", "RISK_REGISTER_RECORD",
+      "RISK_ASSESSMENT_RESULT", "TREATMENT_PLAN", "EXTERNAL",
+    ]).optional(),
+    target_entity_id: z.string().uuid().optional(),
+    target_identifier: z.string().optional(),
+    note: z.string().optional(),
+  }).superRefine((t, ctx) => {
+    // GC-T004 / C8 (#863), codex cycle-1 finding #2: the trigger target is a
+    // coherent typed reference, not three independent optionals. Mirror the
+    // backend invariant at the MCP boundary so bad calls fail before
+    // round-tripping through the API.
+    const hasIdentifier = t.target_identifier != null && t.target_identifier.length > 0;
+    const hasEntityId = t.target_entity_id != null;
+    if (t.target_type == null) {
+      if (hasEntityId || hasIdentifier) {
+        ctx.addIssue({
+          code: "custom",
+          message: "target_entity_id / target_identifier require target_type",
+        });
+      }
+      return;
+    }
+    if (t.target_type === "EXTERNAL") {
+      if (hasEntityId) {
+        ctx.addIssue({
+          code: "custom",
+          message: "target_type=EXTERNAL must not set target_entity_id",
+        });
+      }
+      if (!hasIdentifier) {
+        ctx.addIssue({
+          code: "custom",
+          message: "target_type=EXTERNAL requires target_identifier",
+        });
+      }
+    } else {
+      if (hasIdentifier) {
+        ctx.addIssue({
+          code: "custom",
+          message: `target_type=${t.target_type} must not set target_identifier`,
+        });
+      }
+      if (!hasEntityId) {
+        ctx.addIssue({
+          code: "custom",
+          message: `target_type=${t.target_type} requires target_entity_id`,
+        });
+      }
+    }
+  })).optional(),
+  reassessment_required_at: z.string().optional(),
   outcome: z.string().optional(),
   assurance_level: z.enum(ASSURANCE_LEVELS).optional(),
   verified_at: z.string().optional(),
@@ -101,7 +160,7 @@ export const GC_RISK_GOVERNANCE_DESCRIPTION =
   `Per-entity create fields (snake_case; round-trip to backend camelCase): ` +
   `risk_register_record={uid,title,owner,review_cadence,next_review_at,category_tags,decision_metadata,asset_scope_summary,risk_scenario_ids}; ` +
   `risk_assessment_result={risk_scenario_id,risk_register_record_id,methodology_profile_id,analyst_identity,assumptions,input_factors,observation_date,assessment_at,time_horizon,confidence,uncertainty_metadata,computed_outputs,evidence_refs,notes,observation_ids}; ` +
-  `treatment_plan={uid,title,risk_scenario_id,risk_register_record_id,strategy,owner,rationale,due_date,status,action_items,reassessment_triggers,methodology_profile_id,methodology_strategy_key}. ` +
+  `treatment_plan={uid,title,risk_scenario_id,risk_register_record_id,strategy,owner,rationale,due_date,status,action_items,reassessment_triggers[{category,target_type,target_entity_id,target_identifier,note}],methodology_profile_id,methodology_strategy_key}. ` +
   `Update DTOs drop create-only foreign keys (uid; risk_register_record_id for treatment_plan; risk_scenario_id for risk_assessment_result) and status fields whose changes go through the transition action. ` +
   `Unknown fields are dropped — never tunneled through metadata.`;
 

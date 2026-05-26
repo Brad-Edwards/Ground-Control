@@ -4,11 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.ActionItemStatus;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerCategory;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerTargetType;
 import com.keplerops.groundcontrol.shared.persistence.JacksonTextCollectionConverters;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -301,6 +305,149 @@ class JacksonTextCollectionConvertersTest {
             assertThatThrownBy(() -> converter.convertToEntityAttribute("{\"not\":\"array\"}"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("Expected JSON array");
+        }
+    }
+
+    @Nested
+    class ReassessmentTriggerListConverterTests {
+
+        private final JacksonTextCollectionConverters.ReassessmentTriggerListConverter converter =
+                new JacksonTextCollectionConverters.ReassessmentTriggerListConverter();
+
+        @Test
+        void convertToDatabaseColumn_nullInput_returnsNull() {
+            assertThat(converter.convertToDatabaseColumn(null)).isNull();
+        }
+
+        @Test
+        void convertToEntityAttribute_nullInput_returnsNull() {
+            assertThat(converter.convertToEntityAttribute(null)).isNull();
+        }
+
+        @Test
+        void convertToEntityAttribute_blankString_returnsNull() {
+            assertThat(converter.convertToEntityAttribute("")).isNull();
+            assertThat(converter.convertToEntityAttribute("  ")).isNull();
+        }
+
+        @Test
+        void roundTrip_singleTypedTrigger_categoryOnly() {
+            var original = List.of(
+                    new ReassessmentTrigger(ReassessmentTriggerCategory.ASSESSMENT_REFRESH, null, null, null, null));
+            String json = converter.convertToDatabaseColumn(original);
+            List<ReassessmentTrigger> restored = converter.convertToEntityAttribute(json);
+
+            assertThat(restored).hasSize(1);
+            var t = restored.get(0);
+            assertThat(t.category()).isEqualTo(ReassessmentTriggerCategory.ASSESSMENT_REFRESH);
+            assertThat(t.targetType()).isNull();
+            assertThat(t.targetEntityId()).isNull();
+            assertThat(t.targetIdentifier()).isNull();
+            assertThat(t.note()).isNull();
+        }
+
+        @Test
+        void roundTrip_triggerWithInternalTarget() {
+            var entityId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+            var original = List.of(new ReassessmentTrigger(
+                    ReassessmentTriggerCategory.ASSET_STATE_CHANGED,
+                    ReassessmentTriggerTargetType.ASSET,
+                    entityId,
+                    null,
+                    null));
+            String json = converter.convertToDatabaseColumn(original);
+            List<ReassessmentTrigger> restored = converter.convertToEntityAttribute(json);
+
+            assertThat(restored).hasSize(1);
+            assertThat(restored.get(0).targetType()).isEqualTo(ReassessmentTriggerTargetType.ASSET);
+            assertThat(restored.get(0).targetEntityId()).isEqualTo(entityId);
+        }
+
+        @Test
+        void roundTrip_triggerWithExternalIdentifier() {
+            var original = List.of(new ReassessmentTrigger(
+                    ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC,
+                    ReassessmentTriggerTargetType.EXTERNAL,
+                    null,
+                    "JIRA-INFRA-42",
+                    "watchlist sweep"));
+            String json = converter.convertToDatabaseColumn(original);
+            List<ReassessmentTrigger> restored = converter.convertToEntityAttribute(json);
+
+            assertThat(restored).hasSize(1);
+            assertThat(restored.get(0).targetIdentifier()).isEqualTo("JIRA-INFRA-42");
+            assertThat(restored.get(0).note()).isEqualTo("watchlist sweep");
+        }
+
+        @Test
+        void roundTrip_emptyList() {
+            var original = List.<ReassessmentTrigger>of();
+            String json = converter.convertToDatabaseColumn(original);
+            List<ReassessmentTrigger> restored = converter.convertToEntityAttribute(json);
+            assertThat(restored).isEmpty();
+        }
+
+        @Test
+        void writePath_emitsCanonicalShape_noExtraKeys() {
+            var trigger =
+                    new ReassessmentTrigger(ReassessmentTriggerCategory.ASSESSMENT_REFRESH, null, null, null, null);
+            String json = converter.convertToDatabaseColumn(List.of(trigger));
+
+            // null fields (targetType, targetEntityId, targetIdentifier, note)
+            // must be absent due to @JsonInclude(NON_NULL).
+            assertThat(json).doesNotContain("targetType");
+            assertThat(json).doesNotContain("targetEntityId");
+            assertThat(json).doesNotContain("targetIdentifier");
+            assertThat(json).doesNotContain("note");
+            assertThat(json).contains("\"category\":\"ASSESSMENT_REFRESH\"");
+        }
+
+        @Test
+        void legacyV043Row_freeTextString_foldsToMethodologySpecificNote() {
+            // V043 stored reassessment_triggers as List<String>. Legacy rows have
+            // bare strings inside the array — fold each into a typed trigger with
+            // category=METHODOLOGY_SPECIFIC and note=<string>.
+            String legacyJson = "[\"quarterly review\",\"after Q3 audit\"]";
+            List<ReassessmentTrigger> restored = converter.convertToEntityAttribute(legacyJson);
+
+            assertThat(restored).hasSize(2);
+            assertThat(restored.get(0).category()).isEqualTo(ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC);
+            assertThat(restored.get(0).note()).isEqualTo("quarterly review");
+            assertThat(restored.get(1).note()).isEqualTo("after Q3 audit");
+        }
+
+        @Test
+        void legacyV043Row_blankString_skipped() {
+            String legacyJson = "[\"\",\"real trigger\",\"   \"]";
+            List<ReassessmentTrigger> restored = converter.convertToEntityAttribute(legacyJson);
+
+            assertThat(restored).hasSize(1);
+            assertThat(restored.get(0).note()).isEqualTo("real trigger");
+        }
+
+        @Test
+        void convertToEntityAttribute_nonArrayJson_throws() {
+            assertThatThrownBy(() -> converter.convertToEntityAttribute("{\"not\":\"array\"}"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Expected JSON array");
+        }
+
+        @Test
+        void convertToEntityAttribute_invalidJson_throws() {
+            assertThatThrownBy(() -> converter.convertToEntityAttribute("{not valid"))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        void mixedLegacyAndTypedRows_bothDeserialise() {
+            String mixedJson = "[\"legacy text\",{\"category\":\"TREATMENT_PROGRESS_CHANGED\"}]";
+            List<ReassessmentTrigger> restored = converter.convertToEntityAttribute(mixedJson);
+
+            assertThat(restored).hasSize(2);
+            assertThat(restored.get(0).category()).isEqualTo(ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC);
+            assertThat(restored.get(0).note()).isEqualTo("legacy text");
+            assertThat(restored.get(1).category()).isEqualTo(ReassessmentTriggerCategory.TREATMENT_PROGRESS_CHANGED);
+            assertThat(restored.get(1).note()).isNull();
         }
     }
 }

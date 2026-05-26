@@ -21,6 +21,7 @@ import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmen
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskRegisterRecordRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.TreatmentPlanRepository;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerTargetType;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkTargetType;
 import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelRepository;
 import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelLinkTargetType;
@@ -388,6 +389,111 @@ class GraphTargetResolverServiceTest {
                         projectId, ControlLinkTargetType.EXTERNAL, null, " "))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("targetIdentifier");
+    }
+
+    // GC-T004 / C8 (#863): reassessment-trigger target validation reuses the same
+    // per-internal-type project-scoped existence checks. Same security shape as
+    // ControlLink — a non-existent or cross-project UUID produces
+    // DomainValidationException("not found in the requested project").
+    @ParameterizedTest
+    @EnumSource(
+            value = ReassessmentTriggerTargetType.class,
+            names = {
+                "ASSET",
+                "CONTROL",
+                "RISK_SCENARIO",
+                "RISK_REGISTER_RECORD",
+                "RISK_ASSESSMENT_RESULT",
+                "TREATMENT_PLAN"
+            })
+    void validateReassessmentTriggerTargetAcceptsInternalTargets(ReassessmentTriggerTargetType targetType) {
+        stubReassessmentTriggerInternalTarget(targetType, true);
+
+        var validated =
+                graphTargetResolverService.validateReassessmentTriggerTarget(projectId, targetType, targetId, null);
+
+        assertThat(validated.internal()).isTrue();
+        assertThat(validated.targetEntityId()).isEqualTo(targetId);
+        assertThat(validated.targetIdentifier()).isNull();
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = ReassessmentTriggerTargetType.class,
+            names = {
+                "ASSET",
+                "CONTROL",
+                "RISK_SCENARIO",
+                "RISK_REGISTER_RECORD",
+                "RISK_ASSESSMENT_RESULT",
+                "TREATMENT_PLAN"
+            })
+    void validateReassessmentTriggerTargetRejectsInternalTargets(ReassessmentTriggerTargetType targetType) {
+        stubReassessmentTriggerInternalTarget(targetType, false);
+
+        assertThatThrownBy(() -> graphTargetResolverService.validateReassessmentTriggerTarget(
+                        projectId, targetType, targetId, null))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("not found in the requested project");
+    }
+
+    @Test
+    void validateReassessmentTriggerTargetAcceptsExternalIdentifier() {
+        var validated = graphTargetResolverService.validateReassessmentTriggerTarget(
+                projectId, ReassessmentTriggerTargetType.EXTERNAL, null, "JIRA-INFRA-42");
+
+        assertThat(validated.internal()).isFalse();
+        assertThat(validated.targetIdentifier()).isEqualTo("JIRA-INFRA-42");
+    }
+
+    @Test
+    void validateReassessmentTriggerTargetRejectsMissingInternalTargetEntityId() {
+        assertThatThrownBy(() -> graphTargetResolverService.validateReassessmentTriggerTarget(
+                        projectId, ReassessmentTriggerTargetType.ASSET, null, null))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("targetEntityId");
+    }
+
+    @Test
+    void validateReassessmentTriggerTargetRejectsMissingExternalIdentifier() {
+        assertThatThrownBy(() -> graphTargetResolverService.validateReassessmentTriggerTarget(
+                        projectId, ReassessmentTriggerTargetType.EXTERNAL, null, " "))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("targetIdentifier");
+    }
+
+    private void stubReassessmentTriggerInternalTarget(ReassessmentTriggerTargetType targetType, boolean exists) {
+        switch (targetType) {
+            case ASSET -> when(assetRepository.existsByIdAndProjectId(targetId, projectId))
+                    .thenReturn(exists);
+            case CONTROL -> when(controlRepository.existsByIdAndProjectId(targetId, projectId))
+                    .thenReturn(exists);
+            case RISK_SCENARIO -> when(riskScenarioRepository.existsByIdAndProjectId(targetId, projectId))
+                    .thenReturn(exists);
+            case RISK_REGISTER_RECORD -> when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(
+                            targetId, projectId))
+                    .thenReturn(
+                            exists
+                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
+                                            com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord
+                                                    .class))
+                                    : java.util.Optional.empty());
+            case RISK_ASSESSMENT_RESULT -> when(riskAssessmentResultRepository.findByIdAndProjectIdWithObservations(
+                            targetId, projectId))
+                    .thenReturn(
+                            exists
+                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
+                                            com.keplerops.groundcontrol.domain.riskscenarios.model.RiskAssessmentResult
+                                                    .class))
+                                    : java.util.Optional.empty());
+            case TREATMENT_PLAN -> when(treatmentPlanRepository.findByIdAndProjectId(targetId, projectId))
+                    .thenReturn(
+                            exists
+                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
+                                            com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan.class))
+                                    : java.util.Optional.empty());
+            case EXTERNAL -> throw new IllegalArgumentException("Not an internal target type");
+        }
     }
 
     private void stubAssetInternalTarget(AssetLinkTargetType targetType, boolean exists) {
