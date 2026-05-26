@@ -390,16 +390,20 @@ public class TreatmentPlanService {
         }
     }
 
+    /**
+     * Defensive: persistence-read items bypass Bean Validation, so a legacy row with
+     * status=null could otherwise NPE in {@code hist.merge}. The {@code @NotNull}
+     * contract on {@code ActionItem.status} applies at the REST / service write boundary,
+     * not at the JPA read boundary that feeds this method — Sonar's S2589 ("always false")
+     * reads the contract but not the read path, hence the suppression.
+     */
+    @SuppressWarnings("java:S2589")
     private Map<ActionItemStatus, Long> actionItemStatusHistogram(List<ActionItem> items) {
         Map<ActionItemStatus, Long> hist = new EnumMap<>(ActionItemStatus.class);
         if (items == null) {
             return hist;
         }
         for (var item : items) {
-            // Defensive: persistence-read items bypass Bean Validation, so a legacy
-            // row with status=null could otherwise NPE in hist.merge. The @NotNull
-            // contract on ActionItem.status applies at the REST/service write boundary,
-            // not at the JPA read boundary that feeds this method.
             if (item == null || item.status() == null) {
                 continue;
             }

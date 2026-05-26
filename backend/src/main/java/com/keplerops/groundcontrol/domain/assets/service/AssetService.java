@@ -127,8 +127,8 @@ public class AssetService {
         // (codex cycle-4 finding 1). Cheap-fail before the project lookup.
         bounded("uid", command.uid(), OperationalAssetBounds.UID);
         bounded("name", command.name(), OperationalAssetBounds.NAME);
-        bounded("owner", command.owner(), OperationalAssetBounds.OWNER);
-        bounded("steward", command.steward(), OperationalAssetBounds.STEWARD);
+        bounded(FIELD_OWNER, command.owner(), OperationalAssetBounds.OWNER);
+        bounded(FIELD_STEWARD, command.steward(), OperationalAssetBounds.STEWARD);
         bounded(FIELD_SUBTYPE, command.subtype(), OperationalAssetBounds.SUBTYPE);
 
         var project = projectRepository
@@ -762,13 +762,13 @@ public class AssetService {
         // Non-controller callers must hit the same envelope as DTO-validated ones.
         bounded("name", command.name(), OperationalAssetBounds.NAME);
         if (!command.clearOwner()) {
-            bounded("owner", command.owner(), OperationalAssetBounds.OWNER);
+            bounded(FIELD_OWNER, command.owner(), OperationalAssetBounds.OWNER);
         }
         if (!command.clearSteward()) {
-            bounded("steward", command.steward(), OperationalAssetBounds.STEWARD);
+            bounded(FIELD_STEWARD, command.steward(), OperationalAssetBounds.STEWARD);
         }
         if (!command.clearSubtype()) {
-            bounded("subtype", command.subtype(), OperationalAssetBounds.SUBTYPE);
+            bounded(FIELD_SUBTYPE, command.subtype(), OperationalAssetBounds.SUBTYPE);
         }
         applyCoreFieldUpdates(asset, command);
         applyMetadataUpdates(asset, command);
@@ -898,8 +898,8 @@ public class AssetService {
                             + command.subtype() + " was committed first",
                     "asset_subtype_schema_active_conflict",
                     Map.of(
-                            "assetType", command.assetType().name(),
-                            "subtype", command.subtype()));
+                            FIELD_ASSET_TYPE, command.assetType().name(),
+                            FIELD_SUBTYPE, command.subtype()));
         }
     }
 
