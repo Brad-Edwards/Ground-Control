@@ -763,8 +763,12 @@ server.tool(
     plan_comment_url: z.string().optional(),
     summary: z.string().max(FINAL_REPORT_SUMMARY_MAX).optional(),
     lane: z.enum(["implement", "quickfix"]).optional(),
+    documentation_outcome: z.object({
+      outcome: z.enum(["updated", "verified_unchanged", "not_updated_authorized"]),
+      rationale: z.string().optional(),
+    }).optional(),
   },
-  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, lane }) => {
+  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, lane, documentation_outcome }) => {
     try {
       return ok(JSON.stringify(await runPostFinalReport({
         repoPath: repo_path,
@@ -779,6 +783,7 @@ server.tool(
         planCommentUrl: plan_comment_url ?? null,
         lane: lane ?? null,
         summary: summary ?? null,
+        documentation_outcome: documentation_outcome ?? null,
       }), null, 2));
     } catch (e) { return err(e); }
   },
@@ -804,8 +809,12 @@ server.tool(
     }),
     changelog_fragment: z.string().optional(),
     test_notes: z.string().optional(),
+    documentation_outcome: z.object({
+      outcome: z.enum(["updated", "verified_unchanged", "not_updated_authorized"]),
+      rationale: z.string().optional(),
+    }).optional(),
   },
-  async ({ repo_path, issue_number, change_class, requirement_uids, adr_refs, summary, changes, traceability, changelog_fragment, test_notes }) => {
+  async ({ repo_path, issue_number, change_class, requirement_uids, adr_refs, summary, changes, traceability, changelog_fragment, test_notes, documentation_outcome }) => {
     try {
       return ok(JSON.stringify(await runRenderPrBody({
         repoPath: repo_path,
@@ -818,6 +827,7 @@ server.tool(
         traceability,
         changelogFragment: changelog_fragment ?? null,
         testNotes: test_notes ?? null,
+        documentation_outcome: documentation_outcome ?? null,
       }), null, 2));
     } catch (e) { return err(e); }
   },

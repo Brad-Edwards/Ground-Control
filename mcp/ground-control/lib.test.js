@@ -7009,6 +7009,36 @@ describe("runRenderPrBody (policy enforcement at the tool boundary)", () => {
     assert.equal(r.ok, false);
     assert.equal(r.error, "pr_body_input_invalid");
   });
+  it("renders the ## Documentation section when documentation_outcome is supplied (issue #989)", async () => {
+    // The MCP wrapper (index.js gc_render_pr_body) accepts documentation_outcome
+    // and passes it through to runRenderPrBody; runRenderPrBody calls buildPrBody
+    // which emits the ## Documentation section. This pins the contract that
+    // the field actually reaches the renderer rather than getting dropped at
+    // the wrapper boundary (issue #989 follow-up).
+    const r = await runRenderPrBody(baseInput({
+      documentation_outcome: { outcome: "updated" },
+    }));
+    assert.equal(r.ok, true);
+    assert.ok(r.body.includes("## Documentation"), "rendered body should include the ## Documentation section");
+    assert.ok(r.body.includes("Updated: see diff."), "rendered body should include the outcome prose");
+  });
+  it("renders the ## Documentation section with rationale for outcome=not_updated_authorized", async () => {
+    const r = await runRenderPrBody(baseInput({
+      documentation_outcome: {
+        outcome: "not_updated_authorized",
+        rationale: "diff is test-infra only; runtime docs unchanged",
+      },
+    }));
+    assert.equal(r.ok, true);
+    assert.ok(r.body.includes("## Documentation"));
+    assert.ok(r.body.includes("Not updated (authorized)"));
+    assert.ok(r.body.includes("diff is test-infra only"));
+  });
+  it("omits the ## Documentation section when documentation_outcome is absent", async () => {
+    const r = await runRenderPrBody(baseInput());
+    assert.equal(r.ok, true);
+    assert.ok(!r.body.includes("## Documentation"), "body should not contain a Documentation section when the field is absent");
+  });
 });
 
 describe("buildTelemetryRecord (sanitizes branch in record body — F5 fix)", () => {

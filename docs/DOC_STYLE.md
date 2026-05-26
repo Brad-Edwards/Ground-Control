@@ -78,3 +78,9 @@ their contracts in `docs/DEVELOPMENT_WORKFLOW.md` and in their `SKILL.md`
 files. The style rules above apply to those files the same as to any other
 touched `.md` file: present tense, active voice, no forward guidance, at most
 one em-dash per paragraph.
+
+Per-PR documentation outcomes are recorded as a `## Documentation` section in
+the PR body and the Step 19 final-report comment. Pass the optional
+`documentation_outcome` field to `gc_render_pr_body` or `gc_post_final_report`
+when the diff touches a classified surface (per ADR-054). The renderer emits
+the section automatically; agents do not hand-author it.
