@@ -41,6 +41,8 @@ import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import jakarta.persistence.EntityManager;
 import java.util.Map;
 import java.util.UUID;
+import javax.sql.DataSource;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -100,16 +102,66 @@ class ReassessmentSignalIntegrationTest extends BaseIntegrationTest {
     @Autowired
     private TransactionTemplate transactionTemplate;
 
+    @Autowired
+    private DataSource dataSource;
+
     private Project project;
     private MethodologyProfile profile;
 
     @BeforeEach
     void seedProjectAndProfile() {
+        // Use the V012-seeded `ground-control` project rather than creating a new one per
+        // test. Other integration tests (RequirementController, RequirementsE2E,
+        // TraceabilityLinkController) call `/api/v1/requirements` without a `project` query
+        // param and rely on the "exactly one project" branch in `ProjectService.resolveProjectId`.
+        // Adding new projects breaks that contract across the shared Testcontainers DB.
         transactionTemplate.executeWithoutResult(status -> {
-            project = projectRepository.save(new Project("gc-c8-" + UUID.randomUUID(), "GC-T004 C8 test project"));
-            profile = methodologyProfileRepository.save(
-                    new MethodologyProfile(project, "MP-C8", "Profile", "1.0", MethodologyFamily.CUSTOM));
+            project = projectRepository
+                    .findByIdentifier("ground-control")
+                    .orElseThrow(() -> new IllegalStateException("V012-seeded 'ground-control' project missing"));
+            profile = methodologyProfileRepository.save(new MethodologyProfile(
+                    project, "MP-C8-" + UUID.randomUUID(), "Profile", "1.0", MethodologyFamily.CUSTOM));
         });
+    }
+
+    @AfterEach
+    void cleanupReassessmentRows() throws Exception {
+        // Hard cleanup via JDBC: integration tests share a single Testcontainers Postgres
+        // across the suite (BaseIntegrationTest static singleton), so leaking risk_assessment
+        // rows or links between tests would poison other suites that scan for orphans.
+        // Order matches FK direction.
+        try (var conn = dataSource.getConnection();
+                var stmt = conn.createStatement()) {
+            stmt.executeUpdate("DELETE FROM control_link WHERE control_id IN "
+                    + "(SELECT id FROM control WHERE uid LIKE 'CTRL-%')");
+            stmt.executeUpdate("DELETE FROM asset_link WHERE asset_id IN "
+                    + "(SELECT id FROM operational_asset WHERE uid LIKE 'ASSET-%')");
+            stmt.executeUpdate("DELETE FROM risk_assessment_result_audit WHERE id IN "
+                    + "(SELECT id FROM risk_assessment_result WHERE risk_scenario_id IN "
+                    + "(SELECT id FROM risk_scenario WHERE uid LIKE 'RS-%'))");
+            stmt.executeUpdate("DELETE FROM risk_assessment_result WHERE risk_scenario_id IN "
+                    + "(SELECT id FROM risk_scenario WHERE uid LIKE 'RS-%')");
+            stmt.executeUpdate("DELETE FROM treatment_plan_audit WHERE id IN "
+                    + "(SELECT id FROM treatment_plan WHERE uid LIKE 'TP-%')");
+            stmt.executeUpdate("DELETE FROM treatment_plan WHERE uid LIKE 'TP-%'");
+            stmt.executeUpdate("DELETE FROM risk_register_record_scenario WHERE risk_register_record_id IN "
+                    + "(SELECT id FROM risk_register_record WHERE uid LIKE 'RR-%')");
+            stmt.executeUpdate("DELETE FROM risk_register_record_audit WHERE id IN "
+                    + "(SELECT id FROM risk_register_record WHERE uid LIKE 'RR-%')");
+            stmt.executeUpdate("DELETE FROM risk_register_record WHERE uid LIKE 'RR-%'");
+            stmt.executeUpdate("DELETE FROM risk_scenario_audit WHERE id IN "
+                    + "(SELECT id FROM risk_scenario WHERE uid LIKE 'RS-%')");
+            stmt.executeUpdate("DELETE FROM risk_scenario WHERE uid LIKE 'RS-%'");
+            stmt.executeUpdate(
+                    "DELETE FROM control_audit WHERE id IN " + "(SELECT id FROM control WHERE uid LIKE 'CTRL-%')");
+            stmt.executeUpdate("DELETE FROM control WHERE uid LIKE 'CTRL-%'");
+            stmt.executeUpdate("DELETE FROM operational_asset_audit WHERE id IN "
+                    + "(SELECT id FROM operational_asset WHERE uid LIKE 'ASSET-%')");
+            stmt.executeUpdate("DELETE FROM operational_asset WHERE uid LIKE 'ASSET-%'");
+            stmt.executeUpdate("DELETE FROM methodology_profile_audit WHERE id IN "
+                    + "(SELECT id FROM methodology_profile WHERE profile_key LIKE 'MP-C8-%')");
+            stmt.executeUpdate("DELETE FROM methodology_profile WHERE profile_key LIKE 'MP-C8-%'");
+        }
     }
 
     @Test

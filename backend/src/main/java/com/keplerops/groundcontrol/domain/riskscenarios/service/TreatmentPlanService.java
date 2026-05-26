@@ -78,11 +78,24 @@ public class TreatmentPlanService {
                 .orElseThrow(() ->
                         new NotFoundException("Risk register record not found: " + command.riskRegisterRecordId()));
         var plan = new TreatmentPlan(project, command.uid(), command.title(), record, command.strategy());
-        if (command.status() != null && command.status() != TreatmentPlanStatus.PLANNED) {
+        boolean initialStatusIsTransition = command.status() != null && command.status() != TreatmentPlanStatus.PLANNED;
+        if (initialStatusIsTransition) {
             plan.transitionStatus(command.status());
         }
         applyUpdates(plan, project.getId(), command);
-        return repository.save(plan);
+        var saved = repository.save(plan);
+        if (initialStatusIsTransition) {
+            // Create-with-non-PLANNED-status is functionally a PLANNED → <status> transition
+            // at birth; the publisher contract treats it like `transitionStatus` so the
+            // C8 reassessment signal reaches affected assessment rows.
+            publish(buildSignal(
+                    saved,
+                    ReassessmentTriggerCategory.TREATMENT_PROGRESS_CHANGED,
+                    Set.of("status"),
+                    Map.of("status", TreatmentPlanStatus.PLANNED),
+                    Map.of("status", saved.getStatus())));
+        }
+        return saved;
     }
 
     @Transactional(readOnly = true)
