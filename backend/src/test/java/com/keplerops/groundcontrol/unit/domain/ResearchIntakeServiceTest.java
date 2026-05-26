@@ -92,8 +92,9 @@ class ResearchIntakeServiceTest {
         @Test
         void nonResearchProject_throwsValidation() {
             var project = makeProject(ProjectType.SOFTWARE);
+            var cmd = validCommand();
 
-            assertThatThrownBy(() -> service.create(project, validCommand()))
+            assertThatThrownBy(() -> service.create(project, cmd))
                     .isInstanceOf(DomainValidationException.class)
                     .hasMessageContaining("RESEARCH");
         }
@@ -102,8 +103,9 @@ class ResearchIntakeServiceTest {
         void existingIntake_throwsConflict() {
             var project = makeProject(ProjectType.RESEARCH);
             when(intakeRepository.existsByProjectId(project.getId())).thenReturn(true);
+            var cmd = validCommand();
 
-            assertThatThrownBy(() -> service.create(project, validCommand())).isInstanceOf(ConflictException.class);
+            assertThatThrownBy(() -> service.create(project, cmd)).isInstanceOf(ConflictException.class);
         }
 
         @Test
@@ -362,17 +364,18 @@ class ResearchIntakeServiceTest {
         @Test
         void nonResearchProject_throwsValidation() {
             var project = makeProject(ProjectType.GRC);
+            var cmd = validCommand();
 
-            assertThatThrownBy(() -> service.replace(project, validCommand()))
-                    .isInstanceOf(DomainValidationException.class);
+            assertThatThrownBy(() -> service.replace(project, cmd)).isInstanceOf(DomainValidationException.class);
         }
 
         @Test
         void noExistingIntake_throwsNotFound() {
             var project = makeProject(ProjectType.RESEARCH);
             when(intakeRepository.findByProjectId(project.getId())).thenReturn(Optional.empty());
+            var cmd = validCommand();
 
-            assertThatThrownBy(() -> service.replace(project, validCommand())).isInstanceOf(NotFoundException.class);
+            assertThatThrownBy(() -> service.replace(project, cmd)).isInstanceOf(NotFoundException.class);
         }
     }
 
