@@ -27,7 +27,7 @@ semicolon cannot carry.
 Soft budget: at most one em-dash per paragraph, typically zero. If a paragraph
 has two, rewrite one.
 
-Em-dash chains (`X — Y — Z`) should almost always be reordered into separate
+Em-dash chains (`X—Y—Z`) should almost always be reordered into separate
 clauses.
 
 This pattern was surfaced in shifter #704, where agent-written prose accumulated
@@ -50,6 +50,14 @@ Vale with the `errata-ai/Google` package runs on docs touched in the current
 diff via `make policy`, the CI `policy` job, and the pre-commit `vale-prose-lint`
 hook. The hook installs Vale via `tools/install-vale.sh` on first need; no
 manual `make vale-install` step is required.
+
+MCP-surface changes (`mcp/ground-control/index.js`, `mcp/ground-control/lib.js`)
+also trigger the `doc-coverage-gate-sync` rule per ADR-054, which requires this
+file and ADR-054 to stay current with the classifier surface they describe.
+Adding a new MCP tool or `gc_admin` action does not require new style rules
+here unless the action introduces a new doc-shape (a new request/response
+schema, for example)—in that case document the schema under the relevant
+service section in `docs/API.md`, which Vale lints on touch.
 
 ## Scope: whole file on first touch
 

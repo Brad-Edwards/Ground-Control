@@ -34,6 +34,45 @@ http://localhost:8000/api/v1/
 
 ## Endpoints
 
+### Projects
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/projects` | ProjectRequest | 201 | Create a project (optional `type` + nested `researchIntake`) |
+| GET | `/projects` |—| 200 | List projects (includes `type` and `researchIntake` when present) |
+| GET | `/projects/{identifier}` |—| 200 | Get a project by identifier |
+| PUT | `/projects/{identifier}` | UpdateProjectRequest | 200 | Update name / description |
+| PUT | `/projects/{identifier}/research-intake` | ResearchIntakeRequest | 200 | Replace the research intake on a RESEARCH project (404 if no intake exists; 422 if not RESEARCH) |
+
+`ProjectRequest` fields (ADR-056):
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `identifier` | string (`[a-z0-9-]+`, ≤ 50) | yes | Unique, immutable |
+| `name` | string (≤ 255) | yes | |
+| `description` | string | no | TEXT |
+| `type` | enum `SOFTWARE` \| `GRC` \| `RESEARCH` | no | Defaults to `SOFTWARE` |
+| `researchIntake` | `ResearchIntakeRequest` | required iff `type=RESEARCH` | 422 if mismatched |
+
+`ResearchIntakeRequest` fields (issue #999):
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `goal` | string (≤ 4000) | yes | Research goal narrative |
+| `paperContext` | string (≤ 8000) | no | Paper / project context |
+| `contributionType` | enum | yes | `TAXONOMY` \| `REVIEW` \| `EMPIRICAL_STUDY` \| `METHODOLOGY` \| `POSITION` \| `OTHER` |
+| `intendedOutput` | enum | yes | `SCOPING_REVIEW` \| `SYSTEMATIC_REVIEW` \| `SYSTEMATIC_MAP` \| `CRITICAL_REVIEW` \| `NARRATIVE_REVIEW` \| `TARGETED_RELATED_WORK` \| `TAXONOMY_PAPER` \| `OTHER` |
+| `autonomyLevel` | enum | yes | `COPILOT` \| `AUTONOMOUS` |
+| `allowedTools` | array of string (≤ 100 each, ≤ 100 entries) | yes | Empty list means no tools authorised; null is rejected |
+| `privacyConstraints` | string (≤ 4000) | no | Free-form |
+| `budgetTokens` | integer ≥ 0 | no | Token cap; null = unbounded |
+| `budgetWallClockMinutes` | integer ≥ 0 | no | Wall-clock cap; null = unbounded |
+| `budgetCostUsdMicros` | integer ≥ 0 | no | Cost cap in USD micros (1 USD = 1,000,000); null = unbounded |
+
+The seven non-`OTHER` `intendedOutput` values mirror the method keys in
+`skills/lit-review/methodology/catalog.yaml` so the phase-1 lit-review skill
+can derive a methodology choice from the intake (ADR-055).
+
 ### Requirements
 
 | Method | Path | Body | Status | Purpose |

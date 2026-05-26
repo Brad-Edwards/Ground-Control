@@ -53,7 +53,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "079", "080", "081", "082", "083", "084", "085", "086", "087", "088", "089", "090", "091",
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
-                        "123", "124", "125", "126", "127", "128", "129", "130");
+                        "123", "124", "125", "126", "127", "128", "129", "130", "131", "132");
     }
 
     @Test
@@ -1025,6 +1025,39 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .getSingleResult();
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT reassessment_required_at FROM risk_assessment_result_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        // V131-V132: project.type + research_intake (ADR-056, #999). Pin the
+        // type column on project, the live research_intake shape, and the
+        // _audit shadow column set. Without explicit column probes a copy-paste
+        // regression in V132 that dropped goal / autonomy_level / allowed_tools
+        // would silently create a wrong-shape shadow that passes at boot but
+        // fails on the first Envers flush at runtime.
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_name = 'project'"
+                        + " AND column_name = 'type' AND is_nullable = 'NO'")
+                .getSingleResult();
+        entityManager.createNativeQuery("SELECT 1 FROM research_intake LIMIT 1").getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM research_intake_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_name = 'research_intake'"
+                        + " AND column_name = 'goal' AND is_nullable = 'NO'")
+                .getSingleResult();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_name = 'research_intake'"
+                        + " AND column_name = 'project_id' AND is_nullable = 'NO'")
+                .getSingleResult();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT goal, paper_context, contribution_type, intended_output,"
+                                + " autonomy_level, allowed_tools, privacy_constraints,"
+                                + " budget_tokens, budget_wall_clock_minutes, budget_cost_usd_micros,"
+                                + " created_at, updated_at"
+                                + " FROM research_intake_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }

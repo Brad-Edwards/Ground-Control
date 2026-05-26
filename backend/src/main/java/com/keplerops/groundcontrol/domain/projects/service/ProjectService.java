@@ -4,7 +4,9 @@ import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
+import com.keplerops.groundcontrol.domain.projects.model.ProjectType;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
+import com.keplerops.groundcontrol.domain.research.service.ResearchIntakeService;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,22 +22,45 @@ public class ProjectService {
     private static final Logger log = LoggerFactory.getLogger(ProjectService.class);
 
     private final ProjectRepository projectRepository;
+    private final ResearchIntakeService researchIntakeService;
 
-    public ProjectService(ProjectRepository projectRepository) {
+    public ProjectService(ProjectRepository projectRepository, ResearchIntakeService researchIntakeService) {
         this.projectRepository = projectRepository;
+        this.researchIntakeService = researchIntakeService;
     }
 
     public Project create(CreateProjectCommand command) {
         if (projectRepository.existsByIdentifier(command.identifier())) {
             throw new ConflictException("Project with identifier '" + command.identifier() + "' already exists");
         }
-        var project = new Project(command.identifier(), command.name());
+        var resolvedType = command.type() == null ? ProjectType.SOFTWARE : command.type();
+        validateIntakeAgainstType(resolvedType, command.researchIntake());
+        var project = new Project(command.identifier(), command.name(), resolvedType);
         if (command.description() != null) {
             project.setDescription(command.description());
         }
         var saved = projectRepository.save(project);
-        log.info("project_created: identifier={} id={}", saved.getIdentifier(), saved.getId());
+        log.info("project_created: identifier={} id={} type={}", saved.getIdentifier(), saved.getId(), saved.getType());
+        if (resolvedType == ProjectType.RESEARCH && command.researchIntake() != null) {
+            researchIntakeService.create(saved, command.researchIntake());
+        }
         return saved;
+    }
+
+    private void validateIntakeAgainstType(
+            ProjectType type, com.keplerops.groundcontrol.domain.research.service.ResearchIntakeCommand intake) {
+        if (type == ProjectType.RESEARCH && intake == null) {
+            throw new DomainValidationException(
+                    "type=RESEARCH requires researchIntake to be present",
+                    "research_intake_required",
+                    Map.of("type", type.name()));
+        }
+        if (type != ProjectType.RESEARCH && intake != null) {
+            throw new DomainValidationException(
+                    "researchIntake is only allowed when type=RESEARCH",
+                    "research_intake_not_allowed",
+                    Map.of("type", type.name()));
+        }
     }
 
     @Transactional(readOnly = true)

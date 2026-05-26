@@ -47,7 +47,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import {
   // ---- project/requirement/relation/traceability ----
-  listProjects, createProject,
+  listProjects, createProject, replaceResearchIntake,
   getRequirementByUid, listRequirements, createRequirement, updateRequirement,
   transitionStatus, bulkTransitionStatus, archiveRequirement, cloneRequirement,
   createRelation, getRelations, deleteRelation,
@@ -2706,6 +2706,7 @@ const ADMIN_ACTIONS = [
   "import_strictdoc", "import_reqif", "sync_github", "sync_github_prs",
   "embed_requirement", "embed_project", "embedding_status",
   "materialize_graph", "create_project", "list_projects",
+  "replace_research_intake",
   "run_sweep", "run_sweep_all",
   "export_audit_timeline", "export_requirements", "export_sweep_report", "export_document",
 ];
@@ -2731,6 +2732,25 @@ if (ADMIN_TOOLS_ENABLED) {
       format: z.string().optional(),
       from: z.string().optional(),
       to: z.string().optional(),
+      // Project type + research intake (ADR-056, issue #999).
+      type: z.enum(["SOFTWARE", "GRC", "RESEARCH"]).optional(),
+      research_intake: z.object({
+        goal: z.string(),
+        paperContext: z.string().optional(),
+        contributionType: z.enum([
+          "TAXONOMY", "REVIEW", "EMPIRICAL_STUDY", "METHODOLOGY", "POSITION", "OTHER",
+        ]),
+        intendedOutput: z.enum([
+          "SCOPING_REVIEW", "SYSTEMATIC_REVIEW", "SYSTEMATIC_MAP", "CRITICAL_REVIEW",
+          "NARRATIVE_REVIEW", "TARGETED_RELATED_WORK", "TAXONOMY_PAPER", "OTHER",
+        ]),
+        autonomyLevel: z.enum(["COPILOT", "AUTONOMOUS"]),
+        allowedTools: z.array(z.string()),
+        privacyConstraints: z.string().optional(),
+        budgetTokens: z.number().int().nonnegative().optional(),
+        budgetWallClockMinutes: z.number().int().nonnegative().optional(),
+        budgetCostUsdMicros: z.number().int().nonnegative().optional(),
+      }).optional(),
     },
     async (args) => {
       try {
@@ -2746,7 +2766,21 @@ if (ADMIN_TOOLS_ENABLED) {
           case "list_projects": return ok(JSON.stringify(await listProjects(), null, 2));
           case "create_project": {
             reqArg(args, "identifier", "create_project"); reqArg(args, "name", "create_project");
-            return ok(JSON.stringify(await createProject({ identifier: args.identifier, name: args.name, description: args.description }), null, 2));
+            // type + researchIntake are optional (ADR-056); the backend defaults
+            // type to SOFTWARE and enforces "researchIntake iff type=RESEARCH".
+            const body = {
+              identifier: args.identifier,
+              name: args.name,
+              description: args.description,
+            };
+            if (args.type) body.type = args.type;
+            if (args.research_intake) body.researchIntake = args.research_intake;
+            return ok(JSON.stringify(await createProject(body), null, 2));
+          }
+          case "replace_research_intake": {
+            reqArg(args, "identifier", "replace_research_intake");
+            reqArg(args, "research_intake", "replace_research_intake");
+            return ok(JSON.stringify(await replaceResearchIntake(args.identifier, args.research_intake), null, 2));
           }
           case "run_sweep": return ok(JSON.stringify(await runSweep(args.project), null, 2));
           case "run_sweep_all": return ok(JSON.stringify(await runSweepAll(), null, 2));
