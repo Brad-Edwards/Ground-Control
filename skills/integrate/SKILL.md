@@ -1,13 +1,13 @@
 ---
 name: integrate
-description: "approved-PR integration manager: prepares approved PRs against the latest base branch in a target repo. Maintainer merge remains the human touchpoint. Prepare-only by default; enqueue/merge modes are reserved"
-argument-hint: "[--mode prepare] <target-repo-path-or-slug>"
+description: "approved-PR integration manager: prepares approved PRs against the latest base branch in a target repo. Default mode is prepare-only; mode=merge executes the merge per-PR after verification (ADR-029 carve-out, 2026-05-26). enqueue mode remains reserved."
+argument-hint: "[--mode prepare|merge] <target-repo-path-or-slug>"
 disable-model-invocation: true
 ---
 
 # Integrate: Approved PR Integration Manager
 
-Canonical, agent-neutral implementation of the Ground Control `/integrate` workflow. A mechanical lane for preparing approved pull requests against the latest base branch, satisfying GC-O011 and the contracts in ADR-029 (single-merge-touchpoint) and ADR-027 (config surface).
+Canonical, agent-neutral implementation of the Ground Control `/integrate` workflow. A mechanical lane for preparing approved pull requests against the latest base branch, satisfying GC-O011 and the contracts in ADR-029 (single-merge-touchpoint and its 2026-05-26 merge carve-out) and ADR-027 (config surface).
 
 **Sibling to `skills/implement/SKILL.md` and `skills/quickfix/SKILL.md`.** This skill does not duplicate prose from those lanes; it cross-references them where the contracts are identical. The key distinction: `/integrate` is repo-scoped and mechanical, not requirement-driven. It holds no issue anchor, calls no plan-post tool, and runs no AI-assisted reviews. The MCP tool (`gc_integration_manager`) does the work; this skill drives the three phases and surfaces output to the maintainer.
 
@@ -18,26 +18,32 @@ Use it when:
 - Multiple approved PRs need rebasing after the base branch moved and you want the readiness ledger before handing off to the maintainer.
 - A single approved PR needs CI and Sonar gates run in isolation before the maintainer merges.
 - You want the lock-protected prepare loop to prevent concurrent prepare runs from stomping each other.
+- You want the lane to execute the merge as well as the prepare step (pass `--mode merge`; requires `workflow.integration_manager.merge_strategy` in `.ground-control.yaml`).
 
-Do NOT use it as a replacement for `/implement`. The `/integrate` lane is mechanical: it rebases, runs the completion gate, watches CI and Sonar, and reports. It does not resolve requirements, post plans, run codex reviews, or transition requirement statuses. If the work is requirement-driven, use `/implement <uid>` or `/implement <issue>`.
+Do NOT use it as a replacement for `/implement`. The `/integrate` lane is mechanical: it rebases, runs the completion gate, watches CI and Sonar, and reports (and, with `--mode merge`, merges). It does not resolve requirements, post plans, run codex reviews, or transition requirement statuses. If the work is requirement-driven, use `/implement <uid>` or `/implement <issue>`.
 
 Do NOT use it on unapproved PRs. The discovery step filters by the configured approval label; PRs without it are ignored silently by the MCP tool.
 
 ## Invocation
 
 ```
-/integrate <repo-path>              # default: --mode prepare
+/integrate <repo-path>               # default: --mode prepare
 /integrate --mode prepare <repo-path>
+/integrate --mode merge <repo-path>  # prepare + execute merge per-PR
 ```
 
-`<repo-path>` is an absolute path to the target repository root, or an `owner/repo` slug (the MCP tool resolves the slug to a local path via the git remote). The mode flag is optional; `prepare` is the only executable mode. Passing `--mode enqueue` or `--mode merge` causes the MCP tool to return an error before any side effect, and the skill surfaces the refusal to the user:
+`<repo-path>` is an absolute path to the target repository root, or an `owner/repo` slug (the MCP tool resolves the slug to a local path via the git remote). The mode flag is optional; `prepare` is the default.
+
+`--mode merge` enables the merge carve-out from the ADR-029 (2026-05-26) amendment. For each PR that the prepare step marks outcome=ready, the MCP tool executes `gh pr merge <n> --<strategy> --delete-branch --repo <owner>/<repo>`. The strategy comes from `workflow.integration_manager.merge_strategy` in the target repo's `.ground-control.yaml` (closed enum: `merge`, `squash`, `rebase`; default `merge` when the key is absent). A single merge failure marks that PR blocked:merge_failed and continues to the next PR; it does not halt the queue.
+
+Passing `--mode enqueue` causes the MCP tool to return an error before any side effect:
 
 ```
 error: mode_disabled
 next_action: file_adr_amendment
 ```
 
-Enqueue and merge modes require an ADR-029 amendment before they unlock. Do not attempt to work around the refusal.
+Enqueue mode remains reserved and requires a further ADR-029 amendment to unlock.
 
 ## Maintainer approval signal
 
@@ -59,7 +65,7 @@ Step 01 (`steps/step-01-discover.md`) calls `gc_integration_manager` with `actio
 
 ## Phase B: Prepare (Step 02)
 
-Step 02 (`steps/step-02-prepare.md`) calls `gc_integration_manager` with `action: "prepare"`. The tool acquires the integration lock for the duration of the run, then for each PR in order: creates an isolated git worktree, rebases the PR head onto the current base branch, runs the configured completion gate, watches CI and Sonar (reusing `gc_watch_ci_run` and `gc_watch_sonar_analysis`), and pushes the rebased head with `--force-with-lease`. On every exit path (success or failure) the tool releases the lock. The skill surfaces lock contention, queue-wide halts, and consultation halts to the maintainer.
+Step 02 (`steps/step-02-prepare.md`) calls `gc_integration_manager` with `action: "prepare"` and the caller's mode (`prepare` or `merge`). The tool acquires the integration lock for the duration of the run, then for each PR in order: creates an isolated git worktree, rebases the PR head onto the current base branch, runs the configured completion gate, watches CI and Sonar (reusing `gc_watch_ci_run` and `gc_watch_sonar_analysis`), and pushes the rebased head with `--force-with-lease`. With `mode: "merge"`, after each PR reaches outcome=ready the tool also executes `gh pr merge` with the configured strategy. On every exit path (success or failure) the tool releases the lock. The skill surfaces lock contention, queue-wide halts, and consultation halts to the maintainer.
 
 ## Phase C: Report (Step 03)
 
@@ -81,8 +87,8 @@ The prepare loop recognizes three outcome classes:
 
 Each non-behavior is intentional. The lane is mechanical and narrow by design.
 
-- **No merge.** The user (maintainer) reviews the readiness ledger and merges. Same single-merge-touchpoint rule as `/implement` (ADR-029).
-- **No enqueue or merge mode.** Both modes return a refusal envelope before any side effect. An ADR-029 amendment is required to unlock them.
+- **No automatic merge in default mode.** With `--mode prepare` (the default) the user (maintainer) reviews the readiness ledger and merges. Same single-merge-touchpoint rule as `/implement` (ADR-029). Use `--mode merge` when you want the lane to execute the merge.
+- **No enqueue mode.** Enqueue returns a refusal envelope before any side effect. A further ADR-029 amendment is required to unlock it.
 - **No requirement transitions.** The PRs the lane prepares retain their own `/implement` lifecycle on their own issues. `/integrate` does not call `gc_transition_status` for any requirement UID.
 - **No traceability reconciliation.** `gc_create_traceability_link` and `gc_delete_traceability_link` are not called by this lane. Traceability is the responsibility of the `/implement` run that produced each PR.
 - **No issue-thread plan post.** There is no `gc_post_implementation_plan` call. Integration runs are repo-scoped; the readiness ledger is surfaced to the maintainer at the terminal, not on a GitHub issue thread.

@@ -233,3 +233,5 @@ orphaned by the MCP client's tool-call timeout (issue #893). See ADR-036
 (amendments) for the job model.
 
 **2026-05-26 (issue #989).** A sibling lane, `/integrate`, now exists for preparing queues of approved PRs (GC-O011). The /quickfix and /integrate lanes are disjoint: /quickfix is issue-anchored and accepts the same `gc_post_decision_record` / `gc_post_final_report` contract as /implement; /integrate is repo-scoped and operational-only, with no issue-thread durable record. There is no overlap in trigger conditions or durable-record surfaces.
+
+**2026-05-26 (issue #989 merge carve-out).** The `/integrate` lane at mode=merge may execute the merge for PRs it has prepared and verified (ADR-029 carve-out). The /quickfix lane must not merge; the user-owns-merge rule from ADR-029 applies to /quickfix unchanged.

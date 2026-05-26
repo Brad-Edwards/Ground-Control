@@ -27,6 +27,7 @@ import {
   ensureGitRepo,
   getOwnerRepo,
   INTEGRATION_MANAGER_ORDERINGS,
+  INTEGRATION_MANAGER_MERGE_STRATEGIES,
   acquireIntegrationLock,
   assertRealpathInRepo,
   runWatchCiRun,
@@ -72,11 +73,13 @@ export const GC_INTEGRATION_MANAGER_INPUT_SCHEMA = {
 export const GC_INTEGRATION_MANAGER_DESCRIPTION =
   "Approved PR integration manager (GC-O011). " +
   "Action-discriminated: plan (discover + ordered queue), " +
-  "prepare (rebase + run gates + force-with-lease push), " +
+  "prepare (rebase + run gates + force-with-lease push; with mode=merge also executes the merge per-PR), " +
   "status (read lock and last-run state; read-only), " +
   "release (idempotent integration lock release). " +
   "Mode is closed enum {prepare, enqueue, merge}; " +
-  "only prepare is executable under the current ADR set.";
+  "merge is enabled via the ADR-029 carve-out (2026-05-26) and requires " +
+  "workflow.integration_manager.merge_strategy in .ground-control.yaml. " +
+  "enqueue remains reserved.";
 
 // ---------------------------------------------------------------------------
 // Production-default implementations for injectable dependencies.
@@ -845,12 +848,14 @@ async function preparePullRequestBranch(pr, ctx, deps) {
  */
 async function runPrepareAction(args, deps) {
   // ── Clause a: mode refusal short-circuit ─────────────────────────────────
-  if (args.mode === "enqueue" || args.mode === "merge") {
+  // enqueue remains reserved (no ADR carve-out).
+  // merge is permitted via the ADR-029 amendment (2026-05-26, issue #989).
+  if (args.mode === "enqueue") {
     return {
       ok: false,
       error: "mode_disabled",
       message:
-        `${args.mode} mode is reserved; the integration manager only executes prepare mode under the current ADR set`,
+        "enqueue mode is reserved; the integration manager only executes prepare or merge mode under the current ADR set",
       next_action: "file_adr_amendment",
       mode: args.mode,
     };
@@ -863,6 +868,10 @@ async function runPrepareAction(args, deps) {
   }
 
   const { repoRoot, owner, repo, cfg, policy, queue } = queueResult;
+
+  // ── Resolve merge strategy (only relevant when mode === "merge") ──────────
+  const rawIM = cfg?.workflow?.integration_manager;
+  const mergeStrategy = rawIM?.merge_strategy ?? "merge";
 
   // ── Generate run ID ───────────────────────────────────────────────────────
   const runId = makeRunId(deps);
@@ -979,21 +988,53 @@ async function runPrepareAction(args, deps) {
         };
       }
 
-      // outcome === "ready" or "blocked" — continue.
-      results.push({
+      // outcome === "ready" or "blocked" — record first, then optionally merge.
+      const prRecord = {
         pr_number: prOutcome.pr_number,
         outcome: prOutcome.outcome,
         summary: prOutcome.summary,
         ...(prOutcome.failure_class ? { failure_class: prOutcome.failure_class } : {}),
         ...(prOutcome.next_action ? { next_action: prOutcome.next_action } : {}),
-      });
+      };
+
+      // ── Merge step (mode=merge + outcome=ready only) ──────────────────────
+      // Runs per-PR, in queue order. A single merge failure does NOT halt the
+      // queue; the PR is marked blocked:merge_failed and the loop continues.
+      // The merge step never runs when: outcome is not "ready", a halt has
+      // already fired, or the lock was lost (those paths returned early above).
+      if (args.mode === "merge" && prOutcome.outcome === "ready") {
+        const { execFile } = deps;
+        const strategyFlag = `--${mergeStrategy}`;
+        try {
+          await execFile("gh", [
+            "pr", "merge",
+            String(prOutcome.pr_number),
+            strategyFlag,
+            "--delete-branch",
+            "--repo", `${owner}/${repo}`,
+          ]);
+          prRecord.outcome = "merged";
+          prRecord.merged_at = new Date().toISOString();
+          prRecord.summary = safeSummary(`PR #${prOutcome.pr_number} merged (${mergeStrategy})`);
+          delete prRecord.failure_class;
+          delete prRecord.next_action;
+        } catch (e) {
+          const errText = safeSummary((e.stderr ?? e.stdout ?? e.message ?? "").toString());
+          prRecord.outcome = "blocked";
+          prRecord.failure_class = "merge_failed";
+          prRecord.summary = safeSummary(`gh pr merge failed: ${errText}`);
+          prRecord.next_action = "check_merge_permissions";
+        }
+      }
+
+      results.push(prRecord);
     }
 
     // ── Clause f: return readiness ledger ────────────────────────────────
     return {
       ok: true,
       action: "prepare",
-      mode: "prepare",
+      mode: args.mode,
       run_id: runId,
       owner,
       repo,

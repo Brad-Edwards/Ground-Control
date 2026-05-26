@@ -698,16 +698,19 @@ describe("gc_integration_manager — mode refusal on prepare action", () => {
     assert.equal(worktreeCalls.length, 0, "no worktree calls should occur for mode_disabled");
   });
 
-  it("prepare + mode=merge → error:mode_disabled, no lock acquired", async () => {
+  it("prepare + mode=merge → ok (ADR-029 carve-out 2026-05-26 enables merge; lock IS acquired)", async () => {
     const lockFake = makeLockFake();
-    const deps = prepareDeps({ lockFake, prs: [makePr(1)] });
+    // Use a full prepare-capable fake so the prepare + merge path can run.
+    const deps = mergeDeps({ lockFake, prs: [makePr(1)] });
     const result = await runIntegrationManager(
       { action: "prepare", repo_path: "/some/repo", mode: "merge" },
       deps,
     );
-    assertErrorEnvelope(result, "mode_disabled");
-    assert.equal(result.mode, "merge");
-    assert.equal(lockFake.getAcquireCount(), 0, "lock must not be acquired for mode_disabled");
+    // mode=merge is now enabled; the result should be ok:true with outcome=merged.
+    assert.equal(result.ok, true, `expected ok:true for mode=merge, got: ${JSON.stringify(result)}`);
+    assert.equal(result.results[0].outcome, "merged");
+    // Lock was acquired (prepare ran).
+    assert.equal(lockFake.getAcquireCount(), 1, "lock must be acquired for mode=merge");
   });
 });
 
@@ -2252,5 +2255,432 @@ describe("gc_integration_manager — prepare watcher ordering: push before watch
       pushIdx < sonarIdx,
       `git push (index ${pushIdx}) must occur before runSonarWatcher (index ${sonarIdx}); order was: ${JSON.stringify(callOrder)}`,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 30. mode=merge — merge execution after prepare
+// ---------------------------------------------------------------------------
+
+// Build a prepare execFile fake that also records/handles gh pr merge calls.
+// `mergeResult` controls what happens when gh pr merge is called:
+//   { ok: true }  → succeeds (default)
+//   { ok: false, stderr: "..." } → throws with that stderr
+function makeMergeExecFileFake(prs, { mergeResult = { ok: true } } = {}) {
+  const calls = [];
+
+  return {
+    calls,
+    execFile: async (file, argv, _options) => {
+      calls.push([file, ...argv]);
+
+      // gh api discovery calls.
+      if (file === "gh" && argv.includes("api")) {
+        const pageIdx = argv.findIndex((a) => a.startsWith("page="));
+        const pageNum = pageIdx >= 0 ? Number(argv[pageIdx].split("=")[1]) : 1;
+        return { stdout: JSON.stringify(pageNum === 1 ? prs : []), stderr: "" };
+      }
+
+      // gh pr merge calls.
+      if (file === "gh" && argv.includes("merge")) {
+        if (mergeResult.ok) {
+          return { stdout: "", stderr: "" };
+        }
+        const err = new Error("gh pr merge failed");
+        err.stderr = mergeResult.stderr ?? "remote: permission denied";
+        throw err;
+      }
+
+      // git merge-base.
+      if (file === "git" && argv.includes("merge-base")) {
+        return { stdout: "mergebasesha\n", stderr: "" };
+      }
+
+      // All other git calls succeed.
+      return { stdout: "", stderr: "" };
+    },
+  };
+}
+
+// Build deps for a mode=merge prepare test.
+function mergeDeps(overrides = {}) {
+  const prs = overrides.prs ?? [makePr(1)];
+  const yaml = overrides.yaml ?? validYaml();
+  const lockFake = overrides.lockFake ?? makeLockFake();
+  const mergeResult = overrides.mergeResult ?? { ok: true };
+  const execFileFake = overrides.execFileFake ?? makeMergeExecFileFake(prs, { mergeResult });
+
+  return {
+    execFile: execFileFake.execFile,
+    execFileCalls: execFileFake.calls,
+    ensureGitRepo: overrides.ensureGitRepo ?? (async (p) => p),
+    getOwnerRepo: overrides.getOwnerRepo ?? (async () => ({ owner: "acme", name: "myrepo" })),
+    readYaml: overrides.readYaml ?? (() => yaml),
+    acquireIntegrationLock: lockFake.acquireIntegrationLock,
+    lockFake,
+    writeHaltLedger: overrides.writeHaltLedger ?? (() => {}),
+    runCiWatcher: overrides.runCiWatcher ?? (async () => ({ conclusion: "skipped" })),
+    runSonarWatcher: overrides.runSonarWatcher ?? (async () => ({ conclusion: "skipped" })),
+    now: overrides.now ?? (() => 1748000000000),
+    randomId: overrides.randomId ?? (() => "abc123"),
+  };
+}
+
+describe("gc_integration_manager — mode=merge", () => {
+  it("one ready PR → executes gh pr merge with --merge --delete-branch --repo, outcome=merged", async () => {
+    const prs = [makePr(1)];
+    const deps = mergeDeps({ prs });
+
+    const result = await runIntegrationManager(
+      { action: "prepare", repo_path: "/some/repo", mode: "merge" },
+      deps,
+    );
+
+    assert.equal(result.ok, true, `expected ok:true, got: ${JSON.stringify(result)}`);
+    assert.equal(result.results.length, 1);
+    assert.equal(result.results[0].outcome, "merged");
+    assert.ok(result.results[0].merged_at, "merged_at must be set");
+
+    // Verify the exact argv of the gh pr merge call.
+    const mergeCalls = deps.execFileCalls.filter(
+      (c) => c[0] === "gh" && c.includes("merge"),
+    );
+    assert.equal(mergeCalls.length, 1, "exactly one gh pr merge call");
+    const mergeArgv = mergeCalls[0];
+    assert.deepEqual(mergeArgv, ["gh", "pr", "merge", "1", "--merge", "--delete-branch", "--repo", "acme/myrepo"]);
+  });
+
+  it("one ready + one blocked PR → only the ready PR is merged; blocked PR stays blocked", async () => {
+    // PR 1 will be blocked (rebase conflict), PR 2 will be ready then merged.
+    const prs = [makePr(1), makePr(2)];
+
+    const calls = [];
+    let pr1FetchDone = false;
+    let pr1WorktreeDone = false;
+    let pr1BaseFetchDone = false;
+    let pr1MergeBaseDone = false;
+    let pr1RebaseDone = false;
+
+    const execFileFake = async (file, argv, _options) => {
+      calls.push([file, ...argv]);
+
+      if (file === "gh" && argv.includes("api")) {
+        const pageIdx = argv.findIndex((a) => a.startsWith("page="));
+        const pageNum = pageIdx >= 0 ? Number(argv[pageIdx].split("=")[1]) : 1;
+        return { stdout: JSON.stringify(pageNum === 1 ? prs : []), stderr: "" };
+      }
+      if (file === "gh" && argv.includes("merge")) {
+        return { stdout: "", stderr: "" };
+      }
+
+      // For PR 1: let fetch, worktree, base fetch, merge-base succeed, then rebase fail.
+      if (file === "git") {
+        if (argv.includes("fetch") && argv.some((a) => a.includes("pull/1/head"))) {
+          pr1FetchDone = true;
+          return { stdout: "", stderr: "" };
+        }
+        if (argv.includes("worktree") && argv.includes("add") && !pr1WorktreeDone) {
+          pr1WorktreeDone = true;
+          return { stdout: "", stderr: "" };
+        }
+        if (argv.includes("fetch") && !pr1BaseFetchDone && pr1WorktreeDone) {
+          pr1BaseFetchDone = true;
+          return { stdout: "", stderr: "" };
+        }
+        if (argv.includes("merge-base") && !pr1MergeBaseDone) {
+          pr1MergeBaseDone = true;
+          return { stdout: "mergebasesha\n", stderr: "" };
+        }
+        if (argv.includes("rebase") && !argv.includes("--abort") && !pr1RebaseDone && pr1MergeBaseDone) {
+          pr1RebaseDone = true;
+          // Rebase fails for PR 1.
+          const err = new Error("rebase conflict");
+          err.stderr = "CONFLICT (content): Merge conflict in foo.java";
+          throw err;
+        }
+        if (argv.includes("rebase") && argv.includes("--abort")) {
+          return { stdout: "", stderr: "" };
+        }
+        if (argv.includes("merge-base")) {
+          return { stdout: "mergebasesha\n", stderr: "" };
+        }
+      }
+      return { stdout: "", stderr: "" };
+    };
+
+    const lockFake = makeLockFake();
+    const deps = {
+      execFile: execFileFake,
+      execFileCalls: calls,
+      ensureGitRepo: async (p) => p,
+      getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
+      readYaml: () => validYaml(),
+      acquireIntegrationLock: lockFake.acquireIntegrationLock,
+      lockFake,
+      writeHaltLedger: () => {},
+      runCiWatcher: async () => ({ conclusion: "skipped" }),
+      runSonarWatcher: async () => ({ conclusion: "skipped" }),
+      now: () => 1748000000000,
+      randomId: () => "abc123",
+    };
+
+    const result = await runIntegrationManager(
+      { action: "prepare", repo_path: "/some/repo", mode: "merge" },
+      deps,
+    );
+
+    assert.equal(result.ok, true, `expected ok:true, got: ${JSON.stringify(result)}`);
+    assert.equal(result.results.length, 2);
+
+    const pr1Result = result.results.find((r) => r.pr_number === 1);
+    assert.equal(pr1Result.outcome, "blocked");
+    assert.equal(pr1Result.failure_class, "rebase_conflict");
+
+    const pr2Result = result.results.find((r) => r.pr_number === 2);
+    assert.equal(pr2Result.outcome, "merged");
+
+    // Only PR 2 was merged.
+    const mergeCalls = calls.filter((c) => c[0] === "gh" && c.includes("merge"));
+    assert.equal(mergeCalls.length, 1);
+    assert.ok(mergeCalls[0].includes("2"), "only PR 2 is merged");
+  });
+
+  it("gh pr merge exits non-zero → outcome=blocked, failure_class=merge_failed", async () => {
+    const prs = [makePr(1)];
+    const deps = mergeDeps({
+      prs,
+      mergeResult: { ok: false, stderr: "remote: permission denied" },
+    });
+
+    const result = await runIntegrationManager(
+      { action: "prepare", repo_path: "/some/repo", mode: "merge" },
+      deps,
+    );
+
+    assert.equal(result.ok, true, `expected ok:true envelope, got: ${JSON.stringify(result)}`);
+    assert.equal(result.results.length, 1);
+    assert.equal(result.results[0].outcome, "blocked");
+    assert.equal(result.results[0].failure_class, "merge_failed");
+  });
+
+  it("no ready PRs (all blocked) → no merge calls; envelope returns normally", async () => {
+    const prs = [makePr(1)];
+
+    // Force the single PR to fail at rebase.
+    const calls = [];
+    let rebaseDone = false;
+    let mergeBaseDone = false;
+
+    const execFileFake = async (file, argv, _options) => {
+      calls.push([file, ...argv]);
+      if (file === "gh" && argv.includes("api")) {
+        const pageIdx = argv.findIndex((a) => a.startsWith("page="));
+        const pageNum = pageIdx >= 0 ? Number(argv[pageIdx].split("=")[1]) : 1;
+        return { stdout: JSON.stringify(pageNum === 1 ? prs : []), stderr: "" };
+      }
+      if (file === "git" && argv.includes("merge-base") && !mergeBaseDone) {
+        mergeBaseDone = true;
+        return { stdout: "mergebasesha\n", stderr: "" };
+      }
+      if (file === "git" && argv.includes("rebase") && !argv.includes("--abort") && !rebaseDone) {
+        rebaseDone = true;
+        const err = new Error("rebase conflict");
+        err.stderr = "CONFLICT (content): Merge conflict in bar.java";
+        throw err;
+      }
+      return { stdout: "", stderr: "" };
+    };
+
+    const lockFake = makeLockFake();
+    const deps = {
+      execFile: execFileFake,
+      execFileCalls: calls,
+      ensureGitRepo: async (p) => p,
+      getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
+      readYaml: () => validYaml(),
+      acquireIntegrationLock: lockFake.acquireIntegrationLock,
+      lockFake,
+      writeHaltLedger: () => {},
+      runCiWatcher: async () => ({ conclusion: "skipped" }),
+      runSonarWatcher: async () => ({ conclusion: "skipped" }),
+      now: () => 1748000000000,
+      randomId: () => "abc123",
+    };
+
+    const result = await runIntegrationManager(
+      { action: "prepare", repo_path: "/some/repo", mode: "merge" },
+      deps,
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.results[0].outcome, "blocked");
+
+    const mergeCalls = calls.filter((c) => c[0] === "gh" && c.includes("merge"));
+    assert.equal(mergeCalls.length, 0, "no gh pr merge calls when all PRs are blocked");
+  });
+
+  it("merge_strategy=squash → argv contains --squash", async () => {
+    const prs = [makePr(1)];
+    const yaml = validYaml(`workflow:\n  integration_manager:\n    merge_strategy: squash\n`);
+    const deps = mergeDeps({ prs, yaml });
+
+    const result = await runIntegrationManager(
+      { action: "prepare", repo_path: "/some/repo", mode: "merge" },
+      deps,
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.results[0].outcome, "merged");
+
+    const mergeCalls = deps.execFileCalls.filter(
+      (c) => c[0] === "gh" && c.includes("merge"),
+    );
+    assert.equal(mergeCalls.length, 1);
+    assert.ok(mergeCalls[0].includes("--squash"), `expected --squash in argv, got: ${JSON.stringify(mergeCalls[0])}`);
+  });
+
+  it("merge_strategy=rebase → argv contains --rebase", async () => {
+    const prs = [makePr(1)];
+    const yaml = validYaml(`workflow:\n  integration_manager:\n    merge_strategy: rebase\n`);
+    const deps = mergeDeps({ prs, yaml });
+
+    const result = await runIntegrationManager(
+      { action: "prepare", repo_path: "/some/repo", mode: "merge" },
+      deps,
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.results[0].outcome, "merged");
+
+    const mergeCalls = deps.execFileCalls.filter(
+      (c) => c[0] === "gh" && c.includes("merge"),
+    );
+    assert.equal(mergeCalls.length, 1);
+    assert.ok(mergeCalls[0].includes("--rebase"), `expected --rebase in argv, got: ${JSON.stringify(mergeCalls[0])}`);
+  });
+
+  it("mode=enqueue still returns error:mode_disabled", async () => {
+    const deps = prepareDeps();
+    const result = await runIntegrationManager(
+      { action: "prepare", repo_path: "/some/repo", mode: "enqueue" },
+      deps,
+    );
+    assertErrorEnvelope(result, "mode_disabled");
+    assert.equal(result.mode, "enqueue");
+  });
+
+  it("mode=merge does NOT merge when prepare loop returned queue_wide_halt", async () => {
+    const prs = [makePr(1)];
+    const calls = [];
+
+    // Trigger queue_wide_halt by failing the base branch fetch.
+    let fetchCount = 0;
+    const execFileFake = async (file, argv, _options) => {
+      calls.push([file, ...argv]);
+      if (file === "gh" && argv.includes("api")) {
+        const pageIdx = argv.findIndex((a) => a.startsWith("page="));
+        const pageNum = pageIdx >= 0 ? Number(argv[pageIdx].split("=")[1]) : 1;
+        return { stdout: JSON.stringify(pageNum === 1 ? prs : []), stderr: "" };
+      }
+      if (file === "git" && argv.includes("fetch") && argv.some((a) => a.includes("pull/"))) {
+        return { stdout: "", stderr: "" };
+      }
+      if (file === "git" && argv.includes("worktree")) {
+        return { stdout: "", stderr: "" };
+      }
+      // Base branch fetch fails → queue_wide_halt.
+      if (file === "git" && argv.includes("fetch")) {
+        fetchCount++;
+        if (fetchCount >= 1) {
+          throw new Error("fatal: couldn't find remote ref dev");
+        }
+      }
+      if (file === "git" && argv.includes("merge-base")) {
+        return { stdout: "mergebasesha\n", stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    };
+
+    const lockFake = makeLockFake();
+    const deps = {
+      execFile: execFileFake,
+      execFileCalls: calls,
+      ensureGitRepo: async (p) => p,
+      getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
+      readYaml: () => validYaml(),
+      acquireIntegrationLock: lockFake.acquireIntegrationLock,
+      lockFake,
+      writeHaltLedger: () => {},
+      runCiWatcher: async () => ({ conclusion: "skipped" }),
+      runSonarWatcher: async () => ({ conclusion: "skipped" }),
+      now: () => 1748000000000,
+      randomId: () => "abc123",
+    };
+
+    const result = await runIntegrationManager(
+      { action: "prepare", repo_path: "/some/repo", mode: "merge" },
+      deps,
+    );
+
+    // The envelope should be ok:false with queue_wide_halt.
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "queue_wide_halt");
+
+    const mergeCalls = calls.filter((c) => c[0] === "gh" && c.includes("merge"));
+    assert.equal(mergeCalls.length, 0, "gh pr merge must not be called after queue_wide_halt");
+  });
+
+  it("mode=merge does NOT merge when prepare loop returned consultation_halt", async () => {
+    const prs = [makePr(1)];
+    const calls = [];
+
+    // Trigger consultation_halt by returning a lease mismatch from git push.
+    const execFileFake = async (file, argv, _options) => {
+      calls.push([file, ...argv]);
+      if (file === "gh" && argv.includes("api")) {
+        const pageIdx = argv.findIndex((a) => a.startsWith("page="));
+        const pageNum = pageIdx >= 0 ? Number(argv[pageIdx].split("=")[1]) : 1;
+        return { stdout: JSON.stringify(pageNum === 1 ? prs : []), stderr: "" };
+      }
+      if (file === "gh" && argv.includes("merge")) {
+        return { stdout: "", stderr: "" };
+      }
+      if (file === "git" && argv.includes("merge-base")) {
+        return { stdout: "mergebasesha\n", stderr: "" };
+      }
+      if (file === "git" && argv.includes("push")) {
+        const err = new Error("force-with-lease lease mismatch");
+        err.stderr = "error: rejected (stale info)";
+        throw err;
+      }
+      return { stdout: "", stderr: "" };
+    };
+
+    const lockFake = makeLockFake();
+    const deps = {
+      execFile: execFileFake,
+      execFileCalls: calls,
+      ensureGitRepo: async (p) => p,
+      getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
+      readYaml: () => validYaml(),
+      acquireIntegrationLock: lockFake.acquireIntegrationLock,
+      lockFake,
+      writeHaltLedger: () => {},
+      runCiWatcher: async () => ({ conclusion: "skipped" }),
+      runSonarWatcher: async () => ({ conclusion: "skipped" }),
+      now: () => 1748000000000,
+      randomId: () => "abc123",
+    };
+
+    const result = await runIntegrationManager(
+      { action: "prepare", repo_path: "/some/repo", mode: "merge" },
+      deps,
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "consultation_halt");
+
+    const mergeCalls = calls.filter((c) => c[0] === "gh" && c.includes("merge"));
+    assert.equal(mergeCalls.length, 0, "gh pr merge must not be called after consultation_halt");
   });
 });

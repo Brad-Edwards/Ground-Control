@@ -119,6 +119,7 @@ import {
   isSafeLabelName,
   normalizeIntegrationManagerConfig,
   INTEGRATION_MANAGER_ORDERINGS,
+  INTEGRATION_MANAGER_MERGE_STRATEGIES,
   INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN,
   INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX,
 } from "./lib.js";
@@ -592,7 +593,7 @@ describe("parseGroundControlYaml", () => {
       codex_review: { pre_push_cap: null },
       test_quality_review: { pre_push_cap: null },
       pr_title: null,
-      integration_manager: { approval_label: null, ordering: null, max_queue_size: null },
+      integration_manager: { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null },
     });
     assert.equal(result.value.sonarcloud, null);
     assert.equal(result.value.rules.plan_rules_path, null);
@@ -12292,7 +12293,7 @@ describe("isSafeLabelName", () => {
 // ---------------------------------------------------------------------------
 
 describe("normalizeIntegrationManagerConfig", () => {
-  const emptyValue = { approval_label: null, ordering: null, max_queue_size: null };
+  const emptyValue = { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null };
 
   it("accepts null → returns ok with all-null value", () => {
     const r = normalizeIntegrationManagerConfig(null);
@@ -12319,7 +12320,7 @@ describe("normalizeIntegrationManagerConfig", () => {
       max_queue_size: 10,
     });
     assert.equal(r.ok, true);
-    assert.deepEqual(r.value, { approval_label: "foo", ordering: "pr_number_asc", max_queue_size: 10 });
+    assert.deepEqual(r.value, { approval_label: "foo", ordering: "pr_number_asc", max_queue_size: 10, merge_strategy: null });
   });
 
   it("rejects non-object string", () => {
@@ -12464,6 +12465,43 @@ describe("normalizeIntegrationManagerConfig", () => {
   it("INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX is 100", () => {
     assert.equal(INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX, 100);
   });
+
+  // merge_strategy tests (issue #989 merge carve-out)
+
+  it("accepts merge_strategy=merge", () => {
+    const r = normalizeIntegrationManagerConfig({ merge_strategy: "merge" });
+    assert.equal(r.ok, true);
+    assert.equal(r.value.merge_strategy, "merge");
+  });
+
+  it("accepts merge_strategy=squash", () => {
+    const r = normalizeIntegrationManagerConfig({ merge_strategy: "squash" });
+    assert.equal(r.ok, true);
+    assert.equal(r.value.merge_strategy, "squash");
+  });
+
+  it("accepts merge_strategy=rebase", () => {
+    const r = normalizeIntegrationManagerConfig({ merge_strategy: "rebase" });
+    assert.equal(r.ok, true);
+    assert.equal(r.value.merge_strategy, "rebase");
+  });
+
+  it("rejects bad merge_strategy (unknown enum value)", () => {
+    const r = normalizeIntegrationManagerConfig({ merge_strategy: "fast-forward" });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("merge_strategy")), JSON.stringify(r.errors));
+    assert.ok(r.errors.some((e) => e.includes("merge")), JSON.stringify(r.errors));
+  });
+
+  it("absent merge_strategy → merge_strategy is null", () => {
+    const r = normalizeIntegrationManagerConfig({});
+    assert.equal(r.ok, true);
+    assert.equal(r.value.merge_strategy, null);
+  });
+
+  it("INTEGRATION_MANAGER_MERGE_STRATEGIES constant is exported and complete", () => {
+    assert.deepEqual(INTEGRATION_MANAGER_MERGE_STRATEGIES, ["merge", "squash", "rebase"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -12488,7 +12526,22 @@ describe("parseGroundControlYaml workflow.integration_manager", () => {
       approval_label: "approved-for-integration",
       ordering: "pr_number_asc",
       max_queue_size: 20,
+      merge_strategy: null,
     });
+  });
+
+  it("merge_strategy flows through to value.integration_manager", () => {
+    const yaml = [
+      "schema_version: 1",
+      "project: x",
+      "workflow:",
+      "  integration_manager:",
+      "    merge_strategy: squash",
+      "",
+    ].join("\n");
+    const result = parseGroundControlYaml(yaml);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.equal(result.value.workflow.integration_manager.merge_strategy, "squash");
   });
 
   it("invalid integration_manager block surfaces errors via parent errors[]", () => {
@@ -12516,6 +12569,7 @@ describe("parseGroundControlYaml workflow.integration_manager", () => {
       approval_label: null,
       ordering: null,
       max_queue_size: null,
+      merge_strategy: null,
     });
   });
 
@@ -12526,6 +12580,7 @@ describe("parseGroundControlYaml workflow.integration_manager", () => {
       approval_label: null,
       ordering: null,
       max_queue_size: null,
+      merge_strategy: null,
     });
   });
 });

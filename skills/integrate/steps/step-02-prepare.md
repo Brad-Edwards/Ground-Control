@@ -22,6 +22,18 @@ Call `gc_integration_manager` with:
 }
 ```
 
+When the invoking skill was called with `--mode merge`, pass `mode: "merge"` instead:
+
+```json
+{
+  "action": "prepare",
+  "repo_path": "<resolved-target-path>",
+  "mode": "merge"
+}
+```
+
+With `mode: "merge"`, the tool executes `gh pr merge <n> --<strategy> --delete-branch --repo <owner>/<repo>` for each PR that reaches outcome=ready in the same run. The merge strategy comes from `workflow.integration_manager.merge_strategy` in the target repo's `.ground-control.yaml` (closed enum: `merge`, `squash`, `rebase`; the tool defaults to `merge` when the key is absent). Merged PRs appear in the results with `outcome: "merged"` and a `merged_at` timestamp. A merge failure marks the PR `outcome: "blocked"`, `failure_class: "merge_failed"` and continues to the next PR without halting the queue.
+
 The tool acquires the integration lock before any branch mutation and releases it on every exit path, including errors. The lock identity is derived from the canonical repo root, so two path spellings for the same repo contend on the same lock.
 
 ## Lock contention

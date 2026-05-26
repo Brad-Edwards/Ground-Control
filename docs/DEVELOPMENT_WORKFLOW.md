@@ -309,7 +309,7 @@ PreToolUse hook on `Bash`. The user owns every actual merge. Blocked uncondition
 
 ## /integrate: Approved PR Integration Manager
 
-The `/integrate` lane is the workflow path for preparing maintainer-approved pull requests against the latest base branch of a target repository. It is a lane for maintainers and release operators who need to rebase a queue of already-approved PRs to a clean state before a human merges them. By default the lane operates in **prepare-only** mode: it rebases, gates, verifies, and pushes, but it does not merge. The `enqueue` and `merge` actions are reserved and refuse at runtime until ADR-029 is amended to add an automated merge touchpoint.
+The `/integrate` lane is the workflow path for preparing maintainer-approved pull requests against the latest base branch of a target repository. It is a lane for maintainers and release operators who need to rebase a queue of already-approved PRs to a clean state. By default the lane operates in **prepare-only** mode: it rebases, gates, verifies, and pushes, but it does not merge. Passing `--mode merge` enables the merge carve-out from the ADR-029 amendment (2026-05-26): the lane also executes `gh pr merge` for each PR it marks ready, per the configured `merge_strategy`. The `enqueue` mode remains reserved and refuses at runtime.
 
 ### When to use it
 
@@ -320,16 +320,17 @@ Do not use `/integrate` to batch-merge PRs autonomously. That boundary is explic
 ### Invocation
 
 ```
-/integrate [--repo <owner/repo>] [--base <branch>] [--label <label>] [--dry-run]
+/integrate [--repo <owner/repo>] [--base <branch>] [--label <label>] [--mode prepare|merge] [--dry-run]
 ```
 
-All flags are optional. When `--repo` is omitted the lane reads `github_repo` from the target repo's `.ground-control.yaml`. `--base` overrides `workflow.base_branch` from the same config. `--label` overrides `workflow.integration_manager.approval_label`. `--dry-run` discovers and orders the queue without acquiring a lock or modifying any branch.
+All flags are optional. When `--repo` is omitted the lane reads `github_repo` from the target repo's `.ground-control.yaml`. `--base` overrides `workflow.base_branch`. `--label` overrides `workflow.integration_manager.approval_label`. `--mode` selects the execution mode (default `prepare`). `--dry-run` discovers and orders the queue without acquiring a lock or modifying any branch.
 
 You can also call the underlying MCP tool directly:
 
 ```
 gc_integration_manager action=status  repo_path=<path>
 gc_integration_manager action=prepare repo_path=<path>
+gc_integration_manager action=prepare repo_path=<path> mode=merge
 gc_integration_manager action=release repo_path=<path>
 ```
 
@@ -343,7 +344,10 @@ workflow:
     approval_label: approved-for-integration   # label that marks a PR ready
     ordering: pr_number_asc                    # pr_number_asc | pr_number_desc | approved_at_asc
     max_queue_size: 20                         # integer, [1, 100]
+    merge_strategy: merge                      # merge | squash | rebase (default: merge)
 ```
+
+`merge_strategy` controls the `--merge`, `--squash`, or `--rebase` flag passed to `gh pr merge` when the lane runs in `mode=merge`. The key is only consulted in merge mode; it has no effect in prepare-only mode.
 
 The parser (`normalizeIntegrationManagerConfig` in `mcp/ground-control/lib.js`) enforces the same strict-unknown-key rule as the rest of the workflow config. Unrecognized keys are rejected with a validation error, not silently ignored.
 
@@ -376,8 +380,8 @@ Three failure severities apply:
 
 ### What the lane does NOT do
 
-- No merging. The lane prepares PRs; a human merges them.
-- No `enqueue` or `merge` actions. Both are reserved and refuse at runtime until ADR-029 is amended.
+- No automatic merging in default mode. With `--mode prepare` (default), the lane prepares PRs; a human merges them. Use `--mode merge` to enable the merge carve-out.
+- No `enqueue` mode. Enqueue is reserved and refuses at runtime.
 - No requirement status transitions. The lane does not touch Ground Control requirement states.
 - No traceability reconciliation. The lane does not create or delete IMPLEMENTS/TESTS links against the PRs it prepares.
 - No issue-thread comments. Consultation halts and status reports surface through the invoking interface (terminal output and the MCP tool's return envelope), not as comments on any GitHub issue thread.

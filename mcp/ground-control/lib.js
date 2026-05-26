@@ -1767,7 +1767,7 @@ function emptyWorkflowConfig() {
     pr_title: null,
     // Integration manager config (issue #989). All fields null means "use the
     // tool-layer defaults at call time".
-    integration_manager: { approval_label: null, ordering: null, max_queue_size: null },
+    integration_manager: { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null },
   };
 }
 
@@ -1876,6 +1876,11 @@ export const INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX = 100;
 // Allowed values for workflow.integration_manager.ordering.
 export const INTEGRATION_MANAGER_ORDERINGS = ["pr_number_asc", "pr_number_desc", "approved_at_asc"];
 
+// Allowed values for workflow.integration_manager.merge_strategy.
+// null means "use caller default" (which is "merge", matching the repo's recent
+// merge-commit convention).
+export const INTEGRATION_MANAGER_MERGE_STRATEGIES = ["merge", "squash", "rebase"];
+
 // Validates a GitHub label name used by the integration manager.  Labels are
 // rendered into `gh pr edit --add-label <value>` calls; restrict to printable
 // ASCII to prevent injection through label names that contain control
@@ -1900,7 +1905,7 @@ export function isSafeLabelName(s) {
 // accumulated before returning.
 export function normalizeIntegrationManagerConfig(raw) {
   if (raw == null) {
-    return { ok: true, value: { approval_label: null, ordering: null, max_queue_size: null } };
+    return { ok: true, value: { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null } };
   }
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return {
@@ -1908,7 +1913,7 @@ export function normalizeIntegrationManagerConfig(raw) {
       errors: ["workflow.integration_manager must be a mapping when set"],
     };
   }
-  const allowed = ["approval_label", "ordering", "max_queue_size"];
+  const allowed = ["approval_label", "ordering", "max_queue_size", "merge_strategy"];
   const errors = [];
   for (const key of Object.keys(raw)) {
     if (!allowed.includes(key)) {
@@ -1948,8 +1953,18 @@ export function normalizeIntegrationManagerConfig(raw) {
       max_queue_size = v;
     }
   }
+  let merge_strategy = null;
+  if (raw.merge_strategy != null) {
+    if (!INTEGRATION_MANAGER_MERGE_STRATEGIES.includes(raw.merge_strategy)) {
+      errors.push(
+        `workflow.integration_manager.merge_strategy must be one of: ${INTEGRATION_MANAGER_MERGE_STRATEGIES.join(", ")}`,
+      );
+    } else {
+      merge_strategy = raw.merge_strategy;
+    }
+  }
   if (errors.length) return { ok: false, errors };
-  return { ok: true, value: { approval_label, ordering, max_queue_size } };
+  return { ok: true, value: { approval_label, ordering, max_queue_size, merge_strategy } };
 }
 
 // `workflow.base_branch` is rendered into shell-evaluated `gh` commands by
