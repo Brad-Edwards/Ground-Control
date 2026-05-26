@@ -335,6 +335,54 @@ The frontend (`frontend/`) is a React 19 / TypeScript 5 SPA. It follows these ru
 - Avoid framework lock-in for UI components—prefer shadcn/ui (copy-paste Radix primitives).
 - Never `console.log()` in committed code.
 
+## Static Analysis Thresholds (SonarCloud)
+
+Ground Control runs SonarCloud against every project. Sonar way, the built-in
+profile, leaves complexity and size rules tuned too loose to catch real
+god-class and god-method problems. Every Ground Control repo runs a
+tightened profile instead, or the closest analyzer-specific equivalent when a
+rule is not available for the language at hand.
+
+The thresholds below are the house targets. Apply them to every new project
+brought onto SonarCloud. Sonar rule IDs vary across analyzers; the IDs
+listed are the canonical reference for Java and Python.
+
+### Cross-language thresholds (size, complexity, duplication)
+
+| Bound | Threshold | Reference rule |
+|-------|-----------|----------------|
+| File size (LOC) | 500 | `python:S104` |
+| Function or method length (LOC) | 100 | `python:S138` |
+| Function parameter count | 7 (Java), 13 (Python) | `S107` |
+| Nested control-flow depth | 4 | `python:S134` |
+| Return statements per function | 3 | `python:S1142` |
+| Cognitive complexity per function | 15 | `S3776` |
+| String literal duplication | 3 occurrences | `S1192` |
+| Regex complexity | 20 | `S5843` |
+
+### Java-specific thresholds (god class, god method, OO depth)
+
+| Bound | Threshold | Rule |
+|-------|-----------|------|
+| Inheritance depth | 5 | `java:S110` |
+| `switch` case count | 30 | `java:S1479` |
+| Assertions per test | 25 | `java:S5961` |
+| God-class coupling | 20 | `java:S6539` |
+| Brain method | nesting=3, cyclomatic=15, LOC=65, NODV=7 | `java:S6541` |
+| Statements per line | 5 | `java:S8444` |
+
+When porting these to a new analyzer, prefer the nearest concept (file LOC,
+function length, nesting, cognitive complexity) over a perfect rule-ID match.
+The intent is to bound module and method size; the specific rule is the
+mechanism.
+
+### Profile artifacts
+
+Captured quality profile XML lives in [`tools/sonar/`](../tools/sonar/).
+Each export is date-stamped and prior snapshots stay in place, so profile
+drift remains auditable. See that directory's README for the capture and
+restore procedure.
+
 ## Git & CI
 
 - All code goes through PR targeting `dev`. No direct push to `main` or `dev`.
