@@ -10,10 +10,15 @@ import static org.mockito.Mockito.when;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
+import com.keplerops.groundcontrol.domain.graph.service.GraphTargetResolverService;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.riskscenarios.events.AssetStateChangedEvent;
+import com.keplerops.groundcontrol.domain.riskscenarios.events.ControlStateChangedEvent;
+import com.keplerops.groundcontrol.domain.riskscenarios.events.TreatmentProgressChangedEvent;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
@@ -26,6 +31,8 @@ import com.keplerops.groundcontrol.domain.riskscenarios.service.TreatmentPlanSer
 import com.keplerops.groundcontrol.domain.riskscenarios.service.UpdateTreatmentPlanCommand;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.ActionItemStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerCategory;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerTargetType;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import java.time.Instant;
@@ -58,6 +65,12 @@ class TreatmentPlanServiceTest {
     @Mock
     private ProjectService projectService;
 
+    @Mock
+    private GraphTargetResolverService graphTargetResolverService;
+
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     private TreatmentPlanService service;
 
     private Project project;
@@ -76,7 +89,9 @@ class TreatmentPlanServiceTest {
                 riskScenarioRepository,
                 methodologyProfileRepository,
                 projectService,
-                validatorFactory.getValidator());
+                validatorFactory.getValidator(),
+                graphTargetResolverService,
+                eventPublisher);
         project = new Project("ground-control", "Ground Control");
         projectId = UUID.randomUUID();
         setField(project, "id", projectId);
@@ -155,7 +170,8 @@ class TreatmentPlanServiceTest {
                 TreatmentPlanStatus.IN_PROGRESS,
                 List.of(new ActionItem(
                         "Owner", Instant.parse("2026-06-01T00:00:00Z"), ActionItemStatus.PLANNED, null, "Enable WAF")),
-                List.of("New exposure"),
+                List.of(new ReassessmentTrigger(
+                        ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC, null, null, null, "New exposure")),
                 null,
                 null));
 
@@ -766,5 +782,423 @@ class TreatmentPlanServiceTest {
                 .hasMessageContaining("index 0")
                 .hasMessageContaining("description")
                 .hasMessageContaining("size");
+    }
+
+    // -------------------------------------------------------------------------
+    // GC-T004 / C8 (#863): typed reassessment triggers + publisher
+    // -------------------------------------------------------------------------
+
+    @Test
+    void transitionStatusPublishesTreatmentProgressChangedEvent() {
+        var plan = new TreatmentPlan(project, "TP-1", "Mitigate gateway", record, TreatmentStrategy.MITIGATE);
+        var planId = UUID.randomUUID();
+        setField(plan, "id", planId);
+        when(repository.findByIdAndProjectId(planId, projectId)).thenReturn(Optional.of(plan));
+        when(repository.save(plan)).thenReturn(plan);
+
+        var result = service.transitionStatus(projectId, planId, TreatmentPlanStatus.IN_PROGRESS);
+
+        // Capture-and-assert the state change (test-quality cycle 1).
+        assertThat(result.getStatus()).isEqualTo(TreatmentPlanStatus.IN_PROGRESS);
+        verify(eventPublisher).publishEvent(any(TreatmentProgressChangedEvent.class));
+    }
+
+    @Test
+    void transitionStatusToSameStatusDoesNotFire() {
+        var plan = new TreatmentPlan(project, "TP-1", "Mitigate gateway", record, TreatmentStrategy.MITIGATE);
+        var planId = UUID.randomUUID();
+        setField(plan, "id", planId);
+        when(repository.findByIdAndProjectId(planId, projectId)).thenReturn(Optional.of(plan));
+        when(repository.save(plan)).thenReturn(plan);
+
+        // PLANNED → IN_PROGRESS → publish (one event), then capture and
+        // attempt to "transition" to IN_PROGRESS again — the state machine
+        // rejects no-op transitions with DomainValidationException, so the
+        // publisher never fires. (Same shape as the existing
+        // transitionStatusUsesPlanStateMachine test.)
+        service.transitionStatus(projectId, planId, TreatmentPlanStatus.IN_PROGRESS);
+        verify(eventPublisher).publishEvent(any(TreatmentProgressChangedEvent.class));
+        org.mockito.Mockito.reset(eventPublisher);
+
+        assertThatThrownBy(() -> service.transitionStatus(projectId, planId, TreatmentPlanStatus.IN_PROGRESS))
+                .isInstanceOf(DomainValidationException.class);
+        org.mockito.Mockito.verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void updatePublishesProgressEventWhenActionItemStatusHistogramChanges() {
+        var plan = new TreatmentPlan(project, "TP-1", "Mitigate gateway", record, TreatmentStrategy.MITIGATE);
+        var planId = UUID.randomUUID();
+        setField(plan, "id", planId);
+        plan.setActionItems(List.of(new ActionItem(
+                "Owner", Instant.parse("2026-06-01T00:00:00Z"), ActionItemStatus.PLANNED, null, "Step 1")));
+        when(repository.findByIdAndProjectId(planId, projectId)).thenReturn(Optional.of(plan));
+        when(repository.save(plan)).thenReturn(plan);
+
+        var result = service.update(
+                projectId,
+                planId,
+                new UpdateTreatmentPlanCommand(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        List.of(new ActionItem(
+                                "Owner", Instant.parse("2026-06-01T00:00:00Z"), ActionItemStatus.DONE, null, "Step 1")),
+                        null,
+                        null,
+                        null));
+
+        // Capture-and-assert the state change (test-quality cycle 1).
+        assertThat(result.getActionItems()).hasSize(1);
+        assertThat(result.getActionItems().get(0).status()).isEqualTo(ActionItemStatus.DONE);
+        verify(eventPublisher).publishEvent(any(TreatmentProgressChangedEvent.class));
+    }
+
+    @Test
+    void updateWithIdenticalActionItemStatusHistogramDoesNotFire() {
+        var plan = new TreatmentPlan(project, "TP-1", "Mitigate gateway", record, TreatmentStrategy.MITIGATE);
+        var planId = UUID.randomUUID();
+        setField(plan, "id", planId);
+        var existing = List.of(new ActionItem(
+                "Owner", Instant.parse("2026-06-01T00:00:00Z"), ActionItemStatus.PLANNED, null, "Step 1"));
+        plan.setActionItems(existing);
+        when(repository.findByIdAndProjectId(planId, projectId)).thenReturn(Optional.of(plan));
+        when(repository.save(plan)).thenReturn(plan);
+
+        // New list with same status set — histogram unchanged, no event.
+        service.update(
+                projectId,
+                planId,
+                new UpdateTreatmentPlanCommand(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        List.of(new ActionItem(
+                                "Other",
+                                Instant.parse("2026-06-01T00:00:00Z"),
+                                ActionItemStatus.PLANNED,
+                                null,
+                                "Step renamed")),
+                        null,
+                        null,
+                        null));
+
+        org.mockito.Mockito.verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void updateNeverPublishesAssetOrControlEventsFromTreatmentPath() {
+        var plan = new TreatmentPlan(project, "TP-1", "Mitigate gateway", record, TreatmentStrategy.MITIGATE);
+        var planId = UUID.randomUUID();
+        setField(plan, "id", planId);
+        when(repository.findByIdAndProjectId(planId, projectId)).thenReturn(Optional.of(plan));
+        when(repository.save(plan)).thenReturn(plan);
+
+        service.update(
+                projectId,
+                planId,
+                new UpdateTreatmentPlanCommand("Renamed", null, null, null, null, null, null, null, null, null));
+
+        // Title-only update does not flip status or action-item histogram, so no event.
+        org.mockito.Mockito.verifyNoInteractions(eventPublisher);
+        // Defensive: even if an event had fired, it must not have been a cross-aggregate one.
+        org.mockito.Mockito.verify(eventPublisher, org.mockito.Mockito.never())
+                .publishEvent(any(AssetStateChangedEvent.class));
+        org.mockito.Mockito.verify(eventPublisher, org.mockito.Mockito.never())
+                .publishEvent(any(ControlStateChangedEvent.class));
+    }
+
+    @Test
+    void createValidatesReassessmentTriggerInternalTarget() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+        when(repository.save(any(TreatmentPlan.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        var assetId = UUID.randomUUID();
+
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(new ReassessmentTrigger(
+                        ReassessmentTriggerCategory.ASSET_STATE_CHANGED,
+                        ReassessmentTriggerTargetType.ASSET,
+                        assetId,
+                        null,
+                        null)),
+                null,
+                null);
+
+        service.create(command);
+
+        verify(graphTargetResolverService)
+                .validateReassessmentTriggerTarget(projectId, ReassessmentTriggerTargetType.ASSET, assetId, null);
+    }
+
+    @Test
+    void createRejectsReassessmentTriggerWithBlankCategory() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(new ReassessmentTrigger(null, null, null, null, "fallback")),
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("Reassessment trigger at index 0")
+                .hasMessageContaining("category");
+    }
+
+    @Test
+    void createRejectsReassessmentTriggerWithOverlongNote() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var bad = new ReassessmentTrigger(
+                ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC, null, null, null, "x".repeat(4001));
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(bad),
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("Reassessment trigger at index 0");
+    }
+
+    @Test
+    void createRejectsTriggerTargetEntityIdWithoutTargetType() {
+        // codex cycle-1 finding #2: target fields are not independent optionals.
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var bad = new ReassessmentTrigger(
+                ReassessmentTriggerCategory.ASSET_STATE_CHANGED, null, UUID.randomUUID(), null, null);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(bad),
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("target reference fields without targetType");
+    }
+
+    @Test
+    void createRejectsExternalTriggerWithTargetEntityId() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var bad = new ReassessmentTrigger(
+                ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC,
+                ReassessmentTriggerTargetType.EXTERNAL,
+                UUID.randomUUID(),
+                "JIRA-1",
+                null);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(bad),
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("targetType=EXTERNAL must not set targetEntityId");
+    }
+
+    @Test
+    void createRejectsInternalTriggerWithTargetIdentifier() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var bad = new ReassessmentTrigger(
+                ReassessmentTriggerCategory.ASSET_STATE_CHANGED,
+                ReassessmentTriggerTargetType.ASSET,
+                UUID.randomUUID(),
+                "EXT-1",
+                null);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(bad),
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("must not set targetIdentifier");
+    }
+
+    @Test
+    void createRejectsExternalTriggerWithoutTargetIdentifier() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var bad = new ReassessmentTrigger(
+                ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC,
+                ReassessmentTriggerTargetType.EXTERNAL,
+                null,
+                null,
+                null);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(bad),
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("targetType=EXTERNAL requires targetIdentifier");
+    }
+
+    @Test
+    void createRejectsInternalTriggerWithoutTargetEntityId() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var bad = new ReassessmentTrigger(
+                ReassessmentTriggerCategory.ASSET_STATE_CHANGED, ReassessmentTriggerTargetType.ASSET, null, null, null);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(bad),
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("requires targetEntityId");
+    }
+
+    @Test
+    void createRejectsNullReassessmentTrigger() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var triggers = new ArrayList<ReassessmentTrigger>();
+        triggers.add(null);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                null,
+                triggers,
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("Reassessment trigger at index 0");
     }
 }

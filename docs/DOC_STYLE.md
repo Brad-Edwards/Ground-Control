@@ -94,3 +94,12 @@ both work, but `server.registerTool({inputSchema: <raw JSON Schema>})` passes
 the registration gate and crashes every call with
 `v3Schema.safeParseAsync is not a function`. New tools should match the
 `server.tool` pattern used by the bulk of the file.
+
+## MCP shape extensions are not doc edits
+
+Additive Zod schema fields or new entries in `mcp/ground-control/lib.js`'s
+`TO_CAMEL` map (for example, the typed reassessment-trigger shape added for
+GC-T004 / C8 in issue #863) do not by themselves require new reference-doc
+prose. The MCP tool description string in `gc-risk-governance.js` is the
+contract surface; keep it accurate when adding or removing fields, and the
+changelog fragment in `changelog.d/` carries the temporal record.

@@ -138,6 +138,12 @@ input `{ repo_path, changed_paths[] }`, output
   per-step telemetry.
 - Issue #896: Enforce documentation coverage + style as an explicit workflow
   step.
+- Issue #863 / GC-T004 C8: extended the MCP `gc_risk_governance` Zod shape and
+  the `TO_CAMEL` map in `mcp/ground-control/lib.js` for typed reassessment
+  triggers and the `reassessment_required_at` response field. The change is
+  an additive surface extension governed by the same gate; the underlying
+  classifier already covered `mcp/ground-control/lib.js` as a `config_parser`
+  surface, so no classification update was needed.
 - Google Developer Documentation Style Guide: https://developers.google.com/style
 - Diátaxis: https://diataxis.fr/
 - Vale: https://vale.sh/

@@ -462,7 +462,11 @@ describe("treatment_plan wire body (#880)", () => {
       due_date: "2026-06-30T00:00:00Z",
       status: "PLANNED",
       action_items: [{ owner: "team-y", due_date: "2026-07-15T00:00:00Z", status: "PLANNED" }],
-      reassessment_triggers: ["new evidence", "control change"],
+      reassessment_triggers: [
+        { category: "ASSESSMENT_REFRESH", note: "new evidence" },
+        { category: "CONTROL_STATE_CHANGED", target_type: "CONTROL",
+          target_entity_id: "11111111-1111-1111-1111-111111111111" },
+      ],
     });
     assert.equal(calls.length, 1);
     assert.equal(calls[0].method, "POST");
@@ -478,7 +482,11 @@ describe("treatment_plan wire body (#880)", () => {
       dueDate: "2026-06-30T00:00:00Z",
       status: "PLANNED",
       actionItems: [{ owner: "team-y", dueDate: "2026-07-15T00:00:00Z", status: "PLANNED" }],
-      reassessmentTriggers: ["new evidence", "control change"],
+      reassessmentTriggers: [
+        { category: "ASSESSMENT_REFRESH", note: "new evidence" },
+        { category: "CONTROL_STATE_CHANGED", targetType: "CONTROL",
+          targetEntityId: "11111111-1111-1111-1111-111111111111" },
+      ],
     });
   });
 

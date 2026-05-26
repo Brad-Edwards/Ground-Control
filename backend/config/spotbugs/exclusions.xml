@@ -25,6 +25,15 @@
         <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2" />
     </Match>
 
+    <!-- Domain event records (immutable value records consumed by
+         @TransactionalEventListener handlers) carry Map/Set payloads by design.
+         The publisher constructs a fresh map/set per event and never mutates it
+         after publication; the listener treats the payload as read-only. -->
+    <Match>
+        <Package name="~com\.keplerops\.groundcontrol\.domain\..*\.events" />
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2" />
+    </Match>
+
     <!-- Spring services store injected dependencies by design -->
     <Match>
         <Package name="~com\.keplerops\.groundcontrol\.domain\..*\.service" />

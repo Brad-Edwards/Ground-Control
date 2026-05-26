@@ -89,6 +89,9 @@ class AssetServiceTest {
     @SuppressWarnings("UnusedVariable") // Injected into AssetService via @InjectMocks; errorprone misses the wire.
     private AssetSubtypeValidator subtypeValidator = new AssetSubtypeValidator();
 
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     @InjectMocks
     private AssetService assetService;
 
@@ -2323,6 +2326,144 @@ class AssetServiceTest {
             assertThat(result.getKnowledgeState())
                     .isEqualTo(com.keplerops.groundcontrol.domain.assets.state.KnowledgeState.PROVISIONAL);
             assertThat(result.getConfidence()).isEqualTo("0.85");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // GC-T004 / C8 (#863): reassessment publisher coverage
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class ReassessmentEvents {
+
+        @Test
+        void updatePublishesAssetStateChangedWhenCriticalityChanges() {
+            var asset = createAsset("ASSET-1", "Payments API");
+            asset.setCriticality(com.keplerops.groundcontrol.domain.assets.state.AssetCriticality.MEDIUM);
+            when(assetRepository.findByIdAndProjectId(asset.getId(), projectId)).thenReturn(Optional.of(asset));
+            when(assetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = assetService.update(
+                    projectId,
+                    asset.getId(),
+                    new com.keplerops.groundcontrol.domain.assets.service.UpdateAssetCommand(
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            com.keplerops.groundcontrol.domain.assets.state.AssetCriticality.CRITICAL,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false));
+
+            // Capture-and-assert the state change (test-quality cycle 1).
+            assertThat(result.getCriticality())
+                    .isEqualTo(com.keplerops.groundcontrol.domain.assets.state.AssetCriticality.CRITICAL);
+            verify(eventPublisher)
+                    .publishEvent(
+                            any(com.keplerops.groundcontrol.domain.riskscenarios.events.AssetStateChangedEvent.class));
+        }
+
+        @Test
+        void updateWithUnchangedRiskFieldsDoesNotPublish() {
+            var asset = createAsset("ASSET-1", "Payments API");
+            asset.setCriticality(com.keplerops.groundcontrol.domain.assets.state.AssetCriticality.MEDIUM);
+            asset.setOwner("alice");
+            when(assetRepository.findByIdAndProjectId(asset.getId(), projectId)).thenReturn(Optional.of(asset));
+            when(assetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            // description-only update — no risk-bearing field moves.
+            assetService.update(
+                    projectId,
+                    asset.getId(),
+                    new com.keplerops.groundcontrol.domain.assets.service.UpdateAssetCommand(
+                            null, "new description", null));
+
+            org.mockito.Mockito.verifyNoInteractions(eventPublisher);
+        }
+
+        @Test
+        void archivePublishesAssetStateChangedEvent() {
+            var asset = createAsset("ASSET-1", "Payments API");
+            when(assetRepository.findByIdAndProjectId(asset.getId(), projectId)).thenReturn(Optional.of(asset));
+            when(assetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = assetService.archive(projectId, asset.getId());
+
+            assertThat(result.getArchivedAt()).isNotNull();
+            verify(eventPublisher)
+                    .publishEvent(
+                            any(com.keplerops.groundcontrol.domain.riskscenarios.events.AssetStateChangedEvent.class));
+        }
+
+        // S1874 suppressed: exercising the deprecated overload is the point of this test.
+        @SuppressWarnings("deprecation")
+        @Test
+        void deprecatedUuidOnlyUpdateAlsoPublishes() {
+            // Deprecated UUID-only overload must still fire the publisher per preflight —
+            // legacy call sites would otherwise silently skip reassessment routing.
+            var asset = createAsset("ASSET-1", "Payments API");
+            asset.setEnvironment(com.keplerops.groundcontrol.domain.assets.state.AssetEnvironment.STAGING);
+            when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+            when(assetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = assetService.update(
+                    asset.getId(),
+                    new com.keplerops.groundcontrol.domain.assets.service.UpdateAssetCommand(
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            com.keplerops.groundcontrol.domain.assets.state.AssetEnvironment.PRODUCTION,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false));
+
+            assertThat(result.getEnvironment())
+                    .isEqualTo(com.keplerops.groundcontrol.domain.assets.state.AssetEnvironment.PRODUCTION);
+            verify(eventPublisher)
+                    .publishEvent(
+                            any(com.keplerops.groundcontrol.domain.riskscenarios.events.AssetStateChangedEvent.class));
+        }
+
+        // S1874 suppressed: exercising the deprecated overload is the point of this test.
+        @SuppressWarnings("deprecation")
+        @Test
+        void deprecatedUuidOnlyArchiveAlsoPublishes() {
+            var asset = createAsset("ASSET-1", "Payments API");
+            when(assetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+            when(assetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = assetService.archive(asset.getId());
+
+            assertThat(result.getArchivedAt()).isNotNull();
+            verify(eventPublisher)
+                    .publishEvent(
+                            any(com.keplerops.groundcontrol.domain.riskscenarios.events.AssetStateChangedEvent.class));
         }
     }
 }

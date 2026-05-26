@@ -728,6 +728,7 @@ const TO_CAMEL = {
   due_date: "dueDate",
   action_items: "actionItems",
   reassessment_triggers: "reassessmentTriggers",
+  reassessment_required_at: "reassessmentRequiredAt",
   root_node_ids: "rootNodeIds",
   max_depth: "maxDepth",
   source_node_id: "sourceNodeId",

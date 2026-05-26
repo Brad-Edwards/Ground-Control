@@ -194,6 +194,12 @@ SDD extends TDD by adding contracts as a specification layer:
 - Assurance levels L0-L3 are codified as the `AssuranceLevel` enum in `domain/verification/state/AssuranceLevel.java`.
 - Verification outcomes are codified as the `VerificationStatus` enum in `domain/verification/state/VerificationStatus.java`.
 - Both enums are used by the `VerificationResult` entity (ADR-014 §2, GC-F001).
+- Not every enum under `domain/**/state/` is a state machine. Tag enums that
+  do not define a `canTransitionTo` lifecycle (for example,
+  `ReassessmentTriggerCategory` and `ReassessmentTriggerTargetType` added for
+  GC-T004 / C8 in issue #863) are L0 data classifiers, not L1+ contract
+  surfaces; placement under `state/` follows the existing repo convention for
+  domain-enum location, not an assertion that JML contracts apply.
 
 ## Related ADRs
 

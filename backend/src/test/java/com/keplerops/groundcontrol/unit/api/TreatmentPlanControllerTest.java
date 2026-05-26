@@ -24,6 +24,7 @@ import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
@@ -32,6 +33,7 @@ import com.keplerops.groundcontrol.domain.riskscenarios.service.TreatmentPlanSer
 import com.keplerops.groundcontrol.domain.riskscenarios.service.UpdateTreatmentPlanCommand;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.ActionItemStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerCategory;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import java.time.Instant;
@@ -82,7 +84,8 @@ class TreatmentPlanControllerTest {
         plan.setRationale("Reduce credential theft risk");
         plan.setDueDate(DUE);
         plan.setActionItems(List.of(new ActionItem("Security Lead", DUE, ActionItemStatus.PLANNED, null, null)));
-        plan.setReassessmentTriggers(List.of("Quarterly review"));
+        plan.setReassessmentTriggers(List.of(new ReassessmentTrigger(
+                ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC, null, null, null, "Quarterly review")));
         setField(plan, "id", PLAN_ID);
         setField(plan, "createdAt", NOW);
         setField(plan, "updatedAt", NOW);
@@ -119,7 +122,7 @@ class TreatmentPlanControllerTest {
                                   "dueDate": "2026-06-01T00:00:00Z",
                                   "status": "PLANNED",
                                   "actionItems": [{"owner": "Security Lead", "dueDate": "2026-06-01T00:00:00Z", "status": "PLANNED"}],
-                                  "reassessmentTriggers": ["Quarterly review"]
+                                  "reassessmentTriggers": [{"category": "METHODOLOGY_SPECIFIC", "note": "Quarterly review"}]
                                 }
                                 """
                                         .formatted(RECORD_ID, SCENARIO_ID)))
@@ -142,7 +145,8 @@ class TreatmentPlanControllerTest {
                 .andExpect(jsonPath("$.actionItems[0].dueDate", is("2026-06-01T00:00:00Z")))
                 .andExpect(jsonPath("$.actionItems[0].status", is("PLANNED")))
                 .andExpect(jsonPath("$.reassessmentTriggers", hasSize(1)))
-                .andExpect(jsonPath("$.reassessmentTriggers[0]", is("Quarterly review")));
+                .andExpect(jsonPath("$.reassessmentTriggers[0].category", is("METHODOLOGY_SPECIFIC")))
+                .andExpect(jsonPath("$.reassessmentTriggers[0].note", is("Quarterly review")));
     }
 
     @Test

@@ -17,6 +17,7 @@ import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmen
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskRegisterRecordRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.TreatmentPlanRepository;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerTargetType;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkTargetType;
 import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelRepository;
 import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelLinkTargetType;
@@ -361,6 +362,39 @@ public class GraphTargetResolverService {
             case FINDING -> internalTarget(
                     targetEntityId, findingRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_FINDING);
             case FRAMEWORK, EXTERNAL -> externalTarget(targetIdentifier);
+        };
+    }
+
+    public ValidatedTarget validateReassessmentTriggerTarget(
+            UUID projectId, ReassessmentTriggerTargetType targetType, UUID targetEntityId, String targetIdentifier) {
+        return switch (targetType) {
+            case ASSET -> internalTarget(
+                    targetEntityId, assetRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_ASSET);
+            case CONTROL -> internalTarget(
+                    targetEntityId, controlRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_CONTROL);
+            case RISK_SCENARIO -> internalTarget(
+                    targetEntityId,
+                    riskScenarioRepository.existsByIdAndProjectId(targetEntityId, projectId),
+                    LABEL_RISK_SCENARIO);
+            case RISK_REGISTER_RECORD -> internalTarget(
+                    targetEntityId,
+                    riskRegisterRecordRepository
+                            .findByIdAndProjectIdWithScenarios(targetEntityId, projectId)
+                            .isPresent(),
+                    LABEL_RISK_REGISTER_RECORD);
+            case RISK_ASSESSMENT_RESULT -> internalTarget(
+                    targetEntityId,
+                    riskAssessmentResultRepository
+                            .findByIdAndProjectIdWithObservations(targetEntityId, projectId)
+                            .isPresent(),
+                    LABEL_RISK_ASSESSMENT_RESULT);
+            case TREATMENT_PLAN -> internalTarget(
+                    targetEntityId,
+                    treatmentPlanRepository
+                            .findByIdAndProjectId(targetEntityId, projectId)
+                            .isPresent(),
+                    LABEL_TREATMENT_PLAN);
+            case EXTERNAL -> externalTarget(targetIdentifier);
         };
     }
 

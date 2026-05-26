@@ -389,3 +389,22 @@ restore procedure.
 - PRs require: `./gradlew check` passes (build + spotlessCheck + test + jacocoTestReport).
 - Commit messages: imperative mood. `Add risk scoring engine` not `Added risk scoring engine`.
 - Pre-commit hooks run file checks + gitleaks + Spotless auto-format + `./gradlew check` (full CI-equivalent: build + tests + static analysis + coverage) + `./gradlew openjmlEsc` (formal verification of JML contracts in ESC scope) + Terraform fmt/validate + Checkov IaC security scanning (on `deploy/terraform/`). Do not bypass with `--no-verify`.
+
+## Enum placement under `domain/**/state/`
+
+The `state/` package holds two distinct kinds of enums and the formal-methods
+classification depends on which kind:
+
+- **State machines.** Enums that define a `canTransitionTo(...)` lifecycle,
+  for example `TreatmentPlanStatus` and `ControlStatus`. These are L1+
+  contract surfaces; transition rules must be unit-tested and ADR-012's L1
+  rule applies.
+- **Tag enums.** Enums that are pure classifiers with no transition surface,
+  for example `AssetLinkTargetType`, and the `ReassessmentTriggerCategory` /
+  `ReassessmentTriggerTargetType` added for GC-T004 / C8 in issue #863.
+  These are L0 data; the placement under `state/` follows convention only.
+
+When adding a new file under `state/`, classify it explicitly in the file
+header or the introducing PR's plan. The policy rule that requires this
+section to be touched alongside new state files is a forcing function; the
+real classification is the one above.

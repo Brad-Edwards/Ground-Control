@@ -191,6 +191,82 @@ update adapter tests so create/update bodies preserve the canonical nested
 fields. The action-item schema should not be marked opaque in `lib.js`; unlike
 metadata, its keys are repo-owned contract fields.
 
+## Categorised Reassessment Triggers (#863 / C8)
+
+C8 is a typed trigger contract plus a transactional reassessment signal; it is
+not a workflow engine, scheduler, ticketing integration, or risk recomputation
+operation. Keep three concepts separate:
+
+- Trigger configuration: `TreatmentPlan.reassessmentTriggers` becomes one
+  canonical typed value list with `category` and an optional target reference.
+- Change notification: treatment, asset, and control services publish immutable
+  domain events after successful mutations and after old/new tracked values have
+  been captured.
+- Reassessment signal: the listener sets a durable `reassessmentRequiredAt`
+  timestamp on affected risk rows; it does not recompute risk.
+
+The trigger value shape should reuse the existing JSON-text-column pattern:
+extend `JacksonTextCollectionConverters` with one typed converter and keep REST
+DTOs, command records, the domain entity, MCP Zod, `TO_CAMEL`, and
+`GOVERNANCE_FIELDS` aligned. Do not add a treatment-local `ObjectMapper`, a
+parallel metadata map, or a second trigger schema for each methodology. Existing
+free-text rows must migrate deterministically; do not infer entity targets from
+human labels. If legacy labels must be retained, retain them as a bounded field
+on the same typed value object, not as arbitrary metadata.
+
+Optional trigger target references must resolve through
+`GraphTargetResolverService` under the project id before persistence. If the
+current asset/control/risk-scenario target enums do not exactly match the
+reassessment trigger vocabulary, add the smallest resolver entry point there and
+keep the same `targetEntityId` versus `targetIdentifier` split. Do not parse
+`graphNodeId` strings, bypass project-scoped repositories, or duplicate resolver
+logic in controllers, MCP, or frontend code.
+
+Event payloads must be small, immutable value records, not JPA entities. They
+must carry `projectId`, source entity type/id, trigger category, and old/new
+values for every tracked field that caused the event. Use a single field-change
+value shape across treatment, asset, and control events so the next tracked
+field is added to a tracked-field set, not by inventing another event schema.
+Do not log raw field values, raw action-item payloads, or user metadata maps.
+
+Publisher coverage belongs at the service transaction boundary. `TreatmentPlan`
+progress includes `transitionStatus` and changes in `ActionItem.status`.
+Because action items are currently value objects without stable per-item
+identity, a wholesale `actionItems` replacement can only support plan-level
+status-diff semantics unless a separate requirement introduces item ids or
+per-item mutation endpoints. Do not pretend list position is durable identity.
+Asset-state events must cover `archive` and the project-scoped `update` path for
+the documented risk-bearing fields; if deprecated UUID-only overloads remain
+callable, they must either route through the same publisher path using the
+asset's project id or be proven unreachable. Control-state events must cover
+`transitionStatus` and `update` changes to `effectiveness`; only add other
+control fields when they are explicitly documented as mitigation context.
+
+The reassessment listener should mirror the existing
+`RequirementService` -> `EmbeddingService.@TransactionalEventListener`
+transactional shape, but not the best-effort semantics unless that tradeoff is
+explicitly accepted. Reassessment is a governance signal, not a cache rebuild:
+the listener should stay synchronous, DB-only, idempotent, and directly tested.
+If future reliability needs outbox/retry semantics, that is an ADR-level change,
+not a silent background thread.
+
+Listener traversal must stay bounded to the named link surfaces:
+`AssetLink`, `ControlLink`, `RiskScenarioLink`,
+`TreatmentPlan.riskRegisterRecord`, and `TreatmentPlan.riskScenario`. Use
+project-scoped repository queries, collect affected `RiskAssessmentResult` and
+`RiskRegisterRecord` ids, deduplicate before writes, and update only the
+reassessment timestamp. Do not issue ad hoc graph traversals, AGE queries, or
+multi-hop inference beyond those explicit surfaces to make a test pass.
+
+Persistence must add parent and audit columns in lockstep for every audited
+entity that carries the signal. The minimum requirement target is
+`RiskAssessmentResult.reassessmentRequiredAt`; add the matching
+`RiskRegisterRecord` field only if register-record rows themselves need to be
+routeable on the signal. Do not hide the signal in `decisionMetadata`,
+`computedOutputs`, `uncertaintyMetadata`, action items, or the trigger list.
+Flyway version lists in `MigrationSmokeTest` and
+`RequirementsE2EIntegrationTest` must move with the migration.
+
 ## Cross-Cutting Layers
 
 - Control-link target validation (#860 / C4): `ControlLinkService.create` must

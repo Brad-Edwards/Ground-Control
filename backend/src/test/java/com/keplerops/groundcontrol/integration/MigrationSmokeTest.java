@@ -53,7 +53,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "079", "080", "081", "082", "083", "084", "085", "086", "087", "088", "089", "090", "091",
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
-                        "123", "124", "125");
+                        "123", "124", "125", "126");
     }
 
     @Test
@@ -1005,6 +1005,16 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery(
                                 "SELECT treatment_strategy_vocabulary" + " FROM methodology_profile_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        // V126: reassessmentRequiredAt on risk_assessment_result and audit (GC-T004 / C8, #863).
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_name = 'risk_assessment_result'"
+                        + " AND column_name = 'reassessment_required_at'")
+                .getSingleResult();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT reassessment_required_at FROM risk_assessment_result_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }

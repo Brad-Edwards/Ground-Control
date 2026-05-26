@@ -11,6 +11,8 @@ import com.keplerops.groundcontrol.domain.packregistry.model.PackDependency;
 import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPackEntry;
 import com.keplerops.groundcontrol.domain.packregistry.model.TrustPolicyRule;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerCategory;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 import java.io.IOException;
@@ -230,6 +232,86 @@ public final class JacksonTextCollectionConverters {
         private static boolean hasNonNullText(ObjectNode obj, String key) {
             JsonNode v = obj.get(key);
             return v != null && !v.isNull() && !v.asText().isEmpty();
+        }
+    }
+
+    /**
+     * Persistence converter for {@code TreatmentPlan.reassessmentTriggers} (per GC-T004 / C8, issue #863).
+     *
+     * <p>Writes the canonical typed shape only. On read, legacy {@code List<String>} rows
+     * persisted under the pre-C8 contract are folded into typed triggers with
+     * {@code category = METHODOLOGY_SPECIFIC} and {@code note = <legacy string>} so no
+     * legacy content is silently dropped. Blank legacy strings are skipped — they convey
+     * no signal and would otherwise materialise as a category-only METHODOLOGY_SPECIFIC
+     * trigger with no payload.
+     */
+    @Converter
+    public static class ReassessmentTriggerListConverter
+            implements AttributeConverter<List<ReassessmentTrigger>, String> {
+
+        @Override
+        public String convertToDatabaseColumn(List<ReassessmentTrigger> attribute) {
+            if (attribute == null) {
+                return null;
+            }
+            try {
+                return OBJECT_MAPPER.writeValueAsString(attribute);
+            } catch (JsonProcessingException exception) {
+                throw new IllegalArgumentException("Unable to serialize reassessment_triggers JSON", exception);
+            }
+        }
+
+        @Override
+        // S1168: JPA AttributeConverter contract returns null for NULL columns (matches every
+        // sibling converter in this file); an empty list would persist as `[]` and lose the
+        // null-vs-empty distinction that downstream readers rely on.
+        @SuppressWarnings("java:S1168")
+        public List<ReassessmentTrigger> convertToEntityAttribute(String dbData) {
+            if (dbData == null || dbData.isBlank()) {
+                return null;
+            }
+            try {
+                JsonNode root = OBJECT_MAPPER.readTree(dbData);
+                if (root.isNull()) {
+                    return null;
+                }
+                if (!root.isArray()) {
+                    throw new IllegalArgumentException(
+                            "Expected JSON array for reassessment_triggers, got " + root.getNodeType());
+                }
+                List<ReassessmentTrigger> items = new ArrayList<>(root.size());
+                for (JsonNode node : root) {
+                    var item = readNode(node);
+                    if (item != null) {
+                        items.add(item);
+                    }
+                }
+                return items;
+            } catch (IOException exception) {
+                throw new IllegalArgumentException("Unable to deserialize reassessment_triggers JSON", exception);
+            }
+        }
+
+        private static ReassessmentTrigger readNode(JsonNode node) throws IOException {
+            if (node == null || node.isNull()) {
+                return null;
+            }
+            if (node.isTextual()) {
+                return readLegacyStringNode(node);
+            }
+            if (!node.isObject()) {
+                throw new IllegalArgumentException(
+                        "Expected JSON object or legacy string for reassessment trigger, got " + node.getNodeType());
+            }
+            return OBJECT_MAPPER.treeToValue(node, ReassessmentTrigger.class);
+        }
+
+        private static ReassessmentTrigger readLegacyStringNode(JsonNode node) {
+            String legacy = node.asText();
+            if (legacy == null || legacy.isBlank()) {
+                return null;
+            }
+            return new ReassessmentTrigger(ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC, null, null, null, legacy);
         }
     }
 }
