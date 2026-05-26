@@ -9,6 +9,17 @@
         "GH_REPO": "KeplerOps/Ground-Control"
       }
     },
+    "citation": {
+      "type": "stdio",
+      "command": "mcp/citation/bin/citation-mcp.sh",
+      "args": [],
+      "env": {
+        "CITATION_MCP_MAILTO": "${CITATION_MCP_MAILTO:-j.bradley.edwards@gmail.com}",
+        "PERSONAL_ZOTERO_ID": "${PERSONAL_ZOTERO_ID:-}",
+        "PERSONAL_ZOTERO_KEY": "${PERSONAL_ZOTERO_KEY:-}",
+        "TRANSLATION_SERVER_URL": "${TRANSLATION_SERVER_URL:-http://localhost:1969}"
+      }
+    },
     "sonarqube": {
       "type": "stdio",
       "command": "docker",

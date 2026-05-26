@@ -1,0 +1,80 @@
+# Methodology lookup
+#
+# Method key → primary methodology sources (Zotero keys + titles + PDF status).
+# The agent reads the source PDFs in Zotero to ground its protocol decisions.
+# This file is a lookup, not a paraphrase: do not put method descriptions here.
+
+methods:
+
+  - key: scoping
+    label: Scoping review
+    primary_sources:
+      - zotero_key: UNMJUBXU
+        title: "Scoping studies: towards a methodological framework"
+        pdf_available: true
+      - zotero_key: 4ZZU62K6
+        title: "Scoping studies: advancing the methodology"
+        pdf_available: true
+      - zotero_key: W4HIAEIK
+        title: "PRISMA Extension for Scoping Reviews (PRISMA-ScR): Checklist and Explanation"
+        pdf_available: true
+
+  - key: systematic
+    label: Systematic review
+    primary_sources:
+      - zotero_key: FRM9HPNG
+        title: "Guidelines for performing Systematic Literature Reviews in Software Engineering"
+        pdf_available: false
+      - zotero_key: MJX3HCT5
+        title: "The PRISMA 2020 statement: an updated guideline for reporting systematic reviews"
+        pdf_available: true
+
+  - key: mapping
+    label: Systematic mapping review
+    primary_sources:
+      - zotero_key: 7H3MVIUS
+        title: "Systematic Mapping Studies in Software Engineering"
+        pdf_available: false
+      - zotero_key: SIA2M3JX
+        title: "Guidelines for conducting systematic mapping studies in software engineering: An update"
+        pdf_available: false
+
+  - key: critical
+    label: Critical review
+    primary_sources:
+      - zotero_key: WM8CQC62
+        title: "A typology of reviews: an analysis of 14 review types and associated methodologies"
+        pdf_available: false
+      - zotero_key: KKQZZZ85
+        title: "Literature review as a research methodology: An overview and guidelines"
+        pdf_available: false
+
+  - key: narrative_conceptual
+    label: Narrative / conceptual review
+    primary_sources:
+      - zotero_key: XVR4XPMQ
+        title: "The integrative review: updated methodology"
+        pdf_available: false
+      - zotero_key: MK62GIH3
+        title: "Writing Integrative Literature Reviews: Guidelines and Examples"
+        pdf_available: false
+
+  - key: targeted_related_work
+    label: Targeted related-work review
+    primary_sources:
+      - zotero_key: PJBMHN3N
+        title: "Guidelines for snowballing in systematic literature studies and a replication in software engineering"
+        pdf_available: true
+      - zotero_key: FRM9HPNG
+        title: "Guidelines for performing Systematic Literature Reviews in Software Engineering"
+        pdf_available: false
+
+  - key: taxonomy_development
+    label: Taxonomy development
+    primary_sources:
+      - zotero_key: 5IEWQBCY
+        title: "A method for taxonomy development and its application in information systems"
+        pdf_available: false
+      - zotero_key: CZZN2X64
+        title: "An Update for Taxonomy Designers: Methodological Guidance from Information Systems Research"
+        pdf_available: true

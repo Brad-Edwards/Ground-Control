@@ -1,0 +1,26 @@
+===
+title: "Clean map — phase-4 structural-checker test fixture"
+===
+
+// A minimal well-formed map: every premise grounded, every objection answered,
+// no support argument left unreconstructed, no circular support. The structural
+// checker must pass it.
+
+[Thesis]: The fixture thesis.
+    <- <Objection>
+
+<Support Argument>
+
+(1) A grounded premise. {evidence: "synthesis.md §1"}
+(2) Another grounded premise. {evidence: "synthesis.md §2"}
+-----
+(3) [Thesis]
+
+<Objection>: A stated objection to the thesis.
+
+<Response>
+
+(1) A grounded reason the objection does not hold. {evidence: "synthesis.md §3"}
+-----
+(2) [Rebuttal]: The objection does not hold.
+    -> <Objection>
