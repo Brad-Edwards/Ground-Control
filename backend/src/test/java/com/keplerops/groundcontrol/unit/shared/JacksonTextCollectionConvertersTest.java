@@ -395,11 +395,12 @@ class JacksonTextCollectionConvertersTest {
 
             // null fields (targetType, targetEntityId, targetIdentifier, note)
             // must be absent due to @JsonInclude(NON_NULL).
-            assertThat(json).doesNotContain("targetType");
-            assertThat(json).doesNotContain("targetEntityId");
-            assertThat(json).doesNotContain("targetIdentifier");
-            assertThat(json).doesNotContain("note");
-            assertThat(json).contains("\"category\":\"ASSESSMENT_REFRESH\"");
+            assertThat(json)
+                    .doesNotContain("targetType")
+                    .doesNotContain("targetEntityId")
+                    .doesNotContain("targetIdentifier")
+                    .doesNotContain("note")
+                    .contains("\"category\":\"ASSESSMENT_REFRESH\"");
         }
 
         @Test

@@ -262,6 +262,10 @@ public final class JacksonTextCollectionConverters {
         }
 
         @Override
+        // S1168: JPA AttributeConverter contract returns null for NULL columns (matches every
+        // sibling converter in this file); an empty list would persist as `[]` and lose the
+        // null-vs-empty distinction that downstream readers rely on.
+        @SuppressWarnings("java:S1168")
         public List<ReassessmentTrigger> convertToEntityAttribute(String dbData) {
             if (dbData == null || dbData.isBlank()) {
                 return null;
@@ -293,18 +297,21 @@ public final class JacksonTextCollectionConverters {
                 return null;
             }
             if (node.isTextual()) {
-                String legacy = node.asText();
-                if (legacy == null || legacy.isBlank()) {
-                    return null;
-                }
-                return new ReassessmentTrigger(
-                        ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC, null, null, null, legacy);
+                return readLegacyStringNode(node);
             }
             if (!node.isObject()) {
                 throw new IllegalArgumentException(
                         "Expected JSON object or legacy string for reassessment trigger, got " + node.getNodeType());
             }
             return OBJECT_MAPPER.treeToValue(node, ReassessmentTrigger.class);
+        }
+
+        private static ReassessmentTrigger readLegacyStringNode(JsonNode node) {
+            String legacy = node.asText();
+            if (legacy == null || legacy.isBlank()) {
+                return null;
+            }
+            return new ReassessmentTrigger(ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC, null, null, null, legacy);
         }
     }
 }

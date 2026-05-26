@@ -52,21 +52,34 @@ public class AssetService {
     private static final String DETAIL_FIELD = "field";
     private static final String DETAIL_LIMIT = "limit";
 
+    // GC-T004 / C8 (#863): risk-bearing asset field keys hoisted out of inline
+    // literals so each rename is one site, not three. Used by the snapshot,
+    // changed-set diff, and event payload builders.
+    private static final String FIELD_ASSET_TYPE = "assetType";
+    private static final String FIELD_ENVIRONMENT = "environment";
+    private static final String FIELD_CRITICALITY = "criticality";
+    private static final String FIELD_SCOPE_DESIGNATION = "scopeDesignation";
+    private static final String FIELD_BUSINESS_CONTEXT = "businessContext";
+    private static final String FIELD_OWNER = "owner";
+    private static final String FIELD_STEWARD = "steward";
+    private static final String FIELD_KNOWLEDGE_STATE = "knowledgeState";
+    private static final String FIELD_ARCHIVED_AT = "archivedAt";
+
     /**
-     * Risk-bearing asset fields tracked by GC-T004 / C8 (#863) — a change in any of these on
+     * Risk-bearing asset fields tracked by GC-T004 / C8 (#863). A change in any of these on
      * {@code update} fires an {@link AssetStateChangedEvent} so the reassessment listener can
      * route on which fields moved. Drawn from the preflight: asset type, environment,
      * criticality, scope, business context, ownership, stewardship, and knowledge state.
      */
     private static final Set<String> RISK_BEARING_FIELDS = Set.of(
-            "assetType",
-            "environment",
-            "criticality",
-            "scopeDesignation",
-            "businessContext",
-            "owner",
-            "steward",
-            "knowledgeState");
+            FIELD_ASSET_TYPE,
+            FIELD_ENVIRONMENT,
+            FIELD_CRITICALITY,
+            FIELD_SCOPE_DESIGNATION,
+            FIELD_BUSINESS_CONTEXT,
+            FIELD_OWNER,
+            FIELD_STEWARD,
+            FIELD_KNOWLEDGE_STATE);
 
     private final OperationalAssetRepository assetRepository;
     private final AssetRelationRepository relationRepository;
@@ -198,15 +211,18 @@ public class AssetService {
         return saved;
     }
 
+    /**
+     * Deprecated UUID-only overload routes through the same C8 publisher path as the
+     * project-scoped {@link #update(UUID, UUID, UpdateAssetCommand)}; project id is resolved
+     * from the loaded aggregate so reassessment signal routing is not silently skipped on
+     * legacy call sites (GC-T004 / C8, issue #863).
+     */
     @Deprecated(forRemoval = false)
     public OperationalAsset update(UUID id, UpdateAssetCommand command) {
         var asset = assetRepository.findById(id).orElseThrow(() -> new NotFoundException("Asset not found: " + id));
         var oldSnapshot = riskBearingSnapshot(asset);
         applyAssetUpdates(asset, command);
         var saved = assetRepository.save(asset);
-        // The deprecated UUID-only overload still funnels through the same publisher path;
-        // we resolve project id from the loaded aggregate so reassessment routing is not
-        // silently skipped on legacy call sites (GC-T004 / C8, #863).
         publishStateChangeIfRiskFieldsMoved(saved, oldSnapshot);
         return saved;
     }
@@ -1034,14 +1050,14 @@ public class AssetService {
      */
     private Map<String, Object> riskBearingSnapshot(OperationalAsset asset) {
         Map<String, Object> snap = new HashMap<>();
-        snap.put("assetType", asset.getAssetType());
-        snap.put("environment", asset.getEnvironment());
-        snap.put("criticality", asset.getCriticality());
-        snap.put("scopeDesignation", asset.getScopeDesignation());
-        snap.put("businessContext", asset.getBusinessContext());
-        snap.put("owner", asset.getOwner());
-        snap.put("steward", asset.getSteward());
-        snap.put("knowledgeState", asset.getKnowledgeState());
+        snap.put(FIELD_ASSET_TYPE, asset.getAssetType());
+        snap.put(FIELD_ENVIRONMENT, asset.getEnvironment());
+        snap.put(FIELD_CRITICALITY, asset.getCriticality());
+        snap.put(FIELD_SCOPE_DESIGNATION, asset.getScopeDesignation());
+        snap.put(FIELD_BUSINESS_CONTEXT, asset.getBusinessContext());
+        snap.put(FIELD_OWNER, asset.getOwner());
+        snap.put(FIELD_STEWARD, asset.getSteward());
+        snap.put(FIELD_KNOWLEDGE_STATE, asset.getKnowledgeState());
         return snap;
     }
 
@@ -1082,9 +1098,9 @@ public class AssetService {
                 ReassessmentTriggerCategory.ASSET_STATE_CHANGED,
                 ReassessmentSourceEntityType.ASSET,
                 saved.getId(),
-                Set.of("archivedAt"),
+                Set.of(FIELD_ARCHIVED_AT),
                 Map.of(),
-                Map.of("archivedAt", saved.getArchivedAt()),
+                Map.of(FIELD_ARCHIVED_AT, saved.getArchivedAt()),
                 Instant.now())));
     }
 }

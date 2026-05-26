@@ -91,17 +91,17 @@ class ReassessmentSignalServiceTest {
         return result;
     }
 
-    private TreatmentPlan makePlan(RiskRegisterRecord record, RiskScenario scenario) {
-        var plan = new TreatmentPlan(project, "TP-1", "Plan", record, TreatmentStrategy.MITIGATE);
+    private TreatmentPlan makePlan(RiskRegisterRecord registerRecord, RiskScenario scenario) {
+        var plan = new TreatmentPlan(project, "TP-1", "Plan", registerRecord, TreatmentStrategy.MITIGATE);
         setField(plan, "id", UUID.randomUUID());
         plan.setRiskScenario(scenario);
         return plan;
     }
 
     private RiskRegisterRecord makeRecord() {
-        var record = new RiskRegisterRecord(project, "RR-1", "Record");
-        setField(record, "id", UUID.randomUUID());
-        return record;
+        var registerRecord = new RiskRegisterRecord(project, "RR-1", "Record");
+        setField(registerRecord, "id", UUID.randomUUID());
+        return registerRecord;
     }
 
     private RiskScenario makeScenario(String uid) {
@@ -141,14 +141,15 @@ class ReassessmentSignalServiceTest {
 
     @Test
     void treatmentPlanEventMarksAssessmentResultsLinkedThroughRegisterRecord() {
-        var record = makeRecord();
+        var registerRecord = makeRecord();
         var scenario = makeScenario("RS-1");
-        var plan = makePlan(record, scenario);
+        var plan = makePlan(registerRecord, scenario);
         var result = makeAssessment(UUID.randomUUID());
 
         when(treatmentPlanRepository.findByIdAndProjectId(plan.getId(), projectId))
                 .thenReturn(Optional.of(plan));
-        when(assessmentRepository.findByProjectIdAndRiskRegisterRecordIdOrderByCreatedAtDesc(projectId, record.getId()))
+        when(assessmentRepository.findByProjectIdAndRiskRegisterRecordIdOrderByCreatedAtDesc(
+                        projectId, registerRecord.getId()))
                 .thenReturn(List.of(result));
         when(assessmentRepository.findByProjectIdAndRiskScenarioIdOrderByCreatedAtDesc(projectId, scenario.getId()))
                 .thenReturn(List.of());
@@ -166,14 +167,15 @@ class ReassessmentSignalServiceTest {
     void treatmentPlanEventDeduplicatesScenarioVsRecordPaths() {
         // Both findByRecord and findByScenario return the SAME assessment row —
         // the listener must dedup and call save() exactly once for that id.
-        var record = makeRecord();
+        var registerRecord = makeRecord();
         var scenario = makeScenario("RS-1");
-        var plan = makePlan(record, scenario);
+        var plan = makePlan(registerRecord, scenario);
         var result = makeAssessment(UUID.randomUUID());
 
         when(treatmentPlanRepository.findByIdAndProjectId(plan.getId(), projectId))
                 .thenReturn(Optional.of(plan));
-        when(assessmentRepository.findByProjectIdAndRiskRegisterRecordIdOrderByCreatedAtDesc(projectId, record.getId()))
+        when(assessmentRepository.findByProjectIdAndRiskRegisterRecordIdOrderByCreatedAtDesc(
+                        projectId, registerRecord.getId()))
                 .thenReturn(List.of(result));
         when(assessmentRepository.findByProjectIdAndRiskScenarioIdOrderByCreatedAtDesc(projectId, scenario.getId()))
                 .thenReturn(List.of(result));
@@ -251,13 +253,18 @@ class ReassessmentSignalServiceTest {
     @Test
     void controlEventWalksControlLinkToRegisterRecordAndMarksAssessments() {
         var control = makeControl("CTRL-1");
-        var record = makeRecord();
+        var registerRecord = makeRecord();
         var result = makeAssessment(UUID.randomUUID());
 
         var link = new ControlLink(
-                control, ControlLinkTargetType.RISK_REGISTER_RECORD, record.getId(), null, ControlLinkType.MITIGATES);
+                control,
+                ControlLinkTargetType.RISK_REGISTER_RECORD,
+                registerRecord.getId(),
+                null,
+                ControlLinkType.MITIGATES);
         when(controlLinkRepository.findByControlId(control.getId())).thenReturn(List.of(link));
-        when(assessmentRepository.findByProjectIdAndRiskRegisterRecordIdOrderByCreatedAtDesc(projectId, record.getId()))
+        when(assessmentRepository.findByProjectIdAndRiskRegisterRecordIdOrderByCreatedAtDesc(
+                        projectId, registerRecord.getId()))
                 .thenReturn(List.of(result));
         when(assessmentRepository.findByIdAndProjectId(result.getId(), projectId))
                 .thenReturn(Optional.of(result));

@@ -167,7 +167,7 @@ class ReassessmentSignalIntegrationTest extends BaseIntegrationTest {
     @Test
     void treatmentPlanTransitionMarksAssessmentResultsLinkedThroughRegisterRecord() {
         var fixture = seedScenarioRecordAssessment("RS-TP", "RR-TP");
-        var plan = createPlan("TP-TRANS", fixture.record(), null);
+        var plan = createPlan("TP-TRANS", fixture.registerRecord(), null);
 
         treatmentPlanService.transitionStatus(project.getId(), plan.getId(), TreatmentPlanStatus.IN_PROGRESS);
 
@@ -186,7 +186,7 @@ class ReassessmentSignalIntegrationTest extends BaseIntegrationTest {
                 project.getId(),
                 "TP-CREATE",
                 "Plan",
-                fixture.record().getId(),
+                fixture.registerRecord().getId(),
                 fixture.scenario().getId(),
                 TreatmentStrategy.MITIGATE,
                 "owner",
@@ -253,7 +253,7 @@ class ReassessmentSignalIntegrationTest extends BaseIntegrationTest {
         assetLinkRepository.save(new AssetLink(
                 asset,
                 AssetLinkTargetType.RISK_REGISTER_RECORD,
-                fixture.record().getId(),
+                fixture.registerRecord().getId(),
                 null,
                 AssetLinkType.ASSOCIATED));
 
@@ -284,7 +284,7 @@ class ReassessmentSignalIntegrationTest extends BaseIntegrationTest {
         controlLinkRepository.save(new ControlLink(
                 control,
                 ControlLinkTargetType.RISK_REGISTER_RECORD,
-                fixture.record().getId(),
+                fixture.registerRecord().getId(),
                 null,
                 ControlLinkType.MITIGATES));
 
@@ -335,7 +335,7 @@ class ReassessmentSignalIntegrationTest extends BaseIntegrationTest {
     // helpers
     // -------------------------------------------------------------------------
 
-    private record Fixture(RiskScenario scenario, RiskRegisterRecord record, RiskAssessmentResult assessment) {}
+    private record Fixture(RiskScenario scenario, RiskRegisterRecord registerRecord, RiskAssessmentResult assessment) {}
 
     private Fixture seedScenarioRecordAssessment(String scenarioUid, String recordUid) {
         return transactionTemplate.execute(status -> {
@@ -344,9 +344,9 @@ class ReassessmentSignalIntegrationTest extends BaseIntegrationTest {
             scenario.setTimeHorizon("12 months");
             var savedScenario = riskScenarioRepository.save(scenario);
 
-            var record = new RiskRegisterRecord(project, recordUid, "Record");
-            record.replaceRiskScenarios(java.util.List.of(savedScenario));
-            var savedRecord = riskRegisterRecordRepository.save(record);
+            var registerRecord = new RiskRegisterRecord(project, recordUid, "Record");
+            registerRecord.replaceRiskScenarios(java.util.List.of(savedScenario));
+            var savedRecord = riskRegisterRecordRepository.save(registerRecord);
 
             var assessment = new RiskAssessmentResult(project, savedScenario, profile);
             assessment.setRiskRegisterRecord(savedRecord);
@@ -356,12 +356,12 @@ class ReassessmentSignalIntegrationTest extends BaseIntegrationTest {
     }
 
     private com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan createPlan(
-            String uid, RiskRegisterRecord record, RiskScenario scenario) {
+            String uid, RiskRegisterRecord registerRecord, RiskScenario scenario) {
         return treatmentPlanService.create(new CreateTreatmentPlanCommand(
                 project.getId(),
                 uid,
                 "Plan " + uid,
-                record.getId(),
+                registerRecord.getId(),
                 scenario == null ? null : scenario.getId(),
                 TreatmentStrategy.MITIGATE,
                 "owner",

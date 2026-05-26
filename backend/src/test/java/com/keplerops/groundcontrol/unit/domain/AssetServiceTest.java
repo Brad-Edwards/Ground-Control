@@ -2408,6 +2408,8 @@ class AssetServiceTest {
                             any(com.keplerops.groundcontrol.domain.riskscenarios.events.AssetStateChangedEvent.class));
         }
 
+        // S1874 suppressed: exercising the deprecated overload is the point of this test.
+        @SuppressWarnings("deprecation")
         @Test
         void deprecatedUuidOnlyUpdateAlsoPublishes() {
             // Deprecated UUID-only overload must still fire the publisher per preflight —
@@ -2448,6 +2450,8 @@ class AssetServiceTest {
                             any(com.keplerops.groundcontrol.domain.riskscenarios.events.AssetStateChangedEvent.class));
         }
 
+        // S1874 suppressed: exercising the deprecated overload is the point of this test.
+        @SuppressWarnings("deprecation")
         @Test
         void deprecatedUuidOnlyArchiveAlsoPublishes() {
             var asset = createAsset("ASSET-1", "Payments API");

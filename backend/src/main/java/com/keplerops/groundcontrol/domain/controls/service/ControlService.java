@@ -39,6 +39,11 @@ public class ControlService {
     private static final Logger log = LoggerFactory.getLogger(ControlService.class);
     private static final String DETAIL_CONTROL_UID = "controlUid";
 
+    // GC-T004 / C8 (#863): event-payload field keys hoisted out of inline literals
+    // so each rename is one site, not three.
+    private static final String FIELD_STATUS = "status";
+    private static final String FIELD_EFFECTIVENESS = "effectiveness";
+
     private final ControlRepository controlRepository;
     private final ControlLinkRepository controlLinkRepository;
     private final ControlTestRepository controlTestRepository;
@@ -130,9 +135,9 @@ public class ControlService {
                     ReassessmentTriggerCategory.CONTROL_STATE_CHANGED,
                     ReassessmentSourceEntityType.CONTROL,
                     control.getId(),
-                    Set.of("effectiveness"),
-                    fieldMap("effectiveness", oldEffectiveness),
-                    fieldMap("effectiveness", control.getEffectiveness()),
+                    Set.of(FIELD_EFFECTIVENESS),
+                    fieldMap(FIELD_EFFECTIVENESS, oldEffectiveness),
+                    fieldMap(FIELD_EFFECTIVENESS, control.getEffectiveness()),
                     Instant.now())));
         }
         return control;
@@ -173,9 +178,9 @@ public class ControlService {
                     ReassessmentTriggerCategory.CONTROL_STATE_CHANGED,
                     ReassessmentSourceEntityType.CONTROL,
                     control.getId(),
-                    Set.of("status"),
-                    fieldMap("status", oldStatus),
-                    fieldMap("status", control.getStatus()),
+                    Set.of(FIELD_STATUS),
+                    fieldMap(FIELD_STATUS, oldStatus),
+                    fieldMap(FIELD_STATUS, control.getStatus()),
                     Instant.now())));
         }
         return control;
@@ -255,7 +260,7 @@ public class ControlService {
         // HashMap (not Map.of) because the value may legitimately be null —
         // Map.of rejects null values and we want the absent-vs-null distinction
         // to survive into the listener.
-        Map<String, Object> m = new HashMap<>(1);
+        Map<String, Object> m = HashMap.newHashMap(1);
         m.put(key, value);
         return m;
     }

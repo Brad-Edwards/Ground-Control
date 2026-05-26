@@ -39,6 +39,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class TreatmentPlanService {
 
+    // GC-T004 / C8: field-name keys shared by every TreatmentPlan publisher branch.
+    // Hoisted out of inline literals so each rename is one site, not three.
+    private static final String FIELD_STATUS = "status";
+    private static final String FIELD_ACTION_ITEMS_HISTOGRAM = "actionItemsStatusHistogram";
+
     private final TreatmentPlanRepository repository;
     private final RiskRegisterRecordRepository riskRegisterRecordRepository;
     private final RiskScenarioRepository riskScenarioRepository;
@@ -91,9 +96,9 @@ public class TreatmentPlanService {
             publish(buildSignal(
                     saved,
                     ReassessmentTriggerCategory.TREATMENT_PROGRESS_CHANGED,
-                    Set.of("status"),
-                    Map.of("status", TreatmentPlanStatus.PLANNED),
-                    Map.of("status", saved.getStatus())));
+                    Set.of(FIELD_STATUS),
+                    Map.of(FIELD_STATUS, TreatmentPlanStatus.PLANNED),
+                    Map.of(FIELD_STATUS, saved.getStatus())));
         }
         return saved;
     }
@@ -141,9 +146,9 @@ public class TreatmentPlanService {
             publish(buildSignal(
                     saved,
                     ReassessmentTriggerCategory.TREATMENT_PROGRESS_CHANGED,
-                    Set.of("status"),
-                    Map.of("status", oldStatus),
-                    Map.of("status", saved.getStatus())));
+                    Set.of(FIELD_STATUS),
+                    Map.of(FIELD_STATUS, oldStatus),
+                    Map.of(FIELD_STATUS, saved.getStatus())));
         }
         return saved;
     }
@@ -379,9 +384,9 @@ public class TreatmentPlanService {
             publish(buildSignal(
                     saved,
                     ReassessmentTriggerCategory.TREATMENT_PROGRESS_CHANGED,
-                    Set.of("actionItemsStatusHistogram"),
-                    Map.of("actionItemsStatusHistogram", new HashMap<>(oldHistogram)),
-                    Map.of("actionItemsStatusHistogram", new HashMap<>(newHistogram))));
+                    Set.of(FIELD_ACTION_ITEMS_HISTOGRAM),
+                    Map.of(FIELD_ACTION_ITEMS_HISTOGRAM, new EnumMap<>(oldHistogram)),
+                    Map.of(FIELD_ACTION_ITEMS_HISTOGRAM, new EnumMap<>(newHistogram))));
         }
     }
 
@@ -391,6 +396,10 @@ public class TreatmentPlanService {
             return hist;
         }
         for (var item : items) {
+            // Defensive: persistence-read items bypass Bean Validation, so a legacy
+            // row with status=null could otherwise NPE in hist.merge. The @NotNull
+            // contract on ActionItem.status applies at the REST/service write boundary,
+            // not at the JPA read boundary that feeds this method.
             if (item == null || item.status() == null) {
                 continue;
             }
