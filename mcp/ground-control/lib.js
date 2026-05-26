@@ -1708,7 +1708,7 @@ function resolveRepoRelativePath(repoRoot, rawPath, fieldName) {
 //
 // `repoRootReal` must be the canonical realpath of the repo root. Callers
 // compute it once per request and reuse it for all field checks.
-function assertRealpathInRepo(repoRootReal, targetAbs, fieldName) {
+export function assertRealpathInRepo(repoRootReal, targetAbs, fieldName) {
   let cursor = targetAbs;
   let canonical = null;
   for (;;) {
@@ -1765,6 +1765,9 @@ function emptyWorkflowConfig() {
     // PR title validation config (issue #896). `null` means "use the canonical
     // defaults declared in step-09-pr-body.md".
     pr_title: null,
+    // Integration manager config (issue #989). All fields null means "use the
+    // tool-layer defaults at call time".
+    integration_manager: { approval_label: null, ordering: null, max_queue_size: null },
   };
 }
 
@@ -1864,6 +1867,91 @@ function normalizeReviewerConfig(rawBlock, blockName) {
   return { ok: true, value: { pre_push_cap } };
 }
 
+// Bounds for the integration manager queue size. Lower bound 1 (zero would
+// mean "never integrate anything"). Upper bound 100 (safety net against
+// runaway queues in large monorepos).
+export const INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN = 1;
+export const INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX = 100;
+
+// Allowed values for workflow.integration_manager.ordering.
+export const INTEGRATION_MANAGER_ORDERINGS = ["pr_number_asc", "pr_number_desc", "approved_at_asc"];
+
+// Validates a GitHub label name used by the integration manager.  Labels are
+// rendered into `gh pr edit --add-label <value>` calls; restrict to printable
+// ASCII to prevent injection through label names that contain control
+// characters or non-ASCII sequences that could confuse the shell or the
+// GitHub API.  Leading and trailing whitespace are rejected because they are
+// invisible and produce confusing mismatches.
+export function isSafeLabelName(s) {
+  if (typeof s !== "string" || s.length === 0) return false;
+  if (s.length > 50) return false;
+  if (s.length === 1) {
+    // Single character: must be a non-space printable ASCII character.
+    return /^[\x21-\x7E]$/.test(s);
+  }
+  // Length ≥ 2: first and last chars must be non-space printable ASCII;
+  // interior chars may include spaces (\x20) but no control chars or non-ASCII.
+  return /^[\x21-\x7E][\x20-\x7E]*[\x21-\x7E]$/.test(s);
+}
+
+// Normalizes a workflow.integration_manager block.  Follows the same strict
+// pattern as normalizeReviewerConfig: null/absent → all-null defaults,
+// unknown keys → errors, each field validated individually, all errors
+// accumulated before returning.
+export function normalizeIntegrationManagerConfig(raw) {
+  if (raw == null) {
+    return { ok: true, value: { approval_label: null, ordering: null, max_queue_size: null } };
+  }
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return {
+      ok: false,
+      errors: ["workflow.integration_manager must be a mapping when set"],
+    };
+  }
+  const allowed = ["approval_label", "ordering", "max_queue_size"];
+  const errors = [];
+  for (const key of Object.keys(raw)) {
+    if (!allowed.includes(key)) {
+      errors.push(`workflow.integration_manager has unknown key '${key}'`);
+    }
+  }
+  let approval_label = null;
+  if (raw.approval_label != null) {
+    if (typeof raw.approval_label !== "string" || !isSafeLabelName(raw.approval_label)) {
+      errors.push(
+        "workflow.integration_manager.approval_label must be a 1–50 character printable ASCII string without leading or trailing whitespace",
+      );
+    } else {
+      approval_label = raw.approval_label;
+    }
+  }
+  let ordering = null;
+  if (raw.ordering != null) {
+    if (!INTEGRATION_MANAGER_ORDERINGS.includes(raw.ordering)) {
+      errors.push(
+        `workflow.integration_manager.ordering must be one of: ${INTEGRATION_MANAGER_ORDERINGS.join(", ")}`,
+      );
+    } else {
+      ordering = raw.ordering;
+    }
+  }
+  let max_queue_size = null;
+  if (raw.max_queue_size != null) {
+    const v = raw.max_queue_size;
+    if (typeof v !== "number" || !Number.isInteger(v)) {
+      errors.push("workflow.integration_manager.max_queue_size must be an integer");
+    } else if (v < INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN || v > INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX) {
+      errors.push(
+        `workflow.integration_manager.max_queue_size must be between ${INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN} and ${INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX} inclusive`,
+      );
+    } else {
+      max_queue_size = v;
+    }
+  }
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value: { approval_label, ordering, max_queue_size } };
+}
+
 // `workflow.base_branch` is rendered into shell-evaluated `gh` commands by
 // the implement skill (e.g. `gh issue develop --base <branch>`,
 // `gh pr create --base <branch>`, and the `git rev-parse --verify` /
@@ -1892,7 +1980,7 @@ function normalizeWorkflowConfig(raw) {
   // Scalar string-typed keys handled inline; nested-mapping keys delegated to
   // their own normalizers below.
   const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "base_branch"];
-  const allowedNested = ["codex_review", "test_quality_review", "pr_title"];
+  const allowedNested = ["codex_review", "test_quality_review", "pr_title", "integration_manager"];
   const allowed = [...allowedScalar, ...allowedNested];
   const value = emptyWorkflowConfig();
   const errors = [];
@@ -1925,6 +2013,9 @@ function normalizeWorkflowConfig(raw) {
   const prTitleResult = normalizePrTitleConfig(raw.pr_title);
   if (!prTitleResult.ok) errors.push(...prTitleResult.errors);
   else value.pr_title = prTitleResult.value;
+  const integrationManagerResult = normalizeIntegrationManagerConfig(raw.integration_manager);
+  if (!integrationManagerResult.ok) errors.push(...integrationManagerResult.errors);
+  else value.integration_manager = integrationManagerResult.value;
   if (errors.length) return { ok: false, errors };
   return { ok: true, value };
 }
@@ -2967,7 +3058,7 @@ function resolveKnowledgeBlock(repoRoot, knowledge) {
 // Codex workflow helpers
 // ---------------------------------------------------------------------------
 
-async function ensureGitRepo(repoPath) {
+export async function ensureGitRepo(repoPath) {
   if (!repoPath || !isAbsolute(repoPath)) {
     throw new Error("repo_path must be an absolute path to a Git repository");
   }
@@ -5232,7 +5323,7 @@ export function parseOwnerRepoFromRemoteUrl(url) {
   return null;
 }
 
-async function getOwnerRepo(repoRoot) {
+export async function getOwnerRepo(repoRoot) {
   // Primary path: read the git remote URL directly. git ignores GH_REPO,
   // so this path is immune to env-var hijack and is the source of truth
   // for every real /implement run (real repos always have an origin
@@ -13695,6 +13786,67 @@ export async function writeKnowledgeInbox({
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// Filesystem-lock primitive — shared by acquireKnowledgeLock and
+// acquireIntegrationLock.  Both sit on top of this private helper.
+// ---------------------------------------------------------------------------
+
+// _acquireFilesystemLock(canonicalDir, lockfileBasename, options)
+//
+// Acquire a proper-lockfile filesystem lock.  The lockfile is placed at
+// `join(canonicalDir, lockfileBasename)`.  `canonicalDir` MUST already be a
+// realpath-canonical absolute directory path (the public entry-points below
+// validate and canonicalize before calling this).
+//
+// Uses `proper-lockfile` with stale detection:
+//   - stale  — lock abandoned after this many ms since the last refresh.
+//              60 s is generous for both ingest runs and integration runs.
+//   - update — refresh interval while the lock is held; 10 s gives plenty of
+//              headroom under the 60 s stale window.
+//
+// `retries: 0` by default — contention fails fast so callers can surface a
+// clean "locked, try again" error. Callers that want to wait pass their own
+// `retries` option.
+//
+// Returns an idempotent async release function (double-release is a no-op).
+// Throws with code ELOCKED on contention; rethrows any other error unchanged.
+async function _acquireFilesystemLock(canonicalDir, lockfileBasename, { retries = 0, lockedMessage } = {}) {
+  let release;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- canonicalDir is a caller-validated realpath
+    release = await properLockfile.lock(canonicalDir, {
+      stale: 60_000,
+      update: 10_000,
+      retries,
+      lockfilePath: join(canonicalDir, lockfileBasename),
+      realpath: false,
+    });
+  } catch (error) {
+    if (error.code === "ELOCKED") {
+      const msg = lockedMessage ?? `directory is already held by another process: ${canonicalDir}`;
+      const contended = new Error(msg);
+      contended.code = "ELOCKED";
+      contended.path = canonicalDir;
+      throw contended;
+    }
+    throw error;
+  }
+
+  let released = false;
+  return async function releaseHandle() {
+    if (released) return;
+    released = true;
+    try {
+      await release();
+    } catch (error) {
+      // "Lock is already released" is fine — observed release via another path.
+      if (error.code !== "ENOTACQUIRED" && !/already released/i.test(error.message)) {
+        throw error;
+      }
+    }
+  };
+}
+
 // Acquire an interprocess lock on a knowledge base, keyed by the canonical
 // realpath of the knowledge directory. Different path spellings (symlinks,
 // `..`-normalized forms) that point at the same inode contend on the same
@@ -13744,43 +13896,44 @@ export async function acquireKnowledgeLock(knowledgeDir, { retries = 0 } = {}) {
     throw new Error(`acquireKnowledgeLock: path is not a directory: ${knowledgeDir}`);
   }
 
-  let release;
+  return _acquireFilesystemLock(canonical, ".gc-lock", {
+    retries,
+    lockedMessage: `knowledge base is already held by another process: ${canonical}`,
+  });
+}
+
+// Acquire an interprocess lock for an integration run, keyed by the canonical
+// realpath of the repository root.  The lockfile is placed AT the repo root as
+// `.gc-integration-lock` (mirrors the convention of `.gc-lock` inside the
+// knowledge directory — lockfile lives alongside the directory it guards).
+//
+// Semantics are identical to acquireKnowledgeLock: stale/update tuning,
+// retries:0 default, idempotent release handle, ELOCKED on contention.
+//
+// repoRoot must be an absolute path to an existing directory (the repo root,
+// as returned by ensureGitRepo / realpath-canonicalized by the caller).
+export async function acquireIntegrationLock(repoRoot, { retries = 0 } = {}) {
+  if (typeof repoRoot !== "string" || !isAbsolute(repoRoot)) {
+    throw new Error("acquireIntegrationLock: path must be an absolute directory path");
+  }
+  let canonical;
   try {
-    release = await properLockfile.lock(canonical, {
-      stale: 60_000,
-      update: 10_000,
-      retries,
-      // Store the lockfile INSIDE the knowledge directory as `.gc-lock`
-      // rather than next to it, so rm'ing the knowledge directory also
-      // cleans up the lock. This keeps the host filesystem tidy on test
-      // teardown and stale-repo cleanup.
-      lockfilePath: join(canonical, ".gc-lock"),
-      realpath: false,
-    });
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- absolute path validated above
+    canonical = realpathSync(repoRoot);
   } catch (error) {
-    // proper-lockfile maps contention to `ELOCKED`. Rewrite as a clear
-    // message so callers do not need to know about the underlying code.
-    if (error.code === "ELOCKED") {
-      const contended = new Error(`knowledge base is already held by another process: ${canonical}`);
-      contended.code = "ELOCKED";
-      contended.path = canonical;
-      throw contended;
+    if (error.code === "ENOENT") {
+      throw new Error(`acquireIntegrationLock: path does not exist: ${repoRoot}`);
     }
     throw error;
   }
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- canonical is a realpath
+  const stat = statSync(canonical);
+  if (!stat.isDirectory()) {
+    throw new Error(`acquireIntegrationLock: path is not a directory: ${repoRoot}`);
+  }
 
-  let released = false;
-  return async function releaseHandle() {
-    if (released) return;
-    released = true;
-    try {
-      await release();
-    } catch (error) {
-      // "Lock is already released" is fine — we just observed the release
-      // through a different path. Anything else is a real error.
-      if (error.code !== "ENOTACQUIRED" && !/already released/i.test(error.message)) {
-        throw error;
-      }
-    }
-  };
+  return _acquireFilesystemLock(canonical, ".gc-integration-lock", {
+    retries,
+    lockedMessage: `integration run is already in progress at: ${canonical}`,
+  });
 }

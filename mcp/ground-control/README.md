@@ -97,8 +97,8 @@ under ADR-035 by combining `gc_create_X` / `gc_get_X` / `gc_list_X` /
 `gc_<entity>` tool with an `action` discriminator, and by moving pure-read
 GETs (history, timeline, exports, list-by-X) onto `gc_query`.
 
-**Workflow primitives** (called by name from the `/implement` and `/ship`
-skills' SKILL.md prose, kept unchanged):
+**Workflow primitives** (called by name from the `/implement`, `/ship`, and
+`/integrate` skills' SKILL.md prose, kept unchanged):
 
 | Tool | Purpose |
 |---|---|
@@ -117,6 +117,7 @@ skills' SKILL.md prose, kept unchanged):
 | `gc_codex_review` | Run Codex review with cycle caps |
 | `gc_codex_verify_finding` | Verify a specific finding resolved |
 | `gc_query` | Read-only ad-hoc `/api/v1/*` GET (see below) |
+| `gc_integration_manager` | Approved-PR integration manager (see below) |
 
 **Consolidated entity tools** (one per entity, action-discriminated):
 
@@ -173,14 +174,14 @@ under the `workflow` catalog, so it is always available.
 - **Denylist:** `/api/v1/admin/**`, `/api/v1/embeddings/**`,
   `/api/v1/analysis/sweep/**`, `/api/v1/pack-registry/**` are rejected even
   though they live under `/api/v1/`. The denylist takes precedence over the
-  allowlist when prefixes overlap (e.g., `/api/v1/analysis` is allowed but
+  allowlist when prefixes overlap (for example, `/api/v1/analysis` is allowed but
   `/api/v1/analysis/sweep` is denied).
 - **Headers:** none accepted. `X-Actor: mcp-server` and the bearer token
   resolved from `GROUND_CONTROL_API_TOKEN` (or the legacy admin token, when
   appropriate per ADR-026's path matrix) are added automatically.
 - **Params:** flat object, values must be `string | number | boolean | null`.
   `undefined` and `null` are dropped before URL construction.
-- **Cost cap:** 30s timeout via `AbortController`; 1 MiB response-body cap
+- **Cost cap:** 30 s timeout via `AbortController`; 1 MiB response-body cap
   with a clear truncation marker. Larger results need the catalog tool that
   paginates the resource (in `analysis` or `requirements`).
 
@@ -193,14 +194,14 @@ default-deny posture is intentional.
 Operations have a natural ordering. Requirements must exist before they can
 be related, linked, or analyzed.
 
-1. **Create requirements** — `gc_create_requirement` with uid, title, statement
-2. **Create relations** — `gc_create_relation` between two existing requirements
-3. **Add traceability links** — `gc_create_traceability_link` to connect code, tests, issues, ADRs
-4. **Run analysis** — `gc_analyze_cycles`, `gc_analyze_orphans`, `gc_analyze_coverage_gaps`, `gc_analyze_impact`, `gc_analyze_cross_wave`, `gc_analyze_consistency`, `gc_analyze_completeness`, `gc_analyze_status_drift`
-5. **Embed requirements** — `gc_embed_project` to generate vector embeddings, `gc_analyze_similarity` to find near-duplicates
-6. **Transition status** — `gc_transition_status` moves requirements forward: DRAFT → ACTIVE → DEPRECATED → ARCHIVED
-7. **Bulk operations** — `gc_import_strictdoc` for .sdoc files, `gc_import_reqif` for .reqif files, `gc_sync_github` for issue sync
-8. **Manage baselines** — `gc_create_baseline`, `gc_compare_baselines` for release management
+1. **Create requirements**: `gc_create_requirement` with uid, title, statement
+2. **Create relations**: `gc_create_relation` between two existing requirements
+3. **Add traceability links**: `gc_create_traceability_link` to connect code, tests, issues, ADRs
+4. **Run analysis**: `gc_analyze_cycles`, `gc_analyze_orphans`, `gc_analyze_coverage_gaps`, `gc_analyze_impact`, `gc_analyze_cross_wave`, `gc_analyze_consistency`, `gc_analyze_completeness`, `gc_analyze_status_drift`
+5. **Embed requirements**: `gc_embed_project` to generate vector embeddings, `gc_analyze_similarity` to find near-duplicates
+6. **Transition status**: `gc_transition_status` moves requirements forward: DRAFT → ACTIVE → DEPRECATED → ARCHIVED
+7. **Bulk operations**: `gc_import_strictdoc` for .sdoc files, `gc_import_reqif` for .reqif files, `gc_sync_github` for issue sync
+8. **Manage baselines**: `gc_create_baseline`, `gc_compare_baselines` for release management
 
 ## Tool Reference
 
@@ -223,7 +224,7 @@ be related, linked, or analyzed.
 | `gc_analyze_cross_wave` | _(none)_ | Find cross-wave dependency violations |
 | `gc_analyze_consistency` | `project` (optional) | Detect consistency violations (active conflicts, active supersedes) |
 | `gc_analyze_completeness` | `project` (optional) | Analyze completeness: status distribution and missing fields |
-| `gc_analyze_status_drift` | `project` (optional), `minimum_confidence` (optional: HIGH/MEDIUM/LOW, default MEDIUM) | Find DRAFT requirements with independent evidence of implementation (IMPLEMENTS links, accepted ADRs, linked issues/PRs, code-artifact links — all from the project's own traceability links). Read-only; reports confidence and evidence artifacts |
+| `gc_analyze_status_drift` | `project` (optional), `minimum_confidence` (optional: HIGH/MEDIUM/LOW, default MEDIUM) | Find DRAFT requirements with independent evidence of implementation (IMPLEMENTS links, accepted ADRs, linked issues/PRs, code-artifact links, all from the project's own traceability links). Read-only; reports confidence and evidence artifacts |
 | `gc_dashboard_stats` | `project` (optional) | Aggregate project health: counts by status/wave, coverage percentages, recent changes |
 | `gc_get_work_order` | `project` (optional) | Topological work order with MoSCoW priority |
 | `gc_dashboard_stats` | `project` (optional) | Aggregate project health: counts, coverage, recent changes |
@@ -311,10 +312,24 @@ Common codes: `NOT_FOUND` (404), `CONFLICT` (409), `VALIDATION_ERROR` (422).
 ## IDs
 
 `gc_create_requirement` and `gc_get_requirement` use `uid` (human-readable,
-e.g. `REQ-001`). All other tools use `id` (UUID, returned in create/list
+for example, `REQ-001`). All other tools use `id` (UUID, returned in create/list
 responses).
 
 For cross-repo workflow automation, define repo-local Ground Control context in a `.ground-control.yaml` file at the repo root. At minimum it must declare `schema_version: 1` and a `project` identifier; optional sections include `workflow`, `sonarcloud`, `rules`, `knowledge`, `routing`, `telemetry`, plus the workflow-packaging fields added in ADR-027: `docs.{adr_dir, architecture_overview, coding_standards, workflow_reference, knowledge_base}`, `example_paths.{source, test}`, `requirements.uid_examples`, and `cross_cutting_concerns.description`. The canonical `skills/implement/SKILL.md` renders prose against these fields via `{cfg.X|default Y}` placeholders so one source of truth serves every Ground-Control-aware repo. The `gc_get_repo_ground_control_context` MCP tool reads and validates this file and returns inlined `plan_rules` content plus resolved `knowledge` paths and the workflow-packaging blocks when those sections are configured. `gc_resolve_workflow_route` reads the same config and resolves `routing.stages.<stage>` entries to executable provider/model/fallback decisions. See `docs/DEVELOPMENT_WORKFLOW.md` for the full accepted config shape, defaults, allowed routing values, and validation constraints. `buildSuggestedGroundControlYaml()` in `lib.js` is only the starter template.
+
+## gc_integration_manager: Approved PR Integration Manager
+
+`gc_integration_manager` prepares maintainer-approved pull requests against the latest base branch in a target repository. It is the MCP-layer substrate for the `/integrate` skill (GC-O011, issue #989). The tool is action-discriminated:
+
+| Action | Description |
+|--------|-------------|
+| `prepare` | Discover the approval-labeled queue, acquire the repo-level lock, and for each PR in deterministic order: create an isolated worktree, rebase onto the base branch, run the completion gate, watch CI, watch SonarCloud (when configured), and push with `--force-with-lease`. |
+| `status` | Report current lock state and queue contents without acquiring the lock or modifying any branch. Safe to run at any time. |
+| `release` | Release a stale lock held by an interrupted run. Requires the caller to confirm the previous run is no longer active. |
+| `enqueue` | **Reserved.** Refuses at runtime until ADR-029 is amended to add an automated merge touchpoint. |
+| `merge` | **Reserved.** Refuses at runtime until ADR-029 is amended to add an automated merge touchpoint. |
+
+The tool reads `workflow.integration_manager` from the target repo's `.ground-control.yaml` (`approval_label`, `ordering`, `max_queue_size`). It does not merge PRs, does not transition requirement statuses, and does not post to GitHub issue threads. Consultation halts and status reports are returned in the tool's response envelope and written to `<repo>/.gc/integration-runs/<run-id>/halt.json`. See `skills/integrate/SKILL.md` for the full lane specification and GC-O011 for the requirement.
 
 ## Codex review architecture (privileged side-effect boundary)
 
@@ -323,7 +338,7 @@ Per ADR-027 and issue #793, the codex-backed review tools follow a strict separa
 - **Codex is the planner / reviewer.** It runs in a `read-only` sandbox with no GitHub credentials and returns structured payloads only. It must never invoke `gh`, `git`, or `curl` to post comments.
 - **The MCP server is the GitHub poster.** It validates codex's payloads against the schema below, then performs all GitHub writes (inline review comments, threaded replies, thread-resolution mutations, phase markers, cycle markers) from the host's authenticated `gh`.
 
-`gc_codex_review` consumes a `===FINDINGS===…===END===` JSON tail from each reviewer's stdout. The MCP server validates each finding lexically (path lives inside the repo, line is positive or null, body is non-empty and within GitHub's 65535-char limit) and then POSTs each finding to `/repos/{owner}/{repo}/pulls/{pr}/comments` with the PR's current head SHA. The `[core]` / `[security]` reviewer label is prepended to the comment body by the poster — codex does not include it in the JSON.
+`gc_codex_review` consumes a `===FINDINGS===…===END===` JSON tail from each reviewer's stdout. The MCP server validates each finding lexically (path lives inside the repo, line is positive or null, body is non-empty and within GitHub's 65535-char limit) and then POSTs each finding to `/repos/{owner}/{repo}/pulls/{pr}/comments` with the PR's current head SHA. The `[core]` / `[security]` reviewer label is prepended to the comment body by the poster; codex does not include it in the JSON.
 
 Per-finding schema:
 

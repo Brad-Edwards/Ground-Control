@@ -364,3 +364,5 @@ the result envelope or cancels a stuck job. `.claude/settings.json` also sets
 The gate contract, cycle caps, and durable-record posting are unchanged. See
 ADR-036 (amendments) for the job model and `skills/implement/steps/step-02.5
 / 06.5 / 06.6` for the operative loop prose.
+
+**2026-05-26 (issue #989).** A new workflow lane, `/integrate`, prepares maintainer-approved pull requests against the latest base branch of a target repository (label-based discovery, rebase, completion gate, CI/Sonar watch, force-with-lease push). The lane is prepare-only by default: it does not merge. The GC-O007 single-merge-touchpoint contract is unchanged. See `docs/DEVELOPMENT_WORKFLOW.md § /integrate` and GC-O011.

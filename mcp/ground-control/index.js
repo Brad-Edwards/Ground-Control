@@ -271,6 +271,11 @@ import {
   gcObservationToolHandler,
   GC_OBSERVATION_DESCRIPTION,
 } from "./gc-observation.js";
+import {
+  runIntegrationManager,
+  GC_INTEGRATION_MANAGER_DESCRIPTION,
+  GC_INTEGRATION_MANAGER_INPUT_SCHEMA,
+} from "./gc-integrate.js";
 
 // Load .env from cwd before any auth header is composed.
 function loadDotenvFromCwd() {
@@ -2813,6 +2818,23 @@ if (ADMIN_TOOLS_ENABLED) {
     },
   );
 }
+
+// ============================================================================
+// GC_INTEGRATION_MANAGER — approved-PR integration manager (GC-O011).
+// ============================================================================
+
+server.registerTool(
+  "gc_integration_manager",
+  {
+    description: GC_INTEGRATION_MANAGER_DESCRIPTION,
+    inputSchema: GC_INTEGRATION_MANAGER_INPUT_SCHEMA,
+  },
+  async (args) => {
+    try {
+      return ok(JSON.stringify(await runIntegrationManager(args), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
 
 // ============================================================================
 // Startup

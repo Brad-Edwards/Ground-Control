@@ -215,7 +215,7 @@ The user picks. Do not silently upgrade.
 **2026-05-19 (issue #931).** When the optional codex pre-push review is
 invoked from /quickfix, it returns the same verdict envelope as the
 /implement lane (`verdict` + `architectural_read` + `blocking` + capped
-`notes`). The /quickfix slim close comment is unchanged —
+`notes`). The /quickfix slim close comment is unchanged;
 `gc_post_final_report` with `lane="quickfix"` still drops empty reviews /
 traceability sections. The /quickfix lane does NOT consume
 `.ground-control.yaml::architecture.vocabulary` itself; that block is
@@ -231,3 +231,5 @@ contract this lane inherits are unchanged—async only changes how the agent
 waits for a review cycle's result, so the multi-minute child process is not
 orphaned by the MCP client's tool-call timeout (issue #893). See ADR-036
 (amendments) for the job model.
+
+**2026-05-26 (issue #989).** A sibling lane, `/integrate`, now exists for preparing queues of approved PRs (GC-O011). The /quickfix and /integrate lanes are disjoint: /quickfix is issue-anchored and accepts the same `gc_post_decision_record` / `gc_post_final_report` contract as /implement; /integrate is repo-scoped and operational-only, with no issue-thread durable record. There is no overlap in trigger conditions or durable-record surfaces.

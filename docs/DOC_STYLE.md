@@ -70,3 +70,11 @@ style compliance. See ADR-054 for the rationale behind this trade-off.
 ADRs carry the durable *why*. Release notes and the changelog carry temporal
 context. Tracking issues carry roadmaps. Reference docs state the current
 contract only.
+
+## Operational lane docs
+
+Operational skill lanes (`/integrate`, `/implement`, `/quickfix`) document
+their contracts in `docs/DEVELOPMENT_WORKFLOW.md` and in their `SKILL.md`
+files. The style rules above apply to those files the same as to any other
+touched `.md` file: present tense, active voice, no forward guidance, at most
+one em-dash per paragraph.

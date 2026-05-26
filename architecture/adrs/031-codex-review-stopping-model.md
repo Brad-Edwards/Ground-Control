@@ -82,7 +82,7 @@ are returned as `Minor` with `unclassified=true` rather than guessed.
 
 Each `/implement` run declares numeric gates before cycle 1:
 `max_blocking=0`, `max_critical=0`, `max_major=N`,
-no-new-categories-in-final-cycle. These are recorded as a marker block in the plan
+no-new-categories-in-final-cycle; these are recorded as a marker block in the plan
 comment. Meeting all gates terminates the loop early; missing them at the
 existing three-cycle cap triggers escalation.
 
@@ -151,8 +151,8 @@ per-project knob; the initial implementation hard-codes them.
   trivial but we ran cycle 3 anyway" failure mode.
 - Independent confirmation of `Critical` findings absorbs the bulk of
   LLM-judge overcorrection bias (arXiv 2508.12358) before that
-  classification gates anything user-facing (the highest-leverage point
-  for false positives in the loop).
+  classification gates anything user-facing, which is the highest-leverage point
+  for false positives in the loop.
 - Pre-declared exit gates make termination criteria a property of the run,
   recorded in the issue thread per ADR-029, rather than an undocumented
   in-run agent judgment.
@@ -257,3 +257,5 @@ result, never when the loop stops. See ADR-036 (amendments) for the job model.
 **Amendment: renderer summary byte caps (#964).** `gc_render_pr_body` and `gc_post_final_report` now enforce reject-not-truncate byte caps on their caller-controlled summary fields. `gc_post_decision_record` (the per-cycle decision-record surface this ADR's stopping model writes to) is unchanged at the schema layer; its caller-controlled prose fields (`notes[].text`, finding rationales, titles) already had per-field caps. The canonical succinctness rule lives in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)`.
 
 **Amendment: issue close mechanism (#862 typed-action-items PR).** The /implement Step 18 no longer runs `gh issue close`. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step 9) when the user merges the PR. Step 18 only removes the `in-progress` label set in Step 1. Closing from the agent decoupled the close event from the merge: an unmerged or rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open issues on revert). Step 19 (final report) is correspondingly tightened: traceability reconciliation (Steps 15 through 17) is an explicit precondition, and no earlier step surfaces a user-facing "complete" signal (prior escalations are for input, not for "done"). The /quickfix sibling lane is updated in lockstep.
+
+**2026-05-26 (issue #989).** The `/integrate` lane (GC-O011) does not invoke `gc_codex_review` or `gc_test_quality_review`. The stopping model and cycle caps defined by this ADR apply only to issue-anchored lanes (`/implement`, `/quickfix`). The integration lane's completion gate uses the repo's configured `workflow.completion_command` and post-push CI/Sonar watches; there is no per-cycle Codex reviewer in that lane.
