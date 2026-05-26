@@ -2833,11 +2833,23 @@ if (ADMIN_TOOLS_ENABLED) {
 // GC_INTEGRATION_MANAGER — approved-PR integration manager (GC-O011).
 // ============================================================================
 
-server.registerTool(
+// Registered via server.tool (Zod-raw-shape form) to match every other tool
+// surface in this file. The earlier server.registerTool({inputSchema: <raw
+// JSON Schema>}) shape silently broke at call time with
+// `v3Schema.safeParseAsync is not a function`: the SDK's registerTool wraps
+// the inputSchema in z.object() and invokes safeParseAsync, which is only
+// defined on Zod schemas. A raw JSON Schema object passes the registration
+// gate but blows up on the first invocation. server.tool with a Zod raw
+// shape gives the same validation contract through the path the SDK
+// actually exercises. GC_INTEGRATION_MANAGER_INPUT_SCHEMA stays exported
+// for documentation and external schema-readers.
+server.tool(
   "gc_integration_manager",
+  GC_INTEGRATION_MANAGER_DESCRIPTION,
   {
-    description: GC_INTEGRATION_MANAGER_DESCRIPTION,
-    inputSchema: GC_INTEGRATION_MANAGER_INPUT_SCHEMA,
+    action: z.enum(["plan", "prepare", "status", "release"]),
+    repo_path: z.string().min(1),
+    mode: z.enum(["prepare", "enqueue", "merge"]).optional(),
   },
   async (args) => {
     try {

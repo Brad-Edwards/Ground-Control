@@ -86,3 +86,11 @@ the PR body and the Step 19 final-report comment. Pass the optional
 `documentation_outcome` field to `gc_render_pr_body` or `gc_post_final_report`
 when the diff touches a classified surface (per ADR-054). The renderer emits
 the section automatically; agents do not hand-author it.
+
+MCP tool registrations in `mcp/ground-control/index.js` are sensitive to
+schema shape: `server.tool(name, desc, zodShape, handler)` and
+`server.registerTool(name, {description, inputSchema: <Zod schema>}, handler)`
+both work, but `server.registerTool({inputSchema: <raw JSON Schema>})` passes
+the registration gate and crashes every call with
+`v3Schema.safeParseAsync is not a function`. New tools should match the
+`server.tool` pattern used by the bulk of the file.
