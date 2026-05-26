@@ -117,6 +117,40 @@ class RiskAssessmentResultControllerTest {
     }
 
     @Test
+    void listByScenarioDispatchesToScenarioQuery() throws Exception {
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(riskAssessmentResultService.listByScenario(PROJECT_ID, SCENARIO_ID))
+                .thenReturn(List.of(makeResult()));
+
+        mockMvc.perform(get("/api/v1/risk-assessment-results")
+                        .param("project", "ground-control")
+                        .param("riskScenarioId", SCENARIO_ID.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].id", is(RESULT_ID.toString())))
+                .andExpect(jsonPath("$[0].riskScenarioId", is(SCENARIO_ID.toString())));
+
+        verify(riskAssessmentResultService).listByScenario(PROJECT_ID, SCENARIO_ID);
+    }
+
+    @Test
+    void listByRiskRegisterRecordDispatchesToRecordQuery() throws Exception {
+        var recordId = UUID.fromString("00000000-0000-0000-0000-000000000300");
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(riskAssessmentResultService.listByRiskRegisterRecord(PROJECT_ID, recordId))
+                .thenReturn(List.of(makeResult()));
+
+        mockMvc.perform(get("/api/v1/risk-assessment-results")
+                        .param("project", "ground-control")
+                        .param("riskRegisterRecordId", recordId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].id", is(RESULT_ID.toString())));
+
+        verify(riskAssessmentResultService).listByRiskRegisterRecord(PROJECT_ID, recordId);
+    }
+
+    @Test
     void updateReturnsResult() throws Exception {
         var result = makeResult();
         result.transitionApprovalState(RiskAssessmentApprovalStatus.SUBMITTED);

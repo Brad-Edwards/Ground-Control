@@ -245,6 +245,36 @@ class RiskAssessmentResultServiceTest {
     }
 
     @Test
+    void transitionApprovalStateRejectsIllegalTransition() {
+        var result = new RiskAssessmentResult(project, scenario, profile);
+        result.transitionApprovalState(RiskAssessmentApprovalStatus.SUBMITTED);
+        result.transitionApprovalState(RiskAssessmentApprovalStatus.APPROVED);
+        var resultId = UUID.randomUUID();
+        setField(result, "id", resultId);
+        when(repository.findByIdAndProjectIdWithObservations(resultId, projectId))
+                .thenReturn(Optional.of(result));
+
+        assertThatThrownBy(() ->
+                        service.transitionApprovalState(projectId, resultId, RiskAssessmentApprovalStatus.SUBMITTED))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("APPROVED")
+                .hasMessageContaining("SUBMITTED");
+    }
+
+    @Test
+    void listByProjectReturnsRepositoryResults() {
+        var result = new RiskAssessmentResult(project, scenario, profile);
+        var resultId = UUID.randomUUID();
+        setField(result, "id", resultId);
+        when(repository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(result));
+
+        var results = service.listByProject(projectId);
+
+        assertThat(results).containsExactly(result);
+    }
+
+    @Test
     void deleteRemovesResolvedAssessment() {
         var result = new RiskAssessmentResult(project, scenario, profile);
         var resultId = UUID.randomUUID();
