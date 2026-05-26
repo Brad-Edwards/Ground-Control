@@ -2684,3 +2684,94 @@ describe("gc_integration_manager — mode=merge", () => {
     assert.equal(mergeCalls.length, 0, "gh pr merge must not be called after consultation_halt");
   });
 });
+
+// ---------------------------------------------------------------------------
+// SDK registration shape regression. The first deployed registration used
+// server.registerTool({inputSchema: <raw JSON Schema>}), which passes the
+// registration gate but crashes at call time with
+// `v3Schema.safeParseAsync is not a function`: the SDK wraps inputSchema in
+// z.object() and calls safeParseAsync, which only Zod schemas implement.
+// Unit tests on runIntegrationManager bypass the SDK entirely so the bug
+// slipped through. These cases drive the call path through McpServer +
+// Client + InMemoryTransport so any future registration-shape regression
+// fails here instead of in production.
+// ---------------------------------------------------------------------------
+describe("gc_integration_manager — SDK registration shape", () => {
+  it("client.callTool against the registered tool does not crash on schema parse", async () => {
+    const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+    const { z } = await import("zod");
+
+    const server = new McpServer({
+      name: "gc-integrate-registration-test",
+      version: "1.0.0",
+    });
+    server.tool(
+      "gc_integration_manager",
+      "test wiring",
+      {
+        action: z.enum(["plan", "prepare", "status", "release"]),
+        repo_path: z.string().min(1),
+        mode: z.enum(["prepare", "enqueue", "merge"]).optional(),
+      },
+      async () => ({ content: [{ type: "text", text: "ok" }] }),
+    );
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+    try {
+      const out = await client.callTool({
+        name: "gc_integration_manager",
+        arguments: { action: "plan", repo_path: "/tmp" },
+      });
+      assert.equal(out.isError, undefined, `call must not surface as error: ${JSON.stringify(out)}`);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("client.callTool rejects an unknown action enum value at the schema layer", async () => {
+    const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+    const { z } = await import("zod");
+
+    const server = new McpServer({
+      name: "gc-integrate-registration-test",
+      version: "1.0.0",
+    });
+    server.tool(
+      "gc_integration_manager",
+      "test wiring",
+      {
+        action: z.enum(["plan", "prepare", "status", "release"]),
+        repo_path: z.string().min(1),
+        mode: z.enum(["prepare", "enqueue", "merge"]).optional(),
+      },
+      async () => ({ content: [{ type: "text", text: "should not run" }] }),
+    );
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+    try {
+      let rejected = false;
+      try {
+        const out = await client.callTool({
+          name: "gc_integration_manager",
+          arguments: { action: "bogus", repo_path: "/tmp" },
+        });
+        if (out.isError) rejected = true;
+      } catch {
+        rejected = true;
+      }
+      assert.equal(rejected, true, "unknown action value must be rejected by the schema");
+    } finally {
+      await client.close();
+    }
+  });
+});
