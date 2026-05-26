@@ -161,7 +161,7 @@ class ProjectControllerTest {
         void researchType_withIntake_returns201() throws Exception {
             var project = makeProject("research-project", "Research Project", ProjectType.RESEARCH);
             when(projectService.create(any(CreateProjectCommand.class))).thenReturn(project);
-            when(researchIntakeService.findByProject(eq(project))).thenReturn(Optional.of(makeIntake(project)));
+            when(researchIntakeService.findByProject(project)).thenReturn(Optional.of(makeIntake(project)));
 
             mockMvc.perform(
                             post("/api/v1/projects")
@@ -359,7 +359,7 @@ class ProjectControllerTest {
         void researchProject_includesIntake() throws Exception {
             var project = makeProject("research-p", "Research", ProjectType.RESEARCH);
             when(projectService.getByIdentifier("research-p")).thenReturn(project);
-            when(researchIntakeService.findByProject(eq(project))).thenReturn(Optional.of(makeIntake(project)));
+            when(researchIntakeService.findByProject(project)).thenReturn(Optional.of(makeIntake(project)));
 
             mockMvc.perform(get("/api/v1/projects/research-p"))
                     .andExpect(status().isOk())

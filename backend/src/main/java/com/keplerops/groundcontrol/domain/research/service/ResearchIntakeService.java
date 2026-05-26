@@ -37,6 +37,10 @@ public class ResearchIntakeService {
     private static final int ALLOWED_TOOL_MAX = 100;
     private static final int ALLOWED_TOOLS_MAX_COUNT = 100;
 
+    private static final String FIELD = "field";
+    private static final String ALLOWED_TOOLS = "allowedTools";
+    private static final String INVALID_CODE = "research_intake_invalid";
+
     private final ResearchIntakeRepository intakeRepository;
 
     public ResearchIntakeService(ResearchIntakeRepository intakeRepository) {
@@ -124,7 +128,7 @@ public class ResearchIntakeService {
         }
         if (command.goal() == null || command.goal().trim().isEmpty()) {
             throw new DomainValidationException(
-                    "ResearchIntake.goal must not be blank", "research_intake_invalid", Map.of("field", "goal"));
+                    "ResearchIntake.goal must not be blank", INVALID_CODE, Map.of(FIELD, "goal"));
         }
         requireUnder(command.goal(), GOAL_MAX, "goal");
         requireUnder(command.paperContext(), PAPER_CONTEXT_MAX, "paperContext");
@@ -132,45 +136,41 @@ public class ResearchIntakeService {
         if (command.contributionType() == null) {
             throw new DomainValidationException(
                     "ResearchIntake.contributionType must not be null",
-                    "research_intake_invalid",
-                    Map.of("field", "contributionType"));
+                    INVALID_CODE,
+                    Map.of(FIELD, "contributionType"));
         }
         if (command.intendedOutput() == null) {
             throw new DomainValidationException(
-                    "ResearchIntake.intendedOutput must not be null",
-                    "research_intake_invalid",
-                    Map.of("field", "intendedOutput"));
+                    "ResearchIntake.intendedOutput must not be null", INVALID_CODE, Map.of(FIELD, "intendedOutput"));
         }
         if (command.autonomyLevel() == null) {
             throw new DomainValidationException(
-                    "ResearchIntake.autonomyLevel must not be null",
-                    "research_intake_invalid",
-                    Map.of("field", "autonomyLevel"));
+                    "ResearchIntake.autonomyLevel must not be null", INVALID_CODE, Map.of(FIELD, "autonomyLevel"));
         }
         if (command.allowedTools() == null) {
             throw new DomainValidationException(
                     "ResearchIntake.allowedTools must not be null (use an empty list for 'no tools')",
-                    "research_intake_invalid",
-                    Map.of("field", "allowedTools"));
+                    INVALID_CODE,
+                    Map.of(FIELD, ALLOWED_TOOLS));
         }
         if (command.allowedTools().size() > ALLOWED_TOOLS_MAX_COUNT) {
             throw new DomainValidationException(
                     "ResearchIntake.allowedTools has too many entries",
-                    "research_intake_invalid",
-                    Map.of("field", "allowedTools", "max", ALLOWED_TOOLS_MAX_COUNT));
+                    INVALID_CODE,
+                    Map.of(FIELD, ALLOWED_TOOLS, "max", ALLOWED_TOOLS_MAX_COUNT));
         }
         for (var tool : command.allowedTools()) {
             if (tool == null || tool.trim().isEmpty()) {
                 throw new DomainValidationException(
                         "ResearchIntake.allowedTools must not contain blank entries",
-                        "research_intake_invalid",
-                        Map.of("field", "allowedTools"));
+                        INVALID_CODE,
+                        Map.of(FIELD, ALLOWED_TOOLS));
             }
             if (tool.length() > ALLOWED_TOOL_MAX) {
                 throw new DomainValidationException(
                         "ResearchIntake.allowedTools entry too long",
-                        "research_intake_invalid",
-                        Map.of("field", "allowedTools", "max", ALLOWED_TOOL_MAX));
+                        INVALID_CODE,
+                        Map.of(FIELD, ALLOWED_TOOLS, "max", ALLOWED_TOOL_MAX));
             }
         }
         rejectNegative(command.budgetTokens(), "budgetTokens");
@@ -181,18 +181,14 @@ public class ResearchIntakeService {
     private void requireUnder(String value, int max, String field) {
         if (value != null && value.length() > max) {
             throw new DomainValidationException(
-                    "ResearchIntake." + field + " exceeds max length",
-                    "research_intake_invalid",
-                    Map.of("field", field, "max", max));
+                    "ResearchIntake." + field + " exceeds max length", INVALID_CODE, Map.of(FIELD, field, "max", max));
         }
     }
 
     private void rejectNegative(Number value, String field) {
         if (value != null && value.longValue() < 0) {
             throw new DomainValidationException(
-                    "ResearchIntake." + field + " must not be negative",
-                    "research_intake_invalid",
-                    Map.of("field", field));
+                    "ResearchIntake." + field + " must not be negative", INVALID_CODE, Map.of(FIELD, field));
         }
     }
 
