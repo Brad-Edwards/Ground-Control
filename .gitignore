@@ -241,6 +241,15 @@ archive/
 
 .claude/scheduled_tasks.lock
 
+# Integration manager lockfile (gc_integration_manager, GC-O011). Placed at
+# the repo root by acquireIntegrationLock; operational only, never committed.
+.gc-integration-lock
+.gc-integration-lock.lock
+
+# Integration manager run artifacts (worktrees and halt ledgers).
+.gc/integration-worktrees/
+.gc/integration-runs/
+
 docs/notes
 
 # /implement per-step telemetry (ADR-036) — operational measurement only,
@@ -253,7 +262,10 @@ docs/notes
 .gc/sonar/
 
 # Vale prose linter binary (installed by tools/install-vale.sh).
-# .vale.ini and .vale/styles/Google/ (vendored package) are also excluded
-# — run `make vale-install` to restore them.
+# .vale.ini and the vendored Google package under .vale/styles/Google/
+# are excluded — run `make vale-install` to restore them. House-style
+# overrides under .vale/styles/GoogleProject/ are tracked because the
+# Vale gate depends on them on every machine.
 .tools/
-.vale/styles/
+.vale/styles/*
+!.vale/styles/GoogleProject/

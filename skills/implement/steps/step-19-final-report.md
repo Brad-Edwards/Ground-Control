@@ -8,6 +8,8 @@ tier: low
 
 **You MUST NOT merge the PR. You MUST NOT run `gh pr merge`. The user reviews and merges.**
 
+**Precondition: traceability reconciliation must already be done.** Steps 15 (`gc_transition_status`), 16 (`gc_create_traceability_link` / `gc_delete_traceability_link`), and 17 (verify) run BEFORE this step. The final report is the user-facing "this is done; review and merge" signal; it MUST reflect the reconciled state of the Ground Control graph, not the pre-reconciliation state. Do not fire any earlier user-facing "complete" message; every prior step that escalates to the user is escalating because something needs the user's input, not because work is finished.
+
 Per ADR-036, the final summary is posted via the deterministic **`gc_post_final_report`** MCP tool, not free-form `gh issue comment` prose. Pass:
 
 - `repo_path`, `issue_number`, `pr_number`
@@ -23,7 +25,7 @@ Per ADR-036, the final summary is posted via the deterministic **`gc_post_final_
 
 The tool renders the canonical final-report Markdown, filters sensitive content, posts to the issue thread under a `gc:final-report` marker, and returns `{ ok, comment_url, comment_id }`. Cache the URL.
 
-Tier for this step: `low`—the tool does the rendering; the agent just collects structured input. Do NOT post the final report as free-form `gh issue comment`—the deterministic tool is now the only canonical surface.
+Tier for this step: `low`. The tool does the rendering; the agent just collects structured input. Do NOT post the final report as free-form `gh issue comment`; the deterministic tool is now the only canonical surface.
 
 ## Return contract
 
@@ -37,4 +39,4 @@ Tier for this step: `low`—the tool does the rendering; the agent just collects
 }
 ```
 
-This is the last step of the workflow. Do NOT proceed to merge; the user reviews and merges the PR.
+This is the last step of the workflow. Do NOT proceed to merge; the user reviews and merges the PR. The PR's `Closes #<issue-number>` (rendered into the body by `gc_render_pr_body` in Step 9) closes the issue automatically when the merge lands—Step 18 only clears the `in-progress` label.

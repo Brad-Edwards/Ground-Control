@@ -1,9 +1,14 @@
 # Production docker-compose deploy (red-dragon, ADR-030)
 
-The CI `deploy` job (`.github/workflows/ci.yml`) SSHes to `gc-deploy@red-dragon`
-over the tailnet on every push to `main`. The `gc-deploy` user's
-`authorized_keys` entry uses `command="/opt/gc/deploy.sh",restrict`, so the
-SSH session always runs `deploy.sh` regardless of argv.
+Deploys are operator-driven. Run `make deploy` (which calls
+`scripts/deploy.sh`) from any tailnet host or from red-dragon itself; the
+forced-command target on red-dragon is `/opt/gc/deploy.sh`. The `gc-deploy`
+user's `authorized_keys` entry uses `command="/opt/gc/deploy.sh",restrict`,
+so any SSH session as `gc-deploy` always runs `deploy.sh` regardless of
+argv. There is no push-to-main CI deploy job; see the comment block in
+`.github/workflows/ci.yml` above the removed `deploy:` job for context.
+The `docker` job that builds and pushes the image to GHCR still runs on
+every merge, so `:main` continues to track current `main`.
 
 ## Files in this directory
 
@@ -16,10 +21,10 @@ SSH session always runs `deploy.sh` regardless of argv.
 ## Image resolution
 
 `GC_IMAGE` in `/opt/gc/.env` MUST be a floating tag like
-`ghcr.io/keplerops/ground-control:main`. `deploy.sh` runs `docker compose
+`ghcr.io/brad-edwards/ground-control:main`. `deploy.sh` runs `docker compose
 pull` which resolves the tag to the current digest on GHCR, so each deploy
 picks up whatever the CI `docker` job most recently pushed. Pinning
-`GC_IMAGE` to a digest here freezes the deploy on that image forever — CI
+`GC_IMAGE` to a digest here freezes the deploy on that image forever—CI
 builds will succeed but never roll out.
 
 ## Health check
@@ -41,7 +46,7 @@ the same artifact. Changes go through the repo:
 1. Edit the repo copy on a feature branch.
 2. PR through dev → main per the normal workflow.
 3. After merge, SSH into red-dragon and copy the new file into `/opt/gc/`
-   (the deploy SSH path uses the forced-command `deploy.sh` only — there's
+   (the deploy SSH path uses the forced-command `deploy.sh` only—there's
    no general file-sync). Re-run with `sudo -u gc-deploy /opt/gc/deploy.sh`
    to confirm.
 

@@ -15,7 +15,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 
 - ADRs are **immutable** once accepted. To reverse a decision, create a new ADR that supersedes it.
 - ADRs are **numbered sequentially** and never reused.
-- ADRs are **versioned with code** — they live in the repo, not a wiki.
+- ADRs are **versioned with code**: they live in the repo, not a wiki.
 
 ## Index
 
@@ -43,16 +43,16 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [024](024-threat-model-entry-boundary.md) | Threat Model Entry Boundary | Accepted |
 | [025](025-backup-policy.md) | Backup Policy (GC-P021) | Accepted |
 | [026](026-rest-api-access-control.md) | REST API Access Control (GC-P011) | Accepted |
-| [027](027-agent-neutral-implement-workflow-packaging.md) | Agent-Neutral Implement Workflow Packaging | Accepted |
+| [027](027-agent-neutral-implement-workflow-packaging.md) | Agent-Neutral Implement Workflow Packaging | Accepted (amended 2026-05-26, GC-O011/#989) |
 | [028](028-temporal-workflow-orchestration-boundary.md) | Temporal Workflow Orchestration Boundary | Accepted |
-| [029](029-issue-thread-gate-model.md) | Issue-Thread Gate Model | Accepted |
+| [029](029-issue-thread-gate-model.md) | Issue-Thread Gate Model | Accepted (amended 2026-05-26, GC-O011/#989) |
 | [030](030-on-prem-hetzner-deployment.md) | On-prem Hetzner Deployment | Accepted |
 | [031](031-codex-review-stopping-model.md) | Severity Rubric and Stopping Model for Pre-Push Codex Review | Proposed |
 | [032](032-age-query-construction-boundary.md) | AGE Query Construction Boundary | Accepted |
 | [033](033-authenticated-audit-actor-provenance.md) | Authenticated Audit Actor Provenance | Accepted |
 | [034](034-api-enum-contract-single-source.md) | API Enum Contract Single Source of Truth | Accepted |
 | [035](035-mcp-tool-catalog-curation.md) | MCP Tool Catalog Curation | Accepted |
-| [036](036-per-step-routing-tool-surfaces-telemetry.md) | Per-Step Model Routing, Durable-Record Tool Surfaces, and Step Telemetry (amends ADR-021) | Accepted |
+| [036](036-per-step-routing-tool-surfaces-telemetry.md) | Per-Step Model Routing, Durable-Record Tool Surfaces, and Step Telemetry (amends ADR-021) | Accepted (amended 2026-05-26, GC-O011/#989) |
 | [037](037-browser-session-access-control.md) | Browser Session Access Control | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.

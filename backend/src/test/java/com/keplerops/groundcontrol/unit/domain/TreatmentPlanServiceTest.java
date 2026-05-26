@@ -12,6 +12,7 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
@@ -23,10 +24,12 @@ import com.keplerops.groundcontrol.domain.riskscenarios.repository.TreatmentPlan
 import com.keplerops.groundcontrol.domain.riskscenarios.service.CreateTreatmentPlanCommand;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.TreatmentPlanService;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.UpdateTreatmentPlanCommand;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ActionItemStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -34,7 +37,6 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -56,7 +58,6 @@ class TreatmentPlanServiceTest {
     @Mock
     private ProjectService projectService;
 
-    @InjectMocks
     private TreatmentPlanService service;
 
     private Project project;
@@ -68,6 +69,14 @@ class TreatmentPlanServiceTest {
 
     @BeforeEach
     void setUp() {
+        var validatorFactory = jakarta.validation.Validation.buildDefaultValidatorFactory();
+        service = new TreatmentPlanService(
+                repository,
+                riskRegisterRecordRepository,
+                riskScenarioRepository,
+                methodologyProfileRepository,
+                projectService,
+                validatorFactory.getValidator());
         project = new Project("ground-control", "Ground Control");
         projectId = UUID.randomUUID();
         setField(project, "id", projectId);
@@ -144,7 +153,8 @@ class TreatmentPlanServiceTest {
                 "Rationale",
                 Instant.parse("2026-06-01T00:00:00Z"),
                 TreatmentPlanStatus.IN_PROGRESS,
-                List.of(Map.of("step", "Enable WAF")),
+                List.of(new ActionItem(
+                        "Owner", Instant.parse("2026-06-01T00:00:00Z"), ActionItemStatus.PLANNED, null, "Enable WAF")),
                 List.of("New exposure"),
                 null,
                 null));
@@ -485,5 +495,276 @@ class TreatmentPlanServiceTest {
 
         assertThat(result.getMethodologyStrategyKey()).isEqualTo("KEY_B");
         assertThat(result.getMethodologyProfile()).isSameAs(profile);
+    }
+
+    // -------------------------------------------------------------------------
+    // C1: service-layer guard for typed ActionItem validation
+    // -------------------------------------------------------------------------
+
+    @Test
+    void createRejectActionItemsWithBlankOwner() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var badItem = new ActionItem("  ", Instant.parse("2026-06-01T00:00:00Z"), ActionItemStatus.PLANNED, null, null);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                List.of(badItem),
+                null,
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("index 0")
+                .hasMessageContaining("owner");
+    }
+
+    @Test
+    void createRejectActionItemsWithNullOwner() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var badItem = new ActionItem(null, Instant.parse("2026-06-01T00:00:00Z"), ActionItemStatus.PLANNED, null, null);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                List.of(badItem),
+                null,
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("index 0")
+                .hasMessageContaining("owner");
+    }
+
+    @Test
+    void createRejectActionItemsWithNullDueDate() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var badItem = new ActionItem("Owner", null, ActionItemStatus.PLANNED, null, null);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                List.of(badItem),
+                null,
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("index 0")
+                .hasMessageContaining("dueDate");
+    }
+
+    @Test
+    void createRejectActionItemsWithNullStatus() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var badItem = new ActionItem("Owner", Instant.parse("2026-06-01T00:00:00Z"), null, null, null);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                List.of(badItem),
+                null,
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("index 0")
+                .hasMessageContaining("status");
+    }
+
+    @Test
+    void updateRejectActionItemsWithBlankOwner() {
+        var plan = new TreatmentPlan(project, "TP-1", "Plan", record, TreatmentStrategy.MITIGATE);
+        var planId = UUID.randomUUID();
+        setField(plan, "id", planId);
+        when(repository.findByIdAndProjectId(planId, projectId)).thenReturn(Optional.of(plan));
+
+        var badItem = new ActionItem("", Instant.parse("2026-06-01T00:00:00Z"), ActionItemStatus.PLANNED, null, null);
+        var command =
+                new UpdateTreatmentPlanCommand(null, null, null, null, null, null, List.of(badItem), null, null, null);
+
+        assertThatThrownBy(() -> service.update(projectId, planId, command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("index 0")
+                .hasMessageContaining("owner");
+    }
+
+    @Test
+    void createRejectActionItemsWithNullElement() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var actionItems = new ArrayList<ActionItem>();
+        actionItems.add(null);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                actionItems,
+                null,
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("index 0")
+                .hasMessageContaining("must not be null");
+    }
+
+    @Test
+    void createRejectActionItemsWithOverlongOwner() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var longOwner = "x".repeat(201);
+        var badItem =
+                new ActionItem(longOwner, Instant.parse("2026-06-01T00:00:00Z"), ActionItemStatus.PLANNED, null, null);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                List.of(badItem),
+                null,
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("index 0")
+                .hasMessageContaining("owner")
+                .hasMessageContaining("size");
+    }
+
+    @Test
+    void createRejectActionItemsWithOverlongAssignee() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var longAssignee = "y".repeat(201);
+        var badItem = new ActionItem(
+                "Owner", Instant.parse("2026-06-01T00:00:00Z"), ActionItemStatus.PLANNED, longAssignee, null);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                List.of(badItem),
+                null,
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("index 0")
+                .hasMessageContaining("assignee")
+                .hasMessageContaining("size");
+    }
+
+    @Test
+    void createRejectActionItemsWithOverlongDescription() {
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndUid(projectId, "TP-1")).thenReturn(false);
+        when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
+                .thenReturn(Optional.of(record));
+
+        var longDescription = "z".repeat(4001);
+        var badItem = new ActionItem(
+                "Owner", Instant.parse("2026-06-01T00:00:00Z"), ActionItemStatus.PLANNED, null, longDescription);
+        var command = new CreateTreatmentPlanCommand(
+                projectId,
+                "TP-1",
+                "Plan",
+                recordId,
+                null,
+                TreatmentStrategy.MITIGATE,
+                null,
+                null,
+                null,
+                null,
+                List.of(badItem),
+                null,
+                null,
+                null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("index 0")
+                .hasMessageContaining("description")
+                .hasMessageContaining("size");
     }
 }

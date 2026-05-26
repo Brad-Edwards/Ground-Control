@@ -298,14 +298,34 @@ class GraphTargetResolverServiceTest {
                 .hasMessageContaining("Finding");
     }
 
-    @Test
-    void validateControlTargetRejectsMissingFinding() {
-        when(findingRepository.existsByIdAndProjectId(targetId, projectId)).thenReturn(false);
+    // PR #875 security provenance: an attacker passing a UUID from project B into
+    // project A's ControlLink used to silently persist a cross-project edge. The
+    // resolver now enforces project-scoped existence for every internal type, so a
+    // non-existent UUID and a cross-project UUID are observationally identical here —
+    // both produce DomainValidationException("not found in the requested project").
+    // This single parameterized test subsumes the old per-type singletons.
+    @ParameterizedTest
+    @EnumSource(
+            value = ControlLinkTargetType.class,
+            names = {
+                "ASSET",
+                "REQUIREMENT",
+                "RISK_SCENARIO",
+                "RISK_REGISTER_RECORD",
+                "RISK_ASSESSMENT_RESULT",
+                "TREATMENT_PLAN",
+                "METHODOLOGY_PROFILE",
+                "OBSERVATION",
+                "FINDING",
+                "EVIDENCE"
+            })
+    void validateControlTargetRejectsInternalTargets(ControlLinkTargetType targetType) {
+        stubControlInternalTarget(targetType, false);
 
-        assertThatThrownBy(() -> graphTargetResolverService.validateControlTarget(
-                        projectId, ControlLinkTargetType.FINDING, targetId, null))
+        assertThatThrownBy(
+                        () -> graphTargetResolverService.validateControlTarget(projectId, targetType, targetId, null))
                 .isInstanceOf(DomainValidationException.class)
-                .hasMessageContaining("Finding");
+                .hasMessageContaining("not found in the requested project");
     }
 
     @Test
@@ -360,19 +380,6 @@ class GraphTargetResolverServiceTest {
                         projectId, ControlLinkTargetType.ASSET, null, null))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("targetEntityId");
-    }
-
-    @Test
-    void validateControlTargetRejectsCrossProjectInternalTarget() {
-        // Issue #875: an attacker passing a UUID from project B with the
-        // current control's project A used to silently persist a cross-project
-        // edge. The resolver now enforces project-scoped existence.
-        when(requirementRepository.existsByIdAndProjectId(targetId, projectId)).thenReturn(false);
-
-        assertThatThrownBy(() -> graphTargetResolverService.validateControlTarget(
-                        projectId, ControlLinkTargetType.REQUIREMENT, targetId, null))
-                .isInstanceOf(DomainValidationException.class)
-                .hasMessageContaining("not found");
     }
 
     @Test
@@ -802,17 +809,6 @@ class GraphTargetResolverServiceTest {
 
         assertThatThrownBy(() -> graphTargetResolverService.validateThreatModelTarget(
                         projectId, ThreatModelLinkTargetType.EVIDENCE, targetId, null))
-                .isInstanceOf(DomainValidationException.class)
-                .hasMessageContaining("Evidence");
-    }
-
-    @Test
-    void validateControlTargetRejectsMissingEvidenceArtifact() {
-        when(evidenceArtifactRepository.findByIdAndProjectId(targetId, projectId))
-                .thenReturn(java.util.Optional.empty());
-
-        assertThatThrownBy(() -> graphTargetResolverService.validateControlTarget(
-                        projectId, ControlLinkTargetType.EVIDENCE, targetId, null))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("Evidence");
     }

@@ -168,13 +168,10 @@ smoke: docker-build ## Build Docker image and verify Flyway + health
 	docker rm -f gc-smoke-db gc-smoke 2>/dev/null || true; \
 	[ "$$PASS" = "true" ]
 
-# --- AWS Deployment ---
+# --- Deployment (ADR-030: on-prem red-dragon) ---
 
-deploy: ## Deploy latest image to EC2 (pulls, restarts, verifies health)
-	ssh gc-dev /opt/gc/deploy.sh
-
-deploy-infra: ## Apply Terraform for dev environment
-	cd deploy/terraform/environments/dev && terraform apply
+deploy: ## Manual deploy to red-dragon (pulls latest main image, restarts, verifies health)
+	./scripts/deploy.sh
 
 clean: ## Remove build artifacts
 	cd backend && ./gradlew clean

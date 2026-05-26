@@ -1,11 +1,10 @@
-# Production Docker Compose for AWS EC2 deployment
-# Differences from local docker-compose.yml:
-#   - Backend uses pre-built GHCR image (not local build)
-#   - PostgreSQL data bind-mounted to /data/postgres/ (EBS volume)
-#   - Redis omitted (unused, GC_CACHE_TYPE=none)
-#   - Roadmap viewer omitted
-#   - restart: unless-stopped on all services
-#   - JVM memory capped via JAVA_TOOL_OPTIONS
+# Production Docker Compose for red-dragon (ADR-030).
+# Differences from the local docker-compose.yml at the repo root:
+#   - Backend uses pre-built GHCR image (not a local build).
+#   - PostgreSQL data bind-mounted to /data/postgres/ on the host's NVMe.
+#   - Redis omitted (unused, GC_CACHE_TYPE=none).
+#   - restart: unless-stopped on all services.
+#   - JVM memory capped via JAVA_TOOL_OPTIONS.
 
 services:
   db:

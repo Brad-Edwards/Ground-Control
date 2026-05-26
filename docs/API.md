@@ -39,47 +39,47 @@ http://localhost:8000/api/v1/
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/requirements` | RequirementRequest | 201 | Create requirement |
-| GET | `/requirements` | — | 200 | List requirements (paginated, filterable) |
-| GET | `/requirements/{id}` | — | 200 | Get requirement by UUID |
-| GET | `/requirements/uid/{uid}` | — | 200 | Get requirement by UID |
+| GET | `/requirements` |—| 200 | List requirements (paginated, filterable) |
+| GET | `/requirements/{id}` |—| 200 | Get requirement by UUID |
+| GET | `/requirements/uid/{uid}` |—| 200 | Get requirement by UID |
 | PUT | `/requirements/{id}` | UpdateRequirementRequest | 200 | Update requirement (partial) |
 | POST | `/requirements/{id}/transition` | `{ "status": "ACTIVE" }` | 200 | Transition status |
 | POST | `/requirements/bulk/transition` | BulkStatusTransitionRequest | 200 | Bulk transition status |
 | POST | `/requirements/{id}/clone` | CloneRequirementRequest | 201 | Clone requirement |
-| POST | `/requirements/{id}/archive` | — | 200 | Archive requirement |
+| POST | `/requirements/{id}/archive` |—| 200 | Archive requirement |
 
 ### Relations
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/requirements/{id}/relations` | RelationRequest | 201 | Create relation |
-| GET | `/requirements/{id}/relations` | — | 200 | List relations |
-| DELETE | `/requirements/{id}/relations/{relationId}` | — | 204 | Delete relation |
+| GET | `/requirements/{id}/relations` |—| 200 | List relations |
+| DELETE | `/requirements/{id}/relations/{relationId}` |—| 204 | Delete relation |
 
 ### Traceability
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/requirements/{id}/traceability` | TraceabilityLinkRequest | 201 | Create traceability link |
-| GET | `/requirements/{id}/traceability` | — | 200 | List traceability links |
-| GET | `/requirements/traceability/by-artifact` | — | 200 | Reverse lookup: find links by artifact |
-| DELETE | `/requirements/{id}/traceability/{linkId}` | — | 204 / 404 | Delete traceability link. Returns 404 if `linkId` does not belong to `id`. |
+| GET | `/requirements/{id}/traceability` |—| 200 | List traceability links |
+| GET | `/requirements/traceability/by-artifact` |—| 200 | Reverse lookup: find links by artifact |
+| DELETE | `/requirements/{id}/traceability/{linkId}` |—| 204 / 404 | Delete traceability link. Returns 404 if `linkId` does not belong to `id`. |
 
 `GET /requirements/traceability/by-artifact` accepts query parameters:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `artifactType` | enum | GITHUB_ISSUE, PULL_REQUEST, CODE_FILE, ADR, CONFIG, POLICY, TEST, SPEC, PROOF, DOCUMENTATION, RISK_SCENARIO, CONTROL |
-| `artifactIdentifier` | string | Artifact identifier (e.g. repo-relative path, issue number, ADR UID) |
+| `artifactIdentifier` | string | Artifact identifier (for example, repo-relative path, issue number, ADR UID) |
 
 ### Audit History
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| GET | `/requirements/{id}/history` | — | 200 | Requirement revision history |
-| GET | `/requirements/{id}/relations/{relationId}/history` | — | 200 / 404 | Relation revision history. Returns 404 if `relationId` does not belong to `id` (the requirement is neither the source nor the target of the relation). |
-| GET | `/requirements/{id}/traceability/{linkId}/history` | — | 200 / 404 | Traceability link revision history. Returns 404 if `linkId` does not belong to `id`. |
-| GET | `/requirements/{id}/timeline` | — | 200 | Unified audit timeline |
+| GET | `/requirements/{id}/history` |—| 200 | Requirement revision history |
+| GET | `/requirements/{id}/relations/{relationId}/history` |—| 200 / 404 | Relation revision history. Returns 404 if `relationId` does not belong to `id` (the requirement is neither the source nor the target of the relation). |
+| GET | `/requirements/{id}/traceability/{linkId}/history` |—| 200 / 404 | Traceability link revision history. Returns 404 if `linkId` does not belong to `id`. |
+| GET | `/requirements/{id}/timeline` |—| 200 | Unified audit timeline |
 
 `GET /requirements/{id}/timeline` accepts query parameters:
 
@@ -110,19 +110,19 @@ http://localhost:8000/api/v1/
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| GET | `/analysis/cycles` | — | 200 | Detect dependency cycles |
-| GET | `/analysis/orphans` | — | 200 | Find orphan requirements |
-| GET | `/analysis/coverage-gaps?linkType=X` | — | 200 | Find coverage gaps by link type |
-| GET | `/analysis/impact/{id}` | — | 200 | Transitive impact analysis |
-| GET | `/analysis/cross-wave` | — | 200 | Cross-wave dependency violations |
-| GET | `/analysis/consistency-violations` | — | 200 | Detect consistency violations |
-| GET | `/analysis/completeness` | — | 200 | Analyze completeness |
-| GET | `/analysis/work-order` | — | 200 | Topological work order |
-| GET | `/analysis/dashboard-stats` | — | 200 | Aggregate project health stats |
-| GET | `/analysis/semantic-similarity` | — | 200 | Find semantically similar requirement pairs |
-| GET | `/analysis/status-drift` | — | 200 | Flag DRAFT requirements that have implementation evidence |
-| POST | `/analysis/sweep` | — | 200 | Run analysis sweep on one project |
-| POST | `/analysis/sweep/all` | — | 200 | Run analysis sweep on all projects |
+| GET | `/analysis/cycles` |—| 200 | Detect dependency cycles |
+| GET | `/analysis/orphans` |—| 200 | Find orphan requirements |
+| GET | `/analysis/coverage-gaps?linkType=X` |—| 200 | Find coverage gaps by link type |
+| GET | `/analysis/impact/{id}` |—| 200 | Transitive impact analysis |
+| GET | `/analysis/cross-wave` |—| 200 | Cross-wave dependency violations |
+| GET | `/analysis/consistency-violations` |—| 200 | Detect consistency violations |
+| GET | `/analysis/completeness` |—| 200 | Analyze completeness |
+| GET | `/analysis/work-order` |—| 200 | Topological work order |
+| GET | `/analysis/dashboard-stats` |—| 200 | Aggregate project health stats |
+| GET | `/analysis/semantic-similarity` |—| 200 | Find semantically similar requirement pairs |
+| GET | `/analysis/status-drift` |—| 200 | Flag DRAFT requirements that have implementation evidence |
+| POST | `/analysis/sweep` |—| 200 | Run analysis sweep on one project |
+| POST | `/analysis/sweep/all` |—| 200 | Run analysis sweep on all projects |
 
 **CycleResponse** (`GET /analysis/cycles`):
 
@@ -150,7 +150,7 @@ form it, including the relation type between each consecutive pair.
 | `threshold` | double | 0.85 | Minimum similarity score (0–1) |
 
 `GET /analysis/status-drift` flags `DRAFT` requirements that carry independent
-evidence of implementation or design completion (read-only — it never transitions
+evidence of implementation or design completion (read-only—it never transitions
 requirements or creates links). Query parameters:
 
 | Parameter | Type | Default | Description |
@@ -189,8 +189,8 @@ requirements or creates links). Query parameters:
 Evidence signals, strongest first: `IMPLEMENTS_LINK_ON_DRAFT` (`HIGH`);
 `ACCEPTED_ADR_DOCUMENTS_LINK`, `LINKED_GITHUB_ISSUE`, `LINKED_PULL_REQUEST`
 (`MEDIUM`); `LINKED_CODE_ARTIFACT`, `LINKED_DOC_ARTIFACT` (`LOW`). All signals are
-derived from the requirement's own project — its canonical traceability links and
-accepted ADR records — so the endpoint never reads the project-unscoped GitHub
+derived from the requirement's own project (its canonical traceability links and
+accepted ADR records), so the endpoint never reads the project-unscoped GitHub
 issue/PR sync tables or the filesystem. A finding's `confidence` is the strongest
 band across its `evidence`. Status drift is also surfaced inside
 `POST /analysis/sweep` as a new problem class (`statusDrift` array, counted in
@@ -223,8 +223,8 @@ substrates: `EvidenceArtifact` (derivedAt / supersededByArtifactId / sources),
 `Observation` (observedAt / expiresAt), `ControlTest` (testDate), and
 `OperationalAsset` (filtered by `AssetType.THIRD_PARTY` for vendor analyses).
 Every response is methodology-attributed and structured for agent
-consumption — `analysisKind`, `project`, `asOf`, `derivationMethod`,
-`inputs`/`outputs`/`limitations` sections — per
+consumption: `analysisKind`, `project`, `asOf`, `derivationMethod`,
+`inputs`/`outputs`/`limitations` sections, per
 `architecture/notes/mcp-grc-analysis-tools-preflight.md`. No generic
 `risk_score`; no executions of FAIR / FAIR-CAM / NIST methodology engines
 (those are tracked in GC-T011 / GC-I017 / GC-T014 and ship their own
@@ -232,9 +232,9 @@ analysis endpoints when the engine lands).
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| GET | `/analysis/grc/evidence-freshness` | — | 200 | Per-evidence / per-observation / per-control-test freshness state given an `asOf` and `freshnessWindowDays`. |
-| GET | `/analysis/grc/observation-projection?mode=ASSET_EXPOSURE\|CONTROL_STATE` | — | 200 | Current-state projection from observations; ASSET_EXPOSURE flags assets with active observations; CONTROL_STATE joins through `ControlEffectivenessAssessment`. |
-| GET | `/analysis/grc/vendor-risk` | — | 200 | Aggregation over `OperationalAsset` of `AssetType.THIRD_PARTY` (findings, observations, evidence freshness, mapped controls). |
+| GET | `/analysis/grc/evidence-freshness` |—| 200 | Per-evidence / per-observation / per-control-test freshness state given an `asOf` and `freshnessWindowDays`. |
+| GET | `/analysis/grc/observation-projection?mode=ASSET_EXPOSURE\|CONTROL_STATE` |—| 200 | Current-state projection from observations; ASSET_EXPOSURE flags assets with active observations; CONTROL_STATE joins through `ControlEffectivenessAssessment`. |
+| GET | `/analysis/grc/vendor-risk` |—| 200 | Aggregation over `OperationalAsset` of `AssetType.THIRD_PARTY` (findings, observations, evidence freshness, mapped controls). |
 
 `GET /analysis/grc/evidence-freshness` accepts:
 
@@ -244,8 +244,8 @@ analysis endpoints when the engine lands).
 | `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp; freshness is computed against this |
 | `freshnessWindowDays` | int (positive) | 90 | Items older than this are flagged `STALE`. Non-positive values return `400`. |
 | `includeSuperseded` | boolean | false | If true, `SUPERSEDED` artifacts are still surfaced (state-labeled) |
-| `assetId` | UUID | — | Narrow to evidence/observations attached to this asset. Must belong to the resolved project or `404` is returned. |
-| `controlId` | UUID | — | Narrow to evidence/observations/tests for this control. When supplied without `assetId`, observations are not joinable from controls today; the response surfaces an empty `observations` list and a `limitations` entry explaining the carve-out. When supplied with `assetId`, sections are intersected. |
+| `assetId` | UUID |—| Narrow to evidence/observations attached to this asset. Must belong to the resolved project or `404` is returned. |
+| `controlId` | UUID |—| Narrow to evidence/observations/tests for this control. When supplied without `assetId`, observations are not joinable from controls today; the response surfaces an empty `observations` list and a `limitations` entry explaining the carve-out. When supplied with `assetId`, sections are intersected. |
 
 `GET /analysis/grc/observation-projection` accepts:
 
@@ -254,8 +254,8 @@ analysis endpoints when the engine lands).
 | `project` | string | auto-resolved | Project identifier |
 | `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp; expired observations are flagged `EXPIRED` |
 | `mode` | enum (`ASSET_EXPOSURE` \| `CONTROL_STATE`) | required | Which projection to run |
-| `assetId` | UUID | — | Narrow to observations on this asset |
-| `controlId` | UUID | — | Narrow `CONTROL_STATE` to this control (ignored for `ASSET_EXPOSURE`) |
+| `assetId` | UUID |—| Narrow to observations on this asset |
+| `controlId` | UUID |—| Narrow `CONTROL_STATE` to this control (ignored for `ASSET_EXPOSURE`) |
 
 `GET /analysis/grc/vendor-risk` accepts:
 
@@ -264,7 +264,7 @@ analysis endpoints when the engine lands).
 | `project` | string | auto-resolved | Project identifier |
 | `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp; freshness is computed against this |
 | `freshnessWindowDays` | int (positive) | 90 | Window used to label vendor-attached evidence as `STALE`/`FRESH`. Non-positive values return `400`. |
-| `vendorAssetId` | UUID | — | Narrow to a single third-party asset (otherwise rolls up every `AssetType.THIRD_PARTY` row). Must belong to the resolved project or `404`. |
+| `vendorAssetId` | UUID |—| Narrow to a single third-party asset (otherwise rolls up every `AssetType.THIRD_PARTY` row). Must belong to the resolved project or `404`. |
 
 Every response carries a `limitations` array. For the vendor-risk endpoint
 that array always includes a note that vendors are modeled as
@@ -277,10 +277,10 @@ are involved, additional `limitations` entries are emitted.
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| POST | `/embeddings/{requirementId}` | — | 200 | Embed a single requirement |
-| GET | `/embeddings/{requirementId}/status` | — | 200 | Get embedding status |
-| POST | `/embeddings/batch?project=&force=false` | — | 200 | Batch embed all requirements in a project |
-| DELETE | `/embeddings/{requirementId}` | — | 204 | Delete embedding |
+| POST | `/embeddings/{requirementId}` |—| 200 | Embed a single requirement |
+| GET | `/embeddings/{requirementId}/status` |—| 200 | Get embedding status |
+| POST | `/embeddings/batch?project=&force=false` |—| 200 | Batch embed all requirements in a project |
+| DELETE | `/embeddings/{requirementId}` |—| 204 | Delete embedding |
 
 Requires `GC_EMBEDDING_PROVIDER=openai` and `GC_EMBEDDING_API_KEY` to be set.
 When no provider is configured, endpoints return `provider_unavailable` status
@@ -305,11 +305,11 @@ When no provider is configured, endpoints return `provider_unavailable` status
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/baselines?project=` | BaselineRequest | 201 | Create baseline |
-| GET | `/baselines?project=` | — | 200 | List baselines |
-| GET | `/baselines/{id}` | — | 200 | Get baseline |
-| GET | `/baselines/{id}/snapshot` | — | 200 | Requirement snapshot at baseline |
-| GET | `/baselines/{id}/compare/{otherId}` | — | 200 | Compare two baselines |
-| DELETE | `/baselines/{id}` | — | 204 | Delete baseline |
+| GET | `/baselines?project=` |—| 200 | List baselines |
+| GET | `/baselines/{id}` |—| 200 | Get baseline |
+| GET | `/baselines/{id}/snapshot` |—| 200 | Requirement snapshot at baseline |
+| GET | `/baselines/{id}/compare/{otherId}` |—| 200 | Compare two baselines |
+| DELETE | `/baselines/{id}` |—| 204 | Delete baseline |
 
 **BaselineRequest:**
 
@@ -342,8 +342,8 @@ When no provider is configured, endpoints return `provider_unavailable` status
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | PUT | `/documents/{id}/grammar` | Grammar JSON | 200 | Set/replace grammar |
-| GET | `/documents/{id}/grammar` | — | 200 | Get grammar |
-| DELETE | `/documents/{id}/grammar` | — | 204 | Remove grammar |
+| GET | `/documents/{id}/grammar` |—| 200 | Get grammar |
+| DELETE | `/documents/{id}/grammar` |—| 204 | Remove grammar |
 
 **Grammar JSON:**
 
@@ -358,13 +358,13 @@ When no provider is configured, endpoints return `provider_unavailable` status
 }
 ```
 
-Field types: `STRING`, `INTEGER`, `BOOLEAN`, `ENUM`. Declarative metadata — no runtime enforcement.
+Field types: `STRING`, `INTEGER`, `BOOLEAN`, `ENUM`. Declarative metadata—no runtime enforcement.
 
 ### Document Reading Order
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| GET | `/documents/{id}/reading-order` | — | 200 | Full document in reading order |
+| GET | `/documents/{id}/reading-order` |—| 200 | Full document in reading order |
 
 Returns the document with all sections nested, each containing its content items
 (requirement references and text blocks) in authored sequence.
@@ -374,9 +374,9 @@ Returns the document with all sections nested, each containing its content items
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/sections/{sectionId}/content` | SectionContentRequest | 201 | Add content item |
-| GET | `/sections/{sectionId}/content` | — | 200 | List content in order |
+| GET | `/sections/{sectionId}/content` |—| 200 | List content in order |
 | PUT | `/sections/content/{id}` | UpdateSectionContentRequest | 200 | Update content item |
-| DELETE | `/sections/content/{id}` | — | 204 | Delete content item |
+| DELETE | `/sections/content/{id}` |—| 204 | Delete content item |
 
 **SectionContentRequest:**
 
@@ -403,11 +403,11 @@ or for text blocks:
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/documents/{documentId}/sections` | SectionRequest | 201 | Create section |
-| GET | `/documents/{documentId}/sections` | — | 200 | List sections (flat) |
-| GET | `/documents/{documentId}/sections/tree` | — | 200 | Get section tree (nested) |
-| GET | `/sections/{id}` | — | 200 | Get section |
+| GET | `/documents/{documentId}/sections` |—| 200 | List sections (flat) |
+| GET | `/documents/{documentId}/sections/tree` |—| 200 | Get section tree (nested) |
+| GET | `/sections/{id}` |—| 200 | Get section |
 | PUT | `/sections/{id}` | UpdateSectionRequest | 200 | Update section |
-| DELETE | `/sections/{id}` | — | 204 | Delete section (cascades children) |
+| DELETE | `/sections/{id}` |—| 204 | Delete section (cascades children) |
 
 **SectionRequest:**
 
@@ -420,7 +420,7 @@ or for text blocks:
 }
 ```
 
-Sections support arbitrary nesting — set `parentId` to a section UUID to create a child.
+Sections support arbitrary nesting—set `parentId` to a section UUID to create a child.
 The tree endpoint returns a nested JSON structure with `children` arrays.
 
 ### Documents
@@ -428,10 +428,10 @@ The tree endpoint returns a nested JSON structure with `children` arrays.
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/documents?project=` | DocumentRequest | 201 | Create document |
-| GET | `/documents?project=` | — | 200 | List documents |
-| GET | `/documents/{id}` | — | 200 | Get document |
+| GET | `/documents?project=` |—| 200 | List documents |
+| GET | `/documents/{id}` |—| 200 | Get document |
 | PUT | `/documents/{id}` | UpdateDocumentRequest | 200 | Update document |
-| DELETE | `/documents/{id}` | — | 204 | Delete document |
+| DELETE | `/documents/{id}` |—| 204 | Delete document |
 
 **DocumentRequest:**
 
@@ -448,24 +448,24 @@ The tree endpoint returns a nested JSON structure with `children` arrays.
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/adrs?project=` | AdrRequest | 201 | Create ADR |
-| GET | `/adrs?project=` | — | 200 | List ADRs |
-| GET | `/adrs/{id}` | — | 200 | Get ADR by UUID |
-| GET | `/adrs/uid/{uid}?project=` | — | 200 | Get ADR by UID |
+| GET | `/adrs?project=` |—| 200 | List ADRs |
+| GET | `/adrs/{id}` |—| 200 | Get ADR by UUID |
+| GET | `/adrs/uid/{uid}?project=` |—| 200 | Get ADR by UID |
 | PUT | `/adrs/{id}` | UpdateAdrRequest | 200 | Update ADR (partial) |
-| DELETE | `/adrs/{id}` | — | 204 | Delete ADR |
+| DELETE | `/adrs/{id}` |—| 204 | Delete ADR |
 | PUT | `/adrs/{id}/status` | `{ "status": "ACCEPTED" }` | 200 | Transition status |
-| GET | `/adrs/{id}/requirements` | — | 200 | Get linked requirements (reverse traceability) |
+| GET | `/adrs/{id}/requirements` |—| 200 | Get linked requirements (reverse traceability) |
 
 **AdrRequest:**
 
 ```json
 {
-  "uid": "ADR-018",
-  "title": "AWS EC2 Deployment",
-  "decisionDate": "2026-03-15",
-  "context": "We need a deployment target for the application",
-  "decision": "Deploy to AWS EC2 with Docker",
-  "consequences": "Simple, cost-effective, but single-instance"
+  "uid": "ADR-030",
+  "title": "On-prem Hetzner Deployment",
+  "decisionDate": "2026-05-03",
+  "context": "Need a deployment target that lifts the JVM memory ceiling and removes the AWS account dependency",
+  "decision": "Run the docker-compose stack on red-dragon, tailnet-only, image pulled from GHCR",
+  "consequences": "Eliminates EC2/EBS/S3/DLM/IAM surface; capacity headroom for AGE and the embedding pipeline; no marginal cost"
 }
 ```
 
@@ -476,12 +476,12 @@ The tree endpoint returns a nested JSON structure with `children` arrays.
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/assets?project=` | AssetRequest | 201 | Create asset |
-| GET | `/assets?project=&type=&owner=&steward=&environment=&criticality=&scope=&subtype=` | — | 200 | List assets (any combination of filters is optional; `subtype` is exact-match per the GC-M011 subtype catalog) |
-| GET | `/assets/{id}` | — | 200 | Get asset by UUID |
-| GET | `/assets/uid/{uid}?project=` | — | 200 | Get asset by UID |
+| GET | `/assets?project=&type=&owner=&steward=&environment=&criticality=&scope=&subtype=` |—| 200 | List assets (any combination of filters is optional; `subtype` is exact-match per the GC-M011 subtype catalog) |
+| GET | `/assets/{id}` |—| 200 | Get asset by UUID |
+| GET | `/assets/uid/{uid}?project=` |—| 200 | Get asset by UID |
 | PUT | `/assets/{id}` | UpdateAssetRequest | 200 | Update asset (partial) |
-| DELETE | `/assets/{id}` | — | 204 | Delete asset (cascade deletes relations) |
-| POST | `/assets/{id}/archive` | — | 200 | Archive (soft-delete) asset |
+| DELETE | `/assets/{id}` |—| 204 | Delete asset (cascade deletes relations) |
+| POST | `/assets/{id}/archive` |—| 200 | Archive (soft-delete) asset |
 
 **AssetRequest:**
 
@@ -505,9 +505,9 @@ The tree endpoint returns a nested JSON structure with `children` arrays.
 }
 ```
 
-`owner`, `steward`, and `businessContext` are free-text labels (≤ 200 chars on `owner`/`steward`; `businessContext` is `TEXT`). All six GC-M012 metadata fields are optional on `AssetRequest` and on `UpdateAssetRequest`. On the update path, `null` / absent means "leave field unchanged" (mirrors the existing `name`/`description`/`assetType` null-means-unchanged semantics). To reset a previously-designated metadata field back to NULL ("not designated"), send the paired clear flag — `clearOwner`, `clearSteward`, `clearEnvironment`, `clearCriticality`, `clearBusinessContext`, or `clearScopeDesignation` — as `true`. The clear flag wins over a same-payload assignment so the wire semantics stay unambiguous (the assign loses). This mirrors the `clearRootCauseAnalysis` / `clearOwner` / `clearDueDate` pattern on `UpdateFindingRequest`.
+`owner`, `steward`, and `businessContext` are free-text labels (≤ 200 chars on `owner`/`steward`; `businessContext` is `TEXT`). All six GC-M012 metadata fields are optional on `AssetRequest` and on `UpdateAssetRequest`. On the update path, `null` / absent means "leave field unchanged" (mirrors the existing `name`/`description`/`assetType` null-means-unchanged semantics). To reset a previously designated metadata field back to NULL ("not designated"), send the paired clear flag (`clearOwner`, `clearSteward`, `clearEnvironment`, `clearCriticality`, `clearBusinessContext`, or `clearScopeDesignation`) as `true`. The clear flag wins over a same-payload assignment so the wire semantics stay unambiguous (the assign loses). This mirrors the `clearRootCauseAnalysis` / `clearOwner` / `clearDueDate` pattern on `UpdateFindingRequest`.
 
-GC-M011 fields (`subtype`, `metadata`) follow the same null-means-unchanged / `clearSubtype` / `clearMetadata` convention on the update path. `subtype` is a narrower, project-defined classification under `assetType` (≤ 100 chars). `metadata` is a bounded key→scalar map (≤ 50 keys, key ≤ 100 chars, string value ≤ 4096 chars, scalar values only — strings / numbers / booleans / null). When a matching ACTIVE `AssetSubtypeSchema` (project + assetType + subtype) is registered, the validator additionally enforces the schema's field types, required fields, and bounds; otherwise only the universal bounds apply. `metadata` replacement is atomic — non-null `metadata` in `UpdateAssetRequest` replaces the entire map.
+GC-M011 fields (`subtype`, `metadata`) follow the same null-means-unchanged / `clearSubtype` / `clearMetadata` convention on the update path. `subtype` is a narrower, project-defined classification under `assetType` (≤ 100 chars). `metadata` is a bounded key→scalar map (≤ 50 keys, key ≤ 100 chars, string value ≤ 4096 chars, scalar values only: strings / numbers / booleans / null). When a matching ACTIVE `AssetSubtypeSchema` (project + assetType + subtype) is registered, the validator additionally enforces the schema's field types, required fields, and bounds; otherwise only the universal bounds apply. `metadata` replacement is atomic—non-null `metadata` in `UpdateAssetRequest` replaces the entire map.
 
 Asset types: `APPLICATION`, `SERVICE`, `SYSTEM`, `DATABASE`, `NETWORK`, `HOST`, `CONTAINER`, `IDENTITY`, `DATA_STORE`, `ENDPOINT`, `INTEGRATION`, `WORKLOAD`, `THIRD_PARTY`, `BOUNDARY`, `OTHER`
 
@@ -515,7 +515,7 @@ Asset criticality (GC-M012): `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`. Distinct from 
 
 Asset environment (GC-M012): `PRODUCTION`, `STAGING`, `DEVELOPMENT`, `TEST`, `NON_PRODUCTION`, `OTHER`. `NON_PRODUCTION` is the umbrella value for assets that pre-date the more specific environment vocabulary.
 
-Asset scope designation (GC-M012): `IN_SCOPE`, `OUT_OF_SCOPE`. Two-state explicit; the absence of either (NULL) means "not yet designated" — distinct from `archivedAt` (lifecycle), `quality_gate.scopeStatus`, control `implementationScope`, and risk `assetScopeSummary`.
+Asset scope designation (GC-M012): `IN_SCOPE`, `OUT_OF_SCOPE`. Two-state explicit; the absence of either (NULL) means "not yet designated"—distinct from `archivedAt` (lifecycle), `quality_gate.scopeStatus`, control `implementationScope`, and risk `assetScopeSummary`.
 
 List filters route through `OperationalAssetRepository.findByProjectIdAndArchivedAtIsNullAndFilters` so any combination of `type` / `owner` / `steward` / `environment` / `criticality` / `scope` query parameters is honored in a single JPQL pass; risk, control, audit, and reporting workflows consume this same surface rather than inventing per-workflow lookups.
 
@@ -524,26 +524,26 @@ List filters route through `OperationalAssetRepository.findByProjectIdAndArchive
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/assets/subtype-schemas?project=` | AssetSubtypeSchemaRequest | 201 | Register a new ACTIVE schema (auto-deprecates the prior ACTIVE entry for the same `(assetType, subtype)`) |
-| GET | `/assets/subtype-schemas?project=&assetType=&subtype=` | — | 200 | List schemas; valid combinations are: neither (list all in project), `assetType` alone (list for that asset type), or both `assetType` + `subtype` (list for that exact pair). `subtype` alone without `assetType` is rejected with `asset_subtype_schema_filter_invalid` because the same subtype string may legitimately exist under different asset-type buckets |
-| GET | `/assets/subtype-schemas/active?project=&assetType=&subtype=` | — | 200 | Get the single ACTIVE schema for an `(assetType, subtype)` |
-| GET | `/assets/subtype-schemas/{id}` | — | 200 | Get schema by UUID |
+| GET | `/assets/subtype-schemas?project=&assetType=&subtype=` |—| 200 | List schemas; valid combinations are: neither (list all in project), `assetType` alone (list for that asset type), or both `assetType` + `subtype` (list for that exact pair). `subtype` alone without `assetType` is rejected with `asset_subtype_schema_filter_invalid` because the same subtype string may legitimately exist under different asset-type buckets |
+| GET | `/assets/subtype-schemas/active?project=&assetType=&subtype=` |—| 200 | Get the single ACTIVE schema for an `(assetType, subtype)` |
+| GET | `/assets/subtype-schemas/{id}` |—| 200 | Get schema by UUID |
 | PUT | `/assets/subtype-schemas/{id}` | UpdateAssetSubtypeSchemaRequest | 200 | Replace description / schema body (atomic) |
-| POST | `/assets/subtype-schemas/{id}/deprecate` | — | 200 | Mark schema DEPRECATED |
+| POST | `/assets/subtype-schemas/{id}/deprecate` |—| 200 | Mark schema DEPRECATED |
 
 **AssetSubtypeSchemaRequest:**
 
 ```json
 {
   "assetType": "WORKLOAD",
-  "subtype": "aws_ec2",
+  "subtype": "linux_container_host",
   "schemaVersion": "v1",
-  "description": "AWS EC2 instance subtype schema",
+  "description": "Linux host running a docker-compose stack on the operator tailnet",
   "schemaBody": {
     "fields": {
-      "cloud_account_id": {"type": "STRING", "required": true, "maxLength": 32},
-      "region": {"type": "ENUM", "required": true, "values": ["us-east-1", "us-west-2", "eu-west-1"]},
-      "instance_count": {"type": "INTEGER", "minimum": 0, "maximum": 1000},
-      "encrypted": {"type": "BOOLEAN"}
+      "fqdn": {"type": "STRING", "required": true, "maxLength": 253},
+      "tailnet_ip": {"type": "STRING", "required": false, "maxLength": 45},
+      "kernel_version": {"type": "STRING", "maxLength": 64},
+      "container_runtime": {"type": "ENUM", "required": true, "values": ["docker", "podman", "containerd"]}
     },
     "allowAdditional": false
   }
@@ -560,8 +560,8 @@ Validation errors return HTTP `422` with the canonical `ErrorResponse` envelope 
 |--------|------|------|--------|---------|
 | POST | `/assets/{id}/relations` | AssetRelationRequest | 201 | Create typed relation |
 | PUT | `/assets/{id}/relations/{relationId}` | UpdateAssetRelationRequest | 200 | Update relation metadata |
-| GET | `/assets/{id}/relations` | — | 200 | List relations (incoming + outgoing) |
-| DELETE | `/assets/{id}/relations/{relationId}` | — | 204 | Delete relation |
+| GET | `/assets/{id}/relations` |—| 200 | List relations (incoming + outgoing) |
+| DELETE | `/assets/{id}/relations/{relationId}` |—| 204 | Delete relation |
 
 **AssetRelationRequest:**
 
@@ -570,8 +570,8 @@ Validation errors return HTTP `422` with the canonical `ErrorResponse` envelope 
   "targetId": "uuid",
   "relationType": "DEPENDS_ON",
   "description": "Observed runtime dependency",
-  "sourceSystem": "AWS_CONFIG",
-  "externalSourceId": "cfg-123",
+  "sourceSystem": "INVENTORY_SCAN",
+  "externalSourceId": "inv-123",
   "collectedAt": "2026-04-01T12:00:00Z",
   "confidence": "0.80"
 }
@@ -600,9 +600,9 @@ MCP surface: `gc_asset` with actions `relation_create`, `relation_update`, `rela
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/assets/{id}/links` | AssetLinkRequest | 201 | Link asset to a requirement, control, or other entity |
-| GET | `/assets/{id}/links?target_type=` | — | 200 | List links (optional target type filter) |
-| DELETE | `/assets/{id}/links/{linkId}` | — | 204 | Delete link |
-| GET | `/assets/links/by-target?target_type=&target_identifier=&project=` | — | 200 | Reverse lookup: find assets linked to a target |
+| GET | `/assets/{id}/links?target_type=` |—| 200 | List links (optional target type filter) |
+| DELETE | `/assets/{id}/links/{linkId}` |—| 204 | Delete link |
+| GET | `/assets/links/by-target?target_type=&target_identifier=&project=` |—| 200 | Reverse lookup: find assets linked to a target |
 
 **AssetLinkRequest:**
 
@@ -624,8 +624,8 @@ Link types: `IMPLEMENTS`, `MITIGATES`, `SUBJECT_OF`, `EVIDENCED_BY`, `GOVERNED_B
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| GET | `/assets/topology/cycles?project=` | — | 200 | Detect cycles in asset graph |
-| GET | `/assets/{id}/topology/impact` | — | 200 | Multi-hop impact analysis |
+| GET | `/assets/topology/cycles?project=` |—| 200 | Detect cycles in asset graph |
+| GET | `/assets/{id}/topology/impact` |—| 200 | Multi-hop impact analysis |
 | POST | `/assets/topology/subgraph?project=` | SubgraphRequest | 200 | Extract connected subgraph |
 
 **SubgraphRequest:**
@@ -654,11 +654,11 @@ the most recent non-expired observation per key.
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/assets/{id}/observations?project=` | ObservationRequest | 201 | Create observation |
-| GET | `/assets/{id}/observations?project=` | — | 200 | List observations |
-| GET | `/assets/{id}/observations/{obsId}` | — | 200 | Get observation by UUID |
+| GET | `/assets/{id}/observations?project=` |—| 200 | List observations |
+| GET | `/assets/{id}/observations/{obsId}` |—| 200 | Get observation by UUID |
 | PUT | `/assets/{id}/observations/{obsId}` | UpdateObservationRequest | 200 | Update mutable fields |
-| DELETE | `/assets/{id}/observations/{obsId}` | — | 204 | Delete observation |
-| GET | `/assets/{id}/observations/latest?project=` | — | 200 | Latest non-expired observation per key |
+| DELETE | `/assets/{id}/observations/{obsId}` |—| 204 | Delete observation |
+| GET | `/assets/{id}/observations/latest?project=` |—| 200 | Latest non-expired observation per key |
 
 **ObservationRequest** (`category`, `observationKey`, `observationValue`, `source`, `observedAt` are required):
 
@@ -688,18 +688,18 @@ the most recent non-expired observation per key.
 
 Observation categories: `CONFIGURATION`, `EXPOSURE`, `IDENTITY`, `DEPLOYMENT`, `PATCH_STATE`, `RELATIONSHIP`, `OTHER`
 
-MCP surface: `gc_observation` with actions `create`, `update`, `delete`, `latest`. Snake_case MCP args map to camelCase DTO fields via the adapter's `TO_CAMEL` table — `observation_key` → `observationKey`, `observation_value` → `observationValue`, `observed_at` → `observedAt`, `expires_at` → `expiresAt`, `evidence_ref` → `evidenceRef`. The old field names (`title`, `statement`, `valid_until`, `metadata`) were removed in GC-L008.
+MCP surface: `gc_observation` with actions `create`, `update`, `delete`, `latest`. Snake_case MCP args map to camelCase DTO fields via the adapter's `TO_CAMEL` table—`observation_key` → `observationKey`, `observation_value` → `observationValue`, `observed_at` → `observedAt`, `expires_at` → `expiresAt`, `evidence_ref` → `evidenceRef`. The old field names (`title`, `statement`, `valid_until`, `metadata`) were removed in GC-L008.
 
 ### Quality Gates
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/quality-gates?project=` | QualityGateRequest | 201 | Create quality gate |
-| GET | `/quality-gates?project=` | — | 200 | List quality gates |
-| GET | `/quality-gates/{id}` | — | 200 | Get quality gate |
+| GET | `/quality-gates?project=` |—| 200 | List quality gates |
+| GET | `/quality-gates/{id}` |—| 200 | Get quality gate |
 | PUT | `/quality-gates/{id}` | UpdateQualityGateRequest | 200 | Update quality gate |
-| DELETE | `/quality-gates/{id}` | — | 204 | Delete quality gate |
-| POST | `/quality-gates/evaluate?project=` | — | 200 | Evaluate all enabled gates (CI/CD) |
+| DELETE | `/quality-gates/{id}` |—| 204 | Delete quality gate |
+| POST | `/quality-gates/evaluate?project=` |—| 200 | Evaluate all enabled gates (CI/CD) |
 
 **QualityGateRequest:**
 
@@ -716,7 +716,7 @@ MCP surface: `gc_observation` with actions `create`, `update`, `delete`, `latest
 ```
 
 - `metricType`: `COVERAGE` (% with link type), `ORPHAN_COUNT`, `COMPLETENESS` (issue count)
-- `metricParam`: Required for `COVERAGE` — a LinkType (`IMPLEMENTS`, `TESTS`, `DOCUMENTS`, `CONSTRAINS`, `VERIFIES`)
+- `metricParam`: Required for `COVERAGE`—a LinkType (`IMPLEMENTS`, `TESTS`, `DOCUMENTS`, `CONSTRAINS`, `VERIFIES`)
 - `scopeStatus`: Filter requirements by status. Omit to check all non-archived
 - `operator`: `GTE` (>=), `LTE` (<=), `EQ` (==), `GT` (>), `LT` (<)
 
@@ -750,14 +750,14 @@ MCP surface: `gc_observation` with actions `create`, `update`, `delete`, `latest
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| POST | `/admin/graph/materialize` | — | 200 | Materialize graph (AGE) |
-| GET | `/graph/ancestors/{uid}?depth=N` | — | 200 | Ancestor UIDs |
-| GET | `/graph/descendants/{uid}?depth=N` | — | 200 | Descendant UIDs |
-| GET | `/graph/visualization?entityTypes=X,Y` | — | 200 | Full graph (filterable by entity type) |
-| GET | `/graph/subgraph?roots=X&entityTypes=Y` | — | 200 | Subgraph (filterable by entity type) |
-| GET | `/graph/paths?source=X&target=Y` | — | 200 | All paths between two UIDs (with edges) |
+| POST | `/admin/graph/materialize` |—| 200 | Materialize graph (AGE) |
+| GET | `/graph/ancestors/{uid}?depth=N` |—| 200 | Ancestor UIDs |
+| GET | `/graph/descendants/{uid}?depth=N` |—| 200 | Descendant UIDs |
+| GET | `/graph/visualization?entityTypes=X,Y` |—| 200 | Full graph (filterable by entity type) |
+| GET | `/graph/subgraph?roots=X&entityTypes=Y` |—| 200 | Subgraph (filterable by entity type) |
+| GET | `/graph/paths?source=X&target=Y` |—| 200 | All paths between two UIDs (with edges) |
 
-`entityTypes` is an optional comma-separated list (e.g. `REQUIREMENT`). When omitted, all entity types are returned. Each node includes an `entityType` field.
+`entityTypes` is an optional comma-separated list (for example, `REQUIREMENT`). When omitted, all entity types are returned. Each node includes an `entityType` field.
 
 **Path response shape:**
 
@@ -805,17 +805,17 @@ MCP surface: `gc_observation` with actions `create`, `update`, `delete`, `latest
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| GET | `/export/requirements?project=&format=csv` | — | 200 | Export requirements as CSV, Excel, or PDF |
-| POST | `/export/sweep?project=&format=csv` | — | 200 | Run sweep and export as CSV, Excel, or PDF |
-| GET | `/export/document/{documentId}?format=sdoc` | — | 200 | Export document (sdoc, html, pdf, or reqif) |
+| GET | `/export/requirements?project=&format=csv` |—| 200 | Export requirements as CSV, Excel, or PDF |
+| POST | `/export/sweep?project=&format=csv` |—| 200 | Run sweep and export as CSV, Excel, or PDF |
+| GET | `/export/document/{documentId}?format=sdoc` |—| 200 | Export document (sdoc, html, pdf, or reqif) |
 
 The `format` query parameter accepts `csv` (default), `xlsx`, or `pdf`. Responses include
 `Content-Disposition: attachment` headers with a generated filename.
 
 Content types by format:
-- `csv` — `text/csv`
-- `xlsx` — `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
-- `pdf` — `application/pdf`
+- `csv`: `text/csv`
+- `xlsx`: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+- `pdf`: `application/pdf`
 
 **Requirements export** includes: UID, title, statement, rationale, type, priority,
 status, wave, traceability links, timestamps. Excel format adds a second "Traceability"
@@ -831,8 +831,8 @@ sheet per analysis category.
 |--------|------|------|--------|---------|
 | POST | `/admin/import/strictdoc` | multipart/form-data | 200 | Import .sdoc file |
 | POST | `/admin/import/reqif` | multipart/form-data | 200 | Import .reqif file |
-| POST | `/admin/sync/github?owner=X&repo=Y` | — | 200 | Sync GitHub issues |
-| POST | `/admin/sync/github/prs?owner=X&repo=Y` | — | 200 | Sync GitHub pull requests |
+| POST | `/admin/sync/github?owner=X&repo=Y` |—| 200 | Sync GitHub issues |
+| POST | `/admin/sync/github/prs?owner=X&repo=Y` |—| 200 | Sync GitHub pull requests |
 
 StrictDoc import creates requirements, relations, traceability links, and preserves the
 document structure (document, sections, text blocks). The response includes all counters:
@@ -845,17 +845,17 @@ document structure (document, sections, text blocks). The response includes all 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/verification-results` | VerificationResultRequest | 201 | Create verification result |
-| GET | `/verification-results` | — | 200 | List verification results |
-| GET | `/verification-results/{id}` | — | 200 | Get verification result by UUID |
+| GET | `/verification-results` |—| 200 | List verification results |
+| GET | `/verification-results/{id}` |—| 200 | Get verification result by UUID |
 | PUT | `/verification-results/{id}` | UpdateVerificationResultRequest | 200 | Update verification result |
-| DELETE | `/verification-results/{id}` | — | 204 | Delete verification result |
+| DELETE | `/verification-results/{id}` |—| 204 | Delete verification result |
 
 All endpoints accept an optional `project` query parameter.
 
 **Filters on GET list:**
-- `requirement_id` (UUID) — filter by requirement
-- `prover` (string) — filter by verifier tool identifier
-- `result` (enum) — PROVEN, REFUTED, TIMEOUT, UNKNOWN, ERROR
+- `requirement_id` (UUID)—filter by requirement
+- `prover` (string)—filter by verifier tool identifier
+- `result` (enum)—PROVEN, REFUTED, TIMEOUT, UNKNOWN, ERROR
 
 **VerificationResultRequest fields:** `prover` (required), `result` (required),
 `assuranceLevel` (required, L0-L3), `verifiedAt` (required, ISO 8601), `targetId`
@@ -866,17 +866,17 @@ All endpoints accept an optional `project` query parameter.
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| GET | `/plugins` | — | 200 | List all registered plugins |
-| GET | `/plugins/{name}` | — | 200 | Get plugin by name |
+| GET | `/plugins` |—| 200 | List all registered plugins |
+| GET | `/plugins/{name}` |—| 200 | Get plugin by name |
 | POST | `/plugins` | RegisterPluginRequest | 201 | Register a dynamic plugin |
-| DELETE | `/plugins/{name}` | — | 204 | Unregister a dynamic plugin |
+| DELETE | `/plugins/{name}` |—| 204 | Unregister a dynamic plugin |
 
 All endpoints accept an optional `project` query parameter.
 
 **Filters on GET list:**
-- `type` (enum) — PACK_HANDLER, REGISTRY_BACKEND, VALIDATOR, POLICY_HOOK, VERIFIER, EMBEDDING_PROVIDER, GRAPH_CONTRIBUTOR, CUSTOM
-- `capability` (string) — filter by capability tag
-- `project` (string) — filter dynamic plugins by project
+- `type` (enum)—PACK_HANDLER, REGISTRY_BACKEND, VALIDATOR, POLICY_HOOK, VERIFIER, EMBEDDING_PROVIDER, GRAPH_CONTRIBUTOR, CUSTOM
+- `capability` (string)—filter by capability tag
+- `project` (string)—filter dynamic plugins by project
 
 **RegisterPluginRequest fields:** `name` (required, max 100), `version` (required, max 50),
 `type` (required, PluginType enum), `description` (optional), `capabilities` (optional, string set),
@@ -886,15 +886,15 @@ All endpoints accept an optional `project` query parameter.
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| GET | `/control-packs` | — | 200 | List installed packs |
-| GET | `/control-packs/{packId}` | — | 200 | Get pack by identifier |
-| PUT | `/control-packs/{packId}/deprecate` | — | 200 | Deprecate a pack |
-| DELETE | `/control-packs/{packId}` | — | 204 | Remove a pack |
-| GET | `/control-packs/{packId}/entries` | — | 200 | List pack entries |
-| GET | `/control-packs/{packId}/entries/{entryUid}` | — | 200 | Get a pack entry |
+| GET | `/control-packs` |—| 200 | List installed packs |
+| GET | `/control-packs/{packId}` |—| 200 | Get pack by identifier |
+| PUT | `/control-packs/{packId}/deprecate` |—| 200 | Deprecate a pack |
+| DELETE | `/control-packs/{packId}` |—| 204 | Remove a pack |
+| GET | `/control-packs/{packId}/entries` |—| 200 | List pack entries |
+| GET | `/control-packs/{packId}/entries/{entryUid}` |—| 200 | Get a pack entry |
 | POST | `/control-packs/{packId}/entries/{entryUid}/overrides` | CreateControlPackOverrideRequest | 201 | Create field override |
-| GET | `/control-packs/{packId}/entries/{entryUid}/overrides` | — | 200 | List overrides |
-| DELETE | `/control-packs/{packId}/entries/{entryUid}/overrides/{id}` | — | 204 | Delete override |
+| GET | `/control-packs/{packId}/entries/{entryUid}/overrides` |—| 200 | List overrides |
+| DELETE | `/control-packs/{packId}/entries/{entryUid}/overrides/{id}` |—| 204 | Delete override |
 
 All endpoints accept an optional `project` query parameter.
 
@@ -903,7 +903,7 @@ or import a `CONTROL_PACK` in `/pack-registry`, then use `/pack-install-records/
 or `/pack-install-records/upgrade` so resolution, trust evaluation, and audit recording
 cannot be bypassed.
 
-**CreateControlPackOverrideRequest fields:** `fieldName` (required — title, description, objective,
+**CreateControlPackOverrideRequest fields:** `fieldName` (required—title, description, objective,
 controlFunction, owner, implementationScope, or category), `overrideValue` (optional; title
 must be non-blank), `reason` (optional, max 500).
 
@@ -914,17 +914,17 @@ must be non-blank), `reason` (optional, max 500).
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/threat-models` | ThreatModelRequest | 201 | Create threat model entry |
-| GET | `/threat-models` | — | 200 | List threat models for a project |
-| GET | `/threat-models/{id}` | — | 200 | Get threat model by UUID |
-| GET | `/threat-models/uid/{uid}` | — | 200 | Get threat model by UID |
+| GET | `/threat-models` |—| 200 | List threat models for a project |
+| GET | `/threat-models/{id}` |—| 200 | Get threat model by UUID |
+| GET | `/threat-models/uid/{uid}` |—| 200 | Get threat model by UID |
 | PUT | `/threat-models/{id}` | UpdateThreatModelRequest | 200 | Update mutable fields |
-| DELETE | `/threat-models/{id}` | — | 204 | Delete threat model (cascades to links) |
+| DELETE | `/threat-models/{id}` |—| 204 | Delete threat model (cascades to links) |
 | PUT | `/threat-models/{id}/status` | `{"status": "ACTIVE"}` | 200 | Transition lifecycle status |
-| GET | `/threat-models/{id}/requirements` | — | 200 | List requirements linked to a threat model |
-| GET | `/threat-models/{id}/trace` | — | 200 | End-to-end security trace: assets, controls, requirements, and per-requirement implementing artifacts |
+| GET | `/threat-models/{id}/requirements` |—| 200 | List requirements linked to a threat model |
+| GET | `/threat-models/{id}/trace` |—| 200 | End-to-end security trace: assets, controls, requirements, and per-requirement implementing artifacts |
 | POST | `/threat-models/{id}/links` | ThreatModelLinkRequest | 201 | Create threat-model link |
-| GET | `/threat-models/{id}/links` | — | 200 | List links for a threat model |
-| DELETE | `/threat-models/{id}/links/{linkId}` | — | 204 | Delete threat-model link |
+| GET | `/threat-models/{id}/links` |—| 200 | List links for a threat model |
+| DELETE | `/threat-models/{id}/links/{linkId}` |—| 204 | Delete threat-model link |
 
 All endpoints accept an optional `project` query parameter. When omitted, the request
 auto-resolves to the single project in single-project deployments. In multi-project
@@ -956,7 +956,7 @@ non-authoritative).
 present in the request body are updated. Required fields (`title`, `threatSource`,
 `threatEvent`, `effect`) reject blank strings server-side with 422 `validation_error`
 when present. Optional fields (`stride`, `narrative`) cannot be cleared by sending
-`null` (which means "no change") — set `clearStride` or `clearNarrative` to `true` to
+`null` (which means "no change")—set `clearStride` or `clearNarrative` to `true` to
 explicitly null them. When a `clear*` flag is true, any value supplied in the
 corresponding field is ignored.
 
@@ -968,14 +968,13 @@ max 255).
 
 **Internal target types (require `targetEntityId`, resolved project-scoped):** ASSET
 (includes boundaries via `AssetType.BOUNDARY`), REQUIREMENT, CONTROL, RISK_SCENARIO,
-OBSERVATION, RISK_ASSESSMENT_RESULT, VERIFICATION_RESULT, FINDING (per GC-H009 —
-governed vulnerability/scan/pentest finding records), EVIDENCE (per GC-L006 / ADR-045
-projection alignment — `targetEntityId` must reference an `EvidenceArtifact` UUID
+OBSERVATION, RISK_ASSESSMENT_RESULT, VERIFICATION_RESULT, FINDING (per GC-H009: governed vulnerability/scan/pentest finding records), EVIDENCE (per GC-L006 / ADR-045
+projection alignment—`targetEntityId` must reference an `EvidenceArtifact` UUID
 returned by `POST /api/v1/evidence-artifacts`).
 
-**External target types (require `targetIdentifier`):** ARCHITECTURE_MODEL (e.g. C4
+**External target types (require `targetIdentifier`):** ARCHITECTURE_MODEL (for example, C4
 source or Structurizr DSL, per ADR-011), CODE (repo-relative path), ISSUE (GitHub
-issue or PR number), EXTERNAL (catch-all — also covers CVE identifiers, scanner
+issue or PR number), EXTERNAL (catch-all that also covers CVE identifiers, scanner
 finding IDs, and pentest report IDs that have not been ingested as first-class
 `Finding` records).
 
@@ -993,17 +992,17 @@ association).
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/risk-scenarios` | RiskScenarioRequest | 201 | Create risk scenario |
-| GET | `/risk-scenarios` | — | 200 | List risk scenarios for a project |
-| GET | `/risk-scenarios/{id}` | — | 200 | Get risk scenario by UUID |
-| GET | `/risk-scenarios/uid/{uid}` | — | 200 | Get risk scenario by UID |
+| GET | `/risk-scenarios` |—| 200 | List risk scenarios for a project |
+| GET | `/risk-scenarios/{id}` |—| 200 | Get risk scenario by UUID |
+| GET | `/risk-scenarios/uid/{uid}` |—| 200 | Get risk scenario by UID |
 | PUT | `/risk-scenarios/{id}` | UpdateRiskScenarioRequest | 200 | Update mutable fields |
-| DELETE | `/risk-scenarios/{id}` | — | 204 | Delete risk scenario |
+| DELETE | `/risk-scenarios/{id}` |—| 204 | Delete risk scenario |
 | PUT | `/risk-scenarios/{id}/status` | `{"status": "ACTIVE"}` | 200 | Transition lifecycle status |
-| GET | `/risk-scenarios/{id}/requirements` | — | 200 | List requirements linked to a risk scenario |
-| GET | `/risk-scenarios/{id}/trace` | — | 200 | End-to-end security trace: assets, controls, requirements, and per-requirement implementing artifacts |
+| GET | `/risk-scenarios/{id}/requirements` |—| 200 | List requirements linked to a risk scenario |
+| GET | `/risk-scenarios/{id}/trace` |—| 200 | End-to-end security trace: assets, controls, requirements, and per-requirement implementing artifacts |
 | POST | `/risk-scenarios/{id}/links` | RiskScenarioLinkRequest | 201 | Create risk-scenario link |
-| GET | `/risk-scenarios/{id}/links` | — | 200 | List links for a risk scenario |
-| DELETE | `/risk-scenarios/{id}/links/{linkId}` | — | 204 | Delete risk-scenario link |
+| GET | `/risk-scenarios/{id}/links` |—| 200 | List links for a risk scenario |
+| DELETE | `/risk-scenarios/{id}/links/{linkId}` |—| 204 | Delete risk-scenario link |
 
 All endpoints accept an optional `project` query parameter (required in multi-project deployments).
 
@@ -1019,14 +1018,14 @@ issues, and controls). Unknown `id` → 404 `not_found`.
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/methodology-profiles` | MethodologyProfileRequest | 201 | Create methodology profile |
-| GET | `/methodology-profiles` | — | 200 | List methodology profiles for a project (auto-seeds defaults on first read) |
-| GET | `/methodology-profiles/{id}` | — | 200 | Get methodology profile by UUID |
+| GET | `/methodology-profiles` |—| 200 | List methodology profiles for a project (auto-seeds defaults on first read) |
+| GET | `/methodology-profiles/{id}` |—| 200 | Get methodology profile by UUID |
 | PUT | `/methodology-profiles/{id}` | UpdateMethodologyProfileRequest | 200 | Update mutable fields |
-| DELETE | `/methodology-profiles/{id}` | — | 204 | Delete methodology profile |
+| DELETE | `/methodology-profiles/{id}` |—| 204 | Delete methodology profile |
 
 All endpoints accept an optional `project` query parameter (required in multi-project deployments).
 
-**MethodologyProfileRequest fields:** `profileKey` (required, max 100), `name` (required, max 200), `version` (required, max 50), `family` (required, enum: FAIR, NIST_SP800_30_R1, ISO_27005, CUSTOM), `description` (optional), `inputSchema` (optional JSON object — methodology assessment input vocabulary), `outputSchema` (optional JSON object — methodology assessment output vocabulary), `treatmentStrategyVocabulary` (optional JSON object — strategy vocabulary keyed by stable strategy key; the value object is profile/pack-defined and may carry display labels, semantics, or other metadata), `status` (optional, enum: ACTIVE, DEPRECATED; defaults to ACTIVE).
+**MethodologyProfileRequest fields:** `profileKey` (required, max 100), `name` (required, max 200), `version` (required, max 50), `family` (required, enum: FAIR, NIST_SP800_30_R1, ISO_27005, CUSTOM), `description` (optional), `inputSchema` (optional JSON object: methodology assessment input vocabulary), `outputSchema` (optional JSON object: methodology assessment output vocabulary), `treatmentStrategyVocabulary` (optional JSON object—strategy vocabulary keyed by stable strategy key; the value object is profile/pack-defined and may carry display labels, semantics, or other metadata), `status` (optional, enum: ACTIVE, DEPRECATED; defaults to ACTIVE).
 
 `UpdateMethodologyProfileRequest` carries the same field set minus `profileKey`; null fields are left unchanged.
 
@@ -1037,19 +1036,19 @@ All endpoints accept an optional `project` query parameter (required in multi-pr
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/treatment-plans` | TreatmentPlanRequest | 201 | Create treatment plan |
-| GET | `/treatment-plans` | — | 200 | List treatment plans for a project (optional `riskRegisterRecordId` filter) |
-| GET | `/treatment-plans/{id}` | — | 200 | Get treatment plan by UUID |
+| GET | `/treatment-plans` |—| 200 | List treatment plans for a project (optional `riskRegisterRecordId` filter) |
+| GET | `/treatment-plans/{id}` |—| 200 | Get treatment plan by UUID |
 | PUT | `/treatment-plans/{id}` | UpdateTreatmentPlanRequest | 200 | Update mutable fields |
 | PUT | `/treatment-plans/{id}/status` | `{"status": "IN_PROGRESS"}` | 200 | Transition lifecycle status |
-| DELETE | `/treatment-plans/{id}` | — | 204 | Delete treatment plan |
+| DELETE | `/treatment-plans/{id}` |—| 204 | Delete treatment plan |
 
 All endpoints accept an optional `project` query parameter (required in multi-project deployments).
 
-**TreatmentPlanRequest fields:** `uid` (required, max 50, unique per project), `title` (required, max 200), `riskRegisterRecordId` (required, UUID), `riskScenarioId` (optional, UUID; must belong to the linked register record's scenarios), `strategy` (required, enum: MITIGATE, ACCEPT, TRANSFER, SHARE, AVOID, OTHER), `methodologyProfileId` (optional, UUID; required when `strategy = OTHER`), `methodologyStrategyKey` (optional, max 100; required when `strategy = OTHER`, must exist in the resolved profile's `treatmentStrategyVocabulary`), `owner` (optional, max 200), `rationale` (optional), `dueDate` (optional, ISO-8601 instant), `status` (optional, defaults to PLANNED), `actionItems` (optional list of JSON objects), `reassessmentTriggers` (optional list of strings).
+**TreatmentPlanRequest fields:** `uid` (required, max 50, unique per project), `title` (required, max 200), `riskRegisterRecordId` (required, UUID), `riskScenarioId` (optional, UUID; must belong to the linked register record's scenarios), `strategy` (required, enum: MITIGATE, ACCEPT, TRANSFER, SHARE, AVOID, OTHER), `methodologyProfileId` (optional, UUID; required when `strategy = OTHER`), `methodologyStrategyKey` (optional, max 100; required when `strategy = OTHER`, must exist in the resolved profile's `treatmentStrategyVocabulary`), `owner` (optional, max 200), `rationale` (optional), `dueDate` (optional, ISO-8601 instant), `status` (optional, defaults to PLANNED), `actionItems` (optional list of typed action items: each requires `owner` [max 200], `dueDate` [ISO-8601 instant], `status` [enum PLANNED/IN_PROGRESS/BLOCKED/DONE/CANCELED]; optional `assignee` [max 200] and `description` [max 4000]), `reassessmentTriggers` (optional list of strings).
 
 `UpdateTreatmentPlanRequest` carries the mutable subset; null fields are left unchanged.
 
-**Methodology binding (GC-T004 / C5):** when the resulting `strategy` is `OTHER`, the request must resolve a `methodologyProfileId` (same-project lookup; cross-project or non-existent → 404 `not_found`) and a `methodologyStrategyKey` that exists in that profile's `treatmentStrategyVocabulary` (missing/blank/non-member → 400 `validation_error`). When the resulting strategy is one of the canonical five, the service silently clears any stored profile/key pair — supplied methodology fields are ignored rather than rejected.
+**Methodology binding (GC-T004 / C5):** when the resulting `strategy` is `OTHER`, the request must resolve a `methodologyProfileId` (same-project lookup; cross-project or non-existent → 404 `not_found`) and a `methodologyStrategyKey` that exists in that profile's `treatmentStrategyVocabulary` (missing/blank/non-member → 400 `validation_error`). When the resulting strategy is one of the canonical five, the service silently clears any stored profile/key pair—supplied methodology fields are ignored rather than rejected.
 
 **Lifecycle states:** PLANNED → IN_PROGRESS → {BLOCKED, COMPLETED, CANCELED}; BLOCKED → IN_PROGRESS or CANCELED; PLANNED → CANCELED. COMPLETED and CANCELED are terminal.
 
@@ -1058,15 +1057,15 @@ All endpoints accept an optional `project` query parameter (required in multi-pr
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/findings` | FindingRequest | 201 | Create finding |
-| GET | `/findings` | — | 200 | List findings for a project |
-| GET | `/findings/{id}` | — | 200 | Get finding by UUID |
-| GET | `/findings/uid/{uid}` | — | 200 | Get finding by UID |
+| GET | `/findings` |—| 200 | List findings for a project |
+| GET | `/findings/{id}` |—| 200 | Get finding by UUID |
+| GET | `/findings/uid/{uid}` |—| 200 | Get finding by UID |
 | PUT | `/findings/{id}` | UpdateFindingRequest | 200 | Update mutable fields |
-| DELETE | `/findings/{id}` | — | 204 | Delete finding (cascades to links) |
+| DELETE | `/findings/{id}` |—| 204 | Delete finding (cascades to links) |
 | PUT | `/findings/{id}/status` | `{"status": "REMEDIATION_IN_PROGRESS"}` | 200 | Transition lifecycle status |
 | POST | `/findings/{id}/links` | FindingLinkRequest | 201 | Create finding link |
-| GET | `/findings/{id}/links` | — | 200 | List links for a finding |
-| DELETE | `/findings/{id}/links/{linkId}` | — | 204 | Delete finding link |
+| GET | `/findings/{id}/links` |—| 200 | List links for a finding |
+| DELETE | `/findings/{id}/links/{linkId}` |—| 204 | Delete finding link |
 
 All endpoints accept an optional `project` query parameter (same semantics as the
 Threat Model endpoints above).
@@ -1094,7 +1093,7 @@ MEDIUM, LOW, INFORMATIONAL), `description` (required), `rootCauseAnalysis` (opti
 `clearOwner` (boolean), `clearDueDate` (boolean). Only fields present in the request
 body are updated. Required fields (`title`, `description`) reject blank strings
 server-side with 422 `validation_error` when present. Optional fields cannot be
-cleared by sending `null` (which means "no change") — set the corresponding `clear*`
+cleared by sending `null` (which means "no change")—set the corresponding `clear*`
 flag to `true` to explicitly null them. When a `clear*` flag is true, any value
 supplied in the corresponding field is ignored.
 
@@ -1124,7 +1123,7 @@ remediated by a plan or control), ASSOCIATED (generic association).
 **Lifecycle states:** OPEN → REMEDIATION_IN_PROGRESS → REMEDIATION_COMPLETE →
 VERIFIED_CLOSED. `REMEDIATION_COMPLETE` can transition back to
 `REMEDIATION_IN_PROGRESS` when verification rejects the claimed remediation.
-`VERIFIED_CLOSED` is terminal — reopening a verified-closed finding creates a new
+`VERIFIED_CLOSED` is terminal—reopening a verified-closed finding creates a new
 finding rather than reanimating the closed record.
 
 ### Audits (GC-U001)
@@ -1132,15 +1131,15 @@ finding rather than reanimating the closed record.
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/audits` | AuditRequest | 201 | Create audit |
-| GET | `/audits` | — | 200 | List audits for a project |
-| GET | `/audits/{id}` | — | 200 | Get audit by UUID |
-| GET | `/audits/uid/{uid}` | — | 200 | Get audit by UID |
+| GET | `/audits` |—| 200 | List audits for a project |
+| GET | `/audits/{id}` |—| 200 | Get audit by UUID |
+| GET | `/audits/uid/{uid}` |—| 200 | Get audit by UID |
 | PUT | `/audits/{id}` | UpdateAuditRequest | 200 | Update mutable fields |
-| DELETE | `/audits/{id}` | — | 204 | Delete audit (cascades to links) |
+| DELETE | `/audits/{id}` |—| 204 | Delete audit (cascades to links) |
 | PUT | `/audits/{id}/status` | `{"status": "IN_PROGRESS"}` | 200 | Transition lifecycle status |
 | POST | `/audits/{id}/links` | AuditLinkRequest | 201 | Create audit link |
-| GET | `/audits/{id}/links` | — | 200 | List links for an audit |
-| DELETE | `/audits/{id}/links/{linkId}` | — | 204 | Delete audit link |
+| GET | `/audits/{id}/links` |—| 200 | List links for an audit |
+| DELETE | `/audits/{id}/links/{linkId}` |—| 204 | Delete audit link |
 
 All endpoints accept an optional `project` query parameter (same semantics as other
 aggregate endpoints).
@@ -1189,10 +1188,10 @@ terminal.
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/control-tests` | ControlTestRequest | 201 | Create a control test evidence row |
-| GET | `/control-tests` | — | 200 | List control tests for a project (optional `controlId` filter) |
-| GET | `/control-tests/{id}` | — | 200 | Get control test by UUID |
+| GET | `/control-tests` |—| 200 | List control tests for a project (optional `controlId` filter) |
+| GET | `/control-tests/{id}` |—| 200 | Get control test by UUID |
 | PUT | `/control-tests/{id}` | UpdateControlTestRequest | 200 | Update mutable fields |
-| DELETE | `/control-tests/{id}` | — | 204 | Delete the control test row |
+| DELETE | `/control-tests/{id}` |—| 204 | Delete the control test row |
 
 All endpoints accept the same optional `project` query parameter as the rest of `/api/v1/**`.
 The control test is the durable, audited evidence record for one execution of a test plan
@@ -1201,14 +1200,14 @@ against a {@link Control}; it is not the same thing as a `ControlEffectivenessAs
 
 **ControlTestRequest fields:** `controlId` (required UUID, must belong to the same project),
 `uid` (required, max 50), `methodology` (required, ControlTestMethodology enum: INQUIRY,
-OBSERVATION, INSPECTION, RE_PERFORMANCE — PCAOB AS 2201 vocabulary), `testSteps` (required
+OBSERVATION, INSPECTION, RE_PERFORMANCE, per PCAOB AS 2201 vocabulary), `testSteps` (required
 TEXT), `expectedResults` (required TEXT), `actualResults` (required TEXT), `conclusion`
 (required, ControlTestConclusion enum: EFFECTIVE, INEFFECTIVE, NOT_TESTED), `testerIdentity`
-(required, max 200 — domain provenance; does **not** replace the authenticated audit actor),
+(required, max 200—domain provenance; does **not** replace the authenticated audit actor),
 `testDate` (required LocalDate, `@PastOrPresent`), `notes` (optional TEXT).
 
 **UpdateControlTestRequest fields:** `methodology`, `testSteps`, `expectedResults`,
-`actualResults`, `conclusion`, `testerIdentity`, `testDate`, `notes` — all optional; only
+`actualResults`, `conclusion`, `testerIdentity`, `testDate`, `notes`—all optional; only
 fields present in the request body are updated. `controlId` and `uid` are create-only
 (updates ignore them).
 
@@ -1217,10 +1216,10 @@ fields present in the request body are updated. `controlId` and `uid` are create
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/control-effectiveness-assessments` | ControlEffectivenessAssessmentRequest | 201 | Create an effectiveness rating row |
-| GET | `/control-effectiveness-assessments` | — | 200 | List assessments for a project (optional `controlId` filter) |
-| GET | `/control-effectiveness-assessments/{id}` | — | 200 | Get assessment by UUID |
+| GET | `/control-effectiveness-assessments` |—| 200 | List assessments for a project (optional `controlId` filter) |
+| GET | `/control-effectiveness-assessments/{id}` |—| 200 | Get assessment by UUID |
 | PUT | `/control-effectiveness-assessments/{id}` | UpdateControlEffectivenessAssessmentRequest | 200 | Update mutable fields |
-| DELETE | `/control-effectiveness-assessments/{id}` | — | 204 | Delete the assessment row |
+| DELETE | `/control-effectiveness-assessments/{id}` |—| 204 | Delete the assessment row |
 
 The assessment is the durable rating record. Design and operating effectiveness are stored
 as separate fields because a control can be well-designed but poorly operated, or vice versa
@@ -1231,7 +1230,7 @@ residual-risk computation itself. See ADR-039.
 **ControlEffectivenessAssessmentRequest fields:** `controlId` (required UUID, same project),
 `uid` (required, max 50), `designEffectiveness` (required, ControlEffectivenessRating enum:
 EFFECTIVE, PARTIALLY_EFFECTIVE, INEFFECTIVE), `operatingEffectiveness` (required, same enum),
-`assessedAt` (required LocalDate, `@PastOrPresent`), `assessor` (required, max 200 — domain
+`assessedAt` (required LocalDate, `@PastOrPresent`), `assessor` (required, max 200—domain
 provenance), `rationale` (optional TEXT), `notes` (optional TEXT), `supportingTestIds` (optional
 list of `ControlTest` UUIDs that support this assessment's operating-effectiveness judgment;
 every ID must resolve to a `ControlTest` belonging to the same control as the assessment;
@@ -1239,7 +1238,7 @@ duplicates are de-duplicated; null elements rejected with 422).
 
 **UpdateControlEffectivenessAssessmentRequest fields:** `designEffectiveness`,
 `operatingEffectiveness`, `assessedAt`, `assessor`, `rationale`, `notes`, `supportingTestIds`
-— all optional; `controlId` and `uid` are create-only. A non-null `supportingTestIds` replaces
+—all optional; `controlId` and `uid` are create-only. A non-null `supportingTestIds` replaces
 the existing list wholesale; pass `null` to leave it unchanged or an empty list to clear it.
 
 **Response includes `supportingTestIds`** as a `List<UUID>`. The graph projection emits one
@@ -1257,27 +1256,27 @@ Bidirectional many-to-many link between controls (catalog `Control` or `ScopedCo
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/scoped-control-implementations` | ScopedControlImplementationRequest | 201 | Create a project-scoped implementation record for a catalog control |
-| GET | `/scoped-control-implementations` | — | 200 | List SCIs for the project |
-| GET | `/scoped-control-implementations/{id}` | — | 200 | Get SCI by UUID |
+| GET | `/scoped-control-implementations` |—| 200 | List SCIs for the project |
+| GET | `/scoped-control-implementations/{id}` |—| 200 | Get SCI by UUID |
 | PUT | `/scoped-control-implementations/{id}` | UpdateScopedControlImplementationRequest | 200 | Update mutable fields |
-| DELETE | `/scoped-control-implementations/{id}` | — | 204 | Delete SCI |
+| DELETE | `/scoped-control-implementations/{id}` |—| 204 | Delete SCI |
 
-**ScopedControlImplementationRequest fields:** `uid` (required, max 50), `controlId` (required UUID), `name` (required, max 200), `implementationScope` (optional TEXT), `operationalAssetId` (optional UUID — boundary context).
+**ScopedControlImplementationRequest fields:** `uid` (required, max 50), `controlId` (required UUID), `name` (required, max 200), `implementationScope` (optional TEXT), `operationalAssetId` (optional UUID—boundary context).
 
 #### Risk-Control Mappings
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/risk-control-mappings` | RiskControlMappingRequest | 201 | Create a mapping between a control/SCI and a risk scenario/register record |
-| GET | `/risk-control-mappings` | — | 200 | List mappings for the project |
-| GET | `/risk-control-mappings/{id}` | — | 200 | Get mapping by UUID |
+| GET | `/risk-control-mappings` |—| 200 | List mappings for the project |
+| GET | `/risk-control-mappings/{id}` |—| 200 | Get mapping by UUID |
 | PUT | `/risk-control-mappings/{id}` | UpdateRiskControlMappingRequest | 200 | Update mutable fields (role, objective, scope, methodology influence) |
-| DELETE | `/risk-control-mappings/{id}` | — | 204 | Delete mapping |
+| DELETE | `/risk-control-mappings/{id}` |—| 204 | Delete mapping |
 | POST | `/risk-control-mappings/{id}/observations` | `{"observationId": "<uuid>"}` | 200 | Attach an observation (C8 provenance) |
-| DELETE | `/risk-control-mappings/{id}/observations/{observationId}` | — | 200 | Detach an observation |
+| DELETE | `/risk-control-mappings/{id}/observations/{observationId}` |—| 200 | Detach an observation |
 | POST | `/risk-control-mappings/{id}/evidence` | AddEvidenceRefRequest | 200 | Add an evidence reference (C8 provenance) |
 
-**RiskControlMappingRequest fields:** Exactly one of `controlId` / `scopedImplementationId` (control-side); exactly one of `riskScenarioId` / `riskRegisterRecordId` (risk-side); `controlRole` (required, `MappingControlRole`: `PREVENTIVE`, `DETECTIVE`, `CORRECTIVE`, `DETERRENT`, `COMPENSATING`, `RECOVERY`, `DIRECTIVE`); `mappingObjective` (optional TEXT); `mappingScope` (optional TEXT); `operationalAssetId` (optional UUID — C2 boundary context); `methodologyProfileId` (optional UUID — C4 profile); `methodologyInfluence` (optional JSON object — C4 validated against profile schema if profile provided). Violations of the exactly-one rules return 422.
+**RiskControlMappingRequest fields:** Exactly one of `controlId` / `scopedImplementationId` (control side); exactly one of `riskScenarioId` / `riskRegisterRecordId` (risk side); `controlRole` (required, `MappingControlRole`: `PREVENTIVE`, `DETECTIVE`, `CORRECTIVE`, `DETERRENT`, `COMPENSATING`, `RECOVERY`, `DIRECTIVE`); `mappingObjective` (optional TEXT); `mappingScope` (optional TEXT); `operationalAssetId` (optional UUID: C2 boundary context); `methodologyProfileId` (optional UUID: C4 profile); `methodologyInfluence` (optional JSON object—C4 validated against profile schema if profile provided). Violations of the "exactly one" rules return 422.
 
 **AddEvidenceRefRequest fields:** `evidenceRef` (required, opaque reference string), `evidenceNote` (optional TEXT), `evidenceArtifactId` (optional UUID to a formal `EvidenceArtifact`).
 
@@ -1285,10 +1284,10 @@ Bidirectional many-to-many link between controls (catalog `Control` or `ScopedCo
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| GET | `/analysis/risk-control/unmapped-scenarios` | — | 200 | C5a — Scenarios with no mapped controls |
-| GET | `/analysis/risk-control/unmapped-records` | — | 200 | C5b — Register records with no mapped controls (add `?transitive=true` for transitive form) |
-| GET | `/analysis/risk-control/unmapped-controls` | — | 200 | C6 — Controls not mapped to any relevant scenario (transitive-through-record) |
-| GET | `/analysis/risk-control/assessment-feed/{assessmentResultId}` | — | 200 | C7/C8 — Feed of effectiveness inputs and observation/evidence provenance for a risk assessment result |
+| GET | `/analysis/risk-control/unmapped-scenarios` |—| 200 | C5a—Scenarios with no mapped controls |
+| GET | `/analysis/risk-control/unmapped-records` |—| 200 | C5b—Register records with no mapped controls (add `?transitive=true` for transitive form) |
+| GET | `/analysis/risk-control/unmapped-controls` |—| 200 | C6—Controls not mapped to any relevant scenario (transitive-through-record) |
+| GET | `/analysis/risk-control/assessment-feed/{assessmentResultId}` |—| 200 | C7/C8—Feed of effectiveness inputs and observation/evidence provenance for a risk assessment result |
 
 The `unmapped-records` endpoint accepts `transitive` (boolean, default `true`). In transitive mode, a record is considered covered if all its linked scenarios have at least one mapped control; records with zero scenarios always appear in the result. The `assessment-feed` endpoint requires `?project=<slug>` and the assessment-result UUID in the path.
 
@@ -1297,8 +1296,8 @@ The `unmapped-records` endpoint accepts `transitive` (boolean, default `true`). 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/evidence-artifacts` | EvidenceArtifactRequest | 201 | Create a new summarized-evidence artifact |
-| GET | `/evidence-artifacts` | — | 200 | List artifacts (optional `evidenceType`, `includeSuperseded` filters) |
-| GET | `/evidence-artifacts/{id}` | — | 200 | Get an artifact by UUID |
+| GET | `/evidence-artifacts` |—| 200 | List artifacts (optional `evidenceType`, `includeSuperseded` filters) |
+| GET | `/evidence-artifacts/{id}` |—| 200 | Get an artifact by UUID |
 | POST | `/evidence-artifacts/{id}/supersede` | EvidenceArtifactRequest | 201 | Create a new artifact and link the prior one as superseded |
 
 The aggregate is append-only: there is no PUT and no DELETE. The only post-create
@@ -1310,7 +1309,7 @@ already-superseded prior return HTTP 409 `evidence_artifact_already_superseded`.
 max 200), `summary` (required TEXT, max 8000), `evidenceType` (required, one of
 `OBSERVATION_SUMMARY`, `CONTROL_TEST_SUMMARY`, `ASSURANCE_CONCLUSION`,
 `VERIFICATION_SUMMARY`, `ATTESTATION`, `MIXED`), `derivationMethod` (required, max
-200 — method/profile identifier), `derivedAt` (required Instant), `assuranceLevel`
+200—method/profile identifier), `derivedAt` (required Instant), `assuranceLevel`
 (optional, one of `L0`-`L3`), `confidence` (optional, max 50), `notes` (optional
 TEXT, max 4000), `sources` (required non-empty list, max 100). Each source
 carries `sourceKind` (one of `OBSERVATION`, `CONTROL_TEST`,
@@ -1336,15 +1335,15 @@ replacement once supersede has run.
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/test-cases` | TestCaseRequest | 201 | Create a project-scoped test-case definition |
-| GET | `/test-cases` | — | 200 | List test cases in a project (ordered by `createdAt DESC`) |
-| GET | `/test-cases/{id}` | — | 200 | Get a test case by UUID |
-| GET | `/test-cases/uid/{uid}` | — | 200 | Get a test case by project-scoped UID |
+| GET | `/test-cases` |—| 200 | List test cases in a project (ordered by `createdAt DESC`) |
+| GET | `/test-cases/{id}` |—| 200 | Get a test case by UUID |
+| GET | `/test-cases/uid/{uid}` |—| 200 | Get a test case by project-scoped UID |
 | PUT | `/test-cases/{id}` | UpdateTestCaseRequest | 200 | Update mutable fields (null = no change) |
 | PUT | `/test-cases/{id}/status` | TestCaseStatusTransitionRequest | 200 | Transition the lifecycle status |
-| DELETE | `/test-cases/{id}` | — | 204 | Delete the test case |
+| DELETE | `/test-cases/{id}` |—| 204 | Delete the test case |
 
 The `TestCase` aggregate is a reusable, version-controlled, project-scoped definition of an
-intended test. It is **definition-only** — it does not record executions, results, suites, or
+intended test. It is **definition-only**—it does not record executions, results, suites, or
 defects. Those are future aggregates that reference test cases through the existing
 project-scoped link patterns. See ADR-040.
 
@@ -1352,12 +1351,12 @@ project-scoped link patterns. See ADR-040.
 max 200), `type` (required, `TestCaseType` enum: `MANUAL`, `AUTOMATED`, `HYBRID`),
 `priority` (required, `TestCasePriority` enum: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`),
 `format` (optional, `TestCaseFormat` enum: `STEP_BASED`, `GHERKIN`; defaults to `STEP_BASED`
-and is immutable after create — see TC-004 / ADR-042),
+and is immutable after create—see TC-004 / ADR-042),
 `description` (optional TEXT, Markdown by convention), `preconditions` (optional TEXT),
 `postconditions` (optional TEXT), `estimatedDurationSeconds` (optional non-negative `Long`).
 
 **UpdateTestCaseRequest fields:** `title`, `type`, `priority`, `description`, `preconditions`,
-`postconditions`, `estimatedDurationSeconds` — all optional with null-means-no-change. `uid`
+`postconditions`, `estimatedDurationSeconds`—all optional with null-means-no-change. `uid`
 is create-only.
 
 **TestCaseStatusTransitionRequest fields:** `status` (required, `TestCaseStatus` enum).
@@ -1375,10 +1374,10 @@ and rendered as Markdown by clients; no HTML sanitizer is wired through this sur
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/test-cases/{testCaseId}/steps` | TestCaseStepRequest | 201 | Create a step in a test case |
-| GET | `/test-cases/{testCaseId}/steps` | — | 200 | List steps ordered by `stepNumber` ascending |
-| GET | `/test-cases/{testCaseId}/steps/{stepId}` | — | 200 | Get one step |
+| GET | `/test-cases/{testCaseId}/steps` |—| 200 | List steps ordered by `stepNumber` ascending |
+| GET | `/test-cases/{testCaseId}/steps/{stepId}` |—| 200 | Get one step |
 | PUT | `/test-cases/{testCaseId}/steps/{stepId}` | UpdateTestCaseStepRequest | 200 | Update step fields (null = no change) |
-| DELETE | `/test-cases/{testCaseId}/steps/{stepId}` | — | 204 | Delete a step |
+| DELETE | `/test-cases/{testCaseId}/steps/{stepId}` |—| 204 | Delete a step |
 
 Steps are an ordered child collection of a test case. Each step carries a `stepNumber` (unique
 within its test case, positive), an `action` (what to do), an `expectedResult` (what should
@@ -1390,8 +1389,8 @@ binary storage (see ADR-041 §Rich text and inline images).
 **TestCaseStepRequest fields:** `stepNumber` (required positive `Integer`), `action` (required,
 max 10000), `expectedResult` (required, max 10000), `actualResult` (optional, max 10000).
 
-**UpdateTestCaseStepRequest fields:** `stepNumber`, `action`, `expectedResult`, `actualResult`
-— all optional with null-means-no-change — plus `clearActualResult: true` to wipe the
+**UpdateTestCaseStepRequest fields:** `stepNumber`, `action`, `expectedResult`, `actualResult`:
+all optional with null-means-no-change, plus `clearActualResult: true` to wipe the
 `actualResult` to null (same partial-update convention as `UpdateTestCaseRequest`).
 
 Duplicate `stepNumber` within a test case returns HTTP 409. Non-positive `stepNumber` and
@@ -1399,8 +1398,8 @@ oversize rich-text fields return HTTP 422. A step request against a test case th
 the resolved project returns HTTP 404. Deleting the parent test case cascade-deletes its
 steps service-side so Envers captures each step's delete revision.
 
-A step request against a parent test case whose `format` is not `STEP_BASED` (e.g. a
-Gherkin test case) returns HTTP 409 with a message identifying the actual format — steps
+A step request against a parent test case whose `format` is not `STEP_BASED` (for example, a
+Gherkin test case) returns HTTP 409 with a message identifying the actual format—steps
 and Gherkin source are mutually exclusive authored formats (TC-004 / ADR-042).
 
 ### Test Case BDD/Gherkin Format (TC-004 / ADR-042)
@@ -1408,9 +1407,9 @@ and Gherkin source are mutually exclusive authored formats (TC-004 / ADR-042).
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/test-cases/{testCaseId}/gherkin` | TestCaseGherkinRequest | 201 | Attach Gherkin source to a `GHERKIN`-format test case |
-| GET | `/test-cases/{testCaseId}/gherkin` | — | 200 | Retrieve the Gherkin source |
+| GET | `/test-cases/{testCaseId}/gherkin` |—| 200 | Retrieve the Gherkin source |
 | PUT | `/test-cases/{testCaseId}/gherkin` | UpdateTestCaseGherkinRequest | 200 | Replace the Gherkin source |
-| DELETE | `/test-cases/{testCaseId}/gherkin` | — | 204 | Remove the Gherkin source |
+| DELETE | `/test-cases/{testCaseId}/gherkin` |—| 204 | Remove the Gherkin source |
 
 Gherkin support is a singleton sub-resource: each test case carries at most one Gherkin
 document (UNIQUE on `test_case_id` at the schema layer; HTTP 409 from POST when one already
@@ -1421,7 +1420,7 @@ tests, evaluates expressions, fetches remote includes, or runs Cucumber hooks.
 **TestCaseGherkinRequest fields:** `source` (required, max 102400 chars, must parse as
 Gherkin with at least one `Feature` and at least one `Scenario`/`Scenario Outline`).
 
-**UpdateTestCaseGherkinRequest fields:** `source` (required, same constraints — full
+**UpdateTestCaseGherkinRequest fields:** `source` (required, same constraints—full
 replacement, no null-means-no-change semantic because the resource is a single field).
 
 **Format gating.** Both POST and PUT require the parent test case's `format` to be
@@ -1436,7 +1435,7 @@ may not have a Gherkin document (TC-004 / ADR-042 §Format axis).
 
 Parser failures, oversize source, missing scenarios, or `Scenario Outline` without
 `Examples` return HTTP 422 with code `invalid_gherkin_source`. Error details carry
-line / column / keyword / field metadata only — never the source text, parser stack
+line / column / keyword / field metadata only—never the source text, parser stack
 traces, file paths, or `Examples` cell content.
 
 Deleting the parent test case cascade-deletes the Gherkin document service-side so
@@ -1447,16 +1446,16 @@ Envers captures the delete revision (mirrors the step-cascade pattern in ADR-041
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/test-cases/folders` | TestCaseFolderRequest | 201 | Create a folder under a project (root) or under another folder |
-| GET | `/test-cases/folders` | — | 200 | List folders in a project (ordered by `sortOrder`) |
-| GET | `/test-cases/folders/{id}` | — | 200 | Get a folder by id |
+| GET | `/test-cases/folders` |—| 200 | List folders in a project (ordered by `sortOrder`) |
+| GET | `/test-cases/folders/{id}` |—| 200 | Get a folder by id |
 | PUT | `/test-cases/folders/{id}` | UpdateTestCaseFolderRequest | 200 | Rename / re-describe a folder |
-| DELETE | `/test-cases/folders/{id}` | — | 204 | Delete an **empty** folder (subfolders / test cases must be moved or deleted first) |
+| DELETE | `/test-cases/folders/{id}` |—| 204 | Delete an **empty** folder (subfolders / test cases must be moved or deleted first) |
 | PUT | `/test-cases/folders/{id}/move` | MoveTestCaseFolderRequest | 200 | Move a folder to a new container (cycle / cross-project rejected) |
 | PUT | `/test-cases/folders/reorder` | ReorderTestCaseFoldersRequest | 204 | Bulk reorder folders within one container |
 | PUT | `/test-cases/{id}/move` | MoveTestCaseRequest | 200 | Move a test case into a folder (or to the project root) |
 | POST | `/test-cases/{id}/copy` | CopyTestCaseRequest | 201 | Copy a test case, cloning steps / Gherkin source |
 | PUT | `/test-cases/reorder` | ReorderTestCasesRequest | 204 | Bulk reorder test cases within one container |
-| GET | `/test-cases/tree` | — | 200 | Nested tree of folders and test cases for the project |
+| GET | `/test-cases/tree` |—| 200 | Nested tree of folders and test cases for the project |
 
 A `TestCaseFolder` is the test-repository organisation aggregate. It is project-scoped, self-referencing
 (nullable `parent`), `@Audited`, container-locally ordered by `sortOrder`, and uniquely titled per
@@ -1476,16 +1475,16 @@ plus `clearDescription: true` to wipe `description` to null (same partial-update
 
 **ReorderTestCaseFoldersRequest / ReorderTestCasesRequest fields:** `parentFolderId` (required; null
 = root), `orderedFolderIds` / `orderedTestCaseIds` (required, must contain exactly the current
-siblings — partial reorders are rejected with HTTP 409).
+siblings—partial reorders are rejected with HTTP 409).
 
 **CopyTestCaseRequest fields:** `newUid` (required, max 50, must not collide with an existing UID in
-the same project), `parentFolderId` (explicit target — same convention as `MoveTestCaseRequest`:
+the same project), `parentFolderId` (explicit target—same convention as `MoveTestCaseRequest`:
 `null` or omitted = project root, UUID = that folder), `sortOrder` (optional; defaults to max+1 in
 the target container). Callers that want to clone in place must pass the source's `parentFolderId`
 explicitly. The copy clones every immutable definition field (title, description, preconditions,
 postconditions, priority, type, format, estimatedDurationSeconds), resets `status` to `DRAFT`,
 and clones authored children via their owning services (`TestCaseStepService.copyStepsToTestCase`,
-`TestCaseGherkinService.copyGherkinToTestCase`). Step `actualResult` is **not** copied — it is
+`TestCaseGherkinService.copyGherkinToTestCase`). Step `actualResult` is **not** copied; it is
 run-time evidence, not part of the definition.
 
 **TestCaseFolderResponse fields:** `id`, `projectIdentifier`, `parentFolderId`, `title`,
@@ -1508,12 +1507,12 @@ Copying with a colliding `newUid` returns HTTP 409.
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/test-plans` | TestPlanRequest | 201 | Create a project-scoped test plan |
-| GET | `/test-plans` | — | 200 | List test plans in a project (ordered by `createdAt DESC`) |
-| GET | `/test-plans/{id}` | — | 200 | Get a test plan by UUID |
-| GET | `/test-plans/uid/{uid}` | — | 200 | Get a test plan by project-scoped UID |
+| GET | `/test-plans` |—| 200 | List test plans in a project (ordered by `createdAt DESC`) |
+| GET | `/test-plans/{id}` |—| 200 | Get a test plan by UUID |
+| GET | `/test-plans/uid/{uid}` |—| 200 | Get a test plan by project-scoped UID |
 | PUT | `/test-plans/{id}` | UpdateTestPlanRequest | 200 | Update mutable fields (null = no change; `clearXxx: true` = clear) |
 | PUT | `/test-plans/{id}/status` | TestPlanStatusTransitionRequest | 200 | Transition the lifecycle status |
-| DELETE | `/test-plans/{id}` | — | 204 | Delete the test plan |
+| DELETE | `/test-plans/{id}` |—| 204 | Delete the test plan |
 
 A `TestPlan` is the top-level planning container for a testing effort. It is project-scoped,
 flat (plans do not nest), and carries scope metadata (name, description), release coordinates
@@ -1528,7 +1527,7 @@ max 200), `description` (optional, max 8192), `product` (optional, max 200), `ve
 `endDate` (optional, ISO-8601 date; must be `>= startDate` when both are set).
 
 **UpdateTestPlanRequest fields:** `name`, `description`, `product`, `version`, `build`,
-`startDate`, `endDate` — all optional with null-means-no-change — plus
+`startDate`, `endDate`: all optional with null-means-no-change, plus
 `clearDescription`, `clearProduct`, `clearVersion`, `clearBuild`, `clearStartDate`,
 `clearEndDate` flags to wipe the matching field to null (same partial-update convention as
 `UpdateTestCaseRequest`). `uid` is create-only.
@@ -1548,33 +1547,33 @@ project returns HTTP 409. An inverted `startDate` / `endDate` pair surfaces as H
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/test-suites` | TestSuiteRequest | 201 | Create a project-scoped test suite with an immutable `populationMode` |
-| GET | `/test-suites` | — | 200 | List test suites in a project (ordered by `createdAt DESC`) |
-| GET | `/test-suites/{id}` | — | 200 | Get a test suite by UUID |
-| GET | `/test-suites/uid/{uid}` | — | 200 | Get a test suite by project-scoped UID |
-| PUT | `/test-suites/{id}` | UpdateTestSuiteRequest | 200 | Update mutable fields (null = no change; `clearXxx: true` = clear) — `populationMode` is immutable |
-| DELETE | `/test-suites/{id}` | — | 204 | Delete the test suite (cascades members / source requirements) |
-| GET | `/test-suites/{id}/test-cases` | — | 200 | RESOLVE — return the suite's test cases dispatched on `populationMode` |
-| POST | `/test-suites/{id}/members` | AddTestSuiteMemberRequest | 201 | STATIC only — add a test case to the suite |
-| GET | `/test-suites/{id}/members` | — | 200 | STATIC only — list members in position order |
-| DELETE | `/test-suites/{id}/members/{testCaseId}` | — | 204 | STATIC only — remove a member |
-| PUT | `/test-suites/{id}/members/reorder` | ReorderTestSuiteMembersRequest | 200 | STATIC only — reorder members |
-| POST | `/test-suites/{id}/source-requirements` | AddTestSuiteSourceRequirementRequest | 201 | REQUIREMENTS_BASED only — add a source requirement |
-| GET | `/test-suites/{id}/source-requirements` | — | 200 | REQUIREMENTS_BASED only — list sources |
-| DELETE | `/test-suites/{id}/source-requirements/{requirementId}` | — | 204 | REQUIREMENTS_BASED only — remove a source |
+| GET | `/test-suites` |—| 200 | List test suites in a project (ordered by `createdAt DESC`) |
+| GET | `/test-suites/{id}` |—| 200 | Get a test suite by UUID |
+| GET | `/test-suites/uid/{uid}` |—| 200 | Get a test suite by project-scoped UID |
+| PUT | `/test-suites/{id}` | UpdateTestSuiteRequest | 200 | Update mutable fields (null = no change; `clearXxx: true` = clear)—`populationMode` is immutable |
+| DELETE | `/test-suites/{id}` |—| 204 | Delete the test suite (cascades members / source requirements) |
+| GET | `/test-suites/{id}/test-cases` |—| 200 | RESOLVE—return the suite's test cases dispatched on `populationMode` |
+| POST | `/test-suites/{id}/members` | AddTestSuiteMemberRequest | 201 | STATIC only—add a test case to the suite |
+| GET | `/test-suites/{id}/members` |—| 200 | STATIC only—list members in position order |
+| DELETE | `/test-suites/{id}/members/{testCaseId}` |—| 204 | STATIC only—remove a member |
+| PUT | `/test-suites/{id}/members/reorder` | ReorderTestSuiteMembersRequest | 200 | STATIC only—reorder members |
+| POST | `/test-suites/{id}/source-requirements` | AddTestSuiteSourceRequirementRequest | 201 | REQUIREMENTS_BASED only—add a source requirement |
+| GET | `/test-suites/{id}/source-requirements` |—| 200 | REQUIREMENTS_BASED only—list sources |
+| DELETE | `/test-suites/{id}/source-requirements/{requirementId}` |—| 204 | REQUIREMENTS_BASED only—remove a source |
 
 A `TestSuite` is the selection container for test cases inside a project. It carries a single
 **immutable** `populationMode` chosen at create time:
 
-- `STATIC` — manually selected test cases held as explicit `test_suite_member` rows. Add /
+- `STATIC`—manually selected test cases held as explicit `test_suite_member` rows. Add /
   remove / reorder via the `/members` endpoints. Resolve returns members in `position` order.
-- `REQUIREMENTS_BASED` — auto-populated from one or more source requirements. Add / remove via
+- `REQUIREMENTS_BASED`—auto-populated from one or more source requirements. Add / remove via
   the `/source-requirements` endpoints. Resolve returns the test cases linked to those
   requirements through `TraceabilityLink` rows whose `linkType = TESTS` and
   `artifactType = TEST` (the `artifactIdentifier` is the test case's project-scoped UID).
-- `QUERY_BASED` — auto-populated from typed filter criteria stored as columns on the suite
+- `QUERY_BASED`—auto-populated from typed filter criteria stored as columns on the suite
   (`criteriaStatus`, `criteriaType`, `criteriaPriority`, `criteriaFormat`, `criteriaFolderId`,
   `criteriaTextSearch`). Resolve runs the criteria against the test-case repository at
-  read time; results are **dynamic** — they change as matching cases change. At least one
+  read time; results are **dynamic**—they change as matching cases change. At least one
   criterion must be set on create and on every update.
 
 **Mode immutability.** Switching modes would orphan member / source / criteria state and
@@ -1591,10 +1590,10 @@ promote it to a pageable parameter.
 max 200), `description` (optional, max 8192), `populationMode` (required, one of `STATIC`,
 `REQUIREMENTS_BASED`, `QUERY_BASED`), plus per-mode criteria fields valid only for
 `QUERY_BASED` (`criteriaStatus`, `criteriaType`, `criteriaPriority`, `criteriaFormat`,
-`criteriaFolderId`, `criteriaTextSearch` — max 200).
+`criteriaFolderId`, `criteriaTextSearch`—max 200).
 
-**UpdateTestSuiteRequest fields:** `name`, `description`, all `criteriaXxx` fields — all
-optional with null-means-no-change — plus `clearDescription`, `clearCriteriaStatus`,
+**UpdateTestSuiteRequest fields:** `name`, `description`, all `criteriaXxx` fields: all
+optional with null-means-no-change, plus `clearDescription`, `clearCriteriaStatus`,
 `clearCriteriaType`, `clearCriteriaPriority`, `clearCriteriaFormat`,
 `clearCriteriaFolderId`, `clearCriteriaTextSearch` flags to wipe the matching field to
 null. `uid` and `populationMode` are create-only.
@@ -1603,7 +1602,7 @@ null. `uid` and `populationMode` are create-only.
 non-negative; defaults to `max(position) + 1` for append-on-end semantics).
 
 **ReorderTestSuiteMembersRequest fields:** `orderedTestCaseIds` (required, non-empty). The
-list must contain exactly the current member test-case ids — no extras, no omissions, no
+list must contain exactly the current member test-case ids—no extras, no omissions, no
 duplicates. The reorder uses the same shared `SiblingOrderingHelper` as the test-case and
 test-case-folder reorder endpoints, so the error envelope matches: a set-mismatch returns
 HTTP 409 (the partial/mismatched-siblings case); a null/duplicate id in the input list
@@ -1623,18 +1622,18 @@ suite, or clearing the last criterion of a QUERY_BASED suite, returns HTTP 422
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/test-runs` | TestRunRequest | 201 | Create a project-scoped test run; snapshots the suite's resolved cases as `test_run_case_result` rows |
-| GET | `/test-runs` | — | 200 | List test runs in a project (ordered by `createdAt DESC`) |
-| GET | `/test-runs/{id}` | — | 200 | Get a test run by UUID |
-| GET | `/test-runs/uid/{uid}` | — | 200 | Get a test run by project-scoped UID |
+| GET | `/test-runs` |—| 200 | List test runs in a project (ordered by `createdAt DESC`) |
+| GET | `/test-runs/{id}` |—| 200 | Get a test run by UUID |
+| GET | `/test-runs/uid/{uid}` |—| 200 | Get a test run by project-scoped UID |
 | PUT | `/test-runs/{id}` | UpdateTestRunRequest | 200 | Update mutable fields (null = no change; `clearXxx: true` = clear) |
 | PUT | `/test-runs/{id}/status` | TestRunStatusTransitionRequest | 200 | Transition the lifecycle status |
-| DELETE | `/test-runs/{id}` | — | 204 | Delete the test run (cascades testers and case-result rows) |
+| DELETE | `/test-runs/{id}` |—| 204 | Delete the test run (cascades testers and case-result rows) |
 | POST | `/test-runs/{id}/testers` | AddTestRunTesterRequest | 201 | Assign a tester to the run |
-| GET | `/test-runs/{id}/testers` | — | 200 | List assigned testers |
-| DELETE | `/test-runs/{id}/testers/{testerName}` | — | 204 | Remove a tester |
-| GET | `/test-runs/{id}/results` | — | 200 | List per-case execution results (ordered by `snapshotOrder`) |
+| GET | `/test-runs/{id}/testers` |—| 200 | List assigned testers |
+| DELETE | `/test-runs/{id}/testers/{testerName}` |—| 204 | Remove a tester |
+| GET | `/test-runs/{id}/results` |—| 200 | List per-case execution results (ordered by `snapshotOrder`) |
 | PUT | `/test-runs/{id}/results/{testCaseId}` | UpdateTestRunCaseResultRequest | 200 | Update the per-case status and optional notes |
-| GET | `/test-runs/{id}/results/{caseResultId}/steps` | — | 200 | List per-step execution results for a case (TC-009 / ADR-050; ordered by `snapshotOrder`) |
+| GET | `/test-runs/{id}/results/{caseResultId}/steps` |—| 200 | List per-step execution results for a case (TC-009 / ADR-050; ordered by `snapshotOrder`) |
 | PUT | `/test-runs/{id}/results/{caseResultId}/steps/{stepResultId}` | UpdateTestRunStepResultRequest | 200 | Update per-step status, comment, and execution timestamp |
 | PUT | `/test-runs/{id}/cursor` | UpdateTestRunCursorRequest | 200 | Set / clear the pause-resume cursor (TC-009 / ADR-050) |
 
@@ -1651,7 +1650,7 @@ run: subsequent mutations to the source suite (member changes, criteria edits) d
 rewrite the run's case set. Each result row carries `testCaseUid`, `testCaseTitle`, and
 `snapshotOrder` snapshots captured at create time so later edits to the linked `TestCase`
 or its position in the source suite never rewrite historical evidence. `GET /test-runs/{id}/results`
-replays rows in `snapshotOrder` (the resolver's order at create time — author position for
+replays rows in `snapshotOrder` (the resolver's order at create time—author position for
 STATIC suites, UID order otherwise), not by the case's current UID.
 
 **TestRunRequest fields:** `uid` (required, max 50, unique per project), `name` (required,
@@ -1661,7 +1660,7 @@ max 200), `testPlanId` (required, UUID), `testSuiteId` (required, UUID), `enviro
 `>= startAt` when both are set).
 
 **UpdateTestRunRequest fields:** `name`, `environment`, `version`, `build`, `startAt`,
-`endAt` — all optional with null-means-no-change — plus `clearEnvironment`, `clearVersion`,
+`endAt`: all optional with null-means-no-change, plus `clearEnvironment`, `clearVersion`,
 `clearBuild`, `clearStartAt`, `clearEndAt` flags to wipe the matching field to null.
 `uid`, `testPlanId`, and `testSuiteId` are create-only.
 
@@ -1686,7 +1685,7 @@ returns HTTP 409.
 **UpdateTestRunCaseResultRequest fields:** `status` (required, `TestRunCaseResultStatus`
 enum: `NOT_RUN`, `PASSED`, `FAILED`, `BLOCKED`, `SKIPPED`), `notes` (optional, max 8192),
 `clearNotes` (boolean, wipes notes to null). There is no transition graph for
-per-case result status — a tester may flip a result freely as re-tests, descopes, and
+per-case result status—a tester may flip a result freely as re-tests, descopes, and
 unblocks happen over the life of a run. Attempting to update a result for a case that
 is not part of the run's snapshot returns HTTP 404.
 
@@ -1701,7 +1700,7 @@ vocabulary as the case-level status; no parallel enum is introduced. `GET
 and resume are persisted on the parent run via the
 `current_case_result_id` / `current_step_result_id` cursor columns; these are
 `@NotAudited` so cursor movement does not generate per-step `test_run_audit`
-revisions. Per-case status is NOT auto-rolled-up from per-step status — a tester may
+revisions. Per-case status is NOT auto-rolled-up from per-step status—a tester may
 mark a case `BLOCKED` even when some steps `PASSED` (and vice versa).
 
 **UpdateTestRunStepResultRequest fields:** `status` (required, `TestRunCaseResultStatus`
@@ -1713,7 +1712,7 @@ whose `stepResultId` is not part of the case-result, returns HTTP 404.
 
 **UpdateTestRunCursorRequest fields:** `currentCaseResultId` (optional UUID; must
 identify a case-result row that belongs to this run), `currentStepResultId` (optional
-UUID; must identify a step-result row that belongs to the supplied case-result —
+UUID; must identify a step-result row that belongs to the supplied case-result,
 and `currentCaseResultId` must therefore also be supplied), `clearCursor` (boolean;
 when true, both fields are nulled regardless of the supplied UUIDs). The cursor is
 ephemeral runner-UI state and is intentionally NOT audited.
@@ -1757,7 +1756,7 @@ Standard Spring Page parameters:
 |-----------|---------|-------------|
 | `page` | 0 | Page number (0-based) |
 | `size` | 20 | Page size |
-| `sort` | — | Sort field and direction (e.g. `sort=uid,asc`) |
+| `sort` | (none) | Sort field and direction (for example, `sort=uid,asc`) |
 
 Response wraps results in a Spring Page object with `content`, `totalElements`,
 `totalPages`, `number`, `size`.
@@ -1775,12 +1774,12 @@ the deployment env-var reference. The repo-local MCP helper forwards
 |--------|------|------|--------|---------|
 | POST | `/pack-registry` | RegisterPackRequest | 201 | Register pack version in catalog |
 | POST | `/pack-registry/import` | multipart/form-data | 201 | Import and register a pack from uploaded JSON |
-| GET | `/pack-registry` | — | 200 | List registry entries (optional `packType` filter) |
-| GET | `/pack-registry/{packId}` | — | 200 | List versions of a pack |
-| GET | `/pack-registry/{packId}/{version}` | — | 200 | Get specific pack version |
+| GET | `/pack-registry` |—| 200 | List registry entries (optional `packType` filter) |
+| GET | `/pack-registry/{packId}` |—| 200 | List versions of a pack |
+| GET | `/pack-registry/{packId}/{version}` |—| 200 | Get specific pack version |
 | PUT | `/pack-registry/{packId}/{version}` | UpdatePackRegistryEntryRequest | 200 | Update pack metadata |
-| PUT | `/pack-registry/{packId}/{version}/withdraw` | — | 200 | Withdraw pack version |
-| DELETE | `/pack-registry/{packId}/{version}` | — | 204 | Delete pack version |
+| PUT | `/pack-registry/{packId}/{version}/withdraw` |—| 200 | Withdraw pack version |
+| DELETE | `/pack-registry/{packId}/{version}` |—| 204 | Delete pack version |
 | POST | `/pack-registry/resolve` | ResolvePackRequest | 200 | Resolve version from registry |
 | POST | `/pack-registry/check-compatibility` | ResolvePackRequest | 200 | Check pack compatibility (returns boolean) |
 
@@ -1788,9 +1787,9 @@ For large catalogs, use `POST /pack-registry/import` instead of hand-authoring a
 giant JSON request body. The endpoint accepts a multipart `file` part plus an
 optional JSON `options` part. Supported formats are:
 
-- `AUTO` — detect OSCAL catalog JSON vs Ground Control manifest JSON
-- `OSCAL_JSON` — treat the file as an OSCAL catalog and flatten controls into a `CONTROL_PACK`
-- `GC_MANIFEST` — treat the file as a Ground Control pack manifest and register it directly
+- `AUTO`—detect OSCAL catalog JSON vs Ground Control manifest JSON
+- `OSCAL_JSON`—treat the file as an OSCAL catalog and flatten controls into a `CONTROL_PACK`
+- `GC_MANIFEST`—treat the file as a Ground Control pack manifest and register it directly
 
 `options` may override pack metadata such as `packId`, `version`, `publisher`,
 `description`, `sourceUrl`, `checksum`, `signatureInfo`, `compatibility`,
@@ -1811,10 +1810,10 @@ curl -X POST "http://localhost:8000/api/v1/pack-registry/import?project=ground-c
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/trust-policies` | CreateTrustPolicyRequest | 201 | Create trust policy |
-| GET | `/trust-policies` | — | 200 | List trust policies |
-| GET | `/trust-policies/{id}` | — | 200 | Get trust policy |
+| GET | `/trust-policies` |—| 200 | List trust policies |
+| GET | `/trust-policies/{id}` |—| 200 | Get trust policy |
 | PUT | `/trust-policies/{id}` | UpdateTrustPolicyRequest | 200 | Update trust policy |
-| DELETE | `/trust-policies/{id}` | — | 204 | Delete trust policy |
+| DELETE | `/trust-policies/{id}` |—| 204 | Delete trust policy |
 
 ### Pack Install Records
 
@@ -1822,8 +1821,8 @@ curl -X POST "http://localhost:8000/api/v1/pack-registry/import?project=ground-c
 |--------|------|------|--------|---------|
 | POST | `/pack-install-records/install` | InstallPackRequest | 201, 422 | Install pack via registry with trust evaluation |
 | POST | `/pack-install-records/upgrade` | InstallPackRequest | 200, 422 | Upgrade pack via registry with trust evaluation |
-| GET | `/pack-install-records` | — | 200 | List install records (optional `packId` filter) |
-| GET | `/pack-install-records/{id}` | — | 200 | Get install record |
+| GET | `/pack-install-records` |—| 200 | List install records (optional `packId` filter) |
+| GET | `/pack-install-records/{id}` |—| 200 | Get install record |
 
 ### Admin Users (ADR-037)
 
@@ -1834,13 +1833,13 @@ admin page operating under the signed-in operator's session.
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| GET | `/admin/users` | — | 200 | List users (`username`, `role`, `enabled`) |
+| GET | `/admin/users` |—| 200 | List users (`username`, `role`, `enabled`) |
 | POST | `/admin/users` | `CreateUserRequest` | 201, 409, 422 | Create user. `409 user_exists` on duplicate username; `422 validation_error` for bad username / short password. |
 | PATCH | `/admin/users/{username}/role` | `{"role":"USER"\|"ADMIN"}` | 200, 404, 409, 422 | Change role. `409 last_admin` refuses demoting the last enabled admin. |
 | PATCH | `/admin/users/{username}/enabled` | `{"enabled":bool}` | 200, 404, 409, 422 | Enable / disable. `409 last_admin` refuses disabling the last enabled admin. |
-| DELETE | `/admin/users/{username}` | — | 204, 404, 409 | Delete user. `409 last_admin` refuses deleting the last enabled admin. |
+| DELETE | `/admin/users/{username}` | (none) | 204, 404, 409 | Delete user. `409 last_admin` refuses deleting the last enabled admin. |
 
-`CreateUserRequest`: `{"username":"<lowercase, 2-64 chars, matches /^[a-z][a-z0-9._-]{1,63}$/>", "password":"<12-200 chars>", "role":"USER"\|"ADMIN"}`. Passwords are BCrypt-hashed server-side; the JSON never echoes the password back. First-admin bootstrap is out of band — see `DEPLOYMENT.md`'s Web UI login section.
+`CreateUserRequest`: `{"username":"<lowercase, 2-64 chars, matches /^[a-z][a-z0-9._-]{1,63}$/>", "password":"<12-200 chars>", "role":"USER"\|"ADMIN"}`. Passwords are BCrypt-hashed server-side; the JSON never echoes the password back. First-admin bootstrap is out of band; see `DEPLOYMENT.md`'s Web UI login section.
 
 For control packs, use `/pack-registry/import` or `/pack-registry` to persist the
 pack definition first, then call one of these routes with the `packId` and optional

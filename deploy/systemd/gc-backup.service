@@ -1,0 +1,30 @@
+[Unit]
+Description=Ground Control DB backup (GC-P021)
+Documentation=https://github.com/Brad-Edwards/Ground-Control/blob/main/docs/operations/backup-restore.md
+After=docker.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/gc/backup.sh
+ConditionPathExists=/opt/gc/.env
+
+[Service]
+Type=oneshot
+User=gc-backup
+Group=gc-backup
+ExecStart=/opt/gc/backup.sh
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=900
+
+# Hardening. ProtectSystem=strict makes the whole rootfs read-only
+# except for ReadWritePaths; ReadWritePaths must include /data/backups
+# (where the dump lands) and /var/lib/gc-backup (so ssh can update its
+# own known_hosts on first contact with aurora). The gc-backup home is
+# outside /home and /root, so ProtectHome=true does not block it.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/data/backups /var/lib/gc-backup
+
+[Install]
+WantedBy=multi-user.target

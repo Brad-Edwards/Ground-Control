@@ -4,6 +4,7 @@ import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.MethodologyProfileRepository;
@@ -12,8 +13,12 @@ import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioR
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.TreatmentPlanRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,18 +31,21 @@ public class TreatmentPlanService {
     private final RiskScenarioRepository riskScenarioRepository;
     private final MethodologyProfileRepository methodologyProfileRepository;
     private final ProjectService projectService;
+    private final Validator validator;
 
     public TreatmentPlanService(
             TreatmentPlanRepository repository,
             RiskRegisterRecordRepository riskRegisterRecordRepository,
             RiskScenarioRepository riskScenarioRepository,
             MethodologyProfileRepository methodologyProfileRepository,
-            ProjectService projectService) {
+            ProjectService projectService,
+            Validator validator) {
         this.repository = repository;
         this.riskRegisterRecordRepository = riskRegisterRecordRepository;
         this.riskScenarioRepository = riskScenarioRepository;
         this.methodologyProfileRepository = methodologyProfileRepository;
         this.projectService = projectService;
+        this.validator = validator;
     }
 
     public TreatmentPlan create(CreateTreatmentPlanCommand command) {
@@ -136,7 +144,7 @@ public class TreatmentPlanService {
             String owner,
             String rationale,
             java.time.Instant dueDate,
-            List<java.util.Map<String, Object>> actionItems,
+            List<ActionItem> actionItems,
             List<String> reassessmentTriggers,
             UUID methodologyProfileId,
             String methodologyStrategyKey) {
@@ -165,12 +173,37 @@ public class TreatmentPlanService {
             plan.setDueDate(dueDate);
         }
         if (actionItems != null) {
+            validateActionItems(actionItems);
             plan.setActionItems(actionItems);
         }
         if (reassessmentTriggers != null) {
             plan.setReassessmentTriggers(reassessmentTriggers);
         }
         applyMethodologyBinding(plan, projectId, methodologyProfileId, methodologyStrategyKey);
+    }
+
+    /**
+     * Bypass-write guard for action items. Controller writes traverse Bean Validation
+     * via {@code @Valid} on the request DTOs; service-layer writes (tests, future
+     * internal callers) hit this guard so they cannot persist out-of-contract data.
+     * Reuses the {@link ActionItem} constraint annotations programmatically so the
+     * service guard and the REST boundary share one source of truth.
+     */
+    private void validateActionItems(List<ActionItem> actionItems) {
+        for (int i = 0; i < actionItems.size(); i++) {
+            var item = actionItems.get(i);
+            if (item == null) {
+                throw new DomainValidationException("Action item at index " + i + " must not be null");
+            }
+            Set<ConstraintViolation<ActionItem>> violations = validator.validate(item);
+            if (!violations.isEmpty()) {
+                String detail = violations.stream()
+                        .map(v -> v.getPropertyPath() + " " + v.getMessage())
+                        .sorted()
+                        .collect(Collectors.joining("; "));
+                throw new DomainValidationException("Action item at index " + i + " has invalid " + detail);
+            }
+        }
     }
 
     private void applyMethodologyBinding(

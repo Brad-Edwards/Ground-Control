@@ -18,7 +18,6 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 
@@ -63,9 +62,9 @@ public class TreatmentPlan extends BaseEntity {
     @Column(nullable = false, length = 20)
     private TreatmentPlanStatus status = TreatmentPlanStatus.PLANNED;
 
-    @Convert(converter = JacksonTextCollectionConverters.MapListConverter.class)
+    @Convert(converter = JacksonTextCollectionConverters.ActionItemListConverter.class)
     @Column(name = "action_items", columnDefinition = "TEXT")
-    private List<Map<String, Object>> actionItems;
+    private List<ActionItem> actionItems;
 
     @Convert(converter = JacksonTextCollectionConverters.StringListConverter.class)
     @Column(name = "reassessment_triggers", columnDefinition = "TEXT")
@@ -166,11 +165,11 @@ public class TreatmentPlan extends BaseEntity {
         return status;
     }
 
-    public List<Map<String, Object>> getActionItems() {
+    public List<ActionItem> getActionItems() {
         return actionItems;
     }
 
-    public void setActionItems(List<Map<String, Object>> actionItems) {
+    public void setActionItems(List<ActionItem> actionItems) {
         this.actionItems = actionItems;
     }
 

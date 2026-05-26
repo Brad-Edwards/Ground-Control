@@ -1,4 +1,4 @@
-# Ground Control — Architecture
+# Ground Control—Architecture
 
 ## Mission
 
@@ -27,7 +27,7 @@ See [ADR-014](../../architecture/adrs/014-pluggable-verification-architecture.md
 | Logging | SLF4J + Logback (JSON in prod, console in dev) |
 | API docs | Springdoc-OpenAPI |
 | Container | Docker (multi-stage, non-root, JDK 21) |
-| Registry | GHCR (`ghcr.io/keplerops/ground-control`) |
+| Registry | GHCR (`ghcr.io/brad-edwards/ground-control`) |
 
 See [ADR-013](../../architecture/adrs/013-java-spring-boot-rewrite.md) for the Java migration rationale.
 
@@ -94,7 +94,7 @@ api/ -> domain/ <- infrastructure/
 ```
 
 - `domain/` has no imports from `api/` or `infrastructure/` and no Spring web imports
-- `api/` depends on `domain/` — never imports `infrastructure/`
+- `api/` depends on `domain/`—never imports `infrastructure/`
 - `infrastructure/` implements interfaces defined in `domain/`
 
 Enforced at compile time by ArchUnit tests in `ArchitectureTest.java`.
@@ -103,11 +103,11 @@ Enforced at compile time by ArchUnit tests in `ArchitectureTest.java`.
 
 Spring profiles drive environment-specific behavior:
 
-- `application.yml` — base config (datasource, JPA, Flyway, server port, security defaults)
-- `application-dev.yml` — local dev (`groundcontrol.security.enabled=false`)
-- `application-test.yml` — test overrides (Testcontainers, security disabled)
+- `application.yml`—base config (datasource, JPA, Flyway, server port, security defaults)
+- `application-dev.yml`—local dev (`groundcontrol.security.enabled=false`)
+- `application-test.yml`—test overrides (Testcontainers, security disabled)
 
-Environment variables use the `GC_` prefix (e.g., `GC_DATABASE_URL`, `GC_SERVER_PORT`). See `.env.example`.
+Environment variables use the `GC_` prefix (for example, `GC_DATABASE_URL`, `GC_SERVER_PORT`). See `.env.example`.
 
 ## Request filter chains
 
@@ -138,7 +138,7 @@ both `ApiSecurityConfig` (bearer traffic) and `BrowserSecurityConfig`
 `/index.html`) and SPA client routes require a browser session; unauthenticated
 navigation redirects to `/login`, while API-shaped unauthenticated XHRs receive
 the standard JSON 401 envelope. Controllers do not perform per-method auth
-checks — the one deliberate exception,
+checks—the one deliberate exception,
 `PackRegistryAccessGuard`, is a defense-in-depth bridge that re-derives the
 admin principal from the same `SecurityContext` and re-asserts `ROLE_ADMIN`
 (see ADR-033 §4). `ActorFilter` runs after the security chain so audit
@@ -150,7 +150,7 @@ exports (alongside `request_id` / `tenant_id`). See [ADR-033](../../architecture
 
 ### Exists
 
-**Domain entities:** Requirement, RequirementRelation, TraceabilityLink, GitHubIssueSync, RequirementImport — all JPA with Envers auditing.
+**Domain entities:** Requirement, RequirementRelation, TraceabilityLink, GitHubIssueSync, RequirementImport—all JPA with Envers auditing.
 
 **Services:** RequirementService (9 methods), TraceabilityService (forward and reverse artifact lookup), ImportService (StrictDoc parser + idempotent import), GitHubIssueSyncService (CLI-based GitHub sync), AnalysisService (cycle/orphan/coverage/impact/cross-wave; status drift belongs here as read-only analysis), AgeGraphService (Apache AGE graph materialization + Cypher queries).
 
@@ -162,12 +162,12 @@ exports (alongside `request_id` / `tenant_id`). See [ADR-033](../../architecture
 
 ## Status Drift Analysis
 
-Status drift analysis is a read-only requirements-domain analysis. It flags requirements that are still `DRAFT` while independent artifacts suggest implementation or design completion has already landed. It does not create traceability links, transition requirements, or relax the `IMPLEMENTS`-only-on-`ACTIVE` rule.
+Status drift analysis is a read-only requirements-domain analysis. It flags requirements that are still `DRAFT` while independent artifacts suggest implementation or design completion has already landed. It does not create traceability links, transition requirements, or relax the `IMPLEMENTS`-only on `ACTIVE` rule.
 
 The analysis must build on the existing graph contracts:
 
-- Requirements are project-scoped per ADR-016; all status drift queries must resolve a single project, and every evidence signal must be derived from data owned by that project. Never compare UIDs across projects without project context, and never read project- or repo-unscoped caches (e.g. the GitHub issue/PR sync tables) from this path — a project-scoped analysis must not surface another project's (or another repo's) artifacts.
-- Evidence is link-based: an `IMPLEMENTS` traceability link on a `DRAFT` requirement (the strongest signal — `IMPLEMENTS` to an issue is allowed pre-`ACTIVE` in the GC-O007/#794 shape), a `DOCUMENTS` link to an `ACCEPTED` ADR (`ArchitectureDecisionRecord` + `TraceabilityLink` with `artifactType=ADR`, `linkType=DOCUMENTS`), a non-`IMPLEMENTS` link to a GitHub issue or pull request, or a non-`IMPLEMENTS` link to a code/test/spec/proof artifact. A `DOCUMENTS` link is evidence, not an implementation link.
+- Requirements are project-scoped per ADR-016; all status drift queries must resolve a single project, and every evidence signal must be derived from data owned by that project. Never compare UIDs across projects without project context, and never read project- or repo-unscoped caches (for example, the GitHub issue/PR sync tables) from this path—a project-scoped analysis must not surface another project's (or another repo's) artifacts.
+- Evidence is link-based: an `IMPLEMENTS` traceability link on a `DRAFT` requirement (the strongest signal—`IMPLEMENTS` to an issue is allowed pre-`ACTIVE` in the GC-O007/#794 shape), a `DOCUMENTS` link to an `ACCEPTED` ADR (`ArchitectureDecisionRecord` + `TraceabilityLink` with `artifactType=ADR`, `linkType=DOCUMENTS`), a non-`IMPLEMENTS` link to a GitHub issue or pull request, or a non-`IMPLEMENTS` link to a code/test/spec/proof artifact. A `DOCUMENTS` link is evidence, not an implementation link.
 - Traceability identifiers follow ADR-011 conventions. GitHub issues and pull requests use raw decimal identifiers; ADRs use ADR UIDs; code/test/config evidence uses repo-relative identifiers. Do not add alternate encodings such as `#42`, `owner/repo#42`, `file:...`, or `adr:021`.
 - The analysis path must not shell out to `gh` or scan arbitrary filesystem paths; network and process execution belong in the GitHub sync adapter, not the analysis service.
 
@@ -179,22 +179,21 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
   via ADR-026; browser login UX and external identity-provider integration do
   not)
 - Redis integration (Redis is in docker-compose.yml but nothing in the app uses it)
-- Production deployment infrastructure (local Docker Compose + EC2 via CDK)
 - Multi-tenancy
 - Search
 - Concrete verifier adapter implementations in `infrastructure/verifiers/` (ADR-014 §6). The `VerifierAdapter` port interface and request/outcome contracts are defined in the domain layer; future work is implementing adapters for each prover (OpenJML, TLA+/TLC, OPA/Rego, Frama-C, manual review).
 - Traceability Matrix view (`/traceability`) and Audit Timeline view (`/audit`) in the frontend
-- Apache AGE is optional — the app gracefully degrades to JPA-only analysis when AGE is unavailable
+- Apache AGE is optional—the app gracefully degrades to JPA-only analysis when AGE is unavailable
 
 ### Exists now
 
 - `specs/tla/` for design-level verification artifacts and state-machine specs, aligned with ADR-014
-- Verification result storage (VerificationResult entity with eager-loaded target/requirement, enums, CRUD API, MCP tools) — ADR-014 §2 common schema
-- Pluggable verifier adapter interface (`VerifierAdapter`, `VerificationRequest`, `VerificationOutcome`) — ADR-014 §6 port contract for multi-tool integration
-- Self-referential traceability enforcement — `check_live_policy.mjs` verifies substantive code files have reverse traceability links to requirements (GC-O002), using the `GET /requirements/traceability/by-artifact` reverse lookup endpoint. Lookup errors are tracked separately for debuggability when the endpoint is unavailable.
+- Verification result storage (VerificationResult entity with eager-loaded target/requirement, enums, CRUD API, MCP tools)—ADR-014 §2 common schema
+- Pluggable verifier adapter interface (`VerifierAdapter`, `VerificationRequest`, `VerificationOutcome`)—ADR-014 §6 port contract for multi-tool integration
+- Self-referential traceability enforcement—`check_live_policy.mjs` verifies substantive code files have reverse traceability links to requirements (GC-O002), using the `GET /requirements/traceability/by-artifact` reverse lookup endpoint. Lookup errors are tracked separately for debuggability when the endpoint is unavailable.
 
 ## Knowledge Ingest Engine (repo-local, out of the product model)
 
 Each repository that uses Ground Control can declare an agent-maintained knowledge base under `docs/knowledge/` via the `knowledge` section of its `.ground-control.yaml`. The `gc_remember` MCP tool captures observations into that repo's inbox; a detached ingest subprocess reads the inbox item, decides update-vs-create via codex, writes the wiki page, and commits the change under a per-repo interprocess lock. The engine lives at `mcp/ground-control/knowledge_ingest.js` with a thin CLI entry at `mcp/ground-control/knowledge_ingest_cli.js`.
 
-The knowledge subsystem is deliberately repo-local tooling — not a Spring backend product feature. No REST controller, DTO, JPA entity, migration, or graph node is added by issues #522–#527. See [ADR-025](../../architecture/adrs/025-knowledge-ingest-engine.md) for the decision to co-locate the engine with the MCP server, use codex as the ingest agent, and serialize via `proper-lockfile`. Rollout phasing lives in `docs/notes/agent-knowledge-system-design.md`.
+The knowledge subsystem is deliberately repo-local tooling, not a Spring backend product feature. No REST controller, DTO, JPA entity, migration, or graph node is added by issues #522–#527. See [ADR-025](../../architecture/adrs/025-knowledge-ingest-engine.md) for the decision to co-locate the engine with the MCP server, use codex as the ingest agent, and serialize via `proper-lockfile`. Rollout phasing lives in `docs/notes/agent-knowledge-system-design.md`.

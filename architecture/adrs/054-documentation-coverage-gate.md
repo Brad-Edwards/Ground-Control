@@ -62,6 +62,18 @@ pinned to a specific version, verified by SHA-256 checksum, and installed by
 installs Vale automatically on first need rather than skipping; agents and
 contributors do not bypass the gate by virtue of a fresh clone.
 
+**House-style overrides (`GoogleProject/` namespace).** The `.vale/styles/GoogleProject/`
+directory is the registry for project-specific rules that augment the upstream
+`errata-ai/Google` package. The first such rule is `EmDashDensity`: an
+occurrence-based check scoped to paragraph, `max: 1`, `level: error`, that
+flags paragraphs containing more than one em-dash. The rule pairs with the
+em-dash density guidance in `docs/DOC_STYLE.md §Em-dash density` and runs at
+error level so the on-touch ratchet enforces density compliance the same way
+it enforces every other Google rule: any doc touched in a PR must satisfy the
+budget. Future house-style overrides (passive-voice budget, sentence length,
+hedging patterns) land as sibling YAML files in the same
+namespace with no additional plumbing.
+
 **Scope: whole file on first touch.** Vale lints any `.md` / `.markdown` file
 that appears in the current diff (added, copied, modified, or renamed vs the
 base ref) in its entirety, not line-by-line. A one-line edit to a previously
@@ -130,3 +142,11 @@ input `{ repo_path, changed_paths[] }`, output
 - Diátaxis: https://diataxis.fr/
 - Vale: https://vale.sh/
 - errata-ai/Google Vale package: https://github.com/errata-ai/Google
+
+## Amendments
+
+**2026-05-26 (issue #989).** The `gc_integration_manager` MCP tool (`mcp/ground-control/gc-integrate.js`) and the `gc_integration_manager` entry in `mcp/ground-control/index.js` are new tool surfaces added under this issue. The doc-coverage gate (`doc-coverage-gate-sync` policy rule) triggers on changes to `mcp/ground-control/lib.js` and `mcp/ground-control/index.js`; the tool's documentation lives in `mcp/ground-control/README.md § gc_integration_manager` and `docs/DEVELOPMENT_WORKFLOW.md § /integrate`. No change to the Vale rule set, the `tools/install-vale.sh` installer, the `.vale.ini` configuration, or `docs/DOC_STYLE.md` itself.
+
+**2026-05-26 (issue #989 follow-up).** Fixed a wrapper-layer regression where `gc_render_pr_body` and `gc_post_final_report` did not propagate the optional `documentation_outcome` field. The Zod input schemas omitted the field and the destructure-and-call did not forward it, so the renderer never emitted the `## Documentation` section that this ADR's policy gate requires. Both wrappers now accept `documentation_outcome` (object with `outcome` enum and optional `rationale`) and pass it through to `runRenderPrBody` / `runPostFinalReport`. Unit tests in `lib.test.js::runRenderPrBody` cover the three rendering paths and the omission case.
+
+**2026-05-26 (issue #989 merge carve-out).** The `lib.js` change in this commit adds `INTEGRATION_MANAGER_MERGE_STRATEGIES` and extends `normalizeIntegrationManagerConfig` with the `merge_strategy` field. These changes are to the integration manager config parser, not to any documentation coverage gate surface. No change to the Vale rule set, the `.vale.ini` configuration, or `docs/DOC_STYLE.md` is required.

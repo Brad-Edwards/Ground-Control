@@ -95,6 +95,7 @@ import {
   KNOWLEDGE_SOURCE_TYPES,
   writeKnowledgeInbox,
   acquireKnowledgeLock,
+  acquireIntegrationLock,
   STATUSES,
   REQUIREMENT_TYPES,
   PRIORITIES,
@@ -115,6 +116,12 @@ import {
   FINAL_REPORT_REVIEW_SUMMARY_MAX,
   validateDocumentationOutcome,
   classifyChangedSurface,
+  isSafeLabelName,
+  normalizeIntegrationManagerConfig,
+  INTEGRATION_MANAGER_ORDERINGS,
+  INTEGRATION_MANAGER_MERGE_STRATEGIES,
+  INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN,
+  INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX,
 } from "./lib.js";
 
 // ---------------------------------------------------------------------------
@@ -586,6 +593,7 @@ describe("parseGroundControlYaml", () => {
       codex_review: { pre_push_cap: null },
       test_quality_review: { pre_push_cap: null },
       pr_title: null,
+      integration_manager: { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null },
     });
     assert.equal(result.value.sonarcloud, null);
     assert.equal(result.value.rules.plan_rules_path, null);
@@ -7002,6 +7010,36 @@ describe("runRenderPrBody (policy enforcement at the tool boundary)", () => {
     assert.equal(r.ok, false);
     assert.equal(r.error, "pr_body_input_invalid");
   });
+  it("renders the ## Documentation section when documentation_outcome is supplied (issue #989)", async () => {
+    // The MCP wrapper (index.js gc_render_pr_body) accepts documentation_outcome
+    // and passes it through to runRenderPrBody; runRenderPrBody calls buildPrBody
+    // which emits the ## Documentation section. This pins the contract that
+    // the field actually reaches the renderer rather than getting dropped at
+    // the wrapper boundary (issue #989 follow-up).
+    const r = await runRenderPrBody(baseInput({
+      documentation_outcome: { outcome: "updated" },
+    }));
+    assert.equal(r.ok, true);
+    assert.ok(r.body.includes("## Documentation"), "rendered body should include the ## Documentation section");
+    assert.ok(r.body.includes("Updated: see diff."), "rendered body should include the outcome prose");
+  });
+  it("renders the ## Documentation section with rationale for outcome=not_updated_authorized", async () => {
+    const r = await runRenderPrBody(baseInput({
+      documentation_outcome: {
+        outcome: "not_updated_authorized",
+        rationale: "diff is test-infra only; runtime docs unchanged",
+      },
+    }));
+    assert.equal(r.ok, true);
+    assert.ok(r.body.includes("## Documentation"));
+    assert.ok(r.body.includes("Not updated (authorized)"));
+    assert.ok(r.body.includes("diff is test-infra only"));
+  });
+  it("omits the ## Documentation section when documentation_outcome is absent", async () => {
+    const r = await runRenderPrBody(baseInput());
+    assert.equal(r.ok, true);
+    assert.ok(!r.body.includes("## Documentation"), "body should not contain a Documentation section when the field is absent");
+  });
 });
 
 describe("buildTelemetryRecord (sanitizes branch in record body — F5 fix)", () => {
@@ -11657,6 +11695,104 @@ describe("acquireKnowledgeLock", () => {
 });
 
 // ---------------------------------------------------------------------------
+// acquireIntegrationLock (GC-O011, issue #989) — refactor regression tests.
+// Same behavioral shape as acquireKnowledgeLock but uses .gc-integration-lock
+// placed AT the repo root (not inside a knowledge subdirectory).
+// ---------------------------------------------------------------------------
+
+describe("acquireIntegrationLock", () => {
+  function makeIntegLockTempDir() {
+    return mkdtempSync(join(tmpdir(), "gc-integ-lock-test-"));
+  }
+
+  it("acquires a fresh lock, returns a release handle, and releases cleanly", async () => {
+    const dir = makeIntegLockTempDir();
+    try {
+      const release = await acquireIntegrationLock(dir);
+      assert.equal(typeof release, "function");
+      await release();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to acquire a currently-held lock (ELOCKED)", async () => {
+    const dir = makeIntegLockTempDir();
+    try {
+      const release = await acquireIntegrationLock(dir);
+      // Second acquire must fail because the lock is already held.
+      await assert.rejects(
+        () => acquireIntegrationLock(dir),
+        /held|locked|in progress/i,
+      );
+      await release();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("allows re-acquisition after release", async () => {
+    const dir = makeIntegLockTempDir();
+    try {
+      const r1 = await acquireIntegrationLock(dir);
+      await r1();
+      const r2 = await acquireIntegrationLock(dir);
+      await r2();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("runs locks on different directories in parallel", async () => {
+    const dirA = makeIntegLockTempDir();
+    const dirB = makeIntegLockTempDir();
+    try {
+      const [rA, rB] = await Promise.all([
+        acquireIntegrationLock(dirA),
+        acquireIntegrationLock(dirB),
+      ]);
+      assert.equal(typeof rA, "function");
+      assert.equal(typeof rB, "function");
+      await rA();
+      await rB();
+    } finally {
+      rmSync(dirA, { recursive: true, force: true });
+      rmSync(dirB, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects non-absolute and nonexistent paths", async () => {
+    await assert.rejects(
+      () => acquireIntegrationLock("relative/path"),
+      /absolute/i,
+    );
+    const fakeAbs = join(tmpdir(), "gc-integ-lock-does-not-exist-" + Math.random());
+    await assert.rejects(
+      () => acquireIntegrationLock(fakeAbs),
+      /exist/i,
+    );
+  });
+
+  it("error on contention carries code ELOCKED", async () => {
+    const dir = makeIntegLockTempDir();
+    try {
+      const release = await acquireIntegrationLock(dir);
+      let caughtError;
+      try {
+        await acquireIntegrationLock(dir);
+      } catch (e) {
+        caughtError = e;
+      }
+      assert.ok(caughtError, "must throw on contention");
+      assert.equal(caughtError.code, "ELOCKED", `expected code ELOCKED, got: ${caughtError.code}`);
+      await release();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase 2: workflow.pr_title parser (issue #896)
 // ---------------------------------------------------------------------------
 
@@ -12091,5 +12227,360 @@ describe("buildSuggestedGroundControlYaml covers all parser-accepted keys", () =
     assert.ok(yaml.includes("boundary_contract"), "template must mention boundary_contract");
     assert.ok(yaml.includes("binding_adrs"), "template must mention binding_adrs");
     assert.ok(yaml.includes("anti_recommendations"), "template must mention anti_recommendations");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isSafeLabelName (issue #989)
+// ---------------------------------------------------------------------------
+
+describe("isSafeLabelName", () => {
+  it("accepts a normal label", () => {
+    assert.equal(isSafeLabelName("approved-for-integration"), true);
+  });
+
+  it("accepts a label with internal spaces", () => {
+    assert.equal(isSafeLabelName("approved for integration"), true);
+  });
+
+  it("rejects empty string", () => {
+    assert.equal(isSafeLabelName(""), false);
+  });
+
+  it("rejects labels with leading whitespace", () => {
+    assert.equal(isSafeLabelName(" approved"), false);
+  });
+
+  it("rejects labels with trailing whitespace", () => {
+    assert.equal(isSafeLabelName("approved "), false);
+  });
+
+  it("rejects labels with control characters", () => {
+    assert.equal(isSafeLabelName("foo\x01bar"), false);
+  });
+
+  it("rejects labels with newline", () => {
+    assert.equal(isSafeLabelName("foo\nbar"), false);
+  });
+
+  it("rejects labels with non-ASCII characters", () => {
+    assert.equal(isSafeLabelName("approved-für-integration"), false);
+  });
+
+  it("rejects labels longer than 50 chars", () => {
+    assert.equal(isSafeLabelName("a".repeat(51)), false);
+  });
+
+  it("accepts exactly 50-char label (boundary)", () => {
+    assert.equal(isSafeLabelName("a".repeat(50)), true);
+  });
+
+  it("rejects null", () => {
+    assert.equal(isSafeLabelName(null), false);
+  });
+
+  it("rejects numeric input", () => {
+    assert.equal(isSafeLabelName(123), false);
+  });
+
+  it("rejects undefined", () => {
+    assert.equal(isSafeLabelName(undefined), false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// normalizeIntegrationManagerConfig (issue #989)
+// ---------------------------------------------------------------------------
+
+describe("normalizeIntegrationManagerConfig", () => {
+  const emptyValue = { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null };
+
+  it("accepts null → returns ok with all-null value", () => {
+    const r = normalizeIntegrationManagerConfig(null);
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.value, emptyValue);
+  });
+
+  it("accepts undefined → returns ok with all-null value", () => {
+    const r = normalizeIntegrationManagerConfig(undefined);
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.value, emptyValue);
+  });
+
+  it("accepts empty object → returns ok with all-null value", () => {
+    const r = normalizeIntegrationManagerConfig({});
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.value, emptyValue);
+  });
+
+  it("accepts a complete valid block", () => {
+    const r = normalizeIntegrationManagerConfig({
+      approval_label: "foo",
+      ordering: "pr_number_asc",
+      max_queue_size: 10,
+    });
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.value, { approval_label: "foo", ordering: "pr_number_asc", max_queue_size: 10, merge_strategy: null });
+  });
+
+  it("rejects non-object string", () => {
+    const r = normalizeIntegrationManagerConfig("string");
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.length > 0);
+  });
+
+  it("rejects array", () => {
+    const r = normalizeIntegrationManagerConfig([]);
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.length > 0);
+  });
+
+  it("rejects numeric", () => {
+    const r = normalizeIntegrationManagerConfig(42);
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.length > 0);
+  });
+
+  it("rejects unknown key — error message names the key", () => {
+    const r = normalizeIntegrationManagerConfig({ bogus: true });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("bogus")), JSON.stringify(r.errors));
+  });
+
+  it("rejects multiple unknown keys — error array contains both", () => {
+    const r = normalizeIntegrationManagerConfig({ bogus: true, another: 1 });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("bogus")), JSON.stringify(r.errors));
+    assert.ok(r.errors.some((e) => e.includes("another")), JSON.stringify(r.errors));
+  });
+
+  it("rejects bad approval_label (empty string)", () => {
+    const r = normalizeIntegrationManagerConfig({ approval_label: "" });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("approval_label")), JSON.stringify(r.errors));
+  });
+
+  it("rejects bad approval_label (leading whitespace)", () => {
+    const r = normalizeIntegrationManagerConfig({ approval_label: " bad" });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("approval_label")), JSON.stringify(r.errors));
+  });
+
+  it("rejects bad approval_label (control character)", () => {
+    const r = normalizeIntegrationManagerConfig({ approval_label: "foo\x01bar" });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("approval_label")), JSON.stringify(r.errors));
+  });
+
+  it("rejects bad approval_label (oversized > 50 chars)", () => {
+    const r = normalizeIntegrationManagerConfig({ approval_label: "a".repeat(51) });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("approval_label")), JSON.stringify(r.errors));
+  });
+
+  it("rejects bad ordering (unknown enum value)", () => {
+    const r = normalizeIntegrationManagerConfig({ ordering: "newest_first" });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("ordering")), JSON.stringify(r.errors));
+    // Error must list allowed values
+    assert.ok(r.errors.some((e) => e.includes("pr_number_asc")), JSON.stringify(r.errors));
+  });
+
+  it("accepts ordering pr_number_asc", () => {
+    const r = normalizeIntegrationManagerConfig({ ordering: "pr_number_asc" });
+    assert.equal(r.ok, true);
+    assert.equal(r.value.ordering, "pr_number_asc");
+  });
+
+  it("accepts ordering pr_number_desc", () => {
+    const r = normalizeIntegrationManagerConfig({ ordering: "pr_number_desc" });
+    assert.equal(r.ok, true);
+    assert.equal(r.value.ordering, "pr_number_desc");
+  });
+
+  it("accepts ordering approved_at_asc", () => {
+    const r = normalizeIntegrationManagerConfig({ ordering: "approved_at_asc" });
+    assert.equal(r.ok, true);
+    assert.equal(r.value.ordering, "approved_at_asc");
+  });
+
+  it("rejects max_queue_size of zero", () => {
+    const r = normalizeIntegrationManagerConfig({ max_queue_size: 0 });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("max_queue_size")), JSON.stringify(r.errors));
+  });
+
+  it("rejects max_queue_size of negative", () => {
+    const r = normalizeIntegrationManagerConfig({ max_queue_size: -1 });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("max_queue_size")), JSON.stringify(r.errors));
+  });
+
+  it("rejects max_queue_size of 101", () => {
+    const r = normalizeIntegrationManagerConfig({ max_queue_size: 101 });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("max_queue_size")), JSON.stringify(r.errors));
+  });
+
+  it("rejects non-integer max_queue_size (5.5)", () => {
+    const r = normalizeIntegrationManagerConfig({ max_queue_size: 5.5 });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("max_queue_size")), JSON.stringify(r.errors));
+  });
+
+  it("rejects string max_queue_size", () => {
+    const r = normalizeIntegrationManagerConfig({ max_queue_size: "5" });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("max_queue_size")), JSON.stringify(r.errors));
+  });
+
+  it("accepts max_queue_size 1 (lower bound)", () => {
+    const r = normalizeIntegrationManagerConfig({ max_queue_size: 1 });
+    assert.equal(r.ok, true);
+    assert.equal(r.value.max_queue_size, 1);
+  });
+
+  it("accepts max_queue_size 100 (upper bound)", () => {
+    const r = normalizeIntegrationManagerConfig({ max_queue_size: 100 });
+    assert.equal(r.ok, true);
+    assert.equal(r.value.max_queue_size, 100);
+  });
+
+  it("accumulates errors: two bad fields returns both errors", () => {
+    const r = normalizeIntegrationManagerConfig({ ordering: "bad_ordering", max_queue_size: 0 });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("ordering")), JSON.stringify(r.errors));
+    assert.ok(r.errors.some((e) => e.includes("max_queue_size")), JSON.stringify(r.errors));
+    assert.ok(r.errors.length >= 2, `expected >= 2 errors, got: ${JSON.stringify(r.errors)}`);
+  });
+
+  it("INTEGRATION_MANAGER_ORDERINGS constant is exported and complete", () => {
+    assert.deepEqual(INTEGRATION_MANAGER_ORDERINGS, ["pr_number_asc", "pr_number_desc", "approved_at_asc"]);
+  });
+
+  it("INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN is 1", () => {
+    assert.equal(INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN, 1);
+  });
+
+  it("INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX is 100", () => {
+    assert.equal(INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX, 100);
+  });
+
+  // merge_strategy tests (issue #989 merge carve-out)
+
+  it("accepts merge_strategy=merge", () => {
+    const r = normalizeIntegrationManagerConfig({ merge_strategy: "merge" });
+    assert.equal(r.ok, true);
+    assert.equal(r.value.merge_strategy, "merge");
+  });
+
+  it("accepts merge_strategy=squash", () => {
+    const r = normalizeIntegrationManagerConfig({ merge_strategy: "squash" });
+    assert.equal(r.ok, true);
+    assert.equal(r.value.merge_strategy, "squash");
+  });
+
+  it("accepts merge_strategy=rebase", () => {
+    const r = normalizeIntegrationManagerConfig({ merge_strategy: "rebase" });
+    assert.equal(r.ok, true);
+    assert.equal(r.value.merge_strategy, "rebase");
+  });
+
+  it("rejects bad merge_strategy (unknown enum value)", () => {
+    const r = normalizeIntegrationManagerConfig({ merge_strategy: "fast-forward" });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("merge_strategy")), JSON.stringify(r.errors));
+    assert.ok(r.errors.some((e) => e.includes("merge")), JSON.stringify(r.errors));
+  });
+
+  it("absent merge_strategy → merge_strategy is null", () => {
+    const r = normalizeIntegrationManagerConfig({});
+    assert.equal(r.ok, true);
+    assert.equal(r.value.merge_strategy, null);
+  });
+
+  it("INTEGRATION_MANAGER_MERGE_STRATEGIES constant is exported and complete", () => {
+    assert.deepEqual(INTEGRATION_MANAGER_MERGE_STRATEGIES, ["merge", "squash", "rebase"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// normalizeWorkflowConfig integration — integration_manager (issue #989)
+// ---------------------------------------------------------------------------
+
+describe("parseGroundControlYaml workflow.integration_manager", () => {
+  it("valid integration_manager block flows through to value.integration_manager", () => {
+    const yaml = [
+      "schema_version: 1",
+      "project: x",
+      "workflow:",
+      "  integration_manager:",
+      "    approval_label: approved-for-integration",
+      "    ordering: pr_number_asc",
+      "    max_queue_size: 20",
+      "",
+    ].join("\n");
+    const result = parseGroundControlYaml(yaml);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.deepEqual(result.value.workflow.integration_manager, {
+      approval_label: "approved-for-integration",
+      ordering: "pr_number_asc",
+      max_queue_size: 20,
+      merge_strategy: null,
+    });
+  });
+
+  it("merge_strategy flows through to value.integration_manager", () => {
+    const yaml = [
+      "schema_version: 1",
+      "project: x",
+      "workflow:",
+      "  integration_manager:",
+      "    merge_strategy: squash",
+      "",
+    ].join("\n");
+    const result = parseGroundControlYaml(yaml);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.equal(result.value.workflow.integration_manager.merge_strategy, "squash");
+  });
+
+  it("invalid integration_manager block surfaces errors via parent errors[]", () => {
+    const yaml = [
+      "schema_version: 1",
+      "project: x",
+      "workflow:",
+      "  integration_manager:",
+      "    bogus_key: true",
+      "",
+    ].join("\n");
+    const result = parseGroundControlYaml(yaml);
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.errors.some((e) => e.includes("integration_manager") && e.includes("unknown key")),
+      `expected integration_manager unknown-key error, got: ${JSON.stringify(result.errors)}`,
+    );
+  });
+
+  it("absent integration_manager key still returns all-null value in emptyWorkflowConfig", () => {
+    const yaml = ["schema_version: 1", "project: x", ""].join("\n");
+    const result = parseGroundControlYaml(yaml);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.value.workflow.integration_manager, {
+      approval_label: null,
+      ordering: null,
+      max_queue_size: null,
+      merge_strategy: null,
+    });
+  });
+
+  it("minimal valid yaml includes integration_manager in workflow shape", () => {
+    const result = parseGroundControlYaml("schema_version: 1\nproject: aces-sdl\n");
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.value.workflow.integration_manager, {
+      approval_label: null,
+      ordering: null,
+      max_queue_size: null,
+      merge_strategy: null,
+    });
   });
 });
