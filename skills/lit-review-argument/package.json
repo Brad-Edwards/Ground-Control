@@ -1,0 +1,9 @@
+{
+  "name": "lit-review-argument-validator",
+  "private": true,
+  "description": "Pinned Argdown CLI for validate-argument-map.sh — the phase-4 skill's structural-check helper. Pinned to defeat dependency-confusion / compromised-package supply-chain attacks at validation time (see codex security review on PR #1032).",
+  "version": "0.1.0",
+  "dependencies": {
+    "@argdown/cli": "2.0.0"
+  }
+}

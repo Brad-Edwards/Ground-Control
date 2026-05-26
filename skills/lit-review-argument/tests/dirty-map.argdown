@@ -1,0 +1,37 @@
+===
+title: "Dirty map — phase-4 structural-checker test fixture"
+===
+
+// Deliberately broken. This file is SYNTACTICALLY VALID Argdown, so the parser
+// accepts it and hands it to check-argument-structure.mjs — which must then
+// fail every structural check: A, B, C, and D.
+
+[Thesis]: The fixture thesis.
+    <- <Dangling Objection>
+    <+ <Hand-Wave>
+
+<Main Argument>
+
+(1) A properly grounded premise. {evidence: "synthesis.md §1"}
+(2) An ungrounded premise: no evidence tag, and not derived anywhere in the map.
+-----
+(3) [Thesis]
+
+// B: an argument wired in as support for the thesis but never reconstructed.
+<Hand-Wave>: Asserted to support the thesis, but given no premise-conclusion structure.
+
+// C: an objection that attacks the thesis with nothing answering it.
+<Dangling Objection>: Nothing in the map answers this objection.
+
+// D: circular support — each argument's conclusion is the other's premise.
+<Loop One>
+
+(1) [Loop Claim Two]
+-----
+(2) [Loop Claim One]
+
+<Loop Two>
+
+(1) [Loop Claim One]
+-----
+(2) [Loop Claim Two]
