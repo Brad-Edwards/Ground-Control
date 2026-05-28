@@ -13,4 +13,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     boolean existsByProjectIdAndTitle(UUID projectId, String title);
 
     Optional<Document> findByProjectIdAndTitle(UUID projectId, String title);
+
+    boolean existsByIdAndProjectId(UUID id, UUID projectId);
+
+    Optional<Document> findByIdAndProjectId(UUID id, UUID projectId);
 }

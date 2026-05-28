@@ -221,9 +221,15 @@ class AgeGraphServiceTest {
 
             // setupSearchPath issues LOAD + SET via execute(String); DETACH DELETE + CREATE go
             // through query(sql, pss, callback) — AGE's cypher() always returns SETOF agtype.
+            // Capture the SQL to confirm a CREATE was actually emitted for the REQUIREMENT
+            // node, not just that two queries ran (mock-interaction-only assertions would
+            // pass even if the CREATE loop were silently dropped).
             verify(jdbcTemplate, times(2)).execute(anyString());
+            ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
             verify(jdbcTemplate, atLeast(2))
-                    .query(anyString(), any(PreparedStatementSetter.class), any(RowCallbackHandler.class));
+                    .query(sqlCaptor.capture(), any(PreparedStatementSetter.class), any(RowCallbackHandler.class));
+            assertThat(sqlCaptor.getAllValues())
+                    .anyMatch(sql -> sql.contains("CREATE (:") && sql.contains("REQUIREMENT"));
         }
 
         @Test
@@ -252,7 +258,11 @@ class AgeGraphServiceTest {
             ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
             verify(jdbcTemplate)
                     .query(sqlCaptor.capture(), any(PreparedStatementSetter.class), any(RowCallbackHandler.class));
-            assertThat(sqlCaptor.getValue()).contains("PARENT");
+            // Ancestor traversal uses outgoing PARENT edges (n-[:PARENT*..]->a). Pinning the
+            // outgoing-arrow shape makes the assertion direction-specific, so a regression that
+            // swapped getAncestors to the incoming-edge Cypher (used by getDescendants) would
+            // fail here rather than silently pass on the looser "contains PARENT" check.
+            assertThat(sqlCaptor.getValue()).contains("-[:PARENT*").doesNotContain("<-[:PARENT");
         }
 
         @Test
@@ -279,7 +289,11 @@ class AgeGraphServiceTest {
             ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
             verify(jdbcTemplate)
                     .query(sqlCaptor.capture(), any(PreparedStatementSetter.class), any(RowCallbackHandler.class));
-            assertThat(sqlCaptor.getValue()).contains("PARENT");
+            // Descendant traversal uses incoming PARENT edges (n<-[:PARENT*..]-d). The
+            // incoming-arrow shape is unique to getDescendants and distinguishes it from
+            // getAncestors; the prior "contains PARENT" assertion would silently pass if the
+            // two Cypher generators were ever swapped.
+            assertThat(sqlCaptor.getValue()).contains("<-[:PARENT");
         }
 
         @Test
@@ -849,6 +863,45 @@ class AgeGraphServiceTest {
         void extractPathEdgeLabels_skipsEntriesWithoutLabel() {
             String agtype = "[{\"id\": 10}::edge, {\"id\": 11, \"label\": \"PARENT\"}::edge]";
             assertThat(AgeGraphService.extractPathEdgeLabels(agtype)).containsExactly("PARENT");
+        }
+    }
+
+    // GC-G007 / ADR-032 regression: every property key emitted by
+    // DocumentGraphProjectionContributor must appear in APPROVED_PROPERTY_KEYS.
+    // If any key is missing, AGE materialization throws DomainValidationException at
+    // write time. This test pins the invariant so a future edit to the contributor
+    // cannot silently introduce an unapproved key.
+    @Nested
+    class DocumentContributorPropertyKeyRegression {
+
+        @Test
+        void titleIsApproved() {
+            assertThat(AgeGraphService.APPROVED_PROPERTY_KEYS).contains("title");
+        }
+
+        @Test
+        void versionIsApproved() {
+            assertThat(AgeGraphService.APPROVED_PROPERTY_KEYS).contains("version");
+        }
+
+        @Test
+        void descriptionIsApproved() {
+            assertThat(AgeGraphService.APPROVED_PROPERTY_KEYS).contains("description");
+        }
+
+        @Test
+        void createdByIsApproved() {
+            assertThat(AgeGraphService.APPROVED_PROPERTY_KEYS).contains("createdBy");
+        }
+
+        @Test
+        void createdAtIsApproved() {
+            assertThat(AgeGraphService.APPROVED_PROPERTY_KEYS).contains("createdAt");
+        }
+
+        @Test
+        void updatedAtIsApproved() {
+            assertThat(AgeGraphService.APPROVED_PROPERTY_KEYS).contains("updatedAt");
         }
     }
 }
