@@ -7,6 +7,7 @@
 // the developer-local mirror of that gate.
 export type Status = "DRAFT" | "ACTIVE" | "DEPRECATED" | "ARCHIVED";
 export const STATUSES: Status[] = ["DRAFT", "ACTIVE", "DEPRECATED", "ARCHIVED"];
+export type RiskScenarioStatus = "DRAFT" | "ACTIVE" | "ARCHIVED";
 export type Priority = "MUST" | "SHOULD" | "COULD" | "WONT";
 export const PRIORITIES: Priority[] = ["MUST", "SHOULD", "COULD", "WONT"];
 export type ControlFunction =
@@ -735,6 +736,24 @@ export interface RequirementResponse {
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
+}
+
+export interface RiskScenarioResponse {
+  id: string;
+  graphNodeId: string;
+  projectIdentifier: string;
+  uid: string;
+  title: string;
+  status: RiskScenarioStatus;
+  threat: string;
+  method: string;
+  asset: string;
+  effect: string;
+  timeHorizon: string;
+  fairSentence: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string | null;
 }
 
 export interface RelationResponse {

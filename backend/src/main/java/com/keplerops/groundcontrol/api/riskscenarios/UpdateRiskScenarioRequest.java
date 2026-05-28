@@ -4,9 +4,8 @@ import jakarta.validation.constraints.Size;
 
 public record UpdateRiskScenarioRequest(
         @Size(max = 200) String title,
-        String threatSource,
-        String threatEvent,
-        String affectedObject,
-        String vulnerability,
-        String consequence,
+        @Size(min = 10) String threat,
+        @Size(min = 10) String method,
+        @Size(min = 10) String asset,
+        @Size(min = 10) String effect,
         @Size(max = 100) String timeHorizon) {}

@@ -21,8 +21,10 @@ import org.hibernate.envers.NotAudited;
  * A scoped statement of potential future loss tied to one or more affected
  * operational assets, boundaries, processes, systems, objectives, or third
  * parties within a defined time horizon. Anchors risk to scenario rather
- * than a vague label, supporting FAIR, NIST SP 800-30, and ISO-style
+ * than a vague label, supporting FAIR-CRST, NIST SP 800-30, and ISO-style
  * risk methods.
+ *
+ * FAIR-CRST scoping axes: threat, asset, method, effect, timeHorizon.
  */
 @Entity
 @Audited
@@ -44,20 +46,17 @@ public class RiskScenario extends BaseEntity {
     @Column(nullable = false, length = 20)
     private RiskScenarioStatus status = RiskScenarioStatus.DRAFT;
 
-    @Column(name = "threat_source", nullable = false, columnDefinition = "TEXT")
-    private String threatSource;
+    @Column(name = "threat", nullable = false, columnDefinition = "TEXT")
+    private String threat;
 
-    @Column(name = "threat_event", nullable = false, columnDefinition = "TEXT")
-    private String threatEvent;
+    @Column(name = "method", nullable = false, columnDefinition = "TEXT")
+    private String method;
 
-    @Column(name = "affected_object", nullable = false, columnDefinition = "TEXT")
-    private String affectedObject;
+    @Column(name = "asset", nullable = false, columnDefinition = "TEXT")
+    private String asset;
 
-    @Column(columnDefinition = "TEXT")
-    private String vulnerability;
-
-    @Column(nullable = false, columnDefinition = "TEXT")
-    private String consequence;
+    @Column(name = "effect", nullable = false, columnDefinition = "TEXT")
+    private String effect;
 
     @Column(name = "time_horizon", nullable = false, length = 100)
     private String timeHorizon;
@@ -70,20 +69,14 @@ public class RiskScenario extends BaseEntity {
     }
 
     public RiskScenario(
-            Project project,
-            String uid,
-            String title,
-            String threatSource,
-            String threatEvent,
-            String affectedObject,
-            String consequence) {
+            Project project, String uid, String title, String threat, String method, String asset, String effect) {
         this.project = project;
         this.uid = uid;
         this.title = title;
-        this.threatSource = threatSource;
-        this.threatEvent = threatEvent;
-        this.affectedObject = affectedObject;
-        this.consequence = consequence;
+        this.threat = threat;
+        this.method = method;
+        this.asset = asset;
+        this.effect = effect;
     }
 
     public void transitionStatus(RiskScenarioStatus newStatus) {
@@ -125,44 +118,36 @@ public class RiskScenario extends BaseEntity {
         return status;
     }
 
-    public String getThreatSource() {
-        return threatSource;
+    public String getThreat() {
+        return threat;
     }
 
-    public void setThreatSource(String threatSource) {
-        this.threatSource = threatSource;
+    public void setThreat(String threat) {
+        this.threat = threat;
     }
 
-    public String getThreatEvent() {
-        return threatEvent;
+    public String getMethod() {
+        return method;
     }
 
-    public void setThreatEvent(String threatEvent) {
-        this.threatEvent = threatEvent;
+    public void setMethod(String method) {
+        this.method = method;
     }
 
-    public String getAffectedObject() {
-        return affectedObject;
+    public String getAsset() {
+        return asset;
     }
 
-    public void setAffectedObject(String affectedObject) {
-        this.affectedObject = affectedObject;
+    public void setAsset(String asset) {
+        this.asset = asset;
     }
 
-    public String getVulnerability() {
-        return vulnerability;
+    public String getEffect() {
+        return effect;
     }
 
-    public void setVulnerability(String vulnerability) {
-        this.vulnerability = vulnerability;
-    }
-
-    public String getConsequence() {
-        return consequence;
-    }
-
-    public void setConsequence(String consequence) {
-        this.consequence = consequence;
+    public void setEffect(String effect) {
+        this.effect = effect;
     }
 
     public String getTimeHorizon() {
@@ -179,6 +164,10 @@ public class RiskScenario extends BaseEntity {
 
     public void setCreatedBy(String createdBy) {
         this.createdBy = createdBy;
+    }
+
+    public String getFairSentence() {
+        return threat + " impacts " + asset + " via " + method + ", causing " + effect;
     }
 
     @Override

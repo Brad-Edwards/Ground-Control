@@ -519,6 +519,7 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "123", // V123: create mapping_evidence_audit (Envers @ElementCollection shadow)
                         "124", // V124: add treatment_plan methodology binding columns (GC-T004 C5)
                         "125", // V125: add methodology_profile treatment_strategy_vocabulary (GC-T004 C5)
-                        "126"); // V126: add risk_assessment_result reassessment_required_at (GC-T004 C8)
+                        "126", // V126: add risk_assessment_result reassessment_required_at (GC-T004 C8)
+                        "127"); // V127: FAIR-CRST rename risk_scenario axes + drop vulnerability (GC-T013)
     }
 }

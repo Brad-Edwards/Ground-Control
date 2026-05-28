@@ -73,7 +73,6 @@ class RiskScenarioControllerTest {
                 "Data breach and unauthorized access");
         rs.setTimeHorizon("12 months");
         rs.setCreatedBy("system");
-        rs.setVulnerability("Weak password policy");
         setField(rs, "id", RS_ID);
         setField(rs, "createdAt", NOW);
         setField(rs, "updatedAt", NOW);
@@ -94,11 +93,10 @@ class RiskScenarioControllerTest {
                         {
                             "uid": "RS-001",
                             "title": "Credential stuffing on customer portal",
-                            "threatSource": "External threat actor",
-                            "threatEvent": "Credential stuffing attack",
-                            "affectedObject": "Customer authentication portal",
-                            "vulnerability": "Weak password policy",
-                            "consequence": "Data breach and unauthorized access",
+                            "threat": "External threat actor",
+                            "method": "Credential stuffing attack",
+                            "asset": "Customer authentication portal",
+                            "effect": "Data breach and unauthorized access",
                             "timeHorizon": "12 months"
                         }
                         """))
@@ -106,7 +104,7 @@ class RiskScenarioControllerTest {
                 .andExpect(jsonPath("$.id", is(RS_ID.toString())))
                 .andExpect(jsonPath("$.graphNodeId", is("RISK_SCENARIO:" + RS_ID)))
                 .andExpect(jsonPath("$.uid", is("RS-001")))
-                .andExpect(jsonPath("$.threatSource", is("External threat actor")))
+                .andExpect(jsonPath("$.threat", is("External threat actor")))
                 .andExpect(jsonPath("$.status", is("DRAFT")));
 
         // Lock in the request→command mapping: without this capture, the test
@@ -118,11 +116,10 @@ class RiskScenarioControllerTest {
         org.junit.jupiter.api.Assertions.assertEquals(PROJECT_ID, command.projectId());
         org.junit.jupiter.api.Assertions.assertEquals("RS-001", command.uid());
         org.junit.jupiter.api.Assertions.assertEquals("Credential stuffing on customer portal", command.title());
-        org.junit.jupiter.api.Assertions.assertEquals("External threat actor", command.threatSource());
-        org.junit.jupiter.api.Assertions.assertEquals("Credential stuffing attack", command.threatEvent());
-        org.junit.jupiter.api.Assertions.assertEquals("Customer authentication portal", command.affectedObject());
-        org.junit.jupiter.api.Assertions.assertEquals("Weak password policy", command.vulnerability());
-        org.junit.jupiter.api.Assertions.assertEquals("Data breach and unauthorized access", command.consequence());
+        org.junit.jupiter.api.Assertions.assertEquals("External threat actor", command.threat());
+        org.junit.jupiter.api.Assertions.assertEquals("Credential stuffing attack", command.method());
+        org.junit.jupiter.api.Assertions.assertEquals("Customer authentication portal", command.asset());
+        org.junit.jupiter.api.Assertions.assertEquals("Data breach and unauthorized access", command.effect());
         org.junit.jupiter.api.Assertions.assertEquals("12 months", command.timeHorizon());
     }
 
@@ -135,14 +132,156 @@ class RiskScenarioControllerTest {
                                         """
                         {
                             "title": "Title",
-                            "threatSource": "Source",
-                            "threatEvent": "Event",
-                            "affectedObject": "Object",
-                            "consequence": "Consequence",
+                            "threat": "Source",
+                            "method": "Event",
+                            "asset": "Object",
+                            "effect": "Consequence",
                             "timeHorizon": "12 months"
                         }
                         """))
                 .andExpect(status().isUnprocessableEntity());
+    }
+
+    // TDD: fairSentence projection — GREEN after RiskScenarioResponse.from() computes it.
+    @Test
+    void createResponseIncludesFairSentence() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(riskScenarioService.create(any())).thenReturn(makeScenario());
+
+        mockMvc.perform(
+                        post("/api/v1/risk-scenarios")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                        {
+                            "uid": "RS-001",
+                            "title": "Credential stuffing on customer portal",
+                            "threat": "External threat actor",
+                            "method": "Credential stuffing attack",
+                            "asset": "Customer authentication portal",
+                            "effect": "Data breach and unauthorized access",
+                            "timeHorizon": "12 months"
+                        }
+                        """))
+                .andExpect(status().isCreated())
+                .andExpect(
+                        jsonPath(
+                                "$.fairSentence",
+                                is(
+                                        "External threat actor impacts Customer authentication portal via Credential stuffing attack, causing Data breach and unauthorized access")));
+    }
+
+    // TDD: @Size(min=10) on threat — 9-char value must return 422.
+    @Test
+    void createReturns422WhenThreatTooShort() throws Exception {
+        mockMvc.perform(
+                        post("/api/v1/risk-scenarios")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                        {
+                            "uid": "RS-001",
+                            "title": "Credential stuffing on customer portal",
+                            "threat": "123456789",
+                            "method": "Credential stuffing attack",
+                            "asset": "Customer authentication portal",
+                            "effect": "Data breach and unauthorized access",
+                            "timeHorizon": "12 months"
+                        }
+                        """))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    // TDD: @Size(min=10) on method — 9-char value must return 422.
+    @Test
+    void createReturns422WhenMethodTooShort() throws Exception {
+        mockMvc.perform(
+                        post("/api/v1/risk-scenarios")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                        {
+                            "uid": "RS-001",
+                            "title": "Credential stuffing on customer portal",
+                            "threat": "External threat actor",
+                            "method": "123456789",
+                            "asset": "Customer authentication portal",
+                            "effect": "Data breach and unauthorized access",
+                            "timeHorizon": "12 months"
+                        }
+                        """))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    // TDD: @Size(min=10) on asset — 9-char value must return 422.
+    @Test
+    void createReturns422WhenAssetTooShort() throws Exception {
+        mockMvc.perform(
+                        post("/api/v1/risk-scenarios")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                        {
+                            "uid": "RS-001",
+                            "title": "Credential stuffing on customer portal",
+                            "threat": "External threat actor",
+                            "method": "Credential stuffing attack",
+                            "asset": "123456789",
+                            "effect": "Data breach and unauthorized access",
+                            "timeHorizon": "12 months"
+                        }
+                        """))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    // TDD: @Size(min=10) on effect — 9-char value must return 422.
+    @Test
+    void createReturns422WhenEffectTooShort() throws Exception {
+        mockMvc.perform(
+                        post("/api/v1/risk-scenarios")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                        {
+                            "uid": "RS-001",
+                            "title": "Credential stuffing on customer portal",
+                            "threat": "External threat actor",
+                            "method": "Credential stuffing attack",
+                            "asset": "Customer authentication portal",
+                            "effect": "123456789",
+                            "timeHorizon": "12 months"
+                        }
+                        """))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    // TDD: vulnerability is no longer on RiskScenarioRequest — Spring Boot silently
+    // ignores unknown JSON properties by default, so a request body including
+    // "vulnerability" must still be accepted (200/201) with the known fields processed.
+    @Test
+    void createIgnoresVulnerabilityField() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(riskScenarioService.create(any())).thenReturn(makeScenario());
+
+        mockMvc.perform(
+                        post("/api/v1/risk-scenarios")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                        {
+                            "uid": "RS-001",
+                            "title": "Credential stuffing on customer portal",
+                            "threat": "External threat actor",
+                            "method": "Credential stuffing attack",
+                            "asset": "Customer authentication portal",
+                            "effect": "Data breach and unauthorized access",
+                            "timeHorizon": "12 months",
+                            "vulnerability": "old field should be ignored"
+                        }
+                        """))
+                .andExpect(status().isCreated());
     }
 
     @Test

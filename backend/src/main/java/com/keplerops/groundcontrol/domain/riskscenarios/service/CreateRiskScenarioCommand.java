@@ -6,9 +6,8 @@ public record CreateRiskScenarioCommand(
         UUID projectId,
         String uid,
         String title,
-        String threatSource,
-        String threatEvent,
-        String affectedObject,
-        String vulnerability,
-        String consequence,
+        String threat,
+        String method,
+        String asset,
+        String effect,
         String timeHorizon) {}

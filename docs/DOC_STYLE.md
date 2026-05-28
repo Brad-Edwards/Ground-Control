@@ -95,11 +95,16 @@ the registration gate and crashes every call with
 `v3Schema.safeParseAsync is not a function`. New tools should match the
 `server.tool` pattern used by the bulk of the file.
 
-## MCP shape extensions are not doc edits
+## MCP shape extensions and policy updates are not doc edits
 
 Additive Zod schema fields or new entries in `mcp/ground-control/lib.js`'s
 `TO_CAMEL` map (for example, the typed reassessment-trigger shape added for
-GC-T004 / C8 in issue #863) do not by themselves require new reference-doc
-prose. The MCP tool description string in `gc-risk-governance.js` is the
-contract surface; keep it accurate when adding or removing fields, and the
-changelog fragment in `changelog.d/` carries the temporal record.
+GC-T004 / C8 in issue #863, or field renames in the `gc_risk_scenario` tool)
+do not by themselves require new reference-doc prose. The MCP tool description
+string in the corresponding adapter file (for example, `gc-risk-governance.js` or
+`gc-risk-scenario.js`) is the contract surface; keep it accurate when adding or
+removing fields, and the changelog fragment in `changelog.d/` carries the
+temporal record. Similarly, updates to `tools/policy/checks.py` that extend
+the list of recognized adapter files (for example, adding `gc-risk-scenario.js`
+to the controller-parity check) are policy-surface changes recorded in
+amendments to ADR-054, not documentation edits.

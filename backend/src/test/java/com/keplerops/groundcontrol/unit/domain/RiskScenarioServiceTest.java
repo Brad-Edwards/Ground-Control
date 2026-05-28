@@ -101,7 +101,6 @@ class RiskScenarioServiceTest {
                 "Data breach and unauthorized access");
         rs.setTimeHorizon("12 months");
         rs.setCreatedBy("system");
-        rs.setVulnerability("Weak password policy");
         setField(rs, "id", UUID.randomUUID());
         setField(rs, "createdAt", NOW);
         setField(rs, "updatedAt", NOW);
@@ -125,7 +124,6 @@ class RiskScenarioServiceTest {
                     "External actor",
                     "Credential stuffing",
                     "Auth portal",
-                    "Weak passwords",
                     "Data breach",
                     "12 months");
 
@@ -133,8 +131,7 @@ class RiskScenarioServiceTest {
 
             assertThat(result.getUid()).isEqualTo("RS-001");
             assertThat(result.getTitle()).isEqualTo("Credential stuffing");
-            assertThat(result.getThreatSource()).isEqualTo("External actor");
-            assertThat(result.getVulnerability()).isEqualTo("Weak passwords");
+            assertThat(result.getThreat()).isEqualTo("External actor");
             assertThat(result.getStatus()).isEqualTo(RiskScenarioStatus.DRAFT);
         }
 
@@ -145,24 +142,31 @@ class RiskScenarioServiceTest {
                     .thenReturn(true);
 
             var command = new CreateRiskScenarioCommand(
-                    projectId, "RS-001", "Title", "Source", "Event", "Object", null, "Consequence", "12m");
+                    projectId, "RS-001", "Title", "Source", "Event", "Object", "Consequence", "12m");
 
             assertThatThrownBy(() -> riskScenarioService.create(command)).isInstanceOf(ConflictException.class);
         }
 
         @Test
-        void createsWithNullOptionalFields() {
+        void fairSentenceIsComputedFromFourAxes() {
             when(projectService.getById(projectId)).thenReturn(project);
             when(riskScenarioRepository.existsByProjectIdAndUid(any(), any())).thenReturn(false);
             when(riskScenarioRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             var command = new CreateRiskScenarioCommand(
-                    projectId, "RS-002", "Title", "Source", "Event", "Object", null, "Consequence", "6m");
+                    projectId,
+                    "RS-002",
+                    "Title",
+                    "Attacker",
+                    "Phishing",
+                    "Employee credentials",
+                    "Data exfiltration",
+                    "6m");
 
             var result = riskScenarioService.create(command);
 
-            assertThat(result.getVulnerability()).isNull();
-            assertThat(result.getAffectedObject()).isEqualTo("Object");
+            assertThat(result.getFairSentence())
+                    .isEqualTo("Attacker impacts Employee credentials via Phishing, causing Data exfiltration");
         }
     }
 
@@ -176,11 +180,11 @@ class RiskScenarioServiceTest {
                     .thenReturn(Optional.of(rs));
             when(riskScenarioRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            var command = new UpdateRiskScenarioCommand("Updated title", null, null, null, null, null, null);
+            var command = new UpdateRiskScenarioCommand("Updated title", null, null, null, null, null);
             var result = riskScenarioService.update(projectId, rs.getId(), command);
 
             assertThat(result.getTitle()).isEqualTo("Updated title");
-            assertThat(result.getThreatSource()).isEqualTo("External threat actor");
+            assertThat(result.getThreat()).isEqualTo("External threat actor");
         }
 
         @Test
@@ -188,7 +192,7 @@ class RiskScenarioServiceTest {
             var id = UUID.randomUUID();
             when(riskScenarioRepository.findByIdAndProjectId(id, projectId)).thenReturn(Optional.empty());
 
-            var command = new UpdateRiskScenarioCommand("Title", null, null, null, null, null, null);
+            var command = new UpdateRiskScenarioCommand("Title", null, null, null, null, null);
 
             assertThatThrownBy(() -> riskScenarioService.update(projectId, id, command))
                     .isInstanceOf(NotFoundException.class);
@@ -196,17 +200,16 @@ class RiskScenarioServiceTest {
 
         // Issue #876 (codex review cycle 1, class finding): partial update must not
         // overwrite create-required fields with blank strings. RiskScenarioRequest
-        // marks title / threatSource / threatEvent / affectedObject / consequence /
-        // timeHorizon as @NotBlank; the update path must enforce the same contract
-        // when a value is supplied. Mirrors the rejectBlankIfPresent pattern in
-        // ThreatModelService.update.
+        // marks title / threat / method / asset / effect / timeHorizon as @NotBlank;
+        // the update path must enforce the same contract when a value is supplied.
+        // Mirrors the rejectBlankIfPresent pattern in ThreatModelService.update.
         @Test
         void rejectsBlankTitle() {
             var rs = makeScenario();
             var rsId = rs.getId();
             when(riskScenarioRepository.findByIdAndProjectId(rsId, projectId)).thenReturn(Optional.of(rs));
 
-            var command = new UpdateRiskScenarioCommand("   ", null, null, null, null, null, null);
+            var command = new UpdateRiskScenarioCommand("   ", null, null, null, null, null);
 
             assertThatThrownBy(() -> riskScenarioService.update(projectId, rsId, command))
                     .isInstanceOf(DomainValidationException.class)
@@ -214,55 +217,55 @@ class RiskScenarioServiceTest {
         }
 
         @Test
-        void rejectsBlankThreatSource() {
+        void rejectsBlankThreat() {
             var rs = makeScenario();
             var rsId = rs.getId();
             when(riskScenarioRepository.findByIdAndProjectId(rsId, projectId)).thenReturn(Optional.of(rs));
 
-            var command = new UpdateRiskScenarioCommand(null, "", null, null, null, null, null);
+            var command = new UpdateRiskScenarioCommand(null, "", null, null, null, null);
 
             assertThatThrownBy(() -> riskScenarioService.update(projectId, rsId, command))
                     .isInstanceOf(DomainValidationException.class)
-                    .hasMessageContaining("threatSource");
+                    .hasMessageContaining("threat");
         }
 
         @Test
-        void rejectsBlankThreatEvent() {
+        void rejectsBlankMethod() {
             var rs = makeScenario();
             var rsId = rs.getId();
             when(riskScenarioRepository.findByIdAndProjectId(rsId, projectId)).thenReturn(Optional.of(rs));
 
-            var command = new UpdateRiskScenarioCommand(null, null, " ", null, null, null, null);
+            var command = new UpdateRiskScenarioCommand(null, null, " ", null, null, null);
 
             assertThatThrownBy(() -> riskScenarioService.update(projectId, rsId, command))
                     .isInstanceOf(DomainValidationException.class)
-                    .hasMessageContaining("threatEvent");
+                    .hasMessageContaining("method");
         }
 
         @Test
-        void rejectsBlankAffectedObject() {
+        void rejectsBlankAsset() {
             var rs = makeScenario();
             var rsId = rs.getId();
             when(riskScenarioRepository.findByIdAndProjectId(rsId, projectId)).thenReturn(Optional.of(rs));
 
-            var command = new UpdateRiskScenarioCommand(null, null, null, "", null, null, null);
+            var command = new UpdateRiskScenarioCommand(null, null, null, "", null, null);
 
             assertThatThrownBy(() -> riskScenarioService.update(projectId, rsId, command))
                     .isInstanceOf(DomainValidationException.class)
-                    .hasMessageContaining("affectedObject");
+                    .hasMessageContaining("asset");
         }
 
         @Test
-        void rejectsBlankConsequence() {
+        void rejectsBlankEffect() {
             var rs = makeScenario();
             var rsId = rs.getId();
             when(riskScenarioRepository.findByIdAndProjectId(rsId, projectId)).thenReturn(Optional.of(rs));
 
-            var command = new UpdateRiskScenarioCommand(null, null, null, null, null, "", null);
+            var command = new UpdateRiskScenarioCommand(null, null, null, null, "", null);
 
             assertThatThrownBy(() -> riskScenarioService.update(projectId, rsId, command))
                     .isInstanceOf(DomainValidationException.class)
-                    .hasMessageContaining("consequence");
+                    .hasMessageContaining("effect");
         }
 
         @Test
@@ -271,7 +274,7 @@ class RiskScenarioServiceTest {
             var rsId = rs.getId();
             when(riskScenarioRepository.findByIdAndProjectId(rsId, projectId)).thenReturn(Optional.of(rs));
 
-            var command = new UpdateRiskScenarioCommand(null, null, null, null, null, null, "   ");
+            var command = new UpdateRiskScenarioCommand(null, null, null, null, null, "   ");
 
             assertThatThrownBy(() -> riskScenarioService.update(projectId, rsId, command))
                     .isInstanceOf(DomainValidationException.class)
@@ -280,18 +283,18 @@ class RiskScenarioServiceTest {
 
         @Test
         void allowsAbsentRequiredFields() {
-            // A partial update that touches only the optional vulnerability field
-            // must not be blocked by the new blank-if-present checks.
+            // A partial update that touches only the title must not be blocked
+            // by the blank-if-present checks for fields not in the command.
             var rs = makeScenario();
             when(riskScenarioRepository.findByIdAndProjectId(rs.getId(), projectId))
                     .thenReturn(Optional.of(rs));
             when(riskScenarioRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            var command = new UpdateRiskScenarioCommand(null, null, null, null, "new vuln", null, null);
+            var command = new UpdateRiskScenarioCommand("New title", null, null, null, null, null);
             var result = riskScenarioService.update(projectId, rs.getId(), command);
 
-            assertThat(result.getVulnerability()).isEqualTo("new vuln");
-            assertThat(result.getTitle()).isEqualTo("Credential stuffing on customer portal");
+            assertThat(result.getTitle()).isEqualTo("New title");
+            assertThat(result.getThreat()).isEqualTo("External threat actor");
         }
     }
 
