@@ -198,11 +198,6 @@ class RiskScenarioServiceTest {
                     .isInstanceOf(NotFoundException.class);
         }
 
-        // Issue #876 (codex review cycle 1, class finding): partial update must not
-        // overwrite create-required fields with blank strings. RiskScenarioRequest
-        // marks title / threat / method / asset / effect / timeHorizon as @NotBlank;
-        // the update path must enforce the same contract when a value is supplied.
-        // Mirrors the rejectBlankIfPresent pattern in ThreatModelService.update.
         @Test
         void rejectsBlankTitle() {
             var rs = makeScenario();
