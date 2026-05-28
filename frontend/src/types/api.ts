@@ -596,7 +596,19 @@ export type GraphEntityType =
   | "RISK_ASSESSMENT_RESULT"
   | "TREATMENT_PLAN"
   | "METHODOLOGY_PROFILE"
-  | "EVIDENCE_ARTIFACT";
+  | "EVIDENCE_ARTIFACT"
+  | "CONTROL"
+  | "CONTROL_LINK"
+  | "CONTROL_TEST"
+  | "CONTROL_EFFECTIVENESS_ASSESSMENT"
+  | "VERIFICATION_RESULT"
+  | "THREAT_MODEL"
+  | "FINDING"
+  | "AUDIT"
+  | "AUDIT_LINK"
+  | "RISK_CONTROL_MAPPING"
+  | "SCOPED_CONTROL_IMPLEMENTATION"
+  | "DOCUMENT";
 
 // GC-M012 asset ownership / criticality / scope vocabularies. Mirrors the
 // backend `AssetCriticality`, `AssetEnvironment`, and `AssetScope` enums; ADR-012

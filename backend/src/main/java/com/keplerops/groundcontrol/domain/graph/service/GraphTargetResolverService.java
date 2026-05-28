@@ -7,6 +7,7 @@ import com.keplerops.groundcontrol.domain.audits.repository.AuditRepository;
 import com.keplerops.groundcontrol.domain.audits.state.AuditLinkTargetType;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlRepository;
 import com.keplerops.groundcontrol.domain.controls.state.ControlLinkTargetType;
+import com.keplerops.groundcontrol.domain.documents.repository.DocumentRepository;
 import com.keplerops.groundcontrol.domain.evidence.repository.EvidenceArtifactRepository;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.findings.repository.FindingRepository;
@@ -48,6 +49,7 @@ public class GraphTargetResolverService {
     private static final String LABEL_FINDING = "Finding";
     private static final String LABEL_AUDIT = "Audit";
     private static final String LABEL_EVIDENCE = "Evidence";
+    private static final String LABEL_DOCUMENT = "Document";
 
     private final RequirementRepository requirementRepository;
     private final OperationalAssetRepository assetRepository;
@@ -63,6 +65,7 @@ public class GraphTargetResolverService {
     private final FindingRepository findingRepository;
     private final AuditRepository auditRepository;
     private final EvidenceArtifactRepository evidenceArtifactRepository;
+    private final DocumentRepository documentRepository;
 
     public GraphTargetResolverService(
             RequirementRepository requirementRepository,
@@ -78,7 +81,8 @@ public class GraphTargetResolverService {
             VerificationResultRepository verificationResultRepository,
             FindingRepository findingRepository,
             AuditRepository auditRepository,
-            EvidenceArtifactRepository evidenceArtifactRepository) {
+            EvidenceArtifactRepository evidenceArtifactRepository,
+            DocumentRepository documentRepository) {
         this.requirementRepository = requirementRepository;
         this.assetRepository = assetRepository;
         this.observationRepository = observationRepository;
@@ -93,6 +97,7 @@ public class GraphTargetResolverService {
         this.findingRepository = findingRepository;
         this.auditRepository = auditRepository;
         this.evidenceArtifactRepository = evidenceArtifactRepository;
+        this.documentRepository = documentRepository;
     }
 
     public ValidatedTarget validateAssetTarget(
@@ -396,6 +401,14 @@ public class GraphTargetResolverService {
                     LABEL_TREATMENT_PLAN);
             case EXTERNAL -> externalTarget(targetIdentifier);
         };
+    }
+
+    public ValidatedTarget validateDocumentTarget(UUID projectId, UUID targetEntityId) {
+        if (targetEntityId == null) {
+            throw new DomainValidationException(LABEL_DOCUMENT + " links require targetEntityId");
+        }
+        return internalTarget(
+                targetEntityId, documentRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_DOCUMENT);
     }
 
     private ValidatedTarget internalTarget(UUID targetEntityId, boolean exists, String label) {

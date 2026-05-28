@@ -160,6 +160,10 @@ exports (alongside `request_id` / `tenant_id`). See [ADR-033](../../architecture
 
 **Tooling:** Status state machine with JML contracts (verified by OpenJML ESC + Z3), Flyway migrations, Spotless/Error Prone/SpotBugs/Checkstyle/JaCoCo, ArchUnit architecture tests, CI pipeline (build + test + integration + verify), production Dockerfile, GHCR publishing, E2E integration tests.
 
+## Mixed-Entity Graph Participants
+
+The mixed-entity graph (materialized via `AgeGraphService` + Apache AGE) now includes the following first-class domain participants, each backed by a `GraphProjectionContributor` that emits typed nodes into the project-scoped graph: Requirement, OperationalAsset (and Observation), RiskScenario, Control, ControlTest, ControlEffectivenessAssessment, VerificationResult, ThreatModel, Finding, EvidenceArtifact, Audit, RiskControlMapping, and Document (added GC-G007). GitHub Issues, external code references, and other artifacts without a backend aggregate remain external targets addressed by identifier only, not first-class graph nodes. Every first-class participant exposes a stable `graphNodeId` field on its REST response (via `GraphIds.nodeId`) for client-side graph navigation. Property keys emitted by contributors must be registered in `AgeGraphService.APPROVED_PROPERTY_KEYS` (ADR-032), and each new contributor must ship a regression test asserting that registration.
+
 ## Status Drift Analysis
 
 Status drift analysis is a read-only requirements-domain analysis. It flags requirements that are still `DRAFT` while independent artifacts suggest implementation or design completion has already landed. It does not create traceability links, transition requirements, or relax the `IMPLEMENTS`-only on `ACTIVE` rule.

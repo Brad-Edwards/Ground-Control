@@ -10,6 +10,7 @@ import com.keplerops.groundcontrol.domain.assets.state.AssetLinkTargetType;
 import com.keplerops.groundcontrol.domain.audits.repository.AuditRepository;
 import com.keplerops.groundcontrol.domain.audits.state.AuditLinkTargetType;
 import com.keplerops.groundcontrol.domain.controls.state.ControlLinkTargetType;
+import com.keplerops.groundcontrol.domain.documents.repository.DocumentRepository;
 import com.keplerops.groundcontrol.domain.evidence.repository.EvidenceArtifactRepository;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.findings.repository.FindingRepository;
@@ -79,6 +80,9 @@ class GraphTargetResolverServiceTest {
 
     @Mock
     private EvidenceArtifactRepository evidenceArtifactRepository;
+
+    @Mock
+    private DocumentRepository documentRepository;
 
     @InjectMocks
     private GraphTargetResolverService graphTargetResolverService;
@@ -928,5 +932,35 @@ class GraphTargetResolverServiceTest {
                         projectId, FindingLinkTargetType.EVIDENCE, targetId, null))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("Evidence");
+    }
+
+    // GC-G007: Document is a first-class graph participant. validateDocumentTarget
+    // enforces project-scoped existence for every document link reference.
+
+    @Test
+    void validateDocumentTargetHappyPathReturnsInternalTarget() {
+        when(documentRepository.existsByIdAndProjectId(targetId, projectId)).thenReturn(true);
+
+        var validated = graphTargetResolverService.validateDocumentTarget(projectId, targetId);
+
+        assertThat(validated.internal()).isTrue();
+        assertThat(validated.targetEntityId()).isEqualTo(targetId);
+        assertThat(validated.targetIdentifier()).isNull();
+    }
+
+    @Test
+    void validateDocumentTargetRejectsNullTargetEntityId() {
+        assertThatThrownBy(() -> graphTargetResolverService.validateDocumentTarget(projectId, null))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("Document links require targetEntityId");
+    }
+
+    @Test
+    void validateDocumentTargetRejectsDocumentNotInProject() {
+        when(documentRepository.existsByIdAndProjectId(targetId, projectId)).thenReturn(false);
+
+        assertThatThrownBy(() -> graphTargetResolverService.validateDocumentTarget(projectId, targetId))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("Document target not found in the requested project");
     }
 }
