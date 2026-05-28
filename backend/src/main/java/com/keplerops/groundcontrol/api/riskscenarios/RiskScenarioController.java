@@ -42,11 +42,10 @@ public class RiskScenarioController {
                 projectId,
                 request.uid(),
                 request.title(),
-                request.threatSource(),
-                request.threatEvent(),
-                request.affectedObject(),
-                request.vulnerability(),
-                request.consequence(),
+                request.threat(),
+                request.method(),
+                request.asset(),
+                request.effect(),
                 request.timeHorizon());
         return RiskScenarioResponse.from(riskScenarioService.create(command));
     }
@@ -79,11 +78,10 @@ public class RiskScenarioController {
         var projectId = projectService.requireProjectId(project);
         var command = new UpdateRiskScenarioCommand(
                 request.title(),
-                request.threatSource(),
-                request.threatEvent(),
-                request.affectedObject(),
-                request.vulnerability(),
-                request.consequence(),
+                request.threat(),
+                request.method(),
+                request.asset(),
+                request.effect(),
                 request.timeHorizon());
         return RiskScenarioResponse.from(riskScenarioService.update(projectId, id, command));
     }

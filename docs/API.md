@@ -1006,6 +1006,12 @@ association).
 
 All endpoints accept an optional `project` query parameter (required in multi-project deployments).
 
+**RiskScenarioRequest fields (FAIR-CRST scoping axes):** `uid` (required, max 20), `title` (required, max 200), `threat` (required, min 10, no max), `method` (required, min 10, no max), `asset` (required, min 10, no max), `effect` (required, min 10, no max), `timeHorizon` (required, max 100). The `vulnerability` field has been removed.
+
+**UpdateRiskScenarioRequest fields:** `title`, `threat`, `method`, `asset`, `effect`, `timeHorizon`, all optional (partial update). Required fields (`threat`, `method`, `asset`, `effect`) reject blank strings when present.
+
+**RiskScenarioResponse fields:** all request fields (minus validation constraints), plus `id`, `graphNodeId`, `projectIdentifier`, `status`, `fairSentence` (derived, never stored), `createdAt`, `updatedAt`, `createdBy`. The `fairSentence` field renders `"{threat} impacts {asset} via {method}, causing {effect}"` and is computed on every response.
+
 `GET /{id}/trace` returns a `SecurityTraceResponse` with `sourceType` (`RISK_SCENARIO`), `sourceId`, `sourceUid`,
 `sourceTitle`, `assets[]`, `controls[]`, and `requirements[]`. Each requirement entry carries `requirement`
 (full requirement record) and `artifacts[]` (the `TraceabilityLink` rows recording implementing code, PRs,

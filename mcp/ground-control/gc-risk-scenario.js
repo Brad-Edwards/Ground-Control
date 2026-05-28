@@ -26,27 +26,22 @@ export const GC_RISK_SCENARIO_ACTIONS = [
 
 // Snake_case body fields accepted by gc_risk_scenario.create — mirrors
 // backend RiskScenarioRequest. uid is create-only; the update DTO has no uid.
-// vulnerability is the only non-@NotBlank field on the create DTO.
 export const GC_RISK_SCENARIO_CREATE_BODY_FIELDS = [
-  "uid", "title", "threat_source", "threat_event",
-  "affected_object", "vulnerability", "consequence", "time_horizon",
+  "uid", "title", "threat", "method", "asset", "effect", "time_horizon",
 ];
 
 // Snake_case body fields accepted by gc_risk_scenario.update — mirrors
 // backend UpdateRiskScenarioRequest. All fields are optional (partial
 // update); title and time_horizon retain their @Size caps server-side.
 export const GC_RISK_SCENARIO_UPDATE_BODY_FIELDS = [
-  "title", "threat_source", "threat_event",
-  "affected_object", "vulnerability", "consequence", "time_horizon",
+  "title", "threat", "method", "asset", "effect", "time_horizon",
 ];
 
 // @NotBlank fields on backend RiskScenarioRequest. Enforced at the adapter
 // boundary so callers get a clear `'X' is required` error instead of waiting
-// for a backend 422. vulnerability is intentionally NOT required (it is the
-// only optional field on the create DTO).
+// for a backend 422.
 export const GC_RISK_SCENARIO_CREATE_REQUIRED_FIELDS = [
-  "uid", "title", "threat_source", "threat_event",
-  "affected_object", "consequence", "time_horizon",
+  "uid", "title", "threat", "method", "asset", "effect", "time_horizon",
 ];
 
 export const gcRiskScenarioZodShape = {
@@ -55,11 +50,10 @@ export const gcRiskScenarioZodShape = {
   uid: z.string().optional(),
   project: z.string().optional(),
   title: z.string().optional(),
-  threat_source: z.string().optional(),
-  threat_event: z.string().optional(),
-  affected_object: z.string().optional(),
-  vulnerability: z.string().optional(),
-  consequence: z.string().optional(),
+  threat: z.string().optional(),
+  method: z.string().optional(),
+  asset: z.string().optional(),
+  effect: z.string().optional(),
   time_horizon: z.string().optional(),
   status: z.enum(RISK_SCENARIO_STATUSES).optional(),
   scenario_id: z.string().uuid().optional(),
@@ -71,8 +65,8 @@ export const gcRiskScenarioZodShape = {
 
 export const GC_RISK_SCENARIO_DESCRIPTION =
   `Risk scenarios + their links. Actions: ${GC_RISK_SCENARIO_ACTIONS.join(", ")}. ` +
-  `create requires: ${GC_RISK_SCENARIO_CREATE_REQUIRED_FIELDS.join(", ")} ` +
-  `(and accepts optional vulnerability). update accepts the same fields minus uid, all optional. ` +
+  `create requires: ${GC_RISK_SCENARIO_CREATE_REQUIRED_FIELDS.join(", ")}. ` +
+  `update accepts the same fields minus uid, all optional. ` +
   `status is consumed only by the transition action (creation defaults to DRAFT). ` +
   `requirements returns all requirements linked to the risk scenario (requires id). ` +
   `trace returns the full end-to-end trace: assets, controls, requirements, and per-requirement ` +

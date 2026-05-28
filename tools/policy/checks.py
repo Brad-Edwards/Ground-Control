@@ -350,11 +350,16 @@ def run_controller_contracts(changed_files: list[str], root: Path = REPO_ROOT) -
     if "mcp/ground-control/lib.js" not in changed_files:
         missing.append("mcp/ground-control/lib.js")
     # MCP server adapter companion: most tools register inline in index.js, but
-    # gc_risk_governance was factored into gc-risk-governance.js (its Zod shape,
-    # description, and handler live there; index.js only registers the imports).
-    # Either file satisfies the MCP-adapter requirement for risk-governance
-    # controllers; index.js stays mandatory for any tool still registered inline.
-    adapter_files = ("mcp/ground-control/index.js", "mcp/ground-control/gc-risk-governance.js")
+    # gc_risk_governance and gc_risk_scenario were factored into gc-risk-governance.js
+    # and gc-risk-scenario.js respectively (their Zod shapes, descriptions, and handlers
+    # live there; index.js only registers the imports). Either file satisfies the
+    # MCP-adapter requirement for those controllers; index.js stays mandatory for any
+    # tool still registered inline.
+    adapter_files = (
+        "mcp/ground-control/index.js",
+        "mcp/ground-control/gc-risk-governance.js",
+        "mcp/ground-control/gc-risk-scenario.js",
+    )
     if not any(adapter in changed_files for adapter in adapter_files):
         missing.append("one of: " + ", ".join(adapter_files))
     if missing:

@@ -564,8 +564,7 @@ const TO_CAMEL = {
   assurance_level: "assuranceLevel",
   evidence_ref: "evidenceRef",
   observation_id: "observationId",
-  threat_source: "threatSource",
-  threat_event: "threatEvent",
+  fair_sentence: "fairSentence",
   // Backend ThreatModelRequest uses `stride` (typed StrideCategory) on the wire;
   // the MCP surface keeps `stride_category` for clarity. Mapping is needed to
   // bridge the rename; without it Jackson silently dropped the field (issue #875).
@@ -683,7 +682,6 @@ const TO_CAMEL = {
   clear_root_cause_analysis: "clearRootCauseAnalysis",
   clear_owner: "clearOwner",
   clear_due_date: "clearDueDate",
-  affected_object: "affectedObject",
   time_horizon: "timeHorizon",
   observation_refs: "observationRefs",
   topology_context: "topologyContext",

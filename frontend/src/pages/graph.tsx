@@ -121,7 +121,7 @@ function getNodeDescription(node: GraphNodeData): string {
     return getStringProperty(node, "observationValue");
   }
   if (entityType === "RISK_SCENARIO") {
-    return getStringProperty(node, "consequence");
+    return getStringProperty(node, "effect");
   }
   if (entityType === "RISK_REGISTER_RECORD") {
     return getStringProperty(node, "assetScopeSummary");
@@ -171,8 +171,8 @@ function getTooltipTags(
     ],
     RISK_SCENARIO: [
       { label: "Status", key: "status" },
-      { label: "Threat", key: "threatSource" },
-      { label: "Event", key: "threatEvent" },
+      { label: "Threat", key: "threat" },
+      { label: "Method", key: "method" },
     ],
     RISK_REGISTER_RECORD: [
       { label: "Status", key: "status" },
@@ -459,7 +459,7 @@ export function Graph() {
       const statement =
         String(d.entityType ?? "") === "REQUIREMENT"
           ? String(d.statement ?? "")
-          : String(d.description ?? d.observationValue ?? d.consequence ?? "");
+          : String(d.description ?? d.observationValue ?? d.effect ?? "");
       if (statement) {
         const stmtDiv = document.createElement("div");
         stmtDiv.style.cssText =
@@ -524,9 +524,9 @@ export function Graph() {
           analystIdentity: getStringProperty(node, "analystIdentity"),
           family: getStringProperty(node, "family"),
           version: getStringProperty(node, "version"),
-          threatSource: getStringProperty(node, "threatSource"),
-          threatEvent: getStringProperty(node, "threatEvent"),
-          consequence: getStringProperty(node, "consequence"),
+          threat: getStringProperty(node, "threat"),
+          method: getStringProperty(node, "method"),
+          effect: getStringProperty(node, "effect"),
           observationValue: getStringProperty(node, "observationValue"),
           color: getNodeColor(
             {

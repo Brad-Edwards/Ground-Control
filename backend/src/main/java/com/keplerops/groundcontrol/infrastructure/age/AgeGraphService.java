@@ -182,14 +182,12 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
             "confidence",
             // Risk-scenario projection.
             "category",
-            "threatSource",
-            "threatEvent",
-            "vulnerability",
-            "consequence",
-            "affectedObject",
+            "threat",
+            "method",
+            "asset",
+            "effect",
             "stride",
             "timeHorizon",
-            "effect",
             "property",
             "strategy",
             // Treatment / control / verification.
