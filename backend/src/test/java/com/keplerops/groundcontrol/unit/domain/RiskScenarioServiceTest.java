@@ -291,6 +291,32 @@ class RiskScenarioServiceTest {
             assertThat(result.getTitle()).isEqualTo("New title");
             assertThat(result.getThreat()).isEqualTo("External threat actor");
         }
+
+        @Test
+        void updatesAllFourNarrativeAxes() {
+            var rs = makeScenario();
+            when(riskScenarioRepository.findByIdAndProjectId(rs.getId(), projectId))
+                    .thenReturn(Optional.of(rs));
+            when(riskScenarioRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var command = new UpdateRiskScenarioCommand(
+                    null,
+                    "Nation-state advanced persistent threat",
+                    "Spear-phishing with credential harvesting",
+                    "Engineering source-code repository",
+                    "Loss of intellectual property and regulatory disclosure",
+                    null);
+            var result = riskScenarioService.update(projectId, rs.getId(), command);
+
+            assertThat(result.getThreat()).isEqualTo("Nation-state advanced persistent threat");
+            assertThat(result.getMethod()).isEqualTo("Spear-phishing with credential harvesting");
+            assertThat(result.getAsset()).isEqualTo("Engineering source-code repository");
+            assertThat(result.getEffect()).isEqualTo("Loss of intellectual property and regulatory disclosure");
+            assertThat(result.getFairSentence())
+                    .isEqualTo("Nation-state advanced persistent threat impacts Engineering source-code repository"
+                            + " via Spear-phishing with credential harvesting, causing Loss of intellectual"
+                            + " property and regulatory disclosure");
+        }
     }
 
     @Nested
