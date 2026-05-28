@@ -51,8 +51,7 @@ class DocumentGraphProjectionContributorTest {
 
         var nodes = contributor.contributeNodes(projectId);
 
-        assertThat(nodes).hasSize(2);
-        assertThat(nodes).allMatch(n -> n.entityType() == GraphEntityType.DOCUMENT);
+        assertThat(nodes).hasSize(2).allMatch(n -> n.entityType() == GraphEntityType.DOCUMENT);
     }
 
     @Test
@@ -88,9 +87,7 @@ class DocumentGraphProjectionContributorTest {
         var nodes = contributor.contributeNodes(projectId);
 
         var props = nodes.get(0).properties();
-        assertThat(props).containsKey("description");
-        assertThat(props).containsKey("createdBy");
-        assertThat(props).containsKey("updatedAt");
+        assertThat(props).containsKey("description").containsKey("createdBy").containsKey("updatedAt");
     }
 
     @Test
@@ -104,8 +101,7 @@ class DocumentGraphProjectionContributorTest {
         var nodes = contributor.contributeNodes(projectId);
 
         var props = nodes.get(0).properties();
-        assertThat(props).doesNotContainKey("description");
-        assertThat(props).doesNotContainKey("createdBy");
+        assertThat(props).doesNotContainKey("description").doesNotContainKey("createdBy");
     }
 
     @Test
