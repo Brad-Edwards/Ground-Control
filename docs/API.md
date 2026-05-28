@@ -751,24 +751,96 @@ MCP surface: `gc_observation` with actions `create`, `update`, `delete`, `latest
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/admin/graph/materialize` |—| 200 | Materialize graph (AGE) |
-| GET | `/graph/ancestors/{uid}?depth=N` |—| 200 | Ancestor UIDs |
-| GET | `/graph/descendants/{uid}?depth=N` |—| 200 | Descendant UIDs |
-| GET | `/graph/visualization?entityTypes=X,Y` |—| 200 | Full graph (filterable by entity type) |
-| GET | `/graph/subgraph?roots=X&entityTypes=Y` |—| 200 | Subgraph (filterable by entity type) |
-| GET | `/graph/paths?source=X&target=Y` |—| 200 | All paths between two UIDs (with edges) |
+| GET | `/graph/visualization?project=&entityTypes=` |—| 200 | Mixed-entity graph projection |
+| POST | `/graph/subgraph/query?project=` | GraphNeighborhoodQueryRequest | 200 | Mixed-entity subgraph around root graph node IDs |
+| POST | `/graph/traversal/query?project=` | GraphNeighborhoodQueryRequest | 200 | Mixed-entity bounded traversal from root graph node IDs |
+| POST | `/graph/paths/query?project=` | GraphPathsQueryRequest | 200 | Mixed-entity path between two graph node IDs |
+| GET | `/requirements/graph/ancestors/{uid}?project=&depth=N` |—| 200 | Requirement-only ancestor UIDs |
+| GET | `/requirements/graph/descendants/{uid}?project=&depth=N` |—| 200 | Requirement-only descendant UIDs |
+| GET | `/requirements/graph/paths?project=&source=&target=` |—| 200 | Requirement-only paths by UID |
 
-`entityTypes` is an optional comma-separated list (for example, `REQUIREMENT`). When omitted, all entity types are returned. Each node includes an `entityType` field.
+`project` is required on graph routes. `entityTypes` is an optional repeated
+query parameter on visualization, for example
+`entityTypes=REQUIREMENT&entityTypes=OPERATIONAL_ASSET`. Query request bodies
+use graph node IDs of the form `GraphEntityType:UUID`, not requirement UIDs.
+When omitted, `entityTypes` means all entity types. Filtering prunes both nodes
+and edges.
 
-**Path response shape:**
+**GraphNeighborhoodQueryRequest:**
+
+```json
+{
+  "rootNodeIds": ["REQUIREMENT:00000000-0000-0000-0000-000000000001"],
+  "maxDepth": 2,
+  "entityTypes": ["REQUIREMENT", "OPERATIONAL_ASSET"]
+}
+```
+
+**GraphPathsQueryRequest:**
+
+```json
+{
+  "sourceNodeId": "REQUIREMENT:00000000-0000-0000-0000-000000000001",
+  "targetNodeId": "OPERATIONAL_ASSET:00000000-0000-0000-0000-000000000002",
+  "maxDepth": 4,
+  "entityTypes": ["REQUIREMENT", "OPERATIONAL_ASSET"]
+}
+```
+
+**Graph visualization / subgraph response shape:**
+
+```json
+{
+  "nodes": [
+    {
+      "id": "REQUIREMENT:00000000-0000-0000-0000-000000000001",
+      "domainId": "00000000-0000-0000-0000-000000000001",
+      "entityType": "REQUIREMENT",
+      "projectIdentifier": "ground-control",
+      "uid": "GC-A001",
+      "label": "GC-A001",
+      "properties": { "title": "Example", "status": "ACTIVE" }
+    },
+    {
+      "id": "OPERATIONAL_ASSET:00000000-0000-0000-0000-000000000002",
+      "domainId": "00000000-0000-0000-0000-000000000002",
+      "entityType": "OPERATIONAL_ASSET",
+      "projectIdentifier": "ground-control",
+      "uid": "ASSET-001",
+      "label": "Asset 001",
+      "properties": { "assetType": "SERVICE" }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "edgeType": "ASSOCIATED",
+      "sourceId": "REQUIREMENT:00000000-0000-0000-0000-000000000001",
+      "targetId": "OPERATIONAL_ASSET:00000000-0000-0000-0000-000000000002",
+      "sourceEntityType": "REQUIREMENT",
+      "targetEntityType": "OPERATIONAL_ASSET",
+      "properties": {}
+    }
+  ],
+  "totalNodes": 2,
+  "totalEdges": 1,
+  "rootNodeIds": ["REQUIREMENT:00000000-0000-0000-0000-000000000001"]
+}
+```
+
+Visualization responses omit `rootNodeIds`. Subgraph and traversal responses
+include it.
+
+**Mixed graph path response shape:**
 
 ```json
 [
   {
-    "nodes": ["REQ-A", "REQ-B", "REQ-C"],
-    "edges": [
-      { "sourceUid": "REQ-A", "targetUid": "REQ-B", "relationType": "DEPENDS_ON" },
-      { "sourceUid": "REQ-B", "targetUid": "REQ-C", "relationType": "PARENT" }
-    ]
+    "nodeIds": [
+      "REQUIREMENT:00000000-0000-0000-0000-000000000001",
+      "OPERATIONAL_ASSET:00000000-0000-0000-0000-000000000002"
+    ],
+    "edgeTypes": ["ASSOCIATED"]
   }
 ]
 ```

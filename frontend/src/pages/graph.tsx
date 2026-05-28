@@ -134,7 +134,7 @@ function getTooltipValue(data: Record<string, unknown>, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
-function getTooltipTags(
+export function getTooltipTags(
   data: Record<string, unknown>,
 ): Array<{ text: string; bg: string }> {
   const entityType = String(data.entityType ?? "UNKNOWN");
@@ -193,6 +193,61 @@ function getTooltipTags(
       { label: "Family", key: "family" },
       { label: "Version", key: "version" },
       { label: "Status", key: "status" },
+    ],
+    CONTROL: [
+      { label: "Status", key: "status" },
+      { label: "Owner", key: "owner" },
+      { label: "Category", key: "category" },
+      { label: "Source", key: "source" },
+    ],
+    CONTROL_TEST: [
+      { label: "Methodology", key: "methodology" },
+      { label: "Conclusion", key: "conclusion" },
+      { label: "Tester", key: "testerIdentity" },
+    ],
+    CONTROL_EFFECTIVENESS_ASSESSMENT: [
+      { label: "Design", key: "designEffectiveness" },
+      { label: "Operating", key: "operatingEffectiveness" },
+      { label: "Assessor", key: "assessor" },
+    ],
+    VERIFICATION_RESULT: [
+      { label: "Prover", key: "prover" },
+      { label: "Result", key: "result" },
+      { label: "Assurance", key: "assuranceLevel" },
+    ],
+    THREAT_MODEL: [
+      { label: "Status", key: "status" },
+      { label: "Threat", key: "threatSource" },
+      { label: "Stride", key: "stride" },
+    ],
+    FINDING: [
+      { label: "Status", key: "status" },
+      { label: "Type", key: "findingType" },
+      { label: "Severity", key: "severity" },
+      { label: "Owner", key: "owner" },
+    ],
+    EVIDENCE_ARTIFACT: [
+      { label: "Type", key: "evidenceType" },
+      { label: "Assurance", key: "assuranceLevel" },
+      { label: "Derived by", key: "derivedBy" },
+    ],
+    AUDIT: [
+      { label: "Type", key: "auditType" },
+      { label: "Status", key: "status" },
+      { label: "Created by", key: "createdBy" },
+    ],
+    RISK_CONTROL_MAPPING: [
+      { label: "Role", key: "controlRole" },
+      { label: "Objective", key: "mappingObjective" },
+    ],
+    SCOPED_CONTROL_IMPLEMENTATION: [
+      { label: "Name", key: "name" },
+      { label: "Control", key: "controlUid" },
+    ],
+    DOCUMENT: [
+      { label: "Version", key: "version" },
+      { label: "Created by", key: "createdBy" },
+      { label: "Updated", key: "updatedAt" },
     ],
   };
 
@@ -288,10 +343,12 @@ export function Graph() {
     const entityTypes = new Set<string>();
     const waves: Record<number, number> = {};
     const seriesSet = new Set<string>();
+    let requirementCount = 0;
     for (const node of nodes) {
       entityTypes.add(getNodeEntityType(node));
       const w = getNodeWave(node) || 0;
       if (isRequirementNode(node)) {
+        requirementCount += 1;
         waves[w] = (waves[w] ?? 0) + 1;
         seriesSet.add(getNodeSeries(node));
       }
@@ -304,6 +361,7 @@ export function Graph() {
       nodes: nodes.length,
       edges: relations.length,
       entityTypes: entityTypes.size,
+      requirementCount,
       series: seriesSet.size,
       waves: waveKeys.length,
       waveStr,
@@ -528,6 +586,39 @@ export function Graph() {
           threatEvent: getStringProperty(node, "threatEvent"),
           consequence: getStringProperty(node, "consequence"),
           observationValue: getStringProperty(node, "observationValue"),
+          // CONTROL / CONTROL_TEST / CONTROL_EFFECTIVENESS_ASSESSMENT
+          controlFunction: getStringProperty(node, "controlFunction"),
+          methodology: getStringProperty(node, "methodology"),
+          conclusion: getStringProperty(node, "conclusion"),
+          testerIdentity: getStringProperty(node, "testerIdentity"),
+          controlUid: getStringProperty(node, "controlUid"),
+          designEffectiveness: getStringProperty(node, "designEffectiveness"),
+          operatingEffectiveness: getStringProperty(
+            node,
+            "operatingEffectiveness",
+          ),
+          assessor: getStringProperty(node, "assessor"),
+          // VERIFICATION_RESULT
+          prover: getStringProperty(node, "prover"),
+          result: getStringProperty(node, "result"),
+          assuranceLevel: getStringProperty(node, "assuranceLevel"),
+          // THREAT_MODEL
+          stride: getStringProperty(node, "stride"),
+          effect: getStringProperty(node, "effect"),
+          // FINDING
+          findingType: getStringProperty(node, "findingType"),
+          severity: getStringProperty(node, "severity"),
+          // EVIDENCE_ARTIFACT
+          evidenceType: getStringProperty(node, "evidenceType"),
+          derivedBy: getStringProperty(node, "derivedBy"),
+          // AUDIT
+          auditType: getStringProperty(node, "auditType"),
+          createdBy: getStringProperty(node, "createdBy"),
+          // RISK_CONTROL_MAPPING
+          controlRole: getStringProperty(node, "controlRole"),
+          mappingObjective: getStringProperty(node, "mappingObjective"),
+          // DOCUMENT
+          updatedAt: getStringProperty(node, "updatedAt"),
           color: getNodeColor(
             {
               entityType: getNodeEntityType(node),
@@ -1010,19 +1101,23 @@ export function Graph() {
             </strong>
             entity types
           </span>
-          <span className="text-muted-foreground">
-            <strong className="text-foreground text-[13px] mr-0.5">
-              {stats.series}
-            </strong>
-            series
-          </span>
-          <span className="text-muted-foreground">
-            <strong className="text-foreground text-[13px] mr-0.5">
-              {stats.waves}
-            </strong>
-            waves
-          </span>
-          <span className="text-muted-foreground">{stats.waveStr}</span>
+          {stats.requirementCount > 0 && (
+            <>
+              <span className="text-muted-foreground">
+                <strong className="text-foreground text-[13px] mr-0.5">
+                  {stats.series}
+                </strong>
+                series
+              </span>
+              <span className="text-muted-foreground">
+                <strong className="text-foreground text-[13px] mr-0.5">
+                  {stats.waves}
+                </strong>
+                waves
+              </span>
+              <span className="text-muted-foreground">{stats.waveStr}</span>
+            </>
+          )}
           {selectedNode && (
             <span className="truncate text-muted-foreground">
               selected:{" "}

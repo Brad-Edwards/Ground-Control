@@ -164,6 +164,29 @@ exports (alongside `request_id` / `tenant_id`). See [ADR-033](../../architecture
 
 The mixed-entity graph (materialized via `AgeGraphService` + Apache AGE) now includes the following first-class domain participants, each backed by a `GraphProjectionContributor` that emits typed nodes into the project-scoped graph: Requirement, OperationalAsset (and Observation), RiskScenario, Control, ControlTest, ControlEffectivenessAssessment, VerificationResult, ThreatModel, Finding, EvidenceArtifact, Audit, RiskControlMapping, and Document (added GC-G007). GitHub Issues, external code references, and other artifacts without a backend aggregate remain external targets addressed by identifier only, not first-class graph nodes. Every first-class participant exposes a stable `graphNodeId` field on its REST response (via `GraphIds.nodeId`) for client-side graph navigation. Property keys emitted by contributors must be registered in `AgeGraphService.APPROVED_PROPERTY_KEYS` (ADR-032), and each new contributor must ship a regression test asserting that registration.
 
+## Mixed-Entity Graph Operations
+
+The four public operations on the mixed-entity graph (GC-G008) are:
+
+- `GET /api/v1/graph/visualization`—returns the full project-scoped graph as a flat node+edge list.
+- `POST /api/v1/graph/subgraph/query`—extracts a subgraph anchored at caller-supplied root node IDs.
+- `POST /api/v1/graph/traversal/query`—BFS neighborhood traversal with configurable depth and optional entity-type filter.
+- `POST /api/v1/graph/paths/query`—shortest-path queries between two node IDs.
+
+**Routing:** `GraphController` → `MixedGraphService` → `MixedGraphClient` → `AgeGraphService` (with JPA-projection fallback when Apache AGE is unavailable, per ADR-032). The JPA fallback builds the same `GraphProjection` shape from JPA aggregates so callers receive a consistent response regardless of AGE availability.
+
+**Node IDs** follow the form `GraphEntityType:UUID` (for example, `CONTROL:a1b2c3d4-…`), produced by `GraphIds.nodeId`. All four endpoints accept node IDs in this format; IDs are validated against the resolved project's projection (not globally), so cross-project references are always rejected.
+
+**Project-scope enforcement:** every operation resolves a single project (via the `project` query parameter) before the graph projection is built. Caller-supplied node IDs are validated only after that projection is materialized, ensuring no cross-project data leaks through traversal.
+
+**Traversal bounds:** `GraphTraversalLimits` is the canonical bound policy covering:
+- Maximum root node count per request.
+- Maximum BFS depth cap.
+- Projection node and edge caps (guards against pathologically large graphs).
+- Path result count cap (limits `paths/query` result sets).
+
+**Legacy compatibility:** `/api/v1/requirements/graph/**` routes remain available as requirement-only compatibility endpoints. They must not be extended for mixed-entity traversal; all new cross-entity graph operations go through `/api/v1/graph/**`.
+
 ## Status Drift Analysis
 
 Status drift analysis is a read-only requirements-domain analysis. It flags requirements that are still `DRAFT` while independent artifacts suggest implementation or design completion has already landed. It does not create traceability links, transition requirements, or relax the `IMPLEMENTS`-only on `ACTIVE` rule.
