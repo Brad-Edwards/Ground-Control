@@ -602,9 +602,8 @@ export function Graph() {
           prover: getStringProperty(node, "prover"),
           result: getStringProperty(node, "result"),
           assuranceLevel: getStringProperty(node, "assuranceLevel"),
-          // THREAT_MODEL
+          // THREAT_MODEL (shares the `effect` property bag with RiskScenario above)
           stride: getStringProperty(node, "stride"),
-          effect: getStringProperty(node, "effect"),
           // FINDING
           findingType: getStringProperty(node, "findingType"),
           severity: getStringProperty(node, "severity"),
