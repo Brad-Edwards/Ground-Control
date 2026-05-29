@@ -1026,6 +1026,7 @@ must be non-blank), `reason` (optional, max 500).
 | PUT | `/threat-models/{id}/status` | `{"status": "ACTIVE"}` | 200 | Transition lifecycle status |
 | GET | `/threat-models/{id}/requirements` |—| 200 | List requirements linked to a threat model |
 | GET | `/threat-models/{id}/trace` |—| 200 | End-to-end security trace: assets, controls, requirements, and per-requirement implementing artifacts |
+| GET | `/threat-models/workspace` |—| 200 | Read-only workspace: scoped assets, flows, threat entries with linked controls/requirements and staleness indicators (GC-Q010) |
 | POST | `/threat-models/{id}/links` | ThreatModelLinkRequest | 201 | Create threat-model link |
 | GET | `/threat-models/{id}/links` |—| 200 | List links for a threat model |
 | DELETE | `/threat-models/{id}/links/{linkId}` |—| 204 | Delete threat-model link |

@@ -123,7 +123,7 @@ import {
   createRiskScenarioLink, listRiskScenarioLinks, deleteRiskScenarioLink,
   createThreatModel, listThreatModels, getThreatModel, updateThreatModel,
   deleteThreatModel, transitionThreatModelStatus, getThreatModelLinkedRequirements,
-  getThreatModelTrace,
+  getThreatModelTrace, getThreatModelWorkspace,
   createThreatModelLink, listThreatModelLinks, deleteThreatModelLink,
   createMethodologyProfile, listMethodologyProfiles, getMethodologyProfile,
   updateMethodologyProfile, deleteMethodologyProfile,
@@ -1659,6 +1659,33 @@ server.tool(
     try {
       const result = await gcThreatModelToolHandler(args);
       return result === null ? ok("Deleted") : ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_threat_model_workspace: GC-Q010. Read-only composition endpoint returning
+// scoped assets (with boundary distinction), active flows, and threat entries
+// with linked controls, requirements, and evidence-freshness staleness indicators.
+server.tool(
+  "gc_threat_model_workspace",
+  "Read-only Threat Modeling Workspace (GC-Q010). Returns scoped operational assets, " +
+    "trust boundaries, active flows, and threat entries with linked controls, " +
+    "requirements, and per-entry evidence-freshness staleness indicators. " +
+    "Optional filters: assetId (UUID), stride (StrideCategory enum), " +
+    "status (ThreatModelStatus enum), asOf (ISO-8601 instant), " +
+    "freshnessWindowDays (default 90).",
+  {
+    project: z.string().optional(),
+    assetId: z.string().uuid().optional(),
+    stride: z.enum(["SPOOFING", "TAMPERING", "REPUDIATION", "INFORMATION_DISCLOSURE", "DENIAL_OF_SERVICE", "ELEVATION_OF_PRIVILEGE"]).optional(),
+    status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
+    asOf: z.string().optional(),
+    freshnessWindowDays: z.number().int().positive().optional(),
+  },
+  async ({ project, assetId, stride, status, asOf, freshnessWindowDays }) => {
+    try {
+      const result = await getThreatModelWorkspace({ project, assetId, stride, status, asOf, freshnessWindowDays });
+      return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },
 );

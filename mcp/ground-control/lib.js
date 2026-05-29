@@ -8904,6 +8904,37 @@ export async function deleteThreatModelLink(threatModelId, linkId, project) {
   );
 }
 
+/**
+ * GET /api/v1/threat-models/workspace — read-only workspace composition per
+ * GC-Q010. Returns scoped assets, flows, and threat entries with staleness
+ * indicators.
+ *
+ * @param {object} params
+ * @param {string} [params.project] - project identifier or UUID
+ * @param {string} [params.assetId] - filter entries to those linked to this asset UUID
+ * @param {string} [params.stride] - filter by STRIDE category (StrideCategory enum)
+ * @param {string} [params.status] - filter by status (ThreatModelStatus enum)
+ * @param {string} [params.asOf] - ISO-8601 instant for freshness reference
+ * @param {number} [params.freshnessWindowDays] - freshness window in days (default 90)
+ */
+export async function getThreatModelWorkspace({
+  project,
+  assetId,
+  stride,
+  status,
+  asOf,
+  freshnessWindowDays,
+} = {}) {
+  const params = {};
+  if (project != null) params.project = project;
+  if (assetId != null) params.assetId = assetId;
+  if (stride != null) params.stride = stride;
+  if (status != null) params.status = status;
+  if (asOf != null) params.asOf = asOf;
+  if (freshnessWindowDays != null) params.freshnessWindowDays = String(freshnessWindowDays);
+  return request("GET", "/api/v1/threat-models/workspace", { params });
+}
+
 // ---------------------------------------------------------------------------
 // Finding API functions (GC-V001, ADR-038)
 //

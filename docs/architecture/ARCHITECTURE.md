@@ -156,7 +156,9 @@ exports (alongside `request_id` / `tenant_id`). See [ADR-033](../../architecture
 
 **API:** RequirementController (9 REST endpoints), AnalysisController (5 endpoints), ImportController, SyncController, GraphController. GlobalExceptionHandler maps domain exceptions to HTTP error envelopes.
 
-**Frontend:** React 19 / TypeScript SPA served as embedded static resources from the Spring Boot JAR. Views: Dashboard (project health metrics), Requirements Explorer (browse/filter/author), Requirement Detail (fields, relations, traceability, audit), Dependency Graph (Cytoscape.js DAG visualization). See [ADR-017](../../architecture/adrs/017-interactive-web-application.md).
+**Read-side workspace endpoints (GC-Q010):** `GET /api/v1/threat-models/workspace` assembles scoped operational assets, boundaries, active flows, threat model entries (with linked controls, requirements, and evidence-freshness staleness indicators) as a read-only composition over existing aggregates. Optional query parameters: `assetId`, `stride` (`StrideCategory` enum), `status` (`ThreatModelStatus` enum), `asOf` (ISO 8601 instant), `freshnessWindowDays` (default 90, positive). Staleness per entry is the worst dominant evidence-freshness state across linked assets, computed by `EvidenceFreshnessAnalysisService.assetScopedEvidenceFreshness` (same substrate as the vendor-risk view). No new JPA aggregate or migration.
+
+**Frontend:** React 19 / TypeScript SPA served as embedded static resources from the Spring Boot JAR. Views: Dashboard (project health metrics), Requirements Explorer (browse/filter/author), Requirement Detail (fields, relations, traceability, audit), Dependency Graph (Cytoscape.js DAG visualization), Threat Modeling Workspace (`p/:projectId/threat-modeling`, GC-Q010). See [ADR-017](../../architecture/adrs/017-interactive-web-application.md).
 
 **Tooling:** Status state machine with JML contracts (verified by OpenJML ESC + Z3), Flyway migrations, Spotless/Error Prone/SpotBugs/Checkstyle/JaCoCo, ArchUnit architecture tests, CI pipeline (build + test + integration + verify), production Dockerfile, GHCR publishing, E2E integration tests.
 

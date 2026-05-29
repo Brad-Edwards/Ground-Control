@@ -583,6 +583,8 @@ export function Graph() {
           family: getStringProperty(node, "family"),
           version: getStringProperty(node, "version"),
           threat: getStringProperty(node, "threat"),
+          threatSource: getStringProperty(node, "threatSource"),
+          threatEvent: getStringProperty(node, "threatEvent"),
           method: getStringProperty(node, "method"),
           effect: getStringProperty(node, "effect"),
           observationValue: getStringProperty(node, "observationValue"),

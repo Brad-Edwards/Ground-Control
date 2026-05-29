@@ -1150,3 +1150,94 @@ export interface GitHubIssueRequest {
   extraBody?: string;
   labels?: string[];
 }
+
+// GC-Q010 — Threat Modeling Workspace types.
+// Enum mirrors: StrideCategory, ThreatModelStatus, AssetType, and freshness
+// state strings must track the backend Java enums (ADR-034 enum contract).
+// Policy check: tools/policy/checks.py::run_enum_contract_check.
+export type StrideCategory =
+  | "SPOOFING"
+  | "TAMPERING"
+  | "REPUDIATION"
+  | "INFORMATION_DISCLOSURE"
+  | "DENIAL_OF_SERVICE"
+  | "ELEVATION_OF_PRIVILEGE";
+
+export type ThreatModelStatus = "DRAFT" | "ACTIVE" | "ARCHIVED";
+
+export type AssetType =
+  | "APPLICATION"
+  | "SERVICE"
+  | "SYSTEM"
+  | "DATABASE"
+  | "NETWORK"
+  | "HOST"
+  | "CONTAINER"
+  | "IDENTITY"
+  | "DATA_STORE"
+  | "ENDPOINT"
+  | "INTEGRATION"
+  | "WORKLOAD"
+  | "THIRD_PARTY"
+  | "BOUNDARY"
+  | "OTHER";
+
+export type AssetRelationType =
+  | "CONTAINS"
+  | "DEPENDS_ON"
+  | "COMMUNICATES_WITH"
+  | "TRUST_BOUNDARY"
+  | "SUPPORTS"
+  | "ACCESSES"
+  | "DATA_FLOW";
+
+// Evidence freshness dominant-state values (mirrors EvidenceFreshnessAnalysisService constants).
+export type FreshnessState =
+  | "FRESH"
+  | "STALE"
+  | "EXPIRED"
+  | "SUPERSEDED"
+  | "NO_OBSERVATIONS";
+
+export interface WorkspaceAsset {
+  id: string;
+  uid: string;
+  name: string;
+  assetType: AssetType;
+  boundary: boolean;
+}
+
+export interface WorkspaceFlow {
+  id: string;
+  sourceAssetId: string;
+  targetAssetId: string;
+  relationType: AssetRelationType;
+}
+
+export interface WorkspaceLink {
+  targetEntityId: string | null;
+  targetIdentifier: string | null;
+  targetTitle: string | null;
+  targetUrl: string | null;
+}
+
+export interface WorkspaceThreatEntry {
+  id: string;
+  uid: string;
+  title: string;
+  status: ThreatModelStatus;
+  stride: StrideCategory | null;
+  linkedAssetIds: string[];
+  linkedControls: WorkspaceLink[];
+  linkedRequirements: WorkspaceLink[];
+  staleIndicator: FreshnessState;
+}
+
+export interface ThreatModelWorkspaceResponse {
+  assets: WorkspaceAsset[];
+  flows: WorkspaceFlow[];
+  entries: WorkspaceThreatEntry[];
+  assetCount: number;
+  flowCount: number;
+  entryCount: number;
+}
