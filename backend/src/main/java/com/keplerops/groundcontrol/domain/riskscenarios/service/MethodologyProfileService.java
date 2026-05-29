@@ -986,11 +986,12 @@ public class MethodologyProfileService {
      * <p>Handles FAIR-CAM dotted paths like {@code fair_cam.control_strength} by
      * descending into nested object properties.
      */
+    @SuppressWarnings("unchecked")
     private static void validateFieldPath(String path, Map<String, Object> schema, String surfaceName) {
-        Map<String, Object> properties = extractValidatableProperties(schema);
-        if (properties == null) {
+        if (shouldSkipPropertyCheck(schema)) {
             return;
         }
+        Map<String, Object> properties = (Map<String, Object>) schema.get(SCHEMA_KEY_PROPERTIES);
         String[] segments = path.split("\\.", 2);
         String head = segments[0];
         if (!properties.containsKey(head)) {
@@ -1005,23 +1006,18 @@ public class MethodologyProfileService {
     }
 
     /**
-     * Returns the {@code properties} map suitable for membership checks, or
-     * {@code null} when the schema permits any path (null schema, open
-     * {@code additionalProperties}, or no {@code properties} node).
+     * True when the schema's contents cannot constrain a path (null schema, open
+     * {@code additionalProperties}, or no {@code properties} node): the walker
+     * treats any path as valid in that case.
      */
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> extractValidatableProperties(Map<String, Object> schema) {
+    private static boolean shouldSkipPropertyCheck(Map<String, Object> schema) {
         if (schema == null) {
-            return null;
+            return true;
         }
         if (Boolean.TRUE.equals(schema.get(SCHEMA_KEY_ADDITIONAL_PROPERTIES))) {
-            return null;
+            return true;
         }
-        Object propertiesRaw = schema.get(SCHEMA_KEY_PROPERTIES);
-        if (propertiesRaw instanceof Map) {
-            return (Map<String, Object>) propertiesRaw;
-        }
-        return null;
+        return !(schema.get(SCHEMA_KEY_PROPERTIES) instanceof Map);
     }
 
     @SuppressWarnings("unchecked")
@@ -1033,29 +1029,27 @@ public class MethodologyProfileService {
         if (Boolean.TRUE.equals(nestedMap.get(SCHEMA_KEY_ADDITIONAL_PROPERTIES))) {
             return;
         }
-        validateFieldPath(remaining, synthesizeChildSchema(nestedMap, SCHEMA_KEY_PROPERTIES), surfaceName);
+        recurseIntoChildSchema(remaining, nestedMap, surfaceName);
         Object items = nestedMap.get(SCHEMA_KEY_ITEMS);
         if (items instanceof Map) {
-            validateFieldPath(
-                    remaining, synthesizeChildSchema((Map<String, Object>) items, SCHEMA_KEY_PROPERTIES), surfaceName);
+            recurseIntoChildSchema(remaining, (Map<String, Object>) items, surfaceName);
         }
     }
 
     /**
-     * Builds a single-key schema wrapping {@code parent.get(childKey)} as
-     * {@code properties} so the recursive walker treats it as a schema root.
-     * Returns {@code null} when the child is missing or not a map (the walker
-     * treats null as "no validatable properties" and short-circuits).
+     * If {@code parent[properties]} is itself a JSON-schema-style map, wrap it
+     * as the {@code properties} of a synthetic schema and recurse the walker
+     * into it. Otherwise no-op.
      */
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> synthesizeChildSchema(Map<String, Object> parent, String childKey) {
-        Object child = parent.get(childKey);
+    private static void recurseIntoChildSchema(String remaining, Map<String, Object> parent, String surfaceName) {
+        Object child = parent.get(SCHEMA_KEY_PROPERTIES);
         if (!(child instanceof Map)) {
-            return null;
+            return;
         }
         Map<String, Object> synthetic = new LinkedHashMap<>();
         synthetic.put(SCHEMA_KEY_PROPERTIES, child);
-        return synthetic;
+        validateFieldPath(remaining, synthetic, surfaceName);
     }
 
     /**

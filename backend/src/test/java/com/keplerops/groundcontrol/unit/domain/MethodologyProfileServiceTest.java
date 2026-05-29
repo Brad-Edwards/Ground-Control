@@ -376,11 +376,9 @@ class MethodologyProfileServiceTest {
         var profileId = profile.getId();
         when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
 
-        assertThatThrownBy(() -> service.update(
-                        projectId,
-                        profileId,
-                        new UpdateMethodologyProfileCommand(
-                                null, null, null, null, null, null, null, null, List.of(entry, entry))))
+        var command = new UpdateMethodologyProfileCommand(
+                null, null, null, null, null, null, null, null, List.of(entry, entry));
+        assertThatThrownBy(() -> service.update(projectId, profileId, command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("duplicate");
     }
@@ -402,11 +400,9 @@ class MethodologyProfileServiceTest {
         var profileId = profile.getId();
         when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
 
-        assertThatThrownBy(() -> service.update(
-                        projectId,
-                        profileId,
-                        new UpdateMethodologyProfileCommand(
-                                null, null, null, null, null, null, null, null, List.of(entry))))
+        var command =
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry));
+        assertThatThrownBy(() -> service.update(projectId, profileId, command))
                 .isInstanceOf(DomainValidationException.class);
     }
 
@@ -428,11 +424,9 @@ class MethodologyProfileServiceTest {
         profile.setOutputSchema(null);
         when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
 
-        assertThatThrownBy(() -> service.update(
-                        projectId,
-                        profileId,
-                        new UpdateMethodologyProfileCommand(
-                                null, null, null, null, null, null, null, null, List.of(entry))))
+        var command =
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry));
+        assertThatThrownBy(() -> service.update(projectId, profileId, command))
                 .isInstanceOf(DomainValidationException.class);
     }
 
@@ -454,11 +448,9 @@ class MethodologyProfileServiceTest {
         profile.setTreatmentStrategyVocabulary(null);
         when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
 
-        assertThatThrownBy(() -> service.update(
-                        projectId,
-                        profileId,
-                        new UpdateMethodologyProfileCommand(
-                                null, null, null, null, null, null, null, null, List.of(entry))))
+        var command =
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry));
+        assertThatThrownBy(() -> service.update(projectId, profileId, command))
                 .isInstanceOf(DomainValidationException.class);
     }
 
@@ -480,11 +472,9 @@ class MethodologyProfileServiceTest {
         profile.setTreatmentStrategyVocabulary(Map.of("MITIGATE", Map.of("label", "Mitigate")));
         when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
 
-        assertThatThrownBy(() -> service.update(
-                        projectId,
-                        profileId,
-                        new UpdateMethodologyProfileCommand(
-                                null, null, null, null, null, null, null, null, List.of(entry))))
+        var command =
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry));
+        assertThatThrownBy(() -> service.update(projectId, profileId, command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("nonexistent_strategy");
     }
@@ -533,11 +523,9 @@ class MethodologyProfileServiceTest {
         var profileId = profile.getId();
         when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
 
-        assertThatThrownBy(() -> service.update(
-                        projectId,
-                        profileId,
-                        new UpdateMethodologyProfileCommand(
-                                null, null, null, null, null, null, null, null, List.of(entry))))
+        var command =
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry));
+        assertThatThrownBy(() -> service.update(projectId, profileId, command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("scale");
     }
@@ -560,11 +548,9 @@ class MethodologyProfileServiceTest {
         var profileId = profile.getId();
         when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
 
-        assertThatThrownBy(() -> service.update(
-                        projectId,
-                        profileId,
-                        new UpdateMethodologyProfileCommand(
-                                null, null, null, null, null, null, null, null, List.of(entry))))
+        var command =
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry));
+        assertThatThrownBy(() -> service.update(projectId, profileId, command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("nonexistent_field");
     }
