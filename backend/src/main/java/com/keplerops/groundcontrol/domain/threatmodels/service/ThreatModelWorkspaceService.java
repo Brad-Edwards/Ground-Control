@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -115,117 +116,19 @@ public class ThreatModelWorkspaceService {
             StrideCategory stride,
             ThreatModelStatus status) {
 
-        if (freshnessWindowDays <= 0) {
-            throw new DomainValidationException(
-                    "freshnessWindowDays must be positive",
-                    "validation_error",
-                    Map.of("parameter", "freshnessWindowDays", "value", freshnessWindowDays));
-        }
+        validateInputs(projectId, freshnessWindowDays, assetId);
 
-        // Validate assetId is in-project before any asset-scoped lookup (mirrors
-        // EvidenceFreshnessAnalysisService.analyze).
-        if (assetId != null
-                && operationalAssetRepository
-                        .findByIdAndProjectId(assetId, projectId)
-                        .isEmpty()) {
-            throw new NotFoundException("Asset not found in project: " + assetId);
-        }
+        List<ThreatModelWorkspaceResult.WorkspaceAsset> workspaceAssets = loadAssets(projectId);
+        List<ThreatModelWorkspaceResult.WorkspaceFlow> flows = loadFlows(projectId);
 
-        // 1. Load assets (all non-archived; partition boundaries in-memory)
-        List<OperationalAsset> rawAssets = operationalAssetRepository.findByProjectIdAndArchivedAtIsNull(projectId);
-        List<ThreatModelWorkspaceResult.WorkspaceAsset> workspaceAssets = new ArrayList<>(rawAssets.size());
-        for (OperationalAsset a : rawAssets) {
-            workspaceAssets.add(new ThreatModelWorkspaceResult.WorkspaceAsset(
-                    a.getId(), a.getUid(), a.getName(), a.getAssetType(), a.getAssetType() == AssetType.BOUNDARY));
-        }
-
-        // 2. Load flows
-        List<AssetRelation> rawRelations = assetRelationRepository.findActiveByProjectId(projectId);
-        List<ThreatModelWorkspaceResult.WorkspaceFlow> flows = new ArrayList<>(rawRelations.size());
-        for (AssetRelation r : rawRelations) {
-            flows.add(new ThreatModelWorkspaceResult.WorkspaceFlow(
-                    r.getId(), r.getSource().getId(), r.getTarget().getId(), r.getRelationType()));
-        }
-
-        // 3. Load threat model entries and links
         List<ThreatModel> rawEntries = threatModelRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
         List<ThreatModelLink> allLinks = threatModelLinkRepository.findByProjectId(projectId);
+        Map<UUID, List<ThreatModelLink>> linksByTm = groupLinksByThreatModel(allLinks);
+        Map<UUID, String> freshnessStateByAsset =
+                computeFreshnessByAsset(allLinks, projectId, asOf, freshnessWindowDays);
 
-        // Group links by threat-model id
-        Map<UUID, List<ThreatModelLink>> linksByTm = new LinkedHashMap<>();
-        for (ThreatModelLink link : allLinks) {
-            linksByTm
-                    .computeIfAbsent(link.getThreatModel().getId(), k -> new ArrayList<>())
-                    .add(link);
-        }
-
-        // Collect unique asset ids referenced via ASSET links across all entries
-        Set<UUID> linkedAssetIds = new java.util.LinkedHashSet<>();
-        for (ThreatModelLink link : allLinks) {
-            if (link.getTargetType() == ThreatModelLinkTargetType.ASSET && link.getTargetEntityId() != null) {
-                linkedAssetIds.add(link.getTargetEntityId());
-            }
-        }
-
-        // Compute freshness once per unique asset id (dedup)
-        Map<UUID, String> freshnessStateByAsset = new HashMap<>();
-        for (UUID aid : linkedAssetIds) {
-            AssetScopedFreshnessSummary summary = evidenceFreshnessAnalysisService.assetScopedEvidenceFreshness(
-                    projectId, asOf, freshnessWindowDays, aid);
-            freshnessStateByAsset.put(aid, summary.dominantState());
-        }
-
-        // 4. Compose entries with filters and stale rollup
-        List<ThreatModelWorkspaceResult.WorkspaceThreatEntry> entries = new ArrayList<>();
-        for (ThreatModel tm : rawEntries) {
-            // Optional in-memory filters
-            if (stride != null && tm.getStride() != stride) {
-                continue;
-            }
-            if (status != null && tm.getStatus() != status) {
-                continue;
-            }
-            // Optional asset-scope filter: only include if this entry has a link to assetId
-            if (assetId != null && !hasAssetLink(linksByTm.getOrDefault(tm.getId(), List.of()), assetId)) {
-                continue;
-            }
-
-            List<ThreatModelLink> tmLinks = linksByTm.getOrDefault(tm.getId(), List.of());
-
-            List<UUID> entryAssetIds = new ArrayList<>();
-            List<ThreatModelWorkspaceResult.WorkspaceLink> controls = new ArrayList<>();
-            List<ThreatModelWorkspaceResult.WorkspaceLink> requirements = new ArrayList<>();
-
-            for (ThreatModelLink link : tmLinks) {
-                switch (link.getTargetType()) {
-                    case ASSET -> {
-                        if (link.getTargetEntityId() != null) {
-                            entryAssetIds.add(link.getTargetEntityId());
-                        }
-                    }
-                    case CONTROL -> controls.add(toWorkspaceLink(link));
-                    case REQUIREMENT -> requirements.add(toWorkspaceLink(link));
-                    default -> {
-                        // Other link types (RISK_SCENARIO, OBSERVATION, RISK_ASSESSMENT_RESULT,
-                        // VERIFICATION_RESULT, FINDING, ARCHITECTURE_MODEL, CODE, ISSUE, EVIDENCE,
-                        // EXTERNAL) are not included in the workspace result.
-                    }
-                }
-            }
-
-            String staleIndicator = rollupStaleIndicator(entryAssetIds, freshnessStateByAsset);
-
-            entries.add(new ThreatModelWorkspaceResult.WorkspaceThreatEntry(
-                    tm.getId(),
-                    tm.getUid(),
-                    tm.getTitle(),
-                    tm.getStatus(),
-                    tm.getStride(),
-                    entryAssetIds,
-                    controls,
-                    requirements,
-                    staleIndicator));
-        }
+        List<ThreatModelWorkspaceResult.WorkspaceThreatEntry> entries =
+                composeEntries(rawEntries, linksByTm, freshnessStateByAsset, assetId, stride, status);
 
         log.info(
                 "threat_model_workspace assembled: project={} assets={} flows={} entries={}",
@@ -235,6 +138,144 @@ public class ThreatModelWorkspaceService {
                 entries.size());
 
         return new ThreatModelWorkspaceResult(workspaceAssets, flows, entries);
+    }
+
+    private void validateInputs(UUID projectId, int freshnessWindowDays, UUID assetId) {
+        if (freshnessWindowDays <= 0) {
+            throw new DomainValidationException(
+                    "freshnessWindowDays must be positive",
+                    "validation_error",
+                    Map.of("parameter", "freshnessWindowDays", "value", freshnessWindowDays));
+        }
+        // Validate assetId is in-project before any asset-scoped lookup (mirrors
+        // EvidenceFreshnessAnalysisService.analyze).
+        if (assetId != null
+                && operationalAssetRepository
+                        .findByIdAndProjectId(assetId, projectId)
+                        .isEmpty()) {
+            throw new NotFoundException("Asset not found in project: " + assetId);
+        }
+    }
+
+    /** Loads all non-archived assets; boundaries are flagged in-memory by {@code AssetType.BOUNDARY}. */
+    private List<ThreatModelWorkspaceResult.WorkspaceAsset> loadAssets(UUID projectId) {
+        List<OperationalAsset> rawAssets = operationalAssetRepository.findByProjectIdAndArchivedAtIsNull(projectId);
+        List<ThreatModelWorkspaceResult.WorkspaceAsset> workspaceAssets = new ArrayList<>(rawAssets.size());
+        for (OperationalAsset a : rawAssets) {
+            workspaceAssets.add(new ThreatModelWorkspaceResult.WorkspaceAsset(
+                    a.getId(), a.getUid(), a.getName(), a.getAssetType(), a.getAssetType() == AssetType.BOUNDARY));
+        }
+        return workspaceAssets;
+    }
+
+    private List<ThreatModelWorkspaceResult.WorkspaceFlow> loadFlows(UUID projectId) {
+        List<AssetRelation> rawRelations = assetRelationRepository.findActiveByProjectId(projectId);
+        List<ThreatModelWorkspaceResult.WorkspaceFlow> flows = new ArrayList<>(rawRelations.size());
+        for (AssetRelation r : rawRelations) {
+            flows.add(new ThreatModelWorkspaceResult.WorkspaceFlow(
+                    r.getId(), r.getSource().getId(), r.getTarget().getId(), r.getRelationType()));
+        }
+        return flows;
+    }
+
+    private static Map<UUID, List<ThreatModelLink>> groupLinksByThreatModel(List<ThreatModelLink> allLinks) {
+        Map<UUID, List<ThreatModelLink>> linksByTm = new LinkedHashMap<>();
+        for (ThreatModelLink link : allLinks) {
+            linksByTm
+                    .computeIfAbsent(link.getThreatModel().getId(), k -> new ArrayList<>())
+                    .add(link);
+        }
+        return linksByTm;
+    }
+
+    /** Computes evidence freshness once per unique ASSET-linked id (dedup). */
+    private Map<UUID, String> computeFreshnessByAsset(
+            List<ThreatModelLink> allLinks, UUID projectId, Instant asOf, int freshnessWindowDays) {
+        Set<UUID> linkedAssetIds = new LinkedHashSet<>();
+        for (ThreatModelLink link : allLinks) {
+            if (link.getTargetType() == ThreatModelLinkTargetType.ASSET && link.getTargetEntityId() != null) {
+                linkedAssetIds.add(link.getTargetEntityId());
+            }
+        }
+        Map<UUID, String> freshnessStateByAsset = new HashMap<>();
+        for (UUID aid : linkedAssetIds) {
+            AssetScopedFreshnessSummary summary = evidenceFreshnessAnalysisService.assetScopedEvidenceFreshness(
+                    projectId, asOf, freshnessWindowDays, aid);
+            freshnessStateByAsset.put(aid, summary.dominantState());
+        }
+        return freshnessStateByAsset;
+    }
+
+    private static List<ThreatModelWorkspaceResult.WorkspaceThreatEntry> composeEntries(
+            List<ThreatModel> rawEntries,
+            Map<UUID, List<ThreatModelLink>> linksByTm,
+            Map<UUID, String> freshnessStateByAsset,
+            UUID assetId,
+            StrideCategory stride,
+            ThreatModelStatus status) {
+        List<ThreatModelWorkspaceResult.WorkspaceThreatEntry> entries = new ArrayList<>();
+        for (ThreatModel tm : rawEntries) {
+            List<ThreatModelLink> tmLinks = linksByTm.getOrDefault(tm.getId(), List.of());
+            if (!matchesFilters(tm, tmLinks, assetId, stride, status)) {
+                continue;
+            }
+            entries.add(composeEntry(tm, tmLinks, freshnessStateByAsset));
+        }
+        return entries;
+    }
+
+    /** Applies the optional in-memory stride/status/asset-scope filters. */
+    private static boolean matchesFilters(
+            ThreatModel tm,
+            List<ThreatModelLink> tmLinks,
+            UUID assetId,
+            StrideCategory stride,
+            ThreatModelStatus status) {
+        if (stride != null && tm.getStride() != stride) {
+            return false;
+        }
+        if (status != null && tm.getStatus() != status) {
+            return false;
+        }
+        return assetId == null || hasAssetLink(tmLinks, assetId);
+    }
+
+    private static ThreatModelWorkspaceResult.WorkspaceThreatEntry composeEntry(
+            ThreatModel tm, List<ThreatModelLink> tmLinks, Map<UUID, String> freshnessStateByAsset) {
+        List<UUID> entryAssetIds = new ArrayList<>();
+        List<ThreatModelWorkspaceResult.WorkspaceLink> controls = new ArrayList<>();
+        List<ThreatModelWorkspaceResult.WorkspaceLink> requirements = new ArrayList<>();
+
+        for (ThreatModelLink link : tmLinks) {
+            switch (link.getTargetType()) {
+                case ASSET -> addIfPresent(entryAssetIds, link.getTargetEntityId());
+                case CONTROL -> controls.add(toWorkspaceLink(link));
+                case REQUIREMENT -> requirements.add(toWorkspaceLink(link));
+                default -> {
+                    // Other link types (RISK_SCENARIO, OBSERVATION, RISK_ASSESSMENT_RESULT,
+                    // VERIFICATION_RESULT, FINDING, ARCHITECTURE_MODEL, CODE, ISSUE, EVIDENCE,
+                    // EXTERNAL) are not included in the workspace result.
+                }
+            }
+        }
+
+        String staleIndicator = rollupStaleIndicator(entryAssetIds, freshnessStateByAsset);
+        return new ThreatModelWorkspaceResult.WorkspaceThreatEntry(
+                tm.getId(),
+                tm.getUid(),
+                tm.getTitle(),
+                tm.getStatus(),
+                tm.getStride(),
+                entryAssetIds,
+                controls,
+                requirements,
+                staleIndicator);
+    }
+
+    private static void addIfPresent(List<UUID> ids, UUID id) {
+        if (id != null) {
+            ids.add(id);
+        }
     }
 
     private static boolean hasAssetLink(List<ThreatModelLink> links, UUID assetId) {

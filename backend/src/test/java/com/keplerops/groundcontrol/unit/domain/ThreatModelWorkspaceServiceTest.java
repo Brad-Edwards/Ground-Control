@@ -105,14 +105,6 @@ class ThreatModelWorkspaceServiceTest {
         return tm;
     }
 
-    private ThreatModel makeDraftThreatModel(String uid) {
-        var tm = new ThreatModel(project, uid, "Title " + uid, "Source", "Event", "Effect");
-        setField(tm, "id", UUID.randomUUID());
-        setField(tm, "createdAt", NOW);
-        setField(tm, "updatedAt", NOW);
-        return tm;
-    }
-
     private ThreatModelLink makeLink(ThreatModel tm, ThreatModelLinkTargetType type, UUID entityId, String identifier) {
         var link = new ThreatModelLink(tm, type, entityId, identifier, ThreatModelLinkType.AFFECTS);
         link.setTargetTitle("Title");
@@ -336,7 +328,7 @@ class ThreatModelWorkspaceServiceTest {
                     .thenReturn(List.of(tm));
             when(threatModelLinkRepository.findByProjectId(projectId)).thenReturn(List.of(assetLink));
             when(evidenceFreshnessAnalysisService.assetScopedEvidenceFreshness(
-                            eq(projectId), eq(customAsOf), eq(WINDOW), eq(assetEntityId)))
+                            projectId, customAsOf, WINDOW, assetEntityId))
                     .thenReturn(freshSummary());
 
             var result = service.workspace(projectId, customAsOf, WINDOW, null, null, null);
