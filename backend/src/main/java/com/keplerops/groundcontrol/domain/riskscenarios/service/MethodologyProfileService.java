@@ -569,6 +569,21 @@ public class MethodologyProfileService {
         repository.delete(getById(projectId, id));
     }
 
+    // GC-T012 crosswalk semantic constants (shared scale/units literals across seeds)
+    private static final String SCALE_CONTINUOUS = "continuous";
+    private static final String SCALE_QUALITATIVE_ORDINAL = "qualitative ordinal";
+    private static final String SCALE_ORG_DEFINED_ORDINAL = "organization-defined ordinal";
+    private static final String UNITS_FIVE_LEVEL_ORDINAL = "5-level ordinal (VERY_LOW–VERY_HIGH)";
+    private static final String UNITS_ORG_DEFINED_ORDINAL_LEVELS = "organization-defined ordinal levels";
+
+    // Crosswalk validation error-detail keys + JSON-schema walker keys
+    private static final String DETAIL_KEY_VOCABULARY_SURFACE = "vocabularySurface";
+    private static final String DETAIL_KEY_SOURCE_FIELD_PATH = "sourceFieldPath";
+    private static final String SCHEMA_KEY_PROPERTIES = "properties";
+    private static final String SCHEMA_KEY_ITEMS = "items";
+    private static final String SCHEMA_KEY_ADDITIONAL_PROPERTIES = "additionalProperties";
+    private static final String TREATMENT_SURFACE_NAME = "TREATMENT_STRATEGY_VOCABULARY";
+
     // @formatter:off
     // GC-T012 seed crosswalk entries for FAIR_V3_0
     private static final List<CrosswalkEntry> FAIR_CROSSWALK_ENTRIES = List.of(
@@ -578,7 +593,7 @@ public class MethodologyProfileService {
                     "threat_event_frequency",
                     "Threat Event Frequency",
                     "Estimated annual frequency of the threat event occurring",
-                    "continuous",
+                    SCALE_CONTINUOUS,
                     "annual events",
                     null,
                     null),
@@ -588,7 +603,7 @@ public class MethodologyProfileService {
                     "vulnerability",
                     "Vulnerability",
                     "Probability that a threat event becomes a loss event (0.0-1.0)",
-                    "continuous",
+                    SCALE_CONTINUOUS,
                     "probability (0.0–1.0)",
                     null,
                     null),
@@ -598,7 +613,7 @@ public class MethodologyProfileService {
                     "loss_event_frequency",
                     "Loss Event Frequency",
                     "Derived: TEF × Vulnerability. May be supplied directly if pre-calculated.",
-                    "continuous",
+                    SCALE_CONTINUOUS,
                     "annual events",
                     "LEF = TEF × Vulnerability",
                     null),
@@ -608,7 +623,7 @@ public class MethodologyProfileService {
                     "primary_loss_magnitude",
                     "Primary Loss Magnitude",
                     "Direct monetary loss from a single loss event",
-                    "continuous",
+                    SCALE_CONTINUOUS,
                     "monetary",
                     null,
                     null),
@@ -618,7 +633,7 @@ public class MethodologyProfileService {
                     "secondary_loss_magnitude",
                     "Secondary Loss Magnitude",
                     "Monetary loss from secondary effects (regulatory, reputational, etc.)",
-                    "continuous",
+                    SCALE_CONTINUOUS,
                     "monetary",
                     null,
                     null),
@@ -628,7 +643,7 @@ public class MethodologyProfileService {
                     "fair_cam.control_strength",
                     "FAIR-CAM Control Strength",
                     "Aggregate control effectiveness percentage (0-100)",
-                    "continuous",
+                    SCALE_CONTINUOUS,
                     "percentage (0–100)",
                     null,
                     null),
@@ -638,7 +653,7 @@ public class MethodologyProfileService {
                     "fair_cam.control_coverage",
                     "FAIR-CAM Control Coverage",
                     "Fraction of the attack surface covered by controls (0.0-1.0)",
-                    "continuous",
+                    SCALE_CONTINUOUS,
                     "coverage fraction (0.0–1.0)",
                     null,
                     null));
@@ -651,8 +666,8 @@ public class MethodologyProfileService {
                     "threat_source",
                     "Threat Source",
                     "Threat source per NIST SP 800-30 Rev. 1 Appendix D",
-                    "qualitative ordinal",
-                    "5-level ordinal (VERY_LOW–VERY_HIGH)",
+                    SCALE_QUALITATIVE_ORDINAL,
+                    UNITS_FIVE_LEVEL_ORDINAL,
                     null,
                     "5-level ordinal, no continuous frequency"),
             new CrosswalkEntry(
@@ -661,8 +676,8 @@ public class MethodologyProfileService {
                     "threat_event",
                     "Threat Event",
                     "Threat event per NIST SP 800-30 Rev. 1 Appendix E",
-                    "qualitative ordinal",
-                    "5-level ordinal (VERY_LOW–VERY_HIGH)",
+                    SCALE_QUALITATIVE_ORDINAL,
+                    UNITS_FIVE_LEVEL_ORDINAL,
                     null,
                     null),
             new CrosswalkEntry(
@@ -671,8 +686,8 @@ public class MethodologyProfileService {
                     "vulnerabilities",
                     "Vulnerabilities",
                     "Vulnerabilities exposed to the threat event (NIST Appendix F)",
-                    "qualitative ordinal",
-                    "5-level ordinal (VERY_LOW–VERY_HIGH)",
+                    SCALE_QUALITATIVE_ORDINAL,
+                    UNITS_FIVE_LEVEL_ORDINAL,
                     null,
                     null),
             new CrosswalkEntry(
@@ -681,8 +696,8 @@ public class MethodologyProfileService {
                     "likelihood_initiation",
                     "Likelihood of Initiation",
                     "Likelihood that the threat source initiates the event (NIST Table G-2)",
-                    "qualitative ordinal",
-                    "5-level ordinal (VERY_LOW–VERY_HIGH)",
+                    SCALE_QUALITATIVE_ORDINAL,
+                    UNITS_FIVE_LEVEL_ORDINAL,
                     null,
                     null),
             new CrosswalkEntry(
@@ -691,8 +706,8 @@ public class MethodologyProfileService {
                     "likelihood_adverse_impact",
                     "Likelihood of Adverse Impact",
                     "Likelihood that the threat event results in adverse impact (NIST Table G-3)",
-                    "qualitative ordinal",
-                    "5-level ordinal (VERY_LOW–VERY_HIGH)",
+                    SCALE_QUALITATIVE_ORDINAL,
+                    UNITS_FIVE_LEVEL_ORDINAL,
                     null,
                     null),
             new CrosswalkEntry(
@@ -701,8 +716,8 @@ public class MethodologyProfileService {
                     "likelihood_overall",
                     "Overall Likelihood",
                     "Overall likelihood; derived per Table G-5 when absent",
-                    "qualitative ordinal",
-                    "5-level ordinal (VERY_LOW–VERY_HIGH)",
+                    SCALE_QUALITATIVE_ORDINAL,
+                    UNITS_FIVE_LEVEL_ORDINAL,
                     "Derived per NIST SP 800-30 Rev. 1 Table G-5",
                     null),
             new CrosswalkEntry(
@@ -711,8 +726,8 @@ public class MethodologyProfileService {
                     "impact_level",
                     "Impact Level",
                     "Impact level per NIST Table H-3",
-                    "qualitative ordinal",
-                    "5-level ordinal (VERY_LOW–VERY_HIGH)",
+                    SCALE_QUALITATIVE_ORDINAL,
+                    UNITS_FIVE_LEVEL_ORDINAL,
                     null,
                     null));
 
@@ -724,8 +739,8 @@ public class MethodologyProfileService {
                     "likelihood",
                     "Likelihood",
                     "Likelihood of threat exploitation of vulnerability",
-                    "organization-defined ordinal",
-                    "organization-defined ordinal levels",
+                    SCALE_ORG_DEFINED_ORDINAL,
+                    UNITS_ORG_DEFINED_ORDINAL_LEVELS,
                     null,
                     "Scale levels are organization-defined per ISO 27005:2022"),
             new CrosswalkEntry(
@@ -734,8 +749,8 @@ public class MethodologyProfileService {
                     "consequence",
                     "Consequence",
                     "Business consequence/impact of the risk event (ISO 27005 terminology)",
-                    "organization-defined ordinal",
-                    "organization-defined ordinal levels",
+                    SCALE_ORG_DEFINED_ORDINAL,
+                    UNITS_ORG_DEFINED_ORDINAL_LEVELS,
                     null,
                     null),
             new CrosswalkEntry(
@@ -744,8 +759,8 @@ public class MethodologyProfileService {
                     "asset_value",
                     "Asset Value",
                     "Value classification of the information asset at risk",
-                    "organization-defined ordinal",
-                    "organization-defined ordinal levels",
+                    SCALE_ORG_DEFINED_ORDINAL,
+                    UNITS_ORG_DEFINED_ORDINAL_LEVELS,
                     null,
                     null),
             new CrosswalkEntry(
@@ -885,65 +900,78 @@ public class MethodologyProfileService {
     private static void validateCrosswalkEntries(MethodologyProfile profile, List<CrosswalkEntry> entries) {
         Set<String> seen = new HashSet<>();
         for (CrosswalkEntry entry : entries) {
-            // Duplicate tuple check
-            String key = entry.normalizedConcept() + "|" + entry.vocabularySurface() + "|" + entry.sourceFieldPath();
-            if (!seen.add(key)) {
-                throw new DomainValidationException(
-                        "Crosswalk contains duplicate entry: "
-                                + entry.normalizedConcept() + " / "
-                                + entry.vocabularySurface() + " / "
-                                + entry.sourceFieldPath(),
-                        "duplicate_crosswalk_entry",
-                        Map.of(
-                                "normalizedConcept", entry.normalizedConcept().name(),
-                                "vocabularySurface", entry.vocabularySurface().name(),
-                                "sourceFieldPath", entry.sourceFieldPath()));
-            }
-
-            // Surface-exists check
-            switch (entry.vocabularySurface()) {
-                case INPUT_SCHEMA -> {
-                    if (profile.getInputSchema() == null) {
-                        throw new DomainValidationException(
-                                "Cannot add INPUT_SCHEMA crosswalk entry — profile has no inputSchema",
-                                "crosswalk_surface_not_present",
-                                Map.of("vocabularySurface", "INPUT_SCHEMA"));
-                    }
-                    validateFieldPath(entry.sourceFieldPath(), profile.getInputSchema(), "INPUT_SCHEMA");
-                }
-                case OUTPUT_SCHEMA -> {
-                    if (profile.getOutputSchema() == null) {
-                        throw new DomainValidationException(
-                                "Cannot add OUTPUT_SCHEMA crosswalk entry — profile has no outputSchema",
-                                "crosswalk_surface_not_present",
-                                Map.of("vocabularySurface", "OUTPUT_SCHEMA"));
-                    }
-                    validateFieldPath(entry.sourceFieldPath(), profile.getOutputSchema(), "OUTPUT_SCHEMA");
-                }
-                case TREATMENT_STRATEGY_VOCABULARY -> {
-                    if (profile.getTreatmentStrategyVocabulary() == null) {
-                        throw new DomainValidationException(
-                                "Cannot add TREATMENT_STRATEGY_VOCABULARY crosswalk entry — "
-                                        + "profile has no treatmentStrategyVocabulary",
-                                "crosswalk_surface_not_present",
-                                Map.of("vocabularySurface", "TREATMENT_STRATEGY_VOCABULARY"));
-                    }
-                    validateTreatmentPath(entry.sourceFieldPath(), profile.getTreatmentStrategyVocabulary());
-                }
-                default -> throw new IllegalStateException(
-                        "Unhandled CrosswalkVocabularySurface: " + entry.vocabularySurface());
-            }
-
-            // conversionRule without scale or units
-            if (entry.conversionRule() != null && (entry.scale() == null && entry.units() == null)) {
-                throw new DomainValidationException(
-                        "crosswalk entry for " + entry.sourceFieldPath()
-                                + " has conversionRule but neither scale nor units is set — "
-                                + "a conversion rule must name the scale or units it converts",
-                        "crosswalk_conversion_rule_missing_scale_or_units",
-                        Map.of("sourceFieldPath", entry.sourceFieldPath()));
-            }
+            rejectDuplicateTuple(entry, seen);
+            validateEntrySurface(profile, entry);
+            rejectConversionRuleWithoutScaleOrUnits(entry);
         }
+    }
+
+    private static void rejectDuplicateTuple(CrosswalkEntry entry, Set<String> seen) {
+        String key = entry.normalizedConcept() + "|" + entry.vocabularySurface() + "|" + entry.sourceFieldPath();
+        if (seen.add(key)) {
+            return;
+        }
+        throw new DomainValidationException(
+                "Crosswalk contains duplicate entry: "
+                        + entry.normalizedConcept() + " / "
+                        + entry.vocabularySurface() + " / "
+                        + entry.sourceFieldPath(),
+                "duplicate_crosswalk_entry",
+                Map.of(
+                        "normalizedConcept",
+                        entry.normalizedConcept().name(),
+                        DETAIL_KEY_VOCABULARY_SURFACE,
+                        entry.vocabularySurface().name(),
+                        DETAIL_KEY_SOURCE_FIELD_PATH,
+                        entry.sourceFieldPath()));
+    }
+
+    private static void validateEntrySurface(MethodologyProfile profile, CrosswalkEntry entry) {
+        switch (entry.vocabularySurface()) {
+            case INPUT_SCHEMA -> validateSchemaSurface(profile.getInputSchema(), entry, "INPUT_SCHEMA");
+            case OUTPUT_SCHEMA -> validateSchemaSurface(profile.getOutputSchema(), entry, "OUTPUT_SCHEMA");
+            case TREATMENT_STRATEGY_VOCABULARY -> validateTreatmentSurface(
+                    profile.getTreatmentStrategyVocabulary(), entry);
+            default -> throw new IllegalStateException(
+                    "Unhandled CrosswalkVocabularySurface: " + entry.vocabularySurface());
+        }
+    }
+
+    private static void validateSchemaSurface(Map<String, Object> schema, CrosswalkEntry entry, String surfaceName) {
+        if (schema == null) {
+            throw new DomainValidationException(
+                    "Cannot add " + surfaceName + " crosswalk entry — profile has no "
+                            + (surfaceName.equals("INPUT_SCHEMA") ? "inputSchema" : "outputSchema"),
+                    "crosswalk_surface_not_present",
+                    Map.of(DETAIL_KEY_VOCABULARY_SURFACE, surfaceName));
+        }
+        validateFieldPath(entry.sourceFieldPath(), schema, surfaceName);
+    }
+
+    private static void validateTreatmentSurface(Map<String, Object> vocabulary, CrosswalkEntry entry) {
+        if (vocabulary == null) {
+            throw new DomainValidationException(
+                    "Cannot add TREATMENT_STRATEGY_VOCABULARY crosswalk entry — "
+                            + "profile has no treatmentStrategyVocabulary",
+                    "crosswalk_surface_not_present",
+                    Map.of(DETAIL_KEY_VOCABULARY_SURFACE, TREATMENT_SURFACE_NAME));
+        }
+        validateTreatmentPath(entry.sourceFieldPath(), vocabulary);
+    }
+
+    private static void rejectConversionRuleWithoutScaleOrUnits(CrosswalkEntry entry) {
+        if (entry.conversionRule() == null) {
+            return;
+        }
+        if (entry.scale() != null || entry.units() != null) {
+            return;
+        }
+        throw new DomainValidationException(
+                "crosswalk entry for " + entry.sourceFieldPath()
+                        + " has conversionRule but neither scale nor units is set — "
+                        + "a conversion rule must name the scale or units it converts",
+                "crosswalk_conversion_rule_missing_scale_or_units",
+                Map.of(DETAIL_KEY_SOURCE_FIELD_PATH, entry.sourceFieldPath()));
     }
 
     /**
@@ -958,56 +986,76 @@ public class MethodologyProfileService {
      * <p>Handles FAIR-CAM dotted paths like {@code fair_cam.control_strength} by
      * descending into nested object properties.
      */
-    @SuppressWarnings("unchecked")
     private static void validateFieldPath(String path, Map<String, Object> schema, String surfaceName) {
-        if (schema == null) {
+        Map<String, Object> properties = extractValidatableProperties(schema);
+        if (properties == null) {
             return;
         }
-        // If the schema permits additional properties at the root, skip path check
-        if (Boolean.TRUE.equals(schema.get("additionalProperties"))) {
-            return;
-        }
-        Object propertiesRaw = schema.get("properties");
-        if (!(propertiesRaw instanceof Map)) {
-            // No properties node — cannot validate, pass through
-            return;
-        }
-        Map<String, Object> properties = (Map<String, Object>) propertiesRaw;
         String[] segments = path.split("\\.", 2);
         String head = segments[0];
         if (!properties.containsKey(head)) {
             throw new DomainValidationException(
                     "sourceFieldPath '" + path + "' does not resolve under " + surfaceName,
                     "crosswalk_unknown_field_path",
-                    Map.of("sourceFieldPath", path, "surface", surfaceName));
+                    Map.of(DETAIL_KEY_SOURCE_FIELD_PATH, path, "surface", surfaceName));
         }
-        // Recurse into remaining path segment if present
         if (segments.length > 1) {
-            Object nested = properties.get(head);
-            if (nested instanceof Map) {
-                Map<String, Object> nestedMap = (Map<String, Object>) nested;
-                if (Boolean.TRUE.equals(nestedMap.get("additionalProperties"))) {
-                    return;
-                }
-                Object nestedProps = nestedMap.get("properties");
-                if (nestedProps instanceof Map) {
-                    Map<String, Object> syntheticSchema = new LinkedHashMap<>();
-                    syntheticSchema.put("properties", nestedProps);
-                    validateFieldPath(segments[1], syntheticSchema, surfaceName);
-                }
-                // If no nested properties map, pass through (items-based array schema)
-                Object items = nestedMap.get("items");
-                if (items instanceof Map) {
-                    Map<String, Object> itemsMap = (Map<String, Object>) items;
-                    Object itemsProps = itemsMap.get("properties");
-                    if (itemsProps instanceof Map) {
-                        Map<String, Object> syntheticSchema = new LinkedHashMap<>();
-                        syntheticSchema.put("properties", itemsProps);
-                        validateFieldPath(segments[1], syntheticSchema, surfaceName);
-                    }
-                }
-            }
+            descendIntoNested(segments[1], properties.get(head), surfaceName);
         }
+    }
+
+    /**
+     * Returns the {@code properties} map suitable for membership checks, or
+     * {@code null} when the schema permits any path (null schema, open
+     * {@code additionalProperties}, or no {@code properties} node).
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> extractValidatableProperties(Map<String, Object> schema) {
+        if (schema == null) {
+            return null;
+        }
+        if (Boolean.TRUE.equals(schema.get(SCHEMA_KEY_ADDITIONAL_PROPERTIES))) {
+            return null;
+        }
+        Object propertiesRaw = schema.get(SCHEMA_KEY_PROPERTIES);
+        if (propertiesRaw instanceof Map) {
+            return (Map<String, Object>) propertiesRaw;
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void descendIntoNested(String remaining, Object nested, String surfaceName) {
+        if (!(nested instanceof Map)) {
+            return;
+        }
+        Map<String, Object> nestedMap = (Map<String, Object>) nested;
+        if (Boolean.TRUE.equals(nestedMap.get(SCHEMA_KEY_ADDITIONAL_PROPERTIES))) {
+            return;
+        }
+        validateFieldPath(remaining, synthesizeChildSchema(nestedMap, SCHEMA_KEY_PROPERTIES), surfaceName);
+        Object items = nestedMap.get(SCHEMA_KEY_ITEMS);
+        if (items instanceof Map) {
+            validateFieldPath(
+                    remaining, synthesizeChildSchema((Map<String, Object>) items, SCHEMA_KEY_PROPERTIES), surfaceName);
+        }
+    }
+
+    /**
+     * Builds a single-key schema wrapping {@code parent.get(childKey)} as
+     * {@code properties} so the recursive walker treats it as a schema root.
+     * Returns {@code null} when the child is missing or not a map (the walker
+     * treats null as "no validatable properties" and short-circuits).
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> synthesizeChildSchema(Map<String, Object> parent, String childKey) {
+        Object child = parent.get(childKey);
+        if (!(child instanceof Map)) {
+            return null;
+        }
+        Map<String, Object> synthetic = new LinkedHashMap<>();
+        synthetic.put(SCHEMA_KEY_PROPERTIES, child);
+        return synthetic;
     }
 
     /**
@@ -1029,7 +1077,7 @@ public class MethodologyProfileService {
             throw new DomainValidationException(
                     "sourceFieldPath '" + path + "' does not resolve under TREATMENT_STRATEGY_VOCABULARY",
                     "crosswalk_unknown_field_path",
-                    Map.of("sourceFieldPath", path, "surface", "TREATMENT_STRATEGY_VOCABULARY"));
+                    Map.of(DETAIL_KEY_SOURCE_FIELD_PATH, path, "surface", TREATMENT_SURFACE_NAME));
         }
         if (segments.length > 1) {
             Object nested = vocabulary.get(head);
