@@ -116,3 +116,11 @@ convention: a new kind value in `ANALYZE_KINDS` (for example
 `gc_analyze` tool description string in `mcp/ground-control/index.js`. No
 separate user-facing prose page per kind, no new sections in this style
 guide.
+
+Restoring a `TO_CAMEL` mapping in
+`mcp/ground-control/lib.js` (for example, the `threat_source` /
+`threat_event` entries the `gc_risk_scenario` rename in #720 dropped but
+the `gc_threat_model` tool still needs on its public surface) is a
+config-parser fix: the contract surface that names the snake_case fields
+is the tool's adapter file (`gc-threat-model.js` or sibling), and the
+amendment record lives in ADR-054. No new sections in this style guide.

@@ -565,6 +565,14 @@ const TO_CAMEL = {
   evidence_ref: "evidenceRef",
   observation_id: "observationId",
   fair_sentence: "fairSentence",
+  // Backend ThreatModelRequest fields. RiskScenario renamed its analogous fields
+  // (threat_source→threat, threat_event→method) per GC-T013 / #720, but
+  // ThreatModel still uses `threatSource` / `threatEvent` on the wire and the
+  // MCP `gc_threat_model` surface still accepts `threat_source` / `threat_event`
+  // — without these mappings Jackson silently drops the fields and the create
+  // body lands without the threat source / event (issue #875).
+  threat_source: "threatSource",
+  threat_event: "threatEvent",
   // Backend ThreatModelRequest uses `stride` (typed StrideCategory) on the wire;
   // the MCP surface keeps `stride_category` for clarity. Mapping is needed to
   // bridge the rename; without it Jackson silently dropped the field (issue #875).
