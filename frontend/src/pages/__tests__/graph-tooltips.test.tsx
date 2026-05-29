@@ -99,18 +99,18 @@ describe("getTooltipTags — OBSERVATION node", () => {
 });
 
 describe("getTooltipTags — RISK_SCENARIO node", () => {
-  it("returns status, threatSource, and threatEvent tags", () => {
+  it("returns status, threat, and method tags", () => {
     const data = {
       entityType: "RISK_SCENARIO",
       status: "ACTIVE",
-      threatSource: "external-attacker",
-      threatEvent: "credential-theft",
+      threat: "external-attacker",
+      method: "credential-theft",
     };
     const tags = getTooltipTags(data);
     const texts = tags.map((t) => t.text);
     expect(texts.some((t) => t === "Status: ACTIVE")).toBe(true);
     expect(texts.some((t) => t === "Threat: external-attacker")).toBe(true);
-    expect(texts.some((t) => t === "Event: credential-theft")).toBe(true);
+    expect(texts.some((t) => t === "Method: credential-theft")).toBe(true);
   });
 });
 

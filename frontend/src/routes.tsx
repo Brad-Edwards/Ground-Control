@@ -33,6 +33,11 @@ const TestRuns = lazy(() =>
 const TestRunRunner = lazy(() =>
   import("@/pages/test-run-runner").then((m) => ({ default: m.TestRunRunner })),
 );
+const ThreatModelingWorkspace = lazy(() =>
+  import("@/pages/threat-modeling-workspace").then((m) => ({
+    default: m.ThreatModelingWorkspace,
+  })),
+);
 
 function PageSkeleton() {
   return (
@@ -95,6 +100,7 @@ export function AppRoutes() {
           <Route path="test-runs/:runId/run" element={<TestRunRunner />} />
           <Route path="graph" element={<Graph />} />
           <Route path="analysis" element={<Analysis />} />
+          <Route path="threat-modeling" element={<ThreatModelingWorkspace />} />
           <Route path="admin" element={<Admin />} />
           <Route path="*" element={<NotFound />} />
         </Route>
