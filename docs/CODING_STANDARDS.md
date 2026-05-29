@@ -400,9 +400,12 @@ classification depends on which kind:
   contract surfaces; transition rules must be unit-tested and ADR-012's L1
   rule applies.
 - **Tag enums.** Enums that are pure classifiers with no transition surface,
-  for example `AssetLinkTargetType`, and the `ReassessmentTriggerCategory` /
-  `ReassessmentTriggerTargetType` added for GC-T004 / C8 in issue #863.
-  These are L0 data; the placement under `state/` follows convention only.
+  for example `AssetLinkTargetType`, the `ReassessmentTriggerCategory` /
+  `ReassessmentTriggerTargetType` added for GC-T004 / C8 in issue #863,
+  and the NIST SP 800-30 Rev. 1 classifiers `ThreatEventKind`,
+  `ThreatSourceRelevance`, `NistLikelihoodBand`, and `NistImpactBand` added
+  for GC-T014 / #721. These are L0 data; the placement under `state/`
+  follows convention only.
 
 When adding a new file under `state/`, classify it explicitly in the file
 header or the introducing PR's plan. The policy rule that requires this

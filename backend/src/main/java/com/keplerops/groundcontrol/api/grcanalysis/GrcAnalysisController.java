@@ -70,4 +70,15 @@ public class GrcAnalysisController {
         return VendorRiskAggregationResponse.from(
                 grcAnalysisService.vendorRisk(projectId, asOf, freshnessWindowDays, vendorAssetId));
     }
+
+    @GetMapping("/nist-sp-800-30")
+    public NistAssessmentResponse nistAssessment(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false) UUID riskAssessmentResultId,
+            @RequestParam(required = false) UUID riskScenarioId) {
+        UUID projectId = projectService.resolveProjectId(project);
+        return NistAssessmentResponse.from(
+                grcAnalysisService.nistAssessment(projectId, asOf, riskAssessmentResultId, riskScenarioId));
+    }
 }

@@ -193,87 +193,169 @@ public class MethodologyProfileService {
               }
             }""";
 
-    private static final String NIST_INPUT_SCHEMA =
+    // NIST SP 800-30 Rev. 1 assessment input vocabulary. Encodes the full
+    // Rev. 1 decomposition required by GC-T014: threat sources, threat events
+    // (adversarial vs non-adversarial), vulnerabilities, predisposing
+    // conditions, threat-source relevance, likelihood of initiation,
+    // likelihood of adverse impact, overall likelihood (optionally derived
+    // per Table G-5), impact level, and assessment timeframe.
+    static final String NIST_INPUT_SCHEMA =
             """
             {
               "type": "object",
-              "description": "NIST SP 800-30 Rev. 1 assessment inputs",
+              "description": "NIST SP 800-30 Rev. 1 assessment inputs (full Rev. 1 decomposition per GC-T014)",
               "properties": {
-                "likelihood": {
+                "threat_source": {
                   "type": "object",
-                  "description": "Overall likelihood of threat event occurrence and adverse impact",
+                  "description": "Threat source per NIST SP 800-30 Rev. 1 Appendix D",
                   "properties": {
-                    "level": {"type": "string", "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]},
-                    "score": {"type": "integer", "minimum": 1, "maximum": 5}
-                  },
-                  "required": ["level", "score"]
+                    "id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "kind": {
+                      "type": "string",
+                      "description": "Adversarial or non-adversarial (NIST Table D-2 / Table D-7)",
+                      "enum": ["ADVERSARIAL", "NON_ADVERSARIAL"]
+                    }
+                  }
                 },
-                "impact": {
+                "threat_event": {
                   "type": "object",
-                  "description": "Level of adverse impact if the threat event occurs",
+                  "description": "Threat event per NIST SP 800-30 Rev. 1 Appendix E",
                   "properties": {
-                    "level": {"type": "string", "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]},
-                    "score": {"type": "integer", "minimum": 1, "maximum": 5}
-                  },
-                  "required": ["level", "score"]
+                    "id": {"type": "string"},
+                    "description": {"type": "string"},
+                    "kind": {
+                      "type": "string",
+                      "description": "Adversarial or non-adversarial threat event (NIST Table E-2 / Table E-3)",
+                      "enum": ["ADVERSARIAL", "NON_ADVERSARIAL"]
+                    }
+                  }
                 },
-                "predisposing_conditions": {
+                "threat_event_kind": {
                   "type": "string",
-                  "description": "Conditions that increase or decrease likelihood"
+                  "description": "Short discriminator mirrored on the event for non-recursive consumers",
+                  "enum": ["ADVERSARIAL", "NON_ADVERSARIAL"]
                 },
                 "threat_source_characteristics": {
                   "type": "object",
-                  "description": "NIST threat source characterization",
+                  "description": "Adversarial threat source attributes (NIST Table D-3..D-5); not applicable to non-adversarial events",
                   "properties": {
                     "capability": {"type": "string", "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]},
                     "intent": {"type": "string", "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]},
                     "targeting": {"type": "string", "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]}
                   }
+                },
+                "threat_source_relevance": {
+                  "type": "string",
+                  "description": "Threat source relevance per NIST Table D-2",
+                  "enum": ["CONFIRMED", "EXPECTED", "ANTICIPATED", "PREDICTED", "POSSIBLE", "NOT_APPLICABLE"]
+                },
+                "vulnerabilities": {
+                  "type": "array",
+                  "description": "Vulnerabilities exposed to the threat event (NIST Appendix F)",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {"type": "string"},
+                      "description": {"type": "string"},
+                      "severity": {"type": "string", "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]},
+                      "predisposing_condition_ids": {"type": "array", "items": {"type": "string"}}
+                    }
+                  }
+                },
+                "predisposing_conditions": {
+                  "type": "array",
+                  "description": "Predisposing conditions affecting exploitation (NIST Appendix F)",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {"type": "string"},
+                      "description": {"type": "string"},
+                      "pervasiveness": {
+                        "type": "string",
+                        "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]
+                      }
+                    }
+                  }
+                },
+                "likelihood_initiation": {
+                  "type": "string",
+                  "description": "Likelihood that the threat source initiates the event / event occurs (NIST Table G-2)",
+                  "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]
+                },
+                "likelihood_adverse_impact": {
+                  "type": "string",
+                  "description": "Likelihood that the threat event results in adverse impact (NIST Table G-3)",
+                  "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]
+                },
+                "likelihood_overall": {
+                  "type": "string",
+                  "description": "Optional analyst-supplied overall likelihood; derived per Table G-5 when absent",
+                  "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]
+                },
+                "impact_level": {
+                  "type": "string",
+                  "description": "Impact level per NIST Table H-3",
+                  "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]
+                },
+                "assessment_timeframe": {
+                  "type": "object",
+                  "description": "Time window over which the assessment is judged",
+                  "properties": {
+                    "from": {"type": "string", "format": "date"},
+                    "to": {"type": "string", "format": "date"}
+                  }
                 }
               },
-              "required": ["likelihood", "impact"],
+              "required": ["impact_level"],
               "semantics": {
                 "scale": "ordinal",
                 "levels": 5,
                 "level_labels": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"],
                 "score_range": {"min": 1, "max": 5},
-                "units": "qualitative ordinal levels"
+                "units": "qualitative ordinal levels",
+                "adversarial_branch_fields": ["threat_source_characteristics"],
+                "non_adversarial_branch_fields": []
               }
             }""";
 
-    private static final String NIST_OUTPUT_SCHEMA =
+    static final String NIST_OUTPUT_SCHEMA =
             """
             {
               "type": "object",
-              "description": "NIST SP 800-30 Rev. 1 risk determination outputs",
+              "description": "NIST SP 800-30 Rev. 1 risk determination outputs (methodology-attributed per GC-L007 result contract)",
               "properties": {
-                "risk_level": {
+                "overall_likelihood": {
                   "type": "string",
-                  "description": "Overall risk level derived from the 5x5 matrix",
+                  "description": "Overall likelihood band (analyst-supplied or derived per Table G-5)",
                   "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]
                 },
-                "risk_score": {
-                  "type": "integer",
-                  "description": "Numeric risk score (likelihood_score * impact_score)",
-                  "minimum": 1,
-                  "maximum": 25
-                },
-                "risk_matrix_cell": {
+                "impact_level": {
                   "type": "string",
-                  "description": "Matrix cell reference (e.g., L3-I4 for likelihood=3, impact=4)"
+                  "description": "Impact band echoed from inputs for analyst convenience",
+                  "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]
+                },
+                "risk_level": {
+                  "type": "string",
+                  "description": "Overall risk level per NIST SP 800-30 Rev. 1 Table I-2",
+                  "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]
+                },
+                "matrix_cell": {
+                  "type": "string",
+                  "description": "Matrix cell reference (e.g., L3-I4 for overall_likelihood=MODERATE, impact_level=HIGH)"
+                },
+                "derivation": {
+                  "type": "string",
+                  "description": "Provenance: analyst-supplied or derived per Table G-5"
                 }
               },
-              "required": ["risk_level", "risk_score"],
+              "required": ["risk_level"],
               "semantics": {
                 "scale": "ordinal",
-                "derivation": "risk_score = likelihood.score * impact.score",
-                "matrix_mapping": {
-                  "1-4": "VERY_LOW",
-                  "5-8": "LOW",
-                  "9-12": "MODERATE",
-                  "13-19": "HIGH",
-                  "20-25": "VERY_HIGH"
-                }
+                "units": "qualitative ordinal levels",
+                "derivation_method": "nist-sp800-30-rev1-5x5-matrix-v1",
+                "matrix_conversion_rule": "overall_likelihood × impact_level → risk_level per NIST SP 800-30 Rev. 1 Table I-2",
+                "no_numeric_score": "NIST ordinal bands must not be normalized into a cross-methodology numeric score without an explicit method label and conversion rule"
               }
             }""";
 
