@@ -234,24 +234,25 @@ public class NistAssessmentService {
                 limitations);
         String persistedDerivation = stringValue(persistedOutputs.get(OUT_DERIVATION));
 
+        NistLikelihoodBand overall;
+        String derivation;
         if (persistedOverall != null) {
-            return new DerivedOverall(
-                    persistedOverall,
-                    persistedDerivation != null
-                            ? "persisted: " + persistedDerivation
-                            : "persisted (computedOutputs." + OUT_OVERALL_LIKELIHOOD + ")");
+            overall = persistedOverall;
+            derivation = persistedDerivation != null
+                    ? "persisted: " + persistedDerivation
+                    : "persisted (computedOutputs." + OUT_OVERALL_LIKELIHOOD + ")";
+        } else if (overallSupplied != null) {
+            overall = overallSupplied;
+            derivation = "analyst-supplied (likelihood_overall input)";
+        } else if (decoded.initiation() != null && decoded.adverseImpact() != null) {
+            overall = minBand(decoded.initiation(), decoded.adverseImpact());
+            derivation =
+                    "derived: min(likelihood_initiation, likelihood_adverse_impact) per NIST SP 800-30 Rev. 1 Table G-5";
+        } else {
+            overall = null;
+            derivation = "not-derivable (missing likelihood inputs)";
         }
-        if (overallSupplied != null) {
-            return new DerivedOverall(overallSupplied, "analyst-supplied (likelihood_overall input)");
-        }
-        NistLikelihoodBand initiation = decoded.initiation();
-        NistLikelihoodBand adverse = decoded.adverseImpact();
-        if (initiation != null && adverse != null) {
-            return new DerivedOverall(
-                    minBand(initiation, adverse),
-                    "derived: min(likelihood_initiation, likelihood_adverse_impact) per NIST SP 800-30 Rev. 1 Table G-5");
-        }
-        return new DerivedOverall(null, "not-derivable (missing likelihood inputs)");
+        return new DerivedOverall(overall, derivation);
     }
 
     private ResolvedRisk resolveRisk(
