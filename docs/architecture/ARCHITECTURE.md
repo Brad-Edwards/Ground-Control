@@ -221,6 +221,20 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 - Pluggable verifier adapter interface (`VerifierAdapter`, `VerificationRequest`, `VerificationOutcome`)—ADR-014 §6 port contract for multi-tool integration
 - Self-referential traceability enforcement—`check_live_policy.mjs` verifies substantive code files have reverse traceability links to requirements (GC-O002), using the `GET /requirements/traceability/by-artifact` reverse lookup endpoint. Lookup errors are tracked separately for debuggability when the endpoint is unavailable.
 
+## MethodologyProfile Aggregate and Risk Terminology Crosswalk (GC-T012)
+
+`MethodologyProfile` is the aggregate that defines a risk assessment methodology in a project scope. Each profile carries its input/output JSON schemas, an optional treatment-strategy vocabulary, and (from GC-T012) a **profile-scoped crosswalk** list.
+
+### Crosswalk model
+
+A crosswalk entry maps one concrete source field path (within a profile's `inputSchema`, `outputSchema`, or `treatmentStrategyVocabulary`) to one value in the normalized ten-concept vocabulary: `THREAT_SOURCE`, `THREAT_EVENT`, `VULNERABILITY_OR_EXPOSURE`, `ASSET`, `PROCESS_OR_OBJECTIVE`, `CONSEQUENCE_OR_EFFECT`, `CONTROL`, `LIKELIHOOD_OR_FREQUENCY`, `IMPACT_OR_LOSS_MAGNITUDE`, `TREATMENT`.
+
+The crosswalk is **classifier-only**. It is a declarative labeling layer. It does not aggregate cross-methodology risk scores, collapse method-specific fields into a single ambiguous value, or rewrite assessment result payloads. Assessment outputs remain traceable to their originating methodology profile via `methodologyProfileId`/`profileKey`/`family`/`version` on every `RiskAssessmentResult`.
+
+The crosswalk list is persisted as a JSON-typed `TEXT` column (`crosswalk_entries`) on the `methodology_profile` table via `JacksonTextCollectionConverters.CrosswalkEntryListConverter`. The column is audited via `methodology_profile_aud` under Envers/ADR-026 parity. No separate table is used; the crosswalk is small per profile and is always fetched with the profile.
+
+The two supporting enums (`NormalizedConcept`, `CrosswalkVocabularySurface`) are mirrored at the MCP (`lib.js` constant arrays) and frontend (`api.ts` union types + const arrays) boundaries per ADR-034, and enforced by `tools/policy/checks.py::ENUM_CONTRACT_INVENTORY`.
+
 ## Knowledge Ingest Engine (repo-local, out of the product model)
 
 Each repository that uses Ground Control can declare an agent-maintained knowledge base under `docs/knowledge/` via the `knowledge` section of its `.ground-control.yaml`. The `gc_remember` MCP tool captures observations into that repo's inbox; a detached ingest subprocess reads the inbox item, decides update-vs-create via codex, writes the wiki page, and commits the change under a per-repo interprocess lock. The engine lives at `mcp/ground-control/knowledge_ingest.js` with a thin CLI entry at `mcp/ground-control/knowledge_ingest_cli.js`.

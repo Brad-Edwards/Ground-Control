@@ -492,6 +492,8 @@ class PolicyChecksTest(unittest.TestCase):
                 "ThreatSourceRelevance",
                 "NistLikelihoodBand",
                 "NistImpactBand",
+                "NormalizedConcept",
+                "CrosswalkVocabularySurface",
             },
         )
         for contract in ENUM_CONTRACT_INVENTORY:
@@ -571,6 +573,52 @@ class PolicyChecksTest(unittest.TestCase):
             violations = run_enum_contract_check(root=root)
             codes = {v.code for v in violations}
             self.assertIn("enum-contract-source-missing", codes)
+
+    def test_enum_contract_normalized_concept_positive(self):
+        # GC-T012: NORMALIZED_CONCEPTS in api.ts and lib.js must match NormalizedConcept.java
+        violations = run_enum_contract_check(root=REPO_ROOT)
+        labels = {v.details[0] if v.details else "" for v in violations}
+        self.assertNotIn("NormalizedConcept", " ".join(labels))
+
+    def test_enum_contract_normalized_concept_drift(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._copy_enum_sources(root)
+            api_ts = root / FRONTEND_API_TYPES_PATH
+            text = api_ts.read_text(encoding="utf-8")
+            # Remove TREATMENT from both the union and the constant array.
+            text = text.replace('  | "TREATMENT"\n', "")
+            text = text.replace('  "TREATMENT",\n', "")
+            api_ts.write_text(text, encoding="utf-8")
+            violations = run_enum_contract_check(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("enum-contract-drift", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("NormalizedConcept", details)
+            self.assertIn("TREATMENT", details)
+
+    def test_enum_contract_crosswalk_vocabulary_surface_positive(self):
+        # GC-T012: CROSSWALK_VOCABULARY_SURFACES in api.ts and lib.js must match CrosswalkVocabularySurface.java
+        violations = run_enum_contract_check(root=REPO_ROOT)
+        labels = {v.details[0] if v.details else "" for v in violations}
+        self.assertNotIn("CrosswalkVocabularySurface", " ".join(labels))
+
+    def test_enum_contract_crosswalk_vocabulary_surface_drift(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._copy_enum_sources(root)
+            api_ts = root / FRONTEND_API_TYPES_PATH
+            text = api_ts.read_text(encoding="utf-8")
+            # Remove OUTPUT_SCHEMA from the constant array.
+            text = text.replace('  "OUTPUT_SCHEMA",\n', "")
+            text = text.replace('  | "OUTPUT_SCHEMA"\n', "")
+            api_ts.write_text(text, encoding="utf-8")
+            violations = run_enum_contract_check(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("enum-contract-drift", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("CrosswalkVocabularySurface", details)
+            self.assertIn("OUTPUT_SCHEMA", details)
 
     def test_deferral_classifier_matches_golden_cases(self):
         # The shared golden-case file is the single source of truth for what

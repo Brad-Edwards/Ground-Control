@@ -1055,6 +1055,23 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
         "NIST_IMPACT_BANDS",
         "NIST_IMPACT_BANDS",
     ),
+    # GC-T012 crosswalk vocabulary enums. Mirrored at the
+    # /api/v1/methodology-profiles boundary and in the MCP gc_risk_governance
+    # methodology_profile handler Zod shape. ADR-034.
+    EnumContract(
+        "NormalizedConcept",
+        f"{_RISK_ENUM_STATE_DIR}/NormalizedConcept.java",
+        "NormalizedConcept",
+        "NORMALIZED_CONCEPTS",
+        "NORMALIZED_CONCEPTS",
+    ),
+    EnumContract(
+        "CrosswalkVocabularySurface",
+        f"{_RISK_ENUM_STATE_DIR}/CrosswalkVocabularySurface.java",
+        "CrosswalkVocabularySurface",
+        "CROSSWALK_VOCABULARY_SURFACES",
+        "CROSSWALK_VOCABULARY_SURFACES",
+    ),
 )
 
 
