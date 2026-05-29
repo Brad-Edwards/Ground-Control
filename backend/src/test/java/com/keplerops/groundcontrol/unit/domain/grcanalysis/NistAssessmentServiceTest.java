@@ -275,10 +275,11 @@ class NistAssessmentServiceTest {
     @Test
     void analyze_filterByAssessmentId_nonNistProfile_throwsValidationError() {
         var fairResult = makeAssessment(fairProfile, Map.of("annualized_loss_expectancy", 12345));
-        when(riskAssessmentResultRepository.findByIdAndProjectIdWithObservations(fairResult.getId(), projectId))
+        UUID fairId = fairResult.getId();
+        when(riskAssessmentResultRepository.findByIdAndProjectIdWithObservations(fairId, projectId))
                 .thenReturn(Optional.of(fairResult));
 
-        assertThatThrownBy(() -> service.analyze(projectId, null, fairResult.getId(), null))
+        assertThatThrownBy(() -> service.analyze(projectId, null, fairId, null))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("NIST_SP800_30_R1");
     }
