@@ -690,4 +690,291 @@ class MethodologyProfileServiceTest {
 
         assertThat(result.getCrosswalkEntries()).containsExactly(entry);
     }
+
+    @Test
+    void updateAcceptsValidOutputSchemaPath() {
+        var entry = new CrosswalkEntry(
+                NormalizedConcept.IMPACT_OR_LOSS_MAGNITUDE,
+                CrosswalkVocabularySurface.OUTPUT_SCHEMA,
+                "risk_level",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+        var outputSchema = Map.<String, Object>of(
+                "type", "object", "properties", Map.<String, Object>of("risk_level", Map.<String, Object>of()));
+        var profile = new MethodologyProfile(project, "CUSTOM", "Custom", "1.0", MethodologyFamily.CUSTOM);
+        var profileId = UUID.randomUUID();
+        setField(profile, "id", profileId);
+        profile.setOutputSchema(outputSchema);
+        when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
+        when(repository.save(any(MethodologyProfile.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.update(
+                projectId,
+                profileId,
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry)));
+
+        assertThat(result.getCrosswalkEntries()).hasSize(1);
+    }
+
+    @Test
+    void updateAcceptsMultiSegmentNestedPropertiesPath() {
+        // FAIR-CAM-style fair_cam.control_strength: descend nested properties
+        var entry = new CrosswalkEntry(
+                NormalizedConcept.CONTROL,
+                CrosswalkVocabularySurface.INPUT_SCHEMA,
+                "fair_cam.control_strength",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+        var inputSchema = Map.<String, Object>of(
+                "type",
+                "object",
+                "properties",
+                Map.<String, Object>of(
+                        "fair_cam",
+                        Map.<String, Object>of(
+                                "type",
+                                "object",
+                                "properties",
+                                Map.<String, Object>of("control_strength", Map.<String, Object>of()))));
+        var profile = makeProfileWithInputSchema(inputSchema);
+        var profileId = profile.getId();
+        when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
+        when(repository.save(any(MethodologyProfile.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.update(
+                projectId,
+                profileId,
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry)));
+
+        assertThat(result.getCrosswalkEntries()).hasSize(1);
+    }
+
+    @Test
+    void updateAcceptsMultiSegmentArrayItemsPath() {
+        // NIST vulnerabilities-style path: descend through items.properties
+        var entry = new CrosswalkEntry(
+                NormalizedConcept.VULNERABILITY_OR_EXPOSURE,
+                CrosswalkVocabularySurface.INPUT_SCHEMA,
+                "vulnerabilities.severity",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+        var inputSchema = Map.<String, Object>of(
+                "type",
+                "object",
+                "properties",
+                Map.<String, Object>of(
+                        "vulnerabilities",
+                        Map.<String, Object>of(
+                                "type",
+                                "array",
+                                "items",
+                                Map.<String, Object>of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.<String, Object>of("severity", Map.<String, Object>of())))));
+        var profile = makeProfileWithInputSchema(inputSchema);
+        var profileId = profile.getId();
+        when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
+        when(repository.save(any(MethodologyProfile.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.update(
+                projectId,
+                profileId,
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry)));
+
+        assertThat(result.getCrosswalkEntries()).hasSize(1);
+    }
+
+    @Test
+    void updateSkipsValidationWhenSchemaPermitsAdditionalProperties() {
+        // additionalProperties: true at the root means any path is valid; no throw
+        var entry = new CrosswalkEntry(
+                NormalizedConcept.THREAT_SOURCE,
+                CrosswalkVocabularySurface.INPUT_SCHEMA,
+                "anything_goes",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+        var inputSchema = Map.<String, Object>of("type", "object", "additionalProperties", true);
+        var profile = makeProfileWithInputSchema(inputSchema);
+        var profileId = profile.getId();
+        when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
+        when(repository.save(any(MethodologyProfile.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.update(
+                projectId,
+                profileId,
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry)));
+
+        assertThat(result.getCrosswalkEntries()).hasSize(1);
+    }
+
+    @Test
+    void updateSkipsValidationWhenSchemaHasNoPropertiesKey() {
+        // No properties node means we cannot validate; pass through
+        var entry = new CrosswalkEntry(
+                NormalizedConcept.ASSET,
+                CrosswalkVocabularySurface.INPUT_SCHEMA,
+                "free_form_path",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+        var inputSchema = Map.<String, Object>of("type", "object");
+        var profile = makeProfileWithInputSchema(inputSchema);
+        var profileId = profile.getId();
+        when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
+        when(repository.save(any(MethodologyProfile.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.update(
+                projectId,
+                profileId,
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry)));
+
+        assertThat(result.getCrosswalkEntries()).hasSize(1);
+    }
+
+    @Test
+    void updateSkipsNestedValidationWhenChildHasAdditionalProperties() {
+        // Nested additionalProperties: true short-circuits the descent
+        var entry = new CrosswalkEntry(
+                NormalizedConcept.CONTROL,
+                CrosswalkVocabularySurface.INPUT_SCHEMA,
+                "open_obj.anything",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+        var inputSchema = Map.<String, Object>of(
+                "type",
+                "object",
+                "properties",
+                Map.<String, Object>of(
+                        "open_obj", Map.<String, Object>of("type", "object", "additionalProperties", true)));
+        var profile = makeProfileWithInputSchema(inputSchema);
+        var profileId = profile.getId();
+        when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
+        when(repository.save(any(MethodologyProfile.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.update(
+                projectId,
+                profileId,
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry)));
+
+        assertThat(result.getCrosswalkEntries()).hasSize(1);
+    }
+
+    @Test
+    void updateAcceptsConversionRuleWhenScaleIsSet() {
+        // conversionRule + scale (no units) is valid
+        var entry = new CrosswalkEntry(
+                NormalizedConcept.LIKELIHOOD_OR_FREQUENCY,
+                CrosswalkVocabularySurface.INPUT_SCHEMA,
+                "loss_event_frequency",
+                null,
+                null,
+                "continuous",
+                null,
+                "LEF = TEF × Vulnerability",
+                null);
+        var profile = makeProfileWithInputSchema(Map.of("properties", Map.of("loss_event_frequency", Map.of())));
+        var profileId = profile.getId();
+        when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
+        when(repository.save(any(MethodologyProfile.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.update(
+                projectId,
+                profileId,
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry)));
+
+        assertThat(result.getCrosswalkEntries()).hasSize(1);
+    }
+
+    @Test
+    void updateAcceptsConversionRuleWhenUnitsIsSet() {
+        // conversionRule + units (no scale) is also valid
+        var entry = new CrosswalkEntry(
+                NormalizedConcept.LIKELIHOOD_OR_FREQUENCY,
+                CrosswalkVocabularySurface.INPUT_SCHEMA,
+                "loss_event_frequency",
+                null,
+                null,
+                null,
+                "annual events",
+                "LEF = TEF × Vulnerability",
+                null);
+        var profile = makeProfileWithInputSchema(Map.of("properties", Map.of("loss_event_frequency", Map.of())));
+        var profileId = profile.getId();
+        when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
+        when(repository.save(any(MethodologyProfile.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.update(
+                projectId,
+                profileId,
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry)));
+
+        assertThat(result.getCrosswalkEntries()).hasSize(1);
+    }
+
+    @Test
+    void updateAcceptsNestedTreatmentVocabularyPath() {
+        // treatment_vocabulary.MITIGATE.options.tactical descends through Map values
+        var entry = new CrosswalkEntry(
+                NormalizedConcept.TREATMENT,
+                CrosswalkVocabularySurface.TREATMENT_STRATEGY_VOCABULARY,
+                "MITIGATE.options",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+        var profile = new MethodologyProfile(project, "CUSTOM", "Custom", "1.0", MethodologyFamily.CUSTOM);
+        var profileId = UUID.randomUUID();
+        setField(profile, "id", profileId);
+        profile.setTreatmentStrategyVocabulary(
+                Map.of("MITIGATE", Map.of("options", Map.of("tactical", "Tactical mitigation"))));
+        when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
+        when(repository.save(any(MethodologyProfile.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.update(
+                projectId,
+                profileId,
+                new UpdateMethodologyProfileCommand(null, null, null, null, null, null, null, null, List.of(entry)));
+
+        assertThat(result.getCrosswalkEntries()).hasSize(1);
+    }
+
+    @Test
+    void listByProjectSkipsSeedingProfilesThatAlreadyExist() {
+        // exercises the seedIfMissing early-return when a profile already exists
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndProfileKeyAndVersion(any(), any(), any()))
+                .thenReturn(true);
+        when(repository.findByProjectIdOrderByNameAscVersionDesc(projectId)).thenReturn(List.of());
+
+        service.listByProject(projectId);
+
+        verify(repository, times(0)).save(any(MethodologyProfile.class));
+    }
 }
