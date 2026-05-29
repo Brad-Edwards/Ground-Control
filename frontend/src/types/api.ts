@@ -653,6 +653,57 @@ export const KNOWLEDGE_STATES: KnowledgeState[] = [
   "UNKNOWN",
 ];
 
+// GC-T012: normalized cross-methodology risk concept vocabulary and crosswalk
+// surface types. Single-sourced from backend NormalizedConcept and
+// CrosswalkVocabularySurface enums under domain/riskscenarios/state/.
+// Mirror policy per ADR-034 — declaration order matches the Java enum order;
+// enforced by tools/policy/checks.py::ENUM_CONTRACT_INVENTORY.
+export type NormalizedConcept =
+  | "THREAT_SOURCE"
+  | "THREAT_EVENT"
+  | "VULNERABILITY_OR_EXPOSURE"
+  | "ASSET"
+  | "PROCESS_OR_OBJECTIVE"
+  | "CONSEQUENCE_OR_EFFECT"
+  | "CONTROL"
+  | "LIKELIHOOD_OR_FREQUENCY"
+  | "IMPACT_OR_LOSS_MAGNITUDE"
+  | "TREATMENT";
+export const NORMALIZED_CONCEPTS: NormalizedConcept[] = [
+  "THREAT_SOURCE",
+  "THREAT_EVENT",
+  "VULNERABILITY_OR_EXPOSURE",
+  "ASSET",
+  "PROCESS_OR_OBJECTIVE",
+  "CONSEQUENCE_OR_EFFECT",
+  "CONTROL",
+  "LIKELIHOOD_OR_FREQUENCY",
+  "IMPACT_OR_LOSS_MAGNITUDE",
+  "TREATMENT",
+];
+
+export type CrosswalkVocabularySurface =
+  | "INPUT_SCHEMA"
+  | "OUTPUT_SCHEMA"
+  | "TREATMENT_STRATEGY_VOCABULARY";
+export const CROSSWALK_VOCABULARY_SURFACES: CrosswalkVocabularySurface[] = [
+  "INPUT_SCHEMA",
+  "OUTPUT_SCHEMA",
+  "TREATMENT_STRATEGY_VOCABULARY",
+];
+
+export interface CrosswalkEntry {
+  normalizedConcept: NormalizedConcept;
+  vocabularySurface: CrosswalkVocabularySurface;
+  sourceFieldPath: string;
+  sourceTermLabel?: string | null;
+  sourceTermDefinition?: string | null;
+  scale?: string | null;
+  units?: string | null;
+  conversionRule?: string | null;
+  limitations?: string | null;
+}
+
 // GC-T014 NIST SP 800-30 Rev. 1 enums. Single-sourced from backend
 // ThreatEventKind, ThreatSourceRelevance, NistLikelihoodBand, NistImpactBand.
 // Mirror policy per ADR-034 — every constant array below must match the
@@ -1240,4 +1291,50 @@ export interface ThreatModelWorkspaceResponse {
   assetCount: number;
   flowCount: number;
   entryCount: number;
+}
+
+// GC-T012 / GC-T004: MethodologyProfile response and request types.
+// Mirrors backend MethodologyProfileResponse / MethodologyProfileRequest /
+// UpdateMethodologyProfileRequest field-for-field.
+export interface MethodologyProfile {
+  id: string;
+  graphNodeId: string;
+  projectIdentifier: string;
+  profileKey: string;
+  name: string;
+  version: string;
+  family: string;
+  description?: string | null;
+  inputSchema?: Record<string, unknown> | null;
+  outputSchema?: Record<string, unknown> | null;
+  status: string;
+  treatmentStrategyVocabulary?: Record<string, unknown> | null;
+  crosswalkEntries?: CrosswalkEntry[] | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MethodologyProfileRequest {
+  profileKey: string;
+  name: string;
+  version: string;
+  family: string;
+  description?: string | null;
+  inputSchema?: Record<string, unknown> | null;
+  outputSchema?: Record<string, unknown> | null;
+  status?: string | null;
+  treatmentStrategyVocabulary?: Record<string, unknown> | null;
+  crosswalkEntries?: CrosswalkEntry[] | null;
+}
+
+export interface UpdateMethodologyProfileRequest {
+  name?: string | null;
+  version?: string | null;
+  family?: string | null;
+  description?: string | null;
+  inputSchema?: Record<string, unknown> | null;
+  outputSchema?: Record<string, unknown> | null;
+  status?: string | null;
+  treatmentStrategyVocabulary?: Record<string, unknown> | null;
+  crosswalkEntries?: CrosswalkEntry[] | null;
 }

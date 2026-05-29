@@ -1136,9 +1136,38 @@ issues, and controls). Unknown `id` → 404 `not_found`.
 
 All endpoints accept an optional `project` query parameter (required in multi-project deployments).
 
-**MethodologyProfileRequest fields:** `profileKey` (required, max 100), `name` (required, max 200), `version` (required, max 50), `family` (required, enum: FAIR, NIST_SP800_30_R1, ISO_27005, CUSTOM), `description` (optional), `inputSchema` (optional JSON object: methodology assessment input vocabulary), `outputSchema` (optional JSON object: methodology assessment output vocabulary), `treatmentStrategyVocabulary` (optional JSON object—strategy vocabulary keyed by stable strategy key; the value object is profile/pack-defined and may carry display labels, semantics, or other metadata), `status` (optional, enum: ACTIVE, DEPRECATED; defaults to ACTIVE).
+**MethodologyProfileRequest fields:** `profileKey` (required, max 100), `name` (required, max 200), `version` (required, max 50), `family` (required, enum: FAIR, NIST_SP800_30_R1, ISO_27005, CUSTOM), `description` (optional), `inputSchema` (optional JSON object: methodology assessment input vocabulary), `outputSchema` (optional JSON object: methodology assessment output vocabulary), `treatmentStrategyVocabulary` (optional JSON object; strategy vocabulary keyed by stable strategy key, with the value object profile or pack defined and carrying display labels, semantics, or other metadata), `status` (optional, enum: ACTIVE, DEPRECATED; defaults to ACTIVE), `crosswalkEntries` (optional list of `CrosswalkEntry` objects; see below).
 
-`UpdateMethodologyProfileRequest` carries the same field set minus `profileKey`; null fields are left unchanged.
+`UpdateMethodologyProfileRequest` carries the same field set minus `profileKey`; null fields are left unchanged. A null `crosswalkEntries` leaves the existing list intact; an empty list clears it; a non-null list replaces it in full.
+
+**CrosswalkEntry fields (GC-T012):** `normalizedConcept` (required, enum: `THREAT_SOURCE`, `THREAT_EVENT`, `VULNERABILITY_OR_EXPOSURE`, `ASSET`, `PROCESS_OR_OBJECTIVE`, `CONSEQUENCE_OR_EFFECT`, `CONTROL`, `LIKELIHOOD_OR_FREQUENCY`, `IMPACT_OR_LOSS_MAGNITUDE`, `TREATMENT`), `vocabularySurface` (required, enum: `INPUT_SCHEMA`, `OUTPUT_SCHEMA`, `TREATMENT_STRATEGY_VOCABULARY`), `sourceFieldPath` (required, max 400; dotted path into the named surface's schema properties), `sourceTermLabel` (optional, max 200), `sourceTermDefinition` (optional, max 2000), `scale` (optional, max 100), `units` (optional, max 100), `conversionRule` (optional, max 400; requires `scale` or `units` to be set), `limitations` (optional, max 400).
+
+Semantic validation: duplicate `(normalizedConcept, vocabularySurface, sourceFieldPath)` tuples within the same profile → 422 `duplicate_crosswalk_entry`; surface referenced but corresponding schema is null → 422 `crosswalk_surface_not_present`; `sourceFieldPath` not found in the surface schema's properties → 422 `crosswalk_unknown_field_path`; `conversionRule` set with both `scale` and `units` null → 422 `crosswalk_conversion_rule_missing_scale_or_units`.
+
+**Example `crosswalkEntries` payload:**
+```json
+[
+  {
+    "normalizedConcept": "LIKELIHOOD_OR_FREQUENCY",
+    "vocabularySurface": "INPUT_SCHEMA",
+    "sourceFieldPath": "loss_event_frequency",
+    "sourceTermLabel": "Loss Event Frequency",
+    "scale": "continuous",
+    "units": "annual events",
+    "conversionRule": "LEF = TEF × Vulnerability"
+  },
+  {
+    "normalizedConcept": "IMPACT_OR_LOSS_MAGNITUDE",
+    "vocabularySurface": "INPUT_SCHEMA",
+    "sourceFieldPath": "primary_loss_magnitude",
+    "sourceTermLabel": "Primary Loss Magnitude",
+    "scale": "continuous",
+    "units": "monetary"
+  }
+]
+```
+
+The seeded profiles (`FAIR_V3_0`, `NIST_SP800_30_R1`, `ISO_27005_V2022`) ship with starter crosswalk entries pre-populated on first project list.
 
 `(project_id, profile_key, version)` is unique. Conflict on duplicate create returns 409 `conflict`.
 

@@ -18,10 +18,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.keplerops.groundcontrol.api.riskscenarios.MethodologyProfileController;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.CrosswalkEntry;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
+import com.keplerops.groundcontrol.domain.riskscenarios.service.CreateMethodologyProfileCommand;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.MethodologyProfileService;
+import com.keplerops.groundcontrol.domain.riskscenarios.service.UpdateMethodologyProfileCommand;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.CrosswalkVocabularySurface;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyProfileStatus;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.NormalizedConcept;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -214,5 +219,160 @@ class MethodologyProfileControllerTest {
         mockMvc.perform(get("/api/v1/methodology-profiles/{id}", PROFILE_ID).param("project", "ground-control"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.treatmentStrategyVocabulary").doesNotExist());
+    }
+
+    // -------------------------------------------------------------------------
+    // GC-T012 crosswalk entries — controller round-trip
+    // -------------------------------------------------------------------------
+
+    @Test
+    void createPlumbsCrosswalkEntriesIntoCommand() throws Exception {
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        var profile = makeProfile();
+        var entry = new CrosswalkEntry(
+                NormalizedConcept.THREAT_SOURCE,
+                CrosswalkVocabularySurface.INPUT_SCHEMA,
+                "threat_source",
+                "Threat Source",
+                null,
+                "qualitative ordinal",
+                "5-level ordinal",
+                null,
+                "5-level ordinal, no continuous frequency");
+        profile.setCrosswalkEntries(List.of(entry));
+        when(methodologyProfileService.create(any())).thenReturn(profile);
+
+        mockMvc.perform(
+                        post("/api/v1/methodology-profiles")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "profileKey": "NIST_SP800_30_R1",
+                                  "name": "NIST",
+                                  "version": "1",
+                                  "family": "NIST_SP800_30_R1",
+                                  "crosswalkEntries": [
+                                    {
+                                      "normalizedConcept": "THREAT_SOURCE",
+                                      "vocabularySurface": "INPUT_SCHEMA",
+                                      "sourceFieldPath": "threat_source",
+                                      "sourceTermLabel": "Threat Source",
+                                      "scale": "qualitative ordinal",
+                                      "units": "5-level ordinal",
+                                      "limitations": "5-level ordinal, no continuous frequency"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.crosswalkEntries[0].normalizedConcept", is("THREAT_SOURCE")))
+                .andExpect(jsonPath("$.crosswalkEntries[0].vocabularySurface", is("INPUT_SCHEMA")))
+                .andExpect(jsonPath("$.crosswalkEntries[0].sourceFieldPath", is("threat_source")));
+
+        var captor = org.mockito.ArgumentCaptor.forClass(CreateMethodologyProfileCommand.class);
+        verify(methodologyProfileService).create(captor.capture());
+        assertThat(captor.getValue().crosswalkEntries()).hasSize(1);
+        assertThat(captor.getValue().crosswalkEntries().get(0).normalizedConcept())
+                .isEqualTo(NormalizedConcept.THREAT_SOURCE);
+        assertThat(captor.getValue().crosswalkEntries().get(0).vocabularySurface())
+                .isEqualTo(CrosswalkVocabularySurface.INPUT_SCHEMA);
+    }
+
+    @Test
+    void updatePlumbsCrosswalkEntriesIntoCommand() throws Exception {
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        var profile = makeProfile();
+        var entry = new CrosswalkEntry(
+                NormalizedConcept.LIKELIHOOD_OR_FREQUENCY,
+                CrosswalkVocabularySurface.INPUT_SCHEMA,
+                "loss_event_frequency",
+                null,
+                null,
+                "continuous",
+                "annual events",
+                "LEF = TEF × Vulnerability",
+                null);
+        profile.setCrosswalkEntries(List.of(entry));
+        when(methodologyProfileService.update(eq(PROJECT_ID), eq(PROFILE_ID), any()))
+                .thenReturn(profile);
+
+        mockMvc.perform(
+                        put("/api/v1/methodology-profiles/{id}", PROFILE_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "crosswalkEntries": [
+                                    {
+                                      "normalizedConcept": "LIKELIHOOD_OR_FREQUENCY",
+                                      "vocabularySurface": "INPUT_SCHEMA",
+                                      "sourceFieldPath": "loss_event_frequency",
+                                      "scale": "continuous",
+                                      "units": "annual events",
+                                      "conversionRule": "LEF = TEF × Vulnerability"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.crosswalkEntries[0].normalizedConcept", is("LIKELIHOOD_OR_FREQUENCY")))
+                .andExpect(jsonPath("$.crosswalkEntries[0].sourceFieldPath", is("loss_event_frequency")));
+
+        var captor = org.mockito.ArgumentCaptor.forClass(UpdateMethodologyProfileCommand.class);
+        verify(methodologyProfileService).update(any(), any(), captor.capture());
+        assertThat(captor.getValue().crosswalkEntries()).hasSize(1);
+        assertThat(captor.getValue().crosswalkEntries().get(0).conversionRule()).isEqualTo("LEF = TEF × Vulnerability");
+    }
+
+    @Test
+    void createWithInvalidCrosswalkEntry_returns400() throws Exception {
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+
+        mockMvc.perform(
+                        post("/api/v1/methodology-profiles")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "profileKey": "NIST_SP800_30_R1",
+                                  "name": "NIST",
+                                  "version": "1",
+                                  "family": "NIST_SP800_30_R1",
+                                  "crosswalkEntries": [
+                                    {
+                                      "normalizedConcept": "THREAT_SOURCE",
+                                      "vocabularySurface": "INPUT_SCHEMA",
+                                      "sourceFieldPath": ""
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void getByIdResponseIncludesCrosswalkEntriesWhenPresent() throws Exception {
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        var profile = makeProfile();
+        profile.setCrosswalkEntries(List.of(new CrosswalkEntry(
+                NormalizedConcept.ASSET,
+                CrosswalkVocabularySurface.INPUT_SCHEMA,
+                "asset_value",
+                "Asset Value",
+                null,
+                "ordinal",
+                null,
+                null,
+                null)));
+        when(methodologyProfileService.getById(PROJECT_ID, PROFILE_ID)).thenReturn(profile);
+
+        mockMvc.perform(get("/api/v1/methodology-profiles/{id}", PROFILE_ID).param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.crosswalkEntries[0].normalizedConcept", is("ASSET")))
+                .andExpect(jsonPath("$.crosswalkEntries[0].sourceFieldPath", is("asset_value")));
     }
 }

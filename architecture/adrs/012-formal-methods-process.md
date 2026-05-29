@@ -199,10 +199,12 @@ SDD extends TDD by adding contracts as a specification layer:
   `ReassessmentTriggerCategory` and `ReassessmentTriggerTargetType` added for
   GC-T004 / C8 in issue #863; `ThreatEventKind`, `ThreatSourceRelevance`,
   `NistLikelihoodBand`, and `NistImpactBand` added for GC-T014 / #721 to
-  carry NIST SP 800-30 Rev. 1 vocabulary at the API/MCP boundary) are L0
-  data classifiers, not L1+ contract surfaces; placement under `state/`
-  follows the existing repo convention for domain-enum location, not an
-  assertion that JML contracts apply.
+  carry NIST SP 800-30 Rev. 1 vocabulary at the API/MCP boundary;
+  `NormalizedConcept` and `CrosswalkVocabularySurface` added for GC-T012 /
+  #719 to classify cross-methodology crosswalk entries on
+  `MethodologyProfile`) are L0 data classifiers, not L1+ contract surfaces;
+  placement under `state/` follows the existing repo convention for
+  domain-enum location, not an assertion that JML contracts apply.
 
 ## Related ADRs
 

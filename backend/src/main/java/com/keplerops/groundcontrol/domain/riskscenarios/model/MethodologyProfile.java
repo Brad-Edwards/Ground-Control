@@ -15,6 +15,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.util.List;
 import java.util.Map;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
@@ -62,6 +63,10 @@ public class MethodologyProfile extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private MethodologyProfileStatus status = MethodologyProfileStatus.ACTIVE;
+
+    @Convert(converter = JacksonTextCollectionConverters.CrosswalkEntryListConverter.class)
+    @Column(name = "crosswalk_entries", columnDefinition = "TEXT")
+    private List<CrosswalkEntry> crosswalkEntries;
 
     protected MethodologyProfile() {
         // JPA
@@ -146,5 +151,13 @@ public class MethodologyProfile extends BaseEntity {
 
     public void setStatus(MethodologyProfileStatus status) {
         this.status = status;
+    }
+
+    public List<CrosswalkEntry> getCrosswalkEntries() {
+        return crosswalkEntries;
+    }
+
+    public void setCrosswalkEntries(List<CrosswalkEntry> crosswalkEntries) {
+        this.crosswalkEntries = crosswalkEntries;
     }
 }

@@ -117,6 +117,15 @@ convention: a new kind value in `ANALYZE_KINDS` (for example
 separate user-facing prose page per kind, no new sections in this style
 guide.
 
+Mirrored API-boundary enum constants follow the same convention: the
+`NORMALIZED_CONCEPTS` and `CROSSWALK_VOCABULARY_SURFACES` arrays added to
+`mcp/ground-control/lib.js` for GC-T012 / #719 mirror two new Java enums on
+`MethodologyProfile` and are documented by the methodology profile entry in
+`docs/API.md` and the `gc_risk_governance` tool description in
+`mcp/ground-control/index.js`. The static `ENUM_CONTRACT_INVENTORY`
+extension in `tools/policy/checks.py` enforces parity across backend, MCP,
+and frontend per ADR-034. No new sections in this style guide.
+
 Restoring a `TO_CAMEL` mapping in
 `mcp/ground-control/lib.js` (for example, the `threat_source` /
 `threat_event` entries the `gc_risk_scenario` rename in #720 dropped but

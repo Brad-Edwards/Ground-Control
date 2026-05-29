@@ -15,6 +15,8 @@ import {
   TREATMENT_STRATEGIES,
   ASSURANCE_LEVELS,
   GOVERNANCE_FIELDS,
+  NORMALIZED_CONCEPTS,
+  CROSSWALK_VOCABULARY_SURFACES,
   pick, reqArg, validateGovernanceStatus,
   createMethodologyProfile, updateMethodologyProfile, deleteMethodologyProfile,
   createRiskRegisterRecord, updateRiskRegisterRecord, deleteRiskRegisterRecord,
@@ -151,6 +153,19 @@ export const gcRiskGovernanceZodShape = {
   assurance_level: z.enum(ASSURANCE_LEVELS).optional(),
   verified_at: z.string().optional(),
   metadata: z.record(z.any()).optional(),
+  // GC-T012: profile-scoped crosswalk entries. Forwarded verbatim to the
+  // REST API after toCamelCase conversion (crosswalk_entries → crosswalkEntries).
+  crosswalk_entries: z.array(z.object({
+    normalizedConcept: z.enum(NORMALIZED_CONCEPTS),
+    vocabularySurface: z.enum(CROSSWALK_VOCABULARY_SURFACES),
+    sourceFieldPath: z.string(),
+    sourceTermLabel: z.string().optional(),
+    sourceTermDefinition: z.string().optional(),
+    scale: z.string().optional(),
+    units: z.string().optional(),
+    conversionRule: z.string().optional(),
+    limitations: z.string().optional(),
+  })).optional(),
 };
 
 export const GC_RISK_GOVERNANCE_DESCRIPTION =

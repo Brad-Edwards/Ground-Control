@@ -701,6 +701,7 @@ const TO_CAMEL = {
   profile_key: "profileKey",
   input_schema: "inputSchema",
   output_schema: "outputSchema",
+  crosswalk_entries: "crosswalkEntries",
   review_cadence: "reviewCadence",
   next_review_at: "nextReviewAt",
   category_tags: "categoryTags",
@@ -9070,6 +9071,29 @@ export const THREAT_SOURCE_RELEVANCES = [
 export const NIST_LIKELIHOOD_BANDS = ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"];
 export const NIST_IMPACT_BANDS = ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"];
 
+// GC-T012: normalized cross-methodology risk concept vocabulary (ADR-034 mirror).
+// Declaration order matches NormalizedConcept.java exactly.
+export const NORMALIZED_CONCEPTS = [
+  "THREAT_SOURCE",
+  "THREAT_EVENT",
+  "VULNERABILITY_OR_EXPOSURE",
+  "ASSET",
+  "PROCESS_OR_OBJECTIVE",
+  "CONSEQUENCE_OR_EFFECT",
+  "CONTROL",
+  "LIKELIHOOD_OR_FREQUENCY",
+  "IMPACT_OR_LOSS_MAGNITUDE",
+  "TREATMENT",
+];
+
+// GC-T012: vocabulary surfaces a crosswalk entry can target (ADR-034 mirror).
+// Declaration order matches CrosswalkVocabularySurface.java exactly.
+export const CROSSWALK_VOCABULARY_SURFACES = [
+  "INPUT_SCHEMA",
+  "OUTPUT_SCHEMA",
+  "TREATMENT_STRATEGY_VOCABULARY",
+];
+
 // ---------------------------------------------------------------------------
 // Audit API functions (GC-U001 / ADR-047)
 // ---------------------------------------------------------------------------
@@ -13493,8 +13517,8 @@ export const GOVERNANCE_STATUS_ENUMS = {
 // the shared TO_CAMEL map in this file. Issues #878/#879/#880.
 export const GOVERNANCE_FIELDS = {
   methodology_profile: {
-    create: ["name", "description", "family", "status", "metadata"],
-    update: ["name", "description", "family", "status", "metadata"],
+    create: ["name", "description", "family", "status", "metadata", "crosswalk_entries"],
+    update: ["name", "description", "family", "status", "metadata", "crosswalk_entries"],
   },
   risk_register_record: {
     create: [

@@ -11,6 +11,7 @@ import com.keplerops.groundcontrol.domain.packregistry.model.PackDependency;
 import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPackEntry;
 import com.keplerops.groundcontrol.domain.packregistry.model.TrustPolicyRule;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.CrosswalkEntry;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerCategory;
 import jakarta.persistence.AttributeConverter;
@@ -232,6 +233,17 @@ public final class JacksonTextCollectionConverters {
         private static boolean hasNonNullText(ObjectNode obj, String key) {
             JsonNode v = obj.get(key);
             return v != null && !v.isNull() && !v.asText().isEmpty();
+        }
+    }
+
+    /**
+     * Persistence converter for {@code MethodologyProfile.crosswalkEntries} (per GC-T012).
+     */
+    @Converter
+    public static class CrosswalkEntryListConverter extends AbstractJsonTextConverter<List<CrosswalkEntry>> {
+
+        public CrosswalkEntryListConverter() {
+            super(new TypeReference<>() {});
         }
     }
 

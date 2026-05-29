@@ -609,3 +609,116 @@ describe("treatment_plan wire body (#880)", () => {
     assert.equal(item.description, "Patch firewall");
   });
 });
+
+// ---------------------------------------------------------------------------
+// GC-T012 methodology_profile crosswalk entries round-trip
+// ---------------------------------------------------------------------------
+
+describe("methodology_profile crosswalkEntries round-trip (GC-T012)", () => {
+  it("GOVERNANCE_FIELDS.methodology_profile.create includes crosswalk_entries", () => {
+    assert.ok(
+      GOVERNANCE_FIELDS.methodology_profile.create.includes("crosswalk_entries"),
+      "crosswalk_entries missing from methodology_profile.create allowlist",
+    );
+  });
+
+  it("GOVERNANCE_FIELDS.methodology_profile.update includes crosswalk_entries", () => {
+    assert.ok(
+      GOVERNANCE_FIELDS.methodology_profile.update.includes("crosswalk_entries"),
+      "crosswalk_entries missing from methodology_profile.update allowlist",
+    );
+  });
+
+  it("create passes crosswalk_entries verbatim to the REST API (camelCase key)", async () => {
+    const calls = makeFetchSpy({ body: { id: "prof-uuid" } });
+    const entry = {
+      normalizedConcept: "THREAT_SOURCE",
+      vocabularySurface: "INPUT_SCHEMA",
+      sourceFieldPath: "threat_source",
+      sourceTermLabel: "Threat Source",
+      limitations: "5-level ordinal, no continuous frequency",
+    };
+
+    await callHandler({
+      entity: "methodology_profile",
+      action: "create",
+      project: "proj-a",
+      name: "NIST SP 800-30 Rev. 1",
+      description: "NIST qualitative",
+      family: "NIST_SP800_30_R1",
+      crosswalk_entries: [entry],
+    });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "POST");
+    assert.ok(Array.isArray(calls[0].body.crosswalkEntries), "crosswalkEntries must be an array in the wire body");
+    assert.equal(calls[0].body.crosswalkEntries.length, 1);
+    assert.equal(calls[0].body.crosswalkEntries[0].normalizedConcept, "THREAT_SOURCE");
+    assert.equal(calls[0].body.crosswalkEntries[0].vocabularySurface, "INPUT_SCHEMA");
+    assert.equal(calls[0].body.crosswalkEntries[0].sourceFieldPath, "threat_source");
+    assert.equal(calls[0].body.crosswalkEntries[0].limitations, "5-level ordinal, no continuous frequency");
+  });
+
+  it("update passes crosswalk_entries verbatim to the REST API (camelCase key)", async () => {
+    const calls = makeFetchSpy({ body: { id: "prof-uuid" } });
+    const entry = {
+      normalizedConcept: "LIKELIHOOD_OR_FREQUENCY",
+      vocabularySurface: "INPUT_SCHEMA",
+      sourceFieldPath: "loss_event_frequency",
+      scale: "continuous",
+      units: "annual events",
+      conversionRule: "LEF = TEF × Vulnerability",
+    };
+
+    await callHandler({
+      entity: "methodology_profile",
+      action: "update",
+      id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      project: "proj-a",
+      crosswalk_entries: [entry],
+    });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "PUT");
+    assert.ok(Array.isArray(calls[0].body.crosswalkEntries), "crosswalkEntries must be an array in the wire body");
+    assert.equal(calls[0].body.crosswalkEntries[0].normalizedConcept, "LIKELIHOOD_OR_FREQUENCY");
+    assert.equal(calls[0].body.crosswalkEntries[0].conversionRule, "LEF = TEF × Vulnerability");
+    assert.equal(calls[0].body.crosswalkEntries[0].scale, "continuous");
+  });
+
+  it("Zod validates normalizedConcept enum values (rejects unknown)", async () => {
+    assert.throws(
+      () => SCHEMA.parse({
+        entity: "methodology_profile",
+        action: "create",
+        project: "proj-a",
+        name: "x",
+        family: "FAIR",
+        crosswalk_entries: [{
+          normalizedConcept: "NOT_A_REAL_CONCEPT",
+          vocabularySurface: "INPUT_SCHEMA",
+          sourceFieldPath: "f1",
+        }],
+      }),
+      /invalid_enum_value|ZodError|Invalid/,
+    );
+  });
+
+  it("Zod validates vocabularySurface enum values (rejects unknown)", async () => {
+    assert.throws(
+      () => SCHEMA.parse({
+        entity: "methodology_profile",
+        action: "create",
+        project: "proj-a",
+        name: "x",
+        family: "FAIR",
+        crosswalk_entries: [{
+          normalizedConcept: "THREAT_SOURCE",
+          vocabularySurface: "NOT_A_SURFACE",
+          sourceFieldPath: "f1",
+        }],
+      }),
+      /invalid_enum_value|ZodError|Invalid/,
+    );
+  });
+});
