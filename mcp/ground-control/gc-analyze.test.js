@@ -10,6 +10,9 @@ import {
   analyzeEvidenceFreshness,
   analyzeObservationProjection,
   aggregateVendorRisk,
+  analyzeNistAssessment,
+  toCamelCase,
+  toSnakeCase,
 } from "./lib.js";
 
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -174,5 +177,116 @@ describe("aggregateVendorRisk (GC-L007)", () => {
     assert.equal(url.searchParams.get("asOf"), null);
     assert.equal(url.searchParams.get("freshnessWindowDays"), null);
     assert.equal(url.searchParams.get("vendorAssetId"), null);
+  });
+
+  it("returns the JSON body", async () => {
+    makeFetchSpy({
+      body: { analysisKind: "vendor_risk_aggregation", vendors: [] },
+    });
+
+    const result = await aggregateVendorRisk({ project: "ground-control" });
+
+    assert.equal(result.analysisKind, "vendor_risk_aggregation");
+    assert.deepEqual(result.vendors, []);
+  });
+});
+
+describe("analyzeNistAssessment (GC-T014)", () => {
+  it("hits /api/v1/analysis/grc/nist-sp-800-30 with camelCase params", async () => {
+    const calls = makeFetchSpy({ body: { analysisKind: "nist_assessment" } });
+
+    await analyzeNistAssessment({
+      project: "ground-control",
+      asOf: "2026-05-29T00:00:00Z",
+      riskAssessmentResultId: "00000000-0000-0000-0000-000000000010",
+      riskScenarioId: "00000000-0000-0000-0000-000000000020",
+    });
+
+    assert.equal(calls.length, 1);
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/analysis/grc/nist-sp-800-30");
+    assert.equal(calls[0].method, "GET");
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), "2026-05-29T00:00:00Z");
+    assert.equal(
+      url.searchParams.get("riskAssessmentResultId"),
+      "00000000-0000-0000-0000-000000000010",
+    );
+    assert.equal(
+      url.searchParams.get("riskScenarioId"),
+      "00000000-0000-0000-0000-000000000020",
+    );
+  });
+
+  it("omits undefined params", async () => {
+    const calls = makeFetchSpy();
+
+    await analyzeNistAssessment({ project: "ground-control" });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), null);
+    assert.equal(url.searchParams.get("riskAssessmentResultId"), null);
+    assert.equal(url.searchParams.get("riskScenarioId"), null);
+  });
+
+  it("returns the JSON body verbatim", async () => {
+    makeFetchSpy({
+      body: {
+        analysisKind: "nist_assessment",
+        scale: "ordinal",
+        units: "qualitative ordinal levels",
+        counts: { total: 2, byRiskLevel: { HIGH: 1, LOW: 1 } },
+      },
+    });
+
+    const result = await analyzeNistAssessment({ project: "ground-control" });
+
+    assert.equal(result.analysisKind, "nist_assessment");
+    assert.equal(result.scale, "ordinal");
+    assert.equal(result.counts.total, 2);
+    assert.equal(result.counts.byRiskLevel.HIGH, 1);
+  });
+
+  it("preserves methodology-defined inner keys through case conversion (opaque guard)", () => {
+    // GC-T014 / preflight: methodology-defined keys inside inputFactors /
+    // computedOutputs must NOT be camel/snake-rewritten. This locks in that the
+    // opaque-value-keys guard in lib.js covers the keys the NIST assessment uses.
+    const payload = {
+      input_factors: {
+        threat_source_relevance: "EXPECTED",
+        likelihood_initiation: "HIGH",
+        likelihood_adverse_impact: "MODERATE",
+        likelihood_overall: "MODERATE",
+        impact_level: "HIGH",
+        assessment_timeframe: { from: "2026-01-01", to: "2026-12-31" },
+      },
+      computed_outputs: {
+        risk_level: "HIGH",
+        matrix_cell: "L3-I4",
+      },
+    };
+
+    const camel = toCamelCase(payload);
+    // The outer keys are renamed but the inner methodology-defined keys are NOT.
+    assert.deepEqual(Object.keys(camel.inputFactors).sort(), [
+      "assessment_timeframe",
+      "impact_level",
+      "likelihood_adverse_impact",
+      "likelihood_initiation",
+      "likelihood_overall",
+      "threat_source_relevance",
+    ]);
+    assert.deepEqual(Object.keys(camel.computedOutputs).sort(), ["matrix_cell", "risk_level"]);
+
+    const snake = toSnakeCase(camel);
+    assert.deepEqual(Object.keys(snake.input_factors).sort(), [
+      "assessment_timeframe",
+      "impact_level",
+      "likelihood_adverse_impact",
+      "likelihood_initiation",
+      "likelihood_overall",
+      "threat_source_relevance",
+    ]);
   });
 });

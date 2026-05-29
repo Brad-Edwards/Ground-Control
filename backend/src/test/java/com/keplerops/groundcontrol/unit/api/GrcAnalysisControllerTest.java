@@ -12,13 +12,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.keplerops.groundcontrol.api.grcanalysis.GrcAnalysisController;
+import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionMode;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.VendorRiskAggregationResult;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.NistImpactBand;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.NistLikelihoodBand;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ThreatEventKind;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ThreatSourceRelevance;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -209,6 +215,131 @@ class GrcAnalysisControllerTest {
                             .param("project", "ground-control")
                             .param("freshnessWindowDays", "0"))
                     .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    class NistAssessment {
+
+        private NistAssessmentResult.NistAssessmentItem sampleItem() {
+            var inputs = new NistAssessmentResult.Inputs(
+                    java.util.Map.of("id", "TS-1", "name", "External attacker", "kind", "ADVERSARIAL"),
+                    java.util.Map.of("id", "TE-1", "description", "Phishing", "kind", "ADVERSARIAL"),
+                    ThreatEventKind.ADVERSARIAL,
+                    List.of(),
+                    List.of(),
+                    ThreatSourceRelevance.EXPECTED,
+                    NistLikelihoodBand.HIGH,
+                    NistLikelihoodBand.MODERATE,
+                    NistLikelihoodBand.MODERATE,
+                    NistImpactBand.HIGH,
+                    java.util.Map.of("from", "2026-01-01", "to", "2026-12-31"));
+            var outputs = new NistAssessmentResult.Outputs(
+                    NistLikelihoodBand.MODERATE,
+                    NistImpactBand.HIGH,
+                    "HIGH",
+                    "L3-I4",
+                    "derived: min(...) per NIST SP 800-30 Rev. 1 Table G-5");
+            return new NistAssessmentResult.NistAssessmentItem(
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    "NIST_SP800_30_R1",
+                    "NIST_SP800_30_R1",
+                    "1",
+                    Instant.parse("2026-05-29T00:00:00Z"),
+                    "12 months",
+                    "analyst@example",
+                    "DRAFT",
+                    inputs,
+                    outputs,
+                    List.of(),
+                    List.of("predisposing-condition coverage incomplete"));
+        }
+
+        private NistAssessmentResult sampleResult(List<NistAssessmentResult.NistAssessmentItem> items) {
+            return new NistAssessmentResult(
+                    "nist_assessment",
+                    "ground-control",
+                    Instant.parse("2026-05-29T00:00:00Z"),
+                    "nist-sp800-30-rev1-5x5-matrix-v1",
+                    "ordinal",
+                    "qualitative ordinal levels",
+                    "overall_likelihood × impact_level → risk_level per NIST SP 800-30 Rev. 1 Table I-2",
+                    items,
+                    new NistAssessmentResult.Counts(items.size(), java.util.Map.of("HIGH", items.size()), items.size()),
+                    List.of());
+        }
+
+        @Test
+        void happyPath_returns200WithMethodologyAttribution() throws Exception {
+            when(grcAnalysisService.nistAssessment(eq(PROJECT_ID), any(), any(), any()))
+                    .thenReturn(sampleResult(List.of(sampleItem())));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/nist-sp-800-30").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("nist_assessment")))
+                    .andExpect(jsonPath("$.project", is("ground-control")))
+                    .andExpect(jsonPath("$.derivationMethod", is("nist-sp800-30-rev1-5x5-matrix-v1")))
+                    .andExpect(jsonPath("$.scale", is("ordinal")))
+                    .andExpect(jsonPath("$.units", is("qualitative ordinal levels")))
+                    .andExpect(jsonPath(
+                            "$.matrixConversionRule",
+                            is("overall_likelihood × impact_level → risk_level per NIST SP 800-30 Rev. 1 Table I-2")))
+                    .andExpect(jsonPath("$.assessments", hasSize(1)))
+                    .andExpect(jsonPath("$.assessments[0].profileKey", is("NIST_SP800_30_R1")))
+                    .andExpect(jsonPath("$.assessments[0].family", is("NIST_SP800_30_R1")))
+                    .andExpect(jsonPath("$.assessments[0].inputs.threatEventKind", is("ADVERSARIAL")))
+                    .andExpect(jsonPath("$.assessments[0].inputs.threatSourceRelevance", is("EXPECTED")))
+                    .andExpect(jsonPath("$.assessments[0].inputs.likelihoodInitiation", is("HIGH")))
+                    .andExpect(jsonPath("$.assessments[0].inputs.likelihoodAdverseImpact", is("MODERATE")))
+                    .andExpect(jsonPath("$.assessments[0].inputs.likelihoodOverall", is("MODERATE")))
+                    .andExpect(jsonPath("$.assessments[0].inputs.impactLevel", is("HIGH")))
+                    .andExpect(jsonPath("$.assessments[0].outputs.overallLikelihood", is("MODERATE")))
+                    .andExpect(jsonPath("$.assessments[0].outputs.impactLevel", is("HIGH")))
+                    .andExpect(jsonPath("$.assessments[0].outputs.riskLevel", is("HIGH")))
+                    .andExpect(jsonPath("$.assessments[0].outputs.matrixCell", is("L3-I4")))
+                    .andExpect(jsonPath("$.counts.total", is(1)))
+                    .andExpect(jsonPath("$.limitations").isArray());
+        }
+
+        @Test
+        void emptyResult_returns200WithEmptyAssessmentsArray() throws Exception {
+            when(grcAnalysisService.nistAssessment(eq(PROJECT_ID), any(), any(), any()))
+                    .thenReturn(sampleResult(List.of()));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/nist-sp-800-30").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.assessments", hasSize(0)))
+                    .andExpect(jsonPath("$.counts.total", is(0)));
+        }
+
+        @Test
+        void projectNotFound_returns404() throws Exception {
+            when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/nist-sp-800-30").param("project", "missing"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void invalidRiskAssessmentResultUuid_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/nist-sp-800-30")
+                            .param("project", "ground-control")
+                            .param("riskAssessmentResultId", "not-a-uuid"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void nonNistProfile_throwsValidationError_returns422() throws Exception {
+            when(grcAnalysisService.nistAssessment(eq(PROJECT_ID), any(), any(), any()))
+                    .thenThrow(new DomainValidationException(
+                            "Risk assessment result is not bound to a NIST_SP800_30_R1 methodology profile"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/nist-sp-800-30")
+                            .param("project", "ground-control")
+                            .param("riskAssessmentResultId", UUID.randomUUID().toString()))
+                    .andExpect(status().isUnprocessableEntity());
         }
     }
 }

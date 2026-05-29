@@ -112,6 +112,52 @@ class MethodologyProfileServiceTest {
     }
 
     @Test
+    void seededNistProfileExposesFullRev1Decomposition() {
+        // GC-T014: the seeded NIST profile must expose the threat-source / threat-event /
+        // vulnerability / predisposing-condition / multi-likelihood / impact / timeframe
+        // vocabulary, not just generic likelihood × impact.
+        when(projectService.getById(projectId)).thenReturn(project);
+        when(repository.existsByProjectIdAndProfileKeyAndVersion(any(), any(), any()))
+                .thenReturn(false);
+        when(repository.findByProjectIdOrderByNameAscVersionDesc(projectId)).thenReturn(List.of());
+
+        service.listByProject(projectId);
+
+        var savedCaptor = ArgumentCaptor.forClass(MethodologyProfile.class);
+        verify(repository, times(4)).save(savedCaptor.capture());
+        var nist = savedCaptor.getAllValues().stream()
+                .filter(p -> "NIST_SP800_30_R1".equals(p.getProfileKey()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(nist.getInputSchema()).containsKeys("properties", "semantics");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties =
+                (Map<String, Object>) nist.getInputSchema().get("properties");
+        assertThat(properties)
+                .containsKeys(
+                        "threat_source",
+                        "threat_event",
+                        "threat_event_kind",
+                        "threat_source_relevance",
+                        "vulnerabilities",
+                        "predisposing_conditions",
+                        "likelihood_initiation",
+                        "likelihood_adverse_impact",
+                        "likelihood_overall",
+                        "impact_level",
+                        "assessment_timeframe");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> outputProps =
+                (Map<String, Object>) nist.getOutputSchema().get("properties");
+        assertThat(outputProps)
+                .containsKeys("overall_likelihood", "impact_level", "risk_level", "matrix_cell", "derivation");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> outputSemantics =
+                (Map<String, Object>) nist.getOutputSchema().get("semantics");
+        assertThat(outputSemantics).containsEntry("derivation_method", "nist-sp800-30-rev1-5x5-matrix-v1");
+    }
+
+    @Test
     void getByIdThrowsWhenProfileIsMissing() {
         var profileId = UUID.randomUUID();
         when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.empty());

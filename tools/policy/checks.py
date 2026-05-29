@@ -966,6 +966,7 @@ FRONTEND_API_TYPES_PATH = "frontend/src/types/api.ts"
 MCP_LIB_PATH = "mcp/ground-control/lib.js"
 _ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state"
 _AUDIT_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state"
+_RISK_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state"
 
 # Java enum body: from the opening `{` to whichever comes first — the `;` that
 # terminates the constant list (present when the enum has methods/fields, e.g.
@@ -1023,6 +1024,37 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
     # by UI and exposed by the MCP gc_audit tool.
     EnumContract("AuditType", f"{_AUDIT_ENUM_STATE_DIR}/AuditType.java", "AuditType", "AUDIT_TYPES", "AUDIT_TYPES"),
     EnumContract("AuditStatus", f"{_AUDIT_ENUM_STATE_DIR}/AuditStatus.java", "AuditStatus", "AUDIT_STATUSES", "AUDIT_STATUSES"),
+    # GC-T014 NIST SP 800-30 Rev. 1 enums. Mirrored at the
+    # /api/v1/analysis/grc/nist-sp-800-30 boundary (NistAssessmentResponse) and
+    # in the MCP gc_analyze nist_assessment kind payload. ADR-034.
+    EnumContract(
+        "ThreatEventKind",
+        f"{_RISK_ENUM_STATE_DIR}/ThreatEventKind.java",
+        "ThreatEventKind",
+        "THREAT_EVENT_KINDS",
+        "THREAT_EVENT_KINDS",
+    ),
+    EnumContract(
+        "ThreatSourceRelevance",
+        f"{_RISK_ENUM_STATE_DIR}/ThreatSourceRelevance.java",
+        "ThreatSourceRelevance",
+        "THREAT_SOURCE_RELEVANCES",
+        "THREAT_SOURCE_RELEVANCES",
+    ),
+    EnumContract(
+        "NistLikelihoodBand",
+        f"{_RISK_ENUM_STATE_DIR}/NistLikelihoodBand.java",
+        "NistLikelihoodBand",
+        "NIST_LIKELIHOOD_BANDS",
+        "NIST_LIKELIHOOD_BANDS",
+    ),
+    EnumContract(
+        "NistImpactBand",
+        f"{_RISK_ENUM_STATE_DIR}/NistImpactBand.java",
+        "NistImpactBand",
+        "NIST_IMPACT_BANDS",
+        "NIST_IMPACT_BANDS",
+    ),
 )
 
 

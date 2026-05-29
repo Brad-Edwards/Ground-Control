@@ -108,3 +108,11 @@ temporal record. Similarly, updates to `tools/policy/checks.py` that extend
 the list of recognized adapter files (for example, adding `gc-risk-scenario.js`
 to the controller-parity check) are policy-surface changes recorded in
 amendments to ADR-054, not documentation edits.
+
+New `gc_analyze` kinds backed by a fixed REST endpoint follow the same
+convention: a new kind value in `ANALYZE_KINDS` (for example
+`nist_assessment` added for GC-T014 / #721) plus an adapter helper in
+`lib.js` is documented by the endpoint entry in `docs/API.md` and the
+`gc_analyze` tool description string in `mcp/ground-control/index.js`. No
+separate user-facing prose page per kind, no new sections in this style
+guide.

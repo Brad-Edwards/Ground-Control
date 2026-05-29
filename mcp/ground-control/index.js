@@ -60,6 +60,8 @@ import {
   getDashboardStats,
   // ---- GC-L007 GRC analysis ----
   analyzeEvidenceFreshness, analyzeObservationProjection, aggregateVendorRisk,
+  // ---- GC-T014 NIST SP 800-30 Rev. 1 assessment ----
+  analyzeNistAssessment,
   // ---- history / exports (kept for completeness even though tools route to gc_query) ----
   getRequirementHistory, getRelationHistory, getTraceabilityLinkHistory,
   getRequirementTimeline, getRequirementDiff, getProjectTimeline,
@@ -1366,9 +1368,12 @@ const ANALYZE_KINDS = [
   "cycles", "orphans", "coverage_gaps", "impact", "cross_wave",
   "consistency", "completeness", "status_drift", "similarity", "work_order",
   // GC-L007 — GRC analyses on existing substrates. Methodology-execution
-  // engines (FAIR / FAIR-CAM / NIST) and compliance-framework analyses are
-  // tracked separately and ship their own kinds when those engines land.
+  // engines (FAIR / FAIR-CAM) and compliance-framework analyses are tracked
+  // separately and ship their own kinds when those engines land.
   "evidence_freshness", "observation_exposure", "control_state", "vendor_risk_aggregation",
+  // GC-T014 — NIST SP 800-30 Rev. 1 risk-assessment view (methodology-attributed
+  // envelope from /api/v1/analysis/grc/nist-sp-800-30).
+  "nist_assessment",
 ];
 
 server.tool(
@@ -1378,7 +1383,8 @@ server.tool(
     `evidence_freshness→{project?, as_of?, freshness_window_days?, include_superseded?, asset_id?, control_id?}; ` +
     `observation_exposure→{project?, as_of?, asset_id?}; ` +
     `control_state→{project?, as_of?, asset_id?, control_id?}; ` +
-    `vendor_risk_aggregation→{project?, as_of?, freshness_window_days?, vendor_asset_id?}. ` +
+    `vendor_risk_aggregation→{project?, as_of?, freshness_window_days?, vendor_asset_id?}; ` +
+    `nist_assessment→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
     `Others take {project?}.`,
   {
     kind: z.enum(ANALYZE_KINDS),
@@ -1394,6 +1400,9 @@ server.tool(
     asset_id: z.string().uuid().optional(),
     control_id: z.string().uuid().optional(),
     vendor_asset_id: z.string().uuid().optional(),
+    // GC-T014 NIST assessment params
+    risk_assessment_result_id: z.string().uuid().optional(),
+    risk_scenario_id: z.string().uuid().optional(),
   },
   async (args) => {
     try {
@@ -1444,6 +1453,13 @@ server.tool(
             asOf: args.as_of,
             freshnessWindowDays: args.freshness_window_days,
             vendorAssetId: args.vendor_asset_id,
+          }), null, 2));
+        case "nist_assessment":
+          return ok(JSON.stringify(await analyzeNistAssessment({
+            project: args.project,
+            asOf: args.as_of,
+            riskAssessmentResultId: args.risk_assessment_result_id,
+            riskScenarioId: args.risk_scenario_id,
           }), null, 2));
         default: return err(new Error(`Unknown kind: ${args.kind}`));
       }

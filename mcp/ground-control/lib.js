@@ -794,6 +794,25 @@ const OPAQUE_VALUE_KEYS = new Set([
   "metadata",
   "schemaBody",
   "schema_body",
+  // GC-T014: NIST SP 800-30 Rev. 1 methodology-defined value bags. inputFactors
+  // / computedOutputs / uncertaintyMetadata persist NIST profile-defined keys
+  // (threat_source_relevance, likelihood_initiation, likelihood_adverse_impact,
+  // likelihood_overall, impact_level, ...) that must reach the caller verbatim.
+  // inputSchema / outputSchema carry the methodology JSON Schema bodies whose
+  // properties keys are likewise methodology-defined (see preflight note
+  // architecture/notes/nist-sp800-30-risk-assessment-preflight.md).
+  "inputFactors",
+  "input_factors",
+  "computedOutputs",
+  "computed_outputs",
+  "uncertaintyMetadata",
+  "uncertainty_metadata",
+  "inputSchema",
+  "input_schema",
+  "outputSchema",
+  "output_schema",
+  "treatmentStrategyVocabulary",
+  "treatment_strategy_vocabulary",
 ]);
 
 function copyShallow(value) {
@@ -1143,6 +1162,23 @@ export async function aggregateVendorRisk({
 } = {}) {
   return request("GET", "/api/v1/analysis/grc/vendor-risk", {
     params: { project, asOf, freshnessWindowDays, vendorAssetId },
+  });
+}
+
+// GC-T014 — NIST SP 800-30 Rev. 1 risk-assessment analysis helper. Returns
+// the methodology-attributed envelope from /api/v1/analysis/grc/nist-sp-800-30
+// verbatim; methodology-defined input/output map keys (threat_source_relevance,
+// likelihood_initiation, likelihood_adverse_impact, etc.) must NOT be
+// camel/snake-rewritten, so the relevant outer keys are guarded by
+// OPAQUE_VALUE_KEYS above.
+export async function analyzeNistAssessment({
+  project,
+  asOf,
+  riskAssessmentResultId,
+  riskScenarioId,
+} = {}) {
+  return request("GET", "/api/v1/analysis/grc/nist-sp-800-30", {
+    params: { project, asOf, riskAssessmentResultId, riskScenarioId },
   });
 }
 
@@ -8983,6 +9019,17 @@ export async function supersedeEvidenceArtifact(id, data, project) {
     params: { project },
   });
 }
+
+// ---------------------------------------------------------------------------
+// NIST SP 800-30 Rev. 1 enums (GC-T014, ADR-034 mirror policy)
+// ---------------------------------------------------------------------------
+
+export const THREAT_EVENT_KINDS = ["ADVERSARIAL", "NON_ADVERSARIAL"];
+export const THREAT_SOURCE_RELEVANCES = [
+  "CONFIRMED", "EXPECTED", "ANTICIPATED", "PREDICTED", "POSSIBLE", "NOT_APPLICABLE",
+];
+export const NIST_LIKELIHOOD_BANDS = ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"];
+export const NIST_IMPACT_BANDS = ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"];
 
 // ---------------------------------------------------------------------------
 // Audit API functions (GC-U001 / ADR-047)

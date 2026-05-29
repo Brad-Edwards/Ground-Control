@@ -653,6 +653,47 @@ export const KNOWLEDGE_STATES: KnowledgeState[] = [
   "UNKNOWN",
 ];
 
+// GC-T014 NIST SP 800-30 Rev. 1 enums. Single-sourced from backend
+// ThreatEventKind, ThreatSourceRelevance, NistLikelihoodBand, NistImpactBand.
+// Mirror policy per ADR-034 — every constant array below must match the
+// backend enum order; enforced by tools/policy/checks.py::ENUM_CONTRACT_INVENTORY.
+export type ThreatEventKind = "ADVERSARIAL" | "NON_ADVERSARIAL";
+export const THREAT_EVENT_KINDS: ThreatEventKind[] = ["ADVERSARIAL", "NON_ADVERSARIAL"];
+
+export type ThreatSourceRelevance =
+  | "CONFIRMED"
+  | "EXPECTED"
+  | "ANTICIPATED"
+  | "PREDICTED"
+  | "POSSIBLE"
+  | "NOT_APPLICABLE";
+export const THREAT_SOURCE_RELEVANCES: ThreatSourceRelevance[] = [
+  "CONFIRMED",
+  "EXPECTED",
+  "ANTICIPATED",
+  "PREDICTED",
+  "POSSIBLE",
+  "NOT_APPLICABLE",
+];
+
+export type NistLikelihoodBand = "VERY_LOW" | "LOW" | "MODERATE" | "HIGH" | "VERY_HIGH";
+export const NIST_LIKELIHOOD_BANDS: NistLikelihoodBand[] = [
+  "VERY_LOW",
+  "LOW",
+  "MODERATE",
+  "HIGH",
+  "VERY_HIGH",
+];
+
+export type NistImpactBand = "VERY_LOW" | "LOW" | "MODERATE" | "HIGH" | "VERY_HIGH";
+export const NIST_IMPACT_BANDS: NistImpactBand[] = [
+  "VERY_LOW",
+  "LOW",
+  "MODERATE",
+  "HIGH",
+  "VERY_HIGH",
+];
+
 // GC-U001 / ADR-047 Audit entity enums. Single-sourced from backend
 // AuditStatus, AuditType, AuditPhaseKind, AuditLinkTargetType, AuditLinkType.
 export type AuditType = "INTERNAL" | "EXTERNAL" | "REGULATORY" | "SPECIAL";

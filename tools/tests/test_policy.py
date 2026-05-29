@@ -488,6 +488,10 @@ class PolicyChecksTest(unittest.TestCase):
                 "ChangeCategory",
                 "AuditType",
                 "AuditStatus",
+                "ThreatEventKind",
+                "ThreatSourceRelevance",
+                "NistLikelihoodBand",
+                "NistImpactBand",
             },
         )
         for contract in ENUM_CONTRACT_INVENTORY:
