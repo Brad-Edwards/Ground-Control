@@ -53,8 +53,18 @@ public interface ComplianceDriftEventRepository extends JpaRepository<Compliance
      * Conditional acknowledgement update: writes acknowledged_at only when it
      * is currently null. Returns affected row count so the service can
      * surface a conflict on a second acknowledgement.
+     *
+     * <p>{@code flushAutomatically} ensures any pending writes in the
+     * persistence context are flushed before the bulk update fires, so the
+     * UPDATE sees its own session's pending state. {@code clearAutomatically}
+     * evicts the pre-update managed entity from the L1 cache after the bulk
+     * UPDATE so a subsequent {@code findByIdAndProjectId} re-loads the row
+     * and observes the persisted acknowledgement timestamp — otherwise the
+     * cached entity (still with {@code acknowledgedAt=null}) is returned and
+     * the controller responds with a body that claims the event is not
+     * acknowledged even though the row was updated.
      */
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE ComplianceDriftEvent e SET e.acknowledgedAt = :ackAt, e.acknowledgedBy = :ackBy"
             + " WHERE e.id = :id AND e.project.id = :projectId AND e.acknowledgedAt IS NULL")
     int acknowledgeIfUnset(

@@ -26,6 +26,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @ExtendWith(MockitoExtension.class)
 class EvidenceExpirySweepJobTest {
@@ -36,6 +38,9 @@ class EvidenceExpirySweepJobTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private PlatformTransactionManager transactionManager;
+
     private Clock fixedClock;
     private EvidenceExpirySweepJob job;
     private Project project;
@@ -44,7 +49,14 @@ class EvidenceExpirySweepJobTest {
     @BeforeEach
     void setUp() {
         fixedClock = Clock.fixed(Instant.parse("2026-05-30T12:00:00Z"), ZoneOffset.UTC);
-        job = new EvidenceExpirySweepJob(evidenceRepository, eventPublisher, fixedClock);
+        // Real TransactionTemplate against a mock tx manager — the template
+        // calls publishEvent inside the callback regardless of TX outcome
+        // here (no real DB), which is exactly what we need to verify
+        // dispatch behavior end-to-end through the same code path the
+        // production wiring takes.
+        var template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        job = new EvidenceExpirySweepJob(evidenceRepository, eventPublisher, template, fixedClock);
         project = new Project("ground-control", "Ground Control");
         projectId = UUID.randomUUID();
         setField(project, "id", projectId);

@@ -12,7 +12,9 @@ import java.util.UUID;
  * scope, the matched listener uses {@code @EventListener}, not
  * {@code @TransactionalEventListener}: the listener failing rolls back the
  * publishing transaction so the event cannot silently disappear. The sweep
- * job runs inside its own transaction wrapper so a per-artifact listener
- * failure only rolls back that single artifact's drift-event write.
+ * job wraps each per-artifact dispatch in its own {@code REQUIRES_NEW}
+ * {@code TransactionTemplate} execution so a per-artifact listener failure
+ * only rolls back that single artifact's drift-event write — the rest of
+ * the sweep batch continues to dispatch.
  */
 public record EvidenceExpiryEvent(UUID projectId, UUID evidenceArtifactId, String uid, Instant expiresAt) {}

@@ -11,6 +11,9 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Conditional wiring for the GC-I004 evidence-expiry sweep job.
@@ -40,12 +43,31 @@ public class EvidenceExpirySweepConfig {
         return Clock.systemUTC();
     }
 
+    /**
+     * Per-artifact dispatch template: the sweep job uses this to wrap each
+     * synchronous {@code publishEvent} call so the detector listener runs in
+     * its own writable transaction (REQUIRES_NEW). Without REQUIRES_NEW the
+     * detector's drift-event INSERT either silently fails (joining a
+     * read-only context) or rolls back the entire sweep batch on a single
+     * listener failure — exactly the "stalled monitor silently reports
+     * compliant" mode the cluster scope flagged.
+     */
+    @Bean
+    static TransactionTemplate evidenceExpiryDispatchTransactionTemplate(
+            PlatformTransactionManager transactionManager) {
+        var template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return template;
+    }
+
     @Bean
     static EvidenceExpirySweepJob evidenceExpirySweepJob(
             EvidenceArtifactRepository evidenceArtifactRepository,
             ApplicationEventPublisher eventPublisher,
+            TransactionTemplate evidenceExpiryDispatchTransactionTemplate,
             @Autowired Clock clock) {
-        return new EvidenceExpirySweepJob(evidenceArtifactRepository, eventPublisher, clock);
+        return new EvidenceExpirySweepJob(
+                evidenceArtifactRepository, eventPublisher, evidenceExpiryDispatchTransactionTemplate, clock);
     }
 
     /**

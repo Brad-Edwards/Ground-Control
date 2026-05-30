@@ -9,7 +9,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * GC-I004 scheduled sweep that emits one {@link EvidenceExpiryEvent} per
@@ -23,6 +24,18 @@ import org.springframework.transaction.annotation.Transactional;
  * synchronously and decides whether to publish a drift event (idempotency
  * check on {@code compliance_drift_event}).
  *
+ * <p>Transactional shape: the {@link #sweep()} method itself is intentionally
+ * non-transactional. The candidate read uses the repository's own short
+ * read-only transaction, and each per-artifact {@code publishEvent} dispatch
+ * runs inside its own {@link TransactionTemplate} execution with
+ * {@link TransactionDefinition#PROPAGATION_REQUIRES_NEW} so the synchronous
+ * detector listener receives a fresh writable transaction (rather than
+ * joining a sweep-level read-only context where its drift-event INSERT would
+ * silently fail or roll back the whole batch). A single per-artifact failure
+ * rolls back only that artifact's drift-event write — the rest of the sweep
+ * continues, and {@code lastSweepAt} records the most recent attempt so the
+ * liveness probe surfaces the run.
+ *
  * <p>Liveness telemetry: the job records the last successful sweep
  * timestamp via {@link #lastSweepAt()}; {@code ComplianceDriftController}
  * surfaces it. A stalled scheduler is then directly observable, preventing
@@ -34,13 +47,18 @@ public class EvidenceExpirySweepJob {
 
     private final EvidenceArtifactRepository evidenceRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final TransactionTemplate dispatchTransactionTemplate;
     private final Clock clock;
     private final AtomicReference<Instant> lastSweepAt = new AtomicReference<>();
 
     public EvidenceExpirySweepJob(
-            EvidenceArtifactRepository evidenceRepository, ApplicationEventPublisher eventPublisher, Clock clock) {
+            EvidenceArtifactRepository evidenceRepository,
+            ApplicationEventPublisher eventPublisher,
+            TransactionTemplate dispatchTransactionTemplate,
+            Clock clock) {
         this.evidenceRepository = evidenceRepository;
         this.eventPublisher = eventPublisher;
+        this.dispatchTransactionTemplate = dispatchTransactionTemplate;
         this.clock = clock;
     }
 
@@ -49,7 +67,6 @@ public class EvidenceExpirySweepJob {
      * override via {@code groundcontrol.compliance.evidence-expiry-cron}.
      */
     @Scheduled(cron = "${groundcontrol.compliance.evidence-expiry-cron:0 */15 * * * *}")
-    @Transactional(readOnly = true)
     public void sweep() {
         var now = Instant.now(clock);
         var expired = evidenceRepository.findExpiredAsOf(now);
@@ -57,8 +74,16 @@ public class EvidenceExpirySweepJob {
         int failed = 0;
         for (var artifact : expired) {
             try {
-                eventPublisher.publishEvent(new EvidenceExpiryEvent(
-                        artifact.getProject().getId(), artifact.getId(), artifact.getUid(), artifact.getExpiresAt()));
+                // REQUIRES_NEW per artifact so the detector's drift-event
+                // INSERT runs in its own writable transaction and a single
+                // failure rolls back only that artifact's row — not the
+                // entire sweep batch.
+                dispatchTransactionTemplate.executeWithoutResult(
+                        status -> eventPublisher.publishEvent(new EvidenceExpiryEvent(
+                                artifact.getProject().getId(),
+                                artifact.getId(),
+                                artifact.getUid(),
+                                artifact.getExpiresAt())));
                 dispatched++;
             } catch (RuntimeException ex) {
                 // Per the synchronous-event contract, a listener failure

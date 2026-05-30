@@ -42,8 +42,11 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code ReassessmentSignalService}), every listener here uses
  * {@code @EventListener} — never {@code @TransactionalEventListener}. A
  * listener failure rolls back the publishing mutation. The expiry sweep
- * job wraps each per-artifact dispatch in its own transaction so a single
- * detector failure does not block the rest of the sweep batch.
+ * job wraps each per-artifact dispatch in its own {@code REQUIRES_NEW}
+ * {@code TransactionTemplate} execution so the detector receives a fresh
+ * writable transaction (its drift-event INSERT is not silently dropped by a
+ * read-only context) and so a single detector failure rolls back only that
+ * artifact's row — the rest of the sweep batch continues.
  *
  * <p>Liveness telemetry is read via
  * {@link ComplianceDriftEventRepository#findLastDetectedAt(UUID)} and
