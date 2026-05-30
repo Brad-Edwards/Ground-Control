@@ -1087,5 +1087,25 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT framework_element FROM compliance_framework_mapping_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
+        // The (endpoint, framework, element) uniqueness rule MUST be scoped to
+        // its own endpoint side. A table-wide UNIQUE NULLS NOT DISTINCT would
+        // treat the NULL side as a single value and reject two control-side
+        // rows whose (control_id, framework, element) tuples differ but share
+        // NULL requirement_id — defeating GC-I005's "multiple controls
+        // (including compensating) may map to one element" intent. Pin the
+        // partial unique indexes by name so a future migration cannot silently
+        // regress to the table-wide form.
+        entityManager
+                .createNativeQuery("SELECT 1 FROM pg_indexes"
+                        + " WHERE tablename = 'compliance_framework_mapping'"
+                        + " AND indexname = 'uq_cfm_requirement_framework_element'"
+                        + " AND indexdef LIKE '%WHERE (requirement_id IS NOT NULL)%'")
+                .getSingleResult();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM pg_indexes"
+                        + " WHERE tablename = 'compliance_framework_mapping'"
+                        + " AND indexname = 'uq_cfm_control_framework_element'"
+                        + " AND indexdef LIKE '%WHERE (control_id IS NOT NULL)%'")
+                .getSingleResult();
     }
 }

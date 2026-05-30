@@ -117,6 +117,15 @@ public class ComplianceFrameworkMappingService {
             throw new DomainValidationException(FRAMEWORK_ELEMENT_REQUIRED);
         }
 
+        // Cluster-744 fix: update MUST apply the same control-char /
+        // log-injection guard as create. Without this, an authenticated
+        // caller can PUT a `frameworkIdentifier` containing embedded \n /
+        // \r / \t / chars < 0x20 — defeating the log-injection invariant
+        // that the create path enforces via validateRequiredFields(...).
+        if (command.frameworkIdentifier() != null && containsControlChars(command.frameworkIdentifier())) {
+            throw new DomainValidationException("frameworkIdentifier must not contain control characters or newlines");
+        }
+
         if (command.framework() != null || command.frameworkElement() != null) {
             assertNoDuplicateOnRename(mapping, newFramework, newElement);
         }

@@ -35,17 +35,21 @@ CREATE TABLE compliance_framework_mapping (
     CONSTRAINT ck_cfm_endpoint_xor CHECK (
         (requirement_id IS NOT NULL AND control_id IS NULL)
         OR (requirement_id IS NULL AND control_id IS NOT NULL)
-    ),
-
-    -- One mapping per (endpoint, framework, element) tuple. NULLS NOT DISTINCT
-    -- so the "endpoint" half of the tuple treats the null side as a single
-    -- value distinct from any UUID — mirrors the V121 risk_control_mapping
-    -- approach for polymorphic-endpoint uniqueness.
-    CONSTRAINT uq_cfm_requirement_framework_element
-        UNIQUE NULLS NOT DISTINCT (requirement_id, framework, framework_element),
-    CONSTRAINT uq_cfm_control_framework_element
-        UNIQUE NULLS NOT DISTINCT (control_id, framework, framework_element)
+    )
 );
+
+-- One mapping per (endpoint, framework, element) tuple — scoped to each
+-- endpoint side via partial unique indexes so multiple control rows can map
+-- to the same (framework, element) without colliding on the NULL
+-- requirement_id (and vice versa). This is intentional: GC-I005 must allow
+-- multiple controls — including compensating controls — to map to one
+-- framework element.
+CREATE UNIQUE INDEX uq_cfm_requirement_framework_element
+    ON compliance_framework_mapping(requirement_id, framework, framework_element)
+    WHERE requirement_id IS NOT NULL;
+CREATE UNIQUE INDEX uq_cfm_control_framework_element
+    ON compliance_framework_mapping(control_id, framework, framework_element)
+    WHERE control_id IS NOT NULL;
 
 CREATE INDEX idx_cfm_project              ON compliance_framework_mapping(project_id);
 CREATE INDEX idx_cfm_requirement          ON compliance_framework_mapping(requirement_id)

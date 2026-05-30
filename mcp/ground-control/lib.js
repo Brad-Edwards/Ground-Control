@@ -403,15 +403,36 @@ export const THREAT_MODEL_LINK_TYPES = [
 // ---------------------------------------------------------------------------
 
 /**
- * Build a backend DTO body by picking ONLY the listed snake_case fields from
- * the MCP args object. MCP control fields (action, kind, mode, subsystem,
- * entity, id, project, paging filters, etc.) MUST NOT leak into request
- * bodies, so every tool registration enumerates its body allowlist explicitly.
+ * Build a backend DTO body by picking ONLY the listed fields from the MCP args
+ * object. MCP control fields (action, kind, mode, subsystem, entity, id,
+ * project, paging filters, etc.) MUST NOT leak into request bodies, so every
+ * tool registration enumerates its body allowlist explicitly.
+ *
+ * `keys` may be either:
+ *   - An array of field names (same key on both args side and body side):
+ *     `pick(args, ["title", "statement"])` -> `{title, statement}`.
+ *   - A plain object mapping body-side (camelCase) keys to args-side
+ *     (snake_case) keys: `pick(args, {frameworkIdentifier: "framework_identifier"})`
+ *     reads `args.framework_identifier` and writes
+ *     `out.frameworkIdentifier`. This matches the camelCase request DTO
+ *     contract on the backend while keeping the args surface snake_case.
+ *
+ * Iterating an array works directly. Plain objects are NOT iterable, so we
+ * detect them and walk `Object.entries(...)` instead. Mixing the two forms
+ * in the same call is not supported.
  */
 export function pick(args, keys) {
   const out = {};
-  for (const k of keys) {
-    if (args[k] !== undefined) out[k] = args[k];
+  if (Array.isArray(keys)) {
+    for (const k of keys) {
+      if (args[k] !== undefined) out[k] = args[k];
+    }
+  } else if (keys && typeof keys === "object") {
+    for (const [outKey, argKey] of Object.entries(keys)) {
+      if (args[argKey] !== undefined) out[outKey] = args[argKey];
+    }
+  } else {
+    throw new TypeError("pick(): keys must be an array or a plain object");
   }
   return out;
 }
@@ -810,6 +831,15 @@ const TO_CAMEL = {
   risk_assessment_result_id: "riskAssessmentResultId",
   monitored_risk_factors: "monitoredRiskFactors",
   update_cadence: "updateCadence",
+  // GC-I002 / GC-I005 / GC-I007 / GC-L011 — ComplianceFrameworkMapping aggregate.
+  // The backend ComplianceFrameworkMappingRequest / UpdateComplianceFrameworkMappingRequest
+  // records use camelCase property names. Without these entries Jackson would
+  // silently drop framework_identifier / framework_version / framework_element /
+  // coverage_level when the MCP tool routes snake_case keys through pick().
+  framework_identifier: "frameworkIdentifier",
+  framework_version: "frameworkVersion",
+  framework_element: "frameworkElement",
+  coverage_level: "coverageLevel",
 };
 
 const TO_SNAKE = Object.fromEntries(Object.entries(TO_CAMEL).map(([k, v]) => [v, k]));

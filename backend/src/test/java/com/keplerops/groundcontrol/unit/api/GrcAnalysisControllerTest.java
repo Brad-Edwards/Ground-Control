@@ -1,11 +1,13 @@
 package com.keplerops.groundcontrol.unit.api;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -46,6 +48,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -710,6 +713,29 @@ class GrcAnalysisControllerTest {
                     .andExpect(jsonPath("$.frameworks[0].framework", is("SOC2")))
                     .andExpect(jsonPath("$.frameworks[0].elements[0].coverageLevel", is("FULL")))
                     .andExpect(jsonPath("$.counts.totalFrameworks", is(1)));
+
+            // Cluster-744 finding #6: exercise the framework=SOC2 query-param
+            // parsing on the controller side. The old `eq(PROJECT_ID), any(),
+            // any()` form would pass even if the controller dropped the
+            // framework param or sent the wrong enum to the service.
+            var captor = ArgumentCaptor.forClass(ComplianceFrameworkIdentifier.class);
+            verify(grcAnalysisService).compliancePosture(eq(PROJECT_ID), any(), captor.capture());
+            assertThat(captor.getValue()).isEqualTo(ComplianceFrameworkIdentifier.SOC2);
+        }
+
+        @Test
+        void omittedFrameworkParam_passesNullToService() throws Exception {
+            when(grcAnalysisService.compliancePosture(eq(PROJECT_ID), any(), any()))
+                    .thenReturn(sampleResult());
+
+            mockMvc.perform(get("/api/v1/analysis/grc/compliance-posture").param("project", "ground-control"))
+                    .andExpect(status().isOk());
+
+            var captor = ArgumentCaptor.forClass(ComplianceFrameworkIdentifier.class);
+            verify(grcAnalysisService).compliancePosture(eq(PROJECT_ID), any(), captor.capture());
+            // Optional @RequestParam: null is the expected sentinel for "all
+            // frameworks", per CompliancePostureService semantics.
+            assertThat(captor.getValue()).isNull();
         }
 
         @Test
@@ -771,6 +797,32 @@ class GrcAnalysisControllerTest {
                     .andExpect(jsonPath("$.frameworks[0].elementGaps[0].severity", is("HIGH")))
                     .andExpect(jsonPath("$.frameworks[0].elementGaps[0].coverageStatus", is("PARTIAL")))
                     .andExpect(jsonPath("$.counts.totalElements", is(1)));
+
+            // Cluster-744 finding #6: exercise framework=SOC2 + minSeverity=HIGH
+            // query-param parsing. The old `any(), any()` form would silently
+            // pass even if the controller dropped either param or sent the
+            // wrong enum constants.
+            var frameworkCaptor = ArgumentCaptor.forClass(ComplianceFrameworkIdentifier.class);
+            var severityCaptor = ArgumentCaptor.forClass(GapSeverity.class);
+            verify(grcAnalysisService)
+                    .crossFrameworkGap(eq(PROJECT_ID), any(), frameworkCaptor.capture(), severityCaptor.capture());
+            assertThat(frameworkCaptor.getValue()).isEqualTo(ComplianceFrameworkIdentifier.SOC2);
+            assertThat(severityCaptor.getValue()).isEqualTo(GapSeverity.HIGH);
+        }
+
+        @Test
+        void omittedSeverityParam_passesNullToService() throws Exception {
+            when(grcAnalysisService.crossFrameworkGap(eq(PROJECT_ID), any(), any(), any()))
+                    .thenReturn(sampleResult());
+
+            mockMvc.perform(get("/api/v1/analysis/grc/framework-gap")
+                            .param("project", "ground-control")
+                            .param("framework", "SOC2"))
+                    .andExpect(status().isOk());
+
+            var severityCaptor = ArgumentCaptor.forClass(GapSeverity.class);
+            verify(grcAnalysisService).crossFrameworkGap(eq(PROJECT_ID), any(), any(), severityCaptor.capture());
+            assertThat(severityCaptor.getValue()).isNull();
         }
 
         @Test

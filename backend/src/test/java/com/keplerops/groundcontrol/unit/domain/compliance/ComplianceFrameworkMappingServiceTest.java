@@ -274,6 +274,52 @@ class ComplianceFrameworkMappingServiceTest {
                             PROJECT_ID, MAPPING_ID, null, null, null, "CC2.1", null, null)))
                     .isInstanceOf(ConflictException.class);
         }
+
+        @Test
+        void externalIdentifierWithNewline_throwsDomainValidation() {
+            // Cluster-744 fix (findings #3 / #5): the update path previously
+            // routed `frameworkIdentifier` through `sanitizeExternalIdentifier`
+            // (trim-only), bypassing the control-char log-injection guard the
+            // create path applies via `validateRequiredFields`. A caller could
+            // PUT `Acme\nINJECT` and have the embedded newline land in the
+            // entity (and from there into structured log lines). Verify
+            // the guard is now enforced symmetrically with create.
+            var mapping = ComplianceFrameworkMapping.forRequirement(
+                    project, requirement, ComplianceFrameworkIdentifier.SOC2, "CC1.1", CoverageLevel.PARTIAL);
+            setField(mapping, "id", MAPPING_ID);
+            when(repository.findByIdAndProjectId(MAPPING_ID, PROJECT_ID)).thenReturn(Optional.of(mapping));
+
+            assertThatThrownBy(() -> service.update(new UpdateComplianceFrameworkMappingCommand(
+                            PROJECT_ID, MAPPING_ID, null, "Acme\nINJECT", null, null, null, null)))
+                    .isInstanceOf(DomainValidationException.class)
+                    .hasMessageContaining("control characters");
+        }
+
+        @Test
+        void externalIdentifierWithCarriageReturn_throwsDomainValidation() {
+            var mapping = ComplianceFrameworkMapping.forRequirement(
+                    project, requirement, ComplianceFrameworkIdentifier.SOC2, "CC1.1", CoverageLevel.PARTIAL);
+            setField(mapping, "id", MAPPING_ID);
+            when(repository.findByIdAndProjectId(MAPPING_ID, PROJECT_ID)).thenReturn(Optional.of(mapping));
+
+            assertThatThrownBy(() -> service.update(new UpdateComplianceFrameworkMappingCommand(
+                            PROJECT_ID, MAPPING_ID, null, "Acme\rINJECT", null, null, null, null)))
+                    .isInstanceOf(DomainValidationException.class)
+                    .hasMessageContaining("control characters");
+        }
+
+        @Test
+        void externalIdentifierWithTab_throwsDomainValidation() {
+            var mapping = ComplianceFrameworkMapping.forRequirement(
+                    project, requirement, ComplianceFrameworkIdentifier.SOC2, "CC1.1", CoverageLevel.PARTIAL);
+            setField(mapping, "id", MAPPING_ID);
+            when(repository.findByIdAndProjectId(MAPPING_ID, PROJECT_ID)).thenReturn(Optional.of(mapping));
+
+            assertThatThrownBy(() -> service.update(new UpdateComplianceFrameworkMappingCommand(
+                            PROJECT_ID, MAPPING_ID, null, "Acme\tINJECT", null, null, null, null)))
+                    .isInstanceOf(DomainValidationException.class)
+                    .hasMessageContaining("control characters");
+        }
     }
 
     @Nested

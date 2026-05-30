@@ -122,6 +122,9 @@ import {
   INTEGRATION_MANAGER_MERGE_STRATEGIES,
   INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN,
   INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX,
+  pick,
+  createComplianceFrameworkMapping,
+  updateComplianceFrameworkMapping,
 } from "./lib.js";
 
 // ---------------------------------------------------------------------------
@@ -13288,6 +13291,205 @@ process.exit(2);
       });
     } finally {
       shim.cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pick() — supports both array-of-keys (existing) AND camelCase->snake_case
+// rename-object forms (cluster 744 adversarial-review fix). The plain-object
+// form was silently broken (`for (const k of keys)` on an object throws
+// "keys is not iterable" at runtime), so every consolidated tool that used
+// the rename-object form was throwing on the first call. See finding #2 /
+// #4 for the gc_compliance_framework_mapping case.
+// ---------------------------------------------------------------------------
+
+describe("pick — array form (snake_case allowlist)", () => {
+  it("includes only listed keys present on args", () => {
+    const out = pick(
+      { framework: "SOC2", framework_element: "CC1.1", action: "update", id: "abc" },
+      ["framework", "framework_element"],
+    );
+    assert.deepEqual(out, { framework: "SOC2", framework_element: "CC1.1" });
+  });
+
+  it("omits undefined args so PUT preserves 'null means no change'", () => {
+    const out = pick({ framework: "SOC2" }, ["framework", "framework_element", "coverage_level"]);
+    assert.deepEqual(out, { framework: "SOC2" });
+  });
+
+  it("preserves explicit null (null != undefined)", () => {
+    const out = pick({ framework: null }, ["framework"]);
+    assert.deepEqual(out, { framework: null });
+  });
+});
+
+describe("pick — rename-object form (camelCase body, snake_case args)", () => {
+  it("does NOT throw 'keys is not iterable' on a plain object", () => {
+    assert.doesNotThrow(() =>
+      pick({ framework_element: "CC1.1" }, { frameworkElement: "framework_element" }),
+    );
+  });
+
+  it("maps every camelCase body key to its snake_case args source", () => {
+    const out = pick(
+      {
+        framework: "SOC2",
+        framework_identifier: "Acme SOC2",
+        framework_version: "2017 TSC",
+        framework_element: "CC1.1",
+        coverage_level: "FULL",
+        rationale: "Satisfies fully",
+      },
+      {
+        framework: "framework",
+        frameworkIdentifier: "framework_identifier",
+        frameworkVersion: "framework_version",
+        frameworkElement: "framework_element",
+        coverageLevel: "coverage_level",
+        rationale: "rationale",
+      },
+    );
+    assert.deepEqual(out, {
+      framework: "SOC2",
+      frameworkIdentifier: "Acme SOC2",
+      frameworkVersion: "2017 TSC",
+      frameworkElement: "CC1.1",
+      coverageLevel: "FULL",
+      rationale: "Satisfies fully",
+    });
+  });
+
+  it("omits camelCase keys whose snake_case args source is undefined", () => {
+    const out = pick(
+      { coverage_level: "FULL" },
+      { framework: "framework", coverageLevel: "coverage_level" },
+    );
+    assert.deepEqual(out, { coverageLevel: "FULL" });
+  });
+
+  it("rejects non-array / non-object keys with a clear TypeError", () => {
+    assert.throws(() => pick({}, "framework"), TypeError);
+    assert.throws(() => pick({}, 42), TypeError);
+    assert.throws(() => pick({}, null), TypeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// gc_compliance_framework_mapping — CRUD wire contract. Cluster 744 found that
+// `gc_compliance_framework_mapping action=update` previously threw at the trust
+// boundary on every call (object form of `pick`) and that there were zero
+// MCP-side smoke tests covering the path. These tests pin the fetch-level
+// behaviour so future regressions surface here rather than at runtime.
+// ---------------------------------------------------------------------------
+
+describe("gc_compliance_framework_mapping — MCP wire contract (issue #744)", () => {
+  function withMockFetch(handler) {
+    const originalFetch = globalThis.fetch;
+    const originalBase = process.env.GC_BASE_URL;
+    process.env.GC_BASE_URL = "http://test.invalid";
+    const calls = [];
+    globalThis.fetch = async (url, opts) => {
+      const body = opts && opts.body ? JSON.parse(opts.body) : null;
+      calls.push({ url: url.toString(), method: opts ? opts.method : "GET", body });
+      const { status = 200, responseBody = null } = handler({ url: url.toString(), body }) || {};
+      return {
+        status,
+        ok: status < 400,
+        text: async () => (responseBody === null ? "" : JSON.stringify(responseBody)),
+      };
+    };
+    return {
+      calls,
+      restore() {
+        globalThis.fetch = originalFetch;
+        if (originalBase === undefined) delete process.env.GC_BASE_URL;
+        else process.env.GC_BASE_URL = originalBase;
+      },
+    };
+  }
+
+  it("create POSTs camelCase body with every supplied field", async () => {
+    const mock = withMockFetch(() => ({ status: 201, responseBody: { id: "abc" } }));
+    try {
+      await createComplianceFrameworkMapping(
+        {
+          requirementId: "00000000-0000-0000-0000-000000000200",
+          framework: "SOC2",
+          frameworkIdentifier: "Acme SOC2",
+          frameworkVersion: "2017 TSC",
+          frameworkElement: "CC1.1",
+          coverageLevel: "PARTIAL",
+          rationale: "Documented",
+        },
+        "ground-control",
+      );
+      assert.equal(mock.calls.length, 1);
+      assert.equal(mock.calls[0].method, "POST");
+      assert.match(mock.calls[0].url, /\/api\/v1\/compliance-framework-mappings\?project=ground-control/);
+      assert.deepEqual(mock.calls[0].body, {
+        requirementId: "00000000-0000-0000-0000-000000000200",
+        framework: "SOC2",
+        frameworkIdentifier: "Acme SOC2",
+        frameworkVersion: "2017 TSC",
+        frameworkElement: "CC1.1",
+        coverageLevel: "PARTIAL",
+        rationale: "Documented",
+      });
+    } finally {
+      mock.restore();
+    }
+  });
+
+  it("update PUTs camelCase body — DOES NOT throw at the trust boundary", async () => {
+    // Direct regression on the cluster-744 finding: the old `pick(args, {...})`
+    // path threw "keys is not iterable" before ever calling fetch. Now the
+    // update PUT must reach fetch with a well-shaped body. Body keys land in
+    // camelCase because the request helper runs toCamelCase before serializing.
+    const mock = withMockFetch(() => ({ status: 200, responseBody: { id: "abc" } }));
+    try {
+      await updateComplianceFrameworkMapping(
+        "00000000-0000-0000-0000-000000000300",
+        {
+          framework_element: "CC2.1",
+          coverage_level: "FULL",
+          rationale: "Now satisfies fully",
+        },
+        "ground-control",
+      );
+      assert.equal(mock.calls.length, 1);
+      assert.equal(mock.calls[0].method, "PUT");
+      assert.match(
+        mock.calls[0].url,
+        /\/api\/v1\/compliance-framework-mappings\/00000000-0000-0000-0000-000000000300\?project=ground-control/,
+      );
+      assert.deepEqual(mock.calls[0].body, {
+        frameworkElement: "CC2.1",
+        coverageLevel: "FULL",
+        rationale: "Now satisfies fully",
+      });
+    } finally {
+      mock.restore();
+    }
+  });
+
+  it("update propagates 4xx errors instead of swallowing them", async () => {
+    const mock = withMockFetch(() => ({
+      status: 422,
+      responseBody: { error: { code: "VALIDATION_ERROR", message: "Bad" } },
+    }));
+    try {
+      await assert.rejects(
+        () =>
+          updateComplianceFrameworkMapping(
+            "00000000-0000-0000-0000-000000000300",
+            { coverage_level: "FULL" },
+            "ground-control",
+          ),
+        /Bad/,
+      );
+    } finally {
+      mock.restore();
     }
   });
 });

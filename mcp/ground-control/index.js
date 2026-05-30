@@ -2922,14 +2922,24 @@ server.tool(
           }, p);
           break;
         case "update":
-          result = await updateComplianceFrameworkMapping(reqArg(args, "id"), pick(args, {
-            framework: "framework",
-            frameworkIdentifier: "framework_identifier",
-            frameworkVersion: "framework_version",
-            frameworkElement: "framework_element",
-            coverageLevel: "coverage_level",
-            rationale: "rationale",
-          }), p);
+          // The `request` helper auto-converts snake_case body keys to
+          // camelCase via toCamelCase, so an array of snake_case keys
+          // matches every other CRUD tool in this file. Per cluster
+          // adversarial review: `pick(args, {object literal})` would throw
+          // `keys is not iterable`, and even after the lib.js fix the
+          // array form is the established pattern.
+          result = await updateComplianceFrameworkMapping(
+            reqArg(args, "id"),
+            pick(args, [
+              "framework",
+              "framework_identifier",
+              "framework_version",
+              "framework_element",
+              "coverage_level",
+              "rationale",
+            ]),
+            p,
+          );
           break;
         case "delete":
           await deleteComplianceFrameworkMapping(reqArg(args, "id"), p);

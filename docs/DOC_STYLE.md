@@ -176,3 +176,13 @@ backend Java enums had been extended past the MCP Zod surface and the
 13 new snake_case DTO fields were passing through unrenamed. No new style
 rule is established by this change; the ADR-054 amendment carries the
 record of the surface addition.
+
+Adversarial-review follow-on fixes to existing MCP tool surfaces are
+config-parser changes covered by the existing surface classification.
+Examples: hardening `gc_compliance_framework_mapping action=update` so the
+trust-boundary `pick(args, …)` call no longer throws on a plain object, and
+adding new `TO_CAMEL` entries (`framework_identifier`, `framework_version`,
+`framework_element`, `coverage_level`) so snake_case MCP args reach the
+backend's camelCase DTO. The follow-on is recorded as a separate ADR-054
+amendment entry plus a changelog fragment; no new DOC_STYLE.md prose is
+needed unless a new style rule is being established.
