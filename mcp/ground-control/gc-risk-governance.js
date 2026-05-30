@@ -17,6 +17,8 @@ import {
   GOVERNANCE_FIELDS,
   NORMALIZED_CONCEPTS,
   CROSSWALK_VOCABULARY_SURFACES,
+  APPETITE_TOLERANCE_KINDS,
+  CAMPAIGN_PHASES,
   pick, reqArg, validateGovernanceStatus,
   createMethodologyProfile, updateMethodologyProfile, deleteMethodologyProfile,
   createRiskRegisterRecord, updateRiskRegisterRecord, deleteRiskRegisterRecord,
@@ -26,14 +28,23 @@ import {
   createTreatmentPlan, updateTreatmentPlan, deleteTreatmentPlan,
   transitionTreatmentPlanStatus,
   createVerificationResult, updateVerificationResult, deleteVerificationResult,
+  createRiskAppetiteProfile, updateRiskAppetiteProfile, deleteRiskAppetiteProfile,
+  createRiskAssessmentCampaign, updateRiskAssessmentCampaign,
+  deleteRiskAssessmentCampaign, advanceRiskAssessmentCampaignPhase,
+  createKeyRiskIndicator, updateKeyRiskIndicator, deleteKeyRiskIndicator,
+  recordKriMeasurement,
 } from "./lib.js";
 
 export const GC_RISK_GOVERNANCE_ENTITIES = [
   "methodology_profile", "risk_register_record", "risk_assessment_result",
   "treatment_plan", "verification_result",
+  // GC-T005 / T006 / T007 risk-governance lifecycle aggregates
+  "risk_appetite_profile", "risk_assessment_campaign", "key_risk_indicator",
 ];
 export const GC_RISK_GOVERNANCE_ACTIONS = [
   "create", "update", "delete", "transition", "transition_approval",
+  // GC-T006 campaign phase advance, GC-T007 KRI measurement
+  "advance_phase", "record_measurement",
 ];
 
 export const gcRiskGovernanceZodShape = {
@@ -166,6 +177,48 @@ export const gcRiskGovernanceZodShape = {
     conversionRule: z.string().optional(),
     limitations: z.string().optional(),
   })).optional(),
+  // GC-T005: appetite profile fields
+  profile_key: z.string().optional(),
+  version: z.string().optional(),
+  appetite_statement: z.string().optional(),
+  active: z.boolean().optional(),
+  tolerances: z.array(z.object({
+    category: z.string(),
+    kind: z.enum(APPETITE_TOLERANCE_KINDS),
+    qualitativeLabel: z.string().optional(),
+    monetaryLow: z.number().optional(),
+    monetaryHigh: z.number().optional(),
+    currency: z.string().optional(),
+    lossEventFrequencyMax: z.number().optional(),
+    exceedanceProbabilityMax: z.number().optional(),
+    criteria: z.record(z.any()).optional(),
+    rationale: z.string().optional(),
+  })).optional(),
+  // GC-T006: campaign fields
+  appetite_profile_id: z.string().uuid().optional(),
+  objective: z.string().optional(),
+  scheduled_start: z.string().optional(),
+  scheduled_end: z.string().optional(),
+  scope: z.record(z.any()).optional(),
+  approval_metadata: z.record(z.any()).optional(),
+  scoped_asset_ids: z.array(z.string()).optional(),
+  phase: z.enum(CAMPAIGN_PHASES).optional(),
+  // GC-T007: KRI fields
+  metric_unit: z.string().optional(),
+  yellow_threshold: z.number().optional(),
+  red_threshold: z.number().optional(),
+  direction: z.string().optional(),
+  value: z.number().optional(),
+  measured_at: z.string().optional(),
+  // GC-T015: treatment plan extensions
+  risk_assessment_result_id: z.string().uuid().optional(),
+  monitored_risk_factors: z.array(z.object({
+    label: z.string(),
+    category: z.string(),
+    cadence: z.string().optional(),
+    notes: z.string().optional(),
+  })).optional(),
+  update_cadence: z.string().optional(),
 };
 
 export const GC_RISK_GOVERNANCE_DESCRIPTION =
@@ -242,6 +295,38 @@ export async function gcRiskGovernanceToolHandler(args) {
         case "update": reqArg(args, "id", "update"); return updateVerificationResult(args.id, data, args.project);
         case "delete": reqArg(args, "id", "delete"); await deleteVerificationResult(args.id, args.project); return null;
         default: throw new Error(`Action '${args.action}' not valid for verification_result`);
+      }
+    }
+    case "risk_appetite_profile": {
+      switch (args.action) {
+        case "create": return createRiskAppetiteProfile(data, args.project);
+        case "update": reqArg(args, "id", "update"); return updateRiskAppetiteProfile(args.id, data, args.project);
+        case "delete": reqArg(args, "id", "delete"); await deleteRiskAppetiteProfile(args.id, args.project); return null;
+        default: throw new Error(`Action '${args.action}' not valid for risk_appetite_profile`);
+      }
+    }
+    case "risk_assessment_campaign": {
+      switch (args.action) {
+        case "create": return createRiskAssessmentCampaign(data, args.project);
+        case "update": reqArg(args, "id", "update"); return updateRiskAssessmentCampaign(args.id, data, args.project);
+        case "delete": reqArg(args, "id", "delete"); await deleteRiskAssessmentCampaign(args.id, args.project); return null;
+        case "advance_phase":
+          reqArg(args, "id", "advance_phase");
+          reqArg(args, "phase", "advance_phase");
+          return advanceRiskAssessmentCampaignPhase(args.id, args.phase, args.project);
+        default: throw new Error(`Action '${args.action}' not valid for risk_assessment_campaign`);
+      }
+    }
+    case "key_risk_indicator": {
+      switch (args.action) {
+        case "create": return createKeyRiskIndicator(data, args.project);
+        case "update": reqArg(args, "id", "update"); return updateKeyRiskIndicator(args.id, data, args.project);
+        case "delete": reqArg(args, "id", "delete"); await deleteKeyRiskIndicator(args.id, args.project); return null;
+        case "record_measurement":
+          reqArg(args, "id", "record_measurement");
+          reqArg(args, "value", "record_measurement");
+          return recordKriMeasurement(args.id, args.value, args.measured_at, args.project);
+        default: throw new Error(`Action '${args.action}' not valid for key_risk_indicator`);
       }
     }
     default: throw new Error(`Unknown entity: ${args.entity}`);

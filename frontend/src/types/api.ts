@@ -758,6 +758,44 @@ export const NIST_IMPACT_BANDS: NistImpactBand[] = [
   "VERY_HIGH",
 ];
 
+// GC-T005 / T006 / T007 risk-governance lifecycle enums. Single-sourced from
+// backend AppetiteToleranceKind, CampaignPhase, KriThresholdBand under
+// domain/riskscenarios/state/. Mirror policy per ADR-034 — declaration order
+// matches the Java enum order; enforced by
+// tools/policy/checks.py::ENUM_CONTRACT_INVENTORY.
+export type AppetiteToleranceKind =
+  | "QUALITATIVE"
+  | "MONETARY_RANGE"
+  | "LOSS_EVENT_FREQUENCY"
+  | "EXCEEDANCE_PROBABILITY"
+  | "COMPOSITE";
+export const APPETITE_TOLERANCE_KINDS: AppetiteToleranceKind[] = [
+  "QUALITATIVE",
+  "MONETARY_RANGE",
+  "LOSS_EVENT_FREQUENCY",
+  "EXCEEDANCE_PROBABILITY",
+  "COMPOSITE",
+];
+
+export type CampaignPhase =
+  | "PLANNING"
+  | "IDENTIFICATION"
+  | "ANALYSIS"
+  | "EVALUATION"
+  | "TREATMENT"
+  | "CLOSED";
+export const CAMPAIGN_PHASES: CampaignPhase[] = [
+  "PLANNING",
+  "IDENTIFICATION",
+  "ANALYSIS",
+  "EVALUATION",
+  "TREATMENT",
+  "CLOSED",
+];
+
+export type KriThresholdBand = "GREEN" | "YELLOW" | "RED";
+export const KRI_THRESHOLD_BANDS: KriThresholdBand[] = ["GREEN", "YELLOW", "RED"];
+
 // GC-U001 / ADR-047 Audit entity enums. Single-sourced from backend
 // AuditStatus, AuditType, AuditPhaseKind, AuditLinkTargetType, AuditLinkType.
 export type AuditType = "INTERNAL" | "EXTERNAL" | "REGULATORY" | "SPECIAL";

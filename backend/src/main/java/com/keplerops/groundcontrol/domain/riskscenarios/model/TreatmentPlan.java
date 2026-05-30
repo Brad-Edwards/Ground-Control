@@ -77,6 +77,33 @@ public class TreatmentPlan extends BaseEntity {
     @Column(name = "methodology_strategy_key", length = 100)
     private String methodologyStrategyKey;
 
+    /**
+     * GC-T015: optional FK to the originating risk assessment result.
+     * Project scope is validated through {@code GraphTargetResolverService} —
+     * a result from another project is rejected at the service boundary.
+     */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "risk_assessment_result_id")
+    private RiskAssessmentResult riskAssessmentResult;
+
+    /**
+     * GC-T015: typed list of monitored risk factors. Each entry names a factor,
+     * the change category it belongs to (NIST §3.4), and the cadence at which
+     * the factor is re-checked.
+     */
+    @Convert(converter = JacksonTextCollectionConverters.MonitoredRiskFactorListConverter.class)
+    @Column(name = "monitored_risk_factors", columnDefinition = "TEXT")
+    private List<MonitoredRiskFactor> monitoredRiskFactors;
+
+    /**
+     * GC-T015: ISO-8601 duration (e.g. {@code P30D}) at which the treatment
+     * plan as a whole is re-checked. Separate from per-factor cadence inside
+     * {@link MonitoredRiskFactor}; the plan-level cadence is the lower-bound
+     * heartbeat used by downstream automation.
+     */
+    @Column(name = "update_cadence", length = 50)
+    private String updateCadence;
+
     protected TreatmentPlan() {
         // JPA
     }
@@ -195,5 +222,29 @@ public class TreatmentPlan extends BaseEntity {
 
     public void setMethodologyStrategyKey(String methodologyStrategyKey) {
         this.methodologyStrategyKey = methodologyStrategyKey;
+    }
+
+    public RiskAssessmentResult getRiskAssessmentResult() {
+        return riskAssessmentResult;
+    }
+
+    public void setRiskAssessmentResult(RiskAssessmentResult riskAssessmentResult) {
+        this.riskAssessmentResult = riskAssessmentResult;
+    }
+
+    public List<MonitoredRiskFactor> getMonitoredRiskFactors() {
+        return monitoredRiskFactors;
+    }
+
+    public void setMonitoredRiskFactors(List<MonitoredRiskFactor> monitoredRiskFactors) {
+        this.monitoredRiskFactors = monitoredRiskFactors;
+    }
+
+    public String getUpdateCadence() {
+        return updateCadence;
+    }
+
+    public void setUpdateCadence(String updateCadence) {
+        this.updateCadence = updateCadence;
     }
 }

@@ -1185,13 +1185,57 @@ The seeded profiles (`FAIR_V3_0`, `NIST_SP800_30_R1`, `ISO_27005_V2022`) ship wi
 
 All endpoints accept an optional `project` query parameter (required in multi-project deployments).
 
-**TreatmentPlanRequest fields:** `uid` (required, max 50, unique per project), `title` (required, max 200), `riskRegisterRecordId` (required, UUID), `riskScenarioId` (optional, UUID; must belong to the linked register record's scenarios), `strategy` (required, enum: MITIGATE, ACCEPT, TRANSFER, SHARE, AVOID, OTHER), `methodologyProfileId` (optional, UUID; required when `strategy = OTHER`), `methodologyStrategyKey` (optional, max 100; required when `strategy = OTHER`, must exist in the resolved profile's `treatmentStrategyVocabulary`), `owner` (optional, max 200), `rationale` (optional), `dueDate` (optional, ISO-8601 instant), `status` (optional, defaults to PLANNED), `actionItems` (optional list of typed action items: each requires `owner` [max 200], `dueDate` [ISO-8601 instant], `status` [enum PLANNED/IN_PROGRESS/BLOCKED/DONE/CANCELED]; optional `assignee` [max 200] and `description` [max 4000]), `reassessmentTriggers` (optional list of strings).
+**TreatmentPlanRequest fields:** `uid` (required, max 50, unique per project), `title` (required, max 200), `riskRegisterRecordId` (required, UUID), `riskScenarioId` (optional, UUID; must belong to the linked register record's scenarios), `strategy` (required, enum: MITIGATE, ACCEPT, TRANSFER, SHARE, AVOID, OTHER), `methodologyProfileId` (optional, UUID; required when `strategy = OTHER`), `methodologyStrategyKey` (optional, max 100; required when `strategy = OTHER`, must exist in the resolved profile's `treatmentStrategyVocabulary`), `owner` (optional, max 200), `rationale` (optional), `dueDate` (optional, ISO-8601 instant), `status` (optional, defaults to PLANNED), `actionItems` (optional list of typed action items: each requires `owner` [max 200], `dueDate` [ISO-8601 instant], `status` [enum PLANNED/IN_PROGRESS/BLOCKED/DONE/CANCELED]; optional `assignee` [max 200] and `description` [max 4000]), `reassessmentTriggers` (optional list of typed triggers), `riskAssessmentResultId` (GC-T015, optional UUID; same-project lookup through `GraphTargetResolverService`), `monitoredRiskFactors` (GC-T015, optional list of `{label, category, cadence?, notes?}` entries), `updateCadence` (GC-T015, optional ISO-8601 duration like `P30D`).
 
 `UpdateTreatmentPlanRequest` carries the mutable subset; null fields are left unchanged.
 
 **Methodology binding (GC-T004 / C5):** when the resulting `strategy` is `OTHER`, the request must resolve a `methodologyProfileId` (same-project lookup; cross-project or non-existent → 404 `not_found`) and a `methodologyStrategyKey` that exists in that profile's `treatmentStrategyVocabulary` (missing/blank/non-member → 400 `validation_error`). When the resulting strategy is one of the canonical five, the service silently clears any stored profile/key pair—supplied methodology fields are ignored rather than rejected.
 
 **Lifecycle states:** PLANNED → IN_PROGRESS → {BLOCKED, COMPLETED, CANCELED}; BLOCKED → IN_PROGRESS or CANCELED; PLANNED → CANCELED. COMPLETED and CANCELED are terminal.
+
+### Risk Appetite Profiles (GC-T005)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/risk-appetite-profiles` | RiskAppetiteProfileRequest | 201 | Create versioned appetite profile |
+| GET | `/risk-appetite-profiles` |—| 200 | List appetite profiles for a project |
+| GET | `/risk-appetite-profiles/{id}` |—| 200 | Get appetite profile by UUID |
+| PUT | `/risk-appetite-profiles/{id}` | UpdateRiskAppetiteProfileRequest | 200 | Update mutable fields |
+| DELETE | `/risk-appetite-profiles/{id}` |—| 204 | Delete appetite profile |
+
+Versioned by `(project, profileKey, version)`. Setting `active=true` archives any other active version under the same `profileKey` in the project. Tolerance bands are typed by `AppetiteToleranceKind` (QUALITATIVE, MONETARY_RANGE, LOSS_EVENT_FREQUENCY, EXCEEDANCE_PROBABILITY, COMPOSITE) and consumed by `RiskAppetiteEvaluator` for downstream campaign / KRI / posture analytics.
+
+**RiskAppetiteProfileRequest fields:** `profileKey` (required, max 100), `name` (required, max 200), `version` (required, max 50), `appetiteStatement` (optional), `owner` (optional, max 200), `active` (optional, default true), `tolerances` (optional list of `{category, kind, qualitativeLabel?, monetaryLow?, monetaryHigh?, currency?, lossEventFrequencyMax?, exceedanceProbabilityMax?, criteria?, rationale?}` entries; duplicate `(category, kind)` tuples are rejected with 422 `validation_error`).
+
+### Risk Assessment Campaigns (GC-T006)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/risk-assessment-campaigns` | RiskAssessmentCampaignRequest | 201 | Create campaign |
+| GET | `/risk-assessment-campaigns` |—| 200 | List campaigns for a project |
+| GET | `/risk-assessment-campaigns/{id}` |—| 200 | Get campaign by UUID |
+| PUT | `/risk-assessment-campaigns/{id}` | UpdateRiskAssessmentCampaignRequest | 200 | Update mutable fields |
+| PUT | `/risk-assessment-campaigns/{id}/phase` | `{"phase": "IDENTIFICATION"}` | 200 | Advance the campaign phase |
+| DELETE | `/risk-assessment-campaigns/{id}` |—| 204 | Delete campaign |
+
+Campaign phases: PLANNING → IDENTIFICATION → ANALYSIS → EVALUATION → TREATMENT → CLOSED. Each phase may also cancel to CLOSED. Reaching EVALUATION (or later) requires a bound `methodologyProfileId`; the methodology binding is immutable from EVALUATION through CLOSED so the audit trail stays unambiguous.
+
+**RiskAssessmentCampaignRequest fields:** `uid` (required, max 50), `title` (required, max 200), `owner` (optional, max 200), `objective` (optional), `methodologyProfileId` (optional UUID), `appetiteProfileId` (optional UUID; used in the EVALUATION phase via `RiskAppetiteEvaluator`), `scheduledStart`/`scheduledEnd` (optional ISO-8601 instants), `scope` and `approvalMetadata` (optional structured maps), `scopedAssetIds` (optional list of asset identifiers).
+
+### Key Risk Indicators (GC-T007)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/key-risk-indicators` | KeyRiskIndicatorRequest | 201 | Create KRI |
+| GET | `/key-risk-indicators` |—| 200 | List KRIs for a project |
+| GET | `/key-risk-indicators/{id}` |—| 200 | Get KRI by UUID |
+| PUT | `/key-risk-indicators/{id}` | UpdateKeyRiskIndicatorRequest | 200 | Update mutable fields |
+| POST | `/key-risk-indicators/{id}/measurements` | `{"value": 45, "measuredAt": "..."}` | 200 | Record a measurement, returns the updated KRI with reclassified band |
+| DELETE | `/key-risk-indicators/{id}` |—| 204 | Delete KRI |
+
+Two-breakpoint classification: `direction=HIGHER_IS_WORSE` (default) makes values ≥ `yellowThreshold` YELLOW and ≥ `redThreshold` RED; `direction=LOWER_IS_WORSE` inverts the inequalities. A measurement that crosses from a non-RED band into RED publishes a synchronous `KriBreachedEvent`; `ReassessmentSignalService` fans the `KRI_BREACH` reassessment signal out to assessments under the KRI's linked register record / scenario.
+
+**KeyRiskIndicatorRequest fields:** `uid` (required, max 50), `name` (required, max 200), `description` (optional), `metricUnit` (optional, max 50), `yellowThreshold` / `redThreshold` (numeric, required before a measurement can be recorded), `direction` (optional, default `HIGHER_IS_WORSE`), `owner` (optional, max 200), `riskRegisterRecordId` / `riskScenarioId` (optional same-project UUIDs).
 
 ### Findings
 

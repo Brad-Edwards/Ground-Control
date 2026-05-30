@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.domain.riskscenarios.service;
 
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.MonitoredRiskFactor;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentStrategy;
 import java.time.Instant;
@@ -17,4 +18,7 @@ public record UpdateTreatmentPlanCommand(
         List<ActionItem> actionItems,
         List<ReassessmentTrigger> reassessmentTriggers,
         UUID methodologyProfileId,
-        String methodologyStrategyKey) {}
+        String methodologyStrategyKey,
+        UUID riskAssessmentResultId,
+        List<MonitoredRiskFactor> monitoredRiskFactors,
+        String updateCadence) {}

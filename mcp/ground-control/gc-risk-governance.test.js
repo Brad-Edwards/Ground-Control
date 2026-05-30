@@ -75,7 +75,8 @@ describe("GC_RISK_GOVERNANCE_ACTIONS", () => {
   it("exposes the canonical action verbs the handler dispatches on", () => {
     assert.deepEqual(
       [...GC_RISK_GOVERNANCE_ACTIONS].sort(),
-      ["create", "delete", "transition", "transition_approval", "update"],
+      // GC-T005/T006/T007 added advance_phase + record_measurement
+      ["advance_phase", "create", "delete", "record_measurement", "transition", "transition_approval", "update"],
     );
   });
 });

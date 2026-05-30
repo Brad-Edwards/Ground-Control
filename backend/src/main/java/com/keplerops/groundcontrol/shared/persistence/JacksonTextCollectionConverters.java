@@ -12,7 +12,9 @@ import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPa
 import com.keplerops.groundcontrol.domain.packregistry.model.TrustPolicyRule;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.CrosswalkEntry;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.MonitoredRiskFactor;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskAppetiteTolerance;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerCategory;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
@@ -324,6 +326,29 @@ public final class JacksonTextCollectionConverters {
                 return null;
             }
             return new ReassessmentTrigger(ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC, null, null, null, legacy);
+        }
+    }
+
+    /**
+     * Persistence converter for {@code RiskAppetiteProfile.tolerances} (per GC-T005).
+     */
+    @Converter
+    public static class RiskAppetiteToleranceListConverter
+            extends AbstractJsonTextConverter<List<RiskAppetiteTolerance>> {
+
+        public RiskAppetiteToleranceListConverter() {
+            super(new TypeReference<>() {});
+        }
+    }
+
+    /**
+     * Persistence converter for {@code TreatmentPlan.monitoredRiskFactors} (per GC-T015).
+     */
+    @Converter
+    public static class MonitoredRiskFactorListConverter extends AbstractJsonTextConverter<List<MonitoredRiskFactor>> {
+
+        public MonitoredRiskFactorListConverter() {
+            super(new TypeReference<>() {});
         }
     }
 }

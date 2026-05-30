@@ -68,6 +68,10 @@ export const GC_QUERY_PATH_ALLOWLIST = Object.freeze([
   "/api/v1/traceability",
   "/api/v1/treatment-plans",
   "/api/v1/verification-results",
+  // GC-T005 / T006 / T007 risk-governance lifecycle reads
+  "/api/v1/risk-appetite-profiles",
+  "/api/v1/risk-assessment-campaigns",
+  "/api/v1/key-risk-indicators",
 ]);
 
 /**

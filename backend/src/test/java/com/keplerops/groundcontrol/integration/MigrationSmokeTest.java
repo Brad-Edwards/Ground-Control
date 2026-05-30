@@ -53,7 +53,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "079", "080", "081", "082", "083", "084", "085", "086", "087", "088", "089", "090", "091",
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
-                        "123", "124", "125", "126", "127", "128", "129", "130");
+                        "123", "124", "125", "126", "127", "128", "129", "130", "131");
     }
 
     @Test
@@ -1025,6 +1025,45 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .getSingleResult();
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT reassessment_required_at FROM risk_assessment_result_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        // V131: GC-T005 / T006 / T007 / T015 risk-governance lifecycle aggregates.
+        entityManager
+                .createNativeQuery("SELECT 1 FROM risk_appetite_profile LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM risk_appetite_profile_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM risk_assessment_campaign LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM risk_assessment_campaign_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM key_risk_indicator LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM key_risk_indicator_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_name = 'treatment_plan'"
+                        + " AND column_name = 'risk_assessment_result_id'")
+                .getSingleResult();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_name = 'treatment_plan'"
+                        + " AND column_name = 'monitored_risk_factors'")
+                .getSingleResult();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_name = 'treatment_plan'"
+                        + " AND column_name = 'update_cadence'")
+                .getSingleResult();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT risk_assessment_result_id, monitored_risk_factors, update_cadence"
+                                + " FROM treatment_plan_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }

@@ -23,6 +23,7 @@ import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.MethodologyProfileRepository;
+import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskRegisterRecordRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.TreatmentPlanRepository;
@@ -63,6 +64,9 @@ class TreatmentPlanServiceTest {
     private MethodologyProfileRepository methodologyProfileRepository;
 
     @Mock
+    private RiskAssessmentResultRepository riskAssessmentResultRepository;
+
+    @Mock
     private ProjectService projectService;
 
     @Mock
@@ -88,6 +92,7 @@ class TreatmentPlanServiceTest {
                 riskRegisterRecordRepository,
                 riskScenarioRepository,
                 methodologyProfileRepository,
+                riskAssessmentResultRepository,
                 projectService,
                 validatorFactory.getValidator(),
                 graphTargetResolverService,
@@ -136,12 +141,27 @@ class TreatmentPlanServiceTest {
                 null,
                 null,
                 profileId,
-                strategyKey);
+                strategyKey,
+                null,
+                null,
+                null);
     }
 
     private UpdateTreatmentPlanCommand updateOtherCommand(UUID profileId, String strategyKey) {
         return new UpdateTreatmentPlanCommand(
-                null, null, TreatmentStrategy.OTHER, null, null, null, null, null, profileId, strategyKey);
+                null,
+                null,
+                TreatmentStrategy.OTHER,
+                null,
+                null,
+                null,
+                null,
+                null,
+                profileId,
+                strategyKey,
+                null,
+                null,
+                null);
     }
 
     // -------------------------------------------------------------------------
@@ -173,6 +193,9 @@ class TreatmentPlanServiceTest {
                 List.of(new ReassessmentTrigger(
                         ReassessmentTriggerCategory.METHODOLOGY_SPECIFIC, null, null, null, "New exposure")),
                 null,
+                null,
+                null,
+                null,
                 null));
 
         assertThat(result.getUid()).isEqualTo("TP-1");
@@ -193,6 +216,9 @@ class TreatmentPlanServiceTest {
                         recordId,
                         null,
                         TreatmentStrategy.MITIGATE,
+                        null,
+                        null,
+                        null,
                         null,
                         null,
                         null,
@@ -238,6 +264,9 @@ class TreatmentPlanServiceTest {
                                 Instant.parse("2026-06-01T00:00:00Z"),
                                 List.of(),
                                 List.of(),
+                                null,
+                                null,
+                                null,
                                 null,
                                 null)))
                 .isInstanceOf(DomainValidationException.class)
@@ -412,6 +441,9 @@ class TreatmentPlanServiceTest {
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
                 null));
 
         assertThat(result.getMethodologyProfile()).isNull();
@@ -442,7 +474,10 @@ class TreatmentPlanServiceTest {
                 null,
                 null,
                 ignoredProfileId,
-                "IGNORED_KEY"));
+                "IGNORED_KEY",
+                null,
+                null,
+                null));
 
         assertThat(result.getMethodologyProfile()).isNull();
         assertThat(result.getMethodologyStrategyKey()).isNull();
@@ -485,7 +520,19 @@ class TreatmentPlanServiceTest {
                 projectId,
                 planId,
                 new UpdateTreatmentPlanCommand(
-                        null, null, TreatmentStrategy.MITIGATE, null, null, null, null, null, null, null));
+                        null,
+                        null,
+                        TreatmentStrategy.MITIGATE,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null));
 
         assertThat(result.getMethodologyProfile()).isNull();
         assertThat(result.getMethodologyStrategyKey()).isNull();
@@ -507,7 +554,19 @@ class TreatmentPlanServiceTest {
                 projectId,
                 planId,
                 new UpdateTreatmentPlanCommand(
-                        null, null, TreatmentStrategy.OTHER, null, null, null, null, null, null, "KEY_B"));
+                        null,
+                        null,
+                        TreatmentStrategy.OTHER,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "KEY_B",
+                        null,
+                        null,
+                        null));
 
         assertThat(result.getMethodologyStrategyKey()).isEqualTo("KEY_B");
         assertThat(result.getMethodologyProfile()).isSameAs(profile);
@@ -537,6 +596,9 @@ class TreatmentPlanServiceTest {
                 null,
                 null,
                 List.of(badItem),
+                null,
+                null,
+                null,
                 null,
                 null,
                 null);
@@ -569,6 +631,9 @@ class TreatmentPlanServiceTest {
                 List.of(badItem),
                 null,
                 null,
+                null,
+                null,
+                null,
                 null);
 
         assertThatThrownBy(() -> service.create(command))
@@ -597,6 +662,9 @@ class TreatmentPlanServiceTest {
                 null,
                 null,
                 List.of(badItem),
+                null,
+                null,
+                null,
                 null,
                 null,
                 null);
@@ -629,6 +697,9 @@ class TreatmentPlanServiceTest {
                 List.of(badItem),
                 null,
                 null,
+                null,
+                null,
+                null,
                 null);
 
         assertThatThrownBy(() -> service.create(command))
@@ -645,8 +716,8 @@ class TreatmentPlanServiceTest {
         when(repository.findByIdAndProjectId(planId, projectId)).thenReturn(Optional.of(plan));
 
         var badItem = new ActionItem("", Instant.parse("2026-06-01T00:00:00Z"), ActionItemStatus.PLANNED, null, null);
-        var command =
-                new UpdateTreatmentPlanCommand(null, null, null, null, null, null, List.of(badItem), null, null, null);
+        var command = new UpdateTreatmentPlanCommand(
+                null, null, null, null, null, null, List.of(badItem), null, null, null, null, null, null);
 
         assertThatThrownBy(() -> service.update(projectId, planId, command))
                 .isInstanceOf(DomainValidationException.class)
@@ -675,6 +746,9 @@ class TreatmentPlanServiceTest {
                 null,
                 null,
                 actionItems,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null);
@@ -707,6 +781,9 @@ class TreatmentPlanServiceTest {
                 null,
                 null,
                 List.of(badItem),
+                null,
+                null,
+                null,
                 null,
                 null,
                 null);
@@ -742,6 +819,9 @@ class TreatmentPlanServiceTest {
                 List.of(badItem),
                 null,
                 null,
+                null,
+                null,
+                null,
                 null);
 
         assertThatThrownBy(() -> service.create(command))
@@ -773,6 +853,9 @@ class TreatmentPlanServiceTest {
                 null,
                 null,
                 List.of(badItem),
+                null,
+                null,
+                null,
                 null,
                 null,
                 null);
@@ -849,6 +932,9 @@ class TreatmentPlanServiceTest {
                                 "Owner", Instant.parse("2026-06-01T00:00:00Z"), ActionItemStatus.DONE, null, "Step 1")),
                         null,
                         null,
+                        null,
+                        null,
+                        null,
                         null));
 
         // Capture-and-assert the state change (test-quality cycle 1).
@@ -887,6 +973,9 @@ class TreatmentPlanServiceTest {
                                 "Step renamed")),
                         null,
                         null,
+                        null,
+                        null,
+                        null,
                         null));
 
         org.mockito.Mockito.verifyNoInteractions(eventPublisher);
@@ -903,7 +992,8 @@ class TreatmentPlanServiceTest {
         service.update(
                 projectId,
                 planId,
-                new UpdateTreatmentPlanCommand("Renamed", null, null, null, null, null, null, null, null, null));
+                new UpdateTreatmentPlanCommand(
+                        "Renamed", null, null, null, null, null, null, null, null, null, null, null, null));
 
         // Title-only update does not flip status or action-item histogram, so no event.
         org.mockito.Mockito.verifyNoInteractions(eventPublisher);
@@ -942,6 +1032,9 @@ class TreatmentPlanServiceTest {
                         null,
                         null)),
                 null,
+                null,
+                null,
+                null,
                 null);
 
         service.create(command);
@@ -970,6 +1063,9 @@ class TreatmentPlanServiceTest {
                 null,
                 null,
                 List.of(new ReassessmentTrigger(null, null, null, null, "fallback")),
+                null,
+                null,
+                null,
                 null,
                 null);
 
@@ -1002,6 +1098,9 @@ class TreatmentPlanServiceTest {
                 null,
                 List.of(bad),
                 null,
+                null,
+                null,
+                null,
                 null);
 
         assertThatThrownBy(() -> service.create(command))
@@ -1032,6 +1131,9 @@ class TreatmentPlanServiceTest {
                 null,
                 null,
                 List.of(bad),
+                null,
+                null,
+                null,
                 null,
                 null);
 
@@ -1067,6 +1169,9 @@ class TreatmentPlanServiceTest {
                 null,
                 List.of(bad),
                 null,
+                null,
+                null,
+                null,
                 null);
 
         assertThatThrownBy(() -> service.create(command))
@@ -1100,6 +1205,9 @@ class TreatmentPlanServiceTest {
                 null,
                 null,
                 List.of(bad),
+                null,
+                null,
+                null,
                 null,
                 null);
 
@@ -1135,6 +1243,9 @@ class TreatmentPlanServiceTest {
                 null,
                 List.of(bad),
                 null,
+                null,
+                null,
+                null,
                 null);
 
         assertThatThrownBy(() -> service.create(command))
@@ -1165,6 +1276,9 @@ class TreatmentPlanServiceTest {
                 null,
                 List.of(bad),
                 null,
+                null,
+                null,
+                null,
                 null);
 
         assertThatThrownBy(() -> service.create(command))
@@ -1194,6 +1308,9 @@ class TreatmentPlanServiceTest {
                 null,
                 null,
                 triggers,
+                null,
+                null,
+                null,
                 null,
                 null);
 

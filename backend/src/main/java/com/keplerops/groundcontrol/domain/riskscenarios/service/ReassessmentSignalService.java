@@ -4,9 +4,11 @@ import com.keplerops.groundcontrol.domain.assets.repository.AssetLinkRepository;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.events.AssetStateChangedEvent;
 import com.keplerops.groundcontrol.domain.riskscenarios.events.ControlStateChangedEvent;
+import com.keplerops.groundcontrol.domain.riskscenarios.events.KriBreachedEvent;
 import com.keplerops.groundcontrol.domain.riskscenarios.events.ReassessmentSignal;
 import com.keplerops.groundcontrol.domain.riskscenarios.events.TreatmentProgressChangedEvent;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskAssessmentResult;
+import com.keplerops.groundcontrol.domain.riskscenarios.repository.KeyRiskIndicatorRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.TreatmentPlanRepository;
@@ -52,18 +54,22 @@ public class ReassessmentSignalService {
     private final AssetLinkRepository assetLinkRepository;
     private final ControlLinkRepository controlLinkRepository;
     private final RiskScenarioLinkRepository riskScenarioLinkRepository;
+    private final KeyRiskIndicatorRepository keyRiskIndicatorRepository;
 
+    @SuppressWarnings("java:S107") // the listener fans out across every project-scoped link surface
     public ReassessmentSignalService(
             RiskAssessmentResultRepository assessmentRepository,
             TreatmentPlanRepository treatmentPlanRepository,
             AssetLinkRepository assetLinkRepository,
             ControlLinkRepository controlLinkRepository,
-            RiskScenarioLinkRepository riskScenarioLinkRepository) {
+            RiskScenarioLinkRepository riskScenarioLinkRepository,
+            KeyRiskIndicatorRepository keyRiskIndicatorRepository) {
         this.assessmentRepository = assessmentRepository;
         this.treatmentPlanRepository = treatmentPlanRepository;
         this.assetLinkRepository = assetLinkRepository;
         this.controlLinkRepository = controlLinkRepository;
         this.riskScenarioLinkRepository = riskScenarioLinkRepository;
+        this.keyRiskIndicatorRepository = keyRiskIndicatorRepository;
     }
 
     @EventListener
@@ -84,6 +90,19 @@ public class ReassessmentSignalService {
     public void onControlStateChanged(ControlStateChangedEvent event) {
         var signal = event.signal();
         var affectedResults = collectFromControl(signal);
+        markReassessmentRequired(affectedResults, signal);
+    }
+
+    /**
+     * GC-T007: KRI breach fans the reassessment signal to assessments under the
+     * KRI's linked register record / scenario. Synchronous {@code @EventListener}
+     * (NOT {@code @TransactionalEventListener}) per the shared cross-cluster
+     * contract — a listener failure rolls back the KRI measurement write.
+     */
+    @EventListener
+    public void onKriBreached(KriBreachedEvent event) {
+        var signal = event.signal();
+        var affectedResults = collectFromKri(signal);
         markReassessmentRequired(affectedResults, signal);
     }
 
@@ -158,6 +177,24 @@ public class ReassessmentSignalService {
                     signal.projectId(), link.getRiskScenario().getId(), resultIds);
         }
         return resultIds;
+    }
+
+    /** KRI → linked register record + (optionally) scenario → assessment results. */
+    private Set<UUID> collectFromKri(ReassessmentSignal signal) {
+        Set<UUID> ids = new LinkedHashSet<>();
+        keyRiskIndicatorRepository
+                .findByIdAndProjectId(signal.entityId(), signal.projectId())
+                .ifPresent(kri -> {
+                    if (kri.getRiskRegisterRecord() != null) {
+                        addAllAssessmentsForRecord(
+                                signal.projectId(), kri.getRiskRegisterRecord().getId(), ids);
+                    }
+                    if (kri.getRiskScenario() != null) {
+                        addAllAssessmentsForScenario(
+                                signal.projectId(), kri.getRiskScenario().getId(), ids);
+                    }
+                });
+        return ids;
     }
 
     private void addAllAssessmentsForScenario(UUID projectId, UUID scenarioId, Set<UUID> out) {

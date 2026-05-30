@@ -3,6 +3,7 @@ package com.keplerops.groundcontrol.api.riskscenarios;
 import com.keplerops.groundcontrol.domain.graph.model.GraphEntityType;
 import com.keplerops.groundcontrol.domain.graph.model.GraphIds;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.MonitoredRiskFactor;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
@@ -30,6 +31,9 @@ public record TreatmentPlanResponse(
         List<ReassessmentTrigger> reassessmentTriggers,
         UUID methodologyProfileId,
         String methodologyStrategyKey,
+        UUID riskAssessmentResultId,
+        List<MonitoredRiskFactor> monitoredRiskFactors,
+        String updateCadence,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -55,6 +59,11 @@ public record TreatmentPlanResponse(
                         ? plan.getMethodologyProfile().getId()
                         : null,
                 plan.getMethodologyStrategyKey(),
+                plan.getRiskAssessmentResult() != null
+                        ? plan.getRiskAssessmentResult().getId()
+                        : null,
+                plan.getMonitoredRiskFactors(),
+                plan.getUpdateCadence(),
                 plan.getCreatedAt(),
                 plan.getUpdatedAt());
     }

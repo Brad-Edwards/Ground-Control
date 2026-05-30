@@ -1072,6 +1072,31 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
         "CROSSWALK_VOCABULARY_SURFACES",
         "CROSSWALK_VOCABULARY_SURFACES",
     ),
+    # GC-T005 / T006 / T007 risk-governance lifecycle enums. Mirrored at the
+    # /api/v1/risk-appetite-profiles, /api/v1/risk-assessment-campaigns, and
+    # /api/v1/key-risk-indicators boundaries and in the MCP gc_risk_governance
+    # tool surface. ADR-034.
+    EnumContract(
+        "AppetiteToleranceKind",
+        f"{_RISK_ENUM_STATE_DIR}/AppetiteToleranceKind.java",
+        "AppetiteToleranceKind",
+        "APPETITE_TOLERANCE_KINDS",
+        "APPETITE_TOLERANCE_KINDS",
+    ),
+    EnumContract(
+        "CampaignPhase",
+        f"{_RISK_ENUM_STATE_DIR}/CampaignPhase.java",
+        "CampaignPhase",
+        "CAMPAIGN_PHASES",
+        "CAMPAIGN_PHASES",
+    ),
+    EnumContract(
+        "KriThresholdBand",
+        f"{_RISK_ENUM_STATE_DIR}/KriThresholdBand.java",
+        "KriThresholdBand",
+        "KRI_THRESHOLD_BANDS",
+        "KRI_THRESHOLD_BANDS",
+    ),
 )
 
 

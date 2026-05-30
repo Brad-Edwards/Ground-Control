@@ -10,9 +10,11 @@ import com.keplerops.groundcontrol.domain.riskscenarios.events.ReassessmentSourc
 import com.keplerops.groundcontrol.domain.riskscenarios.events.TreatmentProgressChangedEvent;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.MonitoredRiskFactor;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.MethodologyProfileRepository;
+import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskRegisterRecordRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.TreatmentPlanRepository;
@@ -48,17 +50,19 @@ public class TreatmentPlanService {
     private final RiskRegisterRecordRepository riskRegisterRecordRepository;
     private final RiskScenarioRepository riskScenarioRepository;
     private final MethodologyProfileRepository methodologyProfileRepository;
+    private final RiskAssessmentResultRepository riskAssessmentResultRepository;
     private final ProjectService projectService;
     private final Validator validator;
     private final GraphTargetResolverService graphTargetResolverService;
     private final ApplicationEventPublisher eventPublisher;
 
-    @SuppressWarnings("java:S107") // service aggregates eight collaborators from the constructor on purpose
+    @SuppressWarnings("java:S107") // service aggregates nine collaborators from the constructor on purpose
     public TreatmentPlanService(
             TreatmentPlanRepository repository,
             RiskRegisterRecordRepository riskRegisterRecordRepository,
             RiskScenarioRepository riskScenarioRepository,
             MethodologyProfileRepository methodologyProfileRepository,
+            RiskAssessmentResultRepository riskAssessmentResultRepository,
             ProjectService projectService,
             Validator validator,
             GraphTargetResolverService graphTargetResolverService,
@@ -67,6 +71,7 @@ public class TreatmentPlanService {
         this.riskRegisterRecordRepository = riskRegisterRecordRepository;
         this.riskScenarioRepository = riskScenarioRepository;
         this.methodologyProfileRepository = methodologyProfileRepository;
+        this.riskAssessmentResultRepository = riskAssessmentResultRepository;
         this.projectService = projectService;
         this.validator = validator;
         this.graphTargetResolverService = graphTargetResolverService;
@@ -170,6 +175,12 @@ public class TreatmentPlanService {
                 command.reassessmentTriggers(),
                 command.methodologyProfileId(),
                 command.methodologyStrategyKey());
+        applyMonitoringFields(
+                plan,
+                projectId,
+                command.riskAssessmentResultId(),
+                command.monitoredRiskFactors(),
+                command.updateCadence());
     }
 
     private void applyUpdates(TreatmentPlan plan, UUID projectId, UpdateTreatmentPlanCommand command) {
@@ -185,6 +196,58 @@ public class TreatmentPlanService {
                 command.reassessmentTriggers(),
                 command.methodologyProfileId(),
                 command.methodologyStrategyKey());
+        applyMonitoringFields(
+                plan,
+                projectId,
+                command.riskAssessmentResultId(),
+                command.monitoredRiskFactors(),
+                command.updateCadence());
+    }
+
+    /**
+     * GC-T015: apply monitoring fields (RAR FK, monitored factors, cadence). The RAR
+     * FK is routed through {@code GraphTargetResolverService.validateRiskAssessmentResultTarget}
+     * so a cross-project RAR id is rejected before persistence (closes the
+     * GC-T004/C8 cross-project bug class).
+     */
+    private void applyMonitoringFields(
+            TreatmentPlan plan,
+            UUID projectId,
+            UUID riskAssessmentResultId,
+            List<MonitoredRiskFactor> monitoredRiskFactors,
+            String updateCadence) {
+        if (riskAssessmentResultId != null) {
+            graphTargetResolverService.validateRiskAssessmentResultTarget(projectId, riskAssessmentResultId);
+            var rar = riskAssessmentResultRepository
+                    .findByIdAndProjectId(riskAssessmentResultId, projectId)
+                    .orElseThrow(
+                            () -> new NotFoundException("Risk assessment result not found: " + riskAssessmentResultId));
+            plan.setRiskAssessmentResult(rar);
+        }
+        if (monitoredRiskFactors != null) {
+            validateMonitoredRiskFactors(monitoredRiskFactors);
+            plan.setMonitoredRiskFactors(monitoredRiskFactors);
+        }
+        if (updateCadence != null) {
+            plan.setUpdateCadence(updateCadence.isBlank() ? null : updateCadence);
+        }
+    }
+
+    private void validateMonitoredRiskFactors(List<MonitoredRiskFactor> factors) {
+        for (int i = 0; i < factors.size(); i++) {
+            var factor = factors.get(i);
+            if (factor == null) {
+                throw new DomainValidationException("Monitored risk factor at index " + i + " must not be null");
+            }
+            Set<ConstraintViolation<MonitoredRiskFactor>> violations = validator.validate(factor);
+            if (!violations.isEmpty()) {
+                String detail = violations.stream()
+                        .map(v -> v.getPropertyPath() + " " + v.getMessage())
+                        .sorted()
+                        .collect(Collectors.joining("; "));
+                throw new DomainValidationException("Monitored risk factor at index " + i + " has invalid " + detail);
+            }
+        }
     }
 
     @SuppressWarnings("java:S107") // shared updater is a single point of mutation; arg count tracks the DTO surface

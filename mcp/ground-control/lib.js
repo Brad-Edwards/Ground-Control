@@ -9134,6 +9134,27 @@ export const CROSSWALK_VOCABULARY_SURFACES = [
   "TREATMENT_STRATEGY_VOCABULARY",
 ];
 
+// GC-T005 / T006 / T007 risk-governance lifecycle enums (ADR-034 mirrors).
+// Declaration order matches the Java enum sources exactly.
+export const APPETITE_TOLERANCE_KINDS = [
+  "QUALITATIVE",
+  "MONETARY_RANGE",
+  "LOSS_EVENT_FREQUENCY",
+  "EXCEEDANCE_PROBABILITY",
+  "COMPOSITE",
+];
+
+export const CAMPAIGN_PHASES = [
+  "PLANNING",
+  "IDENTIFICATION",
+  "ANALYSIS",
+  "EVALUATION",
+  "TREATMENT",
+  "CLOSED",
+];
+
+export const KRI_THRESHOLD_BANDS = ["GREEN", "YELLOW", "RED"];
+
 // ---------------------------------------------------------------------------
 // Audit API functions (GC-U001 / ADR-047)
 // ---------------------------------------------------------------------------
@@ -9783,6 +9804,96 @@ export async function transitionTreatmentPlanStatus(id, status, project) {
 
 export async function deleteTreatmentPlan(id, project) {
   await request("DELETE", `/api/v1/treatment-plans/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+// ---------------------------------------------------------------------------
+// GC-T005 / T006 / T007 risk-governance lifecycle API functions
+// ---------------------------------------------------------------------------
+
+// --- Risk Appetite Profile (GC-T005) ---
+export async function createRiskAppetiteProfile(data, project) {
+  return request("POST", "/api/v1/risk-appetite-profiles", { body: data, params: { project } });
+}
+
+export async function listRiskAppetiteProfiles(project) {
+  return request("GET", "/api/v1/risk-appetite-profiles", { params: { project } });
+}
+
+export async function getRiskAppetiteProfile(id, project) {
+  return request("GET", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function updateRiskAppetiteProfile(id, data, project) {
+  return request("PUT", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function deleteRiskAppetiteProfile(id, project) {
+  await request("DELETE", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+// --- Risk Assessment Campaign (GC-T006) ---
+export async function createRiskAssessmentCampaign(data, project) {
+  return request("POST", "/api/v1/risk-assessment-campaigns", { body: data, params: { project } });
+}
+
+export async function listRiskAssessmentCampaigns(project) {
+  return request("GET", "/api/v1/risk-assessment-campaigns", { params: { project } });
+}
+
+export async function getRiskAssessmentCampaign(id, project) {
+  return request("GET", `/api/v1/risk-assessment-campaigns/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function updateRiskAssessmentCampaign(id, data, project) {
+  return request("PUT", `/api/v1/risk-assessment-campaigns/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function advanceRiskAssessmentCampaignPhase(id, phase, project) {
+  return request("PUT", `/api/v1/risk-assessment-campaigns/${encodeURIComponent(id)}/phase`, {
+    body: { phase },
+    params: { project },
+  });
+}
+
+export async function deleteRiskAssessmentCampaign(id, project) {
+  await request("DELETE", `/api/v1/risk-assessment-campaigns/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+// --- Key Risk Indicator (GC-T007) ---
+export async function createKeyRiskIndicator(data, project) {
+  return request("POST", "/api/v1/key-risk-indicators", { body: data, params: { project } });
+}
+
+export async function listKeyRiskIndicators(project) {
+  return request("GET", "/api/v1/key-risk-indicators", { params: { project } });
+}
+
+export async function getKeyRiskIndicator(id, project) {
+  return request("GET", `/api/v1/key-risk-indicators/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function updateKeyRiskIndicator(id, data, project) {
+  return request("PUT", `/api/v1/key-risk-indicators/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function recordKriMeasurement(id, value, measuredAt, project) {
+  return request("POST", `/api/v1/key-risk-indicators/${encodeURIComponent(id)}/measurements`, {
+    body: { value, measuredAt },
+    params: { project },
+  });
+}
+
+export async function deleteKeyRiskIndicator(id, project) {
+  await request("DELETE", `/api/v1/key-risk-indicators/${encodeURIComponent(id)}`, { params: { project } });
 }
 
 // ---------------------------------------------------------------------------
@@ -14117,11 +14228,42 @@ export const GOVERNANCE_FIELDS = {
       "strategy", "owner", "rationale", "due_date", "status",
       "action_items", "reassessment_triggers",
       "methodology_profile_id", "methodology_strategy_key",
+      // GC-T015 extensions
+      "risk_assessment_result_id", "monitored_risk_factors", "update_cadence",
     ],
     update: [
       "title", "risk_scenario_id", "strategy", "owner",
       "rationale", "due_date", "action_items", "reassessment_triggers",
       "methodology_profile_id", "methodology_strategy_key",
+      // GC-T015 extensions
+      "risk_assessment_result_id", "monitored_risk_factors", "update_cadence",
+    ],
+  },
+  // GC-T005: Risk Appetite Profile
+  risk_appetite_profile: {
+    create: ["profile_key", "name", "version", "appetite_statement", "owner", "active", "tolerances"],
+    update: ["name", "version", "appetite_statement", "owner", "active", "tolerances"],
+  },
+  // GC-T006: Risk Assessment Campaign
+  risk_assessment_campaign: {
+    create: [
+      "uid", "title", "owner", "objective", "methodology_profile_id", "appetite_profile_id",
+      "scheduled_start", "scheduled_end", "scope", "approval_metadata", "scoped_asset_ids",
+    ],
+    update: [
+      "title", "owner", "objective", "methodology_profile_id", "appetite_profile_id",
+      "scheduled_start", "scheduled_end", "scope", "approval_metadata", "scoped_asset_ids",
+    ],
+  },
+  // GC-T007: Key Risk Indicator
+  key_risk_indicator: {
+    create: [
+      "uid", "name", "description", "metric_unit", "yellow_threshold", "red_threshold",
+      "direction", "owner", "risk_register_record_id", "risk_scenario_id",
+    ],
+    update: [
+      "name", "description", "metric_unit", "yellow_threshold", "red_threshold",
+      "direction", "owner", "risk_register_record_id", "risk_scenario_id",
     ],
   },
   verification_result: {

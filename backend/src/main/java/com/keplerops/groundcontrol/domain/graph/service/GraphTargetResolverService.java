@@ -13,7 +13,10 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.findings.repository.FindingRepository;
 import com.keplerops.groundcontrol.domain.findings.state.FindingLinkTargetType;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
+import com.keplerops.groundcontrol.domain.riskscenarios.repository.KeyRiskIndicatorRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.MethodologyProfileRepository;
+import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAppetiteProfileRepository;
+import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentCampaignRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskRegisterRecordRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
@@ -50,6 +53,9 @@ public class GraphTargetResolverService {
     private static final String LABEL_AUDIT = "Audit";
     private static final String LABEL_EVIDENCE = "Evidence";
     private static final String LABEL_DOCUMENT = "Document";
+    private static final String LABEL_APPETITE_PROFILE = "Risk appetite profile";
+    private static final String LABEL_CAMPAIGN = "Risk assessment campaign";
+    private static final String LABEL_KRI = "Key risk indicator";
 
     private final RequirementRepository requirementRepository;
     private final OperationalAssetRepository assetRepository;
@@ -66,7 +72,11 @@ public class GraphTargetResolverService {
     private final AuditRepository auditRepository;
     private final EvidenceArtifactRepository evidenceArtifactRepository;
     private final DocumentRepository documentRepository;
+    private final RiskAppetiteProfileRepository riskAppetiteProfileRepository;
+    private final RiskAssessmentCampaignRepository riskAssessmentCampaignRepository;
+    private final KeyRiskIndicatorRepository keyRiskIndicatorRepository;
 
+    @SuppressWarnings("java:S107") // resolver fans out across every project-scoped repository on purpose
     public GraphTargetResolverService(
             RequirementRepository requirementRepository,
             OperationalAssetRepository assetRepository,
@@ -82,7 +92,10 @@ public class GraphTargetResolverService {
             FindingRepository findingRepository,
             AuditRepository auditRepository,
             EvidenceArtifactRepository evidenceArtifactRepository,
-            DocumentRepository documentRepository) {
+            DocumentRepository documentRepository,
+            RiskAppetiteProfileRepository riskAppetiteProfileRepository,
+            RiskAssessmentCampaignRepository riskAssessmentCampaignRepository,
+            KeyRiskIndicatorRepository keyRiskIndicatorRepository) {
         this.requirementRepository = requirementRepository;
         this.assetRepository = assetRepository;
         this.observationRepository = observationRepository;
@@ -98,6 +111,9 @@ public class GraphTargetResolverService {
         this.auditRepository = auditRepository;
         this.evidenceArtifactRepository = evidenceArtifactRepository;
         this.documentRepository = documentRepository;
+        this.riskAppetiteProfileRepository = riskAppetiteProfileRepository;
+        this.riskAssessmentCampaignRepository = riskAssessmentCampaignRepository;
+        this.keyRiskIndicatorRepository = keyRiskIndicatorRepository;
     }
 
     public ValidatedTarget validateAssetTarget(
@@ -399,8 +415,50 @@ public class GraphTargetResolverService {
                             .findByIdAndProjectId(targetEntityId, projectId)
                             .isPresent(),
                     LABEL_TREATMENT_PLAN);
+            case RISK_APPETITE_PROFILE -> internalTarget(
+                    targetEntityId,
+                    riskAppetiteProfileRepository
+                            .findByIdAndProjectId(targetEntityId, projectId)
+                            .isPresent(),
+                    LABEL_APPETITE_PROFILE);
+            case RISK_ASSESSMENT_CAMPAIGN -> internalTarget(
+                    targetEntityId,
+                    riskAssessmentCampaignRepository
+                            .findByIdAndProjectId(targetEntityId, projectId)
+                            .isPresent(),
+                    LABEL_CAMPAIGN);
+            case KEY_RISK_INDICATOR -> internalTarget(
+                    targetEntityId,
+                    keyRiskIndicatorRepository
+                            .findByIdAndProjectId(targetEntityId, projectId)
+                            .isPresent(),
+                    LABEL_KRI);
+            case OBSERVATION -> internalTarget(
+                    targetEntityId,
+                    observationRepository
+                            .findByIdWithAssetAndProjectId(targetEntityId, projectId)
+                            .isPresent(),
+                    LABEL_OBSERVATION);
+            case THREAT_MODEL -> internalTarget(
+                    targetEntityId,
+                    threatModelRepository.existsByIdAndProjectId(targetEntityId, projectId),
+                    LABEL_THREAT_MODEL);
             case EXTERNAL -> externalTarget(targetIdentifier);
         };
+    }
+
+    /**
+     * GC-T015: validates a {@link
+     * com.keplerops.groundcontrol.domain.riskscenarios.model.RiskAssessmentResult}
+     * target is present in the requested project. Closes the GC-T004 / C8
+     * cross-project bug class for TreatmentPlan.riskAssessmentResult FK
+     * (see cross-cutting decisions for cluster 1).
+     */
+    public ValidatedTarget validateRiskAssessmentResultTarget(UUID projectId, UUID targetEntityId) {
+        return internalTarget(
+                targetEntityId,
+                riskAssessmentResultRepository.existsByIdAndProjectId(targetEntityId, projectId),
+                LABEL_RISK_ASSESSMENT_RESULT);
     }
 
     public ValidatedTarget validateDocumentTarget(UUID projectId, UUID targetEntityId) {

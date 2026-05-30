@@ -495,6 +495,10 @@ class PolicyChecksTest(unittest.TestCase):
                 "NistImpactBand",
                 "NormalizedConcept",
                 "CrosswalkVocabularySurface",
+                # GC-T005 / T006 / T007 risk-governance lifecycle enums
+                "AppetiteToleranceKind",
+                "CampaignPhase",
+                "KriThresholdBand",
             },
         )
         for contract in ENUM_CONTRACT_INVENTORY:

@@ -148,3 +148,12 @@ the tool description strings in `index.js` and the skill prose under
 the prose-side guardrail. The surface addition is recorded in the ADR-054
 amendment and the changelog fragment; no new DOC_STYLE.md prose is needed
 unless a new style rule is being established.
+
+The GC-T005 / T006 / T007 / T015 risk-governance lifecycle additions
+(`createRiskAppetiteProfile` and the parallel campaign / KRI API-client
+families in `mcp/ground-control/lib.js`, plus the enum mirrors
+`APPETITE_TOLERANCE_KINDS` / `CAMPAIGN_PHASES` / `KRI_THRESHOLD_BANDS`)
+follow the established additive-surface pattern: the tool description
+strings in `mcp/ground-control/index.js` carry the user-facing wording,
+`docs/API.md` documents the REST surfaces, and ADR-054 records the
+surface addition. No new style rule is established by this change.
