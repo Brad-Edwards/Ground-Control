@@ -1191,6 +1191,25 @@ export async function analyzeNistAssessment({
   });
 }
 
+/**
+ * GET /api/v1/analysis/grc/portfolio — read-only GRC Portfolio Reporting roll-up
+ * per GC-Q013. Returns risk posture, control health, evidence freshness, finding
+ * trends, asset criticality concentration, and methodology-family summaries, with
+ * drill-down id lists. No new materialized state (GC-L007).
+ *
+ * @param {object} params
+ * @param {string} [params.project] - project identifier or UUID
+ * @param {string} [params.asOf] - ISO-8601 instant reference
+ * @param {number} [params.freshnessWindowDays] - freshness window in days (default 90)
+ */
+export async function analyzePortfolio({ project, asOf, freshnessWindowDays } = {}) {
+  const params = {};
+  if (project != null) params.project = project;
+  if (asOf != null) params.asOf = asOf;
+  if (freshnessWindowDays != null) params.freshnessWindowDays = String(freshnessWindowDays);
+  return request("GET", "/api/v1/analysis/grc/portfolio", { params });
+}
+
 // Strict containment predicate. Both arguments MUST already be canonical
 // realpaths — call `realpathSync` on each side before invoking this. Returns
 // true iff `canonicalPath` is strictly inside `canonicalRoot` (rejects the
@@ -1537,6 +1556,26 @@ export async function getTraceabilityByArtifact(artifactType, artifactIdentifier
   return request("GET", "/api/v1/requirements/traceability/by-artifact", {
     params: { artifactType, artifactIdentifier },
   });
+}
+
+/**
+ * GET /api/v1/requirements/traceability/matrix — read-only Traceability Matrix
+ * per GC-Q003. Returns requirement rows with their traceability links projected
+ * as cells per LinkType, plus per-LinkType coverage columns and gap counts.
+ *
+ * @param {object} params
+ * @param {string} [params.project] - project identifier or UUID
+ * @param {number} [params.wave] - filter rows to a single wave
+ * @param {string} [params.status] - filter rows by requirement Status enum
+ * @param {string} [params.linkType] - narrow cells and columns to one LinkType enum
+ */
+export async function getTraceabilityMatrix({ project, wave, status, linkType } = {}) {
+  const params = {};
+  if (project != null) params.project = project;
+  if (wave != null) params.wave = String(wave);
+  if (status != null) params.status = status;
+  if (linkType != null) params.linkType = linkType;
+  return request("GET", "/api/v1/requirements/traceability/matrix", { params });
 }
 
 // ---------------------------------------------------------------------------
@@ -9093,6 +9132,39 @@ export async function getEvidenceArtifact(id, project) {
   return request("GET", `/api/v1/evidence-artifacts/${encodeURIComponent(id)}`, { params: { project } });
 }
 
+/**
+ * GET /api/v1/evidence-artifacts/explorer — read-only Evidence and State Explorer
+ * per GC-Q012. Returns evidence artifacts and observations annotated with freshness
+ * state (reused from the GC-L007 freshness analysis), provenance (sources / observation
+ * source+confidence+evidenceRef), affected assets, and downstream finding impact, plus
+ * a freshness counts roll-up.
+ *
+ * @param {object} params
+ * @param {string} [params.project] - project identifier or UUID
+ * @param {string} [params.assetId] - scope to a single asset UUID
+ * @param {string} [params.evidenceType] - filter artifacts by EvidenceType enum
+ * @param {string} [params.asOf] - ISO-8601 instant for the freshness reference
+ * @param {number} [params.freshnessWindowDays] - freshness window in days (default 90)
+ * @param {boolean} [params.includeSuperseded] - surface superseded artifacts (default true)
+ */
+export async function getEvidenceExplorer({
+  project,
+  assetId,
+  evidenceType,
+  asOf,
+  freshnessWindowDays,
+  includeSuperseded,
+} = {}) {
+  const params = {};
+  if (project != null) params.project = project;
+  if (assetId != null) params.assetId = assetId;
+  if (evidenceType != null) params.evidenceType = evidenceType;
+  if (asOf != null) params.asOf = asOf;
+  if (freshnessWindowDays != null) params.freshnessWindowDays = String(freshnessWindowDays);
+  if (includeSuperseded != null) params.includeSuperseded = String(includeSuperseded);
+  return request("GET", "/api/v1/evidence-artifacts/explorer", { params });
+}
+
 export async function supersedeEvidenceArtifact(id, data, project) {
   return request("POST", `/api/v1/evidence-artifacts/${encodeURIComponent(id)}/supersede`, {
     body: data,
@@ -9571,6 +9643,41 @@ export async function getControl(id, project) {
 
 export async function getControlByUid(uid, project) {
   return request("GET", `/api/v1/controls/uid/${encodeURIComponent(uid)}`, { params: { project } });
+}
+
+/**
+ * GET /api/v1/controls/workspace — read-only Control and Assurance Workspace per
+ * GC-Q011. Returns controls with scoped implementations, control-test summary +
+ * history, latest effectiveness assessment, mapping count, exceptions (linked
+ * findings), evidence-freshness staleness indicator, and owner work queues.
+ *
+ * @param {object} params
+ * @param {string} [params.project] - project identifier or UUID
+ * @param {string} [params.status] - filter by ControlStatus enum
+ * @param {string} [params.controlFunction] - filter by ControlFunction enum
+ * @param {string} [params.owner] - exact owner filter
+ * @param {string} [params.assetId] - filter controls linked to this asset UUID
+ * @param {string} [params.asOf] - ISO-8601 instant for freshness reference
+ * @param {number} [params.freshnessWindowDays] - freshness window in days (default 90)
+ */
+export async function getControlWorkspace({
+  project,
+  status,
+  controlFunction,
+  owner,
+  assetId,
+  asOf,
+  freshnessWindowDays,
+} = {}) {
+  const params = {};
+  if (project != null) params.project = project;
+  if (status != null) params.status = status;
+  if (controlFunction != null) params.controlFunction = controlFunction;
+  if (owner != null) params.owner = owner;
+  if (assetId != null) params.assetId = assetId;
+  if (asOf != null) params.asOf = asOf;
+  if (freshnessWindowDays != null) params.freshnessWindowDays = String(freshnessWindowDays);
+  return request("GET", "/api/v1/controls/workspace", { params });
 }
 
 export async function updateControl(id, data, project) {

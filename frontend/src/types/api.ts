@@ -1451,3 +1451,345 @@ export interface RiskScenarioWorkspaceResponse {
   scenarioCount: number;
   assetCount: number;
 }
+
+// ---------------------------------------------------------------------------
+// GC-Q003 — Traceability Matrix types.
+//
+// Read-only requirements × link-type matrix. Cells project each TraceabilityLink;
+// columns roll coverage up per LinkType. `hasGap` is flagged only for ACTIVE
+// requirements missing a coverage axis (IMPLEMENTS / TESTS) — see the backend
+// TraceabilityMatrixResult javadoc.
+// ---------------------------------------------------------------------------
+
+export interface MatrixCell {
+  linkId: string;
+  linkType: LinkType;
+  artifactType: ArtifactType;
+  artifactIdentifier: string;
+  artifactTitle: string;
+  artifactUrl: string;
+  syncStatus: SyncStatus;
+}
+
+export interface MatrixRow {
+  requirementId: string;
+  uid: string;
+  title: string;
+  status: Status;
+  wave: number | null;
+  priority: Priority;
+  cells: MatrixCell[];
+  coveredLinkTypes: LinkType[];
+  hasGap: boolean;
+}
+
+export interface LinkTypeColumn {
+  linkType: LinkType;
+  coveredRequirements: number;
+  totalRequirements: number;
+  artifactCount: number;
+}
+
+export interface TraceabilityMatrixResponse {
+  rows: MatrixRow[];
+  columns: LinkTypeColumn[];
+  requirementCount: number;
+  linkedRequirementCount: number;
+  gapCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// GC-Q011 — Control and Assurance Workspace types.
+// ---------------------------------------------------------------------------
+
+export type ControlStatus =
+  | "DRAFT"
+  | "PROPOSED"
+  | "IMPLEMENTED"
+  | "OPERATIONAL"
+  | "DEPRECATED"
+  | "RETIRED";
+
+export type ControlTestMethodology =
+  | "INQUIRY"
+  | "OBSERVATION"
+  | "INSPECTION"
+  | "RE_PERFORMANCE";
+
+export type ControlTestConclusion = "EFFECTIVE" | "INEFFECTIVE" | "NOT_TESTED";
+
+export type ControlEffectivenessRating =
+  | "EFFECTIVE"
+  | "PARTIALLY_EFFECTIVE"
+  | "INEFFECTIVE";
+
+export type FindingType =
+  | "AUDIT_FINDING"
+  | "CONTROL_DEFICIENCY"
+  | "POLICY_VIOLATION"
+  | "VULNERABILITY"
+  | "EXCEPTION_ESCALATION";
+
+export type FindingSeverity =
+  | "CRITICAL"
+  | "HIGH"
+  | "MEDIUM"
+  | "LOW"
+  | "INFORMATIONAL";
+
+export type FindingStatus =
+  | "OPEN"
+  | "REMEDIATION_IN_PROGRESS"
+  | "REMEDIATION_COMPLETE"
+  | "VERIFIED_CLOSED";
+
+export interface WorkspaceScopedImplementation {
+  id: string;
+  uid: string;
+  name: string;
+  operationalAssetId: string | null;
+}
+
+export interface WorkspaceControlTest {
+  id: string;
+  uid: string;
+  methodology: ControlTestMethodology;
+  conclusion: ControlTestConclusion;
+  testDate: string | null;
+  testerIdentity: string;
+}
+
+export interface WorkspaceTestSummary {
+  total: number;
+  effective: number;
+  ineffective: number;
+  notTested: number;
+  latestTestDate: string | null;
+  latestConclusion: ControlTestConclusion | null;
+}
+
+export interface WorkspaceControlAssessment {
+  id: string;
+  uid: string;
+  designEffectiveness: ControlEffectivenessRating;
+  operatingEffectiveness: ControlEffectivenessRating;
+  assessedAt: string | null;
+  assessor: string;
+}
+
+export interface WorkspaceExceptionRef {
+  id: string;
+  uid: string;
+  title: string;
+  findingType: FindingType;
+  severity: FindingSeverity;
+  status: FindingStatus;
+}
+
+export interface WorkspaceControl {
+  id: string;
+  uid: string;
+  title: string;
+  controlFunction: ControlFunction;
+  status: ControlStatus;
+  owner: string;
+  category: string;
+  scopedImplementations: WorkspaceScopedImplementation[];
+  tests: WorkspaceControlTest[];
+  testSummary: WorkspaceTestSummary;
+  latestAssessment: WorkspaceControlAssessment | null;
+  mappingCount: number;
+  exceptions: WorkspaceExceptionRef[];
+  linkedAssetIds: string[];
+  staleIndicator: FreshnessState;
+  needsAttention: boolean;
+}
+
+export interface OwnerQueue {
+  owner: string;
+  totalControls: number;
+  attentionControls: number;
+  attentionControlUids: string[];
+}
+
+export interface ControlWorkspaceResponse {
+  controls: WorkspaceControl[];
+  ownerQueues: OwnerQueue[];
+  assets: WorkspaceAsset[];
+  controlCount: number;
+  ownerQueueCount: number;
+  assetCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// GC-Q012 — Evidence and State Explorer types.
+// ---------------------------------------------------------------------------
+
+export type EvidenceType =
+  | "OBSERVATION_SUMMARY"
+  | "CONTROL_TEST_SUMMARY"
+  | "ASSURANCE_CONCLUSION"
+  | "VERIFICATION_SUMMARY"
+  | "ATTESTATION"
+  | "MIXED";
+
+export type EvidenceSourceKind =
+  | "OBSERVATION"
+  | "CONTROL_TEST"
+  | "CONTROL_EFFECTIVENESS_ASSESSMENT"
+  | "VERIFICATION_RESULT"
+  | "RISK_ASSESSMENT_RESULT"
+  | "FINDING"
+  | "ATTESTATION"
+  | "EXTERNAL";
+
+export type AssuranceLevel = "L0" | "L1" | "L2" | "L3";
+
+export interface ExplorerSource {
+  sourceKind: EvidenceSourceKind;
+  sourceEntityId: string | null;
+  sourceIdentifier: string | null;
+  role: string;
+}
+
+export interface ExplorerFindingRef {
+  id: string;
+  uid: string;
+  title: string;
+  severity: FindingSeverity;
+  status: FindingStatus;
+}
+
+export interface ExplorerArtifact {
+  id: string;
+  uid: string;
+  title: string;
+  evidenceType: EvidenceType;
+  derivationMethod: string;
+  derivedAt: string | null;
+  derivedBy: string;
+  assuranceLevel: AssuranceLevel;
+  confidence: string;
+  supersededByArtifactId: string | null;
+  freshnessState: FreshnessState;
+  ageDays: number;
+  sources: ExplorerSource[];
+  downstreamFindings: ExplorerFindingRef[];
+}
+
+export interface ExplorerObservation {
+  id: string;
+  assetId: string;
+  assetUid: string;
+  category: string | null;
+  observationKey: string;
+  observationValue: string | null;
+  source: string | null;
+  confidence: string | null;
+  evidenceRef: string | null;
+  observedAt: string | null;
+  expiresAt: string | null;
+  freshnessState: FreshnessState;
+  ageDays: number;
+  downstreamFindings: ExplorerFindingRef[];
+}
+
+export interface EvidenceFreshnessCounts {
+  fresh: number;
+  stale: number;
+  expired: number;
+  superseded: number;
+  currentlyValid: number;
+}
+
+export interface EvidenceExplorerResponse {
+  evidenceArtifacts: ExplorerArtifact[];
+  observations: ExplorerObservation[];
+  counts: EvidenceFreshnessCounts;
+  limitations: string[];
+  artifactCount: number;
+  observationCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// GC-Q013 — GRC Portfolio Reporting Views types.
+//
+// Distribution maps are keyed by the originating enum name; absent buckets are
+// implicitly zero (see the backend PortfolioSummaryResult javadoc).
+// ---------------------------------------------------------------------------
+
+export type Distribution = Record<string, number>;
+
+export interface PortfolioRiskPosture {
+  totalScenarios: number;
+  scenariosByStatus: Distribution;
+  totalAssessments: number;
+  assessmentsByApprovalState: Distribution;
+  totalTreatments: number;
+  treatmentsByStatus: Distribution;
+  treatmentsByStrategy: Distribution;
+  totalRegisterRecords: number;
+  registerByStatus: Distribution;
+  reassessmentSignals: number;
+  overdueReviews: number;
+  overdueRegisterRecordUids: string[];
+}
+
+export interface PortfolioControlHealth {
+  totalControls: number;
+  controlsByStatus: Distribution;
+  designEffectivenessDistribution: Distribution;
+  operatingEffectivenessDistribution: Distribution;
+  unassessedControls: number;
+  unmappedControls: number;
+  unassessedControlUids: string[];
+  unmappedControlUids: string[];
+}
+
+export interface PortfolioEvidenceFreshness {
+  fresh: number;
+  stale: number;
+  expired: number;
+  superseded: number;
+  currentlyValid: number;
+}
+
+export interface PortfolioFindingTrends {
+  totalFindings: number;
+  bySeverity: Distribution;
+  byStatus: Distribution;
+  byType: Distribution;
+  openCount: number;
+  overdueCount: number;
+  openFindingUids: string[];
+  overdueFindingUids: string[];
+}
+
+export interface PortfolioAssetCriticality {
+  totalAssets: number;
+  byCriticality: Distribution;
+  byEnvironment: Distribution;
+  byScope: Distribution;
+  criticalAssetUids: string[];
+}
+
+export interface PortfolioMethodologySummary {
+  family: string;
+  profileCount: number;
+  assessmentCount: number;
+  approvedAssessmentCount: number;
+  assessmentsWithComputedOutputs: number;
+}
+
+export interface PortfolioSummaryResponse {
+  project: string;
+  asOf: string;
+  derivationMethod: string;
+  riskPosture: PortfolioRiskPosture;
+  controlHealth: PortfolioControlHealth;
+  evidenceFreshness: PortfolioEvidenceFreshness;
+  findingTrends: PortfolioFindingTrends;
+  assetCriticality: PortfolioAssetCriticality;
+  methodologySummaries: PortfolioMethodologySummary[];
+  limitations: string[];
+}

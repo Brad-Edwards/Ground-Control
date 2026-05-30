@@ -63,6 +63,7 @@ http://localhost:8000/api/v1/
 | POST | `/requirements/{id}/traceability` | TraceabilityLinkRequest | 201 | Create traceability link |
 | GET | `/requirements/{id}/traceability` |—| 200 | List traceability links |
 | GET | `/requirements/traceability/by-artifact` |—| 200 | Reverse lookup: find links by artifact |
+| GET | `/requirements/traceability/matrix` |—| 200 | Read-only traceability matrix: requirement rows with links projected as cells per link type, per-link-type coverage columns, and ACTIVE-requirement gap counts. Filters: `wave`, `status`, `linkType` (GC-Q003) |
 | DELETE | `/requirements/{id}/traceability/{linkId}` |—| 204 / 404 | Delete traceability link. Returns 404 if `linkId` does not belong to `id`. |
 
 `GET /requirements/traceability/by-artifact` accepts query parameters:
@@ -237,6 +238,7 @@ the engine lands). NIST SP 800-30 Rev. 1 ships under GC-T014 / #721 as the
 | GET | `/analysis/grc/observation-projection?mode=ASSET_EXPOSURE\|CONTROL_STATE` |—| 200 | Current-state projection from observations; ASSET_EXPOSURE flags assets with active observations; CONTROL_STATE joins through `ControlEffectivenessAssessment`. |
 | GET | `/analysis/grc/vendor-risk` |—| 200 | Aggregation over `OperationalAsset` of `AssetType.THIRD_PARTY` (findings, observations, evidence freshness, mapped controls). |
 | GET | `/analysis/grc/nist-sp-800-30` |—| 200 | NIST SP 800-30 Rev. 1 methodology-attributed view over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `NIST_SP800_30_R1`. Decodes inputs into threat source, threat event (`ADVERSARIAL` / `NON_ADVERSARIAL`), vulnerabilities, predisposing conditions, threat-source relevance, multi-dimensional likelihood, impact level, and assessment timeframe; computes overall likelihood (analyst-supplied or derived per Table G-5) and risk level (per Table I-2) as ordinal bands with explicit `scale`/`units` and a matrix cell label. |
+| GET | `/analysis/grc/portfolio` |—| 200 | GRC Portfolio Reporting roll-up (GC-Q013): risk posture (scenario/assessment/treatment/register distributions, reassessment + overdue-review signals), control health (status + design/operating effectiveness distributions, unassessed + unmapped counts), evidence freshness counts, finding trends (severity/status/type, open + overdue), asset criticality concentration (criticality/environment/scope), and methodology-family (FAIR/NIST/ISO) summaries. Each dimension carries actionable drill-down id lists behind its key signal counts (critical assets, unmapped + unassessed controls, overdue register reviews, open + overdue findings). Read-only projection; no new materialized state. Accepts `asOf`, `freshnessWindowDays`. |
 
 `GET /analysis/grc/evidence-freshness` accepts:
 
@@ -1324,6 +1326,12 @@ entity), EVIDENCED_BY (audit is evidenced by the linked artifact), FOLLOWS_UP_ON
 `FINAL_REPORT` can transition back to `DRAFT_REPORT` for rework. `CLOSED` is
 terminal.
 
+### Control & Assurance Workspace (GC-Q011)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/controls/workspace` |—| 200 | Read-only composition: controls with scoped implementations, control-test summary and history, latest effectiveness assessment, risk-control mapping count, exceptions (linked findings), evidence-freshness staleness indicator, and per-owner work queues. Filters: `status`, `controlFunction`, `owner`, `assetId`, `asOf`, `freshnessWindowDays` |
+
 ### Control Tests (GC-I012)
 
 | Method | Path | Body | Status | Purpose |
@@ -1440,6 +1448,7 @@ The `unmapped-records` endpoint accepts `transitive` (boolean, default `true`). 
 | GET | `/evidence-artifacts` |—| 200 | List artifacts (optional `evidenceType`, `includeSuperseded` filters) |
 | GET | `/evidence-artifacts/{id}` |—| 200 | Get an artifact by UUID |
 | POST | `/evidence-artifacts/{id}/supersede` | EvidenceArtifactRequest | 201 | Create a new artifact and link the prior one as superseded |
+| GET | `/evidence-artifacts/explorer` |—| 200 | Read-only Evidence and State Explorer (GC-Q012): evidence artifacts and observations annotated with freshness state, provenance, affected assets, and downstream finding impact, plus a freshness counts roll-up. Filters: `assetId`, `evidenceType`, `asOf`, `freshnessWindowDays`, `includeSuperseded` |
 
 The aggregate is append-only: there is no PUT and no DELETE. The only post-create
 mutation is `/supersede`, which writes the prior artifact's

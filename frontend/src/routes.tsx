@@ -43,6 +43,26 @@ const RiskScenarioWorkspace = lazy(() =>
     default: m.RiskScenarioWorkspace,
   })),
 );
+const TraceabilityMatrix = lazy(() =>
+  import("@/pages/traceability-matrix").then((m) => ({
+    default: m.TraceabilityMatrix,
+  })),
+);
+const ControlWorkspace = lazy(() =>
+  import("@/pages/control-workspace").then((m) => ({
+    default: m.ControlWorkspace,
+  })),
+);
+const EvidenceExplorer = lazy(() =>
+  import("@/pages/evidence-explorer").then((m) => ({
+    default: m.EvidenceExplorer,
+  })),
+);
+const PortfolioViews = lazy(() =>
+  import("@/pages/portfolio-views").then((m) => ({
+    default: m.PortfolioViews,
+  })),
+);
 
 function PageSkeleton() {
   return (
@@ -107,6 +127,10 @@ export function AppRoutes() {
           <Route path="analysis" element={<Analysis />} />
           <Route path="threat-modeling" element={<ThreatModelingWorkspace />} />
           <Route path="risk-scenarios" element={<RiskScenarioWorkspace />} />
+          <Route path="traceability" element={<TraceabilityMatrix />} />
+          <Route path="controls" element={<ControlWorkspace />} />
+          <Route path="evidence" element={<EvidenceExplorer />} />
+          <Route path="portfolio" element={<PortfolioViews />} />
           <Route path="admin" element={<Admin />} />
           <Route path="*" element={<NotFound />} />
         </Route>

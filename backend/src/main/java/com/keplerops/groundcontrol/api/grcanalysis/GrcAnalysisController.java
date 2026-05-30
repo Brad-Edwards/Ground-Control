@@ -81,4 +81,13 @@ public class GrcAnalysisController {
         return NistAssessmentResponse.from(
                 grcAnalysisService.nistAssessment(projectId, asOf, riskAssessmentResultId, riskScenarioId));
     }
+
+    @GetMapping("/portfolio")
+    public PortfolioSummaryResponse portfolio(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false, defaultValue = "" + DEFAULT_FRESHNESS_WINDOW_DAYS) @Positive int freshnessWindowDays) {
+        UUID projectId = projectService.resolveProjectId(project);
+        return PortfolioSummaryResponse.from(grcAnalysisService.portfolio(projectId, asOf, freshnessWindowDays));
+    }
 }
