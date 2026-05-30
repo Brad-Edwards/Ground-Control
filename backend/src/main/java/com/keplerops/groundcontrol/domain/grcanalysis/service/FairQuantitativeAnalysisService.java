@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
@@ -154,8 +155,30 @@ public class FairQuantitativeAnalysisService {
         ThreePoint tef = decodeThreePoint(inputs, KEY_TEF, limitations);
         ThreePoint vulnerability = decodeThreePoint(inputs, KEY_VULNERABILITY, limitations);
         ThreePoint primaryLoss = decodeThreePoint(inputs, KEY_PRIMARY_LOSS, limitations);
-        ThreePoint secondaryLossFreq = decodeThreePoint(inputs, KEY_SECONDARY_LEF, null);
-        ThreePoint secondaryLoss = decodeThreePoint(inputs, KEY_SECONDARY_LOSS, null);
+        // Asymmetric secondary pair: the FAIR primary/secondary split is meaningful
+        // only when both the secondary frequency and secondary magnitude are
+        // supplied. If exactly one side is present, the other side silently
+        // zeroes out the contribution to ALE — fail loud per the L0 posture and
+        // drop the half-input from the simulation so the limitation is the
+        // only signal the analyst sees. When both sides are absent, we say
+        // nothing (secondary loss is optional in FAIR by design).
+        boolean secondaryFreqProvided = !asMap(inputs.get(KEY_SECONDARY_LEF)).isEmpty();
+        boolean secondaryLossProvided = !asMap(inputs.get(KEY_SECONDARY_LOSS)).isEmpty();
+        ThreePoint secondaryLossFreq;
+        ThreePoint secondaryLoss;
+        if (secondaryFreqProvided ^ secondaryLossProvided) {
+            String present = secondaryFreqProvided ? KEY_SECONDARY_LEF : KEY_SECONDARY_LOSS;
+            String missing = secondaryFreqProvided ? KEY_SECONDARY_LOSS : KEY_SECONDARY_LEF;
+            limitations.add("FAIR secondary loss pair incomplete: \"" + present + "\" present without \"" + missing
+                    + "\"; secondary contribution dropped from ALE / LM rollup");
+            secondaryLossFreq = null;
+            secondaryLoss = null;
+        } else {
+            // Both present (decode with limitations so partially-formed
+            // three-points still fail loud) or both absent (silent).
+            secondaryLossFreq = secondaryFreqProvided ? decodeThreePoint(inputs, KEY_SECONDARY_LEF, limitations) : null;
+            secondaryLoss = secondaryLossProvided ? decodeThreePoint(inputs, KEY_SECONDARY_LOSS, limitations) : null;
+        }
 
         String currency = stringValue(asMap(inputs.get(KEY_PRIMARY_LOSS)).get(KEY_CURRENCY));
         if (currency == null || currency.isBlank()) {
@@ -166,12 +189,58 @@ public class FairQuantitativeAnalysisService {
             monetaryScale = DEFAULT_SCALE;
         }
 
+        // Resolve secondary currency/scale and reconcile with the primary
+        // envelope. Mixing currencies silently would produce a wrong ALE; mixing
+        // scales is recoverable via a known factor, but we still record the
+        // normalization. Refuse to combine across currencies — drop the
+        // secondary contribution from the LM / ALE rollup and emit a limitation.
+        Map<String, Object> secondaryLossMap = asMap(inputs.get(KEY_SECONDARY_LOSS));
+        String secondaryCurrency = stringValue(secondaryLossMap.get(KEY_CURRENCY));
+        if (secondaryCurrency == null || secondaryCurrency.isBlank()) {
+            secondaryCurrency = currency;
+        }
+        String secondaryScale = stringValue(secondaryLossMap.get(KEY_SCALE));
+        if (secondaryScale == null || secondaryScale.isBlank()) {
+            secondaryScale = monetaryScale;
+        }
+        double secondaryToPrimaryScaleFactor = 1.0;
+        if (secondaryLoss != null) {
+            if (!secondaryCurrency.equalsIgnoreCase(currency)) {
+                limitations.add("FAIR secondary_loss_magnitude currency \"" + secondaryCurrency
+                        + "\" differs from primary_loss_magnitude currency \"" + currency
+                        + "\"; secondary contribution dropped from ALE / LM rollup");
+                secondaryLossFreq = null;
+                secondaryLoss = null;
+            } else if (!secondaryScale.equalsIgnoreCase(monetaryScale)) {
+                Double factor = scaleConversionFactor(secondaryScale, monetaryScale);
+                if (factor == null) {
+                    limitations.add("FAIR secondary_loss_magnitude scale \"" + secondaryScale
+                            + "\" not convertible to primary_loss_magnitude scale \"" + monetaryScale
+                            + "\"; secondary contribution dropped from ALE / LM rollup");
+                    secondaryLossFreq = null;
+                    secondaryLoss = null;
+                } else {
+                    limitations.add("FAIR secondary_loss_magnitude scale \"" + secondaryScale
+                            + "\" normalized to primary scale \"" + monetaryScale + "\" (factor=" + factor + ")");
+                    secondaryToPrimaryScaleFactor = factor;
+                }
+            }
+        }
+
         SimulationConfig sim = decodeSimulation(inputs, row.getId(), limitations);
 
         DerivedOutputs derived;
         if (tef != null && vulnerability != null && primaryLoss != null) {
             derived = simulate(
-                    tef, vulnerability, primaryLoss, secondaryLossFreq, secondaryLoss, sim, currency, monetaryScale);
+                    tef,
+                    vulnerability,
+                    primaryLoss,
+                    secondaryLossFreq,
+                    secondaryLoss,
+                    secondaryToPrimaryScaleFactor,
+                    sim,
+                    currency,
+                    monetaryScale);
         } else {
             derived = unsupportedOutputs(currency, monetaryScale, limitations);
         }
@@ -269,6 +338,7 @@ public class FairQuantitativeAnalysisService {
             ThreePoint primaryLoss,
             ThreePoint secondaryLossFreq,
             ThreePoint secondaryLoss,
+            double secondaryToPrimaryScaleFactor,
             SimulationConfig sim,
             String currency,
             String monetaryScale) {
@@ -287,7 +357,10 @@ public class FairQuantitativeAnalysisService {
             double primarySample = sampleTriangular(rng, primaryLoss);
             double secondaryFreqSample =
                     secondaryLossFreq == null ? 0.0 : clamp01(sampleTriangular(rng, secondaryLossFreq));
-            double secondarySample = secondaryLoss == null ? 0.0 : sampleTriangular(rng, secondaryLoss);
+            double secondarySampleRaw = secondaryLoss == null ? 0.0 : sampleTriangular(rng, secondaryLoss);
+            // Normalize secondary magnitude into the primary scale before
+            // combining so the LM rollup never silently mixes scales.
+            double secondarySample = secondarySampleRaw * secondaryToPrimaryScaleFactor;
             double secondaryContribution = secondarySample * secondaryFreqSample;
             double lm = primarySample + secondaryContribution;
 
@@ -422,6 +495,41 @@ public class FairQuantitativeAnalysisService {
 
     private static String stringValue(Object o) {
         return o == null ? null : o.toString();
+    }
+
+    /**
+     * Convert a monetary scale label ({@code UNITS} / {@code THOUSANDS} /
+     * {@code MILLIONS}) to its multiplier against {@code UNITS}, or {@code null}
+     * if the label is unrecognized.
+     */
+    private static Double scaleMultiplier(String scale) {
+        if (scale == null) {
+            return null;
+        }
+        switch (scale.toUpperCase(Locale.ROOT)) {
+            case "UNITS":
+                return 1.0;
+            case "THOUSANDS":
+                return 1_000.0;
+            case "MILLIONS":
+                return 1_000_000.0;
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Factor to multiply a value expressed in {@code from} scale to convert it
+     * into {@code to} scale. Returns {@code null} if either label is unknown so
+     * the caller can fail loud rather than silently mixing magnitudes.
+     */
+    private static Double scaleConversionFactor(String from, String to) {
+        Double fromMul = scaleMultiplier(from);
+        Double toMul = scaleMultiplier(to);
+        if (fromMul == null || toMul == null) {
+            return null;
+        }
+        return fromMul / toMul;
     }
 
     @SuppressWarnings("unchecked")

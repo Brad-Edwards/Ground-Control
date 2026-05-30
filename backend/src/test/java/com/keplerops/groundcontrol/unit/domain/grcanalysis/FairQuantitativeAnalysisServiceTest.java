@@ -111,6 +111,101 @@ class FairQuantitativeAnalysisServiceTest {
         assertThat(item.outputs().annualizedLossExpectancy().percentiles()).isNotNull();
         assertThat(item.outputs().lossEventFrequency().percentiles()).isNotNull();
         assertThat(item.outputs().lossMagnitude().percentiles()).isNotNull();
+        // GC-T016: primary and secondary loss envelopes are surfaced
+        // independently from the LM rollup. A regression that null'd either
+        // field or pointed both at the same envelope would silently collapse
+        // the primary/secondary distinction.
+        assertThat(item.outputs().primaryLossMagnitude()).isNotNull();
+        assertThat(item.outputs().secondaryLossMagnitude()).isNotNull();
+        assertThat(item.outputs().primaryLossMagnitude().percentiles()).isNotNull();
+        assertThat(item.outputs().secondaryLossMagnitude().percentiles()).isNotNull();
+        // Fixture: primary likely ~ 5000, secondary likely ~ 2500 * 0.3 = 750.
+        // The two envelopes MUST hold independent mean / percentile values, not
+        // a shared reference.
+        assertThat(item.outputs().primaryLossMagnitude().likely())
+                .isNotEqualTo(item.outputs().secondaryLossMagnitude().likely());
+        assertThat(item.outputs().primaryLossMagnitude().percentiles().p50())
+                .isNotEqualTo(
+                        item.outputs().secondaryLossMagnitude().percentiles().p50());
+        // Primary contribution dominates LM by design (~5000 vs ~750), so the
+        // primary envelope's mean is the larger of the two.
+        assertThat(item.outputs().primaryLossMagnitude().likely())
+                .isGreaterThan(item.outputs().secondaryLossMagnitude().likely());
+    }
+
+    @Test
+    void analyze_secondaryPairAsymmetric_recordLimitationAndDropContribution() {
+        // Finding 2: providing exactly one of {secondary_loss_event_frequency,
+        // secondary_loss_magnitude} previously silently zeroed the secondary
+        // contribution. We must fail loud.
+        Map<String, Object> oneSided = new LinkedHashMap<>(fairInputs(42, 1000));
+        oneSided.remove("secondary_loss_event_frequency");
+        var row = makeAssessment(fairProfile, oneSided);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(row));
+
+        var result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        assertThat(item.limitations())
+                .anyMatch(l -> l.contains("secondary loss pair incomplete")
+                        && l.contains("secondary_loss_magnitude")
+                        && l.contains("secondary_loss_event_frequency"));
+        // With the asymmetric pair dropped, the secondary envelope must be
+        // zeroed — primary remains intact.
+        assertThat(item.outputs().secondaryLossMagnitude().likely()).isEqualTo(0.0);
+        assertThat(item.outputs().primaryLossMagnitude().likely()).isGreaterThan(0.0);
+    }
+
+    @Test
+    void analyze_secondaryCurrencyDiffers_dropsContributionAndEmitsLimitation() {
+        // Finding 1: secondary currency that differs from primary must NOT
+        // silently roll up into the LM / ALE envelope. Drop the contribution
+        // and emit a limitation.
+        Map<String, Object> mixed = new LinkedHashMap<>(fairInputs(42, 1000));
+        mixed.put(
+                "secondary_loss_magnitude", Map.of("low", 500.0, "likely", 2500.0, "high", 10000.0, "currency", "EUR"));
+        var row = makeAssessment(fairProfile, mixed);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(row));
+
+        var result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        assertThat(item.limitations())
+                .anyMatch(
+                        l -> l.contains("secondary_loss_magnitude currency") && l.contains("EUR") && l.contains("USD"));
+        assertThat(item.outputs().secondaryLossMagnitude().likely()).isEqualTo(0.0);
+        // LM mean falls back to primary-only when secondary is dropped.
+        assertThat(item.outputs().lossMagnitude().likely())
+                .isEqualTo(item.outputs().primaryLossMagnitude().likely());
+    }
+
+    @Test
+    void analyze_secondaryScaleDiffers_normalizesToPrimaryAndEmitsLimitation() {
+        // Finding 1: secondary scale differing from primary should be
+        // normalized (factor recorded as a limitation), not silently mixed.
+        Map<String, Object> mixed = new LinkedHashMap<>(fairInputs(42, 2000));
+        // Primary stays at UNITS (default in fairInputs).
+        // Secondary in THOUSANDS — likely=2 thousand = 2000 in UNITS, which is
+        // larger than the unnormalized 2.0 the math would otherwise see.
+        mixed.put(
+                "secondary_loss_magnitude",
+                Map.of("low", 0.5, "likely", 2.0, "high", 10.0, "currency", "USD", "scale", "THOUSANDS"));
+        var row = makeAssessment(fairProfile, mixed);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(row));
+
+        var result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        assertThat(item.limitations())
+                .anyMatch(l -> l.contains("secondary_loss_magnitude scale")
+                        && l.contains("THOUSANDS")
+                        && l.contains("normalized"));
+        // After normalization, secondary likely ~= 2.0 * 1000 * 0.3 (secondary
+        // LEF likely) = ~600 in UNITS. Without normalization it would be 0.6.
+        assertThat(item.outputs().secondaryLossMagnitude().likely()).isGreaterThan(100.0);
     }
 
     @Test

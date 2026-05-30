@@ -693,8 +693,14 @@ class GrcAnalysisControllerTest {
                     new FairQuantitativeAnalysisResult.FrequencyEnvelope(0.1, 1.0, 5.0, "events per year", percentiles);
             var lm = new FairQuantitativeAnalysisResult.MonetaryEnvelope(
                     1000.0, 5000.0, 20000.0, "USD", "UNITS", "USD per loss event", percentiles);
+            var primaryPercentiles = new FairQuantitativeAnalysisResult.Percentiles(8, 16, 40, 72, 80, 160);
+            var primaryLm = new FairQuantitativeAnalysisResult.MonetaryEnvelope(
+                    900.0, 4500.0, 18000.0, "USD", "UNITS", "USD per loss event", primaryPercentiles);
+            var secondaryPercentiles = new FairQuantitativeAnalysisResult.Percentiles(2, 4, 10, 18, 20, 40);
+            var secondaryLm = new FairQuantitativeAnalysisResult.MonetaryEnvelope(
+                    100.0, 500.0, 2000.0, "USD", "UNITS", "USD per loss event", secondaryPercentiles);
             var outputs = new FairQuantitativeAnalysisResult.FairOutputs(
-                    ale, lef, lm, lm, lm, "monte-carlo; seed=42; iterations=10000");
+                    ale, lef, lm, primaryLm, secondaryLm, "monte-carlo; seed=42; iterations=10000");
             return new FairQuantitativeAnalysisResult.FairAnalysisItem(
                     UUID.randomUUID(),
                     UUID.randomUUID(),
@@ -745,8 +751,13 @@ class GrcAnalysisControllerTest {
                     .andExpect(jsonPath("$.assessments[0].outputs.annualizedLossExpectancy.currency", is("USD")))
                     .andExpect(jsonPath("$.assessments[0].outputs.annualizedLossExpectancy.scale", is("UNITS")))
                     .andExpect(jsonPath("$.assessments[0].outputs.annualizedLossExpectancy.percentiles.p50", is(50.0)))
-                    .andExpect(
-                            jsonPath("$.assessments[0].outputs.annualizedLossExpectancy.percentiles.p95", is(100.0)));
+                    .andExpect(jsonPath("$.assessments[0].outputs.annualizedLossExpectancy.percentiles.p95", is(100.0)))
+                    // GC-T016: primary / secondary loss envelopes are
+                    // serialized as independent fields, not a single LM rollup.
+                    .andExpect(jsonPath("$.assessments[0].outputs.primaryLossMagnitude.likely", is(4500.0)))
+                    .andExpect(jsonPath("$.assessments[0].outputs.primaryLossMagnitude.percentiles.p50", is(40.0)))
+                    .andExpect(jsonPath("$.assessments[0].outputs.secondaryLossMagnitude.likely", is(500.0)))
+                    .andExpect(jsonPath("$.assessments[0].outputs.secondaryLossMagnitude.percentiles.p50", is(10.0)));
         }
 
         @Test
