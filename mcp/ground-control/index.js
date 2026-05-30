@@ -65,6 +65,8 @@ import {
   // ---- GC-T008 methodology-aware aggregate risk reporting ----
   analyzeRiskHeatmap, analyzeRiskDistribution, analyzeRiskTopN,
   analyzeRiskTrends, analyzeRiskPosture,
+  // ---- GC-T011 / GC-T016 / GC-I017 FAIR methodology analytics ----
+  analyzeFairQuantitative, analyzeFairCamControlAnalytics,
   // ---- history / exports (kept for completeness even though tools route to gc_query) ----
   getRequirementHistory, getRelationHistory, getTraceabilityLinkHistory,
   getRequirementTimeline, getRequirementDiff, getProjectTimeline,
@@ -1446,9 +1448,7 @@ server.tool(
 const ANALYZE_KINDS = [
   "cycles", "orphans", "coverage_gaps", "impact", "cross_wave",
   "consistency", "completeness", "status_drift", "similarity", "work_order",
-  // GC-L007 — GRC analyses on existing substrates. Methodology-execution
-  // engines (FAIR / FAIR-CAM) and compliance-framework analyses are tracked
-  // separately and ship their own kinds when those engines land.
+  // GC-L007 — GRC analyses on existing substrates.
   "evidence_freshness", "observation_exposure", "control_state", "vendor_risk_aggregation",
   // GC-T014 — NIST SP 800-30 Rev. 1 risk-assessment view (methodology-attributed
   // envelope from /api/v1/analysis/grc/nist-sp-800-30).
@@ -1460,6 +1460,15 @@ const ANALYZE_KINDS = [
   // distribution, top-N, trends, executive posture). Every kind is
   // read-only and returns a methodology-attributed envelope per ADR-035.
   "risk_heatmap", "risk_distribution", "risk_top_n", "risk_trends", "risk_posture",
+  // GC-T011 — FAIR quantitative analysis (methodology-attributed envelope from
+  // /api/v1/analysis/grc/fair-quantitative). Monetary outputs carry explicit
+  // currency/scale/units; percentiles produced by a seeded Monte Carlo.
+  "fair_analysis",
+  // GC-I017 — FAIR-CAM control analytics (methodology-attributed envelope from
+  // /api/v1/analysis/grc/fair-cam-control-analytics). Capability / coverage /
+  // operational performance dimensions are reported per FAIR-CAM domain and
+  // never collapsed into a generic effectiveness score.
+  "fair_cam_control_analytics",
 ];
 
 const RISK_DISTRIBUTION_GROUP_BY = ["CATEGORY", "STATUS", "OWNER", "ASSET_CRITICALITY"];
@@ -1480,7 +1489,9 @@ server.tool(
     `risk_distribution→{project?, as_of?, group_by(${RISK_DISTRIBUTION_GROUP_BY.join("|")})}; ` +
     `risk_top_n→{project?, as_of?, limit?, order_by(${RISK_TOP_N_ORDER_BY.join("|")})?}; ` +
     `risk_trends→{project?, as_of?, from?, to?, bucket(${RISK_TRENDS_BUCKETS.join("|")})?}; ` +
-    `risk_posture→{project?, as_of?}. ` +
+    `risk_posture→{project?, as_of?}; ` +
+    `fair_analysis→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}; ` +
+    `fair_cam_control_analytics→{project?, as_of?, control_id?}. ` +
     `Others take {project?}.`,
   {
     kind: z.enum(ANALYZE_KINDS),
@@ -1604,6 +1615,19 @@ server.tool(
           return ok(JSON.stringify(await analyzeRiskPosture({
             project: args.project,
             asOf: args.as_of,
+          }), null, 2));
+        case "fair_analysis":
+          return ok(JSON.stringify(await analyzeFairQuantitative({
+            project: args.project,
+            asOf: args.as_of,
+            riskAssessmentResultId: args.risk_assessment_result_id,
+            riskScenarioId: args.risk_scenario_id,
+          }), null, 2));
+        case "fair_cam_control_analytics":
+          return ok(JSON.stringify(await analyzeFairCamControlAnalytics({
+            project: args.project,
+            asOf: args.as_of,
+            controlId: args.control_id,
           }), null, 2));
         default: return err(new Error(`Unknown kind: ${args.kind}`));
       }

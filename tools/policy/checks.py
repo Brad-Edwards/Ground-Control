@@ -1153,6 +1153,30 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
         "ComplianceDriftSeverity",
         None,
         "COMPLIANCE_DRIFT_SEVERITIES",
+    # GC-T011 / GC-T016 / GC-I017 FAIR methodology enums. Mirrored at the
+    # /api/v1/analysis/grc/fair-quantitative and
+    # /api/v1/analysis/grc/fair-cam-control-analytics boundaries and in the MCP
+    # gc_analyze fair_analysis / fair_cam_control_analytics kinds. ADR-034.
+    EnumContract(
+        "FairCamControlDomain",
+        "backend/src/main/java/com/keplerops/groundcontrol/domain/controls/state/FairCamControlDomain.java",
+        "FairCamControlDomain",
+        "FAIR_CAM_CONTROL_DOMAINS",
+        "FAIR_CAM_CONTROL_DOMAINS",
+    ),
+    EnumContract(
+        "FairLossForm",
+        f"{_RISK_ENUM_STATE_DIR}/FairLossForm.java",
+        "FairLossForm",
+        "FAIR_LOSS_FORMS",
+        "FAIR_LOSS_FORMS",
+    ),
+    EnumContract(
+        "FairStakeholderKind",
+        f"{_RISK_ENUM_STATE_DIR}/FairStakeholderKind.java",
+        "FairStakeholderKind",
+        "FAIR_STAKEHOLDER_KINDS",
+        "FAIR_STAKEHOLDER_KINDS",
     ),
 )
 

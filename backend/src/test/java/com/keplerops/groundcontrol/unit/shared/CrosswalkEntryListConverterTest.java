@@ -136,7 +136,10 @@ class CrosswalkEntryListConverterTest {
 
         @Test
         void allNineNormalizedConcepts_roundTrip() {
-            // C1: all 10 normalized concepts must be expressible
+            // C1: every normalized concept must be expressible. GC-T016 split
+            // grew the enum to 12 (added PRIMARY_LOSS_MAGNITUDE /
+            // SECONDARY_LOSS_MAGNITUDE alongside the generic
+            // IMPACT_OR_LOSS_MAGNITUDE).
             var entries = List.of(
                     new CrosswalkEntry(
                             NormalizedConcept.THREAT_SOURCE,
@@ -229,6 +232,26 @@ class CrosswalkEntryListConverterTest {
                             null,
                             null),
                     new CrosswalkEntry(
+                            NormalizedConcept.PRIMARY_LOSS_MAGNITUDE,
+                            CrosswalkVocabularySurface.INPUT_SCHEMA,
+                            "f10a",
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null),
+                    new CrosswalkEntry(
+                            NormalizedConcept.SECONDARY_LOSS_MAGNITUDE,
+                            CrosswalkVocabularySurface.INPUT_SCHEMA,
+                            "f10b",
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null),
+                    new CrosswalkEntry(
                             NormalizedConcept.TREATMENT,
                             CrosswalkVocabularySurface.TREATMENT_STRATEGY_VOCABULARY,
                             "f10",
@@ -241,7 +264,7 @@ class CrosswalkEntryListConverterTest {
 
             var json = converter.convertToDatabaseColumn(entries);
             var restored = converter.convertToEntityAttribute(json);
-            assertThat(restored).hasSize(10);
+            assertThat(restored).hasSize(NormalizedConcept.values().length);
             assertThat(restored.stream().map(CrosswalkEntry::normalizedConcept).toList())
                     .containsExactly(NormalizedConcept.values());
         }

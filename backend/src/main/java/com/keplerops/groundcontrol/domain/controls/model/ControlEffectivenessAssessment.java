@@ -2,6 +2,7 @@ package com.keplerops.groundcontrol.domain.controls.model;
 
 import com.keplerops.groundcontrol.domain.BaseEntity;
 import com.keplerops.groundcontrol.domain.controls.state.ControlEffectivenessRating;
+import com.keplerops.groundcontrol.domain.controls.state.FairCamControlDomain;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.shared.persistence.JacksonTextCollectionConverters;
 import jakarta.persistence.Column;
@@ -86,6 +87,23 @@ public class ControlEffectivenessAssessment extends BaseEntity {
     @Convert(converter = JacksonTextCollectionConverters.StringListConverter.class)
     @Column(name = "supporting_test_ids", columnDefinition = "TEXT")
     private List<String> supportingTestIds;
+
+    /**
+     * Optional FAIR-CAM domain attribution per GC-I017. Identifies the FAIR-CAM
+     * functional domain this assessment belongs to (loss-event, variance-management,
+     * or decision-support). Nullable for non-FAIR programs and for legacy
+     * assessments predating GC-I017; FAIR-CAM analytics scope by this attribute
+     * and emit a per-assessment limitation when it is missing.
+     *
+     * <p>This is intentionally orthogonal to {@link #operatingEffectiveness} /
+     * {@link #designEffectiveness} — FAIR-CAM analytics never collapse the
+     * three dimensions (capability, coverage, operational performance) into a
+     * single effectiveness rating; the rating remains a separate, narrower
+     * label.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fair_cam_control_domain", length = 40)
+    private FairCamControlDomain fairCamControlDomain;
 
     protected ControlEffectivenessAssessment() {
         // JPA
@@ -174,5 +192,13 @@ public class ControlEffectivenessAssessment extends BaseEntity {
 
     public void setSupportingTestIds(List<String> supportingTestIds) {
         this.supportingTestIds = supportingTestIds;
+    }
+
+    public FairCamControlDomain getFairCamControlDomain() {
+        return fairCamControlDomain;
+    }
+
+    public void setFairCamControlDomain(FairCamControlDomain fairCamControlDomain) {
+        this.fairCamControlDomain = fairCamControlDomain;
     }
 }

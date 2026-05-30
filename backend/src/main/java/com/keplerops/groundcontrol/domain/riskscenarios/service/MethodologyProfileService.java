@@ -32,6 +32,11 @@ public class MethodologyProfileService {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     // @formatter:off
+    // GC-T011 / GC-T016: FAIR v3.0 inputs with the full FAIR-MAM nine-loss
+    // canonical set and explicit primary vs. secondary loss discrimination.
+    // FAIR-CAM is encoded by control_domain attribution (LOSS_EVENT_CONTROL,
+    // VARIANCE_MANAGEMENT_CONTROL, DECISION_SUPPORT_CONTROL) rather than a
+    // single "control_strength" scalar.
     private static final String FAIR_INPUT_SCHEMA =
             """
             {
@@ -45,9 +50,28 @@ public class MethodologyProfileService {
                     "low": {"type": "number", "minimum": 0},
                     "likely": {"type": "number", "minimum": 0},
                     "high": {"type": "number", "minimum": 0},
+                    "distribution": {"type": "string", "enum": ["PERT", "TRIANGULAR", "LOGNORMAL", "POINT"], "default": "PERT"},
                     "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
                   },
                   "required": ["low", "likely", "high"]
+                },
+                "contact_frequency": {
+                  "type": "object",
+                  "description": "FAIR underlying factor: annual rate at which the threat agent contacts the asset",
+                  "properties": {
+                    "low": {"type": "number", "minimum": 0},
+                    "likely": {"type": "number", "minimum": 0},
+                    "high": {"type": "number", "minimum": 0}
+                  }
+                },
+                "probability_of_action": {
+                  "type": "object",
+                  "description": "FAIR underlying factor: probability that contact escalates to an attempted threat event (0.0-1.0)",
+                  "properties": {
+                    "low": {"type": "number", "minimum": 0, "maximum": 1},
+                    "likely": {"type": "number", "minimum": 0, "maximum": 1},
+                    "high": {"type": "number", "minimum": 0, "maximum": 1}
+                  }
                 },
                 "vulnerability": {
                   "type": "object",
@@ -59,6 +83,33 @@ public class MethodologyProfileService {
                     "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
                   },
                   "required": ["low", "likely", "high"]
+                },
+                "susceptibility": {
+                  "type": "object",
+                  "description": "FAIR underlying factor: vulnerability sub-factor — probability that resistance fails given attempted threat (0.0-1.0)",
+                  "properties": {
+                    "low": {"type": "number", "minimum": 0, "maximum": 1},
+                    "likely": {"type": "number", "minimum": 0, "maximum": 1},
+                    "high": {"type": "number", "minimum": 0, "maximum": 1}
+                  }
+                },
+                "threat_capability": {
+                  "type": "object",
+                  "description": "FAIR underlying factor: percentile threat strength (0.0-1.0)",
+                  "properties": {
+                    "low": {"type": "number", "minimum": 0, "maximum": 1},
+                    "likely": {"type": "number", "minimum": 0, "maximum": 1},
+                    "high": {"type": "number", "minimum": 0, "maximum": 1}
+                  }
+                },
+                "resistance_strength": {
+                  "type": "object",
+                  "description": "FAIR underlying factor: percentile control resistance (0.0-1.0)",
+                  "properties": {
+                    "low": {"type": "number", "minimum": 0, "maximum": 1},
+                    "likely": {"type": "number", "minimum": 0, "maximum": 1},
+                    "high": {"type": "number", "minimum": 0, "maximum": 1}
+                  }
                 },
                 "loss_event_frequency": {
                   "type": "object",
@@ -72,13 +123,33 @@ public class MethodologyProfileService {
                 },
                 "primary_loss_magnitude": {
                   "type": "object",
-                  "description": "Direct monetary loss from a single loss event",
+                  "description": "Direct monetary loss from a single loss event (GC-T016 primary loss)",
                   "properties": {
                     "low": {"type": "number", "minimum": 0},
                     "likely": {"type": "number", "minimum": 0},
                     "high": {"type": "number", "minimum": 0},
                     "currency": {"type": "string", "default": "USD"},
-                    "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
+                    "scale": {"type": "string", "enum": ["UNITS", "THOUSANDS", "MILLIONS"], "default": "UNITS"},
+                    "distribution": {"type": "string", "enum": ["PERT", "TRIANGULAR", "LOGNORMAL", "POINT"], "default": "PERT"},
+                    "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]},
+                    "loss_forms": {
+                      "type": "array",
+                      "description": "FAIR-MAM loss-form breakdown (any subset of the nine canonical forms)",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "form": {"type": "string", "enum": [
+                            "PRODUCTIVITY", "RESPONSE", "REPLACEMENT", "COMPETITIVE_ADVANTAGE",
+                            "FINES_AND_JUDGMENTS", "REPUTATION", "CUSTOMER_COMPENSATION",
+                            "NOTIFICATION_AND_CREDIT_MONITORING", "BUSINESS_INTERRUPTION"
+                          ]},
+                          "low": {"type": "number", "minimum": 0},
+                          "likely": {"type": "number", "minimum": 0},
+                          "high": {"type": "number", "minimum": 0},
+                          "currency": {"type": "string", "default": "USD"}
+                        }
+                      }
+                    }
                   },
                   "required": ["low", "likely", "high"]
                 },
@@ -94,39 +165,89 @@ public class MethodologyProfileService {
                 },
                 "secondary_loss_magnitude": {
                   "type": "object",
-                  "description": "Monetary loss from secondary effects (regulatory, reputational, etc.)",
+                  "description": "Monetary loss from secondary stakeholder reactions (GC-T016 secondary loss)",
                   "properties": {
                     "low": {"type": "number", "minimum": 0},
                     "likely": {"type": "number", "minimum": 0},
                     "high": {"type": "number", "minimum": 0},
                     "currency": {"type": "string", "default": "USD"},
-                    "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
+                    "scale": {"type": "string", "enum": ["UNITS", "THOUSANDS", "MILLIONS"], "default": "UNITS"},
+                    "distribution": {"type": "string", "enum": ["PERT", "TRIANGULAR", "LOGNORMAL", "POINT"], "default": "PERT"},
+                    "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]},
+                    "stakeholders": {
+                      "type": "array",
+                      "description": "FAIR-MAM stakeholder-specific secondary effects (GC-T016)",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "stakeholder": {"type": "string", "enum": [
+                            "ORGANIZATION", "CUSTOMERS", "REGULATORS", "EMPLOYEES",
+                            "INVESTORS", "PARTNERS", "PUBLIC"
+                          ]},
+                          "low": {"type": "number", "minimum": 0},
+                          "likely": {"type": "number", "minimum": 0},
+                          "high": {"type": "number", "minimum": 0},
+                          "currency": {"type": "string", "default": "USD"},
+                          "loss_forms": {
+                            "type": "array",
+                            "items": {"type": "string", "enum": [
+                              "PRODUCTIVITY", "RESPONSE", "REPLACEMENT", "COMPETITIVE_ADVANTAGE",
+                              "FINES_AND_JUDGMENTS", "REPUTATION", "CUSTOMER_COMPENSATION",
+                              "NOTIFICATION_AND_CREDIT_MONITORING", "BUSINESS_INTERRUPTION"
+                            ]}
+                          }
+                        }
+                      }
+                    }
                   }
                 },
                 "fair_cam": {
                   "type": "object",
-                  "description": "FAIR Control Analytics Model (FAIR-CAM) inputs for deriving Vulnerability",
+                  "description": "FAIR-CAM (Control Analytics Model) per-domain capability/coverage/operational-performance (GC-I017)",
                   "properties": {
                     "control_strength": {
                       "type": "number", "minimum": 0, "maximum": 100,
-                      "description": "Aggregate control effectiveness percentage (0-100)"
+                      "description": "Aggregate control effectiveness percentage (0-100). Legacy scalar — prefer per-domain attribution below."
                     },
                     "control_coverage": {
                       "type": "number", "minimum": 0, "maximum": 1,
-                      "description": "Fraction of the attack surface covered by controls (0.0-1.0)"
+                      "description": "Fraction of the attack surface covered by controls (0.0-1.0). Legacy scalar — prefer per-domain attribution below."
+                    },
+                    "loss_event_controls": {
+                      "type": "object",
+                      "description": "FAIR-CAM loss-event control domain — controls that reduce LEF or LM directly",
+                      "properties": {
+                        "capability": {"type": "number", "minimum": 0, "maximum": 1, "description": "Designed effectiveness percentile (0.0-1.0)"},
+                        "coverage": {"type": "number", "minimum": 0, "maximum": 1, "description": "Fraction of relevant attack surface covered (0.0-1.0)"},
+                        "operational_performance": {"type": "number", "minimum": 0, "maximum": 1, "description": "Observed operational delivery vs. design (0.0-1.0)"}
+                      }
+                    },
+                    "variance_management_controls": {
+                      "type": "object",
+                      "description": "FAIR-CAM variance-management control domain — controls that keep other controls within design envelope",
+                      "properties": {
+                        "capability": {"type": "number", "minimum": 0, "maximum": 1},
+                        "coverage": {"type": "number", "minimum": 0, "maximum": 1},
+                        "operational_performance": {"type": "number", "minimum": 0, "maximum": 1}
+                      }
+                    },
+                    "decision_support_controls": {
+                      "type": "object",
+                      "description": "FAIR-CAM decision-support control domain — controls that improve risk-decision quality",
+                      "properties": {
+                        "capability": {"type": "number", "minimum": 0, "maximum": 1},
+                        "coverage": {"type": "number", "minimum": 0, "maximum": 1},
+                        "operational_performance": {"type": "number", "minimum": 0, "maximum": 1}
+                      }
                     }
                   }
                 },
-                "fair_mam": {
+                "simulation": {
                   "type": "object",
-                  "description": "FAIR Materiality Assessment Model (FAIR-MAM) loss magnitude breakdown",
+                  "description": "Monte Carlo simulation controls (GC-T011)",
                   "properties": {
-                    "productivity_loss": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-                    "response_cost": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-                    "replacement_cost": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-                    "competitive_advantage_loss": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-                    "fines_and_judgments": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-                    "reputation_damage": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}}
+                    "iterations": {"type": "integer", "minimum": 1, "maximum": 1000000, "default": 10000},
+                    "seed": {"type": "integer", "description": "Deterministic seed; required for auditable reproducibility"}
                   }
                 }
               },
@@ -135,7 +256,8 @@ public class MethodologyProfileService {
                 "scale": "continuous",
                 "units": "monetary",
                 "currency": "configurable (default USD)",
-                "estimation_method": "three-point (low/likely/high) with optional Monte Carlo simulation"
+                "estimation_method": "three-point (low/likely/high) with optional Monte Carlo simulation",
+                "primary_secondary_split": "GC-T016 — primary_loss_magnitude and secondary_loss_magnitude are distinct loss lines; FAIR-MAM loss forms attach to each independently"
               }
             }""";
 
@@ -143,7 +265,7 @@ public class MethodologyProfileService {
             """
             {
               "type": "object",
-              "description": "FAIR v3.0 computed risk outputs",
+              "description": "FAIR v3.0 computed risk outputs (GC-T011 percentile fields + GC-T016 primary/secondary loss split)",
               "properties": {
                 "annualized_loss_expectancy": {
                   "type": "object",
@@ -153,14 +275,18 @@ public class MethodologyProfileService {
                     "likely": {"type": "number"},
                     "high": {"type": "number"},
                     "currency": {"type": "string"},
+                    "scale": {"type": "string", "enum": ["UNITS", "THOUSANDS", "MILLIONS"]},
+                    "units": {"type": "string", "description": "Monetary units descriptor (e.g. 'USD per year')"},
                     "percentiles": {
                       "type": "object",
-                      "description": "Optional Monte Carlo simulation percentiles",
+                      "description": "Monte Carlo simulation percentile outputs (GC-T011)",
                       "properties": {
+                        "p5": {"type": "number"},
                         "p10": {"type": "number"},
                         "p50": {"type": "number"},
                         "p90": {"type": "number"},
-                        "p95": {"type": "number"}
+                        "p95": {"type": "number"},
+                        "p99": {"type": "number"}
                       }
                     }
                   },
@@ -168,24 +294,67 @@ public class MethodologyProfileService {
                 },
                 "loss_event_frequency": {
                   "type": "object",
-                  "description": "Computed annual loss event frequency",
+                  "description": "Computed annual loss event frequency (with percentile outputs)",
                   "properties": {
                     "low": {"type": "number"},
                     "likely": {"type": "number"},
-                    "high": {"type": "number"}
+                    "high": {"type": "number"},
+                    "percentiles": {
+                      "type": "object",
+                      "properties": {
+                        "p5": {"type": "number"},
+                        "p10": {"type": "number"},
+                        "p50": {"type": "number"},
+                        "p90": {"type": "number"},
+                        "p95": {"type": "number"},
+                        "p99": {"type": "number"}
+                      }
+                    }
                   },
                   "required": ["low", "likely", "high"]
                 },
                 "loss_magnitude": {
                   "type": "object",
-                  "description": "Computed single-event loss magnitude",
+                  "description": "Computed single-event loss magnitude (primary + secondary)",
+                  "properties": {
+                    "low": {"type": "number"},
+                    "likely": {"type": "number"},
+                    "high": {"type": "number"},
+                    "currency": {"type": "string"},
+                    "scale": {"type": "string", "enum": ["UNITS", "THOUSANDS", "MILLIONS"]},
+                    "percentiles": {
+                      "type": "object",
+                      "properties": {
+                        "p5": {"type": "number"},
+                        "p10": {"type": "number"},
+                        "p50": {"type": "number"},
+                        "p90": {"type": "number"},
+                        "p95": {"type": "number"},
+                        "p99": {"type": "number"}
+                      }
+                    }
+                  },
+                  "required": ["low", "likely", "high"]
+                },
+                "primary_loss_magnitude": {
+                  "type": "object",
+                  "description": "Primary-line loss magnitude rollup (GC-T016)",
                   "properties": {
                     "low": {"type": "number"},
                     "likely": {"type": "number"},
                     "high": {"type": "number"},
                     "currency": {"type": "string"}
-                  },
-                  "required": ["low", "likely", "high"]
+                  }
+                },
+                "secondary_loss_magnitude": {
+                  "type": "object",
+                  "description": "Secondary-line loss magnitude rollup (GC-T016)",
+                  "properties": {
+                    "low": {"type": "number"},
+                    "likely": {"type": "number"},
+                    "high": {"type": "number"},
+                    "currency": {"type": "string"}
+                  }
                 },
                 "risk_level": {
                   "type": "string",
@@ -197,7 +366,8 @@ public class MethodologyProfileService {
               "semantics": {
                 "scale": "continuous",
                 "units": "monetary",
-                "derivation": "ALE = LEF * LM; LEF = TEF * Vuln; LM = PLM + (SLEF * SLM)"
+                "derivation": "ALE = LEF * LM; LEF = TEF * Vuln; LM = PLM + (SLEF * SLM)",
+                "monte_carlo": "Percentile outputs are produced by a seeded RNG so reproducibility is auditable"
               }
             }""";
 
@@ -618,21 +788,21 @@ public class MethodologyProfileService {
                     "LEF = TEF × Vulnerability",
                     null),
             new CrosswalkEntry(
-                    NormalizedConcept.IMPACT_OR_LOSS_MAGNITUDE,
+                    NormalizedConcept.PRIMARY_LOSS_MAGNITUDE,
                     CrosswalkVocabularySurface.INPUT_SCHEMA,
                     "primary_loss_magnitude",
                     "Primary Loss Magnitude",
-                    "Direct monetary loss from a single loss event",
+                    "Direct monetary loss from a single loss event (GC-T016 primary loss line)",
                     SCALE_CONTINUOUS,
                     "monetary",
                     null,
                     null),
             new CrosswalkEntry(
-                    NormalizedConcept.IMPACT_OR_LOSS_MAGNITUDE,
+                    NormalizedConcept.SECONDARY_LOSS_MAGNITUDE,
                     CrosswalkVocabularySurface.INPUT_SCHEMA,
                     "secondary_loss_magnitude",
                     "Secondary Loss Magnitude",
-                    "Monetary loss from secondary effects (regulatory, reputational, etc.)",
+                    "Monetary loss from secondary stakeholder reactions (GC-T016 secondary loss line)",
                     SCALE_CONTINUOUS,
                     "monetary",
                     null,
@@ -655,6 +825,36 @@ public class MethodologyProfileService {
                     "Fraction of the attack surface covered by controls (0.0-1.0)",
                     SCALE_CONTINUOUS,
                     "coverage fraction (0.0–1.0)",
+                    null,
+                    null),
+            new CrosswalkEntry(
+                    NormalizedConcept.CONTROL,
+                    CrosswalkVocabularySurface.INPUT_SCHEMA,
+                    "fair_cam.loss_event_controls",
+                    "FAIR-CAM Loss Event Controls",
+                    "Capability / coverage / operational performance for the loss-event control domain (GC-I017)",
+                    SCALE_CONTINUOUS,
+                    "fraction (0.0–1.0) per dimension",
+                    null,
+                    null),
+            new CrosswalkEntry(
+                    NormalizedConcept.CONTROL,
+                    CrosswalkVocabularySurface.INPUT_SCHEMA,
+                    "fair_cam.variance_management_controls",
+                    "FAIR-CAM Variance Management Controls",
+                    "Capability / coverage / operational performance for the variance-management control domain (GC-I017)",
+                    SCALE_CONTINUOUS,
+                    "fraction (0.0–1.0) per dimension",
+                    null,
+                    null),
+            new CrosswalkEntry(
+                    NormalizedConcept.CONTROL,
+                    CrosswalkVocabularySurface.INPUT_SCHEMA,
+                    "fair_cam.decision_support_controls",
+                    "FAIR-CAM Decision Support Controls",
+                    "Capability / coverage / operational performance for the decision-support control domain (GC-I017)",
+                    SCALE_CONTINUOUS,
+                    "fraction (0.0–1.0) per dimension",
                     null,
                     null));
 

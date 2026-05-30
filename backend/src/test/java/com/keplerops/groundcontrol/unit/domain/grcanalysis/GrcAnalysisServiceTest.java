@@ -6,6 +6,10 @@ import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsService;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentService;
@@ -55,6 +59,12 @@ class GrcAnalysisServiceTest {
 
     @Mock
     private RiskAnalysisOrchestrator riskAnalysisOrchestrator;
+
+    @Mock
+    private FairQuantitativeAnalysisService fairQuantitativeAnalysisService;
+
+    @Mock
+    private FairCamControlAnalyticsService fairCamControlAnalyticsService;
 
     @InjectMocks
     private GrcAnalysisService service;
@@ -284,5 +294,55 @@ class GrcAnalysisServiceTest {
 
         assertThat(actual).isSameAs(expected);
         verify(riskAnalysisOrchestrator).posture(projectId, asOf);
+    }
+
+    @Test
+    void fairQuantitativeAnalysis_delegatesToFairQuantitativeAnalysisService() {
+        UUID projectId = UUID.randomUUID();
+        UUID assessmentId = UUID.randomUUID();
+        UUID scenarioId = UUID.randomUUID();
+        Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
+        FairQuantitativeAnalysisResult expected = new FairQuantitativeAnalysisResult(
+                "fair_analysis",
+                "ground-control",
+                asOf,
+                "fair-v3.0-monte-carlo-pert-v1",
+                "continuous",
+                "monetary per year",
+                "USD",
+                List.of(),
+                new FairQuantitativeAnalysisResult.Counts(0, 0, 0),
+                List.of());
+        when(fairQuantitativeAnalysisService.analyze(projectId, asOf, assessmentId, scenarioId))
+                .thenReturn(expected);
+
+        FairQuantitativeAnalysisResult actual =
+                service.fairQuantitativeAnalysis(projectId, asOf, assessmentId, scenarioId);
+
+        assertThat(actual).isSameAs(expected);
+        verify(fairQuantitativeAnalysisService).analyze(projectId, asOf, assessmentId, scenarioId);
+    }
+
+    @Test
+    void fairCamControlAnalytics_delegatesToFairCamControlAnalyticsService() {
+        UUID projectId = UUID.randomUUID();
+        UUID controlId = UUID.randomUUID();
+        Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
+        FairCamControlAnalyticsResult expected = new FairCamControlAnalyticsResult(
+                "fair_cam_control_analytics",
+                "ground-control",
+                asOf,
+                "fair-cam-v1-domain-attribution-and-three-dimensions",
+                "fraction",
+                "fraction (0.0–1.0) per FAIR-CAM dimension",
+                List.of(),
+                new FairCamControlAnalyticsResult.Counts(0, java.util.Map.of(), 0),
+                List.of());
+        when(fairCamControlAnalyticsService.analyze(projectId, asOf, controlId)).thenReturn(expected);
+
+        FairCamControlAnalyticsResult actual = service.fairCamControlAnalytics(projectId, asOf, controlId);
+
+        assertThat(actual).isSameAs(expected);
+        verify(fairCamControlAnalyticsService).analyze(projectId, asOf, controlId);
     }
 }

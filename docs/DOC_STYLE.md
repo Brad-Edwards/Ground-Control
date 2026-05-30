@@ -187,3 +187,11 @@ When documenting query-parameter aliases (for example, `expired=true` vs
 the `expiredOnly=true` alias for the evidence-artifact list endpoint),
 prefer listing the canonical form first followed by the alias in
 parentheses, and document the "omit both to return all" default explicitly.
+New `gc_analyze` kinds added to `mcp/ground-control/index.js` and matching
+helpers in `mcp/ground-control/lib.js` (for example, `fair_analysis` and
+`fair_cam_control_analytics` added for cluster fair-analytics / GC-T011 /
+GC-T016 / GC-I017) are documented by the tool description string in
+`index.js`, the per-endpoint section in `docs/API.md`, and the FAIR enum
+mirror inventory in `tools/policy/checks.py`. The surface addition is
+recorded in the ADR-054 amendment and the changelog fragment; no new
+DOC_STYLE.md prose is needed unless a new style rule is being established.

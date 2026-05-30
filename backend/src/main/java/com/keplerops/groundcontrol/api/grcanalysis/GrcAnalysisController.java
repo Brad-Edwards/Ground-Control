@@ -145,4 +145,25 @@ public class GrcAnalysisController {
         UUID projectId = projectService.resolveProjectId(project);
         return RiskPostureResponse.from(grcAnalysisService.riskPosture(projectId, asOf));
     }
+
+    @GetMapping("/fair-quantitative")
+    public FairQuantitativeAnalysisResponse fairQuantitativeAnalysis(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false) UUID riskAssessmentResultId,
+            @RequestParam(required = false) UUID riskScenarioId) {
+        UUID projectId = projectService.resolveProjectId(project);
+        return FairQuantitativeAnalysisResponse.from(
+                grcAnalysisService.fairQuantitativeAnalysis(projectId, asOf, riskAssessmentResultId, riskScenarioId));
+    }
+
+    @GetMapping("/fair-cam-control-analytics")
+    public FairCamControlAnalyticsResponse fairCamControlAnalytics(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false) UUID controlId) {
+        UUID projectId = projectService.resolveProjectId(project);
+        return FairCamControlAnalyticsResponse.from(
+                grcAnalysisService.fairCamControlAnalytics(projectId, asOf, controlId));
+    }
 }

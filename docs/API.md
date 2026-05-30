@@ -239,6 +239,8 @@ the engine lands). NIST SP 800-30 Rev. 1 ships under GC-T014 / #721 as the
 | GET | `/analysis/grc/vendor-risk` |—| 200 | Aggregation over `OperationalAsset` of `AssetType.THIRD_PARTY` (findings, observations, evidence freshness, mapped controls). |
 | GET | `/analysis/grc/nist-sp-800-30` |—| 200 | NIST SP 800-30 Rev. 1 methodology-attributed view over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `NIST_SP800_30_R1`. Decodes inputs into threat source, threat event (`ADVERSARIAL` / `NON_ADVERSARIAL`), vulnerabilities, predisposing conditions, threat-source relevance, multi-dimensional likelihood, impact level, and assessment timeframe; computes overall likelihood (analyst-supplied or derived per Table G-5) and risk level (per Table I-2) as ordinal bands with explicit `scale`/`units` and a matrix cell label. |
 | GET | `/analysis/grc/portfolio` |—| 200 | GRC Portfolio Reporting roll-up (GC-Q013): risk posture (scenario/assessment/treatment/register distributions, reassessment + overdue-review signals), control health (status + design/operating effectiveness distributions, unassessed + unmapped counts), evidence freshness counts, finding trends (severity/status/type, open + overdue), asset criticality concentration (criticality/environment/scope), and methodology-family (FAIR/NIST/ISO) summaries. Each dimension carries actionable drill-down id lists behind its key signal counts (critical assets, unmapped + unassessed controls, overdue register reviews, open + overdue findings). Read-only projection; no new materialized state. Accepts `asOf`, `freshnessWindowDays`. |
+| GET | `/analysis/grc/fair-quantitative` |—| 200 | FAIR v3.0 methodology-attributed quantitative view over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `FAIR` (GC-T011 / GC-T016). Decodes FAIR factors (TEF, contact frequency, probability of action, vulnerability, susceptibility, threat capability, resistance strength, primary loss magnitude, secondary loss magnitude, FAIR-MAM loss forms, FAIR-CAM control domain inputs) and emits LEF / LM / ALE envelopes with low/likely/high three-point summaries and Monte Carlo percentile outputs (p5/p10/p50/p90/p95/p99). Monetary outputs carry explicit `currency`, `scale`, and `units`; primary and secondary loss magnitude rollups are reported separately. The Monte Carlo runs against a deterministic seeded RNG so identical inputs reproduce identical percentiles (auditable reproducibility). |
+| GET | `/analysis/grc/fair-cam-control-analytics` |—| 200 | FAIR-CAM methodology-attributed control analytics view over `ControlEffectivenessAssessment` rows (GC-I017). Reports per-control FAIR-CAM domain attribution (`LOSS_EVENT_CONTROL` / `VARIANCE_MANAGEMENT_CONTROL` / `DECISION_SUPPORT_CONTROL`) plus capability / coverage / operational-performance dimensions, each with its own `scale`/`units`. Never collapses the three dimensions into a single effectiveness rating; the GC-I013 `ControlEffectivenessRating` is reported beside them rather than absorbing them. Assessments missing FAIR-CAM domain attribution emit a per-row `limitations` entry; projects with no `ControlEffectivenessAssessment` evidence emit a top-level `limitations` entry. |
 
 `GET /analysis/grc/evidence-freshness` accepts:
 
@@ -368,6 +370,64 @@ families in a single result emits an explicit limitation.
 |-----------|------|---------|-------------|
 | `project` | string | auto-resolved | Project identifier |
 | `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the envelope |
+
+#### FAIR Methodology Analytics (GC-T011 / GC-T016 / GC-I017)
+
+`GET /analysis/grc/fair-quantitative` accepts:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `project` | string | auto-resolved | Project identifier |
+| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the response envelope |
+| `riskAssessmentResultId` | UUID |—| Filter to a single `RiskAssessmentResult`; returns `404` if missing, `422` if the row is not bound to a `FAIR` `MethodologyProfile` |
+| `riskScenarioId` | UUID |—| Narrow to assessments under one `RiskScenario` |
+
+Response shape: top-level `analysisKind: "fair_analysis"`, `project`, `asOf`,
+`derivationMethod` (`"fair-v3.0-monte-carlo-pert-v1"`), `scale`
+(`"continuous"`), `units` (`"monetary per year"`), `currency` (default
+`"USD"`), `assessments` array, `counts` summary (`total`, `withSimulation`,
+`withLimitations`), and a top-level `limitations` array. Each assessment
+item carries `assessmentId` / `riskScenarioId` / `methodologyProfileId` /
+`profileKey` (`FAIR_V3_0`) / `family` (`FAIR`) / `version` / `assessmentAt`
+/ `timeHorizon` / `analystIdentity` / `approvalState`, methodology-defined
+`inputs` (`threatEventFrequency`, `contactFrequency`,
+`probabilityOfAction`, `vulnerability`, `susceptibility`, `threatCapability`,
+`resistanceStrength`, `lossEventFrequency`, `primaryLossMagnitude`,
+`secondaryLossEventFrequency`, `secondaryLossMagnitude`, `fairCam`,
+`simulation`), structured `outputs` (`annualizedLossExpectancy`,
+`lossEventFrequency`, `lossMagnitude`, `primaryLossMagnitude`,
+`secondaryLossMagnitude`, `derivation`) where every monetary envelope
+carries `currency` / `scale` / `units` and a `percentiles` block (p5, p10,
+p50, p90, p95, p99) from the seeded Monte Carlo, `evidenceRefs`, and
+per-row `limitations`. FAIR factor maps inside `inputs` pass through
+verbatim from the persisted methodology-defined keys (FAIR-MAM loss forms,
+FAIR-CAM control domains). Monetary outputs MUST NOT be silently mixed
+across currencies/scales—both fields are required on every envelope.
+
+`GET /analysis/grc/fair-cam-control-analytics` accepts:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `project` | string | auto-resolved | Project identifier |
+| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp; assessments with `assessedAt > asOf` are excluded |
+| `controlId` | UUID |—| Narrow to a single `Control` (project-scoped) |
+
+Response shape: top-level `analysisKind: "fair_cam_control_analytics"`,
+`project`, `asOf`, `derivationMethod`
+(`"fair-cam-v1-domain-attribution-and-three-dimensions"`), `scale`
+(`"fraction"`), `units` (`"fraction (0.0–1.0) per FAIR-CAM dimension"`),
+`controls` array, `counts` summary (`total`, `byDomain`, `withLimitations`),
+and a top-level `limitations` array. Each control item carries
+`assessmentId` / `controlId` / `controlUid` / `controlTitle` /
+`fairCamControlDomain` (`LOSS_EVENT_CONTROL` / `VARIANCE_MANAGEMENT_CONTROL`
+/ `DECISION_SUPPORT_CONTROL` / `null` when unattributed) / `assessedAt` /
+`assessor`, the GC-I013 `designEffectiveness` and `operatingEffectiveness`
+ratings reported beside (not absorbed into) the FAIR-CAM dimensions, a
+`dimensions` block with three independent measurements (`capability`,
+`coverage`, `operationalPerformance`) each with its own `value` / `scale` /
+`units` / `derivation`, `supportingTestIds`, and per-row `limitations`.
+FAIR-CAM analytics MUST NOT collapse the three dimensions into a generic
+effectiveness score.
 
 ### Embeddings
 

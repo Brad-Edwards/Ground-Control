@@ -204,9 +204,14 @@ SDD extends TDD by adding contracts as a specification layer:
   carry NIST SP 800-30 Rev. 1 vocabulary at the API/MCP boundary;
   `NormalizedConcept` and `CrosswalkVocabularySurface` added for GC-T012 /
   #719 to classify cross-methodology crosswalk entries on
-  `MethodologyProfile`) are L0 data classifiers, not L1+ contract surfaces;
-  placement under `state/` follows the existing repo convention for
-  domain-enum location, not an assertion that JML contracts apply.
+  `MethodologyProfile`; `FairCamControlDomain` added for GC-I017 / #746 to
+  carry FAIR-CAM control-domain attribution on
+  `ControlEffectivenessAssessment`; `FairLossForm` and `FairStakeholderKind`
+  added for GC-T016 / #745 to carry the FAIR-MAM canonical nine-loss
+  taxonomy and stakeholder discrimination at the FAIR analytics boundary)
+  are L0 data classifiers, not L1+ contract surfaces; placement under
+  `state/` follows the existing repo convention for domain-enum location,
+  not an assertion that JML contracts apply.
 - **Risk Governance Lifecycle (GC-T005 / T006 / T007 / T015):**
   `AppetiteToleranceKind` and `KriThresholdBand` follow the same L0
   classifier pattern as `NormalizedConcept` (above)—pure value

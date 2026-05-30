@@ -507,6 +507,9 @@ class PolicyChecksTest(unittest.TestCase):
                 "EvidenceType",
                 "ComplianceDriftCategory",
                 "ComplianceDriftSeverity",
+                "FairCamControlDomain",
+                "FairLossForm",
+                "FairStakeholderKind",
             },
         )
         for contract in ENUM_CONTRACT_INVENTORY:

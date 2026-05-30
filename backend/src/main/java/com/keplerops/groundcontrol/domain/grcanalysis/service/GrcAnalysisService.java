@@ -10,7 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
  * controllers thin and gives the extension seam from the preflight a single
  * class to point at. Wired delegates: {@link EvidenceFreshnessAnalysisService},
  * {@link ObservationProjectionService}, {@link VendorRiskAggregationService},
- * {@link NistAssessmentService}, and {@link PortfolioAggregationService}.
+ * {@link NistAssessmentService}, {@link PortfolioAggregationService},
+ * {@link FairQuantitativeAnalysisService}, and {@link FairCamControlAnalyticsService}.
  * Cluster-3 (GC-T008) risk analysis projections (heat map, distribution,
  * top-N, trends, posture) are grouped behind a single
  * {@link RiskAnalysisOrchestrator} to keep the dependency count within the
@@ -26,6 +27,8 @@ public class GrcAnalysisService {
     private final NistAssessmentService nistAssessmentService;
     private final PortfolioAggregationService portfolioAggregationService;
     private final RiskAnalysisOrchestrator riskAnalysisOrchestrator;
+    private final FairQuantitativeAnalysisService fairQuantitativeAnalysisService;
+    private final FairCamControlAnalyticsService fairCamControlAnalyticsService;
 
     public GrcAnalysisService(
             EvidenceFreshnessAnalysisService evidenceFreshnessAnalysisService,
@@ -33,13 +36,17 @@ public class GrcAnalysisService {
             VendorRiskAggregationService vendorRiskAggregationService,
             NistAssessmentService nistAssessmentService,
             PortfolioAggregationService portfolioAggregationService,
-            RiskAnalysisOrchestrator riskAnalysisOrchestrator) {
+            RiskAnalysisOrchestrator riskAnalysisOrchestrator,
+            FairQuantitativeAnalysisService fairQuantitativeAnalysisService,
+            FairCamControlAnalyticsService fairCamControlAnalyticsService) {
         this.evidenceFreshnessAnalysisService = evidenceFreshnessAnalysisService;
         this.observationProjectionService = observationProjectionService;
         this.vendorRiskAggregationService = vendorRiskAggregationService;
         this.nistAssessmentService = nistAssessmentService;
         this.portfolioAggregationService = portfolioAggregationService;
         this.riskAnalysisOrchestrator = riskAnalysisOrchestrator;
+        this.fairQuantitativeAnalysisService = fairQuantitativeAnalysisService;
+        this.fairCamControlAnalyticsService = fairCamControlAnalyticsService;
     }
 
     public EvidenceFreshnessResult evidenceFreshness(
@@ -91,5 +98,14 @@ public class GrcAnalysisService {
 
     public RiskPostureResult riskPosture(UUID projectId, Instant asOf) {
         return riskAnalysisOrchestrator.posture(projectId, asOf);
+    }
+
+    public FairQuantitativeAnalysisResult fairQuantitativeAnalysis(
+            UUID projectId, Instant asOf, UUID riskAssessmentResultId, UUID riskScenarioId) {
+        return fairQuantitativeAnalysisService.analyze(projectId, asOf, riskAssessmentResultId, riskScenarioId);
+    }
+
+    public FairCamControlAnalyticsResult fairCamControlAnalytics(UUID projectId, Instant asOf, UUID controlId) {
+        return fairCamControlAnalyticsService.analyze(projectId, asOf, controlId);
     }
 }

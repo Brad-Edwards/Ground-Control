@@ -12,9 +12,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.keplerops.groundcontrol.api.grcanalysis.GrcAnalysisController;
+import com.keplerops.groundcontrol.domain.controls.state.ControlEffectivenessRating;
+import com.keplerops.groundcontrol.domain.controls.state.FairCamControlDomain;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionMode;
@@ -35,6 +39,7 @@ import com.keplerops.groundcontrol.domain.riskscenarios.state.NistLikelihoodBand
 import com.keplerops.groundcontrol.domain.riskscenarios.state.ThreatEventKind;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.ThreatSourceRelevance;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -660,6 +665,213 @@ class GrcAnalysisControllerTest {
 
             mockMvc.perform(get("/api/v1/analysis/grc/risk-posture").param("project", "missing"))
                     .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    class FairQuantitative {
+
+        private FairQuantitativeAnalysisResult.FairAnalysisItem sampleItem() {
+            var inputs = new FairQuantitativeAnalysisResult.FairInputs(
+                    Map.of("low", 1, "likely", 4, "high", 12),
+                    null,
+                    null,
+                    Map.of("low", 0.1, "likely", 0.4, "high", 0.7),
+                    null,
+                    null,
+                    null,
+                    null,
+                    Map.of("low", 1000, "likely", 5000, "high", 20000, "currency", "USD"),
+                    null,
+                    null,
+                    null,
+                    new FairQuantitativeAnalysisResult.SimulationInputs(10000, 42L));
+            var percentiles = new FairQuantitativeAnalysisResult.Percentiles(10, 20, 50, 90, 100, 200);
+            var ale = new FairQuantitativeAnalysisResult.MonetaryEnvelope(
+                    1.0, 25.0, 100.0, "USD", "UNITS", "USD per year", percentiles);
+            var lef =
+                    new FairQuantitativeAnalysisResult.FrequencyEnvelope(0.1, 1.0, 5.0, "events per year", percentiles);
+            var lm = new FairQuantitativeAnalysisResult.MonetaryEnvelope(
+                    1000.0, 5000.0, 20000.0, "USD", "UNITS", "USD per loss event", percentiles);
+            var outputs = new FairQuantitativeAnalysisResult.FairOutputs(
+                    ale, lef, lm, lm, lm, "monte-carlo; seed=42; iterations=10000");
+            return new FairQuantitativeAnalysisResult.FairAnalysisItem(
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    "FAIR_V3_0",
+                    "FAIR",
+                    "3.0",
+                    Instant.parse("2026-05-30T00:00:00Z"),
+                    "12 months",
+                    "analyst@example",
+                    "DRAFT",
+                    inputs,
+                    outputs,
+                    List.of(),
+                    List.of());
+        }
+
+        private FairQuantitativeAnalysisResult sampleResult(
+                List<FairQuantitativeAnalysisResult.FairAnalysisItem> items) {
+            return new FairQuantitativeAnalysisResult(
+                    "fair_analysis",
+                    "ground-control",
+                    Instant.parse("2026-05-30T00:00:00Z"),
+                    "fair-v3.0-monte-carlo-pert-v1",
+                    "continuous",
+                    "monetary per year",
+                    "USD",
+                    items,
+                    new FairQuantitativeAnalysisResult.Counts(items.size(), items.size(), 0),
+                    List.of());
+        }
+
+        @Test
+        void happyPath_returns200WithMethodologyAttribution() throws Exception {
+            when(grcAnalysisService.fairQuantitativeAnalysis(eq(PROJECT_ID), any(), any(), any()))
+                    .thenReturn(sampleResult(List.of(sampleItem())));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-quantitative").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("fair_analysis")))
+                    .andExpect(jsonPath("$.project", is("ground-control")))
+                    .andExpect(jsonPath("$.derivationMethod", is("fair-v3.0-monte-carlo-pert-v1")))
+                    .andExpect(jsonPath("$.scale", is("continuous")))
+                    .andExpect(jsonPath("$.units", is("monetary per year")))
+                    .andExpect(jsonPath("$.currency", is("USD")))
+                    .andExpect(jsonPath("$.assessments", hasSize(1)))
+                    .andExpect(jsonPath("$.assessments[0].family", is("FAIR")))
+                    .andExpect(jsonPath("$.assessments[0].outputs.annualizedLossExpectancy.currency", is("USD")))
+                    .andExpect(jsonPath("$.assessments[0].outputs.annualizedLossExpectancy.scale", is("UNITS")))
+                    .andExpect(jsonPath("$.assessments[0].outputs.annualizedLossExpectancy.percentiles.p50", is(50.0)))
+                    .andExpect(
+                            jsonPath("$.assessments[0].outputs.annualizedLossExpectancy.percentiles.p95", is(100.0)));
+        }
+
+        @Test
+        void projectNotFound_returns404() throws Exception {
+            when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-quantitative").param("project", "missing"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void nonFairProfile_returns422() throws Exception {
+            when(grcAnalysisService.fairQuantitativeAnalysis(eq(PROJECT_ID), any(), any(), any()))
+                    .thenThrow(new DomainValidationException(
+                            "Risk assessment result is not bound to a FAIR methodology profile"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-quantitative")
+                            .param("project", "ground-control")
+                            .param("riskAssessmentResultId", UUID.randomUUID().toString()))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+    }
+
+    @Nested
+    class FairCamControlAnalytics {
+
+        private FairCamControlAnalyticsResult.ControlAnalyticsItem sampleItem() {
+            var capability = new FairCamControlAnalyticsResult.DimensionMeasurement(
+                    1.0, "fraction", "fraction (0.0–1.0) per FAIR-CAM dimension", "derived from design_effectiveness");
+            var coverage = new FairCamControlAnalyticsResult.DimensionMeasurement(
+                    1.0, "fraction", "fraction (0.0–1.0) per FAIR-CAM dimension", "supporting tests present");
+            var op = new FairCamControlAnalyticsResult.DimensionMeasurement(
+                    1.0,
+                    "fraction",
+                    "fraction (0.0–1.0) per FAIR-CAM dimension",
+                    "derived from operating_effectiveness");
+            return new FairCamControlAnalyticsResult.ControlAnalyticsItem(
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    "CTRL-001",
+                    "Multi-Factor Authentication",
+                    FairCamControlDomain.LOSS_EVENT_CONTROL,
+                    LocalDate.parse("2026-04-01"),
+                    "auditor@example",
+                    ControlEffectivenessRating.EFFECTIVE,
+                    ControlEffectivenessRating.EFFECTIVE,
+                    new FairCamControlAnalyticsResult.Dimensions(capability, coverage, op),
+                    List.of(),
+                    List.of());
+        }
+
+        private FairCamControlAnalyticsResult sampleResult(
+                List<FairCamControlAnalyticsResult.ControlAnalyticsItem> items) {
+            return new FairCamControlAnalyticsResult(
+                    "fair_cam_control_analytics",
+                    "ground-control",
+                    Instant.parse("2026-05-30T00:00:00Z"),
+                    "fair-cam-v1-domain-attribution-and-three-dimensions",
+                    "fraction",
+                    "fraction (0.0–1.0) per FAIR-CAM dimension",
+                    items,
+                    new FairCamControlAnalyticsResult.Counts(
+                            items.size(), Map.of("LOSS_EVENT_CONTROL", items.size()), 0),
+                    List.of());
+        }
+
+        @Test
+        void happyPath_returns200WithMethodologyAttribution() throws Exception {
+            when(grcAnalysisService.fairCamControlAnalytics(eq(PROJECT_ID), any(), any()))
+                    .thenReturn(sampleResult(List.of(sampleItem())));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("fair_cam_control_analytics")))
+                    .andExpect(jsonPath("$.project", is("ground-control")))
+                    .andExpect(jsonPath("$.scale", is("fraction")))
+                    .andExpect(jsonPath("$.controls", hasSize(1)))
+                    .andExpect(jsonPath("$.controls[0].fairCamControlDomain", is("LOSS_EVENT_CONTROL")))
+                    .andExpect(jsonPath("$.controls[0].dimensions.capability.value", is(1.0)))
+                    .andExpect(jsonPath("$.controls[0].dimensions.coverage.value", is(1.0)))
+                    .andExpect(jsonPath("$.controls[0].dimensions.operationalPerformance.value", is(1.0)))
+                    .andExpect(jsonPath("$.controls[0].dimensions.capability.units")
+                            .exists())
+                    .andExpect(jsonPath("$.controls[0].designEffectiveness", is("EFFECTIVE")));
+        }
+
+        @Test
+        void emptyResult_returns200WithTopLimitation() throws Exception {
+            var result = new FairCamControlAnalyticsResult(
+                    "fair_cam_control_analytics",
+                    "ground-control",
+                    Instant.parse("2026-05-30T00:00:00Z"),
+                    "fair-cam-v1-domain-attribution-and-three-dimensions",
+                    "fraction",
+                    "fraction (0.0–1.0) per FAIR-CAM dimension",
+                    List.of(),
+                    new FairCamControlAnalyticsResult.Counts(0, Map.of(), 0),
+                    List.of(
+                            "no ControlEffectivenessAssessment evidence for the requested scope at 2026-05-30T00:00:00Z"));
+            when(grcAnalysisService.fairCamControlAnalytics(eq(PROJECT_ID), any(), any()))
+                    .thenReturn(result);
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.controls", hasSize(0)))
+                    .andExpect(jsonPath("$.limitations", hasSize(1)));
+        }
+
+        @Test
+        void projectNotFound_returns404() throws Exception {
+            when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "missing"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void invalidControlUuid_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control")
+                            .param("controlId", "not-a-uuid"))
+                    .andExpect(status().isBadRequest());
         }
     }
 }

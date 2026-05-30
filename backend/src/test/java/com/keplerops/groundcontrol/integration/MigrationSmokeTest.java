@@ -1095,6 +1095,15 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT id, project_id, category, severity, source_entity_type,"
                                 + " source_entity_id, summary, detected_at, acknowledged_at"
                                 + " FROM compliance_drift_event LIMIT 1")
+        // V131-V132: fair_cam_control_domain on control_effectiveness_assessment and audit (GC-I017).
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_name = 'control_effectiveness_assessment'"
+                        + " AND column_name = 'fair_cam_control_domain'")
+                .getSingleResult();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT fair_cam_control_domain"
+                                + " FROM control_effectiveness_assessment_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }

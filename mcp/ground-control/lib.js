@@ -1268,6 +1268,37 @@ export async function analyzeRiskPosture({ project, asOf } = {}) {
   });
 }
 
+// GC-T011 — FAIR quantitative analysis helper. Returns the methodology-attributed
+// envelope from /api/v1/analysis/grc/fair-quantitative verbatim. Methodology-defined
+// keys inside inputFactors (threat_event_frequency, primary_loss_magnitude, fair_cam, ...)
+// must reach the caller without case conversion; the outer keys are already guarded by
+// OPAQUE_VALUE_KEYS above. The backend remains the semantic validator — this helper
+// refuses caller-supplied URLs/headers/tokens (request() owns those).
+export async function analyzeFairQuantitative({
+  project,
+  asOf,
+  riskAssessmentResultId,
+  riskScenarioId,
+} = {}) {
+  return request("GET", "/api/v1/analysis/grc/fair-quantitative", {
+    params: { project, asOf, riskAssessmentResultId, riskScenarioId },
+  });
+}
+
+// GC-I017 — FAIR-CAM control analytics helper. Returns the methodology-attributed
+// envelope from /api/v1/analysis/grc/fair-cam-control-analytics verbatim. FAIR-CAM
+// capability/coverage/operational-performance dimensions are never collapsed into a
+// generic effectiveness score on the wire.
+export async function analyzeFairCamControlAnalytics({
+  project,
+  asOf,
+  controlId,
+} = {}) {
+  return request("GET", "/api/v1/analysis/grc/fair-cam-control-analytics", {
+    params: { project, asOf, controlId },
+  });
+}
+
 // Strict containment predicate. Both arguments MUST already be canonical
 // realpaths — call `realpathSync` on each side before invoking this. Returns
 // true iff `canonicalPath` is strictly inside `canonicalRoot` (rejects the
@@ -9264,8 +9295,10 @@ export const THREAT_SOURCE_RELEVANCES = [
 export const NIST_LIKELIHOOD_BANDS = ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"];
 export const NIST_IMPACT_BANDS = ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"];
 
-// GC-T012: normalized cross-methodology risk concept vocabulary (ADR-034 mirror).
-// Declaration order matches NormalizedConcept.java exactly.
+// GC-T012 / GC-T016: normalized cross-methodology risk concept vocabulary
+// (ADR-034 mirror). Declaration order matches NormalizedConcept.java exactly.
+// GC-T016 split: PRIMARY_LOSS_MAGNITUDE / SECONDARY_LOSS_MAGNITUDE are FAIR-style
+// further-discriminated forms of IMPACT_OR_LOSS_MAGNITUDE.
 export const NORMALIZED_CONCEPTS = [
   "THREAT_SOURCE",
   "THREAT_EVENT",
@@ -9276,7 +9309,43 @@ export const NORMALIZED_CONCEPTS = [
   "CONTROL",
   "LIKELIHOOD_OR_FREQUENCY",
   "IMPACT_OR_LOSS_MAGNITUDE",
+  "PRIMARY_LOSS_MAGNITUDE",
+  "SECONDARY_LOSS_MAGNITUDE",
   "TREATMENT",
+];
+
+// GC-I017: FAIR-CAM control-domain attribution (ADR-034 mirror). Declaration
+// order matches FairCamControlDomain.java exactly.
+export const FAIR_CAM_CONTROL_DOMAINS = [
+  "LOSS_EVENT_CONTROL",
+  "VARIANCE_MANAGEMENT_CONTROL",
+  "DECISION_SUPPORT_CONTROL",
+];
+
+// GC-T016: FAIR-MAM canonical nine-loss-form taxonomy (ADR-034 mirror).
+// Declaration order matches FairLossForm.java exactly.
+export const FAIR_LOSS_FORMS = [
+  "PRODUCTIVITY",
+  "RESPONSE",
+  "REPLACEMENT",
+  "COMPETITIVE_ADVANTAGE",
+  "FINES_AND_JUDGMENTS",
+  "REPUTATION",
+  "CUSTOMER_COMPENSATION",
+  "NOTIFICATION_AND_CREDIT_MONITORING",
+  "BUSINESS_INTERRUPTION",
+];
+
+// GC-T016: FAIR stakeholder taxonomy for secondary-loss attribution
+// (ADR-034 mirror). Declaration order matches FairStakeholderKind.java exactly.
+export const FAIR_STAKEHOLDER_KINDS = [
+  "ORGANIZATION",
+  "CUSTOMERS",
+  "REGULATORS",
+  "EMPLOYEES",
+  "INVESTORS",
+  "PARTNERS",
+  "PUBLIC",
 ];
 
 // GC-T012: vocabulary surfaces a crosswalk entry can target (ADR-034 mirror).

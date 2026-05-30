@@ -249,7 +249,8 @@ class MethodologyProfileServiceTest {
         assertThat(concepts)
                 .contains(
                         NormalizedConcept.LIKELIHOOD_OR_FREQUENCY,
-                        NormalizedConcept.IMPACT_OR_LOSS_MAGNITUDE,
+                        NormalizedConcept.PRIMARY_LOSS_MAGNITUDE,
+                        NormalizedConcept.SECONDARY_LOSS_MAGNITUDE,
                         NormalizedConcept.THREAT_EVENT,
                         NormalizedConcept.VULNERABILITY_OR_EXPOSURE,
                         NormalizedConcept.CONTROL);

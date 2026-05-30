@@ -668,6 +668,8 @@ export type NormalizedConcept =
   | "CONTROL"
   | "LIKELIHOOD_OR_FREQUENCY"
   | "IMPACT_OR_LOSS_MAGNITUDE"
+  | "PRIMARY_LOSS_MAGNITUDE"
+  | "SECONDARY_LOSS_MAGNITUDE"
   | "TREATMENT";
 export const NORMALIZED_CONCEPTS: NormalizedConcept[] = [
   "THREAT_SOURCE",
@@ -679,7 +681,65 @@ export const NORMALIZED_CONCEPTS: NormalizedConcept[] = [
   "CONTROL",
   "LIKELIHOOD_OR_FREQUENCY",
   "IMPACT_OR_LOSS_MAGNITUDE",
+  "PRIMARY_LOSS_MAGNITUDE",
+  "SECONDARY_LOSS_MAGNITUDE",
   "TREATMENT",
+];
+
+// GC-I017: FAIR-CAM control-domain attribution. Single-sourced from backend
+// FairCamControlDomain. Mirror policy per ADR-034.
+export type FairCamControlDomain =
+  | "LOSS_EVENT_CONTROL"
+  | "VARIANCE_MANAGEMENT_CONTROL"
+  | "DECISION_SUPPORT_CONTROL";
+export const FAIR_CAM_CONTROL_DOMAINS: FairCamControlDomain[] = [
+  "LOSS_EVENT_CONTROL",
+  "VARIANCE_MANAGEMENT_CONTROL",
+  "DECISION_SUPPORT_CONTROL",
+];
+
+// GC-T016: FAIR-MAM canonical nine-loss-form taxonomy. Single-sourced from
+// backend FairLossForm. Mirror policy per ADR-034.
+export type FairLossForm =
+  | "PRODUCTIVITY"
+  | "RESPONSE"
+  | "REPLACEMENT"
+  | "COMPETITIVE_ADVANTAGE"
+  | "FINES_AND_JUDGMENTS"
+  | "REPUTATION"
+  | "CUSTOMER_COMPENSATION"
+  | "NOTIFICATION_AND_CREDIT_MONITORING"
+  | "BUSINESS_INTERRUPTION";
+export const FAIR_LOSS_FORMS: FairLossForm[] = [
+  "PRODUCTIVITY",
+  "RESPONSE",
+  "REPLACEMENT",
+  "COMPETITIVE_ADVANTAGE",
+  "FINES_AND_JUDGMENTS",
+  "REPUTATION",
+  "CUSTOMER_COMPENSATION",
+  "NOTIFICATION_AND_CREDIT_MONITORING",
+  "BUSINESS_INTERRUPTION",
+];
+
+// GC-T016: FAIR stakeholder taxonomy for secondary-loss attribution.
+// Single-sourced from backend FairStakeholderKind. Mirror policy per ADR-034.
+export type FairStakeholderKind =
+  | "ORGANIZATION"
+  | "CUSTOMERS"
+  | "REGULATORS"
+  | "EMPLOYEES"
+  | "INVESTORS"
+  | "PARTNERS"
+  | "PUBLIC";
+export const FAIR_STAKEHOLDER_KINDS: FairStakeholderKind[] = [
+  "ORGANIZATION",
+  "CUSTOMERS",
+  "REGULATORS",
+  "EMPLOYEES",
+  "INVESTORS",
+  "PARTNERS",
+  "PUBLIC",
 ];
 
 export type CrosswalkVocabularySurface =
