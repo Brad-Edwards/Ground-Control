@@ -237,6 +237,14 @@ The crosswalk list is persisted as a JSON-typed `TEXT` column (`crosswalk_entrie
 
 The two supporting enums (`NormalizedConcept`, `CrosswalkVocabularySurface`) are mirrored at the MCP (`lib.js` constant arrays) and frontend (`api.ts` union types + const arrays) boundaries per ADR-034, and enforced by `tools/policy/checks.py::ENUM_CONTRACT_INVENTORY`.
 
+## Backlog, Decision, and Interchange Aggregates (Wave 5–6)
+
+Three independent aggregates land together because their boundaries do not overlap:
+
+- **BacklogItem (GC-W003 / ADR-056)** captures product backlog work with four probability-distribution-valued Cost-of-Delay components. WSJF is computed on demand via a seeded Monte Carlo helper (`SeededMonteCarlo`) under `domain/grcanalysis/util/`. The same helper is the canonical reproducibility primitive for any future distributional analysis. Re-prioritization analysis compares two snapshots and emits per-item rank deltas. REST surface: `/api/v1/backlog-items`.
+- **DecisionAnalysisRecord (GC-W011 / ADR-057)** records decision analyses (inputs, model name, simulation parameters, results, alternatives, chosen alternative, rationale). Lives at `domain/decisions/` (plural; deliberately avoiding the `domain/audit/` Envers package and the `gc_post_decision_record` workflow gate string). A new `ArtifactType.DECISION_RECORD` enum constant lets the existing TraceabilityLink substrate target decisions from requirements, ADRs, and risk scenarios. REST surface: `/api/v1/decisions`.
+- **GrcInterchangeBundle (GC-P012)** is a versioned JSON envelope for graph-native GRC interchange, covering operational assets, risk scenarios, controls, findings, and evidence references. The exporter walks each domain aggregate into the envelope. The importer is idempotent by `externalUid` and persists a `GrcInterchangeProvenance` shadow per entity so client-supplied `createdAt` / `updatedAt` never overwrite domain timestamps (ADR-045). Cross-project bundles are refused. JSON-only with no XML, so no XXE (ADR-026). REST surfaces: `GET /api/v1/export/grc-interchange`, `POST /api/v1/admin/import/grc-interchange`.
+
 ## Knowledge Ingest Engine (repo-local, out of the product model)
 
 Each repository that uses Ground Control can declare an agent-maintained knowledge base under `docs/knowledge/` via the `knowledge` section of its `.ground-control.yaml`. The `gc_remember` MCP tool captures observations into that repo's inbox; a detached ingest subprocess reads the inbox item, decides update-vs-create via codex, writes the wiki page, and commits the change under a per-repo interprocess lock. The engine lives at `mcp/ground-control/knowledge_ingest.js` with a thin CLI entry at `mcp/ground-control/knowledge_ingest_cli.js`.

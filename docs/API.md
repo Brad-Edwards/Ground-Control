@@ -2136,6 +2136,61 @@ informational and is rejected in trust policy rules. Regex policy rules are also
 disabled; use bounded operators `EQUALS`, `NOT_EQUALS`, `CONTAINS`, and
 `IN_LIST`.
 
+### Backlog Items (GC-W003)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/backlog-items` | BacklogItemRequest | 201 | Create backlog item |
+| GET | `/backlog-items` |—| 200 | List backlog items for a project |
+| GET | `/backlog-items/{id}` |—| 200 | Get backlog item by UUID |
+| GET | `/backlog-items/uid/{uid}` |—| 200 | Get backlog item by UID |
+| PUT | `/backlog-items/{id}` | UpdateBacklogItemRequest | 200 | Update mutable fields |
+| PUT | `/backlog-items/{id}/status` | `{"status": "READY"}` | 200 | Transition status |
+| DELETE | `/backlog-items/{id}` |—| 204 | Delete backlog item |
+| GET | `/backlog-items/{id}/wsjf?seed=X&iterations=N` |—| 200 | Compute WSJF distribution |
+
+Per ADR-056, every CoD component (`userBusinessValue`, `timeCriticality`,
+`riskReductionOpportunityEnablement`, `jobDuration`) is a `CostOfDelayComponent`
+record with `kind` (`POINT`, `UNIFORM`, `TRIANGULAR`), `min`, `mode`, `max`,
+and `attributedTo`. WSJF is computed on demand via seeded Monte Carlo; the
+response envelope follows ADR-035 with `analysisKind = "wsjf"`, `scale`,
+`units`, `limitations`, the seed + iterations, mean / median / p10 / p90,
+and the raw samples.
+
+### Decision Analysis Records (GC-W011)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/decisions` | DecisionAnalysisRecordRequest | 201 | Record a decision analysis |
+| GET | `/decisions` |—| 200 | List decision records for a project |
+| GET | `/decisions/{id}` |—| 200 | Get decision record by UUID |
+| GET | `/decisions/uid/{uid}` |—| 200 | Get decision record by UID |
+| PUT | `/decisions/{id}` | UpdateDecisionAnalysisRecordRequest | 200 | Update mutable fields |
+| DELETE | `/decisions/{id}` |—| 204 | Delete decision record |
+
+Per ADR-057, decision records carry `uid`, `title`, `modelName`, `summary`,
+`inputs`, `simulationParameters`, `results`, `alternatives`,
+`chosenAlternative`, and `rationale`. Estimator identity flows through
+ActorHolder. Decision records are linkable from requirements / ADRs /
+risk-scenarios via the existing traceability substrate with the new
+`DECISION_RECORD` artifact type.
+
+### GRC Interchange (GC-P012)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/export/grc-interchange` |—| 200 | Export project graph as JSON bundle |
+| POST | `/admin/import/grc-interchange` (multipart) | JSON bundle | 200 | Import a graph-native GRC bundle |
+
+The bundle carries `formatVersion`, `exportedAt`, `projectIdentifier`, and
+arrays for assets, riskScenarios, controls, findings, and evidenceArtifacts.
+Import is idempotent by `externalUid`; the operational-asset surface is
+upserted in this release, and provenance shadow rows are written for every
+entity-kind payload found in the bundle. Client-supplied `createdAt` /
+`updatedAt` land on the provenance shadow only; domain entity timestamps
+remain owned by `BaseEntity` (ADR-045). Cross-project bundles (where
+`projectIdentifier` mismatches the resolved project) are refused.
+
 ## Interactive Docs
 
 - Swagger UI: `http://localhost:8000/api/docs`

@@ -11,8 +11,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keplerops.groundcontrol.api.admin.ImportController;
 import com.keplerops.groundcontrol.domain.exception.GroundControlException;
+import com.keplerops.groundcontrol.domain.interchange.service.GrcInterchangeImporter;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.requirements.service.ImportResult;
 import com.keplerops.groundcontrol.domain.requirements.service.ImportService;
@@ -43,6 +45,12 @@ class ImportControllerTest {
 
     @MockitoBean
     private ProjectService projectService;
+
+    @MockitoBean
+    private GrcInterchangeImporter grcInterchangeImporter;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Nested
     class ImportStrictdoc {
@@ -81,7 +89,7 @@ class ImportControllerTest {
             when(brokenFile.getBytes()).thenThrow(new IOException("disk error"));
             when(brokenFile.getOriginalFilename()).thenReturn("test.sdoc");
 
-            var controller = new ImportController(importService, projectService);
+            var controller = new ImportController(importService, projectService, grcInterchangeImporter, objectMapper);
             assertThatThrownBy(() -> controller.importStrictdoc(brokenFile, null))
                     .isInstanceOf(GroundControlException.class)
                     .hasMessageContaining("Failed to read uploaded file")
@@ -126,7 +134,7 @@ class ImportControllerTest {
             when(brokenFile.getBytes()).thenThrow(new IOException("disk error"));
             when(brokenFile.getOriginalFilename()).thenReturn("test.reqif");
 
-            var controller = new ImportController(importService, projectService);
+            var controller = new ImportController(importService, projectService, grcInterchangeImporter, objectMapper);
             assertThatThrownBy(() -> controller.importReqif(brokenFile, null))
                     .isInstanceOf(GroundControlException.class)
                     .hasMessageContaining("Failed to read uploaded file")

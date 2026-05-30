@@ -524,6 +524,12 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "128", // V128: expand seeded NIST SP 800-30 Rev. 1 profile schema (GC-T014)
                         "129", // V129: add methodology_profile crosswalk_entries column (GC-T012)
                         "130", // V130: add methodology_profile_aud crosswalk_entries column (GC-T012 audit parity)
-                        "131"); // V131: risk governance lifecycle aggregates (GC-T005 / T006 / T007 / T015)
+                        "131", // V131: risk governance lifecycle aggregates (GC-T005 / T006 / T007 / T015)
+                        "139", // V139: create backlog_item (GC-W003)
+                        "140", // V140: create backlog_item_audit
+                        "141", // V141: create decision_analysis_record (GC-W011)
+                        "142", // V142: create decision_analysis_record_audit
+                        "143", // V143: create grc_interchange_provenance (GC-P012)
+                        "144"); // V144: create grc_interchange_provenance_audit
     }
 }

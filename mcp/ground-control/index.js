@@ -39,6 +39,17 @@
 // path. The allowlist covers every read prefix the curated tools used to
 // expose; agents discover them via gc_get_repo_ground_control_context's
 // catalog field.
+//
+// GC-W003 / #781 BacklogItem, GC-W011 / #789 DecisionAnalysisRecord, and
+// GC-P012 / #752 GrcInterchangeBundle land their REST surfaces under
+// `/api/v1/backlog-items`, `/api/v1/decisions`, `/api/v1/export/grc-interchange`,
+// and `/api/v1/admin/import/grc-interchange`. The read paths are reachable via
+// `gc_query` (allowlist updated in `gc-query.js`). Writes for backlog and
+// decisions go through `gc_query` would not work — those are POST/PUT/DELETE,
+// so they remain accessible only via the bearer-authenticated REST API for now;
+// a curated `gc_backlog` / `gc_decision` tool can be added in a follow-up
+// without renegotiating the envelope shape. Interchange import is admin-only
+// and therefore not exposed through `gc_query` (denylist).
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

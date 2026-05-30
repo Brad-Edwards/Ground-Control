@@ -76,7 +76,8 @@ export type ArtifactType =
   | "PROOF"
   | "DOCUMENTATION"
   | "RISK_SCENARIO"
-  | "CONTROL";
+  | "CONTROL"
+  | "DECISION_RECORD";
 export const ARTIFACT_TYPES: ArtifactType[] = [
   "GITHUB_ISSUE",
   "PULL_REQUEST",
@@ -90,6 +91,7 @@ export const ARTIFACT_TYPES: ArtifactType[] = [
   "DOCUMENTATION",
   "RISK_SCENARIO",
   "CONTROL",
+  "DECISION_RECORD",
 ];
 export type LinkType =
   | "IMPLEMENTS"

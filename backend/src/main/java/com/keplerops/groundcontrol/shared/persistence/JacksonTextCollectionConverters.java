@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.keplerops.groundcontrol.domain.audits.model.AuditPhase;
+import com.keplerops.groundcontrol.domain.backlog.model.CostOfDelayComponent;
 import com.keplerops.groundcontrol.domain.evidence.model.EvidenceSourceRef;
 import com.keplerops.groundcontrol.domain.packregistry.model.PackDependency;
 import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPackEntry;
@@ -245,6 +246,17 @@ public final class JacksonTextCollectionConverters {
     public static class CrosswalkEntryListConverter extends AbstractJsonTextConverter<List<CrosswalkEntry>> {
 
         public CrosswalkEntryListConverter() {
+            super(new TypeReference<>() {});
+        }
+    }
+
+    /**
+     * Persistence converter for {@code BacklogItem.*Component} fields (per GC-W003).
+     */
+    @Converter
+    public static class CostOfDelayComponentConverter extends AbstractJsonTextConverter<CostOfDelayComponent> {
+
+        public CostOfDelayComponentConverter() {
             super(new TypeReference<>() {});
         }
     }

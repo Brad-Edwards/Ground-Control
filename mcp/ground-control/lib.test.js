@@ -5781,6 +5781,7 @@ describe("constants", () => {
       "DOCUMENTATION",
       "RISK_SCENARIO",
       "CONTROL",
+      "DECISION_RECORD",
     ]);
   });
 

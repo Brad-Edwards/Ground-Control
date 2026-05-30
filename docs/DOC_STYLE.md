@@ -171,3 +171,9 @@ backend Java enums had been extended past the MCP Zod surface and the
 13 new snake_case DTO fields were passing through unrenamed. No new style
 rule is established by this change; the ADR-054 amendment carries the
 record of the surface addition.
+
+Additions to the `ARTIFACT_TYPES` constant array in `mcp/ground-control/lib.js`
+(for example, `"DECISION_RECORD"` added for GC-W011 / #789) mirror the Java
+`ArtifactType` enum per ADR-034. The surface addition is recorded in the
+ADR-054 amendment and the changelog fragment; no new DOC_STYLE.md prose is
+needed.

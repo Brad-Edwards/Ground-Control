@@ -1,6 +1,8 @@
 package com.keplerops.groundcontrol.api.export;
 
 import com.keplerops.groundcontrol.domain.documents.service.DocumentExportService;
+import com.keplerops.groundcontrol.domain.interchange.payload.GrcInterchangeBundle;
+import com.keplerops.groundcontrol.domain.interchange.service.GrcInterchangeExporter;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.requirements.service.AnalysisService;
 import com.keplerops.groundcontrol.domain.requirements.service.AnalysisSweepService;
@@ -41,6 +43,7 @@ public class ExportController {
     private final SweepExportCsvService sweepCsvService;
     private final SweepExportExcelService sweepExcelService;
     private final SweepExportPdfService sweepPdfService;
+    private final GrcInterchangeExporter grcInterchangeExporter;
 
     public ExportController(
             DocumentExportService documentExportService,
@@ -52,7 +55,8 @@ public class ExportController {
             RequirementsExportPdfService requirementsPdfService,
             SweepExportCsvService sweepCsvService,
             SweepExportExcelService sweepExcelService,
-            SweepExportPdfService sweepPdfService) {
+            SweepExportPdfService sweepPdfService,
+            GrcInterchangeExporter grcInterchangeExporter) {
         this.documentExportService = documentExportService;
         this.projectService = projectService;
         this.analysisService = analysisService;
@@ -63,6 +67,7 @@ public class ExportController {
         this.sweepCsvService = sweepCsvService;
         this.sweepExcelService = sweepExcelService;
         this.sweepPdfService = sweepPdfService;
+        this.grcInterchangeExporter = grcInterchangeExporter;
     }
 
     @GetMapping("/requirements")
@@ -108,6 +113,15 @@ public class ExportController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .contentType(mediaType)
                 .body(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Export the project's GRC interchange bundle per GC-P012. JSON only.
+     */
+    @GetMapping("/grc-interchange")
+    public GrcInterchangeBundle exportGrcInterchange(@RequestParam(required = false) String project) {
+        var projectId = projectService.resolveProjectId(project);
+        return grcInterchangeExporter.export(projectId);
     }
 
     @GetMapping("/document/{documentId}")

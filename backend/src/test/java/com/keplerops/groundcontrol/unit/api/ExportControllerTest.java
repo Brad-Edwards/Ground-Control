@@ -70,6 +70,9 @@ class ExportControllerTest {
     @MockitoBean
     private com.keplerops.groundcontrol.domain.documents.service.DocumentExportService documentExportService;
 
+    @MockitoBean
+    private com.keplerops.groundcontrol.domain.interchange.service.GrcInterchangeExporter grcInterchangeExporter;
+
     private static final UUID PROJECT_ID = UUID.randomUUID();
 
     @Test

@@ -148,4 +148,15 @@
         <Class name="com.keplerops.groundcontrol.domain.trace.SecurityTrace$RequirementTrace" />
         <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2" />
     </Match>
+
+    <!-- GrcInterchangeBundle (GC-P012) is a JSON wire record under
+         domain/interchange/payload. The canonical constructor takes defensive
+         List.copyOf copies so the bundle is genuinely immutable in practice,
+         but SpotBugs still flags the field-by-record accessor and the
+         constructor field assignment. The contract is documented in the type
+         and reinforced by tests. -->
+    <Match>
+        <Package name="~com\.keplerops\.groundcontrol\.domain\.interchange\.payload" />
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2" />
+    </Match>
 </FindBugsFilter>

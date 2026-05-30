@@ -157,7 +157,7 @@ public class StatusDriftService {
                     link,
                     link.getLinkType().name() + " link to "
                             + link.getArtifactType().name()));
-            case RISK_SCENARIO, CONTROL -> Optional.empty();
+            case RISK_SCENARIO, CONTROL, DECISION_RECORD -> Optional.empty();
         };
     }
 
