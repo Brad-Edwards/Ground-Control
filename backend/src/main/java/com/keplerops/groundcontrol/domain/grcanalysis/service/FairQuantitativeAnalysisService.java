@@ -222,20 +222,27 @@ public class FairQuantitativeAnalysisService {
             return SecondaryInputs.dropped(1.0);
         }
 
+        return reconcileSecondaryMonetary(inputs, primary, secondaryLossFreq, secondaryLoss, limitations);
+    }
+
+    /**
+     * Reconcile the secondary loss pair's currency and scale with the primary envelope.
+     * Refuse to combine across currencies — drop with a limitation. Scale mismatches are
+     * normalized with a recorded factor.
+     */
+    private SecondaryInputs reconcileSecondaryMonetary(
+            Map<String, Object> inputs,
+            PrimaryInputs primary,
+            ThreePoint secondaryLossFreq,
+            ThreePoint secondaryLoss,
+            List<String> limitations) {
         // Resolve secondary currency/scale and reconcile with the primary
         // envelope. Mixing currencies silently would produce a wrong ALE; mixing
         // scales is recoverable via a known factor, but we still record the
-        // normalization. Refuse to combine across currencies — drop the
-        // secondary contribution from the LM / ALE rollup and emit a limitation.
+        // normalization.
         Map<String, Object> secondaryLossMap = asMap(inputs.get(KEY_SECONDARY_LOSS));
-        String secondaryCurrency = stringValue(secondaryLossMap.get(KEY_CURRENCY));
-        if (secondaryCurrency == null || secondaryCurrency.isBlank()) {
-            secondaryCurrency = primary.currency();
-        }
-        String secondaryScale = stringValue(secondaryLossMap.get(KEY_SCALE));
-        if (secondaryScale == null || secondaryScale.isBlank()) {
-            secondaryScale = primary.monetaryScale();
-        }
+        String secondaryCurrency = coalesce(stringValue(secondaryLossMap.get(KEY_CURRENCY)), primary.currency());
+        String secondaryScale = coalesce(stringValue(secondaryLossMap.get(KEY_SCALE)), primary.monetaryScale());
 
         if (!secondaryCurrency.equalsIgnoreCase(primary.currency())) {
             limitations.add("FAIR secondary_loss_magnitude currency \"" + secondaryCurrency
@@ -243,21 +250,37 @@ public class FairQuantitativeAnalysisService {
                     + SECONDARY_DROPPED_SUFFIX);
             return SecondaryInputs.dropped(1.0);
         }
+        return reconcileSecondaryScale(primary, secondaryLossFreq, secondaryLoss, secondaryScale, limitations);
+    }
 
-        if (!secondaryScale.equalsIgnoreCase(primary.monetaryScale())) {
-            Double factor = scaleConversionFactor(secondaryScale, primary.monetaryScale());
-            if (factor == null) {
-                limitations.add("FAIR secondary_loss_magnitude scale \"" + secondaryScale
-                        + "\" not convertible to primary_loss_magnitude scale \"" + primary.monetaryScale()
-                        + SECONDARY_DROPPED_SUFFIX);
-                return SecondaryInputs.dropped(1.0);
-            }
-            limitations.add("FAIR secondary_loss_magnitude scale \"" + secondaryScale
-                    + "\" normalized to primary scale \"" + primary.monetaryScale() + "\" (factor=" + factor + ")");
-            return new SecondaryInputs(secondaryLossFreq, secondaryLoss, factor);
+    /**
+     * Reconcile secondary scale: normalize with a conversion factor if the secondary scale
+     * differs from primary, or drop with a limitation if the labels are unknown.
+     */
+    private static SecondaryInputs reconcileSecondaryScale(
+            PrimaryInputs primary,
+            ThreePoint secondaryLossFreq,
+            ThreePoint secondaryLoss,
+            String secondaryScale,
+            List<String> limitations) {
+        if (secondaryScale.equalsIgnoreCase(primary.monetaryScale())) {
+            return new SecondaryInputs(secondaryLossFreq, secondaryLoss, 1.0);
         }
+        Double factor = scaleConversionFactor(secondaryScale, primary.monetaryScale());
+        if (factor == null) {
+            limitations.add("FAIR secondary_loss_magnitude scale \"" + secondaryScale
+                    + "\" not convertible to primary_loss_magnitude scale \"" + primary.monetaryScale()
+                    + SECONDARY_DROPPED_SUFFIX);
+            return SecondaryInputs.dropped(1.0);
+        }
+        limitations.add("FAIR secondary_loss_magnitude scale \"" + secondaryScale + "\" normalized to primary scale \""
+                + primary.monetaryScale() + "\" (factor=" + factor + ")");
+        return new SecondaryInputs(secondaryLossFreq, secondaryLoss, factor);
+    }
 
-        return new SecondaryInputs(secondaryLossFreq, secondaryLoss, 1.0);
+    /** Returns {@code value} if it is non-null and non-blank; otherwise returns {@code fallback}. */
+    private static String coalesce(String value, String fallback) {
+        return (value == null || value.isBlank()) ? fallback : value;
     }
 
     /** Phase 3: run the Monte Carlo simulation, or fall back to zero outputs if inputs incomplete. */
@@ -510,6 +533,12 @@ public class FairQuantitativeAnalysisService {
             }
             return null;
         }
+        return buildThreePoint(key, low, likely, high, limitations);
+    }
+
+    /** Build a {@link ThreePoint}, clamping the order if the triangle invariant is violated. */
+    private static ThreePoint buildThreePoint(
+            String key, double low, double likely, double high, List<String> limitations) {
         if (likely < low || high < likely) {
             if (limitations != null) {
                 limitations.add(FAIR_INPUT_PREFIX + key + "\" violates low <= likely <= high; using clamped order");
@@ -526,14 +555,15 @@ public class FairQuantitativeAnalysisService {
         if (o instanceof Number n) {
             return n.doubleValue();
         }
-        if (o instanceof String s) {
-            try {
-                return Double.parseDouble(s);
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
+        return o instanceof String s ? parseDoubleOrNull(s) : null;
+    }
+
+    private static Double parseDoubleOrNull(String s) {
+        try {
+            return Double.parseDouble(s);
+        } catch (NumberFormatException ignored) {
+            return null;
         }
-        return null;
     }
 
     private static String stringValue(Object o) {
