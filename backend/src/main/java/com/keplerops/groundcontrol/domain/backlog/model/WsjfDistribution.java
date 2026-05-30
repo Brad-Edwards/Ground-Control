@@ -15,7 +15,7 @@ import java.util.UUID;
  * don't recompute them. {@code seed} and {@code iterations} are surfaced so a
  * reviewer can re-run the same computation and confirm a result.
  */
-@SuppressWarnings("ArrayRecordComponent")
+@SuppressWarnings("ArrayRecordComponent") // primitive array intentional: avoids boxing overhead for Monte Carlo samples
 public record WsjfDistribution(
         long seed, int iterations, double[] samples, double mean, double median, double p10, double p90) {
 
@@ -85,9 +85,7 @@ public record WsjfDistribution(
         double idx = q * (sortedAscending.length - 1);
         int lo = (int) Math.floor(idx);
         int hi = (int) Math.ceil(idx);
-        if (lo == hi) {
-            return sortedAscending[lo];
-        }
+        // When lo == hi the interpolation below reduces to sortedAscending[lo] correctly.
         return sortedAscending[lo] + (sortedAscending[hi] - sortedAscending[lo]) * (idx - lo);
     }
 
@@ -115,6 +113,44 @@ public record WsjfDistribution(
     @Override
     public double[] samples() {
         return samples.clone();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof WsjfDistribution other)) return false;
+        return seed == other.seed
+                && iterations == other.iterations
+                && Double.compare(mean, other.mean) == 0
+                && Double.compare(median, other.median) == 0
+                && Double.compare(p10, other.p10) == 0
+                && Double.compare(p90, other.p90) == 0
+                && Arrays.equals(samples, other.samples);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = Long.hashCode(seed);
+        result = 31 * result + Integer.hashCode(iterations);
+        result = 31 * result + Arrays.hashCode(samples);
+        result = 31 * result + Double.hashCode(mean);
+        result = 31 * result + Double.hashCode(median);
+        result = 31 * result + Double.hashCode(p10);
+        result = 31 * result + Double.hashCode(p90);
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        return "WsjfDistribution["
+                + "seed=" + seed
+                + ", iterations=" + iterations
+                + ", samples=" + Arrays.toString(samples)
+                + ", mean=" + mean
+                + ", median=" + median
+                + ", p10=" + p10
+                + ", p90=" + p90
+                + ']';
     }
 
     /**
