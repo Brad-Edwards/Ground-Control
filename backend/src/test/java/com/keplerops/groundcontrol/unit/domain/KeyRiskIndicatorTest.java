@@ -88,9 +88,9 @@ class KeyRiskIndicatorTest {
         assertThat(k.classify(BigDecimal.TEN)).isNull();
     }
 
-    // Null-value guard is explicit in production (line 114 of KeyRiskIndicator);
-    // without an explicit test, deleting `value == null` from that guard would
-    // NPE under any caller passing null but no test would catch it.
+    // Null-value guard: the guard in classify() returns null when value is null.
+    // Removing that guard would NPE on any caller that passes null without
+    // triggering a test failure under the original suite.
     @Test
     void classifyReturnsNullWhenValueIsNull() {
         var k = kri(new BigDecimal("10"), new BigDecimal("20"), null);
@@ -100,7 +100,8 @@ class KeyRiskIndicatorTest {
     @Test
     void recordMeasurementThrowsWhenUnconfigured() {
         var k = new KeyRiskIndicator(new Project("p", "P"), "KRI-001", "Test");
-        assertThatThrownBy(() -> k.recordMeasurement(BigDecimal.TEN, Instant.now()))
+        var now = Instant.parse("2026-04-04T12:00:00Z");
+        assertThatThrownBy(() -> k.recordMeasurement(BigDecimal.TEN, now))
                 .isInstanceOf(DomainValidationException.class);
     }
 

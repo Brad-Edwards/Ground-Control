@@ -103,7 +103,7 @@ class RiskAssessmentCampaignControllerTest {
         var advanced = makeCampaign();
         setField(advanced, "phase", CampaignPhase.IDENTIFICATION);
         when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
-        when(service.advancePhase(eq(PROJECT_ID), eq(CAMPAIGN_ID), eq(CampaignPhase.IDENTIFICATION)))
+        when(service.advancePhase(PROJECT_ID, CAMPAIGN_ID, CampaignPhase.IDENTIFICATION))
                 .thenReturn(advanced);
 
         mockMvc.perform(
@@ -145,7 +145,7 @@ class RiskAssessmentCampaignControllerTest {
         assertThat(campaign.getPhase()).isEqualTo(CampaignPhase.IDENTIFICATION);
 
         when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
-        when(service.advancePhase(eq(PROJECT_ID), eq(CAMPAIGN_ID), eq(CampaignPhase.IDENTIFICATION)))
+        when(service.advancePhase(PROJECT_ID, CAMPAIGN_ID, CampaignPhase.IDENTIFICATION))
                 .thenReturn(campaign);
 
         mockMvc.perform(
@@ -209,7 +209,7 @@ class RiskAssessmentCampaignControllerTest {
     @Test
     void advancePhaseReturns422OnDomainValidationException() throws Exception {
         when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
-        when(service.advancePhase(eq(PROJECT_ID), eq(CAMPAIGN_ID), eq(CampaignPhase.EVALUATION)))
+        when(service.advancePhase(PROJECT_ID, CAMPAIGN_ID, CampaignPhase.EVALUATION))
                 .thenThrow(new DomainValidationException(
                         "Campaign cannot advance to EVALUATION without a bound methodology profile"));
 

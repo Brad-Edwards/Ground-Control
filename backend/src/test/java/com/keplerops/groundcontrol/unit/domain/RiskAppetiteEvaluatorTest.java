@@ -11,6 +11,8 @@ import com.keplerops.groundcontrol.domain.riskscenarios.state.AppetiteToleranceK
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class RiskAppetiteEvaluatorTest {
 
@@ -22,8 +24,12 @@ class RiskAppetiteEvaluatorTest {
         return profile;
     }
 
-    @Test
-    void monetaryWithinReturnsWithin() {
+    // Three monetary outcome bands in a single parameterized test: below the lower
+    // bound (WITHIN), inside the band (APPROACHING), and above the upper bound
+    // (EXCEEDS). Tolerance band: monetaryLow=$100k, monetaryHigh=$500k, USD.
+    @ParameterizedTest(name = "monetary value={0} → outcome={1}")
+    @CsvSource({"50000,   WITHIN", "200000,  APPROACHING", "1000000, EXCEEDS"})
+    void monetaryOutcomeForValueAgainstBand(String valueStr, Outcome expected) {
         var profile = profileWith(List.of(new RiskAppetiteTolerance(
                 "CYBER",
                 AppetiteToleranceKind.MONETARY_RANGE,
@@ -35,42 +41,8 @@ class RiskAppetiteEvaluatorTest {
                 null,
                 null,
                 null)));
-        var result = evaluator.evaluateMonetary(profile, "CYBER", new BigDecimal("50000"), "USD");
-        assertThat(result.outcome()).isEqualTo(Outcome.WITHIN);
-    }
-
-    @Test
-    void monetaryApproachingReturnsApproaching() {
-        var profile = profileWith(List.of(new RiskAppetiteTolerance(
-                "CYBER",
-                AppetiteToleranceKind.MONETARY_RANGE,
-                null,
-                new BigDecimal("100000"),
-                new BigDecimal("500000"),
-                "USD",
-                null,
-                null,
-                null,
-                null)));
-        var result = evaluator.evaluateMonetary(profile, "CYBER", new BigDecimal("200000"), "USD");
-        assertThat(result.outcome()).isEqualTo(Outcome.APPROACHING);
-    }
-
-    @Test
-    void monetaryExceedingReturnsExceeds() {
-        var profile = profileWith(List.of(new RiskAppetiteTolerance(
-                "CYBER",
-                AppetiteToleranceKind.MONETARY_RANGE,
-                null,
-                new BigDecimal("100000"),
-                new BigDecimal("500000"),
-                "USD",
-                null,
-                null,
-                null,
-                null)));
-        var result = evaluator.evaluateMonetary(profile, "CYBER", new BigDecimal("1000000"), "USD");
-        assertThat(result.outcome()).isEqualTo(Outcome.EXCEEDS);
+        var result = evaluator.evaluateMonetary(profile, "CYBER", new BigDecimal(valueStr), "USD");
+        assertThat(result.outcome()).isEqualTo(expected);
     }
 
     @Test
@@ -283,11 +255,10 @@ class RiskAppetiteEvaluatorTest {
 
     // ------------------------------------------------------------------
     // NOT_EVALUATED guard coverage. The production code explicitly guards
-    // null value, tolerance missing the relevant threshold field, and the
-    // qualitativeLabel-null branch — without explicit tests, deleting any
-    // guard would NPE at runtime but pass under the original suite. One
-    // case per kind for (a) value=null and (b) the relevant tolerance
-    // field unset.
+    // null value and a missing threshold field for each kind. Without these
+    // tests, removing any guard would NPE at runtime but pass silently
+    // under the original suite. Each kind has two cases: null input value,
+    // and the relevant threshold field absent from the tolerance record.
     // ------------------------------------------------------------------
 
     @Test
