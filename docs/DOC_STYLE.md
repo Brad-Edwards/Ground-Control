@@ -135,10 +135,12 @@ is the tool's adapter file (`gc-threat-model.js` or sibling), and the
 amendment record lives in ADR-054. No new sections in this style guide.
 
 New API client functions added to `mcp/ground-control/lib.js` (for example,
-`getThreatModelWorkspace` for GC-Q010, `getRiskScenarioWorkspace` for GC-Q009)
-that directly mirror backend endpoints follow the same pattern: record the
-surface addition in the ADR-054 amendment and the changelog fragment; no new
-DOC_STYLE.md prose is needed unless a new style rule is being established.
+`getThreatModelWorkspace` for GC-Q010, `getRiskScenarioWorkspace` for GC-Q009,
+and `getTraceabilityMatrix`, `getControlWorkspace`, `getEvidenceExplorer`, and
+`analyzePortfolio` for GC-Q003/Q011/Q012/Q013) that directly mirror backend
+endpoints follow the same pattern: record the surface addition in the ADR-054
+amendment and the changelog fragment; no new DOC_STYLE.md prose is needed unless
+a new style rule is being established.
 
 New /implement workflow-gate MCP tools added to `mcp/ground-control/lib.js`
 and `mcp/ground-control/index.js` (for example, `gc_assert_traceability_reconciled`

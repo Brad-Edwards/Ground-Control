@@ -19,6 +19,7 @@ import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService
 import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionMode;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.PortfolioSummaryResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.VendorRiskAggregationResult;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.NistImpactBand;
@@ -340,6 +341,99 @@ class GrcAnalysisControllerTest {
                             .param("project", "ground-control")
                             .param("riskAssessmentResultId", UUID.randomUUID().toString()))
                     .andExpect(status().isUnprocessableEntity());
+        }
+    }
+
+    @Nested
+    class Portfolio {
+
+        private PortfolioSummaryResult portfolioResult() {
+            return new PortfolioSummaryResult(
+                    "ground-control",
+                    Instant.parse("2026-05-18T00:00:00Z"),
+                    "portfolio-projection-v1",
+                    new PortfolioSummaryResult.RiskPosture(
+                            2,
+                            java.util.Map.of("ACTIVE", 2),
+                            1,
+                            java.util.Map.of("APPROVED", 1),
+                            1,
+                            java.util.Map.of("PLANNED", 1),
+                            java.util.Map.of("MITIGATE", 1),
+                            1,
+                            java.util.Map.of("IDENTIFIED", 1),
+                            1,
+                            1,
+                            List.of("RRR-009")),
+                    new PortfolioSummaryResult.ControlHealth(
+                            3,
+                            java.util.Map.of("OPERATIONAL", 3),
+                            java.util.Map.of("EFFECTIVE", 2),
+                            java.util.Map.of("EFFECTIVE", 2),
+                            1,
+                            1,
+                            List.of("CTL-008"),
+                            List.of("CTL-009")),
+                    new PortfolioSummaryResult.EvidenceFreshness(2, 1, 0, 0, 3),
+                    new PortfolioSummaryResult.FindingTrends(
+                            4,
+                            java.util.Map.of("HIGH", 2),
+                            java.util.Map.of("OPEN", 3),
+                            java.util.Map.of("CONTROL_DEFICIENCY", 4),
+                            3,
+                            1,
+                            List.of("FIND-001", "FIND-002", "FIND-003"),
+                            List.of("FIND-004")),
+                    new PortfolioSummaryResult.AssetCriticality(
+                            5,
+                            java.util.Map.of("CRITICAL", 2),
+                            java.util.Map.of("PRODUCTION", 5),
+                            java.util.Map.of("IN_SCOPE", 5),
+                            List.of("A-001", "A-002")),
+                    List.of(new PortfolioSummaryResult.MethodologySummary("FAIR", 1, 1, 1, 1)),
+                    List.of("note"));
+        }
+
+        @Test
+        void happyPath_returns200WithAllDimensions() throws Exception {
+            when(grcAnalysisService.portfolio(eq(PROJECT_ID), any(), anyInt())).thenReturn(portfolioResult());
+
+            mockMvc.perform(get("/api/v1/analysis/grc/portfolio").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.project", is("ground-control")))
+                    .andExpect(jsonPath("$.riskPosture.totalScenarios", is(2)))
+                    .andExpect(jsonPath("$.riskPosture.reassessmentSignals", is(1)))
+                    .andExpect(jsonPath("$.controlHealth.totalControls", is(3)))
+                    .andExpect(jsonPath("$.controlHealth.unmappedControls", is(1)))
+                    .andExpect(jsonPath("$.controlHealth.unmappedControlUids", hasSize(1)))
+                    .andExpect(jsonPath("$.controlHealth.unassessedControlUids", hasSize(1)))
+                    .andExpect(jsonPath("$.riskPosture.overdueRegisterRecordUids", hasSize(1)))
+                    .andExpect(jsonPath("$.evidenceFreshness.currentlyValid", is(3)))
+                    .andExpect(jsonPath("$.findingTrends.openCount", is(3)))
+                    .andExpect(jsonPath("$.findingTrends.openFindingUids", hasSize(3)))
+                    .andExpect(jsonPath("$.findingTrends.overdueFindingUids", hasSize(1)))
+                    .andExpect(jsonPath("$.findingTrends.bySeverity.HIGH", is(2)))
+                    .andExpect(jsonPath("$.assetCriticality.byCriticality.CRITICAL", is(2)))
+                    .andExpect(jsonPath("$.methodologySummaries[0].family", is("FAIR")));
+        }
+
+        @Test
+        void invalidFreshnessWindow_returns400() throws Exception {
+            when(grcAnalysisService.portfolio(eq(PROJECT_ID), any(), anyInt()))
+                    .thenThrow(new DomainValidationException("freshnessWindowDays must be positive"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/portfolio")
+                            .param("project", "ground-control")
+                            .param("freshnessWindowDays", "0"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void projectNotFound_returns404() throws Exception {
+            when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/portfolio").param("project", "no-such-project"))
+                    .andExpect(status().isNotFound());
         }
     }
 }

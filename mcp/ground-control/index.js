@@ -51,7 +51,7 @@ import {
   getRequirementByUid, listRequirements, createRequirement, updateRequirement,
   transitionStatus, bulkTransitionStatus, archiveRequirement, cloneRequirement,
   createRelation, getRelations, deleteRelation,
-  getTraceabilityLinks, getTraceabilityByArtifact, createTraceabilityLink,
+  getTraceabilityLinks, getTraceabilityByArtifact, getTraceabilityMatrix, createTraceabilityLink,
   deleteTraceabilityLink,
   // ---- analysis ----
   detectCycles, findOrphans, findCoverageGaps, impactAnalysis,
@@ -61,7 +61,7 @@ import {
   // ---- GC-L007 GRC analysis ----
   analyzeEvidenceFreshness, analyzeObservationProjection, aggregateVendorRisk,
   // ---- GC-T014 NIST SP 800-30 Rev. 1 assessment ----
-  analyzeNistAssessment,
+  analyzeNistAssessment, analyzePortfolio,
   // ---- history / exports (kept for completeness even though tools route to gc_query) ----
   getRequirementHistory, getRelationHistory, getTraceabilityLinkHistory,
   getRequirementTimeline, getRequirementDiff, getProjectTimeline,
@@ -125,6 +125,7 @@ import {
   createThreatModel, listThreatModels, getThreatModel, updateThreatModel,
   deleteThreatModel, transitionThreatModelStatus, getThreatModelLinkedRequirements,
   getThreatModelTrace, getThreatModelWorkspace,
+  getControlWorkspace, getEvidenceExplorer,
   createThreatModelLink, listThreatModelLinks, deleteThreatModelLink,
   createMethodologyProfile, listMethodologyProfiles, getMethodologyProfile,
   updateMethodologyProfile, deleteMethodologyProfile,
@@ -420,6 +421,27 @@ server.tool(
   async ({ artifact_type, artifact_identifier }) => {
     try { return ok(JSON.stringify(await getTraceabilityByArtifact(artifact_type, artifact_identifier), null, 2)); }
     catch (e) { return err(e); }
+  },
+);
+
+// gc_traceability_matrix: GC-Q003. Read-only requirements × link-type matrix with
+// per-LinkType coverage columns and ACTIVE-requirement gap detection.
+server.tool(
+  "gc_traceability_matrix",
+  "Read-only Traceability Matrix (GC-Q003). Returns requirement rows with their traceability " +
+    "links projected as cells per LinkType, per-LinkType coverage columns (covered/total/artifactCount), " +
+    "and gap counts. A gap flags an ACTIVE requirement missing a coverage axis (IMPLEMENTS / TESTS, or the " +
+    "filtered linkType). Optional filters: wave (int), status (Status enum), linkType (LinkType enum).",
+  {
+    project: z.string().optional(),
+    wave: z.number().int().optional(),
+    status: z.enum(STATUSES).optional(),
+    linkType: z.enum(LINK_TYPES).optional(),
+  },
+  async ({ project, wave, status, linkType }) => {
+    try {
+      return ok(JSON.stringify(await getTraceabilityMatrix({ project, wave, status, linkType }), null, 2));
+    } catch (e) { return err(e); }
   },
 );
 
@@ -1428,6 +1450,9 @@ const ANALYZE_KINDS = [
   // GC-T014 — NIST SP 800-30 Rev. 1 risk-assessment view (methodology-attributed
   // envelope from /api/v1/analysis/grc/nist-sp-800-30).
   "nist_assessment",
+  // GC-Q013 — portfolio reporting roll-up (risk posture, control health, evidence
+  // freshness, finding trends, asset criticality, methodology summaries).
+  "portfolio",
 ];
 
 server.tool(
@@ -1438,7 +1463,8 @@ server.tool(
     `observation_exposure→{project?, as_of?, asset_id?}; ` +
     `control_state→{project?, as_of?, asset_id?, control_id?}; ` +
     `vendor_risk_aggregation→{project?, as_of?, freshness_window_days?, vendor_asset_id?}; ` +
-    `nist_assessment→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
+    `nist_assessment→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}; ` +
+    `portfolio→{project?, as_of?, freshness_window_days?}. ` +
     `Others take {project?}.`,
   {
     kind: z.enum(ANALYZE_KINDS),
@@ -1514,6 +1540,12 @@ server.tool(
             asOf: args.as_of,
             riskAssessmentResultId: args.risk_assessment_result_id,
             riskScenarioId: args.risk_scenario_id,
+          }), null, 2));
+        case "portfolio":
+          return ok(JSON.stringify(await analyzePortfolio({
+            project: args.project,
+            asOf: args.as_of,
+            freshnessWindowDays: args.freshness_window_days,
           }), null, 2));
         default: return err(new Error(`Unknown kind: ${args.kind}`));
       }
@@ -1776,6 +1808,35 @@ server.tool(
   },
 );
 
+// gc_control_workspace: GC-Q011. Read-only composition returning controls with
+// scoped implementations, control-test summary/history, latest effectiveness
+// assessment, mapping count, exceptions (linked findings), evidence-freshness
+// staleness, and owner work queues.
+server.tool(
+  "gc_control_workspace",
+  "Read-only Control and Assurance Workspace (GC-Q011). Returns controls with scoped " +
+    "implementations, control-test summary and history, latest effectiveness assessment " +
+    "(design/operating ratings), risk-control mapping count, exceptions (findings linked to the " +
+    "control), an evidence-freshness staleness indicator, and per-owner work queues with attention " +
+    "counts. Optional filters: status (ControlStatus enum), controlFunction (ControlFunction enum), " +
+    "owner (exact), assetId (UUID), asOf (ISO-8601 instant), freshnessWindowDays (default 90).",
+  {
+    project: z.string().optional(),
+    status: z.enum(["DRAFT", "PROPOSED", "IMPLEMENTED", "OPERATIONAL", "DEPRECATED", "RETIRED"]).optional(),
+    controlFunction: z.enum(["PREVENTIVE", "DETECTIVE", "CORRECTIVE", "COMPENSATING"]).optional(),
+    owner: z.string().optional(),
+    assetId: z.string().uuid().optional(),
+    asOf: z.string().optional(),
+    freshnessWindowDays: z.number().int().positive().optional(),
+  },
+  async ({ project, status, controlFunction, owner, assetId, asOf, freshnessWindowDays }) => {
+    try {
+      const result = await getControlWorkspace({ project, status, controlFunction, owner, assetId, asOf, freshnessWindowDays });
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
 server.tool(
   "gc_finding",
   GC_FINDING_DESCRIPTION,
@@ -1810,6 +1871,33 @@ server.tool(
   async (args) => {
     try {
       const result = await gcEvidenceToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_evidence_explorer: GC-Q012. Read-only composition of evidence artifacts and
+// observations annotated with freshness, provenance, affected assets, and downstream
+// finding impact, plus a freshness counts roll-up.
+server.tool(
+  "gc_evidence_explorer",
+  "Read-only Evidence and State Explorer (GC-Q012). Returns evidence artifacts and observations " +
+    "annotated with freshness state (reused from the GC-L007 freshness analysis), provenance " +
+    "(artifact source refs; observation source/confidence/evidenceRef/value), affected assets, and " +
+    "downstream finding impact, plus a freshness counts roll-up (fresh/stale/expired/superseded/currentlyValid). " +
+    "Optional filters: assetId (UUID), evidenceType (EvidenceType enum), asOf (ISO-8601 instant), " +
+    "freshnessWindowDays (default 90), includeSuperseded (default true).",
+  {
+    project: z.string().optional(),
+    assetId: z.string().uuid().optional(),
+    evidenceType: z.enum(["OBSERVATION_SUMMARY", "CONTROL_TEST_SUMMARY", "ASSURANCE_CONCLUSION", "VERIFICATION_SUMMARY", "ATTESTATION", "MIXED"]).optional(),
+    asOf: z.string().optional(),
+    freshnessWindowDays: z.number().int().positive().optional(),
+    includeSuperseded: z.boolean().optional(),
+  },
+  async ({ project, assetId, evidenceType, asOf, freshnessWindowDays, includeSuperseded }) => {
+    try {
+      const result = await getEvidenceExplorer({ project, assetId, evidenceType, asOf, freshnessWindowDays, includeSuperseded });
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },

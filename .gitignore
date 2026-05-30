@@ -240,6 +240,7 @@ archive/
 .codex
 
 .claude/scheduled_tasks.lock
+.claude/worktrees/
 
 # Integration manager lockfile (gc_integration_manager, GC-O011). Placed at
 # the repo root by acquireIntegrationLock; operational only, never committed.

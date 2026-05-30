@@ -6,11 +6,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Thin orchestrator that delegates to the four GRC analysis services
+ * Thin orchestrator that delegates to the GRC analysis services
  * ({@link EvidenceFreshnessAnalysisService},
  * {@link ObservationProjectionService},
  * {@link VendorRiskAggregationService},
- * {@link NistAssessmentService}). Keeps controllers thin and gives the
+ * {@link NistAssessmentService},
+ * {@link PortfolioAggregationService}). Keeps controllers thin and gives the
  * extension seam from the preflight a single class to point at.
  */
 @Service
@@ -21,16 +22,19 @@ public class GrcAnalysisService {
     private final ObservationProjectionService observationProjectionService;
     private final VendorRiskAggregationService vendorRiskAggregationService;
     private final NistAssessmentService nistAssessmentService;
+    private final PortfolioAggregationService portfolioAggregationService;
 
     public GrcAnalysisService(
             EvidenceFreshnessAnalysisService evidenceFreshnessAnalysisService,
             ObservationProjectionService observationProjectionService,
             VendorRiskAggregationService vendorRiskAggregationService,
-            NistAssessmentService nistAssessmentService) {
+            NistAssessmentService nistAssessmentService,
+            PortfolioAggregationService portfolioAggregationService) {
         this.evidenceFreshnessAnalysisService = evidenceFreshnessAnalysisService;
         this.observationProjectionService = observationProjectionService;
         this.vendorRiskAggregationService = vendorRiskAggregationService;
         this.nistAssessmentService = nistAssessmentService;
+        this.portfolioAggregationService = portfolioAggregationService;
     }
 
     public EvidenceFreshnessResult evidenceFreshness(
@@ -57,5 +61,9 @@ public class GrcAnalysisService {
     public NistAssessmentResult nistAssessment(
             UUID projectId, Instant asOf, UUID riskAssessmentResultId, UUID riskScenarioId) {
         return nistAssessmentService.analyze(projectId, asOf, riskAssessmentResultId, riskScenarioId);
+    }
+
+    public PortfolioSummaryResult portfolio(UUID projectId, Instant asOf, int freshnessWindowDays) {
+        return portfolioAggregationService.summarize(projectId, asOf, freshnessWindowDays);
     }
 }
