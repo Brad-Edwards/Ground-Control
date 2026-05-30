@@ -20,6 +20,14 @@ import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentResu
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionMode;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.PortfolioSummaryResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskDistributionGroupBy;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskDistributionResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskHeatmapResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskPostureResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTopNOrderBy;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTopNResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTrendsBucket;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTrendsResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.VendorRiskAggregationResult;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.NistImpactBand;
@@ -28,6 +36,7 @@ import com.keplerops.groundcontrol.domain.riskscenarios.state.ThreatEventKind;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.ThreatSourceRelevance;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -433,6 +442,223 @@ class GrcAnalysisControllerTest {
             when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
 
             mockMvc.perform(get("/api/v1/analysis/grc/portfolio").param("project", "no-such-project"))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    class RiskHeatmap {
+
+        @Test
+        void happyPath_returns200WithMethodologyAttribution() throws Exception {
+            UUID profileId = UUID.randomUUID();
+            var result = new RiskHeatmapResult(
+                    "risk_heatmap",
+                    "ground-control",
+                    Instant.parse("2026-05-30T00:00:00Z"),
+                    "qualitative-likelihood-impact-heatmap-v1",
+                    profileId,
+                    "NIST_SP800_30_R1",
+                    "ordinal",
+                    "qualitative ordinal levels",
+                    new RiskHeatmapResult.Inputs("ground-control", Instant.parse("2026-05-30T00:00:00Z"), profileId),
+                    List.of(new RiskHeatmapResult.HeatmapCell(4, "HIGH", 3, "MODERATE", 2, List.of())),
+                    new RiskHeatmapResult.Counts(2, 2, 0, Map.of("NIST_SP800_30_R1", 2)),
+                    List.of("note"));
+            when(grcAnalysisService.riskHeatmap(eq(PROJECT_ID), any(), any())).thenReturn(result);
+
+            mockMvc.perform(get("/api/v1/analysis/grc/risk-heatmap").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("risk_heatmap")))
+                    .andExpect(jsonPath("$.derivationMethod", is("qualitative-likelihood-impact-heatmap-v1")))
+                    .andExpect(jsonPath("$.methodologyFamily", is("NIST_SP800_30_R1")))
+                    .andExpect(jsonPath("$.scale", is("ordinal")))
+                    .andExpect(jsonPath("$.cells", hasSize(1)))
+                    .andExpect(jsonPath("$.cells[0].likelihoodBand", is("HIGH")))
+                    .andExpect(jsonPath("$.cells[0].impactBand", is("MODERATE")))
+                    .andExpect(jsonPath("$.cells[0].count", is(2)))
+                    .andExpect(jsonPath("$.limitations", hasSize(1)));
+        }
+
+        @Test
+        void projectNotFound_returns404() throws Exception {
+            when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/risk-heatmap").param("project", "missing"))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    class RiskDistribution {
+
+        @Test
+        void happyPath_returns200WithGroupByEcho() throws Exception {
+            var result = new RiskDistributionResult(
+                    "risk_distribution",
+                    "ground-control",
+                    Instant.parse("2026-05-30T00:00:00Z"),
+                    "risk-register-distribution-v1",
+                    "nominal",
+                    "register record counts",
+                    new RiskDistributionResult.Inputs(
+                            "ground-control", Instant.parse("2026-05-30T00:00:00Z"), "STATUS"),
+                    List.of(new RiskDistributionResult.DistributionBucket("IDENTIFIED", "IDENTIFIED", 3)),
+                    new RiskDistributionResult.Counts(3, 3, 0, Map.of("IDENTIFIED", 3)),
+                    List.of());
+            when(grcAnalysisService.riskDistribution(eq(PROJECT_ID), any(), eq(RiskDistributionGroupBy.STATUS)))
+                    .thenReturn(result);
+
+            mockMvc.perform(get("/api/v1/analysis/grc/risk-distribution")
+                            .param("project", "ground-control")
+                            .param("groupBy", "STATUS"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("risk_distribution")))
+                    .andExpect(jsonPath("$.inputs.groupBy", is("STATUS")))
+                    .andExpect(jsonPath("$.buckets", hasSize(1)));
+        }
+
+        @Test
+        void missingGroupBy_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/risk-distribution").param("project", "ground-control"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void invalidGroupBy_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/risk-distribution")
+                            .param("project", "ground-control")
+                            .param("groupBy", "BOGUS"))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    class RiskTopN {
+
+        @Test
+        void happyPath_returns200WithDefaultLimitAndOrder() throws Exception {
+            var result = new RiskTopNResult(
+                    "risk_top_n",
+                    "ground-control",
+                    Instant.parse("2026-05-30T00:00:00Z"),
+                    "latest-per-scenario-top-n-v1",
+                    "methodology-specific",
+                    "methodology-specific",
+                    new RiskTopNResult.Inputs(
+                            "ground-control", Instant.parse("2026-05-30T00:00:00Z"), 10, "CURRENT_ASSESSMENT_OUTPUT"),
+                    List.of(),
+                    new RiskTopNResult.Counts(0, 0),
+                    List.of());
+            when(grcAnalysisService.riskTopN(
+                            eq(PROJECT_ID), any(), anyInt(), eq(RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT)))
+                    .thenReturn(result);
+
+            mockMvc.perform(get("/api/v1/analysis/grc/risk-top-n").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("risk_top_n")))
+                    .andExpect(jsonPath("$.inputs.limit", is(10)))
+                    .andExpect(jsonPath("$.inputs.orderBy", is("CURRENT_ASSESSMENT_OUTPUT")));
+        }
+
+        @Test
+        void zeroLimit_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/risk-top-n")
+                            .param("project", "ground-control")
+                            .param("limit", "0"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void invalidOrderBy_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/risk-top-n")
+                            .param("project", "ground-control")
+                            .param("orderBy", "BOGUS"))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    class RiskTrends {
+
+        @Test
+        void happyPath_returns200() throws Exception {
+            Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
+            Instant from = Instant.parse("2025-05-30T00:00:00Z");
+            var result = new RiskTrendsResult(
+                    "risk_trends",
+                    "ground-control",
+                    asOf,
+                    "risk-register-envers-audit-trends-v1",
+                    "count",
+                    "audit revisions per bucket",
+                    new RiskTrendsResult.Inputs("ground-control", asOf, from, asOf, "MONTH", "RiskRegisterRecord"),
+                    List.of(),
+                    new RiskTrendsResult.Counts(0, 0),
+                    List.of());
+            when(grcAnalysisService.riskTrends(eq(PROJECT_ID), any(), any(), any(), eq(RiskTrendsBucket.MONTH)))
+                    .thenReturn(result);
+
+            mockMvc.perform(get("/api/v1/analysis/grc/risk-trends").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("risk_trends")))
+                    .andExpect(jsonPath("$.derivationMethod", is("risk-register-envers-audit-trends-v1")))
+                    .andExpect(jsonPath("$.inputs.entity", is("RiskRegisterRecord")));
+        }
+
+        @Test
+        void invalidBucket_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/risk-trends")
+                            .param("project", "ground-control")
+                            .param("bucket", "FORTNIGHT"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void fromAfterTo_returns422() throws Exception {
+            when(grcAnalysisService.riskTrends(eq(PROJECT_ID), any(), any(), any(), any()))
+                    .thenThrow(new DomainValidationException("from must be strictly before to"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/risk-trends")
+                            .param("project", "ground-control")
+                            .param("from", "2026-06-01T00:00:00Z")
+                            .param("to", "2026-05-01T00:00:00Z"))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+    }
+
+    @Nested
+    class RiskPosture {
+
+        @Test
+        void happyPath_returns200WithAppetiteLimitation() throws Exception {
+            var result = new RiskPostureResult(
+                    "risk_posture",
+                    "ground-control",
+                    Instant.parse("2026-05-30T00:00:00Z"),
+                    "risk-register-and-approval-state-rollup-v1",
+                    "count",
+                    "register records and approval-state counts",
+                    new RiskPostureResult.Inputs("ground-control", Instant.parse("2026-05-30T00:00:00Z")),
+                    new RiskPostureResult.StatusSummary(0, 0, 0, 0, Map.of()),
+                    new RiskPostureResult.ApprovalSummary(0, Map.of()),
+                    new RiskPostureResult.ReassessmentSummary(0, 0),
+                    List.of(
+                            "appetite/tolerance evaluation deferred to the shared RiskAppetiteEvaluator kernel from cluster 1 (GC-T005); posture summary reports status / approval-state distributions only — do not interpret as appetite-conforming posture"));
+            when(grcAnalysisService.riskPosture(eq(PROJECT_ID), any())).thenReturn(result);
+
+            mockMvc.perform(get("/api/v1/analysis/grc/risk-posture").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("risk_posture")))
+                    .andExpect(jsonPath("$.derivationMethod", is("risk-register-and-approval-state-rollup-v1")))
+                    .andExpect(jsonPath("$.limitations", hasSize(1)));
+        }
+
+        @Test
+        void projectNotFound_returns404() throws Exception {
+            when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/risk-posture").param("project", "missing"))
                     .andExpect(status().isNotFound());
         }
     }

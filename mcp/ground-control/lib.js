@@ -1210,6 +1210,44 @@ export async function analyzePortfolio({ project, asOf, freshnessWindowDays } = 
   return request("GET", "/api/v1/analysis/grc/portfolio", { params });
 }
 
+// GC-T008 — Methodology-aware aggregate risk reporting helpers. Each helper
+// is a thin GET adapter onto /api/v1/analysis/grc/risk-*. Adapter tests in
+// gc-analyze.test.js lock the URL + params shape (per the ANALYZE_KINDS
+// contract pinned in the cross-cutting decisions). Result envelopes always
+// carry analysisKind, derivationMethod, methodology attribution, and
+// limitations — callers must not coerce ordinal bands into cross-methodology
+// numeric scores (ADR-035).
+
+export async function analyzeRiskHeatmap({ project, asOf, methodologyProfileId } = {}) {
+  return request("GET", "/api/v1/analysis/grc/risk-heatmap", {
+    params: { project, asOf, methodologyProfileId },
+  });
+}
+
+export async function analyzeRiskDistribution({ project, asOf, groupBy } = {}) {
+  return request("GET", "/api/v1/analysis/grc/risk-distribution", {
+    params: { project, asOf, groupBy },
+  });
+}
+
+export async function analyzeRiskTopN({ project, asOf, limit, orderBy } = {}) {
+  return request("GET", "/api/v1/analysis/grc/risk-top-n", {
+    params: { project, asOf, limit, orderBy },
+  });
+}
+
+export async function analyzeRiskTrends({ project, asOf, from, to, bucket } = {}) {
+  return request("GET", "/api/v1/analysis/grc/risk-trends", {
+    params: { project, asOf, from, to, bucket },
+  });
+}
+
+export async function analyzeRiskPosture({ project, asOf } = {}) {
+  return request("GET", "/api/v1/analysis/grc/risk-posture", {
+    params: { project, asOf },
+  });
+}
+
 // Strict containment predicate. Both arguments MUST already be canonical
 // realpaths — call `realpathSync` on each side before invoking this. Returns
 // true iff `canonicalPath` is strictly inside `canonicalRoot` (rejects the

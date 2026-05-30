@@ -62,6 +62,9 @@ import {
   analyzeEvidenceFreshness, analyzeObservationProjection, aggregateVendorRisk,
   // ---- GC-T014 NIST SP 800-30 Rev. 1 assessment ----
   analyzeNistAssessment, analyzePortfolio,
+  // ---- GC-T008 methodology-aware aggregate risk reporting ----
+  analyzeRiskHeatmap, analyzeRiskDistribution, analyzeRiskTopN,
+  analyzeRiskTrends, analyzeRiskPosture,
   // ---- history / exports (kept for completeness even though tools route to gc_query) ----
   getRequirementHistory, getRelationHistory, getTraceabilityLinkHistory,
   getRequirementTimeline, getRequirementDiff, getProjectTimeline,
@@ -1453,7 +1456,15 @@ const ANALYZE_KINDS = [
   // GC-Q013 — portfolio reporting roll-up (risk posture, control health, evidence
   // freshness, finding trends, asset criticality, methodology summaries).
   "portfolio",
+  // GC-T008 — Methodology-aware aggregate risk reporting (heat map,
+  // distribution, top-N, trends, executive posture). Every kind is
+  // read-only and returns a methodology-attributed envelope per ADR-035.
+  "risk_heatmap", "risk_distribution", "risk_top_n", "risk_trends", "risk_posture",
 ];
+
+const RISK_DISTRIBUTION_GROUP_BY = ["CATEGORY", "STATUS", "OWNER", "ASSET_CRITICALITY"];
+const RISK_TOP_N_ORDER_BY = ["CURRENT_ASSESSMENT_OUTPUT", "ASSESSMENT_AT_DESC"];
+const RISK_TRENDS_BUCKETS = ["WEEK", "MONTH", "QUARTER"];
 
 server.tool(
   "gc_analyze",
@@ -1464,7 +1475,12 @@ server.tool(
     `control_state→{project?, as_of?, asset_id?, control_id?}; ` +
     `vendor_risk_aggregation→{project?, as_of?, freshness_window_days?, vendor_asset_id?}; ` +
     `nist_assessment→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}; ` +
-    `portfolio→{project?, as_of?, freshness_window_days?}. ` +
+    `portfolio→{project?, as_of?, freshness_window_days?}; ` +
+    `risk_heatmap→{project?, as_of?, methodology_profile_id?}; ` +
+    `risk_distribution→{project?, as_of?, group_by(${RISK_DISTRIBUTION_GROUP_BY.join("|")})}; ` +
+    `risk_top_n→{project?, as_of?, limit?, order_by(${RISK_TOP_N_ORDER_BY.join("|")})?}; ` +
+    `risk_trends→{project?, as_of?, from?, to?, bucket(${RISK_TRENDS_BUCKETS.join("|")})?}; ` +
+    `risk_posture→{project?, as_of?}. ` +
     `Others take {project?}.`,
   {
     kind: z.enum(ANALYZE_KINDS),
@@ -1483,6 +1499,14 @@ server.tool(
     // GC-T014 NIST assessment params
     risk_assessment_result_id: z.string().uuid().optional(),
     risk_scenario_id: z.string().uuid().optional(),
+    // GC-T008 methodology-aware aggregate risk reporting params
+    methodology_profile_id: z.string().uuid().optional(),
+    group_by: z.enum(RISK_DISTRIBUTION_GROUP_BY).optional(),
+    limit: z.number().int().positive().max(200).optional(),
+    order_by: z.enum(RISK_TOP_N_ORDER_BY).optional(),
+    from: z.string().datetime().optional(),
+    to: z.string().datetime().optional(),
+    bucket: z.enum(RISK_TRENDS_BUCKETS).optional(),
   },
   async (args) => {
     try {
@@ -1546,6 +1570,40 @@ server.tool(
             project: args.project,
             asOf: args.as_of,
             freshnessWindowDays: args.freshness_window_days,
+          }), null, 2));
+        case "risk_heatmap":
+          return ok(JSON.stringify(await analyzeRiskHeatmap({
+            project: args.project,
+            asOf: args.as_of,
+            methodologyProfileId: args.methodology_profile_id,
+          }), null, 2));
+        case "risk_distribution": {
+          reqArg(args, "group_by", "risk_distribution");
+          return ok(JSON.stringify(await analyzeRiskDistribution({
+            project: args.project,
+            asOf: args.as_of,
+            groupBy: args.group_by,
+          }), null, 2));
+        }
+        case "risk_top_n":
+          return ok(JSON.stringify(await analyzeRiskTopN({
+            project: args.project,
+            asOf: args.as_of,
+            limit: args.limit,
+            orderBy: args.order_by,
+          }), null, 2));
+        case "risk_trends":
+          return ok(JSON.stringify(await analyzeRiskTrends({
+            project: args.project,
+            asOf: args.as_of,
+            from: args.from,
+            to: args.to,
+            bucket: args.bucket,
+          }), null, 2));
+        case "risk_posture":
+          return ok(JSON.stringify(await analyzeRiskPosture({
+            project: args.project,
+            asOf: args.as_of,
           }), null, 2));
         default: return err(new Error(`Unknown kind: ${args.kind}`));
       }
