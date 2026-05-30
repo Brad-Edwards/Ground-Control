@@ -1105,6 +1105,7 @@ association).
 | PUT | `/risk-scenarios/{id}/status` | `{"status": "ACTIVE"}` | 200 | Transition lifecycle status |
 | GET | `/risk-scenarios/{id}/requirements` |—| 200 | List requirements linked to a risk scenario |
 | GET | `/risk-scenarios/{id}/trace` |—| 200 | End-to-end security trace: assets, controls, requirements, and per-requirement implementing artifacts |
+| GET | `/risk-scenarios/workspace` |—| 200 | Read-only workspace: risk scenarios with linked assets, controls, findings, evidence, assessments, treatments, and register memberships; explicit-signal review indicator (GC-Q009) |
 | POST | `/risk-scenarios/{id}/links` | RiskScenarioLinkRequest | 201 | Create risk-scenario link |
 | GET | `/risk-scenarios/{id}/links` |—| 200 | List links for a risk scenario |
 | DELETE | `/risk-scenarios/{id}/links/{linkId}` |—| 204 | Delete risk-scenario link |

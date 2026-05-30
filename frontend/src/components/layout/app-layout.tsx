@@ -111,6 +111,7 @@ export function AppLayout() {
                 <NavItem to={`${base}/threat-modeling`}>
                   Threat Modeling
                 </NavItem>
+                <NavItem to={`${base}/risk-scenarios`}>Risk Scenarios</NavItem>
               </>
             )}
             <NavItem to="/projects">Projects</NavItem>

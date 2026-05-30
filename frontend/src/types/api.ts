@@ -709,7 +709,10 @@ export interface CrosswalkEntry {
 // Mirror policy per ADR-034 — every constant array below must match the
 // backend enum order; enforced by tools/policy/checks.py::ENUM_CONTRACT_INVENTORY.
 export type ThreatEventKind = "ADVERSARIAL" | "NON_ADVERSARIAL";
-export const THREAT_EVENT_KINDS: ThreatEventKind[] = ["ADVERSARIAL", "NON_ADVERSARIAL"];
+export const THREAT_EVENT_KINDS: ThreatEventKind[] = [
+  "ADVERSARIAL",
+  "NON_ADVERSARIAL",
+];
 
 export type ThreatSourceRelevance =
   | "CONFIRMED"
@@ -727,7 +730,12 @@ export const THREAT_SOURCE_RELEVANCES: ThreatSourceRelevance[] = [
   "NOT_APPLICABLE",
 ];
 
-export type NistLikelihoodBand = "VERY_LOW" | "LOW" | "MODERATE" | "HIGH" | "VERY_HIGH";
+export type NistLikelihoodBand =
+  | "VERY_LOW"
+  | "LOW"
+  | "MODERATE"
+  | "HIGH"
+  | "VERY_HIGH";
 export const NIST_LIKELIHOOD_BANDS: NistLikelihoodBand[] = [
   "VERY_LOW",
   "LOW",
@@ -736,7 +744,12 @@ export const NIST_LIKELIHOOD_BANDS: NistLikelihoodBand[] = [
   "VERY_HIGH",
 ];
 
-export type NistImpactBand = "VERY_LOW" | "LOW" | "MODERATE" | "HIGH" | "VERY_HIGH";
+export type NistImpactBand =
+  | "VERY_LOW"
+  | "LOW"
+  | "MODERATE"
+  | "HIGH"
+  | "VERY_HIGH";
 export const NIST_IMPACT_BANDS: NistImpactBand[] = [
   "VERY_LOW",
   "LOW",
@@ -1337,4 +1350,104 @@ export interface UpdateMethodologyProfileRequest {
   status?: string | null;
   treatmentStrategyVocabulary?: Record<string, unknown> | null;
   crosswalkEntries?: CrosswalkEntry[] | null;
+}
+
+// GC-Q009 — Risk Scenario Workspace types.
+// Enum mirrors: RiskScenarioStatus (already declared above at line 10),
+// RiskAssessmentApprovalStatus, TreatmentPlanStatus,
+// TreatmentStrategy, RiskRegisterStatus must track the backend Java enums (ADR-034 enum contract).
+// Policy check: tools/policy/checks.py::run_enum_contract_check.
+
+export type RiskAssessmentApprovalStatus =
+  | "DRAFT"
+  | "SUBMITTED"
+  | "APPROVED"
+  | "REJECTED";
+
+export type TreatmentPlanStatus =
+  | "PLANNED"
+  | "IN_PROGRESS"
+  | "BLOCKED"
+  | "COMPLETED"
+  | "CANCELED";
+
+export type TreatmentStrategy =
+  | "MITIGATE"
+  | "ACCEPT"
+  | "TRANSFER"
+  | "SHARE"
+  | "AVOID"
+  | "OTHER";
+
+export type RiskRegisterStatus =
+  | "IDENTIFIED"
+  | "ANALYZING"
+  | "ASSESSED"
+  | "TREATING"
+  | "MONITORING"
+  | "ACCEPTED"
+  | "CLOSED";
+
+// Review indicator values for risk scenario workspace (explicit-signals-only per GC-Q009 preflight).
+export type ScenarioReviewState =
+  | "REASSESSMENT_REQUIRED"
+  | "REVIEW_DUE"
+  | "EVIDENCE_STALE"
+  | "CURRENT"
+  | "NO_SIGNAL";
+
+export interface WorkspaceAssessment {
+  id: string;
+  methodologyProfileName: string | null;
+  approvalState: RiskAssessmentApprovalStatus;
+  assessmentAt: string | null;
+  confidence: string | null;
+  reassessmentRequiredAt: string | null;
+  hasComputedOutputs: boolean;
+}
+
+export interface WorkspaceTreatment {
+  id: string;
+  uid: string;
+  title: string;
+  strategy: TreatmentStrategy;
+  status: TreatmentPlanStatus;
+  owner: string | null;
+  dueDate: string | null;
+}
+
+export interface WorkspaceRegisterRef {
+  id: string;
+  uid: string;
+  title: string;
+  status: RiskRegisterStatus;
+}
+
+export interface WorkspaceScenario {
+  id: string;
+  uid: string;
+  title: string;
+  status: RiskScenarioStatus;
+  threat: string;
+  method: string;
+  asset: string;
+  effect: string;
+  timeHorizon: string | null;
+  fairSentence: string;
+  linkedAssetIds: string[];
+  linkedControls: WorkspaceLink[];
+  linkedFindings: WorkspaceLink[];
+  linkedEvidence: WorkspaceLink[];
+  linkedRequirements: WorkspaceLink[];
+  assessments: WorkspaceAssessment[];
+  treatments: WorkspaceTreatment[];
+  registerRecords: WorkspaceRegisterRef[];
+  reviewIndicator: ScenarioReviewState;
+}
+
+export interface RiskScenarioWorkspaceResponse {
+  scenarios: WorkspaceScenario[];
+  assets: WorkspaceAsset[];
+  scenarioCount: number;
+  assetCount: number;
 }

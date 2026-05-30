@@ -8834,6 +8834,46 @@ export async function deleteRiskScenarioLink(riskScenarioId, linkId, project) {
   );
 }
 
+/**
+ * GET /api/v1/risk-scenarios/workspace — read-only workspace composition per
+ * GC-Q009. Returns scoped risk scenarios with linked assets, controls, findings,
+ * evidence, assessments, treatments, and register memberships.
+ *
+ * @param {object} params
+ * @param {string} [params.project] - project identifier or UUID
+ * @param {string} [params.assetId] - filter scenarios to those linked to this asset UUID
+ * @param {string} [params.status] - filter by status (RiskScenarioStatus enum)
+ * @param {string} [params.methodologyProfileId] - filter by methodology profile UUID
+ * @param {string} [params.approvalState] - filter by assessment approval state (RiskAssessmentApprovalStatus enum)
+ * @param {string} [params.treatmentStatus] - filter by treatment status (TreatmentPlanStatus enum)
+ * @param {string} [params.asOf] - ISO-8601 instant for freshness reference
+ * @param {number} [params.freshnessWindowDays] - freshness window in days (default 90)
+ * @param {string} [params.compare] - comma-separated scenario UUIDs for comparison (max 10)
+ */
+export async function getRiskScenarioWorkspace({
+  project,
+  assetId,
+  status,
+  methodologyProfileId,
+  approvalState,
+  treatmentStatus,
+  asOf,
+  freshnessWindowDays,
+  compare,
+} = {}) {
+  const params = {};
+  if (project != null) params.project = project;
+  if (assetId != null) params.assetId = assetId;
+  if (status != null) params.status = status;
+  if (methodologyProfileId != null) params.methodologyProfileId = methodologyProfileId;
+  if (approvalState != null) params.approvalState = approvalState;
+  if (treatmentStatus != null) params.treatmentStatus = treatmentStatus;
+  if (asOf != null) params.asOf = asOf;
+  if (freshnessWindowDays != null) params.freshnessWindowDays = String(freshnessWindowDays);
+  if (compare != null && compare.length > 0) params.compare = Array.isArray(compare) ? compare.join(",") : compare;
+  return request("GET", "/api/v1/risk-scenarios/workspace", { params });
+}
+
 // ---------------------------------------------------------------------------
 // Threat Model API functions (GC-H001)
 //
