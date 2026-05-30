@@ -1725,6 +1725,101 @@ def run_test_quality_decision_record_contract(
     return violations
 
 
+# ---------------------------------------------------------------------------
+# Traceability-reconciliation gate contract (issue #1058)
+#
+# Asserts the /implement workflow's traceability + post-merge close gate
+# is wired across all four prose surfaces. The MCP-tool layer enforces:
+#   - Step 17 calls gc_assert_traceability_reconciled to write the
+#     traceability_reconciled phase marker.
+#   - Step 19 (gc_post_final_report) refuses without that marker.
+#   - Step 20 (Phase E) calls gc_close_issue_after_merge after PR merge.
+#   - SKILL.md documents Phase E and gc_close_issue_after_merge as the
+#     canonical close path.
+#
+# This check is the prose-side guardrail that catches drift between the
+# enforcement and the contract documentation. A future skill edit that
+# strips one of these references would silently break the contract for
+# any reader of the skill; the check prevents that.
+# ---------------------------------------------------------------------------
+
+IMPLEMENT_STEP_17_PATH = "skills/implement/steps/step-17-verify.md"
+IMPLEMENT_STEP_19_PATH = "skills/implement/steps/step-19-final-report.md"
+IMPLEMENT_STEP_20_PATH = "skills/implement/steps/step-20-close-issue-on-merge.md"
+
+
+def run_traceability_reconciliation_gate_contract(
+    *,
+    root: Path = REPO_ROOT,
+) -> list[Violation]:
+    """Assert the issue #1058 traceability + post-merge close gate is wired.
+
+    The gate has three MCP-tool surfaces and four prose anchors:
+
+      step-17-verify.md       must mention `gc_assert_traceability_reconciled`
+      step-19-final-report.md must mention `traceability_reconciled` (the marker name)
+      step-20-close-issue-on-merge.md must exist AND mention `gc_close_issue_after_merge`
+      SKILL.md                must mention `Phase E` AND `gc_close_issue_after_merge`
+
+    Emits one violation per missing anchor with a stable code so CI surfaces
+    the specific gap. A repo whose policy-tests file isn't yet up to date
+    (e.g., the test fixture path needs a workflow run) flags here rather
+    than going silent.
+    """
+    violations: list[Violation] = []
+
+    requirements = (
+        (
+            IMPLEMENT_STEP_17_PATH,
+            ("gc_assert_traceability_reconciled",),
+            "traceability-gate-step17-missing",
+            "Step 17 must call gc_assert_traceability_reconciled after verification (issue #1058).",
+        ),
+        (
+            IMPLEMENT_STEP_19_PATH,
+            ("traceability_reconciled",),
+            "traceability-gate-step19-missing",
+            "Step 19 must document the traceability_reconciled phase-marker prerequisite (issue #1058).",
+        ),
+        (
+            IMPLEMENT_STEP_20_PATH,
+            ("gc_close_issue_after_merge",),
+            "traceability-gate-step20-missing",
+            "Step 20 (Phase E post-merge close) must exist and mention gc_close_issue_after_merge (issue #1058).",
+        ),
+        (
+            IMPLEMENT_SKILL_PATH,
+            ("Phase E", "gc_close_issue_after_merge"),
+            "traceability-gate-skill-missing",
+            "SKILL.md must document Phase E and the gc_close_issue_after_merge close path (issue #1058).",
+        ),
+    )
+
+    for rel_path, tokens, code, message in requirements:
+        path = root / rel_path
+        if not path.exists():
+            violations.append(
+                Violation(
+                    code=code,
+                    message=f"{rel_path} is missing — required by the issue #1058 traceability gate contract.",
+                    details=[f"expected at {rel_path}", *(f"must mention: {t}" for t in tokens)],
+                )
+            )
+            continue
+        text = path.read_text(encoding="utf-8")
+        missing_tokens = [t for t in tokens if t not in text]
+        if missing_tokens:
+            violations.append(
+                Violation(
+                    code=code,
+                    message=message,
+                    details=[f"in {rel_path}", *(f"missing: '{t}'" for t in missing_tokens)],
+                )
+            )
+
+    return violations
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run repo policy checks.")
     parser.add_argument("--base", help="Git base ref to diff against.")
@@ -1801,6 +1896,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_deploy_compose_credential_passthrough())
     violations.extend(run_enum_contract_check())
     violations.extend(run_test_quality_decision_record_contract())
+    violations.extend(run_traceability_reconciliation_gate_contract())
 
     if not args.skip_pr_body:
         body = _resolve_pr_body(args)

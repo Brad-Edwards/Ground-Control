@@ -109,6 +109,9 @@ routing:
     final_report:
       tier: low
       model: claude-haiku-4-5
+    close_issue_after_merge:
+      tier: low
+      model: claude-haiku-4-5
 telemetry:
   enabled: true
 

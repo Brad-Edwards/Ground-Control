@@ -76,6 +76,7 @@ import {
   runCodexArchitecturePreflight, runCodexReview, runCodexVerifyFinding,
   runTestQualityReview, TEST_QUALITY_REVIEW_HARD_CAP,
   runPostImplementationPlan,
+  runAssertTraceabilityReconciled, runCloseIssueAfterMerge,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
   runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
   runCodexReviewCycle, runTestQualityReviewCycle,
@@ -593,6 +594,55 @@ server.tool(
   },
 );
 
+server.tool(
+  "gc_assert_traceability_reconciled",
+  "Assert that traceability reconciliation has landed for the issue and post a 'traceability_reconciled' phase marker. Re-fetches each in-scope requirement (status_intent: ACTIVE or DRAFT) and its links from the Ground Control REST API and refuses unless every ACTIVE requirement has an IMPLEMENTS link AND, when the IMPLEMENTS link points at an executable surface (backend/src/main/**, frontend/src/**, mcp/**, tools/policy/**), at least one TESTS link. DRAFT requirements are TESTS-exempt. Empty requirements[] runs the orphaned-link audit instead. Downstream: gc_post_final_report refuses unless this marker exists for the issue. override=true + override_reason allows the user to authorize a skip with a quoted rationale.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    requirements: z.array(z.object({
+      uid: z.string().regex(EXACT_REQUIREMENT_UID_RE),
+      status_intent: z.enum(["ACTIVE", "DRAFT", "DEPRECATED", "ARCHIVED"]).optional(),
+    })),
+    project: z.string().optional(),
+    touched_files: z.array(z.string()).optional(),
+    override: z.boolean().optional(),
+    override_reason: z.string().optional(),
+  },
+  async ({ repo_path, issue_number, requirements, project, touched_files, override, override_reason }) => {
+    try {
+      return ok(JSON.stringify(await runAssertTraceabilityReconciled({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        requirements: requirements.map((r) => ({ uid: r.uid, statusIntent: r.status_intent ?? "ACTIVE" })),
+        project: project ?? null,
+        touchedFiles: touched_files ?? [],
+        override: Boolean(override),
+        overrideReason: override_reason ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_close_issue_after_merge",
+  "Canonical post-merge close path for the /implement workflow's Phase E (Step 20). Verifies the issue's linked PR is merged (merged_at non-null AND state=MERGED) before running `gh issue close`; refuses otherwise. Idempotent — re-running on an already-closed issue returns ok with already_closed=true. The PR body's `Closes #<n>` keyword remains the GitHub cross-link for sidebar / timeline purposes, but this tool is the gate-enforcing close path. pr_number is optional; when omitted the tool resolves the merged PR for the issue via the GitHub timeline.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    pr_number: z.number().int().positive().optional(),
+  },
+  async ({ repo_path, issue_number, pr_number }) => {
+    try {
+      return ok(JSON.stringify(await runCloseIssueAfterMerge({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        prNumber: pr_number ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
 const CODEX_REVIEW_CAPS = { postPushCap: CODEX_REVIEW_HARD_CAP, prepushCap: CODEX_REVIEW_PREPUSH_HARD_CAP };
 
 server.tool(
@@ -769,8 +819,10 @@ server.tool(
       outcome: z.enum(["updated", "verified_unchanged", "not_updated_authorized"]),
       rationale: z.string().optional(),
     }).optional(),
+    override_traceability_gate: z.boolean().optional(),
+    override_traceability_reason: z.string().optional(),
   },
-  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, lane, documentation_outcome }) => {
+  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, lane, documentation_outcome, override_traceability_gate, override_traceability_reason }) => {
     try {
       return ok(JSON.stringify(await runPostFinalReport({
         repoPath: repo_path,
@@ -786,6 +838,8 @@ server.tool(
         lane: lane ?? null,
         summary: summary ?? null,
         documentation_outcome: documentation_outcome ?? null,
+        overrideTraceabilityGate: Boolean(override_traceability_gate),
+        overrideTraceabilityReason: override_traceability_reason ?? null,
       }), null, 2));
     } catch (e) { return err(e); }
   },
