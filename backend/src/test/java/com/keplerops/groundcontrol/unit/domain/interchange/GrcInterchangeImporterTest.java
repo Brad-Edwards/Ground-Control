@@ -3,7 +3,6 @@ package com.keplerops.groundcontrol.unit.domain.interchange;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -110,14 +109,14 @@ class GrcInterchangeImporterTest {
             return a;
         });
         when(provenanceRepository.findByProjectIdAndEntityKindAndExternalUid(
-                        eq(PROJECT_ID), eq(InterchangeEntityKind.OPERATIONAL_ASSET), eq("EXT-A")))
+                        PROJECT_ID, InterchangeEntityKind.OPERATIONAL_ASSET, "EXT-A"))
                 .thenReturn(Optional.empty());
         when(provenanceRepository.save(any(GrcInterchangeProvenance.class))).thenAnswer(inv -> inv.getArgument(0));
 
         var result = importer.importBundle(PROJECT_ID, bundle("ground-control", List.of(payload)));
 
         assertThat(result.assetsCreated()).isEqualTo(1);
-        assertThat(result.assetsUpdated()).isEqualTo(0);
+        assertThat(result.assetsUpdated()).isZero();
         assertThat(result.provenanceWritten()).isEqualTo(1);
         verify(assetRepository, atLeastOnce()).save(any(OperationalAsset.class));
         verify(provenanceRepository, atLeastOnce()).save(any(GrcInterchangeProvenance.class));
@@ -171,7 +170,75 @@ class GrcInterchangeImporterTest {
     @Test
     void rejectsBlankExternalUid() {
         var payload = new AssetPayload("  ", "Asset A", null, null, null, null, null, null, null, null, null, null);
-        assertThatThrownBy(() -> importer.importBundle(PROJECT_ID, bundle("ground-control", List.of(payload))))
+        var blankUidBundle = bundle("ground-control", List.of(payload));
+        assertThatThrownBy(() -> importer.importBundle(PROJECT_ID, blankUidBundle))
                 .isInstanceOf(DomainValidationException.class);
+    }
+
+    @Test
+    void provenanceIsRefreshedOnReimport() {
+        var payload = new AssetPayload(
+                "EXT-R",
+                "Asset Reimport",
+                "SOFTWARE",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "sys-a",
+                Instant.parse("2020-01-01T00:00:00Z"),
+                Instant.parse("2020-06-01T00:00:00Z"));
+        var existing = new OperationalAsset(project, "EXT-R", "Asset Reimport");
+        var existingId = UUID.randomUUID();
+        TestUtil.setField(existing, "id", existingId);
+
+        when(assetRepository.findByProjectIdAndUidIgnoreCase(PROJECT_ID, "EXT-R"))
+                .thenReturn(Optional.of(existing));
+        when(assetRepository.save(any(OperationalAsset.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // Existing provenance row - simulates a re-import
+        var existingProv = new GrcInterchangeProvenance(
+                project,
+                InterchangeEntityKind.OPERATIONAL_ASSET,
+                existingId,
+                "EXT-R",
+                new GrcInterchangeProvenance.ImportContext(
+                        "sys-old",
+                        Instant.parse("2020-01-01T00:00:00Z"),
+                        Instant.parse("2020-01-01T00:00:00Z"),
+                        Instant.parse("2020-01-02T00:00:00Z"),
+                        "carol"));
+        when(provenanceRepository.findByProjectIdAndEntityKindAndExternalUid(
+                        PROJECT_ID, InterchangeEntityKind.OPERATIONAL_ASSET, "EXT-R"))
+                .thenReturn(Optional.of(existingProv));
+        when(provenanceRepository.save(any(GrcInterchangeProvenance.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = importer.importBundle(PROJECT_ID, bundle("ground-control", List.of(payload)));
+
+        // asset already existed: counts as updated, not created
+        assertThat(result.assetsCreated()).isZero();
+        assertThat(result.assetsUpdated()).isEqualTo(1);
+        assertThat(result.provenanceWritten()).isEqualTo(1);
+        // provenance row was refreshed with the new source system
+        assertThat(existingProv.getSourceSystem()).isEqualTo("sys-a");
+    }
+
+    @Test
+    void nullBundleIsRejected() {
+        assertThatThrownBy(() -> importer.importBundle(PROJECT_ID, null))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("bundle must not be null");
+    }
+
+    @Test
+    void emptyBundleImportsSuccessfully() {
+        var b = GrcInterchangeBundle.empty("ground-control");
+        var result = importer.importBundle(PROJECT_ID, b);
+
+        assertThat(result.assetsCreated()).isZero();
+        assertThat(result.assetsUpdated()).isZero();
+        assertThat(result.provenanceWritten()).isZero();
     }
 }

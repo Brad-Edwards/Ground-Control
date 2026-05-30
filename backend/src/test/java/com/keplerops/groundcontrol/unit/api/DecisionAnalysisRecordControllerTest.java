@@ -1,16 +1,24 @@
 package com.keplerops.groundcontrol.unit.api;
 
 import static com.keplerops.groundcontrol.TestUtil.setField;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.keplerops.groundcontrol.api.decisions.DecisionAnalysisRecordController;
 import com.keplerops.groundcontrol.domain.decisions.model.DecisionAnalysisRecord;
 import com.keplerops.groundcontrol.domain.decisions.service.DecisionAnalysisRecordService;
+import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import java.time.Instant;
@@ -91,5 +99,108 @@ class DecisionAnalysisRecordControllerTest {
                 .andExpect(jsonPath("$.alternatives.length()", is(2)))
                 .andExpect(jsonPath("$.simulationParameters.seed", is(7)))
                 .andExpect(jsonPath("$.results['buy.npv.p50']", is(50000)));
+    }
+
+    @Test
+    void createRejectsWhenUidBlank() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+
+        mockMvc.perform(
+                        post("/api/v1/decisions")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "uid": "",
+                                  "title": "Buy vs build",
+                                  "modelName": "monte_carlo"
+                                }
+                                """))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void listReturnsRecordsForProject() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(service.listByProject(PROJECT_ID)).thenReturn(List.of(make(), make()));
+
+        mockMvc.perform(get("/api/v1/decisions").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].uid", is("DR-1")))
+                .andExpect(jsonPath("$[0].modelName", is("monte_carlo")));
+    }
+
+    @Test
+    void getByIdReturns200WhenFound() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(service.getById(PROJECT_ID, DR_ID)).thenReturn(make());
+
+        mockMvc.perform(get("/api/v1/decisions/" + DR_ID).param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id", is(DR_ID.toString())))
+                .andExpect(jsonPath("$.uid", is("DR-1")));
+    }
+
+    @Test
+    void getByIdReturns404WhenNotFound() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(service.getById(eq(PROJECT_ID), eq(DR_ID)))
+                .thenThrow(new NotFoundException("DecisionAnalysisRecord not found: " + DR_ID));
+
+        mockMvc.perform(get("/api/v1/decisions/" + DR_ID).param("project", "ground-control"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getByUidReturns200WhenFound() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(service.getByUid(PROJECT_ID, "DR-1")).thenReturn(make());
+
+        mockMvc.perform(get("/api/v1/decisions/uid/DR-1").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.uid", is("DR-1")));
+    }
+
+    @Test
+    void updateReturns200WithUpdatedFields() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        var updated = make();
+        setField(updated, "id", DR_ID);
+        when(service.update(eq(PROJECT_ID), eq(DR_ID), any())).thenReturn(updated);
+
+        mockMvc.perform(
+                        put("/api/v1/decisions/" + DR_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "title": "Revised: Buy vs build",
+                                  "rationale": "updated reasoning"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id", is(DR_ID.toString())))
+                .andExpect(jsonPath("$.uid", is("DR-1")));
+    }
+
+    @Test
+    void deleteReturns204WhenFound() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        doNothing().when(service).delete(PROJECT_ID, DR_ID);
+
+        mockMvc.perform(delete("/api/v1/decisions/" + DR_ID).param("project", "ground-control"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void deleteReturns404WhenNotFound() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        doThrow(new NotFoundException("not found")).when(service).delete(PROJECT_ID, DR_ID);
+
+        mockMvc.perform(delete("/api/v1/decisions/" + DR_ID).param("project", "ground-control"))
+                .andExpect(status().isNotFound());
     }
 }

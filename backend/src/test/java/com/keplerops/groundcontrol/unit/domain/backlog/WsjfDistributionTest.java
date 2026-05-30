@@ -99,6 +99,58 @@ class WsjfDistributionTest {
     }
 
     @Test
+    void equalsAndHashCodeConsiderSamplesContent() {
+        var ubv = CostOfDelayComponent.point(3, "x");
+        var tc = CostOfDelayComponent.point(2, "x");
+        var rroe = CostOfDelayComponent.point(1, "x");
+        var jd = CostOfDelayComponent.point(2, "x");
+
+        var a = WsjfDistribution.compute(ubv, tc, rroe, jd, 42L, 50);
+        var b = WsjfDistribution.compute(ubv, tc, rroe, jd, 42L, 50);
+        var different = WsjfDistribution.compute(ubv, tc, rroe, jd, 99L, 50);
+
+        // Same seed and inputs → equal with consistent hashCode
+        assertThat(a).isEqualTo(b);
+        assertThat(a.hashCode()).isEqualTo(b.hashCode());
+        // Different seed → not equal
+        assertThat(a).isNotEqualTo(different);
+    }
+
+    @Test
+    void toStringIncludesAllFields() {
+        var ubv = CostOfDelayComponent.point(4, "x");
+        var jd = CostOfDelayComponent.point(1, "x");
+        var dist = WsjfDistribution.compute(ubv, ubv, ubv, jd, 1L, 10);
+
+        var str = dist.toString();
+        assertThat(str).contains("seed=");
+        assertThat(str).contains("iterations=");
+        assertThat(str).contains("mean=");
+        assertThat(str).contains("p10=");
+        assertThat(str).contains("p90=");
+    }
+
+    @Test
+    void wsjfCalculationIsCorrectForPointDistributions() {
+        // WSJF = (UBV + TC + RROE) / JobDuration
+        // With point distributions: (3 + 2 + 1) / 2 = 3.0 for all samples
+        var ubv = CostOfDelayComponent.point(3, "x");
+        var tc = CostOfDelayComponent.point(2, "x");
+        var rroe = CostOfDelayComponent.point(1, "x");
+        var jd = CostOfDelayComponent.point(2, "x");
+
+        var dist = WsjfDistribution.compute(ubv, tc, rroe, jd, 0L, 200);
+
+        assertThat(dist.mean()).isCloseTo(3.0, org.assertj.core.data.Offset.offset(1e-9));
+        assertThat(dist.median()).isCloseTo(3.0, org.assertj.core.data.Offset.offset(1e-9));
+        assertThat(dist.p10()).isCloseTo(3.0, org.assertj.core.data.Offset.offset(1e-9));
+        assertThat(dist.p90()).isCloseTo(3.0, org.assertj.core.data.Offset.offset(1e-9));
+        for (double s : dist.samples()) {
+            assertThat(s).isCloseTo(3.0, org.assertj.core.data.Offset.offset(1e-9));
+        }
+    }
+
+    @Test
     void rankingDeltaEmitsMoves() {
         var hi = CostOfDelayComponent.triangular(10, 12, 14, "x");
         var lo = CostOfDelayComponent.triangular(1, 2, 3, "x");

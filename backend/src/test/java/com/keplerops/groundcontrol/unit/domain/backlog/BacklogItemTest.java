@@ -17,9 +17,17 @@ class BacklogItemTest {
     }
 
     @Test
-    void constructorRejectsBlankUidOrTitle() {
+    void constructorRejectsBlankUid() {
         assertThatThrownBy(() -> new BacklogItem(project(), "  ", "ok")).isInstanceOf(DomainValidationException.class);
+    }
+
+    @Test
+    void constructorRejectsBlankTitle() {
         assertThatThrownBy(() -> new BacklogItem(project(), "ok", "  ")).isInstanceOf(DomainValidationException.class);
+    }
+
+    @Test
+    void constructorRejectsNullProject() {
         assertThatThrownBy(() -> new BacklogItem(null, "ok", "ok")).isInstanceOf(DomainValidationException.class);
     }
 

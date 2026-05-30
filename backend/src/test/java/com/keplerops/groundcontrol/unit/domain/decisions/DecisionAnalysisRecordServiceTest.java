@@ -122,4 +122,16 @@ class DecisionAnalysisRecordServiceTest {
         assertThat(saved.getTitle()).isEqualTo("Renamed");
         assertThat(saved.getInputs()).containsEntry("buy.cost", 100_000);
     }
+
+    @Test
+    void createWithNullInputsStampsAttributionOnly() {
+        var command = new CreateDecisionAnalysisRecordCommand(
+                PROJECT_ID, "DR-2", "Null inputs test", "monte_carlo", null, null, null, null, null, null, null);
+
+        var saved = service.create(command);
+
+        // stampAttribution with null inputs produces a map containing only the attribution key
+        assertThat(saved.getInputs()).containsOnlyKeys(ATTRIBUTED_TO_KEY);
+        assertThat(saved.getInputs()).containsEntry(ATTRIBUTED_TO_KEY, "alice");
+    }
 }
