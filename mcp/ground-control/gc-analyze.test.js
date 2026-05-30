@@ -16,6 +16,8 @@ import {
   analyzeRiskTopN,
   analyzeRiskTrends,
   analyzeRiskPosture,
+  analyzeCompliancePosture,
+  analyzeCrossFrameworkGap,
   toCamelCase,
   toSnakeCase,
 } from "./lib.js";
@@ -476,5 +478,99 @@ describe("analyzeRiskPosture (GC-T008)", () => {
 
     assert.equal(result.analysisKind, "risk_posture");
     assert.equal(result.limitations.length, 1);
+  });
+});
+
+describe("analyzeCompliancePosture (GC-I002 / GC-L007)", () => {
+  it("hits /api/v1/analysis/grc/compliance-posture with camelCase params", async () => {
+    const calls = makeFetchSpy({ body: { analysisKind: "compliance_posture" } });
+
+    await analyzeCompliancePosture({
+      project: "ground-control",
+      asOf: "2026-05-30T00:00:00Z",
+      framework: "SOC2",
+    });
+
+    assert.equal(calls.length, 1);
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/analysis/grc/compliance-posture");
+    assert.equal(calls[0].method, "GET");
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), "2026-05-30T00:00:00Z");
+    assert.equal(url.searchParams.get("framework"), "SOC2");
+  });
+
+  it("omits undefined params", async () => {
+    const calls = makeFetchSpy();
+
+    await analyzeCompliancePosture({ project: "ground-control" });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), null);
+    assert.equal(url.searchParams.get("framework"), null);
+  });
+
+  it("returns the JSON body verbatim", async () => {
+    makeFetchSpy({
+      body: {
+        analysisKind: "compliance_posture",
+        frameworks: [{ framework: "SOC2", totalElements: 3 }],
+      },
+    });
+
+    const result = await analyzeCompliancePosture({ project: "ground-control" });
+
+    assert.equal(result.analysisKind, "compliance_posture");
+    assert.equal(result.frameworks[0].framework, "SOC2");
+    assert.equal(result.frameworks[0].totalElements, 3);
+  });
+});
+
+describe("analyzeCrossFrameworkGap (GC-I007 / GC-L007)", () => {
+  it("hits /api/v1/analysis/grc/framework-gap with camelCase params", async () => {
+    const calls = makeFetchSpy({ body: { analysisKind: "cross_framework_gap" } });
+
+    await analyzeCrossFrameworkGap({
+      project: "ground-control",
+      asOf: "2026-05-30T00:00:00Z",
+      framework: "ISO_27001",
+      minSeverity: "HIGH",
+    });
+
+    assert.equal(calls.length, 1);
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/analysis/grc/framework-gap");
+    assert.equal(calls[0].method, "GET");
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), "2026-05-30T00:00:00Z");
+    assert.equal(url.searchParams.get("framework"), "ISO_27001");
+    assert.equal(url.searchParams.get("minSeverity"), "HIGH");
+  });
+
+  it("omits undefined params", async () => {
+    const calls = makeFetchSpy();
+
+    await analyzeCrossFrameworkGap({ project: "ground-control" });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("framework"), null);
+    assert.equal(url.searchParams.get("minSeverity"), null);
+  });
+
+  it("returns the JSON body verbatim", async () => {
+    makeFetchSpy({
+      body: {
+        analysisKind: "cross_framework_gap",
+        counts: { totalElements: 2, bySeverity: { HIGH: 1, MEDIUM: 1 } },
+      },
+    });
+
+    const result = await analyzeCrossFrameworkGap({ project: "ground-control" });
+
+    assert.equal(result.analysisKind, "cross_framework_gap");
+    assert.equal(result.counts.totalElements, 2);
+    assert.equal(result.counts.bySeverity.HIGH, 1);
   });
 });

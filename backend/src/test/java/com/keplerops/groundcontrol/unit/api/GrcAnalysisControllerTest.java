@@ -12,8 +12,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.keplerops.groundcontrol.api.grcanalysis.GrcAnalysisController;
+import com.keplerops.groundcontrol.domain.compliance.state.ComplianceFrameworkIdentifier;
+import com.keplerops.groundcontrol.domain.compliance.state.CoverageLevel;
+import com.keplerops.groundcontrol.domain.compliance.state.GapSeverity;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.CompliancePostureResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.CrossFrameworkGapResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentResult;
@@ -659,6 +664,128 @@ class GrcAnalysisControllerTest {
             when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
 
             mockMvc.perform(get("/api/v1/analysis/grc/risk-posture").param("project", "missing"))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    class CompliancePosture {
+
+        private CompliancePostureResult sampleResult() {
+            var inputs = new CompliancePostureResult.Inputs(
+                    "ground-control", Instant.parse("2026-05-30T00:00:00Z"), ComplianceFrameworkIdentifier.SOC2);
+            var endpoint = new CompliancePostureResult.EndpointMapping(
+                    UUID.fromString("00000000-0000-0000-0000-000000000aaa"),
+                    UUID.fromString("00000000-0000-0000-0000-000000000bbb"),
+                    null,
+                    CoverageLevel.FULL,
+                    "Has SoD policy");
+            var element =
+                    new CompliancePostureResult.ElementPosture("CC1.1", CoverageLevel.FULL, List.of(endpoint), 1, 0);
+            var framework = new CompliancePostureResult.FrameworkPosture(
+                    ComplianceFrameworkIdentifier.SOC2, null, "2017 TSC", List.of(element), 1, 1, 0, 0);
+            var counts =
+                    new CompliancePostureResult.Counts(1, 1, 1, Map.of("FULL", 1, "PARTIAL", 0, "COMPENSATING", 0));
+            return new CompliancePostureResult(
+                    "compliance_posture",
+                    "ground-control",
+                    Instant.parse("2026-05-30T00:00:00Z"),
+                    "compliance-framework-mapping-projection-v1",
+                    inputs,
+                    List.of(framework),
+                    counts,
+                    List.of());
+        }
+
+        @Test
+        void happyPath_returns200WithFrameworkPostures() throws Exception {
+            when(grcAnalysisService.compliancePosture(eq(PROJECT_ID), any(), any()))
+                    .thenReturn(sampleResult());
+
+            mockMvc.perform(get("/api/v1/analysis/grc/compliance-posture")
+                            .param("project", "ground-control")
+                            .param("framework", "SOC2"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("compliance_posture")))
+                    .andExpect(jsonPath("$.frameworks[0].framework", is("SOC2")))
+                    .andExpect(jsonPath("$.frameworks[0].elements[0].coverageLevel", is("FULL")))
+                    .andExpect(jsonPath("$.counts.totalFrameworks", is(1)));
+        }
+
+        @Test
+        void invalidFramework_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/compliance-posture")
+                            .param("project", "ground-control")
+                            .param("framework", "BOGUS"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void projectNotFound_returns404() throws Exception {
+            when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/compliance-posture").param("project", "missing"))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    class CrossFrameworkGap {
+
+        private CrossFrameworkGapResult sampleResult() {
+            var inputs = new CrossFrameworkGapResult.Inputs(
+                    "ground-control",
+                    Instant.parse("2026-05-30T00:00:00Z"),
+                    ComplianceFrameworkIdentifier.SOC2,
+                    GapSeverity.NONE);
+            var elementGap = new CrossFrameworkGapResult.ElementGap(
+                    "CC1.1", GapSeverity.HIGH, "PARTIAL", List.of(), List.of(), 1);
+            var framework = new CrossFrameworkGapResult.FrameworkGap(
+                    ComplianceFrameworkIdentifier.SOC2,
+                    null,
+                    "2017 TSC",
+                    List.of(elementGap),
+                    Map.of("CRITICAL", 0, "HIGH", 1, "MEDIUM", 0, "LOW", 0, "NONE", 0));
+            return new CrossFrameworkGapResult(
+                    "cross_framework_gap",
+                    "ground-control",
+                    Instant.parse("2026-05-30T00:00:00Z"),
+                    "compliance-framework-mapping-gap-projection-v1",
+                    inputs,
+                    List.of(framework),
+                    new CrossFrameworkGapResult.Counts(1, Map.of("HIGH", 1)),
+                    List.of());
+        }
+
+        @Test
+        void happyPath_returns200WithGapSeverity() throws Exception {
+            when(grcAnalysisService.crossFrameworkGap(eq(PROJECT_ID), any(), any(), any()))
+                    .thenReturn(sampleResult());
+
+            mockMvc.perform(get("/api/v1/analysis/grc/framework-gap")
+                            .param("project", "ground-control")
+                            .param("framework", "SOC2")
+                            .param("minSeverity", "HIGH"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("cross_framework_gap")))
+                    .andExpect(jsonPath("$.frameworks[0].elementGaps[0].severity", is("HIGH")))
+                    .andExpect(jsonPath("$.frameworks[0].elementGaps[0].coverageStatus", is("PARTIAL")))
+                    .andExpect(jsonPath("$.counts.totalElements", is(1)));
+        }
+
+        @Test
+        void invalidSeverity_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/framework-gap")
+                            .param("project", "ground-control")
+                            .param("minSeverity", "BOGUS"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void projectNotFound_returns404() throws Exception {
+            when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/framework-gap").param("project", "missing"))
                     .andExpect(status().isNotFound());
         }
     }

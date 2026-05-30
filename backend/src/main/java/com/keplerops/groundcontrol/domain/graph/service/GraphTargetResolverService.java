@@ -5,6 +5,7 @@ import com.keplerops.groundcontrol.domain.assets.repository.OperationalAssetRepo
 import com.keplerops.groundcontrol.domain.assets.state.AssetLinkTargetType;
 import com.keplerops.groundcontrol.domain.audits.repository.AuditRepository;
 import com.keplerops.groundcontrol.domain.audits.state.AuditLinkTargetType;
+import com.keplerops.groundcontrol.domain.compliance.repository.ComplianceFrameworkMappingRepository;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlRepository;
 import com.keplerops.groundcontrol.domain.controls.state.ControlLinkTargetType;
 import com.keplerops.groundcontrol.domain.documents.repository.DocumentRepository;
@@ -53,6 +54,7 @@ public class GraphTargetResolverService {
     private static final String LABEL_AUDIT = "Audit";
     private static final String LABEL_EVIDENCE = "Evidence";
     private static final String LABEL_DOCUMENT = "Document";
+    private static final String LABEL_COMPLIANCE_FRAMEWORK_MAPPING = "Compliance framework mapping";
     private static final String LABEL_APPETITE_PROFILE = "Risk appetite profile";
     private static final String LABEL_CAMPAIGN = "Risk assessment campaign";
     private static final String LABEL_KRI = "Key risk indicator";
@@ -72,6 +74,7 @@ public class GraphTargetResolverService {
     private final AuditRepository auditRepository;
     private final EvidenceArtifactRepository evidenceArtifactRepository;
     private final DocumentRepository documentRepository;
+    private final ComplianceFrameworkMappingRepository complianceFrameworkMappingRepository;
     private final RiskAppetiteProfileRepository riskAppetiteProfileRepository;
     private final RiskAssessmentCampaignRepository riskAssessmentCampaignRepository;
     private final KeyRiskIndicatorRepository keyRiskIndicatorRepository;
@@ -93,6 +96,7 @@ public class GraphTargetResolverService {
             AuditRepository auditRepository,
             EvidenceArtifactRepository evidenceArtifactRepository,
             DocumentRepository documentRepository,
+            ComplianceFrameworkMappingRepository complianceFrameworkMappingRepository,
             RiskAppetiteProfileRepository riskAppetiteProfileRepository,
             RiskAssessmentCampaignRepository riskAssessmentCampaignRepository,
             KeyRiskIndicatorRepository keyRiskIndicatorRepository) {
@@ -111,6 +115,7 @@ public class GraphTargetResolverService {
         this.auditRepository = auditRepository;
         this.evidenceArtifactRepository = evidenceArtifactRepository;
         this.documentRepository = documentRepository;
+        this.complianceFrameworkMappingRepository = complianceFrameworkMappingRepository;
         this.riskAppetiteProfileRepository = riskAppetiteProfileRepository;
         this.riskAssessmentCampaignRepository = riskAssessmentCampaignRepository;
         this.keyRiskIndicatorRepository = keyRiskIndicatorRepository;
@@ -459,6 +464,25 @@ public class GraphTargetResolverService {
                 targetEntityId,
                 riskAssessmentResultRepository.existsByIdAndProjectId(targetEntityId, projectId),
                 LABEL_RISK_ASSESSMENT_RESULT);
+    }
+
+    /**
+     * Validates a {@code ComplianceFrameworkMapping} target by id within the
+     * given project. Used by future link-source aggregates that point at
+     * compliance-framework mappings, and by the MCP graph contributor when
+     * resolving COMPLIANCE_FRAMEWORK_MAPPING entity references. Per
+     * mcp-grc-entity-crud-preflight, promoting the audit FRAMEWORK string path
+     * to a first-class aggregate requires updating this resolver and the
+     * graph projection contributor in the same change.
+     */
+    public ValidatedTarget validateComplianceFrameworkMappingTarget(UUID projectId, UUID targetEntityId) {
+        if (targetEntityId == null) {
+            throw new DomainValidationException(LABEL_COMPLIANCE_FRAMEWORK_MAPPING + " links require targetEntityId");
+        }
+        return internalTarget(
+                targetEntityId,
+                complianceFrameworkMappingRepository.existsByIdAndProjectId(targetEntityId, projectId),
+                LABEL_COMPLIANCE_FRAMEWORK_MAPPING);
     }
 
     public ValidatedTarget validateDocumentTarget(UUID projectId, UUID targetEntityId) {

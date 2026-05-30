@@ -692,6 +692,46 @@ export const CROSSWALK_VOCABULARY_SURFACES: CrosswalkVocabularySurface[] = [
   "TREATMENT_STRATEGY_VOCABULARY",
 ];
 
+// GC-I002 / GC-I005 / GC-I007 / GC-L011 compliance-framework-mapping enums.
+// Single-sourced from backend ComplianceFrameworkIdentifier, CoverageLevel,
+// and GapSeverity enums under domain/compliance/state/. Mirror policy per
+// ADR-034 — declaration order matches the Java enums; enforced by
+// tools/policy/checks.py::ENUM_CONTRACT_INVENTORY.
+export type ComplianceFrameworkIdentifier =
+  | "SOC2"
+  | "SOX"
+  | "ISO_27001"
+  | "NIST_CSF"
+  | "PCI_DSS";
+export const COMPLIANCE_FRAMEWORK_IDENTIFIERS: ComplianceFrameworkIdentifier[] = [
+  "SOC2",
+  "SOX",
+  "ISO_27001",
+  "NIST_CSF",
+  "PCI_DSS",
+];
+
+export type CoverageLevel = "FULL" | "PARTIAL" | "COMPENSATING";
+export const COVERAGE_LEVELS: CoverageLevel[] = ["FULL", "PARTIAL", "COMPENSATING"];
+
+export type GapSeverity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
+export const GAP_SEVERITIES: GapSeverity[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE"];
+
+export interface ComplianceFrameworkMapping {
+  id: string;
+  projectId: string;
+  requirementId?: string | null;
+  controlId?: string | null;
+  framework: ComplianceFrameworkIdentifier;
+  frameworkIdentifier?: string | null;
+  frameworkVersion?: string | null;
+  frameworkElement: string;
+  coverageLevel: CoverageLevel;
+  rationale?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CrosswalkEntry {
   normalizedConcept: NormalizedConcept;
   vocabularySurface: CrosswalkVocabularySurface;

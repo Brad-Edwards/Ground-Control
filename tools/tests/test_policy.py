@@ -503,6 +503,9 @@ class PolicyChecksTest(unittest.TestCase):
                 # monitoring categories + lifecycle target surfaces)
                 "ReassessmentTriggerCategory",
                 "ReassessmentTriggerTargetType",
+                "ComplianceFrameworkIdentifier",
+                "CoverageLevel",
+                "GapSeverity",
             },
         )
         for contract in ENUM_CONTRACT_INVENTORY:

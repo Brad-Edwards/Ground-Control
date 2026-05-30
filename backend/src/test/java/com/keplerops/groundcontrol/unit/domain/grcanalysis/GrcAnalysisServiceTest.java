@@ -4,6 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.keplerops.groundcontrol.domain.compliance.state.ComplianceFrameworkIdentifier;
+import com.keplerops.groundcontrol.domain.compliance.state.GapSeverity;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.CompliancePostureResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.CompliancePostureService;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.CrossFrameworkGapResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.CrossFrameworkGapService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
@@ -55,6 +61,12 @@ class GrcAnalysisServiceTest {
 
     @Mock
     private RiskAnalysisOrchestrator riskAnalysisOrchestrator;
+
+    @Mock
+    private CompliancePostureService compliancePostureService;
+
+    @Mock
+    private CrossFrameworkGapService crossFrameworkGapService;
 
     @InjectMocks
     private GrcAnalysisService service;
@@ -284,5 +296,51 @@ class GrcAnalysisServiceTest {
 
         assertThat(actual).isSameAs(expected);
         verify(riskAnalysisOrchestrator).posture(projectId, asOf);
+    }
+
+    @Test
+    void compliancePosture_delegatesToCompliancePostureService() {
+        UUID projectId = UUID.randomUUID();
+        Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
+        CompliancePostureResult expected = new CompliancePostureResult(
+                "compliance_posture",
+                "ground-control",
+                asOf,
+                "compliance-framework-mapping-projection-v1",
+                new CompliancePostureResult.Inputs("ground-control", asOf, ComplianceFrameworkIdentifier.SOC2),
+                List.of(),
+                new CompliancePostureResult.Counts(0, 0, 0, java.util.Map.of()),
+                List.of());
+        when(compliancePostureService.analyze(projectId, asOf, ComplianceFrameworkIdentifier.SOC2))
+                .thenReturn(expected);
+
+        CompliancePostureResult actual = service.compliancePosture(projectId, asOf, ComplianceFrameworkIdentifier.SOC2);
+
+        assertThat(actual).isSameAs(expected);
+        verify(compliancePostureService).analyze(projectId, asOf, ComplianceFrameworkIdentifier.SOC2);
+    }
+
+    @Test
+    void crossFrameworkGap_delegatesToCrossFrameworkGapService() {
+        UUID projectId = UUID.randomUUID();
+        Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
+        CrossFrameworkGapResult expected = new CrossFrameworkGapResult(
+                "cross_framework_gap",
+                "ground-control",
+                asOf,
+                "compliance-framework-mapping-gap-projection-v1",
+                new CrossFrameworkGapResult.Inputs(
+                        "ground-control", asOf, ComplianceFrameworkIdentifier.SOC2, GapSeverity.HIGH),
+                List.of(),
+                new CrossFrameworkGapResult.Counts(0, java.util.Map.of()),
+                List.of());
+        when(crossFrameworkGapService.analyze(projectId, asOf, ComplianceFrameworkIdentifier.SOC2, GapSeverity.HIGH))
+                .thenReturn(expected);
+
+        CrossFrameworkGapResult actual =
+                service.crossFrameworkGap(projectId, asOf, ComplianceFrameworkIdentifier.SOC2, GapSeverity.HIGH);
+
+        assertThat(actual).isSameAs(expected);
+        verify(crossFrameworkGapService).analyze(projectId, asOf, ComplianceFrameworkIdentifier.SOC2, GapSeverity.HIGH);
     }
 }

@@ -158,7 +158,8 @@ under the `workflow` catalog, so it is always available.
 - **Allowlist (canonical source: `GC_QUERY_PATH_ALLOWLIST` in
   `mcp/ground-control/gc-query.js`):**
   `/api/v1/adrs`, `/api/v1/analysis`, `/api/v1/assets`, `/api/v1/audit`,
-  `/api/v1/audits`, `/api/v1/baselines`, `/api/v1/control-effectiveness-assessments`,
+  `/api/v1/audits`, `/api/v1/baselines`, `/api/v1/compliance-framework-mappings`,
+  `/api/v1/control-effectiveness-assessments`,
   `/api/v1/control-tests`, `/api/v1/controls`, `/api/v1/dashboard`,
   `/api/v1/documents`, `/api/v1/evidence-artifacts`, `/api/v1/findings`, `/api/v1/graph`, `/api/v1/methodology-profiles`,
   `/api/v1/observations`, `/api/v1/projects`, `/api/v1/quality-gates`,

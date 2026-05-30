@@ -1,5 +1,7 @@
 package com.keplerops.groundcontrol.domain.grcanalysis.service;
 
+import com.keplerops.groundcontrol.domain.compliance.state.ComplianceFrameworkIdentifier;
+import com.keplerops.groundcontrol.domain.compliance.state.GapSeverity;
 import java.time.Instant;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -10,7 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
  * controllers thin and gives the extension seam from the preflight a single
  * class to point at. Wired delegates: {@link EvidenceFreshnessAnalysisService},
  * {@link ObservationProjectionService}, {@link VendorRiskAggregationService},
- * {@link NistAssessmentService}, and {@link PortfolioAggregationService}.
+ * {@link NistAssessmentService}, {@link PortfolioAggregationService},
+ * {@link CompliancePostureService}, and {@link CrossFrameworkGapService}.
  * Cluster-3 (GC-T008) risk analysis projections (heat map, distribution,
  * top-N, trends, posture) are grouped behind a single
  * {@link RiskAnalysisOrchestrator} to keep the dependency count within the
@@ -26,6 +29,8 @@ public class GrcAnalysisService {
     private final NistAssessmentService nistAssessmentService;
     private final PortfolioAggregationService portfolioAggregationService;
     private final RiskAnalysisOrchestrator riskAnalysisOrchestrator;
+    private final CompliancePostureService compliancePostureService;
+    private final CrossFrameworkGapService crossFrameworkGapService;
 
     public GrcAnalysisService(
             EvidenceFreshnessAnalysisService evidenceFreshnessAnalysisService,
@@ -33,13 +38,17 @@ public class GrcAnalysisService {
             VendorRiskAggregationService vendorRiskAggregationService,
             NistAssessmentService nistAssessmentService,
             PortfolioAggregationService portfolioAggregationService,
-            RiskAnalysisOrchestrator riskAnalysisOrchestrator) {
+            RiskAnalysisOrchestrator riskAnalysisOrchestrator,
+            CompliancePostureService compliancePostureService,
+            CrossFrameworkGapService crossFrameworkGapService) {
         this.evidenceFreshnessAnalysisService = evidenceFreshnessAnalysisService;
         this.observationProjectionService = observationProjectionService;
         this.vendorRiskAggregationService = vendorRiskAggregationService;
         this.nistAssessmentService = nistAssessmentService;
         this.portfolioAggregationService = portfolioAggregationService;
         this.riskAnalysisOrchestrator = riskAnalysisOrchestrator;
+        this.compliancePostureService = compliancePostureService;
+        this.crossFrameworkGapService = crossFrameworkGapService;
     }
 
     public EvidenceFreshnessResult evidenceFreshness(
@@ -91,5 +100,15 @@ public class GrcAnalysisService {
 
     public RiskPostureResult riskPosture(UUID projectId, Instant asOf) {
         return riskAnalysisOrchestrator.posture(projectId, asOf);
+    }
+
+    public CompliancePostureResult compliancePosture(
+            UUID projectId, Instant asOf, ComplianceFrameworkIdentifier framework) {
+        return compliancePostureService.analyze(projectId, asOf, framework);
+    }
+
+    public CrossFrameworkGapResult crossFrameworkGap(
+            UUID projectId, Instant asOf, ComplianceFrameworkIdentifier framework, GapSeverity minSeverity) {
+        return crossFrameworkGapService.analyze(projectId, asOf, framework, minSeverity);
     }
 }

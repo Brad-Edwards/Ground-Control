@@ -1,5 +1,7 @@
 package com.keplerops.groundcontrol.api.grcanalysis;
 
+import com.keplerops.groundcontrol.domain.compliance.state.ComplianceFrameworkIdentifier;
+import com.keplerops.groundcontrol.domain.compliance.state.GapSeverity;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionMode;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskDistributionGroupBy;
@@ -144,5 +146,25 @@ public class GrcAnalysisController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf) {
         UUID projectId = projectService.resolveProjectId(project);
         return RiskPostureResponse.from(grcAnalysisService.riskPosture(projectId, asOf));
+    }
+
+    @GetMapping("/compliance-posture")
+    public CompliancePostureResponse compliancePosture(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false) ComplianceFrameworkIdentifier framework) {
+        UUID projectId = projectService.resolveProjectId(project);
+        return CompliancePostureResponse.from(grcAnalysisService.compliancePosture(projectId, asOf, framework));
+    }
+
+    @GetMapping("/framework-gap")
+    public CrossFrameworkGapResponse crossFrameworkGap(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false) ComplianceFrameworkIdentifier framework,
+            @RequestParam(required = false) GapSeverity minSeverity) {
+        UUID projectId = projectService.resolveProjectId(project);
+        return CrossFrameworkGapResponse.from(
+                grcAnalysisService.crossFrameworkGap(projectId, asOf, framework, minSeverity));
     }
 }

@@ -239,6 +239,8 @@ the engine lands). NIST SP 800-30 Rev. 1 ships under GC-T014 / #721 as the
 | GET | `/analysis/grc/vendor-risk` |—| 200 | Aggregation over `OperationalAsset` of `AssetType.THIRD_PARTY` (findings, observations, evidence freshness, mapped controls). |
 | GET | `/analysis/grc/nist-sp-800-30` |—| 200 | NIST SP 800-30 Rev. 1 methodology-attributed view over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `NIST_SP800_30_R1`. Decodes inputs into threat source, threat event (`ADVERSARIAL` / `NON_ADVERSARIAL`), vulnerabilities, predisposing conditions, threat-source relevance, multi-dimensional likelihood, impact level, and assessment timeframe; computes overall likelihood (analyst-supplied or derived per Table G-5) and risk level (per Table I-2) as ordinal bands with explicit `scale`/`units` and a matrix cell label. |
 | GET | `/analysis/grc/portfolio` |—| 200 | GRC Portfolio Reporting roll-up (GC-Q013): risk posture (scenario/assessment/treatment/register distributions, reassessment + overdue-review signals), control health (status + design/operating effectiveness distributions, unassessed + unmapped counts), evidence freshness counts, finding trends (severity/status/type, open + overdue), asset criticality concentration (criticality/environment/scope), and methodology-family (FAIR/NIST/ISO) summaries. Each dimension carries actionable drill-down id lists behind its key signal counts (critical assets, unmapped + unassessed controls, overdue register reviews, open + overdue findings). Read-only projection; no new materialized state. Accepts `asOf`, `freshnessWindowDays`. |
+| GET | `/analysis/grc/compliance-posture` |—| 200 | Per-framework, per-element compliance posture (GC-I002 / GC-L007 carve-out) over the `ComplianceFrameworkMapping` aggregate. Returns the methodology-attributed envelope (`analysisKind: "compliance_posture"`, `inputs`, `frameworks[].elements[].mappings`, `counts.coverageLevelCounts`, `limitations`). Accepts optional `framework` (one of `SOC2`, `SOX`, `ISO_27001`, `NIST_CSF`, `PCI_DSS`). |
+| GET | `/analysis/grc/framework-gap` |—| 200 | Cross-framework gap analysis (GC-I007 / GC-L007 carve-out). Categorizes each element by `GapSeverity` (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `NONE`) derived from mapping coverage shape (`FULL` / `PARTIAL` / `COMPENSATING`). Accepts optional `framework` and `minSeverity`. |
 
 `GET /analysis/grc/evidence-freshness` accepts:
 
@@ -368,6 +370,44 @@ families in a single result emits an explicit limitation.
 |-----------|------|---------|-------------|
 | `project` | string | auto-resolved | Project identifier |
 | `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the envelope |
+
+#### Compliance Framework Analysis (GC-I002 / GC-I007 / GC-L011)
+
+`GET /analysis/grc/compliance-posture` accepts:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `project` | string | auto-resolved | Project identifier |
+| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the response envelope |
+| `framework` | `ComplianceFrameworkIdentifier` |—| Narrow to a single framework. When omitted, every framework with at least one mapping is rolled up. |
+
+Response shape: top-level `analysisKind: "compliance_posture"`, `project`,
+`asOf`, `derivationMethod` (`"compliance-framework-mapping-projection-v1"`),
+`inputs`, a `frameworks` array (each entry with `framework`,
+`frameworkIdentifier` (when external), `frameworkVersion`, `elements`, and
+per-coverage-level counts), a `counts` summary
+(`totalFrameworks`, `totalElements`, `totalMappings`, `coverageLevelCounts`),
+and a top-level `limitations` array. Each element rollup lists the
+`mappings` that resolve it with endpoint UUIDs.
+
+`GET /analysis/grc/framework-gap` accepts:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `project` | string | auto-resolved | Project identifier |
+| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the response envelope |
+| `framework` | `ComplianceFrameworkIdentifier` |—| Narrow to a single framework |
+| `minSeverity` | `GapSeverity` |—| Drop elements less severe than this (severity order: `CRITICAL` > `HIGH` > `MEDIUM` > `LOW` > `NONE`) |
+
+Response shape: top-level `analysisKind: "cross_framework_gap"`, `project`,
+`asOf`, `derivationMethod`
+(`"compliance-framework-mapping-gap-projection-v1"`), `inputs`,
+a `frameworks` array (each entry with `framework`, `frameworkIdentifier`,
+`frameworkVersion`, `elementGaps`, and `bySeverity` counts), and a
+`counts` summary (`totalElements`, `bySeverity`). Each element gap entry
+carries `frameworkElement`, `severity`, `coverageStatus`
+(`FULL` / `PARTIAL` / `COMPENSATING_ONLY` / `UNMAPPED`), and the
+`requirementIds` / `controlIds` of the mappings that resolve the element.
 
 ### Embeddings
 
@@ -1534,6 +1574,20 @@ Bidirectional many-to-many link between controls (catalog `Control` or `ScopedCo
 **RiskControlMappingRequest fields:** Exactly one of `controlId` / `scopedImplementationId` (control side); exactly one of `riskScenarioId` / `riskRegisterRecordId` (risk side); `controlRole` (required, `MappingControlRole`: `PREVENTIVE`, `DETECTIVE`, `CORRECTIVE`, `DETERRENT`, `COMPENSATING`, `RECOVERY`, `DIRECTIVE`); `mappingObjective` (optional TEXT); `mappingScope` (optional TEXT); `operationalAssetId` (optional UUID: C2 boundary context); `methodologyProfileId` (optional UUID: C4 profile); `methodologyInfluence` (optional JSON object—C4 validated against profile schema if profile provided). Violations of the "exactly one" rules return 422.
 
 **AddEvidenceRefRequest fields:** `evidenceRef` (required, opaque reference string), `evidenceNote` (optional TEXT), `evidenceArtifactId` (optional UUID to a formal `EvidenceArtifact`).
+
+#### Compliance Framework Mappings (GC-I002 / GC-I005 / GC-I007 / GC-L011)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/compliance-framework-mappings` | ComplianceFrameworkMappingRequest | 201 | Create a mapping from a requirement (GC-I002) or control (GC-I005) to a compliance-framework element |
+| GET | `/compliance-framework-mappings` |—| 200 | List mappings; optionally filter by `framework`, `requirementId`, or `controlId` |
+| GET | `/compliance-framework-mappings/{id}` |—| 200 | Get mapping by UUID |
+| PUT | `/compliance-framework-mappings/{id}` | UpdateComplianceFrameworkMappingRequest | 200 | Update mutable fields (framework, element, coverage level, rationale) |
+| DELETE | `/compliance-framework-mappings/{id}` |—| 204 | Delete mapping |
+
+**ComplianceFrameworkMappingRequest fields:** Exactly one of `requirementId` / `controlId` (source endpoint XOR—violations return 422); `framework` (required, `ComplianceFrameworkIdentifier`: `SOC2`, `SOX`, `ISO_27001`, `NIST_CSF`, `PCI_DSS`); `frameworkIdentifier` (optional free-form string for genuine externals not in the seeded enum); `frameworkVersion` (optional, for example `"2017 TSC"`); `frameworkElement` (required, the specific element label such as `"CC1.1"`); `coverageLevel` (required, `CoverageLevel`: `FULL`, `PARTIAL`, `COMPENSATING`); `rationale` (optional TEXT).
+
+Duplicate `(endpoint, framework, element)` tuples are rejected with `409`. External `frameworkIdentifier` values are sanitized for control characters / newlines per the log-injection guard.
 
 #### Risk-Control Analysis (Coverage Queries)
 

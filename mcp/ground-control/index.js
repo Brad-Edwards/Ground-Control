@@ -65,6 +65,13 @@ import {
   // ---- GC-T008 methodology-aware aggregate risk reporting ----
   analyzeRiskHeatmap, analyzeRiskDistribution, analyzeRiskTopN,
   analyzeRiskTrends, analyzeRiskPosture,
+  // ---- GC-I002 / GC-I007 compliance-framework analysis ----
+  analyzeCompliancePosture, analyzeCrossFrameworkGap,
+  // ---- GC-L011 compliance-framework-mapping CRUD ----
+  COMPLIANCE_FRAMEWORK_IDENTIFIERS, COVERAGE_LEVELS, GAP_SEVERITIES,
+  createComplianceFrameworkMapping, listComplianceFrameworkMappings,
+  getComplianceFrameworkMapping, updateComplianceFrameworkMapping,
+  deleteComplianceFrameworkMapping,
   // ---- history / exports (kept for completeness even though tools route to gc_query) ----
   getRequirementHistory, getRelationHistory, getTraceabilityLinkHistory,
   getRequirementTimeline, getRequirementDiff, getProjectTimeline,
@@ -1447,8 +1454,7 @@ const ANALYZE_KINDS = [
   "cycles", "orphans", "coverage_gaps", "impact", "cross_wave",
   "consistency", "completeness", "status_drift", "similarity", "work_order",
   // GC-L007 — GRC analyses on existing substrates. Methodology-execution
-  // engines (FAIR / FAIR-CAM) and compliance-framework analyses are tracked
-  // separately and ship their own kinds when those engines land.
+  // engines (FAIR / FAIR-CAM) ship their own kinds when those engines land.
   "evidence_freshness", "observation_exposure", "control_state", "vendor_risk_aggregation",
   // GC-T014 — NIST SP 800-30 Rev. 1 risk-assessment view (methodology-attributed
   // envelope from /api/v1/analysis/grc/nist-sp-800-30).
@@ -1460,6 +1466,10 @@ const ANALYZE_KINDS = [
   // distribution, top-N, trends, executive posture). Every kind is
   // read-only and returns a methodology-attributed envelope per ADR-035.
   "risk_heatmap", "risk_distribution", "risk_top_n", "risk_trends", "risk_posture",
+  // GC-I002 / GC-I007 / GC-L007 compliance carve-outs — both kinds dispatch
+  // through lib.js request() to fixed /api/v1/analysis/grc/* paths per the
+  // ADR-035 extension protocol locked in by the cluster cross-cutting decision.
+  "compliance_posture", "cross_framework_gap",
 ];
 
 const RISK_DISTRIBUTION_GROUP_BY = ["CATEGORY", "STATUS", "OWNER", "ASSET_CRITICALITY"];
@@ -1480,7 +1490,9 @@ server.tool(
     `risk_distribution→{project?, as_of?, group_by(${RISK_DISTRIBUTION_GROUP_BY.join("|")})}; ` +
     `risk_top_n→{project?, as_of?, limit?, order_by(${RISK_TOP_N_ORDER_BY.join("|")})?}; ` +
     `risk_trends→{project?, as_of?, from?, to?, bucket(${RISK_TRENDS_BUCKETS.join("|")})?}; ` +
-    `risk_posture→{project?, as_of?}. ` +
+    `risk_posture→{project?, as_of?}; ` +
+    `compliance_posture→{project?, as_of?, framework?}; ` +
+    `cross_framework_gap→{project?, as_of?, framework?, min_severity?}. ` +
     `Others take {project?}.`,
   {
     kind: z.enum(ANALYZE_KINDS),
@@ -1507,6 +1519,9 @@ server.tool(
     from: z.string().datetime().optional(),
     to: z.string().datetime().optional(),
     bucket: z.enum(RISK_TRENDS_BUCKETS).optional(),
+    // GC-I002 / GC-I007 compliance carve-out params
+    framework: z.enum(COMPLIANCE_FRAMEWORK_IDENTIFIERS).optional(),
+    min_severity: z.enum(GAP_SEVERITIES).optional(),
   },
   async (args) => {
     try {
@@ -1604,6 +1619,19 @@ server.tool(
           return ok(JSON.stringify(await analyzeRiskPosture({
             project: args.project,
             asOf: args.as_of,
+          }), null, 2));
+        case "compliance_posture":
+          return ok(JSON.stringify(await analyzeCompliancePosture({
+            project: args.project,
+            asOf: args.as_of,
+            framework: args.framework,
+          }), null, 2));
+        case "cross_framework_gap":
+          return ok(JSON.stringify(await analyzeCrossFrameworkGap({
+            project: args.project,
+            asOf: args.as_of,
+            framework: args.framework,
+            minSeverity: args.min_severity,
           }), null, 2));
         default: return err(new Error(`Unknown kind: ${args.kind}`));
       }
@@ -2840,6 +2868,72 @@ server.tool(
         case "assessment-feed":
           result = await getAssessmentFeed(reqArg(args, "assessment_result_id"), p);
           break;
+        default:
+          throw new Error(`Unknown action: ${args.action}`);
+      }
+      return ok(result === null ? "Deleted" : JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_compliance_framework_mapping: compliance-framework-mapping aggregate
+// (GC-I002 / GC-I005 / GC-I007 / GC-L011). CRUD parity for the promoted
+// aggregate that previously lived as AuditLinkTargetType.FRAMEWORK strings;
+// reads (list, get) route through gc_query like the sibling CRUD tools.
+const COMPLIANCE_FRAMEWORK_MAPPING_ACTIONS = ["create", "update", "delete"];
+server.tool(
+  "gc_compliance_framework_mapping",
+  `Compliance-framework-mapping operations (GC-I002 / GC-I005 / GC-I007 / GC-L011). ` +
+    `Actions: ${COMPLIANCE_FRAMEWORK_MAPPING_ACTIONS.join(", ")}. ` +
+    `Reads (list, get) route through gc_query. ` +
+    `framework values: ${COMPLIANCE_FRAMEWORK_IDENTIFIERS.join(", ")}. ` +
+    `coverage_level values: ${COVERAGE_LEVELS.join(", ")}.`,
+  {
+    action: z.enum(COMPLIANCE_FRAMEWORK_MAPPING_ACTIONS),
+    id: z.string().uuid().optional(),
+    project: z.string().optional(),
+    // Source endpoint (XOR): requirement-side OR control-side
+    requirement_id: z.string().uuid().optional(),
+    control_id: z.string().uuid().optional(),
+    // Framework side
+    framework: z.enum(COMPLIANCE_FRAMEWORK_IDENTIFIERS).optional(),
+    framework_identifier: z.string().max(200).optional(),
+    framework_version: z.string().max(60).optional(),
+    framework_element: z.string().max(200).optional(),
+    // Qualification
+    coverage_level: z.enum(COVERAGE_LEVELS).optional(),
+    rationale: z.string().optional(),
+  },
+  async (args) => {
+    try {
+      const p = args.project;
+      let result;
+      switch (args.action) {
+        case "create":
+          result = await createComplianceFrameworkMapping({
+            requirementId: args.requirement_id,
+            controlId: args.control_id,
+            framework: reqArg(args, "framework"),
+            frameworkIdentifier: args.framework_identifier,
+            frameworkVersion: args.framework_version,
+            frameworkElement: reqArg(args, "framework_element"),
+            coverageLevel: reqArg(args, "coverage_level"),
+            rationale: args.rationale,
+          }, p);
+          break;
+        case "update":
+          result = await updateComplianceFrameworkMapping(reqArg(args, "id"), pick(args, {
+            framework: "framework",
+            frameworkIdentifier: "framework_identifier",
+            frameworkVersion: "framework_version",
+            frameworkElement: "framework_element",
+            coverageLevel: "coverage_level",
+            rationale: "rationale",
+          }), p);
+          break;
+        case "delete":
+          await deleteComplianceFrameworkMapping(reqArg(args, "id"), p);
+          return ok("Deleted");
         default:
           throw new Error(`Unknown action: ${args.action}`);
       }

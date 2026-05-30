@@ -9,6 +9,7 @@ import com.keplerops.groundcontrol.domain.assets.repository.OperationalAssetRepo
 import com.keplerops.groundcontrol.domain.assets.state.AssetLinkTargetType;
 import com.keplerops.groundcontrol.domain.audits.repository.AuditRepository;
 import com.keplerops.groundcontrol.domain.audits.state.AuditLinkTargetType;
+import com.keplerops.groundcontrol.domain.compliance.repository.ComplianceFrameworkMappingRepository;
 import com.keplerops.groundcontrol.domain.controls.state.ControlLinkTargetType;
 import com.keplerops.groundcontrol.domain.documents.repository.DocumentRepository;
 import com.keplerops.groundcontrol.domain.evidence.repository.EvidenceArtifactRepository;
@@ -83,6 +84,9 @@ class GraphTargetResolverServiceTest {
 
     @Mock
     private DocumentRepository documentRepository;
+
+    @Mock
+    private ComplianceFrameworkMappingRepository complianceFrameworkMappingRepository;
 
     @Mock
     private com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAppetiteProfileRepository
@@ -1004,5 +1008,39 @@ class GraphTargetResolverServiceTest {
         assertThatThrownBy(() -> graphTargetResolverService.validateDocumentTarget(projectId, targetId))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("Document target not found in the requested project");
+    }
+
+    // GC-I002 / GC-L011: ComplianceFrameworkMapping is a first-class graph
+    // participant. validateComplianceFrameworkMappingTarget enforces project-scoped
+    // existence for every reference, mirroring the Document seam.
+
+    @Test
+    void validateComplianceFrameworkMappingTargetHappyPathReturnsInternalTarget() {
+        when(complianceFrameworkMappingRepository.existsByIdAndProjectId(targetId, projectId))
+                .thenReturn(true);
+
+        var validated = graphTargetResolverService.validateComplianceFrameworkMappingTarget(projectId, targetId);
+
+        assertThat(validated.internal()).isTrue();
+        assertThat(validated.targetEntityId()).isEqualTo(targetId);
+        assertThat(validated.targetIdentifier()).isNull();
+    }
+
+    @Test
+    void validateComplianceFrameworkMappingTargetRejectsNullTargetEntityId() {
+        assertThatThrownBy(() -> graphTargetResolverService.validateComplianceFrameworkMappingTarget(projectId, null))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("Compliance framework mapping links require targetEntityId");
+    }
+
+    @Test
+    void validateComplianceFrameworkMappingTargetRejectsMappingNotInProject() {
+        when(complianceFrameworkMappingRepository.existsByIdAndProjectId(targetId, projectId))
+                .thenReturn(false);
+
+        assertThatThrownBy(
+                        () -> graphTargetResolverService.validateComplianceFrameworkMappingTarget(projectId, targetId))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("Compliance framework mapping target not found");
     }
 }

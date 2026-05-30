@@ -124,6 +124,11 @@ Mirrored API-boundary enum constants follow the same convention: the
 `mcp/ground-control/lib.js` for GC-T012 / #719 mirror two new Java enums on
 `MethodologyProfile` and are documented by the methodology profile entry in
 `docs/API.md` and the `gc_risk_governance` tool description in
+`mcp/ground-control/index.js`. The `COMPLIANCE_FRAMEWORK_IDENTIFIERS`,
+`COVERAGE_LEVELS`, and `GAP_SEVERITIES` arrays added for GC-I002 /
+GC-I005 / GC-I007 / GC-L011 (#744) follow the same pattern—mirrored on the
+`/compliance-framework-mappings` CRUD entry in `docs/API.md` and the
+`gc_compliance_framework_mapping` tool description in
 `mcp/ground-control/index.js`. The static `ENUM_CONTRACT_INVENTORY`
 extension in `tools/policy/checks.py` enforces parity across backend, MCP,
 and frontend per ADR-034. No new sections in this style guide.

@@ -1268,6 +1268,25 @@ export async function analyzeRiskPosture({ project, asOf } = {}) {
   });
 }
 
+// GC-I002 / GC-L007 carve-out — compliance posture by framework. Returns the
+// methodology-attributed envelope from /api/v1/analysis/grc/compliance-posture
+// verbatim. Path is fixed; callers cannot supply headers / tokens / URLs (per
+// the cluster security note).
+export async function analyzeCompliancePosture({ project, asOf, framework } = {}) {
+  return request("GET", "/api/v1/analysis/grc/compliance-posture", {
+    params: { project, asOf, framework },
+  });
+}
+
+// GC-I007 / GC-L007 carve-out — cross-framework gap analysis. Returns the
+// methodology-attributed envelope from /api/v1/analysis/grc/framework-gap
+// verbatim.
+export async function analyzeCrossFrameworkGap({ project, asOf, framework, minSeverity } = {}) {
+  return request("GET", "/api/v1/analysis/grc/framework-gap", {
+    params: { project, asOf, framework, minSeverity },
+  });
+}
+
 // Strict containment predicate. Both arguments MUST already be canonical
 // realpaths — call `realpathSync` on each side before invoking this. Returns
 // true iff `canonicalPath` is strictly inside `canonicalRoot` (rejects the
@@ -9320,6 +9339,22 @@ export const REASSESSMENT_TRIGGER_TARGET_TYPES = [
   "EXTERNAL",
 ];
 
+// GC-I002 / GC-I005 / GC-I007 / GC-L011: compliance-framework-mapping enums
+// (ADR-034 mirror). Declaration order matches the matching backend enums
+// under domain/compliance/state/ exactly. Enforced by the
+// tools/policy/checks.py::ENUM_CONTRACT_INVENTORY post-condition.
+export const COMPLIANCE_FRAMEWORK_IDENTIFIERS = [
+  "SOC2",
+  "SOX",
+  "ISO_27001",
+  "NIST_CSF",
+  "PCI_DSS",
+];
+
+export const COVERAGE_LEVELS = ["FULL", "PARTIAL", "COMPENSATING"];
+
+export const GAP_SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE"];
+
 // ---------------------------------------------------------------------------
 // Audit API functions (GC-U001 / ADR-047)
 // ---------------------------------------------------------------------------
@@ -10193,6 +10228,40 @@ export async function getUnmappedControls(project) {
 
 export async function getAssessmentFeed(assessmentResultId, project) {
   return request("GET", `/api/v1/analysis/risk-control/assessment-feed/${encodeURIComponent(assessmentResultId)}`, {
+    params: { project },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Compliance Framework Mapping API functions
+// (GC-I002 / GC-I005 / GC-I007 / GC-L011)
+// ---------------------------------------------------------------------------
+
+export async function createComplianceFrameworkMapping(data, project) {
+  return request("POST", "/api/v1/compliance-framework-mappings", { body: data, params: { project } });
+}
+
+export async function listComplianceFrameworkMappings({ project, framework, requirementId, controlId } = {}) {
+  return request("GET", "/api/v1/compliance-framework-mappings", {
+    params: { project, framework, requirementId, controlId },
+  });
+}
+
+export async function getComplianceFrameworkMapping(id, project) {
+  return request("GET", `/api/v1/compliance-framework-mappings/${encodeURIComponent(id)}`, {
+    params: { project },
+  });
+}
+
+export async function updateComplianceFrameworkMapping(id, data, project) {
+  return request("PUT", `/api/v1/compliance-framework-mappings/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function deleteComplianceFrameworkMapping(id, project) {
+  await request("DELETE", `/api/v1/compliance-framework-mappings/${encodeURIComponent(id)}`, {
     params: { project },
   });
 }
