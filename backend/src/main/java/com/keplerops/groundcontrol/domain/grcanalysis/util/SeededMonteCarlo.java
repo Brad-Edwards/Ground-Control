@@ -69,7 +69,7 @@ public final class SeededMonteCarlo {
      * {@code min < max}.
      */
     public double nextUniformRange(double min, double max) {
-        if (!(min < max)) {
+        if (min >= max) {
             throw new IllegalArgumentException("min must be less than max; got min=" + min + ", max=" + max);
         }
         return min + (max - min) * rng.nextDouble();

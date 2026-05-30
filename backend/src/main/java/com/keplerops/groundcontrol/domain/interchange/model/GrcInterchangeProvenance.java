@@ -68,25 +68,30 @@ public class GrcInterchangeProvenance extends BaseEntity {
         // JPA
     }
 
-    public GrcInterchangeProvenance(
-            Project project,
-            InterchangeEntityKind entityKind,
-            UUID entityId,
-            String externalUid,
+    /**
+     * Groups the audit-trail fields that travel together: origin provenance
+     * from the source system and the import event fields recorded by this
+     * server. Keeps the GrcInterchangeProvenance constructor below the 7-param
+     * limit.
+     */
+    public record ImportContext(
             String sourceSystem,
             Instant sourceCreatedAt,
             Instant sourceUpdatedAt,
             Instant importedAt,
-            String importedBy) {
+            String importedBy) {}
+
+    public GrcInterchangeProvenance(
+            Project project, InterchangeEntityKind entityKind, UUID entityId, String externalUid, ImportContext ctx) {
         this.project = project;
         this.entityKind = entityKind;
         this.entityId = entityId;
         this.externalUid = externalUid;
-        this.sourceSystem = sourceSystem;
-        this.sourceCreatedAt = sourceCreatedAt;
-        this.sourceUpdatedAt = sourceUpdatedAt;
-        this.importedAt = importedAt;
-        this.importedBy = importedBy;
+        this.sourceSystem = ctx.sourceSystem();
+        this.sourceCreatedAt = ctx.sourceCreatedAt();
+        this.sourceUpdatedAt = ctx.sourceUpdatedAt();
+        this.importedAt = ctx.importedAt();
+        this.importedBy = ctx.importedBy();
     }
 
     public Project getProject() {

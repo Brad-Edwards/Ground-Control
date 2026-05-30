@@ -81,43 +81,37 @@ public record CostOfDelayComponent(DistributionKind kind, double min, double mod
                     Map.of("field", "min"));
         }
         switch (kind) {
-            case POINT -> {
-                if (min != mode || min != max) {
-                    throw new DomainValidationException(
-                            "POINT distribution requires min == mode == max",
-                            "validation_error",
-                            Map.of(
-                                    "min",
-                                    String.valueOf(min),
-                                    "mode",
-                                    String.valueOf(mode),
-                                    "max",
-                                    String.valueOf(max)));
-                }
-            }
-            case UNIFORM -> {
-                if (!(min < max)) {
-                    throw new DomainValidationException(
-                            "UNIFORM distribution requires min < max",
-                            "validation_error",
-                            Map.of("min", String.valueOf(min), "max", String.valueOf(max)));
-                }
-            }
-            case TRIANGULAR -> {
-                if (!(min <= mode && mode <= max) || min == max) {
-                    throw new DomainValidationException(
-                            "TRIANGULAR distribution requires min <= mode <= max and min < max",
-                            "validation_error",
-                            Map.of(
-                                    "min",
-                                    String.valueOf(min),
-                                    "mode",
-                                    String.valueOf(mode),
-                                    "max",
-                                    String.valueOf(max)));
-                }
-            }
+            case POINT -> validatePoint(min, mode, max);
+            case UNIFORM -> validateUniform(min, max);
+            case TRIANGULAR -> validateTriangular(min, mode, max);
             default -> throw new IllegalStateException("Unhandled DistributionKind: " + kind);
+        }
+    }
+
+    private static void validatePoint(double min, double mode, double max) {
+        if (min != mode || min != max) {
+            throw new DomainValidationException(
+                    "POINT distribution requires min == mode == max",
+                    "validation_error",
+                    Map.of("min", String.valueOf(min), "mode", String.valueOf(mode), "max", String.valueOf(max)));
+        }
+    }
+
+    private static void validateUniform(double min, double max) {
+        if (min >= max) {
+            throw new DomainValidationException(
+                    "UNIFORM distribution requires min < max",
+                    "validation_error",
+                    Map.of("min", String.valueOf(min), "max", String.valueOf(max)));
+        }
+    }
+
+    private static void validateTriangular(double min, double mode, double max) {
+        if (!(min <= mode && mode <= max) || min == max) {
+            throw new DomainValidationException(
+                    "TRIANGULAR distribution requires min <= mode <= max and min < max",
+                    "validation_error",
+                    Map.of("min", String.valueOf(min), "mode", String.valueOf(mode), "max", String.valueOf(max)));
         }
     }
 }

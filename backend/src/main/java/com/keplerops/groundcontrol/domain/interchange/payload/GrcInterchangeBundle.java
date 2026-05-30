@@ -42,6 +42,21 @@ public record GrcInterchangeBundle(
     /** Current interchange schema version. */
     public static final String CURRENT_VERSION = "1.0";
 
+    /**
+     * Common contract for every entity-kind payload in the interchange bundle.
+     * Allows the importer to process provenance-only surfaces generically
+     * without a separate overload per kind.
+     */
+    public interface InterchangePayload {
+        String externalUid();
+
+        String sourceSystem();
+
+        Instant createdAt();
+
+        Instant updatedAt();
+    }
+
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record AssetPayload(
             String externalUid,
@@ -55,7 +70,8 @@ public record GrcInterchangeBundle(
             String criticality,
             String sourceSystem,
             Instant createdAt,
-            Instant updatedAt) {}
+            Instant updatedAt)
+            implements InterchangePayload {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record RiskScenarioPayload(
@@ -65,7 +81,8 @@ public record GrcInterchangeBundle(
             String status,
             String sourceSystem,
             Instant createdAt,
-            Instant updatedAt) {}
+            Instant updatedAt)
+            implements InterchangePayload {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ControlPayload(
@@ -75,7 +92,8 @@ public record GrcInterchangeBundle(
             String controlType,
             String sourceSystem,
             Instant createdAt,
-            Instant updatedAt) {}
+            Instant updatedAt)
+            implements InterchangePayload {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record FindingPayload(
@@ -86,7 +104,8 @@ public record GrcInterchangeBundle(
             String description,
             String sourceSystem,
             Instant createdAt,
-            Instant updatedAt) {}
+            Instant updatedAt)
+            implements InterchangePayload {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record EvidenceArtifactPayload(
@@ -96,7 +115,8 @@ public record GrcInterchangeBundle(
             String externalUri,
             String sourceSystem,
             Instant createdAt,
-            Instant updatedAt) {}
+            Instant updatedAt)
+            implements InterchangePayload {}
 
     public static GrcInterchangeBundle empty(String projectIdentifier) {
         return new GrcInterchangeBundle(

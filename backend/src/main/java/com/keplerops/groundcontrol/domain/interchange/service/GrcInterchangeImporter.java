@@ -8,12 +8,15 @@ import com.keplerops.groundcontrol.domain.assets.state.AssetType;
 import com.keplerops.groundcontrol.domain.audit.ActorHolder;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.interchange.model.GrcInterchangeProvenance;
+import com.keplerops.groundcontrol.domain.interchange.model.GrcInterchangeProvenance.ImportContext;
 import com.keplerops.groundcontrol.domain.interchange.payload.GrcInterchangeBundle;
 import com.keplerops.groundcontrol.domain.interchange.payload.GrcInterchangeBundle.AssetPayload;
+import com.keplerops.groundcontrol.domain.interchange.payload.GrcInterchangeBundle.InterchangePayload;
 import com.keplerops.groundcontrol.domain.interchange.repository.GrcInterchangeProvenanceRepository;
 import com.keplerops.groundcontrol.domain.interchange.state.InterchangeEntityKind;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -84,62 +87,34 @@ public class GrcInterchangeImporter {
         // Provenance-only persistence for the other entity surfaces so a
         // future release can attach the domain creation paths idempotently
         // without renegotiating the envelope shape.
-        if (bundle.riskScenarios() != null) {
-            for (var p : bundle.riskScenarios()) {
-                upsertProvenanceOnly(
-                        project.getId(),
-                        InterchangeEntityKind.RISK_SCENARIO,
-                        p.externalUid(),
-                        p.sourceSystem(),
-                        p.createdAt(),
-                        p.updatedAt(),
-                        importedAt,
-                        importedBy,
-                        builder);
-            }
-        }
-        if (bundle.controls() != null) {
-            for (var p : bundle.controls()) {
-                upsertProvenanceOnly(
-                        project.getId(),
-                        InterchangeEntityKind.CONTROL,
-                        p.externalUid(),
-                        p.sourceSystem(),
-                        p.createdAt(),
-                        p.updatedAt(),
-                        importedAt,
-                        importedBy,
-                        builder);
-            }
-        }
-        if (bundle.findings() != null) {
-            for (var p : bundle.findings()) {
-                upsertProvenanceOnly(
-                        project.getId(),
-                        InterchangeEntityKind.FINDING,
-                        p.externalUid(),
-                        p.sourceSystem(),
-                        p.createdAt(),
-                        p.updatedAt(),
-                        importedAt,
-                        importedBy,
-                        builder);
-            }
-        }
-        if (bundle.evidenceArtifacts() != null) {
-            for (var p : bundle.evidenceArtifacts()) {
-                upsertProvenanceOnly(
-                        project.getId(),
-                        InterchangeEntityKind.EVIDENCE_ARTIFACT,
-                        p.externalUid(),
-                        p.sourceSystem(),
-                        p.createdAt(),
-                        p.updatedAt(),
-                        importedAt,
-                        importedBy,
-                        builder);
-            }
-        }
+        importProvenanceOnlySurface(
+                project.getId(),
+                InterchangeEntityKind.RISK_SCENARIO,
+                bundle.riskScenarios() == null ? List.of() : bundle.riskScenarios(),
+                importedAt,
+                importedBy,
+                builder);
+        importProvenanceOnlySurface(
+                project.getId(),
+                InterchangeEntityKind.CONTROL,
+                bundle.controls() == null ? List.of() : bundle.controls(),
+                importedAt,
+                importedBy,
+                builder);
+        importProvenanceOnlySurface(
+                project.getId(),
+                InterchangeEntityKind.FINDING,
+                bundle.findings() == null ? List.of() : bundle.findings(),
+                importedAt,
+                importedBy,
+                builder);
+        importProvenanceOnlySurface(
+                project.getId(),
+                InterchangeEntityKind.EVIDENCE_ARTIFACT,
+                bundle.evidenceArtifacts() == null ? List.of() : bundle.evidenceArtifacts(),
+                importedAt,
+                importedBy,
+                builder);
 
         var result = builder.build();
         log.info(
@@ -196,11 +171,8 @@ public class GrcInterchangeImporter {
                 projectId,
                 InterchangeEntityKind.OPERATIONAL_ASSET,
                 payload.externalUid(),
-                payload.sourceSystem(),
-                payload.createdAt(),
-                payload.updatedAt(),
-                importedAt,
-                importedBy,
+                new ImportContext(
+                        payload.sourceSystem(), payload.createdAt(), payload.updatedAt(), importedAt, importedBy),
                 asset.getId(),
                 builder);
     }
@@ -231,28 +203,29 @@ public class GrcInterchangeImporter {
         }
     }
 
-    private void upsertProvenanceOnly(
+    /**
+     * Process a list of provenance-only payloads for a given entity kind.
+     * These entity kinds are not yet fully wired through the importer; a
+     * placeholder entity ID is used so a downstream reconciliation pass can
+     * find unattached provenance records.
+     */
+    private <P extends InterchangePayload> void importProvenanceOnlySurface(
             UUID projectId,
             InterchangeEntityKind kind,
-            String externalUid,
-            String sourceSystem,
-            Instant sourceCreatedAt,
-            Instant sourceUpdatedAt,
+            List<P> payloads,
             Instant importedAt,
             String importedBy,
             GrcInterchangeImportResult.Builder builder) {
-        requireExternalUid(externalUid, kind + ".externalUid");
-        upsertProvenance(
-                projectId,
-                kind,
-                externalUid,
-                sourceSystem,
-                sourceCreatedAt,
-                sourceUpdatedAt,
-                importedAt,
-                importedBy,
-                placeholderEntityId(),
-                builder);
+        for (P p : payloads) {
+            requireExternalUid(p.externalUid(), kind + ".externalUid");
+            upsertProvenance(
+                    projectId,
+                    kind,
+                    p.externalUid(),
+                    new ImportContext(p.sourceSystem(), p.createdAt(), p.updatedAt(), importedAt, importedBy),
+                    placeholderEntityId(),
+                    builder);
+        }
     }
 
     /**
@@ -270,11 +243,7 @@ public class GrcInterchangeImporter {
             UUID projectId,
             InterchangeEntityKind kind,
             String externalUid,
-            String sourceSystem,
-            Instant sourceCreatedAt,
-            Instant sourceUpdatedAt,
-            Instant importedAt,
-            String importedBy,
+            ImportContext ctx,
             UUID entityId,
             GrcInterchangeImportResult.Builder builder) {
         var existing = provenanceRepository.findByProjectIdAndEntityKindAndExternalUid(projectId, kind, externalUid);
@@ -282,23 +251,14 @@ public class GrcInterchangeImporter {
         if (existing.isPresent()) {
             var prov = existing.get();
             prov.setEntityId(entityId);
-            prov.setSourceSystem(sourceSystem);
-            prov.setSourceCreatedAt(sourceCreatedAt);
-            prov.setSourceUpdatedAt(sourceUpdatedAt);
-            prov.setImportedAt(importedAt);
-            prov.setImportedBy(importedBy);
+            prov.setSourceSystem(ctx.sourceSystem());
+            prov.setSourceCreatedAt(ctx.sourceCreatedAt());
+            prov.setSourceUpdatedAt(ctx.sourceUpdatedAt());
+            prov.setImportedAt(ctx.importedAt());
+            prov.setImportedBy(ctx.importedBy());
             provenanceRepository.save(prov);
         } else {
-            provenanceRepository.save(new GrcInterchangeProvenance(
-                    project,
-                    kind,
-                    entityId,
-                    externalUid,
-                    sourceSystem,
-                    sourceCreatedAt,
-                    sourceUpdatedAt,
-                    importedAt,
-                    importedBy));
+            provenanceRepository.save(new GrcInterchangeProvenance(project, kind, entityId, externalUid, ctx));
         }
         builder.provenanceWritten();
     }
