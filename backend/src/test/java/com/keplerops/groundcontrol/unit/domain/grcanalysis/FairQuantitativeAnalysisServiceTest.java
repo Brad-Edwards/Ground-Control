@@ -2,7 +2,7 @@ package com.keplerops.groundcontrol.unit.domain.grcanalysis;
 
 import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
@@ -275,9 +275,9 @@ class FairQuantitativeAnalysisServiceTest {
         when(riskAssessmentResultRepository.findByIdAndProjectIdWithObservations(row.getId(), projectId))
                 .thenReturn(Optional.of(row));
 
-        assertThatThrownBy(() -> service.analyze(projectId, null, row.getId(), null))
-                .isInstanceOf(DomainValidationException.class)
-                .hasMessageContaining("not bound to a FAIR methodology profile");
+        DomainValidationException thrown = catchThrowableOfType(
+                DomainValidationException.class, () -> service.analyze(projectId, null, row.getId(), null));
+        assertThat(thrown).hasMessageContaining("not bound to a FAIR methodology profile");
     }
 
     @Test
@@ -285,7 +285,9 @@ class FairQuantitativeAnalysisServiceTest {
         UUID unknown = UUID.randomUUID();
         when(projectRepository.findById(unknown)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.analyze(unknown, null, null, null)).isInstanceOf(NotFoundException.class);
+        NotFoundException thrown =
+                catchThrowableOfType(NotFoundException.class, () -> service.analyze(unknown, null, null, null));
+        assertThat(thrown).isNotNull();
     }
 
     @Test

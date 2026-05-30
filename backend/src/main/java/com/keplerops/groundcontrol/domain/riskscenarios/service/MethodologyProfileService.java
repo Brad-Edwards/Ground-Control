@@ -745,6 +745,7 @@ public class MethodologyProfileService {
     private static final String SCALE_ORG_DEFINED_ORDINAL = "organization-defined ordinal";
     private static final String UNITS_FIVE_LEVEL_ORDINAL = "5-level ordinal (VERY_LOW–VERY_HIGH)";
     private static final String UNITS_ORG_DEFINED_ORDINAL_LEVELS = "organization-defined ordinal levels";
+    private static final String UNITS_FRACTION_PER_DIMENSION = "fraction (0.0–1.0) per dimension";
 
     // Crosswalk validation error-detail keys + JSON-schema walker keys
     private static final String DETAIL_KEY_VOCABULARY_SURFACE = "vocabularySurface";
@@ -834,7 +835,7 @@ public class MethodologyProfileService {
                     "FAIR-CAM Loss Event Controls",
                     "Capability / coverage / operational performance for the loss-event control domain (GC-I017)",
                     SCALE_CONTINUOUS,
-                    "fraction (0.0–1.0) per dimension",
+                    UNITS_FRACTION_PER_DIMENSION,
                     null,
                     null),
             new CrosswalkEntry(
@@ -844,7 +845,7 @@ public class MethodologyProfileService {
                     "FAIR-CAM Variance Management Controls",
                     "Capability / coverage / operational performance for the variance-management control domain (GC-I017)",
                     SCALE_CONTINUOUS,
-                    "fraction (0.0–1.0) per dimension",
+                    UNITS_FRACTION_PER_DIMENSION,
                     null,
                     null),
             new CrosswalkEntry(
@@ -854,7 +855,7 @@ public class MethodologyProfileService {
                     "FAIR-CAM Decision Support Controls",
                     "Capability / coverage / operational performance for the decision-support control domain (GC-I017)",
                     SCALE_CONTINUOUS,
-                    "fraction (0.0–1.0) per dimension",
+                    UNITS_FRACTION_PER_DIMENSION,
                     null,
                     null));
 

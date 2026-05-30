@@ -55,6 +55,11 @@ public class FairQuantitativeAnalysisService {
     static final int MAX_ITERATIONS = 1_000_000;
     static final int MIN_ITERATIONS = 100;
 
+    // Reusable message fragments used in limitation notes.
+    private static final String SECONDARY_DROPPED_SUFFIX = "; secondary contribution dropped from ALE / LM rollup";
+    private static final String PER_LOSS_EVENT_UNIT = " per loss event";
+    private static final String FAIR_INPUT_PREFIX = "FAIR input \"";
+
     // Methodology-defined input map keys (FAIR vocabulary).
     private static final String KEY_TEF = "threat_event_frequency";
     private static final String KEY_CONTACT_FREQUENCY = "contact_frequency";
@@ -147,46 +152,74 @@ public class FairQuantitativeAnalysisService {
         return repository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId);
     }
 
+    // -------------------------------------------------------------------------
+    // toItem phases: input → secondary reconciliation → simulation → output
+    // -------------------------------------------------------------------------
+
     private FairQuantitativeAnalysisResult.FairAnalysisItem toItem(RiskAssessmentResult row) {
         Map<String, Object> inputs = row.getInputFactors() == null ? Map.of() : row.getInputFactors();
-        MethodologyProfile profile = row.getMethodologyProfile();
         List<String> limitations = new ArrayList<>();
 
+        PrimaryInputs primary = decodePrimaryInputs(inputs, limitations);
+        SecondaryInputs secondary = decodeSecondaryInputs(inputs, primary, limitations);
+        SimulationConfig sim = decodeSimulation(inputs, row.getId(), limitations);
+        DerivedOutputs derived = runSimulationOrFallback(primary, secondary, sim, limitations);
+        FairQuantitativeAnalysisResult.FairInputs typedInputs = buildTypedInputs(inputs, sim);
+
+        return buildItem(row, typedInputs, derived.outputs(), limitations);
+    }
+
+    /** Phase 1: decode the three required FAIR input three-points and monetary metadata. */
+    private PrimaryInputs decodePrimaryInputs(Map<String, Object> inputs, List<String> limitations) {
         ThreePoint tef = decodeThreePoint(inputs, KEY_TEF, limitations);
         ThreePoint vulnerability = decodeThreePoint(inputs, KEY_VULNERABILITY, limitations);
         ThreePoint primaryLoss = decodeThreePoint(inputs, KEY_PRIMARY_LOSS, limitations);
-        // Asymmetric secondary pair: the FAIR primary/secondary split is meaningful
-        // only when both the secondary frequency and secondary magnitude are
-        // supplied. If exactly one side is present, the other side silently
-        // zeroes out the contribution to ALE — fail loud per the L0 posture and
-        // drop the half-input from the simulation so the limitation is the
-        // only signal the analyst sees. When both sides are absent, we say
-        // nothing (secondary loss is optional in FAIR by design).
-        boolean secondaryFreqProvided = !asMap(inputs.get(KEY_SECONDARY_LEF)).isEmpty();
-        boolean secondaryLossProvided = !asMap(inputs.get(KEY_SECONDARY_LOSS)).isEmpty();
-        ThreePoint secondaryLossFreq;
-        ThreePoint secondaryLoss;
-        if (secondaryFreqProvided ^ secondaryLossProvided) {
-            String present = secondaryFreqProvided ? KEY_SECONDARY_LEF : KEY_SECONDARY_LOSS;
-            String missing = secondaryFreqProvided ? KEY_SECONDARY_LOSS : KEY_SECONDARY_LEF;
-            limitations.add("FAIR secondary loss pair incomplete: \"" + present + "\" present without \"" + missing
-                    + "\"; secondary contribution dropped from ALE / LM rollup");
-            secondaryLossFreq = null;
-            secondaryLoss = null;
-        } else {
-            // Both present (decode with limitations so partially-formed
-            // three-points still fail loud) or both absent (silent).
-            secondaryLossFreq = secondaryFreqProvided ? decodeThreePoint(inputs, KEY_SECONDARY_LEF, limitations) : null;
-            secondaryLoss = secondaryLossProvided ? decodeThreePoint(inputs, KEY_SECONDARY_LOSS, limitations) : null;
-        }
 
-        String currency = stringValue(asMap(inputs.get(KEY_PRIMARY_LOSS)).get(KEY_CURRENCY));
+        Map<String, Object> primaryLossMap = asMap(inputs.get(KEY_PRIMARY_LOSS));
+        String currency = stringValue(primaryLossMap.get(KEY_CURRENCY));
         if (currency == null || currency.isBlank()) {
             currency = DEFAULT_CURRENCY;
         }
-        String monetaryScale = stringValue(asMap(inputs.get(KEY_PRIMARY_LOSS)).get(KEY_SCALE));
+        String monetaryScale = stringValue(primaryLossMap.get(KEY_SCALE));
         if (monetaryScale == null || monetaryScale.isBlank()) {
             monetaryScale = DEFAULT_SCALE;
+        }
+        return new PrimaryInputs(tef, vulnerability, primaryLoss, currency, monetaryScale);
+    }
+
+    /**
+     * Phase 2: decode the optional secondary loss pair and reconcile currency / scale with the
+     * primary envelope. Asymmetric pairs (only one side supplied) are dropped with a limitation.
+     * Currency mismatches are dropped. Scale mismatches are normalized with a factor recorded as a
+     * limitation.
+     */
+    private SecondaryInputs decodeSecondaryInputs(
+            Map<String, Object> inputs, PrimaryInputs primary, List<String> limitations) {
+        boolean secondaryFreqProvided = !asMap(inputs.get(KEY_SECONDARY_LEF)).isEmpty();
+        boolean secondaryLossProvided = !asMap(inputs.get(KEY_SECONDARY_LOSS)).isEmpty();
+
+        if (secondaryFreqProvided ^ secondaryLossProvided) {
+            // Asymmetric secondary pair: the FAIR primary/secondary split is meaningful
+            // only when both the secondary frequency and secondary magnitude are
+            // supplied. If exactly one side is present, the other side silently
+            // zeroes out the contribution to ALE — fail loud per the L0 posture and
+            // drop the half-input from the simulation so the limitation is the
+            // only signal the analyst sees. When both sides are absent, we say
+            // nothing (secondary loss is optional in FAIR by design).
+            String present = secondaryFreqProvided ? KEY_SECONDARY_LEF : KEY_SECONDARY_LOSS;
+            String missing = secondaryFreqProvided ? KEY_SECONDARY_LOSS : KEY_SECONDARY_LEF;
+            limitations.add("FAIR secondary loss pair incomplete: \"" + present + "\" present without \"" + missing
+                    + SECONDARY_DROPPED_SUFFIX);
+            return SecondaryInputs.dropped(1.0);
+        }
+
+        ThreePoint secondaryLossFreq =
+                secondaryFreqProvided ? decodeThreePoint(inputs, KEY_SECONDARY_LEF, limitations) : null;
+        ThreePoint secondaryLoss =
+                secondaryLossProvided ? decodeThreePoint(inputs, KEY_SECONDARY_LOSS, limitations) : null;
+
+        if (secondaryLoss == null) {
+            return SecondaryInputs.dropped(1.0);
         }
 
         // Resolve secondary currency/scale and reconcile with the primary
@@ -197,55 +230,49 @@ public class FairQuantitativeAnalysisService {
         Map<String, Object> secondaryLossMap = asMap(inputs.get(KEY_SECONDARY_LOSS));
         String secondaryCurrency = stringValue(secondaryLossMap.get(KEY_CURRENCY));
         if (secondaryCurrency == null || secondaryCurrency.isBlank()) {
-            secondaryCurrency = currency;
+            secondaryCurrency = primary.currency();
         }
         String secondaryScale = stringValue(secondaryLossMap.get(KEY_SCALE));
         if (secondaryScale == null || secondaryScale.isBlank()) {
-            secondaryScale = monetaryScale;
+            secondaryScale = primary.monetaryScale();
         }
-        double secondaryToPrimaryScaleFactor = 1.0;
-        if (secondaryLoss != null) {
-            if (!secondaryCurrency.equalsIgnoreCase(currency)) {
-                limitations.add("FAIR secondary_loss_magnitude currency \"" + secondaryCurrency
-                        + "\" differs from primary_loss_magnitude currency \"" + currency
-                        + "\"; secondary contribution dropped from ALE / LM rollup");
-                secondaryLossFreq = null;
-                secondaryLoss = null;
-            } else if (!secondaryScale.equalsIgnoreCase(monetaryScale)) {
-                Double factor = scaleConversionFactor(secondaryScale, monetaryScale);
-                if (factor == null) {
-                    limitations.add("FAIR secondary_loss_magnitude scale \"" + secondaryScale
-                            + "\" not convertible to primary_loss_magnitude scale \"" + monetaryScale
-                            + "\"; secondary contribution dropped from ALE / LM rollup");
-                    secondaryLossFreq = null;
-                    secondaryLoss = null;
-                } else {
-                    limitations.add("FAIR secondary_loss_magnitude scale \"" + secondaryScale
-                            + "\" normalized to primary scale \"" + monetaryScale + "\" (factor=" + factor + ")");
-                    secondaryToPrimaryScaleFactor = factor;
-                }
+
+        if (!secondaryCurrency.equalsIgnoreCase(primary.currency())) {
+            limitations.add("FAIR secondary_loss_magnitude currency \"" + secondaryCurrency
+                    + "\" differs from primary_loss_magnitude currency \"" + primary.currency()
+                    + SECONDARY_DROPPED_SUFFIX);
+            return SecondaryInputs.dropped(1.0);
+        }
+
+        if (!secondaryScale.equalsIgnoreCase(primary.monetaryScale())) {
+            Double factor = scaleConversionFactor(secondaryScale, primary.monetaryScale());
+            if (factor == null) {
+                limitations.add("FAIR secondary_loss_magnitude scale \"" + secondaryScale
+                        + "\" not convertible to primary_loss_magnitude scale \"" + primary.monetaryScale()
+                        + SECONDARY_DROPPED_SUFFIX);
+                return SecondaryInputs.dropped(1.0);
             }
+            limitations.add("FAIR secondary_loss_magnitude scale \"" + secondaryScale
+                    + "\" normalized to primary scale \"" + primary.monetaryScale() + "\" (factor=" + factor + ")");
+            return new SecondaryInputs(secondaryLossFreq, secondaryLoss, factor);
         }
 
-        SimulationConfig sim = decodeSimulation(inputs, row.getId(), limitations);
+        return new SecondaryInputs(secondaryLossFreq, secondaryLoss, 1.0);
+    }
 
-        DerivedOutputs derived;
-        if (tef != null && vulnerability != null && primaryLoss != null) {
-            derived = simulate(
-                    tef,
-                    vulnerability,
-                    primaryLoss,
-                    secondaryLossFreq,
-                    secondaryLoss,
-                    secondaryToPrimaryScaleFactor,
-                    sim,
-                    currency,
-                    monetaryScale);
-        } else {
-            derived = unsupportedOutputs(currency, monetaryScale, limitations);
+    /** Phase 3: run the Monte Carlo simulation, or fall back to zero outputs if inputs incomplete. */
+    private DerivedOutputs runSimulationOrFallback(
+            PrimaryInputs primary, SecondaryInputs secondary, SimulationConfig sim, List<String> limitations) {
+        if (primary.tef() != null && primary.vulnerability() != null && primary.primaryLoss() != null) {
+            return simulate(new FairCalibrationInputs(primary, secondary, sim));
         }
+        return unsupportedOutputs(primary.currency(), primary.monetaryScale(), limitations);
+    }
 
-        var typedInputs = new FairQuantitativeAnalysisResult.FairInputs(
+    /** Phase 4: assemble the typed FairInputs record for the result payload. */
+    private static FairQuantitativeAnalysisResult.FairInputs buildTypedInputs(
+            Map<String, Object> inputs, SimulationConfig sim) {
+        return new FairQuantitativeAnalysisResult.FairInputs(
                 asMap(inputs.get(KEY_TEF)),
                 asMap(inputs.get(KEY_CONTACT_FREQUENCY)),
                 asMap(inputs.get(KEY_PROBABILITY_OF_ACTION)),
@@ -259,7 +286,15 @@ public class FairQuantitativeAnalysisService {
                 asMap(inputs.get(KEY_SECONDARY_LOSS)),
                 asMap(inputs.get(KEY_FAIR_CAM)),
                 new FairQuantitativeAnalysisResult.SimulationInputs(sim.iterations(), sim.seed()));
+    }
 
+    /** Phase 5: build the final FairAnalysisItem from the assembled parts. */
+    private static FairQuantitativeAnalysisResult.FairAnalysisItem buildItem(
+            RiskAssessmentResult row,
+            FairQuantitativeAnalysisResult.FairInputs typedInputs,
+            FairQuantitativeAnalysisResult.FairOutputs outputs,
+            List<String> limitations) {
+        MethodologyProfile profile = row.getMethodologyProfile();
         return new FairQuantitativeAnalysisResult.FairAnalysisItem(
                 row.getId(),
                 row.getRiskScenario() == null ? null : row.getRiskScenario().getId(),
@@ -272,7 +307,7 @@ public class FairQuantitativeAnalysisService {
                 row.getAnalystIdentity(),
                 row.getApprovalState() == null ? null : row.getApprovalState().name(),
                 typedInputs,
-                derived.outputs(),
+                outputs,
                 row.getEvidenceRefs() == null ? List.of() : List.copyOf(row.getEvidenceRefs()),
                 List.copyOf(limitations));
     }
@@ -281,7 +316,7 @@ public class FairQuantitativeAnalysisService {
         limitations.add("FAIR factors missing — ALE / LEF / LM cannot be derived");
         var zeroFreq = new FairQuantitativeAnalysisResult.FrequencyEnvelope(0, 0, 0, "events per year", null);
         var zeroMonetary = new FairQuantitativeAnalysisResult.MonetaryEnvelope(
-                0, 0, 0, currency, monetaryScale, currency + " per loss event", null);
+                0, 0, 0, currency, monetaryScale, currency + PER_LOSS_EVENT_UNIT, null);
         var zeroAle = new FairQuantitativeAnalysisResult.MonetaryEnvelope(
                 0, 0, 0, currency, monetaryScale, currency + " per year", null);
         var outputs = new FairQuantitativeAnalysisResult.FairOutputs(
@@ -332,16 +367,24 @@ public class FairQuantitativeAnalysisService {
         return id == null ? 0L : id.getMostSignificantBits() ^ id.getLeastSignificantBits();
     }
 
-    private DerivedOutputs simulate(
-            ThreePoint tef,
-            ThreePoint vulnerability,
-            ThreePoint primaryLoss,
-            ThreePoint secondaryLossFreq,
-            ThreePoint secondaryLoss,
-            double secondaryToPrimaryScaleFactor,
-            SimulationConfig sim,
-            String currency,
-            String monetaryScale) {
+    /**
+     * Groups all inputs needed for a Monte Carlo simulation run. Introduced to
+     * keep {@link #simulate} below the 7-parameter Sonar limit while preserving
+     * the named-field clarity required for auditability (GC-T011).
+     */
+    private record FairCalibrationInputs(PrimaryInputs primary, SecondaryInputs secondary, SimulationConfig sim) {}
+
+    private DerivedOutputs simulate(FairCalibrationInputs cal) {
+        ThreePoint tef = cal.primary().tef();
+        ThreePoint vulnerability = cal.primary().vulnerability();
+        ThreePoint primaryLoss = cal.primary().primaryLoss();
+        ThreePoint secondaryLossFreq = cal.secondary().lossFreq();
+        ThreePoint secondaryLoss = cal.secondary().loss();
+        double secondaryToPrimaryScaleFactor = cal.secondary().scaleFactor();
+        SimulationConfig sim = cal.sim();
+        String currency = cal.primary().currency();
+        String monetaryScale = cal.primary().monetaryScale();
+
         Random rng = new Random(sim.seed());
         double[] lefSamples = new double[sim.iterations()];
         double[] lmSamples = new double[sim.iterations()];
@@ -373,10 +416,10 @@ public class FairQuantitativeAnalysisService {
 
         var aleEnvelope = monetaryEnvelope(aleSamples, currency, monetaryScale, currency + " per year");
         var lefEnvelope = frequencyEnvelope(lefSamples);
-        var lmEnvelope = monetaryEnvelope(lmSamples, currency, monetaryScale, currency + " per loss event");
-        var primaryEnvelope = monetaryEnvelope(primarySamples, currency, monetaryScale, currency + " per loss event");
+        var lmEnvelope = monetaryEnvelope(lmSamples, currency, monetaryScale, currency + PER_LOSS_EVENT_UNIT);
+        var primaryEnvelope = monetaryEnvelope(primarySamples, currency, monetaryScale, currency + PER_LOSS_EVENT_UNIT);
         var secondaryEnvelope =
-                monetaryEnvelope(secondarySamples, currency, monetaryScale, currency + " per loss event");
+                monetaryEnvelope(secondarySamples, currency, monetaryScale, currency + PER_LOSS_EVENT_UNIT);
 
         String derivation = "monte-carlo: ALE = LEF * LM; LEF = TEF * Vulnerability; "
                 + "LM = PrimaryLoss + (SecondaryLEF * SecondaryLoss); seed=" + sim.seed()
@@ -435,7 +478,7 @@ public class FairQuantitativeAnalysisService {
             return 0.0;
         }
         int idx = (int) Math.floor(q * (sorted.length - 1));
-        return sorted[Math.min(Math.max(idx, 0), sorted.length - 1)];
+        return sorted[Math.clamp(idx, 0, sorted.length - 1)];
     }
 
     private static double mean(double[] s) {
@@ -447,14 +490,14 @@ public class FairQuantitativeAnalysisService {
     }
 
     private static double clamp01(double v) {
-        return Math.min(1.0, Math.max(0.0, v));
+        return Math.clamp(v, 0.0, 1.0);
     }
 
     private static ThreePoint decodeThreePoint(Map<String, Object> inputs, String key, List<String> limitations) {
         Map<String, Object> m = asMap(inputs.get(key));
         if (m.isEmpty()) {
             if (limitations != null) {
-                limitations.add("FAIR input \"" + key + "\" missing");
+                limitations.add(FAIR_INPUT_PREFIX + key + "\" missing");
             }
             return null;
         }
@@ -463,17 +506,17 @@ public class FairQuantitativeAnalysisService {
         Double high = asDouble(m.get(KEY_HIGH));
         if (low == null || likely == null || high == null) {
             if (limitations != null) {
-                limitations.add("FAIR input \"" + key + "\" missing low/likely/high");
+                limitations.add(FAIR_INPUT_PREFIX + key + "\" missing low/likely/high");
             }
             return null;
         }
         if (likely < low || high < likely) {
             if (limitations != null) {
-                limitations.add("FAIR input \"" + key + "\" violates low <= likely <= high; using clamped order");
+                limitations.add(FAIR_INPUT_PREFIX + key + "\" violates low <= likely <= high; using clamped order");
             }
             double newLow = Math.min(low, Math.min(likely, high));
             double newHigh = Math.max(low, Math.max(likely, high));
-            double newLikely = Math.min(Math.max(likely, newLow), newHigh);
+            double newLikely = Math.clamp(likely, newLow, newHigh);
             return new ThreePoint(newLow, newLikely, newHigh);
         }
         return new ThreePoint(low, likely, high);
@@ -506,16 +549,12 @@ public class FairQuantitativeAnalysisService {
         if (scale == null) {
             return null;
         }
-        switch (scale.toUpperCase(Locale.ROOT)) {
-            case "UNITS":
-                return 1.0;
-            case "THOUSANDS":
-                return 1_000.0;
-            case "MILLIONS":
-                return 1_000_000.0;
-            default:
-                return null;
-        }
+        return switch (scale.toUpperCase(Locale.ROOT)) {
+            case DEFAULT_SCALE -> 1.0;
+            case "THOUSANDS" -> 1_000.0;
+            case "MILLIONS" -> 1_000_000.0;
+            default -> null;
+        };
     }
 
     /**
@@ -542,4 +581,20 @@ public class FairQuantitativeAnalysisService {
     private record SimulationConfig(int iterations, long seed) {}
 
     private record DerivedOutputs(FairQuantitativeAnalysisResult.FairOutputs outputs) {}
+
+    /** Decoded primary FAIR inputs plus monetary metadata for the simulation. */
+    private record PrimaryInputs(
+            ThreePoint tef, ThreePoint vulnerability, ThreePoint primaryLoss, String currency, String monetaryScale) {}
+
+    /**
+     * Decoded (and currency/scale-reconciled) secondary FAIR loss pair.
+     * When the pair is dropped (asymmetric, currency mismatch, or absent), both
+     * {@code lossFreq} and {@code loss} are {@code null} and {@code scaleFactor}
+     * is {@code 1.0}.
+     */
+    private record SecondaryInputs(ThreePoint lossFreq, ThreePoint loss, double scaleFactor) {
+        static SecondaryInputs dropped(double scaleFactor) {
+            return new SecondaryInputs(null, null, scaleFactor);
+        }
+    }
 }
