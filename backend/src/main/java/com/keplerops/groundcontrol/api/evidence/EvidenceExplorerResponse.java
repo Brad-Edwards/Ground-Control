@@ -5,6 +5,7 @@ import com.keplerops.groundcontrol.domain.evidence.state.EvidenceSourceKind;
 import com.keplerops.groundcontrol.domain.evidence.state.EvidenceType;
 import com.keplerops.groundcontrol.domain.findings.state.FindingSeverity;
 import com.keplerops.groundcontrol.domain.findings.state.FindingStatus;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskAssessmentApprovalStatus;
 import com.keplerops.groundcontrol.domain.verification.state.AssuranceLevel;
 import java.time.Instant;
 import java.util.List;
@@ -84,11 +85,19 @@ public record EvidenceExplorerResponse(
                 o.ageDays(),
                 o.downstreamFindings().stream()
                         .map(EvidenceExplorerResponse::toFindingRefDto)
+                        .toList(),
+                o.downstreamAssessments().stream()
+                        .map(EvidenceExplorerResponse::toAssessmentRefDto)
                         .toList());
     }
 
     private static ExplorerFindingRefDto toFindingRefDto(EvidenceExplorerResult.ExplorerFindingRef f) {
         return new ExplorerFindingRefDto(f.id(), f.uid(), f.title(), f.severity(), f.status());
+    }
+
+    private static ExplorerAssessmentRefDto toAssessmentRefDto(EvidenceExplorerResult.ExplorerAssessmentRef a) {
+        return new ExplorerAssessmentRefDto(
+                a.assessmentId(), a.riskScenarioId(), a.approvalState(), a.methodologyProfileName());
     }
 
     public record ExplorerArtifactDto(
@@ -124,10 +133,17 @@ public record EvidenceExplorerResponse(
             Instant expiresAt,
             String freshnessState,
             long ageDays,
-            List<ExplorerFindingRefDto> downstreamFindings) {}
+            List<ExplorerFindingRefDto> downstreamFindings,
+            List<ExplorerAssessmentRefDto> downstreamAssessments) {}
 
     public record ExplorerFindingRefDto(
             UUID id, String uid, String title, FindingSeverity severity, FindingStatus status) {}
+
+    public record ExplorerAssessmentRefDto(
+            UUID assessmentId,
+            UUID riskScenarioId,
+            RiskAssessmentApprovalStatus approvalState,
+            String methodologyProfileName) {}
 
     public record FreshnessCountsDto(int fresh, int stale, int expired, int superseded, int currentlyValid) {}
 }

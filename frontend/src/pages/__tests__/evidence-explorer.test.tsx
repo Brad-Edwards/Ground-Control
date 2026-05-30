@@ -84,6 +84,14 @@ const composedExplorer: EvidenceExplorerResponse = {
       freshnessState: "STALE",
       ageDays: 120,
       downstreamFindings: [],
+      downstreamAssessments: [
+        {
+          assessmentId: "assess-1",
+          riskScenarioId: "rs-1",
+          approvalState: "APPROVED",
+          methodologyProfileName: "FAIR-CRST",
+        },
+      ],
     },
   ],
   counts: { fresh: 1, stale: 1, expired: 0, superseded: 0, currentlyValid: 2 },
@@ -176,6 +184,14 @@ describe("EvidenceExplorer — composed data", () => {
     expect(screen.getByText("os_version")).toBeTruthy();
     expect(screen.getByText(/= 1.2.3/)).toBeTruthy();
     expect(screen.getByLabelText("Evidence freshness: STALE")).toBeTruthy();
+  });
+
+  it("renders downstream assessment impact for an observation", () => {
+    renderPage();
+    expect(
+      screen.getAllByText(/downstream assessments/i).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText(/FAIR-CRST \(APPROVED\)/)).toBeTruthy();
   });
 
   it("renders the freshness counts", () => {

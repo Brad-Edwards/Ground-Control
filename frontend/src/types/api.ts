@@ -1660,6 +1660,13 @@ export interface ExplorerFindingRef {
   status: FindingStatus;
 }
 
+export interface ExplorerAssessmentRef {
+  assessmentId: string;
+  riskScenarioId: string | null;
+  approvalState: RiskAssessmentApprovalStatus;
+  methodologyProfileName: string | null;
+}
+
 export interface ExplorerArtifact {
   id: string;
   uid: string;
@@ -1692,6 +1699,7 @@ export interface ExplorerObservation {
   freshnessState: FreshnessState;
   ageDays: number;
   downstreamFindings: ExplorerFindingRef[];
+  downstreamAssessments: ExplorerAssessmentRef[];
 }
 
 export interface EvidenceFreshnessCounts {

@@ -156,6 +156,19 @@ function ObservationCard({
         </div>
       )}
       <DownstreamFindings findings={observation.downstreamFindings} />
+      {observation.downstreamAssessments.length > 0 && (
+        <div className="mt-1 text-xs">
+          <span className="font-medium text-muted-foreground">
+            Downstream assessments:{" "}
+          </span>
+          {observation.downstreamAssessments.map((a, i) => (
+            <span key={a.assessmentId}>
+              {i > 0 && ", "}
+              {a.methodologyProfileName ?? "assessment"} ({a.approvalState})
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -139,14 +139,19 @@ public class ControlWorkspaceService {
         Map<UUID, Finding> findingsById = indexFindings(findings);
         Map<UUID, List<Finding>> exceptionsByControl = groupExceptionsByControl(findingLinks, findingsById);
 
+        // Resolve each control's linked asset ids once (single pass over mappings), then reuse the
+        // same map for the freshness dedup and the compose loop.
+        Map<UUID, List<UUID>> linkedAssetIdsByControl =
+                computeLinkedAssetIdsByControl(controls, scopedByControl, mappings);
+
         // Compute freshness once per unique linked asset id across all controls.
         Map<UUID, String> freshnessByAsset =
-                computeFreshnessByAsset(controls, scopedByControl, mappings, projectId, asOf, freshnessWindowDays);
+                computeFreshnessByAsset(linkedAssetIdsByControl, projectId, asOf, freshnessWindowDays);
 
         List<ControlWorkspaceResult.WorkspaceControl> composedControls = new ArrayList<>();
         for (Control control : controls) {
             List<ScopedControlImplementation> controlScoped = scopedByControl.getOrDefault(control.getId(), List.of());
-            List<UUID> linkedAssetIds = linkedAssetIds(control, controlScoped, mappings);
+            List<UUID> linkedAssetIds = linkedAssetIdsByControl.getOrDefault(control.getId(), List.of());
             if (!matchesFilters(control, linkedAssetIds, status, controlFunction, owner, assetId)) {
                 continue;
             }
@@ -282,42 +287,61 @@ public class ControlWorkspaceService {
 
     // ── Asset linkage + freshness ───────────────────────────────────────────────
 
-    /** A control's linked asset ids: scoped-implementation assets plus risk-control mapping assets. */
-    private static List<UUID> linkedAssetIds(
-            Control control, List<ScopedControlImplementation> controlScoped, List<RiskControlMapping> allMappings) {
-        Set<UUID> ids = new LinkedHashSet<>();
-        for (ScopedControlImplementation impl : controlScoped) {
-            if (impl.getOperationalAsset() != null) {
-                ids.add(impl.getOperationalAsset().getId());
+    /**
+     * Resolves each control's linked asset ids in a single pass: scoped-implementation assets plus
+     * risk-control mapping assets (mappings attributed to a control directly, or via the control id of
+     * the scoped implementation they reference). O(controls + scopedImpls + mappings).
+     */
+    private static Map<UUID, List<UUID>> computeLinkedAssetIdsByControl(
+            List<Control> controls,
+            Map<UUID, List<ScopedControlImplementation>> scopedByControl,
+            List<RiskControlMapping> mappings) {
+        Map<UUID, UUID> controlByScopedImpl = new HashMap<>();
+        for (Map.Entry<UUID, List<ScopedControlImplementation>> entry : scopedByControl.entrySet()) {
+            for (ScopedControlImplementation impl : entry.getValue()) {
+                controlByScopedImpl.put(impl.getId(), entry.getKey());
             }
         }
-        Set<UUID> scopedImplIds = new LinkedHashSet<>();
-        for (ScopedControlImplementation impl : controlScoped) {
-            scopedImplIds.add(impl.getId());
+
+        Map<UUID, Set<UUID>> assetIdsByControl = new LinkedHashMap<>();
+        for (Control control : controls) {
+            Set<UUID> ids = new LinkedHashSet<>();
+            for (ScopedControlImplementation impl : scopedByControl.getOrDefault(control.getId(), List.of())) {
+                if (impl.getOperationalAsset() != null) {
+                    ids.add(impl.getOperationalAsset().getId());
+                }
+            }
+            assetIdsByControl.put(control.getId(), ids);
         }
-        for (RiskControlMapping m : allMappings) {
-            boolean refersToControl =
-                    m.getControl() != null && m.getControl().getId().equals(control.getId());
-            boolean refersToScoped = m.getScopedImplementation() != null
-                    && scopedImplIds.contains(m.getScopedImplementation().getId());
-            if ((refersToControl || refersToScoped) && m.getOperationalAsset() != null) {
+
+        for (RiskControlMapping m : mappings) {
+            if (m.getOperationalAsset() == null) {
+                continue;
+            }
+            UUID controlId = m.getControl() != null
+                    ? m.getControl().getId()
+                    : (m.getScopedImplementation() != null
+                            ? controlByScopedImpl.get(
+                                    m.getScopedImplementation().getId())
+                            : null);
+            Set<UUID> ids = controlId != null ? assetIdsByControl.get(controlId) : null;
+            if (ids != null) {
                 ids.add(m.getOperationalAsset().getId());
             }
         }
-        return new ArrayList<>(ids);
+
+        Map<UUID, List<UUID>> result = new LinkedHashMap<>();
+        for (Map.Entry<UUID, Set<UUID>> entry : assetIdsByControl.entrySet()) {
+            result.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+        }
+        return result;
     }
 
     private Map<UUID, String> computeFreshnessByAsset(
-            List<Control> controls,
-            Map<UUID, List<ScopedControlImplementation>> scopedByControl,
-            List<RiskControlMapping> mappings,
-            UUID projectId,
-            Instant asOf,
-            int freshnessWindowDays) {
+            Map<UUID, List<UUID>> linkedAssetIdsByControl, UUID projectId, Instant asOf, int freshnessWindowDays) {
         Set<UUID> assetIds = new LinkedHashSet<>();
-        for (Control control : controls) {
-            assetIds.addAll(
-                    linkedAssetIds(control, scopedByControl.getOrDefault(control.getId(), List.of()), mappings));
+        for (List<UUID> ids : linkedAssetIdsByControl.values()) {
+            assetIds.addAll(ids);
         }
         Map<UUID, String> result = new HashMap<>();
         for (UUID assetId : assetIds) {
