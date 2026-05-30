@@ -138,15 +138,20 @@ public class KeyRiskIndicator extends BaseEntity {
             return null;
         }
         boolean higherWorse = !DIRECTION_LOWER_IS_WORSE.equals(direction);
-        if (higherWorse) {
-            if (value.compareTo(redThreshold) >= 0) {
-                return KriThresholdBand.RED;
-            }
-            if (value.compareTo(yellowThreshold) >= 0) {
-                return KriThresholdBand.YELLOW;
-            }
-            return KriThresholdBand.GREEN;
+        return higherWorse ? classifyHigherIsWorse(value) : classifyLowerIsWorse(value);
+    }
+
+    private KriThresholdBand classifyHigherIsWorse(BigDecimal value) {
+        if (value.compareTo(redThreshold) >= 0) {
+            return KriThresholdBand.RED;
         }
+        if (value.compareTo(yellowThreshold) >= 0) {
+            return KriThresholdBand.YELLOW;
+        }
+        return KriThresholdBand.GREEN;
+    }
+
+    private KriThresholdBand classifyLowerIsWorse(BigDecimal value) {
         if (value.compareTo(redThreshold) <= 0) {
             return KriThresholdBand.RED;
         }

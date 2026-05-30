@@ -59,7 +59,10 @@ public class RiskAppetiteEvaluator {
         if (tolerance.isEmpty() || value == null) {
             return notEvaluated(category, "no MONETARY_RANGE tolerance for category");
         }
-        var t = tolerance.get();
+        return classifyMonetary(tolerance.get(), category, value, currency);
+    }
+
+    private Result classifyMonetary(RiskAppetiteTolerance t, String category, BigDecimal value, String currency) {
         if (currency != null && t.currency() != null && !currency.equalsIgnoreCase(t.currency())) {
             return notEvaluated(category, "currency mismatch: value=" + currency + " tolerance=" + t.currency());
         }
@@ -81,7 +84,10 @@ public class RiskAppetiteEvaluator {
         if (tolerance.isEmpty() || value == null) {
             return notEvaluated(category, "no LOSS_EVENT_FREQUENCY tolerance for category");
         }
-        var t = tolerance.get();
+        return classifyLossEventFrequency(tolerance.get(), category, value);
+    }
+
+    private Result classifyLossEventFrequency(RiskAppetiteTolerance t, String category, BigDecimal value) {
         if (t.lossEventFrequencyMax() == null) {
             return notEvaluated(category, "tolerance has no lossEventFrequencyMax");
         }
@@ -104,7 +110,10 @@ public class RiskAppetiteEvaluator {
         if (tolerance.isEmpty() || probability == null) {
             return notEvaluated(category, "no EXCEEDANCE_PROBABILITY tolerance for category");
         }
-        var t = tolerance.get();
+        return classifyExceedanceProbability(tolerance.get(), category, probability);
+    }
+
+    private Result classifyExceedanceProbability(RiskAppetiteTolerance t, String category, BigDecimal probability) {
         if (t.exceedanceProbabilityMax() == null) {
             return notEvaluated(category, "tolerance has no exceedanceProbabilityMax");
         }
@@ -128,7 +137,10 @@ public class RiskAppetiteEvaluator {
         if (tolerance.isEmpty() || observedLabel == null) {
             return notEvaluated(category, "no QUALITATIVE tolerance for category");
         }
-        var t = tolerance.get();
+        return classifyQualitative(tolerance.get(), category, observedLabel);
+    }
+
+    private Result classifyQualitative(RiskAppetiteTolerance t, String category, String observedLabel) {
         if (t.qualitativeLabel() == null) {
             return notEvaluated(category, "tolerance has no qualitativeLabel");
         }
