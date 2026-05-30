@@ -6,7 +6,9 @@ import com.keplerops.groundcontrol.domain.decisions.repository.DecisionAnalysisR
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,15 +35,16 @@ public class DecisionAnalysisRecordService {
             throw new ConflictException("DecisionAnalysisRecord with UID '" + command.uid()
                     + "' already exists in project " + project.getIdentifier());
         }
+        var actor = ActorHolder.get();
         var record = new DecisionAnalysisRecord(project, command.uid(), command.title(), command.modelName());
         record.setSummary(command.summary());
-        record.setInputs(command.inputs());
+        record.setInputs(stampAttribution(command.inputs(), actor));
         record.setSimulationParameters(command.simulationParameters());
         record.setResults(command.results());
         record.setAlternatives(command.alternatives());
         record.setChosenAlternative(command.chosenAlternative());
         record.setRationale(command.rationale());
-        record.setCreatedBy(ActorHolder.get());
+        record.setCreatedBy(actor);
         var saved = repository.save(record);
         log.info(
                 "decision_analysis_record_created: project={} uid={} model={} id={}",
@@ -54,6 +57,7 @@ public class DecisionAnalysisRecordService {
 
     public DecisionAnalysisRecord update(UUID projectId, UUID id, UpdateDecisionAnalysisRecordCommand command) {
         var record = findOrThrow(projectId, id);
+        var actor = ActorHolder.get();
         if (command.title() != null) {
             record.setTitle(command.title());
         }
@@ -64,7 +68,7 @@ public class DecisionAnalysisRecordService {
             record.setSummary(command.summary());
         }
         if (command.inputs() != null) {
-            record.setInputs(command.inputs());
+            record.setInputs(stampAttribution(command.inputs(), actor));
         }
         if (command.simulationParameters() != null) {
             record.setSimulationParameters(command.simulationParameters());
@@ -113,5 +117,33 @@ public class DecisionAnalysisRecordService {
         return repository
                 .findByIdAndProjectId(id, projectId)
                 .orElseThrow(() -> new NotFoundException("DecisionAnalysisRecord not found: " + id));
+    }
+
+    /**
+     * Reserved input-map key that names the actor who supplied the decision
+     * inputs. The wire format is free-form {@code Map<String, Object>} for
+     * forward-compat with new model knobs, but the audit story requires a
+     * stable, server-controlled attribution slot — without it an authenticated
+     * caller could record inputs and later claim they came from a different
+     * estimator. Keep it package-visible for tests.
+     */
+    static final String ATTRIBUTED_TO_KEY = "_attributedTo";
+
+    /**
+     * Stamp the authenticated actor onto the decision-analysis inputs map.
+     * Any caller-supplied value at {@link #ATTRIBUTED_TO_KEY} is dropped and
+     * replaced with the ActorHolder principal so the Envers audit trail can
+     * never persist a client-controlled attribution string. Per-input
+     * attribution inside the map values is left to the model layer to validate
+     * — those are arbitrary decision-model knobs whose schema is
+     * model-specific.
+     */
+    private static Map<String, Object> stampAttribution(Map<String, Object> inputs, String actor) {
+        if (inputs == null) {
+            return null;
+        }
+        var copy = new LinkedHashMap<String, Object>(inputs);
+        copy.put(ATTRIBUTED_TO_KEY, actor);
+        return copy;
     }
 }

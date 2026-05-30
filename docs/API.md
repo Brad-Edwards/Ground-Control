@@ -2157,6 +2157,13 @@ response envelope follows ADR-035 with `analysisKind = "wsjf"`, `scale`,
 `units`, `limitations`, the seed + iterations, mean / median / p10 / p90,
 and the raw samples.
 
+`iterations` must be between `1` and `1_000_000` inclusive. Larger values are
+rejected with HTTP 422 `validation_error` so a caller cannot drive the JVM
+into OOM through the bearer-protected endpoint. `attributedTo` on every
+posted CoD component is server-overridden with the authenticated principal
+sourced from `ActorHolder` (ADR-033); the request value is informational only
+and is never persisted to the Envers audit trail.
+
 ### Decision Analysis Records (GC-W011)
 
 | Method | Path | Body | Status | Purpose |
@@ -2173,7 +2180,10 @@ Per ADR-057, decision records carry `uid`, `title`, `modelName`, `summary`,
 `chosenAlternative`, and `rationale`. Estimator identity flows through
 ActorHolder. Decision records are linkable from requirements / ADRs /
 risk-scenarios via the existing traceability substrate with the new
-`DECISION_RECORD` artifact type.
+`DECISION_RECORD` artifact type. The server stamps the reserved
+`_attributedTo` key inside the `inputs` map with the authenticated principal
+on every create/update; any client-supplied value at that key is dropped so
+the audit trail cannot be poisoned with a forged contributor.
 
 ### GRC Interchange (GC-P012)
 
@@ -2190,6 +2200,15 @@ entity-kind payload found in the bundle. Client-supplied `createdAt` /
 `updatedAt` land on the provenance shadow only; domain entity timestamps
 remain owned by `BaseEntity` (ADR-045). Cross-project bundles (where
 `projectIdentifier` mismatches the resolved project) are refused.
+
+In the exported bundle, `controlType` is a structural classifier composed of
+the Control's function (`PREVENTIVE` / `DETECTIVE` / `CORRECTIVE`) and its
+optional `category` (encoded as `FUNCTION:category` when both are present,
+or whichever component is set otherwise). It is intentionally distinct from
+the lifecycle `status`. Malformed JSON bodies are rejected with HTTP 400 and
+a stable `{"error": {"code": "bad_request", "message": "Malformed request
+body"}}` envelope; the underlying Jackson parse detail is logged but never
+reflected back to the caller.
 
 ## Interactive Docs
 

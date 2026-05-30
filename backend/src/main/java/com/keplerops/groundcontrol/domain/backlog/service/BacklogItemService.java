@@ -2,6 +2,7 @@ package com.keplerops.groundcontrol.domain.backlog.service;
 
 import com.keplerops.groundcontrol.domain.audit.ActorHolder;
 import com.keplerops.groundcontrol.domain.backlog.model.BacklogItem;
+import com.keplerops.groundcontrol.domain.backlog.model.CostOfDelayComponent;
 import com.keplerops.groundcontrol.domain.backlog.repository.BacklogItemRepository;
 import com.keplerops.groundcontrol.domain.backlog.state.BacklogItemStatus;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
@@ -34,13 +35,14 @@ public class BacklogItemService {
             throw new ConflictException("BacklogItem with UID '" + command.uid() + "' already exists in project "
                     + project.getIdentifier());
         }
+        var actor = ActorHolder.get();
         var item = new BacklogItem(project, command.uid(), command.title());
         item.setDescription(command.description());
-        item.setUserBusinessValue(command.userBusinessValue());
-        item.setTimeCriticality(command.timeCriticality());
-        item.setRiskReductionOpportunityEnablement(command.riskReductionOpportunityEnablement());
-        item.setJobDuration(command.jobDuration());
-        item.setCreatedBy(ActorHolder.get());
+        item.setUserBusinessValue(stamp(command.userBusinessValue(), actor));
+        item.setTimeCriticality(stamp(command.timeCriticality(), actor));
+        item.setRiskReductionOpportunityEnablement(stamp(command.riskReductionOpportunityEnablement(), actor));
+        item.setJobDuration(stamp(command.jobDuration(), actor));
+        item.setCreatedBy(actor);
         var saved = repository.save(item);
         log.info(
                 "backlog_item_created: project={} uid={} id={}",
@@ -52,6 +54,7 @@ public class BacklogItemService {
 
     public BacklogItem update(UUID projectId, UUID id, UpdateBacklogItemCommand command) {
         var item = findOrThrow(projectId, id);
+        var actor = ActorHolder.get();
         if (command.title() != null) {
             item.setTitle(command.title());
         }
@@ -59,16 +62,16 @@ public class BacklogItemService {
             item.setDescription(command.description());
         }
         if (command.userBusinessValue() != null) {
-            item.setUserBusinessValue(command.userBusinessValue());
+            item.setUserBusinessValue(stamp(command.userBusinessValue(), actor));
         }
         if (command.timeCriticality() != null) {
-            item.setTimeCriticality(command.timeCriticality());
+            item.setTimeCriticality(stamp(command.timeCriticality(), actor));
         }
         if (command.riskReductionOpportunityEnablement() != null) {
-            item.setRiskReductionOpportunityEnablement(command.riskReductionOpportunityEnablement());
+            item.setRiskReductionOpportunityEnablement(stamp(command.riskReductionOpportunityEnablement(), actor));
         }
         if (command.jobDuration() != null) {
-            item.setJobDuration(command.jobDuration());
+            item.setJobDuration(stamp(command.jobDuration(), actor));
         }
         var saved = repository.save(item);
         log.info("backlog_item_updated: id={} uid={}", saved.getId(), saved.getUid());
@@ -110,5 +113,18 @@ public class BacklogItemService {
         return repository
                 .findByIdAndProjectId(id, projectId)
                 .orElseThrow(() -> new NotFoundException("BacklogItem not found: " + id));
+    }
+
+    /**
+     * Stamp the authenticated actor onto the estimate, ignoring any
+     * client-supplied {@code attributedTo}. The BacklogItem entity is fully
+     * Envers-audited; persisting a wire-supplied attribution would let
+     * authenticated user A record an estimate that the audit trail blames on
+     * user B. ADR-033 routes estimator identity through ActorHolder for this
+     * reason. {@code null} components pass through unchanged so a partial
+     * update can leave a component alone.
+     */
+    private static CostOfDelayComponent stamp(CostOfDelayComponent component, String actor) {
+        return component == null ? null : component.withAttributedTo(actor);
     }
 }

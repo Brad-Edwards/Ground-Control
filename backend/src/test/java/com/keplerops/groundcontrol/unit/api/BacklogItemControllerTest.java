@@ -114,4 +114,31 @@ class BacklogItemControllerTest {
                 .andExpect(jsonPath("$.iterations", is(100)))
                 .andExpect(jsonPath("$.samples.length()", is(100)));
     }
+
+    @Test
+    void wsjfEndpointRejectsAboveMaxIterations() throws Exception {
+        // Caller cannot push past the controller cap; the domain layer rejects
+        // <= 0 but only the controller bounds the upper end to keep heap
+        // allocation finite. Authenticated DoS guard for the bearer-protected
+        // endpoint.
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+
+        mockMvc.perform(get("/api/v1/backlog-items/" + ITEM_ID + "/wsjf")
+                        .param("project", "ground-control")
+                        .param("iterations", String.valueOf(Integer.MAX_VALUE)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")))
+                .andExpect(jsonPath("$.error.detail.field", is("iterations")));
+    }
+
+    @Test
+    void wsjfEndpointRejectsZeroIterations() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+
+        mockMvc.perform(get("/api/v1/backlog-items/" + ITEM_ID + "/wsjf")
+                        .param("project", "ground-control")
+                        .param("iterations", "0"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")));
+    }
 }

@@ -2,6 +2,7 @@ package com.keplerops.groundcontrol.domain.interchange.service;
 
 import com.keplerops.groundcontrol.domain.assets.repository.OperationalAssetRepository;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlRepository;
+import com.keplerops.groundcontrol.domain.controls.state.ControlFunction;
 import com.keplerops.groundcontrol.domain.evidence.repository.EvidenceArtifactRepository;
 import com.keplerops.groundcontrol.domain.findings.repository.FindingRepository;
 import com.keplerops.groundcontrol.domain.interchange.payload.GrcInterchangeBundle;
@@ -81,7 +82,12 @@ public class GrcInterchangeExporter {
                         c.getUid(),
                         c.getTitle(),
                         c.getDescription(),
-                        c.getStatus() != null ? c.getStatus().name() : null,
+                        // The bundle's controlType slot is a structural taxonomy field
+                        // (preventive/detective/corrective + free-form category), NOT
+                        // the lifecycle status. Mapping c.getStatus() here would advertise
+                        // DRAFT/ACTIVE/RETIRED as the control type and corrupt round-trip
+                        // through a future controls importer.
+                        resolveControlType(c.getControlFunction(), c.getCategory()),
                         null,
                         c.getCreatedAt(),
                         c.getUpdatedAt()))
@@ -119,5 +125,27 @@ public class GrcInterchangeExporter {
                 controls,
                 findings,
                 evidence);
+    }
+
+    /**
+     * Compose the interchange {@code controlType} string from the Control
+     * taxonomy fields. The bundle's controlType is a structural classifier — a
+     * Control's {@link ControlFunction} (PREVENTIVE/DETECTIVE/CORRECTIVE) plus
+     * its optional free-form {@code category} — and is intentionally distinct
+     * from the lifecycle {@code status}. Encoded as {@code "FUNCTION:category"}
+     * when both are present, or whichever component is set when only one is,
+     * or {@code null} when neither is populated so importers see an unknown
+     * type rather than a misleading default.
+     */
+    private static String resolveControlType(ControlFunction function, String category) {
+        String functionName = function != null ? function.name() : null;
+        String trimmedCategory = (category != null && !category.isBlank()) ? category.trim() : null;
+        if (functionName != null && trimmedCategory != null) {
+            return functionName + ":" + trimmedCategory;
+        }
+        if (functionName != null) {
+            return functionName;
+        }
+        return trimmedCategory;
     }
 }

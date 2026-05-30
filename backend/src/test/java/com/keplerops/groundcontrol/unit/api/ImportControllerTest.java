@@ -92,8 +92,7 @@ class ImportControllerTest {
             var controller = new ImportController(importService, projectService, grcInterchangeImporter, objectMapper);
             assertThatThrownBy(() -> controller.importStrictdoc(brokenFile, null))
                     .isInstanceOf(GroundControlException.class)
-                    .hasMessageContaining("Failed to read uploaded file")
-                    .hasMessageContaining("disk error");
+                    .hasMessage("Failed to read uploaded file");
         }
     }
 
@@ -137,8 +136,26 @@ class ImportControllerTest {
             var controller = new ImportController(importService, projectService, grcInterchangeImporter, objectMapper);
             assertThatThrownBy(() -> controller.importReqif(brokenFile, null))
                     .isInstanceOf(GroundControlException.class)
-                    .hasMessageContaining("Failed to read uploaded file")
-                    .hasMessageContaining("disk error");
+                    .hasMessage("Failed to read uploaded file");
+        }
+    }
+
+    @Nested
+    class ImportGrcInterchange {
+
+        @Test
+        void malformedJson_returns400WithStableEnvelope() throws Exception {
+            when(projectService.resolveProjectId(any())).thenReturn(UUID.randomUUID());
+            // A snippet that looks like Jackson-controlled tokens; the response
+            // must not echo it back.
+            byte[] body = ("{\"formatVersion\": \"1.0\", \"controls\": [\"" + "SECRET-LEAK" + "\"")
+                    .getBytes(StandardCharsets.UTF_8);
+            var file = new MockMultipartFile("file", "bundle.json", "application/json", body);
+
+            mockMvc.perform(multipart("/api/v1/admin/import/grc-interchange").file(file))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code", is("bad_request")))
+                    .andExpect(jsonPath("$.error.message", is("Malformed request body")));
         }
     }
 }

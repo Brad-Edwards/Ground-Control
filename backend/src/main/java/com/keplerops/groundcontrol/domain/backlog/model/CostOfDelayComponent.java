@@ -47,6 +47,17 @@ public record CostOfDelayComponent(DistributionKind kind, double min, double mod
         return new CostOfDelayComponent(DistributionKind.UNIFORM, min, min, max, attributedTo);
     }
 
+    /**
+     * Return a copy with {@code attributedTo} replaced. The wire format carries
+     * {@code attributedTo} so callers can read who supplied an estimate, but
+     * services overwrite it with the authenticated principal so the Envers
+     * audit trail can never persist a client-controlled attribution string per
+     * ADR-033's ActorHolder contract.
+     */
+    public CostOfDelayComponent withAttributedTo(String newAttributedTo) {
+        return new CostOfDelayComponent(kind, min, mode, max, newAttributedTo);
+    }
+
     /** Draw one sample from the configured distribution. */
     public double draw(SeededMonteCarlo rng) {
         return switch (kind) {

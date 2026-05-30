@@ -239,6 +239,11 @@ export const CONFIDENCE_LEVELS = ["HIGH", "MEDIUM", "LOW"];
 export const METRIC_TYPES = ["COVERAGE", "ORPHAN_COUNT", "COMPLETENESS"];
 export const COMPARISON_OPERATORS = ["GTE", "LTE", "EQ", "GT", "LT"];
 export const ADR_STATUSES = ["PROPOSED", "ACCEPTED", "DEPRECATED", "SUPERSEDED"];
+// Hard upper bound mirrored from BacklogItemController.MAX_WSJF_ITERATIONS.
+// Surfaced here so any future MCP tool that drives the WSJF endpoint can
+// validate caller intent client-side before paying the round-trip — the
+// backend still enforces it.
+export const WSJF_ITERATIONS_MAX = 1_000_000;
 export const ASSET_TYPES = [
   "APPLICATION",
   "SERVICE",

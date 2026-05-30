@@ -4,9 +4,11 @@ import com.keplerops.groundcontrol.domain.backlog.service.BacklogItemService;
 import com.keplerops.groundcontrol.domain.backlog.service.CreateBacklogItemCommand;
 import com.keplerops.groundcontrol.domain.backlog.service.UpdateBacklogItemCommand;
 import com.keplerops.groundcontrol.domain.backlog.service.WsjfAnalysisService;
+import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,6 +25,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/backlog-items")
 public class BacklogItemController {
+
+    /**
+     * Hard upper bound on caller-controlled WSJF Monte Carlo iterations. Every
+     * iteration allocates an 8-byte sample slot plus a boxed Double in the JSON
+     * response, so an unbounded request param would let an authenticated caller
+     * trigger OOM. 1,000,000 keeps the worst-case heap allocation at roughly
+     * 8 MB of primitives plus ~24-32 MB of boxed Doubles, which is large but
+     * recoverable under normal heap sizing.
+     */
+    static final int MAX_WSJF_ITERATIONS = 1_000_000;
 
     private final BacklogItemService backlogItemService;
     private final WsjfAnalysisService wsjfAnalysisService;
@@ -112,6 +124,23 @@ public class BacklogItemController {
             @RequestParam(required = false) String project,
             @RequestParam(defaultValue = "0") long seed,
             @RequestParam(defaultValue = "10000") int iterations) {
+        // Reject caller-supplied iteration counts that would let an
+        // authenticated user push the JVM into OOM through this endpoint. The
+        // domain layer also rejects iterations <= 0, but only enforces a lower
+        // bound; the response-shape allocator (double[] + boxed List<Double>)
+        // is what actually exhausts heap when the upper bound is missing.
+        if (iterations <= 0 || iterations > MAX_WSJF_ITERATIONS) {
+            throw new DomainValidationException(
+                    "iterations must be between 1 and " + MAX_WSJF_ITERATIONS + ", got " + iterations,
+                    "validation_error",
+                    Map.of(
+                            "field",
+                            "iterations",
+                            "max",
+                            String.valueOf(MAX_WSJF_ITERATIONS),
+                            "requested",
+                            String.valueOf(iterations)));
+        }
         var projectId = projectService.resolveProjectId(project);
         var dist = wsjfAnalysisService.computeForItem(projectId, id, seed, iterations);
         return WsjfDistributionResponse.from(id, dist);

@@ -177,3 +177,11 @@ Additions to the `ARTIFACT_TYPES` constant array in `mcp/ground-control/lib.js`
 `ArtifactType` enum per ADR-034. The surface addition is recorded in the
 ADR-054 amendment and the changelog fragment; no new DOC_STYLE.md prose is
 needed.
+
+Numeric upper-bound constants exported from `mcp/ground-control/lib.js` that
+mirror a backend controller's request-parameter cap (for example,
+`WSJF_ITERATIONS_MAX` added for the GC-W003 / #781 WSJF endpoint review fix)
+are bounded-DoS guards documented by the endpoint entry in `docs/API.md` and
+the public-contract comment header in `mcp/ground-control/index.js`. The
+surface addition is recorded in the ADR-054 amendment and the changelog
+fragment; no new DOC_STYLE.md prose is needed.

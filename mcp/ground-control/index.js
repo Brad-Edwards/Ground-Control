@@ -50,6 +50,13 @@
 // a curated `gc_backlog` / `gc_decision` tool can be added in a follow-up
 // without renegotiating the envelope shape. Interchange import is admin-only
 // and therefore not exposed through `gc_query` (denylist).
+//
+// Public contract for the WSJF endpoint: the `iterations` query parameter is
+// clamped at `WSJF_ITERATIONS_MAX` (exported from `./lib.js`); requests above
+// the cap return HTTP 422 `validation_error`. The Cost-of-Delay components'
+// `attributedTo` field and the decision-analysis `inputs._attributedTo` key
+// are server-overridden with the authenticated principal per ADR-033 — wire
+// values are advisory and never persisted.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
