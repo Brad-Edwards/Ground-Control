@@ -176,4 +176,55 @@ class WsjfDistributionTest {
         assertThat(byId.get(bId).afterRank()).isEqualTo(1);
         assertThat(byId.get(bId).delta()).isEqualTo(1);
     }
+
+    @Test
+    void rankingDeltaRejectsMismatchedIdAndDistributionListSizes() {
+        var v = CostOfDelayComponent.point(3, "x");
+        var jd = CostOfDelayComponent.point(1, "x");
+        var dist = WsjfDistribution.compute(v, v, v, jd, 0L, 10);
+        var id = UUID.randomUUID();
+
+        // idsBefore has 1 entry but before has 0 — size mismatch.
+        assertThatThrownBy(() -> WsjfDistribution.rankingDelta(List.of(id), List.of(), List.of(id), List.of(dist)))
+                .isInstanceOf(DomainValidationException.class);
+    }
+
+    @Test
+    void rankingDeltaRejectsBeforeAndAfterSizeMismatch() {
+        var v = CostOfDelayComponent.point(3, "x");
+        var jd = CostOfDelayComponent.point(1, "x");
+        var dist = WsjfDistribution.compute(v, v, v, jd, 0L, 10);
+        var id1 = UUID.randomUUID();
+        var id2 = UUID.randomUUID();
+
+        // before has 1 item, after has 2 items.
+        assertThatThrownBy(() -> WsjfDistribution.rankingDelta(
+                        List.of(id1), List.of(dist), List.of(id1, id2), List.of(dist, dist)))
+                .isInstanceOf(DomainValidationException.class);
+    }
+
+    @Test
+    void probabilityFirstDominatesSecondRejectsUnequalIterationCounts() {
+        var v = CostOfDelayComponent.point(3, "x");
+        var jd = CostOfDelayComponent.point(1, "x");
+        var dist100 = WsjfDistribution.compute(v, v, v, jd, 0L, 100);
+        var dist200 = WsjfDistribution.compute(v, v, v, jd, 0L, 200);
+
+        assertThatThrownBy(() -> WsjfDistribution.probabilityFirstDominatesSecond(dist100, dist200))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("iteration count");
+    }
+
+    @Test
+    void constructorRejectsSamplesLengthMismatch() {
+        assertThatThrownBy(() -> new WsjfDistribution(0L, 10, new double[5], 1.0, 1.0, 1.0, 1.0))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("samples length");
+    }
+
+    @Test
+    void constructorRejectsNullSamples() {
+        assertThatThrownBy(() -> new WsjfDistribution(0L, 5, null, 1.0, 1.0, 1.0, 1.0))
+                .isInstanceOf(DomainValidationException.class);
+    }
 }
