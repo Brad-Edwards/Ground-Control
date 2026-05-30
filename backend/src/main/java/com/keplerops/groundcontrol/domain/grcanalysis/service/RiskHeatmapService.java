@@ -5,6 +5,7 @@ import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskAssessmentResult;
+import com.keplerops.groundcontrol.domain.riskscenarios.repository.MethodologyProfileRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.NistImpactBand;
@@ -54,10 +55,15 @@ public class RiskHeatmapService {
 
     private final RiskAssessmentResultRepository repository;
     private final ProjectRepository projectRepository;
+    private final MethodologyProfileRepository methodologyProfileRepository;
 
-    public RiskHeatmapService(RiskAssessmentResultRepository repository, ProjectRepository projectRepository) {
+    public RiskHeatmapService(
+            RiskAssessmentResultRepository repository,
+            ProjectRepository projectRepository,
+            MethodologyProfileRepository methodologyProfileRepository) {
         this.repository = repository;
         this.projectRepository = projectRepository;
+        this.methodologyProfileRepository = methodologyProfileRepository;
     }
 
     public RiskHeatmapResult buildHeatmap(UUID projectId, Instant asOf, UUID methodologyProfileId) {
@@ -85,11 +91,15 @@ public class RiskHeatmapService {
                 incompatible++;
                 continue;
             }
-            byFamily.merge(profile.getFamily().name(), 1, Integer::sum);
-
+            // Apply the methodology-profile filter BEFORE counting byFamily / triggering
+            // the FAIR limitation, so a caller restricted to a non-FAIR profile never
+            // sees a FAIR-incompatibility limitation referencing rows they never asked
+            // about (ADR-035 methodology attribution).
             if (profileRestricted && !profile.getId().equals(methodologyProfileId)) {
                 continue;
             }
+            byFamily.merge(profile.getFamily().name(), 1, Integer::sum);
+
             if (!supportsHeatmap(profile.getFamily())) {
                 incompatible++;
                 continue;
@@ -115,7 +125,15 @@ public class RiskHeatmapService {
             limitations.add(INCOMPATIBLE_PROFILE_LIMITATION);
         }
 
-        MethodologyProfile resolvedProfile = profileRestricted ? resolveProfile(rows, methodologyProfileId) : null;
+        // Resolve the requested profile via the repository (scoped to the project)
+        // so the envelope always carries methodology_profile_id / family of the
+        // REQUESTED profile per ADR-035, even when zero rows match it.
+        MethodologyProfile resolvedProfile = null;
+        if (profileRestricted) {
+            resolvedProfile = methodologyProfileRepository
+                    .findByIdAndProjectId(methodologyProfileId, projectId)
+                    .orElseGet(() -> resolveProfile(rows, methodologyProfileId));
+        }
 
         List<RiskHeatmapResult.HeatmapCell> cells = new ArrayList<>();
         for (Map.Entry<CellKey, List<UUID>> entry : cellPlotIds.entrySet()) {
@@ -129,13 +147,22 @@ public class RiskHeatmapService {
                     List.copyOf(entry.getValue())));
         }
 
+        // ADR-035 attribution: when the caller supplied a methodologyProfileId we MUST
+        // carry it back even when no row matched. methodologyFamily reflects what we
+        // could resolve from the profile lookup; it is null only when neither the
+        // repository nor the live row-set knows the profile.
+        UUID envelopeProfileId =
+                profileRestricted ? methodologyProfileId : (resolvedProfile != null ? resolvedProfile.getId() : null);
+        String envelopeFamily =
+                resolvedProfile != null ? resolvedProfile.getFamily().name() : null;
+
         return new RiskHeatmapResult(
                 ANALYSIS_KIND,
                 project.getIdentifier(),
                 effectiveAsOf,
                 DERIVATION_METHOD,
-                resolvedProfile != null ? resolvedProfile.getId() : null,
-                resolvedProfile != null ? resolvedProfile.getFamily().name() : null,
+                envelopeProfileId,
+                envelopeFamily,
                 SCALE,
                 UNITS,
                 new RiskHeatmapResult.Inputs(project.getIdentifier(), effectiveAsOf, methodologyProfileId),

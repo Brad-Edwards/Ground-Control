@@ -88,13 +88,8 @@ public class RiskTopNService {
         List<Ranked> ranked = new ArrayList<>();
         List<String> projectLimitations = new ArrayList<>();
         boolean droppedForMissingValue = false;
-        Set<String> families = new HashSet<>();
 
         for (RiskAssessmentResult row : rows) {
-            MethodologyProfile profile = row.getMethodologyProfile();
-            if (profile != null) {
-                families.add(profile.getFamily().name());
-            }
             Ranked candidate = score(row, orderBy);
             if (candidate == null) {
                 droppedForMissingValue = true;
@@ -114,9 +109,18 @@ public class RiskTopNService {
 
         List<RiskTopNResult.TopNEntry> entries = new ArrayList<>();
         int rank = 1;
+        // Compute methodology-family attribution from the rows that actually appear in
+        // the returned top-N, NOT from every considered row. Otherwise a row dropped
+        // for missing risk_level (FAIR rows under CURRENT_ASSESSMENT_OUTPUT, etc.) would
+        // pollute the mixed-methodology limitation even though it never made the output.
+        Set<String> families = new HashSet<>();
         for (Ranked r : ranked) {
             if (entries.size() >= requestedLimit) {
                 break;
+            }
+            MethodologyProfile profile = r.row().getMethodologyProfile();
+            if (profile != null) {
+                families.add(profile.getFamily().name());
             }
             entries.add(toEntry(rank++, r, orderBy));
         }

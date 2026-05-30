@@ -13,6 +13,7 @@ import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskAssessmentResult;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
+import com.keplerops.groundcontrol.domain.riskscenarios.repository.MethodologyProfileRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
 import java.time.Instant;
@@ -38,6 +39,9 @@ class RiskHeatmapServiceTest {
 
     @Mock
     private ProjectRepository projectRepository;
+
+    @Mock
+    private MethodologyProfileRepository methodologyProfileRepository;
 
     @InjectMocks
     private RiskHeatmapService service;
@@ -158,5 +162,73 @@ class RiskHeatmapServiceTest {
 
         assertThatThrownBy(() -> service.buildHeatmap(projectId, Instant.now(), null))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    /**
+     * Adversarial-review finding #2: a caller restricted to a NIST profile must NOT
+     * receive a FAIR-incompatibility limitation just because the project has FAIR
+     * rows the caller never asked about. The profile filter has to run BEFORE the
+     * byFamily accumulation that drives FAIR_INCOMPATIBILITY_LIMITATION.
+     */
+    @Test
+    void profileRestriction_doesNotEmitFairLimitationForFilteredOutFairRows() {
+        var nistRow = assessment(nistProfile, Map.of("overall_likelihood", "HIGH", "impact_level", "MODERATE"));
+        var fairRow = assessment(fairProfile, Map.of("ale_p90", "12345"));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(repository.findLatestPerScenarioByProjectId(projectId)).thenReturn(List.of(nistRow, fairRow));
+
+        RiskHeatmapResult result =
+                service.buildHeatmap(projectId, Instant.parse("2026-05-30T00:00:00Z"), nistProfile.getId());
+
+        // NIST row plotted, FAIR row filtered out before contributing to byFamily.
+        assertThat(result.cells()).hasSize(1);
+        assertThat(result.counts().byMethodologyFamily()).containsExactly(Map.entry("NIST_SP800_30_R1", 1));
+        assertThat(result.limitations()).noneMatch(s -> s.contains("FAIR methodology rows are quantitative"));
+        assertThat(result.methodologyProfileId()).isEqualTo(nistProfile.getId());
+        assertThat(result.methodologyFamily()).isEqualTo("NIST_SP800_30_R1");
+    }
+
+    /**
+     * Adversarial-review finding #3: when the caller supplies a methodologyProfileId
+     * that has zero assessments in the project, the envelope must still carry the
+     * requested profile's id+family — resolved via the repository — instead of
+     * silently returning nulls.
+     */
+    @Test
+    void profileRestriction_envelopeCarriesRequestedProfileEvenWhenNoRowsMatch() {
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(repository.findLatestPerScenarioByProjectId(projectId)).thenReturn(List.of());
+        when(methodologyProfileRepository.findByIdAndProjectId(nistProfile.getId(), projectId))
+                .thenReturn(Optional.of(nistProfile));
+
+        RiskHeatmapResult result =
+                service.buildHeatmap(projectId, Instant.parse("2026-05-30T00:00:00Z"), nistProfile.getId());
+
+        assertThat(result.cells()).isEmpty();
+        assertThat(result.methodologyProfileId()).isEqualTo(nistProfile.getId());
+        assertThat(result.methodologyFamily()).isEqualTo("NIST_SP800_30_R1");
+        assertThat(result.inputs().methodologyProfileId()).isEqualTo(nistProfile.getId());
+    }
+
+    /**
+     * Even when the repository cannot find the requested profile (e.g. caller passed
+     * an unknown UUID), the envelope MUST still propagate the requested
+     * methodologyProfileId so the contract surface always reflects the request.
+     */
+    @Test
+    void profileRestriction_envelopeCarriesRequestedIdEvenWhenProfileUnknown() {
+        UUID unknown = UUID.randomUUID();
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(repository.findLatestPerScenarioByProjectId(projectId)).thenReturn(List.of());
+        when(methodologyProfileRepository.findByIdAndProjectId(unknown, projectId))
+                .thenReturn(Optional.empty());
+
+        RiskHeatmapResult result = service.buildHeatmap(projectId, Instant.parse("2026-05-30T00:00:00Z"), unknown);
+
+        assertThat(result.methodologyProfileId()).isEqualTo(unknown);
+        // Family is null because we genuinely don't know it; the requested id is
+        // still propagated so consumers can correlate against their request.
+        assertThat(result.methodologyFamily()).isNull();
+        assertThat(result.inputs().methodologyProfileId()).isEqualTo(unknown);
     }
 }

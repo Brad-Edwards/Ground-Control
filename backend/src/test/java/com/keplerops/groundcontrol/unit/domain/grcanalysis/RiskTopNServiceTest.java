@@ -106,17 +106,68 @@ class RiskTopNServiceTest {
         assertThat(result.limitations()).anyMatch(s -> s.contains("no ranking value"));
     }
 
+    /**
+     * When BOTH a NIST and a FAIR row carry a rankable risk_level and both appear in
+     * the returned top-N, the mixed-methodology limitation is emitted. (FAIR
+     * normally does not produce a qualitative risk_level; this test pins the
+     * mixed-families behavior by giving the FAIR row a level so it survives ranking
+     * and shows up in the output.)
+     */
     @Test
-    void mixedMethodologies_emitsLimitation() {
+    void mixedMethodologies_inOutput_emitsLimitation() {
         Instant now = Instant.parse("2026-05-30T00:00:00Z");
         var nistRow = assessment(nistProfile, "HIGH", now);
-        var fairRow = assessment(fairProfile, null, now);
+        var fairRow = assessment(fairProfile, "MODERATE", now);
         when(repository.findLatestPerScenarioByProjectId(projectId)).thenReturn(List.of(nistRow, fairRow));
 
         RiskTopNResult result = service.topN(projectId, now, 5, RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT);
 
         assertThat(result.limitations()).anyMatch(s -> s.contains("multiple methodology families"));
         assertThat(result.limitations()).anyMatch(s -> s.contains("FAIR methodology rows do not produce"));
+    }
+
+    /**
+     * Adversarial-review finding #4: rows that were considered but dropped from the
+     * output (e.g. a FAIR row with no qualitative risk_level under
+     * CURRENT_ASSESSMENT_OUTPUT) MUST NOT push their family into the
+     * mixed-methodology check. Without this fix a pure-NIST top-N would claim it
+     * spans multiple methodology families.
+     */
+    @Test
+    void droppedFairRow_doesNotPollute_mixedMethodologyLimitation() {
+        Instant now = Instant.parse("2026-05-30T00:00:00Z");
+        var nistRow = assessment(nistProfile, "HIGH", now);
+        var fairRow = assessment(fairProfile, null, now); // dropped for missing risk_level
+        when(repository.findLatestPerScenarioByProjectId(projectId)).thenReturn(List.of(nistRow, fairRow));
+
+        RiskTopNResult result = service.topN(projectId, now, 5, RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT);
+
+        assertThat(result.entries()).hasSize(1);
+        assertThat(result.entries().get(0).rankingValue()).isEqualTo("HIGH");
+        // FAIR row was dropped, so families derived from the output is {NIST} only.
+        assertThat(result.limitations()).noneMatch(s -> s.contains("multiple methodology families"));
+        assertThat(result.limitations()).noneMatch(s -> s.contains("FAIR methodology rows do not produce"));
+        // But the row was still considered-but-filtered, so that limitation IS surfaced.
+        assertThat(result.limitations()).anyMatch(s -> s.contains("no ranking value"));
+    }
+
+    /**
+     * Families that appear beyond the `limit` cutoff also MUST NOT pollute the
+     * mixed-methodology limitation: the limitation describes what the consumer
+     * actually receives, not the unbounded considered set.
+     */
+    @Test
+    void rowBeyondLimit_doesNotPollute_mixedMethodologyLimitation() {
+        Instant now = Instant.parse("2026-05-30T00:00:00Z");
+        var topNistRow = assessment(nistProfile, "HIGH", now);
+        var spilloverFairRow = assessment(fairProfile, "LOW", now);
+        when(repository.findLatestPerScenarioByProjectId(projectId)).thenReturn(List.of(topNistRow, spilloverFairRow));
+
+        RiskTopNResult result = service.topN(projectId, now, 1, RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT);
+
+        assertThat(result.entries()).hasSize(1);
+        assertThat(result.entries().get(0).rankingValue()).isEqualTo("HIGH");
+        assertThat(result.limitations()).noneMatch(s -> s.contains("multiple methodology families"));
     }
 
     @Test

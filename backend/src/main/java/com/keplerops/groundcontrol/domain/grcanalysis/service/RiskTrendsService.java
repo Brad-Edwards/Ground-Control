@@ -37,6 +37,15 @@ import org.springframework.transaction.annotation.Transactional;
  * method explicitly so a consumer never confuses event-count totals with the
  * methodology-specific assessment outputs reported by the heat map / top-N
  * surfaces.
+ *
+ * <p>Live-roster bound: the audit table for {@link RiskRegisterRecord} does
+ * not carry {@code project_id} (the Project association is {@code @NotAudited}
+ * by convention across audited domain entities), so the roster of audited
+ * record ids is sourced from the live project query. Revisions of records
+ * that have since been deleted are therefore NOT included in the counts; an
+ * explicit limitation ({@link #DELETED_RECORDS_NOT_COUNTED_LIMITATION}) is
+ * always surfaced on the envelope so consumers cannot mistake the buckets for
+ * an exhaustive log.
  */
 @Service
 @Transactional(readOnly = true)
@@ -49,6 +58,21 @@ public class RiskTrendsService {
     static final long MAX_WINDOW_DAYS = 365L * 5;
     static final String DEFAULT_WINDOW_LIMITATION =
             "window 'from' defaulted to 12 months before asOf; supply 'from' explicitly to widen or narrow the window";
+    /**
+     * The Envers audit table for {@link RiskRegisterRecord} does NOT carry
+     * {@code project_id} (the Project association is {@code @NotAudited} by
+     * convention across the audited domain entities), so the trend roster is
+     * bounded to records currently in the project. Historical revisions
+     * belonging to records that have since been deleted are not part of the
+     * buckets. This limitation is surfaced on every envelope so consumers do
+     * not mistake the counts for an exhaustive audit log of every status
+     * transition ever recorded against the project's risks.
+     */
+    static final String DELETED_RECORDS_NOT_COUNTED_LIMITATION =
+            "trend counts are bounded to risk_register_record rows currently in the project;"
+                    + " revisions of deleted records are not included because the audit table"
+                    + " does not carry project_id (the Project association on RiskRegisterRecord"
+                    + " is @NotAudited by convention across the audited domain entities)";
 
     private final RiskRegisterRecordRepository registerRepository;
     private final ProjectRepository projectRepository;
@@ -145,6 +169,10 @@ public class RiskTrendsService {
         if (defaultedFrom) {
             limitations.add(DEFAULT_WINDOW_LIMITATION);
         }
+        // Always surface the deleted-records limitation so consumers cannot mistake the
+        // event counts for an exhaustive audit log of every status transition the
+        // project's risks have ever undergone. See ADR-038.
+        limitations.add(DELETED_RECORDS_NOT_COUNTED_LIMITATION);
 
         return new RiskTrendsResult(
                 ANALYSIS_KIND,
