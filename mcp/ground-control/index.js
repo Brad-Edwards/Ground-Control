@@ -119,7 +119,7 @@ import {
   deleteObservation, listLatestObservations,
   createRiskScenario, listRiskScenarios, getRiskScenario, updateRiskScenario,
   deleteRiskScenario, transitionRiskScenarioStatus, getRiskScenarioRequirements,
-  getRiskScenarioTrace,
+  getRiskScenarioTrace, getRiskScenarioWorkspace,
   createRiskScenarioLink, listRiskScenarioLinks, deleteRiskScenarioLink,
   createThreatModel, listThreatModels, getThreatModel, updateThreatModel,
   deleteThreatModel, transitionThreatModelStatus, getThreatModelLinkedRequirements,
@@ -1659,6 +1659,38 @@ server.tool(
     try {
       const result = await gcThreatModelToolHandler(args);
       return result === null ? ok("Deleted") : ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_risk_scenario_workspace: GC-Q009. Read-only composition endpoint returning
+// risk scenarios with linked assets, controls, findings, evidence, assessments,
+// treatments, and register memberships. Review indicator uses only explicit signals.
+server.tool(
+  "gc_risk_scenario_workspace",
+  "Read-only Risk Scenario Workspace (GC-Q009). Returns scoped risk scenarios with " +
+    "linked operational assets, controls, findings, evidence, requirements, assessments " +
+    "(methodologyProfileName, approvalState, hasComputedOutputs, reassessmentRequiredAt), " +
+    "treatment plans, and risk register memberships. Review indicator is an explicit-signal " +
+    "rollup: REASSESSMENT_REQUIRED > REVIEW_DUE > EVIDENCE_STALE > CURRENT > NO_SIGNAL. " +
+    "Optional filters: assetId (UUID), status (RiskScenarioStatus), methodologyProfileId (UUID), " +
+    "approvalState (RiskAssessmentApprovalStatus), treatmentStatus (TreatmentPlanStatus), " +
+    "asOf (ISO-8601 instant), freshnessWindowDays (default 90), compare (array of ≤10 UUIDs).",
+  {
+    project: z.string().optional(),
+    assetId: z.string().uuid().optional(),
+    status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
+    methodologyProfileId: z.string().uuid().optional(),
+    approvalState: z.enum(["DRAFT", "SUBMITTED", "APPROVED", "REJECTED"]).optional(),
+    treatmentStatus: z.enum(["PLANNED", "IN_PROGRESS", "BLOCKED", "COMPLETED", "CANCELED"]).optional(),
+    asOf: z.string().optional(),
+    freshnessWindowDays: z.number().int().positive().optional(),
+    compare: z.array(z.string().uuid()).max(10).optional(),
+  },
+  async ({ project, assetId, status, methodologyProfileId, approvalState, treatmentStatus, asOf, freshnessWindowDays, compare }) => {
+    try {
+      const result = await getRiskScenarioWorkspace({ project, assetId, status, methodologyProfileId, approvalState, treatmentStatus, asOf, freshnessWindowDays, compare });
+      return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },
 );
