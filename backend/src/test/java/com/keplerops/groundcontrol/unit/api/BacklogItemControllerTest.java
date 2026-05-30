@@ -1,14 +1,18 @@
 package com.keplerops.groundcontrol.unit.api;
 
 import static com.keplerops.groundcontrol.TestUtil.setField;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -18,9 +22,13 @@ import com.keplerops.groundcontrol.domain.backlog.model.CostOfDelayComponent;
 import com.keplerops.groundcontrol.domain.backlog.model.WsjfDistribution;
 import com.keplerops.groundcontrol.domain.backlog.service.BacklogItemService;
 import com.keplerops.groundcontrol.domain.backlog.service.WsjfAnalysisService;
+import com.keplerops.groundcontrol.domain.backlog.state.BacklogItemStatus;
+import com.keplerops.groundcontrol.domain.exception.ConflictException;
+import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -140,5 +148,230 @@ class BacklogItemControllerTest {
                         .param("iterations", "0"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.error.code", is("validation_error")));
+    }
+
+    @Test
+    void listReturnsAllItemsForProject() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(backlogItemService.listByProject(PROJECT_ID)).thenReturn(List.of(make()));
+
+        mockMvc.perform(get("/api/v1/backlog-items").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].uid", is("BI-1")));
+    }
+
+    @Test
+    void listReturnsEmptyListWhenNoItems() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(backlogItemService.listByProject(PROJECT_ID)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/backlog-items").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    void getByIdReturnsItemWhenFound() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(backlogItemService.getById(PROJECT_ID, ITEM_ID)).thenReturn(make());
+
+        mockMvc.perform(get("/api/v1/backlog-items/" + ITEM_ID).param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id", is(ITEM_ID.toString())))
+                .andExpect(jsonPath("$.uid", is("BI-1")));
+    }
+
+    @Test
+    void getByIdReturns404WhenNotFound() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(backlogItemService.getById(eq(PROJECT_ID), eq(ITEM_ID)))
+                .thenThrow(new NotFoundException("BacklogItem not found: " + ITEM_ID));
+
+        mockMvc.perform(get("/api/v1/backlog-items/" + ITEM_ID).param("project", "ground-control"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code", is("not_found")));
+    }
+
+    @Test
+    void getByUidReturnsItemWhenFound() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(backlogItemService.getByUid(PROJECT_ID, "BI-1")).thenReturn(make());
+
+        mockMvc.perform(get("/api/v1/backlog-items/uid/BI-1").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.uid", is("BI-1")))
+                .andExpect(jsonPath("$.status", is("CANDIDATE")));
+    }
+
+    @Test
+    void getByUidReturns404WhenNotFound() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(backlogItemService.getByUid(eq(PROJECT_ID), eq("MISSING")))
+                .thenThrow(new NotFoundException("BacklogItem not found: MISSING"));
+
+        mockMvc.perform(get("/api/v1/backlog-items/uid/MISSING").param("project", "ground-control"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code", is("not_found")));
+    }
+
+    @Test
+    void updateReturns200WithUpdatedItem() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(backlogItemService.update(eq(PROJECT_ID), eq(ITEM_ID), any())).thenReturn(make());
+
+        mockMvc.perform(
+                        put("/api/v1/backlog-items/" + ITEM_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {"title": "Updated title"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.uid", is("BI-1")));
+    }
+
+    @Test
+    void updateReturns404WhenItemNotFound() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(backlogItemService.update(eq(PROJECT_ID), eq(ITEM_ID), any()))
+                .thenThrow(new NotFoundException("BacklogItem not found: " + ITEM_ID));
+
+        mockMvc.perform(
+                        put("/api/v1/backlog-items/" + ITEM_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {"title": "Updated title"}
+                                """))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void transitionStatusReturns200WithNewStatus() throws Exception {
+        var ready = make();
+        ready.setUserBusinessValue(CostOfDelayComponent.point(5, "alice"));
+        ready.setTimeCriticality(CostOfDelayComponent.point(3, "alice"));
+        ready.setRiskReductionOpportunityEnablement(CostOfDelayComponent.point(2, "alice"));
+        ready.setJobDuration(CostOfDelayComponent.point(2, "alice"));
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(backlogItemService.transitionStatus(eq(PROJECT_ID), eq(ITEM_ID), eq(BacklogItemStatus.ARCHIVED)))
+                .thenReturn(ready);
+
+        mockMvc.perform(
+                        put("/api/v1/backlog-items/" + ITEM_ID + "/status")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {"status": "ARCHIVED"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id", is(ITEM_ID.toString())));
+    }
+
+    @Test
+    void transitionStatusReturns422ForNullStatus() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+
+        mockMvc.perform(
+                        put("/api/v1/backlog-items/" + ITEM_ID + "/status")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {"status": null}
+                                """))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void transitionStatusReturns422ForInvalidEnumValue() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+
+        mockMvc.perform(
+                        put("/api/v1/backlog-items/" + ITEM_ID + "/status")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {"status": "NOT_A_STATUS"}
+                                """))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")));
+    }
+
+    @Test
+    void deleteReturns204WhenItemExists() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        doNothing().when(backlogItemService).delete(PROJECT_ID, ITEM_ID);
+
+        mockMvc.perform(delete("/api/v1/backlog-items/" + ITEM_ID).param("project", "ground-control"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void deleteReturns404WhenItemNotFound() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        org.mockito.Mockito.doThrow(new NotFoundException("BacklogItem not found: " + ITEM_ID))
+                .when(backlogItemService)
+                .delete(PROJECT_ID, ITEM_ID);
+
+        mockMvc.perform(delete("/api/v1/backlog-items/" + ITEM_ID).param("project", "ground-control"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void createReturns409WhenUidAlreadyExists() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(backlogItemService.create(any()))
+                .thenThrow(
+                        new ConflictException("BacklogItem with UID 'BI-1' already exists in project ground-control"));
+
+        mockMvc.perform(
+                        post("/api/v1/backlog-items")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "uid": "BI-1",
+                                  "title": "Add feature X"
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("conflict")));
+    }
+
+    @Test
+    void createReturns422WhenRequiredFieldsMissing() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+
+        mockMvc.perform(
+                        post("/api/v1/backlog-items")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "title": "Add feature X"
+                                }
+                                """))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")));
+    }
+
+    @Test
+    void wsjfEndpointRejectsNegativeIterations() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+
+        mockMvc.perform(get("/api/v1/backlog-items/" + ITEM_ID + "/wsjf")
+                        .param("project", "ground-control")
+                        .param("iterations", "-1"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")))
+                .andExpect(jsonPath("$.error.detail.field", is("iterations")));
     }
 }

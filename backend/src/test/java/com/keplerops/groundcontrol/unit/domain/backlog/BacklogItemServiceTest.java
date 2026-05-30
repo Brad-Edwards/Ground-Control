@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.unit.domain.backlog;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -13,8 +14,12 @@ import com.keplerops.groundcontrol.domain.backlog.repository.BacklogItemReposito
 import com.keplerops.groundcontrol.domain.backlog.service.BacklogItemService;
 import com.keplerops.groundcontrol.domain.backlog.service.CreateBacklogItemCommand;
 import com.keplerops.groundcontrol.domain.backlog.service.UpdateBacklogItemCommand;
+import com.keplerops.groundcontrol.domain.backlog.state.BacklogItemStatus;
+import com.keplerops.groundcontrol.domain.exception.ConflictException;
+import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -108,5 +113,131 @@ class BacklogItemServiceTest {
         assertThat(saved.getTitle()).isEqualTo("New title");
         // No NPE; null CoD components stay null through stamp().
         assertThat(saved.getJobDuration()).isNull();
+    }
+
+    @Test
+    void createThrowsConflictWhenUidAlreadyExists() {
+        when(repository.existsByProjectIdAndUid(PROJECT_ID, "BI-DUP")).thenReturn(true);
+
+        var command = new CreateBacklogItemCommand(PROJECT_ID, "BI-DUP", "Duplicate", null, null, null, null, null);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("BI-DUP");
+    }
+
+    @Test
+    void getByUidReturnsItemWhenFound() {
+        var existing = new BacklogItem(project, "BI-1", "Feature");
+        var itemId = UUID.randomUUID();
+        TestUtil.setField(existing, "id", itemId);
+        when(repository.findByProjectIdAndUid(PROJECT_ID, "BI-1")).thenReturn(Optional.of(existing));
+
+        var found = service.getByUid(PROJECT_ID, "BI-1");
+
+        assertThat(found.getUid()).isEqualTo("BI-1");
+    }
+
+    @Test
+    void getByUidThrowsNotFoundWhenUidAbsent() {
+        when(repository.findByProjectIdAndUid(PROJECT_ID, "MISSING")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getByUid(PROJECT_ID, "MISSING"))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining("MISSING");
+    }
+
+    @Test
+    void listByProjectReturnsAllItems() {
+        var a = new BacklogItem(project, "BI-1", "Feature A");
+        var b = new BacklogItem(project, "BI-2", "Feature B");
+        when(repository.findByProjectIdOrderByCreatedAtDesc(PROJECT_ID)).thenReturn(List.of(a, b));
+
+        var result = service.listByProject(PROJECT_ID);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).getUid()).isEqualTo("BI-1");
+        assertThat(result.get(1).getUid()).isEqualTo("BI-2");
+    }
+
+    @Test
+    void listByProjectReturnsEmptyListWhenNoneExist() {
+        when(repository.findByProjectIdOrderByCreatedAtDesc(PROJECT_ID)).thenReturn(List.of());
+
+        assertThat(service.listByProject(PROJECT_ID)).isEmpty();
+    }
+
+    @Test
+    void getByIdThrowsNotFoundWhenAbsent() {
+        var missingId = UUID.randomUUID();
+        when(repository.findByIdAndProjectId(missingId, PROJECT_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getById(PROJECT_ID, missingId))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining(missingId.toString());
+    }
+
+    @Test
+    void updateThrowsNotFoundWhenItemAbsent() {
+        var missingId = UUID.randomUUID();
+        when(repository.findByIdAndProjectId(missingId, PROJECT_ID)).thenReturn(Optional.empty());
+
+        var command = new UpdateBacklogItemCommand("title", null, null, null, null, null);
+
+        assertThatThrownBy(() -> service.update(PROJECT_ID, missingId, command)).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void transitionStatusThrowsNotFoundWhenItemAbsent() {
+        var missingId = UUID.randomUUID();
+        when(repository.findByIdAndProjectId(missingId, PROJECT_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.transitionStatus(PROJECT_ID, missingId, BacklogItemStatus.ARCHIVED))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void transitionStatusPersistsNewStatus() {
+        var existing = new BacklogItem(project, "BI-1", "Feature");
+        var itemId = UUID.randomUUID();
+        TestUtil.setField(existing, "id", itemId);
+        when(repository.findByIdAndProjectId(itemId, PROJECT_ID)).thenReturn(Optional.of(existing));
+
+        var saved = service.transitionStatus(PROJECT_ID, itemId, BacklogItemStatus.ARCHIVED);
+
+        assertThat(saved.getStatus()).isEqualTo(BacklogItemStatus.ARCHIVED);
+    }
+
+    @Test
+    void deleteThrowsNotFoundWhenItemAbsent() {
+        var missingId = UUID.randomUUID();
+        when(repository.findByIdAndProjectId(missingId, PROJECT_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.delete(PROJECT_ID, missingId)).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void deleteSucceedsWhenItemExists() {
+        var existing = new BacklogItem(project, "BI-1", "Feature");
+        var itemId = UUID.randomUUID();
+        TestUtil.setField(existing, "id", itemId);
+        when(repository.findByIdAndProjectId(itemId, PROJECT_ID)).thenReturn(Optional.of(existing));
+
+        // delete() is void; just verify it does not throw
+        service.delete(PROJECT_ID, itemId);
+    }
+
+    @Test
+    void updateUpdatesDescriptionWhenProvided() {
+        var existing = new BacklogItem(project, "BI-1", "Feature");
+        var itemId = UUID.randomUUID();
+        TestUtil.setField(existing, "id", itemId);
+        when(repository.findByIdAndProjectId(itemId, PROJECT_ID)).thenReturn(Optional.of(existing));
+
+        var command = new UpdateBacklogItemCommand(null, "A detailed description", null, null, null, null);
+
+        var saved = service.update(PROJECT_ID, itemId, command);
+
+        assertThat(saved.getDescription()).isEqualTo("A detailed description");
     }
 }
