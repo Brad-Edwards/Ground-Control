@@ -497,6 +497,212 @@ class EvidenceArtifactServiceTest {
         }
     }
 
+    // GC-I003: executable-evidence external source kinds (CI / scanner) carry
+    // an opaque identifier; the service must validate the dual-mode shape
+    // identically to ATTESTATION / EXTERNAL — i.e. identifier required,
+    // entityId rejected, and the existence-check switch routes them as
+    // external (returns false).
+    @Nested
+    class ExecutableEvidenceSourceKinds {
+
+        @Test
+        void allowsCiPipelineSourceWithIdentifier() {
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(repository.existsByProjectIdAndUid(projectId, "EVD-0001")).thenReturn(false);
+            when(repository.save(any(EvidenceArtifact.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var sources = List.of(
+                    new EvidenceSourceRef(EvidenceSourceKind.CI_PIPELINE_RESULT, null, "gha-run-12345", "primary"));
+            var result = service.create(happyCommandWithSources(sources));
+
+            assertThat(result.getSources()).hasSize(1);
+            assertThat(result.getSources().get(0).sourceKind()).isEqualTo(EvidenceSourceKind.CI_PIPELINE_RESULT);
+            assertThat(result.getSources().get(0).sourceIdentifier()).isEqualTo("gha-run-12345");
+        }
+
+        @Test
+        void allowsSecurityScanSourceWithIdentifier() {
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(repository.existsByProjectIdAndUid(projectId, "EVD-0001")).thenReturn(false);
+            when(repository.save(any(EvidenceArtifact.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var sources = List.of(
+                    new EvidenceSourceRef(EvidenceSourceKind.SECURITY_SCAN_RESULT, null, "sonar-issue-abc", null));
+            var result = service.create(happyCommandWithSources(sources));
+
+            assertThat(result.getSources().get(0).sourceKind()).isEqualTo(EvidenceSourceKind.SECURITY_SCAN_RESULT);
+        }
+
+        @Test
+        void rejectsCiPipelineSourceMissingIdentifier() {
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(repository.existsByProjectIdAndUid(projectId, "EVD-0001")).thenReturn(false);
+
+            var sources = List.of(new EvidenceSourceRef(EvidenceSourceKind.CI_PIPELINE_RESULT, null, "  ", null));
+            var command = happyCommandWithSources(sources);
+            assertThatThrownBy(() -> service.create(command))
+                    .isInstanceOf(DomainValidationException.class)
+                    .hasMessageContaining("sourceIdentifier is required");
+        }
+
+        @Test
+        void rejectsSecurityScanSourceCarryingEntityId() {
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(repository.existsByProjectIdAndUid(projectId, "EVD-0001")).thenReturn(false);
+
+            var sources = List.of(new EvidenceSourceRef(
+                    EvidenceSourceKind.SECURITY_SCAN_RESULT, UUID.randomUUID(), "scanner-id", null));
+            var command = happyCommandWithSources(sources);
+            assertThatThrownBy(() -> service.create(command))
+                    .isInstanceOf(DomainValidationException.class)
+                    .hasMessageContaining("sourceEntityId must be null for external source kind");
+        }
+    }
+
+    // GC-I004 / ADR-045 §8: expiresAt + validityWindowDays.
+    @Nested
+    class ExpirationFields {
+
+        @Test
+        void persistsExpiresAtAndValidityWindow() {
+            var observationId = UUID.randomUUID();
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(repository.existsByProjectIdAndUid(projectId, "EVD-0001")).thenReturn(false);
+            when(observationRepository.existsByIdAndProjectId(observationId, projectId))
+                    .thenReturn(true);
+            when(repository.save(any(EvidenceArtifact.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var sources = List.of(new EvidenceSourceRef(EvidenceSourceKind.OBSERVATION, observationId, null, null));
+            var derivedAt = Instant.parse("2026-04-30T17:00:00Z");
+            var expiresAt = Instant.parse("2026-07-29T17:00:00Z");
+            var command = new CreateEvidenceArtifactCommand(
+                    projectId,
+                    "EVD-0001",
+                    "Expiring",
+                    "Summary",
+                    EvidenceType.ASSURANCE_CONCLUSION,
+                    "manual-rollup",
+                    derivedAt,
+                    null,
+                    null,
+                    null,
+                    sources,
+                    expiresAt,
+                    90);
+            var result = service.create(command);
+            assertThat(result.getExpiresAt()).isEqualTo(expiresAt);
+            assertThat(result.getValidityWindowDays()).isEqualTo(90);
+            assertThat(result.isExpiredAt(derivedAt)).isFalse();
+            assertThat(result.isExpiredAt(expiresAt)).isTrue();
+        }
+
+        @Test
+        void rejectsValidityWindowDaysZeroOrNegative() {
+            var observationId = UUID.randomUUID();
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(repository.existsByProjectIdAndUid(projectId, "EVD-0001")).thenReturn(false);
+            when(observationRepository.existsByIdAndProjectId(observationId, projectId))
+                    .thenReturn(true);
+
+            var sources = List.of(new EvidenceSourceRef(EvidenceSourceKind.OBSERVATION, observationId, null, null));
+            var command = new CreateEvidenceArtifactCommand(
+                    projectId,
+                    "EVD-0001",
+                    "x",
+                    "y",
+                    EvidenceType.ASSURANCE_CONCLUSION,
+                    "m",
+                    Instant.parse("2026-04-30T17:00:00Z"),
+                    null,
+                    null,
+                    null,
+                    sources,
+                    null,
+                    0);
+            assertThatThrownBy(() -> service.create(command))
+                    .isInstanceOf(DomainValidationException.class)
+                    .hasMessageContaining("validityWindowDays");
+        }
+
+        @Test
+        void rejectsExpiresAtBeforeDerivedAt() {
+            var observationId = UUID.randomUUID();
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(repository.existsByProjectIdAndUid(projectId, "EVD-0001")).thenReturn(false);
+            when(observationRepository.existsByIdAndProjectId(observationId, projectId))
+                    .thenReturn(true);
+
+            var sources = List.of(new EvidenceSourceRef(EvidenceSourceKind.OBSERVATION, observationId, null, null));
+            var derivedAt = Instant.parse("2026-04-30T17:00:00Z");
+            var command = new CreateEvidenceArtifactCommand(
+                    projectId,
+                    "EVD-0001",
+                    "x",
+                    "y",
+                    EvidenceType.ASSURANCE_CONCLUSION,
+                    "m",
+                    derivedAt,
+                    null,
+                    null,
+                    null,
+                    sources,
+                    derivedAt.minusSeconds(60),
+                    null);
+            assertThatThrownBy(() -> service.create(command))
+                    .isInstanceOf(DomainValidationException.class)
+                    .hasMessageContaining("expiresAt");
+        }
+
+        @Test
+        void supersedeDoesNotMutatePriorExpiresAt() {
+            // Append-only: superseding an expired artifact creates a new row
+            // with its own expiresAt; the prior row's expiresAt is untouched.
+            var priorId = UUID.randomUUID();
+            var observationId = UUID.randomUUID();
+            var prior = buildArtifact("EVD-0001");
+            setField(prior, "id", priorId);
+            var priorExpiry = Instant.parse("2026-04-01T00:00:00Z");
+            prior.setExpiresAt(priorExpiry);
+            when(repository.findByIdAndProjectId(priorId, projectId)).thenReturn(Optional.of(prior));
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(repository.existsByProjectIdAndUid(projectId, "EVD-0002")).thenReturn(false);
+            when(observationRepository.existsByIdAndProjectId(observationId, projectId))
+                    .thenReturn(true);
+            when(repository.save(any(EvidenceArtifact.class))).thenAnswer(inv -> {
+                EvidenceArtifact arg = inv.getArgument(0);
+                if (arg.getUid().equals("EVD-0002") && arg.getId() == null) {
+                    setField(arg, "id", UUID.randomUUID());
+                }
+                return arg;
+            });
+            when(repository.markSupersededIfUnset(any(UUID.class), any(UUID.class), any(UUID.class)))
+                    .thenReturn(1);
+
+            var replacement = service.supersede(
+                    projectId,
+                    priorId,
+                    new CreateEvidenceArtifactCommand(
+                            projectId,
+                            "EVD-0002",
+                            "Revised",
+                            "Y",
+                            EvidenceType.ASSURANCE_CONCLUSION,
+                            "m",
+                            Instant.parse("2026-05-01T00:00:00Z"),
+                            null,
+                            null,
+                            null,
+                            List.of(new EvidenceSourceRef(EvidenceSourceKind.OBSERVATION, observationId, null, null)),
+                            Instant.parse("2026-08-01T00:00:00Z"),
+                            90));
+            assertThat(prior.getExpiresAt())
+                    .as("prior expiresAt is preserved (append-only)")
+                    .isEqualTo(priorExpiry);
+            assertThat(replacement.getExpiresAt()).isEqualTo(Instant.parse("2026-08-01T00:00:00Z"));
+            assertThat(replacement.getValidityWindowDays()).isEqualTo(90);
+        }
+    }
+
     private EvidenceArtifact buildArtifact(String uid) {
         return new EvidenceArtifact(
                 project,

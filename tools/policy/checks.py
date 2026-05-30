@@ -967,6 +967,8 @@ MCP_LIB_PATH = "mcp/ground-control/lib.js"
 _ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state"
 _AUDIT_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state"
 _RISK_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state"
+_EVIDENCE_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/evidence/state"
+_COMPLIANCE_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/compliance/state"
 
 # Java enum body: from the opening `{` to whichever comes first — the `;` that
 # terminates the constant list (present when the enum has methods/fields, e.g.
@@ -1115,6 +1117,42 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
         "ReassessmentTriggerTargetType",
         "REASSESSMENT_TRIGGER_TARGET_TYPES",
         "REASSESSMENT_TRIGGER_TARGET_TYPES",
+    ),
+    # GC-I003 / GC-I004 executable-evidence + continuous-monitoring enums.
+    # EvidenceSourceKind extends to CI_PIPELINE_RESULT / SECURITY_SCAN_RESULT
+    # (external kinds, opaque identifiers, never dereferenced server-side).
+    # EvidenceType is unchanged for now but listed so any future addition is
+    # caught by this gate. ComplianceDriftCategory / ComplianceDriftSeverity
+    # are the GC-I004 detector enums. ADR-034 mirror policy. The frontend
+    # union/const mirrors will land with the GC-I003/I004 UI work; for now
+    # only MCP mirrors are wired.
+    EnumContract(
+        "EvidenceSourceKind",
+        f"{_EVIDENCE_ENUM_STATE_DIR}/EvidenceSourceKind.java",
+        "EvidenceSourceKind",
+        None,
+        "EVIDENCE_SOURCE_KINDS",
+    ),
+    EnumContract(
+        "EvidenceType",
+        f"{_EVIDENCE_ENUM_STATE_DIR}/EvidenceType.java",
+        "EvidenceType",
+        None,
+        "EVIDENCE_TYPES",
+    ),
+    EnumContract(
+        "ComplianceDriftCategory",
+        f"{_COMPLIANCE_ENUM_STATE_DIR}/ComplianceDriftCategory.java",
+        "ComplianceDriftCategory",
+        None,
+        "COMPLIANCE_DRIFT_CATEGORIES",
+    ),
+    EnumContract(
+        "ComplianceDriftSeverity",
+        f"{_COMPLIANCE_ENUM_STATE_DIR}/ComplianceDriftSeverity.java",
+        "ComplianceDriftSeverity",
+        None,
+        "COMPLIANCE_DRIFT_SEVERITIES",
     ),
 )
 

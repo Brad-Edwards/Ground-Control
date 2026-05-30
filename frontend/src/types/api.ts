@@ -926,6 +926,37 @@ export const AUDIT_LINK_TYPES: AuditLinkType[] = [
   "ASSOCIATED",
 ];
 
+// GC-M016 / GC-I003 / GC-I004 evidence + drift enums (ADR-045 + ADR-034).
+// Single-sourced from backend EvidenceType / EvidenceSourceKind /
+// ComplianceDriftCategory / ComplianceDriftSeverity.
+export type EvidenceType =
+  | "OBSERVATION_SUMMARY"
+  | "CONTROL_TEST_SUMMARY"
+  | "ASSURANCE_CONCLUSION"
+  | "VERIFICATION_SUMMARY"
+  | "ATTESTATION"
+  | "MIXED";
+
+export type EvidenceSourceKind =
+  | "OBSERVATION"
+  | "CONTROL_TEST"
+  | "CONTROL_EFFECTIVENESS_ASSESSMENT"
+  | "VERIFICATION_RESULT"
+  | "RISK_ASSESSMENT_RESULT"
+  | "FINDING"
+  | "ATTESTATION"
+  | "EXTERNAL"
+  | "CI_PIPELINE_RESULT"
+  | "SECURITY_SCAN_RESULT";
+
+export type ComplianceDriftCategory =
+  | "CONTROL_STATE_CHANGED"
+  | "EVIDENCE_EXPIRED"
+  | "CODE_CHANGE_IMPACT"
+  | "RESOLUTION";
+
+export type ComplianceDriftSeverity = "INFO" | "WARN" | "SEVERE";
+
 // Responses
 export interface ProjectResponse {
   id: string;

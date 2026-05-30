@@ -255,4 +255,100 @@ class EvidenceArtifactControllerTest {
         mockMvc.perform(delete("/api/v1/evidence-artifacts/{id}", ARTIFACT_ID).param("project", "ground-control"))
                 .andExpect(status().isMethodNotAllowed());
     }
+
+    /**
+     * GC-I004: expiredOnly=true filters out non-expired artifacts. The
+     * filter is computed server-side from {@code expiresAt} and the request
+     * time; the controller routes the filter through
+     * {@code listByProjectFilteredByExpiry} so the ArchUnit api -> model
+     * boundary stays clean.
+     */
+    @Test
+    void listFiltersByExpiredOnly() throws Exception {
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        var project = new Project("ground-control", "Ground Control");
+        setField(project, "id", PROJECT_ID);
+        var expired = new EvidenceArtifact(project, "EVD-EXP", "t", "s", EvidenceType.ATTESTATION, "m", NOW);
+        setField(expired, "id", UUID.randomUUID());
+        expired.setSources(List.of(new EvidenceSourceRef(EvidenceSourceKind.ATTESTATION, null, "id", null)));
+        expired.setExpiresAt(NOW.minusSeconds(60));
+        when(service.listByProjectFilteredByExpiry(eq(PROJECT_ID), eq(null), eq(false), any(), eq(true)))
+                .thenReturn(List.of(expired));
+
+        mockMvc.perform(get("/api/v1/evidence-artifacts")
+                        .param("project", "ground-control")
+                        .param("expiredOnly", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].uid", is("EVD-EXP")))
+                .andExpect(jsonPath("$[0].expired", is(true)));
+    }
+
+    @Test
+    void createAcceptsExpiresAtAndValidityWindowDays() throws Exception {
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        var project = new Project("ground-control", "Ground Control");
+        setField(project, "id", PROJECT_ID);
+        var artifact = new EvidenceArtifact(project, "EVD-EXP", "t", "s", EvidenceType.ATTESTATION, "m", NOW);
+        setField(artifact, "id", ARTIFACT_ID);
+        artifact.setSources(List.of(new EvidenceSourceRef(EvidenceSourceKind.ATTESTATION, null, "id", null)));
+        artifact.setExpiresAt(NOW.plusSeconds(86400));
+        artifact.setValidityWindowDays(1);
+        when(service.create(any())).thenReturn(artifact);
+
+        mockMvc.perform(
+                        post("/api/v1/evidence-artifacts")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "uid": "EVD-EXP",
+                                  "title": "t",
+                                  "summary": "s",
+                                  "evidenceType": "ATTESTATION",
+                                  "derivationMethod": "m",
+                                  "derivedAt": "2026-05-01T12:00:00Z",
+                                  "expiresAt": "2026-05-02T12:00:00Z",
+                                  "validityWindowDays": 1,
+                                  "sources": [
+                                    {
+                                      "sourceKind": "ATTESTATION",
+                                      "sourceIdentifier": "id"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.expiresAt", is("2026-05-02T12:00:00Z")))
+                .andExpect(jsonPath("$.validityWindowDays", is(1)));
+    }
+
+    @Test
+    void createRejectsValidityWindowDaysZero() throws Exception {
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        mockMvc.perform(
+                        post("/api/v1/evidence-artifacts")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "uid": "EVD-EXP",
+                                  "title": "t",
+                                  "summary": "s",
+                                  "evidenceType": "ATTESTATION",
+                                  "derivationMethod": "m",
+                                  "derivedAt": "2026-05-01T12:00:00Z",
+                                  "validityWindowDays": 0,
+                                  "sources": [
+                                    {
+                                      "sourceKind": "ATTESTATION",
+                                      "sourceIdentifier": "id"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isUnprocessableEntity());
+    }
 }

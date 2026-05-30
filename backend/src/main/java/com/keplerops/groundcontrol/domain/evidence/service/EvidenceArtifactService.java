@@ -112,6 +112,19 @@ public class EvidenceArtifactService {
         artifact.setNotes(command.notes());
         artifact.setSources(validatedSources);
         artifact.setDerivedBy(ActorHolder.get());
+        var validityDays = command.validityWindowDays();
+        if (validityDays != null && validityDays <= 0) {
+            throw new DomainValidationException(
+                    "validityWindowDays must be positive when provided",
+                    VALIDATION_ERROR,
+                    Map.of(FIELD, "validityWindowDays"));
+        }
+        if (command.expiresAt() != null && command.expiresAt().isBefore(command.derivedAt())) {
+            throw new DomainValidationException(
+                    "expiresAt must not be before derivedAt", VALIDATION_ERROR, Map.of(FIELD, "expiresAt"));
+        }
+        artifact.setExpiresAt(command.expiresAt());
+        artifact.setValidityWindowDays(validityDays);
 
         var saved = repository.save(artifact);
         log.info(
@@ -184,6 +197,26 @@ public class EvidenceArtifactService {
             return rows;
         }
         return rows.stream().filter(a -> a.getSupersededByArtifactId() == null).toList();
+    }
+
+    /**
+     * GC-I004 expiry filter. Returns the rows matching the same filters as
+     * {@link #listByProject(UUID, EvidenceType, boolean)} additionally
+     * filtered by {@code expired}: when {@code expired == true} only rows
+     * with a non-null {@code expiresAt} that is &lt;= {@code asOf}; when
+     * {@code expired == false} only rows whose current state is NOT expired
+     * (no {@code expiresAt}, or {@code expiresAt} is in the future).
+     */
+    @Transactional(readOnly = true)
+    public List<EvidenceArtifact> listByProjectFilteredByExpiry(
+            UUID projectId,
+            EvidenceType evidenceType,
+            boolean includeSuperseded,
+            java.time.Instant asOf,
+            boolean expired) {
+        return listByProject(projectId, evidenceType, includeSuperseded).stream()
+                .filter(a -> a.isExpiredAt(asOf) == expired)
+                .toList();
     }
 
     private EvidenceArtifact findOrThrow(UUID projectId, UUID id) {
@@ -277,7 +310,7 @@ public class EvidenceArtifactService {
             case VERIFICATION_RESULT -> verificationResultRepository.existsByIdAndProjectId(entityId, projectId);
             case RISK_ASSESSMENT_RESULT -> riskAssessmentResultRepository.existsByIdAndProjectId(entityId, projectId);
             case FINDING -> findingRepository.existsByIdAndProjectId(entityId, projectId);
-            case ATTESTATION, EXTERNAL -> false;
+            case ATTESTATION, EXTERNAL, CI_PIPELINE_RESULT, SECURITY_SCAN_RESULT -> false;
         };
     }
 }

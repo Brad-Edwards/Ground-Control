@@ -50,11 +50,21 @@ public class EvidenceArtifactController {
     public List<EvidenceArtifactResponse> list(
             @RequestParam(required = false) EvidenceType evidenceType,
             @RequestParam(required = false, defaultValue = "false") boolean includeSuperseded,
+            @RequestParam(required = false, defaultValue = "false") boolean expiredOnly,
+            @RequestParam(required = false) Boolean expired,
             @RequestParam(required = false) String project) {
         var projectId = projectService.requireProjectId(project);
-        return service.listByProject(projectId, evidenceType, includeSuperseded).stream()
-                .map(EvidenceArtifactResponse::from)
-                .toList();
+        var now = java.time.Instant.now();
+        // GC-I004: optional expiry filter. Pass expired=true to fetch only
+        // already-expired artifacts (alias: expiredOnly), expired=false to
+        // exclude them. Default returns the full set so existing callers see
+        // unchanged behavior. The expiry decision lives in the service so the
+        // api package does not depend on domain.model.* (ArchUnit boundary).
+        Boolean expiredFlag = expired != null ? expired : (expiredOnly ? Boolean.TRUE : null);
+        var rows = expiredFlag == null
+                ? service.listByProject(projectId, evidenceType, includeSuperseded)
+                : service.listByProjectFilteredByExpiry(projectId, evidenceType, includeSuperseded, now, expiredFlag);
+        return rows.stream().map(a -> EvidenceArtifactResponse.from(a, now)).toList();
     }
 
     @GetMapping("/{id}")
@@ -87,6 +97,8 @@ public class EvidenceArtifactController {
                 request.assuranceLevel(),
                 request.confidence(),
                 request.notes(),
-                sources);
+                sources,
+                request.expiresAt(),
+                request.validityWindowDays());
     }
 }

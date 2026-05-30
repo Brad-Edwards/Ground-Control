@@ -53,7 +53,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "079", "080", "081", "082", "083", "084", "085", "086", "087", "088", "089", "090", "091",
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
-                        "123", "124", "125", "126", "127", "128", "129", "130", "131");
+                        "123", "124", "125", "126", "127", "128", "129", "130", "131", "135", "136", "137", "138");
     }
 
     @Test
@@ -1064,6 +1064,37 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT risk_assessment_result_id, monitored_risk_factors, update_cadence"
                                 + " FROM treatment_plan_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        // V135-V136: evidence_artifact expires_at + validity_window_days (GC-I004 / ADR-045 §8).
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_name = 'evidence_artifact'"
+                        + " AND column_name = 'expires_at'")
+                .getSingleResult();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_name = 'evidence_artifact'"
+                        + " AND column_name = 'validity_window_days'")
+                .getSingleResult();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery(
+                                "SELECT expires_at, validity_window_days FROM evidence_artifact_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        // V137-V138: compliance_drift_event + audit (GC-I004).
+        entityManager
+                .createNativeQuery(
+                        "SELECT 1 FROM information_schema.tables" + " WHERE table_name = 'compliance_drift_event'")
+                .getSingleResult();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.tables"
+                        + " WHERE table_name = 'compliance_drift_event_audit'")
+                .getSingleResult();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT id, project_id, category, severity, source_entity_type,"
+                                + " source_entity_id, summary, detected_at, acknowledged_at"
+                                + " FROM compliance_drift_event LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }

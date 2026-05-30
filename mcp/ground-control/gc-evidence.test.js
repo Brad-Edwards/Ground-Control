@@ -188,4 +188,69 @@ describe("gcEvidenceToolHandler", () => {
       "sources",
     ]);
   });
+
+  // GC-I003: CI_PIPELINE_RESULT and SECURITY_SCAN_RESULT are external kinds
+  // carrying an opaque identifier. The adapter must accept them without
+  // requiring sourceEntityId.
+  it("create accepts CI_PIPELINE_RESULT and SECURITY_SCAN_RESULT source kinds", async () => {
+    const calls = makeFetchSpy();
+    await gcEvidenceToolHandler({
+      action: "create",
+      project: "ground-control",
+      uid: "EVD-CI",
+      title: "CI run summary",
+      summary: "Pipeline green.",
+      evidence_type: "CONTROL_TEST_SUMMARY",
+      derivation_method: "ci-rollup",
+      derived_at: "2026-05-30T00:00:00Z",
+      sources: [
+        { sourceKind: "CI_PIPELINE_RESULT", sourceIdentifier: "gha-run-12345" },
+        { sourceKind: "SECURITY_SCAN_RESULT", sourceIdentifier: "sonar-abc" },
+      ],
+    });
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].body.sources, [
+      { sourceKind: "CI_PIPELINE_RESULT", sourceIdentifier: "gha-run-12345" },
+      { sourceKind: "SECURITY_SCAN_RESULT", sourceIdentifier: "sonar-abc" },
+    ]);
+  });
+
+  // GC-I004: expiresAt + validityWindowDays forward to the backend body.
+  it("create forwards expires_at and validity_window_days", async () => {
+    const calls = makeFetchSpy();
+    await gcEvidenceToolHandler({
+      action: "create",
+      project: "ground-control",
+      uid: "EVD-EXP",
+      title: "Expiring",
+      summary: "Will expire.",
+      evidence_type: "ATTESTATION",
+      derivation_method: "m",
+      derived_at: "2026-05-30T00:00:00Z",
+      expires_at: "2026-08-28T00:00:00Z",
+      validity_window_days: 90,
+      sources: [{ sourceKind: "ATTESTATION", sourceIdentifier: "vendor-id" }],
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].body.expiresAt, "2026-08-28T00:00:00Z");
+    assert.equal(calls[0].body.validityWindowDays, 90);
+  });
+
+  // Negative: validity_window_days must be a positive integer at the
+  // adapter boundary so a 0 / negative slip never reaches the backend.
+  it("create rejects zero / negative validity_window_days at the Zod boundary", () => {
+    const schema = z.object(gcEvidenceZodShape);
+    assert.equal(
+      schema.safeParse({ action: "create", validity_window_days: 0 }).success,
+      false,
+    );
+    assert.equal(
+      schema.safeParse({ action: "create", validity_window_days: -1 }).success,
+      false,
+    );
+    assert.equal(
+      schema.safeParse({ action: "create", validity_window_days: 90 }).success,
+      true,
+    );
+  });
 });
