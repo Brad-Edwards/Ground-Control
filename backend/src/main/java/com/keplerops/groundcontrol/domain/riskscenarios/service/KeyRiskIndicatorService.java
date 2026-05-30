@@ -156,6 +156,16 @@ public class KeyRiskIndicatorService {
             kri.setRedThreshold(redThreshold);
         }
         if (direction != null && !direction.isBlank()) {
+            // GC-T007: the direction column is a String (not an enum) for forward
+            // compatibility, but a value outside KeyRiskIndicator.VALID_DIRECTIONS
+            // silently defaults the classify() branch to HIGHER_IS_WORSE — a
+            // typo like LOWER_IS_BETTER would produce inverted band assignments
+            // with no diagnostic. Reject at the write boundary instead.
+            if (!KeyRiskIndicator.VALID_DIRECTIONS.contains(direction)) {
+                throw new DomainValidationException("KRI direction must be one of "
+                        + KeyRiskIndicator.VALID_DIRECTIONS
+                        + " (got '" + direction + "')");
+            }
             kri.setDirection(direction);
         }
         if (owner != null) {

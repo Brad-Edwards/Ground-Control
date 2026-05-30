@@ -41,6 +41,16 @@ class KeyRiskIndicatorTest {
                 .isEqualTo(KriThresholdBand.RED);
     }
 
+    // Boundary coverage: a value one tick below the yellow threshold must
+    // still classify GREEN for HIGHER_IS_WORSE. A regression flipping the
+    // GREEN/YELLOW comparison from `<` to `<=` (or vice versa) would silently
+    // change the band of values sitting just under the breakpoint.
+    @Test
+    void higherIsWorseGreenJustBelowYellow() {
+        assertThat(kri(new BigDecimal("10"), new BigDecimal("20"), null).classify(new BigDecimal("9")))
+                .isEqualTo(KriThresholdBand.GREEN);
+    }
+
     @Test
     void lowerIsWorseGreenWhenAboveYellow() {
         assertThat(kri(new BigDecimal("80"), new BigDecimal("60"), "LOWER_IS_WORSE")
@@ -55,10 +65,36 @@ class KeyRiskIndicatorTest {
                 .isEqualTo(KriThresholdBand.RED);
     }
 
+    // LOWER_IS_WORSE boundary coverage. The original suite did not test the
+    // YELLOW band for the inverted direction; flipping `<=` to `<` on the
+    // yellow comparison would silently break the boundary case.
+    @Test
+    void lowerIsWorseYellowAtYellowThreshold() {
+        assertThat(kri(new BigDecimal("80"), new BigDecimal("60"), "LOWER_IS_WORSE")
+                        .classify(new BigDecimal("80")))
+                .isEqualTo(KriThresholdBand.YELLOW);
+    }
+
+    @Test
+    void lowerIsWorseYellowBetweenYellowAndRed() {
+        assertThat(kri(new BigDecimal("80"), new BigDecimal("60"), "LOWER_IS_WORSE")
+                        .classify(new BigDecimal("70")))
+                .isEqualTo(KriThresholdBand.YELLOW);
+    }
+
     @Test
     void classifyReturnsNullWhenThresholdsUnset() {
         var k = new KeyRiskIndicator(new Project("p", "P"), "KRI-001", "Test");
         assertThat(k.classify(BigDecimal.TEN)).isNull();
+    }
+
+    // Null-value guard is explicit in production (line 114 of KeyRiskIndicator);
+    // without an explicit test, deleting `value == null` from that guard would
+    // NPE under any caller passing null but no test would catch it.
+    @Test
+    void classifyReturnsNullWhenValueIsNull() {
+        var k = kri(new BigDecimal("10"), new BigDecimal("20"), null);
+        assertThat(k.classify(null)).isNull();
     }
 
     @Test

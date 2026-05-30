@@ -74,11 +74,58 @@ class RiskAssessmentCampaignTest {
                 .isInstanceOf(DomainValidationException.class);
     }
 
+    // Cancel-from-PLANNING without any methodology bound: the advanceTo guard
+    // for methodologyLocked() excludes CLOSED, so the cancel path must succeed
+    // even though no methodology profile is bound. Asserts the no-methodology
+    // cancel path explicitly so a future change tightening the guard to all
+    // transitions (including PLANNING → CLOSED) would fail this test.
     @Test
-    void canCancelFromPlanning() {
+    void canCancelFromPlanningWithoutMethodology() {
         var campaign = new RiskAssessmentCampaign(project, "C-1", "C1");
+        assertThat(campaign.getMethodologyProfile()).isNull();
         campaign.advanceTo(CampaignPhase.CLOSED);
         assertThat(campaign.getPhase()).isEqualTo(CampaignPhase.CLOSED);
+        // Methodology binding remains null — the cancel path did not require
+        // or fabricate one.
+        assertThat(campaign.getMethodologyProfile()).isNull();
+    }
+
+    // GC-T006 audit-trail integrity: a campaign that reaches CLOSED with no
+    // prior methodology binding can still have one set later (the
+    // setMethodologyProfile short-circuit "this.methodologyProfile != null"
+    // skips the lock check when the prior value is null). This pins down the
+    // intentional asymmetry between methodologyImmutable() (locks at CLOSED)
+    // and methodologyLocked() (used by advanceTo, excludes CLOSED).
+    @Test
+    void canSetMethodologyOnClosedCampaignWithoutPriorBinding() {
+        var campaign = new RiskAssessmentCampaign(project, "C-1", "C1");
+        campaign.advanceTo(CampaignPhase.CLOSED);
+        var profile = new MethodologyProfile(project, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR);
+        com.keplerops.groundcontrol.TestUtil.setField(profile, "id", java.util.UUID.randomUUID());
+        // No throw — the lock only fires when a prior binding exists.
+        campaign.setMethodologyProfile(profile);
+        assertThat(campaign.getMethodologyProfile()).isSameAs(profile);
+    }
+
+    // GC-T006 audit-trail integrity: a campaign that bound a methodology and
+    // then closed cannot swap to a different methodology — the audit trail of
+    // which methodology produced the campaign's results stays frozen.
+    @Test
+    void cannotSwapMethodologyOnClosedCampaignWithPriorBinding() {
+        var campaign = new RiskAssessmentCampaign(project, "C-1", "C1");
+        var profileA = new MethodologyProfile(project, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR);
+        var profileB =
+                new MethodologyProfile(project, "NIST_SP800_30_R1", "NIST", "1", MethodologyFamily.NIST_SP800_30_R1);
+        com.keplerops.groundcontrol.TestUtil.setField(profileA, "id", java.util.UUID.randomUUID());
+        com.keplerops.groundcontrol.TestUtil.setField(profileB, "id", java.util.UUID.randomUUID());
+        campaign.setMethodologyProfile(profileA);
+        campaign.advanceTo(CampaignPhase.IDENTIFICATION);
+        campaign.advanceTo(CampaignPhase.ANALYSIS);
+        campaign.advanceTo(CampaignPhase.EVALUATION);
+        campaign.advanceTo(CampaignPhase.TREATMENT);
+        campaign.advanceTo(CampaignPhase.CLOSED);
+        assertThatThrownBy(() -> campaign.setMethodologyProfile(profileB))
+                .isInstanceOf(DomainValidationException.class);
     }
 
     @Test

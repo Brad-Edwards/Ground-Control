@@ -19,6 +19,8 @@ import {
   CROSSWALK_VOCABULARY_SURFACES,
   APPETITE_TOLERANCE_KINDS,
   CAMPAIGN_PHASES,
+  REASSESSMENT_TRIGGER_CATEGORIES,
+  REASSESSMENT_TRIGGER_TARGET_TYPES,
   pick, reqArg, validateGovernanceStatus,
   createMethodologyProfile, updateMethodologyProfile, deleteMethodologyProfile,
   createRiskRegisterRecord, updateRiskRegisterRecord, deleteRiskRegisterRecord,
@@ -101,17 +103,16 @@ export const gcRiskGovernanceZodShape = {
     description: z.string().optional(),
   })).optional(),
   reassessment_triggers: z.array(z.object({
-    category: z.enum([
-      "TREATMENT_PROGRESS_CHANGED",
-      "ASSET_STATE_CHANGED",
-      "CONTROL_STATE_CHANGED",
-      "ASSESSMENT_REFRESH",
-      "METHODOLOGY_SPECIFIC",
-    ]),
-    target_type: z.enum([
-      "ASSET", "CONTROL", "RISK_SCENARIO", "RISK_REGISTER_RECORD",
-      "RISK_ASSESSMENT_RESULT", "TREATMENT_PLAN", "EXTERNAL",
-    ]).optional(),
+    // GC-T015: enum lists are sourced from the shared ADR-034 mirror in
+    // lib.js (REASSESSMENT_TRIGGER_CATEGORIES / REASSESSMENT_TRIGGER_TARGET_TYPES).
+    // Hardcoding the legacy 5-category / 7-target subset would silently
+    // reject the new NIST §3.4 categories (THREAT/VULNERABILITY/...
+    // KRI_BREACH) and the new lifecycle target types (RISK_APPETITE_PROFILE,
+    // RISK_ASSESSMENT_CAMPAIGN, KEY_RISK_INDICATOR, OBSERVATION, THREAT_MODEL)
+    // that the backend enums were extended with — keep this Zod surface in
+    // lockstep with the Java source via the shared mirror.
+    category: z.enum(REASSESSMENT_TRIGGER_CATEGORIES),
+    target_type: z.enum(REASSESSMENT_TRIGGER_TARGET_TYPES).optional(),
     target_entity_id: z.string().uuid().optional(),
     target_identifier: z.string().optional(),
     note: z.string().optional(),

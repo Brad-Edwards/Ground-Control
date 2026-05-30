@@ -1097,6 +1097,25 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
         "KRI_THRESHOLD_BANDS",
         "KRI_THRESHOLD_BANDS",
     ),
+    # GC-T015 reassessment-trigger enums. Mirrored at the gc_risk_governance
+    # MCP Zod surface (reassessment_triggers[].category / target_type) and at
+    # the frontend api.ts boundary so callers can author lifecycle-aware
+    # triggers (KRI_BREACH, RISK_APPETITE_PROFILE, ...) without dropping
+    # fields silently at Jackson bind time. ADR-034.
+    EnumContract(
+        "ReassessmentTriggerCategory",
+        f"{_RISK_ENUM_STATE_DIR}/ReassessmentTriggerCategory.java",
+        "ReassessmentTriggerCategory",
+        "REASSESSMENT_TRIGGER_CATEGORIES",
+        "REASSESSMENT_TRIGGER_CATEGORIES",
+    ),
+    EnumContract(
+        "ReassessmentTriggerTargetType",
+        f"{_RISK_ENUM_STATE_DIR}/ReassessmentTriggerTargetType.java",
+        "ReassessmentTriggerTargetType",
+        "REASSESSMENT_TRIGGER_TARGET_TYPES",
+        "REASSESSMENT_TRIGGER_TARGET_TYPES",
+    ),
 )
 
 

@@ -790,6 +790,26 @@ const TO_CAMEL = {
   clear_objectives: "clearObjectives",
   clear_phases: "clearPhases",
   clear_team_members: "clearTeamMembers",
+  // GC-T005 / T006 / T007 / T015 risk-governance lifecycle DTO fields. Without
+  // explicit entries the snake_case wire names would pass through verbatim
+  // (toCamelCase returns TO_CAMEL[k] || k) and Jackson would silently drop
+  // them on bind, so a KRI created via gc_risk_governance would have null
+  // thresholds and the next record_measurement throws DomainValidationException
+  // ("KRI thresholds are not configured"). Same class of silent-drop hits the
+  // appetite profile, campaign, and TreatmentPlan GC-T015 fields.
+  appetite_statement: "appetiteStatement",
+  metric_unit: "metricUnit",
+  yellow_threshold: "yellowThreshold",
+  red_threshold: "redThreshold",
+  appetite_profile_id: "appetiteProfileId",
+  scheduled_start: "scheduledStart",
+  scheduled_end: "scheduledEnd",
+  scoped_asset_ids: "scopedAssetIds",
+  approval_metadata: "approvalMetadata",
+  measured_at: "measuredAt",
+  risk_assessment_result_id: "riskAssessmentResultId",
+  monitored_risk_factors: "monitoredRiskFactors",
+  update_cadence: "updateCadence",
 };
 
 const TO_SNAKE = Object.fromEntries(Object.entries(TO_CAMEL).map(([k, v]) => [v, k]));
@@ -9154,6 +9174,41 @@ export const CAMPAIGN_PHASES = [
 ];
 
 export const KRI_THRESHOLD_BANDS = ["GREEN", "YELLOW", "RED"];
+
+// GC-T015: reassessment-trigger enums (ADR-034 mirror). Declaration order
+// matches the Java enum sources at
+// backend/.../domain/riskscenarios/state/ReassessmentTriggerCategory.java
+// and ReassessmentTriggerTargetType.java exactly. Mirrored here so the MCP
+// Zod schema accepts every value the backend accepts.
+export const REASSESSMENT_TRIGGER_CATEGORIES = [
+  "TREATMENT_PROGRESS_CHANGED",
+  "ASSET_STATE_CHANGED",
+  "CONTROL_STATE_CHANGED",
+  "ASSESSMENT_REFRESH",
+  "METHODOLOGY_SPECIFIC",
+  "THREAT_CHANGED",
+  "VULNERABILITY_CHANGED",
+  "PREDISPOSING_CONDITION_CHANGED",
+  "OBSERVATION_CHANGED",
+  "TOPOLOGY_CHANGED",
+  "ENVIRONMENT_CHANGED",
+  "KRI_BREACH",
+];
+
+export const REASSESSMENT_TRIGGER_TARGET_TYPES = [
+  "ASSET",
+  "CONTROL",
+  "RISK_SCENARIO",
+  "RISK_REGISTER_RECORD",
+  "RISK_ASSESSMENT_RESULT",
+  "TREATMENT_PLAN",
+  "RISK_APPETITE_PROFILE",
+  "RISK_ASSESSMENT_CAMPAIGN",
+  "KEY_RISK_INDICATOR",
+  "OBSERVATION",
+  "THREAT_MODEL",
+  "EXTERNAL",
+];
 
 // ---------------------------------------------------------------------------
 // Audit API functions (GC-U001 / ADR-047)

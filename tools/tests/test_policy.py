@@ -499,6 +499,10 @@ class PolicyChecksTest(unittest.TestCase):
                 "AppetiteToleranceKind",
                 "CampaignPhase",
                 "KriThresholdBand",
+                # GC-T015 reassessment-trigger enums (extended for NIST §3.4
+                # monitoring categories + lifecycle target surfaces)
+                "ReassessmentTriggerCategory",
+                "ReassessmentTriggerTargetType",
             },
         )
         for contract in ENUM_CONTRACT_INVENTORY:

@@ -15,6 +15,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Set;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 
@@ -28,8 +29,13 @@ import org.hibernate.envers.NotAudited;
  *   value &gt;= yellowThreshold &amp;&amp; value &lt; redThreshold → YELLOW
  *   value &gt;= redThreshold        → RED  (breach)
  * </pre>
- * (Set {@code direction = LOWER_IS_BETTER} to flip the inequalities — useful
- * for KRIs where smaller is worse, e.g. patch coverage.)
+ * (Set {@code direction = LOWER_IS_WORSE} to flip the inequalities — useful
+ * for KRIs where smaller is worse, e.g. patch coverage. The two accepted
+ * values are exactly {@code HIGHER_IS_WORSE} (default) and {@code LOWER_IS_WORSE};
+ * the {@link com.keplerops.groundcontrol.domain.riskscenarios.service.KeyRiskIndicatorService}
+ * rejects any other string at the write boundary so a typo like
+ * {@code LOWER_IS_BETTER} or {@code lower_is_worse} cannot land and silently
+ * mis-band measurements.)
  *
  * <p>The KRI optionally links to a risk register record or risk scenario.
  * RED measurements publish a synchronous {@link
@@ -42,6 +48,21 @@ import org.hibernate.envers.NotAudited;
 @Audited
 @Table(name = "key_risk_indicator", uniqueConstraints = @UniqueConstraint(columnNames = {"project_id", "uid"}))
 public class KeyRiskIndicator extends BaseEntity {
+
+    /** Default direction — value above {@code redThreshold} is RED. */
+    public static final String DIRECTION_HIGHER_IS_WORSE = "HIGHER_IS_WORSE";
+
+    /** Inverted direction — value below {@code redThreshold} is RED. */
+    public static final String DIRECTION_LOWER_IS_WORSE = "LOWER_IS_WORSE";
+
+    /**
+     * Closed vocabulary for {@code direction}. The aggregate stores direction
+     * as a String so future organizations can extend without an Envers schema
+     * bump, but the write boundary (service layer) rejects any string not in
+     * this set so a typo like {@code LOWER_IS_BETTER} or {@code lower_is_worse}
+     * cannot land and silently flip classification semantics.
+     */
+    public static final Set<String> VALID_DIRECTIONS = Set.of(DIRECTION_HIGHER_IS_WORSE, DIRECTION_LOWER_IS_WORSE);
 
     @NotAudited
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
@@ -70,10 +91,12 @@ public class KeyRiskIndicator extends BaseEntity {
      * {@code HIGHER_IS_WORSE} (default) — value above redThreshold is RED.
      * {@code LOWER_IS_WORSE} — value below redThreshold is RED.
      * Stored as a String so future organizations can extend without an
-     * Envers schema bump.
+     * Envers schema bump, but the write boundary (service layer) rejects
+     * anything outside {@link #VALID_DIRECTIONS} so a typo cannot silently
+     * flip classification polarity.
      */
     @Column(name = "direction", nullable = false, length = 20)
-    private String direction = "HIGHER_IS_WORSE";
+    private String direction = DIRECTION_HIGHER_IS_WORSE;
 
     @Column(name = "owner", length = 200)
     private String owner;
@@ -114,7 +137,7 @@ public class KeyRiskIndicator extends BaseEntity {
         if (value == null || yellowThreshold == null || redThreshold == null) {
             return null;
         }
-        boolean higherWorse = !"LOWER_IS_WORSE".equals(direction);
+        boolean higherWorse = !DIRECTION_LOWER_IS_WORSE.equals(direction);
         if (higherWorse) {
             if (value.compareTo(redThreshold) >= 0) {
                 return KriThresholdBand.RED;

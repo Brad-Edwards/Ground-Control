@@ -106,7 +106,17 @@ public class ReassessmentSignalService {
         markReassessmentRequired(affectedResults, signal);
     }
 
-    /** Treatment plan → its register record + (optionally) scenario → assessment results. */
+    /**
+     * Treatment plan → its register record + (optionally) scenario + (GC-T015)
+     * directly-linked risk assessment result → assessment results.
+     *
+     * <p>GC-T015 added the {@code TreatmentPlan.riskAssessmentResult} FK
+     * precisely to close the GC-T004 / C8 cross-project bug class — a treatment
+     * plan can legitimately bind a RAR whose own register record differs from
+     * the plan's. Without traversing that FK here, a status transition on such
+     * a plan would not mark the directly-linked RAR as
+     * {@code reassessmentRequiredAt}, defeating the design intent.
+     */
     private Set<UUID> collectFromTreatmentPlan(ReassessmentSignal signal) {
         Set<UUID> ids = new LinkedHashSet<>();
         treatmentPlanRepository
@@ -125,6 +135,11 @@ public class ReassessmentSignalService {
                                         signal.projectId(),
                                         plan.getRiskScenario().getId())
                                 .forEach(r -> ids.add(r.getId()));
+                    }
+                    // GC-T015: plan → directly-linked RAR (may live under a
+                    // different register record than the plan itself).
+                    if (plan.getRiskAssessmentResult() != null) {
+                        ids.add(plan.getRiskAssessmentResult().getId());
                     }
                 });
         return ids;
@@ -223,6 +238,12 @@ public class ReassessmentSignalService {
             addAllAssessmentsForRecord(projectId, plan.getRiskRegisterRecord().getId(), out);
             if (plan.getRiskScenario() != null) {
                 addAllAssessmentsForScenario(projectId, plan.getRiskScenario().getId(), out);
+            }
+            // GC-T015: the directly-linked RAR may live under a different
+            // register record / scenario; include it explicitly so a fan-out
+            // that lands on this plan does not silently miss its RAR.
+            if (plan.getRiskAssessmentResult() != null) {
+                out.add(plan.getRiskAssessmentResult().getId());
             }
         });
     }

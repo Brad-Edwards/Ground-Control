@@ -723,3 +723,279 @@ describe("methodology_profile crosswalkEntries round-trip (GC-T012)", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// GC-T005 / T006 / T007 risk-governance lifecycle (Cycle-2 cluster fix).
+// Lock in the camelCase round-trip for every new snake_case field shipped
+// with this cluster — without these tests, missing TO_CAMEL entries would
+// silently let snake_case names through and Jackson would drop the fields
+// on bind. See lib.js TO_CAMEL extension cycle-2 cluster fix #1.
+// ---------------------------------------------------------------------------
+
+describe("risk_appetite_profile wire body (GC-T005, cycle-2)", () => {
+  it("create round-trips appetite_statement → appetiteStatement and tolerances verbatim", async () => {
+    const calls = makeFetchSpy();
+    await callHandler({
+      entity: "risk_appetite_profile",
+      action: "create",
+      project: "proj-a",
+      profile_key: "APPETITE_BOARD_2026",
+      name: "Board Appetite 2026",
+      version: "1",
+      appetite_statement: "Tolerance posture for FY26",
+      owner: "Board Risk Committee",
+      active: true,
+      tolerances: [{
+        category: "CYBER",
+        kind: "MONETARY_RANGE",
+        monetaryLow: 100000,
+        monetaryHigh: 500000,
+        currency: "USD",
+      }],
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "POST");
+    assert.match(calls[0].url, /\/api\/v1\/risk-appetite-profiles\b/);
+    // The snake_case input must NOT appear in the wire body — Jackson would
+    // silently drop it. Only the camelCase form should reach the backend.
+    assert.equal(calls[0].body.profileKey, "APPETITE_BOARD_2026");
+    assert.equal(calls[0].body.appetiteStatement, "Tolerance posture for FY26");
+    assert.ok(!("appetite_statement" in calls[0].body));
+    assert.ok(!("profile_key" in calls[0].body));
+    assert.equal(calls[0].body.active, true);
+    // Nested tolerance fields are already camelCase on the inbound side; verify
+    // the array survives without recursion-induced damage.
+    assert.equal(calls[0].body.tolerances[0].monetaryLow, 100000);
+    assert.equal(calls[0].body.tolerances[0].monetaryHigh, 500000);
+  });
+});
+
+describe("risk_assessment_campaign wire body (GC-T006, cycle-2)", () => {
+  const APPETITE = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  const METHOD = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+
+  it("create round-trips appetite_profile_id, scheduled_*, scoped_asset_ids, approval_metadata", async () => {
+    const calls = makeFetchSpy();
+    await callHandler({
+      entity: "risk_assessment_campaign",
+      action: "create",
+      project: "proj-a",
+      uid: "CMP-001",
+      title: "FY26 Q1 Risk Campaign",
+      owner: "CISO",
+      objective: "Q1 enterprise risk review",
+      methodology_profile_id: METHOD,
+      appetite_profile_id: APPETITE,
+      scheduled_start: "2026-01-15T00:00:00Z",
+      scheduled_end: "2026-03-31T00:00:00Z",
+      scope: { region: "EMEA" },
+      approval_metadata: { board: "approved" },
+      scoped_asset_ids: ["asset-1", "asset-2"],
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "POST");
+    assert.match(calls[0].url, /\/api\/v1\/risk-assessment-campaigns\b/);
+    // Every snake_case key from the input must be camelCased on the wire so
+    // Spring's Jackson binder accepts it. A missing TO_CAMEL entry would
+    // silently leak the snake form and Spring would drop the field.
+    assert.equal(calls[0].body.methodologyProfileId, METHOD);
+    assert.equal(calls[0].body.appetiteProfileId, APPETITE);
+    assert.equal(calls[0].body.scheduledStart, "2026-01-15T00:00:00Z");
+    assert.equal(calls[0].body.scheduledEnd, "2026-03-31T00:00:00Z");
+    assert.deepEqual(calls[0].body.approvalMetadata, { board: "approved" });
+    assert.deepEqual(calls[0].body.scopedAssetIds, ["asset-1", "asset-2"]);
+    for (const stale of [
+      "appetite_profile_id", "methodology_profile_id",
+      "scheduled_start", "scheduled_end",
+      "approval_metadata", "scoped_asset_ids",
+    ]) {
+      assert.ok(!(stale in calls[0].body), `${stale} leaked onto the wire`);
+    }
+  });
+
+  it("advance_phase posts { phase } body to the dedicated phase endpoint", async () => {
+    const calls = makeFetchSpy();
+    await callHandler({
+      entity: "risk_assessment_campaign",
+      action: "advance_phase",
+      id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      project: "proj-a",
+      phase: "IDENTIFICATION",
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "PUT");
+    assert.match(calls[0].url, /\/api\/v1\/risk-assessment-campaigns\/cccccccc-cccc-cccc-cccc-cccccccccccc\/phase\b/);
+    assert.equal(calls[0].body.phase, "IDENTIFICATION");
+  });
+});
+
+describe("key_risk_indicator wire body (GC-T007, cycle-2)", () => {
+  it("create round-trips metric_unit, yellow_threshold, red_threshold", async () => {
+    const calls = makeFetchSpy();
+    await callHandler({
+      entity: "key_risk_indicator",
+      action: "create",
+      project: "proj-a",
+      uid: "KRI-001",
+      name: "Patch backlog",
+      description: "Open critical CVEs older than 30 days",
+      metric_unit: "days",
+      yellow_threshold: 14,
+      red_threshold: 30,
+      direction: "HIGHER_IS_WORSE",
+      owner: "Patch Mgmt Lead",
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "POST");
+    assert.match(calls[0].url, /\/api\/v1\/key-risk-indicators\b/);
+    // Without TO_CAMEL entries the snake_case names would have leaked through
+    // verbatim, Jackson would silently drop them, and the next record_measurement
+    // would throw DomainValidationException ('KRI thresholds are not configured').
+    assert.equal(calls[0].body.metricUnit, "days");
+    assert.equal(calls[0].body.yellowThreshold, 14);
+    assert.equal(calls[0].body.redThreshold, 30);
+    assert.equal(calls[0].body.direction, "HIGHER_IS_WORSE");
+    for (const stale of ["metric_unit", "yellow_threshold", "red_threshold"]) {
+      assert.ok(!(stale in calls[0].body), `${stale} leaked onto the wire`);
+    }
+  });
+
+  it("record_measurement posts { value, measuredAt } camelCased to /measurements", async () => {
+    const calls = makeFetchSpy();
+    await callHandler({
+      entity: "key_risk_indicator",
+      action: "record_measurement",
+      id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+      project: "proj-a",
+      value: 45,
+      measured_at: "2026-04-04T12:00:00Z",
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "POST");
+    assert.match(calls[0].url, /\/api\/v1\/key-risk-indicators\/dddddddd-dddd-dddd-dddd-dddddddddddd\/measurements\b/);
+    assert.equal(calls[0].body.value, 45);
+    // measured_at must reach the backend as camelCased measuredAt so Jackson binds.
+    assert.equal(calls[0].body.measuredAt, "2026-04-04T12:00:00Z");
+    assert.ok(!("measured_at" in calls[0].body));
+  });
+});
+
+describe("treatment_plan GC-T015 monitoring fields (cycle-2)", () => {
+  const REG = "88888888-8888-8888-8888-888888888888";
+  const RAR = "99999999-9999-9999-9999-999999999999";
+
+  it("create round-trips risk_assessment_result_id, monitored_risk_factors, update_cadence", async () => {
+    const calls = makeFetchSpy();
+    await callHandler({
+      entity: "treatment_plan",
+      action: "create",
+      project: "proj-a",
+      uid: "TP-T015",
+      title: "Plan with monitoring",
+      risk_register_record_id: REG,
+      strategy: "MITIGATE",
+      risk_assessment_result_id: RAR,
+      monitored_risk_factors: [
+        { label: "Patch SLA", category: "VULNERABILITY_CHANGED", cadence: "P7D" },
+      ],
+      update_cadence: "P30D",
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].body.riskAssessmentResultId, RAR);
+    assert.equal(calls[0].body.updateCadence, "P30D");
+    assert.deepEqual(calls[0].body.monitoredRiskFactors, [
+      { label: "Patch SLA", category: "VULNERABILITY_CHANGED", cadence: "P7D" },
+    ]);
+    for (const stale of ["risk_assessment_result_id", "monitored_risk_factors", "update_cadence"]) {
+      assert.ok(!(stale in calls[0].body), `${stale} leaked onto the wire`);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GC-T015 reassessment-trigger enum extensions (cycle-2 cluster fix #2).
+// Lock in that the Zod schema accepts every new category and target_type the
+// backend enums were extended with. Hardcoding the legacy 5/7 subset would
+// silently reject the new lifecycle aggregates at parse time.
+// ---------------------------------------------------------------------------
+
+describe("reassessment_triggers enum surface (GC-T015, cycle-2)", () => {
+  const REG = "88888888-8888-8888-8888-888888888888";
+  const KRI = "11111111-1111-1111-1111-111111111111";
+
+  it("accepts new NIST §3.4 monitoring categories (THREAT/VULNERABILITY/.../KRI_BREACH)", async () => {
+    const calls = makeFetchSpy();
+    await callHandler({
+      entity: "treatment_plan",
+      action: "create",
+      project: "proj-a",
+      uid: "TP-NIST",
+      title: "Plan exercising new categories",
+      risk_register_record_id: REG,
+      strategy: "MITIGATE",
+      reassessment_triggers: [
+        { category: "THREAT_CHANGED" },
+        { category: "VULNERABILITY_CHANGED" },
+        { category: "PREDISPOSING_CONDITION_CHANGED" },
+        { category: "OBSERVATION_CHANGED" },
+        { category: "TOPOLOGY_CHANGED" },
+        { category: "ENVIRONMENT_CHANGED" },
+        { category: "KRI_BREACH", target_type: "KEY_RISK_INDICATOR", target_entity_id: KRI },
+      ],
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].body.reassessmentTriggers.length, 7);
+    assert.equal(calls[0].body.reassessmentTriggers[6].category, "KRI_BREACH");
+    assert.equal(calls[0].body.reassessmentTriggers[6].targetType, "KEY_RISK_INDICATOR");
+  });
+
+  it("accepts new lifecycle target types (RISK_APPETITE_PROFILE / RISK_ASSESSMENT_CAMPAIGN / OBSERVATION / THREAT_MODEL)", async () => {
+    const calls = makeFetchSpy();
+    const targetId = "22222222-2222-2222-2222-222222222222";
+    await callHandler({
+      entity: "treatment_plan",
+      action: "create",
+      project: "proj-a",
+      uid: "TP-TARGETS",
+      title: "Plan exercising new targets",
+      risk_register_record_id: REG,
+      strategy: "MITIGATE",
+      reassessment_triggers: [
+        { category: "METHODOLOGY_SPECIFIC", target_type: "RISK_APPETITE_PROFILE",
+          target_entity_id: targetId },
+        { category: "METHODOLOGY_SPECIFIC", target_type: "RISK_ASSESSMENT_CAMPAIGN",
+          target_entity_id: targetId },
+        { category: "OBSERVATION_CHANGED", target_type: "OBSERVATION",
+          target_entity_id: targetId },
+        { category: "THREAT_CHANGED", target_type: "THREAT_MODEL",
+          target_entity_id: targetId },
+      ],
+    });
+    assert.equal(calls[0].body.reassessmentTriggers.length, 4);
+    for (const expectedType of [
+      "RISK_APPETITE_PROFILE", "RISK_ASSESSMENT_CAMPAIGN", "OBSERVATION", "THREAT_MODEL",
+    ]) {
+      assert.ok(
+        calls[0].body.reassessmentTriggers.some((t) => t.targetType === expectedType),
+        `target_type=${expectedType} missing from wire body`,
+      );
+    }
+  });
+
+  it("Zod still rejects an unknown category", () => {
+    assert.throws(
+      () => SCHEMA.parse({
+        entity: "treatment_plan",
+        action: "create",
+        project: "proj-a",
+        uid: "TP-X",
+        title: "x",
+        risk_register_record_id: REG,
+        strategy: "MITIGATE",
+        reassessment_triggers: [{ category: "NOT_A_CATEGORY" }],
+      }),
+      /invalid_enum_value|ZodError|Invalid/,
+    );
+  });
+});

@@ -112,7 +112,23 @@ class RiskAppetiteProfileControllerTest {
 
         var captor = org.mockito.ArgumentCaptor.forClass(CreateRiskAppetiteProfileCommand.class);
         verify(service).create(captor.capture());
-        assertThat(captor.getValue().tolerances()).hasSize(1);
+        var captured = captor.getValue();
+        // Cycle-2: tighten captor assertions so a controller bug that dropped
+        // half the tolerance fields on the way into the command (e.g. forgetting
+        // monetaryLow / monetaryHigh / currency) would not still produce a
+        // one-element list and pass this test.
+        assertThat(captured.profileKey()).isEqualTo("APPETITE_BOARD_2026");
+        assertThat(captured.name()).isEqualTo("Board Appetite 2026");
+        assertThat(captured.version()).isEqualTo("1");
+        assertThat(captured.appetiteStatement()).isEqualTo("Tolerance posture for FY26.");
+        assertThat(captured.active()).isTrue();
+        assertThat(captured.tolerances()).hasSize(1);
+        var tolerance = captured.tolerances().get(0);
+        assertThat(tolerance.category()).isEqualTo("CYBER");
+        assertThat(tolerance.kind()).isEqualTo(AppetiteToleranceKind.MONETARY_RANGE);
+        assertThat(tolerance.monetaryLow()).isEqualByComparingTo(new BigDecimal("100000"));
+        assertThat(tolerance.monetaryHigh()).isEqualByComparingTo(new BigDecimal("500000"));
+        assertThat(tolerance.currency()).isEqualTo("USD");
     }
 
     @Test

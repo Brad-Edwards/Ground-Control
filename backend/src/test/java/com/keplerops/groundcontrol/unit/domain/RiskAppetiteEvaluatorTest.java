@@ -130,6 +130,44 @@ class RiskAppetiteEvaluatorTest {
         assertThat(result.outcome()).isEqualTo(Outcome.EXCEEDS);
     }
 
+    // Cycle-2 boundary coverage. evaluateLossEventFrequency has three branches:
+    // value > max → EXCEEDS, value == max → APPROACHING, value < max → WITHIN.
+    // A regression flipping > to >= on the EXCEEDS comparison would mis-band the
+    // equality case unless these tests pin the boundary down.
+    @Test
+    void lefApproachingAtBoundaryReturnsApproaching() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER",
+                AppetiteToleranceKind.LOSS_EVENT_FREQUENCY,
+                null,
+                null,
+                null,
+                null,
+                new BigDecimal("0.5"),
+                null,
+                null,
+                null)));
+        var result = evaluator.evaluateLossEventFrequency(profile, "CYBER", new BigDecimal("0.5"));
+        assertThat(result.outcome()).isEqualTo(Outcome.APPROACHING);
+    }
+
+    @Test
+    void lefWithinBelowMaxReturnsWithin() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER",
+                AppetiteToleranceKind.LOSS_EVENT_FREQUENCY,
+                null,
+                null,
+                null,
+                null,
+                new BigDecimal("0.5"),
+                null,
+                null,
+                null)));
+        var result = evaluator.evaluateLossEventFrequency(profile, "CYBER", new BigDecimal("0.49"));
+        assertThat(result.outcome()).isEqualTo(Outcome.WITHIN);
+    }
+
     @Test
     void exceedanceProbabilityWithinReturnsWithin() {
         var profile = profileWith(List.of(new RiskAppetiteTolerance(
@@ -147,11 +185,218 @@ class RiskAppetiteEvaluatorTest {
         assertThat(result.outcome()).isEqualTo(Outcome.WITHIN);
     }
 
+    // Cycle-2 boundary coverage for evaluateExceedanceProbability. Branches mirror
+    // LEF: value > max → EXCEEDS, value == max → APPROACHING, value < max → WITHIN.
+    @Test
+    void exceedanceProbabilityApproachingAtBoundaryReturnsApproaching() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER",
+                AppetiteToleranceKind.EXCEEDANCE_PROBABILITY,
+                null,
+                null,
+                null,
+                null,
+                null,
+                new BigDecimal("0.10"),
+                null,
+                null)));
+        var result = evaluator.evaluateExceedanceProbability(profile, "CYBER", new BigDecimal("0.10"));
+        assertThat(result.outcome()).isEqualTo(Outcome.APPROACHING);
+    }
+
+    @Test
+    void exceedanceProbabilityExceedsAboveMaxReturnsExceeds() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER",
+                AppetiteToleranceKind.EXCEEDANCE_PROBABILITY,
+                null,
+                null,
+                null,
+                null,
+                null,
+                new BigDecimal("0.10"),
+                null,
+                null)));
+        var result = evaluator.evaluateExceedanceProbability(profile, "CYBER", new BigDecimal("0.20"));
+        assertThat(result.outcome()).isEqualTo(Outcome.EXCEEDS);
+    }
+
     @Test
     void qualitativeMatchingLabelReturnsApproaching() {
         var profile = profileWith(List.of(new RiskAppetiteTolerance(
                 "CYBER", AppetiteToleranceKind.QUALITATIVE, "HIGH", null, null, null, null, null, null, null)));
         var result = evaluator.evaluateQualitative(profile, "CYBER", "high");
         assertThat(result.outcome()).isEqualTo(Outcome.APPROACHING);
+    }
+
+    // Cycle-2 coverage for the non-matching qualitative branch — a regression
+    // returning EXCEEDS instead of WITHIN for an unrelated label would silently
+    // mis-label observations against the appetite profile.
+    @Test
+    void qualitativeNonMatchingLabelReturnsWithin() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER", AppetiteToleranceKind.QUALITATIVE, "HIGH", null, null, null, null, null, null, null)));
+        var result = evaluator.evaluateQualitative(profile, "CYBER", "LOW");
+        assertThat(result.outcome()).isEqualTo(Outcome.WITHIN);
+    }
+
+    // Cycle-2 boundary coverage for the monetary band. Production contract:
+    //   value > monetaryHigh  → EXCEEDS
+    //   value >= monetaryLow  → APPROACHING (within the band)
+    //   otherwise            → WITHIN (below the band lower bound)
+    // The original suite used mid-band / well-above / well-below values; a
+    // refactor flipping >= ↔ > on either bound would silently mis-band the
+    // equality cases. These tests pin both boundary cases.
+    @Test
+    void monetaryApproachingAtLowBoundaryReturnsApproaching() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER",
+                AppetiteToleranceKind.MONETARY_RANGE,
+                null,
+                new BigDecimal("100000"),
+                new BigDecimal("500000"),
+                "USD",
+                null,
+                null,
+                null,
+                null)));
+        var result = evaluator.evaluateMonetary(profile, "CYBER", new BigDecimal("100000"), "USD");
+        assertThat(result.outcome()).isEqualTo(Outcome.APPROACHING);
+    }
+
+    @Test
+    void monetaryApproachingAtHighBoundaryReturnsApproaching() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER",
+                AppetiteToleranceKind.MONETARY_RANGE,
+                null,
+                new BigDecimal("100000"),
+                new BigDecimal("500000"),
+                "USD",
+                null,
+                null,
+                null,
+                null)));
+        var result = evaluator.evaluateMonetary(profile, "CYBER", new BigDecimal("500000"), "USD");
+        assertThat(result.outcome()).isEqualTo(Outcome.APPROACHING);
+    }
+
+    // ------------------------------------------------------------------
+    // NOT_EVALUATED guard coverage. The production code explicitly guards
+    // null value, tolerance missing the relevant threshold field, and the
+    // qualitativeLabel-null branch — without explicit tests, deleting any
+    // guard would NPE at runtime but pass under the original suite. One
+    // case per kind for (a) value=null and (b) the relevant tolerance
+    // field unset.
+    // ------------------------------------------------------------------
+
+    @Test
+    void monetaryNullValueReturnsNotEvaluated() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER",
+                AppetiteToleranceKind.MONETARY_RANGE,
+                null,
+                new BigDecimal("100000"),
+                new BigDecimal("500000"),
+                "USD",
+                null,
+                null,
+                null,
+                null)));
+        var result = evaluator.evaluateMonetary(profile, "CYBER", null, "USD");
+        assertThat(result.outcome()).isEqualTo(Outcome.NOT_EVALUATED);
+    }
+
+    @Test
+    void lefNullValueReturnsNotEvaluated() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER",
+                AppetiteToleranceKind.LOSS_EVENT_FREQUENCY,
+                null,
+                null,
+                null,
+                null,
+                new BigDecimal("0.5"),
+                null,
+                null,
+                null)));
+        var result = evaluator.evaluateLossEventFrequency(profile, "CYBER", null);
+        assertThat(result.outcome()).isEqualTo(Outcome.NOT_EVALUATED);
+    }
+
+    @Test
+    void lefToleranceMissingMaxReturnsNotEvaluated() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER",
+                AppetiteToleranceKind.LOSS_EVENT_FREQUENCY,
+                null,
+                null,
+                null,
+                null,
+                null, // lossEventFrequencyMax unset
+                null,
+                null,
+                null)));
+        var result = evaluator.evaluateLossEventFrequency(profile, "CYBER", new BigDecimal("1.0"));
+        assertThat(result.outcome()).isEqualTo(Outcome.NOT_EVALUATED);
+    }
+
+    @Test
+    void exceedanceProbabilityNullValueReturnsNotEvaluated() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER",
+                AppetiteToleranceKind.EXCEEDANCE_PROBABILITY,
+                null,
+                null,
+                null,
+                null,
+                null,
+                new BigDecimal("0.10"),
+                null,
+                null)));
+        var result = evaluator.evaluateExceedanceProbability(profile, "CYBER", null);
+        assertThat(result.outcome()).isEqualTo(Outcome.NOT_EVALUATED);
+    }
+
+    @Test
+    void exceedanceProbabilityToleranceMissingMaxReturnsNotEvaluated() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER",
+                AppetiteToleranceKind.EXCEEDANCE_PROBABILITY,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null, // exceedanceProbabilityMax unset
+                null,
+                null)));
+        var result = evaluator.evaluateExceedanceProbability(profile, "CYBER", new BigDecimal("0.05"));
+        assertThat(result.outcome()).isEqualTo(Outcome.NOT_EVALUATED);
+    }
+
+    @Test
+    void qualitativeNullValueReturnsNotEvaluated() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER", AppetiteToleranceKind.QUALITATIVE, "HIGH", null, null, null, null, null, null, null)));
+        var result = evaluator.evaluateQualitative(profile, "CYBER", null);
+        assertThat(result.outcome()).isEqualTo(Outcome.NOT_EVALUATED);
+    }
+
+    @Test
+    void qualitativeToleranceMissingLabelReturnsNotEvaluated() {
+        var profile = profileWith(List.of(new RiskAppetiteTolerance(
+                "CYBER",
+                AppetiteToleranceKind.QUALITATIVE,
+                null, // qualitativeLabel unset
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null)));
+        var result = evaluator.evaluateQualitative(profile, "CYBER", "HIGH");
+        assertThat(result.outcome()).isEqualTo(Outcome.NOT_EVALUATED);
     }
 }

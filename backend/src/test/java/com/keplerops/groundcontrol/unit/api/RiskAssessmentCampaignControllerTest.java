@@ -1,6 +1,8 @@
 package com.keplerops.groundcontrol.unit.api;
 
 import static com.keplerops.groundcontrol.TestUtil.setField;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -14,14 +16,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.keplerops.groundcontrol.api.riskscenarios.RiskAssessmentCampaignController;
+import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskAssessmentCampaign;
 import com.keplerops.groundcontrol.domain.riskscenarios.service.RiskAssessmentCampaignService;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.CampaignPhase;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -111,6 +116,112 @@ class RiskAssessmentCampaignControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.phase", is("IDENTIFICATION")));
+
+        // Cycle-2: pin down WHICH phase argument was actually passed to the
+        // service. Without ArgumentCaptor verification, a controller that
+        // misrouted `request.phase()` (e.g. always passing PLANNING) would
+        // still produce a passing test because the mock matches the eq() arg
+        // and the JSON-path assertion is satisfied by the stamped return value.
+        var phaseCaptor = ArgumentCaptor.forClass(CampaignPhase.class);
+        verify(service).advancePhase(eq(PROJECT_ID), eq(CAMPAIGN_ID), phaseCaptor.capture());
+        assertThat(phaseCaptor.getValue()).isEqualTo(CampaignPhase.IDENTIFICATION);
+    }
+
+    // Real-entity round-trip: don't stamp phase onto the mock return — instead
+    // construct the campaign and let advanceTo() advance the entity for real, so
+    // a controller bug that dropped the `phase` field on the way out (or that
+    // returned a stale campaign) would actually fail this test rather than be
+    // hidden by a hand-stamped mock return.
+    @Test
+    void advancePhaseRoundTripsThroughRealEntityState() throws Exception {
+        var campaign = new RiskAssessmentCampaign(
+                new Project("ground-control", "Ground Control"), "CMP-001", "FY26 Q1 Risk Campaign");
+        setField(campaign, "id", CAMPAIGN_ID);
+        setField(campaign.getProject(), "id", PROJECT_ID);
+        setField(campaign, "createdAt", NOW);
+        setField(campaign, "updatedAt", NOW);
+        // Real state-machine transition: PLANNING → IDENTIFICATION, no field-stamp shortcut.
+        campaign.advanceTo(CampaignPhase.IDENTIFICATION);
+        assertThat(campaign.getPhase()).isEqualTo(CampaignPhase.IDENTIFICATION);
+
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(service.advancePhase(eq(PROJECT_ID), eq(CAMPAIGN_ID), eq(CampaignPhase.IDENTIFICATION)))
+                .thenReturn(campaign);
+
+        mockMvc.perform(
+                        put("/api/v1/risk-assessment-campaigns/{id}/phase", CAMPAIGN_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {"phase": "IDENTIFICATION"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase", is("IDENTIFICATION")));
+    }
+
+    @Test
+    void listReturnsCampaigns() throws Exception {
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(service.listByProject(PROJECT_ID)).thenReturn(List.of(makeCampaign()));
+
+        mockMvc.perform(get("/api/v1/risk-assessment-campaigns").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].uid", is("CMP-001")));
+    }
+
+    @Test
+    void updateReturnsUpdatedCampaign() throws Exception {
+        var updated = makeCampaign();
+        updated.setOwner("New Owner");
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(service.update(eq(PROJECT_ID), eq(CAMPAIGN_ID), any())).thenReturn(updated);
+
+        mockMvc.perform(
+                        put("/api/v1/risk-assessment-campaigns/{id}", CAMPAIGN_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {"owner": "New Owner"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.owner", is("New Owner")));
+    }
+
+    @Test
+    void createRequiresUid() throws Exception {
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+
+        mockMvc.perform(
+                        post("/api/v1/risk-assessment-campaigns")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {"title": "missing uid"}
+                                """))
+                // GlobalExceptionHandler maps @Valid violations to 422 (ADR-026 envelope).
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void advancePhaseReturns422OnDomainValidationException() throws Exception {
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(service.advancePhase(eq(PROJECT_ID), eq(CAMPAIGN_ID), eq(CampaignPhase.EVALUATION)))
+                .thenThrow(new DomainValidationException(
+                        "Campaign cannot advance to EVALUATION without a bound methodology profile"));
+
+        mockMvc.perform(
+                        put("/api/v1/risk-assessment-campaigns/{id}/phase", CAMPAIGN_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {"phase": "EVALUATION"}
+                                """))
+                .andExpect(status().isUnprocessableEntity());
     }
 
     @Test
