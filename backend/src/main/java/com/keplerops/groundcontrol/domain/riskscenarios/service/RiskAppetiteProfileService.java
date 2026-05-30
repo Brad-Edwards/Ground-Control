@@ -76,7 +76,13 @@ public class RiskAppetiteProfileService {
     }
 
     public RiskAppetiteProfile update(UUID projectId, UUID id, UpdateRiskAppetiteProfileCommand command) {
-        var profile = getById(projectId, id);
+        // Resolve directly via the repository rather than via getById() to avoid
+        // the @Transactional self-invocation pattern Sonar S6809 flags — the
+        // proxy is bypassed and any per-method tx semantics would be lost. The
+        // class-level @Transactional covers this method, so behaviour is unchanged.
+        var profile = repository
+                .findByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new NotFoundException("Risk appetite profile not found: " + id));
         if (command.name() != null) {
             profile.setName(command.name());
         }
@@ -92,7 +98,14 @@ public class RiskAppetiteProfileService {
     }
 
     public void delete(UUID projectId, UUID id) {
-        repository.delete(getById(projectId, id));
+        // Resolve directly via the repository rather than via getById() to avoid
+        // the @Transactional self-invocation pattern Sonar S6809 flags — the
+        // proxy is bypassed and any per-method tx semantics would be lost. The
+        // class-level @Transactional covers this method, so behaviour is unchanged.
+        var profile = repository
+                .findByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new NotFoundException("Risk appetite profile not found: " + id));
+        repository.delete(profile);
     }
 
     private void applyUpdates(

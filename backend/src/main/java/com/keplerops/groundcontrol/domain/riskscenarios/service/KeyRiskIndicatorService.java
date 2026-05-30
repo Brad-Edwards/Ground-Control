@@ -94,7 +94,13 @@ public class KeyRiskIndicatorService {
     }
 
     public KeyRiskIndicator update(UUID projectId, UUID id, UpdateKeyRiskIndicatorCommand command) {
-        var kri = getById(projectId, id);
+        // Resolve directly via the repository rather than via getById() to avoid
+        // the @Transactional self-invocation pattern Sonar S6809 flags — the
+        // proxy is bypassed and any per-method tx semantics would be lost. The
+        // class-level @Transactional covers this method, so behaviour is unchanged.
+        var kri = repository
+                .findByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new NotFoundException("Key risk indicator not found: " + id));
         if (command.name() != null) {
             kri.setName(command.name());
         }
@@ -116,7 +122,13 @@ public class KeyRiskIndicatorService {
         if (command.value() == null) {
             throw new DomainValidationException("KRI measurement value must not be null");
         }
-        var kri = getById(projectId, id);
+        // Resolve directly via the repository rather than via getById() to avoid
+        // the @Transactional self-invocation pattern Sonar S6809 flags — the
+        // proxy is bypassed and any per-method tx semantics would be lost. The
+        // class-level @Transactional covers this method, so behaviour is unchanged.
+        var kri = repository
+                .findByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new NotFoundException("Key risk indicator not found: " + id));
         var oldBand = kri.getCurrentBand();
         var measuredAt = command.measuredAt() != null ? command.measuredAt() : Instant.now();
         var newBand = kri.recordMeasurement(command.value(), measuredAt);
@@ -128,7 +140,14 @@ public class KeyRiskIndicatorService {
     }
 
     public void delete(UUID projectId, UUID id) {
-        repository.delete(getById(projectId, id));
+        // Resolve directly via the repository rather than via getById() to avoid
+        // the @Transactional self-invocation pattern Sonar S6809 flags — the
+        // proxy is bypassed and any per-method tx semantics would be lost. The
+        // class-level @Transactional covers this method, so behaviour is unchanged.
+        var kri = repository
+                .findByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new NotFoundException("Key risk indicator not found: " + id));
+        repository.delete(kri);
     }
 
     @SuppressWarnings("java:S107") // shared updater mirrors the command DTO surface
@@ -172,11 +191,11 @@ public class KeyRiskIndicatorService {
             kri.setOwner(owner);
         }
         if (riskRegisterRecordId != null) {
-            var record = riskRegisterRecordRepository
+            var riskRegisterRecord = riskRegisterRecordRepository
                     .findByIdAndProjectIdWithScenarios(riskRegisterRecordId, projectId)
                     .orElseThrow(
                             () -> new NotFoundException("Risk register record not found: " + riskRegisterRecordId));
-            kri.setRiskRegisterRecord(record);
+            kri.setRiskRegisterRecord(riskRegisterRecord);
         }
         if (riskScenarioId != null) {
             var scenario = riskScenarioRepository

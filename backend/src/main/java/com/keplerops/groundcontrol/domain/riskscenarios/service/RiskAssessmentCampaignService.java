@@ -78,7 +78,13 @@ public class RiskAssessmentCampaignService {
     }
 
     public RiskAssessmentCampaign update(UUID projectId, UUID id, UpdateRiskAssessmentCampaignCommand command) {
-        var campaign = getById(projectId, id);
+        // Resolve directly via the repository rather than via getById() to avoid
+        // the @Transactional self-invocation pattern Sonar S6809 flags — the
+        // proxy is bypassed and any per-method tx semantics would be lost. The
+        // class-level @Transactional covers this method, so behaviour is unchanged.
+        var campaign = repository
+                .findByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new NotFoundException("Risk assessment campaign not found: " + id));
         if (command.title() != null) {
             campaign.setTitle(command.title());
         }
@@ -98,13 +104,26 @@ public class RiskAssessmentCampaignService {
     }
 
     public RiskAssessmentCampaign advancePhase(UUID projectId, UUID id, CampaignPhase target) {
-        var campaign = getById(projectId, id);
+        // Resolve directly via the repository rather than via getById() to avoid
+        // the @Transactional self-invocation pattern Sonar S6809 flags — the
+        // proxy is bypassed and any per-method tx semantics would be lost. The
+        // class-level @Transactional covers this method, so behaviour is unchanged.
+        var campaign = repository
+                .findByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new NotFoundException("Risk assessment campaign not found: " + id));
         campaign.advanceTo(target);
         return repository.save(campaign);
     }
 
     public void delete(UUID projectId, UUID id) {
-        repository.delete(getById(projectId, id));
+        // Resolve directly via the repository rather than via getById() to avoid
+        // the @Transactional self-invocation pattern Sonar S6809 flags — the
+        // proxy is bypassed and any per-method tx semantics would be lost. The
+        // class-level @Transactional covers this method, so behaviour is unchanged.
+        var campaign = repository
+                .findByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new NotFoundException("Risk assessment campaign not found: " + id));
+        repository.delete(campaign);
     }
 
     @SuppressWarnings("java:S107") // shared updater mirrors the command DTO surface
