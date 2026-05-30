@@ -187,3 +187,11 @@ When documenting query-parameter aliases (for example, `expired=true` vs
 the `expiredOnly=true` alias for the evidence-artifact list endpoint),
 prefer listing the canonical form first followed by the alias in
 parentheses, and document the "omit both to return all" default explicitly.
+
+Additive optional fields on existing MCP tools (for example, the
+`additional_closes` array added to `gc_render_pr_body` in the #1058 follow-up
+so multi-issue PRs emit one `Closes #<n>` per linked issue under
+`## Related Issues`) are documented in the tool description string in
+`mcp/ground-control/index.js` and pinned by unit tests in
+`mcp/ground-control/lib.test.js`. The change is recorded in the ADR-054
+amendment and the changelog fragment; no new DOC_STYLE.md prose is needed.

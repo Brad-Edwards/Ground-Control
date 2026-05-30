@@ -6502,6 +6502,39 @@ describe("validatePrBodyInput", () => {
     }
   });
 
+  // additionalCloses (issue #1058 follow-up) — validation surface for the
+  // multi-issue PR contract.
+  it("accepts optional additionalCloses as an array of positive ints", () => {
+    const r = validatePrBodyInput(baseInput({ additionalCloses: [723, 745, 746] }));
+    assert.equal(r.ok, true);
+  });
+  it("accepts an empty additionalCloses[] (caller explicitly opted out)", () => {
+    const r = validatePrBodyInput(baseInput({ additionalCloses: [] }));
+    assert.equal(r.ok, true);
+  });
+  it("rejects additionalCloses that is not an array", () => {
+    const r = validatePrBodyInput(baseInput({ additionalCloses: 723 }));
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => /additionalCloses must be an array/.test(e)));
+  });
+  it("rejects additionalCloses entries that are not positive integers", () => {
+    for (const bad of [0, -1, 1.5, "868", null, {}]) {
+      const r = validatePrBodyInput(baseInput({ additionalCloses: [bad] }));
+      assert.equal(r.ok, false, `should reject ${JSON.stringify(bad)}`);
+      assert.ok(r.errors.some((e) => /additionalCloses\[0\] must be a positive integer/.test(e)));
+    }
+  });
+  it("rejects additionalCloses entries that duplicate the primary issueNumber", () => {
+    const r = validatePrBodyInput(baseInput({ additionalCloses: [868] }));
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => /duplicates the primary issueNumber/.test(e)));
+  });
+  it("rejects duplicate entries within additionalCloses", () => {
+    const r = validatePrBodyInput(baseInput({ additionalCloses: [723, 723] }));
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => /is duplicated within the array/.test(e)));
+  });
+
   assertSummaryByteCap(validatePrBodyInput, PR_BODY_SUMMARY_MAX, baseInput);
 });
 
@@ -6555,6 +6588,35 @@ describe("buildPrBody", () => {
   it("emits 'Closes #N' under Related Issues", () => {
     const body = buildPrBody(baseInput());
     assert.match(body, /Closes #868/);
+  });
+
+  // additionalCloses (issue #1058 follow-up): multi-issue PRs need a
+  // Closes line per linked issue so GitHub auto-closes each on merge.
+  // The original single-Closes renderer forced multi-issue clusters to
+  // hand-append lines that would vanish on the next render; these tests
+  // pin the multi-Closes contract so a regression surfaces here, not in
+  // a lost auto-close after a body re-render.
+  it("emits one Closes line per additionalCloses entry, in input order, after the primary", () => {
+    const body = buildPrBody(baseInput({ additionalCloses: [723, 745, 746] }));
+    const closesLines = body.split("\n").filter((l) => /^Closes #\d+/.test(l));
+    assert.deepEqual(closesLines, [
+      "Closes #868",
+      "Closes #723",
+      "Closes #745",
+      "Closes #746",
+    ]);
+  });
+
+  it("omitting additionalCloses yields exactly the primary Closes line", () => {
+    const body = buildPrBody(baseInput());
+    const closesLines = body.split("\n").filter((l) => /^Closes #\d+/.test(l));
+    assert.deepEqual(closesLines, ["Closes #868"]);
+  });
+
+  it("empty additionalCloses[] yields exactly the primary Closes line (no extras)", () => {
+    const body = buildPrBody(baseInput({ additionalCloses: [] }));
+    const closesLines = body.split("\n").filter((l) => /^Closes #\d+/.test(l));
+    assert.deepEqual(closesLines, ["Closes #868"]);
   });
 
   it("renders ADR Impact='No ADR required' when adrRefs is empty", () => {

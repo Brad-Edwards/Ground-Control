@@ -12284,12 +12284,39 @@ export function validatePrBodyInput(input) {
   if (input == null || typeof input !== "object") {
     return { ok: false, errors: ["input must be an object"] };
   }
-  const { issueNumber, changeClass, requirementUids, adrRefs, summary, changes, traceability, changelogFragment, testNotes } = input;
+  const { issueNumber, changeClass, requirementUids, adrRefs, summary, changes, traceability, changelogFragment, testNotes, additionalCloses } = input;
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
     errors.push("issueNumber must be a positive integer");
   }
   if (!PR_BODY_CHANGE_CLASSES.includes(changeClass)) {
     errors.push(`changeClass must be one of: ${PR_BODY_CHANGE_CLASSES.join(", ")}`);
+  }
+  // additionalCloses (issue #1058 follow-up): an optional array of extra
+  // GitHub issue numbers a multi-issue PR closes. The primary issueNumber
+  // is the canonical anchor; every entry in additionalCloses emits an
+  // extra `Closes #<n>` line in the rendered body so GitHub auto-closes
+  // each linked issue on merge. Without this, multi-issue clusters had to
+  // hand-append Closes lines that would be lost the next time the body
+  // was re-rendered.
+  if (additionalCloses != null) {
+    if (!Array.isArray(additionalCloses)) {
+      errors.push("additionalCloses must be an array of positive integers when set");
+    } else {
+      additionalCloses.forEach((n, i) => {
+        if (!Number.isInteger(n) || n <= 0) {
+          errors.push(`additionalCloses[${i}] must be a positive integer (got ${typeof n === "object" ? JSON.stringify(n) : String(n)})`);
+        } else if (n === issueNumber) {
+          errors.push(`additionalCloses[${i}]=${n} duplicates the primary issueNumber; do not list it twice`);
+        }
+      });
+      const seen = new Set();
+      additionalCloses.forEach((n, i) => {
+        if (typeof n === "number") {
+          if (seen.has(n)) errors.push(`additionalCloses[${i}]=${n} is duplicated within the array`);
+          seen.add(n);
+        }
+      });
+    }
   }
   if (!Array.isArray(requirementUids)) {
     errors.push("requirementUids must be an array (may be empty for requirement-free runs)");
@@ -12370,7 +12397,7 @@ export function buildPrBody(input) {
   if (!validation.ok) {
     throw new Error(`buildPrBody input invalid: ${validation.errors.join("; ")}`);
   }
-  const { issueNumber, changeClass, requirementUids, adrRefs, summary, changes, traceability, changelogFragment, testNotes } = input;
+  const { issueNumber, changeClass, requirementUids, adrRefs, summary, changes, traceability, changelogFragment, testNotes, additionalCloses } = input;
   const lines = [];
   lines.push("## Summary");
   lines.push("");
@@ -12397,6 +12424,9 @@ export function buildPrBody(input) {
   lines.push("## Related Issues");
   lines.push("");
   lines.push(`Closes #${issueNumber}`);
+  if (Array.isArray(additionalCloses)) {
+    for (const n of additionalCloses) lines.push(`Closes #${n}`);
+  }
   lines.push("");
   lines.push("## ADR Impact");
   lines.push("");

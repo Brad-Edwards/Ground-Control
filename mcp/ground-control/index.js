@@ -894,8 +894,15 @@ server.tool(
       outcome: z.enum(["updated", "verified_unchanged", "not_updated_authorized"]),
       rationale: z.string().optional(),
     }).optional(),
+    // additional_closes (issue #1058 follow-up): extra issue numbers a
+    // multi-issue PR closes. Renderer emits one `Closes #<n>` line per
+    // entry, in input order, in addition to the primary issue_number.
+    // GitHub auto-closes each linked issue on merge; without this field,
+    // multi-issue clusters had to hand-append Closes lines that vanished
+    // on re-render.
+    additional_closes: z.array(z.number().int().positive()).optional(),
   },
-  async ({ repo_path, issue_number, change_class, requirement_uids, adr_refs, summary, changes, traceability, changelog_fragment, test_notes, documentation_outcome }) => {
+  async ({ repo_path, issue_number, change_class, requirement_uids, adr_refs, summary, changes, traceability, changelog_fragment, test_notes, documentation_outcome, additional_closes }) => {
     try {
       return ok(JSON.stringify(await runRenderPrBody({
         repoPath: repo_path,
@@ -909,6 +916,7 @@ server.tool(
         changelogFragment: changelog_fragment ?? null,
         testNotes: test_notes ?? null,
         documentation_outcome: documentation_outcome ?? null,
+        additionalCloses: additional_closes ?? null,
       }), null, 2));
     } catch (e) { return err(e); }
   },
