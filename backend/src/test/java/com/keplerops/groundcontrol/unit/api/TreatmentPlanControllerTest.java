@@ -754,4 +754,46 @@ class TreatmentPlanControllerTest {
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.error.code", is("validation_error")));
     }
+
+    /**
+     * GC-T015: the new monitoring fields (riskAssessmentResultId, monitoredRiskFactors,
+     * updateCadence) plumb through {@link CreateTreatmentPlanCommand}. Argument captor
+     * is the gate — verifies the controller passes the fields verbatim to the service.
+     */
+    @Test
+    void createPlumbsMonitoringFieldsIntoCommand() throws Exception {
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(treatmentPlanService.create(any())).thenReturn(makePlan());
+        var rarId = UUID.fromString("00000000-0000-0000-0000-000000000600");
+
+        mockMvc.perform(post("/api/v1/treatment-plans")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                """
+                                {
+                                  "uid": "TP-NIST",
+                                  "title": "NIST monitored plan",
+                                  "riskRegisterRecordId": "%s",
+                                  "strategy": "MITIGATE",
+                                  "riskAssessmentResultId": "%s",
+                                  "updateCadence": "P30D",
+                                  "monitoredRiskFactors": [
+                                    {"label": "Patch backlog", "category": "VULNERABILITY_CHANGED", "cadence": "P14D"}
+                                  ]
+                                }
+                                """
+                                        .formatted(RECORD_ID, rarId)))
+                .andExpect(status().isCreated());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(CreateTreatmentPlanCommand.class);
+        verify(treatmentPlanService).create(captor.capture());
+        assertThat(captor.getValue().riskAssessmentResultId()).isEqualTo(rarId);
+        assertThat(captor.getValue().updateCadence()).isEqualTo("P30D");
+        assertThat(captor.getValue().monitoredRiskFactors()).hasSize(1);
+        assertThat(captor.getValue().monitoredRiskFactors().get(0).label()).isEqualTo("Patch backlog");
+        assertThat(captor.getValue().monitoredRiskFactors().get(0).category())
+                .isEqualTo(ReassessmentTriggerCategory.VULNERABILITY_CHANGED);
+        assertThat(captor.getValue().monitoredRiskFactors().get(0).cadence()).isEqualTo("P14D");
+    }
 }

@@ -495,6 +495,14 @@ class PolicyChecksTest(unittest.TestCase):
                 "NistImpactBand",
                 "NormalizedConcept",
                 "CrosswalkVocabularySurface",
+                # GC-T005 / T006 / T007 risk-governance lifecycle enums
+                "AppetiteToleranceKind",
+                "CampaignPhase",
+                "KriThresholdBand",
+                # GC-T015 reassessment-trigger enums (extended for NIST §3.4
+                # monitoring categories + lifecycle target surfaces)
+                "ReassessmentTriggerCategory",
+                "ReassessmentTriggerTargetType",
             },
         )
         for contract in ENUM_CONTRACT_INVENTORY:

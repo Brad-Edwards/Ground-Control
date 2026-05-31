@@ -4,9 +4,11 @@ import com.keplerops.groundcontrol.domain.assets.repository.AssetLinkRepository;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.events.AssetStateChangedEvent;
 import com.keplerops.groundcontrol.domain.riskscenarios.events.ControlStateChangedEvent;
+import com.keplerops.groundcontrol.domain.riskscenarios.events.KriBreachedEvent;
 import com.keplerops.groundcontrol.domain.riskscenarios.events.ReassessmentSignal;
 import com.keplerops.groundcontrol.domain.riskscenarios.events.TreatmentProgressChangedEvent;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskAssessmentResult;
+import com.keplerops.groundcontrol.domain.riskscenarios.repository.KeyRiskIndicatorRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioLinkRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.TreatmentPlanRepository;
@@ -52,18 +54,22 @@ public class ReassessmentSignalService {
     private final AssetLinkRepository assetLinkRepository;
     private final ControlLinkRepository controlLinkRepository;
     private final RiskScenarioLinkRepository riskScenarioLinkRepository;
+    private final KeyRiskIndicatorRepository keyRiskIndicatorRepository;
 
+    @SuppressWarnings("java:S107") // the listener fans out across every project-scoped link surface
     public ReassessmentSignalService(
             RiskAssessmentResultRepository assessmentRepository,
             TreatmentPlanRepository treatmentPlanRepository,
             AssetLinkRepository assetLinkRepository,
             ControlLinkRepository controlLinkRepository,
-            RiskScenarioLinkRepository riskScenarioLinkRepository) {
+            RiskScenarioLinkRepository riskScenarioLinkRepository,
+            KeyRiskIndicatorRepository keyRiskIndicatorRepository) {
         this.assessmentRepository = assessmentRepository;
         this.treatmentPlanRepository = treatmentPlanRepository;
         this.assetLinkRepository = assetLinkRepository;
         this.controlLinkRepository = controlLinkRepository;
         this.riskScenarioLinkRepository = riskScenarioLinkRepository;
+        this.keyRiskIndicatorRepository = keyRiskIndicatorRepository;
     }
 
     @EventListener
@@ -87,7 +93,30 @@ public class ReassessmentSignalService {
         markReassessmentRequired(affectedResults, signal);
     }
 
-    /** Treatment plan → its register record + (optionally) scenario → assessment results. */
+    /**
+     * GC-T007: KRI breach fans the reassessment signal to assessments under the
+     * KRI's linked register record / scenario. Synchronous {@code @EventListener}
+     * (NOT {@code @TransactionalEventListener}) per the shared cross-cluster
+     * contract — a listener failure rolls back the KRI measurement write.
+     */
+    @EventListener
+    public void onKriBreached(KriBreachedEvent event) {
+        var signal = event.signal();
+        var affectedResults = collectFromKri(signal);
+        markReassessmentRequired(affectedResults, signal);
+    }
+
+    /**
+     * Treatment plan → its register record + (optionally) scenario + (GC-T015)
+     * directly-linked risk assessment result → assessment results.
+     *
+     * <p>GC-T015 added the {@code TreatmentPlan.riskAssessmentResult} FK
+     * precisely to close the GC-T004 / C8 cross-project bug class — a treatment
+     * plan can legitimately bind a RAR whose own register record differs from
+     * the plan's. Without traversing that FK here, a status transition on such
+     * a plan would not mark the directly-linked RAR as
+     * {@code reassessmentRequiredAt}, defeating the design intent.
+     */
     private Set<UUID> collectFromTreatmentPlan(ReassessmentSignal signal) {
         Set<UUID> ids = new LinkedHashSet<>();
         treatmentPlanRepository
@@ -106,6 +135,11 @@ public class ReassessmentSignalService {
                                         signal.projectId(),
                                         plan.getRiskScenario().getId())
                                 .forEach(r -> ids.add(r.getId()));
+                    }
+                    // GC-T015: plan → directly-linked RAR (may live under a
+                    // different register record than the plan itself).
+                    if (plan.getRiskAssessmentResult() != null) {
+                        ids.add(plan.getRiskAssessmentResult().getId());
                     }
                 });
         return ids;
@@ -160,6 +194,24 @@ public class ReassessmentSignalService {
         return resultIds;
     }
 
+    /** KRI → linked register record + (optionally) scenario → assessment results. */
+    private Set<UUID> collectFromKri(ReassessmentSignal signal) {
+        Set<UUID> ids = new LinkedHashSet<>();
+        keyRiskIndicatorRepository
+                .findByIdAndProjectId(signal.entityId(), signal.projectId())
+                .ifPresent(kri -> {
+                    if (kri.getRiskRegisterRecord() != null) {
+                        addAllAssessmentsForRecord(
+                                signal.projectId(), kri.getRiskRegisterRecord().getId(), ids);
+                    }
+                    if (kri.getRiskScenario() != null) {
+                        addAllAssessmentsForScenario(
+                                signal.projectId(), kri.getRiskScenario().getId(), ids);
+                    }
+                });
+        return ids;
+    }
+
     private void addAllAssessmentsForScenario(UUID projectId, UUID scenarioId, Set<UUID> out) {
         if (scenarioId == null) {
             return;
@@ -186,6 +238,12 @@ public class ReassessmentSignalService {
             addAllAssessmentsForRecord(projectId, plan.getRiskRegisterRecord().getId(), out);
             if (plan.getRiskScenario() != null) {
                 addAllAssessmentsForScenario(projectId, plan.getRiskScenario().getId(), out);
+            }
+            // GC-T015: the directly-linked RAR may live under a different
+            // register record / scenario; include it explicitly so a fan-out
+            // that lands on this plan does not silently miss its RAR.
+            if (plan.getRiskAssessmentResult() != null) {
+                out.add(plan.getRiskAssessmentResult().getId());
             }
         });
     }

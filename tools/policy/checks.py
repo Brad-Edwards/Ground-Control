@@ -1072,6 +1072,50 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
         "CROSSWALK_VOCABULARY_SURFACES",
         "CROSSWALK_VOCABULARY_SURFACES",
     ),
+    # GC-T005 / T006 / T007 risk-governance lifecycle enums. Mirrored at the
+    # /api/v1/risk-appetite-profiles, /api/v1/risk-assessment-campaigns, and
+    # /api/v1/key-risk-indicators boundaries and in the MCP gc_risk_governance
+    # tool surface. ADR-034.
+    EnumContract(
+        "AppetiteToleranceKind",
+        f"{_RISK_ENUM_STATE_DIR}/AppetiteToleranceKind.java",
+        "AppetiteToleranceKind",
+        "APPETITE_TOLERANCE_KINDS",
+        "APPETITE_TOLERANCE_KINDS",
+    ),
+    EnumContract(
+        "CampaignPhase",
+        f"{_RISK_ENUM_STATE_DIR}/CampaignPhase.java",
+        "CampaignPhase",
+        "CAMPAIGN_PHASES",
+        "CAMPAIGN_PHASES",
+    ),
+    EnumContract(
+        "KriThresholdBand",
+        f"{_RISK_ENUM_STATE_DIR}/KriThresholdBand.java",
+        "KriThresholdBand",
+        "KRI_THRESHOLD_BANDS",
+        "KRI_THRESHOLD_BANDS",
+    ),
+    # GC-T015 reassessment-trigger enums. Mirrored at the gc_risk_governance
+    # MCP Zod surface (reassessment_triggers[].category / target_type) and at
+    # the frontend api.ts boundary so callers can author lifecycle-aware
+    # triggers (KRI_BREACH, RISK_APPETITE_PROFILE, ...) without dropping
+    # fields silently at Jackson bind time. ADR-034.
+    EnumContract(
+        "ReassessmentTriggerCategory",
+        f"{_RISK_ENUM_STATE_DIR}/ReassessmentTriggerCategory.java",
+        "ReassessmentTriggerCategory",
+        "REASSESSMENT_TRIGGER_CATEGORIES",
+        "REASSESSMENT_TRIGGER_CATEGORIES",
+    ),
+    EnumContract(
+        "ReassessmentTriggerTargetType",
+        f"{_RISK_ENUM_STATE_DIR}/ReassessmentTriggerTargetType.java",
+        "ReassessmentTriggerTargetType",
+        "REASSESSMENT_TRIGGER_TARGET_TYPES",
+        "REASSESSMENT_TRIGGER_TARGET_TYPES",
+    ),
 )
 
 

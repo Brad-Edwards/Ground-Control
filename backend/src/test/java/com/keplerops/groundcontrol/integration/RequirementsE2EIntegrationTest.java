@@ -523,6 +523,7 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "127", // V127: FAIR-CRST rename risk_scenario axes + drop vulnerability (GC-T013)
                         "128", // V128: expand seeded NIST SP 800-30 Rev. 1 profile schema (GC-T014)
                         "129", // V129: add methodology_profile crosswalk_entries column (GC-T012)
-                        "130"); // V130: add methodology_profile_aud crosswalk_entries column (GC-T012 audit parity)
+                        "130", // V130: add methodology_profile_aud crosswalk_entries column (GC-T012 audit parity)
+                        "131"); // V131: risk governance lifecycle aggregates (GC-T005 / T006 / T007 / T015)
     }
 }

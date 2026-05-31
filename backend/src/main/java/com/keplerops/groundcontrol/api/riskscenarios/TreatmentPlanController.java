@@ -50,7 +50,10 @@ public class TreatmentPlanController {
                 request.actionItems(),
                 request.reassessmentTriggers(),
                 request.methodologyProfileId(),
-                request.methodologyStrategyKey())));
+                request.methodologyStrategyKey(),
+                request.riskAssessmentResultId(),
+                request.monitoredRiskFactors(),
+                request.updateCadence())));
     }
 
     @GetMapping
@@ -92,7 +95,10 @@ public class TreatmentPlanController {
                         request.actionItems(),
                         request.reassessmentTriggers(),
                         request.methodologyProfileId(),
-                        request.methodologyStrategyKey())));
+                        request.methodologyStrategyKey(),
+                        request.riskAssessmentResultId(),
+                        request.monitoredRiskFactors(),
+                        request.updateCadence())));
     }
 
     @PutMapping("/{id}/status")

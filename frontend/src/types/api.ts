@@ -758,6 +758,104 @@ export const NIST_IMPACT_BANDS: NistImpactBand[] = [
   "VERY_HIGH",
 ];
 
+// GC-T005 / T006 / T007 risk-governance lifecycle enums. Single-sourced from
+// backend AppetiteToleranceKind, CampaignPhase, KriThresholdBand under
+// domain/riskscenarios/state/. Mirror policy per ADR-034 — declaration order
+// matches the Java enum order; enforced by
+// tools/policy/checks.py::ENUM_CONTRACT_INVENTORY.
+export type AppetiteToleranceKind =
+  | "QUALITATIVE"
+  | "MONETARY_RANGE"
+  | "LOSS_EVENT_FREQUENCY"
+  | "EXCEEDANCE_PROBABILITY"
+  | "COMPOSITE";
+export const APPETITE_TOLERANCE_KINDS: AppetiteToleranceKind[] = [
+  "QUALITATIVE",
+  "MONETARY_RANGE",
+  "LOSS_EVENT_FREQUENCY",
+  "EXCEEDANCE_PROBABILITY",
+  "COMPOSITE",
+];
+
+export type CampaignPhase =
+  | "PLANNING"
+  | "IDENTIFICATION"
+  | "ANALYSIS"
+  | "EVALUATION"
+  | "TREATMENT"
+  | "CLOSED";
+export const CAMPAIGN_PHASES: CampaignPhase[] = [
+  "PLANNING",
+  "IDENTIFICATION",
+  "ANALYSIS",
+  "EVALUATION",
+  "TREATMENT",
+  "CLOSED",
+];
+
+export type KriThresholdBand = "GREEN" | "YELLOW" | "RED";
+export const KRI_THRESHOLD_BANDS: KriThresholdBand[] = ["GREEN", "YELLOW", "RED"];
+
+// GC-T015: reassessment-trigger enums. Single-sourced from backend
+// ReassessmentTriggerCategory and ReassessmentTriggerTargetType under
+// domain/riskscenarios/state/. Declaration order matches the Java enum
+// sources; enforced by tools/policy/checks.py::ENUM_CONTRACT_INVENTORY.
+export type ReassessmentTriggerCategory =
+  | "TREATMENT_PROGRESS_CHANGED"
+  | "ASSET_STATE_CHANGED"
+  | "CONTROL_STATE_CHANGED"
+  | "ASSESSMENT_REFRESH"
+  | "METHODOLOGY_SPECIFIC"
+  | "THREAT_CHANGED"
+  | "VULNERABILITY_CHANGED"
+  | "PREDISPOSING_CONDITION_CHANGED"
+  | "OBSERVATION_CHANGED"
+  | "TOPOLOGY_CHANGED"
+  | "ENVIRONMENT_CHANGED"
+  | "KRI_BREACH";
+export const REASSESSMENT_TRIGGER_CATEGORIES: ReassessmentTriggerCategory[] = [
+  "TREATMENT_PROGRESS_CHANGED",
+  "ASSET_STATE_CHANGED",
+  "CONTROL_STATE_CHANGED",
+  "ASSESSMENT_REFRESH",
+  "METHODOLOGY_SPECIFIC",
+  "THREAT_CHANGED",
+  "VULNERABILITY_CHANGED",
+  "PREDISPOSING_CONDITION_CHANGED",
+  "OBSERVATION_CHANGED",
+  "TOPOLOGY_CHANGED",
+  "ENVIRONMENT_CHANGED",
+  "KRI_BREACH",
+];
+
+export type ReassessmentTriggerTargetType =
+  | "ASSET"
+  | "CONTROL"
+  | "RISK_SCENARIO"
+  | "RISK_REGISTER_RECORD"
+  | "RISK_ASSESSMENT_RESULT"
+  | "TREATMENT_PLAN"
+  | "RISK_APPETITE_PROFILE"
+  | "RISK_ASSESSMENT_CAMPAIGN"
+  | "KEY_RISK_INDICATOR"
+  | "OBSERVATION"
+  | "THREAT_MODEL"
+  | "EXTERNAL";
+export const REASSESSMENT_TRIGGER_TARGET_TYPES: ReassessmentTriggerTargetType[] = [
+  "ASSET",
+  "CONTROL",
+  "RISK_SCENARIO",
+  "RISK_REGISTER_RECORD",
+  "RISK_ASSESSMENT_RESULT",
+  "TREATMENT_PLAN",
+  "RISK_APPETITE_PROFILE",
+  "RISK_ASSESSMENT_CAMPAIGN",
+  "KEY_RISK_INDICATOR",
+  "OBSERVATION",
+  "THREAT_MODEL",
+  "EXTERNAL",
+];
+
 // GC-U001 / ADR-047 Audit entity enums. Single-sourced from backend
 // AuditStatus, AuditType, AuditPhaseKind, AuditLinkTargetType, AuditLinkType.
 export type AuditType = "INTERNAL" | "EXTERNAL" | "REGULATORY" | "SPECIAL";

@@ -67,6 +67,10 @@ class ReassessmentSignalServiceTest {
     @Mock
     private RiskScenarioLinkRepository riskScenarioLinkRepository;
 
+    @Mock
+    private com.keplerops.groundcontrol.domain.riskscenarios.repository.KeyRiskIndicatorRepository
+            keyRiskIndicatorRepository;
+
     @InjectMocks
     private ReassessmentSignalService listener;
 

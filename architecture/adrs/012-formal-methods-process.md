@@ -205,6 +205,15 @@ SDD extends TDD by adding contracts as a specification layer:
   `MethodologyProfile`) are L0 data classifiers, not L1+ contract surfaces;
   placement under `state/` follows the existing repo convention for
   domain-enum location, not an assertion that JML contracts apply.
+- **Risk Governance Lifecycle (GC-T005 / T006 / T007 / T015):**
+  `AppetiteToleranceKind` and `KriThresholdBand` follow the same L0
+  classifier pattern as `NormalizedConcept` (above)—pure value
+  discriminators with no transitions. `CampaignPhase` is **L2** with an
+  explicit transition table and a `methodologyLocked()` predicate gating
+  EVALUATION/TREATMENT—enforced at `RiskAssessmentCampaign.advanceTo`
+  and exhaustively matrix-tested in `RiskAssessmentCampaignTest`. Adding
+  these state enums under `domain/riskscenarios/state/` triggers
+  `formal-methods-sync` per ADR-012's policy rule; this note is the sync.
 
 ## Related ADRs
 

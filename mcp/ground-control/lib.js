@@ -790,6 +790,26 @@ const TO_CAMEL = {
   clear_objectives: "clearObjectives",
   clear_phases: "clearPhases",
   clear_team_members: "clearTeamMembers",
+  // GC-T005 / T006 / T007 / T015 risk-governance lifecycle DTO fields. Without
+  // explicit entries the snake_case wire names would pass through verbatim
+  // (toCamelCase returns TO_CAMEL[k] || k) and Jackson would silently drop
+  // them on bind, so a KRI created via gc_risk_governance would have null
+  // thresholds and the next record_measurement throws DomainValidationException
+  // ("KRI thresholds are not configured"). Same class of silent-drop hits the
+  // appetite profile, campaign, and TreatmentPlan GC-T015 fields.
+  appetite_statement: "appetiteStatement",
+  metric_unit: "metricUnit",
+  yellow_threshold: "yellowThreshold",
+  red_threshold: "redThreshold",
+  appetite_profile_id: "appetiteProfileId",
+  scheduled_start: "scheduledStart",
+  scheduled_end: "scheduledEnd",
+  scoped_asset_ids: "scopedAssetIds",
+  approval_metadata: "approvalMetadata",
+  measured_at: "measuredAt",
+  risk_assessment_result_id: "riskAssessmentResultId",
+  monitored_risk_factors: "monitoredRiskFactors",
+  update_cadence: "updateCadence",
 };
 
 const TO_SNAKE = Object.fromEntries(Object.entries(TO_CAMEL).map(([k, v]) => [v, k]));
@@ -9206,6 +9226,62 @@ export const CROSSWALK_VOCABULARY_SURFACES = [
   "TREATMENT_STRATEGY_VOCABULARY",
 ];
 
+// GC-T005 / T006 / T007 risk-governance lifecycle enums (ADR-034 mirrors).
+// Declaration order matches the Java enum sources exactly.
+export const APPETITE_TOLERANCE_KINDS = [
+  "QUALITATIVE",
+  "MONETARY_RANGE",
+  "LOSS_EVENT_FREQUENCY",
+  "EXCEEDANCE_PROBABILITY",
+  "COMPOSITE",
+];
+
+export const CAMPAIGN_PHASES = [
+  "PLANNING",
+  "IDENTIFICATION",
+  "ANALYSIS",
+  "EVALUATION",
+  "TREATMENT",
+  "CLOSED",
+];
+
+export const KRI_THRESHOLD_BANDS = ["GREEN", "YELLOW", "RED"];
+
+// GC-T015: reassessment-trigger enums (ADR-034 mirror). Declaration order
+// matches the Java enum sources at
+// backend/.../domain/riskscenarios/state/ReassessmentTriggerCategory.java
+// and ReassessmentTriggerTargetType.java exactly. Mirrored here so the MCP
+// Zod schema accepts every value the backend accepts.
+export const REASSESSMENT_TRIGGER_CATEGORIES = [
+  "TREATMENT_PROGRESS_CHANGED",
+  "ASSET_STATE_CHANGED",
+  "CONTROL_STATE_CHANGED",
+  "ASSESSMENT_REFRESH",
+  "METHODOLOGY_SPECIFIC",
+  "THREAT_CHANGED",
+  "VULNERABILITY_CHANGED",
+  "PREDISPOSING_CONDITION_CHANGED",
+  "OBSERVATION_CHANGED",
+  "TOPOLOGY_CHANGED",
+  "ENVIRONMENT_CHANGED",
+  "KRI_BREACH",
+];
+
+export const REASSESSMENT_TRIGGER_TARGET_TYPES = [
+  "ASSET",
+  "CONTROL",
+  "RISK_SCENARIO",
+  "RISK_REGISTER_RECORD",
+  "RISK_ASSESSMENT_RESULT",
+  "TREATMENT_PLAN",
+  "RISK_APPETITE_PROFILE",
+  "RISK_ASSESSMENT_CAMPAIGN",
+  "KEY_RISK_INDICATOR",
+  "OBSERVATION",
+  "THREAT_MODEL",
+  "EXTERNAL",
+];
+
 // ---------------------------------------------------------------------------
 // Audit API functions (GC-U001 / ADR-047)
 // ---------------------------------------------------------------------------
@@ -9890,6 +9966,96 @@ export async function transitionTreatmentPlanStatus(id, status, project) {
 
 export async function deleteTreatmentPlan(id, project) {
   await request("DELETE", `/api/v1/treatment-plans/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+// ---------------------------------------------------------------------------
+// GC-T005 / T006 / T007 risk-governance lifecycle API functions
+// ---------------------------------------------------------------------------
+
+// --- Risk Appetite Profile (GC-T005) ---
+export async function createRiskAppetiteProfile(data, project) {
+  return request("POST", "/api/v1/risk-appetite-profiles", { body: data, params: { project } });
+}
+
+export async function listRiskAppetiteProfiles(project) {
+  return request("GET", "/api/v1/risk-appetite-profiles", { params: { project } });
+}
+
+export async function getRiskAppetiteProfile(id, project) {
+  return request("GET", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function updateRiskAppetiteProfile(id, data, project) {
+  return request("PUT", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function deleteRiskAppetiteProfile(id, project) {
+  await request("DELETE", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+// --- Risk Assessment Campaign (GC-T006) ---
+export async function createRiskAssessmentCampaign(data, project) {
+  return request("POST", "/api/v1/risk-assessment-campaigns", { body: data, params: { project } });
+}
+
+export async function listRiskAssessmentCampaigns(project) {
+  return request("GET", "/api/v1/risk-assessment-campaigns", { params: { project } });
+}
+
+export async function getRiskAssessmentCampaign(id, project) {
+  return request("GET", `/api/v1/risk-assessment-campaigns/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function updateRiskAssessmentCampaign(id, data, project) {
+  return request("PUT", `/api/v1/risk-assessment-campaigns/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function advanceRiskAssessmentCampaignPhase(id, phase, project) {
+  return request("PUT", `/api/v1/risk-assessment-campaigns/${encodeURIComponent(id)}/phase`, {
+    body: { phase },
+    params: { project },
+  });
+}
+
+export async function deleteRiskAssessmentCampaign(id, project) {
+  await request("DELETE", `/api/v1/risk-assessment-campaigns/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+// --- Key Risk Indicator (GC-T007) ---
+export async function createKeyRiskIndicator(data, project) {
+  return request("POST", "/api/v1/key-risk-indicators", { body: data, params: { project } });
+}
+
+export async function listKeyRiskIndicators(project) {
+  return request("GET", "/api/v1/key-risk-indicators", { params: { project } });
+}
+
+export async function getKeyRiskIndicator(id, project) {
+  return request("GET", `/api/v1/key-risk-indicators/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function updateKeyRiskIndicator(id, data, project) {
+  return request("PUT", `/api/v1/key-risk-indicators/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function recordKriMeasurement(id, value, measuredAt, project) {
+  return request("POST", `/api/v1/key-risk-indicators/${encodeURIComponent(id)}/measurements`, {
+    body: { value, measuredAt },
+    params: { project },
+  });
+}
+
+export async function deleteKeyRiskIndicator(id, project) {
+  await request("DELETE", `/api/v1/key-risk-indicators/${encodeURIComponent(id)}`, { params: { project } });
 }
 
 // ---------------------------------------------------------------------------
@@ -14224,11 +14390,42 @@ export const GOVERNANCE_FIELDS = {
       "strategy", "owner", "rationale", "due_date", "status",
       "action_items", "reassessment_triggers",
       "methodology_profile_id", "methodology_strategy_key",
+      // GC-T015 extensions
+      "risk_assessment_result_id", "monitored_risk_factors", "update_cadence",
     ],
     update: [
       "title", "risk_scenario_id", "strategy", "owner",
       "rationale", "due_date", "action_items", "reassessment_triggers",
       "methodology_profile_id", "methodology_strategy_key",
+      // GC-T015 extensions
+      "risk_assessment_result_id", "monitored_risk_factors", "update_cadence",
+    ],
+  },
+  // GC-T005: Risk Appetite Profile
+  risk_appetite_profile: {
+    create: ["profile_key", "name", "version", "appetite_statement", "owner", "active", "tolerances"],
+    update: ["name", "version", "appetite_statement", "owner", "active", "tolerances"],
+  },
+  // GC-T006: Risk Assessment Campaign
+  risk_assessment_campaign: {
+    create: [
+      "uid", "title", "owner", "objective", "methodology_profile_id", "appetite_profile_id",
+      "scheduled_start", "scheduled_end", "scope", "approval_metadata", "scoped_asset_ids",
+    ],
+    update: [
+      "title", "owner", "objective", "methodology_profile_id", "appetite_profile_id",
+      "scheduled_start", "scheduled_end", "scope", "approval_metadata", "scoped_asset_ids",
+    ],
+  },
+  // GC-T007: Key Risk Indicator
+  key_risk_indicator: {
+    create: [
+      "uid", "name", "description", "metric_unit", "yellow_threshold", "red_threshold",
+      "direction", "owner", "risk_register_record_id", "risk_scenario_id",
+    ],
+    update: [
+      "name", "description", "metric_unit", "yellow_threshold", "red_threshold",
+      "direction", "owner", "risk_register_record_id", "risk_scenario_id",
     ],
   },
   verification_result: {

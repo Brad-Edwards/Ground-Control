@@ -84,6 +84,18 @@ class GraphTargetResolverServiceTest {
     @Mock
     private DocumentRepository documentRepository;
 
+    @Mock
+    private com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAppetiteProfileRepository
+            riskAppetiteProfileRepository;
+
+    @Mock
+    private com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentCampaignRepository
+            riskAssessmentCampaignRepository;
+
+    @Mock
+    private com.keplerops.groundcontrol.domain.riskscenarios.repository.KeyRiskIndicatorRepository
+            keyRiskIndicatorRepository;
+
     @InjectMocks
     private GraphTargetResolverService graphTargetResolverService;
 
@@ -496,6 +508,36 @@ class GraphTargetResolverServiceTest {
                                     ? java.util.Optional.of(org.mockito.Mockito.mock(
                                             com.keplerops.groundcontrol.domain.riskscenarios.model.TreatmentPlan.class))
                                     : java.util.Optional.empty());
+            case RISK_APPETITE_PROFILE -> when(riskAppetiteProfileRepository.findByIdAndProjectId(targetId, projectId))
+                    .thenReturn(
+                            exists
+                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
+                                            com.keplerops.groundcontrol.domain.riskscenarios.model.RiskAppetiteProfile
+                                                    .class))
+                                    : java.util.Optional.empty());
+            case RISK_ASSESSMENT_CAMPAIGN -> when(riskAssessmentCampaignRepository.findByIdAndProjectId(
+                            targetId, projectId))
+                    .thenReturn(
+                            exists
+                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
+                                            com.keplerops.groundcontrol.domain.riskscenarios.model
+                                                    .RiskAssessmentCampaign.class))
+                                    : java.util.Optional.empty());
+            case KEY_RISK_INDICATOR -> when(keyRiskIndicatorRepository.findByIdAndProjectId(targetId, projectId))
+                    .thenReturn(
+                            exists
+                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
+                                            com.keplerops.groundcontrol.domain.riskscenarios.model.KeyRiskIndicator
+                                                    .class))
+                                    : java.util.Optional.empty());
+            case OBSERVATION -> when(observationRepository.findByIdWithAssetAndProjectId(targetId, projectId))
+                    .thenReturn(
+                            exists
+                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
+                                            com.keplerops.groundcontrol.domain.assets.model.Observation.class))
+                                    : java.util.Optional.empty());
+            case THREAT_MODEL -> when(threatModelRepository.existsByIdAndProjectId(targetId, projectId))
+                    .thenReturn(exists);
             case EXTERNAL -> throw new IllegalArgumentException("Not an internal target type");
         }
     }

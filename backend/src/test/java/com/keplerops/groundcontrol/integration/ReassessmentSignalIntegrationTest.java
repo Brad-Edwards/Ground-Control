@@ -196,6 +196,9 @@ class ReassessmentSignalIntegrationTest extends BaseIntegrationTest {
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
                 null));
 
         flushAndExpire();
@@ -365,6 +368,9 @@ class ReassessmentSignalIntegrationTest extends BaseIntegrationTest {
                 scenario == null ? null : scenario.getId(),
                 TreatmentStrategy.MITIGATE,
                 "owner",
+                null,
+                null,
+                null,
                 null,
                 null,
                 null,
