@@ -78,81 +78,18 @@ public class RiskHeatmapService {
         // assessment, in line with the GC-T008 "current assessment output" wording.
         List<RiskAssessmentResult> rows = repository.findLatestPerScenarioByProjectId(projectId);
 
-        Map<CellKey, List<UUID>> cellPlotIds = new LinkedHashMap<>();
-        Map<String, Integer> byFamily = new TreeMap<>();
-        int plotted = 0;
-        int incompatible = 0;
-        List<String> limitations = new ArrayList<>();
-        boolean profileRestricted = methodologyProfileId != null;
+        PlotAccumulator acc = plotRows(rows, methodologyProfileId);
 
-        for (RiskAssessmentResult row : rows) {
-            MethodologyProfile profile = row.getMethodologyProfile();
-            if (profile == null) {
-                incompatible++;
-                continue;
-            }
-            // Apply the methodology-profile filter BEFORE counting byFamily / triggering
-            // the FAIR limitation, so a caller restricted to a non-FAIR profile never
-            // sees a FAIR-incompatibility limitation referencing rows they never asked
-            // about (ADR-035 methodology attribution).
-            if (profileRestricted && !profile.getId().equals(methodologyProfileId)) {
-                continue;
-            }
-            byFamily.merge(profile.getFamily().name(), 1, Integer::sum);
-
-            if (!supportsHeatmap(profile.getFamily())) {
-                incompatible++;
-                continue;
-            }
-
-            NistLikelihoodBand likelihood = resolveLikelihood(row);
-            NistImpactBand impact = resolveImpact(row);
-            if (likelihood == null || impact == null) {
-                incompatible++;
-                continue;
-            }
-
-            CellKey key = new CellKey(likelihood, impact);
-            cellPlotIds.computeIfAbsent(key, k -> new ArrayList<>()).add(row.getId());
-            plotted++;
-        }
-
-        boolean anyFairRow = byFamily.getOrDefault(MethodologyFamily.FAIR.name(), 0) > 0;
-        if (anyFairRow) {
-            limitations.add(FAIR_INCOMPATIBILITY_LIMITATION);
-        }
-        if (profileRestricted && plotted == 0 && incompatible > 0) {
-            limitations.add(INCOMPATIBLE_PROFILE_LIMITATION);
-        }
+        List<String> limitations = buildLimitations(acc, methodologyProfileId);
 
         // Resolve the requested profile via the repository (scoped to the project)
         // so the envelope always carries methodology_profile_id / family of the
         // REQUESTED profile per ADR-035, even when zero rows match it.
-        MethodologyProfile resolvedProfile = null;
-        if (profileRestricted) {
-            resolvedProfile = methodologyProfileRepository
-                    .findByIdAndProjectId(methodologyProfileId, projectId)
-                    .orElseGet(() -> resolveProfile(rows, methodologyProfileId));
-        }
+        MethodologyProfile resolvedProfile = resolveRequestedProfile(rows, projectId, methodologyProfileId);
 
-        List<RiskHeatmapResult.HeatmapCell> cells = new ArrayList<>();
-        for (Map.Entry<CellKey, List<UUID>> entry : cellPlotIds.entrySet()) {
-            CellKey k = entry.getKey();
-            cells.add(new RiskHeatmapResult.HeatmapCell(
-                    k.likelihood.ordinal() + 1,
-                    k.likelihood.name(),
-                    k.impact.ordinal() + 1,
-                    k.impact.name(),
-                    entry.getValue().size(),
-                    List.copyOf(entry.getValue())));
-        }
+        List<RiskHeatmapResult.HeatmapCell> cells = buildCells(acc.cellPlotIds);
 
-        // ADR-035 attribution: when the caller supplied a methodologyProfileId we MUST
-        // carry it back even when no row matched. methodologyFamily reflects what we
-        // could resolve from the profile lookup; it is null only when neither the
-        // repository nor the live row-set knows the profile.
-        UUID envelopeProfileId =
-                profileRestricted ? methodologyProfileId : (resolvedProfile != null ? resolvedProfile.getId() : null);
+        UUID envelopeProfileId = envelopeProfileId(methodologyProfileId, resolvedProfile);
         String envelopeFamily =
                 resolvedProfile != null ? resolvedProfile.getFamily().name() : null;
 
@@ -167,17 +104,123 @@ public class RiskHeatmapService {
                 UNITS,
                 new RiskHeatmapResult.Inputs(project.getIdentifier(), effectiveAsOf, methodologyProfileId),
                 cells,
-                new RiskHeatmapResult.Counts(rows.size(), plotted, incompatible, byFamily),
+                new RiskHeatmapResult.Counts(rows.size(), acc.plotted, acc.incompatible, acc.byFamily),
                 limitations);
     }
 
-    private boolean supportsHeatmap(MethodologyFamily family) {
-        return family == MethodologyFamily.NIST_SP800_30_R1
-                || family == MethodologyFamily.ISO_27005
-                || family == MethodologyFamily.CUSTOM;
+    /**
+     * Iterates assessment rows, applies the methodology-profile filter, bins each
+     * compatible row into a heatmap cell, and counts incompatible rows.
+     * The filter runs before byFamily accumulation so FAIR rows excluded by the
+     * profile restriction never trigger the FAIR incompatibility limitation
+     * (ADR-035 methodology attribution).
+     */
+    private PlotAccumulator plotRows(List<RiskAssessmentResult> rows, UUID methodologyProfileId) {
+        PlotAccumulator acc = new PlotAccumulator(methodologyProfileId != null);
+        for (RiskAssessmentResult row : rows) {
+            acc.processRow(row, methodologyProfileId);
+        }
+        return acc;
     }
 
-    private NistLikelihoodBand resolveLikelihood(RiskAssessmentResult row) {
+    private List<String> buildLimitations(PlotAccumulator acc, UUID methodologyProfileId) {
+        List<String> limitations = new ArrayList<>();
+        boolean anyFairRow = acc.byFamily.getOrDefault(MethodologyFamily.FAIR.name(), 0) > 0;
+        if (anyFairRow) {
+            limitations.add(FAIR_INCOMPATIBILITY_LIMITATION);
+        }
+        if (methodologyProfileId != null && acc.plotted == 0 && acc.incompatible > 0) {
+            limitations.add(INCOMPATIBLE_PROFILE_LIMITATION);
+        }
+        return limitations;
+    }
+
+    private MethodologyProfile resolveRequestedProfile(
+            List<RiskAssessmentResult> rows, UUID projectId, UUID methodologyProfileId) {
+        if (methodologyProfileId == null) {
+            return null;
+        }
+        return methodologyProfileRepository
+                .findByIdAndProjectId(methodologyProfileId, projectId)
+                .orElseGet(() -> resolveProfile(rows, methodologyProfileId));
+    }
+
+    private static List<RiskHeatmapResult.HeatmapCell> buildCells(Map<CellKey, List<UUID>> cellPlotIds) {
+        List<RiskHeatmapResult.HeatmapCell> cells = new ArrayList<>();
+        for (Map.Entry<CellKey, List<UUID>> entry : cellPlotIds.entrySet()) {
+            CellKey k = entry.getKey();
+            cells.add(new RiskHeatmapResult.HeatmapCell(
+                    k.likelihood.ordinal() + 1,
+                    k.likelihood.name(),
+                    k.impact.ordinal() + 1,
+                    k.impact.name(),
+                    entry.getValue().size(),
+                    List.copyOf(entry.getValue())));
+        }
+        return cells;
+    }
+
+    /**
+     * ADR-035 attribution: when the caller supplied a methodologyProfileId we MUST
+     * carry it back even when no row matched. When unrestricted, carry back whatever
+     * profile we resolved from the row set.
+     */
+    private static UUID envelopeProfileId(UUID methodologyProfileId, MethodologyProfile resolvedProfile) {
+        if (methodologyProfileId != null) {
+            return methodologyProfileId;
+        }
+        return resolvedProfile != null ? resolvedProfile.getId() : null;
+    }
+
+    /** Mutable accumulator used during the row-plotting phase. */
+    private static final class PlotAccumulator {
+        final boolean profileRestricted;
+        final Map<CellKey, List<UUID>> cellPlotIds = new LinkedHashMap<>();
+        final Map<String, Integer> byFamily = new TreeMap<>();
+        int plotted = 0;
+        int incompatible = 0;
+
+        PlotAccumulator(boolean profileRestricted) {
+            this.profileRestricted = profileRestricted;
+        }
+
+        void processRow(RiskAssessmentResult row, UUID methodologyProfileId) {
+            MethodologyProfile profile = row.getMethodologyProfile();
+            if (profile == null) {
+                incompatible++;
+                return;
+            }
+            if (profileRestricted && !profile.getId().equals(methodologyProfileId)) {
+                return;
+            }
+            byFamily.merge(profile.getFamily().name(), 1, Integer::sum);
+            if (!supportsHeatmap(profile.getFamily())) {
+                incompatible++;
+                return;
+            }
+            plotRow(row);
+        }
+
+        private void plotRow(RiskAssessmentResult row) {
+            NistLikelihoodBand likelihood = resolveLikelihoodStatic(row);
+            NistImpactBand impact = resolveImpactStatic(row);
+            if (likelihood == null || impact == null) {
+                incompatible++;
+                return;
+            }
+            CellKey key = new CellKey(likelihood, impact);
+            cellPlotIds.computeIfAbsent(key, k -> new ArrayList<>()).add(row.getId());
+            plotted++;
+        }
+
+        private static boolean supportsHeatmap(MethodologyFamily family) {
+            return family == MethodologyFamily.NIST_SP800_30_R1
+                    || family == MethodologyFamily.ISO_27005
+                    || family == MethodologyFamily.CUSTOM;
+        }
+    }
+
+    private static NistLikelihoodBand resolveLikelihoodStatic(RiskAssessmentResult row) {
         NistLikelihoodBand persisted = parseLikelihood(getString(row.getComputedOutputs(), OUT_OVERALL_LIKELIHOOD));
         if (persisted != null) {
             return persisted;
@@ -185,7 +228,7 @@ public class RiskHeatmapService {
         return parseLikelihood(getString(row.getInputFactors(), KEY_LIKELIHOOD_OVERALL));
     }
 
-    private NistImpactBand resolveImpact(RiskAssessmentResult row) {
+    private static NistImpactBand resolveImpactStatic(RiskAssessmentResult row) {
         NistImpactBand persisted = parseImpact(getString(row.getComputedOutputs(), OUT_IMPACT_LEVEL));
         if (persisted != null) {
             return persisted;

@@ -71,12 +71,7 @@ public class RiskTopNService {
     public RiskTopNResult topN(UUID projectId, Instant asOf, int requestedLimit, RiskTopNOrderBy orderBy) {
         Objects.requireNonNull(projectId, "projectId");
         Objects.requireNonNull(orderBy, "orderBy");
-        if (requestedLimit <= 0 || requestedLimit > MAX_LIMIT) {
-            throw new DomainValidationException(
-                    "limit must be between 1 and " + MAX_LIMIT,
-                    "validation_error",
-                    Map.of("parameter", "limit", "value", requestedLimit));
-        }
+        validateLimit(requestedLimit);
         Instant effectiveAsOf = asOf != null ? asOf : Instant.now();
 
         Project project = projectRepository
@@ -85,10 +80,39 @@ public class RiskTopNService {
 
         List<RiskAssessmentResult> rows = repository.findLatestPerScenarioByProjectId(projectId);
 
-        List<Ranked> ranked = new ArrayList<>();
-        List<String> projectLimitations = new ArrayList<>();
-        boolean droppedForMissingValue = false;
+        ScoringResult scoringResult = scoreAndSort(rows, orderBy);
 
+        TopNSelection selection = selectTopN(scoringResult.ranked(), requestedLimit, orderBy);
+
+        List<String> projectLimitations =
+                buildProjectLimitations(selection.families(), orderBy, scoringResult.droppedForMissingValue());
+
+        return new RiskTopNResult(
+                ANALYSIS_KIND,
+                project.getIdentifier(),
+                effectiveAsOf,
+                DERIVATION_METHOD,
+                SCALE,
+                UNITS,
+                new RiskTopNResult.Inputs(project.getIdentifier(), effectiveAsOf, requestedLimit, orderBy.name()),
+                selection.entries(),
+                new RiskTopNResult.Counts(rows.size(), selection.entries().size()),
+                projectLimitations);
+    }
+
+    private void validateLimit(int requestedLimit) {
+        if (requestedLimit <= 0 || requestedLimit > MAX_LIMIT) {
+            throw new DomainValidationException(
+                    "limit must be between 1 and " + MAX_LIMIT,
+                    "validation_error",
+                    Map.of("parameter", "limit", "value", requestedLimit));
+        }
+    }
+
+    /** Scores each row, drops rows with no ranking value, then sorts the result. */
+    private ScoringResult scoreAndSort(List<RiskAssessmentResult> rows, RiskTopNOrderBy orderBy) {
+        List<Ranked> ranked = new ArrayList<>();
+        boolean droppedForMissingValue = false;
         for (RiskAssessmentResult row : rows) {
             Ranked candidate = score(row, orderBy);
             if (candidate == null) {
@@ -97,7 +121,11 @@ public class RiskTopNService {
             }
             ranked.add(candidate);
         }
+        sortRanked(ranked, orderBy);
+        return new ScoringResult(ranked, droppedForMissingValue);
+    }
 
+    private static void sortRanked(List<Ranked> ranked, RiskTopNOrderBy orderBy) {
         if (orderBy == RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT) {
             ranked.sort(Comparator.comparingInt(Ranked::score)
                     .reversed()
@@ -106,14 +134,18 @@ public class RiskTopNService {
             ranked.sort(
                     Comparator.comparing(Ranked::tieBreakerInstant, Comparator.nullsLast(Comparator.reverseOrder())));
         }
+    }
 
+    /**
+     * Selects at most {@code requestedLimit} entries from the sorted ranked list.
+     * Methodology-family attribution is collected from the rows that actually
+     * appear in the returned top-N so that dropped rows never pollute the
+     * mixed-methodology limitation (ADR-035).
+     */
+    private TopNSelection selectTopN(List<Ranked> ranked, int requestedLimit, RiskTopNOrderBy orderBy) {
         List<RiskTopNResult.TopNEntry> entries = new ArrayList<>();
-        int rank = 1;
-        // Compute methodology-family attribution from the rows that actually appear in
-        // the returned top-N, NOT from every considered row. Otherwise a row dropped
-        // for missing risk_level (FAIR rows under CURRENT_ASSESSMENT_OUTPUT, etc.) would
-        // pollute the mixed-methodology limitation even though it never made the output.
         Set<String> families = new HashSet<>();
+        int rank = 1;
         for (Ranked r : ranked) {
             if (entries.size() >= requestedLimit) {
                 break;
@@ -124,7 +156,12 @@ public class RiskTopNService {
             }
             entries.add(toEntry(rank++, r, orderBy));
         }
+        return new TopNSelection(entries, families);
+    }
 
+    private List<String> buildProjectLimitations(
+            Set<String> families, RiskTopNOrderBy orderBy, boolean droppedForMissingValue) {
+        List<String> projectLimitations = new ArrayList<>();
         if (families.size() > 1) {
             List<String> sortedFamilies = families.stream().sorted().toList();
             projectLimitations.add(String.format(MIXED_METHODOLOGY_LIMITATION, String.join(", ", sortedFamilies)));
@@ -135,19 +172,12 @@ public class RiskTopNService {
         if (droppedForMissingValue) {
             projectLimitations.add(CONSIDERED_BUT_FILTERED_LIMITATION);
         }
-
-        return new RiskTopNResult(
-                ANALYSIS_KIND,
-                project.getIdentifier(),
-                effectiveAsOf,
-                DERIVATION_METHOD,
-                SCALE,
-                UNITS,
-                new RiskTopNResult.Inputs(project.getIdentifier(), effectiveAsOf, requestedLimit, orderBy.name()),
-                entries,
-                new RiskTopNResult.Counts(rows.size(), entries.size()),
-                projectLimitations);
+        return projectLimitations;
     }
+
+    private record ScoringResult(List<Ranked> ranked, boolean droppedForMissingValue) {}
+
+    private record TopNSelection(List<RiskTopNResult.TopNEntry> entries, Set<String> families) {}
 
     private Ranked score(RiskAssessmentResult row, RiskTopNOrderBy orderBy) {
         return switch (orderBy) {
@@ -202,9 +232,7 @@ public class RiskTopNService {
         RiskAssessmentResult row = r.row();
         MethodologyProfile profile = row.getMethodologyProfile();
         String metric = orderBy == RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT ? "risk_level" : "assessment_at";
-        String value = orderBy == RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT
-                ? r.rankingLabel()
-                : r.tieBreakerInstant() != null ? r.tieBreakerInstant().toString() : null;
+        String value = rankingValue(r, orderBy);
         List<String> perRowLimitations = new ArrayList<>();
         if (orderBy == RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT
                 && profile != null
@@ -224,6 +252,15 @@ public class RiskTopNService {
                 row.getApprovalState() != null ? row.getApprovalState().name() : null,
                 row.getAssessmentAt(),
                 List.copyOf(perRowLimitations));
+    }
+
+    /** Returns the display value for the ranking metric column in a top-N entry. */
+    private static String rankingValue(Ranked r, RiskTopNOrderBy orderBy) {
+        if (orderBy == RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT) {
+            return r.rankingLabel();
+        }
+        Instant tieBreaker = r.tieBreakerInstant();
+        return tieBreaker != null ? tieBreaker.toString() : null;
     }
 
     private record Ranked(RiskAssessmentResult row, int score, Instant tieBreakerInstant, String rankingLabel) {}

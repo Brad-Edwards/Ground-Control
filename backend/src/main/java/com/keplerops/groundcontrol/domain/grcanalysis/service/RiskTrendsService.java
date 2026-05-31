@@ -92,14 +92,50 @@ public class RiskTrendsService {
         Objects.requireNonNull(bucket, "bucket");
         Instant effectiveAsOf = asOf != null ? asOf : Instant.now();
         Instant effectiveTo = to != null ? to : effectiveAsOf;
-        boolean defaultedFrom = false;
-        Instant effectiveFrom;
+
+        ResolvedWindow window = resolveWindow(from, effectiveTo);
+        validateWindow(window.effectiveFrom(), effectiveTo);
+
+        Project project = projectRepository
+                .findById(projectId)
+                .orElseThrow(() -> new NotFoundException("Project not found: " + projectId));
+
+        Set<UUID> ids = collectProjectRecordIds(projectId);
+
+        BucketingResult bucketingResult = bucketAuditRevisions(ids, window.effectiveFrom(), effectiveTo, bucket);
+
+        List<RiskTrendsResult.TrendPoint> points = buildTrendPoints(bucketingResult.bucketed(), bucket);
+
+        List<String> limitations = buildLimitations(window.defaulted());
+
+        return new RiskTrendsResult(
+                ANALYSIS_KIND,
+                project.getIdentifier(),
+                effectiveAsOf,
+                DERIVATION_METHOD,
+                SCALE,
+                UNITS,
+                new RiskTrendsResult.Inputs(
+                        project.getIdentifier(),
+                        effectiveAsOf,
+                        window.effectiveFrom(),
+                        effectiveTo,
+                        bucket.name(),
+                        "RiskRegisterRecord"),
+                points,
+                new RiskTrendsResult.Counts(bucketingResult.totalEvents(), points.size()),
+                limitations);
+    }
+
+    /** Resolves the effective window start, defaulting to 12 months before {@code effectiveTo}. */
+    private static ResolvedWindow resolveWindow(Instant from, Instant effectiveTo) {
         if (from != null) {
-            effectiveFrom = from;
-        } else {
-            effectiveFrom = effectiveTo.minus(365, ChronoUnit.DAYS);
-            defaultedFrom = true;
+            return new ResolvedWindow(from, false);
         }
+        return new ResolvedWindow(effectiveTo.minus(365, ChronoUnit.DAYS), true);
+    }
+
+    private static void validateWindow(Instant effectiveFrom, Instant effectiveTo) {
         if (!effectiveFrom.isBefore(effectiveTo)) {
             throw new DomainValidationException(
                     "from must be strictly before to",
@@ -112,50 +148,81 @@ public class RiskTrendsService {
                     "validation_error",
                     Map.of("days", ChronoUnit.DAYS.between(effectiveFrom, effectiveTo)));
         }
+    }
 
-        Project project = projectRepository
-                .findById(projectId)
-                .orElseThrow(() -> new NotFoundException("Project not found: " + projectId));
-
+    /** Collects the IDs of all live risk register records for the project. */
+    private Set<UUID> collectProjectRecordIds(UUID projectId) {
         List<RiskRegisterRecord> projectRecords =
                 registerRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId);
         Set<UUID> ids = new HashSet<>();
-        for (RiskRegisterRecord record : projectRecords) {
-            ids.add(record.getId());
+        for (RiskRegisterRecord registerRecord : projectRecords) {
+            ids.add(registerRecord.getId());
         }
+        return ids;
+    }
 
+    /**
+     * Queries the Envers audit log for the given record IDs within the window and
+     * accumulates revision counts per bucket start instant.
+     */
+    private BucketingResult bucketAuditRevisions(
+            Set<UUID> ids, Instant effectiveFrom, Instant effectiveTo, RiskTrendsBucket bucket) {
         Map<Instant, BucketAccumulator> bucketed = new TreeMap<>();
         int totalEvents = 0;
         if (!ids.isEmpty()) {
-            var auditReader = AuditReaderFactory.get(entityManager);
-            @SuppressWarnings("unchecked")
-            List<Object[]> results = auditReader
-                    .createQuery()
-                    .forRevisionsOfEntity(RiskRegisterRecord.class, false, true)
-                    .add(AuditEntity.id().in(ids))
-                    .add(AuditEntity.revisionProperty("timestamp").ge(effectiveFrom.toEpochMilli()))
-                    .add(AuditEntity.revisionProperty("timestamp").le(effectiveTo.toEpochMilli()))
-                    .addOrder(AuditEntity.revisionNumber().asc())
-                    .getResultList();
-            for (Object[] row : results) {
-                RiskRegisterRecord entity = (RiskRegisterRecord) row[0];
-                Object revInfo = row[1];
-                RevisionType revType = (RevisionType) row[2];
-                Instant timestamp = readTimestamp(revInfo);
-                if (timestamp == null || timestamp.isBefore(effectiveFrom) || timestamp.isAfter(effectiveTo)) {
-                    continue;
-                }
-                Instant windowStart = bucketStart(timestamp, bucket);
-                BucketAccumulator acc = bucketed.computeIfAbsent(windowStart, k -> new BucketAccumulator());
-                acc.total++;
-                acc.byRevisionType.merge(revType.name(), 1, Integer::sum);
-                if (entity != null && entity.getStatus() != null) {
-                    acc.byStatus.merge(entity.getStatus().name(), 1, Integer::sum);
-                }
-                totalEvents++;
-            }
+            totalEvents = queryAndAccumulate(ids, effectiveFrom, effectiveTo, bucket, bucketed);
         }
+        return new BucketingResult(bucketed, totalEvents);
+    }
 
+    @SuppressWarnings("unchecked")
+    private int queryAndAccumulate(
+            Set<UUID> ids,
+            Instant effectiveFrom,
+            Instant effectiveTo,
+            RiskTrendsBucket bucket,
+            Map<Instant, BucketAccumulator> bucketed) {
+        var auditReader = AuditReaderFactory.get(entityManager);
+        List<Object[]> results = auditReader
+                .createQuery()
+                .forRevisionsOfEntity(RiskRegisterRecord.class, false, true)
+                .add(AuditEntity.id().in(ids))
+                .add(AuditEntity.revisionProperty("timestamp").ge(effectiveFrom.toEpochMilli()))
+                .add(AuditEntity.revisionProperty("timestamp").le(effectiveTo.toEpochMilli()))
+                .addOrder(AuditEntity.revisionNumber().asc())
+                .getResultList();
+        int totalEvents = 0;
+        for (Object[] row : results) {
+            totalEvents += accumulateRow(row, effectiveFrom, effectiveTo, bucket, bucketed);
+        }
+        return totalEvents;
+    }
+
+    private static int accumulateRow(
+            Object[] row,
+            Instant effectiveFrom,
+            Instant effectiveTo,
+            RiskTrendsBucket bucket,
+            Map<Instant, BucketAccumulator> bucketed) {
+        RiskRegisterRecord entity = (RiskRegisterRecord) row[0];
+        Object revInfo = row[1];
+        RevisionType revType = (RevisionType) row[2];
+        Instant timestamp = readTimestamp(revInfo);
+        if (timestamp == null || timestamp.isBefore(effectiveFrom) || timestamp.isAfter(effectiveTo)) {
+            return 0;
+        }
+        Instant windowStart = bucketStart(timestamp, bucket);
+        BucketAccumulator acc = bucketed.computeIfAbsent(windowStart, k -> new BucketAccumulator());
+        acc.total++;
+        acc.byRevisionType.merge(revType.name(), 1, Integer::sum);
+        if (entity != null && entity.getStatus() != null) {
+            acc.byStatus.merge(entity.getStatus().name(), 1, Integer::sum);
+        }
+        return 1;
+    }
+
+    private static List<RiskTrendsResult.TrendPoint> buildTrendPoints(
+            Map<Instant, BucketAccumulator> bucketed, RiskTrendsBucket bucket) {
         List<RiskTrendsResult.TrendPoint> points = new ArrayList<>(bucketed.size());
         for (Map.Entry<Instant, BucketAccumulator> entry : bucketed.entrySet()) {
             Instant start = entry.getKey();
@@ -164,7 +231,10 @@ public class RiskTrendsService {
             points.add(new RiskTrendsResult.TrendPoint(
                     start, end, acc.total, new LinkedHashMap<>(acc.byStatus), new LinkedHashMap<>(acc.byRevisionType)));
         }
+        return points;
+    }
 
+    private static List<String> buildLimitations(boolean defaultedFrom) {
         List<String> limitations = new ArrayList<>();
         if (defaultedFrom) {
             limitations.add(DEFAULT_WINDOW_LIMITATION);
@@ -173,25 +243,12 @@ public class RiskTrendsService {
         // event counts for an exhaustive audit log of every status transition the
         // project's risks have ever undergone. See ADR-038.
         limitations.add(DELETED_RECORDS_NOT_COUNTED_LIMITATION);
-
-        return new RiskTrendsResult(
-                ANALYSIS_KIND,
-                project.getIdentifier(),
-                effectiveAsOf,
-                DERIVATION_METHOD,
-                SCALE,
-                UNITS,
-                new RiskTrendsResult.Inputs(
-                        project.getIdentifier(),
-                        effectiveAsOf,
-                        effectiveFrom,
-                        effectiveTo,
-                        bucket.name(),
-                        "RiskRegisterRecord"),
-                points,
-                new RiskTrendsResult.Counts(totalEvents, points.size()),
-                limitations);
+        return limitations;
     }
+
+    private record ResolvedWindow(Instant effectiveFrom, boolean defaulted) {}
+
+    private record BucketingResult(Map<Instant, BucketAccumulator> bucketed, int totalEvents) {}
 
     private static Instant readTimestamp(Object revisionInfo) {
         if (revisionInfo == null) {
@@ -200,14 +257,18 @@ public class RiskTrendsService {
         try {
             var method = revisionInfo.getClass().getMethod("getTimestamp");
             Object ts = method.invoke(revisionInfo);
-            if (ts instanceof Long longValue) {
-                return Instant.ofEpochMilli(longValue);
-            }
-            if (ts instanceof Number num) {
-                return Instant.ofEpochMilli(num.longValue());
-            }
+            return epochMilliToInstant(ts);
         } catch (ReflectiveOperationException ex) {
             return null;
+        }
+    }
+
+    private static Instant epochMilliToInstant(Object ts) {
+        if (ts instanceof Long longValue) {
+            return Instant.ofEpochMilli(longValue);
+        }
+        if (ts instanceof Number num) {
+            return Instant.ofEpochMilli(num.longValue());
         }
         return null;
     }
