@@ -1097,6 +1097,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                                 + " source_entity_id, summary, detected_at, acknowledged_at"
                                 + " FROM compliance_drift_event LIMIT 1")
         // V131-V132: fair_cam_control_domain on control_effectiveness_assessment and audit (GC-I017).
+        // V132-V133: fair_cam_control_domain on control_effectiveness_assessment and audit (GC-I017).
         entityManager
                 .createNativeQuery("SELECT 1 FROM information_schema.columns"
                         + " WHERE table_name = 'control_effectiveness_assessment'"
