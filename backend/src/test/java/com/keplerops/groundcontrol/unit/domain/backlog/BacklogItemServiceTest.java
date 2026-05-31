@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.TestUtil;
@@ -223,8 +224,9 @@ class BacklogItemServiceTest {
         TestUtil.setField(existing, "id", itemId);
         when(repository.findByIdAndProjectId(itemId, PROJECT_ID)).thenReturn(Optional.of(existing));
 
-        // delete() is void; just verify it does not throw
         service.delete(PROJECT_ID, itemId);
+
+        verify(repository).delete(existing);
     }
 
     @Test
