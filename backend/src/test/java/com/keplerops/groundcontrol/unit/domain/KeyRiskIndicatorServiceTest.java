@@ -106,9 +106,10 @@ class KeyRiskIndicatorServiceTest {
     void createRejectsDuplicateUid() {
         when(projectService.getById(projectId)).thenReturn(project);
         when(repository.existsByProjectIdAndUid(projectId, "KRI-001")).thenReturn(true);
+        var cmd = new CreateKeyRiskIndicatorCommand(
+                projectId, "KRI-001", "Name", null, null, null, null, null, null, null, null);
 
-        assertThatThrownBy(() -> service.create(new CreateKeyRiskIndicatorCommand(
-                        projectId, "KRI-001", "Name", null, null, null, null, null, null, null, null)))
+        assertThatThrownBy(() -> service.create(cmd))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("KRI-001");
     }
@@ -117,9 +118,10 @@ class KeyRiskIndicatorServiceTest {
     void createRejectsInvalidDirection() {
         when(projectService.getById(projectId)).thenReturn(project);
         when(repository.existsByProjectIdAndUid(projectId, "KRI-001")).thenReturn(false);
+        var cmd = new CreateKeyRiskIndicatorCommand(
+                projectId, "KRI-001", "Name", null, null, null, null, "LOWER_IS_BETTER", null, null, null);
 
-        assertThatThrownBy(() -> service.create(new CreateKeyRiskIndicatorCommand(
-                        projectId, "KRI-001", "Name", null, null, null, null, "LOWER_IS_BETTER", null, null, null)))
+        assertThatThrownBy(() -> service.create(cmd))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("direction");
     }
@@ -163,18 +165,16 @@ class KeyRiskIndicatorServiceTest {
     @Test
     void updateThrowsNotFoundWhenKriAbsent() {
         when(repository.findByIdAndProjectId(kriId, projectId)).thenReturn(Optional.empty());
+        var cmd = new UpdateKeyRiskIndicatorCommand(null, null, null, null, null, null, null, null, null);
 
-        assertThatThrownBy(() -> service.update(
-                        projectId,
-                        kriId,
-                        new UpdateKeyRiskIndicatorCommand(null, null, null, null, null, null, null, null, null)))
-                .isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.update(projectId, kriId, cmd)).isInstanceOf(NotFoundException.class);
     }
 
     @Test
     void recordMeasurementThrowsWhenValueNull() {
-        assertThatThrownBy(
-                        () -> service.recordMeasurement(projectId, kriId, new RecordKriMeasurementCommand(null, null)))
+        var cmd = new RecordKriMeasurementCommand(null, null);
+
+        assertThatThrownBy(() -> service.recordMeasurement(projectId, kriId, cmd))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("null");
     }

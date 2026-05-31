@@ -104,9 +104,9 @@ class RiskAppetiteProfileServiceTest {
         when(projectService.getById(projectId)).thenReturn(project);
         when(repository.existsByProjectIdAndProfileKeyAndVersion(projectId, "BOARD_2026", "1"))
                 .thenReturn(true);
+        var cmd = new CreateRiskAppetiteProfileCommand(projectId, "BOARD_2026", "Name", "1", null, null, null, null);
 
-        assertThatThrownBy(() -> service.create(new CreateRiskAppetiteProfileCommand(
-                        projectId, "BOARD_2026", "Name", "1", null, null, null, null)))
+        assertThatThrownBy(() -> service.create(cmd))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("BOARD_2026");
     }
@@ -117,9 +117,10 @@ class RiskAppetiteProfileServiceTest {
         when(repository.existsByProjectIdAndProfileKeyAndVersion(projectId, "BOARD_2026", "1"))
                 .thenReturn(false);
         var duplicate = List.of(cyberMonetaryTolerance(), cyberMonetaryTolerance());
+        var cmd =
+                new CreateRiskAppetiteProfileCommand(projectId, "BOARD_2026", "Name", "1", null, null, null, duplicate);
 
-        assertThatThrownBy(() -> service.create(new CreateRiskAppetiteProfileCommand(
-                        projectId, "BOARD_2026", "Name", "1", null, null, null, duplicate)))
+        assertThatThrownBy(() -> service.create(cmd))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("Duplicate");
     }
@@ -162,10 +163,9 @@ class RiskAppetiteProfileServiceTest {
     @Test
     void updateThrowsNotFoundWhenProfileAbsent() {
         when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.empty());
+        var cmd = new UpdateRiskAppetiteProfileCommand(null, null, null, null, null, null);
 
-        assertThatThrownBy(() -> service.update(
-                        projectId, profileId, new UpdateRiskAppetiteProfileCommand(null, null, null, null, null, null)))
-                .isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.update(projectId, profileId, cmd)).isInstanceOf(NotFoundException.class);
     }
 
     @Test

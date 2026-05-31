@@ -97,9 +97,10 @@ class RiskAssessmentCampaignServiceTest {
     void createRejectsDuplicateUid() {
         when(projectService.getById(projectId)).thenReturn(project);
         when(repository.existsByProjectIdAndUid(projectId, "CMP-001")).thenReturn(true);
+        var cmd = new CreateRiskAssessmentCampaignCommand(
+                projectId, "CMP-001", "Title", null, null, null, null, null, null, null, null, null);
 
-        assertThatThrownBy(() -> service.create(new CreateRiskAssessmentCampaignCommand(
-                        projectId, "CMP-001", "Title", null, null, null, null, null, null, null, null, null)))
+        assertThatThrownBy(() -> service.create(cmd))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("CMP-001");
     }
@@ -143,13 +144,9 @@ class RiskAssessmentCampaignServiceTest {
     @Test
     void updateThrowsNotFoundWhenCampaignAbsent() {
         when(repository.findByIdAndProjectId(campaignId, projectId)).thenReturn(Optional.empty());
+        var cmd = new UpdateRiskAssessmentCampaignCommand(null, null, null, null, null, null, null, null, null, null);
 
-        assertThatThrownBy(() -> service.update(
-                        projectId,
-                        campaignId,
-                        new UpdateRiskAssessmentCampaignCommand(
-                                null, null, null, null, null, null, null, null, null, null)))
-                .isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.update(projectId, campaignId, cmd)).isInstanceOf(NotFoundException.class);
     }
 
     @Test
