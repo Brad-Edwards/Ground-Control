@@ -55,6 +55,12 @@ public class PortfolioAggregationService {
 
     static final String DERIVATION_METHOD = "portfolio-projection-v1";
 
+    /**
+     * Maximum number of ids materialised per drill-down list. The associated count is always the full
+     * total; only the id list is bounded, and a truncation note is added to {@code limitations}.
+     */
+    public static final int MAX_DRILLDOWN = 500;
+
     private final EvidenceFreshnessAnalysisService evidenceFreshnessAnalysisService;
     private final RiskScenarioRepository riskScenarioRepository;
     private final RiskAssessmentResultRepository riskAssessmentResultRepository;
@@ -108,19 +114,21 @@ public class PortfolioAggregationService {
         Instant effectiveAsOf = freshness.asOf();
         LocalDate asOfDate = effectiveAsOf.atZone(ZoneOffset.UTC).toLocalDate();
 
-        PortfolioSummaryResult.RiskPosture riskPosture = riskPosture(projectId, effectiveAsOf);
-        PortfolioSummaryResult.ControlHealth controlHealth = controlHealth(projectId);
+        // Drill-down id lists are bounded; counts stay exact and any truncation is recorded here.
+        List<String> limitations = new ArrayList<>(freshness.limitations());
+
+        PortfolioSummaryResult.RiskPosture riskPosture = riskPosture(projectId, effectiveAsOf, limitations);
+        PortfolioSummaryResult.ControlHealth controlHealth = controlHealth(projectId, limitations);
         PortfolioSummaryResult.EvidenceFreshness evidenceFreshness = new PortfolioSummaryResult.EvidenceFreshness(
                 freshness.counts().fresh(),
                 freshness.counts().stale(),
                 freshness.counts().expired(),
                 freshness.counts().superseded(),
                 freshness.counts().currentlyValid());
-        PortfolioSummaryResult.FindingTrends findingTrends = findingTrends(projectId, asOfDate);
-        PortfolioSummaryResult.AssetCriticality assetCriticality = assetCriticality(projectId);
+        PortfolioSummaryResult.FindingTrends findingTrends = findingTrends(projectId, asOfDate, limitations);
+        PortfolioSummaryResult.AssetCriticality assetCriticality = assetCriticality(projectId, limitations);
         List<PortfolioSummaryResult.MethodologySummary> methodologySummaries = methodologySummaries(projectId);
 
-        List<String> limitations = new ArrayList<>(freshness.limitations());
         limitations.add("distribution maps contain only non-zero buckets; absent enum values are implicitly zero");
 
         log.info(
@@ -144,7 +152,7 @@ public class PortfolioAggregationService {
                 limitations);
     }
 
-    private PortfolioSummaryResult.RiskPosture riskPosture(UUID projectId, Instant asOf) {
+    private PortfolioSummaryResult.RiskPosture riskPosture(UUID projectId, Instant asOf, List<String> limitations) {
         List<RiskScenario> scenarios = riskScenarioRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
         List<RiskAssessmentResult> assessments =
                 riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId);
@@ -194,10 +202,10 @@ public class PortfolioAggregationService {
                 registerByStatus,
                 reassessmentSignals,
                 overdueRegisterRecordUids.size(),
-                overdueRegisterRecordUids);
+                capDrilldown(overdueRegisterRecordUids, "overdue register reviews", limitations));
     }
 
-    private PortfolioSummaryResult.ControlHealth controlHealth(UUID projectId) {
+    private PortfolioSummaryResult.ControlHealth controlHealth(UUID projectId, List<String> limitations) {
         List<Control> controls = controlRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
         List<ControlEffectivenessAssessment> assessments =
                 controlEffectivenessAssessmentRepository.findByProjectIdOrderByAssessedAtDesc(projectId);
@@ -241,11 +249,12 @@ public class PortfolioAggregationService {
                 operatingDistribution,
                 unassessedControlUids.size(),
                 unmappedControlUids.size(),
-                unassessedControlUids,
-                unmappedControlUids);
+                capDrilldown(unassessedControlUids, "unassessed controls", limitations),
+                capDrilldown(unmappedControlUids, "unmapped controls", limitations));
     }
 
-    private PortfolioSummaryResult.FindingTrends findingTrends(UUID projectId, LocalDate asOfDate) {
+    private PortfolioSummaryResult.FindingTrends findingTrends(
+            UUID projectId, LocalDate asOfDate, List<String> limitations) {
         List<Finding> findings = findingRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
         Map<String, Integer> bySeverity = new LinkedHashMap<>();
         Map<String, Integer> byStatus = new LinkedHashMap<>();
@@ -271,11 +280,11 @@ public class PortfolioAggregationService {
                 byType,
                 openFindingUids.size(),
                 overdueFindingUids.size(),
-                openFindingUids,
-                overdueFindingUids);
+                capDrilldown(openFindingUids, "open findings", limitations),
+                capDrilldown(overdueFindingUids, "overdue findings", limitations));
     }
 
-    private PortfolioSummaryResult.AssetCriticality assetCriticality(UUID projectId) {
+    private PortfolioSummaryResult.AssetCriticality assetCriticality(UUID projectId, List<String> limitations) {
         List<OperationalAsset> assets = operationalAssetRepository.findByProjectIdAndArchivedAtIsNull(projectId);
         Map<String, Integer> byCriticality = new LinkedHashMap<>();
         Map<String, Integer> byEnvironment = new LinkedHashMap<>();
@@ -296,7 +305,11 @@ public class PortfolioAggregationService {
             }
         }
         return new PortfolioSummaryResult.AssetCriticality(
-                assets.size(), byCriticality, byEnvironment, byScope, criticalAssetUids);
+                assets.size(),
+                byCriticality,
+                byEnvironment,
+                byScope,
+                capDrilldown(criticalAssetUids, "critical assets", limitations));
     }
 
     private List<PortfolioSummaryResult.MethodologySummary> methodologySummaries(UUID projectId) {
@@ -350,5 +363,18 @@ public class PortfolioAggregationService {
 
     private static void increment(Map<String, Integer> map, String key) {
         map.merge(key, 1, Integer::sum);
+    }
+
+    /**
+     * Returns {@code uids} bounded to {@link #MAX_DRILLDOWN}, recording a truncation note in
+     * {@code limitations} when the list is shortened. The caller keeps the full {@code uids.size()} as
+     * the dimension's count before calling this.
+     */
+    private static List<String> capDrilldown(List<String> uids, String label, List<String> limitations) {
+        if (uids.size() <= MAX_DRILLDOWN) {
+            return uids;
+        }
+        limitations.add(label + " drill-down list truncated to " + MAX_DRILLDOWN + " of " + uids.size());
+        return new ArrayList<>(uids.subList(0, MAX_DRILLDOWN));
     }
 }

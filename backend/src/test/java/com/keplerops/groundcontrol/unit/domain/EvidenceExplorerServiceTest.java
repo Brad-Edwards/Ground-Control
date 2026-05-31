@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.assets.model.Observation;
@@ -30,6 +31,9 @@ import com.keplerops.groundcontrol.domain.findings.state.FindingType;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskAssessmentResult;
+import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskAssessmentApprovalStatus;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -67,6 +71,9 @@ class EvidenceExplorerServiceTest {
     @Mock
     private FindingLinkRepository findingLinkRepository;
 
+    @Mock
+    private RiskAssessmentResultRepository riskAssessmentResultRepository;
+
     @InjectMocks
     private EvidenceExplorerService service;
 
@@ -85,6 +92,8 @@ class EvidenceExplorerServiceTest {
         when(observationRepository.findByProjectId(PROJECT_ID)).thenReturn(List.of());
         when(findingRepository.findByProjectIdOrderByCreatedAtDesc(PROJECT_ID)).thenReturn(List.of());
         when(findingLinkRepository.findByProjectId(PROJECT_ID)).thenReturn(List.of());
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(PROJECT_ID))
+                .thenReturn(List.of());
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -198,6 +207,65 @@ class EvidenceExplorerServiceTest {
 
             assertThat(result.counts().fresh()).isEqualTo(1);
             assertThat(result.counts().currentlyValid()).isEqualTo(2);
+        }
+
+        @Test
+        void surfacesDownstreamAssessmentsThatConsumedTheObservation() {
+            UUID obsId = UUID.randomUUID();
+            UUID assessmentId = UUID.randomUUID();
+            UUID scenarioId = UUID.randomUUID();
+            var obsItem = new EvidenceFreshnessResult.ObservationFreshnessItem(
+                    obsId, UUID.randomUUID(), "A-001", "CONFIGURATION", "os_version", NOW, null, 5, "FRESH");
+            when(evidenceFreshnessAnalysisService.analyze(any(), any(), anyInt(), anyBoolean(), any(), any()))
+                    .thenReturn(freshnessResult(
+                            List.of(),
+                            List.of(obsItem),
+                            new EvidenceFreshnessResult.EvidenceFreshnessCounts(1, 0, 0, 0, 1)));
+
+            // Mock the assessment + its observation set: the service only reads the getters.
+            Observation consumed = mock(Observation.class);
+            when(consumed.getId()).thenReturn(obsId);
+            RiskAssessmentResult assessment = mock(RiskAssessmentResult.class);
+            when(assessment.getId()).thenReturn(assessmentId);
+            when(assessment.getObservations()).thenReturn(java.util.Set.of(consumed));
+            when(assessment.getApprovalState()).thenReturn(RiskAssessmentApprovalStatus.APPROVED);
+            when(assessment.getRiskScenario()).thenReturn(null);
+            when(assessment.getMethodologyProfile()).thenReturn(null);
+            when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(PROJECT_ID))
+                    .thenReturn(List.of(assessment));
+
+            EvidenceExplorerResult result = service.explore(PROJECT_ID, null, WINDOW, null, null, true);
+
+            EvidenceExplorerResult.ExplorerObservation obs =
+                    result.observations().get(0);
+            assertThat(obs.downstreamAssessments()).hasSize(1);
+            assertThat(obs.downstreamAssessments().get(0).assessmentId()).isEqualTo(assessmentId);
+            assertThat(obs.downstreamAssessments().get(0).approvalState())
+                    .isEqualTo(RiskAssessmentApprovalStatus.APPROVED);
+        }
+    }
+
+    @Nested
+    class Bounding {
+
+        @Test
+        void capsObservationListingAndRecordsTruncationWhileCountsStayFull() {
+            List<EvidenceFreshnessResult.ObservationFreshnessItem> items = new java.util.ArrayList<>();
+            for (int i = 0; i < EvidenceExplorerService.MAX_LISTING + 1; i++) {
+                items.add(new EvidenceFreshnessResult.ObservationFreshnessItem(
+                        UUID.randomUUID(), UUID.randomUUID(), "A", "CONFIGURATION", "k" + i, NOW, null, 1, "FRESH"));
+            }
+            when(evidenceFreshnessAnalysisService.analyze(any(), any(), anyInt(), anyBoolean(), any(), any()))
+                    .thenReturn(freshnessResult(
+                            List.of(),
+                            items,
+                            new EvidenceFreshnessResult.EvidenceFreshnessCounts(items.size(), 0, 0, 0, items.size())));
+
+            EvidenceExplorerResult result = service.explore(PROJECT_ID, null, WINDOW, null, null, true);
+
+            assertThat(result.observations()).hasSize(EvidenceExplorerService.MAX_LISTING);
+            assertThat(result.counts().fresh()).isEqualTo(items.size());
+            assertThat(result.limitations()).anyMatch(l -> l.contains("observation listing truncated"));
         }
     }
 

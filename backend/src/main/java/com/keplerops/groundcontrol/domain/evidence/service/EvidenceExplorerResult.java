@@ -4,6 +4,7 @@ import com.keplerops.groundcontrol.domain.evidence.state.EvidenceSourceKind;
 import com.keplerops.groundcontrol.domain.evidence.state.EvidenceType;
 import com.keplerops.groundcontrol.domain.findings.state.FindingSeverity;
 import com.keplerops.groundcontrol.domain.findings.state.FindingStatus;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskAssessmentApprovalStatus;
 import com.keplerops.groundcontrol.domain.verification.state.AssuranceLevel;
 import java.time.Instant;
 import java.util.List;
@@ -53,7 +54,11 @@ public record EvidenceExplorerResult(
     public record ExplorerSource(
             EvidenceSourceKind sourceKind, UUID sourceEntityId, String sourceIdentifier, String role) {}
 
-    /** An observation with provenance, freshness, affected asset, and downstream finding impact. */
+    /**
+     * An observation with provenance, freshness, affected asset, and downstream impact. Downstream
+     * impact is two-sided: findings linked to the observation, and risk assessments that consume it
+     * (assessments whose evidence input set includes this observation).
+     */
     public record ExplorerObservation(
             UUID id,
             UUID assetId,
@@ -68,11 +73,22 @@ public record EvidenceExplorerResult(
             Instant expiresAt,
             String freshnessState,
             long ageDays,
-            List<ExplorerFindingRef> downstreamFindings) {}
+            List<ExplorerFindingRef> downstreamFindings,
+            List<ExplorerAssessmentRef> downstreamAssessments) {}
 
     /** A finding downstream of an evidence artifact or observation. */
     public record ExplorerFindingRef(
             UUID id, String uid, String title, FindingSeverity severity, FindingStatus status) {}
+
+    /**
+     * A risk assessment downstream of an observation — one that consumed the observation as an
+     * evidence input. Only structured references are surfaced (no assessment payloads).
+     */
+    public record ExplorerAssessmentRef(
+            UUID assessmentId,
+            UUID riskScenarioId,
+            RiskAssessmentApprovalStatus approvalState,
+            String methodologyProfileName) {}
 
     /** Evidence-freshness roll-up, mirrored from the freshness analysis (GC-L007). */
     public record FreshnessCounts(int fresh, int stale, int expired, int superseded, int currentlyValid) {}

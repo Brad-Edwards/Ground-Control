@@ -13,6 +13,8 @@ import com.keplerops.groundcontrol.domain.findings.repository.FindingRepository;
 import com.keplerops.groundcontrol.domain.findings.state.FindingLinkTargetType;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskAssessmentResult;
+import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -33,8 +35,10 @@ import org.springframework.transaction.annotation.Transactional;
  * from {@link EvidenceFreshnessAnalysisService#analyze} (which also validates the project, asset
  * filter, and freshness window), so the explorer never re-derives freshness logic. This service
  * enriches those freshness items with provenance (evidence source refs; observation
- * source/confidence/evidenceRef/value) and downstream finding impact (findings linked to an evidence
- * artifact or observation via {@link FindingLink}).
+ * source/confidence/evidenceRef/value) and downstream impact: findings linked to an evidence artifact
+ * or observation via {@link FindingLink}, plus the risk assessments that consumed an observation as an
+ * evidence input. The artifact and observation listings are bounded by {@link #MAX_LISTING}; the
+ * freshness counts always reflect the full set and any truncation is recorded in {@code limitations}.
  */
 @Service
 @Transactional(readOnly = true)
@@ -42,9 +46,17 @@ public class EvidenceExplorerService {
 
     private static final Logger log = LoggerFactory.getLogger(EvidenceExplorerService.class);
 
+    /**
+     * Maximum number of artifacts / observations materialised into the response. The aggregate
+     * freshness counts always reflect the full set; only the listing is bounded, and a truncation note
+     * is added to {@code limitations} so the cap is never silent.
+     */
+    public static final int MAX_LISTING = 500;
+
     private final EvidenceFreshnessAnalysisService evidenceFreshnessAnalysisService;
     private final EvidenceArtifactRepository evidenceArtifactRepository;
     private final ObservationRepository observationRepository;
+    private final RiskAssessmentResultRepository riskAssessmentResultRepository;
     private final FindingRepository findingRepository;
     private final FindingLinkRepository findingLinkRepository;
 
@@ -52,11 +64,13 @@ public class EvidenceExplorerService {
             EvidenceFreshnessAnalysisService evidenceFreshnessAnalysisService,
             EvidenceArtifactRepository evidenceArtifactRepository,
             ObservationRepository observationRepository,
+            RiskAssessmentResultRepository riskAssessmentResultRepository,
             FindingRepository findingRepository,
             FindingLinkRepository findingLinkRepository) {
         this.evidenceFreshnessAnalysisService = evidenceFreshnessAnalysisService;
         this.evidenceArtifactRepository = evidenceArtifactRepository;
         this.observationRepository = observationRepository;
+        this.riskAssessmentResultRepository = riskAssessmentResultRepository;
         this.findingRepository = findingRepository;
         this.findingLinkRepository = findingLinkRepository;
     }
@@ -95,10 +109,14 @@ public class EvidenceExplorerService {
         Map<UUID, List<Finding>> findingsByObservation =
                 groupFindingsByTarget(findingLinks, FindingLinkTargetType.OBSERVATION, findingsById);
 
+        // Downstream assessment impact: which risk assessments consumed each observation as evidence.
+        Map<UUID, List<RiskAssessmentResult>> assessmentsByObservation = groupAssessmentsByObservation(
+                riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId));
+
         List<EvidenceExplorerResult.ExplorerArtifact> artifacts =
                 composeArtifacts(freshness, artifactsById, evidenceType, findingsByEvidence);
         List<EvidenceExplorerResult.ExplorerObservation> observations =
-                composeObservations(freshness, observationsById, findingsByObservation);
+                composeObservations(freshness, observationsById, findingsByObservation, assessmentsByObservation);
 
         EvidenceExplorerResult.FreshnessCounts counts = new EvidenceExplorerResult.FreshnessCounts(
                 freshness.counts().fresh(),
@@ -113,13 +131,32 @@ public class EvidenceExplorerService {
                     "evidenceType narrows the artifact listing only; the freshness counts reflect the full evidence set for the scope");
         }
 
+        // Bound the response payload. The freshness counts above already reflect the full set; only the
+        // listings are capped, and truncation is recorded explicitly (no silent caps).
+        int totalArtifacts = artifacts.size();
+        int totalObservations = observations.size();
+        List<EvidenceExplorerResult.ExplorerArtifact> cappedArtifacts = cap(artifacts);
+        List<EvidenceExplorerResult.ExplorerObservation> cappedObservations = cap(observations);
+        if (totalArtifacts > MAX_LISTING) {
+            limitations.add("evidence-artifact listing truncated to " + MAX_LISTING + " of " + totalArtifacts
+                    + "; narrow by assetId or evidenceType to see the rest");
+        }
+        if (totalObservations > MAX_LISTING) {
+            limitations.add("observation listing truncated to " + MAX_LISTING + " of " + totalObservations
+                    + "; narrow by assetId to see the rest");
+        }
+
         log.info(
                 "evidence_explorer assembled: project={} artifacts={} observations={}",
                 projectId,
-                artifacts.size(),
-                observations.size());
+                cappedArtifacts.size(),
+                cappedObservations.size());
 
-        return new EvidenceExplorerResult(artifacts, observations, counts, limitations);
+        return new EvidenceExplorerResult(cappedArtifacts, cappedObservations, counts, limitations);
+    }
+
+    private static <T> List<T> cap(List<T> items) {
+        return items.size() <= MAX_LISTING ? items : new ArrayList<>(items.subList(0, MAX_LISTING));
     }
 
     private static List<EvidenceExplorerResult.ExplorerArtifact> composeArtifacts(
@@ -155,7 +192,8 @@ public class EvidenceExplorerService {
     private static List<EvidenceExplorerResult.ExplorerObservation> composeObservations(
             EvidenceFreshnessResult freshness,
             Map<UUID, Observation> observationsById,
-            Map<UUID, List<Finding>> findingsByObservation) {
+            Map<UUID, List<Finding>> findingsByObservation,
+            Map<UUID, List<RiskAssessmentResult>> assessmentsByObservation) {
         List<EvidenceExplorerResult.ExplorerObservation> observations = new ArrayList<>();
         for (EvidenceFreshnessResult.ObservationFreshnessItem item : freshness.observations()) {
             Observation entity = observationsById.get(item.id());
@@ -173,9 +211,37 @@ public class EvidenceExplorerService {
                     item.expiresAt(),
                     item.state(),
                     item.ageDays(),
-                    toFindingRefs(findingsByObservation.getOrDefault(item.id(), List.of()))));
+                    toFindingRefs(findingsByObservation.getOrDefault(item.id(), List.of())),
+                    toAssessmentRefs(assessmentsByObservation.getOrDefault(item.id(), List.of()))));
         }
         return observations;
+    }
+
+    /** Reverse index: observation id -> risk assessments that included that observation in their evidence set. */
+    private static Map<UUID, List<RiskAssessmentResult>> groupAssessmentsByObservation(
+            List<RiskAssessmentResult> assessments) {
+        Map<UUID, List<RiskAssessmentResult>> map = new LinkedHashMap<>();
+        for (RiskAssessmentResult assessment : assessments) {
+            for (Observation obs : assessment.getObservations()) {
+                map.computeIfAbsent(obs.getId(), k -> new ArrayList<>()).add(assessment);
+            }
+        }
+        return map;
+    }
+
+    private static List<EvidenceExplorerResult.ExplorerAssessmentRef> toAssessmentRefs(
+            List<RiskAssessmentResult> assessments) {
+        List<EvidenceExplorerResult.ExplorerAssessmentRef> result = new ArrayList<>(assessments.size());
+        for (RiskAssessmentResult a : assessments) {
+            result.add(new EvidenceExplorerResult.ExplorerAssessmentRef(
+                    a.getId(),
+                    a.getRiskScenario() != null ? a.getRiskScenario().getId() : null,
+                    a.getApprovalState(),
+                    a.getMethodologyProfile() != null
+                            ? a.getMethodologyProfile().getName()
+                            : null));
+        }
+        return result;
     }
 
     private static List<EvidenceExplorerResult.ExplorerSource> toSources(List<EvidenceSourceRef> sources) {

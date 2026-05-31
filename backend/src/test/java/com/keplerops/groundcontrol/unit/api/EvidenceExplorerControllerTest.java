@@ -20,6 +20,7 @@ import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.findings.state.FindingSeverity;
 import com.keplerops.groundcontrol.domain.findings.state.FindingStatus;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskAssessmentApprovalStatus;
 import com.keplerops.groundcontrol.domain.verification.state.AssuranceLevel;
 import java.time.Instant;
 import java.util.List;
@@ -68,6 +69,8 @@ class EvidenceExplorerControllerTest {
                 EvidenceSourceKind.OBSERVATION, UUID.randomUUID(), null, "primary");
         var finding = new EvidenceExplorerResult.ExplorerFindingRef(
                 UUID.randomUUID(), "FIND-001", "Downstream finding", FindingSeverity.HIGH, FindingStatus.OPEN);
+        var assessmentRef = new EvidenceExplorerResult.ExplorerAssessmentRef(
+                UUID.randomUUID(), UUID.randomUUID(), RiskAssessmentApprovalStatus.APPROVED, "FAIR-CRST");
         var artifact = new EvidenceExplorerResult.ExplorerArtifact(
                 UUID.randomUUID(),
                 "EV-001",
@@ -97,7 +100,8 @@ class EvidenceExplorerControllerTest {
                 null,
                 "STALE",
                 120,
-                List.of(finding));
+                List.of(finding),
+                List.of(assessmentRef));
         return new EvidenceExplorerResult(
                 List.of(artifact),
                 List.of(observation),
@@ -128,6 +132,8 @@ class EvidenceExplorerControllerTest {
                     .andExpect(jsonPath("$.observations[0].observationValue", is("1.2.3")))
                     .andExpect(jsonPath("$.observations[0].freshnessState", is("STALE")))
                     .andExpect(jsonPath("$.observations[0].downstreamFindings", hasSize(1)))
+                    .andExpect(jsonPath("$.observations[0].downstreamAssessments", hasSize(1)))
+                    .andExpect(jsonPath("$.observations[0].downstreamAssessments[0].approvalState", is("APPROVED")))
                     .andExpect(jsonPath("$.counts.fresh", is(1)))
                     .andExpect(jsonPath("$.counts.currentlyValid", is(2)))
                     .andExpect(jsonPath("$.artifactCount", is(1)))

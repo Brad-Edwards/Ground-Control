@@ -279,6 +279,24 @@ class PortfolioAggregationServiceTest {
     }
 
     @Test
+    void findingDrillDownListsAreCappedWhileCountsStayExact() {
+        int total = PortfolioAggregationService.MAX_DRILLDOWN + 1;
+        List<Finding> open = new java.util.ArrayList<>();
+        for (int i = 0; i < total; i++) {
+            open.add(finding("F-" + i, FindingSeverity.HIGH, FindingStatus.OPEN, null));
+        }
+        when(findingRepository.findByProjectIdOrderByCreatedAtDesc(PROJECT_ID)).thenReturn(open);
+
+        PortfolioSummaryResult result = service.summarize(PROJECT_ID, AS_OF, WINDOW);
+        PortfolioSummaryResult.FindingTrends trends = result.findingTrends();
+
+        // Count reflects the full set; the drill-down list is bounded and truncation is recorded.
+        assertThat(trends.openCount()).isEqualTo(total);
+        assertThat(trends.openFindingUids()).hasSize(PortfolioAggregationService.MAX_DRILLDOWN);
+        assertThat(result.limitations()).anyMatch(l -> l.contains("open findings drill-down list truncated"));
+    }
+
+    @Test
     void emptyProjectYieldsZeroedDimensions() {
         PortfolioSummaryResult result = service.summarize(PROJECT_ID, AS_OF, WINDOW);
         assertThat(result.riskPosture().totalScenarios()).isZero();
