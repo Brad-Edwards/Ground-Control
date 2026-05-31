@@ -182,3 +182,8 @@ covers the parity, plus the documenting endpoint or tool description that
 exposes the new vocabulary. The surface addition is recorded in the ADR-054
 amendment and the changelog fragment; no new DOC_STYLE.md prose is needed
 unless a new style rule is being established.
+
+When documenting query-parameter aliases (for example, `expired=true` vs
+the `expiredOnly=true` alias for the evidence-artifact list endpoint),
+prefer listing the canonical form first followed by the alias in
+parentheses, and document the "omit both to return all" default explicitly.

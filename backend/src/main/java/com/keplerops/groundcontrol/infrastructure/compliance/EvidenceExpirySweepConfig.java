@@ -4,7 +4,6 @@ import com.keplerops.groundcontrol.domain.compliance.service.ComplianceDriftDete
 import com.keplerops.groundcontrol.domain.evidence.repository.EvidenceArtifactRepository;
 import jakarta.annotation.PostConstruct;
 import java.time.Clock;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationEventPublisher;
@@ -65,7 +64,7 @@ public class EvidenceExpirySweepConfig {
             EvidenceArtifactRepository evidenceArtifactRepository,
             ApplicationEventPublisher eventPublisher,
             TransactionTemplate evidenceExpiryDispatchTransactionTemplate,
-            @Autowired Clock clock) {
+            Clock clock) {
         return new EvidenceExpirySweepJob(
                 evidenceArtifactRepository, eventPublisher, evidenceExpiryDispatchTransactionTemplate, clock);
     }

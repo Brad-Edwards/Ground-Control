@@ -9192,6 +9192,11 @@ export async function createEvidenceArtifact(data, project) {
   return request("POST", "/api/v1/evidence-artifacts", { body: data, params: { project } });
 }
 
+/**
+ * List evidence artifacts for a project. Pass `expired=true` (canonical) or
+ * the alias `expiredOnly=true` to restrict to expired artifacts; `expired=false`
+ * to exclude them; omit both to return all artifacts regardless of expiry state.
+ */
 export async function listEvidenceArtifacts({
   project,
   evidenceType,

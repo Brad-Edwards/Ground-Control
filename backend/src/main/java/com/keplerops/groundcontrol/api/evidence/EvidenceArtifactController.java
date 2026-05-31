@@ -60,7 +60,14 @@ public class EvidenceArtifactController {
         // exclude them. Default returns the full set so existing callers see
         // unchanged behavior. The expiry decision lives in the service so the
         // api package does not depend on domain.model.* (ArchUnit boundary).
-        Boolean expiredFlag = expired != null ? expired : (expiredOnly ? Boolean.TRUE : null);
+        Boolean expiredFlag;
+        if (expired != null) {
+            expiredFlag = expired;
+        } else if (expiredOnly) {
+            expiredFlag = Boolean.TRUE;
+        } else {
+            expiredFlag = null;
+        }
         var rows = expiredFlag == null
                 ? service.listByProject(projectId, evidenceType, includeSuperseded)
                 : service.listByProjectFilteredByExpiry(projectId, evidenceType, includeSuperseded, now, expiredFlag);

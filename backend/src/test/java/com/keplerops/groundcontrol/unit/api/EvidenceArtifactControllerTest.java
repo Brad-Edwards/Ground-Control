@@ -284,6 +284,53 @@ class EvidenceArtifactControllerTest {
                 .andExpect(jsonPath("$[0].expired", is(true)));
     }
 
+    /**
+     * GC-I004: expired=true is the canonical form; expiredOnly is an alias.
+     * Both must route to {@code listByProjectFilteredByExpiry}.
+     */
+    @Test
+    void listFiltersByExpiredParamTrue() throws Exception {
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        var project = new Project("ground-control", "Ground Control");
+        setField(project, "id", PROJECT_ID);
+        var expired = new EvidenceArtifact(project, "EVD-EXP2", "t", "s", EvidenceType.ATTESTATION, "m", NOW);
+        setField(expired, "id", UUID.randomUUID());
+        expired.setSources(List.of(new EvidenceSourceRef(EvidenceSourceKind.ATTESTATION, null, "id", null)));
+        expired.setExpiresAt(NOW.minusSeconds(60));
+        when(service.listByProjectFilteredByExpiry(eq(PROJECT_ID), eq(null), eq(false), any(), eq(true)))
+                .thenReturn(List.of(expired));
+
+        mockMvc.perform(get("/api/v1/evidence-artifacts")
+                        .param("project", "ground-control")
+                        .param("expired", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].uid", is("EVD-EXP2")));
+    }
+
+    /**
+     * GC-I004: expired=false filters to non-expired artifacts.
+     */
+    @Test
+    void listFiltersByExpiredParamFalse() throws Exception {
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        var project = new Project("ground-control", "Ground Control");
+        setField(project, "id", PROJECT_ID);
+        var active = new EvidenceArtifact(project, "EVD-ACTIVE", "t", "s", EvidenceType.ATTESTATION, "m", NOW);
+        setField(active, "id", UUID.randomUUID());
+        active.setSources(List.of(new EvidenceSourceRef(EvidenceSourceKind.ATTESTATION, null, "id", null)));
+        active.setExpiresAt(NOW.plusSeconds(86400));
+        when(service.listByProjectFilteredByExpiry(eq(PROJECT_ID), eq(null), eq(false), any(), eq(false)))
+                .thenReturn(List.of(active));
+
+        mockMvc.perform(get("/api/v1/evidence-artifacts")
+                        .param("project", "ground-control")
+                        .param("expired", "false"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].uid", is("EVD-ACTIVE")));
+    }
+
     @Test
     void createAcceptsExpiresAtAndValidityWindowDays() throws Exception {
         when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);

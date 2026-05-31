@@ -84,15 +84,16 @@ public class ComplianceDriftDetectorService {
         var summary = clamp("Control state changed: fields=" + safeFieldNames(signal.changedFields()));
         publish(
                 signal.projectId(),
-                ComplianceDriftCategory.CONTROL_STATE_CHANGED,
-                severity,
-                GraphEntityType.CONTROL.name(),
-                signal.entityId(),
-                summary,
-                signal.occurredAt() != null ? signal.occurredAt() : Instant.now(),
-                /*affectedEntityType=*/ null,
-                /*affectedEntityId=*/ null,
-                /*idempotent=*/ false);
+                new DriftEventSpec(
+                        ComplianceDriftCategory.CONTROL_STATE_CHANGED,
+                        severity,
+                        GraphEntityType.CONTROL.name(),
+                        signal.entityId(),
+                        summary,
+                        signal.occurredAt() != null ? signal.occurredAt() : Instant.now(),
+                        /*affectedEntityType=*/ null,
+                        /*affectedEntityId=*/ null,
+                        /*idempotent=*/ false));
     }
 
     @EventListener
@@ -110,15 +111,16 @@ public class ComplianceDriftDetectorService {
         var summary = clamp("Evidence artifact expired: uid=" + event.uid());
         publish(
                 event.projectId(),
-                ComplianceDriftCategory.EVIDENCE_EXPIRED,
-                ComplianceDriftSeverity.WARN,
-                GraphEntityType.EVIDENCE_ARTIFACT.name(),
-                event.evidenceArtifactId(),
-                summary,
-                event.expiresAt() != null ? event.expiresAt() : Instant.now(),
-                /*affectedEntityType=*/ null,
-                /*affectedEntityId=*/ null,
-                /*idempotent=*/ true);
+                new DriftEventSpec(
+                        ComplianceDriftCategory.EVIDENCE_EXPIRED,
+                        ComplianceDriftSeverity.WARN,
+                        GraphEntityType.EVIDENCE_ARTIFACT.name(),
+                        event.evidenceArtifactId(),
+                        summary,
+                        event.expiresAt() != null ? event.expiresAt() : Instant.now(),
+                        /*affectedEntityType=*/ null,
+                        /*affectedEntityId=*/ null,
+                        /*idempotent=*/ true));
     }
 
     /**
@@ -162,7 +164,9 @@ public class ComplianceDriftDetectorService {
      * caller sees the conflict envelope, not silent success.
      */
     public ComplianceDriftEvent acknowledge(UUID projectId, UUID id) {
-        var event = getById(projectId, id);
+        var event = repository
+                .findByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new NotFoundException("ComplianceDriftEvent not found: " + id));
         if (event.getAcknowledgedAt() != null) {
             throw alreadyAcknowledgedConflict(event);
         }
@@ -170,11 +174,15 @@ public class ComplianceDriftDetectorService {
         var now = Instant.now();
         int updated = repository.acknowledgeIfUnset(id, projectId, now, actor);
         if (updated == 0) {
-            var refreshed = getById(projectId, id);
+            var refreshed = repository
+                    .findByIdAndProjectId(id, projectId)
+                    .orElseThrow(() -> new NotFoundException("ComplianceDriftEvent not found: " + id));
             throw alreadyAcknowledgedConflict(refreshed);
         }
         // Re-read so the response reflects the persisted state.
-        return getById(projectId, id);
+        return repository
+                .findByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new NotFoundException("ComplianceDriftEvent not found: " + id));
     }
 
     private static ConflictException alreadyAcknowledgedConflict(ComplianceDriftEvent event) {
@@ -184,8 +192,11 @@ public class ComplianceDriftDetectorService {
                 Map.of("id", event.getId().toString()));
     }
 
-    private void publish(
-            UUID projectId,
+    /**
+     * Cohesive parameters for a single drift-event write. Introduced to keep
+     * the internal {@code publish} method within the 7-parameter limit.
+     */
+    private record DriftEventSpec(
             ComplianceDriftCategory category,
             ComplianceDriftSeverity severity,
             String sourceEntityType,
@@ -194,12 +205,20 @@ public class ComplianceDriftDetectorService {
             Instant detectedAt,
             String affectedEntityType,
             UUID affectedEntityId,
-            boolean idempotent) {
+            boolean idempotent) {}
+
+    private void publish(UUID projectId, DriftEventSpec spec) {
         var project = projectService.getById(projectId);
         var event = new ComplianceDriftEvent(
-                project, category, severity, sourceEntityType, sourceEntityId, summary, detectedAt);
-        event.setAffectedEntityType(affectedEntityType);
-        event.setAffectedEntityId(affectedEntityId);
+                project,
+                spec.category(),
+                spec.severity(),
+                spec.sourceEntityType(),
+                spec.sourceEntityId(),
+                spec.summary(),
+                spec.detectedAt());
+        event.setAffectedEntityType(spec.affectedEntityType());
+        event.setAffectedEntityId(spec.affectedEntityId());
         event.setDetectedBy(ActorHolder.get());
         repository.save(event);
         if (log.isInfoEnabled()) {
@@ -210,11 +229,11 @@ public class ComplianceDriftDetectorService {
             log.info(
                     "compliance_drift_published: project_id={} category={} severity={} source_type={} source_id={} idempotent={}",
                     projectId,
-                    category,
-                    severity,
-                    sourceEntityType,
-                    sourceEntityId,
-                    idempotent);
+                    spec.category(),
+                    spec.severity(),
+                    spec.sourceEntityType(),
+                    spec.sourceEntityId(),
+                    spec.idempotent());
         }
     }
 

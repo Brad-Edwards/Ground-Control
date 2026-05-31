@@ -1595,7 +1595,9 @@ caller-supplied.
 The list endpoint excludes superseded artifacts by default; pass
 `includeSuperseded=true` to include them. Pass `expired=true` (or the alias
 `expiredOnly=true`) to fetch only artifacts whose `expiresAt` has elapsed;
-`expired=false` excludes them. The graph projection emits one `HAS_SOURCE`
+`expired=false` excludes only expired artifacts, returning all non-expired rows.
+When neither `expired` nor `expiredOnly` is set, all artifacts are returned
+regardless of expiry state. The graph projection emits one `HAS_SOURCE`
 edge per internal-kind source pointing at the existing graph node for the
 source entity, and a `SUPERSEDED_BY` edge from a prior artifact to its
 replacement once supersede has run.

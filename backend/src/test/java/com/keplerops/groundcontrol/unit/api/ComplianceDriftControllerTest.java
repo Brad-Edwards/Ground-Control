@@ -4,7 +4,6 @@ import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -117,8 +116,7 @@ class ComplianceDriftControllerTest {
     @Test
     void acknowledgeReturns409WhenAlreadyAcknowledged() throws Exception {
         when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
-        when(service.acknowledge(eq(PROJECT_ID), eq(EVENT_ID)))
-                .thenThrow(new ConflictException("already acknowledged"));
+        when(service.acknowledge(PROJECT_ID, EVENT_ID)).thenThrow(new ConflictException("already acknowledged"));
 
         mockMvc.perform(post("/api/v1/compliance-drift-events/{id}/acknowledge", EVENT_ID)
                         .param("project", "ground-control"))

@@ -214,7 +214,11 @@ public class EvidenceArtifactService {
             boolean includeSuperseded,
             java.time.Instant asOf,
             boolean expired) {
-        return listByProject(projectId, evidenceType, includeSuperseded).stream()
+        var rows = evidenceType == null
+                ? repository.findByProjectIdOrderByDerivedAtDesc(projectId)
+                : repository.findByProjectIdAndEvidenceTypeOrderByDerivedAtDesc(projectId, evidenceType);
+        return rows.stream()
+                .filter(a -> includeSuperseded || a.getSupersededByArtifactId() == null)
                 .filter(a -> a.isExpiredAt(asOf) == expired)
                 .toList();
     }
