@@ -362,6 +362,14 @@ public class GraphTargetResolverService {
         };
     }
 
+    /**
+     * Validates the target of an audit link. The legacy {@link AuditLinkTargetType#FRAMEWORK}
+     * constant is retained for backward compatibility with audit records authored before
+     * GC-I002 promoted compliance mappings into a first-class aggregate; it resolves as an
+     * external (free-form identifier) target. New audit links must use
+     * {@link AuditLinkTargetType#COMPLIANCE_FRAMEWORK_MAPPING} for typed resolution.
+     */
+    @SuppressWarnings("deprecation")
     public ValidatedTarget validateAuditTarget(
             UUID projectId, AuditLinkTargetType targetType, UUID targetEntityId, String targetIdentifier) {
         return switch (targetType) {
@@ -387,6 +395,10 @@ public class GraphTargetResolverService {
                     LABEL_EVIDENCE);
             case FINDING -> internalTarget(
                     targetEntityId, findingRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_FINDING);
+            case COMPLIANCE_FRAMEWORK_MAPPING -> internalTarget(
+                    targetEntityId,
+                    complianceFrameworkMappingRepository.existsByIdAndProjectId(targetEntityId, projectId),
+                    LABEL_COMPLIANCE_FRAMEWORK_MAPPING);
             case FRAMEWORK, EXTERNAL -> externalTarget(targetIdentifier);
         };
     }

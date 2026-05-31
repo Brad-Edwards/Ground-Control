@@ -189,3 +189,5 @@ input `{ repo_path, changed_paths[] }`, output
 - Backend `ComplianceFrameworkMappingService.update` now applies the same `containsControlChars` log-injection guard that `create` enforces via `validateRequiredFields`. The previous path only ran `sanitizeExternalIdentifier` (trim-only), so an authenticated caller could PUT a `frameworkIdentifier` containing embedded newlines that POST would have rejected.
 
 These are MCP-adapter, config-parser, and backend service-validation surfaces; no change to the Vale rule set, `.vale.ini`, the classifier, or `docs/DOC_STYLE.md`.
+
+**2026-05-31 (issue #744 GC-I002 cycle 2, COMPLIANCE_FRAMEWORK_MAPPING audit link target).** Added `COMPLIANCE_FRAMEWORK_MAPPING` to `AUDIT_LINK_TARGET_TYPES` in `mcp/ground-control/lib.js` to mirror the new typed `AuditLinkTargetType` constant that supersedes the legacy `FRAMEWORK` string path for new audit links. The legacy `FRAMEWORK` constant is retained in both the Java enum and the MCP constant array for backward compatibility with persisted audit records. No new MCP tools or REST paths; no change to the Vale rule set, `.vale.ini`, the classifier, or `docs/DOC_STYLE.md`.

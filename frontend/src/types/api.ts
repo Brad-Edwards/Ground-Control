@@ -940,8 +940,11 @@ export type AuditLinkTargetType =
   | "RISK_REGISTER_RECORD"
   | "EVIDENCE"
   | "FINDING"
-  | "EXTERNAL";
+  | "EXTERNAL"
+  | "COMPLIANCE_FRAMEWORK_MAPPING";
 export const AUDIT_LINK_TARGET_TYPES: AuditLinkTargetType[] = [
+  // FRAMEWORK is the legacy backward-compat external-string path for audit records
+  // authored before GC-I002; new links should use COMPLIANCE_FRAMEWORK_MAPPING.
   "FRAMEWORK",
   "ASSET",
   "CONTROL",
@@ -950,6 +953,7 @@ export const AUDIT_LINK_TARGET_TYPES: AuditLinkTargetType[] = [
   "EVIDENCE",
   "FINDING",
   "EXTERNAL",
+  "COMPLIANCE_FRAMEWORK_MAPPING",
 ];
 
 export type AuditLinkType =

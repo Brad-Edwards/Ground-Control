@@ -1,0 +1,1 @@
+changed: resolve 17 open SonarCloud issues on PR #1066: decompose CompliancePostureService cognitive complexity, migrate the deprecated FRAMEWORK audit link target to the typed COMPLIANCE_FRAMEWORK_MAPPING aggregate, parameterize duplicate update-path tests, and tighten assertThatThrownBy lambda scopes

@@ -91,6 +91,14 @@ public class AuditGraphProjectionContributor implements GraphProjectionContribut
                 .toList();
     }
 
+    /**
+     * Maps an audit link's target type to a graph entity type for edge construction.
+     * The {@link AuditLinkTargetType#FRAMEWORK} case is handled for backward
+     * compatibility with persisted audit records authored before GC-I002; it maps to
+     * {@code null} (external target, no graph node). New links must use
+     * {@link AuditLinkTargetType#COMPLIANCE_FRAMEWORK_MAPPING}.
+     */
+    @SuppressWarnings("deprecation")
     private GraphEdge toAuditLinkEdge(
             UUID linkId,
             UUID auditId,
@@ -110,6 +118,7 @@ public class AuditGraphProjectionContributor implements GraphProjectionContribut
                     case RISK_REGISTER_RECORD -> GraphEntityType.RISK_REGISTER_RECORD;
                     case EVIDENCE -> GraphEntityType.EVIDENCE_ARTIFACT;
                     case FINDING -> GraphEntityType.FINDING;
+                    case COMPLIANCE_FRAMEWORK_MAPPING -> GraphEntityType.COMPLIANCE_FRAMEWORK_MAPPING;
                     case FRAMEWORK, EXTERNAL -> null;
                 };
         if (targetEntityType == null) {

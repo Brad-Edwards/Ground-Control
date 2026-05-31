@@ -832,7 +832,15 @@ class GraphTargetResolverServiceTest {
     @ParameterizedTest
     @EnumSource(
             value = AuditLinkTargetType.class,
-            names = {"ASSET", "CONTROL", "RISK_SCENARIO", "RISK_REGISTER_RECORD", "EVIDENCE", "FINDING"})
+            names = {
+                "ASSET",
+                "CONTROL",
+                "RISK_SCENARIO",
+                "RISK_REGISTER_RECORD",
+                "EVIDENCE",
+                "FINDING",
+                "COMPLIANCE_FRAMEWORK_MAPPING"
+            })
     void validateAuditTargetAcceptsInternalTargets(AuditLinkTargetType targetType) {
         stubAuditInternalTarget(targetType, true);
 
@@ -843,12 +851,23 @@ class GraphTargetResolverServiceTest {
         assertThat(validated.targetIdentifier()).isNull();
     }
 
-    @ParameterizedTest
-    @EnumSource(
-            value = AuditLinkTargetType.class,
-            names = {"FRAMEWORK", "EXTERNAL"})
-    void validateAuditTargetAcceptsExternalTargets(AuditLinkTargetType targetType) {
-        var validated = graphTargetResolverService.validateAuditTarget(projectId, targetType, null, "ISO-27001");
+    @Test
+    void validateAuditTargetAcceptsExternalTarget() {
+        var validated = graphTargetResolverService.validateAuditTarget(
+                projectId, AuditLinkTargetType.EXTERNAL, null, "ISO-27001");
+
+        assertThat(validated.internal()).isFalse();
+        assertThat(validated.targetEntityId()).isNull();
+        assertThat(validated.targetIdentifier()).isEqualTo("ISO-27001");
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    void validateAuditTargetAcceptsLegacyFrameworkExternalTarget() {
+        // FRAMEWORK is the backward-compat external-string path for audit records
+        // authored before GC-I002. New links must use COMPLIANCE_FRAMEWORK_MAPPING.
+        var validated = graphTargetResolverService.validateAuditTarget(
+                projectId, AuditLinkTargetType.FRAMEWORK, null, "ISO-27001");
 
         assertThat(validated.internal()).isFalse();
         assertThat(validated.targetEntityId()).isNull();
@@ -864,7 +883,9 @@ class GraphTargetResolverServiceTest {
     }
 
     @Test
-    void validateAuditTargetRejectsMissingExternalIdentifier() {
+    @SuppressWarnings("deprecation")
+    void validateAuditTargetRejectsMissingExternalIdentifierForLegacyFramework() {
+        // Backward-compat path: blank identifier must still be rejected for FRAMEWORK.
         assertThatThrownBy(() -> graphTargetResolverService.validateAuditTarget(
                         projectId, AuditLinkTargetType.FRAMEWORK, null, " "))
                 .isInstanceOf(DomainValidationException.class)
@@ -926,7 +947,10 @@ class GraphTargetResolverServiceTest {
                                     : java.util.Optional.empty());
             case FINDING -> when(findingRepository.existsByIdAndProjectId(targetId, projectId))
                     .thenReturn(exists);
-            case FRAMEWORK, EXTERNAL -> throw new IllegalArgumentException("Not an internal target type");
+            case COMPLIANCE_FRAMEWORK_MAPPING -> when(complianceFrameworkMappingRepository.existsByIdAndProjectId(
+                            targetId, projectId))
+                    .thenReturn(exists);
+            default -> throw new IllegalArgumentException("Not an internal target type: " + targetType);
         }
     }
 

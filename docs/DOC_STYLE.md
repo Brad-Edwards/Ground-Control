@@ -186,3 +186,8 @@ adding new `TO_CAMEL` entries (`framework_identifier`, `framework_version`,
 backend's camelCase DTO. The follow-on is recorded as a separate ADR-054
 amendment entry plus a changelog fragment; no new DOC_STYLE.md prose is
 needed unless a new style rule is being established.
+
+Extending an existing MCP constant array (for example `AUDIT_LINK_TARGET_TYPES`) to
+mirror a new Java enum constant is a surface-addition amendment to ADR-054;
+the addition is recorded in the ADR-054 changelog entry for the issue. No new
+DOC_STYLE.md prose is needed for constant-only array extensions.
