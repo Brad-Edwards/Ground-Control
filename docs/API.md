@@ -307,6 +307,68 @@ vendor aggregate (per the GC-L009 carve-out from GC-L006). When external
 framework identifiers, missing evidence, or unvalidated methodology schemas
 are involved, additional `limitations` entries are emitted.
 
+#### Methodology-aware Aggregate Risk Reporting (GC-T008)
+
+The five GC-T008 projections are read-only views over the existing
+`RiskAssessmentResult`, `RiskRegisterRecord`, and Envers audit substrates.
+Each response carries the ADR-035 methodology-attributed envelope
+(`analysisKind`, `project`, `asOf`, `derivationMethod`, `scale`, `units`,
+structured `inputs`, `limitations`) so consumers never confuse a qualitative
+ordinal band with a quantitative loss figure. The heat-map and top-N
+endpoints additionally surface `methodologyProfileId` / `methodologyFamily`
+when the projection is restricted to a single profile; mixing methodology
+families in a single result emits an explicit limitation.
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/analysis/grc/risk-heatmap` |—| 200 | Qualitative likelihood × impact heat map over the latest-per-scenario `RiskAssessmentResult`. FAIR rows are excluded (quantitative, not band-plottable) with a `limitations` entry; NIST and ISO_27005 / CUSTOM ordinal profiles plot using the NIST band vocabulary. |
+| GET | `/analysis/grc/risk-distribution` |—| 200 | Count of `RiskRegisterRecord` rows bucketed by `groupBy` axis (`CATEGORY` / `STATUS` / `OWNER` / `ASSET_CRITICALITY`). Records with no resolvable key fall into an `UNCLASSIFIED` bucket; `ASSET_CRITICALITY` always carries a carve-out limitation because per-record asset attribution is not maintained directly on `RiskRegisterRecord`. |
+| GET | `/analysis/grc/risk-top-n` |—| 200 | Top-N risk scenarios ranked by `orderBy` over the latest-per-scenario `RiskAssessmentResult`. `CURRENT_ASSESSMENT_OUTPUT` ranks by the qualitative `risk_level` carried in `computedOutputs`; `ASSESSMENT_AT_DESC` ranks by recency. FAIR rows are flagged on the per-entry `limitations`; mixing methodology families in the same N adds a project-level limitation. |
+| GET | `/analysis/grc/risk-trends` |—| 200 | Risk trend points from the Envers audit history of `RiskRegisterRecord` bucketed into `WEEK` / `MONTH` / `QUARTER` intervals. Counts revisions per status / per `RevisionType` per bucket; actor identity is not surfaced (ADR-033). |
+| GET | `/analysis/grc/risk-posture` |—| 200 | Executive risk posture: `RiskRegisterRecord` open/accepted/closed status distribution, latest-per-scenario `RiskAssessmentResult` approval-state distribution, and the count of assessments flagged for reassessment (`reassessmentRequiredAt` non-null). Always carries a `limitations` entry recording that detailed appetite/tolerance evaluation is deferred to the cluster-1 `RiskAppetiteEvaluator` kernel. |
+
+`GET /analysis/grc/risk-heatmap` accepts:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `project` | string | auto-resolved | Project identifier |
+| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the envelope |
+| `methodologyProfileId` | UUID |—| Restrict plot to rows under one methodology profile; otherwise every project assessment row is considered. |
+
+`GET /analysis/grc/risk-distribution` accepts:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `project` | string | auto-resolved | Project identifier |
+| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the envelope |
+| `groupBy` | enum (`CATEGORY` \| `STATUS` \| `OWNER` \| `ASSET_CRITICALITY`) | required | Bucket axis |
+
+`GET /analysis/grc/risk-top-n` accepts:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `project` | string | auto-resolved | Project identifier |
+| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the envelope |
+| `limit` | int (positive, ≤200) | 10 | Maximum entries to return |
+| `orderBy` | enum (`CURRENT_ASSESSMENT_OUTPUT` \| `ASSESSMENT_AT_DESC`) | `CURRENT_ASSESSMENT_OUTPUT` | Ranking mode |
+
+`GET /analysis/grc/risk-trends` accepts:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `project` | string | auto-resolved | Project identifier |
+| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the envelope |
+| `from` | ISO-8601 instant | `to − 365d` | Window start (default 12 months before `to`) |
+| `to` | ISO-8601 instant | `asOf` | Window end |
+| `bucket` | enum (`WEEK` \| `MONTH` \| `QUARTER`) | `MONTH` | Bucket size |
+
+`GET /analysis/grc/risk-posture` accepts:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `project` | string | auto-resolved | Project identifier |
+| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the envelope |
+
 ### Embeddings
 
 | Method | Path | Body | Status | Purpose |

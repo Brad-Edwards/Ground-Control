@@ -11,6 +11,11 @@ import {
   analyzeObservationProjection,
   aggregateVendorRisk,
   analyzeNistAssessment,
+  analyzeRiskHeatmap,
+  analyzeRiskDistribution,
+  analyzeRiskTopN,
+  analyzeRiskTrends,
+  analyzeRiskPosture,
   toCamelCase,
   toSnakeCase,
 } from "./lib.js";
@@ -288,5 +293,188 @@ describe("analyzeNistAssessment (GC-T014)", () => {
       "likelihood_overall",
       "threat_source_relevance",
     ]);
+  });
+});
+
+// GC-T008 — methodology-aware aggregate risk reporting adapter tests. Each
+// helper must hit the corresponding /api/v1/analysis/grc/risk-* endpoint with
+// camelCase query parameters; the helper signature and parameter names form
+// the lockfile contract referenced by the ANALYZE_KINDS extension protocol.
+
+describe("analyzeRiskHeatmap (GC-T008)", () => {
+  it("hits /api/v1/analysis/grc/risk-heatmap with camelCase params", async () => {
+    const calls = makeFetchSpy({ body: { analysisKind: "risk_heatmap" } });
+
+    await analyzeRiskHeatmap({
+      project: "ground-control",
+      asOf: "2026-05-30T00:00:00Z",
+      methodologyProfileId: "00000000-0000-0000-0000-0000000000aa",
+    });
+
+    assert.equal(calls.length, 1);
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/analysis/grc/risk-heatmap");
+    assert.equal(calls[0].method, "GET");
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), "2026-05-30T00:00:00Z");
+    assert.equal(
+      url.searchParams.get("methodologyProfileId"),
+      "00000000-0000-0000-0000-0000000000aa",
+    );
+  });
+
+  it("omits undefined params", async () => {
+    const calls = makeFetchSpy();
+
+    await analyzeRiskHeatmap({ project: "ground-control" });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), null);
+    assert.equal(url.searchParams.get("methodologyProfileId"), null);
+  });
+
+  it("returns the JSON body", async () => {
+    makeFetchSpy({
+      body: { analysisKind: "risk_heatmap", cells: [] },
+    });
+
+    const result = await analyzeRiskHeatmap({ project: "ground-control" });
+
+    assert.equal(result.analysisKind, "risk_heatmap");
+    assert.deepEqual(result.cells, []);
+  });
+});
+
+describe("analyzeRiskDistribution (GC-T008)", () => {
+  it("hits /api/v1/analysis/grc/risk-distribution with camelCase params", async () => {
+    const calls = makeFetchSpy({ body: { analysisKind: "risk_distribution" } });
+
+    await analyzeRiskDistribution({
+      project: "ground-control",
+      asOf: "2026-05-30T00:00:00Z",
+      groupBy: "STATUS",
+    });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/analysis/grc/risk-distribution");
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), "2026-05-30T00:00:00Z");
+    assert.equal(url.searchParams.get("groupBy"), "STATUS");
+  });
+
+  it("omits undefined params", async () => {
+    const calls = makeFetchSpy();
+
+    await analyzeRiskDistribution({ project: "ground-control", groupBy: "OWNER" });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("groupBy"), "OWNER");
+    assert.equal(url.searchParams.get("asOf"), null);
+  });
+});
+
+describe("analyzeRiskTopN (GC-T008)", () => {
+  it("hits /api/v1/analysis/grc/risk-top-n with camelCase params", async () => {
+    const calls = makeFetchSpy({ body: { analysisKind: "risk_top_n" } });
+
+    await analyzeRiskTopN({
+      project: "ground-control",
+      asOf: "2026-05-30T00:00:00Z",
+      limit: 5,
+      orderBy: "CURRENT_ASSESSMENT_OUTPUT",
+    });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/analysis/grc/risk-top-n");
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("limit"), "5");
+    assert.equal(url.searchParams.get("orderBy"), "CURRENT_ASSESSMENT_OUTPUT");
+  });
+
+  it("omits undefined params", async () => {
+    const calls = makeFetchSpy();
+
+    await analyzeRiskTopN({ project: "ground-control" });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), null);
+    assert.equal(url.searchParams.get("limit"), null);
+    assert.equal(url.searchParams.get("orderBy"), null);
+  });
+});
+
+describe("analyzeRiskTrends (GC-T008)", () => {
+  it("hits /api/v1/analysis/grc/risk-trends with camelCase params", async () => {
+    const calls = makeFetchSpy({ body: { analysisKind: "risk_trends" } });
+
+    await analyzeRiskTrends({
+      project: "ground-control",
+      asOf: "2026-05-30T00:00:00Z",
+      from: "2025-05-30T00:00:00Z",
+      to: "2026-05-30T00:00:00Z",
+      bucket: "MONTH",
+    });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/analysis/grc/risk-trends");
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("from"), "2025-05-30T00:00:00Z");
+    assert.equal(url.searchParams.get("to"), "2026-05-30T00:00:00Z");
+    assert.equal(url.searchParams.get("bucket"), "MONTH");
+  });
+
+  it("omits undefined params", async () => {
+    const calls = makeFetchSpy();
+
+    await analyzeRiskTrends({ project: "ground-control" });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("from"), null);
+    assert.equal(url.searchParams.get("to"), null);
+    assert.equal(url.searchParams.get("bucket"), null);
+  });
+});
+
+describe("analyzeRiskPosture (GC-T008)", () => {
+  it("hits /api/v1/analysis/grc/risk-posture with camelCase params", async () => {
+    const calls = makeFetchSpy({ body: { analysisKind: "risk_posture" } });
+
+    await analyzeRiskPosture({
+      project: "ground-control",
+      asOf: "2026-05-30T00:00:00Z",
+    });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/analysis/grc/risk-posture");
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), "2026-05-30T00:00:00Z");
+  });
+
+  it("omits undefined params", async () => {
+    const calls = makeFetchSpy();
+
+    await analyzeRiskPosture({ project: "ground-control" });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), null);
+  });
+
+  it("returns the JSON body", async () => {
+    makeFetchSpy({
+      body: {
+        analysisKind: "risk_posture",
+        limitations: ["appetite/tolerance evaluation deferred"],
+      },
+    });
+
+    const result = await analyzeRiskPosture({ project: "ground-control" });
+
+    assert.equal(result.analysisKind, "risk_posture");
+    assert.equal(result.limitations.length, 1);
   });
 });

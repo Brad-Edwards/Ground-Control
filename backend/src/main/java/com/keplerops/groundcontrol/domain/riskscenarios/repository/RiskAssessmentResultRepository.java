@@ -39,4 +39,30 @@ public interface RiskAssessmentResultRepository extends JpaRepository<RiskAssess
                     + " WHERE r.project.id = :projectId AND r.riskRegisterRecord.id = :riskRegisterRecordId ORDER BY r.createdAt DESC")
     List<RiskAssessmentResult> findByProjectIdAndRiskRegisterRecordIdOrderByCreatedAtDesc(
             @Param("projectId") UUID projectId, @Param("riskRegisterRecordId") UUID riskRegisterRecordId);
+
+    /**
+     * Return the latest {@code RiskAssessmentResult} per {@code RiskScenario}
+     * for the project — newest by {@code assessmentAt} (NULLs last), tiebreaker
+     * {@code createdAt}. Used by the GC-T008 heat map, distribution, top-N, and
+     * posture services so every aggregation operates on the same "current"
+     * snapshot per scenario.
+     *
+     * <p>The selector uses a correlated NOT EXISTS to keep the result set to
+     * one row per scenario without resorting to native window functions; this
+     * is the precedent shape used elsewhere in the repository layer.
+     */
+    @Query("SELECT r FROM RiskAssessmentResult r"
+            + " WHERE r.project.id = :projectId"
+            + " AND NOT EXISTS ("
+            + "   SELECT 1 FROM RiskAssessmentResult r2"
+            + "   WHERE r2.project.id = :projectId"
+            + "   AND r2.riskScenario.id = r.riskScenario.id"
+            + "   AND ("
+            + "     (r2.assessmentAt IS NOT NULL AND (r.assessmentAt IS NULL OR r2.assessmentAt > r.assessmentAt))"
+            + "     OR (r2.assessmentAt = r.assessmentAt AND r2.createdAt > r.createdAt)"
+            + "     OR (r.assessmentAt IS NULL AND r2.assessmentAt IS NULL AND r2.createdAt > r.createdAt)"
+            + "   )"
+            + " )"
+            + " ORDER BY r.assessmentAt DESC NULLS LAST, r.createdAt DESC")
+    List<RiskAssessmentResult> findLatestPerScenarioByProjectId(@Param("projectId") UUID projectId);
 }

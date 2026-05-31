@@ -110,12 +110,14 @@ to the controller-parity check) are policy-surface changes recorded in
 amendments to ADR-054, not documentation edits.
 
 New `gc_analyze` kinds backed by a fixed REST endpoint follow the same
-convention: a new kind value in `ANALYZE_KINDS` (for example
-`nist_assessment` added for GC-T014 / #721) plus an adapter helper in
-`lib.js` is documented by the endpoint entry in `docs/API.md` and the
-`gc_analyze` tool description string in `mcp/ground-control/index.js`. No
-separate user-facing prose page per kind, no new sections in this style
-guide.
+convention: a new kind value in `ANALYZE_KINDS` (for example,
+`nist_assessment` added for GC-T014 / #721, or the five methodology-aware
+aggregate risk reporting kinds (`risk_heatmap`, `risk_distribution`,
+`risk_top_n`, `risk_trends`, `risk_posture`) added for GC-T008 / #263)
+plus an adapter helper in `lib.js` is documented by the endpoint entry
+in `docs/API.md` and the `gc_analyze` tool description string in
+`mcp/ground-control/index.js`. No separate user-facing prose page per
+kind, no new sections in this style guide.
 
 Mirrored API-boundary enum constants follow the same convention: the
 `NORMALIZED_CONCEPTS` and `CROSSWALK_VOCABULARY_SURFACES` arrays added to

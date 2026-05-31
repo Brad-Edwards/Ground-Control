@@ -12,10 +12,20 @@ import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentServ
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionMode;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionService;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskAnalysisOrchestrator;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskDistributionGroupBy;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskDistributionResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskHeatmapResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskPostureResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTopNOrderBy;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTopNResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTrendsBucket;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTrendsResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.VendorRiskAggregationResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.VendorRiskAggregationService;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,6 +52,9 @@ class GrcAnalysisServiceTest {
 
     @Mock
     private NistAssessmentService nistAssessmentService;
+
+    @Mock
+    private RiskAnalysisOrchestrator riskAnalysisOrchestrator;
 
     @InjectMocks
     private GrcAnalysisService service;
@@ -138,7 +151,7 @@ class GrcAnalysisServiceTest {
                 "qualitative ordinal levels",
                 "rule",
                 List.of(),
-                new NistAssessmentResult.Counts(0, java.util.Map.of(), 0),
+                new NistAssessmentResult.Counts(0, Map.of(), 0),
                 List.of());
         when(nistAssessmentService.analyze(projectId, asOf, assessmentId, scenarioId))
                 .thenReturn(expected);
@@ -147,5 +160,129 @@ class GrcAnalysisServiceTest {
 
         assertThat(actual).isSameAs(expected);
         verify(nistAssessmentService).analyze(projectId, asOf, assessmentId, scenarioId);
+    }
+
+    @Test
+    void riskHeatmap_delegatesToRiskAnalysisOrchestrator() {
+        UUID projectId = UUID.randomUUID();
+        UUID profileId = UUID.randomUUID();
+        Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
+        RiskHeatmapResult expected = new RiskHeatmapResult(
+                "risk_heatmap",
+                "ground-control",
+                asOf,
+                "qualitative-likelihood-impact-heatmap-v1",
+                profileId,
+                "NIST_SP800_30_R1",
+                "ordinal",
+                "qualitative ordinal levels",
+                new RiskHeatmapResult.Inputs("ground-control", asOf, profileId),
+                List.of(),
+                new RiskHeatmapResult.Counts(0, 0, 0, Map.of()),
+                List.of());
+        when(riskAnalysisOrchestrator.heatmap(projectId, asOf, profileId)).thenReturn(expected);
+
+        RiskHeatmapResult actual = service.riskHeatmap(projectId, asOf, profileId);
+
+        assertThat(actual).isSameAs(expected);
+        verify(riskAnalysisOrchestrator).heatmap(projectId, asOf, profileId);
+    }
+
+    @Test
+    void riskDistribution_delegatesToRiskAnalysisOrchestrator() {
+        UUID projectId = UUID.randomUUID();
+        Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
+        RiskDistributionResult expected = new RiskDistributionResult(
+                "risk_distribution",
+                "ground-control",
+                asOf,
+                "risk-register-distribution-v1",
+                "nominal",
+                "register record counts",
+                new RiskDistributionResult.Inputs("ground-control", asOf, "STATUS"),
+                List.of(),
+                new RiskDistributionResult.Counts(0, 0, 0, Map.of()),
+                List.of());
+        when(riskAnalysisOrchestrator.distribution(projectId, asOf, RiskDistributionGroupBy.STATUS))
+                .thenReturn(expected);
+
+        RiskDistributionResult actual = service.riskDistribution(projectId, asOf, RiskDistributionGroupBy.STATUS);
+
+        assertThat(actual).isSameAs(expected);
+        verify(riskAnalysisOrchestrator).distribution(projectId, asOf, RiskDistributionGroupBy.STATUS);
+    }
+
+    @Test
+    void riskTopN_delegatesToRiskAnalysisOrchestrator() {
+        UUID projectId = UUID.randomUUID();
+        Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
+        RiskTopNResult expected = new RiskTopNResult(
+                "risk_top_n",
+                "ground-control",
+                asOf,
+                "latest-per-scenario-top-n-v1",
+                "methodology-specific",
+                "methodology-specific",
+                new RiskTopNResult.Inputs("ground-control", asOf, 10, "CURRENT_ASSESSMENT_OUTPUT"),
+                List.of(),
+                new RiskTopNResult.Counts(0, 0),
+                List.of());
+        when(riskAnalysisOrchestrator.topN(projectId, asOf, 10, RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT))
+                .thenReturn(expected);
+
+        RiskTopNResult actual = service.riskTopN(projectId, asOf, 10, RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT);
+
+        assertThat(actual).isSameAs(expected);
+        verify(riskAnalysisOrchestrator).topN(projectId, asOf, 10, RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT);
+    }
+
+    @Test
+    void riskTrends_delegatesToRiskAnalysisOrchestrator() {
+        UUID projectId = UUID.randomUUID();
+        Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
+        Instant from = Instant.parse("2025-05-30T00:00:00Z");
+        Instant to = asOf;
+        RiskTrendsResult expected = new RiskTrendsResult(
+                "risk_trends",
+                "ground-control",
+                asOf,
+                "risk-register-envers-audit-trends-v1",
+                "count",
+                "audit revisions per bucket",
+                new RiskTrendsResult.Inputs("ground-control", asOf, from, to, "MONTH", "RiskRegisterRecord"),
+                List.of(),
+                new RiskTrendsResult.Counts(0, 0),
+                List.of());
+        when(riskAnalysisOrchestrator.trends(projectId, asOf, from, to, RiskTrendsBucket.MONTH))
+                .thenReturn(expected);
+
+        RiskTrendsResult actual = service.riskTrends(projectId, asOf, from, to, RiskTrendsBucket.MONTH);
+
+        assertThat(actual).isSameAs(expected);
+        verify(riskAnalysisOrchestrator).trends(projectId, asOf, from, to, RiskTrendsBucket.MONTH);
+    }
+
+    @Test
+    void riskPosture_delegatesToRiskAnalysisOrchestrator() {
+        UUID projectId = UUID.randomUUID();
+        Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
+        RiskPostureResult expected = new RiskPostureResult(
+                "risk_posture",
+                "ground-control",
+                asOf,
+                "risk-register-and-approval-state-rollup-v1",
+                "count",
+                "register records and approval-state counts",
+                new RiskPostureResult.Inputs("ground-control", asOf),
+                new RiskPostureResult.StatusSummary(0, 0, 0, 0, Map.of()),
+                new RiskPostureResult.ApprovalSummary(0, Map.of()),
+                new RiskPostureResult.ReassessmentSummary(0, 0),
+                List.of());
+        when(riskAnalysisOrchestrator.posture(projectId, asOf)).thenReturn(expected);
+
+        RiskPostureResult actual = service.riskPosture(projectId, asOf);
+
+        assertThat(actual).isSameAs(expected);
+        verify(riskAnalysisOrchestrator).posture(projectId, asOf);
     }
 }

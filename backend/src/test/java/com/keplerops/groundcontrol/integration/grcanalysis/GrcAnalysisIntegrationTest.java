@@ -96,4 +96,66 @@ class GrcAnalysisIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.counts.total").isNumber())
                 .andExpect(jsonPath("$.limitations").isArray());
     }
+
+    @Test
+    void riskHeatmap_returnsMethodologyAttributedEnvelopeForSeedProject() throws Exception {
+        mockMvc.perform(get("/api/v1/analysis/grc/risk-heatmap").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisKind", is("risk_heatmap")))
+                .andExpect(jsonPath("$.derivationMethod", is("qualitative-likelihood-impact-heatmap-v1")))
+                .andExpect(jsonPath("$.scale", is("ordinal")))
+                .andExpect(jsonPath("$.cells").isArray())
+                .andExpect(jsonPath("$.counts.totalAssessments").isNumber())
+                .andExpect(jsonPath("$.limitations").isArray());
+    }
+
+    @Test
+    void riskDistribution_returnsBucketedCountsForSeedProject() throws Exception {
+        mockMvc.perform(get("/api/v1/analysis/grc/risk-distribution")
+                        .param("project", "ground-control")
+                        .param("groupBy", "STATUS"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisKind", is("risk_distribution")))
+                .andExpect(jsonPath("$.derivationMethod", is("risk-register-distribution-v1")))
+                .andExpect(jsonPath("$.inputs.groupBy", is("STATUS")))
+                .andExpect(jsonPath("$.buckets").isArray());
+    }
+
+    @Test
+    void riskTopN_returnsDefaultLimitForSeedProject() throws Exception {
+        mockMvc.perform(get("/api/v1/analysis/grc/risk-top-n").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisKind", is("risk_top_n")))
+                .andExpect(jsonPath("$.derivationMethod", is("latest-per-scenario-top-n-v1")))
+                .andExpect(jsonPath("$.inputs.limit", is(10)))
+                .andExpect(jsonPath("$.inputs.orderBy", is("CURRENT_ASSESSMENT_OUTPUT")))
+                .andExpect(jsonPath("$.entries").isArray());
+    }
+
+    @Test
+    void riskTrends_returnsMonthlyBucketsForSeedProject() throws Exception {
+        mockMvc.perform(get("/api/v1/analysis/grc/risk-trends").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisKind", is("risk_trends")))
+                .andExpect(jsonPath("$.derivationMethod", is("risk-register-envers-audit-trends-v1")))
+                .andExpect(jsonPath("$.inputs.bucket", is("MONTH")))
+                .andExpect(jsonPath("$.inputs.entity", is("RiskRegisterRecord")))
+                .andExpect(jsonPath("$.points").isArray());
+    }
+
+    @Test
+    void riskPosture_returnsAppetiteDeferralLimitationForSeedProject() throws Exception {
+        mockMvc.perform(get("/api/v1/analysis/grc/risk-posture").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisKind", is("risk_posture")))
+                .andExpect(jsonPath("$.derivationMethod", is("risk-register-and-approval-state-rollup-v1")))
+                .andExpect(jsonPath("$.statusSummary.totalRecords").isNumber())
+                .andExpect(jsonPath(
+                        "$.limitations[?(@ =~ /.*RiskAppetiteEvaluator.*/)]",
+                        is(java.util.List.of(
+                                "appetite/tolerance evaluation deferred to the shared RiskAppetiteEvaluator"
+                                        + " kernel from cluster 1 (GC-T005); posture summary reports status /"
+                                        + " approval-state distributions only — do not interpret as appetite-conforming"
+                                        + " posture"))));
+    }
 }
