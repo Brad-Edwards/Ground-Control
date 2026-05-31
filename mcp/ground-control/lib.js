@@ -9172,7 +9172,19 @@ export const EVIDENCE_SOURCE_KINDS = [
   "FINDING",
   "ATTESTATION",
   "EXTERNAL",
+  "CI_PIPELINE_RESULT",
+  "SECURITY_SCAN_RESULT",
 ];
+
+// GC-I004 compliance drift detector enums (ADR-034 mirror).
+// Declaration order matches ComplianceDriftCategory.java / ComplianceDriftSeverity.java exactly.
+export const COMPLIANCE_DRIFT_CATEGORIES = [
+  "CONTROL_STATE_CHANGED",
+  "EVIDENCE_EXPIRED",
+  "CODE_CHANGE_IMPACT",
+  "RESOLUTION",
+];
+export const COMPLIANCE_DRIFT_SEVERITIES = ["INFO", "WARN", "SEVERE"];
 // ASSURANCE_LEVELS is exported from the VerificationResult section below
 // (search for "AssuranceLevel"); gc-evidence.js imports it from there.
 
@@ -9180,9 +9192,20 @@ export async function createEvidenceArtifact(data, project) {
   return request("POST", "/api/v1/evidence-artifacts", { body: data, params: { project } });
 }
 
-export async function listEvidenceArtifacts({ project, evidenceType, includeSuperseded } = {}) {
+/**
+ * List evidence artifacts for a project. Pass `expired=true` (canonical) or
+ * the alias `expiredOnly=true` to restrict to expired artifacts; `expired=false`
+ * to exclude them; omit both to return all artifacts regardless of expiry state.
+ */
+export async function listEvidenceArtifacts({
+  project,
+  evidenceType,
+  includeSuperseded,
+  expired,
+  expiredOnly,
+} = {}) {
   return request("GET", "/api/v1/evidence-artifacts", {
-    params: { project, evidenceType, includeSuperseded },
+    params: { project, evidenceType, includeSuperseded, expired, expiredOnly },
   });
 }
 

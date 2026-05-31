@@ -48,4 +48,15 @@ public interface EvidenceArtifactRepository extends JpaRepository<EvidenceArtifa
             + " WHERE e.id = :id AND e.project.id = :projectId AND e.supersededByArtifactId IS NULL")
     int markSupersededIfUnset(
             @Param("id") UUID id, @Param("projectId") UUID projectId, @Param("replacementId") UUID replacementId);
+
+    /**
+     * GC-I004 sweep query: artifacts with a non-null {@code expiresAt} that has
+     * elapsed at or before {@code asOf}. Append-only is preserved — this read
+     * does not mutate any rows; the caller decides whether an expiry event has
+     * already been emitted for the artifact (idempotency check on
+     * compliance_drift_event).
+     */
+    @Query("SELECT e FROM EvidenceArtifact e WHERE e.expiresAt IS NOT NULL AND e.expiresAt <= :asOf"
+            + " ORDER BY e.expiresAt ASC, e.uid ASC")
+    List<EvidenceArtifact> findExpiredAsOf(@Param("asOf") java.time.Instant asOf);
 }

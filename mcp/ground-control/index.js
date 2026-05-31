@@ -1920,8 +1920,14 @@ server.tool(
   },
 );
 
-// gc_evidence: GC-M016 / ADR-045. Append-only — create / supersede only;
-// reads (list, get) route through gc_query at /api/v1/evidence-artifacts.
+// gc_evidence: GC-M016 / GC-I003 / GC-I004 / ADR-045. Append-only — create
+// / supersede only; reads (list, get, expiry filter) route through gc_query
+// at /api/v1/evidence-artifacts. Expiry filter: pass expired=true (canonical)
+// or expiredOnly=true (alias) to list expired artifacts; expired=false to
+// exclude them; omit both to return all. GC-I004 compliance drift events are
+// read-only via gc_query at /api/v1/compliance-drift-events; there is
+// intentionally no curated MCP tool for them because drift events are
+// detector-emitted, never agent-published.
 server.tool(
   "gc_evidence",
   GC_EVIDENCE_DESCRIPTION,

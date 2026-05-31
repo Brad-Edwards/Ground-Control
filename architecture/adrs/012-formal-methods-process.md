@@ -88,7 +88,9 @@ When in doubt, use L0 during pre-alpha. The bar rises at beta.
 | `domain/requirements/state/ConfidenceLevel.java` | L0 | Pure value enum; ordinal-ordered band with a `compareTo`-based `atLeast`/`strongest` helper, no transitions or invariants (status-drift analysis support per ADR-011 §9) |
 | `domain/requirements/state/StatusDriftSignal.java` | L0 | Pure value enum; `switch`-mapped `defaultConfidence()` accessor, no transitions or invariants (status-drift analysis support per ADR-011 §9) |
 | `domain/evidence/state/EvidenceType.java` | L0 | Pure value enum; semantic role tag on `EvidenceArtifact` (GC-M016 / ADR-044), no transitions or invariants |
-| `domain/evidence/state/EvidenceSourceKind.java` | L0 | Pure value enum; internal-vs-external source-reference discriminator (GC-M016 / ADR-044), with an `isInternal()` predicate but no state transitions |
+| `domain/evidence/state/EvidenceSourceKind.java` | L0 | Pure value enum; internal-vs-external source-reference discriminator (GC-M016 / GC-I003 / ADR-045 §8), with an `isInternal()` predicate but no state transitions. GC-I003 adds `CI_PIPELINE_RESULT` and `SECURITY_SCAN_RESULT` as external kinds—opaque identifier, length-capped, never dereferenced server-side (SSRF guard) |
+| `domain/compliance/state/ComplianceDriftCategory.java` | L0 | Pure value enum; high-level discriminator on `ComplianceDriftEvent` (GC-I004 / ADR-045 §8), no transitions or invariants |
+| `domain/compliance/state/ComplianceDriftSeverity.java` | L0 | Pure value enum; severity band on `ComplianceDriftEvent` (GC-I004 / ADR-045 §8), no transitions or invariants |
 | `domain/requirements/service/StatusDriftService.java` | L0 | Read-only derived analysis (ADR-011 §9); a service, not a state machine or security boundary—one-test-per-behavior is sufficient |
 | `domain/exception/` | L0 | Data carriers only |
 | `api/GlobalExceptionHandler` | L0 | Mapping layer, no domain logic |

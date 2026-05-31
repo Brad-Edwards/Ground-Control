@@ -524,6 +524,10 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "128", // V128: expand seeded NIST SP 800-30 Rev. 1 profile schema (GC-T014)
                         "129", // V129: add methodology_profile crosswalk_entries column (GC-T012)
                         "130", // V130: add methodology_profile_aud crosswalk_entries column (GC-T012 audit parity)
-                        "131"); // V131: risk governance lifecycle aggregates (GC-T005 / T006 / T007 / T015)
+                        "131", // V131: risk governance lifecycle aggregates (GC-T005 / T006 / T007 / T015)
+                        "135", // V135: add evidence_artifact expires_at + validity_window_days (GC-I004)
+                        "136", // V136: add evidence_artifact_audit expires_at + validity_window_days (GC-I004 audit)
+                        "137", // V137: create compliance_drift_event (GC-I004)
+                        "138"); // V138: create compliance_drift_event_audit (GC-I004 audit parity)
     }
 }

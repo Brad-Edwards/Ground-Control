@@ -27,7 +27,7 @@ semicolon cannot carry.
 Soft budget: at most one em-dash per paragraph, typically zero. If a paragraph
 has two, rewrite one.
 
-Em-dash chains (`X — Y — Z`) should almost always be reordered into separate
+Em-dash chains (`X—Y—Z`) should almost always be reordered into separate
 clauses.
 
 This pattern was surfaced in shifter #704, where agent-written prose accumulated
@@ -171,3 +171,19 @@ backend Java enums had been extended past the MCP Zod surface and the
 13 new snake_case DTO fields were passing through unrenamed. No new style
 rule is established by this change; the ADR-054 amendment carries the
 record of the surface addition.
+
+Extending an enum mirror in `mcp/ground-control/lib.js` to track a new Java
+enum (for example, the GC-I003 / GC-I004 additions:
+`COMPLIANCE_DRIFT_CATEGORIES`, `COMPLIANCE_DRIFT_SEVERITIES`, and the
+`CI_PIPELINE_RESULT` / `SECURITY_SCAN_RESULT` members on
+`EVIDENCE_SOURCE_KINDS`) is documented by extending
+`ENUM_CONTRACT_INVENTORY` in `tools/policy/checks.py` so ADR-034's gate
+covers the parity, plus the documenting endpoint or tool description that
+exposes the new vocabulary. The surface addition is recorded in the ADR-054
+amendment and the changelog fragment; no new DOC_STYLE.md prose is needed
+unless a new style rule is being established.
+
+When documenting query-parameter aliases (for example, `expired=true` vs
+the `expiredOnly=true` alias for the evidence-artifact list endpoint),
+prefer listing the canonical form first followed by the alias in
+parentheses, and document the "omit both to return all" default explicitly.

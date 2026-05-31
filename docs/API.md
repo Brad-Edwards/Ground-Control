@@ -1546,12 +1546,12 @@ Bidirectional many-to-many link between controls (catalog `Control` or `ScopedCo
 
 The `unmapped-records` endpoint accepts `transitive` (boolean, default `true`). In transitive mode, a record is considered covered if all its linked scenarios have at least one mapped control; records with zero scenarios always appear in the result. The `assessment-feed` endpoint requires `?project=<slug>` and the assessment-result UUID in the path.
 
-### Evidence Artifacts (GC-M016 / ADR-045)
+### Evidence Artifacts (GC-M016 / GC-I003 / GC-I004 / ADR-045)
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/evidence-artifacts` | EvidenceArtifactRequest | 201 | Create a new summarized-evidence artifact |
-| GET | `/evidence-artifacts` |—| 200 | List artifacts (optional `evidenceType`, `includeSuperseded` filters) |
+| GET | `/evidence-artifacts` |—| 200 | List artifacts (optional `evidenceType`, `includeSuperseded`, `expired`/`expiredOnly` filters) |
 | GET | `/evidence-artifacts/{id}` |—| 200 | Get an artifact by UUID |
 | POST | `/evidence-artifacts/{id}/supersede` | EvidenceArtifactRequest | 201 | Create a new artifact and link the prior one as superseded |
 | GET | `/evidence-artifacts/explorer` |—| 200 | Read-only Evidence and State Explorer (GC-Q012): evidence artifacts and observations annotated with freshness state, provenance, affected assets, and downstream finding impact, plus a freshness counts roll-up. Filters: `assetId`, `evidenceType`, `asOf`, `freshnessWindowDays`, `includeSuperseded` |
@@ -1570,9 +1570,21 @@ max 200), `summary` (required TEXT, max 8000), `evidenceType` (required, one of
 TEXT, max 4000), `sources` (required non-empty list, max 100). Each source
 carries `sourceKind` (one of `OBSERVATION`, `CONTROL_TEST`,
 `CONTROL_EFFECTIVENESS_ASSESSMENT`, `VERIFICATION_RESULT`,
-`RISK_ASSESSMENT_RESULT`, `FINDING`, `ATTESTATION`, `EXTERNAL`), exactly one of
+`RISK_ASSESSMENT_RESULT`, `FINDING`, `ATTESTATION`, `EXTERNAL`, `CI_PIPELINE_RESULT`,
+`SECURITY_SCAN_RESULT`), exactly one of
 `sourceEntityId` (UUID, for internal kinds) or `sourceIdentifier` (string, for
-external kinds `ATTESTATION` / `EXTERNAL`), and an optional `role` (free text).
+external kinds `ATTESTATION` / `EXTERNAL` / `CI_PIPELINE_RESULT` /
+`SECURITY_SCAN_RESULT`), and an optional `role` (free text). External
+identifiers are stored opaque and length-capped (max 500 chars); the server
+never dereferences them (SSRF guard).
+
+GC-I004 expiration fields (optional, append-only): `expiresAt` (Instant, must
+be at or after `derivedAt`; null means no declared expiration);
+`validityWindowDays` (positive integer; informational). Setting `expiresAt`
+does NOT mutate the row after that instant—expiration is a derived
+current-state flag. The list response includes `expired` (Boolean; computed
+from `expiresAt` versus the request time; omitted when `expiresAt` is null)
+and the originating `expiresAt` / `validityWindowDays` fields.
 
 The service validates internal sources project-scoped via the corresponding
 repository (`evidence_source_target_not_found` 422 when the UUID does not
@@ -1581,10 +1593,51 @@ resolve); external sources require only a non-blank `sourceIdentifier`.
 caller-supplied.
 
 The list endpoint excludes superseded artifacts by default; pass
-`includeSuperseded=true` to include them. The graph projection emits one
-`HAS_SOURCE` edge per internal-kind source pointing at the existing graph node
-for the source entity, and a `SUPERSEDED_BY` edge from a prior artifact to its
+`includeSuperseded=true` to include them. Pass `expired=true` (or the alias
+`expiredOnly=true`) to fetch only artifacts whose `expiresAt` has elapsed;
+`expired=false` excludes only expired artifacts, returning all non-expired rows.
+When neither `expired` nor `expiredOnly` is set, all artifacts are returned
+regardless of expiry state. The graph projection emits one `HAS_SOURCE`
+edge per internal-kind source pointing at the existing graph node for the
+source entity, and a `SUPERSEDED_BY` edge from a prior artifact to its
 replacement once supersede has run.
+
+### Compliance Drift Events (GC-I004 / ADR-045 §8)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/compliance-drift-events` |—| 200 | List drift events (optional `category` filter; ordered by `detectedAt DESC`) |
+| GET | `/compliance-drift-events/{id}` |—| 200 | Get a drift event by UUID |
+| POST | `/compliance-drift-events/{id}/acknowledge` |—| 200 | Acknowledge a drift event (one-shot) |
+| GET | `/compliance-drift-events/liveness` |—| 200 | Detector liveness telemetry |
+
+The aggregate is append-only: there is no PUT, no DELETE, and no
+caller-emitted POST. Drift events are written exclusively by
+`ComplianceDriftDetectorService` (synchronous `@EventListener` on
+`ControlStateChangedEvent` and `EvidenceExpiryEvent`); resolutions are
+published as new rows of category `RESOLUTION`, never as updates to a prior
+row. The only post-create mutation is the one-shot acknowledgement;
+subsequent acknowledgement attempts return HTTP 409
+`compliance_drift_event_already_acknowledged`.
+
+**ComplianceDriftEventResponse fields:** `id`, `projectIdentifier`,
+`category` (one of `CONTROL_STATE_CHANGED`, `EVIDENCE_EXPIRED`,
+`CODE_CHANGE_IMPACT`, `RESOLUTION`), `severity` (one of `INFO`, `WARN`,
+`SEVERE`), `sourceEntityType` (string; matches a `GraphEntityType` when one
+exists), `sourceEntityId` (UUID), optional `affectedEntityType` /
+`affectedEntityId`, `summary` (max 1000 chars; field NAMES only—never
+field VALUES; ADR-029 sanitization at the issue boundary preserves this on
+GitHub surfacing), `detectedAt`, optional `detectedBy`,
+`acknowledgedAt`, `acknowledgedBy`, `createdAt`, `updatedAt`.
+
+**LivenessResponse fields:** `sampledAt`, `lastDetectedAt` (most recent
+drift event for the project; omitted when no event has ever been published),
+`lastSweepAt` (most recent `EvidenceExpirySweepJob` completion; omitted when
+the sweep is disabled or has not run), `lagSeconds`
+(`sampledAt - lastDetectedAt`; omitted when `lastDetectedAt` is absent),
+`unacknowledgedCount`. Consumers (dashboards, alerting) read this to detect a
+stalled monitor—without it, a dead scheduler would silently look
+"compliant" because no new drift events get published.
 
 ### Test Cases (TC-001 / ADR-040)
 

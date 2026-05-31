@@ -144,7 +144,7 @@ public class EvidenceArtifactGraphProjectionContributor implements GraphProjecti
             case VERIFICATION_RESULT -> GraphEntityType.VERIFICATION_RESULT;
             case RISK_ASSESSMENT_RESULT -> GraphEntityType.RISK_ASSESSMENT_RESULT;
             case FINDING -> GraphEntityType.FINDING;
-            case ATTESTATION, EXTERNAL -> null;
+            case ATTESTATION, EXTERNAL, CI_PIPELINE_RESULT, SECURITY_SCAN_RESULT -> null;
         };
     }
 }

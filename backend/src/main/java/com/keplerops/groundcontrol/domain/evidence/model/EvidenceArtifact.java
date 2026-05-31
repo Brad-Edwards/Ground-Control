@@ -95,6 +95,28 @@ public class EvidenceArtifact extends BaseEntity {
     @Convert(converter = EvidenceSourceRefListConverter.class)
     private List<EvidenceSourceRef> sources;
 
+    /**
+     * Optional point-in-time at which this artifact's assurance lapses
+     * (GC-I004 / ADR-045 §8). Setting {@code expiresAt} does NOT mutate the
+     * artifact after that instant — append-only is preserved; expiration is a
+     * derived current-state flag, never an overwrite. The scheduled sweep job
+     * publishes an expiry event once per artifact at the first sweep after
+     * {@code expiresAt}; replacing an expired artifact still goes through the
+     * supersede chain.
+     */
+    @Column(name = "expires_at")
+    private Instant expiresAt;
+
+    /**
+     * Convenience metadata: how many days the artifact's validity covers,
+     * relative to {@code derivedAt}. Optional and informational only; the
+     * sweep job decides expiration purely from {@code expiresAt}. Kept as a
+     * column (not derived) so callers can express &quot;90 days&quot; without
+     * recomputing the derived instant.
+     */
+    @Column(name = "validity_window_days")
+    private Integer validityWindowDays;
+
     protected EvidenceArtifact() {
         // JPA
     }
@@ -195,5 +217,31 @@ public class EvidenceArtifact extends BaseEntity {
 
     public void setSources(List<EvidenceSourceRef> sources) {
         this.sources = sources;
+    }
+
+    public Instant getExpiresAt() {
+        return expiresAt;
+    }
+
+    public void setExpiresAt(Instant expiresAt) {
+        this.expiresAt = expiresAt;
+    }
+
+    public Integer getValidityWindowDays() {
+        return validityWindowDays;
+    }
+
+    public void setValidityWindowDays(Integer validityWindowDays) {
+        this.validityWindowDays = validityWindowDays;
+    }
+
+    /**
+     * Append-only currentness check (GC-I004 / ADR-045 §8). True when
+     * {@code expiresAt} has been set and is not after {@code asOf}. Returns
+     * false when {@code expiresAt} is null (no expiration declared) — those
+     * artifacts remain current forever absent supersede.
+     */
+    public boolean isExpiredAt(Instant asOf) {
+        return expiresAt != null && !asOf.isBefore(expiresAt);
     }
 }

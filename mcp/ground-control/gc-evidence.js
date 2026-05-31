@@ -18,7 +18,8 @@ export const GC_EVIDENCE_ACTIONS = ["create", "supersede"];
 
 // Snake_case body fields accepted by gc_evidence.create / supersede — mirrors
 // the backend EvidenceArtifactRequest. derived_by is server-populated from the
-// authenticated actor and is intentionally not in this list.
+// authenticated actor and is intentionally not in this list. expires_at and
+// validity_window_days are GC-I004 fields (optional; default null).
 export const GC_EVIDENCE_BODY_FIELDS = [
   "uid",
   "title",
@@ -30,6 +31,8 @@ export const GC_EVIDENCE_BODY_FIELDS = [
   "confidence",
   "notes",
   "sources",
+  "expires_at",
+  "validity_window_days",
 ];
 
 export const GC_EVIDENCE_CREATE_REQUIRED_FIELDS = [
@@ -63,10 +66,12 @@ export const gcEvidenceZodShape = {
   confidence: z.string().optional(),
   notes: z.string().optional(),
   sources: z.array(evidenceSourceRefShape).optional(),
+  expires_at: z.string().optional(),
+  validity_window_days: z.number().int().positive().optional(),
 };
 
 export const GC_EVIDENCE_DESCRIPTION =
-  `Summarized-evidence aggregate (GC-M016, ADR-045). Actions: ` +
+  `Summarized-evidence aggregate (GC-M016, ADR-045 + GC-I003/I004). Actions: ` +
   `${GC_EVIDENCE_ACTIONS.join(", ")}. Append-only — there is no update or ` +
   `delete; the aggregate exposes 'create' to add a new artifact and ` +
   `'supersede' to create a replacement that links the prior one. ` +
@@ -76,8 +81,12 @@ export const GC_EVIDENCE_DESCRIPTION =
   `internal kinds (OBSERVATION / CONTROL_TEST / ` +
   `CONTROL_EFFECTIVENESS_ASSESSMENT / VERIFICATION_RESULT / ` +
   `RISK_ASSESSMENT_RESULT / FINDING) require sourceEntityId, external kinds ` +
-  `(ATTESTATION / EXTERNAL) require sourceIdentifier. Reads (list, get) route ` +
-  `through gc_query.`;
+  `(ATTESTATION / EXTERNAL / CI_PIPELINE_RESULT / SECURITY_SCAN_RESULT) ` +
+  `require sourceIdentifier; the server never dereferences external identifiers. ` +
+  `Optional fields expires_at (ISO instant) and validity_window_days (positive int) ` +
+  `wire the GC-I004 expiration semantics — append-only is preserved, the sweep job ` +
+  `derives expiry events without mutating the artifact. ` +
+  `Reads (list, get, by expiry, compliance drift events) route through gc_query.`;
 
 /**
  * Pure adapter handler for gc_evidence. Validates required fields, picks
@@ -105,17 +114,22 @@ export async function gcEvidenceToolHandler(args) {
 function toCreateBody(args) {
   const body = pick(args, GC_EVIDENCE_BODY_FIELDS);
   // Re-shape snake_case → camelCase for the backend DTO. The adapter accepts
-  // either form on input; the backend wire shape is camelCase.
-  return {
+  // either form on input; the backend wire shape is camelCase. Optional
+  // fields are conditionally omitted so the request body remains minimal —
+  // tests assert exact shape on the happy path.
+  const out = {
     uid: body.uid,
     title: body.title,
     summary: body.summary,
     evidenceType: body.evidence_type,
     derivationMethod: body.derivation_method,
     derivedAt: body.derived_at,
-    assuranceLevel: body.assurance_level,
-    confidence: body.confidence,
-    notes: body.notes,
     sources: body.sources,
   };
+  if (body.assurance_level !== undefined) out.assuranceLevel = body.assurance_level;
+  if (body.confidence !== undefined) out.confidence = body.confidence;
+  if (body.notes !== undefined) out.notes = body.notes;
+  if (body.expires_at !== undefined) out.expiresAt = body.expires_at;
+  if (body.validity_window_days !== undefined) out.validityWindowDays = body.validity_window_days;
+  return out;
 }
