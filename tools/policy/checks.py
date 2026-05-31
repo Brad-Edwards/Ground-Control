@@ -1153,6 +1153,7 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
         "ComplianceDriftSeverity",
         None,
         "COMPLIANCE_DRIFT_SEVERITIES",
+    ),
     # GC-T011 / GC-T016 / GC-I017 FAIR methodology enums. Mirrored at the
     # /api/v1/analysis/grc/fair-quantitative and
     # /api/v1/analysis/grc/fair-cam-control-analytics boundaries and in the MCP

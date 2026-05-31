@@ -525,11 +525,11 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "129", // V129: add methodology_profile crosswalk_entries column (GC-T012)
                         "130", // V130: add methodology_profile_aud crosswalk_entries column (GC-T012 audit parity)
                         "131", // V131: risk governance lifecycle aggregates (GC-T005 / T006 / T007 / T015)
+                        "132", // V132: add control_effectiveness_assessment fair_cam_control_domain (GC-I017)
+                        "133", // V133: control_effectiveness_assessment_audit fair_cam_control_domain (GC-I017 audit)
                         "135", // V135: add evidence_artifact expires_at + validity_window_days (GC-I004)
                         "136", // V136: add evidence_artifact_audit expires_at + validity_window_days (GC-I004 audit)
                         "137", // V137: create compliance_drift_event (GC-I004)
                         "138"); // V138: create compliance_drift_event_audit (GC-I004 audit parity)
-                        "132", // V132: add control_effectiveness_assessment fair_cam_control_domain (GC-I017)
-                        "133"); // V133: control_effectiveness_assessment_audit fair_cam_control_domain (GC-I017 audit)
     }
 }

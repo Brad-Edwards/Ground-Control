@@ -10,11 +10,11 @@ import org.springframework.transaction.annotation.Transactional;
  * controllers thin and gives the extension seam from the preflight a single
  * class to point at. Wired delegates: {@link EvidenceFreshnessAnalysisService},
  * {@link ObservationProjectionService}, {@link VendorRiskAggregationService},
- * {@link NistAssessmentService}, {@link PortfolioAggregationService},
- * {@link FairQuantitativeAnalysisService}, and {@link FairCamControlAnalyticsService}.
+ * {@link NistAssessmentService}, and {@link PortfolioAggregationService}.
  * Cluster-3 (GC-T008) risk analysis projections (heat map, distribution,
  * top-N, trends, posture) are grouped behind a single
- * {@link RiskAnalysisOrchestrator} to keep the dependency count within the
+ * {@link RiskAnalysisOrchestrator}; FAIR analytics (GC-T011 / GC-I017) behind
+ * {@link FairAnalysisOrchestrator}—to keep the dependency count within the
  * Monster-Class limit.
  */
 @Service
@@ -27,8 +27,7 @@ public class GrcAnalysisService {
     private final NistAssessmentService nistAssessmentService;
     private final PortfolioAggregationService portfolioAggregationService;
     private final RiskAnalysisOrchestrator riskAnalysisOrchestrator;
-    private final FairQuantitativeAnalysisService fairQuantitativeAnalysisService;
-    private final FairCamControlAnalyticsService fairCamControlAnalyticsService;
+    private final FairAnalysisOrchestrator fairAnalysisOrchestrator;
 
     public GrcAnalysisService(
             EvidenceFreshnessAnalysisService evidenceFreshnessAnalysisService,
@@ -37,16 +36,14 @@ public class GrcAnalysisService {
             NistAssessmentService nistAssessmentService,
             PortfolioAggregationService portfolioAggregationService,
             RiskAnalysisOrchestrator riskAnalysisOrchestrator,
-            FairQuantitativeAnalysisService fairQuantitativeAnalysisService,
-            FairCamControlAnalyticsService fairCamControlAnalyticsService) {
+            FairAnalysisOrchestrator fairAnalysisOrchestrator) {
         this.evidenceFreshnessAnalysisService = evidenceFreshnessAnalysisService;
         this.observationProjectionService = observationProjectionService;
         this.vendorRiskAggregationService = vendorRiskAggregationService;
         this.nistAssessmentService = nistAssessmentService;
         this.portfolioAggregationService = portfolioAggregationService;
         this.riskAnalysisOrchestrator = riskAnalysisOrchestrator;
-        this.fairQuantitativeAnalysisService = fairQuantitativeAnalysisService;
-        this.fairCamControlAnalyticsService = fairCamControlAnalyticsService;
+        this.fairAnalysisOrchestrator = fairAnalysisOrchestrator;
     }
 
     public EvidenceFreshnessResult evidenceFreshness(
@@ -102,10 +99,10 @@ public class GrcAnalysisService {
 
     public FairQuantitativeAnalysisResult fairQuantitativeAnalysis(
             UUID projectId, Instant asOf, UUID riskAssessmentResultId, UUID riskScenarioId) {
-        return fairQuantitativeAnalysisService.analyze(projectId, asOf, riskAssessmentResultId, riskScenarioId);
+        return fairAnalysisOrchestrator.quantitative(projectId, asOf, riskAssessmentResultId, riskScenarioId);
     }
 
     public FairCamControlAnalyticsResult fairCamControlAnalytics(UUID projectId, Instant asOf, UUID controlId) {
-        return fairCamControlAnalyticsService.analyze(projectId, asOf, controlId);
+        return fairAnalysisOrchestrator.camControlAnalytics(projectId, asOf, controlId);
     }
 }

@@ -6,10 +6,9 @@ import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairAnalysisOrchestrator;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsResult;
-import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisResult;
-import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentService;
@@ -61,10 +60,7 @@ class GrcAnalysisServiceTest {
     private RiskAnalysisOrchestrator riskAnalysisOrchestrator;
 
     @Mock
-    private FairQuantitativeAnalysisService fairQuantitativeAnalysisService;
-
-    @Mock
-    private FairCamControlAnalyticsService fairCamControlAnalyticsService;
+    private FairAnalysisOrchestrator fairAnalysisOrchestrator;
 
     @InjectMocks
     private GrcAnalysisService service;
@@ -313,14 +309,14 @@ class GrcAnalysisServiceTest {
                 List.of(),
                 new FairQuantitativeAnalysisResult.Counts(0, 0, 0),
                 List.of());
-        when(fairQuantitativeAnalysisService.analyze(projectId, asOf, assessmentId, scenarioId))
+        when(fairAnalysisOrchestrator.quantitative(projectId, asOf, assessmentId, scenarioId))
                 .thenReturn(expected);
 
         FairQuantitativeAnalysisResult actual =
                 service.fairQuantitativeAnalysis(projectId, asOf, assessmentId, scenarioId);
 
         assertThat(actual).isSameAs(expected);
-        verify(fairQuantitativeAnalysisService).analyze(projectId, asOf, assessmentId, scenarioId);
+        verify(fairAnalysisOrchestrator).quantitative(projectId, asOf, assessmentId, scenarioId);
     }
 
     @Test
@@ -338,11 +334,12 @@ class GrcAnalysisServiceTest {
                 List.of(),
                 new FairCamControlAnalyticsResult.Counts(0, java.util.Map.of(), 0),
                 List.of());
-        when(fairCamControlAnalyticsService.analyze(projectId, asOf, controlId)).thenReturn(expected);
+        when(fairAnalysisOrchestrator.camControlAnalytics(projectId, asOf, controlId))
+                .thenReturn(expected);
 
         FairCamControlAnalyticsResult actual = service.fairCamControlAnalytics(projectId, asOf, controlId);
 
         assertThat(actual).isSameAs(expected);
-        verify(fairCamControlAnalyticsService).analyze(projectId, asOf, controlId);
+        verify(fairAnalysisOrchestrator).camControlAnalytics(projectId, asOf, controlId);
     }
 }

@@ -183,6 +183,12 @@ exposes the new vocabulary. The surface addition is recorded in the ADR-054
 amendment and the changelog fragment; no new DOC_STYLE.md prose is needed
 unless a new style rule is being established.
 
+Internal domain-service refactors that reduce coupling below the S6539 threshold
+(for example, introducing `FairAnalysisOrchestrator` to group the GC-T011 /
+GC-I017 services behind a single facade) change no public API or MCP tool surface.
+They are recorded in the ADR-054 amendment and a changelog fragment; no new
+DOC_STYLE.md prose is needed.
+
 When documenting query-parameter aliases (for example, `expired=true` vs
 the `expiredOnly=true` alias for the evidence-artifact list endpoint),
 prefer listing the canonical form first followed by the alias in

@@ -53,8 +53,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "079", "080", "081", "082", "083", "084", "085", "086", "087", "088", "089", "090", "091",
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
-                        "123", "124", "125", "126", "127", "128", "129", "130", "131", "135", "136", "137", "138");
-                        "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133");
+                        "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "135", "136",
+                        "137", "138");
     }
 
     @Test
@@ -1096,7 +1096,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT id, project_id, category, severity, source_entity_type,"
                                 + " source_entity_id, summary, detected_at, acknowledged_at"
                                 + " FROM compliance_drift_event LIMIT 1")
-        // V131-V132: fair_cam_control_domain on control_effectiveness_assessment and audit (GC-I017).
+                        .getResultList())
+                .doesNotThrowAnyException();
         // V132-V133: fair_cam_control_domain on control_effectiveness_assessment and audit (GC-I017).
         entityManager
                 .createNativeQuery("SELECT 1 FROM information_schema.columns"
