@@ -525,8 +525,6 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "129", // V129: add methodology_profile crosswalk_entries column (GC-T012)
                         "130", // V130: add methodology_profile_aud crosswalk_entries column (GC-T012 audit parity)
                         "131", // V131: risk governance lifecycle aggregates (GC-T005 / T006 / T007 / T015)
-                        "132", // V132: add control_effectiveness_assessment fair_cam_control_domain (GC-I017)
-                        "133", // V133: control_effectiveness_assessment_audit fair_cam_control_domain (GC-I017 audit)
                         "134"); // V134: create compliance_framework_mapping (+audit) (GC-I002 / GC-I005 / GC-I007)
     }
 }

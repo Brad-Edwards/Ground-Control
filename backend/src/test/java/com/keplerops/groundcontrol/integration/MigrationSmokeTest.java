@@ -53,7 +53,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "079", "080", "081", "082", "083", "084", "085", "086", "087", "088", "089", "090", "091",
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
-                        "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134");
+                        "123", "124", "125", "126", "127", "128", "129", "130", "131", "134");
     }
 
     @Test
@@ -1064,17 +1064,6 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT risk_assessment_result_id, monitored_risk_factors, update_cadence"
                                 + " FROM treatment_plan_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        // V132-V133: fair_cam_control_domain on control_effectiveness_assessment and audit (GC-I017).
-        entityManager
-                .createNativeQuery("SELECT 1 FROM information_schema.columns"
-                        + " WHERE table_name = 'control_effectiveness_assessment'"
-                        + " AND column_name = 'fair_cam_control_domain'")
-                .getSingleResult();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT fair_cam_control_domain"
-                                + " FROM control_effectiveness_assessment_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
         // V134: compliance_framework_mapping aggregate + audit parity
