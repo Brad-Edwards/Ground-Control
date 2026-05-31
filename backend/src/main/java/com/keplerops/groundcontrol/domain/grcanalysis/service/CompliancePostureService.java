@@ -152,15 +152,21 @@ public class CompliancePostureService {
 
     private CompliancePostureResult.ElementPosture projectElement(
             String frameworkElement, List<ComplianceFrameworkMapping> mappings) {
-        var endpoints = new ArrayList<CompliancePostureResult.EndpointMapping>();
-        boolean hasFull = false;
-        boolean hasPartial = false;
-        boolean hasCompensating = false;
-        int requirementCount = 0;
-        int controlCount = 0;
         // Stable order: requirement-side endpoints first, then control-side; by id.
         mappings.sort(Comparator.comparing((ComplianceFrameworkMapping m) -> m.getRequirement() != null ? 0 : 1)
                 .thenComparing(m -> m.getId().toString()));
+        var endpoints = buildEndpoints(mappings);
+        int requirementCount =
+                (int) mappings.stream().filter(m -> m.getRequirement() != null).count();
+        int controlCount =
+                (int) mappings.stream().filter(m -> m.getControl() != null).count();
+        CoverageLevel elementCoverage = deriveCoverageLevel(mappings);
+        return new CompliancePostureResult.ElementPosture(
+                frameworkElement, elementCoverage, List.copyOf(endpoints), requirementCount, controlCount);
+    }
+
+    private List<CompliancePostureResult.EndpointMapping> buildEndpoints(List<ComplianceFrameworkMapping> mappings) {
+        var endpoints = new ArrayList<CompliancePostureResult.EndpointMapping>();
         for (var m : mappings) {
             endpoints.add(new CompliancePostureResult.EndpointMapping(
                     m.getId(),
@@ -168,6 +174,21 @@ public class CompliancePostureService {
                     m.getControl() != null ? m.getControl().getId() : null,
                     m.getCoverageLevel(),
                     m.getRationale()));
+        }
+        return endpoints;
+    }
+
+    /**
+     * Derives the aggregate coverage level for a framework element from the
+     * individual mapping coverage levels. FULL takes precedence over PARTIAL
+     * which takes precedence over COMPENSATING. An empty list is impossible
+     * here (we group by existing mappings), but defaults to PARTIAL if reached.
+     */
+    private static CoverageLevel deriveCoverageLevel(List<ComplianceFrameworkMapping> mappings) {
+        boolean hasFull = false;
+        boolean hasPartial = false;
+        boolean hasCompensating = false;
+        for (var m : mappings) {
             switch (m.getCoverageLevel()) {
                 case FULL -> hasFull = true;
                 case PARTIAL -> hasPartial = true;
@@ -176,27 +197,14 @@ public class CompliancePostureService {
                     /* exhaustive */
                 }
             }
-            if (m.getRequirement() != null) {
-                requirementCount++;
-            }
-            if (m.getControl() != null) {
-                controlCount++;
-            }
         }
-        CoverageLevel elementCoverage;
         if (hasFull) {
-            elementCoverage = CoverageLevel.FULL;
-        } else if (hasPartial) {
-            elementCoverage = CoverageLevel.PARTIAL;
-        } else if (hasCompensating) {
-            elementCoverage = CoverageLevel.COMPENSATING;
-        } else {
-            // Empty list is impossible here (we group by existing mappings),
-            // but the compiler does not know that.
-            elementCoverage = CoverageLevel.PARTIAL;
+            return CoverageLevel.FULL;
         }
-        return new CompliancePostureResult.ElementPosture(
-                frameworkElement, elementCoverage, List.copyOf(endpoints), requirementCount, controlCount);
+        if (hasPartial) {
+            return CoverageLevel.PARTIAL;
+        }
+        return hasCompensating ? CoverageLevel.COMPENSATING : CoverageLevel.PARTIAL;
     }
 
     private static Map<String, Integer> toStringIntegerMap(Map<CoverageLevel, Integer> source) {
