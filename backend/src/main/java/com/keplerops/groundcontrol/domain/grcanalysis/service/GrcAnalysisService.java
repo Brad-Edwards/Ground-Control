@@ -12,12 +12,11 @@ import org.springframework.transaction.annotation.Transactional;
  * controllers thin and gives the extension seam from the preflight a single
  * class to point at. Wired delegates: {@link EvidenceFreshnessAnalysisService},
  * {@link ObservationProjectionService}, {@link VendorRiskAggregationService},
- * {@link NistAssessmentService}, {@link PortfolioAggregationService},
- * {@link CompliancePostureService}, and {@link CrossFrameworkGapService}.
- * Cluster-3 (GC-T008) risk analysis projections (heat map, distribution,
- * top-N, trends, posture) are grouped behind a single
- * {@link RiskAnalysisOrchestrator} to keep the dependency count within the
- * Monster-Class limit.
+ * {@link NistAssessmentService}, and {@link PortfolioAggregationService}.
+ * Cluster-3 (GC-T008) risk analysis projections are grouped behind
+ * {@link RiskAnalysisOrchestrator}; GC-I002 / GC-I007 compliance analyses
+ * behind {@link ComplianceAnalysisOrchestrator}—to keep the dependency count
+ * within the Monster-Class limit.
  */
 @Service
 @Transactional(readOnly = true)
@@ -29,8 +28,7 @@ public class GrcAnalysisService {
     private final NistAssessmentService nistAssessmentService;
     private final PortfolioAggregationService portfolioAggregationService;
     private final RiskAnalysisOrchestrator riskAnalysisOrchestrator;
-    private final CompliancePostureService compliancePostureService;
-    private final CrossFrameworkGapService crossFrameworkGapService;
+    private final ComplianceAnalysisOrchestrator complianceAnalysisOrchestrator;
 
     public GrcAnalysisService(
             EvidenceFreshnessAnalysisService evidenceFreshnessAnalysisService,
@@ -39,16 +37,14 @@ public class GrcAnalysisService {
             NistAssessmentService nistAssessmentService,
             PortfolioAggregationService portfolioAggregationService,
             RiskAnalysisOrchestrator riskAnalysisOrchestrator,
-            CompliancePostureService compliancePostureService,
-            CrossFrameworkGapService crossFrameworkGapService) {
+            ComplianceAnalysisOrchestrator complianceAnalysisOrchestrator) {
         this.evidenceFreshnessAnalysisService = evidenceFreshnessAnalysisService;
         this.observationProjectionService = observationProjectionService;
         this.vendorRiskAggregationService = vendorRiskAggregationService;
         this.nistAssessmentService = nistAssessmentService;
         this.portfolioAggregationService = portfolioAggregationService;
         this.riskAnalysisOrchestrator = riskAnalysisOrchestrator;
-        this.compliancePostureService = compliancePostureService;
-        this.crossFrameworkGapService = crossFrameworkGapService;
+        this.complianceAnalysisOrchestrator = complianceAnalysisOrchestrator;
     }
 
     public EvidenceFreshnessResult evidenceFreshness(
@@ -104,11 +100,11 @@ public class GrcAnalysisService {
 
     public CompliancePostureResult compliancePosture(
             UUID projectId, Instant asOf, ComplianceFrameworkIdentifier framework) {
-        return compliancePostureService.analyze(projectId, asOf, framework);
+        return complianceAnalysisOrchestrator.posture(projectId, asOf, framework);
     }
 
     public CrossFrameworkGapResult crossFrameworkGap(
             UUID projectId, Instant asOf, ComplianceFrameworkIdentifier framework, GapSeverity minSeverity) {
-        return crossFrameworkGapService.analyze(projectId, asOf, framework, minSeverity);
+        return complianceAnalysisOrchestrator.gap(projectId, asOf, framework, minSeverity);
     }
 }

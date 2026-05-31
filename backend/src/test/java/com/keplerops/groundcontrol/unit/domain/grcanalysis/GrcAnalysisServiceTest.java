@@ -6,10 +6,9 @@ import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.compliance.state.ComplianceFrameworkIdentifier;
 import com.keplerops.groundcontrol.domain.compliance.state.GapSeverity;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.ComplianceAnalysisOrchestrator;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.CompliancePostureResult;
-import com.keplerops.groundcontrol.domain.grcanalysis.service.CompliancePostureService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.CrossFrameworkGapResult;
-import com.keplerops.groundcontrol.domain.grcanalysis.service.CrossFrameworkGapService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
@@ -63,10 +62,7 @@ class GrcAnalysisServiceTest {
     private RiskAnalysisOrchestrator riskAnalysisOrchestrator;
 
     @Mock
-    private CompliancePostureService compliancePostureService;
-
-    @Mock
-    private CrossFrameworkGapService crossFrameworkGapService;
+    private ComplianceAnalysisOrchestrator complianceAnalysisOrchestrator;
 
     @InjectMocks
     private GrcAnalysisService service;
@@ -311,13 +307,13 @@ class GrcAnalysisServiceTest {
                 List.of(),
                 new CompliancePostureResult.Counts(0, 0, 0, java.util.Map.of()),
                 List.of());
-        when(compliancePostureService.analyze(projectId, asOf, ComplianceFrameworkIdentifier.SOC2))
+        when(complianceAnalysisOrchestrator.posture(projectId, asOf, ComplianceFrameworkIdentifier.SOC2))
                 .thenReturn(expected);
 
         CompliancePostureResult actual = service.compliancePosture(projectId, asOf, ComplianceFrameworkIdentifier.SOC2);
 
         assertThat(actual).isSameAs(expected);
-        verify(compliancePostureService).analyze(projectId, asOf, ComplianceFrameworkIdentifier.SOC2);
+        verify(complianceAnalysisOrchestrator).posture(projectId, asOf, ComplianceFrameworkIdentifier.SOC2);
     }
 
     @Test
@@ -334,13 +330,14 @@ class GrcAnalysisServiceTest {
                 List.of(),
                 new CrossFrameworkGapResult.Counts(0, java.util.Map.of()),
                 List.of());
-        when(crossFrameworkGapService.analyze(projectId, asOf, ComplianceFrameworkIdentifier.SOC2, GapSeverity.HIGH))
+        when(complianceAnalysisOrchestrator.gap(projectId, asOf, ComplianceFrameworkIdentifier.SOC2, GapSeverity.HIGH))
                 .thenReturn(expected);
 
         CrossFrameworkGapResult actual =
                 service.crossFrameworkGap(projectId, asOf, ComplianceFrameworkIdentifier.SOC2, GapSeverity.HIGH);
 
         assertThat(actual).isSameAs(expected);
-        verify(crossFrameworkGapService).analyze(projectId, asOf, ComplianceFrameworkIdentifier.SOC2, GapSeverity.HIGH);
+        verify(complianceAnalysisOrchestrator)
+                .gap(projectId, asOf, ComplianceFrameworkIdentifier.SOC2, GapSeverity.HIGH);
     }
 }

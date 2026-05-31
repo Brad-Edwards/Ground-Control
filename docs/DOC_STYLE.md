@@ -191,3 +191,9 @@ Extending an existing MCP constant array (for example `AUDIT_LINK_TARGET_TYPES`)
 mirror a new Java enum constant is a surface-addition amendment to ADR-054;
 the addition is recorded in the ADR-054 changelog entry for the issue. No new
 DOC_STYLE.md prose is needed for constant-only array extensions.
+
+Internal domain-service refactors that reduce coupling below the S6539 threshold
+(for example, introducing `ComplianceAnalysisOrchestrator` to group the GC-I002 /
+GC-I007 compliance services behind a single facade) change no public API or MCP
+tool surface. They are recorded in the ADR-054 amendment and a changelog fragment;
+no new DOC_STYLE.md prose is needed.
