@@ -63,6 +63,8 @@ public class ComplianceDriftDetectorService {
     /** Max length of the synthesized {@code summary} field; matches DB cap. */
     private static final int MAX_SUMMARY_LENGTH = 1000;
 
+    private static final String NOT_FOUND_MSG = "ComplianceDriftEvent not found: ";
+
     private final ComplianceDriftEventRepository repository;
     private final ProjectService projectService;
 
@@ -155,7 +157,7 @@ public class ComplianceDriftDetectorService {
     public ComplianceDriftEvent getById(UUID projectId, UUID id) {
         return repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("ComplianceDriftEvent not found: " + id));
+                .orElseThrow(() -> new NotFoundException(NOT_FOUND_MSG + id));
     }
 
     /**
@@ -166,7 +168,7 @@ public class ComplianceDriftDetectorService {
     public ComplianceDriftEvent acknowledge(UUID projectId, UUID id) {
         var event = repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("ComplianceDriftEvent not found: " + id));
+                .orElseThrow(() -> new NotFoundException(NOT_FOUND_MSG + id));
         if (event.getAcknowledgedAt() != null) {
             throw alreadyAcknowledgedConflict(event);
         }
@@ -176,13 +178,13 @@ public class ComplianceDriftDetectorService {
         if (updated == 0) {
             var refreshed = repository
                     .findByIdAndProjectId(id, projectId)
-                    .orElseThrow(() -> new NotFoundException("ComplianceDriftEvent not found: " + id));
+                    .orElseThrow(() -> new NotFoundException(NOT_FOUND_MSG + id));
             throw alreadyAcknowledgedConflict(refreshed);
         }
         // Re-read so the response reflects the persisted state.
         return repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("ComplianceDriftEvent not found: " + id));
+                .orElseThrow(() -> new NotFoundException(NOT_FOUND_MSG + id));
     }
 
     private static ConflictException alreadyAcknowledgedConflict(ComplianceDriftEvent event) {
