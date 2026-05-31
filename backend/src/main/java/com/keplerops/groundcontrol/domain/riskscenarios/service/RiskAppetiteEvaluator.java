@@ -66,6 +66,10 @@ public class RiskAppetiteEvaluator {
         if (currency != null && t.currency() != null && !currency.equalsIgnoreCase(t.currency())) {
             return notEvaluated(category, "currency mismatch: value=" + currency + " tolerance=" + t.currency());
         }
+        return classifyMonetaryValue(t, value);
+    }
+
+    private Result classifyMonetaryValue(RiskAppetiteTolerance t, BigDecimal value) {
         if (t.monetaryHigh() != null && value.compareTo(t.monetaryHigh()) > 0) {
             return new Result(Outcome.EXCEEDS, t, "value exceeds monetaryHigh");
         }
@@ -91,6 +95,10 @@ public class RiskAppetiteEvaluator {
         if (t.lossEventFrequencyMax() == null) {
             return notEvaluated(category, "tolerance has no lossEventFrequencyMax");
         }
+        return classifyLefValue(t, value);
+    }
+
+    private Result classifyLefValue(RiskAppetiteTolerance t, BigDecimal value) {
         int cmp = value.compareTo(t.lossEventFrequencyMax());
         if (cmp > 0) {
             return new Result(Outcome.EXCEEDS, t, "LEF exceeds tolerance ceiling");
@@ -117,6 +125,10 @@ public class RiskAppetiteEvaluator {
         if (t.exceedanceProbabilityMax() == null) {
             return notEvaluated(category, "tolerance has no exceedanceProbabilityMax");
         }
+        return classifyEpValue(t, probability);
+    }
+
+    private Result classifyEpValue(RiskAppetiteTolerance t, BigDecimal probability) {
         int cmp = probability.compareTo(t.exceedanceProbabilityMax());
         if (cmp > 0) {
             return new Result(Outcome.EXCEEDS, t, "exceedance probability above tolerance");
