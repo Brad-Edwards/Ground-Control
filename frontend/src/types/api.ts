@@ -1754,23 +1754,7 @@ export interface ControlWorkspaceResponse {
 // GC-Q012 — Evidence and State Explorer types.
 // ---------------------------------------------------------------------------
 
-export type EvidenceType =
-  | "OBSERVATION_SUMMARY"
-  | "CONTROL_TEST_SUMMARY"
-  | "ASSURANCE_CONCLUSION"
-  | "VERIFICATION_SUMMARY"
-  | "ATTESTATION"
-  | "MIXED";
-
-export type EvidenceSourceKind =
-  | "OBSERVATION"
-  | "CONTROL_TEST"
-  | "CONTROL_EFFECTIVENESS_ASSESSMENT"
-  | "VERIFICATION_RESULT"
-  | "RISK_ASSESSMENT_RESULT"
-  | "FINDING"
-  | "ATTESTATION"
-  | "EXTERNAL";
+// EvidenceType and EvidenceSourceKind are declared in the GC-M016 section above.
 
 export type AssuranceLevel = "L0" | "L1" | "L2" | "L3";
 
