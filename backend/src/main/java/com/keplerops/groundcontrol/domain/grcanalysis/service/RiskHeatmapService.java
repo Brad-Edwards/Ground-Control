@@ -202,8 +202,8 @@ public class RiskHeatmapService {
         }
 
         private void plotRow(RiskAssessmentResult row) {
-            NistLikelihoodBand likelihood = resolveLikelihoodStatic(row);
-            NistImpactBand impact = resolveImpactStatic(row);
+            NistLikelihoodBand likelihood = resolveLikelihood(row);
+            NistImpactBand impact = resolveImpact(row);
             if (likelihood == null || impact == null) {
                 incompatible++;
                 return;
@@ -213,27 +213,32 @@ public class RiskHeatmapService {
             plotted++;
         }
 
+        // Sonar S3398: these resolvers are only referenced from plotRow, so
+        // they belong inside the accumulator rather than dangling on the
+        // outer service. parseLikelihood / parseImpact / getString remain
+        // outer-class statics because they are pure-format helpers with no
+        // dependency on accumulator state.
+        private static NistLikelihoodBand resolveLikelihood(RiskAssessmentResult row) {
+            NistLikelihoodBand persisted = parseLikelihood(getString(row.getComputedOutputs(), OUT_OVERALL_LIKELIHOOD));
+            if (persisted != null) {
+                return persisted;
+            }
+            return parseLikelihood(getString(row.getInputFactors(), KEY_LIKELIHOOD_OVERALL));
+        }
+
+        private static NistImpactBand resolveImpact(RiskAssessmentResult row) {
+            NistImpactBand persisted = parseImpact(getString(row.getComputedOutputs(), OUT_IMPACT_LEVEL));
+            if (persisted != null) {
+                return persisted;
+            }
+            return parseImpact(getString(row.getInputFactors(), KEY_IMPACT_LEVEL));
+        }
+
         private static boolean supportsHeatmap(MethodologyFamily family) {
             return family == MethodologyFamily.NIST_SP800_30_R1
                     || family == MethodologyFamily.ISO_27005
                     || family == MethodologyFamily.CUSTOM;
         }
-    }
-
-    private static NistLikelihoodBand resolveLikelihoodStatic(RiskAssessmentResult row) {
-        NistLikelihoodBand persisted = parseLikelihood(getString(row.getComputedOutputs(), OUT_OVERALL_LIKELIHOOD));
-        if (persisted != null) {
-            return persisted;
-        }
-        return parseLikelihood(getString(row.getInputFactors(), KEY_LIKELIHOOD_OVERALL));
-    }
-
-    private static NistImpactBand resolveImpactStatic(RiskAssessmentResult row) {
-        NistImpactBand persisted = parseImpact(getString(row.getComputedOutputs(), OUT_IMPACT_LEVEL));
-        if (persisted != null) {
-            return persisted;
-        }
-        return parseImpact(getString(row.getInputFactors(), KEY_IMPACT_LEVEL));
     }
 
     private static NistLikelihoodBand parseLikelihood(String raw) {
