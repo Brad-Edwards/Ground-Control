@@ -81,8 +81,8 @@ public class RiskPostureService {
         int open = 0;
         int accepted = 0;
         int closed = 0;
-        for (RiskRegisterRecord record : records) {
-            RiskRegisterStatus status = record.getStatus();
+        for (RiskRegisterRecord registerRecord : records) {
+            RiskRegisterStatus status = registerRecord.getStatus();
             if (status == null) {
                 continue;
             }

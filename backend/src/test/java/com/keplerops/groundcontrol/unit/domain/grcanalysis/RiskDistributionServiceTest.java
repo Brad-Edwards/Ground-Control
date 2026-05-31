@@ -54,7 +54,7 @@ class RiskDistributionServiceTest {
         when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
     }
 
-    private RiskRegisterRecord record(
+    private RiskRegisterRecord buildRecord(
             String uid, RiskRegisterStatus status, String owner, java.util.List<String> tags) {
         var r = new RiskRegisterRecord(project, uid, uid + " title");
         setField(r, "id", UUID.randomUUID());
@@ -70,8 +70,8 @@ class RiskDistributionServiceTest {
 
     @Test
     void groupByStatus_countsByEnumName() {
-        var open = record("RR-1", RiskRegisterStatus.IDENTIFIED, null, null);
-        var closed = record("RR-2", RiskRegisterStatus.CLOSED, null, null);
+        var open = buildRecord("RR-1", RiskRegisterStatus.IDENTIFIED, null, null);
+        var closed = buildRecord("RR-2", RiskRegisterStatus.CLOSED, null, null);
         when(registerRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
                 .thenReturn(List.of(open, closed));
 
@@ -88,8 +88,8 @@ class RiskDistributionServiceTest {
 
     @Test
     void groupByOwner_skipsBlankOwnersWithLimitation() {
-        var with = record("RR-1", RiskRegisterStatus.IDENTIFIED, "alice", null);
-        var without = record("RR-2", RiskRegisterStatus.IDENTIFIED, null, null);
+        var with = buildRecord("RR-1", RiskRegisterStatus.IDENTIFIED, "alice", null);
+        var without = buildRecord("RR-2", RiskRegisterStatus.IDENTIFIED, null, null);
         when(registerRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
                 .thenReturn(List.of(with, without));
 
@@ -104,7 +104,7 @@ class RiskDistributionServiceTest {
 
     @Test
     void groupByCategory_splitsTagsAndKeepsAllPerRecord() {
-        var multi = record("RR-1", RiskRegisterStatus.IDENTIFIED, null, List.of("data", "privacy"));
+        var multi = buildRecord("RR-1", RiskRegisterStatus.IDENTIFIED, null, List.of("data", "privacy"));
         when(registerRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
                 .thenReturn(List.of(multi));
 
@@ -117,7 +117,7 @@ class RiskDistributionServiceTest {
 
     @Test
     void groupByAssetCriticality_alwaysEmitsCarveOutLimitation() {
-        var any = record("RR-1", RiskRegisterStatus.IDENTIFIED, null, null);
+        var any = buildRecord("RR-1", RiskRegisterStatus.IDENTIFIED, null, null);
         when(registerRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
                 .thenReturn(List.of(any));
 

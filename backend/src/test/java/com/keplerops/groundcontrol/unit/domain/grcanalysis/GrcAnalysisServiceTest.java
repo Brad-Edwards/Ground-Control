@@ -12,19 +12,15 @@ import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentServ
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionMode;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionService;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskAnalysisOrchestrator;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskDistributionGroupBy;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskDistributionResult;
-import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskDistributionService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskHeatmapResult;
-import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskHeatmapService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskPostureResult;
-import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskPostureService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTopNOrderBy;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTopNResult;
-import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTopNService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTrendsBucket;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTrendsResult;
-import com.keplerops.groundcontrol.domain.grcanalysis.service.RiskTrendsService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.VendorRiskAggregationResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.VendorRiskAggregationService;
 import java.time.Instant;
@@ -58,19 +54,7 @@ class GrcAnalysisServiceTest {
     private NistAssessmentService nistAssessmentService;
 
     @Mock
-    private RiskHeatmapService riskHeatmapService;
-
-    @Mock
-    private RiskDistributionService riskDistributionService;
-
-    @Mock
-    private RiskTopNService riskTopNService;
-
-    @Mock
-    private RiskTrendsService riskTrendsService;
-
-    @Mock
-    private RiskPostureService riskPostureService;
+    private RiskAnalysisOrchestrator riskAnalysisOrchestrator;
 
     @InjectMocks
     private GrcAnalysisService service;
@@ -179,7 +163,7 @@ class GrcAnalysisServiceTest {
     }
 
     @Test
-    void riskHeatmap_delegatesToRiskHeatmapService() {
+    void riskHeatmap_delegatesToRiskAnalysisOrchestrator() {
         UUID projectId = UUID.randomUUID();
         UUID profileId = UUID.randomUUID();
         Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
@@ -196,16 +180,16 @@ class GrcAnalysisServiceTest {
                 List.of(),
                 new RiskHeatmapResult.Counts(0, 0, 0, Map.of()),
                 List.of());
-        when(riskHeatmapService.buildHeatmap(projectId, asOf, profileId)).thenReturn(expected);
+        when(riskAnalysisOrchestrator.heatmap(projectId, asOf, profileId)).thenReturn(expected);
 
         RiskHeatmapResult actual = service.riskHeatmap(projectId, asOf, profileId);
 
         assertThat(actual).isSameAs(expected);
-        verify(riskHeatmapService).buildHeatmap(projectId, asOf, profileId);
+        verify(riskAnalysisOrchestrator).heatmap(projectId, asOf, profileId);
     }
 
     @Test
-    void riskDistribution_delegatesToRiskDistributionService() {
+    void riskDistribution_delegatesToRiskAnalysisOrchestrator() {
         UUID projectId = UUID.randomUUID();
         Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
         RiskDistributionResult expected = new RiskDistributionResult(
@@ -219,17 +203,17 @@ class GrcAnalysisServiceTest {
                 List.of(),
                 new RiskDistributionResult.Counts(0, 0, 0, Map.of()),
                 List.of());
-        when(riskDistributionService.distribute(projectId, asOf, RiskDistributionGroupBy.STATUS))
+        when(riskAnalysisOrchestrator.distribution(projectId, asOf, RiskDistributionGroupBy.STATUS))
                 .thenReturn(expected);
 
         RiskDistributionResult actual = service.riskDistribution(projectId, asOf, RiskDistributionGroupBy.STATUS);
 
         assertThat(actual).isSameAs(expected);
-        verify(riskDistributionService).distribute(projectId, asOf, RiskDistributionGroupBy.STATUS);
+        verify(riskAnalysisOrchestrator).distribution(projectId, asOf, RiskDistributionGroupBy.STATUS);
     }
 
     @Test
-    void riskTopN_delegatesToRiskTopNService() {
+    void riskTopN_delegatesToRiskAnalysisOrchestrator() {
         UUID projectId = UUID.randomUUID();
         Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
         RiskTopNResult expected = new RiskTopNResult(
@@ -243,17 +227,17 @@ class GrcAnalysisServiceTest {
                 List.of(),
                 new RiskTopNResult.Counts(0, 0),
                 List.of());
-        when(riskTopNService.topN(projectId, asOf, 10, RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT))
+        when(riskAnalysisOrchestrator.topN(projectId, asOf, 10, RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT))
                 .thenReturn(expected);
 
         RiskTopNResult actual = service.riskTopN(projectId, asOf, 10, RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT);
 
         assertThat(actual).isSameAs(expected);
-        verify(riskTopNService).topN(projectId, asOf, 10, RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT);
+        verify(riskAnalysisOrchestrator).topN(projectId, asOf, 10, RiskTopNOrderBy.CURRENT_ASSESSMENT_OUTPUT);
     }
 
     @Test
-    void riskTrends_delegatesToRiskTrendsService() {
+    void riskTrends_delegatesToRiskAnalysisOrchestrator() {
         UUID projectId = UUID.randomUUID();
         Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
         Instant from = Instant.parse("2025-05-30T00:00:00Z");
@@ -269,17 +253,17 @@ class GrcAnalysisServiceTest {
                 List.of(),
                 new RiskTrendsResult.Counts(0, 0),
                 List.of());
-        when(riskTrendsService.trends(projectId, asOf, from, to, RiskTrendsBucket.MONTH))
+        when(riskAnalysisOrchestrator.trends(projectId, asOf, from, to, RiskTrendsBucket.MONTH))
                 .thenReturn(expected);
 
         RiskTrendsResult actual = service.riskTrends(projectId, asOf, from, to, RiskTrendsBucket.MONTH);
 
         assertThat(actual).isSameAs(expected);
-        verify(riskTrendsService).trends(projectId, asOf, from, to, RiskTrendsBucket.MONTH);
+        verify(riskAnalysisOrchestrator).trends(projectId, asOf, from, to, RiskTrendsBucket.MONTH);
     }
 
     @Test
-    void riskPosture_delegatesToRiskPostureService() {
+    void riskPosture_delegatesToRiskAnalysisOrchestrator() {
         UUID projectId = UUID.randomUUID();
         Instant asOf = Instant.parse("2026-05-30T00:00:00Z");
         RiskPostureResult expected = new RiskPostureResult(
@@ -294,11 +278,11 @@ class GrcAnalysisServiceTest {
                 new RiskPostureResult.ApprovalSummary(0, Map.of()),
                 new RiskPostureResult.ReassessmentSummary(0, 0),
                 List.of());
-        when(riskPostureService.posture(projectId, asOf)).thenReturn(expected);
+        when(riskAnalysisOrchestrator.posture(projectId, asOf)).thenReturn(expected);
 
         RiskPostureResult actual = service.riskPosture(projectId, asOf);
 
         assertThat(actual).isSameAs(expected);
-        verify(riskPostureService).posture(projectId, asOf);
+        verify(riskAnalysisOrchestrator).posture(projectId, asOf);
     }
 }

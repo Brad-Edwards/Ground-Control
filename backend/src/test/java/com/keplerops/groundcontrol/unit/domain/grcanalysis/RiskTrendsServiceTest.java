@@ -377,10 +377,10 @@ class RiskTrendsServiceTest {
     // --- helpers -------------------------------------------------------
 
     private RiskRegisterRecord registerRecord(String uid, RiskRegisterStatus status) {
-        RiskRegisterRecord record = new RiskRegisterRecord(project, uid, "Risk " + uid);
-        setField(record, "id", UUID.randomUUID());
-        setField(record, "status", status);
-        return record;
+        RiskRegisterRecord registerRecord = new RiskRegisterRecord(project, uid, "Risk " + uid);
+        setField(registerRecord, "id", UUID.randomUUID());
+        setField(registerRecord, "status", status);
+        return registerRecord;
     }
 
     private void runWithStubbedAudit(List<RiskRegisterRecord> liveProjectRecords, List<Row> auditRows, Runnable body) {

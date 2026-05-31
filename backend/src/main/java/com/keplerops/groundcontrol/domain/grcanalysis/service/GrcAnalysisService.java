@@ -10,9 +10,11 @@ import org.springframework.transaction.annotation.Transactional;
  * controllers thin and gives the extension seam from the preflight a single
  * class to point at. Wired delegates: {@link EvidenceFreshnessAnalysisService},
  * {@link ObservationProjectionService}, {@link VendorRiskAggregationService},
- * {@link NistAssessmentService}, {@link PortfolioAggregationService}, and the
- * GC-T008 cluster of methodology-aware aggregate risk reporting services
- * (heat map, distribution, top-N, trends, posture).
+ * {@link NistAssessmentService}, and {@link PortfolioAggregationService}.
+ * Cluster-3 (GC-T008) risk analysis projections (heat map, distribution,
+ * top-N, trends, posture) are grouped behind a single
+ * {@link RiskAnalysisOrchestrator} to keep the dependency count within the
+ * Monster-Class limit.
  */
 @Service
 @Transactional(readOnly = true)
@@ -23,34 +25,21 @@ public class GrcAnalysisService {
     private final VendorRiskAggregationService vendorRiskAggregationService;
     private final NistAssessmentService nistAssessmentService;
     private final PortfolioAggregationService portfolioAggregationService;
-    private final RiskHeatmapService riskHeatmapService;
-    private final RiskDistributionService riskDistributionService;
-    private final RiskTopNService riskTopNService;
-    private final RiskTrendsService riskTrendsService;
-    private final RiskPostureService riskPostureService;
+    private final RiskAnalysisOrchestrator riskAnalysisOrchestrator;
 
-    @SuppressWarnings("java:S107") // orchestrator: each delegate is a distinct read-only projection service.
     public GrcAnalysisService(
             EvidenceFreshnessAnalysisService evidenceFreshnessAnalysisService,
             ObservationProjectionService observationProjectionService,
             VendorRiskAggregationService vendorRiskAggregationService,
             NistAssessmentService nistAssessmentService,
             PortfolioAggregationService portfolioAggregationService,
-            RiskHeatmapService riskHeatmapService,
-            RiskDistributionService riskDistributionService,
-            RiskTopNService riskTopNService,
-            RiskTrendsService riskTrendsService,
-            RiskPostureService riskPostureService) {
+            RiskAnalysisOrchestrator riskAnalysisOrchestrator) {
         this.evidenceFreshnessAnalysisService = evidenceFreshnessAnalysisService;
         this.observationProjectionService = observationProjectionService;
         this.vendorRiskAggregationService = vendorRiskAggregationService;
         this.nistAssessmentService = nistAssessmentService;
         this.portfolioAggregationService = portfolioAggregationService;
-        this.riskHeatmapService = riskHeatmapService;
-        this.riskDistributionService = riskDistributionService;
-        this.riskTopNService = riskTopNService;
-        this.riskTrendsService = riskTrendsService;
-        this.riskPostureService = riskPostureService;
+        this.riskAnalysisOrchestrator = riskAnalysisOrchestrator;
     }
 
     public EvidenceFreshnessResult evidenceFreshness(
@@ -84,23 +73,23 @@ public class GrcAnalysisService {
     }
 
     public RiskHeatmapResult riskHeatmap(UUID projectId, Instant asOf, UUID methodologyProfileId) {
-        return riskHeatmapService.buildHeatmap(projectId, asOf, methodologyProfileId);
+        return riskAnalysisOrchestrator.heatmap(projectId, asOf, methodologyProfileId);
     }
 
     public RiskDistributionResult riskDistribution(UUID projectId, Instant asOf, RiskDistributionGroupBy groupBy) {
-        return riskDistributionService.distribute(projectId, asOf, groupBy);
+        return riskAnalysisOrchestrator.distribution(projectId, asOf, groupBy);
     }
 
     public RiskTopNResult riskTopN(UUID projectId, Instant asOf, int limit, RiskTopNOrderBy orderBy) {
-        return riskTopNService.topN(projectId, asOf, limit, orderBy);
+        return riskAnalysisOrchestrator.topN(projectId, asOf, limit, orderBy);
     }
 
     public RiskTrendsResult riskTrends(
             UUID projectId, Instant asOf, Instant from, Instant to, RiskTrendsBucket bucket) {
-        return riskTrendsService.trends(projectId, asOf, from, to, bucket);
+        return riskAnalysisOrchestrator.trends(projectId, asOf, from, to, bucket);
     }
 
     public RiskPostureResult riskPosture(UUID projectId, Instant asOf) {
-        return riskPostureService.posture(projectId, asOf);
+        return riskAnalysisOrchestrator.posture(projectId, asOf);
     }
 }

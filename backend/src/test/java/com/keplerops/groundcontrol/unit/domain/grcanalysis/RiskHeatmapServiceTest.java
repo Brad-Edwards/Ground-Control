@@ -160,8 +160,8 @@ class RiskHeatmapServiceTest {
     void projectNotFound_throws() {
         when(projectRepository.findById(projectId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.buildHeatmap(projectId, Instant.now(), null))
-                .isInstanceOf(NotFoundException.class);
+        Instant now = Instant.now();
+        assertThatThrownBy(() -> service.buildHeatmap(projectId, now, null)).isInstanceOf(NotFoundException.class);
     }
 
     /**

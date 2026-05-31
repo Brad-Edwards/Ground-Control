@@ -63,7 +63,7 @@ class RiskPostureServiceTest {
         setField(nistProfile, "id", UUID.randomUUID());
     }
 
-    private RiskRegisterRecord record(RiskRegisterStatus status) {
+    private RiskRegisterRecord buildRecord(RiskRegisterStatus status) {
         var r = new RiskRegisterRecord(project, "RR-" + UUID.randomUUID(), "title");
         setField(r, "id", UUID.randomUUID());
         setField(r, "status", status);
@@ -85,10 +85,10 @@ class RiskPostureServiceTest {
     @Test
     void aggregatesStatusOpenAcceptedClosedAndEmitsAppetiteDeferral() {
         Instant now = Instant.parse("2026-05-30T00:00:00Z");
-        var open1 = record(RiskRegisterStatus.IDENTIFIED);
-        var open2 = record(RiskRegisterStatus.TREATING);
-        var accepted = record(RiskRegisterStatus.ACCEPTED);
-        var closed = record(RiskRegisterStatus.CLOSED);
+        var open1 = buildRecord(RiskRegisterStatus.IDENTIFIED);
+        var open2 = buildRecord(RiskRegisterStatus.TREATING);
+        var accepted = buildRecord(RiskRegisterStatus.ACCEPTED);
+        var closed = buildRecord(RiskRegisterStatus.CLOSED);
         when(registerRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
                 .thenReturn(List.of(open1, open2, accepted, closed));
         when(assessmentRepository.findLatestPerScenarioByProjectId(projectId)).thenReturn(List.of());
@@ -111,7 +111,7 @@ class RiskPostureServiceTest {
         var approvedAssessment = assessment(RiskAssessmentApprovalStatus.APPROVED, null);
         var pendingReassessment = assessment(RiskAssessmentApprovalStatus.APPROVED, now);
         when(registerRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
-                .thenReturn(List.of(record(RiskRegisterStatus.IDENTIFIED)));
+                .thenReturn(List.of(buildRecord(RiskRegisterStatus.IDENTIFIED)));
         when(assessmentRepository.findLatestPerScenarioByProjectId(projectId))
                 .thenReturn(List.of(draftAssessment, approvedAssessment, pendingReassessment));
 

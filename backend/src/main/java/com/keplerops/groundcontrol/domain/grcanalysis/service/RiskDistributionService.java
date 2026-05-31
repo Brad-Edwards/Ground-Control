@@ -75,8 +75,8 @@ public class RiskDistributionService {
 
         Map<String, Integer> counts = new TreeMap<>();
         int unclassified = 0;
-        for (RiskRegisterRecord record : records) {
-            List<String> keys = keysFor(groupBy, record);
+        for (RiskRegisterRecord registerRecord : records) {
+            List<String> keys = keysFor(groupBy, registerRecord);
             if (keys.isEmpty()) {
                 counts.merge(UNCLASSIFIED_KEY, 1, Integer::sum);
                 unclassified++;
@@ -115,17 +115,17 @@ public class RiskDistributionService {
                 limitations);
     }
 
-    private List<String> keysFor(RiskDistributionGroupBy groupBy, RiskRegisterRecord record) {
+    private List<String> keysFor(RiskDistributionGroupBy groupBy, RiskRegisterRecord registerRecord) {
         return switch (groupBy) {
-            case STATUS -> record.getStatus() == null
+            case STATUS -> registerRecord.getStatus() == null
                     ? List.of()
-                    : List.of(record.getStatus().name());
+                    : List.of(registerRecord.getStatus().name());
             case OWNER -> {
-                String owner = record.getOwner();
+                String owner = registerRecord.getOwner();
                 yield owner == null || owner.isBlank() ? List.of() : List.of(owner.trim());
             }
             case CATEGORY -> {
-                List<String> tags = record.getCategoryTags();
+                List<String> tags = registerRecord.getCategoryTags();
                 if (tags == null || tags.isEmpty()) {
                     yield List.of();
                 }
