@@ -1,4 +1,4 @@
--- V134: compliance_drift_event_audit (Envers shadow for V133).
+-- V138: compliance_drift_event_audit (Envers shadow for V137).
 CREATE TABLE compliance_drift_event_audit (
     id                  UUID         NOT NULL,
     rev                 INTEGER      NOT NULL REFERENCES revinfo(rev),

@@ -1,4 +1,4 @@
--- V133: compliance_drift_event (GC-I004).
+-- V137: compliance_drift_event (GC-I004).
 --
 -- Append-only drift event row published by ComplianceDriftDetectorService
 -- when a synchronous control / evidence / code-change signal indicates a

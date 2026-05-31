@@ -1,4 +1,4 @@
--- V131: evidence_artifact.expires_at + validity_window_days (GC-I004 / ADR-045 §8).
+-- V135: evidence_artifact.expires_at + validity_window_days (GC-I004 / ADR-045 §8).
 --
 -- Optional point-in-time expiry for evidence artifacts. Setting expires_at
 -- does NOT mutate the artifact after that instant — the append-only contract
