@@ -213,11 +213,9 @@ public class RiskHeatmapService {
             plotted++;
         }
 
-        // Sonar S3398: these resolvers are only referenced from plotRow, so
-        // they belong inside the accumulator rather than dangling on the
-        // outer service. parseLikelihood / parseImpact / getString remain
-        // outer-class statics because they are pure-format helpers with no
-        // dependency on accumulator state.
+        // Sonar S3398: every band/parse/getString helper is referenced
+        // only from plotRow's resolvers, so they all belong inside the
+        // accumulator rather than dangling on the outer service.
         private static NistLikelihoodBand resolveLikelihood(RiskAssessmentResult row) {
             NistLikelihoodBand persisted = parseLikelihood(getString(row.getComputedOutputs(), OUT_OVERALL_LIKELIHOOD));
             if (persisted != null) {
@@ -234,41 +232,41 @@ public class RiskHeatmapService {
             return parseImpact(getString(row.getInputFactors(), KEY_IMPACT_LEVEL));
         }
 
+        private static NistLikelihoodBand parseLikelihood(String raw) {
+            if (raw == null || raw.isBlank()) {
+                return null;
+            }
+            try {
+                return NistLikelihoodBand.valueOf(raw.trim().toUpperCase());
+            } catch (IllegalArgumentException ex) {
+                return null;
+            }
+        }
+
+        private static NistImpactBand parseImpact(String raw) {
+            if (raw == null || raw.isBlank()) {
+                return null;
+            }
+            try {
+                return NistImpactBand.valueOf(raw.trim().toUpperCase());
+            } catch (IllegalArgumentException ex) {
+                return null;
+            }
+        }
+
+        private static String getString(Map<String, Object> map, String key) {
+            if (map == null) {
+                return null;
+            }
+            Object v = map.get(key);
+            return v == null ? null : v.toString();
+        }
+
         private static boolean supportsHeatmap(MethodologyFamily family) {
             return family == MethodologyFamily.NIST_SP800_30_R1
                     || family == MethodologyFamily.ISO_27005
                     || family == MethodologyFamily.CUSTOM;
         }
-    }
-
-    private static NistLikelihoodBand parseLikelihood(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        try {
-            return NistLikelihoodBand.valueOf(raw.trim().toUpperCase());
-        } catch (IllegalArgumentException ex) {
-            return null;
-        }
-    }
-
-    private static NistImpactBand parseImpact(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        try {
-            return NistImpactBand.valueOf(raw.trim().toUpperCase());
-        } catch (IllegalArgumentException ex) {
-            return null;
-        }
-    }
-
-    private static String getString(Map<String, Object> map, String key) {
-        if (map == null) {
-            return null;
-        }
-        Object v = map.get(key);
-        return v == null ? null : v.toString();
     }
 
     private static MethodologyProfile resolveProfile(List<RiskAssessmentResult> rows, UUID profileId) {
