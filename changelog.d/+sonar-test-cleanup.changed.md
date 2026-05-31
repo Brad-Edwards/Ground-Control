@@ -1,0 +1,1 @@
+changed: parameterize three duplicate control-character tests in ComplianceFrameworkMappingServiceTest into one @ParameterizedTest, hoist lambda arguments out of all assertThatThrownBy calls, and remove backtick Java code from a comment in ComplianceFrameworkMappingGraphProjectionContributorTest

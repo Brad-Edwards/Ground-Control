@@ -106,11 +106,10 @@ class ComplianceFrameworkMappingGraphProjectionContributorTest {
 
     @Test
     void nodeProperties_includeOptionalFrameworkIdentifierAndVersion() {
-        // Cluster-744 finding #7: the `if (mapping.getFrameworkIdentifier() != null)`
-        // and `if (mapping.getFrameworkVersion() != null)` branches in
-        // contributeNodes() were uncovered. Exercise them so a future
-        // refactor that omits either property surfaces as a failing test
-        // rather than as silent data loss in the materialized graph.
+        // Cluster-744 finding #7: the null-check branches for frameworkIdentifier
+        // and frameworkVersion in contributeNodes() were uncovered. Exercise them
+        // so a future refactor that omits either property surfaces as a failing
+        // test rather than as silent data loss in the materialized graph.
         UUID mappingId = UUID.fromString("00000000-0000-0000-0000-000000000ccc");
         var mapping = ComplianceFrameworkMapping.forRequirement(
                 project, requirement, ComplianceFrameworkIdentifier.SOC2, "CC2.1", CoverageLevel.PARTIAL);

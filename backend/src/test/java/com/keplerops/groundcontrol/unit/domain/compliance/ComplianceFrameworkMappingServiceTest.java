@@ -27,10 +27,14 @@ import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -128,16 +132,18 @@ class ComplianceFrameworkMappingServiceTest {
 
         @Test
         void bothEndpoints_throwsDomainValidation() {
-            assertThatThrownBy(() -> service.create(new CreateComplianceFrameworkMappingCommand(
-                            PROJECT_ID,
-                            REQUIREMENT_ID,
-                            CONTROL_ID,
-                            ComplianceFrameworkIdentifier.SOC2,
-                            null,
-                            null,
-                            "CC1.1",
-                            CoverageLevel.PARTIAL,
-                            null)))
+            var cmd = new CreateComplianceFrameworkMappingCommand(
+                    PROJECT_ID,
+                    REQUIREMENT_ID,
+                    CONTROL_ID,
+                    ComplianceFrameworkIdentifier.SOC2,
+                    null,
+                    null,
+                    "CC1.1",
+                    CoverageLevel.PARTIAL,
+                    null);
+
+            assertThatThrownBy(() -> service.create(cmd))
                     .isInstanceOf(DomainValidationException.class)
                     .hasMessageContaining("Exactly one");
 
@@ -146,40 +152,44 @@ class ComplianceFrameworkMappingServiceTest {
 
         @Test
         void neitherEndpoint_throwsDomainValidation() {
-            assertThatThrownBy(() -> service.create(new CreateComplianceFrameworkMappingCommand(
-                            PROJECT_ID,
-                            null,
-                            null,
-                            ComplianceFrameworkIdentifier.SOC2,
-                            null,
-                            null,
-                            "CC1.1",
-                            CoverageLevel.PARTIAL,
-                            null)))
-                    .isInstanceOf(DomainValidationException.class);
+            var cmd = new CreateComplianceFrameworkMappingCommand(
+                    PROJECT_ID,
+                    null,
+                    null,
+                    ComplianceFrameworkIdentifier.SOC2,
+                    null,
+                    null,
+                    "CC1.1",
+                    CoverageLevel.PARTIAL,
+                    null);
+
+            assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(DomainValidationException.class);
         }
 
         @Test
         void missingFramework_throwsDomainValidation() {
-            assertThatThrownBy(() -> service.create(new CreateComplianceFrameworkMappingCommand(
-                            PROJECT_ID, REQUIREMENT_ID, null, null, null, null, "CC1.1", CoverageLevel.PARTIAL, null)))
+            var cmd = new CreateComplianceFrameworkMappingCommand(
+                    PROJECT_ID, REQUIREMENT_ID, null, null, null, null, "CC1.1", CoverageLevel.PARTIAL, null);
+
+            assertThatThrownBy(() -> service.create(cmd))
                     .isInstanceOf(DomainValidationException.class)
                     .hasMessageContaining("framework");
         }
 
         @Test
         void blankElement_throwsDomainValidation() {
-            assertThatThrownBy(() -> service.create(new CreateComplianceFrameworkMappingCommand(
-                            PROJECT_ID,
-                            REQUIREMENT_ID,
-                            null,
-                            ComplianceFrameworkIdentifier.SOC2,
-                            null,
-                            null,
-                            "   ",
-                            CoverageLevel.PARTIAL,
-                            null)))
-                    .isInstanceOf(DomainValidationException.class);
+            var cmd = new CreateComplianceFrameworkMappingCommand(
+                    PROJECT_ID,
+                    REQUIREMENT_ID,
+                    null,
+                    ComplianceFrameworkIdentifier.SOC2,
+                    null,
+                    null,
+                    "   ",
+                    CoverageLevel.PARTIAL,
+                    null);
+
+            assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(DomainValidationException.class);
         }
 
         @Test
@@ -187,17 +197,18 @@ class ComplianceFrameworkMappingServiceTest {
             when(projectService.getById(PROJECT_ID)).thenReturn(project);
             when(controlRepository.findByIdAndProjectId(CONTROL_ID, PROJECT_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.create(new CreateComplianceFrameworkMappingCommand(
-                            PROJECT_ID,
-                            null,
-                            CONTROL_ID,
-                            ComplianceFrameworkIdentifier.SOC2,
-                            null,
-                            null,
-                            "CC1.1",
-                            CoverageLevel.PARTIAL,
-                            null)))
-                    .isInstanceOf(NotFoundException.class);
+            var cmd = new CreateComplianceFrameworkMappingCommand(
+                    PROJECT_ID,
+                    null,
+                    CONTROL_ID,
+                    ComplianceFrameworkIdentifier.SOC2,
+                    null,
+                    null,
+                    "CC1.1",
+                    CoverageLevel.PARTIAL,
+                    null);
+
+            assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(NotFoundException.class);
         }
 
         @Test
@@ -209,32 +220,35 @@ class ComplianceFrameworkMappingServiceTest {
                             REQUIREMENT_ID, ComplianceFrameworkIdentifier.SOC2, "CC1.1"))
                     .thenReturn(true);
 
-            assertThatThrownBy(() -> service.create(new CreateComplianceFrameworkMappingCommand(
-                            PROJECT_ID,
-                            REQUIREMENT_ID,
-                            null,
-                            ComplianceFrameworkIdentifier.SOC2,
-                            null,
-                            null,
-                            "CC1.1",
-                            CoverageLevel.PARTIAL,
-                            null)))
-                    .isInstanceOf(ConflictException.class);
+            var cmd = new CreateComplianceFrameworkMappingCommand(
+                    PROJECT_ID,
+                    REQUIREMENT_ID,
+                    null,
+                    ComplianceFrameworkIdentifier.SOC2,
+                    null,
+                    null,
+                    "CC1.1",
+                    CoverageLevel.PARTIAL,
+                    null);
+
+            assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(ConflictException.class);
         }
 
         @Test
         void externalIdentifierWithNewline_throwsDomainValidation() {
             // Log-injection guard from the cluster security note.
-            assertThatThrownBy(() -> service.create(new CreateComplianceFrameworkMappingCommand(
-                            PROJECT_ID,
-                            REQUIREMENT_ID,
-                            null,
-                            ComplianceFrameworkIdentifier.SOC2,
-                            "Custom\nIdentifier",
-                            null,
-                            "CC1.1",
-                            CoverageLevel.PARTIAL,
-                            null)))
+            var cmd = new CreateComplianceFrameworkMappingCommand(
+                    PROJECT_ID,
+                    REQUIREMENT_ID,
+                    null,
+                    ComplianceFrameworkIdentifier.SOC2,
+                    "Custom\nIdentifier",
+                    null,
+                    "CC1.1",
+                    CoverageLevel.PARTIAL,
+                    null);
+
+            assertThatThrownBy(() -> service.create(cmd))
                     .isInstanceOf(DomainValidationException.class)
                     .hasMessageContaining("control characters");
         }
@@ -270,55 +284,43 @@ class ComplianceFrameworkMappingServiceTest {
                             REQUIREMENT_ID, ComplianceFrameworkIdentifier.SOC2, "CC2.1"))
                     .thenReturn(true);
 
-            assertThatThrownBy(() -> service.update(new UpdateComplianceFrameworkMappingCommand(
-                            PROJECT_ID, MAPPING_ID, null, null, null, "CC2.1", null, null)))
-                    .isInstanceOf(ConflictException.class);
+            var cmd = new UpdateComplianceFrameworkMappingCommand(
+                    PROJECT_ID, MAPPING_ID, null, null, null, "CC2.1", null, null);
+
+            assertThatThrownBy(() -> service.update(cmd)).isInstanceOf(ConflictException.class);
         }
 
-        @Test
-        void externalIdentifierWithNewline_throwsDomainValidation() {
-            // Cluster-744 fix (findings #3 / #5): the update path previously
-            // routed `frameworkIdentifier` through `sanitizeExternalIdentifier`
-            // (trim-only), bypassing the control-char log-injection guard the
-            // create path applies via `validateRequiredFields`. A caller could
-            // PUT `Acme\nINJECT` and have the embedded newline land in the
-            // entity (and from there into structured log lines). Verify
-            // the guard is now enforced symmetrically with create.
+        /**
+         * The update path must enforce the control-character log-injection guard
+         * symmetrically with the create path. Verify each control-character class
+         * (newline, carriage return, tab) is rejected with a validation error.
+         *
+         * <p>Cluster-744 fix (findings #3 / #5): the update path previously routed
+         * frameworkIdentifier through sanitizeExternalIdentifier (trim-only), bypassing
+         * the guard. A caller could PUT an identifier with embedded newlines and have
+         * them land in the entity and from there into structured log lines.
+         */
+        @ParameterizedTest(name = "externalIdentifier with {0} is rejected")
+        @MethodSource("controlCharIdentifiers")
+        void externalIdentifierWithControlChar_throwsDomainValidation(String label, String badIdentifier) {
             var mapping = ComplianceFrameworkMapping.forRequirement(
                     project, requirement, ComplianceFrameworkIdentifier.SOC2, "CC1.1", CoverageLevel.PARTIAL);
             setField(mapping, "id", MAPPING_ID);
             when(repository.findByIdAndProjectId(MAPPING_ID, PROJECT_ID)).thenReturn(Optional.of(mapping));
 
-            assertThatThrownBy(() -> service.update(new UpdateComplianceFrameworkMappingCommand(
-                            PROJECT_ID, MAPPING_ID, null, "Acme\nINJECT", null, null, null, null)))
+            var cmd = new UpdateComplianceFrameworkMappingCommand(
+                    PROJECT_ID, MAPPING_ID, null, badIdentifier, null, null, null, null);
+
+            assertThatThrownBy(() -> service.update(cmd))
                     .isInstanceOf(DomainValidationException.class)
                     .hasMessageContaining("control characters");
         }
 
-        @Test
-        void externalIdentifierWithCarriageReturn_throwsDomainValidation() {
-            var mapping = ComplianceFrameworkMapping.forRequirement(
-                    project, requirement, ComplianceFrameworkIdentifier.SOC2, "CC1.1", CoverageLevel.PARTIAL);
-            setField(mapping, "id", MAPPING_ID);
-            when(repository.findByIdAndProjectId(MAPPING_ID, PROJECT_ID)).thenReturn(Optional.of(mapping));
-
-            assertThatThrownBy(() -> service.update(new UpdateComplianceFrameworkMappingCommand(
-                            PROJECT_ID, MAPPING_ID, null, "Acme\rINJECT", null, null, null, null)))
-                    .isInstanceOf(DomainValidationException.class)
-                    .hasMessageContaining("control characters");
-        }
-
-        @Test
-        void externalIdentifierWithTab_throwsDomainValidation() {
-            var mapping = ComplianceFrameworkMapping.forRequirement(
-                    project, requirement, ComplianceFrameworkIdentifier.SOC2, "CC1.1", CoverageLevel.PARTIAL);
-            setField(mapping, "id", MAPPING_ID);
-            when(repository.findByIdAndProjectId(MAPPING_ID, PROJECT_ID)).thenReturn(Optional.of(mapping));
-
-            assertThatThrownBy(() -> service.update(new UpdateComplianceFrameworkMappingCommand(
-                            PROJECT_ID, MAPPING_ID, null, "Acme\tINJECT", null, null, null, null)))
-                    .isInstanceOf(DomainValidationException.class)
-                    .hasMessageContaining("control characters");
+        static Stream<Arguments> controlCharIdentifiers() {
+            return Stream.of(
+                    Arguments.of("newline (\\n)", "Acme\nINJECT"),
+                    Arguments.of("carriage return (\\r)", "Acme\rINJECT"),
+                    Arguments.of("tab (\\t)", "Acme\tINJECT"));
         }
     }
 
