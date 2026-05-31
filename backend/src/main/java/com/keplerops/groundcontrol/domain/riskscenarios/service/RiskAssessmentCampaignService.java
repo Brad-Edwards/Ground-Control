@@ -28,6 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class RiskAssessmentCampaignService {
 
+    private static final String CAMPAIGN_NOT_FOUND = "Risk assessment campaign not found: ";
+
     private final RiskAssessmentCampaignRepository repository;
     private final ProjectService projectService;
     private final MethodologyProfileRepository methodologyProfileRepository;
@@ -74,7 +76,7 @@ public class RiskAssessmentCampaignService {
     public RiskAssessmentCampaign getById(UUID projectId, UUID id) {
         return repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Risk assessment campaign not found: " + id));
+                .orElseThrow(() -> new NotFoundException(CAMPAIGN_NOT_FOUND + id));
     }
 
     public RiskAssessmentCampaign update(UUID projectId, UUID id, UpdateRiskAssessmentCampaignCommand command) {
@@ -84,7 +86,7 @@ public class RiskAssessmentCampaignService {
         // class-level @Transactional covers this method, so behaviour is unchanged.
         var campaign = repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Risk assessment campaign not found: " + id));
+                .orElseThrow(() -> new NotFoundException(CAMPAIGN_NOT_FOUND + id));
         if (command.title() != null) {
             campaign.setTitle(command.title());
         }
@@ -110,7 +112,7 @@ public class RiskAssessmentCampaignService {
         // class-level @Transactional covers this method, so behaviour is unchanged.
         var campaign = repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Risk assessment campaign not found: " + id));
+                .orElseThrow(() -> new NotFoundException(CAMPAIGN_NOT_FOUND + id));
         campaign.advanceTo(target);
         return repository.save(campaign);
     }
@@ -122,7 +124,7 @@ public class RiskAssessmentCampaignService {
         // class-level @Transactional covers this method, so behaviour is unchanged.
         var campaign = repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Risk assessment campaign not found: " + id));
+                .orElseThrow(() -> new NotFoundException(CAMPAIGN_NOT_FOUND + id));
         repository.delete(campaign);
     }
 

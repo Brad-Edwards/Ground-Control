@@ -36,6 +36,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class RiskAppetiteProfileService {
 
+    private static final String PROFILE_NOT_FOUND = "Risk appetite profile not found: ";
+
     private final RiskAppetiteProfileRepository repository;
     private final ProjectService projectService;
     private final Validator validator;
@@ -72,7 +74,7 @@ public class RiskAppetiteProfileService {
     public RiskAppetiteProfile getById(UUID projectId, UUID id) {
         return repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Risk appetite profile not found: " + id));
+                .orElseThrow(() -> new NotFoundException(PROFILE_NOT_FOUND + id));
     }
 
     public RiskAppetiteProfile update(UUID projectId, UUID id, UpdateRiskAppetiteProfileCommand command) {
@@ -82,7 +84,7 @@ public class RiskAppetiteProfileService {
         // class-level @Transactional covers this method, so behaviour is unchanged.
         var profile = repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Risk appetite profile not found: " + id));
+                .orElseThrow(() -> new NotFoundException(PROFILE_NOT_FOUND + id));
         if (command.name() != null) {
             profile.setName(command.name());
         }
@@ -104,7 +106,7 @@ public class RiskAppetiteProfileService {
         // class-level @Transactional covers this method, so behaviour is unchanged.
         var profile = repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Risk appetite profile not found: " + id));
+                .orElseThrow(() -> new NotFoundException(PROFILE_NOT_FOUND + id));
         repository.delete(profile);
     }
 

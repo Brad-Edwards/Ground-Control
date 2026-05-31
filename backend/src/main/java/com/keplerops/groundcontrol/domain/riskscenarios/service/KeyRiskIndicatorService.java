@@ -41,6 +41,7 @@ public class KeyRiskIndicatorService {
 
     private static final String FIELD_BAND = "band";
     private static final String FIELD_VALUE = "value";
+    private static final String KRI_NOT_FOUND = "Key risk indicator not found: ";
 
     private final KeyRiskIndicatorRepository repository;
     private final ProjectService projectService;
@@ -90,7 +91,7 @@ public class KeyRiskIndicatorService {
     public KeyRiskIndicator getById(UUID projectId, UUID id) {
         return repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Key risk indicator not found: " + id));
+                .orElseThrow(() -> new NotFoundException(KRI_NOT_FOUND + id));
     }
 
     public KeyRiskIndicator update(UUID projectId, UUID id, UpdateKeyRiskIndicatorCommand command) {
@@ -100,7 +101,7 @@ public class KeyRiskIndicatorService {
         // class-level @Transactional covers this method, so behaviour is unchanged.
         var kri = repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Key risk indicator not found: " + id));
+                .orElseThrow(() -> new NotFoundException(KRI_NOT_FOUND + id));
         if (command.name() != null) {
             kri.setName(command.name());
         }
@@ -128,7 +129,7 @@ public class KeyRiskIndicatorService {
         // class-level @Transactional covers this method, so behaviour is unchanged.
         var kri = repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Key risk indicator not found: " + id));
+                .orElseThrow(() -> new NotFoundException(KRI_NOT_FOUND + id));
         var oldBand = kri.getCurrentBand();
         var measuredAt = command.measuredAt() != null ? command.measuredAt() : Instant.now();
         var newBand = kri.recordMeasurement(command.value(), measuredAt);
@@ -146,7 +147,7 @@ public class KeyRiskIndicatorService {
         // class-level @Transactional covers this method, so behaviour is unchanged.
         var kri = repository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Key risk indicator not found: " + id));
+                .orElseThrow(() -> new NotFoundException(KRI_NOT_FOUND + id));
         repository.delete(kri);
     }
 

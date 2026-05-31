@@ -41,7 +41,7 @@ repos:
     hooks:
       - id: spotless
         name: spotless (Java auto-format)
-        entry: bash -c 'cd backend && ./gradlew spotlessApply -q'
+        entry: bash -c 'export JAVA_HOME=/usr/lib/jvm/java-1.21.0-openjdk-amd64; cd backend && ./gradlew spotlessApply -q'
         language: system
         files: ^backend/.*\.java$
         pass_filenames: false
@@ -86,14 +86,14 @@ repos:
 
       - id: gradle-check
         name: gradle check (build + test + static analysis + coverage)
-        entry: bash -c 'cd backend && ./gradlew check -q'
+        entry: bash -c 'export JAVA_HOME=/usr/lib/jvm/java-1.21.0-openjdk-amd64; cd backend && ./gradlew check -q'
         language: system
         files: ^backend/
         pass_filenames: false
 
       - id: openjml-esc
         name: openjml ESC (formal verification of JML contracts)
-        entry: bash -c 'cd backend && ./gradlew openjmlEsc -q'
+        entry: bash -c 'export JAVA_HOME=/usr/lib/jvm/java-1.21.0-openjdk-amd64; cd backend && ./gradlew openjmlEsc -q'
         language: system
         files: ^backend/src/main/java/com/keplerops/groundcontrol/domain/(requirements|adrs)/state/
         pass_filenames: false
