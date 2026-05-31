@@ -109,11 +109,8 @@ class WsjfDistributionTest {
         var b = WsjfDistribution.compute(ubv, tc, rroe, jd, 42L, 50);
         var different = WsjfDistribution.compute(ubv, tc, rroe, jd, 99L, 50);
 
-        // Same seed and inputs → equal with consistent hashCode
-        assertThat(a).isEqualTo(b);
-        assertThat(a).hasSameHashCodeAs(b);
-        // Different seed → not equal
-        assertThat(a).isNotEqualTo(different);
+        // Same seed and inputs → equal with consistent hashCode; different seed → not equal
+        assertThat(a).isEqualTo(b).hasSameHashCodeAs(b).isNotEqualTo(different);
     }
 
     @Test
