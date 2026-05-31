@@ -92,9 +92,7 @@ class WsjfAnalysisServiceTest {
         var result = service.computeForProject(PROJECT_ID, 0L, 100);
 
         // Only the fully-calibrated item should appear in the result.
-        assertThat(result).hasSize(1);
-        assertThat(result).containsKey(id1);
-        assertThat(result).doesNotContainKey(id2);
+        assertThat(result).hasSize(1).containsKey(id1).doesNotContainKey(id2);
     }
 
     @Test

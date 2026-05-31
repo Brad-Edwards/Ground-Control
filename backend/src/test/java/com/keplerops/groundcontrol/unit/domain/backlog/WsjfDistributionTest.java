@@ -111,7 +111,7 @@ class WsjfDistributionTest {
 
         // Same seed and inputs → equal with consistent hashCode
         assertThat(a).isEqualTo(b);
-        assertThat(a.hashCode()).isEqualTo(b.hashCode());
+        assertThat(a).hasSameHashCodeAs(b);
         // Different seed → not equal
         assertThat(a).isNotEqualTo(different);
     }
@@ -123,11 +123,12 @@ class WsjfDistributionTest {
         var dist = WsjfDistribution.compute(ubv, ubv, ubv, jd, 1L, 10);
 
         var str = dist.toString();
-        assertThat(str).contains("seed=");
-        assertThat(str).contains("iterations=");
-        assertThat(str).contains("mean=");
-        assertThat(str).contains("p10=");
-        assertThat(str).contains("p90=");
+        assertThat(str)
+                .contains("seed=")
+                .contains("iterations=")
+                .contains("mean=")
+                .contains("p10=")
+                .contains("p90=");
     }
 
     @Test
@@ -183,9 +184,13 @@ class WsjfDistributionTest {
         var jd = CostOfDelayComponent.point(1, "x");
         var dist = WsjfDistribution.compute(v, v, v, jd, 0L, 10);
         var id = UUID.randomUUID();
+        var idsBefore = List.of(id);
+        var before = List.<WsjfDistribution>of();
+        var idsAfter = List.of(id);
+        var after = List.of(dist);
 
         // idsBefore has 1 entry but before has 0 — size mismatch.
-        assertThatThrownBy(() -> WsjfDistribution.rankingDelta(List.of(id), List.of(), List.of(id), List.of(dist)))
+        assertThatThrownBy(() -> WsjfDistribution.rankingDelta(idsBefore, before, idsAfter, after))
                 .isInstanceOf(DomainValidationException.class);
     }
 
@@ -196,10 +201,13 @@ class WsjfDistributionTest {
         var dist = WsjfDistribution.compute(v, v, v, jd, 0L, 10);
         var id1 = UUID.randomUUID();
         var id2 = UUID.randomUUID();
+        var idsBefore = List.of(id1);
+        var before = List.of(dist);
+        var idsAfter = List.of(id1, id2);
+        var after = List.of(dist, dist);
 
         // before has 1 item, after has 2 items.
-        assertThatThrownBy(() -> WsjfDistribution.rankingDelta(
-                        List.of(id1), List.of(dist), List.of(id1, id2), List.of(dist, dist)))
+        assertThatThrownBy(() -> WsjfDistribution.rankingDelta(idsBefore, before, idsAfter, after))
                 .isInstanceOf(DomainValidationException.class);
     }
 

@@ -185,7 +185,7 @@ class BacklogItemControllerTest {
     @Test
     void getByIdReturns404WhenNotFound() throws Exception {
         when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
-        when(backlogItemService.getById(eq(PROJECT_ID), eq(ITEM_ID)))
+        when(backlogItemService.getById(PROJECT_ID, ITEM_ID))
                 .thenThrow(new NotFoundException("BacklogItem not found: " + ITEM_ID));
 
         mockMvc.perform(get("/api/v1/backlog-items/" + ITEM_ID).param("project", "ground-control"))
@@ -207,7 +207,7 @@ class BacklogItemControllerTest {
     @Test
     void getByUidReturns404WhenNotFound() throws Exception {
         when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
-        when(backlogItemService.getByUid(eq(PROJECT_ID), eq("MISSING")))
+        when(backlogItemService.getByUid(PROJECT_ID, "MISSING"))
                 .thenThrow(new NotFoundException("BacklogItem not found: MISSING"));
 
         mockMvc.perform(get("/api/v1/backlog-items/uid/MISSING").param("project", "ground-control"))
@@ -257,7 +257,7 @@ class BacklogItemControllerTest {
         ready.setRiskReductionOpportunityEnablement(CostOfDelayComponent.point(2, "alice"));
         ready.setJobDuration(CostOfDelayComponent.point(2, "alice"));
         when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
-        when(backlogItemService.transitionStatus(eq(PROJECT_ID), eq(ITEM_ID), eq(BacklogItemStatus.ARCHIVED)))
+        when(backlogItemService.transitionStatus(PROJECT_ID, ITEM_ID, BacklogItemStatus.ARCHIVED))
                 .thenReturn(ready);
 
         mockMvc.perform(

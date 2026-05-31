@@ -118,14 +118,15 @@ public record WsjfDistribution(
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof WsjfDistribution other)) return false;
+        if (o == null || getClass() != o.getClass()) return false;
+        WsjfDistribution other = (WsjfDistribution) o;
         return seed == other.seed
                 && iterations == other.iterations
                 && Double.compare(mean, other.mean) == 0
                 && Double.compare(median, other.median) == 0
                 && Double.compare(p10, other.p10) == 0
                 && Double.compare(p90, other.p90) == 0
-                && Arrays.equals(samples, other.samples);
+                && Arrays.equals(samples, other.samples());
     }
 
     @Override

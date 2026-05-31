@@ -146,7 +146,7 @@ class DecisionAnalysisRecordControllerTest {
     @Test
     void getByIdReturns404WhenNotFound() throws Exception {
         when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
-        when(service.getById(eq(PROJECT_ID), eq(DR_ID)))
+        when(service.getById(PROJECT_ID, DR_ID))
                 .thenThrow(new NotFoundException("DecisionAnalysisRecord not found: " + DR_ID));
 
         mockMvc.perform(get("/api/v1/decisions/" + DR_ID).param("project", "ground-control"))

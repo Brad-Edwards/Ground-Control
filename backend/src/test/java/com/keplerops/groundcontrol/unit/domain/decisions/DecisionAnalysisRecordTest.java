@@ -18,19 +18,22 @@ class DecisionAnalysisRecordTest {
 
     @Test
     void constructorRejectsBlankUid() {
-        assertThatThrownBy(() -> new DecisionAnalysisRecord(project(), "  ", "t", "m"))
+        var p = project();
+        assertThatThrownBy(() -> new DecisionAnalysisRecord(p, "  ", "t", "m"))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void constructorRejectsBlankTitle() {
-        assertThatThrownBy(() -> new DecisionAnalysisRecord(project(), "u", "  ", "m"))
+        var p = project();
+        assertThatThrownBy(() -> new DecisionAnalysisRecord(p, "u", "  ", "m"))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void constructorRejectsBlankModelName() {
-        assertThatThrownBy(() -> new DecisionAnalysisRecord(project(), "u", "t", "  "))
+        var p = project();
+        assertThatThrownBy(() -> new DecisionAnalysisRecord(p, "u", "t", "  "))
                 .isInstanceOf(DomainValidationException.class);
     }
 

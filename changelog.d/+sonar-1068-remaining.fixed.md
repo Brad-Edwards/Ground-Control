@@ -1,0 +1,1 @@
+Fix remaining 15 SonarCloud findings on PR #1068: WsjfDistribution record-equals refactor (S6878), single-invocation lambda wrappers (S5778), chained AssertJ assertions (S5853), hasSameHashCodeAs (S5838), and useless eq() removal (S6068).
