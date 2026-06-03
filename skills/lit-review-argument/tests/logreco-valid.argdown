@@ -1,0 +1,21 @@
+===
+title: "LogReco valid map — phase-4 formal-validity fixture"
+===
+
+// Structurally clean map whose single argument carries a well-formed
+// formalization on every PCS member. Z3 must certify the inference as valid.
+// Pair: logreco-invalid.argdown, where Z3 must reject the inference.
+//
+// FOL syntax is NLTK's: lowercase variables, uppercase predicates, `->`
+// for implication, `all x.` for universal quantification. Declarations
+// list every name appearing in the formula so the upstream
+// WellFormedFormulasHandler does not flag undeclared variables.
+
+[Thesis]: Socrates is mortal. {formalization: "Mortal(socrates)", declarations: {Mortal: "predicate", socrates: "individual"}}
+
+<Modus Ponens>
+
+(1) All humans are mortal. {formalization: "all x.(Human(x) -> Mortal(x))", declarations: {Human: "predicate", Mortal: "predicate"}, evidence: "synthesis.md §1"}
+(2) Socrates is a human. {formalization: "Human(socrates)", declarations: {socrates: "individual"}, evidence: "synthesis.md §2"}
+-- {from: ["1", "2"]} --
+(3) [Thesis]

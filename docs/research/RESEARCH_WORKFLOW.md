@@ -25,7 +25,7 @@ Each phase enforces specific disciplines against observed failure modes. The ful
 - **Citation hallucination → deterministic citation MCP only.** Every citation must come from `cite_resolve`, `cite_search`, `cite_forward`, or a Zotero record the agent opened—never from training memory. The citation MCP exists to make this enforceable.
 - **Two-state source rule (phase 3).** A source is in exactly one of two states: (a) fully in the review—resolved, stored in the Zotero collection, full text read, charted; or (b) access gap—resolved, stored, full text not obtainable, not charted. There is no "charted from the abstract" or "charted from memory" state.
 - **Procedural-invention guard (phase 1).** Phase 1 emits *requirements the plan must satisfy*, not the answers. If the methodology source does not specify a particular database / date range / coding category, neither does the phase-1 output. Domain content is phase 2's job.
-- **Argument grounding (phase 4).** Every Argdown premise carries an `{evidence: ...}` tag pointing at a specific section of the evidence base—or is itself the conclusion of another reconstructed argument. `validate-argument-map.sh` mechanically flags ungrounded premises, unreconstructed support arguments, unanswered objections, and circular support.
+- **Argument grounding (phase 4).** Every Argdown premise carries an `{evidence: ...}` tag pointing at a specific section of the evidence base—or its proposition is itself the conclusion of another reconstructed argument. `validate-argument-map.sh` mechanically flags ungrounded premises, unreconstructed support arguments, unanswered objections, and circular support. When `--logreco` is passed and every PCS member carries `{formalization: ...}` metadata, the wrapper additionally runs `argdown-feedback`'s LogReco family (NLTK FOL + Z3) for deductive-validity checking.
 - **Manuscript-not-memo guard (phase 5).** The manuscript reads cold for a reviewer who has never heard of Ground Control. No phase vocabulary, no internal-artifact names, no "the evidence matrix shows" gestures. Every load-bearing empirical claim is demonstrated on the page—inline citation, numbered table, or quoted example—not asserted.
 - **Voice contract (phase 5).** `skills/lit-review-draft/writing-style.md` is a voice profile plus a model-tell blocklist. The style pass runs the blocklist literally against the draft; zero hits is the bar.
 
@@ -59,7 +59,7 @@ workspace/
 |---|---|
 | Phase skills | `skills/lit-review/`, `skills/lit-review-plan/`, `skills/lit-review-search/`, `skills/lit-review-argument/`, `skills/lit-review-draft/` |
 | Methodology catalog | `skills/lit-review/methodology/catalog.yaml` |
-| Argdown validation tooling | `skills/lit-review-argument/{validate-argument-map.sh, check-argument-structure.mjs, tests/}` |
+| Argdown validation tooling | `skills/lit-review-argument/{validate-argument-map.sh, run_verifier.py, handlers/, requirements.txt, tests/}` (Python; `argdown-feedback` pinned in `requirements.txt`) |
 | Voice contract | `skills/lit-review-draft/writing-style.md` |
 | Citation MCP | `mcp/citation/` (Python; see `mcp/citation/README.md` for bootstrap) |
 | MCP registration | `.mcp.json` → `citation` server (provides `mcp__citation__*` tools) |
