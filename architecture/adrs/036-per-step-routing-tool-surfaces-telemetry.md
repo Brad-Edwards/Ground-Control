@@ -449,3 +449,16 @@ start/poll/cancel triple is the shape a Temporal activity handle takes.
 **2026-05-26 (issue #989 merge carve-out).** The `/integrate` lane's `mode=merge` execution path runs inside the MCP server subprocess (via `gc_integration_manager` action=prepare mode=merge). This is the same tool surface boundary that the prepare path uses; no new routing stage or telemetry surface is required. The merge carve-out does not change the step-routing contract for any other lane.
 
 **2026-05-30 (issue #1058 Phase E + close stage).** A new orchestrator stage `close_issue_after_merge` is added to the routing table for the /implement Phase E (Step 20) post-merge close. The stage's tier defaults to `low` (the work is mechanical: verify `merged_at`, run `gh issue close`) and is configurable per repo via `routing.stages.close_issue_after_merge` in `.ground-control.yaml`. The two underlying tools (`gc_assert_traceability_reconciled` and `gc_close_issue_after_merge`) consume the existing `repoPath` / `issueNumber` boundary and produce telemetry records via the existing `gc_log_step_telemetry` writer; no new telemetry schema is required. The step-routing contract for every other lane and stage is unchanged.
+
+## Amendment (2026-06-06)
+
+ADR-058, ADR-059, and ADR-061 refine this ADR's routing and enforcement
+contract. Routing becomes budget-aware: Codex owns architecture preflight,
+contract definition, planning, review lenses, and hard-problem escalation;
+Claude owns mechanical implementation, fix application, and bookkeeping. This
+inverts the current `.ground-control.yaml` default that routes planning and
+review to Claude Opus. Cross-model review stays available for Critical and
+Blocking confirmation. Enforcement remains agent-neutral: every gate that the
+workflow relies on must live in `bin/policy`, ecosystem build tasks, CI, or an
+MCP refusal. `.claude/hooks/` may mirror a gate for local feedback, but it is
+never the only enforcement layer because it does not run for Codex.

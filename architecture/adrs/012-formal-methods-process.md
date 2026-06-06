@@ -210,3 +210,12 @@ SDD extends TDD by adding contracts as a specification layer:
 
 - **ADR-013** (Java/Spring Boot Backend Rewrite)—Current tool names (JML, OpenJML, jqwik, KeY) for Ground Control's own code.
 - **ADR-014** (Pluggable Verification Architecture)—Generalizes assurance levels from JML-specific to pluggable. The methodology defined here is universal; the tools per level depend on the target language. Adds TLA+ at L2 for design-level verification.
+
+## Amendment (2026-06-06)
+
+ADR-057 supersedes this ADR as the language-neutral assurance ladder. This ADR
+remains accepted as the Java binding for ADR-057: JML, Bean Validation,
+OpenJML ESC where reachable, jqwik, and KeY are the Java providers for the
+language-neutral L0-L3 capabilities. Phase 1 must reconcile the documented
+coverage drift in `docs/CODING_STANDARDS.md`, which still states a 30 percent
+pre-alpha coverage threshold while the active JaCoCo gate is 80 percent.

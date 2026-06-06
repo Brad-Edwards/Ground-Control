@@ -440,3 +440,15 @@ unchanged by this amendment.
 **2026-05-26 (issue #989).** The new `/integrate` lane (GC-O011) is repo-scoped, not issue-scoped: its plan and readiness records surface through the invoking interface (terminal output), not as comments on a GitHub issue thread. The single-merge-touchpoint contract is preserved unchanged: the lane prepares PRs but does not merge them. Consultation halts (clause (h) of GC-O011) consult the maintainer through the invoking interface and do not post to any GitHub issue. ADR-029's "issue thread is the durable record" guarantee applies to issue-anchored runs (`/implement`, `/quickfix`); the `/integrate` lane's records are operational and live on the maintainer's terminal, in the MCP tool's return envelope, and in the local halt ledger at `<repo>/.gc/integration-runs/<run-id>/halt.json`.
 
 **2026-05-26 (issue #989 merge carve-out).** The single-human-touchpoint contract is amended to permit `gc_integration_manager` action=prepare mode=merge to execute the merge for queue entries that the same lane has just prepared (rebased, completion-gate green, CI green, Sonar green). The carve-out is narrow: merge is only legal when invoked through the integration manager's MCP tool boundary, only on PRs the same run has marked outcome=ready, and only when the repository has opted in via `workflow.integration_manager.merge_strategy`. All other agent paths to merge remain forbidden by skill prose and by the `.claude/hooks/git-merge-guard.py` PreToolUse hook that already blocks `gh pr merge` and `git merge` from agent Bash invocations. The MCP server itself is the only privileged-side-effect surface that can execute the merge; the hook layer does not apply to MCP server subprocesses, so the access-control surface is the gc_integration_manager tool registration.
+
+## Amendment (2026-06-06)
+
+ADR-060 and ADR-061 update this ADR's issue-thread gate model. The GitHub
+issue thread remains the durable workflow record, but lifecycle side effects
+are no longer agent-authored prose steps: `in-progress` is set and cleared by
+server-side lifecycle tools, and issue close is triggered by a GitHub Action on
+`pull_request: closed` plus a scheduled reconciler backstop, both using the
+merge-verified `gc_close_issue_after_merge` path. ADR-061 generalizes phase
+markers across the whole `/implement` DAG. The next phase advances only after
+its predecessor marker exists, and escalation is a terminal issue-thread
+record rather than an ambiguous middle state.

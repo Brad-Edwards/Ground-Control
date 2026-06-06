@@ -115,3 +115,15 @@ for the operative start-then-poll loop prose.
 **2026-05-26 (issue #989 merge carve-out).** The `/integrate` lane at mode=merge may now execute the merge for PRs that the same run has prepared and verified. This carve-out applies at the `/integrate` lane only; `/implement` and `/quickfix` must not merge. The full gate contract is in ADR-029 (2026-05-26 merge carve-out amendment). The issue-anchored phases A/B/C/D of this ADR are unaffected.
 
 **2026-05-30 (issue #1058 Phase E added).** A new Phase E (`/implement` Step 20) handles post-merge issue close via `gc_close_issue_after_merge`, which verifies the linked PR's `merged_at` non-null AND state `MERGED` before running `gh issue close`. The single-human-touchpoint contract is unchanged: PR merge remains the only synchronous user gate; Phase E runs autonomously when the user re-invokes `/implement` after the merge. The traceability-reconciliation precondition for Step 19 is now mechanically enforced by `gc_post_final_report` (refuses without the `traceability_reconciled` phase marker written by Step 17's `gc_assert_traceability_reconciled` call). The full contract is in ADR-029 (2026-05-30 amendment). The issue-anchored phases A/B/C/D of this ADR are unchanged in scope; Phase E is additive.
+
+## Amendment (2026-06-06)
+
+ADR-060 and ADR-061 refine GC-O007 without changing the single human
+touchpoint. ADR-060 makes `in-progress` and issue close lifecycle effects
+server-side consequences of verified phase state, including event-driven close
+through the merge-verified `gc_close_issue_after_merge` path. ADR-061 replaces
+prose phase ordering with the marker chain
+`claimed -> context_loaded -> preflight -> contract -> plan -> test_red ->
+impl_green -> gates_green -> reviews_clean -> published -> ci_green ->
+sonar_clean -> traceability_reconciled -> reported -> closed`. Each phase tool
+re-verifies state and refuses without its predecessor marker.
