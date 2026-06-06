@@ -1,0 +1,298 @@
+schema_version: 1
+pack: docs-generic
+version: 1.0.0
+bindings:
+  format:
+    status: provided
+    provider: pre-commit-docs-format
+    command: "if command -v pre-commit >/dev/null 2>&1; then pre-commit run --all-files; else node .gc/gate-packs/docs-generic/check-docs.mjs; fi"
+    blocking: true
+    scope: repo
+    applies_when:
+      paths:
+        - "*.md"
+        - "**/*.md"
+        - "*.markdown"
+        - "**/*.markdown"
+        - "docs/**"
+        - "architecture/adrs/**"
+        - .ground-control.yaml
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  lint:
+    status: provided
+    provider: markdown-policy
+    command: "node .gc/gate-packs/docs-generic/check-docs.mjs"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "*.md"
+        - "**/*.md"
+        - "*.markdown"
+        - "**/*.markdown"
+        - "docs/**"
+        - "architecture/adrs/**"
+        - .ground-control.yaml
+    thresholds:
+      platform_minimum:
+        metric: doc_errors
+        max: 0
+      recommendation:
+        metric: doc_errors
+        max: 0
+  build:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "docs-generic does not compile product code."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  type_safety:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "docs-generic does not type-check product code."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  unit_tests:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "docs-generic does not run product unit tests."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  integration_tests:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "docs-generic does not run product integration tests."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  contract_boundary:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "docs-generic assurance classification no-ops on Markdown/YAML-only diffs."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  property_verification:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "docs-generic has no property-test surface by default."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  architecture:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "docs-generic has no code architecture surface by default."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  complexity:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "docs-generic has no code complexity surface by default."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  mutation:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "docs-generic has no code mutation-testing surface by default."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  diff_coverage:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "docs-generic has no code coverage surface by default."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  sast:
+    status: provided
+    provider: semgrep-config
+    command: "semgrep --config p/ci --error"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.yaml"
+        - "**/*.yml"
+        - "**/*.json"
+        - "**/*.md"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  secret_scan:
+    status: provided
+    provider: gitleaks-detect-private-key
+    command: "if command -v gitleaks >/dev/null 2>&1; then gitleaks detect --source . --no-git --redact --exit-code 1; else node .gc/gate-packs/docs-generic/check-docs.mjs --secrets-only; fi"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  dependency_policy:
+    status: provided
+    provider: workflow-policy
+    command: "node .gc/gate-packs/docs-generic/check-docs.mjs --workflows"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - ".github/workflows/**"
+        - .pre-commit-config.yaml
+        - "**/*.yaml"
+        - "**/*.yml"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  accessibility:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "docs-generic has no rendered UI accessibility surface by default."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  docs_policy:
+    status: provided
+    provider: vale-markdown-policy
+    command: "node .gc/gate-packs/docs-generic/check-docs.mjs"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "*.md"
+        - "**/*.md"
+        - "*.markdown"
+        - "**/*.markdown"
+        - "docs/**"
+        - "architecture/adrs/**"
+        - .ground-control.yaml
+    thresholds:
+      platform_minimum:
+        metric: doc_errors
+        max: 0
+      recommendation:
+        metric: doc_errors
+        max: 0
+  traceability:
+    status: provider_missing
+    provider_missing: reviewer_fallback
+    blocking: false
+    reason: "Ground Control traceability requires a configured project and live server context."
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  policy:
+    status: provided
+    provider: repo-policy-or-doc-policy
+    command: "if [ -f Makefile ] && grep -q '^policy:' Makefile; then make policy; elif [ -x ./bin/policy ]; then ./bin/policy --skip-pr-body; else node .gc/gate-packs/docs-generic/check-docs.mjs; fi"
+    blocking: true
+    scope: repo
+    applies_when:
+      paths:
+        - "**/*"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  remote_status:
+    status: provided
+    provider: required-statuses
+    blocking: true
+    scope: repo
+    required_statuses:
+      - ci
+    thresholds:
+      platform_minimum:
+        metric: required_statuses
+        policy: all_success
+      recommendation:
+        metric: required_statuses
+        policy: all_success

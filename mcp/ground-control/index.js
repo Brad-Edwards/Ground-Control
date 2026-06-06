@@ -78,7 +78,7 @@ import {
   runPostImplementationPlan,
   runAssertTraceabilityReconciled, runCloseIssueAfterMerge,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
-  runGetIssueThread, runGates, runWatchCiRun, runWatchSonarAnalysis,
+  runGetIssueThread, runGates, installWorkflowAssets, runWatchCiRun, runWatchSonarAnalysis,
   runWatchRequiredStatuses,
   runCodexReviewCycle, runTestQualityReviewCycle,
   startReviewJob, pollReviewJob, cancelReviewJob,
@@ -399,6 +399,35 @@ server.tool(
         headRef: head_ref ?? "HEAD",
         phase: phase ?? "local",
         capabilities: capabilities ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_install_workflow_assets",
+  "Install or upgrade a portable workflow gate pack from gate-catalog.json. Resolves pack_id plus a semver constraint, verifies the source bundle SHA-256 checksum, vendors the exact pack under .gc/vendor/ground-control/packs/<pack-id>/<version>/, copies pack templates, writes or merges .gc/gates.yaml, updates .gc/workflow-lock.json and .ground-control.yaml workflow.packs[], optionally installs declared dev dependencies through the detected package manager, runs the pack self-test, and leaves a normal repository change. Signature/provenance enforcement is intentionally reported as TODO until release signing is cut; checksum and lockfile verification are real.",
+  {
+    repo_path: z.string(),
+    pack_id: z.string(),
+    version: z.string().optional(),
+    scope: z.string().optional(),
+    profile: z.string().optional(),
+    catalog_path: z.string().optional(),
+    run_selftest: z.boolean().optional(),
+    install_dependencies: z.boolean().optional(),
+  },
+  async ({ repo_path, pack_id, version, scope, profile, catalog_path, run_selftest, install_dependencies }) => {
+    try {
+      return ok(JSON.stringify(await installWorkflowAssets({
+        repoPath: repo_path,
+        packId: pack_id,
+        versionConstraint: version ?? "1.0.0",
+        scope: scope ?? ".",
+        profile: profile ?? null,
+        catalogPath: catalog_path ?? undefined,
+        runSelftest: run_selftest ?? true,
+        installDependencies: install_dependencies ?? true,
       }), null, 2));
     } catch (e) { return err(e); }
   },

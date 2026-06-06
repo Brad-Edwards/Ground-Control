@@ -1,0 +1,38 @@
+{
+  "pack_id": "python",
+  "required_tools": [
+    {
+      "name": "python3",
+      "command": "python3",
+      "args": [
+        "--version"
+      ]
+    },
+    {
+      "name": "pytest",
+      "command": "python3",
+      "args": [
+        "-m",
+        "pytest",
+        "--version"
+      ]
+    }
+  ],
+  "fixture": {
+    "passCapability": "unit_tests",
+    "failCapability": "unit_tests",
+    "missingCapability": "contract_boundary",
+    "changedFiles": [
+      "src/gc_pack_selftest/__init__.py",
+      "tests/test_sample.py"
+    ],
+    "files": {
+      "pyproject.toml": "[project]\nname = \"gc-pack-python-selftest\"\nversion = \"0.1.0\"\nrequires-python = \">=3.10\"\n\n[tool.pytest.ini_options]\npythonpath = [\"src\"]\n",
+      "src/gc_pack_selftest/__init__.py": "def add(left: int, right: int) -> int:\n    return left + right\n",
+      "tests/test_sample.py": "from gc_pack_selftest import add\n\n\ndef test_adds_numbers():\n    assert add(2, 2) == 4\n"
+    },
+    "failFiles": {
+      "tests/test_sample.py": "from gc_pack_selftest import add\n\n\ndef test_adds_numbers():\n    assert add(2, 2) == 5\n"
+    }
+  }
+}

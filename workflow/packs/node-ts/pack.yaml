@@ -1,0 +1,67 @@
+schema_version: 1
+id: node-ts
+version: 1.0.0
+name: "Node TypeScript gate pack"
+description: "TypeScript and JavaScript gates grounded in pulsar, Ground-Control frontend, and aptl MCP/web workspaces."
+compatible_engine: ">=1.0.0 <2.0.0"
+profiles:
+  - id: default
+    description: "Node package with package-manager scripts."
+  - id: react-vite
+    description: "Vite/React frontend with accessibility profile."
+  - id: node-library
+    description: "Node library or MCP package."
+grounded_local_anchors:
+  - "pulsar: pnpm lint, pnpm typecheck, pnpm test, pnpm policy, Playwright checks, OSV"
+  - "Ground-Control frontend: Vite, TypeScript, Biome, Vitest"
+  - "aptl: multiple TypeScript MCP packages and a web frontend"
+capabilities_provided:
+  - format
+  - lint
+  - build
+  - type_safety
+  - unit_tests
+  - integration_tests
+  - property_verification
+  - architecture
+  - complexity
+  - mutation
+  - diff_coverage
+  - sast
+  - secret_scan
+  - dependency_policy
+  - accessibility
+  - docs_policy
+  - policy
+  - remote_status
+capabilities_not_provided:
+  provider_missing:
+    - contract_boundary
+    - traceability
+  not_applicable: []
+threshold_tiers:
+  platform_minimums: "encoded per capability under capabilities.yaml"
+  pack_recommendations: "encoded per capability under capabilities.yaml"
+  consumer_ratchets: "supported by workflow.gate_overrides in the engine"
+install:
+  templates:
+    - source: templates/dependency-cruiser.cjs
+      target: .gc/gate-packs/node-ts/dependency-cruiser.cjs
+    - source: templates/a11y.config.mjs
+      target: .gc/gate-packs/node-ts/a11y.config.mjs
+  dev_dependencies:
+    - typescript
+    - vitest
+    - fast-check
+    - dependency-cruiser
+    - "@axe-core/playwright"
+    - eslint-plugin-jsx-a11y
+    - stryker-cli
+selftest:
+  runner: selftest/run.mjs
+  required_tools:
+    - node
+    - npm
+signing:
+  checksum_algorithm: sha256
+  provenance: "TODO: signed release provenance before broad rollout"

@@ -1,0 +1,58 @@
+schema_version: 1
+id: jvm-maven
+version: 1.0.0
+name: "JVM Maven gate pack"
+description: "Maven JVM gates for platform completeness where no local consumer is currently present."
+compatible_engine: ">=1.0.0 <2.0.0"
+profiles:
+  - id: default
+    description: "Generic Maven JVM project."
+  - id: multi-module
+    description: "Parent POM with child modules."
+grounded_local_anchors:
+  - "No local .ground-control.yaml Maven consumer was found; Maven support is required for portable JVM coverage."
+capabilities_provided:
+  - format
+  - lint
+  - build
+  - type_safety
+  - unit_tests
+  - integration_tests
+  - property_verification
+  - architecture
+  - complexity
+  - mutation
+  - diff_coverage
+  - sast
+  - secret_scan
+  - dependency_policy
+  - docs_policy
+  - policy
+  - remote_status
+capabilities_not_provided:
+  provider_missing:
+    - contract_boundary
+    - traceability
+  not_applicable:
+    - accessibility
+threshold_tiers:
+  platform_minimums: "encoded per capability under capabilities.yaml"
+  pack_recommendations: "encoded per capability under capabilities.yaml"
+  consumer_ratchets: "supported by workflow.gate_overrides in the engine"
+install:
+  templates:
+    - source: templates/gc-quality-profile.xml
+      target: .gc/gate-packs/jvm-maven/gc-quality-profile.xml
+    - source: templates/checkstyle.xml
+      target: .gc/gate-packs/jvm-maven/checkstyle.xml
+    - source: templates/pmd-ruleset.xml
+      target: .gc/gate-packs/jvm-maven/pmd-ruleset.xml
+  dev_dependencies: []
+selftest:
+  runner: selftest/run.mjs
+  required_tools:
+    - java
+    - mvn
+signing:
+  checksum_algorithm: sha256
+  provenance: "TODO: signed release provenance before broad rollout"

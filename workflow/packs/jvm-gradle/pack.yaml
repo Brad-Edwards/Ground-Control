@@ -1,0 +1,59 @@
+schema_version: 1
+id: jvm-gradle
+version: 1.0.0
+name: "JVM Gradle gate pack"
+description: "Gradle JVM gates grounded in Ground-Control, gc, and aphelion."
+compatible_engine: ">=1.0.0 <2.0.0"
+profiles:
+  - id: default
+    description: "Generic JVM Gradle project."
+  - id: spring
+    description: "Spring or server-side JVM service."
+grounded_local_anchors:
+  - "Ground-Control/gc: Gradle Kotlin DSL, Spotless, Checkstyle, JaCoCo, PIT, jqwik, ArchUnit"
+  - "aphelion: Gradle with Spotless, SpotBugs, Error Prone, jqwik, and ArchUnit"
+capabilities_provided:
+  - format
+  - lint
+  - build
+  - type_safety
+  - unit_tests
+  - integration_tests
+  - property_verification
+  - architecture
+  - complexity
+  - mutation
+  - diff_coverage
+  - sast
+  - secret_scan
+  - dependency_policy
+  - docs_policy
+  - policy
+  - remote_status
+capabilities_not_provided:
+  provider_missing:
+    - contract_boundary
+    - traceability
+  not_applicable:
+    - accessibility
+threshold_tiers:
+  platform_minimums: "encoded per capability under capabilities.yaml"
+  pack_recommendations: "encoded per capability under capabilities.yaml"
+  consumer_ratchets: "supported by workflow.gate_overrides in the engine"
+install:
+  templates:
+    - source: templates/gc-quality.gradle.kts
+      target: .gc/gate-packs/jvm-gradle/gc-quality.gradle.kts
+    - source: templates/checkstyle.xml
+      target: .gc/gate-packs/jvm-gradle/checkstyle.xml
+    - source: templates/pmd-ruleset.xml
+      target: .gc/gate-packs/jvm-gradle/pmd-ruleset.xml
+  dev_dependencies: []
+selftest:
+  runner: selftest/run.mjs
+  required_tools:
+    - java
+    - gradle
+signing:
+  checksum_algorithm: sha256
+  provenance: "TODO: signed release provenance before broad rollout"

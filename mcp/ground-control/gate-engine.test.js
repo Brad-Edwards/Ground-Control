@@ -2,15 +2,18 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
 import {
   ENGINE_CAPABILITIES,
+  GATE_CATALOG_DEFAULT_PATH,
   GATE_MANIFEST_JSON_SCHEMA,
   buildBoundPhaseMarker,
+  computeGatePackDirectoryChecksum,
   evaluateBoundPhaseMarkerFreshness,
   evaluateGateThreshold,
   evaluateRequiredStatuses,
+  installWorkflowAssets,
   parseGroundControlYaml,
   runGates,
   runWatchRequiredStatuses,
@@ -112,6 +115,91 @@ workflow:
     assert.equal(parsed.value.workflow.gate_manifest, ".gc/gates.yaml");
     assert.equal(parsed.value.workflow.packs[0].scope, ".");
     assert.equal(parsed.value.workflow.gate_overrides["test.threshold.min"], 80);
+  });
+});
+
+describe("gate pack catalog and installer", () => {
+  it("catalog checksums match the materialized workflow pack sources", () => {
+    const catalog = JSON.parse(readFileSync(GATE_CATALOG_DEFAULT_PATH, "utf8"));
+    const repoRoot = join(dirname(GATE_CATALOG_DEFAULT_PATH), "..");
+    assert.deepEqual(catalog.packs.map((entry) => entry.id), [
+      "rust-cargo",
+      "python",
+      "jvm-gradle",
+      "jvm-maven",
+      "node-ts",
+      "cpp-cmake",
+      "docs-generic",
+    ]);
+    for (const entry of catalog.packs) {
+      assert.equal(
+        computeGatePackDirectoryChecksum(join(repoRoot, entry.artifact)),
+        entry.sha256,
+        `${entry.id} checksum drifted`,
+      );
+    }
+  });
+
+  it("installs a cataloged pack by checksum, vendors it, and writes manifest/config/lock surfaces", async () => {
+    await withTempRepo(async (repo) => {
+      writeFileSync(join(repo, "README.md"), "# Fixture\n\nDocs are present.\n");
+      const result = await installWorkflowAssets({
+        repoPath: repo,
+        packId: "docs-generic",
+        versionConstraint: "^1.0.0",
+        scope: ".",
+        profile: "docs",
+        installDependencies: false,
+        runSelftest: false,
+      });
+      assert.equal(result.ok, true);
+      assert.equal(result.pack.version, "1.0.0");
+      assert.equal(result.gates_written, ENGINE_CAPABILITIES.length);
+      assert.equal(result.selftest.status, "skipped");
+      assert.match(result.vendor_path, /^\.gc\/vendor\/ground-control\/packs\/docs-generic\/1\.0\.0/);
+
+      const parsedConfig = parseGroundControlYaml(readFileSync(join(repo, ".ground-control.yaml"), "utf8"));
+      assert.equal(parsedConfig.ok, true);
+      assert.equal(parsedConfig.value.workflow.gate_manifest, ".gc/gates.yaml");
+      assert.equal(parsedConfig.value.workflow.packs[0].id, "docs-generic");
+      assert.equal(parsedConfig.value.workflow.packs[0].version, "^1.0.0");
+
+      const manifest = readFileSync(join(repo, ".gc/gates.yaml"), "utf8");
+      assert.match(manifest, /docs-generic\.root\.docs_policy/);
+      assert.match(manifest, /provider_missing: not_applicable/);
+      const lock = JSON.parse(readFileSync(join(repo, ".gc/workflow-lock.json"), "utf8"));
+      assert.equal(lock.packs[0].checksum.startsWith("sha256:"), true);
+      assert.equal(typeof lock.packs[0].installed_at, "string");
+
+      const gateResult = await runGates({
+        repoPath: repo,
+        issueNumber: 1075,
+        diffInfo: { base_ref: "main", head_ref: "HEAD", changed_files: ["README.md"], diff_hash: "diff1" },
+        postMarker: false,
+        capabilities: ["docs_policy"],
+      });
+      assert.equal(gateResult.ok, true);
+      assert.equal(gateResult.status, "passed");
+    });
+  });
+
+  it("refuses to install a pack when the catalog checksum does not match", async () => {
+    await withTempRepo(async (repo) => {
+      const catalog = JSON.parse(readFileSync(GATE_CATALOG_DEFAULT_PATH, "utf8"));
+      catalog.packs = catalog.packs.map((entry) => entry.id === "docs-generic" ? { ...entry, sha256: "0".repeat(64) } : entry);
+      const catalogPath = join(repo, "bad-gate-catalog.json");
+      writeFileSync(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
+      const result = await installWorkflowAssets({
+        repoPath: repo,
+        packId: "docs-generic",
+        versionConstraint: "1.0.0",
+        catalogPath,
+        installDependencies: false,
+        runSelftest: false,
+      });
+      assert.equal(result.ok, false);
+      assert.equal(result.error, "gate_pack_checksum_mismatch");
+    });
   });
 });
 

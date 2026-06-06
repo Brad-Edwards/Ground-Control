@@ -1,0 +1,344 @@
+schema_version: 1
+pack: rust-cargo
+version: 1.0.0
+bindings:
+  format:
+    status: provided
+    provider: cargo-fmt
+    command: "cargo fmt --all --check"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.rs"
+        - Cargo.toml
+        - Cargo.lock
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  lint:
+    status: provided
+    provider: cargo-clippy
+    command: "cargo clippy --workspace --all-targets -- -D warnings"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.rs"
+        - Cargo.toml
+        - Cargo.lock
+    thresholds:
+      platform_minimum:
+        metric: warning_count
+        max: 0
+      recommendation:
+        metric: clippy_warnings
+        max: 0
+  build:
+    status: provided
+    provider: cargo-build
+    command: "if [ -f Cargo.lock ]; then cargo build --workspace --all-targets --locked; else cargo build --workspace --all-targets; fi"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.rs"
+        - Cargo.toml
+        - Cargo.lock
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    timeout_seconds: 1200
+  type_safety:
+    status: provided
+    provider: cargo-check
+    command: "cargo check --workspace --all-targets"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.rs"
+        - Cargo.toml
+        - Cargo.lock
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  unit_tests:
+    status: provided
+    provider: cargo-test
+    command: "cargo test --workspace --all-targets"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.rs"
+        - Cargo.toml
+        - Cargo.lock
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    timeout_seconds: 1200
+  integration_tests:
+    status: provided
+    provider: cargo-test-integration
+    command: "cargo test --workspace --tests"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.rs"
+        - "tests/**"
+        - Cargo.toml
+        - Cargo.lock
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    timeout_seconds: 1200
+  contract_boundary:
+    status: provider_missing
+    provider_missing: reviewer_fallback
+    blocking: false
+    reason: "Rust boundary contracts are repository-specific: type-level validation, Result boundaries, runtime guards, and tests."
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  property_verification:
+    status: provided
+    provider: proptest-or-quickcheck
+    command: "cargo test --workspace --all-targets --features property-tests"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.rs"
+        - Cargo.toml
+        - Cargo.lock
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  architecture:
+    status: provided
+    provider: cargo-workspace-policy
+    command: "cargo test --workspace --all-targets arch"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.rs"
+        - Cargo.toml
+        - Cargo.lock
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  complexity:
+    status: provided
+    provider: cargo-clippy-complexity
+    command: "cargo clippy --workspace --all-targets -- -D warnings"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.rs"
+        - Cargo.toml
+        - Cargo.lock
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  mutation:
+    status: provided
+    provider: cargo-mutants
+    command: "cargo mutants --in-place --timeout 60"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.rs"
+        - Cargo.toml
+        - Cargo.lock
+    thresholds:
+      platform_minimum:
+        metric: mutation_score
+        min: 60
+      recommendation:
+        metric: mutation_score
+        min: 80
+    timeout_seconds: 3600
+  diff_coverage:
+    status: provided
+    provider: cargo-llvm-cov-diff
+    command: "cargo llvm-cov --workspace --lcov --output-path .gc/reports/rust/lcov.info && diff-cover .gc/reports/rust/lcov.info --fail-under=90"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.rs"
+    thresholds:
+      platform_minimum:
+        metric: changed_line_coverage
+        min: 80
+      recommendation:
+        metric: changed_line_coverage
+        min: 90
+  sast:
+    status: provided
+    provider: semgrep-rust
+    command: "semgrep --config p/rust --error"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.rs"
+        - Cargo.toml
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  secret_scan:
+    status: provided
+    provider: gitleaks
+    command: "gitleaks detect --source . --no-git --redact --exit-code 1"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  dependency_policy:
+    status: provided
+    provider: cargo-audit-deny
+    command: "if command -v cargo-deny >/dev/null 2>&1; then cargo deny check; else cargo audit; fi"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - Cargo.toml
+        - Cargo.lock
+        - "**/Cargo.toml"
+    thresholds:
+      platform_minimum:
+        metric: vulnerability_severity
+        severity: high
+      recommendation:
+        metric: vulnerability_severity
+        severity: medium
+  accessibility:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "Rust Cargo projects do not expose a rendered UI accessibility surface by default."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  docs_policy:
+    status: provided
+    provider: docs-profile
+    command: "if command -v vale >/dev/null 2>&1; then vale .; else echo 'vale not installed; docs policy provider unavailable'; exit 1; fi"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "*.md"
+        - "**/*.md"
+        - "*.markdown"
+        - "**/*.markdown"
+        - "docs/**"
+        - "architecture/adrs/**"
+        - .ground-control.yaml
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  traceability:
+    status: provider_missing
+    provider_missing: reviewer_fallback
+    blocking: false
+    reason: "Ground Control traceability requires a configured project and live server context."
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  policy:
+    status: provided
+    provider: repo-policy
+    command: "if [ -f Makefile ] && grep -q '^policy:' Makefile; then make policy; elif [ -x ./bin/policy ]; then ./bin/policy --skip-pr-body; else echo 'No repo policy command found'; exit 1; fi"
+    blocking: true
+    scope: repo
+    applies_when:
+      paths:
+        - "**/*"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  remote_status:
+    status: provided
+    provider: required-statuses
+    blocking: true
+    scope: repo
+    required_statuses:
+      - ci
+    thresholds:
+      platform_minimum:
+        metric: required_statuses
+        policy: all_success
+      recommendation:
+        metric: required_statuses
+        policy: all_success

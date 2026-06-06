@@ -1,0 +1,36 @@
+{
+  "pack_id": "node-ts",
+  "required_tools": [
+    {
+      "name": "node",
+      "command": "node",
+      "args": [
+        "--version"
+      ]
+    },
+    {
+      "name": "npm",
+      "command": "npm",
+      "args": [
+        "--version"
+      ]
+    }
+  ],
+  "fixture": {
+    "passCapability": "unit_tests",
+    "failCapability": "unit_tests",
+    "missingCapability": "contract_boundary",
+    "changedFiles": [
+      "src/add.test.js",
+      "src/add.js"
+    ],
+    "files": {
+      "package.json": "{\n  \"name\": \"gc-node-pack-selftest\",\n  \"version\": \"0.1.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\",\n    \"build\": \"node --check src/add.js\",\n    \"typecheck\": \"node --check src/add.js\"\n  }\n}\n",
+      "src/add.js": "export function add(left, right) {\n  return left + right;\n}\n",
+      "src/add.test.js": "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { add } from './add.js';\n\ntest('adds numbers', () => {\n  assert.equal(add(2, 2), 4);\n});\n"
+    },
+    "failFiles": {
+      "src/add.test.js": "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { add } from './add.js';\n\ntest('adds numbers', () => {\n  assert.equal(add(2, 2), 5);\n});\n"
+    }
+  }
+}

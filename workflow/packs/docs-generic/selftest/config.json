@@ -1,0 +1,26 @@
+{
+  "pack_id": "docs-generic",
+  "required_tools": [
+    {
+      "name": "node",
+      "command": "node",
+      "args": [
+        "--version"
+      ]
+    }
+  ],
+  "fixture": {
+    "passCapability": "docs_policy",
+    "failCapability": "docs_policy",
+    "missingCapability": "build",
+    "changedFiles": [
+      "README.md"
+    ],
+    "files": {
+      "README.md": "# Self-test\n\nThis document has a title and useful content.\n"
+    },
+    "failFiles": {
+      "README.md": "# Self-test\n\nTODO\n"
+    }
+  }
+}

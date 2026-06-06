@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "kind": "ground-control-gate-catalog",
+  "engine": {
+    "version": "1.0.0",
+    "compatible": ">=1.0.0 <2.0.0",
+    "source_url": "workflow/packs",
+    "checksum": "TODO: engine release checksum is recorded when engine artifacts are cut"
+  },
+  "packs": [
+    {
+      "id": "rust-cargo",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/rust-cargo",
+      "artifact": "workflow/packs/rust-cargo",
+      "sha256": "c3219a6eddaaeb69a94eb9e4ac17f40ed61780db3fd55db0829babac1d9f658b",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development"
+    },
+    {
+      "id": "python",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/python",
+      "artifact": "workflow/packs/python",
+      "sha256": "3ca69cd80824457da3d3ec069fa4d88e49529d9e5a708dc356032b1aabe6f0f2",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development"
+    },
+    {
+      "id": "jvm-gradle",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/jvm-gradle",
+      "artifact": "workflow/packs/jvm-gradle",
+      "sha256": "2a481a50dc82c3c5b46b880f3e360b30dc372cfc8dd4b4141ed7ba4af48e0f6c",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development"
+    },
+    {
+      "id": "jvm-maven",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/jvm-maven",
+      "artifact": "workflow/packs/jvm-maven",
+      "sha256": "199760a790d34b792d60e7365c3159ea86cbdf122f0b4bfe3154b61c96841910",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development"
+    },
+    {
+      "id": "node-ts",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/node-ts",
+      "artifact": "workflow/packs/node-ts",
+      "sha256": "df635cb5f5521b236340d6ffb441141fe269ffc4bfb2cb9495b9fdfb302120fc",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development"
+    },
+    {
+      "id": "cpp-cmake",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/cpp-cmake",
+      "artifact": "workflow/packs/cpp-cmake",
+      "sha256": "5ed1c97fd34ddb56ede12e1d2cf6339db4c70d69899445866280d8a7fd57d4f4",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development"
+    },
+    {
+      "id": "docs-generic",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/docs-generic",
+      "artifact": "workflow/packs/docs-generic",
+      "sha256": "7eae25f5c7f2a1f76d5194d166ca0c5cfc1e73f841fc78dc8b66c79c0573a517",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development"
+    }
+  ]
+}

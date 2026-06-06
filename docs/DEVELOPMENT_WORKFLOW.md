@@ -174,6 +174,56 @@ The tool performs these steps:
 
 When a repo has no manifest but still declares legacy `completion_command`, `test_command`, `lint_command`, or `format_command`, `gc_run_gates` synthesizes temporary `policy`, `unit_tests`, `lint`, and `format` gates. The result envelope sets `legacy_mode: true`, records telemetry, and leaves `pack_versions` empty. Legacy mode preserves compatibility but does not claim pack coverage.
 
+#### Gate Pack Registry
+
+Gate packs live under `workflow/packs/<pack-id>/`. This directory is separate
+from the OSCAL control-pack catalog under `packs/`.
+
+Each gate pack contains:
+
+- `pack.yaml`: pack id, version, engine compatibility, profiles, threshold
+  tier ownership, install templates, and self-test metadata.
+- `capabilities.yaml`: every engine capability marked as `provided`,
+  `provider_missing`, or `not_applicable`.
+- `templates/`: pack-owned config files copied into `.gc/gate-packs/<id>/`.
+- `installer.mjs`: a pack-local installer shim.
+- `selftest/`: a generated fixture contract and runnable self-test.
+
+The catalog at `workflow/gate-catalog.json` resolves the seven initial packs:
+`rust-cargo`, `python`, `jvm-gradle`, `jvm-maven`, `node-ts`, `cpp-cmake`, and
+`docs-generic`. Catalog entries carry the exact version, source path,
+compatible engine range, SHA-256 checksum, signer placeholder, and trust
+policy. Checksum verification is enforced today. Release signatures and
+provenance are recorded as `TODO` metadata until signed pack artifacts exist.
+
+`gc_install_workflow_assets` installs a pack into a consumer repository:
+
+```json
+{
+  "repo_path": "/repo",
+  "pack_id": "node-ts",
+  "version": "^1.0.0",
+  "scope": "frontend",
+  "profile": "react-vite",
+  "install_dependencies": true,
+  "run_selftest": true
+}
+```
+
+The installer resolves the catalog entry, verifies the pack checksum, vendors
+the exact pack under `.gc/vendor/ground-control/packs/<pack-id>/<version>/`,
+copies templates, writes or merges `.gc/gates.yaml`, writes
+`.gc/workflow-lock.json`, updates `.ground-control.yaml` with
+`workflow.engine`, `workflow.gate_manifest`, and `workflow.packs[]`, optionally
+adds declared dev dependencies through the detected package manager, and runs
+the pack self-test. It leaves normal repository file changes for review.
+
+Self-tests create a temporary fixture repository, install the pack, validate
+the generated manifest, run one passing gate, run one intentional failing gate
+fixture, and verify the pack's `provider_missing` or `not_applicable`
+behavior. If the required toolchain is missing, the self-test exits
+successfully with `status: "skipped"` and a concrete missing-tool reason.
+
 #### Gate Manifest
 
 The manifest is a strict YAML object. Unknown keys are rejected at every level. Gate ids are globally unique. Every `capability` must be one of the engine vocabulary values from ADR-062:
@@ -242,9 +292,21 @@ Provider-missing behavior is explicit. A gate with no command returns a `provide
 ```json
 {
   "schema_version": 1,
-  "engine": { "version": "1.0.0" },
+  "engine": {
+    "version": "1.0.0",
+    "compatible": ">=1.0.0 <2.0.0"
+  },
   "packs": [
-    { "id": "docs-generic", "version": "1.0.0" }
+    {
+      "id": "docs-generic",
+      "version": "1.0.0",
+      "checksum": "sha256:<hex>",
+      "source_url": "workflow/packs/docs-generic",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development",
+      "installed_at": "2026-06-06T00:00:00.000Z"
+    }
   ]
 }
 ```

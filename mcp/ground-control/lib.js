@@ -1,4 +1,4 @@
-import { appendFileSync, closeSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { appendFileSync, closeSync, cpSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath } from "node:path";
 import { execFile as execFileCb, spawn as spawnChild } from "node:child_process";
@@ -3637,7 +3637,7 @@ export function parseGateManifestYaml(yamlText, { repoRoot }) {
 
 const WORKFLOW_LOCK_ROOT_KEYS = ["schema_version", "engine", "packs"];
 const WORKFLOW_LOCK_ENGINE_KEYS = ["version", "checksum", "source_url", "compatible"];
-const WORKFLOW_LOCK_PACK_KEYS = ["id", "version", "checksum", "source_url", "compatible_engine", "signer", "trust_policy"];
+const WORKFLOW_LOCK_PACK_KEYS = ["id", "version", "checksum", "source_url", "compatible_engine", "signer", "trust_policy", "installed_at"];
 
 export function validateWorkflowLock(lock, { manifest }) {
   const errors = [];
@@ -3676,7 +3676,7 @@ export function validateWorkflowLock(lock, { manifest }) {
         pushUnknownKeyErrors(errors, prefix, entry, WORKFLOW_LOCK_PACK_KEYS);
         const id = normalizeGateString(entry.id, `${prefix}.id`, errors, { required: true, pattern: WORKFLOW_PACK_ID_RE });
         const version = normalizeGateString(entry.version, `${prefix}.version`, errors, { required: true });
-        for (const key of ["checksum", "source_url", "compatible_engine", "signer", "trust_policy"]) {
+        for (const key of ["checksum", "source_url", "compatible_engine", "signer", "trust_policy", "installed_at"]) {
           if (entry[key] != null && (typeof entry[key] !== "string" || entry[key].trim() === "")) {
             errors.push(`${prefix}.${key} must be a non-empty string when set`);
           }
@@ -3700,6 +3700,547 @@ export function validateWorkflowLock(lock, { manifest }) {
       schema_version: lock.schema_version ?? 1,
       engine: { version: lock.engine.version },
       packs: lockPacks,
+    },
+  };
+}
+
+const MCP_MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+export const GATE_CATALOG_DEFAULT_PATH = join(resolvePath(MCP_MODULE_DIR, "../.."), "workflow/gate-catalog.json");
+const GATE_PACK_INSTALL_DEFAULT_ENGINE_CONSTRAINT = "^1.0.0";
+const GATE_PACK_ID_SAFE_RE = /^[a-z0-9][a-z0-9._-]*$/;
+
+function fileExists(path) {
+  try {
+    statSync(path);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+function readJsonAbsolute(path, fieldName) {
+  try {
+    return JSON.parse(readAbsoluteTextFile(path));
+  } catch (error) {
+    return { __error: `${fieldName} could not be parsed as JSON: ${error.message}` };
+  }
+}
+
+function parseYamlFileAbsolute(path, fieldName) {
+  try {
+    return { ok: true, value: parseYaml(readAbsoluteTextFile(path)) };
+  } catch (error) {
+    return { ok: false, error: `${fieldName} could not be parsed as YAML: ${error.message}` };
+  }
+}
+
+function parseSemverTuple(raw) {
+  if (typeof raw !== "string") return null;
+  const match = raw.trim().match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function compareSemver(a, b) {
+  const aa = parseSemverTuple(a);
+  const bb = parseSemverTuple(b);
+  if (!aa || !bb) return null;
+  for (let i = 0; i < 3; i += 1) {
+    if (aa[i] < bb[i]) return -1;
+    if (aa[i] > bb[i]) return 1;
+  }
+  return 0;
+}
+
+function satisfiesSingleVersionComparator(version, comparator) {
+  const trimmed = comparator.trim();
+  if (trimmed === "" || trimmed === "*" || trimmed === "latest") return true;
+  if (trimmed.startsWith("^")) {
+    const base = trimmed.slice(1);
+    const v = parseSemverTuple(version);
+    const b = parseSemverTuple(base);
+    if (!v || !b) return false;
+    if (v[0] !== b[0]) return false;
+    return compareSemver(version, base) >= 0;
+  }
+  const opMatch = trimmed.match(/^(>=|<=|>|<|=)?\s*(\d+\.\d+\.\d+(?:[-+].*)?)$/);
+  if (!opMatch) return version === trimmed;
+  const op = opMatch[1] ?? "=";
+  const cmp = compareSemver(version, opMatch[2]);
+  if (cmp == null) return false;
+  if (op === ">=") return cmp >= 0;
+  if (op === "<=") return cmp <= 0;
+  if (op === ">") return cmp > 0;
+  if (op === "<") return cmp < 0;
+  return cmp === 0;
+}
+
+function versionSatisfies(version, constraint) {
+  if (constraint == null || constraint === "") return true;
+  return String(constraint)
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((part) => satisfiesSingleVersionComparator(version, part));
+}
+
+function normalizeInstallScope(scope) {
+  const raw = scope == null || scope === "" ? "." : String(scope);
+  const normalized = raw.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "");
+  return normalized === "" ? "." : normalized;
+}
+
+function gateIdPrefix(packId, scope) {
+  const scopePart = normalizeInstallScope(scope) === "."
+    ? "root"
+    : normalizeInstallScope(scope).replace(/[^A-Za-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "");
+  return `${packId}.${scopePart}`;
+}
+
+function prefixPackPattern(scope, pattern) {
+  const normalizedScope = normalizeInstallScope(scope);
+  const normalizedPattern = String(pattern).replace(/\\/g, "/").replace(/^\.\/+/, "");
+  if (normalizedScope === ".") return normalizedPattern;
+  return `${normalizedScope}/${normalizedPattern}`;
+}
+
+export function computeGatePackDirectoryChecksum(packDir) {
+  const files = [];
+  function walk(current) {
+    for (const entry of readdirSync(current).sort()) {
+      const abs = join(current, entry);
+      const st = statSync(abs);
+      if (st.isDirectory()) walk(abs);
+      else files.push(abs);
+    }
+  }
+  walk(packDir);
+  const h = createHash("sha256");
+  for (const abs of files) {
+    const rel = relative(packDir, abs).replace(/\\/g, "/");
+    h.update(rel);
+    h.update("\0");
+    h.update(readFileSync(abs));
+    h.update("\0");
+  }
+  return h.digest("hex");
+}
+
+function loadGateCatalog(catalogPath) {
+  const resolved = resolvePath(catalogPath ?? GATE_CATALOG_DEFAULT_PATH);
+  const json = readJsonAbsolute(resolved, "gate catalog");
+  if (json.__error) return { ok: false, error: "gate_catalog_invalid", message: json.__error };
+  if (!isPlainMapping(json) || json.schema_version !== 1 || !Array.isArray(json.packs)) {
+    return {
+      ok: false,
+      error: "gate_catalog_invalid",
+      message: "gate catalog must be a schema_version=1 object with a packs[] list",
+    };
+  }
+  return { ok: true, catalog: json, catalog_path: resolved };
+}
+
+function resolveGateCatalogEntry({ catalog, packId, versionConstraint }) {
+  const candidates = catalog.packs
+    .filter((entry) => entry && entry.id === packId && versionSatisfies(entry.version, versionConstraint))
+    .sort((a, b) => compareSemver(b.version, a.version) ?? 0);
+  return candidates[0] ?? null;
+}
+
+function resolveCatalogArtifactPath({ catalogPath, artifact }) {
+  if (typeof artifact !== "string" || artifact.trim() === "") {
+    return { ok: false, error: "gate_catalog_invalid", message: "catalog artifact path must be a non-empty string" };
+  }
+  if (isAbsolute(artifact)) {
+    return { ok: true, path: artifact };
+  }
+  const sourceRoot = resolvePath(MCP_MODULE_DIR, "../..");
+  const base = artifact.startsWith("workflow/") ? sourceRoot : dirname(catalogPath);
+  return { ok: true, path: resolvePath(base, artifact) };
+}
+
+function validatePackSourceShape(packSourcePath, packId) {
+  const packYamlPath = join(packSourcePath, "pack.yaml");
+  const capabilitiesYamlPath = join(packSourcePath, "capabilities.yaml");
+  const packYaml = parseYamlFileAbsolute(packYamlPath, `${packId}/pack.yaml`);
+  if (!packYaml.ok) return packYaml;
+  const capabilitiesYaml = parseYamlFileAbsolute(capabilitiesYamlPath, `${packId}/capabilities.yaml`);
+  if (!capabilitiesYaml.ok) return capabilitiesYaml;
+  if (!isPlainMapping(packYaml.value) || packYaml.value.id !== packId) {
+    return { ok: false, error: "gate_pack_invalid", message: `${packId}/pack.yaml id does not match '${packId}'` };
+  }
+  if (!isPlainMapping(capabilitiesYaml.value) || !isPlainMapping(capabilitiesYaml.value.bindings)) {
+    return { ok: false, error: "gate_pack_invalid", message: `${packId}/capabilities.yaml must contain bindings` };
+  }
+  for (const cap of Object.keys(capabilitiesYaml.value.bindings)) {
+    if (!ENGINE_CAPABILITY_SET.has(cap)) {
+      return { ok: false, error: "gate_pack_invalid", message: `${packId}/capabilities.yaml has unknown capability '${cap}'` };
+    }
+  }
+  for (const cap of ENGINE_CAPABILITIES) {
+    if (!isPlainMapping(capabilitiesYaml.value.bindings[cap])) {
+      return { ok: false, error: "gate_pack_invalid", message: `${packId}/capabilities.yaml must explicitly bind '${cap}'` };
+    }
+  }
+  return { ok: true, pack: packYaml.value, capabilities: capabilitiesYaml.value };
+}
+
+function generateManifestGatesFromPack({ packId, packVersion, scope, capabilitiesDoc }) {
+  const normalizedScope = normalizeInstallScope(scope);
+  const prefix = gateIdPrefix(packId, normalizedScope);
+  const gates = [];
+  for (const capability of ENGINE_CAPABILITIES) {
+    const binding = capabilitiesDoc.bindings[capability];
+    const status = binding.status;
+    if (!["provided", "provider_missing", "not_applicable"].includes(status)) {
+      throw new Error(`${packId}.${capability} binding has unsupported status '${status}'`);
+    }
+    const gate = {
+      id: `${prefix}.${capability}`,
+      capability,
+      pack: packId,
+      cwd: normalizedScope,
+      blocking: Boolean(binding.blocking),
+      scope: binding.scope === "repo" ? "repo" : "changed",
+      applies_when: {
+        paths: Array.isArray(binding.applies_when?.paths)
+          ? binding.applies_when.paths.map((pattern) => prefixPackPattern(normalizedScope, pattern))
+          : [],
+      },
+    };
+    if (binding.provider != null) gate.provider = String(binding.provider);
+    if (status === "provided") {
+      if (capability !== "remote_status") gate.command = String(binding.command);
+      if (Number.isInteger(binding.timeout_seconds)) gate.timeout_seconds = binding.timeout_seconds;
+      if (Array.isArray(binding.required_statuses)) gate.required_statuses = binding.required_statuses.map(String);
+    } else {
+      gate.provider_missing = status === "not_applicable" ? "not_applicable" : "reviewer_fallback";
+    }
+    if (binding.output != null) gate.output = binding.output;
+    if (binding.threshold != null) gate.threshold = binding.threshold;
+    gates.push(gate);
+  }
+  return {
+    pack: { id: packId, version: packVersion, scope: normalizedScope },
+    gate_prefix: prefix,
+    gates,
+  };
+}
+
+function loadExistingGateManifest(repoRoot) {
+  const manifestPath = join(repoRoot, ".gc/gates.yaml");
+  if (!fileExists(manifestPath)) {
+    return {
+      schema_version: 1,
+      engine: { min_version: ">=1.0.0", manifest_version: "1.0.0" },
+      defaults: { timeout_seconds: GATE_DEFAULT_TIMEOUT_SECONDS, provider_missing: "reviewer_fallback", fail_fast: false },
+      packs: [],
+      gates: [],
+    };
+  }
+  const parsed = parseYamlFileAbsolute(manifestPath, ".gc/gates.yaml");
+  if (!parsed.ok) throw new Error(parsed.error);
+  if (!isPlainMapping(parsed.value)) throw new Error(".gc/gates.yaml root must be a mapping");
+  return parsed.value;
+}
+
+function mergePackIntoManifest({ repoRoot, packManifestEntry, generatedGates, gatePrefix }) {
+  const manifest = loadExistingGateManifest(repoRoot);
+  manifest.schema_version = 1;
+  manifest.engine = manifest.engine ?? { min_version: ">=1.0.0", manifest_version: "1.0.0" };
+  manifest.defaults = manifest.defaults ?? { timeout_seconds: GATE_DEFAULT_TIMEOUT_SECONDS, provider_missing: "reviewer_fallback", fail_fast: false };
+  manifest.packs = Array.isArray(manifest.packs) ? manifest.packs : [];
+  manifest.gates = Array.isArray(manifest.gates) ? manifest.gates : [];
+  manifest.packs = manifest.packs.filter((entry) => !(entry?.id === packManifestEntry.id && normalizeInstallScope(entry.scope) === packManifestEntry.scope));
+  manifest.packs.push(packManifestEntry);
+  manifest.gates = manifest.gates.filter((gate) => !(gate?.pack === packManifestEntry.id && typeof gate.id === "string" && gate.id.startsWith(`${gatePrefix}.`)));
+  manifest.gates.push(...generatedGates);
+
+  mkdirSync(join(repoRoot, ".gc"), { recursive: true });
+  const validation = validateGateManifest(manifest, { repoRoot });
+  if (!validation.ok) {
+    return { ok: false, error: "gate_manifest_invalid", message: "generated gate manifest is invalid", errors: validation.errors };
+  }
+  writeFileSync(join(repoRoot, ".gc/gates.yaml"), dumpYaml(manifest, { lineWidth: 120, noRefs: true, sortKeys: false }));
+  return { ok: true, manifest: validation.value };
+}
+
+function mergePackIntoGroundControlYaml({ repoRoot, packId, versionConstraint, scope, profile }) {
+  const path = join(repoRoot, ".ground-control.yaml");
+  let raw = {};
+  if (fileExists(path)) {
+    const parsed = parseYamlFileAbsolute(path, ".ground-control.yaml");
+    if (!parsed.ok) throw new Error(parsed.error);
+    raw = isPlainMapping(parsed.value) ? parsed.value : {};
+  }
+  raw.schema_version = raw.schema_version ?? 1;
+  raw.project = raw.project ?? "local";
+  raw.workflow = isPlainMapping(raw.workflow) ? raw.workflow : {};
+  raw.workflow.engine = isPlainMapping(raw.workflow.engine) ? raw.workflow.engine : {};
+  raw.workflow.engine.version = raw.workflow.engine.version ?? GATE_PACK_INSTALL_DEFAULT_ENGINE_CONSTRAINT;
+  raw.workflow.gate_manifest = ".gc/gates.yaml";
+  const packs = Array.isArray(raw.workflow.packs) ? raw.workflow.packs : [];
+  const normalizedScope = normalizeInstallScope(scope);
+  const next = packs.filter((entry) => !(entry?.id === packId && normalizeInstallScope(entry.scope) === normalizedScope));
+  const packEntry = { id: packId, version: versionConstraint, scope: normalizedScope };
+  if (profile != null) packEntry.profile = profile;
+  next.push(packEntry);
+  raw.workflow.packs = next;
+  const parsedConfig = parseGroundControlYaml(dumpYaml(raw, { lineWidth: 120, noRefs: true, sortKeys: false }));
+  if (!parsedConfig.ok) {
+    return { ok: false, error: "ground_control_yaml_invalid", message: "updated .ground-control.yaml would be invalid", errors: parsedConfig.errors };
+  }
+  writeFileSync(path, dumpYaml(raw, { lineWidth: 120, noRefs: true, sortKeys: false }));
+  return { ok: true, workflow: parsedConfig.value.workflow };
+}
+
+function mergeWorkflowLock({ repoRoot, entry, manifest, installedAt }) {
+  const path = join(repoRoot, ".gc/workflow-lock.json");
+  let raw = {
+    schema_version: 1,
+    engine: {
+      version: GATE_ENGINE_VERSION,
+      compatible: ">=1.0.0 <2.0.0",
+    },
+    packs: [],
+  };
+  if (fileExists(path)) {
+    const parsed = readJsonAbsolute(path, ".gc/workflow-lock.json");
+    if (parsed.__error) throw new Error(parsed.__error);
+    if (isPlainMapping(parsed)) raw = parsed;
+  }
+  raw.schema_version = 1;
+  raw.engine = isPlainMapping(raw.engine) ? raw.engine : {};
+  raw.engine.version = raw.engine.version ?? GATE_ENGINE_VERSION;
+  raw.engine.compatible = raw.engine.compatible ?? ">=1.0.0 <2.0.0";
+  raw.packs = Array.isArray(raw.packs) ? raw.packs : [];
+  raw.packs = raw.packs.filter((pack) => pack?.id !== entry.id);
+  raw.packs.push({
+    id: entry.id,
+    version: entry.version,
+    checksum: `sha256:${entry.sha256}`,
+    source_url: entry.source_url,
+    compatible_engine: entry.compatible_engine,
+    signer: entry.signer,
+    trust_policy: entry.trust_policy,
+    installed_at: installedAt,
+  });
+  const validation = validateWorkflowLock(raw, { manifest });
+  if (!validation.ok) {
+    return { ok: false, error: "workflow_lock_invalid", message: "generated workflow lock is invalid", errors: validation.errors };
+  }
+  writeFileSync(path, `${JSON.stringify(raw, null, 2)}\n`);
+  return { ok: true, lock: validation.value };
+}
+
+function copyPackTemplates({ repoRoot, packSourcePath, packYaml }) {
+  const copied = [];
+  const templates = Array.isArray(packYaml.install?.templates) ? packYaml.install.templates : [];
+  for (const template of templates) {
+    if (!isPlainMapping(template) || typeof template.source !== "string" || typeof template.target !== "string") {
+      throw new Error(`${packYaml.id} has malformed install.templates entry`);
+    }
+    const source = join(packSourcePath, template.source);
+    const resolvedTarget = resolveGateRepoPath(repoRoot, realpathSync(repoRoot), template.target, `${packYaml.id}.template.target`, { allowRoot: false });
+    if (!resolvedTarget.ok) throw new Error(resolvedTarget.error);
+    mkdirSync(dirname(resolvedTarget.abs), { recursive: true });
+    cpSync(source, resolvedTarget.abs, { recursive: true });
+    copied.push(resolvedTarget.rel);
+  }
+  return copied;
+}
+
+function detectNodePackageManager(scopeAbs) {
+  if (fileExists(join(scopeAbs, "pnpm-lock.yaml"))) return { command: "pnpm", args: ["add", "-D"] };
+  if (fileExists(join(scopeAbs, "yarn.lock"))) return { command: "yarn", args: ["add", "-D"] };
+  if (fileExists(join(scopeAbs, "package-lock.json")) || fileExists(join(scopeAbs, "package.json"))) {
+    return { command: "npm", args: ["install", "--save-dev"] };
+  }
+  return null;
+}
+
+function detectPythonPackageManager(scopeAbs) {
+  if (fileExists(join(scopeAbs, "uv.lock"))) return { command: "uv", args: ["add", "--dev"] };
+  if (fileExists(join(scopeAbs, "poetry.lock"))) return { command: "poetry", args: ["add", "--group", "dev"] };
+  if (fileExists(join(scopeAbs, "pyproject.toml"))) return { command: "python3", args: ["-m", "pip", "install"] };
+  if (fileExists(join(scopeAbs, "requirements.txt"))) return { command: "python3", args: ["-m", "pip", "install"] };
+  return null;
+}
+
+async function installPackDevDependencies({ repoRoot, scope, packYaml, installDependencies }) {
+  const deps = Array.isArray(packYaml.install?.dev_dependencies) ? packYaml.install.dev_dependencies : [];
+  if (deps.length === 0) return { status: "not_required", command: null, dependencies: [] };
+  if (installDependencies !== true) return { status: "skipped", reason: "install_dependencies=false", dependencies: deps };
+  const scopeAbs = resolvePath(repoRoot, normalizeInstallScope(scope) === "." ? "" : normalizeInstallScope(scope));
+  let detected = null;
+  if (packYaml.id === "node-ts") detected = detectNodePackageManager(scopeAbs);
+  else if (packYaml.id === "python") detected = detectPythonPackageManager(scopeAbs);
+  if (detected == null) {
+    return { status: "skipped", reason: "no supported package manager detected for dev dependency installation", dependencies: deps };
+  }
+  const args = [...detected.args, ...deps];
+  const result = await execFile(detected.command, args, { cwd: scopeAbs, maxBuffer: 64 * 1024 * 1024 });
+  return {
+    status: "installed",
+    command: [detected.command, ...args].join(" "),
+    dependencies: deps,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+}
+
+async function runWorkflowPackSelftest({ packSourcePath, catalogPath }) {
+  const runner = join(packSourcePath, "selftest/run.mjs");
+  if (!fileExists(runner)) {
+    return { status: "missing", ok: false, reason: "selftest/run.mjs is missing" };
+  }
+  const result = await execFile("node", [runner, "--catalog", catalogPath], {
+    cwd: resolvePath(MCP_MODULE_DIR, "../.."),
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  const stdout = result.stdout.trim();
+  const parsed = stdout ? JSON.parse(stdout.split(/\r?\n/).at(-1)) : {};
+  return parsed;
+}
+
+export async function installWorkflowAssets({
+  repoPath,
+  packId,
+  versionConstraint = "1.0.0",
+  scope = ".",
+  profile = null,
+  catalogPath = GATE_CATALOG_DEFAULT_PATH,
+  runSelftest = true,
+  installDependencies = true,
+} = {}) {
+  if (typeof repoPath !== "string" || repoPath.trim() === "") {
+    return { ok: false, error: "workflow_asset_install_input_invalid", message: "repo_path is required" };
+  }
+  if (typeof packId !== "string" || !GATE_PACK_ID_SAFE_RE.test(packId)) {
+    return { ok: false, error: "workflow_asset_install_input_invalid", message: `pack_id must match ${GATE_PACK_ID_SAFE_RE.source}` };
+  }
+  if (typeof versionConstraint !== "string" || versionConstraint.trim() === "") {
+    return { ok: false, error: "workflow_asset_install_input_invalid", message: "version must be a non-empty semver constraint" };
+  }
+  let repoRoot;
+  try {
+    repoRoot = await ensureGitRepo(repoPath);
+  } catch (error) {
+    return { ok: false, error: "workflow_asset_install_repo_not_found", message: error.message };
+  }
+  const catalogResult = loadGateCatalog(catalogPath);
+  if (!catalogResult.ok) return catalogResult;
+  const entry = resolveGateCatalogEntry({
+    catalog: catalogResult.catalog,
+    packId,
+    versionConstraint,
+  });
+  if (entry == null) {
+    return {
+      ok: false,
+      error: "gate_pack_not_found",
+      message: `No gate pack '${packId}' satisfies version constraint '${versionConstraint}'`,
+    };
+  }
+  const artifactPath = resolveCatalogArtifactPath({ catalogPath: catalogResult.catalog_path, artifact: entry.artifact ?? entry.source_url });
+  if (!artifactPath.ok) return artifactPath;
+  const checksum = computeGatePackDirectoryChecksum(artifactPath.path);
+  if (checksum !== entry.sha256) {
+    return {
+      ok: false,
+      error: "gate_pack_checksum_mismatch",
+      message: `Checksum mismatch for ${packId}@${entry.version}`,
+      expected: entry.sha256,
+      actual: checksum,
+    };
+  }
+  const shape = validatePackSourceShape(artifactPath.path, packId);
+  if (!shape.ok) return shape;
+  const normalizedScope = normalizeInstallScope(scope);
+  const generated = generateManifestGatesFromPack({
+    packId,
+    packVersion: entry.version,
+    scope: normalizedScope,
+    capabilitiesDoc: shape.capabilities,
+  });
+  const vendorPath = join(repoRoot, ".gc/vendor/ground-control/packs", packId, entry.version);
+  rmSync(vendorPath, { recursive: true, force: true });
+  mkdirSync(dirname(vendorPath), { recursive: true });
+  cpSync(artifactPath.path, vendorPath, { recursive: true });
+  const copiedTemplates = copyPackTemplates({ repoRoot, packSourcePath: artifactPath.path, packYaml: shape.pack });
+  const manifestResult = mergePackIntoManifest({
+    repoRoot,
+    packManifestEntry: generated.pack,
+    generatedGates: generated.gates,
+    gatePrefix: generated.gate_prefix,
+  });
+  if (!manifestResult.ok) return manifestResult;
+  const groundControlResult = mergePackIntoGroundControlYaml({
+    repoRoot,
+    packId,
+    versionConstraint,
+    scope: normalizedScope,
+    profile,
+  });
+  if (!groundControlResult.ok) return groundControlResult;
+  const installedAt = new Date().toISOString();
+  const lockResult = mergeWorkflowLock({
+    repoRoot,
+    entry,
+    manifest: manifestResult.manifest,
+    installedAt,
+  });
+  if (!lockResult.ok) return lockResult;
+  let dependencyInstall;
+  try {
+    dependencyInstall = await installPackDevDependencies({
+      repoRoot,
+      scope: normalizedScope,
+      packYaml: shape.pack,
+      installDependencies,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: "workflow_asset_dependency_install_failed",
+      message: formatCommandFailure("dependency install", error),
+    };
+  }
+  let selftest = { status: "skipped", reason: "run_selftest=false" };
+  if (runSelftest) {
+    try {
+      selftest = await runWorkflowPackSelftest({ packSourcePath: artifactPath.path, catalogPath: catalogResult.catalog_path });
+    } catch (error) {
+      return {
+        ok: false,
+        error: "workflow_asset_selftest_failed",
+        message: formatCommandFailure("pack selftest", error),
+      };
+    }
+  }
+  return {
+    ok: true,
+    repo_path: repoRoot,
+    pack: {
+      id: packId,
+      version: entry.version,
+      version_constraint: versionConstraint,
+      scope: normalizedScope,
+      profile,
+      checksum: `sha256:${entry.sha256}`,
+      compatible_engine: entry.compatible_engine,
+    },
+    vendor_path: relative(repoRoot, vendorPath).replace(/\\/g, "/"),
+    manifest_path: ".gc/gates.yaml",
+    lock_path: ".gc/workflow-lock.json",
+    ground_control_yaml: ".ground-control.yaml",
+    templates: copiedTemplates,
+    gates_written: generated.gates.length,
+    dependency_install: dependencyInstall,
+    selftest,
+    signing: {
+      status: "todo",
+      note: "Checksum verification is enforced; release signatures/provenance remain TODO before broad rollout.",
     },
   };
 }

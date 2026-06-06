@@ -1,0 +1,350 @@
+schema_version: 1
+pack: jvm-maven
+version: 1.0.0
+bindings:
+  format:
+    status: provided
+    provider: maven-spotless
+    command: "mvn -B spotless:check"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.java"
+        - pom.xml
+        - "**/pom.xml"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  lint:
+    status: provided
+    provider: maven-checkstyle-pmd
+    command: "mvn -B checkstyle:check pmd:check"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "src/main/**"
+        - pom.xml
+        - "**/pom.xml"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  build:
+    status: provided
+    provider: maven-verify
+    command: "mvn -B verify"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "src/**"
+        - pom.xml
+        - "**/pom.xml"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    timeout_seconds: 1800
+  type_safety:
+    status: provided
+    provider: maven-compiler-static
+    command: "mvn -B -DskipTests compile"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "src/main/**"
+        - pom.xml
+        - "**/pom.xml"
+    thresholds:
+      platform_minimum:
+        metric: compile_errors
+        max: 0
+      recommendation:
+        metric: nullness_errors
+        max: 0
+  unit_tests:
+    status: provided
+    provider: maven-surefire
+    command: "mvn -B test"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "src/main/**"
+        - "src/test/**"
+        - pom.xml
+        - "**/pom.xml"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    timeout_seconds: 1800
+  integration_tests:
+    status: provided
+    provider: maven-failsafe
+    command: "mvn -B verify -DskipUnitTests"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "src/main/**"
+        - "src/it/**"
+        - pom.xml
+        - "**/pom.xml"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    timeout_seconds: 2400
+  contract_boundary:
+    status: provider_missing
+    provider_missing: reviewer_fallback
+    blocking: false
+    reason: "JVM boundary contracts depend on repository-selected Bean Validation, JML, guard, or schema patterns."
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  property_verification:
+    status: provided
+    provider: jqwik
+    command: "mvn -B test -Dtest='*Properties'"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "src/main/**"
+        - "src/test/**"
+        - pom.xml
+        - "**/pom.xml"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  architecture:
+    status: provided
+    provider: archunit
+    command: "mvn -B test -Dtest='*Architecture*'"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "src/main/**"
+        - "src/test/**"
+        - pom.xml
+        - "**/pom.xml"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  complexity:
+    status: provided
+    provider: maven-checkstyle-pmd-complexity
+    command: "mvn -B checkstyle:check pmd:check"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "src/main/**"
+        - pom.xml
+        - "**/pom.xml"
+    thresholds:
+      platform_minimum:
+        metric: cyclomatic_complexity
+        max: 15
+      recommendation:
+        metric: cyclomatic_complexity
+        max: 10
+  mutation:
+    status: provided
+    provider: pitest-maven
+    command: "mvn -B org.pitest:pitest-maven:mutationCoverage"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "src/main/**"
+        - "src/test/**"
+        - pom.xml
+        - "**/pom.xml"
+    thresholds:
+      platform_minimum:
+        metric: mutation_score
+        min: 60
+      recommendation:
+        metric: mutation_score
+        min: 80
+    timeout_seconds: 3600
+  diff_coverage:
+    status: provided
+    provider: jacoco-maven-diff-cover
+    command: "mvn -B test jacoco:report && diff-cover target/site/jacoco/jacoco.xml --fail-under=90"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "src/main/**"
+        - "src/test/**"
+    thresholds:
+      platform_minimum:
+        metric: changed_line_coverage
+        min: 80
+      recommendation:
+        metric: changed_line_coverage
+        min: 90
+  sast:
+    status: provided
+    provider: spotbugs-maven
+    command: "mvn -B spotbugs:check"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "src/main/**"
+        - pom.xml
+        - "**/pom.xml"
+    thresholds:
+      platform_minimum:
+        metric: sast_severity
+        severity: high
+      recommendation:
+        metric: sast_severity
+        severity: medium
+  secret_scan:
+    status: provided
+    provider: gitleaks
+    command: "gitleaks detect --source . --no-git --redact --exit-code 1"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  dependency_policy:
+    status: provided
+    provider: dependency-check-maven
+    command: "mvn -B org.owasp:dependency-check-maven:check"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - pom.xml
+        - "**/pom.xml"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  accessibility:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "JVM Maven pack does not expose a rendered UI accessibility surface by default."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  docs_policy:
+    status: provided
+    provider: docs-profile
+    command: "if command -v vale >/dev/null 2>&1; then vale .; else echo 'vale not installed; docs policy provider unavailable'; exit 1; fi"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "*.md"
+        - "**/*.md"
+        - "*.markdown"
+        - "**/*.markdown"
+        - "docs/**"
+        - "architecture/adrs/**"
+        - .ground-control.yaml
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  traceability:
+    status: provider_missing
+    provider_missing: reviewer_fallback
+    blocking: false
+    reason: "Ground Control traceability requires a configured project and live server context."
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  policy:
+    status: provided
+    provider: repo-policy
+    command: "if [ -f Makefile ] && grep -q '^policy:' Makefile; then make policy; elif [ -x ./bin/policy ]; then ./bin/policy --skip-pr-body; else echo 'No repo policy command found'; exit 1; fi"
+    blocking: true
+    scope: repo
+    applies_when:
+      paths:
+        - "**/*"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    timeout_seconds: 1800
+  remote_status:
+    status: provided
+    provider: required-statuses
+    blocking: true
+    scope: repo
+    required_statuses:
+      - ci
+    thresholds:
+      platform_minimum:
+        metric: required_statuses
+        policy: all_success
+      recommendation:
+        metric: required_statuses
+        policy: all_success

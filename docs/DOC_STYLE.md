@@ -159,9 +159,10 @@ unless a new style rule is being established.
 
 Portable gate-engine MCP tools added for `/implement` platform work are a
 broader workflow contract than a single skill step. Document `gc_run_gates`,
-`.gc/gates.yaml`, `.gc/workflow-lock.json`, provider-missing fallback,
-gate-effectiveness telemetry, `gates_green`, `remote_gates_green`, and
-`gc_watch_required_statuses` in `docs/DEVELOPMENT_WORKFLOW.md`. Keep the
-tool description strings in `mcp/ground-control/index.js` aligned with that
+`gc_install_workflow_assets`, `.gc/gates.yaml`, `.gc/workflow-lock.json`,
+the gate-pack catalog, provider-missing fallback, gate-effectiveness
+telemetry, `gates_green`, `remote_gates_green`, and
+`gc_watch_required_statuses` in `docs/DEVELOPMENT_WORKFLOW.md`. Keep the tool
+description strings in `mcp/ground-control/index.js` aligned with that
 reference. ADR-054 carries the amendment record; no new prose-style rule is
 needed unless the change alters this documentation coverage model.
