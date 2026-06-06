@@ -123,8 +123,11 @@ jobs:
           PACK_ID: ${{ matrix.pack }}
           ALLOW_SKIP: ${{ matrix.allow_skip }}
         run: |
-          set -euo pipefail
-          RESULT="$(node workflow/tools/selftest-pack.mjs --pack "${PACK_ID}" --catalog workflow/gate-catalog.json)"
+          set -uo pipefail
+          # Capture without aborting so the result JSON is always echoed for diagnosis,
+          # even when the self-test reports ok:false (exit 1). The node check below is
+          # the authoritative pass/fail signal.
+          RESULT="$(node workflow/tools/selftest-pack.mjs --pack "${PACK_ID}" --catalog workflow/gate-catalog.json)" || true
           echo "${RESULT}"
           node - "${RESULT}" <<'NODE'
           const result = JSON.parse(process.argv[2]);
