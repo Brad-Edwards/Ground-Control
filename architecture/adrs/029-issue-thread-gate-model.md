@@ -8,7 +8,7 @@ Accepted
 
 2026-05-03
 
-> **Amended by issue #906 (2026-05-13):** Two changes to the review-loop contract this ADR establishes. (1) **Pre-push Codex review default cap drops from 3 to 1** (the cap value lives on the MCP tool as `CODEX_REVIEW_PREPUSH_HARD_CAP` and is now overrideable per-repo via `.ground-control.yaml::workflow.codex_review.pre_push_cap`, bounds `[1, 10]`); the `override_cap=true` + `override_reason=<authorization quote>` escape is unchanged and continues to grant a single over-cap cycle. Empirical rationale: PR #903 (a 4-cycle run) showed cycles 2 and 3 partly compounding the agent's own fix-introduced bugs rather than catching net-new bugs, and CI / SonarCloud / human review cover the residual risk. (2) **Test-quality review moves pre-push** to a new Step 6.6 in the same local-iteration band as the codex pre-push review (former Step 13 is merged out; former Step 14 collapses into Step 10's existing CI watch). Test-quality's default cap also drops to 1 with the same `workflow.test_quality_review.pre_push_cap` override path. The `gc:test-quality-review-cycle` marker family and the `gc_post_decision_record` contract are **unchanged**; what moves is the placement of the step in the workflow, not the durability mechanism. The PR now opens with both AI-assisted reviewers clean; CI + SonarCloud + human reviewer are the only post-push gates. SKILL.md Steps 13 / 14 are intentional tombstones; downstream Step 15 / 18 / 19 numbering is preserved so external references don't track a moving target. See `skills/implement/SKILL.md` Step 6.5 / 6.6 for the operative loop prose and `architecture/notes/quickfix-workflow-lane-preflight.md` for the preflight design context.
+> **Amended by issue #906 (2026-05-13):** Two changes to the review-loop contract this ADR establishes. (1) **Pre-push Codex review default cap drops from 3 to 1** (the cap value lives on the MCP tool as `CODEX_REVIEW_PREPUSH_HARD_CAP` and is now overrideable per-repo via `.ground-control.yaml::workflow.codex_review.pre_push_cap`, bounds `[1, 10]`); the `override_cap=true` + `override_reason=<authorization quote>` escape is unchanged and continues to grant a single over-cap cycle. Empirical rationale: PR #903 (a 4-cycle run) showed cycles 2 and 3 partly compounding the agent's own fix-introduced bugs rather than catching net-new bugs, and required remote status checks plus human review cover the residual risk. (2) **Test-quality review moves pre-push** to a new Step 6.6 in the same local-iteration band as the codex pre-push review (former Step 13 is merged out; former Step 14 collapses into Step 10's existing remote-status watch). Test-quality's default cap also drops to 1 with the same `workflow.test_quality_review.pre_push_cap` override path. The `gc:test-quality-review-cycle` marker family and the `gc_post_decision_record` contract are **unchanged**; what moves is the placement of the step in the workflow, not the durability mechanism. The PR now opens with both AI-assisted reviewers clean; required remote status checks and the human reviewer are the only post-push gates. SKILL.md Steps 13 / 14 are intentional tombstones; downstream Step 15 / 18 / 19 numbering is preserved so external references don't track a moving target. See `skills/implement/SKILL.md` Step 6.5 / 6.6 for the operative loop prose and `architecture/notes/quickfix-workflow-lane-preflight.md` for the preflight design context.
 
 > **Amended by issue #937 (2026-05-21):** The pre-push review tools (`gc_codex_review` / `gc_test_quality_review` and their `_cycle` wrappers) and the architecture preflight may run as **async background jobs** (opt-in `async: true`), polled or cancelled via the new `gc_codex_job` tool. The issue-thread durable-record contract this ADR establishes is **unchanged**: every review cycle still posts its verbatim findings record and its `gc_post_decision_record` decision record to the resolved issue thread, and the cycle counter still anchors to the issue thread. Async only decouples the multi-minute child process from a single MCP tool-call so the client's tool-call timeout cannot abandon it and orphan the child (issue #893). See ADR-036 (amendments) for the job model and ADR-031 (amendments) for the codex-review framing.
 
@@ -58,9 +58,10 @@ comment on the GitHub issue:
 - **Plan**: posted as a comment when `/implement` enters Phase A. Includes
   context, approach, files-to-change, verification steps, risks.
 - **Review findings**: every finding from codex review, refactor review,
-  test-quality review, and SonarCloud is posted to its native location (PR
-  review comment for codex; issue comment summary for review aggregates).
-  The issue thread carries a summary linking back to the PR comments.
+  test-quality review, and required remote status providers is posted to its
+  native location (PR review comment for codex; issue comment summary for
+  review aggregates and gate-result records). The issue thread carries a
+  summary linking back to the PR comments and provider records.
 - **Decisions on findings**: for every finding, the agent records its
   disposition as an issue comment: **fix**, **wontfix**, or
   **not-applicable**, with a one-line rationale. `defer` is not a valid
@@ -94,8 +95,8 @@ Pre-push `gc_codex_review` runs with `uncommitted=true` are the canonical
 Codex review step. The later post-push invocation is retained only as a
 tool-layer defense-in-depth path for direct callers; the `/implement` skill
 must not drive a second Codex review after the first push. Merge-commit drift
-relative to the target branch is covered by CI, integration tests, and
-SonarCloud, not by a duplicate Codex pass.
+relative to the target branch is covered by integration tests and required
+remote status checks, not by a duplicate Codex pass.
 
 Because the workflow now has one Codex review step instead of two, the
 `gc_codex_review` hard cap is **configurable per repo** (per the issue #906
@@ -439,11 +440,11 @@ unchanged by this amendment.
 
 **2026-05-26 (issue #989).** The new `/integrate` lane (GC-O011) is repo-scoped, not issue-scoped: its plan and readiness records surface through the invoking interface (terminal output), not as comments on a GitHub issue thread. The single-merge-touchpoint contract is preserved unchanged: the lane prepares PRs but does not merge them. Consultation halts (clause (h) of GC-O011) consult the maintainer through the invoking interface and do not post to any GitHub issue. ADR-029's "issue thread is the durable record" guarantee applies to issue-anchored runs (`/implement`, `/quickfix`); the `/integrate` lane's records are operational and live on the maintainer's terminal, in the MCP tool's return envelope, and in the local halt ledger at `<repo>/.gc/integration-runs/<run-id>/halt.json`.
 
-**2026-05-26 (issue #989 merge carve-out).** The single-human-touchpoint contract is amended to permit `gc_integration_manager` action=prepare mode=merge to execute the merge for queue entries that the same lane has just prepared (rebased, completion-gate green, CI green, Sonar green). The carve-out is narrow: merge is only legal when invoked through the integration manager's MCP tool boundary, only on PRs the same run has marked outcome=ready, and only when the repository has opted in via `workflow.integration_manager.merge_strategy`. All other agent paths to merge remain forbidden by skill prose and by the `.claude/hooks/git-merge-guard.py` PreToolUse hook that already blocks `gh pr merge` and `git merge` from agent Bash invocations. The MCP server itself is the only privileged-side-effect surface that can execute the merge; the hook layer does not apply to MCP server subprocesses, so the access-control surface is the gc_integration_manager tool registration.
+**2026-05-26 (issue #989 merge carve-out).** The single-human-touchpoint contract is amended to permit `gc_integration_manager` action=prepare mode=merge to execute the merge for queue entries that the same lane has just prepared (rebased, completion-gate green, and required remote status checks green). The carve-out is narrow: merge is only legal when invoked through the integration manager's MCP tool boundary, only on PRs the same run has marked outcome=ready, and only when the repository has opted in via `workflow.integration_manager.merge_strategy`. All other agent paths to merge remain forbidden by skill prose and by the `.claude/hooks/git-merge-guard.py` PreToolUse hook that already blocks `gh pr merge` and `git merge` from agent Bash invocations. The MCP server itself is the only privileged-side-effect surface that can execute the merge; the hook layer does not apply to MCP server subprocesses, so the access-control surface is the gc_integration_manager tool registration.
 
 ## Amendment (2026-06-06)
 
-ADR-060 and ADR-061 update this ADR's issue-thread gate model. The GitHub
+ADR-060, ADR-061, and ADR-062 update this ADR's issue-thread gate model. The GitHub
 issue thread remains the durable workflow record, but lifecycle side effects
 are no longer agent-authored prose steps: `in-progress` is set and cleared by
 server-side lifecycle tools, and issue close is triggered by a GitHub Action on
@@ -451,4 +452,7 @@ server-side lifecycle tools, and issue close is triggered by a GitHub Action on
 merge-verified `gc_close_issue_after_merge` path. ADR-061 generalizes phase
 markers across the whole `/implement` DAG. The next phase advances only after
 its predecessor marker exists, and escalation is a terminal issue-thread
-record rather than an ambiguous middle state.
+record rather than an ambiguous middle state. Gate-result records come from
+`gc_run_gates` and provider-neutral required remote status envelopes, with
+provider-specific watchers behind the manifest rather than named as canonical
+issue-thread phases.

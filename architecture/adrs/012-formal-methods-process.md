@@ -214,8 +214,9 @@ SDD extends TDD by adding contracts as a specification layer:
 ## Amendment (2026-06-06)
 
 ADR-057 supersedes this ADR as the language-neutral assurance ladder. This ADR
-remains accepted as the Java binding for ADR-057: JML, Bean Validation,
-OpenJML ESC where reachable, jqwik, and KeY are the Java providers for the
-language-neutral L0-L3 capabilities. Phase 1 must reconcile the documented
-coverage drift in `docs/CODING_STANDARDS.md`, which still states a 30 percent
-pre-alpha coverage threshold while the active JaCoCo gate is 80 percent.
+remains accepted as the Java and Java Virtual Machine (JVM) binding only:
+Java Modeling Language (JML), Bean Validation, OpenJML Extended Static Checking
+(ESC) where reachable, jqwik, and KeY are providers for the language-neutral
+L0-L3 capabilities when a JVM gate pack selects them. This ADR does not define
+the platform-wide assurance ladder and does not impose consumer-specific
+coverage cleanup work on the portable `/implement` engine.

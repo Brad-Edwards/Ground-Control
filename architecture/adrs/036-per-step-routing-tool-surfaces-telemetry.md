@@ -97,8 +97,8 @@ Three new MCP tools replace agent-authored long-form comments:
   (defense in depth on top of the `block-defer-language.py` PreToolUse hook).
 - **`gc_post_final_report(issue_number, pr_number, ...)`**: same pattern for
   Step 19. Structured input (in-scope requirements, files by change kind,
-  reviews per reviewer, traceability reconciliation, CI/SonarCloud status) →
-  canonical Markdown → issue thread → `gc:final-report` marker.
+  reviews per reviewer, traceability reconciliation, required remote status
+  results) → canonical Markdown → issue thread → `gc:final-report` marker.
 - **`gc_render_pr_body(issue_number, change_class, ...)`**: renders a PR
   body that satisfies `check_pr_body`'s policy gates (template sections,
   requirement UIDs, ADR impact, three Ground Control Checks, IMPLEMENTS/TESTS
@@ -139,7 +139,8 @@ cycle the parent calls `gc_post_decision_record` with the
 `fix`/`wontfix`/`not-applicable` dispositions (cycle counter, durable
 record); a clean cycle is the structured advance-to-Phase-C signal once
 that post returns `ok: true` (the string was `..._advance_to_step_14`
-before issue #906 collapsed Step 14 into Step 10's existing CI watch;
+before issue #906 collapsed Step 14 into Step 10's existing remote-status
+watch;
 new MCP envelope returns `..._advance_to_phase_c`). See
 `architecture/notes/test-quality-review-engine.md` for the full MCP
 tool mechanism (claude CLI exec, `ANTHROPIC_API_KEY` strip / OAuth,
@@ -345,19 +346,18 @@ which loops execute**.
      internal seam (`_runReviewCycleShared`) parameterized by reviewer and
      cap source; there is exactly one cycle implementation, not one per
      reviewer.
-   - `gc_watch_ci_run`: server-side GitHub Actions poller. Replaces the
-     per-poll agent turn cost of /implement Step 10. Returns one terminal
-     envelope `{conclusion, failed_steps[], log_summary}` after the run
-     reaches a terminal state, hits the queued-too-long cap (5 min
-     default), or hits the total cap (45 min default). Raw CI logs stay
-     server-side; only the bounded UTF-8 tail of `gh run view --log-failed`
-     is returned.
-   - `gc_watch_sonar_analysis`: server-side SonarCloud poller. Returns
-     `{quality_gate, issues_summary, hotspots_summary,
-     full_issue_export_path}` after the analysis is fetched and
-     paginated. The `SONAR_TOKEN` is read at call time and passed only in
-     the Authorization HTTP header; never in argv, telemetry, exports,
-     or returned envelopes (the issue #934 preflight binding rule).
+   - `gc_watch_required_statuses`: server-side required-status watcher.
+     Replaces the per-poll agent turn cost of /implement Step 10. It reads
+     the manifest and discovered required checks, calls configured provider
+     adapters, and returns one terminal envelope `{conclusion,
+     failed_statuses[], log_summary, provider_results[]}` after the required
+     status set reaches a terminal state, hits the queued-too-long cap (5 min
+     default), or hits the total cap (45 min default). Raw provider logs stay
+     server-side; only bounded summaries are returned.
+   - Provider-specific watchers, such as a GitHub Actions poller or a quality
+     dashboard poller, are optional adapters behind
+     `gc_watch_required_statuses`. They are not engine phases and are selected
+     only when the manifest or discovered required checks call for them.
 
 4. **Issue-thread cache.** `gc_get_issue_thread` returns the body +
    comments + a sha256 content hash on first call. Subsequent calls with
@@ -417,9 +417,8 @@ Two coordinated changes:
    `MCP_TOOL_TIMEOUT` (3,600,000 ms) and `MCP_TIMEOUT` (30,000 ms) explicitly,
    in the checked-in repo settings, so every Claude Code session in the repo
    gives long-running MCP tools the headroom they need. This also covers the
-   `gc_watch_ci_run` (2700 s) and `gc_watch_sonar_analysis` (1800 s)
-   server-side-hold tools added in the #934 amendment, which previously relied
-   on an unset client default.
+   `gc_watch_required_statuses` server-side-hold tool and the provider
+   adapters it calls, which previously relied on an unset client default.
 
 2. **Async job model.** The five review/preflight tools gain an opt-in
    `async` boolean (default `false`; synchronous behavior and every direct
@@ -444,7 +443,7 @@ start/poll/cancel triple is the shape a Temporal activity handle takes.
 
 **Amendment: issue close mechanism (#862 typed-action-items PR).** The /implement Step 18 no longer runs `gh issue close`. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step 9) when the user merges the PR. Step 18 only removes the `in-progress` label set in Step 1. Closing from the agent decoupled the close event from the merge: an unmerged or rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open issues on revert). Step 19 (final report) is correspondingly tightened: traceability reconciliation (Steps 15 through 17) is an explicit precondition, and no earlier step surfaces a user-facing "complete" signal (prior escalations are for input, not for "done"). The /quickfix sibling lane is updated in lockstep.
 
-**2026-05-26 (issue #989).** The new `/integrate` skill lane (GC-O011) runs on the parent session for every step. The lane's work is mechanical (label-based PR discovery, worktree rebase, completion gate, CI/Sonar watch, force-with-lease push) and does not benefit from per-step model tiering. If a future stage of the lane benefits from LLM reasoning, the `gc_resolve_workflow_route` resolver and the `routing.stages.*` configuration block already support adding stages without changing this ADR.
+**2026-05-26 (issue #989).** The new `/integrate` skill lane (GC-O011) runs on the parent session for every step. The lane's work is mechanical (label-based PR discovery, worktree rebase, completion gate, required remote status watch, force-with-lease push) and does not benefit from per-step model tiering. If a future stage of the lane benefits from LLM reasoning, the `gc_resolve_workflow_route` resolver and the `routing.stages.*` configuration block already support adding stages without changing this ADR.
 
 **2026-05-26 (issue #989 merge carve-out).** The `/integrate` lane's `mode=merge` execution path runs inside the MCP server subprocess (via `gc_integration_manager` action=prepare mode=merge). This is the same tool surface boundary that the prepare path uses; no new routing stage or telemetry surface is required. The merge carve-out does not change the step-routing contract for any other lane.
 
@@ -452,13 +451,17 @@ start/poll/cancel triple is the shape a Temporal activity handle takes.
 
 ## Amendment (2026-06-06)
 
-ADR-058, ADR-059, and ADR-061 refine this ADR's routing and enforcement
-contract. Routing becomes budget-aware: Codex owns architecture preflight,
-contract definition, planning, review lenses, and hard-problem escalation;
-Claude owns mechanical implementation, fix application, and bookkeeping. This
-inverts the current `.ground-control.yaml` default that routes planning and
-review to Claude Opus. Cross-model review stays available for Critical and
+ADR-058, ADR-059, ADR-061, and ADR-062 refine this ADR's routing and
+enforcement contract. Routing becomes budget-aware by stage and capability:
+architecture preflight, contract definition, planning, review lenses, and
+hard-problem escalation use high-capability routes; mechanical implementation,
+fix application, polling, and bookkeeping can use lower-cost routes. The route
+resolver, not local prose, decides the concrete driver from
+`.ground-control.yaml`. Cross-model review stays available for Critical and
 Blocking confirmation. Enforcement remains agent-neutral: every gate that the
 workflow relies on must live in `bin/policy`, ecosystem build tasks, CI, or an
 MCP refusal. `.claude/hooks/` may mirror a gate for local feedback, but it is
-never the only enforcement layer because it does not run for Codex.
+never the only enforcement layer because it does not run for every driver.
+Remote checks use the generic required-status watcher
+`gc_watch_required_statuses`; provider-specific watchers are optional
+manifest-driven adapters behind that tool.

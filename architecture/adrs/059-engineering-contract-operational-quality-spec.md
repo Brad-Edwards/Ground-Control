@@ -38,13 +38,13 @@ The contract contains these observable properties:
 
 | Property | Operational target | Checked by |
 |----------|--------------------|------------|
-| Interface-first | A contract artifact precedes implementation; every new public symbol is exercised through the public surface. | `contract` phase marker, plan-to-diff reconciliation, new-public-surface classifier, and tests tied to the declared contract. |
-| Whole-system fit | The change uses existing cross-cutting helpers, boundaries, and data models; it does not reimplement envelopes, logging, authorization, traceability, or validation helpers. | Architecture gate, anti-hand-roll policy rules, architecture reviewer question grounded in `.ground-control.yaml` vocabulary and binding ADRs. |
-| Right-sized simplicity | The implementation is the smallest design that satisfies the requirement and does not add scope outside the plan. | Complexity and size gates, plan-to-diff reconciliation, scope-expansion refusal, and reviewer question grounded in the posted plan. |
-| Realistic defensive coding | Inputs are validated at system boundaries; state transitions, security boundaries, and corruption-prone mutators carry explicit contracts and tests. | ADR-057 assurance-classifier gate and the `contract_boundary` capability in ADR-058. |
-| Test strength | Tests fail when the implementation is broken, not only when lines are executed. | Mutation threshold, diff coverage threshold, property tests where classified L2, and test-strength reviewer question grounded in the contract. |
-| Secure from the gate | The first draft avoids injection, server-side request forgery, unsafe deserialization, missing authorization, secret exposure, and insecure dependency changes. | Static application security testing, secret scan, dependency-policy gates, and security reviewer question grounded in a Common Weakness Enumeration (CWE) or attacker-model artifact. |
-| Architectural conformance | The diff stays inside declared boundaries and respects binding ADRs, package rules, and graph or traceability invariants. | Architecture-as-code gate, ADR citation in the plan, phase-marker prerequisites, and architecture reviewer question grounded in the binding ADRs. |
+| Interface-first | A contract artifact precedes implementation; every new public symbol is exercised through the public surface. | `contract` phase marker, plan-to-diff reconciliation, new-public-surface classifier, `contract_boundary`, and tests tied to the declared contract. |
+| Whole-system fit | The change uses existing cross-cutting helpers, boundaries, and data models; it does not reimplement envelopes, logging, authorization, traceability, or validation helpers. | `architecture`, `policy`, anti-hand-roll rules, and architecture reviewer question grounded in `.ground-control.yaml` vocabulary and binding ADRs. |
+| Right-sized simplicity | The implementation is the smallest design that satisfies the requirement and does not add scope outside the plan. | `complexity`, `policy`, plan-to-diff reconciliation, scope-expansion refusal, and reviewer question grounded in the posted plan. |
+| Realistic defensive coding | Inputs are validated at system boundaries; state transitions, security boundaries, and corruption-prone mutators carry explicit contracts and tests. | ADR-057 assurance-classifier gate, `contract_boundary`, and `property_verification` where classified L2. |
+| Test strength | Tests fail when the implementation is broken, not only when lines are executed. | `mutation`, `diff_coverage`, `property_verification`, `unit_tests`, `integration_tests`, and test-strength reviewer question grounded in the contract. |
+| Secure from the gate | The first draft avoids injection, server-side request forgery, unsafe deserialization, missing authorization, secret exposure, and insecure dependency changes. | `sast`, `secret_scan`, `dependency_policy`, and security reviewer question grounded in a Common Weakness Enumeration (CWE) or attacker-model artifact. |
+| Architectural conformance | The diff stays inside declared boundaries and respects binding ADRs, package rules, and graph or traceability invariants. | `architecture`, `traceability`, `policy`, ADR citation in the plan, phase-marker prerequisites, and architecture reviewer question grounded in the binding ADRs. |
 | Extensibility seam | The design names the next expected variation and leaves the smallest useful seam for it. | Reviewer question grounded in the plan and interface contract. This property is not a free-form improvement request. |
 
 Every property must have exactly one primary acceptance path:
@@ -78,8 +78,8 @@ style preferences or speculative improvements.
 The contract composes with ADR-057 and ADR-058:
 
 - ADR-057 classifies surfaces that require contracts, property tests, or proof.
-- ADR-058 binds each deterministic property to concrete commands or MCP
-  refusals.
+- ADR-058 and ADR-062 bind each deterministic property to a capability,
+  manifest gate, required remote status, or MCP refusal.
 - This ADR defines the property table that generation and review both use.
 
 ## Consequences
@@ -103,5 +103,7 @@ findings into deterministic gates when possible.
 
 - ADR-021: Gated Agentic Development Loop.
 - ADR-057: Language-neutral assurance ladder and classifier.
-- ADR-058: Gate capability-to-provider indirection and gate packs.
+- ADR-058: Gate manifest, runner contract, and gate-pack bundles.
 - ADR-061: Governable phase-marker state machine.
+- ADR-062: Portable /implement engine, gate-pack registry, and consumer
+  adoption model.

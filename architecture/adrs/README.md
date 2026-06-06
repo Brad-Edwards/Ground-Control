@@ -41,7 +41,7 @@ records.
 | [018](018-aws-ec2-deployment.md) | AWS EC2 Deployment | Superseded by ADR-030 |
 | [019](019-asset-topology-model.md) | Asset Topology and Boundary Relationships | Accepted |
 | [020](020-asset-cross-entity-linking.md) | Asset Cross-Entity Linking | Accepted |
-| [021](021-gated-agentic-development-loop.md) | Gated Agentic Development Loop | Accepted (amended by ADR-029, ADR-036, ADR-060, ADR-061) |
+| [021](021-gated-agentic-development-loop.md) | Gated Agentic Development Loop | Accepted (amended by ADR-029, ADR-036, ADR-060, ADR-061, ADR-062) |
 | [022](022-content-pack-distribution-architecture.md) | Content Pack Distribution Architecture | Accepted |
 | [023](023-plugin-architecture.md) | Plugin Architecture | Accepted |
 | [024](024-threat-model-entry-boundary.md) | Threat Model Entry Boundary | Accepted |
@@ -50,7 +50,7 @@ records.
 | [026](026-rest-api-access-control.md) | REST API Access Control (GC-P011) | Accepted |
 | [027](027-agent-neutral-implement-workflow-packaging.md) | Agent-Neutral Implement Workflow Packaging | Accepted (amended 2026-05-26, GC-O011/#989) |
 | [028](028-temporal-workflow-orchestration-boundary.md) | Temporal Workflow Orchestration Boundary | Accepted |
-| [029](029-issue-thread-gate-model.md) | Issue-Thread Gate Model | Accepted (amended by ADR-060, ADR-061) |
+| [029](029-issue-thread-gate-model.md) | Issue-Thread Gate Model | Accepted (amended by ADR-060, ADR-061, ADR-062) |
 | [030](030-on-prem-hetzner-deployment.md) | On-prem Hetzner Deployment | Accepted |
 | [031](031-codex-review-stopping-model.md) | Severity Rubric and Stopping Model for Pre-Push Codex Review | Accepted |
 | [032](032-age-query-construction-boundary.md) | AGE Query Construction Boundary | Accepted |
@@ -80,9 +80,10 @@ records.
 | [055](055-research-workflow-skills-and-citation-mcp.md) | Research workflow skills and citation MCP | Accepted |
 | [056](056-research-project-type-and-intake.md) | Research project type and intake metadata | Accepted |
 | [057](057-language-neutral-assurance-ladder-and-classifier.md) | Language-neutral assurance ladder and classifier | Accepted |
-| [058](058-gate-capability-provider-indirection-and-gate-packs.md) | Gate capability-to-provider indirection and gate packs | Accepted |
+| [058](058-gate-capability-provider-indirection-and-gate-packs.md) | Gate manifest, runner contract, and gate-pack bundles | Accepted |
 | [059](059-engineering-contract-operational-quality-spec.md) | The engineering contract | Accepted |
 | [060](060-lifecycle-determinism.md) | Lifecycle determinism | Accepted |
 | [061](061-governable-phase-marker-state-machine.md) | Governable phase-marker state machine | Accepted |
+| [062](062-portable-implement-engine-gate-pack-registry-and-consumer-adoption-model.md) | Portable /implement engine, gate-pack registry, and consumer adoption model | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.

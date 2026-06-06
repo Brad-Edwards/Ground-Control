@@ -64,8 +64,9 @@ Every reviewer returns a parseable verdict envelope. The envelope includes:
 - `notes[]`, bounded and non-blocking;
 - `next_action`, computed by the dispatcher, not by reviewer prose.
 
-The dispatcher owns advance. It reads all lens envelopes, deterministic gate
-results, prior cycle markers, and the cap state. It returns one of:
+The dispatcher owns advance. It reads all lens envelopes, `gc_run_gates`
+result envelopes from ADR-058, required remote status envelopes, prior cycle
+markers, and the cap state. It returns one of:
 
 - `advance_to_next_phase`;
 - `fix_findings_and_reinvoke`;
@@ -73,6 +74,15 @@ results, prior cycle markers, and the cap state. It returns one of:
 - `record_terminal_escalation`.
 
 Reviewer prose does not decide advance, loop, or escalation.
+
+The dispatcher treats `gc_run_gates` results as the deterministic gate surface.
+A blocking gate failure prevents advance until the gate passes or a terminal
+escalation is recorded. A `provider_missing` result never becomes a silent
+pass. If the manifest declares reviewer fallback for that missing capability,
+the dispatcher routes the gap to the matching reviewer lens and records
+telemetry such as `provider_missing` and `reviewer_fallback_used`. If the
+manifest marks the missing provider as blocking without fallback, the
+dispatcher refuses advance.
 
 The review set has four independent lenses:
 
@@ -85,8 +95,8 @@ The review set has four independent lenses:
   package boundaries, cross-cutting helpers, traceability rules, and the
   engineering contract;
 - **test-strength**: checks that tests exercise the public contract and are
-  backed by mutation, diff coverage, or property-test evidence where the gate
-  manifest requires it.
+  backed by `mutation`, `diff_coverage`, or `property_verification` evidence
+  where the gate manifest requires it.
 
 Each lens runs in a fresh context with edit tools removed. A lens sees the
 requirement, contract, plan, relevant ADR clauses, gate results, and diff. It
@@ -164,9 +174,11 @@ failure with a different vocabulary.
 - ADR-027: Agent-Neutral Implement Workflow Packaging.
 - ADR-029: Issue-Thread Gate Model.
 - ADR-036: Per-Step Model Routing, Durable-Record Tool Surfaces, and Step Telemetry.
-- ADR-058: Gate capability-to-provider indirection and gate packs.
+- ADR-058: Gate manifest, runner contract, and gate-pack bundles.
 - ADR-059: The engineering contract.
 - ADR-061: Governable phase-marker state machine.
+- ADR-062: Portable /implement engine, gate-pack registry, and consumer
+  adoption model.
 
 ## References
 
