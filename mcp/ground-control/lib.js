@@ -52,11 +52,13 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#   completion_command: <how to run the full CI gate>",
     "#   lint_command: <how to run the linter>",
     "#   format_command: <how to run the formatter>",
-    "#   # Per-reviewer pre-push caps (issue #906). Omit to use MCP-tool defaults.",
+    "#   # Per-reviewer pre-push caps. Omit to use MCP-tool defaults.",
+    "#   # Values below 2 are accepted for backward compatibility but run with",
+    "#   # the ADR-031 effective minimum cap of 2.",
     "#   codex_review:",
-    "#     pre_push_cap: 1",
+    "#     pre_push_cap: 2",
     "#   test_quality_review:",
-    "#     pre_push_cap: 1",
+    "#     pre_push_cap: 2",
     "#   # PR title validation (issue #896). Omit to use /implement skill defaults.",
     "#   pr_title:",
     "#     types: [security, added, changed, deprecated, removed, fixed,",
@@ -5872,6 +5874,39 @@ function buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode = "inline
 // a parse failure (see parseCodexReviewEnvelopeTail).
 export const REVIEW_NOTES_MAX = 2;
 export const REVIEW_VERDICTS = Object.freeze(["ship", "ship-with-fixes", "don't-ship"]);
+export const REVIEWER_LENSES = Object.freeze(["correctness", "security", "architecture", "test-strength"]);
+export const REVIEW_SEVERITIES = Object.freeze(["Minor", "Major", "Critical", "Blocking"]);
+export const REVIEW_CONVERGENCE_ACTIONS = Object.freeze([
+  "advance_to_next_phase",
+  "fix_findings_and_reinvoke",
+  "post_structured_decision_aid_and_escalate",
+  "record_terminal_escalation",
+]);
+
+const REVIEWER_LENS_SET = new Set(REVIEWER_LENSES);
+const REVIEW_SEVERITY_RANK = new Map(REVIEW_SEVERITIES.map((severity, idx) => [severity, idx]));
+const REVIEW_SEVERITY_ALIASES = new Map([
+  ["minor", "Minor"],
+  ["warning", "Minor"],
+  ["warn", "Minor"],
+  ["low", "Minor"],
+  ["major", "Major"],
+  ["medium", "Major"],
+  ["error", "Major"],
+  ["critical", "Critical"],
+  ["crit", "Critical"],
+  ["high", "Critical"],
+  ["blocking", "Blocking"],
+  ["blocker", "Blocking"],
+  ["block", "Blocking"],
+]);
+
+export function normalizeReviewHardCap(hardCap) {
+  if (typeof hardCap !== "number" || !Number.isFinite(hardCap) || hardCap < 1) {
+    return 2;
+  }
+  return Math.max(2, Math.trunc(hardCap));
+}
 
 const PRINCIPAL_ENGINEER_ANTI_RUBRIC = Object.freeze([
   "Renaming for clarity is NOT a finding unless the current name actively misleads.",
@@ -6055,10 +6090,11 @@ async function readVocabularyForReview(repoRoot, baseBranch) {
 // security STRIDE, test-quality false-assurance) lives in the consumer's own
 // prompt; this rubric carries the SHARED contract — verdict envelope, two-
 // pass, anti-rubric, sweep evidence, notes cap, tone.
-export function buildPrincipalEngineerRubric({ reviewerLabel, vocabulary = null, findingFieldsDescription = "", findingExampleJson = "" } = {}) {
+export function buildPrincipalEngineerRubric({ reviewerLabel, reviewerLens = null, vocabulary = null, findingFieldsDescription = "", findingExampleJson = "" } = {}) {
   if (typeof reviewerLabel !== "string" || reviewerLabel.trim() === "") {
     throw new Error("buildPrincipalEngineerRubric: reviewerLabel must be a non-empty string");
   }
+  const lens = normalizeReviewerLens(reviewerLens, reviewerLabel);
   const lines = [];
 
   lines.push("You are a principal/staff engineer reviewing this change. The goal is JUDGMENT, not finding accumulation.");
@@ -6083,8 +6119,10 @@ export function buildPrincipalEngineerRubric({ reviewerLabel, vocabulary = null,
   lines.push("```");
   lines.push("{");
   lines.push('  "verdict": "ship" | "ship-with-fixes" | "don\'t-ship",');
+  lines.push(`  "reviewer_lens": "${lens}",`);
   lines.push('  "architectural_read": "<one paragraph, required, written first>",');
-  lines.push('  "blocking": [<finding objects — see fields below>],');
+  lines.push('  "findings": [<finding objects — see fields below>],');
+  lines.push('  "blocking": [<blocking finding objects copied from findings[]>],');
   lines.push(`  "notes": [<at most ${REVIEW_NOTES_MAX}; { \"text\": \"<one-line observation>\" }>]`);
   lines.push("}");
   lines.push("```");
@@ -6093,6 +6131,7 @@ export function buildPrincipalEngineerRubric({ reviewerLabel, vocabulary = null,
   lines.push("- `verdict: ship` → `blocking` MUST be empty.");
   lines.push("- `verdict: ship-with-fixes` → `blocking` MUST be non-empty.");
   lines.push("- `verdict: don't-ship` → `blocking` MUST be non-empty AND include at least one `class` finding (or a one-off with `structural_blocker: true`). A `don't-ship` with only minor one-offs is rejected.");
+  lines.push("- `findings[]` and `blocking[]` contain full finding objects. For now every emitted finding is blocking; copy the same objects into both arrays. The MCP dispatcher computes `next_action` after parsing.");
   lines.push(`- \`notes\` length capped at ${REVIEW_NOTES_MAX}. Omit the key entirely when you have nothing material; \"no notes\" is the strongest signal.`);
   lines.push("- Do NOT invoke `gh`, `git`, `curl`, or any shell. The MCP server publishes the envelope after you return.");
   lines.push("- Do NOT include secrets, full file contents, environment dumps, or anything resembling credentials in any field. The body is published to a public thread.");
@@ -6109,7 +6148,7 @@ export function buildPrincipalEngineerRubric({ reviewerLabel, vocabulary = null,
   lines.push("Example 1 — clean review, `ship` verdict (this IS a valid outcome):");
   lines.push("```");
   lines.push("===REVIEW===");
-  lines.push('{"verdict":"ship","architectural_read":"This change adds a new Repository site for ScopedRequirementRepository.findActiveByWave; it reuses the existing scoped-query helper, matches the canonical pattern, and adds a @WebMvcTest controller slice that exercises both the happy path and the empty-result path. The seam is correct; no foreclosure of the obvious next variation (filtering by status range). I would ship this.","blocking":[]}');
+  lines.push(`{"verdict":"ship","reviewer_lens":"${lens}","architectural_read":"This change adds a new Repository site for ScopedRequirementRepository.findActiveByWave; it reuses the existing scoped-query helper, matches the canonical pattern, and adds a @WebMvcTest controller slice that exercises both the happy path and the empty-result path. The seam is correct; no foreclosure of the obvious next variation (filtering by status range). I would ship this.","findings":[],"blocking":[]}`);
   lines.push("===END===");
   lines.push("```");
   lines.push("");
@@ -6118,10 +6157,13 @@ export function buildPrincipalEngineerRubric({ reviewerLabel, vocabulary = null,
   lines.push("===REVIEW===");
   lines.push("{");
   lines.push('  "verdict": "ship-with-fixes",');
+  lines.push(`  "reviewer_lens": "${lens}",`);
   lines.push('  "architectural_read": "The change wires a new GRC analysis path, but bypasses the canonical ErrorResponse envelope and rolls its own per-endpoint error shapes. The shape recurs at three sites in this diff; the fix is one place (use GlobalExceptionHandler) not three.",');
   if (findingExampleJson.trim() !== "") {
+    lines.push(`  "findings": [${findingExampleJson}],`);
     lines.push(`  "blocking": [${findingExampleJson}]`);
   } else {
+    lines.push('  "findings": [<reviewer-specific finding example>],');
     lines.push('  "blocking": [<reviewer-specific finding example>]');
   }
   lines.push("}");
@@ -6212,6 +6254,7 @@ export function evaluateCodexReviewCycleCap({
   if (typeof priorCount !== "number" || !Number.isFinite(priorCount) || priorCount < 0) {
     throw new Error(`evaluateCodexReviewCycleCap: priorCount must be a non-negative number, got ${priorCount}`);
   }
+  const effectiveCap = normalizeReviewHardCap(hardCap);
 
   if (overrideCap === true) {
     if (typeof overrideReason !== "string" || overrideReason.trim() === "") {
@@ -6223,48 +6266,43 @@ export function evaluateCodexReviewCycleCap({
           "Audits cannot distinguish legitimate overrides from accidental ones without a reason.",
         pr_number: prNumber,
         prior_cycles: priorCount,
-        cap: hardCap,
+        cap: effectiveCap,
+        configured_cap: hardCap,
       };
     }
     return {
       ok: true,
       nextCycle: priorCount + 1,
-      cap: hardCap,
+      cap: effectiveCap,
+      configured_cap: hardCap,
       override: true,
       override_reason: overrideReason.trim(),
-      next_action: "fix_findings_then_summarize_and_escalate",
+      next_action: "fix_findings_and_reinvoke",
     };
   }
 
-  if (priorCount >= hardCap) {
+  if (priorCount >= effectiveCap) {
     return {
       ok: false,
       error: "codex_review_cap_reached",
       message:
-        `gc_codex_review hard cap reached (${hardCap} cycles) for PR #${prNumber}. ` +
-        `Per GC-O007 / ADR-029, after cycle ${hardCap} you must (a) post a summary of findings + fixes ` +
-        `to the issue thread, then (b) escalate to the user and ask whether to run cycle ${hardCap + 1} ` +
-        `or ship as-is. Do not address findings by silently re-invoking codex. If the user authorizes ` +
-        `another cycle, retry with override_cap=true and override_reason="<their authorization>".`,
+        `gc_codex_review convergence cap reached (${effectiveCap} cycles) for PR #${prNumber}. ` +
+        `Record terminal escalation or retry only with override_cap=true and override_reason="<user authorization>".`,
       pr_number: prNumber,
       prior_cycles: priorCount,
-      cap: hardCap,
-      next_action: "post_summary_and_escalate_to_user",
+      cap: effectiveCap,
+      configured_cap: hardCap,
+      next_action: "record_terminal_escalation",
     };
   }
 
-  // Cycle 1 returns next_action that nudges toward "fix findings"; cycle 2
-  // returns the stronger nudge that includes the summarize-and-escalate
-  // discipline (the gap that #794 was specifically filed to close).
   const nextCycle = priorCount + 1;
   return {
     ok: true,
     nextCycle,
-    cap: hardCap,
-    next_action:
-      nextCycle === hardCap
-        ? "fix_all_findings_then_summarize_and_escalate"
-        : "fix_all_findings_and_push",
+    cap: effectiveCap,
+    configured_cap: hardCap,
+    next_action: "fix_findings_and_reinvoke",
   };
 }
 
@@ -6429,7 +6467,7 @@ export function buildCodexVerifyCycleMarker({ prNumber, commentId, cycleNumber, 
 // set `workflow.codex_review.pre_push_cap: 3` in `.ground-control.yaml`;
 // runCodexReview resolves that knob via `resolveReviewerPrePushCap` and
 // passes the effective cap to `evaluateCodexReviewPrePushCycleCap`'s `hardCap`.
-export const CODEX_REVIEW_PREPUSH_HARD_CAP = 1;
+export const CODEX_REVIEW_PREPUSH_HARD_CAP = 2;
 export const CODEX_REVIEW_PREPUSH_MARKER_PREFIX = "<!-- gc:codex-prepush-cycle";
 // Matches `<!-- gc:codex-prepush-cycle issue="N" branch="..." cycle="M" ... -->`.
 // `branch` is JSON-encoded so it can carry slashes and escaped quotes; the
@@ -6498,6 +6536,7 @@ export function evaluateCodexReviewPrePushCycleCap({
       `evaluateCodexReviewPrePushCycleCap: priorCount must be a non-negative number, got ${priorCount}`,
     );
   }
+  const effectiveCap = normalizeReviewHardCap(hardCap);
 
   if (overrideCap === true) {
     if (typeof overrideReason !== "string" || overrideReason.trim() === "") {
@@ -6510,35 +6549,35 @@ export function evaluateCodexReviewPrePushCycleCap({
         issue_number: issueNumber,
         branch: branchName,
         prior_cycles: priorCount,
-        cap: hardCap,
+        cap: effectiveCap,
+        configured_cap: hardCap,
       };
     }
     return {
       ok: true,
       nextCycle: priorCount + 1,
-      cap: hardCap,
+      cap: effectiveCap,
+      configured_cap: hardCap,
       override: true,
       override_reason: overrideReason.trim(),
-      next_action: "fix_findings_then_summarize_and_escalate",
+      next_action: "fix_findings_and_reinvoke",
     };
   }
 
-  if (priorCount >= hardCap) {
+  if (priorCount >= effectiveCap) {
     return {
       ok: false,
       error: "codex_review_prepush_cap_reached",
       message:
-        `gc_codex_review pre-push hard cap reached (${hardCap} cycles) for issue #${issueNumber} ` +
-        `on branch '${branchName}'. Per GC-O007 / ADR-029, after cycle ${hardCap} you must (a) post a ` +
-        `summary of findings + fixes to the issue thread, then (b) escalate to the user and ask whether ` +
-        `to run cycle ${hardCap + 1} or push as-is. Do not address findings by silently re-invoking ` +
-        `codex. If the user authorizes another cycle, retry with override_cap=true and ` +
-        `override_reason="<their authorization>".`,
+        `gc_codex_review pre-push convergence cap reached (${effectiveCap} cycles) for issue #${issueNumber} ` +
+        `on branch '${branchName}'. Record terminal escalation or retry only with override_cap=true and ` +
+        `override_reason="<user authorization>".`,
       issue_number: issueNumber,
       branch: branchName,
       prior_cycles: priorCount,
-      cap: hardCap,
-      next_action: "post_summary_and_escalate_to_user",
+      cap: effectiveCap,
+      configured_cap: hardCap,
+      next_action: "record_terminal_escalation",
     };
   }
 
@@ -6546,11 +6585,9 @@ export function evaluateCodexReviewPrePushCycleCap({
   return {
     ok: true,
     nextCycle,
-    cap: hardCap,
-    next_action:
-      nextCycle === hardCap
-        ? "fix_all_findings_then_summarize_and_escalate"
-        : "fix_all_findings_and_restage",
+    cap: effectiveCap,
+    configured_cap: hardCap,
+    next_action: "fix_findings_and_reinvoke",
   };
 }
 
@@ -6612,7 +6649,7 @@ export function buildCodexReviewPrePushCycleMarker({
 
 // Default test-quality cap, lowered from 3 → 1 by issue #906 alongside the
 // codex-review default. Override via `workflow.test_quality_review.pre_push_cap`.
-export const TEST_QUALITY_REVIEW_HARD_CAP = 1;
+export const TEST_QUALITY_REVIEW_HARD_CAP = 2;
 
 // Resolve the effective per-reviewer pre-push cap from `.ground-control.yaml`.
 // Falls back to `moduleDefault` ONLY for legitimate absence (missing file,
@@ -6710,6 +6747,7 @@ export function evaluateTestQualityReviewCycleCap({
       `evaluateTestQualityReviewCycleCap: priorCount must be a non-negative number, got ${priorCount}`,
     );
   }
+  const effectiveCap = normalizeReviewHardCap(hardCap);
 
   if (overrideCap === true) {
     if (typeof overrideReason !== "string" || overrideReason.trim() === "") {
@@ -6722,35 +6760,35 @@ export function evaluateTestQualityReviewCycleCap({
         issue_number: issueNumber,
         branch: branchName,
         prior_cycles: priorCount,
-        cap: hardCap,
+        cap: effectiveCap,
+        configured_cap: hardCap,
       };
     }
     return {
       ok: true,
       nextCycle: priorCount + 1,
-      cap: hardCap,
+      cap: effectiveCap,
+      configured_cap: hardCap,
       override: true,
       override_reason: overrideReason.trim(),
-      next_action: "fix_findings_then_summarize_and_escalate",
+      next_action: "fix_findings_and_reinvoke",
     };
   }
 
-  if (priorCount >= hardCap) {
+  if (priorCount >= effectiveCap) {
     return {
       ok: false,
       error: "test_quality_review_cap_reached",
       message:
-        `gc_test_quality_review hard cap reached (${hardCap} cycles) for issue #${issueNumber} ` +
-        `on branch '${branchName}'. Per ADR-029 / #884 follow-up, after cycle ${hardCap} you must ` +
-        `(a) post a summary of remaining findings + fix history to the issue thread, then (b) ` +
-        `escalate to the user and ask whether to run cycle ${hardCap + 1} or ship as-is. Do not ` +
-        `address findings by silently re-invoking the reviewer. If the user authorizes another ` +
-        `cycle, retry with override_cap=true and override_reason="<their authorization>".`,
+        `gc_test_quality_review convergence cap reached (${effectiveCap} cycles) for issue #${issueNumber} ` +
+        `on branch '${branchName}'. Record terminal escalation or retry only with override_cap=true and ` +
+        `override_reason="<user authorization>".`,
       issue_number: issueNumber,
       branch: branchName,
       prior_cycles: priorCount,
-      cap: hardCap,
-      next_action: "post_summary_and_escalate_to_user",
+      cap: effectiveCap,
+      configured_cap: hardCap,
+      next_action: "record_terminal_escalation",
     };
   }
 
@@ -6758,11 +6796,9 @@ export function evaluateTestQualityReviewCycleCap({
   return {
     ok: true,
     nextCycle,
-    cap: hardCap,
-    next_action:
-      nextCycle === hardCap
-        ? "fix_findings_then_summarize_and_escalate"
-        : "fix_findings_and_reinvoke",
+    cap: effectiveCap,
+    configured_cap: hardCap,
+    next_action: "fix_findings_and_reinvoke",
   };
 }
 
@@ -7004,9 +7040,11 @@ export function buildDiffBlock({ diffText, mode = "inline", manifest = null, bas
 // Codex finding field description shared by both core and security reviewers
 // (#931). The verdict envelope's `blocking` array contains items of this shape.
 const CODEX_FINDING_FIELDS_DESCRIPTION = [
+  '    `severity` — exactly "Minor", "Major", "Critical", or "Blocking". Critical/Blocking require independent cross-model confirmation before they control gating.',
   "    `path`   — repo-relative file path (string, no leading `/`, no `..` segments).",
   "    `line`   — line number in the new (RIGHT) side of the diff, as a positive integer. File-level comments are not yet supported; anchor every finding to a specific line in the diff.",
   "    `title`  — one-line summary, ≤200 characters, non-empty.",
+  "    `evidence` — one concise sentence tying the finding to the supplied requirement, contract, plan, ADR, gate result, or diff hunk.",
   "    `body`   — detailed explanation, ≤65322 characters, non-empty. Self-contained — do NOT reference 'see above'. Do NOT paste full file contents, secret values, or environment variables into the body.",
   '    `classification` — exactly "one-off" or "class".',
   "    `sweep_evidence` — REQUIRED when classification is \"one-off\". One-line statement of what you swept and what you did NOT find (e.g. \"grepped for `*Repository` calls across `backend/src/main` — 12 sites, all use the scoped helper; this site is the only bypass\"). Forbidden when classification is \"class\" (class findings document evidence via category.instances).",
@@ -7014,9 +7052,11 @@ const CODEX_FINDING_FIELDS_DESCRIPTION = [
   "    `structural_blocker` — optional boolean. Set to true on a one-off finding that warrants verdict=don't-ship (e.g. missing security boundary at a unique site). Implicit on class findings.",
 ].join("\n");
 
-const CODEX_CORE_FINDING_EXAMPLE = '{"path":"backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java","line":42,"title":"Bypasses canonical ErrorResponse envelope","body":"Returns ResponseEntity<String> with a hand-rolled JSON shape instead of routing through GlobalExceptionHandler + ErrorResponse. Three call-sites in this diff do the same — fix at GlobalExceptionHandler not site-by-site.","classification":"class","category":{"shape":"controller method returning ResponseEntity<String> for error cases instead of throwing through GlobalExceptionHandler","instances":["backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java:42","backend/src/main/java/com/keplerops/groundcontrol/api/bar/BarController.java:55","backend/src/main/java/com/keplerops/groundcontrol/api/baz/BazController.java:88"]}}';
+const CODEX_CORE_FINDING_EXAMPLE = '{"severity":"Major","path":"backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java","line":42,"title":"Bypasses canonical ErrorResponse envelope","evidence":"The diff adds three controller error responses outside GlobalExceptionHandler, contrary to the repo boundary contract.","body":"Returns ResponseEntity<String> with a hand-rolled JSON shape instead of routing through GlobalExceptionHandler + ErrorResponse. Three call-sites in this diff do the same — fix at GlobalExceptionHandler not site-by-site.","classification":"class","category":{"shape":"controller method returning ResponseEntity<String> for error cases instead of throwing through GlobalExceptionHandler","instances":["backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java:42","backend/src/main/java/com/keplerops/groundcontrol/api/bar/BarController.java:55","backend/src/main/java/com/keplerops/groundcontrol/api/baz/BazController.java:88"]}}';
 
-const CODEX_SECURITY_FINDING_EXAMPLE = '{"path":"deploy/scripts/sync.sh","line":99,"title":"Bearer token in curl argv","body":"Attacker model: other local users on the runner. Path: token is interpolated into curl -H argv; readable via /proc/<pid>/cmdline. Fix: pass through --config <(printf ...) or env-only header.","classification":"one-off","sweep_evidence":"grepped \\"curl -H\\" across deploy/scripts — 4 sites, 3 use --config; this site is the only one putting a secret in argv.","structural_blocker":true}';
+const CODEX_SECURITY_FINDING_EXAMPLE = '{"severity":"Critical","path":"deploy/scripts/sync.sh","line":99,"title":"Bearer token in curl argv","evidence":"The added curl command interpolates a bearer token into argv, exposing it through process listings on shared runners.","body":"Attacker model: other local users on the runner. Path: token is interpolated into curl -H argv; readable via /proc/<pid>/cmdline. Fix: pass through --config <(printf ...) or env-only header.","classification":"one-off","sweep_evidence":"grepped \\"curl -H\\" across deploy/scripts — 4 sites, 3 use --config; this site is the only one putting a secret in argv.","structural_blocker":true}';
+
+const CODEX_ARCHITECTURE_FINDING_EXAMPLE = '{"severity":"Major","path":"backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooService.java","line":73,"title":"Bypasses scoped repository boundary","evidence":"The diff adds a direct cross-project lookup instead of using the scoped repository helper required by the boundary contract.","body":"The service reaches across the project boundary with a raw repository call. The established service path routes through the scoped helper, which applies tenant/project constraints consistently. Fix by reusing the canonical helper rather than adding another local guard.","classification":"class","category":{"shape":"service method bypassing scoped repository helper for project-scoped reads","instances":["backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooService.java:73","backend/src/main/java/com/keplerops/groundcontrol/api/bar/BarService.java:118"]}}';
 
 export function buildCodexReviewCorePrompt({
   baseBranch,
@@ -7030,31 +7070,76 @@ export function buildCodexReviewCorePrompt({
   const lines = [
     buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode }),
     "",
-    "Review the code in this PR for production-readiness. The goal is principal-engineer JUDGMENT, not finding accumulation. Return `verdict: ship` when the change is shaped correctly — that is a valid outcome.",
+    "Review the code in this PR for correctness against the stated requirement, contract, implementation plan, and binding ADRs. The goal is principal-engineer JUDGMENT, not finding accumulation. Return `verdict: ship` when the change satisfies the obligations — that is a valid outcome.",
     "",
-    "A dedicated security reviewer runs against the same diff in parallel — do NOT spend effort on OWASP-style security findings here. If you notice something security-relevant, a one-line `note` is enough; the security reviewer will catch it.",
+    "A dedicated security reviewer and architecture reviewers run against the same diff in separate fresh contexts — do NOT spend effort on OWASP-style security findings or architectural preference calls here. If you notice one, a one-line `note` is enough; the matching lens will handle it.",
     "",
-    "Sub-section the core review along two axes — keep each axis short and ranked. The notes cap (≤2 total) forces ranking; do not pad.",
+    "Correctness anti-overcorrection discipline:",
+    "1. First extract the stated obligations from the requirement, contract, plan, and binding ADRs that are visible in the supplied artifacts.",
+    "2. Then audit the diff only against those obligations. Flag gaps in expected vs actual behavior; do not request unrelated improvements or speculative cleanups.",
+    "3. If no obligation is violated, return `verdict: ship`; clean is a valid outcome.",
     "",
-    "### Axis 1: Architecture-fit",
-    "- Does the change fit the repo's declared design vocabulary (see Repo vocabulary below)?",
-    "- Cross-cutting concerns and canonical helpers — does the change reuse the incumbents the repo already has, or re-implement them?",
-    "- Boundary contract — does the change respect the layering invariant?",
-    "- ADR alignment — does the change conflict with any binding ADR?",
-    "- This axis allows at most 1 non-blocking `note`.",
+    "Correctness audit scope:",
+    "- Expected vs actual behavior for every stated obligation.",
+    "- Edge cases explicitly implied by the requirement or plan.",
+    "- Data-shape and API-contract compatibility introduced by the diff.",
+    "- Runtime behavior that would make tests pass while the requirement is still unsatisfied.",
     "",
-    "### Axis 2: Code-quality",
-    "- Fitness for purpose, maintainability, extensibility — does the change solve the stated problem and leave room for the next obvious variation without speculative abstraction?",
-    "- Tests pin real behavior (not just shape).",
-    "- This axis allows at most 1 non-blocking `note`. The total notes cap across both axes is 2.",
+    "What NOT to flag:",
+    "- Style, naming, helper extraction, or architecture preference unless it causes a concrete behavioral obligation to fail.",
+    "- Existing issues unchanged by this diff.",
+    "- Test-strength issues unless they prove the implementation behavior is wrong.",
     "",
-    "Each axis emits findings into the SAME `blocking` array (when material) and the SAME `notes` array (when non-blocking). The axis is a thinking aid for YOU; the envelope is unified.",
+    "This lens allows at most 2 non-blocking `notes`; rank them and do not pad.",
     "",
     ...buildPrincipalEngineerRubric({
       reviewerLabel: "core",
+      reviewerLens: "correctness",
       vocabulary,
       findingFieldsDescription: CODEX_FINDING_FIELDS_DESCRIPTION,
       findingExampleJson: CODEX_CORE_FINDING_EXAMPLE,
+    }),
+    "",
+    ...buildDiffBlock({ diffText, mode: diffMode, manifest: diffManifest, baseRefDescriptor }),
+  ];
+  return lines.join("\n");
+}
+
+export function buildCodexArchitectureReviewPrompt({
+  baseBranch,
+  uncommitted,
+  diffText,
+  diffMode = "inline",
+  diffManifest = null,
+  baseRefDescriptor = null,
+  vocabulary = null,
+}) {
+  const lines = [
+    buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode }),
+    "",
+    "You are the architecture lens for this review. Focus only on architectural contract fit introduced by the diff: repo vocabulary, boundary contracts, binding ADRs, canonical helpers, layering, and cross-cutting concerns. Return `verdict: ship` when the change fits those contracts.",
+    "",
+    "Architecture audit scope:",
+    "- Does the change fit the repo's declared design vocabulary (see Repo vocabulary below)?",
+    "- Cross-cutting concerns and canonical helpers — does the change reuse the incumbents the repo already has, or re-implement them?",
+    "- Boundary contract — does the change respect layering and ownership invariants?",
+    "- ADR alignment — does the change conflict with any binding ADR or pre-declared plan constraint?",
+    "- Extensibility only where the stated requirement already implies the next variation; do not ask for speculative abstraction.",
+    "",
+    "What NOT to flag:",
+    "- Pure style, naming, file length, or helper extraction below the workflow anti-rubric threshold.",
+    "- Correctness bugs without architectural contract significance; the correctness lens owns those.",
+    "- Security bugs without architectural boundary significance; the security lens owns those.",
+    "- Static-analyzer categories already owned by repo-native gates unless the diff bypasses a binding architectural control.",
+    "",
+    "This lens allows at most 2 non-blocking `notes`; rank them and do not pad.",
+    "",
+    ...buildPrincipalEngineerRubric({
+      reviewerLabel: "architecture",
+      reviewerLens: "architecture",
+      vocabulary,
+      findingFieldsDescription: CODEX_FINDING_FIELDS_DESCRIPTION,
+      findingExampleJson: CODEX_ARCHITECTURE_FINDING_EXAMPLE,
     }),
     "",
     ...buildDiffBlock({ diffText, mode: diffMode, manifest: diffManifest, baseRefDescriptor }),
@@ -7099,6 +7184,7 @@ export function buildCodexSecurityReviewPrompt({
     "",
     ...buildPrincipalEngineerRubric({
       reviewerLabel: "security",
+      reviewerLens: "security",
       vocabulary,
       findingFieldsDescription: CODEX_FINDING_FIELDS_DESCRIPTION,
       findingExampleJson: CODEX_SECURITY_FINDING_EXAMPLE,
@@ -7264,6 +7350,367 @@ export function parseCodexReviewFindingsTail(stdout, repoRoot) {
   return { findings: envelope.blocking, body, envelope };
 }
 
+function normalizeReviewerLens(lens, fallback = "correctness") {
+  if (typeof lens === "string") {
+    const normalized = lens.trim().toLowerCase();
+    if (REVIEWER_LENS_SET.has(normalized)) return normalized;
+    if (normalized === "core") return "correctness";
+    if (normalized === "test_quality" || normalized === "test-quality" || normalized === "test-quality-review") return "test-strength";
+  }
+  if (typeof fallback === "string") {
+    const normalizedFallback = fallback.trim().toLowerCase();
+    if (REVIEWER_LENS_SET.has(normalizedFallback)) return normalizedFallback;
+    if (normalizedFallback === "core") return "correctness";
+    if (normalizedFallback === "test_quality" || normalizedFallback === "test-quality" || normalizedFallback === "test-quality-review") return "test-strength";
+  }
+  return "correctness";
+}
+
+export function normalizeReviewSeverity(severity) {
+  if (typeof severity !== "string" || severity.trim() === "") return "Major";
+  return REVIEW_SEVERITY_ALIASES.get(severity.trim().toLowerCase()) ?? "Major";
+}
+
+function lowerReviewSeverity(a, b) {
+  const left = normalizeReviewSeverity(a);
+  const right = normalizeReviewSeverity(b);
+  return REVIEW_SEVERITY_RANK.get(left) <= REVIEW_SEVERITY_RANK.get(right) ? left : right;
+}
+
+function normalizeSeverityOpinions(finding) {
+  const opinions = [];
+  const primary = normalizeReviewSeverity(finding?.severity);
+  opinions.push({
+    source: typeof finding?.reviewer_lens === "string" ? finding.reviewer_lens : "primary",
+    severity: primary,
+    confirmed: true,
+  });
+  const rawOpinions = Array.isArray(finding?.severity_opinions) ? finding.severity_opinions : [];
+  for (const opinion of rawOpinions) {
+    if (!opinion || typeof opinion !== "object") continue;
+    opinions.push({
+      source: typeof opinion.source === "string" && opinion.source.trim() !== "" ? opinion.source.trim() : "reviewer",
+      severity: normalizeReviewSeverity(opinion.severity),
+      confirmed: opinion.confirmed === true,
+    });
+  }
+  const confirmations = Array.isArray(finding?.confirmations) ? finding.confirmations : [];
+  for (const confirmation of confirmations) {
+    if (!confirmation || typeof confirmation !== "object") continue;
+    opinions.push({
+      source: typeof confirmation.reviewer === "string" && confirmation.reviewer.trim() !== ""
+        ? confirmation.reviewer.trim()
+        : "cross-model",
+      severity: normalizeReviewSeverity(confirmation.severity ?? finding?.severity),
+      confirmed: confirmation.confirmed !== false,
+    });
+  }
+  return opinions;
+}
+
+function normalizeReviewFinding(finding, lens, idx) {
+  const classification = finding?.classification === "class" ? "class" : "one-off";
+  const severityOpinions = normalizeSeverityOpinions({ ...finding, reviewer_lens: lens });
+  let effectiveSeverity = severityOpinions[0]?.severity ?? "Major";
+  for (const opinion of severityOpinions.slice(1)) {
+    effectiveSeverity = lowerReviewSeverity(effectiveSeverity, opinion.severity);
+  }
+  const primarySeverity = normalizeReviewSeverity(finding?.severity);
+  const needsConfirmation = primarySeverity === "Critical" || primarySeverity === "Blocking";
+  const confirmedByIndependentModel =
+    !needsConfirmation ||
+    severityOpinions.some((opinion) => opinion.confirmed === true && opinion.source !== lens && opinion.source !== "primary");
+  const path = typeof finding?.path === "string" && finding.path.trim() !== "" ? finding.path.trim() : null;
+  const line = Number.isInteger(finding?.line) && finding.line > 0 ? finding.line : null;
+  const location =
+    typeof finding?.location === "string" && finding.location.trim() !== ""
+      ? finding.location.trim()
+      : path
+        ? line != null ? `${path}:${line}` : path
+        : "(unlocated)";
+  return {
+    id: typeof finding?.id === "string" && finding.id.trim() !== "" ? finding.id.trim() : `${lens}-${idx + 1}`,
+    reviewer_lens: lens,
+    severity: primarySeverity,
+    effective_severity: effectiveSeverity,
+    severity_opinions: severityOpinions,
+    location,
+    title:
+      typeof finding?.title === "string" && finding.title.trim() !== ""
+        ? finding.title.trim()
+        : typeof finding?.problem === "string" && finding.problem.trim() !== ""
+          ? finding.problem.trim()
+          : "(no title)",
+    evidence:
+      typeof finding?.evidence === "string" && finding.evidence.trim() !== ""
+        ? finding.evidence.trim()
+        : typeof finding?.body === "string" && finding.body.trim() !== ""
+          ? finding.body.trim()
+          : typeof finding?.why_it_matters === "string" && finding.why_it_matters.trim() !== ""
+            ? finding.why_it_matters.trim()
+            : "",
+    classification,
+    sweep:
+      typeof finding?.sweep === "string" && finding.sweep.trim() !== ""
+        ? finding.sweep.trim()
+        : typeof finding?.sweep_evidence === "string" && finding.sweep_evidence.trim() !== ""
+          ? finding.sweep_evidence.trim()
+          : null,
+    category: finding?.category && typeof finding.category === "object" ? finding.category : null,
+    disposition: typeof finding?.disposition === "string" ? finding.disposition : "unresolved",
+    confirmation_required: needsConfirmation,
+    confirmation_satisfied: confirmedByIndependentModel,
+  };
+}
+
+function normalizeLensEnvelope(envelope, fallbackLens = "correctness") {
+  const lens = normalizeReviewerLens(envelope?.reviewer_lens, fallbackLens);
+  const verdict = REVIEW_VERDICTS.includes(envelope?.verdict) ? envelope.verdict : "ship-with-fixes";
+  const rawFindings = Array.isArray(envelope?.findings)
+    ? envelope.findings
+    : Array.isArray(envelope?.blocking)
+      ? envelope.blocking
+      : [];
+  const findings = rawFindings.map((finding, idx) => normalizeReviewFinding(finding, lens, idx));
+  const blocking = Array.isArray(envelope?.blocking) && envelope.blocking.length > 0
+    ? envelope.blocking.map((finding, idx) => normalizeReviewFinding(finding, lens, idx))
+    : findings.filter((finding) => finding.disposition === "unresolved");
+  return {
+    verdict,
+    reviewer_lens: lens,
+    architectural_read:
+      typeof envelope?.architectural_read === "string" && envelope.architectural_read.trim() !== ""
+        ? envelope.architectural_read.trim()
+        : typeof envelope?.summary === "string"
+          ? envelope.summary.trim()
+          : "",
+    findings,
+    blocking,
+    notes: Array.isArray(envelope?.notes) ? envelope.notes : [],
+  };
+}
+
+function normalizeGateResults(gateResults) {
+  if (Array.isArray(gateResults)) return gateResults;
+  if (Array.isArray(gateResults?.gates)) return gateResults.gates;
+  return [];
+}
+
+function summarizeSeverityCounts(findings) {
+  const counts = Object.fromEntries(REVIEW_SEVERITIES.map((severity) => [severity, 0]));
+  for (const finding of findings) {
+    counts[finding.effective_severity] = (counts[finding.effective_severity] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function categoryKey(finding) {
+  if (finding.classification !== "class") return null;
+  if (finding.category && typeof finding.category.shape === "string" && finding.category.shape.trim() !== "") {
+    return finding.category.shape.trim();
+  }
+  return finding.title;
+}
+
+export function buildReviewConvergenceDecisionAid({
+  currentCycle,
+  cap,
+  findings,
+  gateResults,
+  providerMissingFallbacks,
+  blockingGateFailures,
+  unconfirmedCriticalOrBlocking,
+  cycleHistory = [],
+}) {
+  const previous = Array.isArray(cycleHistory) && cycleHistory.length > 0
+    ? cycleHistory[cycleHistory.length - 1]
+    : null;
+  const currentSeverityCounts = summarizeSeverityCounts(findings);
+  const previousSeverityCounts = previous && Array.isArray(previous.findings)
+    ? summarizeSeverityCounts(previous.findings.map((finding, idx) => normalizeReviewFinding(finding, finding.reviewer_lens ?? "correctness", idx)))
+    : null;
+  const currentCategories = new Set(findings.map(categoryKey).filter(Boolean));
+  const previousCategories = new Set(
+    previous && Array.isArray(previous.findings)
+      ? previous.findings.map(categoryKey).filter(Boolean)
+      : [],
+  );
+  const newCategories = [...currentCategories].filter((category) => !previousCategories.has(category));
+  const unresolved = findings.map((finding) => ({
+    id: finding.id,
+    reviewer_lens: finding.reviewer_lens,
+    severity: finding.severity,
+    effective_severity: finding.effective_severity,
+    location: finding.location,
+    title: finding.title,
+    classification: finding.classification,
+    confirmation_required: finding.confirmation_required,
+    confirmation_satisfied: finding.confirmation_satisfied,
+  }));
+  return {
+    cycle: currentCycle,
+    cap,
+    cycle_history: Array.isArray(cycleHistory) ? cycleHistory : [],
+    unresolved_findings: unresolved,
+    severity_trend: {
+      current: currentSeverityCounts,
+      previous: previousSeverityCounts,
+      delta: previousSeverityCounts
+        ? Object.fromEntries(REVIEW_SEVERITIES.map((severity) => [
+            severity,
+            currentSeverityCounts[severity] - previousSeverityCounts[severity],
+          ]))
+        : null,
+    },
+    new_categories: newCategories,
+    confirmation_status: {
+      unconfirmed_critical_or_blocking: unconfirmedCriticalOrBlocking.map((finding) => ({
+        id: finding.id,
+        reviewer_lens: finding.reviewer_lens,
+        severity: finding.severity,
+        location: finding.location,
+        title: finding.title,
+      })),
+    },
+    gate_results: gateResults.map((gate) => ({
+      gate_id: gate.gate_id ?? gate.id ?? null,
+      capability: gate.capability ?? null,
+      outcome: gate.outcome ?? null,
+      blocking: gate.blocking === true,
+      ok: gate.ok === true,
+      provider_missing: gate.provider_missing === true,
+      reviewer_fallback_used: gate.reviewer_fallback_used === true,
+      threshold: gate.threshold ?? null,
+    })),
+    provider_missing_fallbacks: providerMissingFallbacks.map((gate) => ({
+      gate_id: gate.gate_id ?? gate.id ?? null,
+      capability: gate.capability ?? null,
+      fallback: gate.fallback ?? "reviewer_lens",
+    })),
+    projected_value_of_another_cycle:
+      findings.length === 0 && blockingGateFailures.length === 0
+        ? "low: no unresolved reviewer findings or blocking gate failures remain"
+        : newCategories.length > 0
+          ? "medium: new categories appeared in the latest cycle; another cycle may find adjacent instances after fixes"
+          : "low-to-medium: remaining work is known; fix the listed items before considering another review cycle",
+    recommended_next_action:
+      findings.length === 0 && blockingGateFailures.length === 0
+        ? "advance_to_next_phase"
+        : "owner_decision_required",
+  };
+}
+
+export function dispatchReviewConvergence({
+  lensEnvelopes = [],
+  gateResults = [],
+  priorCycles = 0,
+  currentCycle = null,
+  cap = 2,
+  exitGates = {},
+  cycleHistory = [],
+  terminalEscalationRecorded = false,
+} = {}) {
+  const effectiveCap = normalizeReviewHardCap(cap);
+  const cycle = Number.isInteger(currentCycle) && currentCycle > 0 ? currentCycle : priorCycles + 1;
+  const lenses = (Array.isArray(lensEnvelopes) ? lensEnvelopes : [])
+    .map((envelope, idx) => normalizeLensEnvelope(envelope, REVIEWER_LENSES[idx] ?? "correctness"));
+  const findings = lenses.flatMap((lens) => lens.blocking.length > 0 ? lens.blocking : lens.findings);
+  const gates = normalizeGateResults(gateResults);
+  const blockingGateFailures = gates.filter((gate) => gate?.blocking === true && gate?.blocking_satisfied !== true && gate?.ok !== true);
+  const providerMissing = gates.filter((gate) => gate?.provider_missing === true);
+  const providerMissingWithoutFallback = providerMissing.filter((gate) =>
+    gate?.blocking === true && gate?.reviewer_fallback_used !== true && gate?.ok !== true
+  );
+  const providerMissingFallbacks = providerMissing.filter((gate) => gate?.reviewer_fallback_used === true);
+  const unconfirmedCriticalOrBlocking = findings.filter((finding) =>
+    finding.confirmation_required === true && finding.confirmation_satisfied !== true
+  );
+  const hasClassFindings = findings.some((finding) => finding.classification === "class");
+  const severityCounts = summarizeSeverityCounts(findings);
+  const maxCritical = Number.isInteger(exitGates.max_critical) ? exitGates.max_critical : 0;
+  const maxBlocking = Number.isInteger(exitGates.max_blocking) ? exitGates.max_blocking : 0;
+  const exitGateFailures = [];
+  if ((severityCounts.Blocking ?? 0) > maxBlocking) exitGateFailures.push("max_blocking");
+  if ((severityCounts.Critical ?? 0) > maxCritical) exitGateFailures.push("max_critical");
+  if (hasClassFindings) exitGateFailures.push("no_unresolved_class_findings");
+  if (unconfirmedCriticalOrBlocking.length > 0) exitGateFailures.push("no_unconfirmed_critical_or_blocking");
+  if (blockingGateFailures.length > 0 || providerMissingWithoutFallback.length > 0) exitGateFailures.push("blocking_gates_satisfied");
+
+  const dirty =
+    lenses.some((lens) => lens.verdict !== "ship") ||
+    findings.length > 0 ||
+    blockingGateFailures.length > 0 ||
+    providerMissingWithoutFallback.length > 0 ||
+    exitGateFailures.length > 0;
+
+  const base = {
+    ok: true,
+    dispatcher: "review_convergence_v1",
+    cycle,
+    cap: effectiveCap,
+    configured_cap: cap,
+    lenses,
+    findings,
+    severity_counts: severityCounts,
+    gate_summary: {
+      total: gates.length,
+      blocking_failures: blockingGateFailures.length,
+      provider_missing: providerMissing.length,
+      reviewer_fallback_used: providerMissingFallbacks.length,
+    },
+    provider_missing_fallbacks: providerMissingFallbacks,
+    exit_gate_failures: [...new Set(exitGateFailures)],
+    unconfirmed_critical_or_blocking: unconfirmedCriticalOrBlocking,
+    degraded: providerMissingFallbacks.length > 0,
+  };
+
+  if (terminalEscalationRecorded === true) {
+    return {
+      ...base,
+      next_action: "record_terminal_escalation",
+      terminal: true,
+    };
+  }
+
+  if (!dirty) {
+    return {
+      ...base,
+      next_action: "advance_to_next_phase",
+      clean: true,
+      early_stop_allowed: true,
+    };
+  }
+
+  const decisionAid = buildReviewConvergenceDecisionAid({
+    currentCycle: cycle,
+    cap: effectiveCap,
+    findings,
+    gateResults: gates,
+    providerMissingFallbacks,
+    blockingGateFailures,
+    unconfirmedCriticalOrBlocking,
+    cycleHistory,
+  });
+
+  if (cycle >= effectiveCap) {
+    return {
+      ...base,
+      next_action: "post_structured_decision_aid_and_escalate",
+      clean: false,
+      early_stop_allowed: false,
+      decision_aid: decisionAid,
+    };
+  }
+
+  return {
+    ...base,
+    next_action: "fix_findings_and_reinvoke",
+    clean: false,
+    early_stop_allowed: false,
+    decision_aid: decisionAid,
+  };
+}
+
 // Validate the verdict envelope returned by both core and security reviewers
 // (issue #931). Returns the normalized envelope; throws on any shape violation.
 //
@@ -7369,7 +7816,9 @@ export function validateReviewEnvelope(raw, repoRoot) {
   if (errs.length) throw new Error(errs[0]);
   return {
     verdict: raw.verdict,
+    reviewer_lens: normalizeReviewerLens(raw.reviewer_lens, "correctness"),
     architectural_read: raw.architectural_read.trim(),
+    findings: blocking,
     blocking,
     notes,
   };
@@ -7527,12 +7976,20 @@ function validateFinding(raw, idx, repoRoot) {
   const finding = {
     path,
     line,
+    severity: normalizeReviewSeverity(raw.severity),
     title: truncateReviewProse(raw.title, FINDING_TITLE_MAX),
     body: truncateReviewProse(raw.body, FINDING_BODY_MAX),
+    evidence:
+      typeof raw.evidence === "string" && raw.evidence.trim() !== ""
+        ? truncateReviewProse(raw.evidence.trim(), FINDING_BODY_MAX)
+        : truncateReviewProse(raw.body, FINDING_BODY_MAX),
     classification: raw.classification,
   };
+  if (Array.isArray(raw.severity_opinions)) finding.severity_opinions = raw.severity_opinions;
+  if (Array.isArray(raw.confirmations)) finding.confirmations = raw.confirmations;
   if (category !== null) finding.category = category;
   if (sweepEvidence !== null) finding.sweep_evidence = sweepEvidence;
+  if (sweepEvidence !== null) finding.sweep = sweepEvidence;
   if (structuralBlocker) finding.structural_blocker = true;
   return finding;
 }
@@ -8282,12 +8739,12 @@ async function runSingleCodexReview({ repoRoot, prompt, signal = undefined }) {
   }
 }
 
-// Default for whether to run the two reviewers in parallel. Sequential is the
-// default because two concurrent codex processes contend for CPU, file
+// Default for whether to run Codex reviewers in parallel. Sequential is the
+// default because concurrent codex processes contend for CPU, file
 // descriptors, and provider rate limits — and on a single-machine workflow
 // the wall-clock difference is small. Set GC_CODEX_REVIEW_PARALLEL=2 to
-// re-enable the old parallel behavior. Values other than 1 or 2 fall back to
-// 1 (sequential).
+// enable reviewer parallelism. Values other than 1 or 2 fall back to 1
+// (sequential).
 export const DEFAULT_CODEX_REVIEW_PARALLEL = (() => {
   const raw = Number.parseInt(process.env.GC_CODEX_REVIEW_PARALLEL || "", 10);
   return raw === 2 ? 2 : 1;
@@ -8334,13 +8791,14 @@ export const TEST_QUALITY_REVIEW_SCHEMA = {
   type: "object",
   properties: {
     verdict: { type: "string", enum: ["ship", "ship-with-fixes", "don't-ship"] },
+    reviewer_lens: { type: "string", enum: ["test-strength"] },
     architectural_read: { type: "string", minLength: 1 },
     blocking: {
       type: "array",
       items: {
         type: "object",
         properties: {
-          severity: { type: "string", enum: ["critical", "warning"] },
+          severity: { type: "string", enum: ["Minor", "Major", "Critical", "Blocking", "minor", "major", "critical", "blocking", "warning"] },
           location: { type: "string", minLength: 1 },
           problem: { type: "string", minLength: 1 },
           why_it_matters: { type: "string" },
@@ -8357,6 +8815,31 @@ export const TEST_QUALITY_REVIEW_SCHEMA = {
             additionalProperties: false,
           },
           structural_blocker: { type: "boolean" },
+          severity_opinions: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                source: { type: "string" },
+                severity: { type: "string", enum: ["Minor", "Major", "Critical", "Blocking", "minor", "major", "critical", "blocking", "warning"] },
+                confirmed: { type: "boolean" },
+              },
+              required: ["severity"],
+              additionalProperties: false,
+            },
+          },
+          confirmations: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                reviewer: { type: "string" },
+                severity: { type: "string", enum: ["Minor", "Major", "Critical", "Blocking", "minor", "major", "critical", "blocking", "warning"] },
+                confirmed: { type: "boolean" },
+              },
+              additionalProperties: false,
+            },
+          },
         },
         required: ["severity", "location", "problem", "fix", "classification"],
         additionalProperties: false,
@@ -8397,7 +8880,7 @@ export const TEST_QUALITY_REVIEW_TIMEOUT_MS = 600_000;
 // why_it_matters / fix) and findings carry classification + sweep_evidence +
 // category alongside.
 const TEST_QUALITY_FINDING_FIELDS_DESCRIPTION = [
-  '    `severity`        — exactly "critical" or "warning".',
+  '    `severity`        — "Critical" for false-assurance tests that can miss a broken public contract; "Minor" for lower-risk warnings. Lowercase "critical"/"warning" is accepted for compatibility.',
   "    `location`        — `<file>::<TestClass>::<test_method>` OR `<file>:<line>`.",
   "    `problem`         — what's wrong (non-empty).",
   "    `why_it_matters`  — what regression this test would miss (optional but recommended).",
@@ -8408,7 +8891,7 @@ const TEST_QUALITY_FINDING_FIELDS_DESCRIPTION = [
   "    `structural_blocker` — optional boolean. Set on a one-off that warrants verdict=don't-ship.",
 ].join("\n");
 
-const TEST_QUALITY_FINDING_EXAMPLE = '{"severity":"critical","location":"backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FooServiceTest.java::FooServiceTest::createFoo_returns_the_new_foo","problem":"Test calls fooService.create(...) but only verifies that the mock fooRepository.save was called. No assertion on the returned Foo.","why_it_matters":"Refactoring FooService.create to return null would still pass this test.","fix":"Assert on the returned Foo (id, name, status) after calling create().","classification":"class","category":{"shape":"@Test method that only verifies a mock interaction without asserting on the SUT\'s return value or state change","instances":["backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FooServiceTest.java:42","backend/src/test/java/com/keplerops/groundcontrol/unit/domain/BarServiceTest.java:55"]}}';
+const TEST_QUALITY_FINDING_EXAMPLE = '{"severity":"Critical","location":"backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FooServiceTest.java::FooServiceTest::createFoo_returns_the_new_foo","problem":"Test calls fooService.create(...) but only verifies that the mock fooRepository.save was called. No assertion on the returned Foo.","why_it_matters":"Refactoring FooService.create to return null would still pass this test.","fix":"Assert on the returned Foo (id, name, status) after calling create().","classification":"class","category":{"shape":"@Test method that only verifies a mock interaction without asserting on the SUT\'s return value or state change","instances":["backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FooServiceTest.java:42","backend/src/test/java/com/keplerops/groundcontrol/unit/domain/BarServiceTest.java:55"]}}';
 
 export function buildTestQualityReviewPrompt({
   baseBranch,
@@ -8463,6 +8946,7 @@ export function buildTestQualityReviewPrompt({
     "",
     ...buildPrincipalEngineerRubric({
       reviewerLabel: "test-quality",
+      reviewerLens: "test-strength",
       vocabulary,
       findingFieldsDescription: TEST_QUALITY_FINDING_FIELDS_DESCRIPTION,
       findingExampleJson: TEST_QUALITY_FINDING_EXAMPLE,
@@ -8579,7 +9063,9 @@ export function parseTestQualityReviewEnvelope(stdout) {
 
   return {
     verdict: payload.verdict,
+    reviewer_lens: normalizeReviewerLens(payload.reviewer_lens, "test-strength"),
     architectural_read: payload.architectural_read.trim(),
+    findings: blocking,
     blocking,
     notes,
   };
@@ -8590,9 +9076,9 @@ function validateTestQualityFinding(raw, i) {
     throw new Error(`test-quality review blocking[${i}] is not an object`);
   }
   const { severity, location, problem, why_it_matters, fix, classification } = raw;
-  if (severity !== "critical" && severity !== "warning") {
+  if (!REVIEW_SEVERITY_ALIASES.has(String(severity ?? "").trim().toLowerCase())) {
     throw new Error(
-      `test-quality review blocking[${i}].severity must be 'critical' or 'warning', got ${JSON.stringify(severity)}`,
+      `test-quality review blocking[${i}].severity must be one of ${REVIEW_SEVERITIES.join(", ")} (or legacy 'critical'/'warning'), got ${JSON.stringify(severity)}`,
     );
   }
   if (typeof location !== "string" || location.trim() === "") {
@@ -8670,16 +9156,21 @@ function validateTestQualityFinding(raw, i) {
   }
 
   const finding = {
-    severity,
+    severity: normalizeReviewSeverity(severity),
     location: location.trim(),
     problem: problem.trim(),
+    title: problem.trim(),
+    evidence: typeof why_it_matters === "string" && why_it_matters.trim() !== "" ? why_it_matters.trim() : problem.trim(),
     why_it_matters: typeof why_it_matters === "string" ? why_it_matters.trim() : "",
     fix: fix.trim(),
     classification,
   };
+  if (Array.isArray(raw.severity_opinions)) finding.severity_opinions = raw.severity_opinions;
+  if (Array.isArray(raw.confirmations)) finding.confirmations = raw.confirmations;
   if (category !== null) finding.category = category;
   if (raw.sweep_evidence != null && classification === "one-off") {
     finding.sweep_evidence = truncateReviewProse(raw.sweep_evidence.trim(), FINDING_SWEEP_EVIDENCE_MAX);
+    finding.sweep = finding.sweep_evidence;
   }
   if (structuralBlocker) finding.structural_blocker = true;
   return finding;
@@ -8897,6 +9388,7 @@ export async function runTestQualityReview({
   baseBranch = null,
   issueNumber = null,
   prNumber = null,
+  gateResults = [],
   overrideCap = false,
   overrideReason = null,
   model = TEST_QUALITY_REVIEW_DEFAULT_MODEL,
@@ -9025,12 +9517,27 @@ export async function runTestQualityReview({
     includeUncommitted: true,
   });
   if (changedTestFiles.length === 0) {
+    const dispatch = dispatchReviewConvergence({
+      lensEnvelopes: [{
+        verdict: "ship",
+        reviewer_lens: "test-strength",
+        architectural_read: "No changed test files; test-strength lens has no reviewable test diff.",
+        findings: [],
+        blocking: [],
+        notes: [],
+      }],
+      gateResults,
+      priorCycles: priorCount,
+      currentCycle: decision.nextCycle,
+      cap: decision.cap,
+    });
     // Still record a cycle so the cap counts correctly. Preserve override
     // metadata in both the marker and the envelope so an authorized
     // cycle 4 with no changed tests still leaves a durable audit trail.
     const recordBody = buildTestQualityReviewFindingsComment({
       cycleNumber: decision.nextCycle,
       cap: decision.cap,
+      configuredCap: decision.configured_cap ?? decision.cap,
       issueNumber: effectiveIssue,
       branch: branchName,
       findings: [],
@@ -9046,7 +9553,7 @@ export async function runTestQualityReview({
       override: decision.override === true,
       overrideReason: decision.override_reason ?? null,
       recordBody,
-      hardCap: effectiveCap,
+      hardCap: decision.cap,
     });
     if (!markerWriteResult.ok) return markerWriteResult.envelope;
     return {
@@ -9056,9 +9563,11 @@ export async function runTestQualityReview({
       pr_number: prNumber,
       cycle: decision.nextCycle,
       cap: decision.cap,
+      configured_cap: decision.configured_cap ?? decision.cap,
       finding_count: 0,
       findings: [],
-      next_action: "post_clean_decision_record_and_advance_to_phase_c",
+      next_action: dispatch.next_action,
+      dispatcher: dispatch,
       findings_comment_url: markerWriteResult.recordUrl,
       changed_test_files: [],
       override: decision.override === true,
@@ -9114,6 +9623,13 @@ export async function runTestQualityReview({
   }
 
   const findings = parsed.findings;
+  const dispatch = dispatchReviewConvergence({
+    lensEnvelopes: [parsed.envelope],
+    gateResults,
+    priorCycles: priorCount,
+    currentCycle: decision.nextCycle,
+    cap: decision.cap,
+  });
 
   // Disarm caller-controlled fields against reserved marker injection
   // (codex cycle-3 security finding F10: prompt-injected test files
@@ -9170,14 +9686,9 @@ export async function runTestQualityReview({
     recordBody,
     findingCount: findings.length,
     findings,
-    hardCap: effectiveCap,
+    hardCap: decision.cap,
   });
   if (!markerWriteResult.ok) return markerWriteResult.envelope;
-
-  const nextAction =
-    findings.length === 0
-      ? "post_clean_decision_record_and_advance_to_phase_c"
-      : decision.next_action;
 
   return {
     ok: true,
@@ -9186,10 +9697,12 @@ export async function runTestQualityReview({
     pr_number: prNumber,
     cycle: decision.nextCycle,
     cap: decision.cap,
+    configured_cap: decision.configured_cap ?? decision.cap,
     finding_count: findings.length,
     findings,
     architectural_read: parsed.envelope?.architectural_read,
-    next_action: nextAction,
+    next_action: dispatch.next_action,
+    dispatcher: dispatch,
     findings_comment_url: markerWriteResult.recordUrl,
     changed_test_files: changedTestFiles,
     override: decision.override === true,
@@ -9427,6 +9940,7 @@ export async function runCodexReview({
   uncommitted = false,
   prNumber = null,
   issueNumber = null,
+  gateResults = [],
   overrideCap = false,
   overrideReason = null,
   overridePhaseGate = false,
@@ -9572,11 +10086,12 @@ export async function runCodexReview({
       branchName,
       cycleNumber: decision.nextCycle,
       cap: decision.cap,
+      configuredCap: decision.configured_cap ?? decision.cap,
       // Effective cap also held separately so the deferred marker write at
       // the end of the run uses the same value the decision was made against
       // (issue #906). decision.cap is the resolved value; we mirror it here
       // to avoid re-reading cfg later.
-      hardCap: effectivePrePushCap,
+      hardCap: decision.cap,
       nextAction: decision.next_action ?? null,
       override: decision.override === true,
       overrideReason: decision.override_reason ?? null,
@@ -9677,6 +10192,7 @@ export async function runCodexReview({
       prNumber: effectivePr,
       cycleNumber: decision.nextCycle,
       cap: decision.cap,
+      configuredCap: decision.configured_cap ?? decision.cap,
       nextAction: decision.next_action ?? null,
       override: decision.override === true,
       overrideReason: decision.override_reason ?? null,
@@ -9708,18 +10224,22 @@ export async function runCodexReview({
   };
   const corePrompt = buildCodexReviewCorePrompt(promptArgs);
   const securityPrompt = buildCodexSecurityReviewPrompt(promptArgs);
+  const architecturePrompt = buildCodexArchitectureReviewPrompt(promptArgs);
 
   let coreOutput;
   let securityOutput;
+  let architectureOutput;
   try {
     if (DEFAULT_CODEX_REVIEW_PARALLEL === 2) {
-      [coreOutput, securityOutput] = await Promise.all([
+      [coreOutput, securityOutput, architectureOutput] = await Promise.all([
         runSingleCodexReview({ repoRoot, prompt: corePrompt, signal }),
         runSingleCodexReview({ repoRoot, prompt: securityPrompt, signal }),
+        runSingleCodexReview({ repoRoot, prompt: architecturePrompt, signal }),
       ]);
     } else {
       coreOutput = await runSingleCodexReview({ repoRoot, prompt: corePrompt, signal });
       securityOutput = await runSingleCodexReview({ repoRoot, prompt: securityPrompt, signal });
+      architectureOutput = await runSingleCodexReview({ repoRoot, prompt: architecturePrompt, signal });
     }
   } catch (error) {
     throw new Error(`Codex review failed: ${formatCommandFailure("codex", error)}`);
@@ -9733,6 +10253,7 @@ export async function runCodexReview({
   const parseErrors = [];
   const core = parseReviewerTailSafely(coreOutput, repoRoot, "core", parseErrors);
   const security = parseReviewerTailSafely(securityOutput, repoRoot, "security", parseErrors);
+  const architecture = parseReviewerTailSafely(architectureOutput, repoRoot, "architecture", parseErrors);
 
   // Resolve owner/name once if any posting could happen. The pre-push and
   // gate paths above also resolved owner/name; cycleOwnership/prePushOwnership
@@ -9741,7 +10262,7 @@ export async function runCodexReview({
   let owner = cycleOwnership?.owner ?? prePushOwnership?.owner ?? null;
   let name = cycleOwnership?.name ?? prePushOwnership?.name ?? null;
   const willPost =
-    effectivePr != null && (core.findings.length > 0 || security.findings.length > 0);
+    effectivePr != null && (core.findings.length > 0 || security.findings.length > 0 || architecture.findings.length > 0);
   if (willPost && (owner == null || name == null)) {
     ({ owner, name } = await getOwnerRepo(repoRoot));
   }
@@ -9766,10 +10287,19 @@ export async function runCodexReview({
     reviewerLabel: "security",
     findings: security.findings,
   });
+  const architecturePostResults = await postCodexReviewFindings({
+    repoRoot,
+    owner,
+    name,
+    prNumber: effectivePr,
+    reviewerLabel: "architecture",
+    findings: architecture.findings,
+  });
 
   const postFailures = collectPostFailures([
     { reviewer: "core", results: corePostResults },
     { reviewer: "security", results: securityPostResults },
+    { reviewer: "architecture", results: architecturePostResults },
   ]);
 
   // Build the agent-facing comments list from the SUCCESSFUL POSTs. Codex's
@@ -9794,8 +10324,17 @@ export async function runCodexReview({
     findings: security.findings,
     reviewer: "security",
   });
+  const architectureComments = await buildReviewerCommentsList({
+    repoRoot,
+    owner,
+    name,
+    prNumber: effectivePr,
+    postResults: architecturePostResults,
+    findings: architecture.findings,
+    reviewer: "architecture",
+  });
 
-  const comments = dedupFindings([...coreComments, ...securityComments]);
+  const comments = dedupFindings([...coreComments, ...securityComments, ...architectureComments]);
 
   // Compute partialFailure here (used to shape the final response). A run
   // with parse_errors or post_failures is NOT a completed review — the
@@ -9809,7 +10348,8 @@ export async function runCodexReview({
   // a gap flagged in #793 post-push review cycle 2).
   const successfulPostCount =
     corePostResults.filter((r) => r.ok).length +
-    securityPostResults.filter((r) => r.ok).length;
+    securityPostResults.filter((r) => r.ok).length +
+    architecturePostResults.filter((r) => r.ok).length;
   const cycleConsumed = successfulPostCount > 0 || !partialFailure;
 
   const cycleSource = cycleOwnership ?? prePushOwnership ?? null;
@@ -9845,6 +10385,7 @@ export async function runCodexReview({
         branch: prePushOwnership ? prePushOwnership.branchName : null,
         coreReviewText: renderReviewerEnvelope(core),
         securityReviewText: renderReviewerEnvelope(security),
+        architectureReviewText: renderReviewerEnvelope(architecture),
         postedComments: comments,
       });
       // #804 review-cycle-1 finding 2: route the rendered body through the
@@ -9874,6 +10415,7 @@ export async function runCodexReview({
             parseErrors,
             core,
             security,
+            architecture,
           });
         }
       }
@@ -9913,6 +10455,7 @@ export async function runCodexReview({
           parseErrors,
           core,
           security,
+          architecture,
         });
       }
     }
@@ -9985,22 +10528,21 @@ export async function runCodexReview({
         parse_errors: parseErrors,
         core_review_text: core.body,
         security_review_text: security.body,
+        architecture_review_text: architecture.body,
         reviewers: [
           { name: "core", finding_count: core.findings.length },
           { name: "security", finding_count: security.findings.length },
+          { name: "architecture", finding_count: architecture.findings.length },
         ],
       };
     }
   }
 
   // When the cycle returned 0 findings AND no reviewer's tail failed to
-  // parse AND every POST landed, the cap-evaluator's pre-run next_action
-  // ("fix_all_findings_..." / "fix_all_findings_then_summarize_...") is
-  // misleading — there is nothing to fix. Override to a clean signal so the
-  // caller proceeds (and so cycle 2 doesn't carry the cycle-2 escalation cue
-  // when there are no findings to summarize). Refusal envelopes (returned
-  // earlier with their own next_action) and override-cycle metadata are
-  // unaffected.
+  // parse AND every POST landed, the pre-run cap evaluator is only a budget
+  // check. Normalize to the dispatcher clean action so the caller proceeds.
+  // Refusal envelopes (returned earlier with their own next_action) and
+  // override-cycle metadata are unaffected.
   //
   // Parse failures and post failures are explicitly NOT treated as "clean":
   // a malformed reviewer payload or a failed-to-land comment is a partial
@@ -10008,11 +10550,17 @@ export async function runCodexReview({
   // marker is written above, and the cycle/cap fields read null so the
   // agent treats the run as incomplete (closes gaps flagged in #793 review
   // cycles 1, 2, and 3).
-  let effectiveNextAction = cycleSource ? cycleSource.nextAction : null;
+  const dispatch = cycleSource
+    ? dispatchReviewConvergence({
+        lensEnvelopes: [core.envelope, security.envelope, architecture.envelope].filter(Boolean),
+        gateResults,
+        currentCycle: cycleSource.cycleNumber,
+        cap: cycleSource.cap,
+      })
+    : null;
+  let effectiveNextAction = dispatch ? dispatch.next_action : cycleSource ? cycleSource.nextAction : null;
   if (partialFailure) {
     effectiveNextAction = "address_parse_or_post_failures";
-  } else if (cycleSource != null && comments.length === 0) {
-    effectiveNextAction = "proceed_clean";
   }
   return {
     repo_path: repoRoot,
@@ -10031,14 +10579,16 @@ export async function runCodexReview({
     // blocking on `classification === "class"` only, so a codex `don't-ship`
     // justified by a one-off structural_blocker would fail validation. The
     // findings list already conveys the outcome.
-    architectural_read: mergeReviewerArchitecturalReads(core, security),
+    architectural_read: mergeReviewerArchitecturalReads(core, security, architecture),
     post_failures: postFailures,
     parse_errors: parseErrors,
     core_review_text: core.body,
     security_review_text: security.body,
+    architecture_review_text: architecture.body,
     reviewers: [
       { name: "core", finding_count: core.findings.length },
       { name: "security", finding_count: security.findings.length },
+      { name: "architecture", finding_count: architecture.findings.length },
     ],
     // Cycle is consumed iff at least one comment landed on the PR or there
     // were no failures at all (see cycleConsumed above). When suppressed,
@@ -10046,7 +10596,9 @@ export async function runCodexReview({
     // that wasn't incremented.
     cycle: cycleConsumed && cycleSource ? cycleSource.cycleNumber : null,
     cap: cycleConsumed && cycleSource ? cycleSource.cap : null,
+    configured_cap: cycleSource?.configuredCap ?? null,
     next_action: effectiveNextAction,
+    dispatcher: dispatch,
     override: cycleSource && cycleSource.override === true ? true : false,
     override_reason: cycleSource ? cycleSource.overrideReason : null,
     findings_comment_url: findingsCommentUrl,
@@ -10071,6 +10623,7 @@ function buildReviewCommentPostFailedEnvelope({
   parseErrors,
   core,
   security,
+  architecture = { findings: [], body: "" },
 }) {
   return {
     repo_path: repoRoot,
@@ -10096,9 +10649,11 @@ function buildReviewCommentPostFailedEnvelope({
     parse_errors: parseErrors,
     core_review_text: core.body,
     security_review_text: security.body,
+    architecture_review_text: architecture.body,
     reviewers: [
       { name: "core", finding_count: core.findings.length },
       { name: "security", finding_count: security.findings.length },
+      { name: "architecture", finding_count: architecture.findings.length },
     ],
   };
 }
@@ -10242,18 +10797,22 @@ export function renderReviewerEnvelope(reviewer) {
   return lines.join("\n").trim();
 }
 
-// Merge the core + security reviewers' architectural_read into one string for
-// the decision record. Each reviewer's read is required-non-empty by
-// validateReviewEnvelope; returns undefined only when neither envelope parsed.
-export function mergeReviewerArchitecturalReads(core, security) {
+// Merge reviewer architectural_read fields into one string for the decision
+// record. Each reviewer's read is required-non-empty by validateReviewEnvelope;
+// returns undefined only when no envelope parsed.
+export function mergeReviewerArchitecturalReads(...reviewers) {
   const parts = [];
-  const coreRead = core?.envelope?.architectural_read;
-  const secRead = security?.envelope?.architectural_read;
-  if (typeof coreRead === "string" && coreRead.trim() !== "") {
-    parts.push(`**Core reviewer:** ${coreRead.trim()}`);
-  }
-  if (typeof secRead === "string" && secRead.trim() !== "") {
-    parts.push(`**Security reviewer:** ${secRead.trim()}`);
+  const flattened = reviewers.length === 1 && Array.isArray(reviewers[0]) ? reviewers[0] : reviewers;
+  for (const reviewer of flattened) {
+    const read = reviewer?.envelope?.architectural_read;
+    if (typeof read !== "string" || read.trim() === "") continue;
+    const lens = normalizeReviewerLens(reviewer?.envelope?.reviewer_lens, reviewer?.reviewer ?? reviewer?.name ?? "core");
+    const label = lens === "correctness"
+      ? "Core reviewer"
+      : lens === "test-strength"
+        ? "Test-strength reviewer"
+        : `${lens[0].toUpperCase()}${lens.slice(1)} reviewer`;
+    parts.push(`**${label}:** ${read.trim()}`);
   }
   return parts.length > 0 ? parts.join("\n\n") : undefined;
 }
@@ -10267,6 +10826,7 @@ export function buildCodexReviewFindingsComments({
   branch = null,
   coreReviewText,
   securityReviewText,
+  architectureReviewText = null,
   postedComments = [],
 }) {
   const modeLabel = mode === "pre-push" ? "pre-push" : "post-push";
@@ -10274,19 +10834,24 @@ export function buildCodexReviewFindingsComments({
 
   const safeCore = disarmMarkerSequences(coreReviewText && coreReviewText.trim() !== "" ? coreReviewText : "_(empty)_");
   const safeSecurity = disarmMarkerSequences(securityReviewText && securityReviewText.trim() !== "" ? securityReviewText : "_(empty)_");
+  const safeArchitecture = architectureReviewText == null
+    ? null
+    : disarmMarkerSequences(architectureReviewText && architectureReviewText.trim() !== "" ? architectureReviewText : "_(empty)_");
+  const reviewerSections = [
+    ["Core review", safeCore],
+    ["Security review", safeSecurity],
+    ...(safeArchitecture == null ? [] : [["Architecture review", safeArchitecture]]),
+  ];
 
   // Try to fit everything in one body first.
   const singleBodyLines = [
     headerLine,
     "",
-    "## Core review",
-    "",
-    safeCore,
-    "",
-    "## Security review",
-    "",
-    safeSecurity,
   ];
+  reviewerSections.forEach(([label, text], idx) => {
+    if (idx > 0) singleBodyLines.push("");
+    singleBodyLines.push(`## ${label}`, "", text);
+  });
   if (modeLabel === "post-push" && Array.isArray(postedComments) && postedComments.length > 0) {
     singleBodyLines.push("", "## Inline comments");
     singleBodyLines.push("");
@@ -10305,19 +10870,14 @@ export function buildCodexReviewFindingsComments({
   // (each reviewer caps at FINDINGS_COMMENT_PER_REVIEWER_MAX) and a
   // pointer to the continuation comments. Then chunk the FULL reviewer
   // text into continuation bodies.
-  const primaryCore = truncateReviewText(safeCore, FINDINGS_COMMENT_PER_REVIEWER_MAX);
-  const primarySecurity = truncateReviewText(safeSecurity, FINDINGS_COMMENT_PER_REVIEWER_MAX);
   const primaryLines = [
     headerLine,
     "",
-    "## Core review",
-    "",
-    primaryCore,
-    "",
-    "## Security review",
-    "",
-    primarySecurity,
   ];
+  reviewerSections.forEach(([label, text], idx) => {
+    if (idx > 0) primaryLines.push("");
+    primaryLines.push(`## ${label}`, "", truncateReviewText(text, FINDINGS_COMMENT_PER_REVIEWER_MAX));
+  });
   if (modeLabel === "post-push" && Array.isArray(postedComments) && postedComments.length > 0) {
     primaryLines.push("", "## Inline comments");
     primaryLines.push("");
@@ -10350,8 +10910,7 @@ export function buildCodexReviewFindingsComments({
     });
   }
 
-  addContinuationsForSection("Core review", safeCore);
-  addContinuationsForSection("Security review", safeSecurity);
+  reviewerSections.forEach(([label, text]) => addContinuationsForSection(label, text));
 
   return bodies;
 }
@@ -10371,7 +10930,15 @@ export function buildCodexReviewFindingsComment(args) {
 // agent sees the failure without losing any successful findings.
 function parseReviewerTailSafely(stdout, repoRoot, reviewer, parseErrors) {
   try {
-    return parseCodexReviewFindingsTail(stdout, repoRoot);
+    const parsed = parseCodexReviewFindingsTail(stdout, repoRoot);
+    if (parsed.envelope && typeof parsed.envelope === "object") {
+      parsed.envelope = {
+        ...parsed.envelope,
+        reviewer_lens: normalizeReviewerLens(parsed.envelope.reviewer_lens, reviewer),
+        findings: Array.isArray(parsed.envelope.findings) ? parsed.envelope.findings : parsed.envelope.blocking,
+      };
+    }
+    return parsed;
   } catch (error) {
     parseErrors.push({ reviewer, error: error.message });
     return { findings: [], body: stdout };
@@ -15831,8 +16398,11 @@ export function summarizeReviewFindings(findings, topCategoriesLimit = 5) {
 // the cycle tool's `status` is a coarser classification used for
 // branching on the agent's side.
 function _statusForReviewerAction(nextAction, hasFindings) {
-  if (nextAction === "post_summary_and_escalate_to_user") return "capped";
+  if (nextAction === "record_terminal_escalation") return "terminal";
+  if (nextAction === "post_structured_decision_aid_and_escalate") return "escalated";
+  if (nextAction === "post_summary_and_escalate_to_user") return "terminal";
   if (
+    nextAction === "advance_to_next_phase" ||
     nextAction === "post_clean_decision_record_and_advance_to_phase_c" ||
     nextAction === "proceed_clean"
   ) {
@@ -15859,10 +16429,13 @@ function _statusForReviewerAction(nextAction, hasFindings) {
 // vocabulary for direct callers.
 export function normalizeReviewCycleNextAction(reviewerAction, status) {
   if (status === "clean") {
-    return "post_clean_decision_record_and_advance_to_phase_c";
+    return "advance_to_next_phase";
   }
-  if (status === "capped") {
-    return "post_summary_and_escalate_to_user";
+  if (status === "terminal") {
+    return "record_terminal_escalation";
+  }
+  if (status === "escalated") {
+    return "post_structured_decision_aid_and_escalate";
   }
   // For "findings" and "post_failed" the underlying vocabulary already
   // matches the wrapper's. Pass through.
@@ -15914,17 +16487,18 @@ async function _runReviewCycleShared({
   // Cap-refused: the underlying review did NOT consume a cycle (the
   // marker was not written). The agent must escalate to the user.
   // No decision record is posted.
-  if (status === "capped") {
+  if (status === "terminal") {
     return {
       ok: true,
       reviewer,
       cycle,
       cap,
-      status: "capped",
-      next_action: normalizeReviewCycleNextAction(nextAction, "capped"),
+      status: "terminal",
+      next_action: normalizeReviewCycleNextAction(nextAction, "terminal"),
       findings_summary: summary,
       findings_record_url: findingsRecordUrl,
       decision_record_url: null,
+      decision_aid: reviewResult.dispatcher?.decision_aid ?? null,
     };
   }
 
@@ -15988,6 +16562,8 @@ async function _runReviewCycleShared({
     findings_summary: summary,
     findings_record_url: findingsRecordUrl,
     decision_record_url: drResult.comment_url ?? null,
+    decision_aid: reviewResult.dispatcher?.decision_aid ?? null,
+    dispatcher: reviewResult.dispatcher ?? null,
   };
 }
 
@@ -15996,6 +16572,7 @@ export async function runCodexReviewCycle({
   issueNumber,
   baseBranch = null,
   uncommitted = true,
+  gateResults = [],
   overrideCap = false,
   overrideReason = null,
   signal = undefined,
@@ -16033,6 +16610,7 @@ export async function runCodexReviewCycle({
     baseBranch: baseBranch ?? "dev",
     uncommitted: true,
     issueNumber,
+    gateResults,
     overrideCap,
     overrideReason,
     signal,
@@ -16050,6 +16628,7 @@ export async function runTestQualityReviewCycle({
   repoPath,
   issueNumber,
   baseBranch = null,
+  gateResults = [],
   overrideCap = false,
   overrideReason = null,
   model = undefined,
@@ -16078,6 +16657,7 @@ export async function runTestQualityReviewCycle({
     repoPath,
     baseBranch,
     issueNumber,
+    gateResults,
     overrideCap,
     overrideReason,
     signal,

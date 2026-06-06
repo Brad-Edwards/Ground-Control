@@ -166,3 +166,13 @@ telemetry, `gates_green`, `remote_gates_green`, and
 description strings in `mcp/ground-control/index.js` aligned with that
 reference. ADR-054 carries the amendment record; no new prose-style rule is
 needed unless the change alters this documentation coverage model.
+
+Review-convergence MCP changes for `/implement` are workflow-contract changes.
+Document dispatcher actions, reviewer-lens envelopes, effective caps,
+provider-missing fallback, and structured decision aids in ADR-031,
+`docs/DEVELOPMENT_WORKFLOW.md`, `docs/WORKFLOW.md`, and the
+`skills/implement/steps/` review-loop files. Keep `gc_codex_review`,
+`gc_codex_review_cycle`, `gc_test_quality_review`, and
+`gc_test_quality_review_cycle` tool descriptions aligned with those surfaces.
+ADR-054 carries the amendment record; no new prose-style rule is needed unless
+the change alters this documentation coverage model.

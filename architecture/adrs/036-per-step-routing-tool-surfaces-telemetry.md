@@ -12,8 +12,8 @@ Accepted
 
 ADR-021 ("Gated Agentic Development Loop") and ADR-029 ("Issue-Thread Gate Model")
 codify GC-O007: the four-phase `/implement` workflow with one human touchpoint
-(PR merge), one Codex review pass (pre-push, hard-capped at three cycles), and
-the GitHub issue thread as the durable record. The workflow contract is sound;
+(PR merge), one pre-push Codex review convergence loop, and the GitHub issue
+thread as the durable record. The workflow contract is sound;
 the cost profile of running it is not.
 
 Issue #867 (and its scoped sibling #868) measured the within-run token cost
@@ -45,11 +45,11 @@ LLM call, no workflow state. They become Temporal activities directly under
 GC-O009 with no shape change.
 
 The gate model is preserved end to end: one human touchpoint (PR merge), no
-plan-approval gate, no post-push Codex review, ADR-029's configurable
-pre-push cap (default 1 cycle per issue #906; per-repo override via
-`.ground-control.yaml::workflow.codex_review.pre_push_cap`, bounds `[1, 10]`),
-zero deferral. This ADR amends ADR-021 with cost-side machinery; it does
-not redefine GC-O007's gate contract.
+plan-approval gate, no post-push Codex review, ADR-031's configurable
+pre-push convergence cap (per-repo override via
+`.ground-control.yaml::workflow.codex_review.pre_push_cap`, configured bounds
+`[1, 10]`, effective minimum cap 2), zero deferral. This ADR amends ADR-021
+with cost-side machinery; it does not redefine GC-O007's gate contract.
 
 ## Decision
 
@@ -128,20 +128,17 @@ calls `gc_test_quality_review`** (per #884 v2; the prior `Skill("review-tests")`
 boundary returned prose findings that the autoregressive parent agent
 kept echoing back to the user instead of fixing in-turn, defeating the
 SKILL.md prose rule; the MCP tool returns a structured envelope with
-`next_action` that the agent reads as a directive). Issue #906 moved this
+dispatcher-computed `next_action` that the agent reads as a directive). Issue #906 moved this
 call pre-push (former Step 13 → new Step 6.6) so the PR opens with both
-AI-assisted reviewers clean; the same #906 amendment dropped the default
-pre-push cap for both reviewers from 3 to 1, configurable per repo via
-`workflow.codex_review.pre_push_cap` and `workflow.test_quality_review.pre_push_cap`.
-The MCP tool itself is unchanged; only its workflow placement and default
-cap value shifted. After Step 6.6's
+AI-assisted reviewers clean; ADR-031 makes both reviewers convergence loops
+with configurable caps and an effective minimum cap of 2, configurable per
+repo via `workflow.codex_review.pre_push_cap` and
+`workflow.test_quality_review.pre_push_cap`. After Step 6.6's
 cycle the parent calls `gc_post_decision_record` with the
 `fix`/`wontfix`/`not-applicable` dispositions (cycle counter, durable
 record); a clean cycle is the structured advance-to-Phase-C signal once
-that post returns `ok: true` (the string was `..._advance_to_step_14`
-before issue #906 collapsed Step 14 into Step 10's existing remote-status
-watch;
-new MCP envelope returns `..._advance_to_phase_c`). See
+that post returns `ok: true` and the dispatcher returns `advance_to_next_phase`.
+See
 `architecture/notes/test-quality-review-engine.md` for the full MCP
 tool mechanism (claude CLI exec, `ANTHROPIC_API_KEY` strip / OAuth,
 cycle markers, failure modes). Step 19 calls `gc_post_final_report`.
@@ -215,9 +212,9 @@ queue, or worker code. It only ensures the bridge surface is Temporal-shaped.
 - **ADR-021** is amended (gain a new amendment blockquote citing this ADR).
   The gate model and phase structure are unchanged; only the cost-side
   machinery changes.
-- **ADR-029** is amended by issue #906 only to make the Codex cap
-  configurable per repo (default 1, override via
-  `workflow.codex_review.pre_push_cap`); the zero-deferral rule,
+- **ADR-029** is amended by issue #906 / ADR-031 to make the Codex cap
+  configurable per repo (override via `workflow.codex_review.pre_push_cap`,
+  ADR-031 effective minimum cap 2); the zero-deferral rule,
   issue-thread-as-durable-record contract, and one-human-touchpoint contract
   all stand.
 - **ADR-027** is unchanged; the agent-neutral packaging seam absorbs the new
@@ -334,8 +331,9 @@ which loops execute**.
 
    - `gc_codex_review_cycle`: wraps the existing `gc_codex_review` AND
      auto-posts the per-cycle decision record. Returns a compact terminal
-     envelope: `{ok, reviewer, cycle, cap, status, next_action,
-     findings_summary, findings_record_url, decision_record_url}`.
+     envelope: `{ok, reviewer, cycle, configured_cap, cap, status,
+     next_action, dispatcher, findings_summary, findings_record_url,
+     decision_record_url}`.
      Verbatim review prose stays server-side via the underlying findings
      record. Auto-posted decisions are always `decision: "fix"` (the only
      decision the cycle tool can record without user authorization). A
@@ -432,8 +430,8 @@ Two coordinated changes:
    Cancellation aborts an `AbortController` whose signal is threaded down to
    the child process exec, so a cancelled job leaves no orphan. The /implement
    step files (2.5, 6.5, 6.6 and `_review-loop-rules.md`) drive the
-   start-then-poll pattern; `result.next_action` is dispatched exactly as the
-   synchronous envelope was.
+   start-then-poll pattern; the dispatcher-computed `result.next_action` is
+   dispatched exactly as the synchronous envelope was.
 
 `gc_codex_job` is the sixth tool in this ADR's surface family and, like the
 cycle wrappers and watch tools, is bridge work toward GC-O009; the

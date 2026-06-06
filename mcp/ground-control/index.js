@@ -561,7 +561,7 @@ const ASYNC_REVIEW_PARAM_DESC =
   "When true, start the review/preflight as a background job and return " +
   "{ok,status:'running',job_id} immediately instead of blocking the MCP call. " +
   "Poll the job with gc_codex_job (action='poll') until status='done', then dispatch " +
-  "on result.next_action exactly as for the synchronous call. Use this in the /implement " +
+  "on the dispatcher-computed result.next_action exactly as for the synchronous call. Use this in the /implement " +
   "workflow so a multi-minute review never trips the MCP client's tool-call timeout (issue #937).";
 
 server.tool(
@@ -710,19 +710,21 @@ server.tool(
     uncommitted: z.boolean().optional(),
     pr_number: z.number().int().positive().optional(),
     issue_number: z.number().int().positive().optional(),
+    gate_results: z.array(z.any()).optional(),
     override_cap: z.boolean().optional().describe(buildCodexReviewOverrideCapDescription(CODEX_REVIEW_CAPS)),
     override_reason: z.string().optional().describe(buildCodexReviewOverrideReasonDescription(CODEX_REVIEW_CAPS)),
     override_phase_gate: z.boolean().optional(),
     override_phase_reason: z.string().optional(),
     async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, base_branch, uncommitted, pr_number, issue_number, override_cap, override_reason, override_phase_gate, override_phase_reason, async: asyncMode }) => {
+  async ({ repo_path, base_branch, uncommitted, pr_number, issue_number, gate_results, override_cap, override_reason, override_phase_gate, override_phase_reason, async: asyncMode }) => {
     try {
       const params = {
         repoPath: repo_path, baseBranch: base_branch ?? null,
         uncommitted: Boolean(uncommitted),
         prNumber: pr_number != null ? pr_number : null,
         issueNumber: issue_number != null ? issue_number : null,
+        gateResults: gate_results ?? [],
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
         overridePhaseGate: Boolean(override_phase_gate),
@@ -747,16 +749,15 @@ server.tool(
     `\`claude\` CLI (Sonnet 4.6 by default) with the review-tests rubric and the ` +
     `changed test-file paths, parses the structured JSON output (validated by --json-schema), posts ` +
     `the durable findings record + cycle marker to the issue thread, and returns a structured ` +
-    `envelope: \`{ ok, finding_count, findings, cycle, cap, next_action, findings_comment_url, ... }\`. ` +
-    `The \`next_action\` field is "fix_findings_and_reinvoke" / "post_clean_decision_record_and_advance_to_phase_c" / ` +
-    `"fix_findings_then_summarize_and_escalate" / "post_summary_and_escalate_to_user" — the parent ` +
-    `/implement workflow reads it as a directive. "fix_findings_then_summarize_and_escalate" is the ` +
-    `last-in-cap action: fix the findings, post the decision record, then summarize and escalate to the ` +
-    `user; it is NOT a normal re-invoke path. Replaces the prior Skill("review-tests") boundary, ` +
+    `envelope: \`{ ok, finding_count, findings, cycle, configured_cap, cap, next_action, dispatcher, findings_comment_url, ... }\`. ` +
+    `The \`next_action\` field is computed by the deterministic ADR-031 dispatcher: ` +
+    `"advance_to_next_phase" / "fix_findings_and_reinvoke" / ` +
+    `"post_structured_decision_aid_and_escalate" / "record_terminal_escalation". ` +
+    `Cycle 1 never collapses into escalation; caps below 2 run with effective cap 2. Replaces the prior Skill("review-tests") boundary, ` +
     `which produced prose findings that the autoregressive parent agent kept echoing back to the user ` +
     `instead of fixing in-turn (issue #884 v1 regression). Default cycle cap: ${TEST_QUALITY_REVIEW_HARD_CAP} per ` +
     `issue (issue #906; configurable per repo via \`workflow.test_quality_review.pre_push_cap\` in ` +
-    `.ground-control.yaml; bounds [1, 10]); cycle cap+1 requires override_cap=true + override_reason. ` +
+    `.ground-control.yaml; configured bounds [1, 10], effective minimum [2]); cycle cap+1 requires override_cap=true + override_reason. ` +
     `Authentication: the CLI invocation strips ANTHROPIC_API_KEY from the subprocess env so claude uses ` +
     `the host's OAuth session — see docs/DEVELOPMENT_WORKFLOW.md "Test-quality review engine".`,
   {
@@ -764,12 +765,13 @@ server.tool(
     base_branch: z.string().optional(),
     issue_number: z.number().int().positive().optional(),
     pr_number: z.number().int().positive().optional(),
+    gate_results: z.array(z.any()).optional(),
     override_cap: z.boolean().optional(),
     override_reason: z.string().optional(),
     model: z.string().optional(),
     async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, base_branch, issue_number, pr_number, override_cap, override_reason, model, async: asyncMode }) => {
+  async ({ repo_path, base_branch, issue_number, pr_number, gate_results, override_cap, override_reason, model, async: asyncMode }) => {
     try {
       const params = {
         repoPath: repo_path,
@@ -779,6 +781,7 @@ server.tool(
         baseBranch: base_branch ?? null,
         issueNumber: issue_number != null ? issue_number : null,
         prNumber: pr_number != null ? pr_number : null,
+        gateResults: gate_results ?? [],
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
         ...(model ? { model } : {}),
@@ -1043,23 +1046,25 @@ server.tool(
 
 server.tool(
   "gc_codex_review_cycle",
-  "Pre-push codex-review cycle wrapper. Runs gc_codex_review (uncommitted=true) AND auto-posts the canonical per-cycle decision record (every finding gets decision='fix' with auto-rationale, the only decision the cycle tool can record without user authorization). Returns a compact envelope: {ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url}. Verbatim review prose and per-finding bodies stay server-side via the underlying review's findings record — they never reach the agent through this tool. The subagent that drives the loop calls this tool once per cycle; on next_action='fix_findings_and_reinvoke' it fixes, self-verifies locally, re-stages, and re-invokes. wontfix / not-applicable decisions still require an explicit gc_post_decision_record call after user authorization.",
+  "Pre-push codex-review cycle wrapper. Runs gc_codex_review (uncommitted=true) AND auto-posts the canonical per-cycle decision record (every finding gets decision='fix' with auto-rationale, the only decision the cycle tool can record without user authorization). Returns a compact envelope: {ok, reviewer, cycle, configured_cap, cap, status, next_action, dispatcher, findings_summary, findings_record_url, decision_record_url}. Verbatim review prose and per-finding bodies stay server-side via the underlying review's findings record — they never reach the agent through this tool. The subagent that drives the loop calls this tool once per cycle; on next_action='fix_findings_and_reinvoke' it fixes, self-verifies locally, re-stages, and re-invokes. On next_action='post_structured_decision_aid_and_escalate' it posts the structured cap decision aid and stops for owner authorization. wontfix / not-applicable decisions still require an explicit gc_post_decision_record call after user authorization.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
     base_branch: z.string().nullable().optional(),
     uncommitted: z.boolean().optional(),
+    gate_results: z.array(z.any()).optional(),
     override_cap: z.boolean().optional(),
     override_reason: z.string().nullable().optional(),
     async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, issue_number, base_branch, uncommitted, override_cap, override_reason, async: asyncMode }) => {
+  async ({ repo_path, issue_number, base_branch, uncommitted, gate_results, override_cap, override_reason, async: asyncMode }) => {
     try {
       const params = {
         repoPath: repo_path,
         issueNumber: issue_number,
         baseBranch: base_branch ?? null,
         uncommitted: uncommitted ?? true,
+        gateResults: gate_results ?? [],
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
       };
@@ -1076,22 +1081,24 @@ server.tool(
 
 server.tool(
   "gc_test_quality_review_cycle",
-  "Pre-push test-quality review cycle wrapper. Runs gc_test_quality_review AND auto-posts the canonical per-cycle decision record (reviewer='test-quality', every finding decision='fix' with auto-rationale). Same compact envelope shape as gc_codex_review_cycle. Verbatim reviewer prose stays server-side. Skips automatically when the diff has no test files (the underlying review handles that).",
+  "Pre-push test-quality review cycle wrapper. Runs gc_test_quality_review AND auto-posts the canonical per-cycle decision record (reviewer='test-quality', every finding decision='fix' with auto-rationale). Same compact convergence envelope shape as gc_codex_review_cycle, including dispatcher-computed next_action and structured decision aid at a real cap. Verbatim reviewer prose stays server-side. Skips automatically when the diff has no test files (the underlying review handles that).",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
     base_branch: z.string().nullable().optional(),
+    gate_results: z.array(z.any()).optional(),
     override_cap: z.boolean().optional(),
     override_reason: z.string().nullable().optional(),
     model: z.string().optional(),
     async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, issue_number, base_branch, override_cap, override_reason, model, async: asyncMode }) => {
+  async ({ repo_path, issue_number, base_branch, gate_results, override_cap, override_reason, model, async: asyncMode }) => {
     try {
       const params = {
         repoPath: repo_path,
         issueNumber: issue_number,
         baseBranch: base_branch ?? null,
+        gateResults: gate_results ?? [],
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
         model,

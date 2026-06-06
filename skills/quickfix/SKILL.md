@@ -28,7 +28,7 @@ Routes through the same `gc_resolve_workflow_route` resolver as `/implement` (se
 
 ```
 /quickfix <issue-number>           # default: AI-assisted reviews off
-/quickfix --review <issue-number>  # opt-in: codex pre-push + test-quality pre-push, cap 1 each
+/quickfix --review <issue-number>  # opt-in: codex pre-push + test-quality convergence loops
 ```
 
 The `<issue-number>` argument is a plain GitHub issue number, a `#`-prefixed integer, or `issue:N`. **Requirement UIDs are NOT a valid `/quickfix` input.** `/quickfix` runs are requirement-free by definition, so accepting a UID would be a lane-mismatch that quietly drops the requirement lifecycle. If the user passes a UID, STOP and tell them to use `/implement <uid>` instead.
@@ -100,8 +100,8 @@ Do NOT move to Phase C until all four pass.
 
 When the user invokes `/quickfix --review <issue>`:
 
-- **Step Q6.5 = codex pre-push review.** Run `gc_codex_review` with `uncommitted=true` against the staged + unstaged diff, exactly as `/implement` Step 6.5 describes. Default cap is **1 cycle** (per the same `.ground-control.yaml::workflow.codex_review.pre_push_cap` knob `/implement` uses; per issue #906). Apply the Review loop rules; post `gc_post_decision_record` per cycle; respect the cap; `override_cap=true` + `override_reason` works the same way.
-- **Step Q6.6 = test-quality pre-push review.** Run `gc_test_quality_review` exactly as `/implement` Step 6.6 describes. Default cap 1 (`workflow.test_quality_review.pre_push_cap`). Same Review loop rules. Same decision-record contract.
+- **Step Q6.5 = codex pre-push review.** Run `gc_codex_review_cycle` / `gc_codex_review` with `uncommitted=true` against the staged + unstaged diff, exactly as `/implement` Step 6.5 describes. The same `.ground-control.yaml::workflow.codex_review.pre_push_cap` knob applies; configured values below 2 run with the ADR-031 effective cap of 2. Apply the Review loop rules; dispatch only on the MCP-computed `next_action`; `override_cap=true` + `override_reason` works the same way after a structured decision aid.
+- **Step Q6.6 = test-quality pre-push review.** Run `gc_test_quality_review_cycle` / `gc_test_quality_review` exactly as `/implement` Step 6.6 describes. The same `workflow.test_quality_review.pre_push_cap` knob applies with the ADR-031 effective minimum cap of 2. Same Review loop rules. Same decision-record contract.
 
 When `--review` is absent, both steps skip. The skill still posts no decision records (the issue-thread durable record for a `/quickfix` run is the pickup comment + the open PR + the `gc_post_final_report` close comment in Step Q19; codex/test-quality records exist only when the reviewer actually ran).
 
@@ -187,7 +187,7 @@ Each drop is intentional and reversible mid-flight by re-invoking `/implement <s
 
 - **Codex architecture preflight** (`gc_codex_architecture_preflight`)—the design is settled at intake.
 - **Plan post + plan-phase marker** (`gc_post_implementation_plan`)—diff is the plan; PR is the durable record.
-- **Pre-push codex review** + **pre-push test-quality review** by default—off unless `--review` is supplied. Both still respect the configured cap (default 1) when enabled.
+- **Pre-push codex review** + **pre-push test-quality review** by default—off unless `--review` is supplied. Both still respect the configured cap with the ADR-031 effective minimum of 2 when enabled.
 - **Final-report tool full payload.** `gc_post_final_report` still runs (so its sensitive-content / no-defer / reserved-marker scrubs protect the public close comment on every driver), but with a slim payload: empty `requirements`, empty-or-one-line-per-reviewer `reviews`, no `traceability` block. The structured tool boundary is the only driver-neutral filter; a direct `gh issue comment` would bypass it.
 - **Requirement status transitions** (`gc_transition_status`)—`/quickfix` runs are requirement-free by definition.
 - **Traceability reconciliation** (`gc_create_traceability_link` / `gc_delete_traceability_link`)—only the touched-file link-maintenance path runs (and even that is rare for a typical `/quickfix` run).
@@ -206,7 +206,7 @@ The user picks. Do not silently upgrade.
 - `skills/implement/SKILL.md`—canonical full workflow this skill mirrors.
 - ADR-021 (Gated Agentic Development Loop)—the lane contract this builds on.
 - ADR-029 (Issue-Thread Gate Model)—durable record + decision-record contract.
-- ADR-031 (Codex Review Stopping Model)—the cap-1 default + override semantics this skill inherits.
+- ADR-031 (Codex Review Stopping Model)—the convergence dispatcher, effective minimum cap, structured decision aid, and override semantics this skill inherits.
 - ADR-036 (Per-Step Routing / Tool Surfaces / Telemetry)—routing tier semantics + MCP-tool surfaces.
 - `architecture/notes/quickfix-workflow-lane-preflight.md`—preflight design context for this skill.
 
@@ -226,7 +226,7 @@ and test-quality pre-push reviews (Steps Q6.5 / Q6.6) run as async background
 jobs: `gc_codex_review` / `gc_test_quality_review` are called with
 `async: true` and the job is polled via the new `gc_codex_job` tool, exactly
 as the /implement Step 6.5 / 6.6 prose this lane defers to now describes. The
-cap-1 default, `override_cap` semantics, and the `gc_post_decision_record`
+convergence dispatcher, `override_cap` semantics, and the `gc_post_decision_record`
 contract this lane inherits are unchanged—async only changes how the agent
 waits for a review cycle's result, so the multi-minute child process is not
 orphaned by the MCP client's tool-call timeout (issue #893). See ADR-036

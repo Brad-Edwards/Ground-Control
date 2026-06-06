@@ -185,3 +185,14 @@ current with the actual classifier surface.
 **2026-06-06 (issue #1075 gate-engine core).** Added the portable gate-engine MCP primitives in `mcp/ground-control/lib.js` and registered `gc_run_gates` plus `gc_watch_required_statuses` in `mcp/ground-control/index.js`. The config parser now accepts `workflow.engine.version`, `workflow.gate_manifest`, `workflow.packs[]`, and `workflow.gate_overrides`; the gate manifest, lockfile, marker bindings, provider-missing fallback, and gate-effectiveness telemetry are documented in `docs/DEVELOPMENT_WORKFLOW.md § Gate Engine Core`. `docs/DOC_STYLE.md` records the documentation surface rule for gate-engine MCP tools. No change to the Vale rule set, the `tools/install-vale.sh` installer, or the `.vale.ini` configuration is required.
 
 **2026-06-06 (issue #1075 gate-pack registry).** Added the versioned gate-pack source tree under `workflow/packs/`, generated `workflow/gate-catalog.json` checksums, implemented `installWorkflowAssets` in `mcp/ground-control/lib.js`, and registered `gc_install_workflow_assets` in `mcp/ground-control/index.js`. The installer writes `.gc/gates.yaml`, `.gc/workflow-lock.json`, and `workflow.packs[]` in `.ground-control.yaml`, then runs the pack self-test. The workflow reference documents the catalog, pack bundle shape, installer input, lockfile metadata, and self-test skip behavior in `docs/DEVELOPMENT_WORKFLOW.md § Gate Engine Core`; `docs/DOC_STYLE.md` names the installer as part of the portable gate-engine MCP surface. No change to the Vale rule set, the `tools/install-vale.sh` installer, or the `.vale.ini` configuration is required.
+
+**2026-06-06 (issue #1075 review convergence dispatcher).** Replaced the
+pre-push codex and test-quality cycle counters in `mcp/ground-control/lib.js`
+with the ADR-031 convergence dispatcher and updated the registered MCP tool
+schemas in `mcp/ground-control/index.js` to accept gate-result inputs. The
+workflow contract is documented in ADR-031, `docs/DEVELOPMENT_WORKFLOW.md`,
+`docs/WORKFLOW.md`, and the `skills/implement/steps/` review-loop files;
+`docs/DOC_STYLE.md` names those files as the documentation surface for
+review-convergence MCP changes. No change to the Vale rule set, the
+`tools/install-vale.sh` installer, or the `.vale.ini` configuration is
+required.

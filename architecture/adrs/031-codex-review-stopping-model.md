@@ -48,9 +48,12 @@ The loop ends only when one of these terminal conditions holds:
 - an explicit terminal escalation state is recorded.
 
 Cycle 1 must never collapse into escalation because findings exist. A
-configured hard cap below 2 is invalid for issue-anchored `/implement` and
-`/quickfix` reviewer loops. Repositories that need a single advisory review
-must model that as an advisory lens outside this convergence gate.
+configured hard cap below 2 is invalid as an effective stopping cap for
+issue-anchored `/implement` and `/quickfix` reviewer loops. The parser may
+accept legacy values such as `pre_push_cap=1` for compatibility, but the
+dispatcher floors the effective cap to 2. Repositories that need a single
+advisory review must model that as an advisory lens outside this convergence
+gate.
 
 Every reviewer returns a parseable verdict envelope. The envelope includes:
 
@@ -61,8 +64,10 @@ Every reviewer returns a parseable verdict envelope. The envelope includes:
 - `findings[]`, each with severity, location, evidence, classification
   (`one-off` or `class`), disposition state, and sweep evidence where needed;
 - `blocking[]`, derived from findings that block advance;
-- `notes[]`, bounded and non-blocking;
-- `next_action`, computed by the dispatcher, not by reviewer prose.
+- `notes[]`, bounded and non-blocking.
+
+The review wrapper returns `next_action` beside the lens envelopes. That
+field is computed by the dispatcher, not by reviewer prose.
 
 The dispatcher owns advance. It reads all lens envelopes, `gc_run_gates`
 result envelopes from ADR-058, required remote status envelopes, prior cycle

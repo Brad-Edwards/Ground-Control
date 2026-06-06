@@ -8,11 +8,11 @@ Accepted
 
 2026-05-03
 
-> **Amended by issue #906 (2026-05-13):** Two changes to the review-loop contract this ADR establishes. (1) **Pre-push Codex review default cap drops from 3 to 1** (the cap value lives on the MCP tool as `CODEX_REVIEW_PREPUSH_HARD_CAP` and is now overrideable per-repo via `.ground-control.yaml::workflow.codex_review.pre_push_cap`, bounds `[1, 10]`); the `override_cap=true` + `override_reason=<authorization quote>` escape is unchanged and continues to grant a single over-cap cycle. Empirical rationale: PR #903 (a 4-cycle run) showed cycles 2 and 3 partly compounding the agent's own fix-introduced bugs rather than catching net-new bugs, and required remote status checks plus human review cover the residual risk. (2) **Test-quality review moves pre-push** to a new Step 6.6 in the same local-iteration band as the codex pre-push review (former Step 13 is merged out; former Step 14 collapses into Step 10's existing remote-status watch). Test-quality's default cap also drops to 1 with the same `workflow.test_quality_review.pre_push_cap` override path. The `gc:test-quality-review-cycle` marker family and the `gc_post_decision_record` contract are **unchanged**; what moves is the placement of the step in the workflow, not the durability mechanism. The PR now opens with both AI-assisted reviewers clean; required remote status checks and the human reviewer are the only post-push gates. SKILL.md Steps 13 / 14 are intentional tombstones; downstream Step 15 / 18 / 19 numbering is preserved so external references don't track a moving target. See `skills/implement/SKILL.md` Step 6.5 / 6.6 for the operative loop prose and `architecture/notes/quickfix-workflow-lane-preflight.md` for the preflight design context.
+> **Amended by issue #906 (2026-05-13), then by ADR-031 (2026-06-06):** Two changes to the review-loop contract this ADR establishes. (1) **Pre-push Codex review is a convergence loop** with a configurable cap (`.ground-control.yaml::workflow.codex_review.pre_push_cap`, configured bounds `[1, 10]`) and an ADR-031 effective minimum cap of 2. Cycle 1 with findings always returns the dispatcher action `fix_findings_and_reinvoke`; only a real cap emits `post_structured_decision_aid_and_escalate`, and `override_cap=true` + `override_reason=<authorization quote>` grants a single over-cap cycle after that structured aid. (2) **Test-quality review moves pre-push** to a new Step 6.6 in the same local-iteration band as the codex pre-push review (former Step 13 is merged out; former Step 14 collapses into Step 10's existing remote-status watch). Test-quality uses the same configurable cap semantics via `workflow.test_quality_review.pre_push_cap` and the same effective minimum cap of 2. The `gc:test-quality-review-cycle` marker family and the `gc_post_decision_record` contract are **unchanged**; what moves is the placement of the step in the workflow, not the durability mechanism. The PR now opens with both AI-assisted reviewers clean; required remote status checks and the human reviewer are the only post-push gates. SKILL.md Steps 13 / 14 are intentional tombstones; downstream Step 15 / 18 / 19 numbering is preserved so external references don't track a moving target. See `skills/implement/SKILL.md` Step 6.5 / 6.6 for the operative loop prose and `architecture/notes/quickfix-workflow-lane-preflight.md` for the preflight design context.
 
 > **Amended by issue #937 (2026-05-21):** The pre-push review tools (`gc_codex_review` / `gc_test_quality_review` and their `_cycle` wrappers) and the architecture preflight may run as **async background jobs** (opt-in `async: true`), polled or cancelled via the new `gc_codex_job` tool. The issue-thread durable-record contract this ADR establishes is **unchanged**: every review cycle still posts its verbatim findings record and its `gc_post_decision_record` decision record to the resolved issue thread, and the cycle counter still anchors to the issue thread. Async only decouples the multi-minute child process from a single MCP tool-call so the client's tool-call timeout cannot abandon it and orphan the child (issue #893). See ADR-036 (amendments) for the job model and ADR-031 (amendments) for the codex-review framing.
 
-> **Amended by issue #931 (2026-05-19):** The review-cycle payload is now a **verdict envelope**: `verdict` in (`ship`, `ship-with-fixes`, `don't-ship`) + non-empty `architectural_read` + per-finding `blocking[]` + capped `notes[]` (max 2). Block delimiter renamed from `===FINDINGS===` to `===REVIEW===`. One-off findings carry a required `sweep_evidence` field; class findings continue to carry `category.instances`. `gc_post_decision_record` accepts and renders the new shape with verdict + architectural_read rendered before blocking findings; the existing reviewer enum, defer-rejection, marker family, and wontfix authorization rules are unchanged. The principal-engineer recalibration motivation: the workflow now lets a clean review say `verdict: ship` as a first-class outcome instead of forcing reviewers to manufacture findings. See `skills/implement/SKILL.md` Step 6.5 / 6.6 for the operative loop prose and `architecture/notes/ai-review-recalibration-preflight.md` for the binding preflight guidance.
+> **Amended by issue #931 (2026-05-19), refined by ADR-031 (2026-06-06):** The review-cycle payload is now a **verdict envelope** per lens: `verdict` in (`ship`, `ship-with-fixes`, `don't-ship`), `reviewer_lens`, `findings[]`, per-finding severity/evidence/classification, `blocking[]`, and capped `notes[]` (max 2). Block delimiter renamed from `===FINDINGS===` to `===REVIEW===`. One-off findings carry a required `sweep_evidence` field; class findings continue to carry `category.instances`. `gc_post_decision_record` accepts and renders the new shape with verdict + architectural read rendered before blocking findings; the existing reviewer enum, defer-rejection, marker family, and wontfix authorization rules are unchanged. The principal-engineer recalibration motivation: the workflow now lets a clean review say `verdict: ship` as a first-class outcome instead of forcing reviewers to manufacture findings. `next_action` is computed by the non-LLM dispatcher, not by reviewer prose. See `skills/implement/SKILL.md` Step 6.5 / 6.6 for the operative loop prose and `architecture/notes/ai-review-recalibration-preflight.md` for the binding preflight guidance.
 
 > **Amended by issue #1058 (2026-05-30):** Traceability reconciliation and post-merge issue close move from prose-only guidance to MCP-tool-enforced gates. (1) A new `gc_assert_traceability_reconciled` tool re-fetches each in-scope requirement and its links from the Ground Control REST API and posts a `traceability_reconciled` phase marker on success; the gate is enforced server-side rather than from the agent's claim. (2) `gc_post_final_report` now refuses unless that marker exists for the issue (same prerequisite shape as `gc_post_implementation_plan`'s `preflight` requirement), with the `/quickfix` lane explicitly exempt and a bounded `override_traceability_gate` + `override_traceability_reason` escape for user-authorized skips. (3) A new `gc_close_issue_after_merge` tool replaces ad-hoc `gh issue close` invocations as the canonical close path: it verifies `merged_at` non-null AND PR state `MERGED` before closing, and is idempotent on already-closed issues. The PR-body `Closes #<n>` keyword remains as the GitHub UI cross-link but is no longer load-bearing for the close. (4) A new Phase E (Step 20 in the orchestrator) drives the post-merge close after the user has merged. (5) A new `run_traceability_reconciliation_gate_contract` policy check in `tools/policy/checks.py` anchors the four prose surfaces (SKILL.md + step-17 + step-19 + step-20) so the contract documentation does not drift from the tool enforcement. The issue-thread durable-record contract this ADR establishes is **unchanged**: phase markers + final-report + decision records are still the durable surfaces; what changes is which gates are mechanically enforced versus prose-asserted. See `skills/implement/SKILL.md` Phase boundaries and `architecture/notes/traceability-post-merge-tool-gates-preflight.md` for the binding preflight guidance.
 
@@ -99,12 +99,12 @@ relative to the target branch is covered by integration tests and required
 remote status checks, not by a duplicate Codex pass.
 
 Because the workflow now has one Codex review step instead of two, the
-`gc_codex_review` hard cap is **configurable per repo** (per the issue #906
-amendment above). The MCP tool's module defaults are 1 cycle pre-push and
-3 cycles post-push; the pre-push default may be overridden via
-`workflow.codex_review.pre_push_cap` in `.ground-control.yaml`. The cap
-remains anchored per issue (pre-push) and per PR (post-push); branch is
-audit context, not part of the cap key.
+`gc_codex_review` convergence cap is **configurable per repo** (per the issue
+#906 / ADR-031 amendment above). The configured value may be overridden via
+`workflow.codex_review.pre_push_cap` in `.ground-control.yaml` (bounds
+`[1, 10]`), but the dispatcher floors the effective issue-anchored review cap
+to at least 2. The cap remains anchored per issue (pre-push) and per PR
+(post-push); branch is audit context, not part of the cap key.
 `gc_codex_verify_finding` remains capped at two calls per
 finding because verification loops are per-finding, not whole-review cycles.
 Any older workflow text, issue prose, or ADR amendment that refers to a
@@ -124,15 +124,16 @@ available via the user-authorized `override_cap=true` + `override_reason`
 path; the override marker stays distinguishable from regular cycle markers in
 the audit trail.
 
-The configured cap (default 1 per #906; per-repo override via
-`workflow.codex_review.pre_push_cap`, bounds `[1, 10]`) is hard against agent
-self-authorization: the agent cannot run cycle cap+1 to "verify the fix" of
-the previous cycle's findings. Last-in-cap findings must be fixed in place;
-if concern remains after fixing them, the agent posts an issue-thread comment
-summarizing the remaining concern and fix history and escalates to the user.
-The user may then authorize cycle cap+1 explicitly via `override_cap=true`
-+ an `override_reason` quoting that authorization, or decide a different
-workflow move (stop, re-scope, open a fresh issue). The marker preserves the
+The effective cap is hard against agent self-authorization: the agent cannot
+run cycle cap+1 to "verify the fix" of the previous cycle's findings. Below
+the effective cap, any dirty cycle returns `fix_findings_and_reinvoke`; cycle 1
+never escalates merely because findings exist. If the effective cap is reached
+without a clean verdict, the dispatcher emits
+`post_structured_decision_aid_and_escalate` with unresolved findings, severity
+trend, confirmation state, gate results, and recommended next action. The user
+may then authorize cycle cap+1 explicitly via `override_cap=true` + an
+`override_reason` quoting that authorization, or decide a different workflow
+move (stop, re-scope, open a fresh issue). The marker preserves the
 distinction so the audit trail records whether each cycle ran in-cap or under
 user-authorized override.
 
@@ -190,8 +191,8 @@ parent agent kept echoing them back to the user as a status report
 instead of fixing them in the same turn. The SKILL.md "do not echo,
 fix in same turn" prose could not override the tool-boundary bias.
 The `gc_test_quality_review` MCP tool returns a structured envelope
-with a `next_action` field; the parent reads it as a directive, not
-as text to summarize. See
+with a dispatcher-computed `next_action` field; the parent reads it as a
+directive, not as text to summarize. See
 `architecture/notes/test-quality-review-engine.md` for the full
 mechanism (claude CLI exec wrapper, OAuth vs `ANTHROPIC_API_KEY`
 auth, cycle cap markers, findings record, failure modes). A clean cycle posts `findings: []`, which renders as
@@ -218,36 +219,35 @@ instead of advancing. The skill's prose line remains for transcript
 readability; the decision-record marker on the issue thread is the
 workflow contract.
 
-The cycle cap for test-quality defaults to 1 per issue (per the #906
-amendment above), aligned with the codex pre-push cap default. It is
-configurable per repo via `workflow.test_quality_review.pre_push_cap`
-in `.ground-control.yaml`. Per #884 v2 the cap is **server-side**: the MCP tool
-`gc_test_quality_review` counts `gc:test-quality-review-cycle` markers
-on the issue thread and refuses cycle 4 unless `override_cap=true` with
-a non-empty `override_reason`. The marker family is disjoint from
+The cycle cap for test-quality is configurable per repo via
+`workflow.test_quality_review.pre_push_cap` in `.ground-control.yaml`, with
+configured bounds `[1, 10]` and an ADR-031 effective minimum cap of 2. Per #884
+v2 the cap is **server-side**: the MCP tool `gc_test_quality_review` counts
+`gc:test-quality-review-cycle` markers on the issue thread and refuses an
+over-cap cycle unless `override_cap=true` with a non-empty `override_reason`.
+The marker family is disjoint from
 `gc:codex-prepush-cycle` and `gc:decision-record`; the three counters
 never cross-count. Branch is recorded for audit context only; a
 branch rename on the same issue does NOT reset the counter.
 
 The whole point of the test-quality review is to **fix** the tests, not
 to file a status report on them. The MCP tool returns a structured
-envelope with `findings[]` and `next_action`; the parent /implement
-agent reads `next_action` as a directive. On
-`next_action: "fix_findings_and_reinvoke"` the parent fixes every
-finding in the same agent turn (classify, apply the fix, self-verify,
-commit/push, post the decision record with `fix` / `wontfix` /
-`not-applicable` dispositions, re-invoke). On
-`next_action: "post_clean_decision_record_and_advance_to_phase_c"` the
-parent posts the clean `gc_post_decision_record(findings: [])`,
-confirms `ok: true`, and proceeds to Phase C (stage / commit / push) in
-the same turn. (The string changed from `..._advance_to_step_14` to
-`..._advance_to_phase_c` when issue #906 moved Step 13's test-quality
-review pre-push to Step 6.6; Step 14 no longer exists.) The
-parent does NOT echo findings back to the user; the v1 prose-only
-attempt to forbid that behavior failed because the Skill-tool
-boundary's autoregressive bias overrode the SKILL.md rule; the v2 MCP
-tool boundary closes that bias by returning structured `next_action`
-rather than prose findings.
+envelope with `findings[]`, `dispatcher`, and `next_action`; the parent
+/implement agent reads `next_action` as a directive. On
+`next_action: "fix_findings_and_reinvoke"` the parent fixes every finding in
+the same agent turn (classify, apply the fix, self-verify, re-stage, post the
+decision record with `fix` / `wontfix` / `not-applicable` dispositions,
+re-invoke). On `next_action: "advance_to_next_phase"` the parent confirms the
+clean decision record is posted with `ok: true` and proceeds to Phase C
+(stage / commit / push) in the same turn. On
+`next_action: "post_structured_decision_aid_and_escalate"` the parent surfaces
+the structured decision aid and waits for owner authorization; on
+`next_action: "record_terminal_escalation"` the parent records the terminal
+state and stops. The parent does NOT echo findings back to the user; the v1
+prose-only attempt to forbid that behavior failed because the Skill-tool
+boundary's autoregressive bias overrode the SKILL.md rule; the v2 MCP tool
+boundary closes that bias by returning structured `next_action` rather than
+prose findings.
 
 ### Codex findings issue-thread record
 
@@ -262,8 +262,8 @@ contract and include:
 
 - cycle number, cap, reviewer names, and review mode (`pre-push` or
   `post-push`);
-- the verbatim `core_review_text` and `security_review_text` returned by the
-  reviewers;
+- the verbatim `core_review_text`, `security_review_text`, and
+  `architecture_review_text` returned by the reviewers;
 - for post-push reviews, every inline PR review comment URL that was created.
 
 Post-push inline PR review comments still exist for anchored human review.
