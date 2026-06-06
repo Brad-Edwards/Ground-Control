@@ -3,6 +3,8 @@ package com.keplerops.groundcontrol.domain.projects.model;
 import com.keplerops.groundcontrol.domain.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 
 @Entity
@@ -18,13 +20,22 @@ public class Project extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private ProjectType type = ProjectType.SOFTWARE;
+
     protected Project() {
         // JPA
     }
 
     public Project(String identifier, String name) {
+        this(identifier, name, ProjectType.SOFTWARE);
+    }
+
+    public Project(String identifier, String name, ProjectType type) {
         this.identifier = identifier;
         this.name = name;
+        this.type = type == null ? ProjectType.SOFTWARE : type;
     }
 
     public String getIdentifier() {
@@ -45,6 +56,10 @@ public class Project extends BaseEntity {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public ProjectType getType() {
+        return type;
     }
 
     @Override

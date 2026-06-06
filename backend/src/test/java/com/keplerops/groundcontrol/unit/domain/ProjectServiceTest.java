@@ -3,6 +3,9 @@ package com.keplerops.groundcontrol.unit.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.TestUtil;
@@ -10,10 +13,16 @@ import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
+import com.keplerops.groundcontrol.domain.projects.model.ProjectType;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
 import com.keplerops.groundcontrol.domain.projects.service.CreateProjectCommand;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.projects.service.UpdateProjectCommand;
+import com.keplerops.groundcontrol.domain.research.model.AutonomyLevel;
+import com.keplerops.groundcontrol.domain.research.model.ContributionType;
+import com.keplerops.groundcontrol.domain.research.model.IntendedOutput;
+import com.keplerops.groundcontrol.domain.research.service.ResearchIntakeCommand;
+import com.keplerops.groundcontrol.domain.research.service.ResearchIntakeService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,11 +41,14 @@ class ProjectServiceTest {
     @Mock
     private ProjectRepository projectRepository;
 
+    @Mock
+    private ResearchIntakeService researchIntakeService;
+
     private ProjectService service;
 
     @BeforeEach
     void setUp() {
-        service = new ProjectService(projectRepository);
+        service = new ProjectService(projectRepository, researchIntakeService);
     }
 
     private Project makeProject(String identifier, String name) {
@@ -82,6 +94,63 @@ class ProjectServiceTest {
             when(projectRepository.existsByIdentifier("existing")).thenReturn(true);
 
             assertThatThrownBy(() -> service.create(command)).isInstanceOf(ConflictException.class);
+        }
+
+        @Test
+        void researchType_withIntake_delegatesToIntakeService() {
+            var intakeCmd = new ResearchIntakeCommand(
+                    "Investigate research goal",
+                    null,
+                    ContributionType.REVIEW,
+                    IntendedOutput.SCOPING_REVIEW,
+                    AutonomyLevel.COPILOT,
+                    List.of("cite_resolve"),
+                    null,
+                    null,
+                    null,
+                    null);
+            var command = new CreateProjectCommand(
+                    "research-project", "Research Project", "desc", ProjectType.RESEARCH, intakeCmd);
+            when(projectRepository.existsByIdentifier("research-project")).thenReturn(false);
+            when(projectRepository.save(any(Project.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = service.create(command);
+            assertThat(result.getType()).isEqualTo(ProjectType.RESEARCH);
+            verify(researchIntakeService, times(1)).create(result, intakeCmd);
+        }
+
+        @Test
+        void researchType_missingIntake_throwsValidation() {
+            var command =
+                    new CreateProjectCommand("research-project", "Research Project", null, ProjectType.RESEARCH, null);
+            when(projectRepository.existsByIdentifier("research-project")).thenReturn(false);
+
+            assertThatThrownBy(() -> service.create(command))
+                    .isInstanceOf(com.keplerops.groundcontrol.domain.exception.DomainValidationException.class)
+                    .hasMessageContaining("researchIntake");
+            verify(researchIntakeService, never()).create(any(), any());
+        }
+
+        @Test
+        void softwareType_withIntake_throwsValidation() {
+            var intakeCmd = new ResearchIntakeCommand(
+                    "x",
+                    null,
+                    ContributionType.REVIEW,
+                    IntendedOutput.SCOPING_REVIEW,
+                    AutonomyLevel.COPILOT,
+                    List.of(),
+                    null,
+                    null,
+                    null,
+                    null);
+            var command = new CreateProjectCommand("sw-project", "SW Project", null, ProjectType.SOFTWARE, intakeCmd);
+            when(projectRepository.existsByIdentifier("sw-project")).thenReturn(false);
+
+            assertThatThrownBy(() -> service.create(command))
+                    .isInstanceOf(com.keplerops.groundcontrol.domain.exception.DomainValidationException.class)
+                    .hasMessageContaining("researchIntake");
+            verify(researchIntakeService, never()).create(any(), any());
         }
     }
 

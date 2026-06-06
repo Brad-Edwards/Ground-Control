@@ -95,6 +95,15 @@ A new MCP tool `gc_documentation_coverage` exposes the classifier to agents:
 input `{ repo_path, changed_paths[] }`, output
 `{ ok, classifications[], outcome_required, suggested_doc_targets[] }`.
 
+**MCP-surface additions are classified `mcp_tool`.** New `gc_admin` actions
+(for example `replace_research_intake` in issue #999) or any future
+`gc_*` tool registered in `mcp/ground-control/index.js` inherit the existing
+`mcp_tool` classification on path basis; the closed-vocabulary classifier
+does not need an update per-action. The gate-sync rule
+(`doc-coverage-gate-sync` in `architecture/policies/adr-policy.json`) fires
+whenever the listed trigger paths change so this ADR and `DOC_STYLE.md` stay
+current with the actual classifier surface.
+
 ## Consequences
 
 - PRs that modify a classified surface must supply `documentation_outcome` or

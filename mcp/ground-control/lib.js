@@ -1009,12 +1009,28 @@ export async function getProject(identifier) {
   return request("GET", `/api/v1/projects/${encodeURIComponent(identifier)}`);
 }
 
+/**
+ * Create a project. {@code data} accepts {@code identifier}, {@code name},
+ * {@code description}, and (since ADR-056 / issue #999) optional
+ * {@code type} (SOFTWARE | GRC | RESEARCH; defaults to SOFTWARE backend-side)
+ * and optional {@code researchIntake} nested object. The backend enforces
+ * "researchIntake required iff type=RESEARCH" with a 422 if mismatched.
+ */
 export async function createProject(data) {
   return request("POST", "/api/v1/projects", { body: data });
 }
 
 export async function updateProject(identifier, data) {
   return request("PUT", `/api/v1/projects/${encodeURIComponent(identifier)}`, { body: data });
+}
+
+/**
+ * Replace the research-intake metadata for a RESEARCH project. The backend
+ * returns 404 if no intake exists, 422 if the project is not RESEARCH.
+ * See ADR-056.
+ */
+export async function replaceResearchIntake(identifier, data) {
+  return request("PUT", `/api/v1/projects/${encodeURIComponent(identifier)}/research-intake`, { body: data });
 }
 
 // ---------------------------------------------------------------------------
