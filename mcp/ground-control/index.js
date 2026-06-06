@@ -78,13 +78,15 @@ import {
   runPostImplementationPlan,
   runAssertTraceabilityReconciled, runCloseIssueAfterMerge,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
-  runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
+  runGetIssueThread, runGates, runWatchCiRun, runWatchSonarAnalysis,
+  runWatchRequiredStatuses,
   runCodexReviewCycle, runTestQualityReviewCycle,
   startReviewJob, pollReviewJob, cancelReviewJob,
   runResolveWorkflowRoute,
   DECISION_RECORD_REVIEWERS, DECISION_RECORD_DECISIONS, DECISION_RECORD_CLASSIFICATIONS,
   PR_BODY_CHANGE_CLASSES, PR_REQUIREMENT_RE, EXACT_REQUIREMENT_UID_RE,
   TELEMETRY_TIERS, TELEMETRY_OUTCOMES,
+  ENGINE_CAPABILITIES,
   buildCodexReviewToolDescription, buildCodexReviewOverrideCapDescription,
   buildCodexReviewOverrideReasonDescription,
   CODEX_REVIEW_HARD_CAP, CODEX_REVIEW_PREPUSH_HARD_CAP,
@@ -374,6 +376,31 @@ server.tool(
   async ({ repo_path }) => {
     try { return ok(JSON.stringify(await getRepoGroundControlContext(repo_path), null, 2)); }
     catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_run_gates",
+  "Run the portable local gate engine. Resolves .ground-control.yaml through gc_get_repo_ground_control_context, loads and validates the configured .gc/gates.yaml manifest plus .gc/workflow-lock.json, computes changed files and a diff hash from base_ref...head_ref, selects applicable capability gates, executes each command with a bounded timeout and sanitized environment, evaluates typed provider output and thresholds, records gate-effectiveness telemetry, and writes the gates_green phase marker only when applicable blocking local gates pass. If no manifest exists, legacy completion/test/lint/format workflow commands are adapted into temporary policy/unit_tests/lint/format gates and reported as legacy_mode without pack coverage.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    base_ref: z.string().optional(),
+    head_ref: z.string().optional(),
+    phase: z.enum(["local", "remote"]).optional(),
+    capabilities: z.array(z.enum(ENGINE_CAPABILITIES)).optional(),
+  },
+  async ({ repo_path, issue_number, base_ref, head_ref, phase, capabilities }) => {
+    try {
+      return ok(JSON.stringify(await runGates({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        baseRef: base_ref ?? "origin/dev",
+        headRef: head_ref ?? "HEAD",
+        phase: phase ?? "local",
+        capabilities: capabilities ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
   },
 );
 
@@ -1075,7 +1102,7 @@ server.tool(
 
 server.tool(
   "gc_watch_sonar_analysis",
-  "Poll SonarCloud for a PR's quality gate and open issues / hotspots server-side. Returns one compact terminal envelope: {quality_gate, issues_summary, hotspots_summary, full_issue_export_path}. Designed for /implement Step 11: the agent makes one tool call; the MCP server holds the connection through the analysis propagation wait (60s default) and quality-gate polling (30 min default). When the repo has no sonarcloud block in .ground-control.yaml the tool returns ok=true skipped=true quality_gate='NONE' (mirrors the existing skip behavior). SonarCloud REST authentication uses HTTP Basic with the SONAR_TOKEN env var as the username — the token is read at call time and passed only in the Authorization header (never argv, telemetry, export, or returned envelope). The full per-issue + per-hotspot payload is written server-side under `.gc/sonar/<pr>-<ts>.json` for on-demand drilldown; only summaries reach the caller.",
+  "Optional provider adapter that polls SonarCloud for a PR's quality gate and open issues / hotspots server-side. The engine-level remote gate is gc_watch_required_statuses with the remote_status capability; this tool remains available for repositories that still want the SonarCloud-specific summary/export. Returns one compact terminal envelope: {quality_gate, issues_summary, hotspots_summary, full_issue_export_path}. The MCP server holds the connection through the analysis propagation wait (60s default) and quality-gate polling (30 min default). When the repo has no sonarcloud block in .ground-control.yaml the tool returns ok=true skipped=true quality_gate='NONE'. SonarCloud REST authentication uses HTTP Basic with the SONAR_TOKEN env var as the username — the token is read at call time and passed only in the Authorization header (never argv, telemetry, export, or returned envelope). The full per-issue + per-hotspot payload is written server-side under `.gc/sonar/<pr>-<ts>.json` for on-demand drilldown; only summaries reach the caller.",
   {
     repo_path: z.string(),
     pr_number: z.number().int().positive(),
@@ -1091,6 +1118,60 @@ server.tool(
         initialWaitSeconds: initial_wait_seconds ?? 60,
         totalTimeoutSeconds: total_timeout_seconds ?? 1800,
         pollIntervalSeconds: poll_interval_seconds ?? 30,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_watch_required_statuses",
+  "Watch provider-neutral required remote statuses for a pull request. The status set comes from remote_status gates in the manifest unless required_statuses is supplied explicitly. The tool evaluates arbitrary status names, polls the PR status rollup when no status_snapshot is supplied, and writes remote_gates_green only when the required set passes for the bound head SHA, manifest hash, diff hash, and required-status-set hash.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    pr_number: z.number().int().positive(),
+    base_ref: z.string().optional(),
+    head_ref: z.string().optional(),
+    head_sha: z.string().optional(),
+    required_statuses: z.array(z.string().min(1)).optional(),
+    status_snapshot: z.array(z.object({
+      name: z.string().min(1),
+      status: z.string().optional(),
+      conclusion: z.string().optional(),
+      state: z.string().optional(),
+      id: z.union([z.string(), z.number()]).optional(),
+      url: z.string().optional(),
+    }).passthrough()).optional(),
+    queued_timeout_seconds: z.number().int().nonnegative().optional(),
+    total_timeout_seconds: z.number().int().nonnegative().optional(),
+    poll_interval_seconds: z.number().int().nonnegative().optional(),
+  },
+  async ({
+    repo_path,
+    issue_number,
+    pr_number,
+    base_ref,
+    head_ref,
+    head_sha,
+    required_statuses,
+    status_snapshot,
+    queued_timeout_seconds,
+    total_timeout_seconds,
+    poll_interval_seconds,
+  }) => {
+    try {
+      return ok(JSON.stringify(await runWatchRequiredStatuses({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        prNumber: pr_number,
+        baseRef: base_ref ?? "origin/dev",
+        headRef: head_ref ?? "HEAD",
+        headSha: head_sha ?? null,
+        requiredStatuses: required_statuses ?? null,
+        statusSnapshot: status_snapshot ?? null,
+        queuedTimeoutSeconds: queued_timeout_seconds ?? 300,
+        totalTimeoutSeconds: total_timeout_seconds ?? 2700,
+        pollIntervalSeconds: poll_interval_seconds ?? 15,
       }), null, 2));
     } catch (e) { return err(e); }
   },

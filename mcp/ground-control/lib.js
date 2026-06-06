@@ -1817,6 +1817,13 @@ function emptyWorkflowConfig() {
     lint_command: null,
     format_command: null,
     base_branch: null,
+    // Portable workflow-engine config (ADR-062). Null means the repository has
+    // not adopted versioned engine/packs yet; command-only legacy configs still
+    // work through the compatibility adapter in gc_run_gates.
+    engine: { version: null },
+    gate_manifest: null,
+    packs: [],
+    gate_overrides: {},
     // Per-reviewer pre-push cap defaults. `null` means "use the MCP tool
     // default" (issue #906 lowered the tool default from 3 to 1; repos that
     // want the old behavior set `pre_push_cap: 3` explicitly).
@@ -1829,6 +1836,104 @@ function emptyWorkflowConfig() {
     // tool-layer defaults at call time".
     integration_manager: { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null },
   };
+}
+
+const WORKFLOW_ENGINE_KEYS = ["version"];
+const WORKFLOW_PACK_KEYS = ["id", "version", "scope", "profile"];
+const WORKFLOW_PACK_ID_RE = /^[a-z0-9][a-z0-9._-]*$/;
+const WORKFLOW_OVERRIDE_KEY_RE = /^[A-Za-z0-9_.-]+$/;
+
+function normalizeWorkflowEngineConfig(raw) {
+  if (raw == null) return { ok: true, value: { version: null } };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, errors: ["workflow.engine must be a mapping when set"] };
+  }
+  const errors = [];
+  for (const key of Object.keys(raw)) {
+    if (!WORKFLOW_ENGINE_KEYS.includes(key)) {
+      errors.push(`workflow.engine has unknown key '${key}'`);
+    }
+  }
+  let version = null;
+  if (raw.version != null) {
+    if (typeof raw.version !== "string" || raw.version.trim() === "") {
+      errors.push("workflow.engine.version must be a non-empty string when set");
+    } else {
+      version = raw.version;
+    }
+  }
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value: { version } };
+}
+
+function normalizeWorkflowPacksConfig(raw) {
+  if (raw == null) return { ok: true, value: [] };
+  if (!Array.isArray(raw)) {
+    return { ok: false, errors: ["workflow.packs must be a list when set"] };
+  }
+  const errors = [];
+  const out = [];
+  raw.forEach((entry, i) => {
+    const prefix = `workflow.packs[${i}]`;
+    const before = errors.length;
+    if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+      errors.push(`${prefix} must be a mapping`);
+      return;
+    }
+    for (const key of Object.keys(entry)) {
+      if (!WORKFLOW_PACK_KEYS.includes(key)) {
+        errors.push(`${prefix} has unknown key '${key}'`);
+      }
+    }
+    if (typeof entry.id !== "string" || !WORKFLOW_PACK_ID_RE.test(entry.id)) {
+      errors.push(`${prefix}.id must match ${WORKFLOW_PACK_ID_RE.source}`);
+    }
+    if (typeof entry.version !== "string" || entry.version.trim() === "") {
+      errors.push(`${prefix}.version must be a non-empty string`);
+    }
+    if (typeof entry.scope !== "string" || entry.scope.trim() === "") {
+      errors.push(`${prefix}.scope must be a non-empty repo-relative path`);
+    }
+    if (entry.profile != null && (typeof entry.profile !== "string" || entry.profile.trim() === "")) {
+      errors.push(`${prefix}.profile must be a non-empty string when set`);
+    }
+    if (errors.length === before) {
+      out.push({
+        id: entry.id,
+        version: entry.version,
+        scope: entry.scope,
+        profile: entry.profile ?? null,
+      });
+    }
+  });
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value: out };
+}
+
+function normalizeWorkflowGateOverrides(raw) {
+  if (raw == null) return { ok: true, value: {} };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, errors: ["workflow.gate_overrides must be a mapping when set"] };
+  }
+  const errors = [];
+  const out = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!WORKFLOW_OVERRIDE_KEY_RE.test(key)) {
+      errors.push(`workflow.gate_overrides key '${key}' must match ${WORKFLOW_OVERRIDE_KEY_RE.source}`);
+      continue;
+    }
+    if (
+      value == null ||
+      !["string", "number", "boolean"].includes(typeof value) ||
+      (typeof value === "string" && value.trim() === "")
+    ) {
+      errors.push(`workflow.gate_overrides.${key} must be a non-empty scalar`);
+      continue;
+    }
+    out[key] = value;
+  }
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value: out };
 }
 
 // Normalize a workflow.pr_title block.  Allowed keys: types, subject_pattern,
@@ -2054,8 +2159,8 @@ function normalizeWorkflowConfig(raw) {
   }
   // Scalar string-typed keys handled inline; nested-mapping keys delegated to
   // their own normalizers below.
-  const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "base_branch"];
-  const allowedNested = ["codex_review", "test_quality_review", "pr_title", "integration_manager"];
+  const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "base_branch", "gate_manifest"];
+  const allowedNested = ["engine", "packs", "gate_overrides", "codex_review", "test_quality_review", "pr_title", "integration_manager"];
   const allowed = [...allowedScalar, ...allowedNested];
   const value = emptyWorkflowConfig();
   const errors = [];
@@ -2079,6 +2184,15 @@ function normalizeWorkflowConfig(raw) {
     }
     value[key] = v;
   }
+  const engineResult = normalizeWorkflowEngineConfig(raw.engine);
+  if (!engineResult.ok) errors.push(...engineResult.errors);
+  else value.engine = engineResult.value;
+  const packsResult = normalizeWorkflowPacksConfig(raw.packs);
+  if (!packsResult.ok) errors.push(...packsResult.errors);
+  else value.packs = packsResult.value;
+  const gateOverridesResult = normalizeWorkflowGateOverrides(raw.gate_overrides);
+  if (!gateOverridesResult.ok) errors.push(...gateOverridesResult.errors);
+  else value.gate_overrides = gateOverridesResult.value;
   const codexResult = normalizeReviewerConfig(raw.codex_review, "workflow.codex_review");
   if (!codexResult.ok) errors.push(...codexResult.errors);
   else value.codex_review = codexResult.value;
@@ -2865,6 +2979,24 @@ export async function getRepoGroundControlContext(repoPath) {
     const r = resolveRepoRelativePath(repoRoot, v, `example_paths.${field}`);
     if (!r.ok) docsPathErrors.push(r.error);
   }
+  const workflow = parseResult.value.workflow;
+  if (workflow.gate_manifest != null) {
+    const r = resolveRepoRelativePath(repoRoot, workflow.gate_manifest, "workflow.gate_manifest");
+    if (!r.ok) {
+      docsPathErrors.push(r.error);
+    } else {
+      const real = assertRealpathInRepo(repoRootRealForDocs, r.abs, "workflow.gate_manifest");
+      if (!real.ok) docsPathErrors.push(real.error);
+    }
+  }
+  workflow.packs.forEach((entry, i) => {
+    const field = `workflow.packs[${i}].scope`;
+    const r = resolveGateRepoPath(repoRoot, repoRootRealForDocs, entry.scope, field, { allowRoot: true });
+    if (!r.ok) {
+      docsPathErrors.push(r.error);
+      return;
+    }
+  });
   // architecture.vocabulary path-valued entries: same containment rules as
   // docs.* (lexical resolve + realpath containment). example_path on patterns
   // and path on canonical_helpers are repo-relative documentation pointers
@@ -2929,6 +3061,1647 @@ export async function getRepoGroundControlContext(repoPath) {
     telemetry: parseResult.value.telemetry,
     architecture: parseResult.value.architecture,
     errors: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Portable gate engine (ADR-058 / ADR-061 / ADR-062)
+// ---------------------------------------------------------------------------
+
+export const GATE_ENGINE_VERSION = "1.0.0";
+
+export const ENGINE_CAPABILITIES = Object.freeze([
+  "format",
+  "lint",
+  "build",
+  "type_safety",
+  "unit_tests",
+  "integration_tests",
+  "contract_boundary",
+  "property_verification",
+  "architecture",
+  "complexity",
+  "mutation",
+  "diff_coverage",
+  "sast",
+  "secret_scan",
+  "dependency_policy",
+  "accessibility",
+  "docs_policy",
+  "traceability",
+  "policy",
+  "remote_status",
+]);
+
+const ENGINE_CAPABILITY_SET = new Set(ENGINE_CAPABILITIES);
+const GATE_MANIFEST_ROOT_KEYS = ["schema_version", "engine", "defaults", "packs", "gates"];
+const GATE_MANIFEST_ENGINE_KEYS = ["min_version", "manifest_version"];
+const GATE_MANIFEST_DEFAULT_KEYS = ["timeout_seconds", "provider_missing", "fail_fast"];
+const GATE_MANIFEST_PACK_KEYS = ["id", "version", "scope"];
+const GATE_MANIFEST_GATE_KEYS = [
+  "id",
+  "capability",
+  "pack",
+  "provider",
+  "cwd",
+  "command",
+  "blocking",
+  "scope",
+  "applies_when",
+  "timeout_seconds",
+  "threshold",
+  "output",
+  "artifacts",
+  "config_paths",
+  "generated_files",
+  "provider_missing",
+  "required_statuses",
+];
+const GATE_MANIFEST_APPLIES_KEYS = ["paths"];
+const GATE_MANIFEST_THRESHOLD_KEYS = ["metric", "min", "max", "break", "severity", "policy"];
+const GATE_MANIFEST_OUTPUT_KEYS = ["type", "path", "metrics"];
+const GATE_SCOPES = Object.freeze(["repo", "changed"]);
+const GATE_PROVIDER_MISSING_POLICIES = Object.freeze(["fail", "reviewer_fallback", "not_applicable"]);
+const GATE_OUTPUT_TYPES = Object.freeze(["json"]);
+const GATE_SEVERITIES = Object.freeze(["info", "low", "medium", "high", "critical", "blocker"]);
+const GATE_TELEMETRY_SCHEMA_VERSION = 1;
+const GATE_DEFAULT_TIMEOUT_SECONDS = 900;
+const GATE_MAX_TIMEOUT_SECONDS = 86400;
+const GATE_OUTPUT_MAX_BYTES = 1024 * 1024;
+
+export const GATE_MANIFEST_JSON_SCHEMA = Object.freeze({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  title: "Ground Control gate manifest",
+  type: "object",
+  additionalProperties: false,
+  required: ["schema_version", "gates"],
+  properties: {
+    schema_version: { const: 1 },
+    engine: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        min_version: { type: "string", minLength: 1 },
+        manifest_version: { type: "string", minLength: 1 },
+      },
+    },
+    defaults: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        timeout_seconds: { type: "integer", minimum: 1, maximum: GATE_MAX_TIMEOUT_SECONDS },
+        provider_missing: { enum: GATE_PROVIDER_MISSING_POLICIES },
+        fail_fast: { type: "boolean" },
+      },
+    },
+    packs: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "version", "scope"],
+        properties: {
+          id: { type: "string", pattern: WORKFLOW_PACK_ID_RE.source },
+          version: { type: "string", minLength: 1 },
+          scope: { type: "string", minLength: 1 },
+        },
+      },
+    },
+    gates: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "capability"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          capability: { enum: ENGINE_CAPABILITIES },
+          pack: { type: "string", minLength: 1 },
+          provider: { type: "string", minLength: 1 },
+          cwd: { type: "string", minLength: 1 },
+          command: { type: "string", minLength: 1 },
+          blocking: { type: "boolean" },
+          scope: { enum: GATE_SCOPES },
+          applies_when: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              paths: { type: "array", items: { type: "string", minLength: 1 } },
+            },
+          },
+          timeout_seconds: { type: "integer", minimum: 1, maximum: GATE_MAX_TIMEOUT_SECONDS },
+          threshold: {
+            type: "object",
+            additionalProperties: false,
+            required: ["metric"],
+            properties: {
+              metric: { type: "string", minLength: 1 },
+              min: { type: "number" },
+              max: { type: "number" },
+              break: { type: "number" },
+              severity: { enum: GATE_SEVERITIES },
+              policy: { type: "string", minLength: 1 },
+            },
+          },
+          output: {
+            type: "object",
+            additionalProperties: false,
+            required: ["type"],
+            properties: {
+              type: { enum: GATE_OUTPUT_TYPES },
+              path: { type: "string", minLength: 1 },
+              metrics: { type: "object" },
+            },
+          },
+          artifacts: { type: "array", items: { type: "string", minLength: 1 } },
+          config_paths: { type: "array", items: { type: "string", minLength: 1 } },
+          generated_files: { type: "array", items: { type: "string", minLength: 1 } },
+          provider_missing: { enum: GATE_PROVIDER_MISSING_POLICIES },
+          required_statuses: { type: "array", items: { type: "string", minLength: 1 } },
+        },
+      },
+    },
+  },
+});
+
+function isPlainMapping(value) {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function pushUnknownKeyErrors(errors, prefix, raw, allowed) {
+  for (const key of Object.keys(raw)) {
+    if (!allowed.includes(key)) errors.push(`${prefix} has unknown key '${key}'`);
+  }
+}
+
+function isPositiveBoundedInteger(value) {
+  return Number.isInteger(value) && value > 0 && value <= GATE_MAX_TIMEOUT_SECONDS;
+}
+
+function normalizeGateString(raw, field, errors, { required = false, pattern = null } = {}) {
+  if (raw == null) {
+    if (required) errors.push(`${field} is required`);
+    return null;
+  }
+  if (typeof raw !== "string" || raw.trim() === "") {
+    errors.push(`${field} must be a non-empty string`);
+    return null;
+  }
+  if (pattern && !pattern.test(raw)) {
+    errors.push(`${field} must match ${pattern.source}`);
+    return null;
+  }
+  return raw;
+}
+
+function resolveGateRepoPath(repoRoot, repoRootReal, rawPath, fieldName, { allowRoot = false, requireExisting = false } = {}) {
+  if (typeof rawPath !== "string" || rawPath.trim() === "") {
+    return { ok: false, error: `${fieldName} must be a non-empty repo-relative path` };
+  }
+  if (rawPath.includes("\0")) {
+    return { ok: false, error: `${fieldName} must not contain NUL bytes` };
+  }
+  if (isAbsolute(rawPath)) {
+    return { ok: false, error: `${fieldName} must be repo-relative (got absolute path '${rawPath}')` };
+  }
+  const abs = resolvePath(repoRoot, rawPath);
+  const rel = relative(repoRoot, abs);
+  if ((rel === "" && !allowRoot) || rel.startsWith("..") || isAbsolute(rel)) {
+    return { ok: false, error: `${fieldName} must stay inside the repository root (got '${rawPath}')` };
+  }
+  try {
+    if (requireExisting) {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- abs comes from a repo-relative manifest path
+      statSync(abs);
+    }
+    if (rel === "") {
+      const canonicalRoot = realpathSync(repoRoot);
+      if (canonicalRoot !== repoRootReal) {
+        return { ok: false, error: `${fieldName} canonical root mismatch` };
+      }
+      return { ok: true, rel: ".", abs };
+    }
+    const contain = assertRealpathInRepo(repoRootReal, abs, fieldName);
+    if (!contain.ok) return contain;
+  } catch (error) {
+    if (requireExisting && error.code === "ENOENT") {
+      return { ok: false, error: `${fieldName} references '${rawPath}' which does not exist` };
+    }
+    throw error;
+  }
+  return { ok: true, rel: rel === "" ? "." : rel, abs };
+}
+
+function validateGatePathPattern(raw, fieldName) {
+  if (typeof raw !== "string" || raw.trim() === "") {
+    return `${fieldName} must be a non-empty repo-relative path pattern`;
+  }
+  if (raw.includes("\0")) return `${fieldName} must not contain NUL bytes`;
+  if (isAbsolute(raw)) return `${fieldName} must be repo-relative`;
+  const normalized = raw.replace(/\\/g, "/");
+  if (normalized.split("/").includes("..")) {
+    return `${fieldName} must not contain '..' path segments`;
+  }
+  if (normalized.startsWith("../") || normalized === "..") {
+    return `${fieldName} must stay inside the repository root`;
+  }
+  return null;
+}
+
+function normalizeGatePathArray(raw, field, errors, repoRoot, repoRootReal) {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) {
+    errors.push(`${field} must be a list of repo-relative paths`);
+    return [];
+  }
+  const out = [];
+  raw.forEach((entry, i) => {
+    const resolved = resolveGateRepoPath(repoRoot, repoRootReal, entry, `${field}[${i}]`, { allowRoot: false });
+    if (!resolved.ok) {
+      errors.push(resolved.error);
+    } else {
+      out.push(resolved.rel);
+    }
+  });
+  return out;
+}
+
+function normalizeGateAppliesWhen(raw, field, errors) {
+  if (raw == null) return { paths: [] };
+  if (!isPlainMapping(raw)) {
+    errors.push(`${field} must be a mapping when set`);
+    return { paths: [] };
+  }
+  pushUnknownKeyErrors(errors, field, raw, GATE_MANIFEST_APPLIES_KEYS);
+  const paths = [];
+  if (raw.paths != null) {
+    if (!Array.isArray(raw.paths)) {
+      errors.push(`${field}.paths must be a list of repo-relative path patterns`);
+    } else {
+      raw.paths.forEach((entry, i) => {
+        const error = validateGatePathPattern(entry, `${field}.paths[${i}]`);
+        if (error) errors.push(error);
+        else paths.push(entry.replace(/\\/g, "/"));
+      });
+    }
+  }
+  return { paths };
+}
+
+function normalizeGateThreshold(raw, field, errors) {
+  if (raw == null) return null;
+  if (!isPlainMapping(raw)) {
+    errors.push(`${field} must be a mapping when set`);
+    return null;
+  }
+  pushUnknownKeyErrors(errors, field, raw, GATE_MANIFEST_THRESHOLD_KEYS);
+  const metric = normalizeGateString(raw.metric, `${field}.metric`, errors, { required: true });
+  const out = { metric };
+  for (const key of ["min", "max", "break"]) {
+    if (raw[key] == null) continue;
+    if (typeof raw[key] !== "number" || Number.isNaN(raw[key])) {
+      errors.push(`${field}.${key} must be a number when set`);
+    } else {
+      out[key] = raw[key];
+    }
+  }
+  if (raw.severity != null) {
+    if (!GATE_SEVERITIES.includes(raw.severity)) {
+      errors.push(`${field}.severity must be one of: ${GATE_SEVERITIES.join(", ")}`);
+    } else {
+      out.severity = raw.severity;
+    }
+  }
+  if (raw.policy != null) {
+    if (typeof raw.policy !== "string" || raw.policy.trim() === "") {
+      errors.push(`${field}.policy must be a non-empty string when set`);
+    } else {
+      out.policy = raw.policy;
+    }
+  }
+  return out;
+}
+
+function normalizeGateOutput(raw, field, errors, repoRoot, repoRootReal) {
+  if (raw == null) return null;
+  if (!isPlainMapping(raw)) {
+    errors.push(`${field} must be a mapping when set`);
+    return null;
+  }
+  pushUnknownKeyErrors(errors, field, raw, GATE_MANIFEST_OUTPUT_KEYS);
+  const type = normalizeGateString(raw.type, `${field}.type`, errors, { required: true });
+  if (type && !GATE_OUTPUT_TYPES.includes(type)) {
+    errors.push(`${field}.type must be one of: ${GATE_OUTPUT_TYPES.join(", ")}`);
+  }
+  let path = null;
+  if (raw.path != null) {
+    const resolved = resolveGateRepoPath(repoRoot, repoRootReal, raw.path, `${field}.path`, { allowRoot: false });
+    if (!resolved.ok) errors.push(resolved.error);
+    else path = resolved.rel;
+  }
+  const metrics = {};
+  if (raw.metrics != null) {
+    if (!isPlainMapping(raw.metrics)) {
+      errors.push(`${field}.metrics must be a mapping from metric name to JSON path string`);
+    } else {
+      for (const [metric, jsonPath] of Object.entries(raw.metrics)) {
+        if (typeof metric !== "string" || metric.trim() === "") {
+          errors.push(`${field}.metrics contains an empty metric name`);
+        } else if (typeof jsonPath !== "string" || jsonPath.trim() === "") {
+          errors.push(`${field}.metrics.${metric} must be a non-empty string`);
+        } else {
+          metrics[metric] = jsonPath;
+        }
+      }
+    }
+  }
+  return { type, path, metrics };
+}
+
+export function validateGateManifest(manifest, { repoRoot }) {
+  const errors = [];
+  if (!isPlainMapping(manifest)) {
+    return { ok: false, errors: [".gc/gates.yaml root must be a mapping"] };
+  }
+  pushUnknownKeyErrors(errors, "gate manifest", manifest, GATE_MANIFEST_ROOT_KEYS);
+  if (manifest.schema_version !== 1) {
+    errors.push("schema_version must be 1");
+  }
+  let repoRootReal;
+  try {
+    repoRootReal = realpathSync(repoRoot);
+  } catch (error) {
+    errors.push(`failed to canonicalize repo root ${repoRoot}: ${error.message}`);
+    repoRootReal = repoRoot;
+  }
+
+  const engine = { min_version: null, manifest_version: null };
+  if (manifest.engine != null) {
+    if (!isPlainMapping(manifest.engine)) {
+      errors.push("engine must be a mapping when set");
+    } else {
+      pushUnknownKeyErrors(errors, "engine", manifest.engine, GATE_MANIFEST_ENGINE_KEYS);
+      engine.min_version = normalizeGateString(manifest.engine.min_version, "engine.min_version", errors);
+      engine.manifest_version = normalizeGateString(manifest.engine.manifest_version, "engine.manifest_version", errors);
+    }
+  }
+
+  const defaults = {
+    timeout_seconds: GATE_DEFAULT_TIMEOUT_SECONDS,
+    provider_missing: "reviewer_fallback",
+    fail_fast: false,
+  };
+  if (manifest.defaults != null) {
+    if (!isPlainMapping(manifest.defaults)) {
+      errors.push("defaults must be a mapping when set");
+    } else {
+      pushUnknownKeyErrors(errors, "defaults", manifest.defaults, GATE_MANIFEST_DEFAULT_KEYS);
+      if (manifest.defaults.timeout_seconds != null) {
+        if (!isPositiveBoundedInteger(manifest.defaults.timeout_seconds)) {
+          errors.push(`defaults.timeout_seconds must be an integer in [1, ${GATE_MAX_TIMEOUT_SECONDS}]`);
+        } else {
+          defaults.timeout_seconds = manifest.defaults.timeout_seconds;
+        }
+      }
+      if (manifest.defaults.provider_missing != null) {
+        if (!GATE_PROVIDER_MISSING_POLICIES.includes(manifest.defaults.provider_missing)) {
+          errors.push(`defaults.provider_missing must be one of: ${GATE_PROVIDER_MISSING_POLICIES.join(", ")}`);
+        } else {
+          defaults.provider_missing = manifest.defaults.provider_missing;
+        }
+      }
+      if (manifest.defaults.fail_fast != null) {
+        if (typeof manifest.defaults.fail_fast !== "boolean") {
+          errors.push("defaults.fail_fast must be a boolean when set");
+        } else {
+          defaults.fail_fast = manifest.defaults.fail_fast;
+        }
+      }
+    }
+  }
+
+  const packs = [];
+  if (manifest.packs != null) {
+    if (!Array.isArray(manifest.packs)) {
+      errors.push("packs must be a list when set");
+    } else {
+      manifest.packs.forEach((entry, i) => {
+        const prefix = `packs[${i}]`;
+        const before = errors.length;
+        if (!isPlainMapping(entry)) {
+          errors.push(`${prefix} must be a mapping`);
+          return;
+        }
+        pushUnknownKeyErrors(errors, prefix, entry, GATE_MANIFEST_PACK_KEYS);
+        const id = normalizeGateString(entry.id, `${prefix}.id`, errors, { required: true, pattern: WORKFLOW_PACK_ID_RE });
+        const version = normalizeGateString(entry.version, `${prefix}.version`, errors, { required: true });
+        let scope = null;
+        if (entry.scope == null) {
+          errors.push(`${prefix}.scope is required`);
+        } else {
+          const resolved = resolveGateRepoPath(repoRoot, repoRootReal, entry.scope, `${prefix}.scope`, { allowRoot: true });
+          if (!resolved.ok) errors.push(resolved.error);
+          else scope = resolved.rel;
+        }
+        if (errors.length === before) packs.push({ id, version, scope });
+      });
+    }
+  }
+
+  const gateIds = new Set();
+  const gates = [];
+  if (!Array.isArray(manifest.gates)) {
+    errors.push("gates must be a list");
+  } else {
+    manifest.gates.forEach((entry, i) => {
+      const prefix = `gates[${i}]`;
+      const before = errors.length;
+      if (!isPlainMapping(entry)) {
+        errors.push(`${prefix} must be a mapping`);
+        return;
+      }
+      pushUnknownKeyErrors(errors, prefix, entry, GATE_MANIFEST_GATE_KEYS);
+      const id = normalizeGateString(entry.id, `${prefix}.id`, errors, { required: true });
+      if (id != null) {
+        if (gateIds.has(id)) errors.push(`gate id '${id}' is duplicated`);
+        gateIds.add(id);
+      }
+      const capability = normalizeGateString(entry.capability, `${prefix}.capability`, errors, { required: true });
+      if (capability && !ENGINE_CAPABILITY_SET.has(capability)) {
+        errors.push(`${prefix}.capability must be one of: ${ENGINE_CAPABILITIES.join(", ")}`);
+      }
+      const pack = normalizeGateString(entry.pack, `${prefix}.pack`, errors);
+      const provider = normalizeGateString(entry.provider, `${prefix}.provider`, errors);
+      let cwd = ".";
+      if (entry.cwd != null) {
+        const resolved = resolveGateRepoPath(repoRoot, repoRootReal, entry.cwd, `${prefix}.cwd`, { allowRoot: true });
+        if (!resolved.ok) errors.push(resolved.error);
+        else cwd = resolved.rel;
+      }
+      const command = normalizeGateString(entry.command, `${prefix}.command`, errors);
+      let blocking = true;
+      if (entry.blocking != null) {
+        if (typeof entry.blocking !== "boolean") errors.push(`${prefix}.blocking must be a boolean when set`);
+        else blocking = entry.blocking;
+      }
+      let scope = "repo";
+      if (entry.scope != null) {
+        if (!GATE_SCOPES.includes(entry.scope)) errors.push(`${prefix}.scope must be one of: ${GATE_SCOPES.join(", ")}`);
+        else scope = entry.scope;
+      }
+      let timeoutSeconds = null;
+      if (entry.timeout_seconds != null) {
+        if (!isPositiveBoundedInteger(entry.timeout_seconds)) {
+          errors.push(`${prefix}.timeout_seconds must be an integer in [1, ${GATE_MAX_TIMEOUT_SECONDS}]`);
+        } else {
+          timeoutSeconds = entry.timeout_seconds;
+        }
+      }
+      let providerMissing = null;
+      if (entry.provider_missing != null) {
+        if (!GATE_PROVIDER_MISSING_POLICIES.includes(entry.provider_missing)) {
+          errors.push(`${prefix}.provider_missing must be one of: ${GATE_PROVIDER_MISSING_POLICIES.join(", ")}`);
+        } else {
+          providerMissing = entry.provider_missing;
+        }
+      }
+      const appliesWhen = normalizeGateAppliesWhen(entry.applies_when, `${prefix}.applies_when`, errors);
+      const threshold = normalizeGateThreshold(entry.threshold, `${prefix}.threshold`, errors);
+      const output = normalizeGateOutput(entry.output, `${prefix}.output`, errors, repoRoot, repoRootReal);
+      const artifacts = normalizeGatePathArray(entry.artifacts, `${prefix}.artifacts`, errors, repoRoot, repoRootReal);
+      const configPaths = normalizeGatePathArray(entry.config_paths, `${prefix}.config_paths`, errors, repoRoot, repoRootReal);
+      const generatedFiles = normalizeGatePathArray(entry.generated_files, `${prefix}.generated_files`, errors, repoRoot, repoRootReal);
+      const requiredStatuses = [];
+      if (entry.required_statuses != null) {
+        if (!Array.isArray(entry.required_statuses)) {
+          errors.push(`${prefix}.required_statuses must be a list of strings`);
+        } else {
+          entry.required_statuses.forEach((statusName, j) => {
+            if (typeof statusName !== "string" || statusName.trim() === "") {
+              errors.push(`${prefix}.required_statuses[${j}] must be a non-empty string`);
+            } else {
+              requiredStatuses.push(statusName);
+            }
+          });
+        }
+      }
+      if (command == null && providerMissing == null && defaults.provider_missing === "fail" && capability !== "remote_status") {
+        errors.push(`${prefix}.command is required unless provider_missing is declared`);
+      }
+      if (errors.length === before) {
+        gates.push({
+          id,
+          capability,
+          pack,
+          provider,
+          cwd,
+          command,
+          blocking,
+          scope,
+          applies_when: appliesWhen,
+          timeout_seconds: timeoutSeconds,
+          threshold,
+          output,
+          artifacts,
+          config_paths: configPaths,
+          generated_files: generatedFiles,
+          provider_missing: providerMissing,
+          required_statuses: requiredStatuses,
+        });
+      }
+    });
+  }
+
+  if (errors.length) return { ok: false, errors };
+  return {
+    ok: true,
+    value: {
+      schema_version: 1,
+      engine,
+      defaults,
+      packs,
+      gates,
+    },
+  };
+}
+
+export function parseGateManifestYaml(yamlText, { repoRoot }) {
+  let parsed;
+  try {
+    parsed = parseYaml(yamlText);
+  } catch (error) {
+    return { ok: false, errors: [`Could not parse gate manifest: ${error.message}`] };
+  }
+  return validateGateManifest(parsed, { repoRoot });
+}
+
+const WORKFLOW_LOCK_ROOT_KEYS = ["schema_version", "engine", "packs"];
+const WORKFLOW_LOCK_ENGINE_KEYS = ["version", "checksum", "source_url", "compatible"];
+const WORKFLOW_LOCK_PACK_KEYS = ["id", "version", "checksum", "source_url", "compatible_engine", "signer", "trust_policy"];
+
+export function validateWorkflowLock(lock, { manifest }) {
+  const errors = [];
+  if (!isPlainMapping(lock)) {
+    return { ok: false, errors: [".gc/workflow-lock.json root must be a mapping"] };
+  }
+  pushUnknownKeyErrors(errors, "workflow lock", lock, WORKFLOW_LOCK_ROOT_KEYS);
+  if (lock.schema_version != null && lock.schema_version !== 1) {
+    errors.push("workflow lock schema_version must be 1 when set");
+  }
+  if (!isPlainMapping(lock.engine)) {
+    errors.push("workflow lock engine must be a mapping");
+  } else {
+    pushUnknownKeyErrors(errors, "workflow lock engine", lock.engine, WORKFLOW_LOCK_ENGINE_KEYS);
+    if (typeof lock.engine.version !== "string" || lock.engine.version.trim() === "") {
+      errors.push("workflow lock engine.version must be a non-empty string");
+    }
+    for (const key of ["checksum", "source_url", "compatible"]) {
+      if (lock.engine[key] != null && (typeof lock.engine[key] !== "string" || lock.engine[key].trim() === "")) {
+        errors.push(`workflow lock engine.${key} must be a non-empty string when set`);
+      }
+    }
+  }
+  const lockPacks = [];
+  if (lock.packs != null) {
+    if (!Array.isArray(lock.packs)) {
+      errors.push("workflow lock packs must be a list when set");
+    } else {
+      lock.packs.forEach((entry, i) => {
+        const prefix = `workflow lock packs[${i}]`;
+        const before = errors.length;
+        if (!isPlainMapping(entry)) {
+          errors.push(`${prefix} must be a mapping`);
+          return;
+        }
+        pushUnknownKeyErrors(errors, prefix, entry, WORKFLOW_LOCK_PACK_KEYS);
+        const id = normalizeGateString(entry.id, `${prefix}.id`, errors, { required: true, pattern: WORKFLOW_PACK_ID_RE });
+        const version = normalizeGateString(entry.version, `${prefix}.version`, errors, { required: true });
+        for (const key of ["checksum", "source_url", "compatible_engine", "signer", "trust_policy"]) {
+          if (entry[key] != null && (typeof entry[key] !== "string" || entry[key].trim() === "")) {
+            errors.push(`${prefix}.${key} must be a non-empty string when set`);
+          }
+        }
+        if (errors.length === before) lockPacks.push({ id, version });
+      });
+    }
+  }
+  const lockById = new Map(lockPacks.map((pack) => [pack.id, pack.version]));
+  for (const pack of manifest.packs) {
+    if (!lockById.has(pack.id)) {
+      errors.push(`workflow lock is missing manifest pack '${pack.id}'`);
+    } else if (lockById.get(pack.id) !== pack.version) {
+      errors.push(`workflow lock pack '${pack.id}' version '${lockById.get(pack.id)}' does not match manifest version '${pack.version}'`);
+    }
+  }
+  if (errors.length) return { ok: false, errors };
+  return {
+    ok: true,
+    value: {
+      schema_version: lock.schema_version ?? 1,
+      engine: { version: lock.engine.version },
+      packs: lockPacks,
+    },
+  };
+}
+
+function sha256Hex(text) {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map((v) => stableJson(v)).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stableJson(value[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function normalizeChangedPath(pathValue) {
+  return String(pathValue || "").replace(/\\/g, "/").replace(/^\.\/+/, "");
+}
+
+function globPatternToRegex(pattern) {
+  const normalized = normalizeChangedPath(pattern);
+  let out = "^";
+  for (let i = 0; i < normalized.length; i++) {
+    const ch = normalized[i];
+    if (ch === "*") {
+      if (normalized[i + 1] === "*") {
+        const prev = normalized[i - 1];
+        const next = normalized[i + 2];
+        if (prev === "/" && next === "/") {
+          out = out.slice(0, -1);
+          out += "(?:/.*)?/";
+          i += 2;
+        } else {
+          out += ".*";
+          i += 1;
+        }
+      } else {
+        out += "[^/]*";
+      }
+    } else if (ch === "?") {
+      out += "[^/]";
+    } else {
+      out += ch.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+    }
+  }
+  out += "$";
+  return new RegExp(out);
+}
+
+export function pathMatchesGatePattern(pathValue, pattern) {
+  return globPatternToRegex(pattern).test(normalizeChangedPath(pathValue));
+}
+
+export function gateAppliesToChangedFiles(gate, changedFiles) {
+  const files = Array.isArray(changedFiles) ? changedFiles.map(normalizeChangedPath) : [];
+  if (gate.scope === "repo") return true;
+  if (gate.scope !== "changed") return false;
+  if (files.length === 0) return false;
+  const patterns = Array.isArray(gate.applies_when?.paths) ? gate.applies_when.paths : [];
+  if (patterns.length === 0) return true;
+  return files.some((file) => patterns.some((pattern) => pathMatchesGatePattern(file, pattern)));
+}
+
+export function selectApplicableGates(manifest, { changedFiles = [], capabilities = null, phase = "local" } = {}) {
+  const requested = Array.isArray(capabilities) && capabilities.length > 0 ? new Set(capabilities) : null;
+  return manifest.gates.filter((gate) => {
+    if (phase === "local" && gate.capability === "remote_status") return false;
+    if (phase === "remote" && gate.capability !== "remote_status") return false;
+    if (requested && !requested.has(gate.capability)) return false;
+    return gateAppliesToChangedFiles(gate, changedFiles);
+  });
+}
+
+function readJsonPath(payload, jsonPath) {
+  if (typeof jsonPath !== "string" || jsonPath.trim() === "") return undefined;
+  const pathText = jsonPath.startsWith("$.") ? jsonPath.slice(2) : jsonPath;
+  if (pathText === "$" || pathText === "") return payload;
+  return pathText.split(".").reduce((cur, part) => {
+    if (cur == null) return undefined;
+    if (/^\d+$/.test(part) && Array.isArray(cur)) return cur[Number(part)];
+    return cur[part];
+  }, payload);
+}
+
+function extractGateMetric(providerOutput, metric, metricsMap = {}) {
+  if (!providerOutput || typeof providerOutput !== "object") return undefined;
+  const mapped = metricsMap[metric];
+  if (mapped) return readJsonPath(providerOutput, mapped);
+  if (Object.prototype.hasOwnProperty.call(providerOutput, metric)) return providerOutput[metric];
+  if (providerOutput.metrics && Object.prototype.hasOwnProperty.call(providerOutput.metrics, metric)) {
+    return providerOutput.metrics[metric];
+  }
+  return undefined;
+}
+
+function severityRank(severity) {
+  const idx = GATE_SEVERITIES.indexOf(String(severity || "").toLowerCase());
+  return idx < 0 ? null : idx;
+}
+
+export function evaluateGateThreshold(threshold, providerOutput = null) {
+  if (threshold == null) return { ok: true, threshold: null };
+  const actual = extractGateMetric(providerOutput, threshold.metric, providerOutput?.__metrics_map ?? {});
+  const result = { metric: threshold.metric, actual };
+  const failures = [];
+  if (Object.prototype.hasOwnProperty.call(threshold, "min")) {
+    result.min = threshold.min;
+    if (typeof actual !== "number" || actual < threshold.min) failures.push("min");
+  }
+  if (Object.prototype.hasOwnProperty.call(threshold, "max")) {
+    result.max = threshold.max;
+    if (typeof actual !== "number" || actual > threshold.max) failures.push("max");
+  }
+  if (Object.prototype.hasOwnProperty.call(threshold, "break")) {
+    result.break = threshold.break;
+    if (typeof actual !== "number" || actual < threshold.break) failures.push("break");
+  }
+  if (Object.prototype.hasOwnProperty.call(threshold, "severity")) {
+    result.severity = threshold.severity;
+    const actualRank = severityRank(actual);
+    const allowedRank = severityRank(threshold.severity);
+    if (actualRank == null || allowedRank == null || actualRank > allowedRank) failures.push("severity");
+  }
+  if (Object.prototype.hasOwnProperty.call(threshold, "policy")) {
+    result.policy = threshold.policy;
+    if (actual !== threshold.policy) failures.push("policy");
+  }
+  return { ok: failures.length === 0, threshold: result, failures };
+}
+
+function synthesizeLegacyGate(id, capability, command) {
+  return {
+    id,
+    capability,
+    pack: null,
+    provider: "legacy_command",
+    cwd: ".",
+    command,
+    blocking: true,
+    scope: "repo",
+    applies_when: { paths: [] },
+    timeout_seconds: null,
+    threshold: null,
+    output: null,
+    artifacts: [],
+    config_paths: [],
+    generated_files: [],
+    provider_missing: null,
+    required_statuses: [],
+  };
+}
+
+export function synthesizeLegacyGateManifest(workflow) {
+  const gates = [];
+  if (workflow.completion_command) gates.push(synthesizeLegacyGate("legacy.policy", "policy", workflow.completion_command));
+  if (workflow.test_command) gates.push(synthesizeLegacyGate("legacy.unit_tests", "unit_tests", workflow.test_command));
+  if (workflow.lint_command) gates.push(synthesizeLegacyGate("legacy.lint", "lint", workflow.lint_command));
+  if (workflow.format_command) gates.push(synthesizeLegacyGate("legacy.format", "format", workflow.format_command));
+  if (gates.length === 0) return null;
+  return {
+    schema_version: 1,
+    engine: { min_version: null, manifest_version: "legacy" },
+    defaults: { timeout_seconds: GATE_DEFAULT_TIMEOUT_SECONDS, provider_missing: "fail", fail_fast: false },
+    packs: [],
+    gates,
+    legacy_mode: true,
+  };
+}
+
+export function applyGateOverrides(manifest, overrides = {}) {
+  if (!overrides || Object.keys(overrides).length === 0) return manifest;
+  const copy = JSON.parse(JSON.stringify(manifest));
+  for (const [key, value] of Object.entries(overrides)) {
+    const gate = [...copy.gates]
+      .sort((a, b) => b.id.length - a.id.length)
+      .find((candidate) => key === candidate.id || key.startsWith(`${candidate.id}.`));
+    if (!gate || key === gate.id) continue;
+    const tail = key.slice(gate.id.length + 1);
+    if (tail === "timeout_seconds" && isPositiveBoundedInteger(value)) {
+      gate.timeout_seconds = value;
+    } else if (tail === "blocking" && typeof value === "boolean") {
+      gate.blocking = value;
+    } else if (tail === "provider_missing" && GATE_PROVIDER_MISSING_POLICIES.includes(value)) {
+      gate.provider_missing = value;
+    } else if (tail.startsWith("threshold.")) {
+      if (gate.threshold == null) gate.threshold = { metric: tail.slice("threshold.".length) };
+      const thresholdKey = tail.slice("threshold.".length);
+      if (GATE_MANIFEST_THRESHOLD_KEYS.includes(thresholdKey) && thresholdKey !== "metric") {
+        gate.threshold[thresholdKey] = value;
+      }
+    }
+  }
+  return copy;
+}
+
+export async function computeGitDiffInfo(repoRoot, baseRef, headRef) {
+  if (!isSafeGitRefName(baseRef)) {
+    throw new Error(`base_ref '${baseRef}' is not a safe Git ref name`);
+  }
+  if (!isSafeGitRefName(headRef)) {
+    throw new Error(`head_ref '${headRef}' is not a safe Git ref name`);
+  }
+  const range = `${baseRef}...${headRef}`;
+  const [nameResult, diffResult] = await Promise.all([
+    execFile("git", ["-C", repoRoot, "diff", "--name-only", range], { maxBuffer: 64 * 1024 * 1024 }),
+    execFile("git", ["-C", repoRoot, "diff", "--binary", range], { maxBuffer: 64 * 1024 * 1024 }),
+  ]);
+  const changedFiles = nameResult.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .sort();
+  return {
+    base_ref: baseRef,
+    head_ref: headRef,
+    changed_files: changedFiles,
+    diff_hash: sha256Hex(diffResult.stdout),
+  };
+}
+
+export function buildGateCommandEnv(extra = {}) {
+  const allow = [
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "LANG",
+    "LC_ALL",
+    "SHELL",
+    "CI",
+    "USER",
+    "LOGNAME",
+    "TERM",
+    "NO_COLOR",
+    "XDG_CACHE_HOME",
+    "npm_config_cache",
+  ];
+  const env = {};
+  for (const key of allow) {
+    if (typeof process.env[key] === "string") env[key] = process.env[key];
+  }
+  if (!env.PATH) env.PATH = "/usr/local/bin:/usr/bin:/bin";
+  env.GC_GATE_ENGINE_VERSION = GATE_ENGINE_VERSION;
+  for (const [key, value] of Object.entries(extra)) {
+    if (/^[A-Z0-9_]+$/.test(key) && typeof value === "string") env[key] = value;
+  }
+  return env;
+}
+
+export async function executeGateCommand({ command, cwd, timeoutSeconds, env = buildGateCommandEnv() }) {
+  return await new Promise((resolve) => {
+    const started = Date.now();
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let settled = false;
+    const child = spawnChild("/bin/sh", ["-lc", command], {
+      cwd,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const capAppend = (current, chunk) => {
+      if (Buffer.byteLength(current, "utf8") >= GATE_OUTPUT_MAX_BYTES) return current;
+      const next = current + chunk.toString("utf8");
+      if (Buffer.byteLength(next, "utf8") <= GATE_OUTPUT_MAX_BYTES) return next;
+      return Buffer.from(next, "utf8").subarray(0, GATE_OUTPUT_MAX_BYTES).toString("utf8");
+    };
+    child.stdout.on("data", (chunk) => { stdout = capAppend(stdout, chunk); });
+    child.stderr.on("data", (chunk) => { stderr = capAppend(stderr, chunk); });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // The process may have exited between timeout and kill.
+      }
+      setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // Already exited.
+        }
+      }, KILL_GRACE_MS_DEFAULT);
+    }, timeoutSeconds * 1000);
+    const finish = (exitCode, signal, spawnError = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({
+        exit_code: typeof exitCode === "number" ? exitCode : null,
+        signal: signal ?? null,
+        timed_out: timedOut,
+        duration_ms: Date.now() - started,
+        stdout,
+        stderr,
+        error: spawnError ? spawnError.message : null,
+      });
+    };
+    child.on("error", (error) => finish(127, null, error));
+    child.on("close", (code, signal) => finish(code, signal));
+  });
+}
+
+function parseGateProviderOutput({ gate, repoRoot, commandResult }) {
+  if (gate.output == null) return { ok: true, value: null };
+  let rawText = commandResult.stdout;
+  if (gate.output.path) {
+    const resolved = resolveGateRepoPath(repoRoot, realpathSync(repoRoot), gate.output.path, `${gate.id}.output.path`, { allowRoot: false });
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    try {
+      rawText = readAbsoluteTextFile(resolved.abs);
+    } catch (error) {
+      return { ok: false, error: `could not read declared provider output '${gate.output.path}': ${error.message}` };
+    }
+  }
+  if (gate.output.type === "json") {
+    try {
+      const parsed = JSON.parse(rawText);
+      if (parsed && typeof parsed === "object") parsed.__metrics_map = gate.output.metrics || {};
+      return { ok: true, value: parsed };
+    } catch (error) {
+      return { ok: false, error: `could not parse JSON provider output for gate '${gate.id}': ${error.message}` };
+    }
+  }
+  return { ok: true, value: null };
+}
+
+function packVersionForGate(manifest, gate) {
+  if (!gate.pack) return null;
+  return manifest.packs.find((pack) => pack.id === gate.pack)?.version ?? null;
+}
+
+function gateProviderMissingResult({ gate, manifest, manifestHash, diffHash, commandHash }) {
+  const fallback = gate.provider_missing ?? manifest.defaults.provider_missing;
+  const reviewerFallbackUsed = fallback === "reviewer_fallback";
+  const notApplicable = fallback === "not_applicable";
+  const blockingSatisfied = gate.blocking !== true || reviewerFallbackUsed || notApplicable;
+  return {
+    gate_id: gate.id,
+    capability: gate.capability,
+    pack: gate.pack,
+    pack_version: packVersionForGate(manifest, gate),
+    provider: gate.provider,
+    blocking: gate.blocking,
+    outcome: "provider_missing",
+    ok: blockingSatisfied,
+    blocking_satisfied: blockingSatisfied,
+    fallback: reviewerFallbackUsed ? "reviewer_lens" : fallback,
+    provider_missing: true,
+    reviewer_fallback_used: reviewerFallbackUsed,
+    command_hash: commandHash,
+    manifest_hash: manifestHash,
+    diff_hash: diffHash,
+    telemetry: [
+      "provider_missing",
+      ...(reviewerFallbackUsed ? ["reviewer_fallback_used"] : []),
+      ...(notApplicable ? ["not_applicable"] : []),
+    ],
+    next_action: blockingSatisfied ? "route_residual_concern_to_reviewer_lens" : "install_provider_or_mark_gate_nonblocking",
+  };
+}
+
+async function runOneGate({ gate, manifest, repoRoot, manifestHash, diffHash, commandRunner }) {
+  const commandHash = gate.command ? sha256Hex(gate.command) : null;
+  if (gate.command == null) {
+    return gateProviderMissingResult({ gate, manifest, manifestHash, diffHash, commandHash });
+  }
+  const cwd = resolvePath(repoRoot, gate.cwd === "." ? "" : gate.cwd);
+  const timeoutSeconds = gate.timeout_seconds ?? manifest.defaults.timeout_seconds;
+  const commandResult = await commandRunner({
+    command: gate.command,
+    cwd,
+    timeoutSeconds,
+    env: buildGateCommandEnv({
+      GC_GATE_ID: gate.id,
+      GC_GATE_CAPABILITY: gate.capability,
+    }),
+  });
+  const providerOutputResult = parseGateProviderOutput({ gate, repoRoot, commandResult });
+  const providerOutput = providerOutputResult.ok ? providerOutputResult.value : null;
+  const thresholdResult = providerOutputResult.ok
+    ? evaluateGateThreshold(gate.threshold, providerOutput)
+    : { ok: false, threshold: gate.threshold, failures: ["provider_output"] };
+  const exitOk = commandResult.exit_code === 0 && commandResult.timed_out !== true && commandResult.error == null;
+  const ok = exitOk && providerOutputResult.ok && thresholdResult.ok;
+  return {
+    gate_id: gate.id,
+    capability: gate.capability,
+    pack: gate.pack,
+    pack_version: packVersionForGate(manifest, gate),
+    provider: gate.provider,
+    blocking: gate.blocking,
+    outcome: ok ? "passed" : "failed",
+    ok,
+    blocking_satisfied: ok || gate.blocking !== true,
+    exit_code: commandResult.exit_code,
+    signal: commandResult.signal,
+    timed_out: commandResult.timed_out,
+    duration_ms: commandResult.duration_ms ?? null,
+    stdout: commandResult.stdout ?? "",
+    stderr: commandResult.stderr ?? "",
+    command_hash: commandHash,
+    manifest_hash: manifestHash,
+    diff_hash: diffHash,
+    threshold: thresholdResult.threshold,
+    threshold_failures: thresholdResult.failures ?? [],
+    provider_output_error: providerOutputResult.ok ? null : providerOutputResult.error,
+    artifacts: gate.artifacts,
+    telemetry: [ok ? "passed" : "failed"],
+    next_action: ok ? "continue" : "fix_tests_and_rerun_gate",
+  };
+}
+
+function buildGateEffectivenessTelemetryRecord({ issueNumber, envelopeId, result, legacyMode }) {
+  return {
+    schema_version: GATE_TELEMETRY_SCHEMA_VERSION,
+    kind: "gate_effectiveness",
+    recorded_at: new Date().toISOString(),
+    issue_number: issueNumber,
+    envelope_id: envelopeId,
+    gate_id: result.gate_id,
+    capability: result.capability,
+    outcome: result.outcome,
+    blocking: result.blocking,
+    provider_missing: result.provider_missing === true,
+    reviewer_fallback_used: result.reviewer_fallback_used === true,
+    pack: result.pack,
+    pack_version: result.pack_version,
+    legacy_mode: legacyMode === true,
+    duration_ms: result.duration_ms ?? null,
+    exit_code: result.exit_code ?? null,
+    threshold: result.threshold ?? null,
+  };
+}
+
+function appendGateEffectivenessTelemetry(repoRoot, issueNumber, envelopeId, results, legacyMode) {
+  try {
+    const rel = `.gc/telemetry/gate-effectiveness-${issueNumber}.jsonl`;
+    const resolved = resolveGateRepoPath(repoRoot, realpathSync(repoRoot), rel, "gate_effectiveness_telemetry_path", { allowRoot: false });
+    if (!resolved.ok) return null;
+    mkdirSync(dirname(resolved.abs), { recursive: true });
+    const lines = results.map((result) => JSON.stringify(buildGateEffectivenessTelemetryRecord({
+      issueNumber,
+      envelopeId,
+      result,
+      legacyMode,
+    })));
+    if (lines.length > 0) appendFileSync(resolved.abs, `${lines.join("\n")}\n`);
+    return resolved.rel;
+  } catch {
+    return null;
+  }
+}
+
+function manifestPackVersions(manifest) {
+  return manifest.packs.map((pack) => ({ id: pack.id, version: pack.version, scope: pack.scope }));
+}
+
+export function computePackVersionsHash(packVersions) {
+  return sha256Hex(stableJson(packVersions));
+}
+
+function loadManifestOrLegacy({ repoRoot, context }) {
+  const workflow = context.workflow;
+  const manifestRel = workflow.gate_manifest ?? ".gc/gates.yaml";
+  const manifestAbs = resolvePath(repoRoot, manifestRel);
+  let manifestText = null;
+  try {
+    manifestText = readAbsoluteTextFile(manifestAbs);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    if (workflow.gate_manifest != null) {
+      return {
+        ok: false,
+        error: "gate_manifest_missing",
+        message: `workflow.gate_manifest references ${workflow.gate_manifest}, but that file does not exist`,
+      };
+    }
+    const legacy = synthesizeLegacyGateManifest(workflow);
+    if (legacy == null) {
+      return {
+        ok: true,
+        manifest: null,
+        manifest_text: null,
+        manifest_path: manifestRel,
+        manifest_hash: null,
+        legacy_mode: false,
+      };
+    }
+    return {
+      ok: true,
+      manifest: legacy,
+      manifest_text: stableJson(legacy),
+      manifest_path: null,
+      manifest_hash: sha256Hex(stableJson(legacy)),
+      legacy_mode: true,
+    };
+  }
+  const manifestResult = parseGateManifestYaml(manifestText, { repoRoot });
+  if (!manifestResult.ok) {
+    return {
+      ok: false,
+      error: "gate_manifest_invalid",
+      message: "gate manifest validation failed",
+      errors: manifestResult.errors,
+    };
+  }
+  const lockPath = join(repoRoot, ".gc/workflow-lock.json");
+  let lockText;
+  try {
+    lockText = readAbsoluteTextFile(lockPath);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return {
+        ok: false,
+        error: "workflow_lock_missing",
+        message: ".gc/workflow-lock.json is required when a gate manifest is present",
+      };
+    }
+    throw error;
+  }
+  let lockJson;
+  try {
+    lockJson = JSON.parse(lockText);
+  } catch (error) {
+    return {
+      ok: false,
+      error: "workflow_lock_invalid",
+      message: `Could not parse .gc/workflow-lock.json: ${error.message}`,
+    };
+  }
+  const lockResult = validateWorkflowLock(lockJson, { manifest: manifestResult.value });
+  if (!lockResult.ok) {
+    return {
+      ok: false,
+      error: "workflow_lock_invalid",
+      message: "workflow lock validation failed",
+      errors: lockResult.errors,
+    };
+  }
+  const overridden = applyGateOverrides(manifestResult.value, workflow.gate_overrides);
+  return {
+    ok: true,
+    manifest: overridden,
+    manifest_text: manifestText,
+    manifest_path: manifestRel,
+    manifest_hash: sha256Hex(manifestText),
+    lock: lockResult.value,
+    legacy_mode: false,
+  };
+}
+
+export async function runGates({
+  repoPath,
+  issueNumber,
+  baseRef = "origin/dev",
+  headRef = "HEAD",
+  phase = "local",
+  capabilities = null,
+  commandRunner = executeGateCommand,
+  diffInfo = null,
+  postMarker = true,
+  markerPoster = null,
+} = {}) {
+  if (typeof repoPath !== "string" || repoPath.length === 0) {
+    return { ok: false, error: "gate_run_input_invalid", message: "repo_path is required" };
+  }
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    return { ok: false, error: "gate_run_input_invalid", message: "issue_number must be a positive integer" };
+  }
+  if (!["local", "remote"].includes(phase)) {
+    return { ok: false, error: "gate_run_input_invalid", message: "phase must be 'local' or 'remote'" };
+  }
+  if (capabilities != null) {
+    if (!Array.isArray(capabilities) || capabilities.some((cap) => !ENGINE_CAPABILITY_SET.has(cap))) {
+      return {
+        ok: false,
+        error: "gate_run_input_invalid",
+        message: `capabilities must be drawn from: ${ENGINE_CAPABILITIES.join(", ")}`,
+      };
+    }
+  }
+
+  let repoRoot;
+  try {
+    repoRoot = await ensureGitRepo(repoPath);
+  } catch (error) {
+    return { ok: false, error: "gate_run_repo_not_found", message: error.message };
+  }
+  const context = await getRepoGroundControlContext(repoRoot);
+  if (context.status !== "ok") {
+    return {
+      ok: false,
+      error: "ground_control_context_invalid",
+      message: "gc_get_repo_ground_control_context did not return an ok context",
+      context_status: context.status,
+      errors: context.errors ?? [],
+    };
+  }
+  const manifestLoaded = loadManifestOrLegacy({ repoRoot, context });
+  if (!manifestLoaded.ok) return { ok: false, ...manifestLoaded, repo_path: repoRoot, issue_number: issueNumber };
+  if (manifestLoaded.manifest == null) {
+    const envelopeId = sha256Hex(stableJson({
+      repoRoot,
+      issueNumber,
+      baseRef,
+      headRef,
+      status: "provider_missing",
+      reason: "no_gate_manifest",
+    }));
+    return {
+      ok: true,
+      status: "degraded",
+      error: "provider_missing",
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      fallback: "reviewer_lens",
+      telemetry: ["provider_missing", "reviewer_fallback_used"],
+      envelope_id: envelopeId,
+      gates: [],
+      message: "No gate manifest or legacy workflow commands are configured; deterministic local gate coverage is unavailable.",
+    };
+  }
+
+  let effectiveDiffInfo = diffInfo;
+  if (effectiveDiffInfo == null) {
+    try {
+      effectiveDiffInfo = await computeGitDiffInfo(repoRoot, baseRef, headRef);
+    } catch (error) {
+      return {
+        ok: false,
+        error: "gate_diff_failed",
+        message: error.message,
+        repo_path: repoRoot,
+        issue_number: issueNumber,
+      };
+    }
+  }
+  const manifest = manifestLoaded.manifest;
+  const applicable = selectApplicableGates(manifest, {
+    changedFiles: effectiveDiffInfo.changed_files,
+    capabilities,
+    phase,
+  });
+  const results = [];
+  for (const gate of applicable) {
+    const result = await runOneGate({
+      gate,
+      manifest,
+      repoRoot,
+      manifestHash: manifestLoaded.manifest_hash,
+      diffHash: effectiveDiffInfo.diff_hash,
+      commandRunner,
+    });
+    results.push(result);
+    if (manifest.defaults.fail_fast && result.blocking_satisfied !== true) break;
+  }
+  const packVersions = manifestPackVersions(manifest);
+  const packVersionsHash = computePackVersionsHash(packVersions);
+  const blockingFailure = results.find((result) => result.blocking === true && result.blocking_satisfied !== true);
+  const envelopeBase = {
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    base_ref: effectiveDiffInfo.base_ref ?? baseRef,
+    head_ref: effectiveDiffInfo.head_ref ?? headRef,
+    manifest_path: manifestLoaded.manifest_path,
+    manifest_hash: manifestLoaded.manifest_hash,
+    diff_hash: effectiveDiffInfo.diff_hash,
+    changed_files: effectiveDiffInfo.changed_files,
+    pack_versions: packVersions,
+    pack_versions_hash: packVersionsHash,
+    legacy_mode: manifestLoaded.legacy_mode === true,
+    gates: results,
+  };
+  const envelopeId = sha256Hex(stableJson(envelopeBase));
+  const telemetryPath = appendGateEffectivenessTelemetry(repoRoot, issueNumber, envelopeId, results, manifestLoaded.legacy_mode);
+  if (blockingFailure) {
+    return {
+      ok: false,
+      error: blockingFailure.outcome === "provider_missing" ? "provider_missing" : "blocking_gate_failed",
+      gate_id: blockingFailure.gate_id,
+      capability: blockingFailure.capability,
+      pack: blockingFailure.pack,
+      pack_version: blockingFailure.pack_version,
+      blocking: blockingFailure.blocking,
+      exit_code: blockingFailure.exit_code ?? null,
+      threshold: blockingFailure.threshold ?? null,
+      artifacts: blockingFailure.artifacts ?? [],
+      next_action: blockingFailure.next_action,
+      envelope_id: envelopeId,
+      telemetry_path: telemetryPath,
+      ...envelopeBase,
+    };
+  }
+
+  let marker = null;
+  if (phase === "local" && postMarker) {
+    const binding = {
+      repo: context.github_repo ?? null,
+      base_ref: envelopeBase.base_ref,
+      head_ref: envelopeBase.head_ref,
+      manifest_hash: manifestLoaded.manifest_hash,
+      diff_hash: effectiveDiffInfo.diff_hash,
+      pack_versions_hash: packVersionsHash,
+      envelope_id: envelopeId,
+    };
+    try {
+      if (markerPoster) {
+        marker = await markerPoster({ repoRoot, issueNumber, phase: "gates_green", binding });
+      } else {
+        const { owner, name } = await getOwnerRepo(repoRoot);
+        marker = await postGatePhaseMarker(repoRoot, owner, name, issueNumber, "gates_green", binding);
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: "gate_marker_post_failed",
+        message: error.message,
+        envelope_id: envelopeId,
+        telemetry_path: telemetryPath,
+        ...envelopeBase,
+      };
+    }
+  }
+  const degraded = results.some((result) => result.provider_missing === true);
+  return {
+    ok: true,
+    status: degraded ? "degraded" : "passed",
+    envelope_id: envelopeId,
+    telemetry_path: telemetryPath,
+    phase_marker: marker ? { phase: "gates_green", issue_number: issueNumber } : null,
+    marker,
+    ...envelopeBase,
+  };
+}
+
+function collectRequiredStatusesFromManifest(manifest, { changedFiles = [] } = {}) {
+  if (!manifest) return [];
+  const gates = selectApplicableGates(manifest, {
+    changedFiles,
+    capabilities: ["remote_status"],
+    phase: "remote",
+  });
+  const statuses = [];
+  for (const gate of gates) {
+    for (const statusName of gate.required_statuses || []) statuses.push(statusName);
+  }
+  return [...new Set(statuses)].sort();
+}
+
+function normalizeRemoteStatusName(statusName) {
+  return typeof statusName === "string" ? statusName.trim() : "";
+}
+
+function normalizeRemoteStatusValue(value) {
+  return typeof value === "string" ? value.toLowerCase() : "";
+}
+
+export function evaluateRequiredStatuses({ requiredStatuses, statusSnapshot }) {
+  const required = [...new Set((requiredStatuses || []).map(normalizeRemoteStatusName).filter(Boolean))].sort();
+  const snapshot = Array.isArray(statusSnapshot) ? statusSnapshot : [];
+  const byName = new Map();
+  for (const entry of snapshot) {
+    const name = normalizeRemoteStatusName(entry?.name ?? entry?.context);
+    if (!name) continue;
+    byName.set(name, entry);
+  }
+  const passed = [];
+  const pending = [];
+  const failed = [];
+  const missing = [];
+  for (const name of required) {
+    const entry = byName.get(name);
+    if (!entry) {
+      missing.push(name);
+      continue;
+    }
+    const conclusion = normalizeRemoteStatusValue(entry.conclusion ?? entry.state ?? entry.status);
+    const status = normalizeRemoteStatusValue(entry.status ?? entry.state ?? entry.conclusion);
+    if (["success", "passed", "pass", "ok"].includes(conclusion)) {
+      passed.push(name);
+    } else if (["failure", "failed", "error", "cancelled", "canceled", "timed_out", "action_required"].includes(conclusion)) {
+      failed.push({ name, conclusion });
+    } else if (["queued", "pending", "waiting", "in_progress", "requested", "expected"].includes(status) || conclusion === "") {
+      pending.push(name);
+    } else {
+      failed.push({ name, conclusion: conclusion || status || "unknown" });
+    }
+  }
+  if (failed.length > 0) return { ok: false, state: "failed", required, passed, pending, failed, missing };
+  if (missing.length > 0 || pending.length > 0) return { ok: false, state: "pending", required, passed, pending, failed, missing };
+  return { ok: true, state: "passed", required, passed, pending, failed, missing };
+}
+
+async function fetchRemoteStatusSnapshotFromGh({ repoRoot, prNumber }) {
+  const { stdout } = await execFile(
+    "gh",
+    ["pr", "view", String(prNumber), "--json", "headRefOid,statusCheckRollup,url"],
+    { cwd: repoRoot },
+  );
+  const data = JSON.parse(stdout);
+  const rollup = Array.isArray(data.statusCheckRollup) ? data.statusCheckRollup : [];
+  return {
+    head_sha: typeof data.headRefOid === "string" ? data.headRefOid : null,
+    statuses: rollup.map((entry) => ({
+      name: entry.name ?? entry.context ?? "",
+      status: entry.status ?? entry.state ?? "",
+      conclusion: entry.conclusion ?? entry.state ?? "",
+      id: entry.databaseId ?? entry.detailsUrl ?? entry.targetUrl ?? entry.name ?? entry.context ?? "",
+      url: entry.detailsUrl ?? entry.targetUrl ?? "",
+    })),
+  };
+}
+
+function providerResultIdsHash(statusSnapshot) {
+  const ids = (Array.isArray(statusSnapshot) ? statusSnapshot : [])
+    .map((entry) => entry?.id ?? entry?.url ?? entry?.name ?? "")
+    .filter((id) => String(id).length > 0)
+    .sort();
+  return sha256Hex(stableJson(ids));
+}
+
+export async function runWatchRequiredStatuses({
+  repoPath,
+  issueNumber,
+  prNumber,
+  baseRef = "origin/dev",
+  headRef = "HEAD",
+  headSha = null,
+  requiredStatuses = null,
+  statusSnapshot = null,
+  queuedTimeoutSeconds = 300,
+  totalTimeoutSeconds = 2700,
+  pollIntervalSeconds = 15,
+  diffInfo = null,
+  statusFetcher = fetchRemoteStatusSnapshotFromGh,
+  postMarker = true,
+  markerPoster = null,
+} = {}) {
+  if (typeof repoPath !== "string" || repoPath.length === 0) {
+    return { ok: false, error: "required_status_input_invalid", message: "repo_path is required" };
+  }
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    return { ok: false, error: "required_status_input_invalid", message: "issue_number must be a positive integer" };
+  }
+  if (!Number.isInteger(prNumber) || prNumber <= 0) {
+    return { ok: false, error: "required_status_input_invalid", message: "pr_number must be a positive integer" };
+  }
+  for (const [name, value] of [
+    ["queued_timeout_seconds", queuedTimeoutSeconds],
+    ["total_timeout_seconds", totalTimeoutSeconds],
+    ["poll_interval_seconds", pollIntervalSeconds],
+  ]) {
+    if (!Number.isInteger(value) || value < 0) {
+      return { ok: false, error: "required_status_input_invalid", message: `${name} must be a non-negative integer` };
+    }
+  }
+
+  let repoRoot;
+  try {
+    repoRoot = await ensureGitRepo(repoPath);
+  } catch (error) {
+    return { ok: false, error: "required_status_repo_not_found", message: error.message };
+  }
+  const context = await getRepoGroundControlContext(repoRoot);
+  if (context.status !== "ok") {
+    return {
+      ok: false,
+      error: "ground_control_context_invalid",
+      message: "gc_get_repo_ground_control_context did not return an ok context",
+      context_status: context.status,
+      errors: context.errors ?? [],
+    };
+  }
+  let effectiveDiffInfo = diffInfo;
+  if (effectiveDiffInfo == null) {
+    try {
+      effectiveDiffInfo = await computeGitDiffInfo(repoRoot, baseRef, headRef);
+    } catch (error) {
+      return { ok: false, error: "required_status_diff_failed", message: error.message };
+    }
+  }
+  const manifestLoaded = loadManifestOrLegacy({ repoRoot, context });
+  if (!manifestLoaded.ok) return { ok: false, ...manifestLoaded, repo_path: repoRoot, issue_number: issueNumber };
+  const manifestStatuses = manifestLoaded.manifest
+    ? collectRequiredStatusesFromManifest(manifestLoaded.manifest, { changedFiles: effectiveDiffInfo.changed_files })
+    : [];
+  const required = requiredStatuses == null
+    ? manifestStatuses
+    : [...new Set(requiredStatuses.map(normalizeRemoteStatusName).filter(Boolean))].sort();
+
+  const startMs = Date.now();
+  let snapshot = Array.isArray(statusSnapshot) ? statusSnapshot : null;
+  let effectiveHeadSha = headSha;
+  let evaluation = evaluateRequiredStatuses({ requiredStatuses: required, statusSnapshot: snapshot ?? [] });
+  while (true) {
+    if (snapshot == null) {
+      let fetched;
+      try {
+        fetched = await statusFetcher({ repoRoot, prNumber });
+      } catch (error) {
+        return {
+          ok: false,
+          error: "required_status_fetch_failed",
+          message: error.message,
+          pr_number: prNumber,
+        };
+      }
+      snapshot = fetched.statuses;
+      effectiveHeadSha = effectiveHeadSha ?? fetched.head_sha ?? null;
+      evaluation = evaluateRequiredStatuses({ requiredStatuses: required, statusSnapshot: snapshot });
+    }
+    if (evaluation.ok || evaluation.state === "failed" || statusSnapshot != null) break;
+    const elapsedSeconds = Math.floor((Date.now() - startMs) / 1000);
+    if (elapsedSeconds > totalTimeoutSeconds) {
+      return {
+        ok: false,
+        error: "required_status_watch_timed_out",
+        pr_number: prNumber,
+        required_statuses: required,
+        evaluation,
+        next_action: "wait_for_required_statuses_and_retry",
+      };
+    }
+    if (evaluation.missing.length > 0 && elapsedSeconds > queuedTimeoutSeconds) {
+      return {
+        ok: false,
+        error: "required_status_missing_too_long",
+        pr_number: prNumber,
+        required_statuses: required,
+        evaluation,
+        next_action: "verify_required_status_configuration",
+      };
+    }
+    await _sleepMs(pollIntervalSeconds * 1000);
+    snapshot = null;
+  }
+  const requiredStatusSetHash = sha256Hex(stableJson(required));
+  const resultIdsHash = providerResultIdsHash(snapshot);
+  const envelopeBase = {
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    pr_number: prNumber,
+    base_ref: effectiveDiffInfo.base_ref ?? baseRef,
+    head_ref: effectiveDiffInfo.head_ref ?? headRef,
+    head_sha: effectiveHeadSha,
+    manifest_hash: manifestLoaded.manifest_hash,
+    diff_hash: effectiveDiffInfo.diff_hash,
+    required_statuses: required,
+    required_status_set_hash: requiredStatusSetHash,
+    provider_result_ids_hash: resultIdsHash,
+    evaluation,
+    statuses: snapshot ?? [],
+  };
+  const envelopeId = sha256Hex(stableJson(envelopeBase));
+  if (!evaluation.ok) {
+    return {
+      ok: false,
+      error: evaluation.state === "failed" ? "required_status_failed" : "required_status_pending",
+      next_action: evaluation.state === "failed" ? "fix_remote_status_and_retry" : "wait_for_required_statuses_and_retry",
+      envelope_id: envelopeId,
+      ...envelopeBase,
+    };
+  }
+  let marker = null;
+  if (postMarker) {
+    const binding = {
+      repo: context.github_repo ?? null,
+      pr_number: prNumber,
+      head_sha: effectiveHeadSha,
+      manifest_hash: manifestLoaded.manifest_hash,
+      diff_hash: effectiveDiffInfo.diff_hash,
+      required_status_set_hash: requiredStatusSetHash,
+      provider_result_ids_hash: resultIdsHash,
+      envelope_id: envelopeId,
+    };
+    try {
+      if (markerPoster) {
+        marker = await markerPoster({ repoRoot, issueNumber, phase: "remote_gates_green", binding });
+      } else {
+        const { owner, name } = await getOwnerRepo(repoRoot);
+        marker = await postGatePhaseMarker(repoRoot, owner, name, issueNumber, "remote_gates_green", binding);
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: "required_status_marker_post_failed",
+        message: error.message,
+        envelope_id: envelopeId,
+        ...envelopeBase,
+      };
+    }
+  }
+  return {
+    ok: true,
+    status: required.length === 0 ? "no_required_statuses" : "passed",
+    envelope_id: envelopeId,
+    phase_marker: marker ? { phase: "remote_gates_green", issue_number: issueNumber } : null,
+    marker,
+    ...envelopeBase,
   };
 }
 
@@ -4563,6 +6336,103 @@ export function buildPhaseMarker({ phase, issueNumber }) {
   ].join("\n");
 }
 
+const BOUND_PHASE_MARKER_RE = /<!--\s*gc:phase\s+([^]*?)-->/g;
+const PHASE_MARKER_ATTR_RE = /([a-z_]+)="([^"]*)"/g;
+const GATE_BOUND_PHASES = new Set(["gates_green", "remote_gates_green"]);
+
+function markerAttr(value) {
+  return encodeURIComponent(String(value));
+}
+
+function unmarkerAttr(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function parseMarkerAttrs(attrText) {
+  const attrs = {};
+  for (const match of attrText.matchAll(PHASE_MARKER_ATTR_RE)) {
+    attrs[match[1]] = unmarkerAttr(match[2]);
+  }
+  return attrs;
+}
+
+export function buildBoundPhaseMarker({ phase, issueNumber, binding = {}, body = null }) {
+  if (!GATE_BOUND_PHASES.has(phase)) {
+    throw new Error(`buildBoundPhaseMarker only supports: ${[...GATE_BOUND_PHASES].join(", ")}`);
+  }
+  const attrs = {
+    phase,
+    issue: String(issueNumber),
+    marker_schema: "1",
+    ...Object.fromEntries(Object.entries(binding).filter(([, value]) => value != null)),
+  };
+  const attrText = Object.entries(attrs)
+    .map(([key, value]) => `${key}="${markerAttr(value)}"`)
+    .join(" ");
+  const marker = [
+    `<!-- gc:phase ${attrText} -->`,
+    "",
+    `_gc workflow phase recorded: \`${phase}\` (issue #${issueNumber})._ ` +
+      "Posted by the MCP server after re-verifying the bound gate state. " +
+      "Do not edit or delete — downstream tools use this marker and binding to detect stale gate results.",
+  ].join("\n");
+  return body ? `${marker}\n\n${body}` : marker;
+}
+
+export function parseBoundPhaseMarkers(commentBodies, { issueNumber, phase = null } = {}) {
+  const records = [];
+  if (!Array.isArray(commentBodies)) return records;
+  for (const body of commentBodies) {
+    if (typeof body !== "string") continue;
+    for (const match of body.matchAll(BOUND_PHASE_MARKER_RE)) {
+      const attrs = parseMarkerAttrs(match[1]);
+      const markerIssue = Number.parseInt(attrs.issue, 10);
+      if (Number.isInteger(issueNumber) && markerIssue !== issueNumber) continue;
+      if (phase && attrs.phase !== phase) continue;
+      records.push({ phase: attrs.phase, issue_number: markerIssue, attrs });
+    }
+  }
+  return records;
+}
+
+export function evaluateBoundPhaseMarkerFreshness({ commentBodies, issueNumber, phase, expected }) {
+  const markers = parseBoundPhaseMarkers(commentBodies, { issueNumber, phase });
+  if (markers.length === 0) {
+    return {
+      ok: false,
+      error: "missing_phase_marker",
+      missing: [phase],
+      next_action: phase === "gates_green" ? "rerun_gc_run_gates" : "rerun_gc_watch_required_statuses",
+    };
+  }
+  const latest = markers[markers.length - 1];
+  const actual = {};
+  const expectedSubset = {};
+  const staleKeys = [];
+  for (const [key, value] of Object.entries(expected || {})) {
+    if (value == null) continue;
+    expectedSubset[key] = String(value);
+    actual[key] = latest.attrs[key] ?? null;
+    if (actual[key] !== String(value)) staleKeys.push(key);
+  }
+  if (staleKeys.length > 0) {
+    return {
+      ok: false,
+      error: "stale_phase_marker",
+      marker: phase,
+      stale_keys: staleKeys,
+      expected: expectedSubset,
+      actual,
+      next_action: phase === "gates_green" ? "rerun_gc_run_gates" : "rerun_gc_watch_required_statuses",
+    };
+  }
+  return { ok: true, marker: phase, attrs: latest.attrs };
+}
+
 // Maximum bytes of diff text to inline into a codex review prompt. Beyond
 // this, we switch to a manifest (file list + numstat) and instruct codex to
 // fetch per-file diffs via shell. Keeps prompt size bounded so review latency
@@ -5519,6 +7389,32 @@ async function readIssueCommentBodies(repoRoot, owner, name, issueNumber) {
 async function postPhaseMarker(repoRoot, owner, name, issueNumber, phase, extras = {}) {
   const marker = buildPhaseMarker({ phase, issueNumber });
   const body = extras.commentBody ? `${marker}\n\n${extras.commentBody}` : marker;
+  const { stdout } = await execFile(
+    "gh",
+    [
+      "api",
+      "--method",
+      "POST",
+      `/repos/${owner}/${name}/issues/${issueNumber}/comments`,
+      "-f",
+      `body=${body}`,
+    ],
+    { cwd: repoRoot },
+  );
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+}
+
+async function postGatePhaseMarker(repoRoot, owner, name, issueNumber, phase, binding, extras = {}) {
+  const body = buildBoundPhaseMarker({
+    phase,
+    issueNumber,
+    binding,
+    body: extras.commentBody ?? null,
+  });
   const { stdout } = await execFile(
     "gh",
     [

@@ -56,6 +56,16 @@ workflow:
   lint_command: make lint
   format_command: make format
   base_branch: dev
+  engine:
+    version: "^1.0.0"
+  gate_manifest: .gc/gates.yaml
+  packs:
+    - id: docs-generic
+      version: "^1.0.0"
+      scope: .
+      profile: default
+  gate_overrides:
+    docs.docs_policy.threshold.max: 0
 
 sonarcloud:
   project_key: Owner_Project
@@ -112,8 +122,12 @@ Config contract:
 
 - `schema_version` is required and currently must be `1`.
 - `project` is required and must be a lowercase identifier using letters, numbers, and hyphens.
-- Unknown top-level keys are rejected. Current top-level keys are `schema_version`, `project`, `github_repo`, `workflow`, `sonarcloud`, `rules`, `knowledge`, `docs`, `example_paths`, `requirements`, `cross_cutting_concerns`, `routing`, and `telemetry`.
-- `workflow.*` values are optional non-empty strings. `workflow.base_branch` must be a safe Git ref name using `[A-Za-z0-9._/-]`.
+- Unknown top-level keys are rejected. Current top-level keys are `schema_version`, `project`, `github_repo`, `workflow`, `sonarcloud`, `rules`, `knowledge`, `docs`, `example_paths`, `requirements`, `cross_cutting_concerns`, `routing`, `telemetry`, and `architecture`.
+- Legacy `workflow.test_command`, `workflow.completion_command`, `workflow.lint_command`, and `workflow.format_command` values are optional non-empty strings. `workflow.base_branch` must be a safe Git ref name using `[A-Za-z0-9._/-]`.
+- `workflow.engine.version` declares the portable workflow engine version constraint. It is optional; omitted means the repo has not selected versioned engine assets.
+- `workflow.gate_manifest` points to the repo-relative gate manifest. Omitted means `.gc/gates.yaml`.
+- `workflow.packs[]` declares selected gate packs with `id`, `version`, `scope`, and optional `profile`. Pack scopes are repo-relative and containment-checked.
+- `workflow.gate_overrides` is a mapping from dotted gate override keys to scalar values. It is used for repository ratchets such as `backend.mutation.threshold.min: 60`.
 - `sonarcloud` is optional, but when present it must include non-empty `project_key` and `organization`.
 - `rules.plan_rules` is optional and points to the repo-relative plan-rules file whose content is inlined into `gc_get_repo_ground_control_context`.
 - `knowledge.dir` is required when `knowledge` is present. `knowledge.schema` and `knowledge.inbox` are optional overrides; by default they resolve under `knowledge.dir`.
@@ -127,6 +141,149 @@ Config contract:
 - `telemetry.enabled` defaults to `false`. `gc_log_step_telemetry` refuses to write telemetry unless this is explicitly true.
 
 `AGENTS.md` should still carry a brief `Ground Control Context` section that points agents at `.ground-control.yaml` and `.gc/`, so repo newcomers know where the workflow config lives.
+
+### Gate Engine Core
+
+The MCP server exposes the portable gate engine through `gc_run_gates`. The tool is the execution boundary for local gates: agents do not parse `.gc/gates.yaml`, choose provider commands, compute diff hashes, or write gate markers in prose.
+
+`gc_run_gates` input:
+
+```json
+{
+  "repo_path": "/repo",
+  "issue_number": 1075,
+  "base_ref": "origin/dev",
+  "head_ref": "HEAD",
+  "phase": "local",
+  "capabilities": ["policy", "unit_tests"]
+}
+```
+
+The tool performs these steps:
+
+- Resolves `.ground-control.yaml` through `gc_get_repo_ground_control_context`.
+- Loads `workflow.gate_manifest` or `.gc/gates.yaml`.
+- Validates the manifest and `.gc/workflow-lock.json`.
+- Computes changed files and `diff_hash` with `git diff <base_ref>...<head_ref>`.
+- Selects gates by capability, scope, and `applies_when.paths`.
+- Runs each command in its declared `cwd` with a bounded timeout and sanitized environment.
+- Parses JSON provider output only when the gate declares `output.type: json`; otherwise the exit code is authoritative.
+- Evaluates typed thresholds.
+- Writes gate-effectiveness telemetry under `.gc/telemetry/gate-effectiveness-<issue>.jsonl`.
+- Writes `gates_green` only when every applicable blocking local gate is satisfied.
+
+When a repo has no manifest but still declares legacy `completion_command`, `test_command`, `lint_command`, or `format_command`, `gc_run_gates` synthesizes temporary `policy`, `unit_tests`, `lint`, and `format` gates. The result envelope sets `legacy_mode: true`, records telemetry, and leaves `pack_versions` empty. Legacy mode preserves compatibility but does not claim pack coverage.
+
+#### Gate Manifest
+
+The manifest is a strict YAML object. Unknown keys are rejected at every level. Gate ids are globally unique. Every `capability` must be one of the engine vocabulary values from ADR-062:
+
+```text
+format, lint, build, type_safety, unit_tests, integration_tests,
+contract_boundary, property_verification, architecture, complexity,
+mutation, diff_coverage, sast, secret_scan, dependency_policy,
+accessibility, docs_policy, traceability, policy, remote_status
+```
+
+Minimal manifest:
+
+```yaml
+schema_version: 1
+engine:
+  min_version: ">=1.0.0"
+  manifest_version: "1.0.0"
+
+defaults:
+  timeout_seconds: 900
+  provider_missing: reviewer_fallback
+  fail_fast: false
+
+packs:
+  - id: docs-generic
+    version: "1.0.0"
+    scope: .
+
+gates:
+  - id: docs.docs_policy
+    capability: docs_policy
+    pack: docs-generic
+    cwd: .
+    command: make policy
+    blocking: true
+    scope: repo
+
+  - id: src.unit_tests
+    capability: unit_tests
+    pack: example-pack
+    cwd: .
+    command: npm test -- --json
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "src/**"
+    output:
+      type: json
+      metrics:
+        passed_tests: summary.passed
+    threshold:
+      metric: passed_tests
+      min: 1
+```
+
+Path-valued fields are repo-relative and containment-checked: `cwd`, pack `scope`, `artifacts`, `config_paths`, `generated_files`, and `output.path`. `applies_when.paths` are repo-relative glob patterns evaluated by the MCP server against the changed-file set. Supported gate scopes are `repo` and `changed`.
+
+Thresholds are typed by `metric` and may include `min`, `max`, `break`, `severity`, or `policy`. Numeric thresholds compare numeric provider output. Severity thresholds use the ordered set `info`, `low`, `medium`, `high`, `critical`, `blocker`. Policy thresholds compare exact strings.
+
+Provider-missing behavior is explicit. A gate with no command returns a `provider_missing` result. It can satisfy the local gate run only when the gate is non-blocking, declares `provider_missing: reviewer_fallback`, or declares `provider_missing: not_applicable`. Reviewer fallback records `reviewer_fallback_used`; it does not claim that a deterministic provider passed.
+
+`.gc/workflow-lock.json` is required when a manifest exists. It records the exact engine and pack versions used by the manifest:
+
+```json
+{
+  "schema_version": 1,
+  "engine": { "version": "1.0.0" },
+  "packs": [
+    { "id": "docs-generic", "version": "1.0.0" }
+  ]
+}
+```
+
+#### Marker Model
+
+`gates_green` and `remote_gates_green` are bound phase markers posted by MCP tools. The existing phase marker family remains:
+
+```html
+<!-- gc:phase phase="gates_green" issue="1075" marker_schema="1" ... -->
+```
+
+`gates_green` binds to:
+
+- issue number
+- repository identity
+- base ref
+- head ref
+- manifest hash
+- diff hash
+- pack-versions hash
+- gate-result envelope id
+
+`remote_gates_green` binds to:
+
+- issue number
+- pull request number
+- head SHA
+- manifest hash
+- diff hash
+- required-status-set hash
+- provider-result-ids hash
+- remote-status envelope id
+
+Downstream tools treat a marker as stale when any bound value no longer matches the current state. Stale marker refusals use `error: "stale_phase_marker"` and report the expected and actual binding values. Missing marker refusals use `error: "missing_phase_marker"`.
+
+#### Required Remote Statuses
+
+`gc_watch_required_statuses` is the provider-neutral remote gate watcher. It consumes `remote_status` gates from the manifest or an explicit `required_statuses[]` input, evaluates arbitrary status names, and writes `remote_gates_green` only when the required set passes for the bound head SHA and diff. SonarCloud remains available as `gc_watch_sonar_analysis`, but that tool is an optional provider adapter, not a canonical workflow phase.
 
 ### User Touchpoint
 
