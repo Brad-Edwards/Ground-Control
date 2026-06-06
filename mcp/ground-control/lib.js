@@ -3692,7 +3692,7 @@ export function parseGateManifestYaml(yamlText, { repoRoot }) {
 }
 
 const WORKFLOW_LOCK_ROOT_KEYS = ["schema_version", "engine", "packs"];
-const WORKFLOW_LOCK_ENGINE_KEYS = ["version", "checksum", "source_url", "compatible"];
+const WORKFLOW_LOCK_ENGINE_KEYS = ["version", "checksum", "source_url", "compatible", "signer", "trust_policy", "installed_at"];
 const WORKFLOW_LOCK_PACK_KEYS = ["id", "version", "checksum", "source_url", "compatible_engine", "signer", "trust_policy", "installed_at"];
 
 export function validateWorkflowLock(lock, { manifest }) {
@@ -3701,8 +3701,8 @@ export function validateWorkflowLock(lock, { manifest }) {
     return { ok: false, errors: [".gc/workflow-lock.json root must be a mapping"] };
   }
   pushUnknownKeyErrors(errors, "workflow lock", lock, WORKFLOW_LOCK_ROOT_KEYS);
-  if (lock.schema_version != null && lock.schema_version !== 1) {
-    errors.push("workflow lock schema_version must be 1 when set");
+  if (lock.schema_version !== 1) {
+    errors.push("workflow lock schema_version must be 1");
   }
   if (!isPlainMapping(lock.engine)) {
     errors.push("workflow lock engine must be a mapping");
@@ -3711,13 +3711,17 @@ export function validateWorkflowLock(lock, { manifest }) {
     if (typeof lock.engine.version !== "string" || lock.engine.version.trim() === "") {
       errors.push("workflow lock engine.version must be a non-empty string");
     }
-    for (const key of ["checksum", "source_url", "compatible"]) {
-      if (lock.engine[key] != null && (typeof lock.engine[key] !== "string" || lock.engine[key].trim() === "")) {
-        errors.push(`workflow lock engine.${key} must be a non-empty string when set`);
+    for (const key of ["checksum", "source_url", "compatible", "signer", "trust_policy", "installed_at"]) {
+      if (typeof lock.engine[key] !== "string" || lock.engine[key].trim() === "") {
+        errors.push(`workflow lock engine.${key} must be a non-empty string`);
       }
+    }
+    if (lock.engine.checksum != null && normalizeSha256Checksum(lock.engine.checksum) == null) {
+      errors.push("workflow lock engine.checksum must be sha256:<64 hex chars>");
     }
   }
   const lockPacks = [];
+  const seenLockPacks = new Set();
   if (lock.packs != null) {
     if (!Array.isArray(lock.packs)) {
       errors.push("workflow lock packs must be a list when set");
@@ -3733,11 +3737,18 @@ export function validateWorkflowLock(lock, { manifest }) {
         const id = normalizeGateString(entry.id, `${prefix}.id`, errors, { required: true, pattern: WORKFLOW_PACK_ID_RE });
         const version = normalizeGateString(entry.version, `${prefix}.version`, errors, { required: true });
         for (const key of ["checksum", "source_url", "compatible_engine", "signer", "trust_policy", "installed_at"]) {
-          if (entry[key] != null && (typeof entry[key] !== "string" || entry[key].trim() === "")) {
-            errors.push(`${prefix}.${key} must be a non-empty string when set`);
+          if (typeof entry[key] !== "string" || entry[key].trim() === "") {
+            errors.push(`${prefix}.${key} must be a non-empty string`);
           }
         }
-        if (errors.length === before) lockPacks.push({ id, version });
+        if (entry.checksum != null && normalizeSha256Checksum(entry.checksum) == null) {
+          errors.push(`${prefix}.checksum must be sha256:<64 hex chars>`);
+        }
+        if (errors.length === before) {
+          if (seenLockPacks.has(id)) errors.push(`workflow lock packs duplicated id '${id}'`);
+          seenLockPacks.add(id);
+          lockPacks.push({ id, version, checksum: entry.checksum });
+        }
       });
     }
   }
@@ -3753,8 +3764,8 @@ export function validateWorkflowLock(lock, { manifest }) {
   return {
     ok: true,
     value: {
-      schema_version: lock.schema_version ?? 1,
-      engine: { version: lock.engine.version },
+      schema_version: lock.schema_version,
+      engine: { version: lock.engine.version, checksum: lock.engine.checksum },
       packs: lockPacks,
     },
   };
@@ -3882,18 +3893,38 @@ export function computeGatePackDirectoryChecksum(packDir) {
   return h.digest("hex");
 }
 
+export function computeWorkflowArtifactChecksum(artifactPath) {
+  const st = statSync(artifactPath);
+  if (st.isDirectory()) return computeGatePackDirectoryChecksum(artifactPath);
+  if (!st.isFile()) throw new Error(`workflow artifact '${artifactPath}' must be a file or directory`);
+  return createHash("sha256").update(readFileSync(artifactPath)).digest("hex");
+}
+
+function normalizeSha256Checksum(raw) {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim().replace(/^sha256:/i, "");
+  return /^[a-f0-9]{64}$/i.test(value) ? value.toLowerCase() : null;
+}
+
 function loadGateCatalog(catalogPath) {
   const resolved = resolvePath(catalogPath ?? GATE_CATALOG_DEFAULT_PATH);
   const json = readJsonAbsolute(resolved, "gate catalog");
   if (json.__error) return { ok: false, error: "gate_catalog_invalid", message: json.__error };
-  if (!isPlainMapping(json) || json.schema_version !== 1 || !Array.isArray(json.packs)) {
+  if (!isPlainMapping(json) || json.schema_version !== 1 || !isPlainMapping(json.engine) || !Array.isArray(json.packs)) {
     return {
       ok: false,
       error: "gate_catalog_invalid",
-      message: "gate catalog must be a schema_version=1 object with a packs[] list",
+      message: "gate catalog must be a schema_version=1 object with an engine mapping and packs[] list",
     };
   }
   return { ok: true, catalog: json, catalog_path: resolved };
+}
+
+function resolveGateCatalogEngine({ catalog, versionConstraint }) {
+  const candidates = Array.isArray(catalog.engines) ? catalog.engines : [catalog.engine];
+  return candidates
+    .filter((entry) => entry && versionSatisfies(entry.version, versionConstraint))
+    .sort((a, b) => compareSemver(b.version, a.version) ?? 0)[0] ?? null;
 }
 
 function resolveGateCatalogEntry({ catalog, packId, versionConstraint }) {
@@ -3913,6 +3944,83 @@ function resolveCatalogArtifactPath({ catalogPath, artifact }) {
   const sourceRoot = resolvePath(MCP_MODULE_DIR, "../..");
   const base = artifact.startsWith("workflow/") ? sourceRoot : dirname(catalogPath);
   return { ok: true, path: resolvePath(base, artifact) };
+}
+
+async function materializeCatalogArtifact({ catalogPath, entry, artifactKind, checksumField = "sha256" }) {
+  const label = artifactKind === "engine" ? "workflow_engine" : "gate_pack";
+  const artifactPath = resolveCatalogArtifactPath({ catalogPath, artifact: entry.artifact ?? entry.source_url });
+  if (!artifactPath.ok) return artifactPath;
+  const expected = normalizeSha256Checksum(entry[checksumField] ?? entry.checksum);
+  if (expected == null) {
+    return {
+      ok: false,
+      error: `${label}_checksum_invalid`,
+      message: `${label} catalog entry must carry a sha256 checksum`,
+    };
+  }
+  let actual;
+  try {
+    actual = computeWorkflowArtifactChecksum(artifactPath.path);
+  } catch (error) {
+    return { ok: false, error: `${label}_artifact_invalid`, message: error.message };
+  }
+  if (actual !== expected) {
+    return {
+      ok: false,
+      error: `${label}_checksum_mismatch`,
+      message: `Checksum mismatch for ${artifactKind}@${entry.version}`,
+      expected,
+      actual,
+    };
+  }
+  const st = statSync(artifactPath.path);
+  if (st.isDirectory()) {
+    return { ok: true, artifact_path: artifactPath.path, source_path: artifactPath.path, sha256: actual, cleanup: null };
+  }
+  if (!/\.(?:tgz|tar\.gz)$/i.test(artifactPath.path)) {
+    return {
+      ok: false,
+      error: `${label}_artifact_invalid`,
+      message: `${label} artifact must be a directory or .tgz/.tar.gz archive`,
+    };
+  }
+  const tempDir = mkdtempSync(join(tmpdir(), `gc-${label}-`));
+  try {
+    await execFile("tar", ["-xzf", artifactPath.path, "-C", tempDir], { maxBuffer: 64 * 1024 * 1024 });
+  } catch (error) {
+    rmSync(tempDir, { recursive: true, force: true });
+    return {
+      ok: false,
+      error: `${label}_artifact_extract_failed`,
+      message: formatCommandFailure("tar -xzf workflow artifact", error),
+    };
+  }
+  return {
+    ok: true,
+    artifact_path: artifactPath.path,
+    source_path: tempDir,
+    sha256: actual,
+    cleanup: () => rmSync(tempDir, { recursive: true, force: true }),
+  };
+}
+
+function validateEngineSourceShape(engineSourcePath) {
+  const engineYamlPath = join(engineSourcePath, "workflow/engine/engine.yaml");
+  const fallbackEngineYamlPath = join(engineSourcePath, "engine.yaml");
+  const path = fileExists(engineYamlPath) ? engineYamlPath : fallbackEngineYamlPath;
+  const parsed = parseYamlFileAbsolute(path, "engine.yaml");
+  if (!parsed.ok) return { ok: false, error: "workflow_engine_invalid", message: parsed.error };
+  if (!isPlainMapping(parsed.value) || parsed.value.id !== "ground-control-implement-engine") {
+    return {
+      ok: false,
+      error: "workflow_engine_invalid",
+      message: "engine.yaml must identify id='ground-control-implement-engine'",
+    };
+  }
+  if (typeof parsed.value.version !== "string" || parsed.value.version.trim() === "") {
+    return { ok: false, error: "workflow_engine_invalid", message: "engine.yaml version must be a non-empty string" };
+  }
+  return { ok: true, engine: parsed.value };
 }
 
 function validatePackSourceShape(packSourcePath, packId) {
@@ -4031,7 +4139,7 @@ function mergePackIntoManifest({ repoRoot, packManifestEntry, generatedGates, ga
   return { ok: true, manifest: validation.value };
 }
 
-function mergePackIntoGroundControlYaml({ repoRoot, packId, versionConstraint, scope, profile }) {
+function mergePackIntoGroundControlYaml({ repoRoot, packId, versionConstraint, engineVersionConstraint, scope, profile }) {
   const path = join(repoRoot, ".ground-control.yaml");
   let raw = {};
   if (fileExists(path)) {
@@ -4043,7 +4151,7 @@ function mergePackIntoGroundControlYaml({ repoRoot, packId, versionConstraint, s
   raw.project = raw.project ?? "local";
   raw.workflow = isPlainMapping(raw.workflow) ? raw.workflow : {};
   raw.workflow.engine = isPlainMapping(raw.workflow.engine) ? raw.workflow.engine : {};
-  raw.workflow.engine.version = raw.workflow.engine.version ?? GATE_PACK_INSTALL_DEFAULT_ENGINE_CONSTRAINT;
+  raw.workflow.engine.version = engineVersionConstraint;
   raw.workflow.gate_manifest = ".gc/gates.yaml";
   const packs = Array.isArray(raw.workflow.packs) ? raw.workflow.packs : [];
   const normalizedScope = normalizeInstallScope(scope);
@@ -4060,13 +4168,18 @@ function mergePackIntoGroundControlYaml({ repoRoot, packId, versionConstraint, s
   return { ok: true, workflow: parsedConfig.value.workflow };
 }
 
-function mergeWorkflowLock({ repoRoot, entry, manifest, installedAt }) {
+function mergeWorkflowLock({ repoRoot, engineEntry, packEntry, manifest, installedAt }) {
   const path = join(repoRoot, ".gc/workflow-lock.json");
   let raw = {
     schema_version: 1,
     engine: {
       version: GATE_ENGINE_VERSION,
+      checksum: null,
+      source_url: null,
       compatible: ">=1.0.0 <2.0.0",
+      signer: "TODO: release signer",
+      trust_policy: "checksum-only-development",
+      installed_at: installedAt,
     },
     packs: [],
   };
@@ -4076,19 +4189,25 @@ function mergeWorkflowLock({ repoRoot, entry, manifest, installedAt }) {
     if (isPlainMapping(parsed)) raw = parsed;
   }
   raw.schema_version = 1;
-  raw.engine = isPlainMapping(raw.engine) ? raw.engine : {};
-  raw.engine.version = raw.engine.version ?? GATE_ENGINE_VERSION;
-  raw.engine.compatible = raw.engine.compatible ?? ">=1.0.0 <2.0.0";
+  raw.engine = {
+    version: engineEntry.version,
+    checksum: `sha256:${normalizeSha256Checksum(engineEntry.sha256 ?? engineEntry.checksum)}`,
+    source_url: engineEntry.artifact ?? engineEntry.source_url,
+    compatible: engineEntry.compatible,
+    signer: engineEntry.signer,
+    trust_policy: engineEntry.trust_policy,
+    installed_at: installedAt,
+  };
   raw.packs = Array.isArray(raw.packs) ? raw.packs : [];
-  raw.packs = raw.packs.filter((pack) => pack?.id !== entry.id);
+  raw.packs = raw.packs.filter((pack) => pack?.id !== packEntry.id);
   raw.packs.push({
-    id: entry.id,
-    version: entry.version,
-    checksum: `sha256:${entry.sha256}`,
-    source_url: entry.source_url,
-    compatible_engine: entry.compatible_engine,
-    signer: entry.signer,
-    trust_policy: entry.trust_policy,
+    id: packEntry.id,
+    version: packEntry.version,
+    checksum: `sha256:${normalizeSha256Checksum(packEntry.sha256 ?? packEntry.checksum)}`,
+    source_url: packEntry.artifact ?? packEntry.source_url,
+    compatible_engine: packEntry.compatible_engine,
+    signer: packEntry.signer,
+    trust_policy: packEntry.trust_policy,
     installed_at: installedAt,
   });
   const validation = validateWorkflowLock(raw, { manifest });
@@ -4155,12 +4274,12 @@ async function installPackDevDependencies({ repoRoot, scope, packYaml, installDe
   };
 }
 
-async function runWorkflowPackSelftest({ packSourcePath, catalogPath }) {
-  const runner = join(packSourcePath, "selftest/run.mjs");
+async function runWorkflowPackSelftest({ packId, catalogPath }) {
+  const runner = join(resolvePath(MCP_MODULE_DIR, "../.."), "workflow/tools/selftest-pack.mjs");
   if (!fileExists(runner)) {
     return { status: "missing", ok: false, reason: "selftest/run.mjs is missing" };
   }
-  const result = await execFile("node", [runner, "--catalog", catalogPath], {
+  const result = await execFile("node", [runner, "--pack", packId, "--catalog", catalogPath], {
     cwd: resolvePath(MCP_MODULE_DIR, "../.."),
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -4173,11 +4292,13 @@ export async function installWorkflowAssets({
   repoPath,
   packId,
   versionConstraint = "1.0.0",
+  engineVersionConstraint = GATE_PACK_INSTALL_DEFAULT_ENGINE_CONSTRAINT,
   scope = ".",
   profile = null,
   catalogPath = GATE_CATALOG_DEFAULT_PATH,
   runSelftest = true,
   installDependencies = true,
+  mode = "install",
 } = {}) {
   if (typeof repoPath !== "string" || repoPath.trim() === "") {
     return { ok: false, error: "workflow_asset_install_input_invalid", message: "repo_path is required" };
@@ -4188,6 +4309,12 @@ export async function installWorkflowAssets({
   if (typeof versionConstraint !== "string" || versionConstraint.trim() === "") {
     return { ok: false, error: "workflow_asset_install_input_invalid", message: "version must be a non-empty semver constraint" };
   }
+  if (typeof engineVersionConstraint !== "string" || engineVersionConstraint.trim() === "") {
+    return { ok: false, error: "workflow_asset_install_input_invalid", message: "engine_version must be a non-empty semver constraint" };
+  }
+  if (!["install", "upgrade"].includes(mode)) {
+    return { ok: false, error: "workflow_asset_install_input_invalid", message: "mode must be 'install' or 'upgrade'" };
+  }
   let repoRoot;
   try {
     repoRoot = await ensureGitRepo(repoPath);
@@ -4196,6 +4323,17 @@ export async function installWorkflowAssets({
   }
   const catalogResult = loadGateCatalog(catalogPath);
   if (!catalogResult.ok) return catalogResult;
+  const engineEntry = resolveGateCatalogEngine({
+    catalog: catalogResult.catalog,
+    versionConstraint: engineVersionConstraint,
+  });
+  if (engineEntry == null) {
+    return {
+      ok: false,
+      error: "workflow_engine_not_found",
+      message: `No workflow engine satisfies version constraint '${engineVersionConstraint}'`,
+    };
+  }
   const entry = resolveGateCatalogEntry({
     catalog: catalogResult.catalog,
     packId,
@@ -4208,107 +4346,138 @@ export async function installWorkflowAssets({
       message: `No gate pack '${packId}' satisfies version constraint '${versionConstraint}'`,
     };
   }
-  const artifactPath = resolveCatalogArtifactPath({ catalogPath: catalogResult.catalog_path, artifact: entry.artifact ?? entry.source_url });
-  if (!artifactPath.ok) return artifactPath;
-  const checksum = computeGatePackDirectoryChecksum(artifactPath.path);
-  if (checksum !== entry.sha256) {
-    return {
-      ok: false,
-      error: "gate_pack_checksum_mismatch",
-      message: `Checksum mismatch for ${packId}@${entry.version}`,
-      expected: entry.sha256,
-      actual: checksum,
-    };
-  }
-  const shape = validatePackSourceShape(artifactPath.path, packId);
-  if (!shape.ok) return shape;
-  const normalizedScope = normalizeInstallScope(scope);
-  const generated = generateManifestGatesFromPack({
-    packId,
-    packVersion: entry.version,
-    scope: normalizedScope,
-    capabilitiesDoc: shape.capabilities,
-  });
-  const vendorPath = join(repoRoot, ".gc/vendor/ground-control/packs", packId, entry.version);
-  rmSync(vendorPath, { recursive: true, force: true });
-  mkdirSync(dirname(vendorPath), { recursive: true });
-  cpSync(artifactPath.path, vendorPath, { recursive: true });
-  const copiedTemplates = copyPackTemplates({ repoRoot, packSourcePath: artifactPath.path, packYaml: shape.pack });
-  const manifestResult = mergePackIntoManifest({
-    repoRoot,
-    packManifestEntry: generated.pack,
-    generatedGates: generated.gates,
-    gatePrefix: generated.gate_prefix,
-  });
-  if (!manifestResult.ok) return manifestResult;
-  const groundControlResult = mergePackIntoGroundControlYaml({
-    repoRoot,
-    packId,
-    versionConstraint,
-    scope: normalizedScope,
-    profile,
-  });
-  if (!groundControlResult.ok) return groundControlResult;
-  const installedAt = new Date().toISOString();
-  const lockResult = mergeWorkflowLock({
-    repoRoot,
-    entry,
-    manifest: manifestResult.manifest,
-    installedAt,
-  });
-  if (!lockResult.ok) return lockResult;
-  let dependencyInstall;
+  const cleanup = [];
   try {
-    dependencyInstall = await installPackDevDependencies({
-      repoRoot,
-      scope: normalizedScope,
-      packYaml: shape.pack,
-      installDependencies,
+    const engineArtifact = await materializeCatalogArtifact({
+      catalogPath: catalogResult.catalog_path,
+      entry: engineEntry,
+      artifactKind: "engine",
     });
-  } catch (error) {
-    return {
-      ok: false,
-      error: "workflow_asset_dependency_install_failed",
-      message: formatCommandFailure("dependency install", error),
-    };
-  }
-  let selftest = { status: "skipped", reason: "run_selftest=false" };
-  if (runSelftest) {
+    if (!engineArtifact.ok) return engineArtifact;
+    if (engineArtifact.cleanup) cleanup.push(engineArtifact.cleanup);
+    const engineShape = validateEngineSourceShape(engineArtifact.source_path);
+    if (!engineShape.ok) return engineShape;
+
+    const packArtifact = await materializeCatalogArtifact({
+      catalogPath: catalogResult.catalog_path,
+      entry,
+      artifactKind: "pack",
+    });
+    if (!packArtifact.ok) return packArtifact;
+    if (packArtifact.cleanup) cleanup.push(packArtifact.cleanup);
+    const shape = validatePackSourceShape(packArtifact.source_path, packId);
+    if (!shape.ok) return shape;
+
+    const normalizedScope = normalizeInstallScope(scope);
+    const generated = generateManifestGatesFromPack({
+      packId,
+      packVersion: entry.version,
+      scope: normalizedScope,
+      capabilitiesDoc: shape.capabilities,
+    });
+    const engineVendorPath = join(repoRoot, ".gc/vendor/ground-control/engine", engineEntry.version);
+    rmSync(engineVendorPath, { recursive: true, force: true });
+    mkdirSync(dirname(engineVendorPath), { recursive: true });
+    cpSync(engineArtifact.source_path, engineVendorPath, { recursive: true });
+    const vendorPath = join(repoRoot, ".gc/vendor/ground-control/packs", packId, entry.version);
+    rmSync(vendorPath, { recursive: true, force: true });
+    mkdirSync(dirname(vendorPath), { recursive: true });
+    cpSync(packArtifact.source_path, vendorPath, { recursive: true });
+    const copiedTemplates = copyPackTemplates({ repoRoot, packSourcePath: packArtifact.source_path, packYaml: shape.pack });
+    const manifestResult = mergePackIntoManifest({
+      repoRoot,
+      packManifestEntry: generated.pack,
+      generatedGates: generated.gates,
+      gatePrefix: generated.gate_prefix,
+    });
+    if (!manifestResult.ok) return manifestResult;
+    const groundControlResult = mergePackIntoGroundControlYaml({
+      repoRoot,
+      packId,
+      versionConstraint,
+      engineVersionConstraint,
+      scope: normalizedScope,
+      profile,
+    });
+    if (!groundControlResult.ok) return groundControlResult;
+    const installedAt = new Date().toISOString();
+    const lockResult = mergeWorkflowLock({
+      repoRoot,
+      engineEntry: { ...engineEntry, sha256: engineArtifact.sha256 },
+      packEntry: { ...entry, sha256: packArtifact.sha256 },
+      manifest: manifestResult.manifest,
+      installedAt,
+    });
+    if (!lockResult.ok) return lockResult;
+    let dependencyInstall;
     try {
-      selftest = await runWorkflowPackSelftest({ packSourcePath: artifactPath.path, catalogPath: catalogResult.catalog_path });
+      dependencyInstall = await installPackDevDependencies({
+        repoRoot,
+        scope: normalizedScope,
+        packYaml: shape.pack,
+        installDependencies,
+      });
     } catch (error) {
       return {
         ok: false,
-        error: "workflow_asset_selftest_failed",
-        message: formatCommandFailure("pack selftest", error),
+        error: "workflow_asset_dependency_install_failed",
+        message: formatCommandFailure("dependency install", error),
       };
     }
+    let selftest = { status: "skipped", reason: "run_selftest=false" };
+    if (runSelftest) {
+      try {
+        selftest = await runWorkflowPackSelftest({ packId, catalogPath: catalogResult.catalog_path });
+      } catch (error) {
+        return {
+          ok: false,
+          error: "workflow_asset_selftest_failed",
+          message: formatCommandFailure("pack selftest", error),
+        };
+      }
+    }
+    return {
+      ok: true,
+      operation: mode,
+      repo_path: repoRoot,
+      engine: {
+        version: engineEntry.version,
+        version_constraint: engineVersionConstraint,
+        checksum: `sha256:${engineArtifact.sha256}`,
+        compatible: engineEntry.compatible,
+      },
+      pack: {
+        id: packId,
+        version: entry.version,
+        version_constraint: versionConstraint,
+        scope: normalizedScope,
+        profile,
+        checksum: `sha256:${packArtifact.sha256}`,
+        compatible_engine: entry.compatible_engine,
+      },
+      engine_vendor_path: relative(repoRoot, engineVendorPath).replace(/\\/g, "/"),
+      vendor_path: relative(repoRoot, vendorPath).replace(/\\/g, "/"),
+      manifest_path: ".gc/gates.yaml",
+      lock_path: ".gc/workflow-lock.json",
+      ground_control_yaml: ".ground-control.yaml",
+      templates: copiedTemplates,
+      gates_written: generated.gates.length,
+      dependency_install: dependencyInstall,
+      selftest,
+      signing: {
+        status: "todo",
+        note: "Checksum verification is enforced; release signatures/provenance remain TODO before broad rollout.",
+      },
+    };
+  } finally {
+    for (const fn of cleanup.reverse()) {
+      try {
+        fn();
+      } catch {
+        // Temporary extraction cleanup is best-effort.
+      }
+    }
   }
-  return {
-    ok: true,
-    repo_path: repoRoot,
-    pack: {
-      id: packId,
-      version: entry.version,
-      version_constraint: versionConstraint,
-      scope: normalizedScope,
-      profile,
-      checksum: `sha256:${entry.sha256}`,
-      compatible_engine: entry.compatible_engine,
-    },
-    vendor_path: relative(repoRoot, vendorPath).replace(/\\/g, "/"),
-    manifest_path: ".gc/gates.yaml",
-    lock_path: ".gc/workflow-lock.json",
-    ground_control_yaml: ".ground-control.yaml",
-    templates: copiedTemplates,
-    gates_written: generated.gates.length,
-    dependency_install: dependencyInstall,
-    selftest,
-    signing: {
-      status: "todo",
-      note: "Checksum verification is enforced; release signatures/provenance remain TODO before broad rollout.",
-    },
-  };
 }
 
 function sha256Hex(text) {

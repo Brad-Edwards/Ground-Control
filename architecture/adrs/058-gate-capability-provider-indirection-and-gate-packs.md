@@ -339,6 +339,25 @@ The manifest and pack system add release and maintenance work. Schemas,
 installer logic, trust policy, pack fixtures, and threshold ratchets must be
 tested as platform surfaces, not left as repository-local conventions.
 
+## Amendments
+
+**2026-06-06 (issue #1075 Phase 6).** The release pipeline is implemented in
+`workflow/tools/materialize-pack-registry.mjs`. It emits
+`workflow/releases/gc-engine-<version>.tgz`,
+`workflow/releases/gc-gate-pack-<id>-<version>.tgz`, and
+`workflow/gate-catalog.json`. Catalog `sha256` fields cover the release
+artifacts that the installer vendors; `source_sha256` fields record source-tree
+drift metadata. `gc_install_workflow_assets` verifies engine and pack artifact
+checksums, vendors exact versions, writes the stricter workflow lockfile, and
+supports explicit `mode: install` or `mode: upgrade`. Signature and provenance
+verification remains marked TODO in catalog and lock metadata per ADR-062.
+
+The pack self-test contract is CI-backed by `.github/workflows/workflow-platform.yml`.
+Each of the seven supported packs has a matrix entry with the expected
+toolchain setup, and unexpected self-test skips fail that entry. The same
+workflow runs `workflow/tools/verify-workflow-release.mjs` to validate catalog
+checksums.
+
 ## References
 
 - ADR-027: Agent-Neutral Implement Workflow Packaging.

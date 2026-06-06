@@ -15,6 +15,7 @@ import {
   classifyAssuranceSurfacesFromDiff,
   dispatchReviewConvergence,
   computeGatePackDirectoryChecksum,
+  computeWorkflowArtifactChecksum,
   evaluateBoundPhaseMarkerFreshness,
   evaluateGateThreshold,
   evaluateRemoteQualitySubstance,
@@ -33,6 +34,7 @@ import {
   selectApplicableGates,
   synthesizeLegacyGateManifest,
   validateGateManifest,
+  validateWorkflowLock,
 } from "./lib.js";
 
 async function withTempRepo(fn) {
@@ -57,13 +59,42 @@ function writeConfig(repo, workflowYaml = "") {
   ].filter(Boolean).join("\n"));
 }
 
+function testWorkflowLock(packEntries = [{ id: "test-pack", version: "1.0.0" }]) {
+  const installedAt = "2026-06-06T00:00:00.000Z";
+  return {
+    schema_version: 1,
+    engine: {
+      version: "1.0.0",
+      checksum: `sha256:${"1".repeat(64)}`,
+      source_url: "workflow/releases/gc-engine-1.0.0.tgz",
+      compatible: ">=1.0.0 <2.0.0",
+      signer: "TODO: release signer",
+      trust_policy: "checksum-only-development",
+      installed_at: installedAt,
+    },
+    packs: packEntries.map((entry, index) => ({
+      id: entry.id,
+      version: entry.version,
+      checksum: `sha256:${String(index + 2).repeat(64)}`,
+      source_url: `workflow/releases/gc-gate-pack-${entry.id}-${entry.version}.tgz`,
+      compatible_engine: ">=1.0.0 <2.0.0",
+      signer: "TODO: release signer",
+      trust_policy: "checksum-only-development",
+      installed_at: installedAt,
+    })),
+  };
+}
+
 function writeManifestRepo(repo, manifestYaml, lockJson = null) {
   mkdirSync(join(repo, ".gc"), { recursive: true });
   writeFileSync(join(repo, ".gc/gates.yaml"), manifestYaml);
-  writeFileSync(join(repo, ".gc/workflow-lock.json"), JSON.stringify(lockJson ?? {
-    schema_version: 1,
-    engine: { version: "1.0.0" },
-    packs: [{ id: "test-pack", version: "1.0.0" }],
+  const base = lockJson ?? testWorkflowLock();
+  const hydrated = testWorkflowLock(base.packs ?? [{ id: "test-pack", version: "1.0.0" }]);
+  writeFileSync(join(repo, ".gc/workflow-lock.json"), JSON.stringify({
+    ...hydrated,
+    ...base,
+    engine: { ...hydrated.engine, ...(base.engine ?? {}) },
+    packs: (base.packs ?? hydrated.packs).map((pack, i) => ({ ...hydrated.packs[i], ...pack })),
   }, null, 2));
 }
 
@@ -168,6 +199,12 @@ describe("gate pack catalog and installer", () => {
   it("catalog checksums match the materialized workflow pack sources", () => {
     const catalog = JSON.parse(readFileSync(GATE_CATALOG_DEFAULT_PATH, "utf8"));
     const repoRoot = join(dirname(GATE_CATALOG_DEFAULT_PATH), "..");
+    assert.match(catalog.engine.artifact, /^workflow\/releases\/gc-engine-1\.0\.0\.tgz$/);
+    assert.equal(
+      computeWorkflowArtifactChecksum(join(repoRoot, catalog.engine.artifact)),
+      catalog.engine.sha256,
+      "engine release artifact checksum drifted",
+    );
     assert.deepEqual(catalog.packs.map((entry) => entry.id), [
       "rust-cargo",
       "python",
@@ -179,9 +216,14 @@ describe("gate pack catalog and installer", () => {
     ]);
     for (const entry of catalog.packs) {
       assert.equal(
-        computeGatePackDirectoryChecksum(join(repoRoot, entry.artifact)),
+        computeWorkflowArtifactChecksum(join(repoRoot, entry.artifact)),
         entry.sha256,
-        `${entry.id} checksum drifted`,
+        `${entry.id} release artifact checksum drifted`,
+      );
+      assert.equal(
+        computeGatePackDirectoryChecksum(join(repoRoot, entry.source_url)),
+        entry.source_sha256,
+        `${entry.id} source checksum drifted`,
       );
     }
   });
@@ -202,10 +244,12 @@ describe("gate pack catalog and installer", () => {
       assert.equal(result.pack.version, "1.0.0");
       assert.equal(result.gates_written, ENGINE_CAPABILITIES.length);
       assert.equal(result.selftest.status, "skipped");
+      assert.match(result.engine_vendor_path, /^\.gc\/vendor\/ground-control\/engine\/1\.0\.0/);
       assert.match(result.vendor_path, /^\.gc\/vendor\/ground-control\/packs\/docs-generic\/1\.0\.0/);
 
       const parsedConfig = parseGroundControlYaml(readFileSync(join(repo, ".ground-control.yaml"), "utf8"));
       assert.equal(parsedConfig.ok, true);
+      assert.equal(parsedConfig.value.workflow.engine.version, "^1.0.0");
       assert.equal(parsedConfig.value.workflow.gate_manifest, ".gc/gates.yaml");
       assert.equal(parsedConfig.value.workflow.packs[0].id, "docs-generic");
       assert.equal(parsedConfig.value.workflow.packs[0].version, "^1.0.0");
@@ -214,7 +258,10 @@ describe("gate pack catalog and installer", () => {
       assert.match(manifest, /docs-generic\.root\.docs_policy/);
       assert.match(manifest, /provider_missing: not_applicable/);
       const lock = JSON.parse(readFileSync(join(repo, ".gc/workflow-lock.json"), "utf8"));
+      assert.equal(lock.engine.checksum.startsWith("sha256:"), true);
+      assert.match(lock.engine.source_url, /^workflow\/releases\/gc-engine-1\.0\.0\.tgz$/);
       assert.equal(lock.packs[0].checksum.startsWith("sha256:"), true);
+      assert.match(lock.packs[0].source_url, /^workflow\/releases\/gc-gate-pack-docs-generic-1\.0\.0\.tgz$/);
       assert.equal(typeof lock.packs[0].installed_at, "string");
 
       const gateResult = await runGates({
@@ -246,6 +293,63 @@ describe("gate pack catalog and installer", () => {
       assert.equal(result.ok, false);
       assert.equal(result.error, "gate_pack_checksum_mismatch");
     });
+  });
+
+  it("upgrades a cataloged pack to the highest matching semver and rewrites the lock", async () => {
+    await withTempRepo(async (repo) => {
+      writeFileSync(join(repo, "README.md"), "# Fixture\n\nDocs are present.\n");
+      const initial = await installWorkflowAssets({
+        repoPath: repo,
+        packId: "docs-generic",
+        versionConstraint: "1.0.0",
+        scope: ".",
+        installDependencies: false,
+        runSelftest: false,
+      });
+      assert.equal(initial.ok, true, JSON.stringify(initial));
+
+      const catalog = JSON.parse(readFileSync(GATE_CATALOG_DEFAULT_PATH, "utf8"));
+      const existing = catalog.packs.find((entry) => entry.id === "docs-generic");
+      catalog.packs.push({ ...existing, version: "1.0.1" });
+      const catalogPath = join(repo, "upgrade-gate-catalog.json");
+      writeFileSync(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
+
+      const upgraded = await installWorkflowAssets({
+        repoPath: repo,
+        packId: "docs-generic",
+        versionConstraint: "^1.0.0",
+        scope: ".",
+        catalogPath,
+        installDependencies: false,
+        runSelftest: false,
+        mode: "upgrade",
+      });
+      assert.equal(upgraded.ok, true, JSON.stringify(upgraded));
+      assert.equal(upgraded.operation, "upgrade");
+      assert.equal(upgraded.pack.version, "1.0.1");
+      assert.match(upgraded.vendor_path, /docs-generic\/1\.0\.1$/);
+
+      const lock = JSON.parse(readFileSync(join(repo, ".gc/workflow-lock.json"), "utf8"));
+      assert.equal(lock.packs.find((entry) => entry.id === "docs-generic").version, "1.0.1");
+      assert.equal(lock.packs.find((entry) => entry.id === "docs-generic").checksum.startsWith("sha256:"), true);
+      const parsedConfig = parseGroundControlYaml(readFileSync(join(repo, ".ground-control.yaml"), "utf8"));
+      assert.equal(parsedConfig.value.workflow.packs[0].version, "^1.0.0");
+    });
+  });
+
+  it("validates the release lockfile shape, including required checksums", () => {
+    const manifest = { packs: [{ id: "docs-generic", version: "1.0.0", scope: "." }] };
+    const invalid = validateWorkflowLock({
+      schema_version: 1,
+      engine: { version: "1.0.0" },
+      packs: [{ id: "docs-generic", version: "1.0.0" }],
+    }, { manifest });
+    assert.equal(invalid.ok, false);
+    assert.match(invalid.errors.join("\n"), /engine\.checksum/);
+    assert.match(invalid.errors.join("\n"), /packs\[0\]\.checksum/);
+
+    const valid = validateWorkflowLock(testWorkflowLock([{ id: "docs-generic", version: "1.0.0" }]), { manifest });
+    assert.equal(valid.ok, true, JSON.stringify(valid));
   });
 });
 

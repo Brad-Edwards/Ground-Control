@@ -273,6 +273,28 @@ The design adds operational burden. The platform must maintain engine
 releases, pack releases, trusted-signer policy, lockfile validation,
 installer tests, pack fixtures, and upgrade tests before broad rollout.
 
+## Amendments
+
+**2026-06-06 (issue #1075 Phase 6).** Phase 6 implements the maintainability
+surface for this ADR. The release materializer builds immutable engine and
+gate-pack `.tgz` artifacts under `workflow/releases/` and writes a catalog with
+real SHA-256 checksums. `gc_install_workflow_assets` resolves semver
+constraints, verifies engine and pack checksums, vendors exact versions under
+`.gc/vendor/ground-control/`, writes a lockfile with required checksum,
+source, signer, trust-policy, and install timestamp fields, updates
+`.ground-control.yaml`, and runs pack self-tests. Signature and provenance
+verification remain explicit TODO metadata; checksum and lockfile enforcement
+are live.
+
+The versioned workflow eval suite lives under
+`workflow/evals/engine-behavior/v1/` and runs through
+`workflow/tools/eval-workflow-engine.mjs`. It covers review convergence,
+completion-gate prerequisites, remote-quality substance, context loading,
+traceability staleness, lockfile shape, and legacy command compatibility with
+deterministic pass/fail checks. `.github/workflows/workflow-platform.yml` runs
+release validation, the eval suite, and the seven-pack self-test matrix on
+changes to `skills/`, `mcp/`, or `workflow/`.
+
 ## References
 
 - ADR-021: Gated Agentic Development Loop.

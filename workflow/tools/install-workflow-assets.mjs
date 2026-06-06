@@ -26,11 +26,13 @@ export async function runInstallWorkflowAssetsCli({ defaultPackId = null } = {})
     repoPath,
     packId,
     versionConstraint: args.version ?? "1.0.0",
+    engineVersionConstraint: args.engine_version ?? args.engine ?? "^1.0.0",
     scope: args.scope ?? ".",
     profile: args.profile ?? null,
     catalogPath: args.catalog ?? undefined,
     runSelftest: args.selftest !== "false",
     installDependencies: args.install_dependencies !== "false",
+    mode: args.mode ?? (args.upgrade === "true" ? "upgrade" : "install"),
   });
   console.log(JSON.stringify(result, null, 2));
   if (result.ok !== true) process.exitCode = 1;

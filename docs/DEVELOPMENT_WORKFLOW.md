@@ -202,40 +202,64 @@ Each gate pack contains:
 - `installer.mjs`: a pack-local installer shim.
 - `selftest/`: a generated fixture contract and runnable self-test.
 
-The catalog at `workflow/gate-catalog.json` resolves the seven initial packs:
-`rust-cargo`, `python`, `jvm-gradle`, `jvm-maven`, `node-ts`, `cpp-cmake`, and
-`docs-generic`. Catalog entries carry the exact version, source path,
-compatible engine range, SHA-256 checksum, signer placeholder, and trust
-policy. Checksum verification is enforced today. Release signatures and
-provenance are recorded as `TODO` metadata until signed pack artifacts exist.
+`workflow/tools/materialize-pack-registry.mjs` builds the release surface. It
+materializes the seven initial packs (`rust-cargo`, `python`, `jvm-gradle`,
+`jvm-maven`, `node-ts`, `cpp-cmake`, and `docs-generic`), writes
+`workflow/engine/engine.yaml`, creates `workflow/releases/gc-engine-<version>.tgz`
+and `workflow/releases/gc-gate-pack-<id>-<version>.tgz`, and writes
+`workflow/gate-catalog.json`.
 
-`gc_install_workflow_assets` installs a pack into a consumer repository:
+Catalog entries carry the exact version, release artifact path, release
+artifact SHA-256 checksum, source path, source-tree checksum, compatible engine
+range, signer placeholder, and trust policy. The installer verifies the
+release artifact checksum that it vendors. Source checksums are drift metadata.
+Release signatures and provenance are recorded as `TODO` metadata until signed
+artifacts exist.
+
+`gc_install_workflow_assets` installs or upgrades workflow assets in a consumer
+repository:
 
 ```json
 {
   "repo_path": "/repo",
   "pack_id": "node-ts",
   "version": "^1.0.0",
+  "engine_version": "^1.0.0",
   "scope": "frontend",
   "profile": "react-vite",
+  "mode": "upgrade",
   "install_dependencies": true,
   "run_selftest": true
 }
 ```
 
-The installer resolves the catalog entry, verifies the pack checksum, vendors
-the exact pack under `.gc/vendor/ground-control/packs/<pack-id>/<version>/`,
-copies templates, writes or merges `.gc/gates.yaml`, writes
-`.gc/workflow-lock.json`, updates `.ground-control.yaml` with
-`workflow.engine`, `workflow.gate_manifest`, and `workflow.packs[]`, optionally
-adds declared dev dependencies through the detected package manager, and runs
-the pack self-test. It leaves normal repository file changes for review.
+The installer resolves the highest matching engine and pack semver entries,
+verifies both release artifact checksums, vendors the exact engine under
+`.gc/vendor/ground-control/engine/<version>/`, vendors the exact pack under
+`.gc/vendor/ground-control/packs/<pack-id>/<version>/`, copies templates,
+writes or merges `.gc/gates.yaml`, writes `.gc/workflow-lock.json`, updates
+`.ground-control.yaml` with `workflow.engine`, `workflow.gate_manifest`, and
+`workflow.packs[]`, optionally adds declared dev dependencies through the
+detected package manager, and runs the selected pack's self-test. It leaves
+normal repository file changes for review.
 
 Self-tests create a temporary fixture repository, install the pack, validate
 the generated manifest, run one passing gate, run one intentional failing gate
 fixture, and verify the pack's `provider_missing` or `not_applicable`
 behavior. If the required toolchain is missing, the self-test exits
-successfully with `status: "skipped"` and a concrete missing-tool reason.
+successfully with `status: "skipped"` and a concrete missing-tool reason. CI
+runs a matrix entry for every supported pack and installs the expected
+toolchain for that pack; an unexpected skip fails that matrix entry.
+
+`workflow/tools/verify-workflow-release.mjs` validates the release catalog and
+artifact checksums. `workflow/tools/eval-workflow-engine.mjs` runs the
+versioned workflow-engine eval suite at
+`workflow/evals/engine-behavior/v1/scenarios.json`. The eval suite uses
+deterministic checks for review convergence, completion-gate prerequisites,
+remote-quality substance, context loading, traceability staleness, lockfile
+shape, and legacy command compatibility. The `Workflow Platform` CI workflow
+runs release validation, the eval suite, and the seven-pack self-test matrix on
+changes to `skills/`, `mcp/`, or `workflow/`.
 
 #### Gate Manifest
 
@@ -307,7 +331,12 @@ Provider-missing behavior is explicit. A gate with no command returns a `provide
   "schema_version": 1,
   "engine": {
     "version": "1.0.0",
-    "compatible": ">=1.0.0 <2.0.0"
+    "checksum": "sha256:<hex>",
+    "source_url": "workflow/releases/gc-engine-1.0.0.tgz",
+    "compatible": ">=1.0.0 <2.0.0",
+    "signer": "TODO: release signer",
+    "trust_policy": "checksum-only-development",
+    "installed_at": "2026-06-06T00:00:00.000Z"
   },
   "packs": [
     {

@@ -160,10 +160,11 @@ unless a new style rule is being established.
 Portable gate-engine MCP tools added for `/implement` platform work are a
 broader workflow contract than a single skill step. Document `gc_run_gates`,
 `gc_install_workflow_assets`, `.gc/gates.yaml`, `.gc/workflow-lock.json`,
-the gate-pack catalog, provider-missing fallback, gate-effectiveness
-telemetry, `contract`, `test_red`, `impl_green`, `gates_green`,
-`context_loaded`, `remote_gates_green`, `traceability_reconciled`, the ADR-057
-assurance classifier, `gc_get_implementation_context`,
+the gate-pack catalog, workflow release artifacts, pack self-tests, workflow
+engine evals, provider-missing fallback, gate-effectiveness telemetry,
+`contract`, `test_red`, `impl_green`, `gates_green`, `context_loaded`,
+`remote_gates_green`, `traceability_reconciled`, the ADR-057 assurance
+classifier, `gc_get_implementation_context`,
 `gc_reconcile_traceability`, `gc_watch_required_statuses`,
 `gc_gate_telemetry_summary`, and `gc_capture_process_lessons` in
 `docs/DEVELOPMENT_WORKFLOW.md`. Keep the tool description strings in

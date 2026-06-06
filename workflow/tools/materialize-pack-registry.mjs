@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const packsRoot = join(repoRoot, "workflow/packs");
+const engineRoot = join(repoRoot, "workflow/engine");
+const releasesRoot = join(repoRoot, "workflow/releases");
 const catalogPath = join(repoRoot, "workflow/gate-catalog.json");
 const version = "1.0.0";
 const compatibleEngine = ">=1.0.0 <2.0.0";
@@ -886,8 +889,140 @@ function directoryChecksum(dir) {
   return h.digest("hex");
 }
 
+function fileChecksum(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function copyTreeFiltered(source, target, { exclude = [] } = {}) {
+  const st = statSync(source);
+  if (st.isDirectory()) {
+    mkdirSync(target, { recursive: true });
+    for (const entry of readdirSync(source).sort()) {
+      const rel = relative(source, join(source, entry)).replace(/\\/g, "/");
+      if (exclude.some((pattern) => pattern(entry, rel))) continue;
+      copyTreeFiltered(join(source, entry), join(target, entry), { exclude });
+    }
+    return;
+  }
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, readFileSync(source));
+}
+
+function writeEngineMetadata() {
+  mkdirSync(engineRoot, { recursive: true });
+  const engineYaml = {
+    schema_version: 1,
+    id: "ground-control-implement-engine",
+    version,
+    compatible_engine: compatibleEngine,
+    capability_vocabulary: capabilities,
+    included_surfaces: [
+      "skills/implement/**",
+      "skills/quickfix/**",
+      "mcp/ground-control/{index.js,lib.js,package.json,package-lock.json,README.md,*.test.js}",
+      "workflow/tools/**",
+      "workflow/evals/**",
+      "architecture/adrs/{036,058,062}-*.md",
+    ],
+    release_artifacts: {
+      engine: `workflow/releases/gc-engine-${version}.tgz`,
+      gate_catalog: "workflow/gate-catalog.json",
+    },
+    signing: {
+      checksum_algorithm: "sha256",
+      provenance: "TODO: signed release provenance before broad rollout",
+      signature: "TODO: release signatures before broad rollout",
+    },
+  };
+  writeFileSync(join(engineRoot, "engine.yaml"), `${toYaml(engineYaml)}\n`);
+}
+
+function stageEngineRelease(stageRoot) {
+  copyTreeFiltered(engineRoot, join(stageRoot, "workflow/engine"));
+  copyTreeFiltered(join(repoRoot, "skills/implement"), join(stageRoot, "skills/implement"));
+  copyTreeFiltered(join(repoRoot, "skills/quickfix"), join(stageRoot, "skills/quickfix"));
+  copyTreeFiltered(join(repoRoot, "workflow/tools"), join(stageRoot, "workflow/tools"));
+  const evalsPath = join(repoRoot, "workflow/evals");
+  if (statOrNull(evalsPath)?.isDirectory()) {
+    copyTreeFiltered(evalsPath, join(stageRoot, "workflow/evals"));
+  }
+  copyTreeFiltered(join(repoRoot, "mcp/ground-control"), join(stageRoot, "mcp/ground-control"), {
+    exclude: [
+      (entry) => entry === "node_modules",
+      (entry) => entry === ".cache",
+    ],
+  });
+  for (const adr of [
+    "036-per-step-routing-tool-surfaces-telemetry.md",
+    "058-gate-capability-provider-indirection-and-gate-packs.md",
+    "062-portable-implement-engine-gate-pack-registry-and-consumer-adoption-model.md",
+  ]) {
+    copyTreeFiltered(join(repoRoot, "architecture/adrs", adr), join(stageRoot, "architecture/adrs", adr));
+  }
+}
+
+function createDeterministicTgz({ sourceDir, artifactPath }) {
+  mkdirSync(dirname(artifactPath), { recursive: true });
+  rmSync(artifactPath, { force: true });
+  execFileSync("tar", [
+    "--sort=name",
+    "--mtime=@0",
+    "--owner=0",
+    "--group=0",
+    "--numeric-owner",
+    "--pax-option=delete=atime,delete=ctime",
+    "-czf",
+    artifactPath,
+    "-C",
+    sourceDir,
+    ".",
+  ], {
+    env: { ...process.env, GZIP: "-n" },
+    stdio: "ignore",
+  });
+}
+
+function buildEngineReleaseArtifact() {
+  const stageRoot = join(releasesRoot, ".stage-engine");
+  rmSync(stageRoot, { recursive: true, force: true });
+  mkdirSync(stageRoot, { recursive: true });
+  stageEngineRelease(stageRoot);
+  const artifactRel = `workflow/releases/gc-engine-${version}.tgz`;
+  createDeterministicTgz({
+    sourceDir: stageRoot,
+    artifactPath: join(repoRoot, artifactRel),
+  });
+  const sourceChecksum = directoryChecksum(stageRoot);
+  rmSync(stageRoot, { recursive: true, force: true });
+  return {
+    artifact: artifactRel,
+    sha256: fileChecksum(join(repoRoot, artifactRel)),
+    source_sha256: sourceChecksum,
+  };
+}
+
+function buildPackReleaseArtifact(pack) {
+  const sourcePath = `workflow/packs/${pack.id}`;
+  const artifactRel = `workflow/releases/gc-gate-pack-${pack.id}-${version}.tgz`;
+  createDeterministicTgz({
+    sourceDir: join(repoRoot, sourcePath),
+    artifactPath: join(repoRoot, artifactRel),
+  });
+  return {
+    source_path: sourcePath,
+    artifact: artifactRel,
+    sha256: fileChecksum(join(repoRoot, artifactRel)),
+    source_sha256: directoryChecksum(join(repoRoot, sourcePath)),
+  };
+}
+
 mkdirSync(packsRoot, { recursive: true });
 for (const pack of packs) writePack(pack);
+writeEngineMetadata();
+rmSync(releasesRoot, { recursive: true, force: true });
+mkdirSync(releasesRoot, { recursive: true });
+const engineArtifact = buildEngineReleaseArtifact();
+const packArtifacts = new Map(packs.map((pack) => [pack.id, buildPackReleaseArtifact(pack)]));
 
 const catalog = {
   schema_version: 1,
@@ -895,22 +1030,37 @@ const catalog = {
   engine: {
     version,
     compatible: compatibleEngine,
-    source_url: "workflow/packs",
-    checksum: "TODO: engine release checksum is recorded when engine artifacts are cut",
+    source_url: "workflow/engine",
+    artifact: engineArtifact.artifact,
+    sha256: engineArtifact.sha256,
+    source_sha256: engineArtifact.source_sha256,
+    checksum: `sha256:${engineArtifact.sha256}`,
+    signer: "TODO: release signer",
+    trust_policy: "checksum-only-development",
+    signing: {
+      status: "todo",
+      note: "TODO: release signatures/provenance per ADR-062; SHA-256 checksum verification is enforced.",
+    },
   },
   packs: packs.map((pack) => {
-    const sourcePath = `workflow/packs/${pack.id}`;
+    const artifact = packArtifacts.get(pack.id);
     return {
       id: pack.id,
       version,
-      source_url: sourcePath,
-      artifact: sourcePath,
-      sha256: directoryChecksum(join(repoRoot, sourcePath)),
+      source_url: artifact.source_path,
+      source_sha256: artifact.source_sha256,
+      artifact: artifact.artifact,
+      sha256: artifact.sha256,
+      checksum: `sha256:${artifact.sha256}`,
       compatible_engine: compatibleEngine,
       signer: "TODO: release signer",
       trust_policy: "checksum-only-development",
+      signing: {
+        status: "todo",
+        note: "TODO: release signatures/provenance per ADR-062; SHA-256 checksum verification is enforced.",
+      },
     };
   }),
 };
 writeFileSync(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
-console.log(`materialized ${packs.length} gate packs and ${catalogPath}`);
+console.log(`materialized ${packs.length} gate packs, release artifacts, and ${catalogPath}`);
