@@ -14,7 +14,7 @@ Step 18 only clears the `in-progress` flag set in Step 1:
 gh issue edit <issue-number> --remove-label in-progress
 ```
 
-The label says, "an agent is actively working this issue." By the time Step 18 runs, the agent has handed the PR to the user and traceability is reconciled (Steps 15–17). Active work is done; the label has to go even though the issue is still open. If the label removal fails, surface it in the Step 19 report rather than swallowing it.
+The label says, "an agent is actively working this issue." By the time Step 18 runs, the agent has handed the PR to the user and traceability is reconciled (Step 15). Active work is done; the label has to go even though the issue is still open. If the label removal fails, surface it in the Step 19 report rather than swallowing it.
 
 ## Return contract
 

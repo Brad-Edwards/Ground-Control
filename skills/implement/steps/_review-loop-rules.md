@@ -41,6 +41,7 @@ Reviewer prose never decides whether the workflow advances. Each lens returns a 
 
    - `advance_to_next_phase` — all blocking gates are satisfied, all blocking lenses report `ship`, and the durable decision record is present. Advance in the same turn.
    - `fix_findings_and_reinvoke` — fix every finding, self-verify, re-stage (`git add -A`), and re-invoke the cycle tool. This is the only dirty-loop action. **Cycle 1 must never collapse into escalation because findings exist.**
+   - `post_high_risk_fix_and_escalate` — the deterministic fix-risk classifier marked the proposed fix high risk (`escalation_reason: "high_risk_fix"`). STOP, post the proposed fix and risk rationale to the issue thread, and wait for the user's sanity-check. This is separate from the convergence cap and is the only routine stop for risky fixes.
    - `post_structured_decision_aid_and_escalate` — a real cap has been reached with unresolved findings or gates. Post/surface the dispatcher decision aid (cycle history, unresolved findings, severity trend, new categories, confirmation status, gate state, and recommendation) and wait for owner authorization. Do not keep looping unless the owner authorizes `override_cap=true` + `override_reason`.
    - `record_terminal_escalation` — a terminal condition exists before another review can run. Record the terminal escalation and stop.
 

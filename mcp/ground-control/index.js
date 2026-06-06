@@ -78,9 +78,11 @@ import {
   runCodexArchitecturePreflight, runCodexReview, runCodexVerifyFinding,
   runTestQualityReview, TEST_QUALITY_REVIEW_HARD_CAP,
   runPostInterfaceContract, runPostImplementationPlan,
+  runGetImplementationContext, runReconcileTraceability,
   runAssertTestRed, runAssertImplGreen,
   runAssertTraceabilityReconciled, runCloseIssueAfterMerge,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
+  runGateTelemetrySummary, runCaptureProcessLessons,
   runGetIssueThread, runGates, installWorkflowAssets, runWatchCiRun, runWatchSonarAnalysis,
   runWatchRequiredStatuses,
   runCodexReviewCycle, runTestQualityReviewCycle,
@@ -634,8 +636,31 @@ server.tool(
 );
 
 server.tool(
+  "gc_get_implementation_context",
+  "Load the server-side implementation context bundle and write the bound context_loaded phase marker. Bundles the binding ADRs, cross-cutting-concern incumbents from .ground-control.yaml, existing IMPLEMENTS artifacts, and the related requirement neighbourhood before contract or planning can proceed.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive().optional(),
+    requirement_uid: z.string().regex(EXACT_REQUIREMENT_UID_RE).optional(),
+    project: z.string().optional(),
+    repo: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/).optional(),
+  },
+  async ({ repo_path, issue_number, requirement_uid, project, repo }) => {
+    try {
+      return ok(JSON.stringify(await runGetImplementationContext({
+        repoPath: repo_path,
+        issueNumber: issue_number ?? null,
+        requirementUid: requirement_uid ?? null,
+        project: project ?? null,
+        repo: repo ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
   "gc_post_interface_contract",
-  "Post the language-neutral interface/behavior contract as a GitHub issue comment and write the bound 'contract' phase marker. Refuses unless the 'preflight' marker exists, unless override=true with a user-authorized override_reason. The contract is the public oracle for planning, tests, and review lenses: interfaces/signatures/DTOs/error envelopes/API shapes/invariants to implement.",
+  "Post the language-neutral interface/behavior contract as a GitHub issue comment and write the bound 'contract' phase marker. Refuses unless context_loaded and preflight markers exist, unless override=true with a user-authorized override_reason. The contract is the public oracle for planning, tests, and review lenses: interfaces/signatures/DTOs/error envelopes/API shapes/invariants to implement.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -662,7 +687,7 @@ server.tool(
 
 server.tool(
   "gc_post_implementation_plan",
-  "Post the implementation plan as a comment on the GitHub issue. Refuses unless a 'contract' phase marker exists for the issue. Writes a 'plan' phase marker on success.",
+  "Post the implementation plan as a comment on the GitHub issue. Refuses unless context_loaded and contract phase markers exist for the issue. Writes a 'plan' phase marker on success.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -675,6 +700,38 @@ server.tool(
       return ok(JSON.stringify(await runPostImplementationPlan({
         repoPath: repo_path, issueNumber: issue_number, planBody: plan_body,
         override: Boolean(override), overrideReason: override_reason ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_reconcile_traceability",
+  "Compute the live git diff name-status server-side, reverse-lookup traceability by changed path, and return a structured worklist plus the gap set of in-scope requirements lacking IMPLEMENTS coverage. This replaces manual artifact discovery; the caller confirms and applies the worklist, then calls gc_assert_traceability_reconciled.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    base_ref: z.string().optional(),
+    head_ref: z.string().optional(),
+    project: z.string().optional(),
+    repo: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/).optional(),
+    requirements: z.array(z.object({
+      uid: z.string().regex(EXACT_REQUIREMENT_UID_RE),
+      status_intent: z.enum(["ACTIVE", "DRAFT", "DEPRECATED", "ARCHIVED"]).optional(),
+    })).optional(),
+  },
+  async ({ repo_path, issue_number, base_ref, head_ref, project, repo, requirements }) => {
+    try {
+      return ok(JSON.stringify(await runReconcileTraceability({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        baseRef: base_ref ?? "origin/dev",
+        headRef: head_ref ?? "HEAD",
+        project: project ?? null,
+        repo: repo ?? null,
+        requirements: Array.isArray(requirements)
+          ? requirements.map((r) => ({ uid: r.uid, statusIntent: r.status_intent ?? "ACTIVE" }))
+          : null,
       }), null, 2));
     } catch (e) { return err(e); }
   },
@@ -738,7 +795,7 @@ server.tool(
 
 server.tool(
   "gc_assert_traceability_reconciled",
-  "Assert that traceability reconciliation has landed for the issue and post a 'traceability_reconciled' phase marker. Re-fetches each in-scope requirement (status_intent: ACTIVE or DRAFT) and its links from the Ground Control REST API and refuses unless every ACTIVE requirement has an IMPLEMENTS link AND, when the IMPLEMENTS link points at an executable surface (backend/src/main/**, frontend/src/**, mcp/**, tools/policy/**), at least one TESTS link. DRAFT requirements are TESTS-exempt. Empty requirements[] runs the orphaned-link audit instead. Downstream: gc_post_final_report refuses unless this marker exists for the issue. override=true + override_reason allows the user to authorize a skip with a quoted rationale.",
+  "Assert that traceability reconciliation has landed for the issue and post a diff-bound 'traceability_reconciled' phase marker. Recomputes the live diff from base_ref...head_ref, re-fetches each in-scope requirement and changed artifact link from Ground Control, and refuses unless every executable changed path and ACTIVE requirement has IMPLEMENTS coverage plus required TESTS coverage. Downstream: gc_post_final_report refuses when the marker is missing or stale against the live diff. override=true + override_reason allows the user to authorize a skip with a quoted rationale.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -748,10 +805,12 @@ server.tool(
     })),
     project: z.string().optional(),
     touched_files: z.array(z.string()).optional(),
+    base_ref: z.string().optional(),
+    head_ref: z.string().optional(),
     override: z.boolean().optional(),
     override_reason: z.string().optional(),
   },
-  async ({ repo_path, issue_number, requirements, project, touched_files, override, override_reason }) => {
+  async ({ repo_path, issue_number, requirements, project, touched_files, base_ref, head_ref, override, override_reason }) => {
     try {
       return ok(JSON.stringify(await runAssertTraceabilityReconciled({
         repoPath: repo_path,
@@ -759,6 +818,8 @@ server.tool(
         requirements: requirements.map((r) => ({ uid: r.uid, statusIntent: r.status_intent ?? "ACTIVE" })),
         project: project ?? null,
         touchedFiles: touched_files ?? [],
+        baseRef: base_ref ?? "origin/dev",
+        headRef: head_ref ?? "HEAD",
         override: Boolean(override),
         overrideReason: override_reason ?? null,
       }), null, 2));
@@ -932,6 +993,8 @@ server.tool(
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
     pr_number: z.number().int().positive(),
+    base_ref: z.string().optional(),
+    head_ref: z.string().optional(),
     requirements: z.array(z.object({
       // Anchored UID match — `requirements[].uid` must BE a UID (codex cycle-4 F2).
       uid: z.string().regex(EXACT_REQUIREMENT_UID_RE),
@@ -967,12 +1030,14 @@ server.tool(
     override_traceability_gate: z.boolean().optional(),
     override_traceability_reason: z.string().optional(),
   },
-  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, lane, documentation_outcome, override_traceability_gate, override_traceability_reason }) => {
+  async ({ repo_path, issue_number, pr_number, base_ref, head_ref, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, lane, documentation_outcome, override_traceability_gate, override_traceability_reason }) => {
     try {
       return ok(JSON.stringify(await runPostFinalReport({
         repoPath: repo_path,
         issueNumber: issue_number,
         prNumber: pr_number,
+        baseRef: base_ref ?? "origin/dev",
+        headRef: head_ref ?? "HEAD",
         requirements,
         files: files ?? {},
         reviews,
@@ -1064,6 +1129,42 @@ server.tool(
         outputTokens: output_tokens ?? null,
         outcome,
         ts: ts ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_gate_telemetry_summary",
+  "Read gate-effectiveness telemetry from `.gc/telemetry/gate-effectiveness-<issue>.jsonl` and aggregate per-gate fire rate, outcomes, false-positive/override/escape rates, and duration statistics. Analytic only; it never changes in-run gate state.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive().optional(),
+  },
+  async ({ repo_path, issue_number }) => {
+    try {
+      return ok(JSON.stringify(await runGateTelemetrySummary({
+        repoPath: repo_path,
+        issueNumber: issue_number ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_capture_process_lessons",
+  "At run close, derive process observations from gate-effectiveness telemetry and write them through the repo's knowledge inbox, equivalent to a structured gc_remember call whose note is generated from telemetry rather than agent recollection.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    tags: z.array(z.string()).optional(),
+  },
+  async ({ repo_path, issue_number, tags }) => {
+    try {
+      return ok(JSON.stringify(await runCaptureProcessLessons({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        tags: tags ?? undefined,
       }), null, 2));
     } catch (e) { return err(e); }
   },
@@ -1247,7 +1348,7 @@ server.tool(
 
 server.tool(
   "gc_watch_required_statuses",
-  "Watch provider-neutral required remote statuses for a pull request. The status set comes from remote_status gates in the manifest unless required_statuses is supplied explicitly. The tool evaluates arbitrary status names, polls the PR status rollup when no status_snapshot is supplied, and writes remote_gates_green only when the required set passes for the bound head SHA, manifest hash, diff hash, and required-status-set hash.",
+  "Watch provider-neutral required remote statuses for a pull request and verify remote-quality substance server-side. The status set comes from remote_status gates in the manifest unless required_statuses is supplied explicitly. The tool polls the PR status rollup when no status_snapshot is supplied, then checks configured provider results (for example SonarCloud quality gate, new and overall issues by severity, ratings, hotspots, coverage, duplications). It writes remote_gates_green only when both the required status set and the full provider-quality bar pass for the bound head SHA, manifest hash, diff hash, required-status-set hash, and remote-quality hash.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),

@@ -162,11 +162,14 @@ broader workflow contract than a single skill step. Document `gc_run_gates`,
 `gc_install_workflow_assets`, `.gc/gates.yaml`, `.gc/workflow-lock.json`,
 the gate-pack catalog, provider-missing fallback, gate-effectiveness
 telemetry, `contract`, `test_red`, `impl_green`, `gates_green`,
-`remote_gates_green`, the ADR-057 assurance classifier, and
-`gc_watch_required_statuses` in `docs/DEVELOPMENT_WORKFLOW.md`. Keep the tool
-description strings in `mcp/ground-control/index.js` aligned with that
-reference. ADR-054 carries the amendment record; no new prose-style rule is
-needed unless the change alters this documentation coverage model.
+`context_loaded`, `remote_gates_green`, `traceability_reconciled`, the ADR-057
+assurance classifier, `gc_get_implementation_context`,
+`gc_reconcile_traceability`, `gc_watch_required_statuses`,
+`gc_gate_telemetry_summary`, and `gc_capture_process_lessons` in
+`docs/DEVELOPMENT_WORKFLOW.md`. Keep the tool description strings in
+`mcp/ground-control/index.js` aligned with that reference. ADR-054 carries the
+amendment record; no new prose-style rule is needed unless the change alters
+this documentation coverage model.
 
 Review-convergence MCP changes for `/implement` are workflow-contract changes.
 Document dispatcher actions, reviewer-lens envelopes, effective caps,

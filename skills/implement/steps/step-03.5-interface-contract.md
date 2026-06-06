@@ -23,8 +23,8 @@ Before writing the implementation plan or changing behavior, define the public c
    - `issue_number`: the issue number from Step 1
    - `contract_body`: the Markdown contract
 
-   The tool refuses unless the `preflight` phase marker exists for this issue, computes the current diff binding, writes the `contract` phase marker, and returns the canonical engineering-contract rubric. Do not post the contract manually.
-4. Cache the returned comment URL and marker state for Step 4. The Step 4 plan tool refuses without this marker.
+   The tool refuses unless both `context_loaded` and `preflight` phase markers exist for this issue, computes the current diff binding, writes the `contract` phase marker, and returns the canonical engineering-contract rubric. Do not post the contract manually.
+4. Cache the returned comment URL and marker state for Step 4. The Step 4 plan tool refuses without `context_loaded` and this marker.
 
 ## Return contract
 

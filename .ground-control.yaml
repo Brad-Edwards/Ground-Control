@@ -9,6 +9,8 @@ workflow:
 sonarcloud:
   project_key: KeplerOps_Ground-Control
   organization: KeplerOps
+remote_quality:
+  tier: zero_overall_issues
 rules:
   plan_rules: .gc/plan-rules.md
 knowledge:
@@ -91,7 +93,7 @@ routing:
     ci_monitor:
       tier: low
       model: claude-haiku-4-5
-    sonarcloud:
+    remote_quality:
       tier: low
       model: claude-haiku-4-5
     test_quality_review:

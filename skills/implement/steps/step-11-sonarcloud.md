@@ -1,39 +1,34 @@
 ---
-stage_id: sonarcloud
+stage_id: remote_quality
 step: "Step 11"
 tier: low
 ---
 
-# Step 11: SonarCloud
+# Step 11: Remote Quality
 
-Replaces the previous "wait 60s + curl quality gate + paginated curl through issues/hotspots" inline shell flow with a single MCP call. The agent makes one tool call; the MCP server performs propagation wait, quality-gate polling, and the paginated REST scrape server-side, then returns one compact envelope. (Issue #934 item 4.)
+This step runs AFTER Step 10 reports green. A green PR checkmark is not enough. The MCP server must re-verify required remote statuses and the full provider-quality result before it writes `remote_gates_green`.
 
-This step runs AFTER Step 10 (CI Monitor) reports green. A green CI run does not imply a clean SonarCloud — the quality gate and the issue list are separate from CI conclusions and must be checked independently.
-
-**Skip behavior**: if the repo's `.ground-control.yaml` has no `sonarcloud` block, the tool returns `{ok: true, skipped: true, quality_gate: "NONE"}` immediately. Log "SonarCloud skipped — no sonarcloud block in .ground-control.yaml" and proceed to Step 15.
-
-1. Call the `gc_watch_sonar_analysis` MCP tool with:
+1. Call `gc_watch_required_statuses` with:
    - `repo_path`: absolute path from Step 1
-   - `pr_number`: from Step 9
-   - Defaults are appropriate: initial wait 60s, total cap 30 min, poll every 30s.
+   - `issue_number`: issue number from Step 1
+   - `pr_number`: PR number from Step 9
+   - `base_ref` / `head_ref`: the same base/head refs used for local gates
 
-2. Read the returned envelope:
-   - `skipped: true` → no sonarcloud block. Advance to Step 15.
-   - `quality_gate: "OK"` AND `issues_summary.open_count == 0` AND `hotspots_summary.open_count == 0` → all clean. Advance to Step 15.
-   - Otherwise → there are findings. The envelope's `issues_summary` (counts by severity / type + `top_issues[]`) and `hotspots_summary` (counts + `top_hotspots[]`) tell you what to fix. For drill-down on the full issue list, the envelope's `full_issue_export_path` points at a server-side JSON file (`.gc/sonar/<pr>-<ts>.json`, gitignored) — read it on demand; do NOT bring its raw contents into parent context.
+2. The tool watches `remote_status` gates from the manifest and, when a provider is configured, verifies provider substance server-side. For SonarCloud that means quality-gate status, new and overall issues by severity, reliability/security/maintainability ratings, security hotspots, coverage, and duplications. Provider-specific tools such as `gc_watch_sonar_analysis` are adapters only; they are not the gate.
 
-3. **Fix every open issue the tool returns — code-smell, bug, vulnerability, and security hotspot, every severity from INFO to BLOCKER, pre-existing or not.** If you think a finding is dangerous to fix, unwise in context, or a false positive, STOP, post your reasoning as an issue comment with `decision: <fix|wontfix|not-applicable>` and the rationale, and ask the user. Wait for their answer; do not push commits while the question is open.
+3. If the tool returns `ok: false`:
+   - `required_status_*` errors: wait, fix CI, or fix remote status configuration as directed by `next_action`.
+   - `remote_quality_substance_failed`: fix every provider finding needed by the configured bar, including pre-existing findings when the repo ratchet requires zero overall issues.
+   - Missing full provider data is a failure. Do not claim "green" from a PR checkmark.
 
-4. For each fix cycle:
-   - Apply the fixes.
-   - Re-run the local completion gate to confirm nothing regressed locally.
-   - `git add`, `git commit` with message `Fix SonarCloud findings (cycle <N>)`, `git push`.
-   - Re-run Step 10 (CI Monitor) so SonarCloud re-analyzes the PR.
-   - After CI is green, re-invoke this step.
+4. For each remote-quality fix cycle:
+   - Classify fix risk before editing: blast radius, behavior change, critical-path touch, and area test coverage.
+   - Low/medium-risk fixes are applied automatically, locally verified, committed, pushed, then Step 10 and Step 11 are re-run.
+   - High-risk fixes trigger the dispatcher escalation reason `high_risk_fix`: STOP, post the proposed fix plus risk rationale to the issue thread, and wait for the user sanity-check. This stop is separate from non-convergence and is the only routine user stop in this loop.
 
-5. **Cycle cap: 5 iterations for SonarCloud.** If the issue list is still non-empty after 5 fix→re-analyze cycles, STOP, post the remaining findings as an issue comment, and escalate to the user.
+5. Cycle cap: 5 remote-quality iterations. If findings still do not converge after 5 fix and re-analyze cycles, stop with the remaining provider failures and ask the user.
 
-6. Proceed to Step 15 only when: the quality gate is `OK` AND the issues summary's `open_count` is 0 AND the hotspots summary's `open_count` is 0. (Steps 13–14 were merged out in #906: test-quality review moved pre-push to Step 6.6, and there is no separate "final CI re-verify" because there is no post-push fix loop after Sonar clean.)
+Proceed to Step 15 only when `gc_watch_required_statuses` returns `ok: true` and a `remote_gates_green` marker is written.
 
 ## Return contract
 
@@ -41,10 +36,8 @@ This step runs AFTER Step 10 (CI Monitor) reports green. A green CI run does not
 {
   "status": "ok",
   "cached_for_next_step": {
-    "sonar_status": "passed" | "failed" | "skipped",
-    "quality_gate": "OK" | "ERROR" | "WARN" | "NONE",
-    "open_issues_count": <int>,
-    "open_hotspots_count": <int>,
+    "remote_gates_green": true,
+    "remote_quality_status": "passed" | "skipped",
     "fix_cycles_run": <int>
   }
 }

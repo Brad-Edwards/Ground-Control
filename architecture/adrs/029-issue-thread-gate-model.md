@@ -466,3 +466,36 @@ non-executable carve-out. `gc_run_gates` refuses `gates_green` unless
 `impl_green` is fresh for the current diff and the ADR-057 assurance classifier
 finds the required contract/test artifacts for each classified L1/L2 surface.
 These are durable issue-thread records, not local notes.
+
+## Amendment (2026-06-06, Phase 5 of issue #1075)
+
+The issue thread gains three additional durable phase records:
+`context_loaded`, `remote_gates_green`, and diff-bound
+`traceability_reconciled`. `gc_get_implementation_context` posts
+`context_loaded` only after loading the binding ADRs, configured repo context,
+existing IMPLEMENTS artifacts, and related requirement neighbourhood. The
+contract and plan durable-record tools refuse without it.
+
+Traceability reconciliation is no longer a hand-authored Step 16/17 audit.
+`gc_reconcile_traceability` computes `git diff --name-status` server-side,
+looks up current Ground Control links for each changed artifact, and returns a
+worklist plus in-scope coverage gaps. `gc_assert_traceability_reconciled`
+recomputes the live diff before writing the marker and binds the marker to the
+diff hash. `gc_post_final_report` treats a missing or stale marker as a gate
+failure unless the existing bounded user-authorized override is supplied.
+
+`remote_gates_green` is an issue-thread marker for remote status and
+remote-quality substance, not for an agent claim that checks are green.
+`gc_watch_required_statuses` re-fetches required statuses and provider detail
+server-side; provider adapters such as SonarCloud contribute structured
+quality data behind the provider-neutral `remote_status` capability. Open
+provider issues, failed ratings, unreviewed hotspots, coverage, or duplication
+threshold failures block the marker even when the PR UI shows a green
+checkmark.
+
+The dispatcher has one new routine issue-thread stop:
+`high_risk_fix`. It is separate from non-convergence and cap exhaustion. When
+the deterministic fix-risk classifier marks the next zero-deferral fix as high
+risk, the workflow posts the proposed fix and risk rationale to the issue
+thread and waits for owner sanity-check. Low and medium risk fixes remain
+automatic in the same loop.

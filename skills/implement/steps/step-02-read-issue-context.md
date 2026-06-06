@@ -12,6 +12,8 @@ If the orchestrator forwarded `issue_thread_hash` from Step 1, call `gc_get_issu
 
 The issue thread is the durable record (per ADR-029) — including this skill's own plan and decision comments — so historical context lives there. Anchor the plan, clause verification, and review scope on the issue.
 
+Before leaving this step, call `gc_get_implementation_context` with `repo_path`, `issue_number`, and any resolved `requirement_uid`. This server-side bundle loads the binding ADRs, the repo's cross-cutting-concern incumbents from `.ground-control.yaml`, existing IMPLEMENTS artifacts, and the related-requirement neighbourhood. The tool writes the `context_loaded` phase marker. Downstream `gc_post_interface_contract` and `gc_post_implementation_plan` refuse without it; do not substitute manual ADR reading for this marker.
+
 ## Return contract
 
 ```json
@@ -19,6 +21,8 @@ The issue thread is the durable record (per ADR-029) — including this skill's 
   "status": "ok",
   "cached_for_next_step": {
     "issue_thread_hash": "<latest hash>",
+    "implementation_context_hash": "<context_hash from gc_get_implementation_context>",
+    "context_loaded_marker_written": true,
     "comment_count": <int>,
     "labels": [ "<label name>" ],
     "discussion_notes": [ "<short string summarizing key user-comment context>" ]

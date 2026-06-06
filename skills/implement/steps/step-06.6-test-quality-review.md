@@ -10,7 +10,7 @@ This step is driven by **one subagent invocation** that owns the entire test-qua
 
 Per issue #934 item 2, the parent dispatches a single subagent for this step. The subagent runs the convergence loop in [_review-loop-rules.md](_review-loop-rules.md) against the cycle tool (`gc_test_quality_review_cycle`, issue #934 item 3) until the MCP dispatcher returns clean advance, structured escalation, or terminal escalation, then returns the envelope below.
 
-This step moved from post-PR (former Step 13) to pre-push by issue #906 so the PR opens with **both** AI-assisted reviewers clean. Without the move, a reviewer scanning the PR sees a stale picture (codex clean, test-quality pending), and any test-quality fix costs an extra commit + push + CI run + SonarCloud re-analyze cycle. Pre-push, it's just re-stage + re-run.
+This step moved from post-PR (former Step 13) to pre-push by issue #906 so the PR opens with **both** AI-assisted reviewers clean. Without the move, a reviewer scanning the PR sees a stale picture (codex clean, test-quality pending), and any test-quality fix costs an extra commit + push + CI run + remote-quality re-analysis cycle. Pre-push, it's just re-stage + re-run.
 
 ## Subagent prompt template
 

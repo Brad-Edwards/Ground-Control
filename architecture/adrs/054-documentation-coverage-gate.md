@@ -209,3 +209,16 @@ names the new marker and classifier surfaces as part of the portable
 gate-engine documentation model. No change to the Vale rule set, the
 `tools/install-vale.sh` installer, or the `.vale.ini` configuration is
 required.
+
+**2026-06-06 (issue #1075 context, traceability, remote quality, and gate
+telemetry).** Added `gc_get_implementation_context`,
+`gc_reconcile_traceability`, `gc_gate_telemetry_summary`, and
+`gc_capture_process_lessons`; extended `gc_watch_required_statuses` to verify
+full provider-quality substance; and made `gc_assert_traceability_reconciled`
+diff-bound against the live diff. The workflow contract is documented in
+`docs/DEVELOPMENT_WORKFLOW.md`, `docs/WORKFLOW.md`,
+`skills/implement/SKILL.md`, the affected `skills/implement/steps/` files, and
+the ADR-021/029/031/036 amendments. `docs/DOC_STYLE.md` names these as part of
+the portable gate-engine documentation surface. No change to the Vale rule set,
+the `tools/install-vale.sh` installer, or the `.vale.ini` configuration is
+required.

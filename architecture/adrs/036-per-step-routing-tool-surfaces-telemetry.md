@@ -473,3 +473,31 @@ also gains `gc_post_interface_contract`, `gc_assert_test_red`, and
 phase-marker primitives: each re-verifies its predecessor marker or command
 evidence before posting, returns a structured envelope, and is Temporal-shaped
 for the future GC-O009 workflow.
+
+## Amendment (2026-06-06, Phase 5 of issue #1075)
+
+The MCP tool surface expands again, without changing the provider-neutral
+engine boundary:
+
+- `gc_get_implementation_context` loads binding ADRs, configured
+  cross-cutting incumbents, existing IMPLEMENTS artifacts, and related
+  requirement graph context, then writes `context_loaded`.
+- `gc_reconcile_traceability` computes the live `git diff --name-status`,
+  calls Ground Control reverse traceability lookup for each changed artifact,
+  and returns a structured worklist plus in-scope coverage gaps.
+- `gc_assert_traceability_reconciled` binds its marker to the live diff hash;
+  `gc_post_final_report` refuses stale traceability when base/head refs are
+  supplied.
+- `gc_watch_required_statuses` now verifies full remote-quality provider
+  substance before writing `remote_gates_green`. SonarCloud, CodeQL, Codecov,
+  and equivalent services remain adapters behind `remote_status`; their
+  metrics are not engine phases.
+- `gc_gate_telemetry_summary` summarizes per-gate fire rate, outcomes,
+  override and false-positive signals, escapes, and duration.
+- `gc_capture_process_lessons` derives process observations from telemetry
+  and writes them through the same knowledge inbox path used by `gc_remember`.
+
+Gate telemetry is analytic only. It complements the existing step wall-time
+telemetry but must never become a workflow-state counter, cap, or in-run gate.
+The durable audit record remains the issue thread and Ground Control
+traceability graph.

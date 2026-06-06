@@ -67,6 +67,7 @@ import {
   parsePhaseMarkers,
   evaluatePhasePrerequisite,
   buildPhaseMarker,
+  buildBoundPhaseMarker,
   PHASE_MARKER_PREFIX,
   parseCodexVerifyCycleMarkers,
   evaluateCodexVerifyCycleCap,
@@ -603,6 +604,11 @@ describe("parseGroundControlYaml", () => {
       integration_manager: { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null },
     });
     assert.equal(result.value.sonarcloud, null);
+    assert.deepEqual(result.value.remote_quality, {
+      tier: "platform_minimum",
+      min_coverage: null,
+      max_duplications: null,
+    });
     assert.equal(result.value.rules.plan_rules_path, null);
     assert.equal(result.value.knowledge, null);
   });
@@ -635,6 +641,7 @@ describe("parseGroundControlYaml", () => {
     assert.equal(result.value.workflow.completion_command, "make check");
     assert.equal(result.value.sonarcloud.project_key, "KeplerOps_Ground-Control");
     assert.equal(result.value.sonarcloud.organization, "KeplerOps");
+    assert.equal(result.value.remote_quality.tier, "platform_minimum");
     assert.equal(result.value.rules.plan_rules_path, ".gc/plan-rules.md");
     assert.deepEqual(result.value.knowledge, {
       dir: "docs/knowledge",
@@ -853,6 +860,25 @@ describe("parseGroundControlYaml", () => {
     const result = parseGroundControlYaml(yaml);
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes("organization")));
+  });
+
+  it("parses the remote_quality ratchet tier and metric thresholds", () => {
+    const yaml = [
+      "schema_version: 1",
+      "project: x",
+      "remote_quality:",
+      "  tier: zero_overall_issues",
+      "  min_coverage: 80",
+      "  max_duplications: 3",
+      "",
+    ].join("\n");
+    const result = parseGroundControlYaml(yaml);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.deepEqual(result.value.remote_quality, {
+      tier: "zero_overall_issues",
+      min_coverage: 80,
+      max_duplications: 3,
+    });
   });
 
   it("parses a knowledge section with only dir and leaves overrides null", () => {
@@ -12467,6 +12493,12 @@ describe("buildSuggestedGroundControlYaml covers all parser-accepted keys", () =
     assert.ok(yaml.includes("test_quality_review"), "template must mention test_quality_review");
   });
 
+  it("covers remote_quality in the suggested template", () => {
+    const yaml = buildSuggestedGroundControlYaml();
+    assert.ok(yaml.includes("remote_quality"), "template must mention remote_quality");
+    assert.ok(yaml.includes("zero_overall_issues"), "template must mention the stricter remote-quality tier");
+  });
+
   it("covers architecture.vocabulary sub-schema keys in the suggested template", () => {
     const yaml = buildSuggestedGroundControlYaml();
     assert.ok(yaml.includes("vocabulary"), "template must mention vocabulary");
@@ -13227,6 +13259,47 @@ process.exit(2);
         assert.equal(r.ok, false);
         assert.equal(r.error, "phase_prerequisite_missing");
         assert.deepEqual(r.missing, ["traceability_reconciled"]);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("refuses when traceability_reconciled is stale against the live diff", async () => {
+    const staleMarker = buildBoundPhaseMarker({
+      phase: "traceability_reconciled",
+      issueNumber: 1058,
+      binding: { diff_hash: "stale-diff", requirements_hash: "reqs" },
+    });
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          { argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"], stdout: slurp([{ body: staleMarker }]) },
+        ],
+      },
+    });
+    try {
+      writeFileSync(join(shim.repoDir, "README"), "base\n");
+      execFileSync("git", ["-C", shim.repoDir, "add", "README"]);
+      execFileSync("git", ["-C", shim.repoDir, "commit", "-q", "-m", "base"]);
+      execFileSync("git", ["-C", shim.repoDir, "branch", "base"]);
+      writeFileSync(join(shim.repoDir, "README"), "changed\n");
+      execFileSync("git", ["-C", shim.repoDir, "add", "README"]);
+      execFileSync("git", ["-C", shim.repoDir, "commit", "-q", "-m", "change"]);
+      await withShimPath(shim.binDir, async () => {
+        const { runPostFinalReport } = await import("./lib.js");
+        const r = await runPostFinalReport({
+          repoPath: shim.repoDir,
+          issueNumber: 1058, prNumber: 42,
+          baseRef: "base", headRef: "HEAD",
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+          ciStatus: "green", sonarStatus: "passed",
+        });
+        assert.equal(r.ok, false);
+        assert.equal(r.error, "stale_phase_marker");
+        assert.equal(r.next_action, "rerun_gc_assert_traceability_reconciled_against_live_diff");
       });
     } finally {
       shim.cleanup();

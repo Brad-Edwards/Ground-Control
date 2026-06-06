@@ -11,13 +11,19 @@ import {
   buildBoundPhaseMarker,
   buildPhaseMarker,
   buildTestQualityReviewPrompt,
+  classifyFixRisk,
   classifyAssuranceSurfacesFromDiff,
+  dispatchReviewConvergence,
   computeGatePackDirectoryChecksum,
   evaluateBoundPhaseMarkerFreshness,
   evaluateGateThreshold,
+  evaluateRemoteQualitySubstance,
   evaluateRequiredStatuses,
   installWorkflowAssets,
   parseGroundControlYaml,
+  runGateTelemetrySummary,
+  runGetImplementationContext,
+  runReconcileTraceability,
   runAssertImplGreen,
   runAssertTestRed,
   runGates,
@@ -59,6 +65,39 @@ function writeManifestRepo(repo, manifestYaml, lockJson = null) {
     engine: { version: "1.0.0" },
     packs: [{ id: "test-pack", version: "1.0.0" }],
   }, null, 2));
+}
+
+function withMockFetch(routesByUrl, fn) {
+  const originalFetch = globalThis.fetch;
+  const originalBase = process.env.GC_BASE_URL;
+  process.env.GC_BASE_URL = "http://test.invalid";
+  globalThis.fetch = async (url) => {
+    const value = url.toString();
+    for (const [pattern, handler] of routesByUrl) {
+      if (value.includes(pattern)) {
+        const response = await handler(value);
+        return {
+          status: response.status ?? 200,
+          ok: (response.status ?? 200) < 400,
+          text: async () => JSON.stringify(response.body ?? null),
+          json: async () => response.body ?? null,
+        };
+      }
+    }
+    return {
+      status: 404,
+      ok: false,
+      text: async () => JSON.stringify({ error: { message: `no route for ${value}` } }),
+      json: async () => ({ error: { message: `no route for ${value}` } }),
+    };
+  };
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      globalThis.fetch = originalFetch;
+      if (originalBase === undefined) delete process.env.GC_BASE_URL;
+      else process.env.GC_BASE_URL = originalBase;
+    });
 }
 
 describe("gate manifest schema and validation", () => {
@@ -159,7 +198,7 @@ describe("gate pack catalog and installer", () => {
         installDependencies: false,
         runSelftest: false,
       });
-      assert.equal(result.ok, true);
+      assert.equal(result.ok, true, JSON.stringify(result));
       assert.equal(result.pack.version, "1.0.0");
       assert.equal(result.gates_written, ENGINE_CAPABILITIES.length);
       assert.equal(result.selftest.status, "skipped");
@@ -421,6 +460,11 @@ describe("contract-first marker tools", () => {
     await withTempRepo(async (repo) => {
       writeConfig(repo);
       const diffInfo = classifierDiff({ "README.md": "+# Contract marker fixture\n" });
+      const contextLoaded = buildBoundPhaseMarker({
+        phase: "context_loaded",
+        issueNumber: 1075,
+        binding: { context_hash: "ctx1" },
+      });
       const preflight = buildPhaseMarker({ phase: "preflight", issueNumber: 1075 });
       const plan = buildPhaseMarker({ phase: "plan", issueNumber: 1075 });
       const contract = contractMarker();
@@ -444,13 +488,13 @@ describe("contract-first marker tools", () => {
         diffInfo,
       });
       assert.equal(contractMissing.ok, false);
-      assert.deepEqual(contractMissing.missing, ["preflight"]);
+      assert.deepEqual(contractMissing.missing, ["context_loaded", "preflight"]);
 
       const contractPosted = await runPostInterfaceContract({
         repoPath: repo,
         issueNumber: 1075,
         contractBody: "Interface: GET /things returns ThingDto or ErrorEnvelope.",
-        phaseCommentBodies: [preflight],
+        phaseCommentBodies: [contextLoaded, preflight],
         markerPoster,
         diffInfo,
       });
@@ -466,13 +510,13 @@ describe("contract-first marker tools", () => {
         markerPoster,
       });
       assert.equal(planMissing.ok, false);
-      assert.deepEqual(planMissing.missing, ["contract"]);
+      assert.deepEqual(planMissing.missing, ["context_loaded", "contract"]);
 
       const planPosted = await runPostImplementationPlan({
         repoPath: repo,
         issueNumber: 1075,
         planBody: "Plan: implement the declared interface.",
-        phaseCommentBodies: [contract],
+        phaseCommentBodies: [contextLoaded, contract],
         markerPoster,
       });
       assert.equal(planPosted.ok, true);
@@ -550,6 +594,102 @@ describe("contract-first marker tools", () => {
     assert.match(prompt, /POST \/foo returns 201/);
     assert.match(prompt, /Interface-first/);
     assert.match(prompt, /Secure from the gate/);
+  });
+});
+
+describe("implementation context and diff-derived traceability", () => {
+  it("loads binding ADR context and writes context_loaded before contract posting", async () => {
+    await withTempRepo(async (repo) => {
+      writeConfig(repo, [
+        "docs:",
+        "  adr_dir: architecture/adrs/",
+        "cross_cutting_concerns:",
+        "  description: ErrorResponse envelope; Spring Security auth boundary.",
+      ].join("\n"));
+      mkdirSync(join(repo, "architecture/adrs"), { recursive: true });
+      for (const id of ["031", "036", "061", "062"]) {
+        writeFileSync(join(repo, `architecture/adrs/${id}-binding.md`), `# ADR-${id}\n\nBinding design ${id}.\n`);
+      }
+      const markerCalls = [];
+      const result = await withMockFetch([
+        ["/api/v1/requirements/traceability/by-artifact", async () => ({ body: [] })],
+      ], () => runGetImplementationContext({
+        repoPath: repo,
+        issueNumber: 1075,
+        issueContext: { body: "## Requirements\n\nNo formal requirements for this fixture." },
+        markerPoster: async (payload) => {
+          markerCalls.push(payload);
+          return { html_url: "https://example.test/comment/ctx", id: 77 };
+        },
+      }));
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(result.phase_marker.phase, "context_loaded");
+      assert.equal(markerCalls[0].phase, "context_loaded");
+      assert.equal(result.binding_adrs.filter((adr) => adr.error == null).length, 4);
+      assert.match(result.ground_control_context.cross_cutting_concerns.description, /ErrorResponse/);
+
+      const contract = await runPostInterfaceContract({
+        repoPath: repo,
+        issueNumber: 1075,
+        contractBody: "Interface: deterministic context fixture.",
+        phaseCommentBodies: [buildPhaseMarker({ phase: "preflight", issueNumber: 1075 })],
+        diffInfo: classifierDiff({ "README.md": "+x\n" }),
+        markerPoster: async () => ({ html_url: "https://example.test/comment/contract", id: 78 }),
+      });
+      assert.equal(contract.ok, false);
+      assert.deepEqual(contract.missing, ["context_loaded"]);
+    });
+  });
+
+  it("reconciles traceability from the live git name-status diff and reports gap sets", async () => {
+    await withTempRepo(async (repo) => {
+      writeConfig(repo);
+      mkdirSync(join(repo, "mcp/ground-control"), { recursive: true });
+      writeFileSync(join(repo, "mcp/ground-control/lib.js"), "export const before = 1;\n");
+      execFileSync("git", ["add", "."], { cwd: repo });
+      execFileSync("git", ["commit", "-m", "base"], { cwd: repo, stdio: "ignore" });
+      execFileSync("git", ["branch", "base"], { cwd: repo });
+      writeFileSync(join(repo, "mcp/ground-control/lib.js"), "export const after = 2;\n");
+      execFileSync("git", ["add", "."], { cwd: repo });
+      execFileSync("git", ["commit", "-m", "change"], { cwd: repo, stdio: "ignore" });
+
+      const result = await withMockFetch([
+        ["/api/v1/requirements/traceability/by-artifact", async (url) => {
+          if (url.includes("artifactType=FILE")) return { body: [] };
+          return { body: [] };
+        }],
+        ["/api/v1/requirements/uid/GC-X001", async () => ({ body: { id: "uuid-1", uid: "GC-X001", status: "ACTIVE" } })],
+        ["/api/v1/requirements/uuid-1/traceability", async () => ({ body: [] })],
+      ], () => runReconcileTraceability({
+        repoPath: repo,
+        issueNumber: 1075,
+        baseRef: "base",
+        headRef: "HEAD",
+        issueContext: { body: "## Requirements\n\n- GC-X001 - Traceability fixture" },
+        requirements: [{ uid: "GC-X001", statusIntent: "ACTIVE" }],
+      }));
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(result.name_status[0].path, "mcp/ground-control/lib.js");
+      assert.equal(result.worklist[0].suggested_action, "add_implements_link_or_mark_requirement_free");
+      assert.deepEqual(result.gap_set, [{ uid: "GC-X001", reason: "implements_missing", status: "ACTIVE" }]);
+      assert.match(result.diff_hash, /^[a-f0-9]{64}$/);
+    });
+  });
+
+  it("treats a traceability_reconciled marker as stale when the bound diff hash changes", () => {
+    const marker = buildBoundPhaseMarker({
+      phase: "traceability_reconciled",
+      issueNumber: 1075,
+      binding: { diff_hash: "old-diff", requirements_hash: "reqs" },
+    });
+    const result = evaluateBoundPhaseMarkerFreshness({
+      commentBodies: [marker],
+      issueNumber: 1075,
+      phase: "traceability_reconciled",
+      expected: { diff_hash: "new-diff" },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "stale_phase_marker");
   });
 });
 
@@ -765,6 +905,33 @@ gates: []
 });
 
 describe("required remote statuses", () => {
+  function fullRemoteQuality(overrides = {}) {
+    return {
+      provider: "sonarcloud",
+      ok: true,
+      quality_gate: "OK",
+      issues: {
+        new: { total: 0, by_severity: { BLOCKER: 0, CRITICAL: 0, MAJOR: 0, MINOR: 0, INFO: 0 } },
+        overall: { total: 0, by_severity: { BLOCKER: 0, CRITICAL: 0, MAJOR: 0, MINOR: 0, INFO: 0 } },
+      },
+      ratings: {
+        reliability: "A",
+        security: "A",
+        maintainability: "A",
+        new_reliability: "A",
+        new_security: "A",
+        new_maintainability: "A",
+      },
+      security_hotspots: {
+        new: { to_review: 0, reviewed: true },
+        overall: { to_review: 0, reviewed: true },
+      },
+      coverage: { overall: 91, new: 92 },
+      duplications: { overall: 1.2, new: 0 },
+      ...overrides,
+    };
+  }
+
   it("evaluates arbitrary required status names without provider-specific assumptions", () => {
     const result = evaluateRequiredStatuses({
       requiredStatuses: ["ci", "quality"],
@@ -776,6 +943,31 @@ describe("required remote statuses", () => {
     assert.equal(result.ok, false);
     assert.equal(result.state, "failed");
     assert.equal(result.failed[0].name, "quality");
+  });
+
+  it("evaluates remote-quality substance separately from provider checkmarks", () => {
+    const platform = evaluateRemoteQualitySubstance({
+      providerResults: [fullRemoteQuality({
+        issues: {
+          new: { total: 0, by_severity: { BLOCKER: 0, CRITICAL: 0, MAJOR: 0, MINOR: 0, INFO: 0 } },
+          overall: { total: 1, by_severity: { BLOCKER: 0, CRITICAL: 0, MAJOR: 1, MINOR: 0, INFO: 0 } },
+        },
+      })],
+      policy: { tier: "platform_minimum" },
+    });
+    assert.equal(platform.ok, true);
+
+    const ratcheted = evaluateRemoteQualitySubstance({
+      providerResults: [fullRemoteQuality({
+        issues: {
+          new: { total: 0, by_severity: { BLOCKER: 0, CRITICAL: 0, MAJOR: 0, MINOR: 0, INFO: 0 } },
+          overall: { total: 1, by_severity: { BLOCKER: 0, CRITICAL: 0, MAJOR: 1, MINOR: 0, INFO: 0 } },
+        },
+      })],
+      policy: { tier: "zero_overall_issues" },
+    });
+    assert.equal(ratcheted.ok, false);
+    assert.ok(ratcheted.failures.some((failure) => failure.reason === "overall_issues_not_zero"));
   });
 
   it("writes a remote_gates_green marker when supplied statuses pass", async () => {
@@ -799,6 +991,120 @@ describe("required remote statuses", () => {
       assert.equal(result.status, "passed");
       assert.equal(markerCalls[0].phase, "remote_gates_green");
       assert.equal(markerCalls[0].binding.head_sha, "abc123");
+    });
+  });
+
+  it("refuses remote_gates_green when a green-checkmark PR still has open Sonar issues", async () => {
+    await withTempRepo(async (repo) => {
+      writeConfig(repo);
+      const markerCalls = [];
+      const result = await runWatchRequiredStatuses({
+        repoPath: repo,
+        issueNumber: 1075,
+        prNumber: 12,
+        requiredStatuses: ["ci"],
+        statusSnapshot: [{ name: "ci", conclusion: "success", id: "check-1" }],
+        headSha: "abc123",
+        diffInfo: { base_ref: "main", head_ref: "HEAD", changed_files: ["mcp/ground-control/lib.js"], diff_hash: "diff1" },
+        remoteQualityPolicy: { tier: "zero_overall_issues" },
+        remoteQualityResults: [fullRemoteQuality({
+          issues: {
+            new: { total: 0, by_severity: { BLOCKER: 0, CRITICAL: 0, MAJOR: 0, MINOR: 0, INFO: 0 } },
+            overall: { total: 1, by_severity: { BLOCKER: 0, CRITICAL: 0, MAJOR: 1, MINOR: 0, INFO: 0 } },
+          },
+        })],
+        markerPoster: async (payload) => {
+          markerCalls.push(payload);
+          return { html_url: "https://example.test/comment/1", id: 1 };
+        },
+      });
+      assert.equal(result.ok, false);
+      assert.equal(result.error, "remote_quality_substance_failed");
+      assert.equal(result.evaluation.ok, true);
+      assert.ok(result.remote_quality.failures.some((failure) => failure.reason === "overall_issues_not_zero"));
+      assert.equal(markerCalls.length, 0);
+    });
+  });
+});
+
+describe("fix-risk escalation and gate telemetry summary", () => {
+  it("classifies low, medium, and high fix risks deterministically", () => {
+    const low = classifyFixRisk({ changedFiles: ["docs/DEVELOPMENT_WORKFLOW.md"] });
+    assert.equal(low.risk, "low");
+    assert.equal(low.automatic, true);
+
+    const medium = classifyFixRisk({
+      changedFiles: ["frontend/src/App.jsx", "frontend/src/App.test.jsx"],
+      behaviorChange: true,
+    });
+    assert.equal(medium.risk, "medium");
+    assert.equal(medium.automatic, true);
+
+    const high = classifyFixRisk({
+      changedFiles: ["mcp/ground-control/lib.js"],
+      behaviorChange: true,
+      testCoverage: false,
+    });
+    assert.equal(high.risk, "high");
+    assert.equal(high.automatic, false);
+  });
+
+  it("dispatches high_risk_fix as a distinct owner escalation", () => {
+    const result = dispatchReviewConvergence({
+      currentCycle: 1,
+      cap: 2,
+      lensEnvelopes: [{
+        verdict: "ship-with-fixes",
+        reviewer_lens: "correctness",
+        findings: [{
+          id: "F1",
+          severity: "Major",
+          location: "mcp/ground-control/lib.js:10",
+          title: "Remote-quality bug",
+          evidence: "Provider substance can be bypassed.",
+          classification: "one-off",
+          sweep: "No analogue found.",
+        }],
+        blocking: [{
+          id: "F1",
+          severity: "Major",
+          location: "mcp/ground-control/lib.js:10",
+          title: "Remote-quality bug",
+          evidence: "Provider substance can be bypassed.",
+          classification: "one-off",
+          sweep: "No analogue found.",
+        }],
+      }],
+      proposedFixRisk: { risk: "high", factors: ["critical_behavior_change"] },
+    });
+    assert.equal(result.next_action, "post_high_risk_fix_and_escalate");
+    assert.equal(result.escalation_reason, "high_risk_fix");
+    assert.equal(result.terminal, true);
+    assert.equal(result.decision_aid.high_risk_fix.risk, "high");
+  });
+
+  it("summarizes gate-effectiveness telemetry by gate", async () => {
+    await withTempRepo(async (repo) => {
+      writeConfig(repo, [
+        "workflow:",
+        "  completion_command: make policy",
+      ].join("\n"));
+      const gateResult = await runGates({
+        repoPath: repo,
+        issueNumber: 1075,
+        capabilities: ["policy"],
+        diffInfo: { base_ref: "main", head_ref: "HEAD", changed_files: ["README.md"], diff_hash: "diff1" },
+        postMarker: false,
+        commandRunner: async () => ({ exit_code: 0, stdout: "", stderr: "", timed_out: false, duration_ms: 11 }),
+      });
+      assert.equal(gateResult.ok, true);
+      const summary = await runGateTelemetrySummary({ repoPath: repo, issueNumber: 1075 });
+      assert.equal(summary.ok, true);
+      assert.equal(summary.summary.total_records, 1);
+      assert.equal(summary.summary.gates[0].gate_id, "legacy.policy");
+      assert.equal(summary.summary.gates[0].fire_rate, 1);
+      assert.equal(summary.summary.gates[0].outcomes.passed, 1);
+      assert.equal(summary.summary.gates[0].duration_ms.avg_ms, 11);
     });
   });
 });

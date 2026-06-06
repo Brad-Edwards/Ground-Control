@@ -9,20 +9,20 @@ disable-model-invocation: true
 
 Canonical, agent-neutral implementation of the Ground Control `/quickfix` workflow. A purpose-built fast lane for **straightforward, lower-risk fixes** that don't warrant the full `/implement` ceremony (preflight, plan post, AI-assisted reviews, final-report tool, requirement transitions). Drops the ceremony designed for requirement-driven multi-clause work; keeps every mechanical guardrail the repo enforces.
 
-**Sibling to `skills/implement/SKILL.md`.** This skill cross-references the canonical full workflow at every step rather than duplicating prose—the contract surfaces (branch shape, in-progress signal, changelog fragment, PR-title rules, `gc_render_pr_body`, CI/SonarCloud, no-deferral, user-owns-merge) are identical. The only differences are the dropped ceremony. `/quickfix` does not post the `/implement` contract-first marker chain (`contract`, `test_red`, `impl_green`, `gates_green`); if the work needs that chain, upgrade to `/implement`.
+**Sibling to `skills/implement/SKILL.md`.** This skill cross-references the canonical full workflow at every step rather than duplicating prose—the contract surfaces (branch shape, in-progress signal, changelog fragment, PR-title rules, `gc_render_pr_body`, CI/remote-quality gates, no-deferral, user-owns-merge) are identical. The only differences are the dropped ceremony. `/quickfix` does not post the `/implement` contract-first marker chain (`context_loaded`, `contract`, `test_red`, `impl_green`, `gates_green`); if the work needs that chain, upgrade to `/implement`.
 
 ## When to pick `/quickfix` vs `/implement`
 
 Judgment call, gating heuristic:
 
-- **`/quickfix`** when the fix is obvious from the issue description, touches **< ~10 files**, has **no architectural footprint**, and the agent has no open design questions. Examples: parser bug, doc typo, SonarCloud finding cleanup, dependency bump, lint fix, narrow refactor with no behavior change, "the reviewer told me exactly what to do" follow-up.
+- **`/quickfix`** when the fix is obvious from the issue description, touches **< ~10 files**, has **no architectural footprint**, and the agent has no open design questions. Examples: parser bug, doc typo, remote-quality provider finding cleanup, dependency bump, lint fix, narrow refactor with no behavior change, "the reviewer told me exactly what to do" follow-up.
 - **`/implement`** when the issue carries a `## Requirements` section (UIDs in scope), or the diff is wider than ~10 files, or the design is unsettled, or there's any cross-aggregate blast radius. Also use `/implement` for any diff that hits the ADR-057 assurance classifier's L1/L2 surfaces (security boundary, corruption-prone domain mutator, state machine, DAG/graph operation), because those require the contract-first marker chain and contract/test artifacts.
 
 The user picks the lane explicitly at invocation time. The issue is the durable anchor—a `/quickfix` run can be upgraded to `/implement` mid-flight by re-invoking `/implement <same-issue>`.
 
 ## Per-step model routing (ADR-036)
 
-Routes through the same `gc_resolve_workflow_route` resolver as `/implement` (see ADR-036 + `skills/implement/SKILL.md` § "Per-step model routing"). Stages reused: `issue_branch_resolution`, `codebase_assessment`, `implementation`, `precommit`, `completion_gate`, `review_cycle_1_consume` (only when `--review`), `review_fix_application`, `git_publish`, `pr_body`, `ci_monitor`, `sonarcloud`, `test_quality_review` (only when `--review`), `close_issue`. Stages NOT used (because the skill drops them): `architecture_preflight`, `planning`, `clause_mapping`, `transition_reconcile`, `final_report`. Routing and telemetry are opt-in per repo via `.ground-control.yaml` (same `cfg.routing.enabled` and `cfg.telemetry.enabled` knobs).
+Routes through the same `gc_resolve_workflow_route` resolver as `/implement` (see ADR-036 + `skills/implement/SKILL.md` § "Per-step model routing"). Stages reused: `issue_branch_resolution`, `codebase_assessment`, `implementation`, `precommit`, `completion_gate`, `review_cycle_1_consume` (only when `--review`), `review_fix_application`, `git_publish`, `pr_body`, `ci_monitor`, `remote_quality`, `test_quality_review` (only when `--review`), `close_issue`. Stages NOT used (because the skill drops them): `architecture_preflight`, `contract_definition`, `planning`, `clause_mapping`, `transition_reconcile`, `final_report`. Routing and telemetry are opt-in per repo via `.ground-control.yaml` (same `cfg.routing.enabled` and `cfg.telemetry.enabled` knobs).
 
 ## Invocation
 
@@ -98,7 +98,7 @@ If this repo's completion path is `gc_run_gates` and the tool refuses with a mis
 
 ### Step Q6.5 + Step Q6.6: AI-Assisted Reviews (OFF by default; `--review` to enable)
 
-`/quickfix` skips both pre-push AI-assisted reviews by default. CI and SonarCloud (Steps Q10 / Q11) still run post-push and remain non-negotiable; the codex + test-quality reviewers are the optional add-ons.
+`/quickfix` skips both pre-push AI-assisted reviews by default. CI and remote-quality gates (Steps Q10 / Q11) still run post-push and remain non-negotiable; the codex + test-quality reviewers are the optional add-ons.
 
 When the user invokes `/quickfix --review <issue>`:
 
@@ -133,17 +133,17 @@ The renderer's `change_class` is typically `source` for `/quickfix` runs; `doc-o
 
 **Identical to `skills/implement/SKILL.md` Step 10.** Bounded poll (5-min queued-too-long guard, 45-min in-progress cap), diagnose-and-fix loop on failure.
 
-### Step Q11: SonarCloud
+### Step Q11: Remote Quality
 
-**Identical to `skills/implement/SKILL.md` Step 11.** Quality gate + open-issues sweep + security hotspots. 5-iteration cap on fix → re-analyze cycles. Same `$SONAR_TOKEN`-direct REST fallback.
+**Identical to `skills/implement/SKILL.md` Step 11.** `gc_watch_required_statuses` verifies required remote statuses and full provider-quality substance server-side before writing `remote_gates_green`. A green PR checkmark is not enough. Provider adapters such as SonarCloud supply quality-gate status, issue severities, ratings, security hotspots, coverage, and duplications behind `remote_status`; they are not workflow phases.
 
-If `cfg.sonarcloud` is null, skip; proceed to Step Q18.
+If no remote-quality provider is configured, Step Q11 may return `remote_quality_status: "skipped"` after required remote statuses pass; proceed to Step Q18.
 
 ### Steps Q15–Q17: NO Requirement Transitions or Traceability Reconciliation
 
 `/quickfix` runs are scoped to fix-shaped work, not requirement-shaped work—no `gc_transition_status` calls, no `gc_create_traceability_link` reconciliation against in-scope UIDs. The `in_scope_requirements[]` list is by definition empty for a `/quickfix` run.
 
-**Exception: link maintenance on touched files.** If the diff modifies a file that has an existing IMPLEMENTS / TESTS link to some requirement and the behavior moved, update that link per `skills/implement/SKILL.md` Step 16's deletion-and-renaming rules (same `gc_get_traceability_by_artifact` + `gc_delete_traceability_link` + `gc_create_traceability_link` pattern). Default for a typical `/quickfix` run is no link changes; the fix preserves behavior, and the existing links remain valid.
+**Exception: link maintenance on touched files.** If the diff modifies a file that has an existing IMPLEMENTS / TESTS link to some requirement and the behavior moved, use the same diff-derived lookup as `skills/implement/SKILL.md` Step 15 (`gc_reconcile_traceability`, then explicit link create/delete calls as needed). Default for a typical `/quickfix` run is no link changes; the fix preserves behavior, and the existing links remain valid.
 
 If a `/quickfix` run touches files in a way that warrants requirement transitions, that's a signal the run should have been `/implement`. Surface to the user and re-invoke `/implement <same-issue>` rather than partial-completing the requirement work in the lighter lane.
 
@@ -153,7 +153,7 @@ If a `/quickfix` run touches files in a way that warrants requirement transition
 
 ### Step Q19: Lightweight Close Comment (via `gc_post_final_report`)
 
-`/quickfix` calls `gc_post_final_report` with **`lane: "quickfix"`** (issue #906) and a slim payload: empty `requirements: []`, empty (or one-line-per-reviewer) `reviews: []`, no `traceability` block, a one-paragraph `summary`, the open `pr_number`, and `ci_status` / `sonar_status` reflecting the actual Step Q10 / Q11 results. The `lane: "quickfix"` flag relaxes the runner's "reviews must be non-empty AND contain a codex entry" gate (which exists for `/implement` Step 19's mandatory pre-push codex review record); `/quickfix` runs default with reviews off, so an empty `reviews[]` is the canonical shape. The `lane: "quickfix"` flag also exempts the run from the `/implement`-side `traceability_reconciled` phase-marker prerequisite added by issue #1058 — `/quickfix` runs are requirement-free by precondition and have no traceability reconciliation to assert, so the gate would never apply. Every other gate stays in force: the tool runs `detectSensitiveBodyContent` and the canonical sensitive-content / no-defer / reserved-marker scrubs before any GitHub post, so the close comment can never carry an accidental token, secret, or raw command transcript onto the public issue thread. A direct `gh issue comment --body "..."` post would bypass those server-side filters, and the `.claude/hooks/*.py` PreToolUse hooks are Claude-Code-only and do not protect Codex or other drivers, so the MCP-tool boundary is the only driver-neutral enforcement layer.
+`/quickfix` calls `gc_post_final_report` with **`lane: "quickfix"`** (issue #906) and a slim payload: empty `requirements: []`, empty (or one-line-per-reviewer) `reviews: []`, no `traceability` block, a one-paragraph `summary`, the open `pr_number`, and `ci_status` / legacy `sonar_status` reflecting the actual Step Q10 / Q11 remote-quality result. The `lane: "quickfix"` flag relaxes the runner's "reviews must be non-empty AND contain a codex entry" gate (which exists for `/implement` Step 19's mandatory pre-push codex review record); `/quickfix` runs default with reviews off, so an empty `reviews[]` is the canonical shape. The `lane: "quickfix"` flag also exempts the run from the `/implement`-side `traceability_reconciled` phase-marker prerequisite added by issue #1058 — `/quickfix` runs are requirement-free by precondition and have no traceability reconciliation to assert, so the gate would never apply. Every other gate stays in force: the tool runs `detectSensitiveBodyContent` and the canonical sensitive-content / no-defer / reserved-marker scrubs before any GitHub post, so the close comment can never carry an accidental token, secret, or raw command transcript onto the public issue thread. A direct `gh issue comment --body "..."` post would bypass those server-side filters, and the `.claude/hooks/*.py` PreToolUse hooks are Claude-Code-only and do not protect Codex or other drivers, so the MCP-tool boundary is the only driver-neutral enforcement layer.
 
 The slim payload should populate:
 
@@ -162,7 +162,7 @@ The slim payload should populate:
 - `reviews`: one entry per reviewer that ran (for example, `{reviewer: "codex", summary: "1 cycle, 0 findings"}`). Empty array when `--review` was not supplied.
 - `requirements`: empty array (`/quickfix` is requirement-free by precondition; if link maintenance touched UIDs per the Q15–Q17 exception, mention them in `summary` rather than fabricating a requirement entry).
 - `pr_number`: the **open** PR number from Step Q9—the comment is posted before the user-owned merge, so do NOT wait for the PR to be merged before calling this. The PR URL is rendered into the comment body by the tool.
-- `ci_status` / `sonar_status`: `"green"` / `"passed"` for a successful run; `"skipped"` only when `cfg.sonarcloud` is null.
+- `ci_status` / `sonar_status`: `"green"` / `"passed"` for a successful run; `"skipped"` only when no provider is configured. `sonar_status` is the current renderer field name; feed it from Step Q11's remote-quality result.
 
 **You MUST NOT merge the PR.** Same rule as `/implement` Step 19. The user reviews and merges. Step Q19 runs **before** the merge; any prose suggesting a "merged PR link" is incorrect—at this point the PR is still open by contract.
 
@@ -179,7 +179,7 @@ Every mechanical guardrail the repo enforces. Adding to this list is a `bin/poli
 - **Changelog fragment** for source-changing diffs (issue #848). Path-based, no "pure refactor" carve-out.
 - **PR-title rules** (issue #901). Single conventional-commit type + lowercase subject; per-repo override via `workflow.pr_title`.
 - **`gc_render_pr_body`** for the PR body (ADR-036) so `tools/policy/checks.py::check_pr_body` accepts it.
-- **CI + SonarCloud green** before merge handoff.
+- **CI + remote-quality green** before merge handoff.
 - **`make check` + `make policy` clean** before commit (Step Q6 / pre-commit).
 - **User merges, not the agent.**
 
@@ -237,3 +237,12 @@ orphaned by the MCP client's tool-call timeout (issue #893). See ADR-036
 **2026-05-26 (issue #989).** A sibling lane, `/integrate`, now exists for preparing queues of approved PRs (GC-O011). The /quickfix and /integrate lanes are disjoint: /quickfix is issue-anchored and accepts the same `gc_post_decision_record` / `gc_post_final_report` contract as /implement; /integrate is repo-scoped and operational-only, with no issue-thread durable record. There is no overlap in trigger conditions or durable-record surfaces.
 
 **2026-05-26 (issue #989 merge carve-out).** The `/integrate` lane at mode=merge may execute the merge for PRs it has prepared and verified (ADR-029 carve-out). The /quickfix lane must not merge; the user-owns-merge rule from ADR-029 applies to /quickfix unchanged.
+
+**2026-06-06 (issue #1075 Phase 5).** The sibling-lane sync replaces
+SonarCloud-as-step wording with the provider-neutral `remote_quality` stage
+and `gc_watch_required_statuses` remote-quality substance gate. Provider tools
+remain adapters behind `remote_status`; a green PR checkmark is not enough.
+The lane remains requirement-free and exempt from the `/implement`
+`traceability_reconciled` prerequisite, but touched-file link maintenance now
+uses the same diff-derived `gc_reconcile_traceability` lookup instead of the
+old manual Step 16/17 flow.

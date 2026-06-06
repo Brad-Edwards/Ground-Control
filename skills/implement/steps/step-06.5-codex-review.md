@@ -10,7 +10,7 @@ This step is driven by **one subagent invocation** that owns the entire codex re
 
 Per issue #934 item 2, the parent dispatches a single subagent for this step. The subagent runs the convergence loop in [_review-loop-rules.md](_review-loop-rules.md) against the cycle tool (`gc_codex_review_cycle`, issue #934 item 3) until the MCP dispatcher returns clean advance, structured escalation, or terminal escalation, then returns the envelope below.
 
-The codex review is THE review pass for the PR — there is no second post-push codex review (see issue #804). Merge-commit drift relative to the target branch is the responsibility of CI (compile/tests/integration) and SonarCloud (quality), not a separate codex pass.
+The codex review is THE review pass for the PR — there is no second post-push codex review (see issue #804). Merge-commit drift relative to the target branch is the responsibility of CI (compile/tests/integration) and provider-neutral remote-quality gates, not a separate codex pass.
 
 ## Subagent prompt template
 

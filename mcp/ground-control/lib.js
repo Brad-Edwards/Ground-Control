@@ -34,7 +34,7 @@ export function buildGroundControlContextSnippet(project = "your-project-id") {
   return [
     "## Ground Control Context",
     "",
-    "This repo's Ground Control project id, workflow commands, SonarCloud",
+    "This repo's Ground Control project id, workflow commands, remote-quality",
     "settings, and plan rules live in `.ground-control.yaml` at repo root.",
     "Agents read it via the `gc_get_repo_ground_control_context` MCP tool.",
   ].join("\n");
@@ -68,6 +68,10 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "# sonarcloud:",
     "#   project_key: <sonar-project-key>",
     "#   organization: <sonar-org>",
+    "# remote_quality:",
+    "#   tier: platform_minimum # or zero_overall_issues",
+    "#   # min_coverage: 80",
+    "#   # max_duplications: 3",
     "# rules:",
     "#   plan_rules: .gc/plan-rules.md",
     "# knowledge:",
@@ -2237,6 +2241,50 @@ function normalizeSonarcloudConfig(raw) {
   return { ok: true, value: { project_key, organization } };
 }
 
+const REMOTE_QUALITY_TIERS = Object.freeze(["platform_minimum", "zero_overall_issues"]);
+
+function emptyRemoteQualityConfig() {
+  return {
+    tier: "platform_minimum",
+    min_coverage: null,
+    max_duplications: null,
+  };
+}
+
+function normalizeRemoteQualityConfig(raw) {
+  if (raw == null) {
+    return { ok: true, value: emptyRemoteQualityConfig() };
+  }
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, errors: ["remote_quality must be a mapping, not a list or scalar"] };
+  }
+  const allowed = ["tier", "min_coverage", "max_duplications"];
+  const value = emptyRemoteQualityConfig();
+  const errors = [];
+  for (const key of Object.keys(raw)) {
+    if (!allowed.includes(key)) {
+      errors.push(`remote_quality has unknown key '${key}'`);
+    }
+  }
+  if (raw.tier != null) {
+    if (!REMOTE_QUALITY_TIERS.includes(raw.tier)) {
+      errors.push(`remote_quality.tier must be one of: ${REMOTE_QUALITY_TIERS.join(", ")}`);
+    } else {
+      value.tier = raw.tier;
+    }
+  }
+  for (const key of ["min_coverage", "max_duplications"]) {
+    if (raw[key] == null) continue;
+    if (typeof raw[key] !== "number" || Number.isNaN(raw[key]) || raw[key] < 0 || raw[key] > 100) {
+      errors.push(`remote_quality.${key} must be a number in [0, 100] when set`);
+    } else {
+      value[key] = raw[key];
+    }
+  }
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value };
+}
+
 function normalizeRulesConfig(raw) {
   if (raw == null) {
     return { ok: true, value: { plan_rules_path: null } };
@@ -2775,6 +2823,7 @@ export function parseGroundControlYaml(yamlText) {
     "github_repo",
     "workflow",
     "sonarcloud",
+    "remote_quality",
     "rules",
     "knowledge",
     "docs",
@@ -2822,6 +2871,9 @@ export function parseGroundControlYaml(yamlText) {
   const sonarResult = normalizeSonarcloudConfig(parsed.sonarcloud);
   if (!sonarResult.ok) errors.push(...sonarResult.errors);
 
+  const remoteQualityResult = normalizeRemoteQualityConfig(parsed.remote_quality);
+  if (!remoteQualityResult.ok) errors.push(...remoteQualityResult.errors);
+
   const rulesResult = normalizeRulesConfig(parsed.rules);
   if (!rulesResult.ok) errors.push(...rulesResult.errors);
 
@@ -2858,6 +2910,7 @@ export function parseGroundControlYaml(yamlText) {
       github_repo: githubRepo,
       workflow: workflowResult.value,
       sonarcloud: sonarResult.value,
+      remote_quality: remoteQualityResult.value,
       rules: {
         plan_rules_path: rulesResult.value.plan_rules_path,
       },
@@ -3050,6 +3103,7 @@ export async function getRepoGroundControlContext(repoPath) {
     github_repo: parseResult.value.github_repo,
     workflow: parseResult.value.workflow,
     sonarcloud: parseResult.value.sonarcloud,
+    remote_quality: parseResult.value.remote_quality,
     rules: {
       plan_rules_path: rules.plan_rules_path,
       plan_rules_content: planRulesContent,
@@ -3126,7 +3180,7 @@ const GATE_SCOPES = Object.freeze(["repo", "changed"]);
 const GATE_PROVIDER_MISSING_POLICIES = Object.freeze(["fail", "reviewer_fallback", "not_applicable"]);
 const GATE_OUTPUT_TYPES = Object.freeze(["json"]);
 const GATE_SEVERITIES = Object.freeze(["info", "low", "medium", "high", "critical", "blocker"]);
-const GATE_TELEMETRY_SCHEMA_VERSION = 1;
+const GATE_TELEMETRY_SCHEMA_VERSION = 2;
 const GATE_DEFAULT_TIMEOUT_SECONDS = 900;
 const GATE_MAX_TIMEOUT_SECONDS = 86400;
 const GATE_OUTPUT_MAX_BYTES = 1024 * 1024;
@@ -4457,8 +4511,9 @@ export async function computeGitDiffInfo(repoRoot, baseRef, headRef) {
     throw new Error(`head_ref '${headRef}' is not a safe Git ref name`);
   }
   const range = `${baseRef}...${headRef}`;
-  const [nameResult, diffResult] = await Promise.all([
+  const [nameResult, nameStatusResult, diffResult] = await Promise.all([
     execFile("git", ["-C", repoRoot, "diff", "--name-only", range], { maxBuffer: 64 * 1024 * 1024 }),
+    execFile("git", ["-C", repoRoot, "diff", "--name-status", range], { maxBuffer: 64 * 1024 * 1024 }),
     execFile("git", ["-C", repoRoot, "diff", "--binary", range], { maxBuffer: 64 * 1024 * 1024 }),
   ]);
   const changedFiles = nameResult.stdout
@@ -4470,10 +4525,40 @@ export async function computeGitDiffInfo(repoRoot, baseRef, headRef) {
     base_ref: baseRef,
     head_ref: headRef,
     changed_files: changedFiles,
+    name_status: parseGitDiffNameStatus(nameStatusResult.stdout),
     diff_hash: sha256Hex(diffResult.stdout),
     diff_text: diffResult.stdout,
     file_diffs: splitUnifiedDiffByFile(diffResult.stdout),
   };
+}
+
+export function parseGitDiffNameStatus(text) {
+  if (typeof text !== "string" || text.trim() === "") return [];
+  return text.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split("\t");
+      const rawStatus = parts[0] ?? "";
+      const status = rawStatus[0] ?? "";
+      if (status === "R" || status === "C") {
+        return {
+          status,
+          score: rawStatus.slice(1) || null,
+          old_path: normalizeChangedPath(parts[1] ?? ""),
+          path: normalizeChangedPath(parts[2] ?? parts[1] ?? ""),
+          raw: line,
+        };
+      }
+      return {
+        status,
+        score: null,
+        old_path: null,
+        path: normalizeChangedPath(parts[1] ?? ""),
+        raw: line,
+      };
+    })
+    .filter((entry) => entry.path !== "");
 }
 
 function splitUnifiedDiffByFile(diffText) {
@@ -4694,6 +4779,10 @@ async function runOneGate({ gate, manifest, repoRoot, manifestHash, diffHash, co
 }
 
 function buildGateEffectivenessTelemetryRecord({ issueNumber, envelopeId, result, legacyMode }) {
+  const outcome = result.outcome ?? (result.ok === true ? "passed" : "failed");
+  const override = result.override === true || result.override_used === true;
+  const falsePositive = result.false_positive === true;
+  const escape = result.escape === true || result.review_escape === true || result.remote_escape === true;
   return {
     schema_version: GATE_TELEMETRY_SCHEMA_VERSION,
     kind: "gate_effectiveness",
@@ -4702,10 +4791,14 @@ function buildGateEffectivenessTelemetryRecord({ issueNumber, envelopeId, result
     envelope_id: envelopeId,
     gate_id: result.gate_id,
     capability: result.capability,
-    outcome: result.outcome,
+    fired: true,
+    outcome,
     blocking: result.blocking,
     provider_missing: result.provider_missing === true,
     reviewer_fallback_used: result.reviewer_fallback_used === true,
+    false_positive: falsePositive,
+    override,
+    escape,
     pack: result.pack,
     pack_version: result.pack_version,
     legacy_mode: legacyMode === true,
@@ -4732,6 +4825,199 @@ function appendGateEffectivenessTelemetry(repoRoot, issueNumber, envelopeId, res
   } catch {
     return null;
   }
+}
+
+function summarizeDurationStats(values) {
+  const nums = (Array.isArray(values) ? values : [])
+    .filter((value) => typeof value === "number" && Number.isFinite(value))
+    .sort((a, b) => a - b);
+  if (nums.length === 0) return { count: 0, avg_ms: null, median_ms: null, max_ms: null };
+  const sum = nums.reduce((acc, value) => acc + value, 0);
+  const mid = Math.floor(nums.length / 2);
+  const median = nums.length % 2 === 1 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
+  return {
+    count: nums.length,
+    avg_ms: Math.round((sum / nums.length) * 100) / 100,
+    median_ms: median,
+    max_ms: nums[nums.length - 1],
+  };
+}
+
+export function summarizeGateTelemetryRecords(records) {
+  const arr = Array.isArray(records) ? records : [];
+  const byGate = new Map();
+  for (const record of arr) {
+    if (!record || typeof record !== "object") continue;
+    const gateId = typeof record.gate_id === "string" && record.gate_id.length > 0
+      ? record.gate_id
+      : "(unknown)";
+    if (!byGate.has(gateId)) {
+      byGate.set(gateId, {
+        gate_id: gateId,
+        capability: record.capability ?? null,
+        total_runs: 0,
+        fired_count: 0,
+        outcomes: {},
+        false_positive_count: 0,
+        override_count: 0,
+        escape_count: 0,
+        durations: [],
+      });
+    }
+    const item = byGate.get(gateId);
+    item.total_runs += 1;
+    if (record.fired !== false) item.fired_count += 1;
+    const outcome = typeof record.outcome === "string" && record.outcome.length > 0 ? record.outcome : "unknown";
+    item.outcomes[outcome] = (item.outcomes[outcome] ?? 0) + 1;
+    if (record.false_positive === true) item.false_positive_count += 1;
+    if (record.override === true || record.override_used === true) item.override_count += 1;
+    if (record.escape === true || record.review_escape === true || record.remote_escape === true) item.escape_count += 1;
+    if (typeof record.duration_ms === "number" && Number.isFinite(record.duration_ms)) {
+      item.durations.push(record.duration_ms);
+    }
+  }
+  const gates = [...byGate.values()].map((item) => ({
+    gate_id: item.gate_id,
+    capability: item.capability,
+    total_runs: item.total_runs,
+    fired_count: item.fired_count,
+    fire_rate: item.total_runs === 0 ? 0 : item.fired_count / item.total_runs,
+    outcomes: item.outcomes,
+    false_positive_count: item.false_positive_count,
+    false_positive_rate: item.total_runs === 0 ? 0 : item.false_positive_count / item.total_runs,
+    override_count: item.override_count,
+    override_rate: item.total_runs === 0 ? 0 : item.override_count / item.total_runs,
+    escape_count: item.escape_count,
+    escape_rate: item.total_runs === 0 ? 0 : item.escape_count / item.total_runs,
+    duration_ms: summarizeDurationStats(item.durations),
+  })).sort((a, b) => a.gate_id.localeCompare(b.gate_id));
+  return {
+    total_records: arr.length,
+    gates,
+  };
+}
+
+export async function runGateTelemetrySummary({ repoPath, issueNumber = null } = {}) {
+  if (typeof repoPath !== "string" || repoPath.length === 0) {
+    return { ok: false, error: "gate_telemetry_input_invalid", message: "repo_path is required" };
+  }
+  if (issueNumber != null && (!Number.isInteger(issueNumber) || issueNumber <= 0)) {
+    return { ok: false, error: "gate_telemetry_input_invalid", message: "issue_number must be a positive integer when supplied" };
+  }
+  let repoRoot;
+  try {
+    repoRoot = await ensureGitRepo(repoPath);
+  } catch (error) {
+    return { ok: false, error: "gate_telemetry_repo_not_found", message: error.message };
+  }
+  const telemetryDir = resolveGateRepoPath(repoRoot, realpathSync(repoRoot), ".gc/telemetry", "gate_telemetry_dir", {
+    allowRoot: false,
+  });
+  if (!telemetryDir.ok) return { ok: false, error: "gate_telemetry_path_invalid", message: telemetryDir.error };
+  const fileNames = [];
+  try {
+    if (issueNumber != null) {
+      fileNames.push(`gate-effectiveness-${issueNumber}.jsonl`);
+    } else {
+      fileNames.push(...readdirSync(telemetryDir.abs).filter((name) =>
+        /^gate-effectiveness-\d+\.jsonl$/.test(name)
+      ));
+    }
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return {
+        ok: true,
+        repo_path: repoRoot,
+        issue_number: issueNumber,
+        files: [],
+        summary: summarizeGateTelemetryRecords([]),
+      };
+    }
+    return { ok: false, error: "gate_telemetry_read_failed", message: error.message };
+  }
+  const records = [];
+  const files = [];
+  for (const name of fileNames.sort()) {
+    const rel = `.gc/telemetry/${name}`;
+    const resolved = resolveGateRepoPath(repoRoot, realpathSync(repoRoot), rel, "gate_telemetry_file", {
+      allowRoot: false,
+      requireExisting: false,
+    });
+    if (!resolved.ok) continue;
+    let text;
+    try {
+      text = readFileSync(resolved.abs, "utf8");
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      return { ok: false, error: "gate_telemetry_read_failed", message: error.message, path: rel };
+    }
+    let count = 0;
+    for (const line of text.split(/\r?\n/)) {
+      if (line.trim() === "") continue;
+      try {
+        const record = JSON.parse(line);
+        records.push(record);
+        count += 1;
+      } catch {
+        return { ok: false, error: "gate_telemetry_parse_failed", message: `invalid JSONL record in ${rel}` };
+      }
+    }
+    files.push({ path: rel, records: count });
+  }
+  return {
+    ok: true,
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    files,
+    summary: summarizeGateTelemetryRecords(records),
+  };
+}
+
+function buildProcessLessonNoteFromGateTelemetry(summaryResult) {
+  const gates = Array.isArray(summaryResult?.summary?.gates) ? summaryResult.summary.gates : [];
+  const lines = [
+    `Process observations for issue #${summaryResult.issue_number}:`,
+    "",
+    `Gate telemetry records analysed: ${summaryResult?.summary?.total_records ?? 0}.`,
+  ];
+  if (gates.length === 0) {
+    lines.push("No gate-effectiveness records were present for this run.");
+    return lines.join("\n");
+  }
+  lines.push("");
+  for (const gate of gates) {
+    const outcomes = Object.entries(gate.outcomes ?? {})
+      .map(([name, count]) => `${name}=${count}`)
+      .join(", ");
+    lines.push(
+      `- ${gate.gate_id}: fired=${gate.fired_count}/${gate.total_runs}; outcomes=${outcomes || "none"}; ` +
+      `overrides=${gate.override_count}; false_positives=${gate.false_positive_count}; escapes=${gate.escape_count}; ` +
+      `avg_duration_ms=${gate.duration_ms?.avg_ms ?? "n/a"}.`,
+    );
+  }
+  return lines.join("\n");
+}
+
+export async function runCaptureProcessLessons({
+  repoPath,
+  issueNumber,
+  tags = ["implement", "gate-telemetry", "process-lesson"],
+  spawnIngest = defaultSpawnIngest,
+} = {}) {
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    return { ok: false, error: "process_lesson_input_invalid", message: "issue_number must be a positive integer" };
+  }
+  const summary = await runGateTelemetrySummary({ repoPath, issueNumber });
+  if (!summary.ok) return summary;
+  const note = buildProcessLessonNoteFromGateTelemetry(summary);
+  return writeKnowledgeInbox({
+    repoPath: summary.repo_path,
+    note,
+    sourceType: "issue",
+    sourceRef: String(issueNumber),
+    tags,
+    spawnIngest,
+  });
 }
 
 function manifestPackVersions(manifest) {
@@ -5352,6 +5638,454 @@ function providerResultIdsHash(statusSnapshot) {
   return sha256Hex(stableJson(ids));
 }
 
+const REMOTE_QUALITY_SEVERITIES = Object.freeze(["BLOCKER", "CRITICAL", "MAJOR", "MINOR", "INFO"]);
+const REMOTE_QUALITY_RATING_FIELDS = Object.freeze(["reliability", "security", "maintainability"]);
+const REMOTE_QUALITY_SONAR_MEASURES = Object.freeze([
+  "coverage",
+  "new_coverage",
+  "duplicated_lines_density",
+  "new_duplicated_lines_density",
+  "reliability_rating",
+  "new_reliability_rating",
+  "security_rating",
+  "new_security_rating",
+  "sqale_rating",
+  "new_maintainability_rating",
+  "software_quality_reliability_rating",
+  "new_software_quality_reliability_rating",
+  "software_quality_security_rating",
+  "new_software_quality_security_rating",
+  "software_quality_maintainability_rating",
+  "new_software_quality_maintainability_rating",
+]);
+
+function numericOrNull(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function normalizeQualityGateStatus(value) {
+  if (typeof value === "string") return value.trim().toUpperCase();
+  if (value && typeof value === "object") {
+    return normalizeQualityGateStatus(value.status ?? value.conclusion ?? value.state);
+  }
+  return "";
+}
+
+function qualityGatePassed(status) {
+  return ["OK", "PASS", "PASSED", "SUCCESS", "GREEN"].includes(normalizeQualityGateStatus(status));
+}
+
+function normalizeSeverityCounts(value) {
+  const counts = Object.fromEntries(REMOTE_QUALITY_SEVERITIES.map((severity) => [severity, 0]));
+  if (Array.isArray(value)) {
+    for (const issue of value) {
+      const severity = typeof issue?.severity === "string" ? issue.severity.toUpperCase() : "INFO";
+      if (Object.prototype.hasOwnProperty.call(counts, severity)) counts[severity] += 1;
+    }
+    return { counts, total: value.length, present: true };
+  }
+  if (value && typeof value === "object") {
+    const bySeverity = value.by_severity ?? value.bySeverity ?? value.severities ?? value;
+    for (const severity of REMOTE_QUALITY_SEVERITIES) {
+      counts[severity] = numericOrNull(bySeverity?.[severity] ?? bySeverity?.[severity.toLowerCase()]) ?? 0;
+    }
+    const total = numericOrNull(value.total ?? value.open_count ?? value.count);
+    return {
+      counts,
+      total: total ?? Object.values(counts).reduce((acc, item) => acc + item, 0),
+      present: true,
+    };
+  }
+  return { counts, total: null, present: false };
+}
+
+function sonarRatingToLetter(value) {
+  if (typeof value === "string") {
+    const trimmed = value.trim().toUpperCase();
+    if (/^[A-E]$/.test(trimmed)) return trimmed;
+    const numeric = numericOrNull(trimmed);
+    if (numeric != null) return sonarRatingToLetter(numeric);
+  }
+  const numeric = numericOrNull(value);
+  if (numeric == null) return null;
+  if (numeric <= 1) return "A";
+  if (numeric <= 2) return "B";
+  if (numeric <= 3) return "C";
+  if (numeric <= 4) return "D";
+  return "E";
+}
+
+function normalizeRemoteQualityRatings(raw = {}, measures = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const out = {};
+  for (const field of REMOTE_QUALITY_RATING_FIELDS) {
+    const sonarMeasureKey = field === "maintainability" ? "sqale_rating" : `${field}_rating`;
+    const sonarQualityMeasureKey = `software_quality_${field}_rating`;
+    out[field] = sonarRatingToLetter(
+      source[field] ?? measures[sonarMeasureKey] ?? measures[sonarQualityMeasureKey],
+    );
+    out[`new_${field}`] = sonarRatingToLetter(
+      source[`new_${field}`]
+        ?? measures[`new_${sonarMeasureKey}`]
+        ?? measures[`new_software_quality_${field}_rating`],
+    );
+  }
+  return out;
+}
+
+function normalizeRemoteQualityHotspots(value) {
+  if (Array.isArray(value)) {
+    return {
+      to_review: value.length,
+      reviewed: value.length === 0,
+      present: true,
+    };
+  }
+  if (value && typeof value === "object") {
+    const toReview = numericOrNull(
+      value.to_review ?? value.toReview ?? value.open_count ?? value.openCount ?? value.pending_review,
+    );
+    const reviewed = value.reviewed === true || value.all_reviewed === true || toReview === 0;
+    return {
+      to_review: toReview,
+      reviewed,
+      present: true,
+    };
+  }
+  return { to_review: null, reviewed: false, present: false };
+}
+
+function normalizeRemoteQualityMeasures(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  return {
+    coverage: {
+      overall: numericOrNull(source.coverage ?? source.overall_coverage ?? source.overallCoverage),
+      new: numericOrNull(source.new_coverage ?? source.newCoverage),
+    },
+    duplications: {
+      overall: numericOrNull(
+        source.duplications
+          ?? source.duplication
+          ?? source.duplicated_lines_density
+          ?? source.overall_duplications
+          ?? source.overallDuplications,
+      ),
+      new: numericOrNull(
+        source.new_duplications
+          ?? source.newDuplication
+          ?? source.new_duplicated_lines_density
+          ?? source.newDuplications,
+      ),
+    },
+  };
+}
+
+function normalizeRemoteQualityProviderResult(raw) {
+  const provider = typeof raw?.provider === "string" && raw.provider.trim() !== "" ? raw.provider.trim() : "unknown";
+  const rawMeasures = raw?.measures && typeof raw.measures === "object" ? raw.measures : {};
+  const measures = normalizeRemoteQualityMeasures({
+    ...rawMeasures,
+    coverage: raw?.coverage?.overall ?? raw?.coverage ?? rawMeasures.coverage,
+    new_coverage: raw?.coverage?.new ?? raw?.new_coverage ?? rawMeasures.new_coverage,
+    duplications: raw?.duplications?.overall ?? raw?.duplications ?? rawMeasures.duplications,
+    new_duplications: raw?.duplications?.new ?? raw?.new_duplications ?? rawMeasures.new_duplications,
+  });
+  const issuesRoot = raw?.issues && typeof raw.issues === "object" && !Array.isArray(raw.issues)
+    ? raw.issues
+    : {};
+  const newIssues = normalizeSeverityCounts(
+    issuesRoot.new ?? raw?.new_issues ?? raw?.issues_summary ?? raw?.issues,
+  );
+  const overallIssues = normalizeSeverityCounts(
+    issuesRoot.overall ?? raw?.overall_issues ?? raw?.overall_issues_summary,
+  );
+  const hotspotsRoot = raw?.security_hotspots ?? raw?.hotspots ?? {};
+  const newHotspots = normalizeRemoteQualityHotspots(
+    hotspotsRoot?.new ?? raw?.new_hotspots ?? raw?.hotspots_summary,
+  );
+  const overallHotspots = normalizeRemoteQualityHotspots(
+    hotspotsRoot?.overall ?? raw?.overall_hotspots,
+  );
+  const normalized = {
+    provider,
+    ok: raw?.ok !== false,
+    skipped: raw?.skipped === true,
+    error: raw?.error ?? null,
+    quality_gate: normalizeQualityGateStatus(raw?.quality_gate ?? raw?.qualityGate ?? raw?.projectStatus),
+    issues: {
+      new: {
+        total: newIssues.total,
+        by_severity: newIssues.counts,
+        present: newIssues.present,
+      },
+      overall: {
+        total: overallIssues.total,
+        by_severity: overallIssues.counts,
+        present: overallIssues.present,
+      },
+    },
+    ratings: normalizeRemoteQualityRatings(raw?.ratings, rawMeasures),
+    security_hotspots: {
+      new: newHotspots,
+      overall: overallHotspots,
+    },
+    coverage: measures.coverage,
+    duplications: measures.duplications,
+    export_path: raw?.full_issue_export_path ?? raw?.export_path ?? null,
+  };
+  return normalized;
+}
+
+function remoteQualityPolicyFromManifest(manifest, context, overridePolicy = null) {
+  const cfg = context?.remote_quality && typeof context.remote_quality === "object"
+    ? context.remote_quality
+    : emptyRemoteQualityConfig();
+  const policy = {
+    tier: cfg.tier ?? "platform_minimum",
+    min_coverage: cfg.min_coverage ?? null,
+    max_duplications: cfg.max_duplications ?? null,
+  };
+  if (overridePolicy && typeof overridePolicy === "object") {
+    if (overridePolicy.tier != null) policy.tier = overridePolicy.tier;
+    if (overridePolicy.min_coverage != null) policy.min_coverage = overridePolicy.min_coverage;
+    if (overridePolicy.max_duplications != null) policy.max_duplications = overridePolicy.max_duplications;
+  }
+  const remoteGates = Array.isArray(manifest?.gates)
+    ? manifest.gates.filter((gate) => gate?.capability === "remote_status")
+    : [];
+  for (const gate of remoteGates) {
+    if (gate?.threshold?.policy === "zero_overall_issues") policy.tier = "zero_overall_issues";
+    if (typeof gate?.threshold?.min === "number" && gate.threshold.metric === "coverage") {
+      policy.min_coverage = Math.max(policy.min_coverage ?? 0, gate.threshold.min);
+    }
+    if (typeof gate?.threshold?.max === "number" && gate.threshold.metric === "duplications") {
+      policy.max_duplications = Math.min(policy.max_duplications ?? 100, gate.threshold.max);
+    }
+  }
+  if (!REMOTE_QUALITY_TIERS.includes(policy.tier)) policy.tier = "platform_minimum";
+  return policy;
+}
+
+export function evaluateRemoteQualitySubstance({ providerResults = [], policy = null } = {}) {
+  const results = (Array.isArray(providerResults) ? providerResults : [providerResults])
+    .filter((item) => item != null)
+    .map(normalizeRemoteQualityProviderResult);
+  const effectivePolicy = {
+    ...emptyRemoteQualityConfig(),
+    ...(policy && typeof policy === "object" ? policy : {}),
+  };
+  const failures = [];
+  for (const result of results) {
+    if (result.skipped === true) continue;
+    const prefix = result.provider;
+    if (result.ok !== true || result.error != null) {
+      failures.push({ provider: prefix, reason: "provider_failed", error: result.error ?? null });
+    }
+    if (!qualityGatePassed(result.quality_gate)) {
+      failures.push({ provider: prefix, reason: "quality_gate_failed", actual: result.quality_gate || null });
+    }
+    for (const scope of ["new", "overall"]) {
+      if (result.issues[scope].present !== true || result.issues[scope].total == null) {
+        failures.push({ provider: prefix, reason: `${scope}_issues_missing` });
+      }
+    }
+    const newBlockerCritical =
+      (result.issues.new.by_severity.BLOCKER ?? 0) + (result.issues.new.by_severity.CRITICAL ?? 0);
+    if (newBlockerCritical > 0) {
+      failures.push({ provider: prefix, reason: "new_blocker_critical_issues", count: newBlockerCritical });
+    }
+    if (effectivePolicy.tier === "zero_overall_issues") {
+      const overallTotal = result.issues.overall.total;
+      if (typeof overallTotal !== "number" || overallTotal !== 0) {
+        failures.push({ provider: prefix, reason: "overall_issues_not_zero", count: overallTotal });
+      }
+    }
+    for (const field of REMOTE_QUALITY_RATING_FIELDS) {
+      if (result.ratings[field] == null) {
+        failures.push({ provider: prefix, reason: "rating_missing", rating: field });
+      } else if (result.ratings[field] !== "A") {
+        failures.push({ provider: prefix, reason: "rating_below_a", rating: field, actual: result.ratings[field] });
+      }
+    }
+    for (const scope of ["new", "overall"]) {
+      const hotspots = result.security_hotspots[scope];
+      if (hotspots.present !== true || hotspots.to_review == null) {
+        failures.push({ provider: prefix, reason: `${scope}_security_hotspots_missing` });
+      } else if (hotspots.to_review !== 0 || hotspots.reviewed !== true) {
+        failures.push({ provider: prefix, reason: `${scope}_security_hotspots_unreviewed`, count: hotspots.to_review });
+      }
+    }
+    if (result.coverage.overall == null) failures.push({ provider: prefix, reason: "coverage_missing", scope: "overall" });
+    if (result.coverage.new == null) failures.push({ provider: prefix, reason: "coverage_missing", scope: "new" });
+    if (result.duplications.overall == null) failures.push({ provider: prefix, reason: "duplications_missing", scope: "overall" });
+    if (result.duplications.new == null) failures.push({ provider: prefix, reason: "duplications_missing", scope: "new" });
+    if (typeof effectivePolicy.min_coverage === "number") {
+      if (typeof result.coverage.overall !== "number" || result.coverage.overall < effectivePolicy.min_coverage) {
+        failures.push({ provider: prefix, reason: "coverage_below_min", scope: "overall", actual: result.coverage.overall, min: effectivePolicy.min_coverage });
+      }
+      if (typeof result.coverage.new !== "number" || result.coverage.new < effectivePolicy.min_coverage) {
+        failures.push({ provider: prefix, reason: "coverage_below_min", scope: "new", actual: result.coverage.new, min: effectivePolicy.min_coverage });
+      }
+    }
+    if (typeof effectivePolicy.max_duplications === "number") {
+      if (typeof result.duplications.overall !== "number" || result.duplications.overall > effectivePolicy.max_duplications) {
+        failures.push({ provider: prefix, reason: "duplications_above_max", scope: "overall", actual: result.duplications.overall, max: effectivePolicy.max_duplications });
+      }
+      if (typeof result.duplications.new !== "number" || result.duplications.new > effectivePolicy.max_duplications) {
+        failures.push({ provider: prefix, reason: "duplications_above_max", scope: "new", actual: result.duplications.new, max: effectivePolicy.max_duplications });
+      }
+    }
+  }
+  return {
+    ok: failures.length === 0,
+    policy: effectivePolicy,
+    providers: results,
+    failures,
+  };
+}
+
+async function _fetchSonarIssuesByScope({ projectKey, prNumber = null, token, maxPages = 20 }) {
+  const out = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const prQuery = prNumber == null ? "" : `&pullRequest=${encodeURIComponent(String(prNumber))}`;
+    const url = `${SONAR_BASE_URL}/api/issues/search?componentKeys=${encodeURIComponent(projectKey)}${prQuery}&resolved=false&ps=500&p=${page}`;
+    const resp = await _sonarFetchWithRetry(url, {
+      headers: { Authorization: _sonarAuthHeader(token), Accept: "application/json" },
+    });
+    if (!resp.ok) {
+      throw new Error(`sonar issues fetch failed (page ${page}): HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    const issues = Array.isArray(data?.issues) ? data.issues : [];
+    out.push(...issues);
+    const total = typeof data?.total === "number" ? data.total : out.length;
+    if (out.length >= total) break;
+    if (issues.length === 0) break;
+  }
+  return out;
+}
+
+async function _fetchSonarHotspotsByScope({ projectKey, prNumber = null, token, maxPages = 20 }) {
+  const out = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const prQuery = prNumber == null ? "" : `&pullRequest=${encodeURIComponent(String(prNumber))}`;
+    const url = `${SONAR_BASE_URL}/api/hotspots/search?projectKey=${encodeURIComponent(projectKey)}${prQuery}&status=TO_REVIEW&ps=500&p=${page}`;
+    const resp = await _sonarFetchWithRetry(url, {
+      headers: { Authorization: _sonarAuthHeader(token), Accept: "application/json" },
+    });
+    if (!resp.ok) {
+      throw new Error(`sonar hotspots fetch failed (page ${page}): HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    const hotspots = Array.isArray(data?.hotspots) ? data.hotspots : [];
+    out.push(...hotspots);
+    const paging = data?.paging;
+    const total = typeof paging?.total === "number" ? paging.total : out.length;
+    if (out.length >= total) break;
+    if (hotspots.length === 0) break;
+  }
+  return out;
+}
+
+async function _fetchSonarMeasures({ projectKey, prNumber = null, token }) {
+  const prQuery = prNumber == null ? "" : `&pullRequest=${encodeURIComponent(String(prNumber))}`;
+  const url = `${SONAR_BASE_URL}/api/measures/component?component=${encodeURIComponent(projectKey)}${prQuery}&metricKeys=${REMOTE_QUALITY_SONAR_MEASURES.map(encodeURIComponent).join(",")}`;
+  const resp = await _sonarFetchWithRetry(url, {
+    headers: { Authorization: _sonarAuthHeader(token), Accept: "application/json" },
+  });
+  if (!resp.ok) {
+    throw new Error(`sonar measures fetch failed: HTTP ${resp.status}`);
+  }
+  const data = await resp.json();
+  const measures = {};
+  for (const item of Array.isArray(data?.component?.measures) ? data.component.measures : []) {
+    if (typeof item?.metric !== "string") continue;
+    const value = item.period?.value ?? item.value;
+    measures[item.metric] = numericOrNull(value) ?? value ?? null;
+  }
+  return measures;
+}
+
+async function fetchConfiguredRemoteQualityProviders({ repoRoot, prNumber }) {
+  const sonarConfig = _readSonarCloudConfigFromRepo(repoRoot);
+  if (sonarConfig === null) return [];
+  const token = process.env.SONAR_TOKEN;
+  if (typeof token !== "string" || token.length === 0) {
+    return [{
+      provider: "sonarcloud",
+      ok: false,
+      error: "sonar_token_missing",
+      quality_gate: "UNKNOWN",
+    }];
+  }
+  const projectKey = sonarConfig.projectKey;
+  const qg = await _fetchSonarQualityGate({ projectKey, prNumber, token });
+  if (qg.available !== true) {
+    return [{
+      provider: "sonarcloud",
+      ok: false,
+      error: "quality_gate_unavailable",
+      quality_gate: "NONE",
+    }];
+  }
+  const [newIssues, overallIssues, newHotspots, overallHotspots, prMeasures, overallMeasures] = await Promise.all([
+    _fetchSonarIssuesByScope({ projectKey, prNumber, token }),
+    _fetchSonarIssuesByScope({ projectKey, token }),
+    _fetchSonarHotspotsByScope({ projectKey, prNumber, token }),
+    _fetchSonarHotspotsByScope({ projectKey, token }),
+    _fetchSonarMeasures({ projectKey, prNumber, token }),
+    _fetchSonarMeasures({ projectKey, token }),
+  ]);
+  const measures = {
+    ...overallMeasures,
+    new_coverage: prMeasures.new_coverage ?? prMeasures.coverage ?? overallMeasures.new_coverage,
+    new_duplicated_lines_density:
+      prMeasures.new_duplicated_lines_density
+        ?? prMeasures.duplicated_lines_density
+        ?? overallMeasures.new_duplicated_lines_density,
+    new_reliability_rating: prMeasures.new_reliability_rating ?? prMeasures.reliability_rating ?? overallMeasures.new_reliability_rating,
+    new_security_rating: prMeasures.new_security_rating ?? prMeasures.security_rating ?? overallMeasures.new_security_rating,
+    new_maintainability_rating:
+      prMeasures.new_maintainability_rating
+        ?? prMeasures.sqale_rating
+        ?? overallMeasures.new_maintainability_rating,
+    new_software_quality_reliability_rating:
+      prMeasures.new_software_quality_reliability_rating
+        ?? prMeasures.software_quality_reliability_rating
+        ?? overallMeasures.new_software_quality_reliability_rating,
+    new_software_quality_security_rating:
+      prMeasures.new_software_quality_security_rating
+        ?? prMeasures.software_quality_security_rating
+        ?? overallMeasures.new_software_quality_security_rating,
+    new_software_quality_maintainability_rating:
+      prMeasures.new_software_quality_maintainability_rating
+        ?? prMeasures.software_quality_maintainability_rating
+        ?? overallMeasures.new_software_quality_maintainability_rating,
+  };
+  const payload = {
+    provider: "sonarcloud",
+    ok: true,
+    quality_gate: qg.status,
+    issues: {
+      new: summarizeSonarIssues(newIssues),
+      overall: summarizeSonarIssues(overallIssues),
+    },
+    security_hotspots: {
+      new: summarizeSonarHotspots(newHotspots),
+      overall: summarizeSonarHotspots(overallHotspots),
+    },
+    measures,
+    fetched_at: new Date().toISOString(),
+  };
+  payload.full_issue_export_path = _writeSonarExport(repoRoot, prNumber, payload);
+  return [payload];
+}
+
 export async function runWatchRequiredStatuses({
   repoPath,
   issueNumber,
@@ -5366,6 +6100,9 @@ export async function runWatchRequiredStatuses({
   pollIntervalSeconds = 15,
   diffInfo = null,
   statusFetcher = fetchRemoteStatusSnapshotFromGh,
+  remoteQualityResults = null,
+  remoteQualityFetcher = fetchConfiguredRemoteQualityProviders,
+  remoteQualityPolicy = null,
   postMarker = true,
   markerPoster = null,
 } = {}) {
@@ -5469,6 +6206,36 @@ export async function runWatchRequiredStatuses({
   }
   const requiredStatusSetHash = sha256Hex(stableJson(required));
   const resultIdsHash = providerResultIdsHash(snapshot);
+  let remoteQualityEvaluation = {
+    ok: true,
+    policy: remoteQualityPolicyFromManifest(manifestLoaded.manifest, context, remoteQualityPolicy),
+    providers: [],
+    failures: [],
+  };
+  if (evaluation.ok) {
+    let providerResults = remoteQualityResults;
+    if (providerResults == null) {
+      try {
+        providerResults = await remoteQualityFetcher({ repoRoot, prNumber, context, manifest: manifestLoaded.manifest });
+      } catch (error) {
+        return {
+          ok: false,
+          error: "remote_quality_fetch_failed",
+          message: error.message,
+          pr_number: prNumber,
+          next_action: "retry_remote_quality_provider_or_fix_configuration",
+        };
+      }
+    }
+    remoteQualityEvaluation = evaluateRemoteQualitySubstance({
+      providerResults,
+      policy: remoteQualityEvaluation.policy,
+    });
+  }
+  const remoteQualityHash = sha256Hex(stableJson({
+    policy: remoteQualityEvaluation.policy,
+    providers: remoteQualityEvaluation.providers,
+  }));
   const envelopeBase = {
     repo_path: repoRoot,
     issue_number: issueNumber,
@@ -5481,6 +6248,8 @@ export async function runWatchRequiredStatuses({
     required_statuses: required,
     required_status_set_hash: requiredStatusSetHash,
     provider_result_ids_hash: resultIdsHash,
+    remote_quality_hash: remoteQualityHash,
+    remote_quality: remoteQualityEvaluation,
     evaluation,
     statuses: snapshot ?? [],
   };
@@ -5490,6 +6259,18 @@ export async function runWatchRequiredStatuses({
       ok: false,
       error: evaluation.state === "failed" ? "required_status_failed" : "required_status_pending",
       next_action: evaluation.state === "failed" ? "fix_remote_status_and_retry" : "wait_for_required_statuses_and_retry",
+      envelope_id: envelopeId,
+      ...envelopeBase,
+    };
+  }
+  if (!remoteQualityEvaluation.ok) {
+    return {
+      ok: false,
+      error: "remote_quality_substance_failed",
+      message:
+        "Required remote statuses passed, but the provider's full quality result did not meet the configured bar. " +
+        "A green PR checkmark alone is not sufficient for remote_gates_green.",
+      next_action: "fix_remote_quality_findings_and_retry_gc_watch_required_statuses",
       envelope_id: envelopeId,
       ...envelopeBase,
     };
@@ -5504,6 +6285,7 @@ export async function runWatchRequiredStatuses({
       diff_hash: effectiveDiffInfo.diff_hash,
       required_status_set_hash: requiredStatusSetHash,
       provider_result_ids_hash: resultIdsHash,
+      remote_quality_hash: remoteQualityHash,
       envelope_id: envelopeId,
     };
     try {
@@ -6143,6 +6925,258 @@ async function computeWorkflowDiffBinding(repoRoot, baseRef, headRef, diffInfo) 
   return await computeGitDiffInfo(repoRoot, baseRef, headRef);
 }
 
+const IMPLEMENTATION_CONTEXT_BINDING_ADRS = Object.freeze(["ADR-061", "ADR-062", "ADR-031", "ADR-036"]);
+const IMPLEMENTATION_CONTEXT_ADR_MAX_BYTES = 64 * 1024;
+const IMPLEMENTATION_CONTEXT_UID_RE = /\b[A-Z][A-Z0-9]+-[A-Z0-9]+(?:-\d+|\d+)\b/g;
+
+function extractRequirementUidsFromIssueBody(body) {
+  if (typeof body !== "string" || body.trim() === "") return [];
+  const section = (() => {
+    const start = body.indexOf("## Requirements");
+    if (start === -1) return body;
+    const after = body.slice(start + "## Requirements".length);
+    const nextHeader = after.search(/\n## /);
+    return nextHeader === -1 ? after : after.slice(0, nextHeader);
+  })();
+  return [...new Set([...section.matchAll(IMPLEMENTATION_CONTEXT_UID_RE)].map((m) => m[0]))].sort();
+}
+
+function normalizeAdrId(raw) {
+  if (typeof raw !== "string") return null;
+  const match = raw.trim().match(/^ADR-?(\d{3})$/i);
+  return match ? `ADR-${match[1]}` : null;
+}
+
+function readImplementationContextAdrs(repoRoot, context) {
+  const configured = Array.isArray(context?.architecture?.vocabulary?.binding_adrs)
+    ? context.architecture.vocabulary.binding_adrs.map((entry) => normalizeAdrId(entry?.id)).filter(Boolean)
+    : [];
+  const ids = [...new Set([...IMPLEMENTATION_CONTEXT_BINDING_ADRS, ...configured])].sort();
+  const adrDir = context?.docs?.adr_dir;
+  if (typeof adrDir !== "string" || adrDir.trim() === "") {
+    return ids.map((id) => ({ id, path: null, title: null, content: null, error: "adr_dir_not_configured" }));
+  }
+  const resolved = resolveRepoRelativePath(repoRoot, adrDir, "docs.adr_dir");
+  if (!resolved.ok) {
+    return ids.map((id) => ({ id, path: null, title: null, content: null, error: resolved.error }));
+  }
+  let entries = [];
+  try {
+    entries = readdirSync(resolved.abs);
+  } catch (error) {
+    return ids.map((id) => ({ id, path: null, title: null, content: null, error: error.message }));
+  }
+  return ids.map((id) => {
+    const num = id.slice(4);
+    const file = entries.find((entry) => entry.startsWith(`${num}-`) && entry.endsWith(".md"));
+    if (!file) return { id, path: null, title: null, content: null, error: "adr_file_not_found" };
+    const relPath = normalizeChangedPath(`${resolved.rel}/${file}`);
+    const absPath = join(resolved.abs, file);
+    let content;
+    try {
+      content = readAbsoluteTextFile(absPath);
+    } catch (error) {
+      return { id, path: relPath, title: null, content: null, error: error.message };
+    }
+    if (Buffer.byteLength(content, "utf8") > IMPLEMENTATION_CONTEXT_ADR_MAX_BYTES) {
+      content = Buffer.from(content, "utf8").subarray(0, IMPLEMENTATION_CONTEXT_ADR_MAX_BYTES).toString("utf8");
+    }
+    const title = content.split(/\r?\n/).find((line) => line.startsWith("# "))?.replace(/^#\s+/, "").trim() ?? null;
+    return { id, path: relPath, title, content, error: null };
+  });
+}
+
+function summarizeImplementationLinks(links) {
+  const arr = Array.isArray(links) ? links : [];
+  return arr.map((link) => ({
+    id: link?.id ?? null,
+    requirement_uid: link?.requirement_uid ?? link?.requirementUid ?? link?.source_uid ?? link?.sourceUid ?? null,
+    requirement_id: link?.requirement_id ?? link?.requirementId ?? link?.requirement ?? null,
+    link_type: link?.link_type ?? link?.linkType ?? null,
+    artifact_type: link?.artifact_type ?? link?.artifactType ?? null,
+    artifact_identifier: link?.artifact_identifier ?? link?.artifactIdentifier ?? null,
+    artifact_title: link?.artifact_title ?? link?.artifactTitle ?? null,
+  }));
+}
+
+async function implementationRequirementBundle(uid, project) {
+  const requirement = await getRequirementByUid(uid, project);
+  const links = await getTraceabilityLinks(requirement.id);
+  const implementsLinks = summarizeImplementationLinks(links).filter((link) => link.link_type === "IMPLEMENTS");
+  const testsLinks = summarizeImplementationLinks(links).filter((link) => link.link_type === "TESTS");
+  let impact = null;
+  let impactError = null;
+  try {
+    impact = await impactAnalysis(requirement.id);
+  } catch (error) {
+    impactError = error.message;
+  }
+  let graph = null;
+  let graphError = null;
+  try {
+    const [ancestors, descendants] = await Promise.all([
+      getAncestors(uid, 2, project),
+      getDescendants(uid, 2, project),
+    ]);
+    graph = { ancestors, descendants };
+  } catch (error) {
+    graphError = error.message;
+  }
+  return {
+    uid,
+    requirement,
+    traceability: summarizeImplementationLinks(links),
+    implements_artifacts: implementsLinks,
+    tests_artifacts: testsLinks,
+    neighborhood: {
+      impact,
+      impact_error: impactError,
+      graph,
+      graph_error: graphError,
+    },
+  };
+}
+
+export async function runGetImplementationContext({
+  repoPath,
+  issueNumber = null,
+  requirementUid = null,
+  project = null,
+  repo = null,
+  markerPoster = null,
+  issueContext = null,
+} = {}) {
+  if ((issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0)
+    && (typeof requirementUid !== "string" || requirementUid.trim() === "")) {
+    return {
+      ok: false,
+      error: "implementation_context_input_invalid",
+      message: "gc_get_implementation_context requires issue_number or requirement_uid",
+      issue_number: issueNumber ?? null,
+    };
+  }
+
+  let repoRoot;
+  try {
+    repoRoot = await ensureGitRepo(repoPath);
+  } catch (error) {
+    return { ok: false, error: "implementation_context_repo_not_found", message: error.message };
+  }
+  const context = await getRepoGroundControlContext(repoRoot);
+  if (context.status !== "ok") {
+    return {
+      ok: false,
+      error: "ground_control_context_invalid",
+      message: "gc_get_repo_ground_control_context did not return an ok context",
+      context_status: context.status,
+      errors: context.errors ?? [],
+    };
+  }
+
+  let effectiveIssueContext = issueContext;
+  if (issueNumber != null && effectiveIssueContext == null) {
+    effectiveIssueContext = await getIssueContext(issueNumber, repo, { cwd: repoRoot });
+  }
+  const bodyUids = extractRequirementUidsFromIssueBody(effectiveIssueContext?.body ?? "");
+  const requirementUids = [...new Set([
+    ...(typeof requirementUid === "string" && requirementUid.trim() !== "" ? [requirementUid.trim()] : []),
+    ...bodyUids,
+  ])].sort();
+
+  const requirements = [];
+  for (const uid of requirementUids) {
+    try {
+      requirements.push(await implementationRequirementBundle(uid, project ?? context.project ?? null));
+    } catch (error) {
+      return {
+        ok: false,
+        error: "implementation_context_requirement_lookup_failed",
+        message: `could not bundle requirement ${uid}: ${error.message}`,
+        uid,
+        issue_number: issueNumber,
+      };
+    }
+  }
+
+  let issueTraceability = [];
+  if (issueNumber != null) {
+    try {
+      issueTraceability = summarizeImplementationLinks(await getTraceabilityByArtifact("GITHUB_ISSUE", String(issueNumber)));
+    } catch {
+      issueTraceability = [];
+    }
+  }
+
+  const bindingAdrs = readImplementationContextAdrs(repoRoot, context);
+  const bundle = {
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    requirement_uid: requirementUid ?? null,
+    project: project ?? context.project ?? null,
+    ground_control_context: {
+      project: context.project,
+      github_repo: context.github_repo,
+      workflow: context.workflow,
+      docs: context.docs,
+      cross_cutting_concerns: context.cross_cutting_concerns,
+      architecture_vocabulary: context.architecture?.vocabulary ?? null,
+    },
+    issue: effectiveIssueContext,
+    binding_adrs: bindingAdrs,
+    requirements,
+    existing_implements_artifacts: requirements.flatMap((item) => item.implements_artifacts),
+    issue_traceability: issueTraceability,
+  };
+  const contextHash = sha256Hex(stableJson({
+    issue_number: issueNumber,
+    requirement_uids: requirementUids,
+    binding_adrs: bindingAdrs.map((adr) => ({ id: adr.id, path: adr.path, content_hash: adr.content ? sha256Hex(adr.content) : null })),
+    cross_cutting_concerns: context.cross_cutting_concerns,
+    implements: bundle.existing_implements_artifacts,
+  }));
+
+  let marker = null;
+  if (issueNumber != null) {
+    const binding = {
+      repo: context.github_repo ?? null,
+      context_hash: contextHash,
+      requirement_uids_hash: sha256Hex(stableJson(requirementUids)),
+      binding_adrs_hash: sha256Hex(stableJson(bindingAdrs.map((adr) => ({ id: adr.id, path: adr.path })))),
+    };
+    try {
+      if (markerPoster) {
+        marker = await markerPoster({ repoRoot, issueNumber, phase: "context_loaded", binding, body: "Implementation context loaded server-side." });
+      } else {
+        const ownerName = await getOwnerRepo(repoRoot);
+        marker = await postGatePhaseMarker(repoRoot, ownerName.owner, ownerName.name, issueNumber, "context_loaded", binding, {
+          commentBody: [
+            "Implementation context loaded server-side.",
+            "",
+            `- Requirements: ${requirementUids.length === 0 ? "(none)" : requirementUids.join(", ")}`,
+            `- Binding ADRs: ${bindingAdrs.map((adr) => adr.id).join(", ")}`,
+            `- Existing IMPLEMENTS artifacts: ${bundle.existing_implements_artifacts.length}`,
+          ].join("\n"),
+        });
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: "context_loaded_marker_post_failed",
+        message: error.message,
+        issue_number: issueNumber,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    ...bundle,
+    context_hash: contextHash,
+    phase_marker: marker ? { phase: "context_loaded", issue_number: issueNumber } : null,
+    marker,
+  };
+}
+
 export async function runPostInterfaceContract({
   repoPath,
   issueNumber,
@@ -6176,7 +7210,7 @@ export async function runPostInterfaceContract({
     const decision = evaluatePhasePrerequisite({
       completed,
       nextPhase: "contract",
-      requires: ["preflight"],
+      requires: ["context_loaded", "preflight"],
       issueNumber,
     });
     if (!decision.ok) {
@@ -6188,7 +7222,9 @@ export async function runPostInterfaceContract({
         message: decision.message,
         missing: decision.missing,
         completed: decision.completed,
-        next_action: "run_gc_codex_architecture_preflight_first",
+        next_action: decision.missing.includes("context_loaded")
+          ? "run_gc_get_implementation_context_first"
+          : "run_gc_codex_architecture_preflight_first",
       };
     }
   }
@@ -6268,7 +7304,7 @@ export async function runPostImplementationPlan({
     const decision = evaluatePhasePrerequisite({
       completed,
       nextPhase: "plan",
-      requires: ["contract"],
+      requires: ["context_loaded", "contract"],
       issueNumber,
     });
     if (!decision.ok) {
@@ -6280,7 +7316,9 @@ export async function runPostImplementationPlan({
         message: decision.message,
         missing: decision.missing,
         completed: decision.completed,
-        next_action: "run_gc_post_interface_contract_first",
+        next_action: decision.missing.includes("context_loaded")
+          ? "run_gc_get_implementation_context_first"
+          : "run_gc_post_interface_contract_first",
       };
     }
   }
@@ -7703,13 +8741,23 @@ export function buildPhaseMarker({ phase, issueNumber }) {
 
 const BOUND_PHASE_MARKER_RE = /<!--\s*gc:phase\s+([^]*?)-->/g;
 const PHASE_MARKER_ATTR_RE = /([a-z_]+)="([^"]*)"/g;
-const BOUND_PHASES = new Set(["contract", "test_red", "impl_green", "gates_green", "remote_gates_green"]);
+const BOUND_PHASES = new Set([
+  "context_loaded",
+  "contract",
+  "test_red",
+  "impl_green",
+  "gates_green",
+  "remote_gates_green",
+  "traceability_reconciled",
+]);
 const PHASE_NEXT_ACTIONS = Object.freeze({
+  context_loaded: "run_gc_get_implementation_context",
   contract: "run_gc_post_interface_contract",
   test_red: "run_gc_assert_test_red",
   impl_green: "run_gc_assert_impl_green",
   gates_green: "rerun_gc_run_gates",
   remote_gates_green: "rerun_gc_watch_required_statuses",
+  traceability_reconciled: "rerun_gc_assert_traceability_reconciled",
 });
 
 function markerAttr(value) {
@@ -8401,6 +9449,96 @@ export function buildReviewConvergenceDecisionAid({
   };
 }
 
+const FIX_RISK_DOC_TEST_PATTERNS = [
+  /^docs\//,
+  /^architecture\/adrs\//,
+  /^skills\//,
+  /^changelog\.d\//,
+  /^mcp\/ground-control\/.*\.test\.js$/,
+  /(^|\/)(__tests__|test|tests)\//,
+  /\.(md|adoc|txt)$/i,
+];
+
+const FIX_RISK_CRITICAL_PATH_PATTERNS = [
+  /^mcp\/ground-control\/(lib|index)\.js$/,
+  /^tools\/policy\//,
+  /^\.github\/workflows\//,
+  /(^|\/)(security|auth|audit|migration|migrations|liquibase|flyway)(\/|\.|$)/i,
+  /^backend\/src\/main\/.*(Controller|Service|Repository|Security|Config)\.java$/,
+];
+
+function fixRiskPathMatches(pathValue, patterns) {
+  const normalized = normalizeChangedPath(pathValue);
+  return patterns.some((pattern) => pattern.test(normalized));
+}
+
+function normalizeFixRiskInput(input) {
+  if (typeof input === "string") return { risk: input };
+  if (input && typeof input === "object") return input;
+  return null;
+}
+
+export function classifyFixRisk({
+  changedFiles = [],
+  diffInfo = null,
+  behaviorChange = false,
+  criticalPathTouched = false,
+  testCoverage = null,
+  proposedFix = null,
+} = {}) {
+  const files = [
+    ...new Set([
+      ...(Array.isArray(changedFiles) ? changedFiles : []),
+      ...(Array.isArray(diffInfo?.changed_files) ? diffInfo.changed_files : []),
+    ].map(normalizeChangedPath).filter(Boolean)),
+  ];
+  const factors = [];
+  const testsPresent = testCoverage === true
+    || files.some((pathValue) => /(^|\/)(test|tests|__tests__)(\/|$)|\.test\.|Test\./.test(pathValue));
+  const docsOrTestsOnly = files.length > 0 && files.every((pathValue) =>
+    fixRiskPathMatches(pathValue, FIX_RISK_DOC_TEST_PATTERNS)
+  );
+  const criticalFiles = files.filter((pathValue) => fixRiskPathMatches(pathValue, FIX_RISK_CRITICAL_PATH_PATTERNS));
+  const proposedText = typeof proposedFix === "string" ? proposedFix : stableJson(proposedFix ?? {});
+  const textSignalsBehavior =
+    /\b(api|schema|migration|auth|security|permission|transaction|thread|async|lock|delete|rewrite|refactor|behavior)\b/i
+      .test(proposedText);
+  const effectiveBehaviorChange = behaviorChange === true || textSignalsBehavior;
+  if (docsOrTestsOnly) factors.push("docs_or_tests_only");
+  if (criticalPathTouched === true || criticalFiles.length > 0) factors.push("critical_path_touched");
+  if (effectiveBehaviorChange) factors.push("behavior_change");
+  if (!testsPresent) factors.push("no_area_test_coverage");
+  if (files.length > 8) factors.push("broad_blast_radius");
+  if ((criticalPathTouched === true || criticalFiles.length > 0) && effectiveBehaviorChange) {
+    factors.push("critical_behavior_change");
+  }
+
+  let risk = "low";
+  if (factors.includes("critical_behavior_change")
+    || (effectiveBehaviorChange && !testsPresent)
+    || files.length > 12) {
+    risk = "high";
+  } else if (criticalPathTouched === true || criticalFiles.length > 0 || effectiveBehaviorChange || files.length > 4 || !testsPresent) {
+    risk = "medium";
+  }
+  if (docsOrTestsOnly && !effectiveBehaviorChange && criticalFiles.length === 0) risk = "low";
+  return {
+    risk,
+    automatic: risk !== "high",
+    factors: [...new Set(factors)],
+    changed_files_count: files.length,
+    critical_paths: criticalFiles,
+    test_coverage_present: testsPresent,
+  };
+}
+
+function normalizeFixRiskSignal(input) {
+  const normalized = normalizeFixRiskInput(input);
+  if (normalized == null) return null;
+  if (["low", "medium", "high"].includes(normalized.risk)) return normalized;
+  return classifyFixRisk(normalized);
+}
+
 export function dispatchReviewConvergence({
   lensEnvelopes = [],
   gateResults = [],
@@ -8410,6 +9548,7 @@ export function dispatchReviewConvergence({
   exitGates = {},
   cycleHistory = [],
   terminalEscalationRecorded = false,
+  proposedFixRisk = null,
 } = {}) {
   const effectiveCap = normalizeReviewHardCap(cap);
   const cycle = Number.isInteger(currentCycle) && currentCycle > 0 ? currentCycle : priorCycles + 1;
@@ -8492,6 +9631,22 @@ export function dispatchReviewConvergence({
     unconfirmedCriticalOrBlocking,
     cycleHistory,
   });
+  const fixRisk = normalizeFixRiskSignal(proposedFixRisk);
+  if (fixRisk?.risk === "high") {
+    return {
+      ...base,
+      next_action: "post_high_risk_fix_and_escalate",
+      escalation_reason: "high_risk_fix",
+      clean: false,
+      terminal: true,
+      early_stop_allowed: false,
+      decision_aid: {
+        ...decisionAid,
+        high_risk_fix: fixRisk,
+        recommended_next_action: "owner_sanity_check_required",
+      },
+    };
+  }
 
   if (cycle >= effectiveCap) {
     return {
@@ -15100,7 +16255,8 @@ export async function runPostFinalReport(input) {
   // path lets the user authorize a skip with a quoted rationale (the
   // input-shape validation for that override is done earlier).
   if (rest.lane !== "quickfix" && !phaseOverride) {
-    const completed = await readCompletedPhases(repoRoot, owner, name, rest.issueNumber);
+    const commentBodies = await readIssueCommentBodies(repoRoot, owner, name, rest.issueNumber);
+    const completed = parsePhaseMarkers(commentBodies, rest.issueNumber);
     const decision = evaluatePhasePrerequisite({
       completed,
       nextPhase: "final_report",
@@ -15118,6 +16274,36 @@ export async function runPostFinalReport(input) {
         completed: decision.completed,
         next_action: "run_gc_assert_traceability_reconciled_first",
       };
+    }
+    if (typeof rest.baseRef === "string" && rest.baseRef.trim() !== "") {
+      let liveDiff;
+      try {
+        liveDiff = await computeGitDiffInfo(repoRoot, rest.baseRef, rest.headRef ?? "HEAD");
+      } catch (error) {
+        return {
+          repo_path: repoRoot,
+          issue_number: rest.issueNumber,
+          ok: false,
+          error: "final_report_traceability_diff_failed",
+          message: error.message,
+          next_action: "verify_base_ref_and_rerun_gc_assert_traceability_reconciled",
+        };
+      }
+      const fresh = evaluateBoundPhaseMarkerFreshness({
+        commentBodies,
+        issueNumber: rest.issueNumber,
+        phase: "traceability_reconciled",
+        expected: { diff_hash: liveDiff.diff_hash },
+      });
+      if (!fresh.ok) {
+        return {
+          repo_path: repoRoot,
+          issue_number: rest.issueNumber,
+          ok: false,
+          ...fresh,
+          next_action: "rerun_gc_assert_traceability_reconciled_against_live_diff",
+        };
+      }
     }
   }
   let apiResponse = null;
@@ -15202,6 +16388,14 @@ const TRACEABILITY_TESTABLE_SURFACE_PREFIXES = [
   "tools/policy/",
 ];
 
+const TRACEABILITY_TEST_PATH_PATTERNS = [
+  "backend/src/test/**",
+  "frontend/src/**/*.test.*",
+  "frontend/src/**/*.spec.*",
+  "mcp/**/*.test.js",
+  "tools/tests/**",
+];
+
 function hasTestableSurfaceTarget(linksOfTypeImplements) {
   if (!Array.isArray(linksOfTypeImplements) || linksOfTypeImplements.length === 0) return false;
   for (const link of linksOfTypeImplements) {
@@ -15215,12 +16409,212 @@ function hasTestableSurfaceTarget(linksOfTypeImplements) {
   return false;
 }
 
+function traceabilityArtifactPathForStatus(entry) {
+  if (!entry || typeof entry !== "object") return "";
+  return entry.status === "D" ? normalizeChangedPath(entry.path) : normalizeChangedPath(entry.path);
+}
+
+function traceabilityPathIsExecutable(pathValue) {
+  const p = normalizeChangedPath(pathValue);
+  return TRACEABILITY_TESTABLE_SURFACE_PREFIXES.some((prefix) => p.startsWith(prefix));
+}
+
+function traceabilityPathIsTest(pathValue) {
+  const p = normalizeChangedPath(pathValue);
+  return TRACEABILITY_TEST_PATH_PATTERNS.some((pattern) => pathMatchesGatePattern(p, pattern))
+    || /(^|\/)(test|tests|__tests__)\//.test(p)
+    || /\.(test|spec)\.[cm]?[jt]sx?$/.test(p);
+}
+
+function traceabilityPathRequiresImplements(pathValue) {
+  return traceabilityPathIsExecutable(pathValue) && !traceabilityPathIsTest(pathValue);
+}
+
+function normalizeTraceabilityRequirementUid(link) {
+  if (!link || typeof link !== "object") return null;
+  return link.requirement_uid
+    ?? link.requirementUid
+    ?? link.uid
+    ?? link.source_uid
+    ?? link.sourceUid
+    ?? link.requirement?.uid
+    ?? null;
+}
+
+function traceabilitySuggestedAction({ entry, currentLinks, oldLinks = [] }) {
+  const status = entry.status;
+  const links = Array.isArray(currentLinks) ? currentLinks : [];
+  const old = Array.isArray(oldLinks) ? oldLinks : [];
+  const implementsLinks = links.filter((link) => link.link_type === "IMPLEMENTS");
+  if (status === "D") {
+    return links.length > 0 ? "remove_or_update_links_for_deleted_artifact" : "no_action";
+  }
+  if (status === "R") {
+    if (old.length > 0 && links.length === 0) return "move_existing_links_from_old_path_to_new_path";
+    if (traceabilityPathRequiresImplements(entry.path) && implementsLinks.length === 0) return "add_implements_link_for_renamed_artifact";
+    return "confirm_renamed_artifact_links";
+  }
+  if (traceabilityPathIsTest(entry.path)) {
+    return links.some((link) => link.link_type === "TESTS")
+      ? "confirm_tests_links"
+      : "add_tests_link_or_mark_test_incidental";
+  }
+  if (traceabilityPathRequiresImplements(entry.path)) {
+    return implementsLinks.length > 0
+      ? "confirm_implements_links"
+      : "add_implements_link_or_mark_requirement_free";
+  }
+  return links.length > 0 ? "confirm_current_links" : "no_action";
+}
+
+async function getIssueContextForTraceability(repoRoot, issueNumber, issueContext, repo) {
+  if (issueContext != null) return issueContext;
+  try {
+    return await getIssueContext(issueNumber, repo, { cwd: repoRoot });
+  } catch {
+    return null;
+  }
+}
+
+async function resolveTraceabilityInScopeRequirements({ repoRoot, issueNumber, project, repo, issueContext, requirements = null }) {
+  const explicit = Array.isArray(requirements)
+    ? requirements.map((item) => typeof item === "string" ? item : item?.uid).filter((uid) => typeof uid === "string" && uid.trim() !== "")
+    : [];
+  const effectiveIssue = await getIssueContextForTraceability(repoRoot, issueNumber, issueContext, repo);
+  const fromBody = extractRequirementUidsFromIssueBody(effectiveIssue?.body ?? "");
+  let fromIssueLinks = [];
+  try {
+    const links = summarizeImplementationLinks(await getTraceabilityByArtifact("GITHUB_ISSUE", String(issueNumber)));
+    fromIssueLinks = links.map(normalizeTraceabilityRequirementUid).filter((uid) => typeof uid === "string" && uid.trim() !== "");
+  } catch {
+    fromIssueLinks = [];
+  }
+  const uids = [...new Set([...explicit, ...fromBody, ...fromIssueLinks])].sort();
+  const resolved = [];
+  for (const uid of uids) {
+    const requirement = await getRequirementByUid(uid, project);
+    const links = summarizeImplementationLinks(await getTraceabilityLinks(requirement.id));
+    resolved.push({ uid, requirement, links });
+  }
+  return { issue: effectiveIssue, requirements: resolved };
+}
+
+export async function runReconcileTraceability({
+  repoPath,
+  issueNumber,
+  baseRef = "origin/dev",
+  headRef = "HEAD",
+  project = null,
+  repo = null,
+  issueContext = null,
+  requirements = null,
+  diffInfo = null,
+} = {}) {
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    return { ok: false, error: "traceability_reconcile_input_invalid", message: "issue_number must be a positive integer" };
+  }
+  let repoRoot;
+  try {
+    repoRoot = await ensureGitRepo(repoPath);
+  } catch (error) {
+    return { ok: false, error: "traceability_reconcile_repo_not_found", message: error.message };
+  }
+  let effectiveDiffInfo = diffInfo;
+  if (effectiveDiffInfo == null) {
+    try {
+      effectiveDiffInfo = await computeGitDiffInfo(repoRoot, baseRef, headRef);
+    } catch (error) {
+      return { ok: false, error: "traceability_reconcile_diff_failed", message: error.message };
+    }
+  }
+  const nameStatus = Array.isArray(effectiveDiffInfo.name_status)
+    ? effectiveDiffInfo.name_status
+    : (Array.isArray(effectiveDiffInfo.changed_files)
+      ? effectiveDiffInfo.changed_files.map((path) => ({ status: "M", path: normalizeChangedPath(path), old_path: null, score: null, raw: `M\t${path}` }))
+      : []);
+  const worklist = [];
+  for (const entry of nameStatus) {
+    const path = traceabilityArtifactPathForStatus(entry);
+    let currentLinks = [];
+    let oldLinks = [];
+    try {
+      currentLinks = summarizeImplementationLinks(await getTraceabilityByArtifact("FILE", path));
+    } catch {
+      currentLinks = [];
+    }
+    if (entry.status === "R" && entry.old_path) {
+      try {
+        oldLinks = summarizeImplementationLinks(await getTraceabilityByArtifact("FILE", entry.old_path));
+      } catch {
+        oldLinks = [];
+      }
+    }
+    worklist.push({
+      status: entry.status,
+      path,
+      old_path: entry.old_path ?? null,
+      current_links: currentLinks,
+      old_links: oldLinks,
+      requires_implements: traceabilityPathRequiresImplements(path),
+      suggested_action: traceabilitySuggestedAction({ entry, currentLinks, oldLinks }),
+    });
+  }
+
+  let resolved;
+  try {
+    resolved = await resolveTraceabilityInScopeRequirements({
+      repoRoot,
+      issueNumber,
+      project,
+      repo,
+      issueContext,
+      requirements,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: "traceability_reconcile_requirement_lookup_failed",
+      message: error.message,
+      issue_number: issueNumber,
+    };
+  }
+  const gapSet = resolved.requirements
+    .filter((item) => !item.links.some((link) => link.link_type === "IMPLEMENTS"))
+    .map((item) => ({
+      uid: item.uid,
+      reason: "implements_missing",
+      status: item.requirement?.status ?? null,
+    }));
+
+  return {
+    ok: true,
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    base_ref: effectiveDiffInfo.base_ref ?? baseRef,
+    head_ref: effectiveDiffInfo.head_ref ?? headRef,
+    diff_hash: effectiveDiffInfo.diff_hash ?? null,
+    name_status: nameStatus,
+    worklist,
+    gap_set: gapSet,
+    in_scope_requirements: resolved.requirements.map((item) => ({
+      uid: item.uid,
+      id: item.requirement?.id ?? null,
+      status: item.requirement?.status ?? null,
+      implements_count: item.links.filter((link) => link.link_type === "IMPLEMENTS").length,
+      tests_count: item.links.filter((link) => link.link_type === "TESTS").length,
+    })),
+  };
+}
+
 export async function runAssertTraceabilityReconciled({
   repoPath,
   issueNumber,
   requirements,
   project = null,
   touchedFiles = [],
+  baseRef = null,
+  headRef = "HEAD",
+  diffInfo = null,
   override = false,
   overrideReason = null,
 }) {
@@ -15245,6 +16639,20 @@ export async function runAssertTraceabilityReconciled({
   }
 
   const repoRoot = await ensureGitRepo(repoPath);
+  let effectiveDiffInfo = diffInfo;
+  if (effectiveDiffInfo == null && baseRef != null) {
+    try {
+      effectiveDiffInfo = await computeGitDiffInfo(repoRoot, baseRef, headRef);
+    } catch (error) {
+      return {
+        ok: false,
+        error: "traceability_diff_failed",
+        message: error.message,
+        issue_number: issueNumber,
+        next_action: "verify_base_ref_and_retry_traceability_assertion",
+      };
+    }
+  }
 
   const checked = [];
   const failures = [];
@@ -15328,6 +16736,37 @@ export async function runAssertTraceabilityReconciled({
       }
     }
 
+    if (effectiveDiffInfo != null) {
+      const nameStatus = Array.isArray(effectiveDiffInfo.name_status)
+        ? effectiveDiffInfo.name_status
+        : (Array.isArray(effectiveDiffInfo.changed_files)
+          ? effectiveDiffInfo.changed_files.map((path) => ({ status: "M", path: normalizeChangedPath(path), old_path: null }))
+          : []);
+      for (const entry of nameStatus) {
+        const path = traceabilityArtifactPathForStatus(entry);
+        if (!path || entry.status === "D" || !traceabilityPathRequiresImplements(path)) continue;
+        let artifactLinks = [];
+        try {
+          artifactLinks = summarizeImplementationLinks(await getTraceabilityByArtifact("FILE", path));
+        } catch (error) {
+          return {
+            ok: false,
+            error: "traceability_artifact_links_lookup_failed",
+            message: `gc_assert_traceability_reconciled could not fetch links for ${path}: ${error.message}`,
+            issue_number: issueNumber,
+            path,
+          };
+        }
+        if (!artifactLinks.some((link) => link.link_type === "IMPLEMENTS")) {
+          failures.push({
+            path,
+            reason: "path_implements_missing",
+            status: entry.status,
+          });
+        }
+      }
+    }
+
     if (requirements.length === 0) {
       // Bug/refactor/maintenance run with no formal requirements. The marker
       // is still required, but the only check is that the issue does not
@@ -15368,11 +16807,11 @@ export async function runAssertTraceabilityReconciled({
       error: "traceability_not_reconciled",
       message:
         `Traceability reconciliation gate failed for issue #${issueNumber}: ` +
-        failures.map((f) => `${f.uid ?? "issue"}:${f.reason}`).join(", "),
+        failures.map((f) => `${f.uid ?? f.path ?? "issue"}:${f.reason}`).join(", "),
       issue_number: issueNumber,
       failures,
       checked,
-      next_action: "fix_traceability_in_step_16_and_retry",
+      next_action: "run_gc_reconcile_traceability_apply_worklist_and_retry_assertion",
     };
   }
 
@@ -15389,7 +16828,16 @@ export async function runAssertTraceabilityReconciled({
   const summary = summaryLines.join("\n");
 
   const { owner, name } = await getOwnerRepo(repoRoot);
-  const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "traceability_reconciled", {
+  const binding = {
+    base_ref: effectiveDiffInfo?.base_ref ?? baseRef ?? null,
+    head_ref: effectiveDiffInfo?.head_ref ?? headRef ?? null,
+    diff_hash: effectiveDiffInfo?.diff_hash ?? null,
+    requirements_hash: sha256Hex(stableJson(requirements.map((item) => ({
+      uid: item.uid,
+      statusIntent: item.statusIntent ?? "ACTIVE",
+    })))),
+  };
+  const apiResponse = await postGatePhaseMarker(repoRoot, owner, name, issueNumber, "traceability_reconciled", binding, {
     commentBody: summary,
   });
 
@@ -15400,6 +16848,7 @@ export async function runAssertTraceabilityReconciled({
     phase_marker: { phase: "traceability_reconciled", issue_number: issueNumber },
     override: override === true,
     override_reason: override === true ? overrideReason.trim() : null,
+    binding,
     checked,
     comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
     comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
@@ -17694,7 +19143,7 @@ export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
   git_publish: { tier: "low" },
   pr_body: { tier: "low" },
   ci_monitor: { tier: "low" },
-  sonarcloud: { tier: "low" },
+  remote_quality: { tier: "low" },
   test_quality_review: { tier: "medium" },
   transition_reconcile: { tier: "medium" },
   close_issue: { tier: "low" },

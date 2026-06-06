@@ -145,3 +145,41 @@ without fresh `impl_green` and runs the ADR-057 assurance classifier before
 gate execution. The classifier is engine-generic; language/framework patterns
 live in each gate pack's `classifier.yaml`, with docs-only diffs no-oping
 under `docs-generic`.
+
+## Amendment (2026-06-06, Phase 5 of issue #1075)
+
+The marker chain now starts implementation work from server-loaded context.
+`gc_get_implementation_context` bundles the binding ADRs, repo configured
+cross-cutting incumbents, existing IMPLEMENTS artifacts, and related
+requirement neighbourhood, then writes `context_loaded`. Contract and plan
+posting tools refuse without that marker, so "read the ADRs and use Ground
+Control context" is enforced by the MCP boundary rather than by agent memory.
+
+Phase D traceability is diff-derived. Step 15 now runs
+`gc_reconcile_traceability`, applies the returned worklist, then runs
+`gc_assert_traceability_reconciled`. The assertion recomputes the live diff and
+binds `traceability_reconciled` to the diff hash, so a later HEAD move makes
+the marker stale and final-report posting refuses until reconciliation is
+rerun.
+
+Remote readiness is provider-neutral and substance-based. `remote_gates_green`
+requires `gc_watch_required_statuses` to re-verify required remote statuses and
+the full configured provider result, including quality-gate status, issue
+severities for new and overall code, ratings, hotspots, coverage, and
+duplications. A green PR checkmark is not sufficient. SonarCloud, CodeQL,
+Codecov, and similar tools are adapters behind `remote_status`, not workflow
+phases. The platform minimum bar is quality gate pass, zero new
+blocker/critical issues, A ratings, and reviewed hotspots; repos can ratchet to
+`zero_overall_issues`.
+
+The zero-deferral loop still fixes every remote-quality finding, including
+pre-existing findings. A deterministic fix-risk classifier separates low,
+medium, and high risk fixes by blast radius, behavior change, critical-path
+touch, and test coverage. Low and medium fixes continue automatically. A high
+risk fix emits dispatcher escalation reason `high_risk_fix`, posts the
+proposed fix and risk rationale to the issue thread, and stops for owner
+sanity-check. Gate-effectiveness telemetry records fire rate, outcome,
+override/false-positive signals, escapes, and duration as analytic data only;
+it is not a workflow-state counter. Process lessons at run close are derived
+from that telemetry via `gc_gate_telemetry_summary` / `gc_remember`, not from
+agent recollection.

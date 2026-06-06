@@ -203,3 +203,21 @@ grounded reviewer checks rather than ad hoc preference. `gc_run_gates`
 classifier results remain deterministic input to the dispatcher: an unresolved
 ADR-057 contract/test artifact obligation blocks advance before reviewer prose
 can treat the surface as clean.
+
+## Amendment (2026-06-06, Phase 5 of issue #1075)
+
+The dispatcher now handles remote-quality repair risk as a first-class stop
+reason. The zero-deferral rule still requires every remote-quality finding to
+be fixed, including pre-existing provider findings surfaced by the configured
+ratchet. Before applying a fix, the deterministic classifier assigns risk from
+the diff blast radius, behavior-change scope, critical-path touch, test
+coverage of the touched area, and the proposed fix shape.
+
+Low and medium risk fixes return the existing automatic repair action. High
+risk fixes return `post_high_risk_fix_and_escalate` with
+`escalation_reason: "high_risk_fix"`, a proposed fix summary, and risk
+rationale. This is the only routine owner sanity-check stop in the completion
+loop and is distinct from `post_structured_decision_aid_and_escalate`, which
+still represents review non-convergence or cap exhaustion. A high-risk stop
+does not authorize deferral; it pauses for owner confirmation of the proposed
+fix path.
