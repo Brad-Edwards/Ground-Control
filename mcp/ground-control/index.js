@@ -22,7 +22,9 @@
 //
 //   Workflow primitives the /implement skill calls by name (unchanged):
 //     gc_get_repo_ground_control_context, gc_codex_architecture_preflight,
-//     gc_codex_review, gc_codex_verify_finding, gc_post_implementation_plan,
+//     gc_post_interface_contract, gc_post_implementation_plan,
+//     gc_assert_test_red, gc_assert_impl_green, gc_run_gates,
+//     gc_codex_review, gc_codex_verify_finding,
 //     gc_create_github_issue, gc_dashboard_stats, gc_query,
 //     gc_get_requirement, gc_get_traceability, gc_get_traceability_by_artifact,
 //     gc_create_traceability_link, gc_delete_traceability_link,
@@ -75,7 +77,8 @@ import {
   getRepoGroundControlContext,
   runCodexArchitecturePreflight, runCodexReview, runCodexVerifyFinding,
   runTestQualityReview, TEST_QUALITY_REVIEW_HARD_CAP,
-  runPostImplementationPlan,
+  runPostInterfaceContract, runPostImplementationPlan,
+  runAssertTestRed, runAssertImplGreen,
   runAssertTraceabilityReconciled, runCloseIssueAfterMerge,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
   runGetIssueThread, runGates, installWorkflowAssets, runWatchCiRun, runWatchSonarAnalysis,
@@ -631,8 +634,35 @@ server.tool(
 );
 
 server.tool(
+  "gc_post_interface_contract",
+  "Post the language-neutral interface/behavior contract as a GitHub issue comment and write the bound 'contract' phase marker. Refuses unless the 'preflight' marker exists, unless override=true with a user-authorized override_reason. The contract is the public oracle for planning, tests, and review lenses: interfaces/signatures/DTOs/error envelopes/API shapes/invariants to implement.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    contract_body: z.string().min(1),
+    base_ref: z.string().optional(),
+    head_ref: z.string().optional(),
+    override: z.boolean().optional(),
+    override_reason: z.string().optional(),
+  },
+  async ({ repo_path, issue_number, contract_body, base_ref, head_ref, override, override_reason }) => {
+    try {
+      return ok(JSON.stringify(await runPostInterfaceContract({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        contractBody: contract_body,
+        baseRef: base_ref ?? "origin/dev",
+        headRef: head_ref ?? "HEAD",
+        override: Boolean(override),
+        overrideReason: override_reason ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
   "gc_post_implementation_plan",
-  "Post the implementation plan as a comment on the GitHub issue. Refuses unless a 'preflight' phase marker exists for the issue. Writes a 'plan' phase marker on success.",
+  "Post the implementation plan as a comment on the GitHub issue. Refuses unless a 'contract' phase marker exists for the issue. Writes a 'plan' phase marker on success.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -645,6 +675,62 @@ server.tool(
       return ok(JSON.stringify(await runPostImplementationPlan({
         repoPath: repo_path, issueNumber: issue_number, planBody: plan_body,
         override: Boolean(override), overrideReason: override_reason ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_assert_test_red",
+  "Verify and record the test_red phase. Runs the supplied relevant test/contract-check command and requires it to fail before implementation, or accepts a documented non-executable carve-out whose changed paths are docs-only. Refuses unless the plan marker exists. Writes a bound test_red marker only after re-verification.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    test_command: z.string().optional(),
+    base_ref: z.string().optional(),
+    head_ref: z.string().optional(),
+    carveout: z.object({
+      reason: z.string().min(1),
+      structural_gate: z.string().min(1),
+    }).optional(),
+  },
+  async ({ repo_path, issue_number, test_command, base_ref, head_ref, carveout }) => {
+    try {
+      return ok(JSON.stringify(await runAssertTestRed({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        testCommand: test_command ?? null,
+        baseRef: base_ref ?? "origin/dev",
+        headRef: head_ref ?? "HEAD",
+        carveout: carveout ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_assert_impl_green",
+  "Verify and record the impl_green phase. Refuses unless test_red exists. Runs the supplied targeted test/contract-check command and requires it to pass, or accepts the same verified non-executable carve-out. Writes a bound impl_green marker only after re-verification; gc_run_gates refuses without a fresh impl_green marker.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    test_command: z.string().optional(),
+    base_ref: z.string().optional(),
+    head_ref: z.string().optional(),
+    carveout: z.object({
+      reason: z.string().min(1),
+      structural_gate: z.string().min(1),
+    }).optional(),
+  },
+  async ({ repo_path, issue_number, test_command, base_ref, head_ref, carveout }) => {
+    try {
+      return ok(JSON.stringify(await runAssertImplGreen({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        testCommand: test_command ?? null,
+        baseRef: base_ref ?? "origin/dev",
+        headRef: head_ref ?? "HEAD",
+        carveout: carveout ?? null,
       }), null, 2));
     } catch (e) { return err(e); }
   },

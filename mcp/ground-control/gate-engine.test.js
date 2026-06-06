@@ -9,13 +9,20 @@ import {
   GATE_CATALOG_DEFAULT_PATH,
   GATE_MANIFEST_JSON_SCHEMA,
   buildBoundPhaseMarker,
+  buildPhaseMarker,
+  buildTestQualityReviewPrompt,
+  classifyAssuranceSurfacesFromDiff,
   computeGatePackDirectoryChecksum,
   evaluateBoundPhaseMarkerFreshness,
   evaluateGateThreshold,
   evaluateRequiredStatuses,
   installWorkflowAssets,
   parseGroundControlYaml,
+  runAssertImplGreen,
+  runAssertTestRed,
   runGates,
+  runPostImplementationPlan,
+  runPostInterfaceContract,
   runWatchRequiredStatuses,
   selectApplicableGates,
   synthesizeLegacyGateManifest,
@@ -257,6 +264,295 @@ describe("gate marker binding", () => {
   });
 });
 
+function classifierDiff(fileDiffs, diffHash = "diff1") {
+  return {
+    base_ref: "main",
+    head_ref: "HEAD",
+    changed_files: Object.keys(fileDiffs),
+    diff_hash: diffHash,
+    file_diffs: fileDiffs,
+    diff_text: Object.entries(fileDiffs).map(([path, diff]) => `diff --git a/${path} b/${path}\n${diff}`).join("\n"),
+  };
+}
+
+function packManifest(packId, scope = ".") {
+  return {
+    packs: [{ id: packId, version: "1.0.0", scope }],
+    gates: [],
+  };
+}
+
+function contractMarker(issueNumber = 1075) {
+  return buildBoundPhaseMarker({
+    phase: "contract",
+    issueNumber,
+    binding: { diff_hash: "diff1", contract_hash: "contract1" },
+    body: "Public contract: validate inputs, preserve invariants, and expose explicit errors.",
+  });
+}
+
+describe("ADR-057 assurance classifier", () => {
+  it("detects security, state-machine, DAG, and corruption-prone mutator surfaces with required artifacts", async () => {
+    await withTempRepo(async (repo) => {
+      const cases = [
+        {
+          type: "security_boundary",
+          files: {
+            "src/main/java/example/FooController.java": [
+              "+class FooController {",
+              "+  @PreAuthorize(\"hasRole('ADMIN')\")",
+              "+  void update(FooRequest request) { validate(request); }",
+              "+}",
+            ].join("\n"),
+            "src/test/java/example/FooControllerTest.java": [
+              "+@WithMockUser(roles = \"USER\")",
+              "+void rejectsUnauthorizedUser() { assertThrows(AccessDeniedException.class, () -> call()); }",
+            ].join("\n"),
+          },
+        },
+        {
+          type: "state_machine",
+          files: {
+            "src/main/java/example/StatusFlow.java": [
+              "+class StatusFlow {",
+              "+  boolean canTransitionTo(Status next) {",
+              "+    if (!allowedTransitions.contains(next)) throw new IllegalStateException(\"invalid_status_transition\");",
+              "+    return true;",
+              "+  }",
+              "+}",
+            ].join("\n"),
+            "src/test/java/example/StatusPropertyTest.java": [
+              "+@Property",
+              "+void transition_matrix_rejects_invalid_edges() {",
+              "+  Arbitraries.of(\"DRAFT\", \"ACTIVE\");",
+              "+  assertThrows(IllegalStateException.class, () -> transition());",
+              "+}",
+            ].join("\n"),
+          },
+        },
+        {
+          type: "dag_graph",
+          files: {
+            "src/main/java/example/GraphPlanner.java": [
+              "+class GraphPlanner {",
+              "+  List<Node> topologicalSort(Graph graph) {",
+              "+    if (detectCycle(graph)) throw new IllegalArgumentException(\"cycle\");",
+              "+    // acyclic invariant: depth and visited are bounded by path length",
+              "+    return List.of();",
+              "+  }",
+              "+}",
+            ].join("\n"),
+            "src/test/java/example/GraphPropertyTest.java": [
+              "+@Property",
+              "+void topological_path_property_rejects_cycles() {",
+              "+  // cycle path topological",
+              "+  Arbitraries.integers();",
+              "+  assertThrows(IllegalArgumentException.class, () -> graphWithCycle());",
+              "+}",
+            ].join("\n"),
+          },
+        },
+        {
+          type: "corruption_prone_mutator",
+          files: {
+            "src/main/java/example/RequirementService.java": [
+              "+class RequirementService {",
+              "+  @Transactional",
+              "+  void archiveRequirement(String externalId) {",
+              "+    validate(externalId);",
+              "+    repository.save(entity);",
+              "+    audit.record(\"archive\");",
+              "+  }",
+              "+}",
+            ].join("\n"),
+            "src/test/java/example/RequirementServiceTest.java": [
+              "+void archive_rejects_bad_externalId_and_saves_audit() {",
+              "+  assertThrows(IllegalArgumentException.class, () -> archive());",
+              "+  assertThat(repository.save(entity)).isNotNull();",
+              "+}",
+            ].join("\n"),
+          },
+        },
+      ];
+
+      for (const item of cases) {
+        const result = classifyAssuranceSurfacesFromDiff({
+          repoRoot: repo,
+          manifest: packManifest("jvm-gradle"),
+          diffInfo: classifierDiff(item.files),
+          issueNumber: 1075,
+          commentBodies: [contractMarker()],
+        });
+        assert.equal(result.ok, true, `${item.type} should have all mandated artifacts`);
+        assert.ok(result.surfaces.some((surface) => surface.surface_type === item.type), `${item.type} should be classified`);
+      }
+    });
+  });
+
+  it("auto-excludes trivial enums/DTOs and no-ops for docs-generic docs-only diffs", async () => {
+    await withTempRepo(async (repo) => {
+      const trivial = classifyAssuranceSurfacesFromDiff({
+        repoRoot: repo,
+        manifest: packManifest("jvm-gradle"),
+        diffInfo: classifierDiff({
+          "src/main/java/example/Status.java": "+public enum Status { DRAFT, ACTIVE }\n",
+        }),
+        issueNumber: 1075,
+        commentBodies: [contractMarker()],
+      });
+      assert.equal(trivial.ok, true);
+      assert.deepEqual(trivial.surfaces, []);
+
+      const docs = classifyAssuranceSurfacesFromDiff({
+        repoRoot: repo,
+        manifest: packManifest("docs-generic"),
+        diffInfo: classifierDiff({ "docs/workflow.md": "+# Workflow\n+Text only.\n" }),
+        issueNumber: 1075,
+        commentBodies: [],
+      });
+      assert.equal(docs.ok, true);
+      assert.deepEqual(docs.surfaces, []);
+    });
+  });
+});
+
+describe("contract-first marker tools", () => {
+  it("enforces contract, plan, test_red, and impl_green prerequisites with re-run evidence", async () => {
+    await withTempRepo(async (repo) => {
+      writeConfig(repo);
+      const diffInfo = classifierDiff({ "README.md": "+# Contract marker fixture\n" });
+      const preflight = buildPhaseMarker({ phase: "preflight", issueNumber: 1075 });
+      const plan = buildPhaseMarker({ phase: "plan", issueNumber: 1075 });
+      const contract = contractMarker();
+      const testRed = buildBoundPhaseMarker({
+        phase: "test_red",
+        issueNumber: 1075,
+        binding: { red_diff_hash: "diff1", evidence_mode: "red_command" },
+      });
+      const markerCalls = [];
+      const markerPoster = async (payload) => {
+        markerCalls.push(payload);
+        return { html_url: `https://example.test/comment/${markerCalls.length}`, id: markerCalls.length };
+      };
+
+      const contractMissing = await runPostInterfaceContract({
+        repoPath: repo,
+        issueNumber: 1075,
+        contractBody: "Interface: GET /things returns ThingDto or ErrorEnvelope.",
+        phaseCommentBodies: [],
+        markerPoster,
+        diffInfo,
+      });
+      assert.equal(contractMissing.ok, false);
+      assert.deepEqual(contractMissing.missing, ["preflight"]);
+
+      const contractPosted = await runPostInterfaceContract({
+        repoPath: repo,
+        issueNumber: 1075,
+        contractBody: "Interface: GET /things returns ThingDto or ErrorEnvelope.",
+        phaseCommentBodies: [preflight],
+        markerPoster,
+        diffInfo,
+      });
+      assert.equal(contractPosted.ok, true);
+      assert.equal(markerCalls.at(-1).phase, "contract");
+      assert.ok(contractPosted.engineering_contract.some((entry) => entry.property === "Interface-first"));
+
+      const planMissing = await runPostImplementationPlan({
+        repoPath: repo,
+        issueNumber: 1075,
+        planBody: "Plan: implement the declared interface.",
+        phaseCommentBodies: [preflight],
+        markerPoster,
+      });
+      assert.equal(planMissing.ok, false);
+      assert.deepEqual(planMissing.missing, ["contract"]);
+
+      const planPosted = await runPostImplementationPlan({
+        repoPath: repo,
+        issueNumber: 1075,
+        planBody: "Plan: implement the declared interface.",
+        phaseCommentBodies: [contract],
+        markerPoster,
+      });
+      assert.equal(planPosted.ok, true);
+      assert.equal(markerCalls.at(-1).phase, "plan");
+
+      const redMissing = await runAssertTestRed({
+        repoPath: repo,
+        issueNumber: 1075,
+        testCommand: "npm test -- Thing",
+        phaseCommentBodies: [contract],
+        markerPoster,
+        diffInfo,
+        commandRunner: async () => ({ exit_code: 1, stdout: "", stderr: "", timed_out: false, duration_ms: 5 }),
+      });
+      assert.equal(redMissing.ok, false);
+      assert.deepEqual(redMissing.missing, ["plan"]);
+
+      const redNotRed = await runAssertTestRed({
+        repoPath: repo,
+        issueNumber: 1075,
+        testCommand: "npm test -- Thing",
+        phaseCommentBodies: [plan],
+        markerPoster,
+        diffInfo,
+        commandRunner: async () => ({ exit_code: 0, stdout: "passed", stderr: "", timed_out: false, duration_ms: 5 }),
+      });
+      assert.equal(redNotRed.ok, false);
+      assert.equal(redNotRed.error, "test_red_not_red");
+
+      const redPosted = await runAssertTestRed({
+        repoPath: repo,
+        issueNumber: 1075,
+        testCommand: "npm test -- Thing",
+        phaseCommentBodies: [plan],
+        markerPoster,
+        diffInfo,
+        commandRunner: async () => ({ exit_code: 1, stdout: "", stderr: "expected failure", timed_out: false, duration_ms: 5 }),
+      });
+      assert.equal(redPosted.ok, true);
+      assert.equal(markerCalls.at(-1).phase, "test_red");
+
+      const greenMissing = await runAssertImplGreen({
+        repoPath: repo,
+        issueNumber: 1075,
+        testCommand: "npm test -- Thing",
+        phaseCommentBodies: [plan],
+        markerPoster,
+        diffInfo,
+        commandRunner: async () => ({ exit_code: 0, stdout: "passed", stderr: "", timed_out: false, duration_ms: 5 }),
+      });
+      assert.equal(greenMissing.ok, false);
+      assert.deepEqual(greenMissing.missing, ["test_red"]);
+
+      const greenPosted = await runAssertImplGreen({
+        repoPath: repo,
+        issueNumber: 1075,
+        testCommand: "npm test -- Thing",
+        phaseCommentBodies: [testRed],
+        markerPoster,
+        diffInfo,
+        commandRunner: async () => ({ exit_code: 0, stdout: "passed", stderr: "", timed_out: false, duration_ms: 5 }),
+      });
+      assert.equal(greenPosted.ok, true);
+      assert.equal(markerCalls.at(-1).phase, "impl_green");
+    });
+  });
+
+  it("injects the posted contract oracle and ADR-059 engineering contract into the test-strength lens", () => {
+    const prompt = buildTestQualityReviewPrompt({
+      baseBranch: "origin/dev",
+      changedTestFiles: ["src/test/java/example/FooTest.java"],
+      interfaceContract: "Interface: POST /foo returns 201 or ErrorEnvelope.",
+    });
+    assert.match(prompt, /Posted interface contract oracle/);
+    assert.match(prompt, /POST \/foo returns 201/);
+    assert.match(prompt, /Interface-first/);
+    assert.match(prompt, /Secure from the gate/);
+  });
+});
+
 describe("legacy adapter and gc_run_gates dispatch", () => {
   it("synthesizes temporary gates from legacy commands without pack coverage", () => {
     const manifest = synthesizeLegacyGateManifest({
@@ -374,6 +670,96 @@ gates:
       const telemetry = readFileSync(join(repo, ".gc/telemetry/gate-effectiveness-1075.jsonl"), "utf8");
       assert.match(telemetry, /"provider_missing":true/);
       assert.match(telemetry, /"reviewer_fallback_used":true/);
+    });
+  });
+});
+
+describe("gc_run_gates contract-first completion gate", () => {
+  it("refuses to write gates_green without a fresh impl_green marker bound to the current diff", async () => {
+    await withTempRepo(async (repo) => {
+      writeConfig(repo);
+      writeManifestRepo(repo, `
+schema_version: 1
+packs:
+  - id: docs-generic
+    version: "1.0.0"
+    scope: .
+gates:
+  - id: docs.policy
+    capability: docs_policy
+    pack: docs-generic
+    command: echo ok
+    blocking: true
+    scope: changed
+    applies_when:
+      paths: ["**/*.md"]
+`, {
+        schema_version: 1,
+        engine: { version: "1.0.0" },
+        packs: [{ id: "docs-generic", version: "1.0.0" }],
+      });
+      let commandRan = false;
+      const result = await runGates({
+        repoPath: repo,
+        issueNumber: 1075,
+        diffInfo: classifierDiff({ "README.md": "+# Docs\n" }),
+        postMarker: true,
+        phaseCommentBodies: [],
+        markerPoster: async () => {
+          throw new Error("marker poster should not be reached");
+        },
+        commandRunner: async () => {
+          commandRan = true;
+          return { exit_code: 0, stdout: "", stderr: "", timed_out: false, duration_ms: 5 };
+        },
+      });
+      assert.equal(result.ok, false);
+      assert.equal(result.error, "missing_phase_marker");
+      assert.deepEqual(result.missing, ["impl_green"]);
+      assert.equal(commandRan, false);
+    });
+  });
+
+  it("completion gate refuses an L1 security boundary without contract and test artifacts", async () => {
+    await withTempRepo(async (repo) => {
+      writeConfig(repo);
+      writeManifestRepo(repo, `
+schema_version: 1
+packs:
+  - id: jvm-gradle
+    version: "1.0.0"
+    scope: .
+gates: []
+`, {
+        schema_version: 1,
+        engine: { version: "1.0.0" },
+        packs: [{ id: "jvm-gradle", version: "1.0.0" }],
+      });
+      const result = await runGates({
+        repoPath: repo,
+        issueNumber: 1075,
+        diffInfo: classifierDiff({
+          "src/main/java/example/FooController.java": [
+            "+class FooController {",
+            "+  @PreAuthorize(\"hasRole('ADMIN')\")",
+            "+  void update(FooRequest request) { validate(request); }",
+            "+}",
+          ].join("\n"),
+        }),
+        postMarker: false,
+        commandRunner: async () => {
+          throw new Error("gates should not run before assurance artifacts are present");
+        },
+      });
+      assert.equal(result.ok, false);
+      assert.equal(result.error, "assurance_artifacts_missing");
+      assert.equal(result.classifier.missing[0].surface_type, "security_boundary");
+      assert.equal(result.classifier.missing[0].assurance_level, "L1");
+      assert.deepEqual(result.classifier.missing[0].missing.sort(), [
+        "contract_artifact",
+        "contract_phase_marker",
+        "test_artifact",
+      ]);
     });
   });
 });

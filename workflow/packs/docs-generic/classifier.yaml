@@ -1,0 +1,33 @@
+schema_version: 1
+pack: docs-generic
+version: 1.0.0
+language:
+  primary: docs
+  extensions: [".md", ".markdown", ".txt", ".adoc"]
+frameworks: []
+noop_when_all_paths_match:
+  - "*.md"
+  - "**/*.md"
+  - "*.markdown"
+  - "**/*.markdown"
+  - "README.md"
+  - "CONTRIBUTING.md"
+  - "CHANGELOG.md"
+  - "docs/**"
+  - "architecture/**"
+  - "changelog.d/**"
+  - "skills/**/*.md"
+include:
+  paths:
+    - "*.md"
+    - "**/*.md"
+    - "*.markdown"
+    - "**/*.markdown"
+    - "docs/**"
+    - "architecture/**"
+    - "changelog.d/**"
+    - "skills/**/*.md"
+exclude:
+  paths: []
+  content: []
+surfaces: []

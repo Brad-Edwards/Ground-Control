@@ -456,3 +456,13 @@ record rather than an ambiguous middle state. Gate-result records come from
 `gc_run_gates` and provider-neutral required remote status envelopes, with
 provider-specific watchers behind the manifest rather than named as canonical
 issue-thread phases.
+
+The issue thread now carries a contract-first local evidence chain before the
+PR exists. `gc_post_interface_contract` posts the public interface contract and
+writes `contract`; `gc_post_implementation_plan` refuses without it.
+`gc_assert_test_red` and `gc_assert_impl_green` post the red/green evidence
+markers only after re-running the relevant command or validating a documented
+non-executable carve-out. `gc_run_gates` refuses `gates_green` unless
+`impl_green` is fresh for the current diff and the ADR-057 assurance classifier
+finds the required contract/test artifacts for each classified L1/L2 surface.
+These are durable issue-thread records, not local notes.

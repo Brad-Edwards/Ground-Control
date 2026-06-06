@@ -191,3 +191,15 @@ failure with a different vocabulary.
   anti-overcorrection prompt structures.
 - arXiv:2512.02304, verifier-quality threshold and false-rejection risk.
 - Issue #1075, `/implement` workflow redesign.
+
+## Amendment (2026-06-06, Phase 4)
+
+The test-strength lens now treats the posted interface contract as its oracle.
+The MCP prompt builder reads the latest `contract` phase marker from the issue
+thread when available and injects that contract into the review prompt. The
+same ADR-059 engineering contract used at contract/plan generation is embedded
+as the reviewer rubric, so review questions map back to enforceable gates or
+grounded reviewer checks rather than ad hoc preference. `gc_run_gates`
+classifier results remain deterministic input to the dispatcher: an unresolved
+ADR-057 contract/test artifact obligation blocks advance before reviewer prose
+can treat the surface as clean.

@@ -1,0 +1,71 @@
+schema_version: 1
+pack: python
+version: 1.0.0
+language:
+  primary: python
+  extensions: [".py"]
+frameworks:
+  - fastapi
+  - django
+  - pydantic
+  - hypothesis
+  - sqlalchemy
+include:
+  paths:
+    - "**/*.py"
+exclude:
+  paths:
+    - "**/migrations/**"
+    - "**/generated/**"
+    - "**/__pycache__/**"
+  content:
+    - '^\+\s*class\s+\w+\((BaseModel|TypedDict|Enum)\):\s*$'
+    - '^\+\s*[A-Z0-9_]+\s*=\s*["''][^"'']+["'']\s*$'
+surfaces:
+  - type: security_boundary
+    assurance: L1
+    detect:
+      path: ["**/*auth*.py", "**/*security*.py", "**/*views.py", "**/*routes.py", "**/*api*.py"]
+      content: ['@login_required\b', '@permission_required\b', '\bDepends\s*\(', '\bSecurity\s*\(', '\bHTTPBearer\b', '\bauthori[sz]e\b', '\btenant\b', '\bpermission\b']
+    requires:
+      contract:
+        content: ['\bBaseModel\b', '\bfield_validator\b', '\bmodel_validator\b', '\bicontract\b', '\bdeal\.', '\bassert\b', '\braise\s+\w*Error\b', '\bvalidate\b']
+      test:
+        path: ["**/test_*.py", "**/*_test.py", "**/tests/**"]
+        content: ['\bpytest\b', '\bclient\.', '\braises\s*\(', '\bstatus_code\s*==\s*(401|403)', '\bforbidden\b', '\bunauthorized\b']
+  - type: state_machine
+    assurance: L2
+    detect:
+      content: ['\bcan_transition_to\b', '\btransition_to\b', '\bset_status\b', '\bupdate_status\b', '\bInvalidTransition\b', '\bStatus\b']
+    requires:
+      contract:
+        content: ['\bcan_transition_to\b', '\ballowed_transitions\b', '\bInvalidTransition\b', '\braise\s+\w*Error\b', '\bassert\b']
+      test:
+        path: ["**/test_*.py", "**/*_test.py", "**/tests/**"]
+        content: ['\btransition\b', '\bstatus\b', '\braises\s*\(', '\bpytest\b']
+      property_test:
+        path: ["**/test_*.py", "**/*_test.py", "**/tests/**"]
+        content: ['\bhypothesis\b', '@given\b', '\bst\.']
+  - type: dag_graph
+    assurance: L2
+    detect:
+      content: ['\bnetworkx\b', '\btopological\b', '\bcycle\b', '\bgraph\b', '\bdfs\b', '\bbfs\b', '\bancestors\b', '\bdescendants\b']
+    requires:
+      contract:
+        content: ['\bacyclic\b', '\bcycle\b', '\bvisited\b', '\bdepth\b', '\binvariant\b', '\braise\s+\w*Error\b']
+      test:
+        path: ["**/test_*.py", "**/*_test.py", "**/tests/**"]
+        content: ['\bcycle\b', '\bpath\b', '\btopological\b', '\bgraph\b', '\bpytest\b']
+      property_test:
+        path: ["**/test_*.py", "**/*_test.py", "**/tests/**"]
+        content: ['\bhypothesis\b', '@given\b', '\bst\.']
+  - type: corruption_prone_mutator
+    assurance: L1
+    detect:
+      content: ['\bsession\.(add|delete|commit)\s*\(', '\bupdate_\w+\s*\(', '\bdelete_\w+\s*\(', '\barchive_\w+\s*\(', '\baudit\b', '\bmetadata\b', '\bmutate\b']
+    requires:
+      contract:
+        content: ['\bvalidate\b', '\bBaseModel\b', '\bfield_validator\b', '\bassert\b', '\braise\s+\w*Error\b', '\binvariant\b']
+      test:
+        path: ["**/test_*.py", "**/*_test.py", "**/tests/**"]
+        content: ['\b(add|delete|commit|archive|metadata|audit)\b', '\braises\s*\(', '\bassert\b']

@@ -165,6 +165,12 @@ The tool performs these steps:
 - Loads `workflow.gate_manifest` or `.gc/gates.yaml`.
 - Validates the manifest and `.gc/workflow-lock.json`.
 - Computes changed files and `diff_hash` with `git diff <base_ref>...<head_ref>`.
+- For local completion runs that post a marker, refuses unless a fresh `impl_green`
+  marker is bound to the current diff.
+- Runs the ADR-057 assurance classifier against changed files before executing
+  gates. L1/L2 surfaces must have a posted `contract` marker plus pack-detected
+  contract and test artifacts; L2 also requires property-verification evidence.
+  `docs-generic` no-ops on docs-only diffs.
 - Selects gates by capability, scope, and `applies_when.paths`.
 - Runs each command in its declared `cwd` with a bounded timeout and sanitized environment.
 - Parses JSON provider output only when the gate declares `output.type: json`; otherwise the exit code is authoritative.
@@ -185,6 +191,8 @@ Each gate pack contains:
   tier ownership, install templates, and self-test metadata.
 - `capabilities.yaml`: every engine capability marked as `provided`,
   `provider_missing`, or `not_applicable`.
+- `classifier.yaml`: deterministic ADR-057 surface detection and artifact
+  patterns for the pack's language/framework ecosystem.
 - `templates/`: pack-owned config files copied into `.gc/gate-packs/<id>/`.
 - `installer.mjs`: a pack-local installer shim.
 - `selftest/`: a generated fixture contract and runnable self-test.
@@ -311,9 +319,42 @@ Provider-missing behavior is explicit. A gate with no command returns a `provide
 }
 ```
 
+#### Contract-First Markers and Assurance Classifier
+
+The local `/implement` marker chain is:
+
+```text
+preflight -> contract -> plan -> test_red -> impl_green -> gates_green
+```
+
+`gc_post_interface_contract` writes `contract` after re-verifying `preflight`.
+The contract is the language-neutral public shape the implementation promises:
+interfaces, signatures, DTOs, error envelopes, API shapes, and invariants. It
+also injects the ADR-059 engineering contract. `gc_post_implementation_plan`
+refuses without `contract`.
+
+`gc_assert_test_red` writes `test_red` only after re-running a targeted command
+and observing a failing test/contract check, or after validating a documented
+non-executable carve-out. `gc_assert_impl_green` writes `impl_green` only after
+re-running the targeted command and observing green implementation evidence, or
+after validating the same carve-out. `gc_run_gates` refuses `gates_green`
+without a fresh `impl_green` marker.
+
+The assurance classifier is engine-generic and pack-specific. The engine owns
+diff binding, marker lookup, artifact checks, and gate refusal. Each
+`classifier.yaml` owns language/framework detection: for example JVM
+`@PreAuthorize`, `canTransitionTo`, graph traversal, and transactional
+mutators; Python auth decorators, Pydantic/Enum state, graph operations, and
+SQLAlchemy mutators; TypeScript route guards/reducers/fast-check; Rust
+`Result` boundaries, `unsafe`, and proptest; C/C++ status/result boundaries
+and sanitizer/gtest patterns. Trivial DTOs/records/config/pure enums are
+excluded by pack rules.
+
 #### Marker Model
 
-`gates_green` and `remote_gates_green` are bound phase markers posted by MCP tools. The existing phase marker family remains:
+`contract`, `test_red`, `impl_green`, `gates_green`, and `remote_gates_green`
+are bound phase markers posted by MCP tools. The existing phase marker family
+remains:
 
 ```html
 <!-- gc:phase phase="gates_green" issue="1075" marker_schema="1" ... -->
@@ -360,10 +401,11 @@ flowchart TB
   S2[2 · Read issue body + comments]
   S3[3 · Codex architecture preflight]
   S4[4 · Explore codebase + consult knowledge base]
+  S4b[3.5 · Post interface contract · contract marker]
   S5[5 · Post plan as issue comment]
-  S6[6 · TDD implementation]
+  S6[6 · TDD implementation · test_red + impl_green]
   S7[7 · pre-commit run]
-  S8[8 · Completion gate · make policy + make check + changelog fragment]
+  S8[8 · gc_run_gates · assurance classifier · gates_green]
   S8b[8.5 · Pre-push gc_codex_review · correctness + security + architecture · convergence dispatcher]
   S8c[8.6 · Pre-push gc_test_quality_review · test-strength · convergence dispatcher]
   S9[9 · Stage + commit + push]
@@ -380,7 +422,8 @@ flowchart TB
   S1 --> S2
   S2 --> S3
   S3 --> S4
-  S4 --> S5
+  S4 --> S4b
+  S4b --> S5
   S5 --> S6
   S6 --> S7
   S7 --> S8
@@ -411,8 +454,8 @@ flowchart TB
 
 - **Yellow** nodes are user touchpoints. Per ADR-029, the workflow has **one** synchronous human touchpoint: PR merge (the `End` node). Plans are posted to the GitHub issue thread (S5) and the agent proceeds without waiting; review findings and decisions on findings are also recorded on the issue thread.
 - **Entry is always by issue.** Step 1 resolves the input to a GitHub issue (either directly or via a UID → issue shim) and parses the `## Requirements` section from the issue body into `in_scope_requirements[]`. The list may be empty (bug fix / refactor) or contain one or many UIDs (grouped implementation). Everything downstream treats the issue as the authoritative context and the list as the set of requirements to be transitioned to `ACTIVE` on completion. Step 1 also creates the feature branch with a **bounded short-slug name**: `gh issue develop` is invoked with `--name <issue-number>-<short-slug>` (≤ 50 chars, ASCII-only); skipping `--name` lets `gh` slugify the full issue title and produces unusable 100+ character branch names that break terminal display, copy-paste, CI breadcrumbs, and downstream shell quoting. The skill then **validates the actual checked-out branch against the same rule**: `gh` reuses existing branches, so a previous pickup that ran before this rule existed (or didn't follow it) would otherwise hand the agent a non-compliant branch that flows through pickup comment, push, CI, and PR. The post-check fetches the configured base and compares against `origin/<base>` (local base can be stale); renames the branch in place when it has no commits relative to the remote base and no PR exists, or applies the in-progress signal first (so a paused picked-up issue stays visibly flagged) then stops and escalates to the user when a published PR is on the line. The post-check is the dispositive enforcement (the `--name` flag only governs first-time pickups). Slug derivation rule, validation predicate, and worked examples live in `skills/implement/SKILL.md` Step 1 sub-step 11. Step 1 then flags the resolved issue **in-progress**: an `in-progress` label (created on demand if the repo lacks it) plus a pickup comment on the thread recording the driver, the checked-out branch, and a timestamp; a maintainer scanning `/issues`, or another agent, sees at a glance that work is underway. The label is removed by Step 18 when the agent finishes its work and hands the PR to the user. The GitHub issue itself stays open until the user merges the PR, at which point GitHub closes it automatically via the `Closes #<issue-number>` keyword rendered into the PR body by `gc_render_pr_body` (Step 9). A run that escalates to the user without completing intentionally leaves both the label and the issue open, because the issue *was* picked up but the work is paused, not finished.
-- **Steps 1–4** gather context and run the codex architecture preflight before any code is written. Step 4 also consults the repo knowledge base via the index if one is present.
-- **Step 6** is TDD (red → green → refactor per clause). Steps 7–8 are the local quality gate. A narrow documentation-only carve-out is documented in `skills/implement/SKILL.md` Step 4.4 for diffs that contain no executable behavior and whose claims are protected by an existing structural gate (policy check, schema validator, lint rule, verifier script). The carve-out must be declared in the plan and re-stated as an issue comment naming the gate; substring/snapshot tests written only to satisfy TDD wording are explicitly disallowed. The completion gate re-validates the carve-out with a two-check sweep over the union of committed, staged, unstaged, and untracked paths (Step 6 runs before stage-and-commit, so working-tree state is part of the diff): every path must be in the documentation set AND every diff hunk's content must be free of executable behavior; a path check alone isn't enough, because a doc file can still carry executable behavior.
+- **Steps 1–3.5** gather context, run the architecture preflight, inspect the codebase, and post the interface contract before any code is written. The contract is the oracle for the plan, targeted tests, and test-strength review.
+- **Step 6** is TDD (red → green → refactor per clause) with tool-verified markers. `gc_assert_test_red` observes the failing targeted test/contract check, and `gc_assert_impl_green` observes the passing targeted check after implementation. Steps 7–8 are the local quality gate. A narrow documentation-only carve-out is documented in `skills/implement/SKILL.md` Step 4.4; both marker tools validate that carve-out before writing their markers. `gc_run_gates` then re-verifies fresh `impl_green`, runs manifest/legacy gates, and runs the assurance classifier before writing `gates_green`.
 - **Step 8.5 (= SKILL Step 6.5)** is the pre-push Codex review pass per issue #804: `gc_codex_review` with `uncommitted=true` runs locally against the staged + unstaged diff and posts a verbatim findings record to the resolved issue thread for each cycle (durable per ADR-029). The Codex pass runs three fresh-context lenses with edit tools removed: correctness, security, and architecture. The cap is configurable per repo via `workflow.codex_review.pre_push_cap` in `.ground-control.yaml` (configured bounds `[1, 10]`, ADR-031 effective minimum cap 2) and enforced **per issue** (the cycle counter is anchored to the GitHub issue thread; the current branch is recorded in the marker for audit context but is NOT part of the cap key, so a branch rename on the same issue cannot reset the counter; see ADR-029). After a cycle's findings are surfaced, the agent **dispatches on the MCP-computed `next_action`**: `advance_to_next_phase`, `fix_findings_and_reinvoke`, `post_structured_decision_aid_and_escalate`, or `record_terminal_escalation`. Cycle 1 never collapses into escalation because findings exist; dirty cycles below the effective cap fix, self-verify, re-stage, and re-invoke. No commit/push between cycles. The post-push codex review (former Step 12 in earlier numbering) was removed by issue #804; merge-commit drift is the responsibility of CI (compile/tests/integration) and SonarCloud (quality).
 - **Step 8.6 (= SKILL Step 6.6)** is the pre-push test-quality review, moved pre-push by issue #906 from the former post-PR Step 13. `gc_test_quality_review` runs locally against the same staged + unstaged + untracked diff as the test-strength lens. It consumes `gc_run_gates` mutation / diff-coverage results when the gate manifest supplies them, and provider-missing telemetry can route to reviewer fallback without treating the missing deterministic provider as passed. The cap is configurable via `workflow.test_quality_review.pre_push_cap` with the same ADR-031 effective minimum of 2. Same local-only convergence loop as Step 6.5 (re-stage, do NOT commit between cycles); same `gc_post_decision_record` contract for the durable record. The MCP tool returns a `{findings, cycle, configured_cap, cap, next_action, dispatcher, ...}` envelope; the parent /implement agent reads `next_action` as a directive, not as prose to summarize back to the user. Per #884 v2 this is an MCP tool, not a Skill; the v1 Skill-tool boundary returned prose findings that the parent's autoregressive "I just got a result, present it" bias kept echoing back to the user instead of fixing in-turn; the MCP boundary closes that bias structurally. See `architecture/notes/test-quality-review-engine.md` for the full mechanism (engine, auth, failure modes).
 - **Steps 9–11** commit, push, open the PR, and block on CI + SonarCloud before any reviewer looks at the code. **PR title format (issue #901):** Step 9 validates the title locally before `gh pr create`. Two rules: (1) a single conventional-commit type with optional scope (`<type>(<optional-scope>): <subject>`); compound prefixes like `security/docs:` are rejected by `amannn/action-semantic-pull-request` and similar linters downstream repos run; for bundled PRs pick the dominant type and describe the rest in the subject; (2) the subject must start with a lowercase letter (`^[a-z].*$`); uppercase acronyms (NGFW, GCP, MCP) must be reshaped (lowercase, relocate into a slash-prefixed path, or front with a verb). Per-repo override via `.ground-control.yaml::workflow.pr_title.types` / `subject_pattern`; otherwise the conventional-commits canonical allow-list + `^[a-z]` pattern apply. Catching both locally removes the edit-cycle-per-failure cost the agent otherwise pays after every `gh pr create`. See `skills/implement/SKILL.md` Step 9 for the full rule + reshape examples.

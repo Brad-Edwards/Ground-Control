@@ -9,14 +9,14 @@ disable-model-invocation: true
 
 Canonical, agent-neutral implementation of the Ground Control `/quickfix` workflow. A purpose-built fast lane for **straightforward, lower-risk fixes** that don't warrant the full `/implement` ceremony (preflight, plan post, AI-assisted reviews, final-report tool, requirement transitions). Drops the ceremony designed for requirement-driven multi-clause work; keeps every mechanical guardrail the repo enforces.
 
-**Sibling to `skills/implement/SKILL.md`.** This skill cross-references the canonical full workflow at every step rather than duplicating prose—the contract surfaces (branch shape, in-progress signal, changelog fragment, PR-title rules, `gc_render_pr_body`, CI/SonarCloud, no-deferral, user-owns-merge) are identical. The only differences are the dropped ceremony.
+**Sibling to `skills/implement/SKILL.md`.** This skill cross-references the canonical full workflow at every step rather than duplicating prose—the contract surfaces (branch shape, in-progress signal, changelog fragment, PR-title rules, `gc_render_pr_body`, CI/SonarCloud, no-deferral, user-owns-merge) are identical. The only differences are the dropped ceremony. `/quickfix` does not post the `/implement` contract-first marker chain (`contract`, `test_red`, `impl_green`, `gates_green`); if the work needs that chain, upgrade to `/implement`.
 
 ## When to pick `/quickfix` vs `/implement`
 
 Judgment call, gating heuristic:
 
 - **`/quickfix`** when the fix is obvious from the issue description, touches **< ~10 files**, has **no architectural footprint**, and the agent has no open design questions. Examples: parser bug, doc typo, SonarCloud finding cleanup, dependency bump, lint fix, narrow refactor with no behavior change, "the reviewer told me exactly what to do" follow-up.
-- **`/implement`** when the issue carries a `## Requirements` section (UIDs in scope), or the diff is wider than ~10 files, or the design is unsettled, or there's any cross-aggregate blast radius. Anything that benefits from a codex production-readiness pass + test-quality review.
+- **`/implement`** when the issue carries a `## Requirements` section (UIDs in scope), or the diff is wider than ~10 files, or the design is unsettled, or there's any cross-aggregate blast radius. Also use `/implement` for any diff that hits the ADR-057 assurance classifier's L1/L2 surfaces (security boundary, corruption-prone domain mutator, state machine, DAG/graph operation), because those require the contract-first marker chain and contract/test artifacts.
 
 The user picks the lane explicitly at invocation time. The issue is the durable anchor—a `/quickfix` run can be upgraded to `/implement` mid-flight by re-invoking `/implement <same-issue>`.
 
@@ -85,7 +85,7 @@ The full TDD discipline from `skills/implement/SKILL.md` Step 4.4 (write failing
 
 ### Step Q6: Completion Gate
 
-**Identical to `skills/implement/SKILL.md` Step 6.** All four checks apply, non-negotiable:
+Lower ceremony variant of `skills/implement/SKILL.md` Step 6. `/quickfix` runs the repo's configured completion command and `make policy` directly; it does not write `/implement`'s `impl_green` or `gates_green` markers. All four checks apply, non-negotiable:
 
 1. Completion gate command exits successfully (`cfg.workflow.completion_command` or `cfg.workflow.test_command` fallback).
 2. Changelog fragment present for source-changing diffs (`changelog.d/<issue>.<type>.md`).
@@ -93,6 +93,8 @@ The full TDD discipline from `skills/implement/SKILL.md` Step 4.4 (write failing
 4. Documentation-only carve-out re-validation (path check + content check). Same rules as `/implement`.
 
 Do NOT move to Phase C until all four pass.
+
+If this repo's completion path is `gc_run_gates` and the tool refuses with a missing `impl_green` marker or `assurance_artifacts_missing`, stop and upgrade to `/implement <same-issue>`. That refusal means the diff is no longer quickfix-shaped under ADR-057 / ADR-061.
 
 ### Step Q6.5 + Step Q6.6: AI-Assisted Reviews (OFF by default; `--review` to enable)
 

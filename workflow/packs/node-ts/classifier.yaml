@@ -1,0 +1,77 @@
+schema_version: 1
+pack: node-ts
+version: 1.0.0
+language:
+  primary: typescript
+  extensions: [".ts", ".tsx", ".js", ".jsx"]
+frameworks:
+  - express
+  - nestjs
+  - react
+  - redux
+  - zod
+  - fast-check
+include:
+  paths:
+    - "**/*.ts"
+    - "**/*.tsx"
+    - "**/*.js"
+    - "**/*.jsx"
+exclude:
+  paths:
+    - "**/*.d.ts"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/generated/**"
+  content:
+    - '^\+\s*export\s+type\s+\w+\s*='
+    - '^\+\s*export\s+interface\s+\w+\s*\{[^}]*\}\s*$'
+    - '^\+\s*export\s+enum\s+\w+\s*\{\s*([A-Z0-9_]+\s*,?\s*)+;?\s*\}\s*$'
+surfaces:
+  - type: security_boundary
+    assurance: L1
+    detect:
+      path: ["**/*auth*.ts", "**/*guard*.ts", "**/*route*.ts", "**/*controller*.ts", "**/*middleware*.ts"]
+      content: ['@UseGuards\b', '\brequireAuth\b', '\bauthori[sz]e\b', '\bauthMiddleware\b', '\bcanActivate\b', '\btenant\b', '\bpermission\b', '\brouteGuard\b']
+    requires:
+      contract:
+        content: ['\bz\.object\s*\(', '\bschema\b', '\bassert\b', '\binvariant\b', '\bResult\b', '\bthrow\s+new\b', '\bvalidate\b', '\bauthori[sz]e\b']
+      test:
+        path: ["**/*.test.ts", "**/*.spec.ts", "**/test/**", "**/tests/**"]
+        content: ['\bdescribe\s*\(', '\bit\s*\(', '\bexpect\s*\(', '\bsupertest\b', '\bunauthori[sz]ed\b', '\bforbidden\b']
+  - type: state_machine
+    assurance: L2
+    detect:
+      content: ['\bcreateReducer\b', '\breducer\b', '\bswitch\s*\([^)]*action\.type', '\bcanTransitionTo\b', '\btransitionTo\b', '\bstateMachine\b', '\bstatus\b']
+    requires:
+      contract:
+        content: ['\bassertNever\b', '\binvariant\b', '\bcanTransitionTo\b', '\ballowedTransitions\b', '\bResult\b', '\bInvalidTransition\b']
+      test:
+        path: ["**/*.test.ts", "**/*.spec.ts", "**/test/**", "**/tests/**"]
+        content: ['\breducer\b', '\btransition\b', '\bstate\b', '\bexpect\s*\(']
+      property_test:
+        path: ["**/*.test.ts", "**/*.spec.ts", "**/test/**", "**/tests/**"]
+        content: ['\bfast-check\b', '\bfc\.property\b', '\bfc\.assert\b']
+  - type: dag_graph
+    assurance: L2
+    detect:
+      content: ['\btoposort\b', '\btopological\b', '\bdetectCycle\b', '\bgraph\b', '\bdfs\b', '\bbfs\b', '\bdependency\b', '\bacyclic\b']
+    requires:
+      contract:
+        content: ['\bacyclic\b', '\bcycle\b', '\bvisited\b', '\bdepth\b', '\binvariant\b', '\bassert\b']
+      test:
+        path: ["**/*.test.ts", "**/*.spec.ts", "**/test/**", "**/tests/**"]
+        content: ['\bcycle\b', '\bpath\b', '\btopological\b', '\bgraph\b', '\bexpect\s*\(']
+      property_test:
+        path: ["**/*.test.ts", "**/*.spec.ts", "**/test/**", "**/tests/**"]
+        content: ['\bfast-check\b', '\bfc\.property\b', '\bfc\.assert\b']
+  - type: corruption_prone_mutator
+    assurance: L1
+    detect:
+      content: ['\bupdate[A-Z]\w*\s*\(', '\bdelete[A-Z]\w*\s*\(', '\bupsert[A-Z]\w*\s*\(', '\bwriteFile\b', '\btransaction\b', '\baudit\b', '\bmetadata\b', '\bmutat(e|or)\b']
+    requires:
+      contract:
+        content: ['\bz\.object\s*\(', '\bvalidate\b', '\binvariant\b', '\bassert\b', '\bResult\b', '\bthrow\s+new\b']
+      test:
+        path: ["**/*.test.ts", "**/*.spec.ts", "**/test/**", "**/tests/**"]
+        content: ['\b(update|delete|upsert|metadata|audit)\b', '\bexpect\s*\(', '\btoThrow\b']

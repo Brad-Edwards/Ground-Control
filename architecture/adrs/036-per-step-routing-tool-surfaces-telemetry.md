@@ -463,3 +463,13 @@ never the only enforcement layer because it does not run for every driver.
 Remote checks use the generic required-status watcher
 `gc_watch_required_statuses`; provider-specific watchers are optional
 manifest-driven adapters behind that tool.
+
+The routing table now includes `contract_definition` between codebase
+assessment and planning. It defaults to a high-tier parent route because it
+sets the public interface and operational property contract that the plan,
+tests, classifier, and reviewers all consume. The durable-record tool family
+also gains `gc_post_interface_contract`, `gc_assert_test_red`, and
+`gc_assert_impl_green`. These tools reuse the existing repo/issue boundary and
+phase-marker primitives: each re-verifies its predecessor marker or command
+evidence before posting, returns a structured envelope, and is Temporal-shaped
+for the future GC-O009 workflow.

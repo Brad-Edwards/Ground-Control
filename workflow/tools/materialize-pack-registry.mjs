@@ -784,6 +784,10 @@ function groupedMissing(bindings, status) {
 
 function writePack(pack) {
   const dir = join(packsRoot, pack.id);
+  const existingClassifierPath = join(dir, "classifier.yaml");
+  const existingClassifier = statOrNull(existingClassifierPath)?.isFile()
+    ? readFileSync(existingClassifierPath, "utf8")
+    : null;
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   const packYaml = {
@@ -842,6 +846,17 @@ await runPackSelftestCli({ defaultPackId: ${JSON.stringify(pack.id)} });
     const target = join(dir, rel);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, content);
+  }
+  if (typeof existingClassifier === "string") {
+    writeFileSync(join(dir, "classifier.yaml"), existingClassifier);
+  }
+}
+
+function statOrNull(path) {
+  try {
+    return statSync(path);
+  } catch {
+    return null;
   }
 }
 

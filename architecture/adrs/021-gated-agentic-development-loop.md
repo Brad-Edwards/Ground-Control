@@ -132,3 +132,16 @@ advance is blocked by manifest gates, and post-publication advance is blocked
 by required remote statuses through the provider-neutral `remote_status`
 capability. Each phase tool re-verifies state and refuses without its
 predecessor marker.
+
+The Phase A implementation order is now contract-first. After architecture
+preflight and codebase assessment, `gc_post_interface_contract` posts the
+language-neutral public contract and writes the `contract` marker. Planning
+refuses without that marker. TDD evidence is likewise tool-verified:
+`gc_assert_test_red` writes `test_red` only after observing a targeted failing
+test or validated non-executable carve-out, and `gc_assert_impl_green` writes
+`impl_green` only after observing the targeted green run or validated
+carve-out. The local completion gate (`gc_run_gates`) refuses `gates_green`
+without fresh `impl_green` and runs the ADR-057 assurance classifier before
+gate execution. The classifier is engine-generic; language/framework patterns
+live in each gate pack's `classifier.yaml`, with docs-only diffs no-oping
+under `docs-generic`.

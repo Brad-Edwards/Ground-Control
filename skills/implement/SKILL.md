@@ -39,6 +39,7 @@ The parent never sees verbatim subagent prose, raw `gh`/`git` output, full file 
 | 2 | `read_issue_context` | `steps/step-02-read-issue-context.md` |
 | 2.5 | `architecture_preflight` | `steps/step-02.5-architecture-preflight.md` |
 | 3 | `codebase_assessment` | `steps/step-03-codebase-assessment.md` |
+| 3.5 | `contract_definition` | `steps/step-03.5-interface-contract.md` |
 | 4 | `planning` | `steps/step-04-planning.md` |
 | 4.4 | `implementation` | `steps/step-04.4-tdd.md` |
 | 4.5 | `clause_mapping` | `steps/step-04.5-clause-mapping.md` |
@@ -63,6 +64,7 @@ Steps 12, 13, 14 are intentional tombstones (post-push Codex review collapsed in
 ## Phase boundaries (control flow)
 
 - **Phase A** (Steps 1 → 4.5), **Phase B** (Steps 5 → 6.6), **Phase C** (Steps 7 → 8), **Phase D** (Steps 9 → 19), and **Phase E** (Step 20) run in fixed order. Phase E is the post-merge close phase (issue #1058) — see "Issue close mechanism" below.
+- **Contract-first marker chain:** Step 2.5 writes `preflight`; Step 3.5 writes `contract`; Step 4 writes `plan`; Step 4.4 writes `test_red` and `impl_green`; Step 6 writes `gates_green`. Each MCP tool re-verifies its predecessor marker and bound state before writing the next marker.
 - **Step 4 work-already-complete branch**: when Step 4's envelope returns `work_already_complete: true`, skip Steps 4.4 / 4.5 / 5 / 6 / 6.5 / 6.6 / 7 / 8 / 9 / 10 / 11 (there's no diff to push) and jump to Step 15 to reconcile Ground Control state.
 - **Step 10 CI failure**: on `ci_conclusion != "success"`, fix locally, return to Step 7 (re-stage), Step 8 (commit + push), then Step 10 again.
 - **Step 11 SonarCloud findings**: same loop—fix, push, re-run Step 10, then Step 11. Cap: 5 SonarCloud iterations.

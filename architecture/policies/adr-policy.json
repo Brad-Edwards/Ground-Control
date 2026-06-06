@@ -9,8 +9,9 @@
         {
           "id": "workflow-guardrail-sync",
           "whenAny": [
-            "skills/implement/SKILL.md",
-            "skills/quickfix/SKILL.md",
+        "skills/implement/SKILL.md",
+        "skills/implement/steps/*.md",
+        "skills/quickfix/SKILL.md",
             "skills/integrate/SKILL.md",
             ".claude/skills/implement/SKILL.md",
             ".claude/skills/integrate/SKILL.md",

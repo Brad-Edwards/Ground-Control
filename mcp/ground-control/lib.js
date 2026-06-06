@@ -3864,15 +3864,25 @@ function resolveCatalogArtifactPath({ catalogPath, artifact }) {
 function validatePackSourceShape(packSourcePath, packId) {
   const packYamlPath = join(packSourcePath, "pack.yaml");
   const capabilitiesYamlPath = join(packSourcePath, "capabilities.yaml");
+  const classifierYamlPath = join(packSourcePath, "classifier.yaml");
   const packYaml = parseYamlFileAbsolute(packYamlPath, `${packId}/pack.yaml`);
   if (!packYaml.ok) return packYaml;
   const capabilitiesYaml = parseYamlFileAbsolute(capabilitiesYamlPath, `${packId}/capabilities.yaml`);
   if (!capabilitiesYaml.ok) return capabilitiesYaml;
+  const classifierYaml = parseYamlFileAbsolute(classifierYamlPath, `${packId}/classifier.yaml`);
+  if (!classifierYaml.ok) return classifierYaml;
   if (!isPlainMapping(packYaml.value) || packYaml.value.id !== packId) {
     return { ok: false, error: "gate_pack_invalid", message: `${packId}/pack.yaml id does not match '${packId}'` };
   }
   if (!isPlainMapping(capabilitiesYaml.value) || !isPlainMapping(capabilitiesYaml.value.bindings)) {
     return { ok: false, error: "gate_pack_invalid", message: `${packId}/capabilities.yaml must contain bindings` };
+  }
+  if (!isPlainMapping(classifierYaml.value) || classifierYaml.value.pack !== packId || !Array.isArray(classifierYaml.value.surfaces)) {
+    return {
+      ok: false,
+      error: "gate_pack_invalid",
+      message: `${packId}/classifier.yaml must be a mapping with pack='${packId}' and surfaces[]`,
+    };
   }
   for (const cap of Object.keys(capabilitiesYaml.value.bindings)) {
     if (!ENGINE_CAPABILITY_SET.has(cap)) {
@@ -4461,7 +4471,32 @@ export async function computeGitDiffInfo(repoRoot, baseRef, headRef) {
     head_ref: headRef,
     changed_files: changedFiles,
     diff_hash: sha256Hex(diffResult.stdout),
+    diff_text: diffResult.stdout,
+    file_diffs: splitUnifiedDiffByFile(diffResult.stdout),
   };
+}
+
+function splitUnifiedDiffByFile(diffText) {
+  const result = {};
+  if (typeof diffText !== "string" || diffText === "") return result;
+  const lines = diffText.split(/\r?\n/);
+  let current = null;
+  let buffer = [];
+  const flush = () => {
+    if (current) result[current] = buffer.join("\n");
+  };
+  for (const line of lines) {
+    const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+    if (match) {
+      flush();
+      current = normalizeChangedPath(match[2]);
+      buffer = [line];
+    } else if (current) {
+      buffer.push(line);
+    }
+  }
+  flush();
+  return result;
 }
 
 export function buildGateCommandEnv(extra = {}) {
@@ -4797,6 +4832,192 @@ function loadManifestOrLegacy({ repoRoot, context }) {
   };
 }
 
+function scopedPathForPack(pathValue, scope) {
+  const normalizedPath = normalizeChangedPath(pathValue);
+  const normalizedScope = normalizeInstallScope(scope);
+  if (normalizedScope === ".") return normalizedPath;
+  if (normalizedPath === normalizedScope) return "";
+  if (!normalizedPath.startsWith(`${normalizedScope}/`)) return null;
+  return normalizedPath.slice(normalizedScope.length + 1);
+}
+
+function compileClassifierRegex(raw, label) {
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+  try {
+    return new RegExp(raw, "m");
+  } catch (error) {
+    throw new Error(`${label} has invalid regex ${JSON.stringify(raw)}: ${error.message}`);
+  }
+}
+
+function classifierAnyPathMatch(pathValue, patterns = []) {
+  if (!Array.isArray(patterns) || patterns.length === 0) return false;
+  return patterns.some((pattern) => pathMatchesGatePattern(pathValue, pattern));
+}
+
+function classifierAnyContentMatch(text, patterns = [], label = "classifier.content") {
+  if (!Array.isArray(patterns) || patterns.length === 0) return false;
+  const value = typeof text === "string" ? text : "";
+  return patterns.some((pattern) => compileClassifierRegex(pattern, label)?.test(value));
+}
+
+function classifierMatches(record, patterns = {}, label = "classifier") {
+  const pathPatterns = Array.isArray(patterns.path) ? patterns.path : [];
+  const contentPatterns = Array.isArray(patterns.content) ? patterns.content : [];
+  const pathOk = pathPatterns.length === 0 || classifierAnyPathMatch(record.scoped_path, pathPatterns);
+  const contentOk = contentPatterns.length === 0 || classifierAnyContentMatch(record.diff_text, contentPatterns, `${label}.content`);
+  return pathOk && contentOk;
+}
+
+function readClassifierYamlForPack(repoRoot, pack) {
+  const id = pack?.id;
+  const version = pack?.version;
+  if (typeof id !== "string" || id.trim() === "") return null;
+  const candidates = [];
+  if (typeof version === "string" && version.trim() !== "") {
+    candidates.push(join(repoRoot, ".gc/vendor/ground-control/packs", id, version, "classifier.yaml"));
+  }
+  candidates.push(join(resolvePath(MCP_MODULE_DIR, "../.."), "workflow/packs", id, "classifier.yaml"));
+  for (const path of candidates) {
+    if (!fileExists(path)) continue;
+    const parsed = parseYamlFileAbsolute(path, `${id}/classifier.yaml`);
+    if (!parsed.ok) throw new Error(parsed.error);
+    if (!isPlainMapping(parsed.value)) throw new Error(`${id}/classifier.yaml root must be a mapping`);
+    return parsed.value;
+  }
+  return null;
+}
+
+function buildDiffRecordsForPack(diffInfo, pack) {
+  const changedFiles = Array.isArray(diffInfo?.changed_files) ? diffInfo.changed_files : [];
+  const fileDiffs = diffInfo?.file_diffs && typeof diffInfo.file_diffs === "object"
+    ? diffInfo.file_diffs
+    : splitUnifiedDiffByFile(diffInfo?.diff_text ?? "");
+  return changedFiles
+    .map((pathValue) => {
+      const scoped = scopedPathForPack(pathValue, pack.scope ?? ".");
+      if (scoped == null) return null;
+      return {
+        path: normalizeChangedPath(pathValue),
+        scoped_path: scoped,
+        diff_text: typeof fileDiffs[normalizeChangedPath(pathValue)] === "string"
+          ? fileDiffs[normalizeChangedPath(pathValue)]
+          : "",
+      };
+    })
+    .filter(Boolean);
+}
+
+function classifierExcludesRecord(record, classifier) {
+  const exclude = classifier?.exclude ?? {};
+  if (classifierAnyPathMatch(record.scoped_path, exclude.paths ?? [])) return true;
+  if (classifierAnyContentMatch(record.diff_text, exclude.content ?? [], "classifier.exclude.content")) return true;
+  return false;
+}
+
+function artifactExists(records, artifactPatterns, label) {
+  if (!isPlainMapping(artifactPatterns)) return false;
+  return records.some((record) => classifierMatches(record, artifactPatterns, label));
+}
+
+export function classifyAssuranceSurfacesFromDiff({ manifest, diffInfo, repoRoot, commentBodies = [], issueNumber = null } = {}) {
+  const surfaces = [];
+  const obligations = [];
+  const packs = Array.isArray(manifest?.packs) ? manifest.packs : [];
+  for (const pack of packs) {
+    const classifier = readClassifierYamlForPack(repoRoot, pack);
+    if (classifier == null) continue;
+    const records = buildDiffRecordsForPack(diffInfo, pack);
+    if (records.length === 0) continue;
+    const noop = classifier.noop_when_all_paths_match;
+    if (Array.isArray(noop) && noop.length > 0 && records.every((record) => classifierAnyPathMatch(record.scoped_path, noop))) {
+      continue;
+    }
+    const include = classifier.include ?? {};
+    const considered = records.filter((record) => {
+      if (Array.isArray(include.paths) && include.paths.length > 0 && !classifierAnyPathMatch(record.scoped_path, include.paths)) {
+        return false;
+      }
+      return !classifierExcludesRecord(record, classifier);
+    });
+    for (const surfaceDef of Array.isArray(classifier.surfaces) ? classifier.surfaces : []) {
+      if (!isPlainMapping(surfaceDef) || typeof surfaceDef.type !== "string") continue;
+      const assurance = surfaceDef.assurance === "L2" ? "L2" : "L1";
+      for (const record of considered) {
+        if (!classifierMatches(record, surfaceDef.detect ?? {}, `${pack.id}.${surfaceDef.type}.detect`)) continue;
+        const surface = {
+          pack: pack.id,
+          pack_version: pack.version ?? null,
+          scope: pack.scope ?? ".",
+          path: record.path,
+          surface_type: surfaceDef.type,
+          assurance_level: assurance,
+          reason: surfaceDef.reason ?? null,
+        };
+        surfaces.push(surface);
+        const requirements = surfaceDef.requires ?? {};
+        const contractIssue = Number.isInteger(issueNumber) && issueNumber > 0
+          ? issueNumber
+          : Number.parseInt(commentBodies.__issue_number ?? "0", 10);
+        const contractMarker = latestBoundPhaseMarker(commentBodies, { issueNumber: contractIssue, phase: "contract" });
+        const hasContractMarker = contractMarker != null || commentBodies.__contract_marker_present === true;
+        const contractOk = hasContractMarker && artifactExists(considered, requirements.contract ?? {}, `${pack.id}.${surfaceDef.type}.requires.contract`);
+        const testOk = artifactExists(considered, requirements.test ?? {}, `${pack.id}.${surfaceDef.type}.requires.test`);
+        const propertyOk = assurance !== "L2" || artifactExists(considered, requirements.property_test ?? {}, `${pack.id}.${surfaceDef.type}.requires.property_test`);
+        const missing = [];
+        if (!hasContractMarker) missing.push("contract_phase_marker");
+        if (!contractOk) missing.push("contract_artifact");
+        if (!testOk) missing.push("test_artifact");
+        if (!propertyOk) missing.push("property_test_artifact");
+        obligations.push({
+          ...surface,
+          required: assurance === "L2"
+            ? ["contract_phase_marker", "contract_artifact", "test_artifact", "property_test_artifact"]
+            : ["contract_phase_marker", "contract_artifact", "test_artifact"],
+          missing: [...new Set(missing)],
+          ok: missing.length === 0,
+        });
+      }
+    }
+  }
+  return {
+    ok: obligations.every((item) => item.ok),
+    surfaces,
+    obligations,
+    missing: obligations.filter((item) => !item.ok),
+  };
+}
+
+async function evaluateAssuranceClassifierForGate({
+  repoRoot,
+  manifest,
+  diffInfo,
+  issueNumber,
+  owner,
+  name,
+  phaseCommentBodies = null,
+}) {
+  let bodies = phaseCommentBodies;
+  if (!Array.isArray(bodies) && owner && name) {
+    bodies = await readIssueCommentBodies(repoRoot, owner, name, issueNumber);
+  }
+  bodies = Array.isArray(bodies) ? bodies : [];
+  bodies.__issue_number = String(issueNumber);
+  bodies.__contract_marker_present = latestBoundPhaseMarker(bodies, { issueNumber, phase: "contract" }) != null;
+  try {
+    return classifyAssuranceSurfacesFromDiff({ manifest, diffInfo, repoRoot, commentBodies: bodies, issueNumber });
+  } catch (error) {
+    return {
+      ok: false,
+      error: "assurance_classifier_failed",
+      message: error.message,
+      surfaces: [],
+      obligations: [],
+      missing: [],
+    };
+  }
+}
+
 export async function runGates({
   repoPath,
   issueNumber,
@@ -4808,6 +5029,7 @@ export async function runGates({
   diffInfo = null,
   postMarker = true,
   markerPoster = null,
+  phaseCommentBodies = null,
 } = {}) {
   if (typeof repoPath !== "string" || repoPath.length === 0) {
     return { ok: false, error: "gate_run_input_invalid", message: "repo_path is required" };
@@ -4884,6 +5106,69 @@ export async function runGates({
     }
   }
   const manifest = manifestLoaded.manifest;
+  let ownerNameForMarkers = null;
+  let commentBodiesForPhases = phaseCommentBodies;
+  if (phase === "local" && postMarker) {
+    try {
+      if (Array.isArray(commentBodiesForPhases)) {
+        ownerNameForMarkers = null;
+      } else {
+        ownerNameForMarkers = await getOwnerRepo(repoRoot);
+        commentBodiesForPhases = await readIssueCommentBodies(
+          repoRoot,
+          ownerNameForMarkers.owner,
+          ownerNameForMarkers.name,
+          issueNumber,
+        );
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: "phase_marker_read_failed",
+        message: error.message,
+        repo_path: repoRoot,
+        issue_number: issueNumber,
+      };
+    }
+    const implGreen = evaluateBoundPhaseMarkerFreshness({
+      commentBodies: commentBodiesForPhases,
+      issueNumber,
+      phase: "impl_green",
+      expected: {
+        diff_hash: effectiveDiffInfo.diff_hash,
+      },
+    });
+    if (!implGreen.ok) {
+      return {
+        repo_path: repoRoot,
+        issue_number: issueNumber,
+        ok: false,
+        ...implGreen,
+      };
+    }
+  }
+  if (phase === "local") {
+    const classifierResult = await evaluateAssuranceClassifierForGate({
+      repoRoot,
+      manifest,
+      diffInfo: effectiveDiffInfo,
+      issueNumber,
+      owner: ownerNameForMarkers?.owner ?? null,
+      name: ownerNameForMarkers?.name ?? null,
+      phaseCommentBodies: commentBodiesForPhases,
+    });
+    if (!classifierResult.ok) {
+      return {
+        ok: false,
+        error: classifierResult.error ?? "assurance_artifacts_missing",
+        message: classifierResult.message ?? "ADR-057 assurance classifier found L1/L2 surfaces without the mandated contract and test artifacts.",
+        repo_path: repoRoot,
+        issue_number: issueNumber,
+        next_action: "post_contract_and_add_required_contract_tests_then_rerun_gc_run_gates",
+        classifier: classifierResult,
+      };
+    }
+  }
   const applicable = selectApplicableGates(manifest, {
     changedFiles: effectiveDiffInfo.changed_files,
     capabilities,
@@ -4955,8 +5240,8 @@ export async function runGates({
       if (markerPoster) {
         marker = await markerPoster({ repoRoot, issueNumber, phase: "gates_green", binding });
       } else {
-        const { owner, name } = await getOwnerRepo(repoRoot);
-        marker = await postGatePhaseMarker(repoRoot, owner, name, issueNumber, "gates_green", binding);
+        const ownerName = ownerNameForMarkers ?? await getOwnerRepo(repoRoot);
+        marker = await postGatePhaseMarker(repoRoot, ownerName.owner, ownerName.name, issueNumber, "gates_green", binding);
       }
     } catch (error) {
       return {
@@ -5779,37 +6064,118 @@ export async function runCodexArchitecturePreflight({
 // the agent passed in.
 // ---------------------------------------------------------------------------
 
-export async function runPostImplementationPlan({ repoPath, issueNumber, planBody, override = false, overrideReason = null }) {
+async function getPhaseCommentBodies({ repoRoot, owner, name, issueNumber, phaseCommentBodies = null }) {
+  if (Array.isArray(phaseCommentBodies)) return phaseCommentBodies;
+  return await readIssueCommentBodies(repoRoot, owner, name, issueNumber);
+}
+
+function phasesFromBodies(commentBodies, issueNumber) {
+  return parsePhaseMarkers(commentBodies, issueNumber);
+}
+
+async function postBoundWorkflowPhase({
+  repoRoot,
+  owner,
+  name,
+  issueNumber,
+  phase,
+  binding = {},
+  body = null,
+  markerPoster = null,
+}) {
+  if (markerPoster) {
+    return await markerPoster({ repoRoot, issueNumber, phase, binding, body });
+  }
+  return await postGatePhaseMarker(repoRoot, owner, name, issueNumber, phase, binding, { commentBody: body });
+}
+
+function validateOverride({ override, overrideReason, issueNumber }) {
+  if (override !== true) return null;
+  if (typeof overrideReason !== "string" || overrideReason.trim() === "") {
+    return {
+      ok: false,
+      error: "phase_override_missing_reason",
+      message:
+        "override=true requires a non-empty override_reason quoting the user's authorization to skip this phase prerequisite. " +
+        "Audits cannot distinguish legitimate overrides from accidents without a reason.",
+      issue_number: issueNumber,
+    };
+  }
+  return null;
+}
+
+function docsOnlyPath(pathValue) {
+  const p = normalizeChangedPath(pathValue);
+  return (
+    p === "README.md" ||
+    p === "CONTRIBUTING.md" ||
+    p === "CHANGELOG.md" ||
+    p.endsWith(".md") ||
+    p.endsWith(".markdown") ||
+    p.startsWith("docs/") ||
+    p.startsWith("architecture/") ||
+    p.startsWith("changelog.d/") ||
+    p.startsWith("skills/") ||
+    p.startsWith(".gc/")
+  );
+}
+
+function validateNonExecutableCarveout({ carveout, changedFiles }) {
+  if (carveout == null || typeof carveout !== "object") {
+    return { ok: false, error: "carveout must be an object" };
+  }
+  if (typeof carveout.reason !== "string" || carveout.reason.trim() === "") {
+    return { ok: false, error: "carveout.reason must be a non-empty string" };
+  }
+  if (typeof carveout.structural_gate !== "string" || carveout.structural_gate.trim() === "") {
+    return { ok: false, error: "carveout.structural_gate must be a non-empty string" };
+  }
+  const files = Array.isArray(changedFiles) ? changedFiles : [];
+  const nonDocs = files.filter((pathValue) => !docsOnlyPath(pathValue));
+  if (nonDocs.length > 0) {
+    return { ok: false, error: `non-executable carve-out only applies to documentation paths; non-doc paths: ${nonDocs.join(", ")}` };
+  }
+  return { ok: true };
+}
+
+async function computeWorkflowDiffBinding(repoRoot, baseRef, headRef, diffInfo) {
+  if (diffInfo != null) return diffInfo;
+  return await computeGitDiffInfo(repoRoot, baseRef, headRef);
+}
+
+export async function runPostInterfaceContract({
+  repoPath,
+  issueNumber,
+  contractBody,
+  baseRef = "origin/dev",
+  headRef = "HEAD",
+  override = false,
+  overrideReason = null,
+  phaseCommentBodies = null,
+  markerPoster = null,
+  diffInfo = null,
+} = {}) {
   if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
-    throw new Error("gc_post_implementation_plan requires a positive integer issue_number");
+    throw new Error("gc_post_interface_contract requires a positive integer issue_number");
   }
-  if (typeof planBody !== "string" || planBody.trim() === "") {
-    throw new Error("gc_post_implementation_plan requires a non-empty plan_body");
+  if (typeof contractBody !== "string" || contractBody.trim() === "") {
+    throw new Error("gc_post_interface_contract requires a non-empty contract_body");
   }
-
   const repoRoot = await ensureGitRepo(repoPath);
-  const { owner, name } = await getOwnerRepo(repoRoot);
+  const ownerRepo = markerPoster ? { owner: null, name: null } : await getOwnerRepo(repoRoot);
+  let commentBodies = phaseCommentBodies;
 
-  // Prerequisite check: preflight must have run for this issue. Override is
-  // available for the same reason as the codex-review cap override — the user
-  // can explicitly authorize skipping the gate (for tiny bug fixes where
-  // preflight is overkill, for example). Override requires a non-empty reason.
-  if (override === true) {
-    if (typeof overrideReason !== "string" || overrideReason.trim() === "") {
-      return {
-        ok: false,
-        error: "phase_override_missing_reason",
-        message:
-          "override=true requires a non-empty override_reason quoting the user's authorization to skip preflight. " +
-          "Audits cannot distinguish legitimate overrides from accidents without a reason.",
-        issue_number: issueNumber,
-      };
+  const overrideError = validateOverride({ override, overrideReason, issueNumber });
+  if (overrideError) return overrideError;
+  if (override !== true) {
+    if (!Array.isArray(commentBodies)) {
+      const ownerName = ownerRepo.owner == null ? await getOwnerRepo(repoRoot) : ownerRepo;
+      commentBodies = await getPhaseCommentBodies({ repoRoot, owner: ownerName.owner, name: ownerName.name, issueNumber });
     }
-  } else {
-    const completed = await readCompletedPhases(repoRoot, owner, name, issueNumber);
+    const completed = phasesFromBodies(commentBodies, issueNumber);
     const decision = evaluatePhasePrerequisite({
       completed,
-      nextPhase: "plan",
+      nextPhase: "contract",
       requires: ["preflight"],
       issueNumber,
     });
@@ -5827,9 +6193,103 @@ export async function runPostImplementationPlan({ repoPath, issueNumber, planBod
     }
   }
 
+  let effectiveDiffInfo;
+  try {
+    effectiveDiffInfo = await computeWorkflowDiffBinding(repoRoot, baseRef, headRef, diffInfo);
+  } catch (error) {
+    return { repo_path: repoRoot, issue_number: issueNumber, ok: false, error: "contract_diff_failed", message: error.message };
+  }
+  const binding = {
+    base_ref: effectiveDiffInfo.base_ref ?? baseRef,
+    head_ref: effectiveDiffInfo.head_ref ?? headRef,
+    diff_hash: effectiveDiffInfo.diff_hash ?? null,
+    contract_hash: sha256Hex(contractBody.trim()),
+  };
+  const ownerName = ownerRepo.owner == null && !markerPoster ? await getOwnerRepo(repoRoot) : ownerRepo;
+  const apiResponse = await postBoundWorkflowPhase({
+    repoRoot,
+    owner: ownerName.owner,
+    name: ownerName.name,
+    issueNumber,
+    phase: "contract",
+    binding,
+    body: contractBody.trim(),
+    markerPoster,
+  });
+  return {
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    ok: true,
+    phase_marker: { phase: "contract", issue_number: issueNumber },
+    binding,
+    engineering_contract: ENGINEERING_CONTRACT_PROPERTIES,
+    override: override === true,
+    override_reason: override === true ? overrideReason.trim() : null,
+    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+  };
+}
+
+export async function runPostImplementationPlan({
+  repoPath,
+  issueNumber,
+  planBody,
+  override = false,
+  overrideReason = null,
+  phaseCommentBodies = null,
+  markerPoster = null,
+}) {
+  if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error("gc_post_implementation_plan requires a positive integer issue_number");
+  }
+  if (typeof planBody !== "string" || planBody.trim() === "") {
+    throw new Error("gc_post_implementation_plan requires a non-empty plan_body");
+  }
+
+  const repoRoot = await ensureGitRepo(repoPath);
+  const ownerRepo = markerPoster ? { owner: null, name: null } : await getOwnerRepo(repoRoot);
+
+  // Prerequisite check: the interface contract must have been posted for this
+  // issue. Override is
+  // available for the same reason as the codex-review cap override — the user
+  // can explicitly authorize skipping the gate (for tiny bug fixes where
+  // contract posting is overkill, for example). Override requires a non-empty reason.
+  const overrideError = validateOverride({ override, overrideReason, issueNumber });
+  if (overrideError) return overrideError;
+  if (override !== true) {
+    const commentBodies = await getPhaseCommentBodies({
+      repoRoot,
+      owner: ownerRepo.owner,
+      name: ownerRepo.name,
+      issueNumber,
+      phaseCommentBodies,
+    });
+    const completed = phasesFromBodies(commentBodies, issueNumber);
+    const decision = evaluatePhasePrerequisite({
+      completed,
+      nextPhase: "plan",
+      requires: ["contract"],
+      issueNumber,
+    });
+    if (!decision.ok) {
+      return {
+        repo_path: repoRoot,
+        issue_number: issueNumber,
+        ok: false,
+        error: decision.error,
+        message: decision.message,
+        missing: decision.missing,
+        completed: decision.completed,
+        next_action: "run_gc_post_interface_contract_first",
+      };
+    }
+  }
+
   // Post the plan + the `plan` phase marker as a single combined comment so
   // the marker and the human-visible plan are the same thread artifact.
-  const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "plan", { commentBody: planBody });
+  const apiResponse = markerPoster
+    ? await markerPoster({ repoRoot, issueNumber, phase: "plan", binding: {}, body: planBody })
+    : await postPhaseMarker(repoRoot, ownerRepo.owner, ownerRepo.name, issueNumber, "plan", { commentBody: planBody });
 
   return {
     repo_path: repoRoot,
@@ -5838,6 +6298,266 @@ export async function runPostImplementationPlan({ repoPath, issueNumber, planBod
     phase_marker: { phase: "plan", issue_number: issueNumber },
     override: override === true ? true : false,
     override_reason: override === true ? overrideReason.trim() : null,
+    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+  };
+}
+
+export async function runAssertTestRed({
+  repoPath,
+  issueNumber,
+  testCommand = null,
+  baseRef = "origin/dev",
+  headRef = "HEAD",
+  carveout = null,
+  phaseCommentBodies = null,
+  markerPoster = null,
+  commandRunner = executeGateCommand,
+  diffInfo = null,
+} = {}) {
+  if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error("gc_assert_test_red requires a positive integer issue_number");
+  }
+  const repoRoot = await ensureGitRepo(repoPath);
+  const ownerRepo = markerPoster ? { owner: null, name: null } : await getOwnerRepo(repoRoot);
+  const commentBodies = await getPhaseCommentBodies({
+    repoRoot,
+    owner: ownerRepo.owner,
+    name: ownerRepo.name,
+    issueNumber,
+    phaseCommentBodies,
+  });
+  const completed = phasesFromBodies(commentBodies, issueNumber);
+  const decision = evaluatePhasePrerequisite({
+    completed,
+    nextPhase: "test_red",
+    requires: ["plan"],
+    issueNumber,
+  });
+  if (!decision.ok) {
+    return {
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      ok: false,
+      error: decision.error,
+      message: decision.message,
+      missing: decision.missing,
+      completed: decision.completed,
+      next_action: "run_gc_post_implementation_plan_first",
+    };
+  }
+  let effectiveDiffInfo;
+  try {
+    effectiveDiffInfo = await computeWorkflowDiffBinding(repoRoot, baseRef, headRef, diffInfo);
+  } catch (error) {
+    return { repo_path: repoRoot, issue_number: issueNumber, ok: false, error: "test_red_diff_failed", message: error.message };
+  }
+
+  let evidence;
+  if (carveout != null) {
+    const carveoutResult = validateNonExecutableCarveout({ carveout, changedFiles: effectiveDiffInfo.changed_files });
+    if (!carveoutResult.ok) {
+      return {
+        repo_path: repoRoot,
+        issue_number: issueNumber,
+        ok: false,
+        error: "test_red_carveout_invalid",
+        message: carveoutResult.error,
+        next_action: "write_a_real_red_test_or_fix_the_carveout",
+      };
+    }
+    evidence = {
+      mode: "non_executable_carveout",
+      reason: carveout.reason.trim(),
+      structural_gate: carveout.structural_gate.trim(),
+    };
+  } else {
+    if (typeof testCommand !== "string" || testCommand.trim() === "") {
+      throw new Error("gc_assert_test_red requires test_command unless carveout is supplied");
+    }
+    const result = await commandRunner({
+      command: testCommand,
+      cwd: repoRoot,
+      timeoutSeconds: GATE_DEFAULT_TIMEOUT_SECONDS,
+      env: buildGateCommandEnv({ GC_PHASE: "test_red" }),
+    });
+    if (result.exit_code === 0 && result.timed_out !== true && result.error == null) {
+      return {
+        repo_path: repoRoot,
+        issue_number: issueNumber,
+        ok: false,
+        error: "test_red_not_red",
+        message: "The supplied test_command passed; test_red requires observing a relevant failing test or contract check before implementation.",
+        exit_code: result.exit_code,
+        stdout: result.stdout ?? "",
+        stderr: result.stderr ?? "",
+        next_action: "write_or_select_a_relevant_failing_test_and_retry",
+      };
+    }
+    evidence = {
+      mode: "red_command",
+      command_hash: sha256Hex(testCommand.trim()),
+      exit_code: result.exit_code,
+      timed_out: result.timed_out === true,
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+    };
+  }
+
+  const binding = {
+    base_ref: effectiveDiffInfo.base_ref ?? baseRef,
+    head_ref: effectiveDiffInfo.head_ref ?? headRef,
+    red_diff_hash: effectiveDiffInfo.diff_hash ?? null,
+    evidence_mode: evidence.mode,
+    command_hash: evidence.command_hash ?? null,
+  };
+  const apiResponse = await postBoundWorkflowPhase({
+    repoRoot,
+    owner: ownerRepo.owner,
+    name: ownerRepo.name,
+    issueNumber,
+    phase: "test_red",
+    binding,
+    body: JSON.stringify(evidence, null, 2),
+    markerPoster,
+  });
+  return {
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    ok: true,
+    phase_marker: { phase: "test_red", issue_number: issueNumber },
+    binding,
+    evidence,
+    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+  };
+}
+
+export async function runAssertImplGreen({
+  repoPath,
+  issueNumber,
+  testCommand = null,
+  baseRef = "origin/dev",
+  headRef = "HEAD",
+  carveout = null,
+  phaseCommentBodies = null,
+  markerPoster = null,
+  commandRunner = executeGateCommand,
+  diffInfo = null,
+} = {}) {
+  if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error("gc_assert_impl_green requires a positive integer issue_number");
+  }
+  const repoRoot = await ensureGitRepo(repoPath);
+  const ownerRepo = markerPoster ? { owner: null, name: null } : await getOwnerRepo(repoRoot);
+  const commentBodies = await getPhaseCommentBodies({
+    repoRoot,
+    owner: ownerRepo.owner,
+    name: ownerRepo.name,
+    issueNumber,
+    phaseCommentBodies,
+  });
+  const completed = phasesFromBodies(commentBodies, issueNumber);
+  const decision = evaluatePhasePrerequisite({
+    completed,
+    nextPhase: "impl_green",
+    requires: ["test_red"],
+    issueNumber,
+  });
+  if (!decision.ok) {
+    return {
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      ok: false,
+      error: decision.error,
+      message: decision.message,
+      missing: decision.missing,
+      completed: decision.completed,
+      next_action: "run_gc_assert_test_red_first",
+    };
+  }
+  let effectiveDiffInfo;
+  try {
+    effectiveDiffInfo = await computeWorkflowDiffBinding(repoRoot, baseRef, headRef, diffInfo);
+  } catch (error) {
+    return { repo_path: repoRoot, issue_number: issueNumber, ok: false, error: "impl_green_diff_failed", message: error.message };
+  }
+
+  let evidence;
+  if (carveout != null) {
+    const carveoutResult = validateNonExecutableCarveout({ carveout, changedFiles: effectiveDiffInfo.changed_files });
+    if (!carveoutResult.ok) {
+      return {
+        repo_path: repoRoot,
+        issue_number: issueNumber,
+        ok: false,
+        error: "impl_green_carveout_invalid",
+        message: carveoutResult.error,
+        next_action: "run_targeted_tests_or_fix_the_carveout",
+      };
+    }
+    evidence = {
+      mode: "non_executable_carveout",
+      reason: carveout.reason.trim(),
+      structural_gate: carveout.structural_gate.trim(),
+    };
+  } else {
+    if (typeof testCommand !== "string" || testCommand.trim() === "") {
+      throw new Error("gc_assert_impl_green requires test_command unless carveout is supplied");
+    }
+    const result = await commandRunner({
+      command: testCommand,
+      cwd: repoRoot,
+      timeoutSeconds: GATE_DEFAULT_TIMEOUT_SECONDS,
+      env: buildGateCommandEnv({ GC_PHASE: "impl_green" }),
+    });
+    if (result.exit_code !== 0 || result.timed_out === true || result.error != null) {
+      return {
+        repo_path: repoRoot,
+        issue_number: issueNumber,
+        ok: false,
+        error: "impl_green_not_green",
+        message: "The supplied test_command did not pass; impl_green requires implementation plus targeted tests to be green.",
+        exit_code: result.exit_code,
+        timed_out: result.timed_out === true,
+        stdout: result.stdout ?? "",
+        stderr: result.stderr ?? "",
+        next_action: "fix_implementation_or_tests_and_retry",
+      };
+    }
+    evidence = {
+      mode: "green_command",
+      command_hash: sha256Hex(testCommand.trim()),
+      exit_code: result.exit_code,
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+    };
+  }
+
+  const binding = {
+    base_ref: effectiveDiffInfo.base_ref ?? baseRef,
+    head_ref: effectiveDiffInfo.head_ref ?? headRef,
+    diff_hash: effectiveDiffInfo.diff_hash ?? null,
+    evidence_mode: evidence.mode,
+    command_hash: evidence.command_hash ?? null,
+  };
+  const apiResponse = await postBoundWorkflowPhase({
+    repoRoot,
+    owner: ownerRepo.owner,
+    name: ownerRepo.name,
+    issueNumber,
+    phase: "impl_green",
+    binding,
+    body: JSON.stringify(evidence, null, 2),
+    markerPoster,
+  });
+  return {
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    ok: true,
+    phase_marker: { phase: "impl_green", issue_number: issueNumber },
+    binding,
+    evidence,
     comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
     comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
   };
@@ -6084,6 +6804,72 @@ async function readVocabularyForReview(repoRoot, baseBranch) {
   return null;
 }
 
+export const ENGINEERING_CONTRACT_PROPERTIES = Object.freeze([
+  {
+    property: "Interface-first",
+    target: "A contract artifact precedes implementation; every new public symbol is exercised through the public surface.",
+    acceptance: "contract phase marker, plan-to-diff reconciliation, assurance classifier, contract_boundary, and tests tied to the declared contract.",
+    reviewer_question: "Does the diff implement every obligation in the posted interface contract through the public surface?",
+  },
+  {
+    property: "Whole-system fit",
+    target: "The change uses existing cross-cutting helpers, boundaries, and data models instead of reimplementing envelopes, logging, authorization, traceability, or validation helpers.",
+    acceptance: "architecture, policy, anti-hand-roll rules, and architecture review grounded in .ground-control.yaml vocabulary and binding ADRs.",
+    reviewer_question: "Does any new helper bypass an existing repository helper, boundary, or data model named in the repo vocabulary?",
+  },
+  {
+    property: "Right-sized simplicity",
+    target: "The implementation is the smallest design that satisfies the requirement and does not add scope outside the plan.",
+    acceptance: "complexity, policy, plan-to-diff reconciliation, scope-expansion refusal, and review grounded in the posted plan.",
+    reviewer_question: "Does the diff add scope or abstraction not required by the posted plan?",
+  },
+  {
+    property: "Realistic defensive coding",
+    target: "Inputs are validated at system boundaries; state transitions, security boundaries, and corruption-prone mutators carry explicit contracts and tests.",
+    acceptance: "ADR-057 assurance classifier, contract_boundary, and property_verification where classified L2.",
+    reviewer_question: "Does each classified boundary, transition, graph operation, or mutator carry the mandated contract and test artifact?",
+  },
+  {
+    property: "Test strength",
+    target: "Tests fail when the implementation is broken, not only when lines are executed.",
+    acceptance: "mutation, diff_coverage, property_verification, unit_tests, integration_tests, and test-strength review grounded in the posted contract.",
+    reviewer_question: "Would the changed tests fail if an obligation in the posted contract were broken?",
+  },
+  {
+    property: "Secure from the gate",
+    target: "The first draft avoids injection, server-side request forgery, unsafe deserialization, missing authorization, secret exposure, and insecure dependency changes.",
+    acceptance: "sast, secret_scan, dependency_policy, and security review grounded in CWE or attacker-model evidence.",
+    reviewer_question: "Does the diff introduce a concrete attacker path or weaken an existing control?",
+  },
+  {
+    property: "Architectural conformance",
+    target: "The diff stays inside declared boundaries and respects binding ADRs, package rules, and graph or traceability invariants.",
+    acceptance: "architecture, traceability, policy, ADR citations in the plan, phase-marker prerequisites, and architecture review grounded in binding ADRs.",
+    reviewer_question: "Does the diff violate a binding ADR, package rule, graph invariant, or traceability contract?",
+  },
+  {
+    property: "Extensibility seam",
+    target: "The design names the next expected variation and leaves the smallest useful seam for it.",
+    acceptance: "review grounded in the plan and interface contract.",
+    reviewer_question: "Does the contract name the next expected variation without adding speculative abstraction?",
+  },
+]);
+
+export function buildEngineeringContractSection() {
+  const lines = [
+    "## Engineering Contract (ADR-059)",
+    "",
+    "Use this same contract during generation and review. Each finding must cite the failed property and the artifact it evaluated.",
+    "",
+  ];
+  for (const entry of ENGINEERING_CONTRACT_PROPERTIES) {
+    lines.push(`- **${entry.property}**: ${entry.target}`);
+    lines.push(`  Acceptance path: ${entry.acceptance}`);
+    lines.push(`  Reviewer question: ${entry.reviewer_question}`);
+  }
+  return lines;
+}
+
 // Canonical principal-engineer rubric — single source consumed by codex core,
 // codex security, and test-quality reviewers. Tests assert the key phrases in
 // each consumer's prompt. The reviewer-specific subject-matter focus (e.g.
@@ -6100,6 +6886,8 @@ export function buildPrincipalEngineerRubric({ reviewerLabel, reviewerLens = nul
   lines.push("You are a principal/staff engineer reviewing this change. The goal is JUDGMENT, not finding accumulation.");
   lines.push("");
   lines.push(...buildVocabularySection(vocabulary));
+  lines.push("");
+  lines.push(...buildEngineeringContractSection());
   lines.push("");
   lines.push("Two-pass discipline:");
   lines.push("1. First, write `architectural_read` — one paragraph stating what a principal engineer would say about the SHAPE of this change. Does it fit the repo's vocabulary above? Cross-cutting concerns it touches. Where the design seam is. Whether it forecloses the obvious next variation. \"This is shaped correctly\" is a valid architectural_read.");
@@ -6915,7 +7703,14 @@ export function buildPhaseMarker({ phase, issueNumber }) {
 
 const BOUND_PHASE_MARKER_RE = /<!--\s*gc:phase\s+([^]*?)-->/g;
 const PHASE_MARKER_ATTR_RE = /([a-z_]+)="([^"]*)"/g;
-const GATE_BOUND_PHASES = new Set(["gates_green", "remote_gates_green"]);
+const BOUND_PHASES = new Set(["contract", "test_red", "impl_green", "gates_green", "remote_gates_green"]);
+const PHASE_NEXT_ACTIONS = Object.freeze({
+  contract: "run_gc_post_interface_contract",
+  test_red: "run_gc_assert_test_red",
+  impl_green: "run_gc_assert_impl_green",
+  gates_green: "rerun_gc_run_gates",
+  remote_gates_green: "rerun_gc_watch_required_statuses",
+});
 
 function markerAttr(value) {
   return encodeURIComponent(String(value));
@@ -6938,8 +7733,8 @@ function parseMarkerAttrs(attrText) {
 }
 
 export function buildBoundPhaseMarker({ phase, issueNumber, binding = {}, body = null }) {
-  if (!GATE_BOUND_PHASES.has(phase)) {
-    throw new Error(`buildBoundPhaseMarker only supports: ${[...GATE_BOUND_PHASES].join(", ")}`);
+  if (!BOUND_PHASES.has(phase)) {
+    throw new Error(`buildBoundPhaseMarker only supports: ${[...BOUND_PHASES].join(", ")}`);
   }
   const attrs = {
     phase,
@@ -6954,8 +7749,8 @@ export function buildBoundPhaseMarker({ phase, issueNumber, binding = {}, body =
     `<!-- gc:phase ${attrText} -->`,
     "",
     `_gc workflow phase recorded: \`${phase}\` (issue #${issueNumber})._ ` +
-      "Posted by the MCP server after re-verifying the bound gate state. " +
-      "Do not edit or delete — downstream tools use this marker and binding to detect stale gate results.",
+      "Posted by the MCP server after re-verifying the bound workflow state. " +
+      "Do not edit or delete — downstream tools use this marker and binding to detect stale results.",
   ].join("\n");
   return body ? `${marker}\n\n${body}` : marker;
 }
@@ -6970,10 +7765,16 @@ export function parseBoundPhaseMarkers(commentBodies, { issueNumber, phase = nul
       const markerIssue = Number.parseInt(attrs.issue, 10);
       if (Number.isInteger(issueNumber) && markerIssue !== issueNumber) continue;
       if (phase && attrs.phase !== phase) continue;
-      records.push({ phase: attrs.phase, issue_number: markerIssue, attrs });
+      const tail = body.slice((match.index ?? 0) + match[0].length).trim();
+      records.push({ phase: attrs.phase, issue_number: markerIssue, attrs, body: tail });
     }
   }
   return records;
+}
+
+export function latestBoundPhaseMarker(commentBodies, { issueNumber, phase } = {}) {
+  const markers = parseBoundPhaseMarkers(commentBodies, { issueNumber, phase });
+  return markers.length > 0 ? markers[markers.length - 1] : null;
 }
 
 export function evaluateBoundPhaseMarkerFreshness({ commentBodies, issueNumber, phase, expected }) {
@@ -6983,7 +7784,7 @@ export function evaluateBoundPhaseMarkerFreshness({ commentBodies, issueNumber, 
       ok: false,
       error: "missing_phase_marker",
       missing: [phase],
-      next_action: phase === "gates_green" ? "rerun_gc_run_gates" : "rerun_gc_watch_required_statuses",
+      next_action: PHASE_NEXT_ACTIONS[phase] ?? `run_${phase}_phase`,
     };
   }
   const latest = markers[markers.length - 1];
@@ -7004,7 +7805,7 @@ export function evaluateBoundPhaseMarkerFreshness({ commentBodies, issueNumber, 
       stale_keys: staleKeys,
       expected: expectedSubset,
       actual,
-      next_action: phase === "gates_green" ? "rerun_gc_run_gates" : "rerun_gc_watch_required_statuses",
+      next_action: PHASE_NEXT_ACTIONS[phase] ?? `rerun_${phase}_phase`,
     };
   }
   return { ok: true, marker: phase, attrs: latest.attrs };
@@ -8897,6 +9698,7 @@ export function buildTestQualityReviewPrompt({
   baseBranch,
   changedTestFiles,
   vocabulary = null,
+  interfaceContract = null,
 }) {
   if (typeof baseBranch !== "string" || baseBranch.trim() === "") {
     throw new Error("buildTestQualityReviewPrompt: baseBranch must be a non-empty string");
@@ -8914,9 +9716,19 @@ export function buildTestQualityReviewPrompt({
     }
   }
   const listing = changedTestFiles.map((p) => `- ${p}`).join("\n");
+  const contractText =
+    typeof interfaceContract === "string" && interfaceContract.trim() !== ""
+      ? interfaceContract.trim()
+      : "No posted interface contract was found in the issue thread. Treat that as a workflow gap when tests cannot be tied to a public contract.";
   return [
     "You are reviewing test files changed against the base branch `" + baseBranch + "`.",
     "Your job is to identify TESTS THAT PROVIDE FALSE ASSURANCE — tests that pass but would still pass if the implementation were broken. Return `verdict: ship` when the tests are solid — that is a valid outcome.",
+    "",
+    "## Posted interface contract oracle",
+    "",
+    "Use this language-neutral contract as the oracle for test strength. A strong test suite proves the obligations below fail when broken; line coverage without obligation checks is insufficient.",
+    "",
+    contractText,
     "",
     "## Files to review",
     "",
@@ -9579,10 +10391,17 @@ export async function runTestQualityReview({
   // Vocabulary sourced from trusted base ref when the PR touches the policy
   // file (#931 codex cycle-1 security finding F3). Same pattern as runCodexReview.
   const vocabulary = await readVocabularyForReview(repoRoot, effectiveBaseBranch);
+  let interfaceContract = null;
+  try {
+    interfaceContract = await readLatestInterfaceContractBody(repoRoot, owner, name, effectiveIssue);
+  } catch {
+    interfaceContract = null;
+  }
   const prompt = buildTestQualityReviewPrompt({
     baseBranch: effectiveBaseBranch,
     changedTestFiles,
     vocabulary,
+    interfaceContract,
   });
   let stdout;
   try {
@@ -9845,6 +10664,12 @@ async function postFindingsRecordAndCycleMarker({
 async function readPriorTestQualityReviewCycleCount(repoRoot, owner, name, issueNumber) {
   const bodies = await readIssueCommentBodies(repoRoot, owner, name, issueNumber);
   return parseTestQualityReviewCycleMarkers(bodies, issueNumber);
+}
+
+async function readLatestInterfaceContractBody(repoRoot, owner, name, issueNumber) {
+  const bodies = await readIssueCommentBodies(repoRoot, owner, name, issueNumber);
+  const marker = latestBoundPhaseMarker(bodies, { issueNumber, phase: "contract" });
+  return marker && typeof marker.body === "string" && marker.body.trim() !== "" ? marker.body.trim() : null;
 }
 
 // Helper: post an issue comment, return its HTML URL.
@@ -16858,6 +17683,7 @@ export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
   read_issue_context: { tier: "low" },
   architecture_preflight: { tier: "low" },
   codebase_assessment: { tier: "medium" },
+  contract_definition: { tier: "high", agent: "parent", fallback: "error" },
   planning: { tier: "high", agent: "parent", fallback: "error" },
   implementation: { tier: "medium" },
   clause_mapping: { tier: "medium" },

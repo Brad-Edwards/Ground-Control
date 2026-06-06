@@ -196,3 +196,16 @@ workflow contract is documented in ADR-031, `docs/DEVELOPMENT_WORKFLOW.md`,
 review-convergence MCP changes. No change to the Vale rule set, the
 `tools/install-vale.sh` installer, or the `.vale.ini` configuration is
 required.
+
+**2026-06-06 (issue #1075 contract-first + assurance classifier).** Added
+`gc_post_interface_contract`, `gc_assert_test_red`, and `gc_assert_impl_green`
+to the portable `/implement` MCP surface and added per-pack
+`classifier.yaml` files for ADR-057 assurance classification. The workflow
+contract is documented in `docs/DEVELOPMENT_WORKFLOW.md`, `docs/WORKFLOW.md`,
+`skills/implement/SKILL.md`, `skills/implement/steps/step-03.5-interface-contract.md`,
+`skills/implement/steps/step-04-planning.md`, `skills/implement/steps/step-04.4-tdd.md`,
+and `skills/implement/steps/step-06-completion-gate.md`; `docs/DOC_STYLE.md`
+names the new marker and classifier surfaces as part of the portable
+gate-engine documentation model. No change to the Vale rule set, the
+`tools/install-vale.sh` installer, or the `.vale.ini` configuration is
+required.
