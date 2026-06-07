@@ -146,9 +146,6 @@ Config contract:
 ### Gate Engine Core
 
 The MCP server exposes the portable gate engine through `gc_run_gates`. The tool is the execution boundary for local gates: agents do not parse `.gc/gates.yaml`, choose provider commands, compute diff hashes, or write gate markers in prose.
-The consumer onboarding procedure is
-[`docs/GATE_PACK_ONBOARDING.md`](GATE_PACK_ONBOARDING.md). Ground Control's
-worked adoption record is [`docs/GATE_PACK_ADOPTION.md`](GATE_PACK_ADOPTION.md).
 
 `gc_run_gates` input:
 
@@ -227,9 +224,7 @@ Release signatures and provenance are recorded as `TODO` metadata until signed
 artifacts exist.
 
 `gc_install_workflow_assets` installs or upgrades workflow assets in a consumer
-repository. Ground Control is the engine host because it contains
-`mcp/ground-control/lib.js`; host installs skip `.gc/vendor/` and report
-`vendoring.status: "skipped"`.
+repository:
 
 ```json
 {
@@ -247,17 +242,13 @@ repository. Ground Control is the engine host because it contains
 
 The installer resolves the highest matching engine and pack semver entries,
 verifies both release artifact checksums, vendors the exact engine under
-`.gc/vendor/ground-control/engine/<version>/` and the exact pack under
-`.gc/vendor/ground-control/packs/<pack-id>/<version>/` for non-host consumer
-repositories, copies templates, writes or merges `.gc/gates.yaml`, writes
-`.gc/workflow-lock.json`, updates `.ground-control.yaml` with
-`workflow.engine`, `workflow.gate_manifest`, and `workflow.packs[]`,
-optionally adds declared dev dependencies through the detected package
-manager, and runs the selected pack's self-test. It leaves normal repository
-file changes for review. Consumer onboarding commits the manifest, lockfile,
-pack config under `.gc/gate-packs/`, baselines, and CI wiring. It does not
-commit `.gc/vendor/`; that directory is re-materialized by install or avoided
-by using the shared host MCP server.
+`.gc/vendor/ground-control/engine/<version>/`, vendors the exact pack under
+`.gc/vendor/ground-control/packs/<pack-id>/<version>/`, copies templates,
+writes or merges `.gc/gates.yaml`, writes `.gc/workflow-lock.json`, updates
+`.ground-control.yaml` with `workflow.engine`, `workflow.gate_manifest`, and
+`workflow.packs[]`, optionally adds declared dev dependencies through the
+detected package manager, and runs the selected pack's self-test. It leaves
+normal repository file changes for review.
 
 Self-tests create a temporary fixture repository, install the pack, validate
 the generated manifest, run one passing gate, run one intentional failing gate

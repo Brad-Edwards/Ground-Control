@@ -6,9 +6,9 @@
     "compatible": ">=1.0.0 <2.0.0",
     "source_url": "workflow/engine",
     "artifact": "workflow/releases/gc-engine-1.0.0.tgz",
-    "sha256": "0282a7f9afe425f6ed0e6025a0112b2cb1c7577a5a413a0401936d3210a12081",
-    "source_sha256": "dca017d8fc7b0b16a5e09233d17ab86035397637d067dabca30698d1e6f3c812",
-    "checksum": "sha256:0282a7f9afe425f6ed0e6025a0112b2cb1c7577a5a413a0401936d3210a12081",
+    "sha256": "1e241494624a77731740c746ba7911b74992c5d73662ff00444f63dba1b107f5",
+    "source_sha256": "8b3dc2e26396fe304f4df14545f13ff19dbce35ee04fe3504dd6361b6502743b",
+    "checksum": "sha256:1e241494624a77731740c746ba7911b74992c5d73662ff00444f63dba1b107f5",
     "signer": "TODO: release signer",
     "trust_policy": "checksum-only-development",
     "signing": {

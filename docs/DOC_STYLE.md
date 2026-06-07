@@ -174,10 +174,7 @@ this documentation coverage model. Changes to threshold-tier materialization,
 `workflow.gate_overrides` semantics, gate path matching, or workflow-engine eval
 coverage are part of the same portable gate-engine documentation surface. The
 Python gate-pack environment launcher and its installer behavior are also part
-of that surface. Consumer onboarding and host-vendoring behavior are documented
-in `docs/GATE_PACK_ONBOARDING.md`, `docs/DEVELOPMENT_WORKFLOW.md`, and
-`workflow/README.md`; Ground Control's adoption-specific baselines remain in
-`docs/GATE_PACK_ADOPTION.md`.
+of that surface.
 
 Review-convergence MCP changes for `/implement` are workflow-contract changes.
 Document dispatcher actions, reviewer-lens envelopes, effective caps,
