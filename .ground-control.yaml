@@ -7,8 +7,8 @@ workflow:
   lint_command: cd backend && ./gradlew spotlessCheck
   format_command: cd backend && ./gradlew spotlessApply
 sonarcloud:
-  project_key: KeplerOps_Ground-Control
-  organization: KeplerOps
+  project_key: Brad-Edwards_Ground-Control
+  organization: brad-edwards
 remote_quality:
   tier: zero_overall_issues
 rules:
