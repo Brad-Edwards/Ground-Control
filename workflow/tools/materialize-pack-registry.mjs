@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,175 +35,6 @@ const capabilities = [
   "policy",
   "remote_status",
 ];
-
-const pythonLauncherTemplate = "templates/gc-python-run";
-const pythonLauncherTarget = ".gc/gate-packs/python/gc-python-run";
-const pythonPackToolPins = Object.freeze([
-  "bandit==1.9.4",
-  "build==1.5.0",
-  "coverage==7.14.1",
-  "diff-cover==10.3.0",
-  "hypothesis==6.155.2",
-  "import-linter==2.11",
-  "mutmut==3.6.0",
-  "mypy==1.20.2",
-  "nox==2026.4.10",
-  "pip-audit==2.10.0",
-  "pre-commit==4.6.0",
-  "pytest==8.4.2",
-  "pytest-cov==7.1.0",
-  "ruff==0.15.16",
-]);
-
-const pythonLauncherScript = [
-  "#!/bin/sh",
-  "set -eu",
-  "",
-  "TOOL_PINS='",
-  ...pythonPackToolPins,
-  "'",
-  "",
-  "note() {",
-  "  printf '%s\\n' \"gc-python-run: $1\" >&2",
-  "}",
-  "",
-  "fail() {",
-  "  printf '%s\\n' \"gc-python-run: $1\" >&2",
-  "  exit \"${2:-1}\"",
-  "}",
-  "",
-  "has_pyproject_section() {",
-  "  section=$1",
-  "  [ -f pyproject.toml ] && grep -Eq \"^[[:space:]]*\\[$section\\][[:space:]]*(#.*)?$\" pyproject.toml",
-  "}",
-  "",
-  "run_from_venv() {",
-  "  venv_dir=$1",
-  "  label=$2",
-  "  shift 2",
-  "  venv_bin=$venv_dir/bin",
-  "  if [ ! -x \"$venv_bin/python\" ]; then",
-  "    fail \"$venv_dir is not a usable Python virtual environment\" 127",
-  "  fi",
-  "  note \"$label\"",
-  "  if [ \"$#\" -eq 0 ]; then",
-  "    exec \"$venv_bin/python\"",
-  "  fi",
-  "  command_name=$1",
-  "  case \"$command_name\" in",
-  "    python|python3)",
-  "      shift",
-  "      exec \"$venv_bin/python\" \"$@\"",
-  "      ;;",
-  "    sh)",
-  "      shift",
-  "      PATH=\"$venv_bin:/usr/bin:/bin\"",
-  "      export PATH",
-  "      exec /bin/sh \"$@\"",
-  "      ;;",
-  "    */*)",
-  "      exec \"$@\"",
-  "      ;;",
-  "    *)",
-  "      if [ -x \"$venv_bin/$command_name\" ]; then",
-  "        shift",
-  "        exec \"$venv_bin/$command_name\" \"$@\"",
-  "      fi",
-  "      fail \"$command_name is not installed in $venv_dir\" 127",
-  "      ;;",
-  "  esac",
-  "}",
-  "",
-  "if [ \"$#\" -eq 0 ]; then",
-  "  fail 'usage: gc-python-run <tool> [args...]' 64",
-  "fi",
-  "",
-  "if [ \"${1:-}\" = \"pyright-or-mypy\" ]; then",
-  "  shift",
-  "  set -- sh -c 'if command -v pyright >/dev/null 2>&1; then exec pyright \"$@\"; fi; exec mypy --strict . \"$@\"' pyright-or-mypy \"$@\"",
-  "elif [ \"${1:-}\" = \"coverage-diff-cover\" ]; then",
-  "  shift",
-  "  set -- sh -c 'mkdir -p .gc/reports/python && coverage run -m pytest && coverage xml -o .gc/reports/python/coverage.xml && diff-cover .gc/reports/python/coverage.xml --fail-under=90 \"$@\"' coverage-diff-cover \"$@\"",
-  "fi",
-  "",
-  "if command -v uv >/dev/null 2>&1; then",
-  "  note 'uv run'",
-  "  exec uv run -- \"$@\"",
-  "fi",
-  "",
-  "if command -v poetry >/dev/null 2>&1 && has_pyproject_section 'tool\\.poetry'; then",
-  "  note 'poetry run'",
-  "  exec poetry run -- \"$@\"",
-  "fi",
-  "",
-  "if command -v hatch >/dev/null 2>&1 && has_pyproject_section 'tool\\.hatch'; then",
-  "  note 'hatch run'",
-  "  exec hatch run -- \"$@\"",
-  "fi",
-  "",
-  "if [ \"${VIRTUAL_ENV:-}\" != \"\" ] && [ -x \"$VIRTUAL_ENV/bin/python\" ]; then",
-  "  run_from_venv \"$VIRTUAL_ENV\" '$VIRTUAL_ENV'",
-  "fi",
-  "",
-  "if [ -x .venv/bin/python ]; then",
-  "  run_from_venv .venv '.venv'",
-  "fi",
-  "",
-  "if [ -x venv/bin/python ]; then",
-  "  run_from_venv venv 'venv'",
-  "fi",
-  "",
-  "if ! command -v python3 >/dev/null 2>&1; then",
-  "  fail 'python3 is required to create .venv for the fallback runner' 127",
-  "fi",
-  "",
-  "python3 -m venv .venv",
-  "fallback_python=.venv/bin/python",
-  "if [ ! -x \"$fallback_python\" ]; then",
-  "  fail 'python3 -m venv did not create .venv/bin/python' 127",
-  "fi",
-  "# shellcheck disable=SC2086",
-  "\"$fallback_python\" -m pip install $TOOL_PINS",
-  "run_from_venv .venv 'created .venv with pinned pack tools'",
-  "",
-].join("\n");
-
-const pythonSelftestPyproject = [
-  "[project]",
-  "name = \"gc-pack-python-selftest\"",
-  "version = \"0.1.0\"",
-  "requires-python = \">=3.10\"",
-  "",
-  "[dependency-groups]",
-  "dev = [",
-  "  \"pytest==8.4.2\",",
-  "]",
-  "",
-  "[tool.pytest.ini_options]",
-  "pythonpath = [\"src\"]",
-  "",
-].join("\n");
-
-const pythonPackReadme = [
-  "# Python Gate Pack",
-  "",
-  "Python gates execute through `.gc/gate-packs/python/gc-python-run` rather than bare global Python tools.",
-  "",
-  "The launcher resolves the project environment in this order:",
-  "",
-  "1. `uv run -- <tool>` when `uv` is available.",
-  "2. `poetry run -- <tool>` when `poetry` is available and `pyproject.toml` has `[tool.poetry]`.",
-  "3. `hatch run -- <tool>` when `hatch` is available and `pyproject.toml` has `[tool.hatch]`.",
-  "4. An existing project virtual environment from `$VIRTUAL_ENV`, `.venv/`, or `venv/`.",
-  "5. A generated `.venv` with the pack's pinned fallback tool set.",
-  "",
-  "Each invocation writes one stderr line naming the selected runner. The fallback `.venv` path installs exact tool pins from the pack; it does not install global latest Python tools.",
-  "",
-].join("\n");
-
-function pythonRun(command) {
-  return `${pythonLauncherTarget} ${command}`;
-}
 
 function provided(provider, command, paths, options = {}) {
   return {
@@ -368,25 +199,22 @@ const packs = [
     ],
     install: {
       templates: [
-        { source: pythonLauncherTemplate, target: pythonLauncherTarget, executable: true },
         { source: "templates/pyproject.gc.toml", target: ".gc/gate-packs/python/pyproject.gc.toml" },
         { source: "templates/importlinter.ini", target: ".gc/gate-packs/python/importlinter.ini" },
       ],
-      dev_dependencies: pythonPackToolPins,
+      dev_dependencies: ["ruff", "pytest", "pytest-cov", "hypothesis", "diff-cover", "import-linter", "bandit", "pip-audit"],
     },
-    runtime: {
-      python_environment_launcher: pythonLauncherTarget,
-      resolution_order: ["uv", "poetry", "hatch", "$VIRTUAL_ENV", ".venv", "venv", "generated .venv"],
-      fallback_tool_dependencies: pythonPackToolPins,
-    },
-    selftestTools: [{ name: "uv", command: "uv", args: ["--version"] }],
+    selftestTools: [
+      { name: "python3", command: "python3", args: ["--version"] },
+      { name: "pytest", command: "python3", args: ["-m", "pytest", "--version"] },
+    ],
     selftest: {
       passCapability: "unit_tests",
       failCapability: "unit_tests",
       missingCapability: "contract_boundary",
       changedFiles: ["src/gc_pack_selftest/__init__.py", "tests/test_sample.py"],
       files: {
-        "pyproject.toml": pythonSelftestPyproject,
+        "pyproject.toml": "[project]\nname = \"gc-pack-python-selftest\"\nversion = \"0.1.0\"\nrequires-python = \">=3.10\"\n\n[tool.pytest.ini_options]\npythonpath = [\"src\"]\n",
         "src/gc_pack_selftest/__init__.py": "def add(left: int, right: int) -> int:\n    return left + right\n",
         "tests/test_sample.py": "from gc_pack_selftest import add\n\n\ndef test_adds_numbers():\n    assert add(2, 2) == 4\n",
       },
@@ -395,32 +223,32 @@ const packs = [
       },
     },
     bindings: withAll({
-      format: provided("ruff-format", pythonRun("ruff format --check ."), ["**/*.py", "pyproject.toml"]),
-      lint: provided("ruff-check", pythonRun("ruff check ."), ["**/*.py", "pyproject.toml"], {
+      format: provided("ruff-format", "ruff format --check .", ["**/*.py", "pyproject.toml"]),
+      lint: provided("ruff-check", "ruff check .", ["**/*.py", "pyproject.toml"], {
         thresholds: {
           platform_minimum: { metric: "ruff_errors", max: 0 },
           recommendation: { metric: "ruff_errors", max: 0 },
         },
       }),
-      build: provided("python-build", pythonRun("python -m build"), ["pyproject.toml", "setup.cfg", "setup.py", "**/*.py"], { blocking: false }),
-      type_safety: provided("pyright-or-mypy", pythonRun("pyright-or-mypy"), ["**/*.py", "pyproject.toml"], {
+      build: provided("python-build", "python -m build", ["pyproject.toml", "setup.cfg", "setup.py", "**/*.py"], { blocking: false }),
+      type_safety: provided("pyright-or-mypy", "if command -v pyright >/dev/null 2>&1; then pyright; else mypy --strict .; fi", ["**/*.py", "pyproject.toml"], {
         thresholds: {
           platform_minimum: { metric: "type_errors", max: 0 },
           recommendation: { metric: "type_errors", max: 0 },
         },
       }),
-      unit_tests: provided("pytest", pythonRun("pytest"), ["**/*.py", "tests/**", "pyproject.toml"], { timeout_seconds: 1200 }),
-      integration_tests: provided("pytest-integration", pythonRun("pytest -m integration"), ["**/*.py", "tests/**", "pyproject.toml"], { blocking: false, timeout_seconds: 1800 }),
+      unit_tests: provided("pytest", "pytest", ["**/*.py", "tests/**", "pyproject.toml"], { timeout_seconds: 1200 }),
+      integration_tests: provided("pytest-integration", "pytest -m integration", ["**/*.py", "tests/**", "pyproject.toml"], { blocking: false, timeout_seconds: 1800 }),
       contract_boundary: missing("Python boundary contracts depend on the project's Pydantic/icontract/deal/runtime-guard choices."),
-      property_verification: provided("hypothesis", pythonRun("pytest -m fuzz"), ["**/*.py", "tests/**", "pyproject.toml"], { blocking: false, timeout_seconds: 1800 }),
-      architecture: provided("import-linter", pythonRun("lint-imports --config .gc/gate-packs/python/importlinter.ini"), ["**/*.py", "pyproject.toml"], { blocking: false }),
-      complexity: provided("ruff-complexity", pythonRun("ruff check --select C901 ."), ["**/*.py", "pyproject.toml"], {
+      property_verification: provided("hypothesis", "pytest -m fuzz", ["**/*.py", "tests/**", "pyproject.toml"], { blocking: false, timeout_seconds: 1800 }),
+      architecture: provided("import-linter", "lint-imports --config .gc/gate-packs/python/importlinter.ini", ["**/*.py", "pyproject.toml"], { blocking: false }),
+      complexity: provided("ruff-complexity", "ruff check --select C901 .", ["**/*.py", "pyproject.toml"], {
         thresholds: {
           platform_minimum: { metric: "mccabe_complexity", max: 15 },
           recommendation: { metric: "mccabe_complexity", max: 10 },
         },
       }),
-      mutation: provided("mutmut", pythonRun("mutmut run"), ["**/*.py", "tests/**", "pyproject.toml"], {
+      mutation: provided("mutmut", "mutmut run", ["**/*.py", "tests/**", "pyproject.toml"], {
         blocking: false,
         timeout_seconds: 3600,
         thresholds: {
@@ -428,20 +256,20 @@ const packs = [
           recommendation: { metric: "mutation_score", min: 80 },
         },
       }),
-      diff_coverage: provided("coverage-diff-cover", pythonRun("coverage-diff-cover"), ["**/*.py", "tests/**"], {
+      diff_coverage: provided("coverage-diff-cover", "coverage run -m pytest && coverage xml -o .gc/reports/python/coverage.xml && diff-cover .gc/reports/python/coverage.xml --fail-under=90", ["**/*.py", "tests/**"], {
         thresholds: {
           platform_minimum: { metric: "changed_line_coverage", min: 80 },
           recommendation: { metric: "changed_line_coverage", min: 90 },
         },
       }),
-      sast: provided("bandit", pythonRun("bandit -r . -ll"), ["**/*.py", "pyproject.toml"], {
+      sast: provided("bandit", "bandit -r . -ll", ["**/*.py", "pyproject.toml"], {
         thresholds: {
           platform_minimum: { metric: "sast_severity", severity: "high" },
           recommendation: { metric: "sast_severity", severity: "medium" },
         },
       }),
       secret_scan: provided("gitleaks", "gitleaks detect --source . --no-git --redact --exit-code 1", commonCodePaths),
-      dependency_policy: provided("pip-audit-or-uv-audit", `if command -v uv >/dev/null 2>&1 && [ -f uv.lock ]; then uv audit; else ${pythonRun("pip-audit")}; fi`, ["pyproject.toml", "requirements*.txt", "uv.lock", "poetry.lock"], {
+      dependency_policy: provided("pip-audit-or-uv-audit", "if command -v uv >/dev/null 2>&1 && [ -f uv.lock ]; then uv audit; else pip-audit; fi", ["pyproject.toml", "requirements*.txt", "uv.lock", "poetry.lock"], {
         thresholds: {
           platform_minimum: { metric: "vulnerability_severity", severity: "high" },
           recommendation: { metric: "vulnerability_severity", severity: "medium" },
@@ -450,13 +278,10 @@ const packs = [
       accessibility: notApplicable("Python projects do not expose a rendered UI accessibility surface by default."),
       docs_policy: provided("docs-profile", "if command -v vale >/dev/null 2>&1; then vale .; else echo 'vale not installed; docs policy provider unavailable'; exit 1; fi", docsPaths, { blocking: false }),
       traceability: missing("Ground Control traceability requires a configured project and live server context."),
-      policy: provided("repo-policy", `if [ -f noxfile.py ]; then ${pythonRun("nox -s verify")}; elif [ -f Makefile ] && grep -q '^policy:' Makefile; then make policy; elif [ -x ./bin/policy ]; then ./bin/policy --skip-pr-body; else ${pythonRun("pre-commit run --all-files")}; fi`, commonCodePaths, { scope: "repo", timeout_seconds: 1800 }),
+      policy: provided("repo-policy", "if [ -f noxfile.py ]; then nox -s verify; elif [ -f Makefile ] && grep -q '^policy:' Makefile; then make policy; elif [ -x ./bin/policy ]; then ./bin/policy --skip-pr-body; else pre-commit run --all-files; fi", commonCodePaths, { scope: "repo", timeout_seconds: 1800 }),
       remote_status: remoteStatus(),
     }),
-    readme: pythonPackReadme,
-    executableTemplates: [pythonLauncherTemplate],
     templates: {
-      [pythonLauncherTemplate]: pythonLauncherScript,
       "templates/pyproject.gc.toml": "[tool.coverage.run]\nbranch = true\nsource = [\"src\"]\n\n[tool.coverage.report]\nshow_missing = true\n\n[tool.ruff.lint]\nselect = [\"E\", \"F\", \"I\", \"B\", \"C901\", \"S\"]\n",
       "templates/importlinter.ini": "[importlinter]\nroot_package = src\n\n[importlinter:contract:layers]\nname = Layered architecture\nlayers = api; domain; infrastructure\n",
     },
@@ -880,8 +705,8 @@ const packs = [
       format: provided("pre-commit-docs-format", "if command -v pre-commit >/dev/null 2>&1; then pre-commit run --all-files; else node .gc/gate-packs/docs-generic/check-docs.mjs; fi", docsPaths, { scope: "repo" }),
       lint: provided("markdown-policy", "node .gc/gate-packs/docs-generic/check-docs.mjs", docsPaths, {
         thresholds: {
-          platform_minimum: { metric: "exit_code", max: 0 },
-          recommendation: { metric: "exit_code", max: 0 },
+          platform_minimum: { metric: "doc_errors", max: 0 },
+          recommendation: { metric: "doc_errors", max: 0 },
         },
       }),
       build: notApplicable("docs-generic does not compile product code."),
@@ -900,8 +725,8 @@ const packs = [
       accessibility: notApplicable("docs-generic has no rendered UI accessibility surface by default."),
       docs_policy: provided("vale-markdown-policy", "node .gc/gate-packs/docs-generic/check-docs.mjs", docsPaths, {
         thresholds: {
-          platform_minimum: { metric: "exit_code", max: 0 },
-          recommendation: { metric: "exit_code", max: 0 },
+          platform_minimum: { metric: "doc_errors", max: 0 },
+          recommendation: { metric: "doc_errors", max: 0 },
         },
       }),
       traceability: missing("Ground Control traceability requires a configured project and live server context."),
@@ -988,7 +813,6 @@ function writePack(pack) {
       consumer_ratchets: "supported by workflow.gate_overrides in the engine",
     },
     install: pack.install,
-    ...(pack.runtime ? { runtime: pack.runtime } : {}),
     selftest: {
       runner: "selftest/run.mjs",
       required_tools: pack.selftestTools.map((tool) => tool.name),
@@ -1005,9 +829,6 @@ function writePack(pack) {
     version,
     bindings: pack.bindings,
   })}\n`);
-  if (typeof pack.readme === "string") {
-    writeFileSync(join(dir, "README.md"), `${pack.readme.replace(/\s+$/, "")}\n`);
-  }
   writeFileSync(join(dir, "installer.mjs"), `#!/usr/bin/env node
 import { runInstallWorkflowAssetsCli } from "../../tools/install-workflow-assets.mjs";
 
@@ -1024,12 +845,10 @@ import { runPackSelftestCli } from "../../../tools/selftest-pack.mjs";
 
 await runPackSelftestCli({ defaultPackId: ${JSON.stringify(pack.id)} });
 `);
-  const executableTemplates = new Set(pack.executableTemplates ?? []);
   for (const [rel, content] of Object.entries(pack.templates)) {
     const target = join(dir, rel);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, content);
-    if (executableTemplates.has(rel)) chmodSync(target, 0o755);
   }
   if (typeof existingClassifier === "string") {
     writeFileSync(join(dir, "classifier.yaml"), existingClassifier);

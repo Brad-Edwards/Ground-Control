@@ -5,7 +5,7 @@ bindings:
   format:
     status: provided
     provider: ruff-format
-    command: ".gc/gate-packs/python/gc-python-run ruff format --check ."
+    command: "ruff format --check ."
     blocking: true
     scope: changed
     applies_when:
@@ -22,7 +22,7 @@ bindings:
   lint:
     status: provided
     provider: ruff-check
-    command: ".gc/gate-packs/python/gc-python-run ruff check ."
+    command: "ruff check ."
     blocking: true
     scope: changed
     applies_when:
@@ -39,7 +39,7 @@ bindings:
   build:
     status: provided
     provider: python-build
-    command: ".gc/gate-packs/python/gc-python-run python -m build"
+    command: "python -m build"
     blocking: false
     scope: changed
     applies_when:
@@ -58,7 +58,7 @@ bindings:
   type_safety:
     status: provided
     provider: pyright-or-mypy
-    command: ".gc/gate-packs/python/gc-python-run pyright-or-mypy"
+    command: "if command -v pyright >/dev/null 2>&1; then pyright; else mypy --strict .; fi"
     blocking: true
     scope: changed
     applies_when:
@@ -75,7 +75,7 @@ bindings:
   unit_tests:
     status: provided
     provider: pytest
-    command: ".gc/gate-packs/python/gc-python-run pytest"
+    command: pytest
     blocking: true
     scope: changed
     applies_when:
@@ -94,7 +94,7 @@ bindings:
   integration_tests:
     status: provided
     provider: pytest-integration
-    command: ".gc/gate-packs/python/gc-python-run pytest -m integration"
+    command: "pytest -m integration"
     blocking: false
     scope: changed
     applies_when:
@@ -125,7 +125,7 @@ bindings:
   property_verification:
     status: provided
     provider: hypothesis
-    command: ".gc/gate-packs/python/gc-python-run pytest -m fuzz"
+    command: "pytest -m fuzz"
     blocking: false
     scope: changed
     applies_when:
@@ -144,7 +144,7 @@ bindings:
   architecture:
     status: provided
     provider: import-linter
-    command: ".gc/gate-packs/python/gc-python-run lint-imports --config .gc/gate-packs/python/importlinter.ini"
+    command: "lint-imports --config .gc/gate-packs/python/importlinter.ini"
     blocking: false
     scope: changed
     applies_when:
@@ -161,7 +161,7 @@ bindings:
   complexity:
     status: provided
     provider: ruff-complexity
-    command: ".gc/gate-packs/python/gc-python-run ruff check --select C901 ."
+    command: "ruff check --select C901 ."
     blocking: true
     scope: changed
     applies_when:
@@ -178,7 +178,7 @@ bindings:
   mutation:
     status: provided
     provider: mutmut
-    command: ".gc/gate-packs/python/gc-python-run mutmut run"
+    command: "mutmut run"
     blocking: false
     scope: changed
     applies_when:
@@ -197,7 +197,7 @@ bindings:
   diff_coverage:
     status: provided
     provider: coverage-diff-cover
-    command: ".gc/gate-packs/python/gc-python-run coverage-diff-cover"
+    command: "coverage run -m pytest && coverage xml -o .gc/reports/python/coverage.xml && diff-cover .gc/reports/python/coverage.xml --fail-under=90"
     blocking: true
     scope: changed
     applies_when:
@@ -214,7 +214,7 @@ bindings:
   sast:
     status: provided
     provider: bandit
-    command: ".gc/gate-packs/python/gc-python-run bandit -r . -ll"
+    command: "bandit -r . -ll"
     blocking: true
     scope: changed
     applies_when:
@@ -247,7 +247,7 @@ bindings:
   dependency_policy:
     status: provided
     provider: pip-audit-or-uv-audit
-    command: "if command -v uv >/dev/null 2>&1 && [ -f uv.lock ]; then uv audit; else .gc/gate-packs/python/gc-python-run pip-audit; fi"
+    command: "if command -v uv >/dev/null 2>&1 && [ -f uv.lock ]; then uv audit; else pip-audit; fi"
     blocking: true
     scope: changed
     applies_when:
@@ -312,7 +312,7 @@ bindings:
   policy:
     status: provided
     provider: repo-policy
-    command: "if [ -f noxfile.py ]; then .gc/gate-packs/python/gc-python-run nox -s verify; elif [ -f Makefile ] && grep -q '^policy:' Makefile; then make policy; elif [ -x ./bin/policy ]; then ./bin/policy --skip-pr-body; else .gc/gate-packs/python/gc-python-run pre-commit run --all-files; fi"
+    command: "if [ -f noxfile.py ]; then nox -s verify; elif [ -f Makefile ] && grep -q '^policy:' Makefile; then make policy; elif [ -x ./bin/policy ]; then ./bin/policy --skip-pr-body; else pre-commit run --all-files; fi"
     blocking: true
     scope: repo
     applies_when:

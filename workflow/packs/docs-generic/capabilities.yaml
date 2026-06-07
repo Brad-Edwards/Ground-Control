@@ -41,10 +41,10 @@ bindings:
         - .ground-control.yaml
     thresholds:
       platform_minimum:
-        metric: exit_code
+        metric: doc_errors
         max: 0
       recommendation:
-        metric: exit_code
+        metric: doc_errors
         max: 0
   build:
     status: not_applicable
@@ -249,10 +249,10 @@ bindings:
         - .ground-control.yaml
     thresholds:
       platform_minimum:
-        metric: exit_code
+        metric: doc_errors
         max: 0
       recommendation:
-        metric: exit_code
+        metric: doc_errors
         max: 0
   traceability:
     status: provider_missing

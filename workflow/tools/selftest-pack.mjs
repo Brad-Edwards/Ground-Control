@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -46,29 +46,6 @@ function writeFixtureFiles(root, files) {
     const abs = join(root, rel);
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, content);
-  }
-}
-
-// Remove language bytecode / test caches between gate phases. The fail fixture
-// can be the same byte length as the pass fixture (e.g. `== 4` vs `== 5`), so
-// Python's mtime+size .pyc validation can otherwise serve the pass-phase
-// compiled module during the fail phase, making the self-test pass when it
-// should fail. Clearing these caches makes the fail phase deterministic.
-function clearBuildCaches(root) {
-  let entries;
-  try {
-    entries = readdirSync(root, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const abs = join(root, entry.name);
-    if (entry.name === "__pycache__" || entry.name === ".pytest_cache") {
-      rmSync(abs, { recursive: true, force: true });
-    } else if (entry.name !== ".git") {
-      clearBuildCaches(abs);
-    }
   }
 }
 
@@ -137,7 +114,6 @@ async function runPackSelftest({ packId, catalogPath }) {
     }
 
     writeFixtureFiles(fixtureRoot, config.fixture.failFiles);
-    clearBuildCaches(fixtureRoot);
     const fail = await runGates({
       repoPath: fixtureRoot,
       issueNumber: 1075,

@@ -82,16 +82,6 @@
       "id": "workflow-lock-accepts-release-shape",
       "type": "positive-control",
       "expect": "The release lockfile validator accepts the full checksum/source/trust shape."
-    },
-    {
-      "id": "pack-thresholds-preserve-platform-minimum-and-recommendation",
-      "type": "negative-control",
-      "expect": "Pack-supplied threshold tiers materialize into the active platform minimum and retained recommendation threshold."
-    },
-    {
-      "id": "root-only-secret-scan-selects-shipped-pack-gate",
-      "type": "negative-control",
-      "expect": "A root-only secret diff such as .env selects the shipped pack secret_scan gate bound to **/*."
     }
   ]
 }

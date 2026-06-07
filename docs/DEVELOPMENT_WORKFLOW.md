@@ -202,13 +202,6 @@ Each gate pack contains:
 - `installer.mjs`: a pack-local installer shim.
 - `selftest/`: a generated fixture contract and runnable self-test.
 
-The Python pack installs `.gc/gate-packs/python/gc-python-run` and routes
-Python tools through it instead of invoking bare host commands. The launcher
-selects `uv run`, `poetry run`, `hatch run`, `$VIRTUAL_ENV`, `.venv`, `venv`,
-or a generated `.venv` with the pack's pinned fallback tools, in that order.
-Each invocation writes one stderr line naming the selected runner. Non-Python
-providers such as Gitleaks remain outside this launcher.
-
 `workflow/tools/materialize-pack-registry.mjs` builds the release surface. It
 materializes the seven initial packs (`rust-cargo`, `python`, `jvm-gradle`,
 `jvm-maven`, `node-ts`, `cpp-cmake`, and `docs-generic`), writes
@@ -327,7 +320,7 @@ gates:
 
 Path-valued fields are repo-relative and containment-checked: `cwd`, pack `scope`, `artifacts`, `config_paths`, `generated_files`, and `output.path`. `applies_when.paths` are repo-relative glob patterns evaluated by the MCP server against the changed-file set. Supported gate scopes are `repo` and `changed`.
 
-Thresholds are typed by `metric` and may include `min`, `max`, `break`, `severity`, or `policy`. Numeric thresholds compare numeric provider output. Severity thresholds use the ordered set `info`, `low`, `medium`, `high`, `critical`, `blocker`. Policy thresholds compare exact strings. Pack-generated manifests keep tiered defaults in `thresholds.platform_minimum` and `thresholds.recommendation`; the active `threshold` is the enforced platform minimum unless the repository ratchets it through `workflow.gate_overrides`. Override operator keys such as `<gate>.threshold.min` require an existing threshold metric or a paired `<gate>.threshold.metric` override.
+Thresholds are typed by `metric` and may include `min`, `max`, `break`, `severity`, or `policy`. Numeric thresholds compare numeric provider output. Severity thresholds use the ordered set `info`, `low`, `medium`, `high`, `critical`, `blocker`. Policy thresholds compare exact strings.
 
 Provider-missing behavior is explicit. A gate with no command returns a `provider_missing` result. It can satisfy the local gate run only when the gate is non-blocking, declares `provider_missing: reviewer_fallback`, or declares `provider_missing: not_applicable`. Reviewer fallback records `reviewer_fallback_used`; it does not claim that a deterministic provider passed.
 

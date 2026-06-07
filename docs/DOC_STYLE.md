@@ -170,11 +170,7 @@ classifier, `gc_get_implementation_context`,
 `docs/DEVELOPMENT_WORKFLOW.md`. Keep the tool description strings in
 `mcp/ground-control/index.js` aligned with that reference. ADR-054 carries the
 amendment record; no new prose-style rule is needed unless the change alters
-this documentation coverage model. Changes to threshold-tier materialization,
-`workflow.gate_overrides` semantics, gate path matching, or workflow-engine eval
-coverage are part of the same portable gate-engine documentation surface. The
-Python gate-pack environment launcher and its installer behavior are also part
-of that surface.
+this documentation coverage model.
 
 Review-convergence MCP changes for `/implement` are workflow-contract changes.
 Document dispatcher actions, reviewer-lens envelopes, effective caps,

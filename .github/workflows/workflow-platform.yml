@@ -53,7 +53,7 @@ jobs:
             toolchain: rust-cargo
             allow_skip: "false"
           - pack: python
-            toolchain: python-uv
+            toolchain: python-pytest
             allow_skip: "false"
           - pack: jvm-gradle
             toolchain: gradle-jdk21
@@ -97,10 +97,8 @@ jobs:
                 sudo apt-get install -y cargo
               fi
               ;;
-            python-uv)
-              curl -LsSf https://astral.sh/uv/install.sh | sh
-              echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-              "$HOME/.local/bin/uv" --version
+            python-pytest)
+              python3 -m pip install --user pytest
               ;;
             maven-jdk21)
               sudo apt-get update

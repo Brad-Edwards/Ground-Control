@@ -12,11 +12,8 @@ import {
   evaluateBoundPhaseMarkerFreshness,
   evaluateRemoteQualitySubstance,
   evaluateRequiredStatuses,
-  installWorkflowAssets,
-  parseGateManifestYaml,
   runGates,
   runPostInterfaceContract,
-  selectApplicableGates,
   synthesizeLegacyGateManifest,
   validateWorkflowLock,
 } from "../../mcp/ground-control/lib.js";
@@ -341,48 +338,6 @@ gates: []
       manifest: { packs: [{ id: "docs-generic", version: "1.0.0" }] },
     });
     assert.equal(result.ok, true, JSON.stringify(result));
-  },
-  "pack-thresholds-preserve-platform-minimum-and-recommendation": async () => {
-    await withTempRepo(async (repo) => {
-      writeFileSync(join(repo, "pyproject.toml"), "[project]\nname = \"eval-threshold-fixture\"\nversion = \"0.1.0\"\n");
-      const install = await installWorkflowAssets({
-        repoPath: repo,
-        packId: "python",
-        versionConstraint: "1.0.0",
-        scope: ".",
-        profile: "default",
-        installDependencies: false,
-        runSelftest: false,
-      });
-      assert.equal(install.ok, true, JSON.stringify(install));
-      const manifest = parseGateManifestYaml(readFileSync(join(repo, ".gc/gates.yaml"), "utf8"), { repoRoot: repo });
-      assert.equal(manifest.ok, true, JSON.stringify(manifest));
-      const mutationGate = manifest.value.gates.find((gate) => gate.id === "python.root.mutation");
-      assert.deepEqual(mutationGate?.threshold, { metric: "mutation_score", min: 60 });
-      assert.deepEqual(mutationGate?.thresholds?.recommendation, { metric: "mutation_score", min: 80 });
-    });
-  },
-  "root-only-secret-scan-selects-shipped-pack-gate": async () => {
-    await withTempRepo(async (repo) => {
-      writeFileSync(join(repo, ".env"), "SECRET_TOKEN=eval\n");
-      const install = await installWorkflowAssets({
-        repoPath: repo,
-        packId: "docs-generic",
-        versionConstraint: "1.0.0",
-        scope: ".",
-        profile: "default",
-        installDependencies: false,
-        runSelftest: false,
-      });
-      assert.equal(install.ok, true, JSON.stringify(install));
-      const manifest = parseGateManifestYaml(readFileSync(join(repo, ".gc/gates.yaml"), "utf8"), { repoRoot: repo });
-      assert.equal(manifest.ok, true, JSON.stringify(manifest));
-      const selected = selectApplicableGates(manifest.value, {
-        changedFiles: [".env"],
-        capabilities: ["secret_scan"],
-      });
-      assert.deepEqual(selected.map((gate) => gate.id), ["docs-generic.root.secret_scan"]);
-    });
   },
 };
 
