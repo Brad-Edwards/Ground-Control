@@ -128,6 +128,7 @@ frontend-gate: ## Frontend deterministic gates: typecheck + Biome + dependency-c
 	cd frontend && npm run typecheck && npm run lint && npm run arch && npm test
 
 mcp-gate: ## MCP deterministic gates: JS type parse + ESLint + dependency-cruiser + node:test
+	node workflow/tools/materialize-pack-registry.mjs >/dev/null
 	cd mcp/ground-control && npm run typecheck && npm run lint && npm run arch && npm test
 
 gates: ground-control-mcp-install ## Run Ground Control's portable gate manifest locally
