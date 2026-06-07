@@ -1,0 +1,34 @@
+{
+  "pack_id": "jvm-maven",
+  "required_tools": [
+    {
+      "name": "java",
+      "command": "java",
+      "args": [
+        "-version"
+      ]
+    },
+    {
+      "name": "mvn",
+      "command": "mvn",
+      "args": [
+        "--version"
+      ]
+    }
+  ],
+  "fixture": {
+    "passCapability": "build",
+    "failCapability": "build",
+    "missingCapability": "contract_boundary",
+    "changedFiles": [
+      "src/main/java/example/App.java"
+    ],
+    "files": {
+      "pom.xml": "<project xmlns=\"http://maven.apache.org/POM/4.0.0\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd\">\n  <modelVersion>4.0.0</modelVersion>\n  <groupId>example</groupId>\n  <artifactId>gc-maven-pack-selftest</artifactId>\n  <version>0.1.0</version>\n  <properties><maven.compiler.release>17</maven.compiler.release></properties>\n  <build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin></plugins></build>\n</project>\n",
+      "src/main/java/example/App.java": "package example;\n\npublic final class App {\n  private App() {}\n  public static int add(int left, int right) { return left + right; }\n}\n"
+    },
+    "failFiles": {
+      "src/main/java/example/App.java": "package example;\n\npublic final class App {\n  public static int add(int left, int right) { return left + ; }\n}\n"
+    }
+  }
+}

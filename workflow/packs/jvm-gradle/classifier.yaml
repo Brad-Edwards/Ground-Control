@@ -1,0 +1,157 @@
+schema_version: 1
+pack: jvm-gradle
+version: 1.0.0
+language:
+  primary: jvm
+  extensions: [".java", ".kt"]
+frameworks:
+  - spring-security
+  - spring-web
+  - jakarta-validation
+  - jqwik
+include:
+  paths:
+    - "**/*.java"
+    - "**/*.kt"
+exclude:
+  paths:
+    - "**/generated/**"
+    - "**/build/**"
+    - "**/target/**"
+  content:
+    - '\brecord\s+\w+\s*\('
+    - '\bdata\s+class\s+\w+\s*\('
+    - '^\+\s*(public\s+)?enum\s+\w+\s*\{\s*([A-Z0-9_]+\s*,?\s*)+;?\s*\}\s*$'
+surfaces:
+  - type: security_boundary
+    assurance: L1
+    reason: "Spring/JVM authorization or trust-boundary surface."
+    detect:
+      path: ["**/*Controller.java", "**/*Controller.kt", "**/*Security*.java", "**/*Security*.kt"]
+      content:
+        - '@PreAuthorize\b'
+        - '@Secured\b'
+        - '\bSecurityFilterChain\b'
+        - '\bAuthentication\b'
+        - '\bAuthorization\b'
+        - '\bhasRole\s*\('
+        - '\bhasAuthority\s*\('
+        - '\btenant\b'
+    requires:
+      contract:
+        content:
+          - '@PreAuthorize\b'
+          - '@Valid\b'
+          - '\brequireNonNull\s*\('
+          - '\bAssert\.'
+          - '\bvalidate\s*\('
+          - '\bauthori[sz]e'
+          - '\bthrow\s+new\s+\w*Exception\b'
+      test:
+        path: ["**/src/test/**", "**/src/integrationTest/**", "**/*Test.java", "**/*IT.java", "**/*Test.kt"]
+        content:
+          - '@WithMockUser\b'
+          - '\bSecurityMockMvc\b'
+          - '\bassertThrows\s*\('
+          - '\bforbidden\b'
+          - '\bunauthorized\b'
+          - '\bhasRole\b'
+  - type: state_machine
+    assurance: L2
+    reason: "Lifecycle or status transition surface."
+    detect:
+      content:
+        - '\bcanTransitionTo\b'
+        - '\btransitionTo\b'
+        - '\btransition[A-Z]\w*\s*\('
+        - '\bsetStatus\s*\('
+        - '\bupdateStatus\s*\('
+        - '\binvalid_status_transition\b'
+    requires:
+      contract:
+        content:
+          - '\bcanTransitionTo\b'
+          - '\bisValidTransition\b'
+          - '\ballowedTransitions\b'
+          - '\binvalid_status_transition\b'
+          - '\bIllegalStateException\b'
+      test:
+        path: ["**/src/test/**", "**/*Test.java", "**/*Test.kt"]
+        content:
+          - '\btransition\b'
+          - '\bcanTransitionTo\b'
+          - '\bassertThrows\s*\('
+          - '\binvalid_status_transition\b'
+      property_test:
+        path: ["**/src/test/**", "**/*Properties.java", "**/*PropertyTest.java", "**/*Properties.kt"]
+        content:
+          - '@Property\b'
+          - '\bjqwik\b'
+          - '\bArbitraries\b'
+          - '\bforall\b'
+  - type: dag_graph
+    assurance: L2
+    reason: "DAG, graph traversal, cycle detection, or dependency topology surface."
+    detect:
+      content:
+        - '\btopological\b'
+        - '\bdetectCycle\b'
+        - '\bfindPaths\b'
+        - '\bgetAncestors\b'
+        - '\bgetDescendants\b'
+        - '\btraverseGraph\b'
+        - '\bacyclic\b'
+        - '\bDAG\b'
+        - '\bgraph\b'
+    requires:
+      contract:
+        content:
+          - '\bacyclic\b'
+          - '\bcycle\b'
+          - '\bdepth\b'
+          - '\bvisited\b'
+          - '\binvariant\b'
+          - '\bIllegalArgumentException\b'
+      test:
+        path: ["**/src/test/**", "**/*Test.java", "**/*Test.kt"]
+        content:
+          - '\bcycle\b'
+          - '\bpath\b'
+          - '\bancestor\b'
+          - '\bdescendant\b'
+          - '\btopological\b'
+      property_test:
+        path: ["**/src/test/**", "**/*Properties.java", "**/*PropertyTest.java", "**/*Properties.kt"]
+        content:
+          - '@Property\b'
+          - '\bjqwik\b'
+          - '\bArbitraries\b'
+  - type: corruption_prone_mutator
+    assurance: L1
+    reason: "Persistent identity, audit, graph-link, or serialized-value mutator."
+    detect:
+      content:
+        - '@Transactional\b'
+        - '\brepository\.(save|delete|deleteById)\s*\('
+        - '\barchive[A-Z]\w*\s*\('
+        - '\bcreateRelation\b'
+        - '\bdeleteRelation\b'
+        - '\bexternalId\b'
+        - '\baudit\b'
+        - '\bmetadata\b'
+    requires:
+      contract:
+        content:
+          - '@Transactional\b'
+          - '\bvalidate\s*\('
+          - '\brequireNonNull\s*\('
+          - '\binvariant\b'
+          - '\bOptimisticLock\b'
+          - '\baudit\b'
+          - '\bIllegalArgumentException\b'
+      test:
+        path: ["**/src/test/**", "**/*Test.java", "**/*IT.java", "**/*Test.kt"]
+        content:
+          - '\b(save|delete|archive|relation|externalId|metadata)\b'
+          - '\bassertThrows\s*\('
+          - '\bassertThat\b'

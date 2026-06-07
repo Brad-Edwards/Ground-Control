@@ -1,0 +1,67 @@
+schema_version: 1
+pack: rust-cargo
+version: 1.0.0
+language:
+  primary: rust
+  extensions: [".rs"]
+frameworks:
+  - proptest
+  - quickcheck
+  - serde
+include:
+  paths:
+    - "**/*.rs"
+exclude:
+  paths:
+    - "target/**"
+    - "**/generated/**"
+  content:
+    - '^\+\s*pub\s+struct\s+\w+\s*\{[^}]*\}\s*$'
+    - '^\+\s*pub\s+enum\s+\w+\s*\{\s*([A-Z][A-Za-z0-9_]*,?\s*)+;?\s*\}\s*$'
+surfaces:
+  - type: security_boundary
+    assurance: L1
+    detect:
+      content: ['\bunsafe\b', '\bauthori[sz]e\b', '\bauth\b', '\btenant\b', '\bcredential\b', '\bSecret\b', '\bResult<[^>]*Error']
+    requires:
+      contract:
+        content: ['\bResult<', '\bensure!\s*\(', '\bbail!\s*\(', '\bassert!\s*\(', '\bdebug_assert!\s*\(', '\bthiserror\b', '\bValidation\b']
+      test:
+        path: ["**/*_test.rs", "**/tests/**", "**/*.rs"]
+        content: ['#\[test\]', '\bassert!\s*\(', '\bmatches!\s*\(', '\bErr\s*\(']
+  - type: state_machine
+    assurance: L2
+    detect:
+      content: ['\bcan_transition_to\b', '\btransition_to\b', '\bmatch\s+.*state\b', '\bState\b', '\bStatus\b']
+    requires:
+      contract:
+        content: ['\bcan_transition_to\b', '\ballowed_transitions\b', '\bInvalidTransition\b', '\bResult<', '\bassert!\s*\(']
+      test:
+        path: ["**/*_test.rs", "**/tests/**", "**/*.rs"]
+        content: ['#\[test\]', '\btransition\b', '\bstate\b', '\bassert!\s*\(']
+      property_test:
+        path: ["**/*_test.rs", "**/tests/**", "**/*.rs"]
+        content: ['\bproptest!\b', '\bquickcheck\b', '#\[quickcheck\]']
+  - type: dag_graph
+    assurance: L2
+    detect:
+      content: ['\btopological\b', '\bcycle\b', '\bgraph\b', '\bdfs\b', '\bbfs\b', '\bancestors\b', '\bdescendants\b', '\bacyclic\b']
+    requires:
+      contract:
+        content: ['\bacyclic\b', '\bcycle\b', '\bvisited\b', '\bdepth\b', '\bResult<', '\bassert!\s*\(']
+      test:
+        path: ["**/*_test.rs", "**/tests/**", "**/*.rs"]
+        content: ['#\[test\]', '\bcycle\b', '\bpath\b', '\btopological\b', '\bgraph\b']
+      property_test:
+        path: ["**/*_test.rs", "**/tests/**", "**/*.rs"]
+        content: ['\bproptest!\b', '\bquickcheck\b', '#\[quickcheck\]']
+  - type: corruption_prone_mutator
+    assurance: L1
+    detect:
+      content: ['\binsert\s*\(', '\bremove\s*\(', '\bdelete\s*\(', '\bmut\s+\w+', '\bserialize\b', '\bpersist\b', '\baudit\b', '\bmetadata\b']
+    requires:
+      contract:
+        content: ['\bResult<', '\bensure!\s*\(', '\bbail!\s*\(', '\bassert!\s*\(', '\binvariant\b', '\bValidation\b']
+      test:
+        path: ["**/*_test.rs", "**/tests/**", "**/*.rs"]
+        content: ['#\[test\]', '\b(insert|remove|delete|metadata|audit)\b', '\bassert!\s*\(', '\bErr\s*\(']

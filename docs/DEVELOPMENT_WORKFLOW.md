@@ -38,7 +38,7 @@ Every `/implement` run is driven by a GitHub issue. The issue is the durable art
 
 Grouped implementation (shipping several related requirements in one PR) is expressed by listing all of them under `## Requirements` in a single issue body. One issue → one `/implement` run → one PR → N requirements transitioned to `ACTIVE` in the same commit stream. Do NOT spin up one issue per requirement when they belong together; the grouping is what makes the review boundary coherent.
 
-Repo-local Ground Control project context comes from a `.ground-control.yaml` file at the repo root (with larger rule files under `.gc/`), not from `AGENTS.md` inline YAML or hardcoded assumptions in the skill. The workflow validates this via `gc_get_repo_ground_control_context` before it starts implementation; that call returns the project id, workflow commands, SonarCloud settings, and plan rules in a single response. It should:
+Repo-local Ground Control project context comes from a `.ground-control.yaml` file at the repo root (with larger rule files under `.gc/`), not from `AGENTS.md` inline YAML or hardcoded assumptions in the skill. The workflow validates this via `gc_get_repo_ground_control_context` before it starts implementation; that call returns the project id, workflow commands, remote-quality settings, and plan rules in a single response. It should:
 - use the repo's configured Ground Control `project` when present
 - treat inputs like `OBS-001`, `DSL-101`, `API-412`, or `GC-J001` as already-complete UIDs
 - avoid guessing a prefix from the repository name
@@ -56,6 +56,16 @@ workflow:
   lint_command: make lint
   format_command: make format
   base_branch: dev
+  engine:
+    version: "^1.0.0"
+  gate_manifest: .gc/gates.yaml
+  packs:
+    - id: docs-generic
+      version: "^1.0.0"
+      scope: .
+      profile: default
+  gate_overrides:
+    docs.docs_policy.threshold.max: 0
 
 sonarcloud:
   project_key: Owner_Project
@@ -112,9 +122,14 @@ Config contract:
 
 - `schema_version` is required and currently must be `1`.
 - `project` is required and must be a lowercase identifier using letters, numbers, and hyphens.
-- Unknown top-level keys are rejected. Current top-level keys are `schema_version`, `project`, `github_repo`, `workflow`, `sonarcloud`, `rules`, `knowledge`, `docs`, `example_paths`, `requirements`, `cross_cutting_concerns`, `routing`, and `telemetry`.
-- `workflow.*` values are optional non-empty strings. `workflow.base_branch` must be a safe Git ref name using `[A-Za-z0-9._/-]`.
+- Unknown top-level keys are rejected. Current top-level keys are `schema_version`, `project`, `github_repo`, `workflow`, `sonarcloud`, `remote_quality`, `rules`, `knowledge`, `docs`, `example_paths`, `requirements`, `cross_cutting_concerns`, `routing`, `telemetry`, and `architecture`.
+- Legacy `workflow.test_command`, `workflow.completion_command`, `workflow.lint_command`, and `workflow.format_command` values are optional non-empty strings. `workflow.base_branch` must be a safe Git ref name using `[A-Za-z0-9._/-]`.
+- `workflow.engine.version` declares the portable workflow engine version constraint. It is optional; omitted means the repo has not selected versioned engine assets.
+- `workflow.gate_manifest` points to the repo-relative gate manifest. Omitted means `.gc/gates.yaml`.
+- `workflow.packs[]` declares selected gate packs with `id`, `version`, `scope`, and optional `profile`. Pack scopes are repo-relative and containment-checked.
+- `workflow.gate_overrides` is a mapping from dotted gate override keys to scalar values. It is used for repository ratchets such as `backend.mutation.threshold.min: 60`.
 - `sonarcloud` is optional, but when present it must include non-empty `project_key` and `organization`.
+- `remote_quality` is optional. `tier` defaults to `platform_minimum`; repos can ratchet to `zero_overall_issues`. Optional `min_coverage` and `max_duplications` thresholds are numbers in `[0, 100]`.
 - `rules.plan_rules` is optional and points to the repo-relative plan-rules file whose content is inlined into `gc_get_repo_ground_control_context`.
 - `knowledge.dir` is required when `knowledge` is present. `knowledge.schema` and `knowledge.inbox` are optional overrides; by default they resolve under `knowledge.dir`.
 - `docs.*` and `example_paths.*` are optional repo-relative paths. Docs paths are containment-checked so a config file cannot point an agent outside the repository.
@@ -128,6 +143,292 @@ Config contract:
 
 `AGENTS.md` should still carry a brief `Ground Control Context` section that points agents at `.ground-control.yaml` and `.gc/`, so repo newcomers know where the workflow config lives.
 
+### Gate Engine Core
+
+The MCP server exposes the portable gate engine through `gc_run_gates`. The tool is the execution boundary for local gates: agents do not parse `.gc/gates.yaml`, choose provider commands, compute diff hashes, or write gate markers in prose.
+
+`gc_run_gates` input:
+
+```json
+{
+  "repo_path": "/repo",
+  "issue_number": 1075,
+  "base_ref": "origin/dev",
+  "head_ref": "HEAD",
+  "phase": "local",
+  "capabilities": ["policy", "unit_tests"]
+}
+```
+
+The tool performs these steps:
+
+- Resolves `.ground-control.yaml` through `gc_get_repo_ground_control_context`.
+- Loads `workflow.gate_manifest` or `.gc/gates.yaml`.
+- Validates the manifest and `.gc/workflow-lock.json`.
+- Computes changed files and `diff_hash` with `git diff <base_ref>...<head_ref>`.
+- For local completion runs that post a marker, refuses unless a fresh `impl_green`
+  marker is bound to the current diff.
+- Runs the ADR-057 assurance classifier against changed files before executing
+  gates. L1/L2 surfaces must have a posted `contract` marker plus pack-detected
+  contract and test artifacts; L2 also requires property-verification evidence.
+  `docs-generic` no-ops on docs-only diffs.
+- Selects gates by capability, scope, and `applies_when.paths`.
+- Runs each command in its declared `cwd` with a bounded timeout and sanitized environment.
+- Parses JSON provider output only when the gate declares `output.type: json`; otherwise the exit code is authoritative.
+- Evaluates typed thresholds.
+- Writes gate-effectiveness telemetry under `.gc/telemetry/gate-effectiveness-<issue>.jsonl`.
+- Writes `gates_green` only when every applicable blocking local gate is satisfied.
+
+Remote status gates run through `gc_watch_required_statuses`. That tool consumes `remote_status` manifest gates, watches the provider status rollup, and then verifies configured provider-quality substance server-side before writing `remote_gates_green`. For SonarCloud this includes quality-gate status, new and overall issues by severity, reliability/security/maintainability ratings, security hotspots, coverage, and duplications. A green PR checkmark alone is not sufficient.
+
+Gate-effectiveness telemetry is analytic: `gc_gate_telemetry_summary` aggregates per-gate fire rate, outcomes, override/false-positive/escape rates, and duration. It never feeds back into in-run gate counters.
+
+When a repo has no manifest but still declares legacy `completion_command`, `test_command`, `lint_command`, or `format_command`, `gc_run_gates` synthesizes temporary `policy`, `unit_tests`, `lint`, and `format` gates. The result envelope sets `legacy_mode: true`, records telemetry, and leaves `pack_versions` empty. Legacy mode preserves compatibility but does not claim pack coverage.
+
+#### Gate Pack Registry
+
+Gate packs live under `workflow/packs/<pack-id>/`. This directory is separate
+from the OSCAL control-pack catalog under `packs/`.
+
+Each gate pack contains:
+
+- `pack.yaml`: pack id, version, engine compatibility, profiles, threshold
+  tier ownership, install templates, and self-test metadata.
+- `capabilities.yaml`: every engine capability marked as `provided`,
+  `provider_missing`, or `not_applicable`.
+- `classifier.yaml`: deterministic ADR-057 surface detection and artifact
+  patterns for the pack's language/framework ecosystem.
+- `templates/`: pack-owned config files copied into `.gc/gate-packs/<id>/`.
+- `installer.mjs`: a pack-local installer shim.
+- `selftest/`: a generated fixture contract and runnable self-test.
+
+`workflow/tools/materialize-pack-registry.mjs` builds the release surface. It
+materializes the seven initial packs (`rust-cargo`, `python`, `jvm-gradle`,
+`jvm-maven`, `node-ts`, `cpp-cmake`, and `docs-generic`), writes
+`workflow/engine/engine.yaml`, creates `workflow/releases/gc-engine-<version>.tgz`
+and `workflow/releases/gc-gate-pack-<id>-<version>.tgz`, and writes
+`workflow/gate-catalog.json`.
+
+Catalog entries carry the exact version, release artifact path, release
+artifact SHA-256 checksum, source path, source-tree checksum, compatible engine
+range, signer placeholder, and trust policy. The installer verifies the
+release artifact checksum that it vendors. Source checksums are drift metadata.
+Release signatures and provenance are recorded as `TODO` metadata until signed
+artifacts exist.
+
+`gc_install_workflow_assets` installs or upgrades workflow assets in a consumer
+repository:
+
+```json
+{
+  "repo_path": "/repo",
+  "pack_id": "node-ts",
+  "version": "^1.0.0",
+  "engine_version": "^1.0.0",
+  "scope": "frontend",
+  "profile": "react-vite",
+  "mode": "upgrade",
+  "install_dependencies": true,
+  "run_selftest": true
+}
+```
+
+The installer resolves the highest matching engine and pack semver entries,
+verifies both release artifact checksums, vendors the exact engine under
+`.gc/vendor/ground-control/engine/<version>/`, vendors the exact pack under
+`.gc/vendor/ground-control/packs/<pack-id>/<version>/`, copies templates,
+writes or merges `.gc/gates.yaml`, writes `.gc/workflow-lock.json`, updates
+`.ground-control.yaml` with `workflow.engine`, `workflow.gate_manifest`, and
+`workflow.packs[]`, optionally adds declared dev dependencies through the
+detected package manager, and runs the selected pack's self-test. It leaves
+normal repository file changes for review.
+
+Self-tests create a temporary fixture repository, install the pack, validate
+the generated manifest, run one passing gate, run one intentional failing gate
+fixture, and verify the pack's `provider_missing` or `not_applicable`
+behavior. If the required toolchain is missing, the self-test exits
+successfully with `status: "skipped"` and a concrete missing-tool reason. CI
+runs a matrix entry for every supported pack and installs the expected
+toolchain for that pack; an unexpected skip fails that matrix entry.
+
+`workflow/tools/verify-workflow-release.mjs` validates the release catalog and
+artifact checksums. `workflow/tools/eval-workflow-engine.mjs` runs the
+versioned workflow-engine eval suite at
+`workflow/evals/engine-behavior/v1/scenarios.json`. The eval suite uses
+deterministic checks for review convergence, completion-gate prerequisites,
+remote-quality substance, context loading, traceability staleness, lockfile
+shape, and legacy command compatibility. The `Workflow Platform` CI workflow
+runs release validation, the eval suite, and the seven-pack self-test matrix on
+changes to `skills/`, `mcp/`, or `workflow/`.
+
+#### Gate Manifest
+
+The manifest is a strict YAML object. Unknown keys are rejected at every level. Gate ids are globally unique. Every `capability` must be one of the engine vocabulary values from ADR-062:
+
+```text
+format, lint, build, type_safety, unit_tests, integration_tests,
+contract_boundary, property_verification, architecture, complexity,
+mutation, diff_coverage, sast, secret_scan, dependency_policy,
+accessibility, docs_policy, traceability, policy, remote_status
+```
+
+Minimal manifest:
+
+```yaml
+schema_version: 1
+engine:
+  min_version: ">=1.0.0"
+  manifest_version: "1.0.0"
+
+defaults:
+  timeout_seconds: 900
+  provider_missing: reviewer_fallback
+  fail_fast: false
+
+packs:
+  - id: docs-generic
+    version: "1.0.0"
+    scope: .
+
+gates:
+  - id: docs.docs_policy
+    capability: docs_policy
+    pack: docs-generic
+    cwd: .
+    command: make policy
+    blocking: true
+    scope: repo
+
+  - id: src.unit_tests
+    capability: unit_tests
+    pack: example-pack
+    cwd: .
+    command: npm test -- --json
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "src/**"
+    output:
+      type: json
+      metrics:
+        passed_tests: summary.passed
+    threshold:
+      metric: passed_tests
+      min: 1
+```
+
+Path-valued fields are repo-relative and containment-checked: `cwd`, pack `scope`, `artifacts`, `config_paths`, `generated_files`, and `output.path`. `applies_when.paths` are repo-relative glob patterns evaluated by the MCP server against the changed-file set. Supported gate scopes are `repo` and `changed`.
+
+Thresholds are typed by `metric` and may include `min`, `max`, `break`, `severity`, or `policy`. Numeric thresholds compare numeric provider output. Severity thresholds use the ordered set `info`, `low`, `medium`, `high`, `critical`, `blocker`. Policy thresholds compare exact strings.
+
+Provider-missing behavior is explicit. A gate with no command returns a `provider_missing` result. It can satisfy the local gate run only when the gate is non-blocking, declares `provider_missing: reviewer_fallback`, or declares `provider_missing: not_applicable`. Reviewer fallback records `reviewer_fallback_used`; it does not claim that a deterministic provider passed.
+
+`.gc/workflow-lock.json` is required when a manifest exists. It records the exact engine and pack versions used by the manifest:
+
+```json
+{
+  "schema_version": 1,
+  "engine": {
+    "version": "1.0.0",
+    "checksum": "sha256:<hex>",
+    "source_url": "workflow/releases/gc-engine-1.0.0.tgz",
+    "compatible": ">=1.0.0 <2.0.0",
+    "signer": "TODO: release signer",
+    "trust_policy": "checksum-only-development",
+    "installed_at": "2026-06-06T00:00:00.000Z"
+  },
+  "packs": [
+    {
+      "id": "docs-generic",
+      "version": "1.0.0",
+      "checksum": "sha256:<hex>",
+      "source_url": "workflow/packs/docs-generic",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development",
+      "installed_at": "2026-06-06T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+#### Contract-First Markers and Assurance Classifier
+
+The local `/implement` marker chain is:
+
+```text
+context_loaded -> preflight -> contract -> plan -> test_red -> impl_green -> gates_green -> remote_gates_green -> traceability_reconciled
+```
+
+`gc_get_implementation_context` writes `context_loaded` after loading the binding ADRs, cross-cutting-concern incumbents, existing IMPLEMENTS artifacts, and the related requirement neighbourhood. `gc_post_interface_contract` writes `contract` after re-verifying `context_loaded` and `preflight`.
+The contract is the language-neutral public shape the implementation promises:
+interfaces, signatures, DTOs, error envelopes, API shapes, and invariants. It
+also injects the ADR-059 engineering contract. `gc_post_implementation_plan`
+refuses without `context_loaded` and `contract`.
+
+`gc_assert_test_red` writes `test_red` only after re-running a targeted command
+and observing a failing test/contract check, or after validating a documented
+non-executable carve-out. `gc_assert_impl_green` writes `impl_green` only after
+re-running the targeted command and observing green implementation evidence, or
+after validating the same carve-out. `gc_run_gates` refuses `gates_green`
+without a fresh `impl_green` marker.
+
+The assurance classifier is engine-generic and pack-specific. The engine owns
+diff binding, marker lookup, artifact checks, and gate refusal. Each
+`classifier.yaml` owns language/framework detection: for example JVM
+`@PreAuthorize`, `canTransitionTo`, graph traversal, and transactional
+mutators; Python auth decorators, Pydantic/Enum state, graph operations, and
+SQLAlchemy mutators; TypeScript route guards/reducers/fast-check; Rust
+`Result` boundaries, `unsafe`, and proptest; C/C++ status/result boundaries
+and sanitizer/gtest patterns. Trivial DTOs/records/config/pure enums are
+excluded by pack rules.
+
+#### Marker Model
+
+`context_loaded`, `contract`, `test_red`, `impl_green`, `gates_green`, `remote_gates_green`, and `traceability_reconciled`
+are bound phase markers posted by MCP tools. The existing phase marker family
+remains:
+
+```html
+<!-- gc:phase phase="gates_green" issue="1075" marker_schema="1" ... -->
+```
+
+`gates_green` binds to:
+
+- issue number
+- repository identity
+- base ref
+- head ref
+- manifest hash
+- diff hash
+- pack-versions hash
+- gate-result envelope id
+
+`remote_gates_green` binds to:
+
+- issue number
+- pull request number
+- head SHA
+- manifest hash
+- diff hash
+- required-status-set hash
+- provider-result-ids hash
+- remote-quality hash
+- remote-status envelope id
+
+`traceability_reconciled` binds to the live diff hash and requirement set. `gc_post_final_report` refuses when the marker is missing or stale.
+
+Downstream tools treat a marker as stale when any bound value no longer matches the current state. Stale marker refusals use `error: "stale_phase_marker"` and report the expected and actual binding values. Missing marker refusals use `error: "missing_phase_marker"`.
+
+#### Required Remote Statuses
+
+`gc_watch_required_statuses` is the provider-neutral remote gate watcher. It consumes `remote_status` gates from the manifest or an explicit `required_statuses[]` input, evaluates arbitrary status names, verifies provider-quality substance, and writes `remote_gates_green` only when both layers pass for the bound head SHA and diff. SonarCloud remains available as `gc_watch_sonar_analysis`, but that tool is an optional provider adapter, not a canonical workflow phase.
+
+#### Traceability Reconcile And Assert
+
+`gc_reconcile_traceability` computes `git diff --name-status` server-side, reverse-lookups traceability for each changed path, and returns a worklist plus the gap set of in-scope requirements without IMPLEMENTS coverage. The agent applies that worklist rather than hand-discovering changed artifacts. `gc_assert_traceability_reconciled` then recomputes the live diff, re-fetches requirements and artifact links, and writes `traceability_reconciled` bound to the diff hash. If HEAD moves, the marker is stale.
+
 ### User Touchpoint
 
 Per ADR-029, the workflow has **one** synchronous human touchpoint: PR review and merge to `dev`. Plans are posted to the GitHub issue thread as comments and the agent proceeds without waiting; review findings and decisions on findings are also recorded on the issue thread. Everything before merge is automated.
@@ -138,22 +439,21 @@ Per ADR-029, the workflow has **one** synchronous human touchpoint: PR review an
 flowchart TB
   Start([/implement #issue or UID])
   S1[1 · Resolve issue · flag in-progress · parse Requirements]
-  S2[2 · Read issue body + comments]
+  S2[2 · Read issue body + comments · context_loaded]
   S3[3 · Codex architecture preflight]
   S4[4 · Explore codebase + consult knowledge base]
+  S4b[3.5 · Post interface contract · contract marker]
   S5[5 · Post plan as issue comment]
-  S6[6 · TDD implementation]
+  S6[6 · TDD implementation · test_red + impl_green]
   S7[7 · pre-commit run]
-  S8[8 · Completion gate · make policy + make check + changelog fragment]
-  S8b[8.5 · Pre-push gc_codex_review · core + security · default cap 1 · posts findings record to issue thread]
-  S8c[8.6 · Pre-push gc_test_quality_review · default cap 1 · posts findings record to issue thread]
+  S8[8 · gc_run_gates · assurance classifier · gates_green]
+  S8b[8.5 · Pre-push gc_codex_review · correctness + security + architecture · convergence dispatcher]
+  S8c[8.6 · Pre-push gc_test_quality_review · test-strength · convergence dispatcher]
   S9[9 · Stage + commit + push]
   S10[10 · Create PR to dev]
   S11[11 · CI monitor]
-  S12[12 · SonarCloud sweep]
-  S15[15 · Transition in-scope requirements DRAFT → ACTIVE]
-  S16[16 · Reconcile traceability against diff]
-  S17[17 · Verify GC state landed]
+  S12[11 · Remote quality substance · remote_gates_green]
+  S15[15 · Transition + diff reconcile + traceability_reconciled]
   S18[18 · Report—DO NOT MERGE]
   End([User reviews PR and merges])
 
@@ -161,7 +461,8 @@ flowchart TB
   S1 --> S2
   S2 --> S3
   S3 --> S4
-  S4 --> S5
+  S4 --> S4b
+  S4b --> S5
   S5 --> S6
   S6 --> S7
   S7 --> S8
@@ -172,17 +473,15 @@ flowchart TB
   S10 --> S11
   S11 --> S12
   S12 --> S15
-  S15 --> S16
-  S16 --> S17
-  S17 --> S18
+  S15 --> S18
   S18 --> End
 
   S8 -->|fail| S7
   S8b -->|findings, re-stage, re-run within cap| S6
   S8c -->|findings, re-stage, re-run within cap| S6
   S11 -->|red| S9
-  S12 -->|findings| S9
-  S17 -->|drift| S16
+  S12 -->|findings or high_risk_fix| S9
+  S15 -->|drift| S15
 
   classDef user fill:#fff7cc,stroke:#c9a900,color:#000
   class Start,End user
@@ -192,11 +491,11 @@ flowchart TB
 
 - **Yellow** nodes are user touchpoints. Per ADR-029, the workflow has **one** synchronous human touchpoint: PR merge (the `End` node). Plans are posted to the GitHub issue thread (S5) and the agent proceeds without waiting; review findings and decisions on findings are also recorded on the issue thread.
 - **Entry is always by issue.** Step 1 resolves the input to a GitHub issue (either directly or via a UID → issue shim) and parses the `## Requirements` section from the issue body into `in_scope_requirements[]`. The list may be empty (bug fix / refactor) or contain one or many UIDs (grouped implementation). Everything downstream treats the issue as the authoritative context and the list as the set of requirements to be transitioned to `ACTIVE` on completion. Step 1 also creates the feature branch with a **bounded short-slug name**: `gh issue develop` is invoked with `--name <issue-number>-<short-slug>` (≤ 50 chars, ASCII-only); skipping `--name` lets `gh` slugify the full issue title and produces unusable 100+ character branch names that break terminal display, copy-paste, CI breadcrumbs, and downstream shell quoting. The skill then **validates the actual checked-out branch against the same rule**: `gh` reuses existing branches, so a previous pickup that ran before this rule existed (or didn't follow it) would otherwise hand the agent a non-compliant branch that flows through pickup comment, push, CI, and PR. The post-check fetches the configured base and compares against `origin/<base>` (local base can be stale); renames the branch in place when it has no commits relative to the remote base and no PR exists, or applies the in-progress signal first (so a paused picked-up issue stays visibly flagged) then stops and escalates to the user when a published PR is on the line. The post-check is the dispositive enforcement (the `--name` flag only governs first-time pickups). Slug derivation rule, validation predicate, and worked examples live in `skills/implement/SKILL.md` Step 1 sub-step 11. Step 1 then flags the resolved issue **in-progress**: an `in-progress` label (created on demand if the repo lacks it) plus a pickup comment on the thread recording the driver, the checked-out branch, and a timestamp; a maintainer scanning `/issues`, or another agent, sees at a glance that work is underway. The label is removed by Step 18 when the agent finishes its work and hands the PR to the user. The GitHub issue itself stays open until the user merges the PR, at which point GitHub closes it automatically via the `Closes #<issue-number>` keyword rendered into the PR body by `gc_render_pr_body` (Step 9). A run that escalates to the user without completing intentionally leaves both the label and the issue open, because the issue *was* picked up but the work is paused, not finished.
-- **Steps 1–4** gather context and run the codex architecture preflight before any code is written. Step 4 also consults the repo knowledge base via the index if one is present.
-- **Step 6** is TDD (red → green → refactor per clause). Steps 7–8 are the local quality gate. A narrow documentation-only carve-out is documented in `skills/implement/SKILL.md` Step 4.4 for diffs that contain no executable behavior and whose claims are protected by an existing structural gate (policy check, schema validator, lint rule, verifier script). The carve-out must be declared in the plan and re-stated as an issue comment naming the gate; substring/snapshot tests written only to satisfy TDD wording are explicitly disallowed. The completion gate re-validates the carve-out with a two-check sweep over the union of committed, staged, unstaged, and untracked paths (Step 6 runs before stage-and-commit, so working-tree state is part of the diff): every path must be in the documentation set AND every diff hunk's content must be free of executable behavior; a path check alone isn't enough, because a doc file can still carry executable behavior.
-- **Step 8.5 (= SKILL Step 6.5)** is the pre-push Codex review pass per issue #804: `gc_codex_review` with `uncommitted=true` runs locally against the staged + unstaged diff and posts a verbatim findings record to the resolved issue thread for each cycle (durable per ADR-029). **Default cap is 1 cycle** (issue #906); configurable per repo via `workflow.codex_review.pre_push_cap` in `.ground-control.yaml`, bounds `[1, 10]`. The cap is enforced **per issue** (the cycle counter is anchored to the GitHub issue thread; the current branch is recorded in the marker for audit context but is NOT part of the cap key, so a branch rename on the same issue cannot reset the counter; see ADR-029). After a cycle's findings are surfaced, the agent **dispatches on the returned `next_action`**: re-stage and re-invoke ONLY on `fix_findings_and_reinvoke`; on `fix_findings_then_summarize_and_escalate` (the last-in-cap action, which fires on cycle 1 under the cap-1 default when findings are present) fix and post the decision record but escalate to the user instead of a blind re-invoke that would only return `codex_review_prepush_cap_reached`. No commit/push between cycles. The post-push codex review (former Step 12 in earlier numbering) was removed by issue #804; merge-commit drift is the responsibility of CI (compile/tests/integration) and SonarCloud (quality).
-- **Step 8.6 (= SKILL Step 6.6)** is the pre-push test-quality review, moved pre-push by issue #906 from the former post-PR Step 13. `gc_test_quality_review` runs locally against the same staged + unstaged + untracked diff. **Default cap is 1 cycle**; configurable per repo via `workflow.test_quality_review.pre_push_cap`. Same local-only iteration loop as Step 6.5 (re-stage, do NOT commit between cycles); same `gc_post_decision_record` contract for the durable record. The MCP tool returns a `{findings, cycle, cap, next_action, ...}` envelope; the parent /implement agent reads `next_action` as a directive (`fix_findings_and_reinvoke` / `post_clean_decision_record_and_advance_to_phase_c` / `fix_findings_then_summarize_and_escalate` (last in-cap cycle: fix + escalate, NOT re-invoke) / `post_summary_and_escalate_to_user`), not as prose to summarize back to the user. Per #884 v2 this is an MCP tool, not a Skill; the v1 Skill-tool boundary returned prose findings that the parent's autoregressive "I just got a result, present it" bias kept echoing back to the user instead of fixing in-turn; the MCP boundary closes that bias structurally. See `architecture/notes/test-quality-review-engine.md` for the full mechanism (engine, auth, failure modes).
-- **Steps 9–11** commit, push, open the PR, and block on CI + SonarCloud before any reviewer looks at the code. **PR title format (issue #901):** Step 9 validates the title locally before `gh pr create`. Two rules: (1) a single conventional-commit type with optional scope (`<type>(<optional-scope>): <subject>`); compound prefixes like `security/docs:` are rejected by `amannn/action-semantic-pull-request` and similar linters downstream repos run; for bundled PRs pick the dominant type and describe the rest in the subject; (2) the subject must start with a lowercase letter (`^[a-z].*$`); uppercase acronyms (NGFW, GCP, MCP) must be reshaped (lowercase, relocate into a slash-prefixed path, or front with a verb). Per-repo override via `.ground-control.yaml::workflow.pr_title.types` / `subject_pattern`; otherwise the conventional-commits canonical allow-list + `^[a-z]` pattern apply. Catching both locally removes the edit-cycle-per-failure cost the agent otherwise pays after every `gh pr create`. See `skills/implement/SKILL.md` Step 9 for the full rule + reshape examples.
+- **Steps 1–3.5** gather context, run the architecture preflight, inspect the codebase, and post the interface contract before any code is written. The contract is the oracle for the plan, targeted tests, and test-strength review.
+- **Step 6** is TDD (red → green → refactor per clause) with tool-verified markers. `gc_assert_test_red` observes the failing targeted test/contract check, and `gc_assert_impl_green` observes the passing targeted check after implementation. Steps 7–8 are the local quality gate. A narrow documentation-only carve-out is documented in `skills/implement/SKILL.md` Step 4.4; both marker tools validate that carve-out before writing their markers. `gc_run_gates` then re-verifies fresh `impl_green`, runs manifest/legacy gates, and runs the assurance classifier before writing `gates_green`.
+- **Step 8.5 (= SKILL Step 6.5)** is the pre-push Codex review pass per issue #804: `gc_codex_review` with `uncommitted=true` runs locally against the staged + unstaged diff and posts a verbatim findings record to the resolved issue thread for each cycle (durable per ADR-029). The Codex pass runs three fresh-context lenses with edit tools removed: correctness, security, and architecture. The cap is configurable per repo via `workflow.codex_review.pre_push_cap` in `.ground-control.yaml` (configured bounds `[1, 10]`, ADR-031 effective minimum cap 2) and enforced **per issue** (the cycle counter is anchored to the GitHub issue thread; the current branch is recorded in the marker for audit context but is NOT part of the cap key, so a branch rename on the same issue cannot reset the counter; see ADR-029). After a cycle's findings are surfaced, the agent **dispatches on the MCP-computed `next_action`**: `advance_to_next_phase`, `fix_findings_and_reinvoke`, `post_structured_decision_aid_and_escalate`, or `record_terminal_escalation`. Cycle 1 never collapses into escalation because findings exist; dirty cycles below the effective cap fix, self-verify, re-stage, and re-invoke. No commit/push between cycles. The post-push codex review (former Step 12 in earlier numbering) was removed by issue #804; merge-commit drift is the responsibility of CI (compile/tests/integration) and provider-neutral remote-quality gates.
+- **Step 8.6 (= SKILL Step 6.6)** is the pre-push test-quality review, moved pre-push by issue #906 from the former post-PR Step 13. `gc_test_quality_review` runs locally against the same staged + unstaged + untracked diff as the test-strength lens. It consumes `gc_run_gates` mutation / diff-coverage results when the gate manifest supplies them, and provider-missing telemetry can route to reviewer fallback without treating the missing deterministic provider as passed. The cap is configurable via `workflow.test_quality_review.pre_push_cap` with the same ADR-031 effective minimum of 2. Same local-only convergence loop as Step 6.5 (re-stage, do NOT commit between cycles); same `gc_post_decision_record` contract for the durable record. The MCP tool returns a `{findings, cycle, configured_cap, cap, next_action, dispatcher, ...}` envelope; the parent /implement agent reads `next_action` as a directive, not as prose to summarize back to the user. Per #884 v2 this is an MCP tool, not a Skill; the v1 Skill-tool boundary returned prose findings that the parent's autoregressive "I just got a result, present it" bias kept echoing back to the user instead of fixing in-turn; the MCP boundary closes that bias structurally. See `architecture/notes/test-quality-review-engine.md` for the full mechanism (engine, auth, failure modes).
+- **Steps 9–11** commit, push, open the PR, and block on CI plus remote-quality substance before any reviewer looks at the code. **PR title format (issue #901):** Step 9 validates the title locally before `gh pr create`. Two rules: (1) a single conventional-commit type with optional scope (`<type>(<optional-scope>): <subject>`); compound prefixes like `security/docs:` are rejected by `amannn/action-semantic-pull-request` and similar linters downstream repos run; for bundled PRs pick the dominant type and describe the rest in the subject; (2) the subject must start with a lowercase letter (`^[a-z].*$`); uppercase acronyms (NGFW, GCP, MCP) must be reshaped (lowercase, relocate into a slash-prefixed path, or front with a verb). Per-repo override via `.ground-control.yaml::workflow.pr_title.types` / `subject_pattern`; otherwise the conventional-commits canonical allow-list + `^[a-z]` pattern apply. Catching both locally removes the edit-cycle-per-failure cost the agent otherwise pays after every `gh pr create`. See `skills/implement/SKILL.md` Step 9 for the full rule + reshape examples.
 - **Steps 13 / 14 were merged out by issue #906.** Test-quality review moved pre-push to Step 6.6; there is no separate post-PR review step. Final CI re-verify (former Step 14) collapsed into Step 10's existing CI watch on the original push; without a post-push fix loop there is no second CI run to re-verify. The numbering of Steps 15 / 18 / 19 (transitions, close, final report) is preserved so external references don't track a moving target; Steps 13 / 14 are intentional tombstones in SKILL.md, not errors.
 
 #### Test-quality review engine
@@ -224,42 +523,41 @@ with the prompt on stdin and `ANTHROPIC_API_KEY` **stripped from the subprocess 
 **Separate billing account:** if the env-var path is preferred, remove the env-var strip in `runSingleClaudeTestQualityReview` (lib.js) and ensure `ANTHROPIC_API_KEY` has credits. The default strip path keeps OAuth as the canonical auth.
 
 The legacy `Skill("review-tests")` path was removed in #884 v2. Existing host installs at `~/.claude/skills/review-tests/` and `~/.codex/prompts/review-tests.md` are orphaned and can be deleted manually; `bin/install-skills.sh` no longer installs them.
-- **Step 15 transitions each in-scope requirement to `ACTIVE`.** This MUST happen BEFORE Step 16's traceability reconciliation: the Ground Control API enforces `IMPLEMENTS-only-on-ACTIVE`, so reconciling first against a still-DRAFT requirement silently fails. Forward-looking requirements (the diff documents/references but does not deliver) stay DRAFT and use `DOCUMENTS` links instead in Step 16.
-- **Step 16 is traceability reconciliation, not link creation.** It walks every added/modified/renamed/deleted file in the diff, finds existing IMPLEMENTS/TESTS links pointing at each, and updates/deletes/creates links so the Ground Control graph matches reality after the change. Runs with zero in-scope requirements still reconcile, because a bug fix may have touched files linked to other requirements whose links are now stale. Deleting the sole implementation of a requirement is escalated to the user rather than silently removing the link. When the diff *finalizes* a requirement (for example, an ADR clarification or changelog fragment that ships the requirement) but the structural implementation lives in pre-existing files shipped under a sibling requirement, Step 16 backfills IMPLEMENTS links onto those pre-existing artifacts of record. The backfill is bounded by the requirement's concrete subject matter—not a whole-repo scan.
-- **Step 17** re-verifies Ground Control state matches reality after Steps 15–16. These three steps run LAST, after every reviewer has signed off, so Ground Control never runs ahead of code that hasn't passed review. Zero in-scope requirements → Step 15 is a no-op; Step 16 still reconciles; Step 17 still audits.
-- **Every downstream failure loops back to step 9** (stage + commit + push), which is the single re-entry point for fix commits. The completion gate (step 8), the pre-push codex review (step 8.5), and the GC verify (step 17) are the loops that target earlier steps, because they correspond to local-only / pre-PR / GC-only state respectively.
+- **Step 15 transitions each delivered in-scope requirement to `ACTIVE`, runs `gc_reconcile_traceability`, applies the returned diff-derived worklist, and then calls `gc_assert_traceability_reconciled`.** The assertion recomputes the live diff and writes `traceability_reconciled` bound to the diff hash. Forward-looking requirements (the diff documents/references but does not deliver) stay DRAFT and use `DOCUMENTS` links instead. Runs with zero in-scope requirements still reconcile touched artifacts, because a bug fix may have touched files linked to other requirements whose links are now stale. Deleting the sole implementation of a requirement is escalated to the user rather than silently removing the link. Steps 16 and 17 are compatibility tombstones that redirect back to Step 15.
+- **Every downstream failure loops back to step 9** (stage + commit + push), which is the single re-entry point for fix commits. The completion gate (step 8), the pre-push codex review (step 8.5), and the diff-bound traceability assertion (step 15) are the loops that target earlier steps, because they correspond to local-only / pre-PR / GC-only state respectively.
 
 Claude does NOT merge. The user reviews the PR and merges.
 
 ## Per-step routing, tool surfaces, and telemetry (ADR-036)
 
-Per ADR-036 the `/implement` skill carries three cost-side optimizations layered on top of the GC-O007 gate model (which is unchanged on the contract—one human touchpoint at PR merge, ADR-029's configurable pre-push Codex cap [default 1 cycle per #906; per-repo override via `workflow.codex_review.pre_push_cap`], zero deferral, four-phase structure).
+Per ADR-036 the `/implement` skill carries three cost-side optimizations layered on top of the GC-O007 gate model (which is unchanged on the contract—one human touchpoint at PR merge, ADR-031's configurable convergence cap with effective minimum 2 and per-repo override via `workflow.codex_review.pre_push_cap`, zero deferral, four-phase structure).
 
 | Optimization | What it changes | Opt-in knob |
 |--------------|-----------------|-------------|
 | Per-step routing | Each step carries a provider-neutral tier (`low`, `medium`, `high`); `gc_resolve_workflow_route` resolves the stage/purpose from `.ground-control.yaml` to a concrete provider, agent, canonical model id, and fallback policy. Claude Code routes subagent stages to canonical model ids such as `claude-haiku-4-5` and `claude-sonnet-4-6`; parent-only high-tier stages use `claude-opus-4-7`. Codex drivers ignore delegation today unless they explicitly call the resolver and external runner. | `.ground-control.yaml` → `routing.enabled` (default `false`) plus optional `routing.stages.<stage>` overrides |
 | Durable-record MCP tools | `gc_post_decision_record` (Step 6.5 cycle decisions), `gc_post_final_report` (Step 19 summary), `gc_render_pr_body` (Step 9 PR body) replace agent free-prose with deterministic structured-input renderers. All three filter sensitive content, post under a structured marker family, and reject `decision: "defer"` server-side (see canonical succinctness rule in `skills/implement/steps/_review-loop-rules.md`). | Always available; SKILL calls them unconditionally once the tools are present |
-| Traceability + post-merge close gates (#1058) | `gc_assert_traceability_reconciled` (Step 17) re-fetches each in-scope requirement and its IMPLEMENTS / TESTS links from the Ground Control REST API and posts a `traceability_reconciled` phase marker on success; `gc_post_final_report` (Step 19) refuses to publish without that marker; `gc_close_issue_after_merge` (Step 20 / Phase E) verifies the linked PR's `merged_at` non-null AND state `MERGED` before closing the issue, idempotent on already-closed issues. The /quickfix lane is requirement-free and exempt from the traceability gate; a bounded `override_traceability_gate=true` + `override_traceability_reason` escape lets the user authorize a skip with a quoted rationale. | Always on for `/implement`; `lane: "quickfix"` opts out of the traceability prerequisite |
-| Per-step telemetry | `gc_log_step_telemetry` writes one JSONL line per routed step to `.gc/telemetry/<issue>-<sanitized-branch>.jsonl` (gitignored, repo-relative, containment-validated). Operational measurement only—never workflow state. The tool refuses with `telemetry_disabled` when the opt-in knob is off; the agent prose is not the gate. Summarizer reports wall time + token counts (when present) per step and per model; dollar-cost translation is future work. Target: `make implement-cost-summary`. | `.ground-control.yaml` → `telemetry.enabled` (default `false`) |
+| Traceability + post-merge close gates (#1058 / #1075) | `gc_get_implementation_context` writes `context_loaded` before contract/plan; `gc_reconcile_traceability` (Step 15) computes the live diff and returns the worklist; `gc_assert_traceability_reconciled` binds the marker to the live diff hash; `gc_post_final_report` (Step 19) refuses missing or stale traceability; `gc_close_issue_after_merge` (Step 20 / Phase E) verifies the linked PR's `merged_at` non-null AND state `MERGED` before closing the issue, idempotent on already-closed issues. The /quickfix lane is requirement-free and exempt from the traceability gate; a bounded `override_traceability_gate=true` + `override_traceability_reason` escape lets the user authorize a skip with a quoted rationale. | Always on for `/implement`; `lane: "quickfix"` opts out of the traceability prerequisite |
+| Remote-quality substance (#1075) | `gc_watch_required_statuses` writes `remote_gates_green` only after re-verifying required remote statuses and the full configured provider result: quality-gate status, issue severities, ratings, hotspots, coverage, and duplication. SonarCloud/CodeQL/Codecov are provider adapters behind `remote_status`, not workflow phases. A green PR checkmark is not sufficient. | `.ground-control.yaml` → `remote_quality.tier` (`platform_minimum` or `zero_overall_issues`) plus optional coverage/duplication thresholds |
+| Per-step and gate telemetry | `gc_log_step_telemetry` writes one JSONL line per routed step to `.gc/telemetry/<issue>-<sanitized-branch>.jsonl` (gitignored, repo-relative, containment-validated). `gc_gate_telemetry_summary` separately reports gate fire rate, outcomes, overrides/false-positive signals, escapes, and duration; `gc_capture_process_lessons` derives close-out lessons from that telemetry. Operational measurement only—never workflow state. | `.ground-control.yaml` → `telemetry.enabled` (default `false`) |
 
 Each new tool is Temporal-shaped (deterministic, structured-input/output, no LLM call) so GC-O009 inherits them as activities when the Temporal workflow lands.
 
 ## Review Pipeline
 
-One mandatory pre-implementation architecture pass, then a single pre-push codex review pass (Step 6.5), then test-quality review before the user sees the PR. The post-push codex review (former Step 12) was removed by issue #804—the canonical codex pass is the pre-push one, which catches everything codex would normally flag while collapsing the asymmetric "post-push finding → guaranteed CI/SonarCloud roundtrip" cost. Merge-commit drift relative to base is the responsibility of CI (compile/tests/integration) and SonarCloud (quality), not a separate codex pass.
+One mandatory pre-implementation architecture pass, then a single pre-push codex review pass (Step 6.5), then test-quality review before the user sees the PR. The post-push codex review (former Step 12) was removed by issue #804—the canonical codex pass is the pre-push one, which catches everything codex would normally flag while collapsing the asymmetric "post-push finding → guaranteed CI/remote-quality roundtrip" cost. Merge-commit drift relative to base is the responsibility of CI (compile/tests/integration) and provider-neutral remote-quality gates, not a separate codex pass.
 
 | Stage | What it catches | How it runs |
 |-------|-----------------|-------------|
 | Codex architecture preflight | Cross-cutting concerns, reuse opportunities, abstraction/concept confusion, need for ADR/design guidance before coding | `gc_codex_architecture_preflight` |
-| SonarCloud | Coverage, code smells, duplication, security hotspots, open issues on the PR | CI job + `$SONAR_TOKEN` sweep of `api/issues/search` and `api/hotspots/search` for this PR |
+| Remote-quality providers | Quality-gate status, issue severities for new and overall code, reliability/security/maintainability ratings, reviewed security hotspots, coverage, and duplication | `gc_watch_required_statuses` with provider adapters such as SonarCloud behind `remote_status`; server-side API fetch, not a PR green-checkmark claim |
 | Trivy (advisory) | Container image vulnerabilities, Dockerfile/IaC misconfigurations, in-image secrets | CI job; SARIF artifact `trivy-sarif` on the workflow run page; non-blocking |
 | OSV-scanner (advisory) | CVEs in Java/Gradle dependencies (read from `backend/gradle.lockfile`) | CI job; SARIF artifact `osv-scanner-sarif` on the workflow run page; non-blocking |
-| Codex review (pre-push, Step 6.5) | Fitness for purpose, architectural soundness, maintainability, extensibility, security, established patterns, consistency with the larger codebase. Codex returns structured findings; the MCP server posts a verbatim findings record to the resolved issue thread from the host side; the coding agent dispatches on the returned `next_action` (re-invoke only on `fix_findings_and_reinvoke`; on `fix_findings_then_summarize_and_escalate` fix + escalate without re-invoke). There is no PR yet at Step 6.5, so no inline PR comments are written by the SKILL—inline anchored comments only happen if a direct caller invokes `gc_codex_review` post-push (with a `pr_number`), which the SKILL no longer drives (issue #804). | `gc_codex_review` (`uncommitted=true`); MCP posts the issue-thread findings record |
-| `gc_test_quality_review` (Step 6.6) | Assertion-free tests, mock-only assertions, integration-as-unit, tests that can't detect regressions | `gc_test_quality_review` MCP tool (shells out to `claude --print --model claude-sonnet-4-6` by default; full mechanism in `architecture/notes/test-quality-review-engine.md`) |
+| Codex review (pre-push, Step 6.5) | Correctness, security, and architecture lenses against stated requirements, contracts, plans, and binding ADRs. Codex returns verdict envelopes; the MCP server posts a verbatim findings record to the resolved issue thread from the host side; the coding agent dispatches only on the dispatcher-computed `next_action`. There is no PR yet at Step 6.5, so no inline PR comments are written by the SKILL—inline anchored comments only happen if a direct caller invokes `gc_codex_review` post-push (with a `pr_number`), which the SKILL no longer drives (issue #804). | `gc_codex_review` (`uncommitted=true`); MCP posts the issue-thread findings record |
+| `gc_test_quality_review` (Step 6.6) | Test-strength lens: assertion-free tests, mock-only assertions, integration-as-unit, tests that can't detect regressions, and manifest-provided mutation / diff-coverage gate evidence | `gc_test_quality_review` MCP tool (shells out to `claude --print --model claude-sonnet-4-6` by default; full mechanism in `architecture/notes/test-quality-review-engine.md`) |
 
-**Async execution (issue #937).** The codex review, codex architecture preflight, and test-quality review tools each spawn a child process (`codex exec` / `claude --print`) that legitimately runs for several minutes. Run synchronously, a single MCP tool-call blocked past the MCP client's per-call timeout; the client abandoned the call and the orphaned child left the workflow with no result handle (issue #893). All five tools (`gc_codex_architecture_preflight`, `gc_codex_review`, `gc_codex_review_cycle`, `gc_test_quality_review`, `gc_test_quality_review_cycle`) now take an opt-in `async` flag (default `false`; synchronous behavior unchanged for direct callers). With `async: true` the tool starts a background job and returns `{ok, status: "running", job_id}` immediately; the new `gc_codex_job` tool polls for the result envelope (`status: "done"` carries the full review result under `result`) or cancels a stuck job (cancel aborts an `AbortController` whose signal kills the child, so nothing is orphaned). The `/implement` step files (2.5 / 6.5 / 6.6) drive the start-then-poll loop. Client-side, `.claude/settings.json` sets `MCP_TOOL_TIMEOUT` / `MCP_TIMEOUT` so long-running MCP tools (including `gc_watch_ci_run` and `gc_watch_sonar_analysis`) have headroom. Full design in ADR-036 (amendments).
+**Async execution (issue #937).** The codex review, codex architecture preflight, and test-quality review tools each spawn a child process (`codex exec` / `claude --print`) that legitimately runs for several minutes. Run synchronously, a single MCP tool-call blocked past the MCP client's per-call timeout; the client abandoned the call and the orphaned child left the workflow with no result handle (issue #893). All five tools (`gc_codex_architecture_preflight`, `gc_codex_review`, `gc_codex_review_cycle`, `gc_test_quality_review`, `gc_test_quality_review_cycle`) now take an opt-in `async` flag (default `false`; synchronous behavior unchanged for direct callers). With `async: true` the tool starts a background job and returns `{ok, status: "running", job_id}` immediately; the new `gc_codex_job` tool polls for the result envelope (`status: "done"` carries the full review result under `result`) or cancels a stuck job (cancel aborts an `AbortController` whose signal kills the child, so nothing is orphaned). The `/implement` step files (2.5 / 6.5 / 6.6) drive the start-then-poll loop. Client-side, `.claude/settings.json` sets `MCP_TOOL_TIMEOUT` / `MCP_TIMEOUT` so long-running MCP tools (including CI and remote-quality watchers) have headroom. Full design in ADR-036 (amendments).
 
-All preflight/review stages operate under the same rule: **fix everything, defer nothing.** Review-loop cap (issue #906): **default 1 cycle per reviewer** for codex (Step 6.5) and test-quality (Step 6.6); per-repo override via `.ground-control.yaml::workflow.codex_review.pre_push_cap` and `workflow.test_quality_review.pre_push_cap` (bounds `[1, 10]`). Per-finding `gc_codex_verify_finding` cap stays at 2. If a cycle past the configured cap is needed, `override_cap=true` + `override_reason=<authorization quote>` is required per cycle; otherwise the skill escalates to the user with the full finding history.
+All preflight/review stages operate under the same rule: **fix everything, defer nothing.** Review-loop cap (ADR-031): codex (Step 6.5) and test-quality (Step 6.6) are configurable per repo via `.ground-control.yaml::workflow.codex_review.pre_push_cap` and `workflow.test_quality_review.pre_push_cap` (configured bounds `[1, 10]`, effective minimum cap 2). Per-finding `gc_codex_verify_finding` cap stays at 2. If a cycle past the effective cap is needed, the dispatcher emits a structured decision aid and `override_cap=true` + `override_reason=<authorization quote>` is required per cycle; otherwise the skill stops at the terminal escalation.
 
 "Defer nothing" is mechanically enforced (issue #830, ADR-029 § "`defer` is not a valid disposition"): the `.claude/hooks/block-defer-language.py` PreToolUse hook blocks `gh issue/pr {create,edit,comment,close}` calls carrying deferral-disposition language ("deferred to a follow-up PR," "addressed in a subsequent PR," "TBD later" in a closing comment, …), and `bin/policy` flags the same language in the PR body at completion gate. Filing a tracking issue does not convert a deferral into a valid disposition; the only valid ones are `fix`, `wontfix` (with explicit user authorization), or `not-applicable` (with rationale). Codex review additionally classifies each finding `one-off` or `class`; a `class` finding must be fixed at the **category** level (a structural gate / shared helper / parameterization; one point of repair applied to every instance), not whack-a-mole'd to the reviewer-named site.
 
@@ -316,7 +614,7 @@ The `/integrate` lane is the workflow path for preparing maintainer-approved pul
 
 ### When to use it
 
-Use `/integrate` when you have a set of PRs in a target repository that carry an approval label (default `approved-for-integration`) and you want to rebase each one onto the current base branch, run the repo's completion gate and CI/Sonar checks, and push the result. The lane does not replace human review: PRs must already carry the approval label before the lane touches them. It replaces the manual rebase-and-push step that a maintainer would otherwise do for each PR in turn.
+Use `/integrate` when you have a set of PRs in a target repository that carry an approval label (default `approved-for-integration`) and you want to rebase each one onto the current base branch, run the repo's completion gate and CI/remote-quality checks, and push the result. The lane does not replace human review: PRs must already carry the approval label before the lane touches them. It replaces the manual rebase-and-push step that a maintainer would otherwise do for each PR in turn.
 
 Do not use `/integrate` to batch-merge PRs autonomously. That boundary is explicit: the lane prepares PRs for merge; the human merges.
 
@@ -369,7 +667,7 @@ For each PR in queue order:
 3. **Rebase onto base branch.** The PR branch is rebased onto the latest `origin/<base>`. Rebase conflicts halt that PR with a `blocked` failure mode; the queue continues to the next PR (see Failure modes below).
 4. **Run completion gate.** The repo's configured `workflow.completion_command` (typically `make check`) runs in the worktree. Failure halts the queue.
 5. **Watch CI.** After pushing, the lane polls the GitHub Actions run for the PR and waits for a terminal conclusion. CI failure halts the queue.
-6. **Watch SonarCloud.** If the repo configures a `sonarcloud` block, the lane waits for the Sonar analysis and inspects quality gate status. A failed quality gate halts the queue.
+6. **Watch remote quality.** If the repo configures a remote-quality provider, the lane waits for provider analysis and inspects the quality gate. A failed quality gate halts the queue.
 7. **Force-with-lease push.** When all gates pass, the lane pushes the rebased branch to `origin` with `--force-with-lease`. This updates the PR's head SHA without disturbing any concurrent push to a different branch.
 8. **Release lock.** The lock is released after each PR regardless of outcome, so the next PR can be processed.
 
@@ -377,7 +675,7 @@ For each PR in queue order:
 
 Three failure severities apply:
 
-- **`blocked`**: the current PR cannot be prepared (rebase conflict, completion-gate failure, CI failure, Sonar failure). The queue continues to the next PR. The blocked PR is recorded in the run ledger at `<repo>/.gc/integration-runs/<run-id>/halt.json`.
+- **`blocked`**: the current PR cannot be prepared (rebase conflict, completion-gate failure, CI failure, remote-quality failure). The queue continues to the next PR. The blocked PR is recorded in the run ledger at `<repo>/.gc/integration-runs/<run-id>/halt.json`.
 - **`queue_wide_halt`**: a condition prevents any further processing (lock conflict from a concurrent run, invalid configuration, missing base branch). The queue stops. No further PRs are processed in this invocation.
 - **`consultation_halt`**: the lane encounters a condition that requires maintainer judgment before proceeding. The queue stops and the lane reports the condition through the invoking interface. The consultation criteria from GC-O011 clause (h) are: the PR diff touches a file that another queued PR also touches (ordering-sensitive overlap); the rebase produces a commit that is structurally different from the original PR's commits in a way the lane cannot resolve deterministically; the CI run produces a failure log that names a file modified by a different PR in the queue; or the quality gate failure names a metric that was passing before the rebase and failing after. In any of these cases the lane must stop and consult the maintainer rather than proceeding with a potentially incorrect ordering or an attribution-ambiguous failure.
 

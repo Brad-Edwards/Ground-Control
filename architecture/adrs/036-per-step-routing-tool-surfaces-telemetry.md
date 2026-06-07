@@ -12,8 +12,8 @@ Accepted
 
 ADR-021 ("Gated Agentic Development Loop") and ADR-029 ("Issue-Thread Gate Model")
 codify GC-O007: the four-phase `/implement` workflow with one human touchpoint
-(PR merge), one Codex review pass (pre-push, hard-capped at three cycles), and
-the GitHub issue thread as the durable record. The workflow contract is sound;
+(PR merge), one pre-push Codex review convergence loop, and the GitHub issue
+thread as the durable record. The workflow contract is sound;
 the cost profile of running it is not.
 
 Issue #867 (and its scoped sibling #868) measured the within-run token cost
@@ -45,11 +45,11 @@ LLM call, no workflow state. They become Temporal activities directly under
 GC-O009 with no shape change.
 
 The gate model is preserved end to end: one human touchpoint (PR merge), no
-plan-approval gate, no post-push Codex review, ADR-029's configurable
-pre-push cap (default 1 cycle per issue #906; per-repo override via
-`.ground-control.yaml::workflow.codex_review.pre_push_cap`, bounds `[1, 10]`),
-zero deferral. This ADR amends ADR-021 with cost-side machinery; it does
-not redefine GC-O007's gate contract.
+plan-approval gate, no post-push Codex review, ADR-031's configurable
+pre-push convergence cap (per-repo override via
+`.ground-control.yaml::workflow.codex_review.pre_push_cap`, configured bounds
+`[1, 10]`, effective minimum cap 2), zero deferral. This ADR amends ADR-021
+with cost-side machinery; it does not redefine GC-O007's gate contract.
 
 ## Decision
 
@@ -97,8 +97,8 @@ Three new MCP tools replace agent-authored long-form comments:
   (defense in depth on top of the `block-defer-language.py` PreToolUse hook).
 - **`gc_post_final_report(issue_number, pr_number, ...)`**: same pattern for
   Step 19. Structured input (in-scope requirements, files by change kind,
-  reviews per reviewer, traceability reconciliation, CI/SonarCloud status) →
-  canonical Markdown → issue thread → `gc:final-report` marker.
+  reviews per reviewer, traceability reconciliation, required remote status
+  results) → canonical Markdown → issue thread → `gc:final-report` marker.
 - **`gc_render_pr_body(issue_number, change_class, ...)`**: renders a PR
   body that satisfies `check_pr_body`'s policy gates (template sections,
   requirement UIDs, ADR impact, three Ground Control Checks, IMPLEMENTS/TESTS
@@ -128,19 +128,17 @@ calls `gc_test_quality_review`** (per #884 v2; the prior `Skill("review-tests")`
 boundary returned prose findings that the autoregressive parent agent
 kept echoing back to the user instead of fixing in-turn, defeating the
 SKILL.md prose rule; the MCP tool returns a structured envelope with
-`next_action` that the agent reads as a directive). Issue #906 moved this
+dispatcher-computed `next_action` that the agent reads as a directive). Issue #906 moved this
 call pre-push (former Step 13 → new Step 6.6) so the PR opens with both
-AI-assisted reviewers clean; the same #906 amendment dropped the default
-pre-push cap for both reviewers from 3 to 1, configurable per repo via
-`workflow.codex_review.pre_push_cap` and `workflow.test_quality_review.pre_push_cap`.
-The MCP tool itself is unchanged; only its workflow placement and default
-cap value shifted. After Step 6.6's
+AI-assisted reviewers clean; ADR-031 makes both reviewers convergence loops
+with configurable caps and an effective minimum cap of 2, configurable per
+repo via `workflow.codex_review.pre_push_cap` and
+`workflow.test_quality_review.pre_push_cap`. After Step 6.6's
 cycle the parent calls `gc_post_decision_record` with the
 `fix`/`wontfix`/`not-applicable` dispositions (cycle counter, durable
 record); a clean cycle is the structured advance-to-Phase-C signal once
-that post returns `ok: true` (the string was `..._advance_to_step_14`
-before issue #906 collapsed Step 14 into Step 10's existing CI watch;
-new MCP envelope returns `..._advance_to_phase_c`). See
+that post returns `ok: true` and the dispatcher returns `advance_to_next_phase`.
+See
 `architecture/notes/test-quality-review-engine.md` for the full MCP
 tool mechanism (claude CLI exec, `ANTHROPIC_API_KEY` strip / OAuth,
 cycle markers, failure modes). Step 19 calls `gc_post_final_report`.
@@ -214,9 +212,9 @@ queue, or worker code. It only ensures the bridge surface is Temporal-shaped.
 - **ADR-021** is amended (gain a new amendment blockquote citing this ADR).
   The gate model and phase structure are unchanged; only the cost-side
   machinery changes.
-- **ADR-029** is amended by issue #906 only to make the Codex cap
-  configurable per repo (default 1, override via
-  `workflow.codex_review.pre_push_cap`); the zero-deferral rule,
+- **ADR-029** is amended by issue #906 / ADR-031 to make the Codex cap
+  configurable per repo (override via `workflow.codex_review.pre_push_cap`,
+  ADR-031 effective minimum cap 2); the zero-deferral rule,
   issue-thread-as-durable-record contract, and one-human-touchpoint contract
   all stand.
 - **ADR-027** is unchanged; the agent-neutral packaging seam absorbs the new
@@ -333,8 +331,9 @@ which loops execute**.
 
    - `gc_codex_review_cycle`: wraps the existing `gc_codex_review` AND
      auto-posts the per-cycle decision record. Returns a compact terminal
-     envelope: `{ok, reviewer, cycle, cap, status, next_action,
-     findings_summary, findings_record_url, decision_record_url}`.
+     envelope: `{ok, reviewer, cycle, configured_cap, cap, status,
+     next_action, dispatcher, findings_summary, findings_record_url,
+     decision_record_url}`.
      Verbatim review prose stays server-side via the underlying findings
      record. Auto-posted decisions are always `decision: "fix"` (the only
      decision the cycle tool can record without user authorization). A
@@ -345,19 +344,18 @@ which loops execute**.
      internal seam (`_runReviewCycleShared`) parameterized by reviewer and
      cap source; there is exactly one cycle implementation, not one per
      reviewer.
-   - `gc_watch_ci_run`: server-side GitHub Actions poller. Replaces the
-     per-poll agent turn cost of /implement Step 10. Returns one terminal
-     envelope `{conclusion, failed_steps[], log_summary}` after the run
-     reaches a terminal state, hits the queued-too-long cap (5 min
-     default), or hits the total cap (45 min default). Raw CI logs stay
-     server-side; only the bounded UTF-8 tail of `gh run view --log-failed`
-     is returned.
-   - `gc_watch_sonar_analysis`: server-side SonarCloud poller. Returns
-     `{quality_gate, issues_summary, hotspots_summary,
-     full_issue_export_path}` after the analysis is fetched and
-     paginated. The `SONAR_TOKEN` is read at call time and passed only in
-     the Authorization HTTP header; never in argv, telemetry, exports,
-     or returned envelopes (the issue #934 preflight binding rule).
+   - `gc_watch_required_statuses`: server-side required-status watcher.
+     Replaces the per-poll agent turn cost of /implement Step 10. It reads
+     the manifest and discovered required checks, calls configured provider
+     adapters, and returns one terminal envelope `{conclusion,
+     failed_statuses[], log_summary, provider_results[]}` after the required
+     status set reaches a terminal state, hits the queued-too-long cap (5 min
+     default), or hits the total cap (45 min default). Raw provider logs stay
+     server-side; only bounded summaries are returned.
+   - Provider-specific watchers, such as a GitHub Actions poller or a quality
+     dashboard poller, are optional adapters behind
+     `gc_watch_required_statuses`. They are not engine phases and are selected
+     only when the manifest or discovered required checks call for them.
 
 4. **Issue-thread cache.** `gc_get_issue_thread` returns the body +
    comments + a sha256 content hash on first call. Subsequent calls with
@@ -417,9 +415,8 @@ Two coordinated changes:
    `MCP_TOOL_TIMEOUT` (3,600,000 ms) and `MCP_TIMEOUT` (30,000 ms) explicitly,
    in the checked-in repo settings, so every Claude Code session in the repo
    gives long-running MCP tools the headroom they need. This also covers the
-   `gc_watch_ci_run` (2700 s) and `gc_watch_sonar_analysis` (1800 s)
-   server-side-hold tools added in the #934 amendment, which previously relied
-   on an unset client default.
+   `gc_watch_required_statuses` server-side-hold tool and the provider
+   adapters it calls, which previously relied on an unset client default.
 
 2. **Async job model.** The five review/preflight tools gain an opt-in
    `async` boolean (default `false`; synchronous behavior and every direct
@@ -433,8 +430,8 @@ Two coordinated changes:
    Cancellation aborts an `AbortController` whose signal is threaded down to
    the child process exec, so a cancelled job leaves no orphan. The /implement
    step files (2.5, 6.5, 6.6 and `_review-loop-rules.md`) drive the
-   start-then-poll pattern; `result.next_action` is dispatched exactly as the
-   synchronous envelope was.
+   start-then-poll pattern; the dispatcher-computed `result.next_action` is
+   dispatched exactly as the synchronous envelope was.
 
 `gc_codex_job` is the sixth tool in this ADR's surface family and, like the
 cycle wrappers and watch tools, is bridge work toward GC-O009; the
@@ -444,8 +441,63 @@ start/poll/cancel triple is the shape a Temporal activity handle takes.
 
 **Amendment: issue close mechanism (#862 typed-action-items PR).** The /implement Step 18 no longer runs `gh issue close`. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step 9) when the user merges the PR. Step 18 only removes the `in-progress` label set in Step 1. Closing from the agent decoupled the close event from the merge: an unmerged or rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open issues on revert). Step 19 (final report) is correspondingly tightened: traceability reconciliation (Steps 15 through 17) is an explicit precondition, and no earlier step surfaces a user-facing "complete" signal (prior escalations are for input, not for "done"). The /quickfix sibling lane is updated in lockstep.
 
-**2026-05-26 (issue #989).** The new `/integrate` skill lane (GC-O011) runs on the parent session for every step. The lane's work is mechanical (label-based PR discovery, worktree rebase, completion gate, CI/Sonar watch, force-with-lease push) and does not benefit from per-step model tiering. If a future stage of the lane benefits from LLM reasoning, the `gc_resolve_workflow_route` resolver and the `routing.stages.*` configuration block already support adding stages without changing this ADR.
+**2026-05-26 (issue #989).** The new `/integrate` skill lane (GC-O011) runs on the parent session for every step. The lane's work is mechanical (label-based PR discovery, worktree rebase, completion gate, required remote status watch, force-with-lease push) and does not benefit from per-step model tiering. If a future stage of the lane benefits from LLM reasoning, the `gc_resolve_workflow_route` resolver and the `routing.stages.*` configuration block already support adding stages without changing this ADR.
 
 **2026-05-26 (issue #989 merge carve-out).** The `/integrate` lane's `mode=merge` execution path runs inside the MCP server subprocess (via `gc_integration_manager` action=prepare mode=merge). This is the same tool surface boundary that the prepare path uses; no new routing stage or telemetry surface is required. The merge carve-out does not change the step-routing contract for any other lane.
 
 **2026-05-30 (issue #1058 Phase E + close stage).** A new orchestrator stage `close_issue_after_merge` is added to the routing table for the /implement Phase E (Step 20) post-merge close. The stage's tier defaults to `low` (the work is mechanical: verify `merged_at`, run `gh issue close`) and is configurable per repo via `routing.stages.close_issue_after_merge` in `.ground-control.yaml`. The two underlying tools (`gc_assert_traceability_reconciled` and `gc_close_issue_after_merge`) consume the existing `repoPath` / `issueNumber` boundary and produce telemetry records via the existing `gc_log_step_telemetry` writer; no new telemetry schema is required. The step-routing contract for every other lane and stage is unchanged.
+
+## Amendment (2026-06-06)
+
+ADR-058, ADR-059, ADR-061, and ADR-062 refine this ADR's routing and
+enforcement contract. Routing becomes budget-aware by stage and capability:
+architecture preflight, contract definition, planning, review lenses, and
+hard-problem escalation use high-capability routes; mechanical implementation,
+fix application, polling, and bookkeeping can use lower-cost routes. The route
+resolver, not local prose, decides the concrete driver from
+`.ground-control.yaml`. Cross-model review stays available for Critical and
+Blocking confirmation. Enforcement remains agent-neutral: every gate that the
+workflow relies on must live in `bin/policy`, ecosystem build tasks, CI, or an
+MCP refusal. `.claude/hooks/` may mirror a gate for local feedback, but it is
+never the only enforcement layer because it does not run for every driver.
+Remote checks use the generic required-status watcher
+`gc_watch_required_statuses`; provider-specific watchers are optional
+manifest-driven adapters behind that tool.
+
+The routing table now includes `contract_definition` between codebase
+assessment and planning. It defaults to a high-tier parent route because it
+sets the public interface and operational property contract that the plan,
+tests, classifier, and reviewers all consume. The durable-record tool family
+also gains `gc_post_interface_contract`, `gc_assert_test_red`, and
+`gc_assert_impl_green`. These tools reuse the existing repo/issue boundary and
+phase-marker primitives: each re-verifies its predecessor marker or command
+evidence before posting, returns a structured envelope, and is Temporal-shaped
+for the future GC-O009 workflow.
+
+## Amendment (2026-06-06, Phase 5 of issue #1075)
+
+The MCP tool surface expands again, without changing the provider-neutral
+engine boundary:
+
+- `gc_get_implementation_context` loads binding ADRs, configured
+  cross-cutting incumbents, existing IMPLEMENTS artifacts, and related
+  requirement graph context, then writes `context_loaded`.
+- `gc_reconcile_traceability` computes the live `git diff --name-status`,
+  calls Ground Control reverse traceability lookup for each changed artifact,
+  and returns a structured worklist plus in-scope coverage gaps.
+- `gc_assert_traceability_reconciled` binds its marker to the live diff hash;
+  `gc_post_final_report` refuses stale traceability when base/head refs are
+  supplied.
+- `gc_watch_required_statuses` now verifies full remote-quality provider
+  substance before writing `remote_gates_green`. SonarCloud, CodeQL, Codecov,
+  and equivalent services remain adapters behind `remote_status`; their
+  metrics are not engine phases.
+- `gc_gate_telemetry_summary` summarizes per-gate fire rate, outcomes,
+  override and false-positive signals, escapes, and duration.
+- `gc_capture_process_lessons` derives process observations from telemetry
+  and writes them through the same knowledge inbox path used by `gc_remember`.
+
+Gate telemetry is analytic only. It complements the existing step wall-time
+telemetry but must never become a workflow-state counter, cap, or in-run gate.
+The durable audit record remains the issue thread and Ground Control
+traceability graph.

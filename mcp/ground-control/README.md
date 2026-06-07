@@ -116,6 +116,9 @@ GETs (history, timeline, exports, list-by-X) onto `gc_query`.
 | `gc_post_implementation_plan` | Post plan to issue thread |
 | `gc_codex_review` | Run Codex review with cycle caps |
 | `gc_codex_verify_finding` | Verify a specific finding resolved |
+| `gc_run_gates` | Run manifest-bound local workflow gates |
+| `gc_install_workflow_assets` | Install versioned workflow gate packs |
+| `gc_watch_required_statuses` | Evaluate provider-neutral remote status gates |
 | `gc_query` | Read-only ad-hoc `/api/v1/*` GET (see below) |
 | `gc_integration_manager` | Approved-PR integration manager (see below) |
 

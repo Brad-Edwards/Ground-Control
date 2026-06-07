@@ -10,7 +10,11 @@ Per ADR-029, the plan is **published to the GitHub issue as a comment** and the 
 
 This step runs in the **parent** agent (`agent: parent` in the routing config). Architectural reasoning lives at the parent level; subagents implement.
 
-1. **If the work is NOT yet complete**: produce a written plan and post it as an issue comment. Identify which files need to be created or modified, what tests to write, and what approach to take. Update length follows the canonical succinctness rule in `skills/implement/steps/_review-loop-rules.md`.
+Step 3.5's posted interface contract is the oracle for this plan. The plan explains how the implementation will satisfy that contract; it does not invent a different public shape.
+
+The Step 2 `context_loaded` marker is also a hard prerequisite. If it is missing, run `gc_get_implementation_context` before planning; do not compensate by manually summarizing ADRs or traceability.
+
+1. **If the work is NOT yet complete**: produce a written plan and post it as an issue comment. Identify which files need to be created or modified, what tests to write, what contract obligations those tests prove, and what approach to take. Update length follows the canonical succinctness rule in `skills/implement/steps/_review-loop-rules.md`.
    - When `in_scope_requirements[]` is non-empty, the plan must cover every clause of every in-scope requirement. When it is empty, the plan must fully address every acceptance criterion in the issue body and any user clarifications in comments.
    - **Structural-gate runs need a GC requirement, even when `in_scope_requirements[]` is empty.** If the plan introduces a new ADR-backed structural gate (a new MCP tool, a new policy check in `tools/policy/checks.py`, a new `/implement` step, or any other executable enforcement layer), the plan must anchor that gate on a Ground Control requirement so traceability links exist. Two valid paths: (a) link the new artifacts to an existing umbrella requirement when the work clearly fits one—for example, additions to the `/implement` gated workflow fit `GC-O007` "Gated Agentic Development Loop"; (b) file a new requirement via `gc_requirement` action=create when the gate has its own distinct contract that no existing requirement covers, then transition it `DRAFT → ACTIVE` at Step 15. The architecture preflight's "no requirement introduced" non-goal is a starting recommendation, not a binding directive—the planner overrides when the diff ships a new gate. Shipping a structural gate without traceability is the failure mode this rule exists to prevent.
    - Plans must respect the coding standards and formal methods classification levels.
@@ -29,7 +33,7 @@ This step runs in the **parent** agent (`agent: parent` in the routing config). 
    - `issue_number`: the issue number from Step 1
    - `plan_body`: the full plan as a Markdown string
 
-   The tool refuses unless a `preflight` phase marker exists for this issue (per #794 MVP-2—`gc_codex_architecture_preflight` writes that marker on success). If you skipped Step 2.5, this gate will refuse the plan post and instruct you to run preflight first; do not work around the refusal by `gh issue comment` directly. The tool also writes a `plan` phase marker so downstream tools can confirm planning happened.
+   The tool refuses unless `context_loaded` and `contract` phase markers exist for this issue. If you skipped Step 2 or Step 3.5, this gate will refuse the plan post and instruct you to load context or post the contract first; do not work around the refusal by `gh issue comment` directly. The tool also writes a `plan` phase marker so downstream tools can confirm planning happened.
 
    Cache the returned comment URL for the final report (Step 19).
 
@@ -48,6 +52,7 @@ This step runs in the **parent** agent (`agent: parent` in the routing config). 
     "plan_comment_url": "<URL from gc_post_implementation_plan>",
     "plan_comment_id": <int>,
     "plan_phase_marker_written": true,
+    "contract_comment_url": "<URL cached from Step 3.5>",
     "work_already_complete": false,
     "doc_only_carveout_declared": false,
     "carveout_structural_gates": [ "<gate name per clause>" ]

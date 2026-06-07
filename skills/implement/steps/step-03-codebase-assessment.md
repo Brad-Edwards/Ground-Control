@@ -7,8 +7,9 @@ tier: medium
 # Step 3: Assess Codebase Coverage
 
 Explore the codebase to determine whether the work described in the issue is already covered by existing code:
+- Start from the `gc_get_implementation_context` bundle cached in Step 2. Treat its binding ADRs, cross-cutting-concern incumbents, existing IMPLEMENTS artifacts, and related-requirement neighbourhood as mandatory context for this assessment.
 - Search for relevant classes, methods, tests, and configurations touching the subsystems the issue describes.
-- Consult the repository's existing documentation during exploration. Each repo declares its design-context locations in `.ground-control.yaml`. Read:
+- Consult additional repository documentation only when the Step 2 bundle points at a relevant surface or the issue needs more local detail. Each repo declares its design-context locations in `.ground-control.yaml`. Read:
   - ADRs at `{cfg.docs.adr_dir|default architecture/adrs/}`
   - Architecture overview at `{cfg.docs.architecture_overview|default docs/architecture/ARCHITECTURE.md}` (if present)
   - Coding standards at `{cfg.docs.coding_standards|default docs/CODING_STANDARDS.md}` (if present)
@@ -32,7 +33,7 @@ Explore the codebase to determine whether the work described in the issue is alr
   ```
 
   For each concern the new code will touch, find and read the project's existing implementation. Use the existing helper. If you genuinely need a new one, justify the new helper in the plan (Step 4) and note why the existing one didn't fit. Re-implementing what's already there is the failure mode the Step 6.5 codex review is designed to catch—catch it here first so you don't spend a review cycle on it.
-- For each requirement in `in_scope_requirements[]`, review its existing traceability links (IMPLEMENTS, TESTS) via `gc_get_traceability` on the requirement UUID. Some or all clauses may already be satisfied.
+- For each requirement in `in_scope_requirements[]`, use the Step 2 bundle's existing traceability links (IMPLEMENTS, TESTS) first. Re-fetch only if you need to verify a possible drift before planning.
 - Reuse the architecture-preflight guidance from Step 2.5 while assessing existing coverage and planning changes.
 - **Documentation coverage (ADR-054).** Call `gc_documentation_coverage` with `repo_path` and the list of paths likely to change. When `outcome_required` is true, include the returned `suggested_doc_targets` in the Step 4 plan so the implementation addresses documentation alongside code.
 

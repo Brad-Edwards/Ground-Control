@@ -4,35 +4,32 @@ step: "Step 15"
 tier: medium
 ---
 
-# Step 15: Transition In-Scope Requirements to ACTIVE
+# Step 15: Transition and Reconcile Traceability
 
-The status transition MUST happen BEFORE traceability reconciliation (Step 16). The Ground Control API enforces `IMPLEMENTS → ACTIVE`: any `gc_create_traceability_link` call with `link_type: IMPLEMENTS` against a `DRAFT` requirement returns `422 requirement_not_active`. Reconciling first therefore produces silent failures.
+This step replaces the old manual Steps 15/16/17 flow. Do the status transition, run the diff-derived traceability reconcile worklist, apply confirmed link changes, then assert reconciliation server-side.
 
-Semantically, moving a requirement from DRAFT to ACTIVE is the point at which the team commits to its statement. Once real code exists pointing at it, the requirement is no longer a proposal — it's a contract.
+1. For each UID in `in_scope_requirements[]`, classify it:
+   - **Materially implemented**: transition `DRAFT -> ACTIVE` with `gc_transition_status` if needed.
+   - **Forward-looking**: leave `DRAFT`, add or preserve a DOCUMENTS relationship, and note why it is not implemented in this PR.
+   - **Invalid/missing implementation**: STOP and ask the user. Do not transition a requirement whose implementing artifact cannot be identified.
 
-For each UID in `in_scope_requirements[]`:
-- **First, classify the requirement against the actual diff:**
-  - **Materially implemented (case in-diff)** — the diff itself contains the artifacts-of-record that satisfy the requirement's clauses (production code, tests, schema/migration files, configuration files, ADRs, workflow definitions, skill prose, or any other deliverable the requirement statement specifies).
-  - **Materially implemented (case pre-existing)** — the diff finalizes/documents the requirement (e.g., an ADR clarification, changelog fragment, or workflow note marking the requirement complete) while the structural implementation already exists in pre-existing files shipped under a sibling requirement. The test is "does this PR ship the requirement," not "is the implementing code in this diff." For this case, **before transitioning the requirement**, use the discovery procedure below to identify the pre-existing artifact(s) of record. If discovery finds zero implementing files, the case-pre-existing classification is wrong: STOP, surface to the user (the requirement is either forward-looking, has missing implementation, or was misidentified), and do NOT transition.
-  - **Forward-looking** — the diff documents or references the requirement but does not ship it (e.g., a schema field that an unimplemented future feature will consume, or a design note that anticipates work in a later wave). Use a `DOCUMENTS` link in Step 16 instead of `IMPLEMENTS`, and leave the status DRAFT. Surface this decision as a comment on the issue. Skip the rest of this loop for that UID.
+2. Call `gc_reconcile_traceability` with `repo_path`, `issue_number`, `base_ref`, `head_ref`, and the in-scope requirements. The tool computes `git diff --name-status` itself, calls `gc_get_traceability_by_artifact` for each changed path, and returns:
+   - `worklist[]`: `{path, current_links, suggested_action}`
+   - `gap_set[]`: in-scope requirements lacking IMPLEMENTS coverage
+   - `diff_hash`: the live diff hash that the assertion must bind
 
-- **Pre-existing artifact discovery procedure (case pre-existing only).** This MUST run before the ACTIVE transition for the case-pre-existing path, so Ground Control never gets promoted-without-coverage:
-  1. Read the requirement statement and identify the named subsystems, file roots, modules, or component identifiers it references (e.g., "the Identity Center bootstrap module," "the state-boundary verifier," "the ingest pipeline's retry helper").
-  2. Run `git ls-files` filtered to those roots, plus `git grep -l` (NOT `grep -r`) against the requirement's distinctive identifiers (UID, named module, distinctive function names) bounded to the subject-area paths. Use `git`-aware tools so the candidate set only contains tracked files — `grep -r` would also walk untracked / generated / `.gitignore`'d / build / `node_modules` paths and produce candidates for files that were never shipped, which would create traceability links to non-shipped artifacts. Do NOT scan the whole repo.
-  3. **Validate each candidate file against the requirement statement** by reading it and confirming the file actually satisfies the clause(s) you mapped it to. The candidate list from grep/ls-files is a superset; the agent's read of file content against the requirement is what proves satisfaction. Discard candidates that do not actually satisfy the requirement.
-  4. **For each surviving candidate**, classify it by intended link type and call `gc_get_traceability_by_artifact` to learn what it is already linked to (dedupe / preservation, NOT validation):
-     - Production code, configuration files, ADR/design docs, workflow files → IMPLEMENTS link, with `artifact_type: CODE_FILE` / `CONFIG` / `ADR` / `DOCUMENTATION` as appropriate.
-     - Automated tests that verify the requirement → TESTS link, with `artifact_type: TEST`.
-     - Existing links to the same requirement remain valid; do not churn them. Existing links to a different requirement that still satisfy that requirement also remain valid; do not delete them.
-  5. Cache the resulting candidate set as the *backfill targets*, partitioned by intended link type (IMPLEMENTS targets vs TESTS targets) — Step 16 Mode A reuses this partitioned set rather than re-discovering, and never creates an IMPLEMENTS link onto a candidate classified as a TEST.
-  6. If the IMPLEMENTS partition is empty after a bounded, validated search, the case-pre-existing classification fails (see above).
+3. Confirm and apply the worklist:
+   - Add missing IMPLEMENTS links for changed executable artifacts that satisfy a requirement.
+   - Add TESTS links for automated tests that verify a requirement.
+   - Move/delete stale links for renamed or deleted artifacts.
+   - Keep incidental files unlinked only when the worklist action and requirement mapping make that explicit.
+   - Do not fabricate a link to satisfy the gate; if a requirement has no real artifact of record, STOP.
 
-- **Only after classification (and, for case pre-existing, after discovery succeeded)**, transition the materially-implemented requirements:
-  - Use `gc_transition_status` to transition the requirement from `DRAFT` to `ACTIVE`.
-  - If the requirement was already `ACTIVE`, skip it.
-  - If the requirement was in any other state (`DEPRECATED`, `ARCHIVED`), STOP and surface the anomaly to the user — transitioning out of those states is a user decision.
+4. Re-run `gc_reconcile_traceability` after edits until `worklist` and `gap_set` reflect the intended graph.
 
-If `in_scope_requirements[]` is empty, this step is a no-op. Proceed to Step 16 anyway — reconciliation still needs to run to catch drift on other requirements whose files this diff touched.
+5. Call `gc_assert_traceability_reconciled` with the same `base_ref` and `head_ref`, plus the in-scope requirements as `[{uid, status_intent}]`. The tool recomputes the live diff, re-fetches requirements and artifact links, and writes the `traceability_reconciled` marker bound to the diff hash. If HEAD moves after the marker, `gc_post_final_report` will treat it as stale.
+
+No deferral language is allowed. Missing implementation is fix-or-escalate, not a follow-up.
 
 ## Return contract
 
@@ -44,9 +41,11 @@ If `in_scope_requirements[]` is empty, this step is a no-op. Proceed to Step 16 
       { "uid": "<UID>", "from": "DRAFT", "to": "ACTIVE" }
     ],
     "forward_looking": [ "<UID>" ],
-    "backfill_targets": {
-      "<UID>": { "implements": [ "<path>" ], "tests": [ "<path>" ] }
-    }
+    "links_added": [ "<UID> <- <path> (<link_type>)" ],
+    "links_updated": [ "<UID> <- <old_path> -> <new_path>" ],
+    "links_deleted": [ "<UID> <- <path>" ],
+    "traceability_reconciled_marker_url": "<URL from gc_assert_traceability_reconciled>",
+    "traceability_diff_hash": "<diff_hash>"
   }
 }
 ```

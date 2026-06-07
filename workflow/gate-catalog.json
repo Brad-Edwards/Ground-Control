@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "kind": "ground-control-gate-catalog",
+  "engine": {
+    "version": "1.0.0",
+    "compatible": ">=1.0.0 <2.0.0",
+    "source_url": "workflow/engine",
+    "artifact": "workflow/releases/gc-engine-1.0.0.tgz",
+    "sha256": "095da4fbcef973746be672fedc9a75ed451abeb2b1bd2ba1a48b92261c7e7239",
+    "source_sha256": "b60db62232af6154369448db959d89bb1d97fcd36028202cbc51d958a997a08c",
+    "checksum": "sha256:095da4fbcef973746be672fedc9a75ed451abeb2b1bd2ba1a48b92261c7e7239",
+    "signer": "TODO: release signer",
+    "trust_policy": "checksum-only-development",
+    "signing": {
+      "status": "todo",
+      "note": "TODO: release signatures/provenance per ADR-062; SHA-256 checksum verification is enforced."
+    }
+  },
+  "packs": [
+    {
+      "id": "rust-cargo",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/rust-cargo",
+      "source_sha256": "d025f06061fa320372f29b48fa3654c14e986431729698760271bbb57aa2d654",
+      "artifact": "workflow/releases/gc-gate-pack-rust-cargo-1.0.0.tgz",
+      "sha256": "0e1680381600706b04040c01ad6db8dc253486199f85fb86463dafa5492a3330",
+      "checksum": "sha256:0e1680381600706b04040c01ad6db8dc253486199f85fb86463dafa5492a3330",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development",
+      "signing": {
+        "status": "todo",
+        "note": "TODO: release signatures/provenance per ADR-062; SHA-256 checksum verification is enforced."
+      }
+    },
+    {
+      "id": "python",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/python",
+      "source_sha256": "e3a57070bc9d9d127b1ca9341d377ab3d5d1bc4daccf36a3849c734d093c2f23",
+      "artifact": "workflow/releases/gc-gate-pack-python-1.0.0.tgz",
+      "sha256": "ce8b5e4eae5e562a50d10dfae01991d2e2a2931f58fe514c32f9e2d17afd98a7",
+      "checksum": "sha256:ce8b5e4eae5e562a50d10dfae01991d2e2a2931f58fe514c32f9e2d17afd98a7",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development",
+      "signing": {
+        "status": "todo",
+        "note": "TODO: release signatures/provenance per ADR-062; SHA-256 checksum verification is enforced."
+      }
+    },
+    {
+      "id": "jvm-gradle",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/jvm-gradle",
+      "source_sha256": "11aec8365dd409d348ef3f7e0a8405d5c5148f793f5a9914abc9783a15757efc",
+      "artifact": "workflow/releases/gc-gate-pack-jvm-gradle-1.0.0.tgz",
+      "sha256": "9d4b2b67d89993a46c2330128ab355f5e94d51acb66269e6d9aa7759cfb78c16",
+      "checksum": "sha256:9d4b2b67d89993a46c2330128ab355f5e94d51acb66269e6d9aa7759cfb78c16",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development",
+      "signing": {
+        "status": "todo",
+        "note": "TODO: release signatures/provenance per ADR-062; SHA-256 checksum verification is enforced."
+      }
+    },
+    {
+      "id": "jvm-maven",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/jvm-maven",
+      "source_sha256": "7e9591a2410b9a9b7d2cbf0f71f73290dfa537cdddb7ef8bf4caea35b7e57ed5",
+      "artifact": "workflow/releases/gc-gate-pack-jvm-maven-1.0.0.tgz",
+      "sha256": "6a3a63f613f2a094dc6f2d4d9916224784f2664f5ec2446ba7259170045bd9a5",
+      "checksum": "sha256:6a3a63f613f2a094dc6f2d4d9916224784f2664f5ec2446ba7259170045bd9a5",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development",
+      "signing": {
+        "status": "todo",
+        "note": "TODO: release signatures/provenance per ADR-062; SHA-256 checksum verification is enforced."
+      }
+    },
+    {
+      "id": "node-ts",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/node-ts",
+      "source_sha256": "4853a273e08fae8cb01e7a8e84e26652f260774d5c9caa2ed947c5db4d6216c9",
+      "artifact": "workflow/releases/gc-gate-pack-node-ts-1.0.0.tgz",
+      "sha256": "9db60d1ab337a13f79d9ab16977c09d63d324948aec2b8fd7e81262233107d49",
+      "checksum": "sha256:9db60d1ab337a13f79d9ab16977c09d63d324948aec2b8fd7e81262233107d49",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development",
+      "signing": {
+        "status": "todo",
+        "note": "TODO: release signatures/provenance per ADR-062; SHA-256 checksum verification is enforced."
+      }
+    },
+    {
+      "id": "cpp-cmake",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/cpp-cmake",
+      "source_sha256": "55ce3bd71e5550faa3bcda8e2010f35e81f9ce29855f54ceb5fc63ea46267182",
+      "artifact": "workflow/releases/gc-gate-pack-cpp-cmake-1.0.0.tgz",
+      "sha256": "dbfb33bcea4432f47b2222506795624ee6d7275066e2cb8ad30114bcf78d5d02",
+      "checksum": "sha256:dbfb33bcea4432f47b2222506795624ee6d7275066e2cb8ad30114bcf78d5d02",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development",
+      "signing": {
+        "status": "todo",
+        "note": "TODO: release signatures/provenance per ADR-062; SHA-256 checksum verification is enforced."
+      }
+    },
+    {
+      "id": "docs-generic",
+      "version": "1.0.0",
+      "source_url": "workflow/packs/docs-generic",
+      "source_sha256": "b77bc7ae5192e1d07b96219ec9a9f5779dd49283f1c04f97cca154c5d313af44",
+      "artifact": "workflow/releases/gc-gate-pack-docs-generic-1.0.0.tgz",
+      "sha256": "14054fce61e3e3306e02ebed74e4b0421a500d8d82201d4c1028f38ecab97692",
+      "checksum": "sha256:14054fce61e3e3306e02ebed74e4b0421a500d8d82201d4c1028f38ecab97692",
+      "compatible_engine": ">=1.0.0 <2.0.0",
+      "signer": "TODO: release signer",
+      "trust_policy": "checksum-only-development",
+      "signing": {
+        "status": "todo",
+        "note": "TODO: release signatures/provenance per ADR-062; SHA-256 checksum verification is enforced."
+      }
+    }
+  ]
+}

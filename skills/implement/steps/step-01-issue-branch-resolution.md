@@ -23,7 +23,7 @@ tier: low
    - `cfg.workflow.completion_command` — the full completion gate (falls back to test_command if null)
    - `cfg.workflow.lint_command` — the linter
    - `cfg.workflow.format_command` — the formatter
-   - `cfg.sonarcloud` — if set, used by Step 11; if null, SonarCloud is skipped
+   - `cfg.sonarcloud` / `cfg.remote_quality` — if set, used by Step 11's provider-quality adapter and ratchet policy
    - `cfg.rules.plan_rules_content` — if non-null, mandatory plan constraints (Step 4)
    - `cfg.docs.*` — repo documentation paths (Step 3)
    - `cfg.example_paths.*` — repo source/test path examples (Step 4.5)
@@ -51,9 +51,9 @@ tier: low
    - If a UID in the section fails to resolve via `gc_get_requirement`, stop and report the broken reference.
    - If the input was a requirement UID (Step 6), ensure that UID is in `in_scope_requirements[]` — add it if missing, which also means updating the issue body to include a Requirements section.
 
-9. **For each UID in `in_scope_requirements[]`**, fetch the full requirement via `gc_get_requirement` and cache its UUID, title, statement, status, and wave. You will use these for clause verification (Step 4.5), status transitions (Step 15), and traceability reconciliation (Step 16).
+9. **For each UID in `in_scope_requirements[]`**, fetch the full requirement via `gc_get_requirement` and cache its UUID, title, statement, status, and wave. You will use these for clause verification (Step 4.5), status transitions, and the diff-driven reconciliation in Step 15.
 
-10. **Fetch the existing traceability links for the issue** via `gc_get_traceability_by_artifact` with `artifact_type: GITHUB_ISSUE` and `artifact_identifier: <issue-number>`. Cache the result — you will need it to reconcile the issue's relationship to requirements in Step 16.
+10. **Fetch the existing traceability links for the issue** via `gc_get_traceability_by_artifact` with `artifact_type: GITHUB_ISSUE` and `artifact_identifier: <issue-number>`. Cache the result for issue-to-requirement context; Step 15 will recompute changed-artifact traceability server-side with `gc_reconcile_traceability`.
 
 11. **Switch to the issue's feature branch**: run `gh issue develop <issue-number> --checkout --base {cfg.workflow.base_branch|default dev} --name <issue-number>-<short-slug>`.
 

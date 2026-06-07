@@ -1,0 +1,360 @@
+schema_version: 1
+pack: cpp-cmake
+version: 1.0.0
+bindings:
+  format:
+    status: provided
+    provider: clang-format
+    command: "find . -type f \\( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \\) -print0 | xargs -0 clang-format --dry-run --Werror"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.c"
+        - "**/*.cc"
+        - "**/*.cpp"
+        - "**/*.h"
+        - "**/*.hpp"
+        - .clang-format
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  lint:
+    status: provided
+    provider: clang-tidy
+    command: "run-clang-tidy -p build/gc-quality -quiet"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*.c"
+        - "**/*.cc"
+        - "**/*.cpp"
+        - "**/*.h"
+        - "**/*.hpp"
+        - .clang-tidy
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    timeout_seconds: 1800
+  build:
+    status: provided
+    provider: cmake-build
+    command: "cmake -S . -B build/gc-quality -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_WERROR=TRUE && cmake --build build/gc-quality"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - CMakeLists.txt
+        - "cmake/**"
+        - "src/**"
+        - "include/**"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    timeout_seconds: 1800
+  type_safety:
+    status: provided
+    provider: compiler-werror-clang-tidy
+    command: "cmake -S . -B build/gc-quality -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_WERROR=TRUE && cmake --build build/gc-quality"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - CMakeLists.txt
+        - "cmake/**"
+        - "src/**"
+        - "include/**"
+    thresholds:
+      platform_minimum:
+        metric: warning_count
+        max: 0
+      recommendation:
+        metric: warning_count
+        max: 0
+    timeout_seconds: 1800
+  unit_tests:
+    status: provided
+    provider: ctest
+    command: "cmake -S . -B build/gc-quality -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON && cmake --build build/gc-quality && ctest --test-dir build/gc-quality --output-on-failure"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - CMakeLists.txt
+        - "src/**"
+        - "include/**"
+        - "tests/**"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    timeout_seconds: 1800
+  integration_tests:
+    status: provided
+    provider: ctest-integration
+    command: "ctest --test-dir build/gc-quality --output-on-failure -L integration"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - CMakeLists.txt
+        - "src/**"
+        - "include/**"
+        - "tests/**"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    timeout_seconds: 2400
+  contract_boundary:
+    status: provider_missing
+    provider_missing: reviewer_fallback
+    blocking: false
+    reason: "C/C++ boundary contracts depend on project-selected assertions, GSL Expects/Ensures, or explicit error-return conventions."
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  property_verification:
+    status: provided
+    provider: fuzz-property-harness
+    command: "ctest --test-dir build/gc-quality --output-on-failure -L property"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "src/**"
+        - "include/**"
+        - "tests/**"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  architecture:
+    status: provided
+    provider: include-dependency-policy
+    command: "cmake --graphviz=.gc/reports/cpp/deps.dot build/gc-quality"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - CMakeLists.txt
+        - "cmake/**"
+        - "src/**"
+        - "include/**"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  complexity:
+    status: provided
+    provider: lizard
+    command: "lizard src include -C 15"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "src/**"
+        - "include/**"
+    thresholds:
+      platform_minimum:
+        metric: cyclomatic_complexity
+        max: 15
+      recommendation:
+        metric: cyclomatic_complexity
+        max: 10
+  mutation:
+    status: provided
+    provider: mull
+    command: "mull-runner --reporters Elements"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "src/**"
+        - "include/**"
+        - "tests/**"
+    thresholds:
+      platform_minimum:
+        metric: mutation_score
+        min: 50
+      recommendation:
+        metric: mutation_score
+        min: 70
+    timeout_seconds: 3600
+  diff_coverage:
+    status: provided
+    provider: gcovr-diff-cover
+    command: "gcovr --xml-pretty --output .gc/reports/cpp/coverage.xml && diff-cover .gc/reports/cpp/coverage.xml --fail-under=80"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "src/**"
+        - "include/**"
+        - "tests/**"
+    thresholds:
+      platform_minimum:
+        metric: changed_line_coverage
+        min: 80
+      recommendation:
+        metric: changed_line_coverage
+        min: 90
+  sast:
+    status: provided
+    provider: clang-static-analyzer
+    command: "scan-build cmake --build build/gc-quality"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "src/**"
+        - "include/**"
+        - CMakeLists.txt
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  secret_scan:
+    status: provided
+    provider: gitleaks
+    command: "gitleaks detect --source . --no-git --redact --exit-code 1"
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - "**/*"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  dependency_policy:
+    status: provided
+    provider: sbom-scan
+    command: "if command -v osv-scanner >/dev/null 2>&1; then osv-scanner --recursive .; else echo 'No C/C++ dependency scanner configured'; exit 1; fi"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - vcpkg.json
+        - "conanfile.*"
+        - CMakeLists.txt
+        - "cmake/**"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  accessibility:
+    status: not_applicable
+    provider_missing: not_applicable
+    blocking: false
+    reason: "C/C++ CMake pack does not expose a rendered UI accessibility surface by default."
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  docs_policy:
+    status: provided
+    provider: docs-profile
+    command: "if command -v vale >/dev/null 2>&1; then vale .; else echo 'vale not installed; docs policy provider unavailable'; exit 1; fi"
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - "*.md"
+        - "**/*.md"
+        - "*.markdown"
+        - "**/*.markdown"
+        - "docs/**"
+        - "architecture/adrs/**"
+        - .ground-control.yaml
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  traceability:
+    status: provider_missing
+    provider_missing: reviewer_fallback
+    blocking: false
+    reason: "Ground Control traceability requires a configured project and live server context."
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  policy:
+    status: provided
+    provider: repo-policy
+    command: "if [ -f Makefile ] && grep -q '^policy:' Makefile; then make policy; elif [ -x ./bin/policy ]; then ./bin/policy --skip-pr-body; else echo 'No repo policy command found'; exit 1; fi"
+    blocking: true
+    scope: repo
+    applies_when:
+      paths:
+        - "**/*"
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    timeout_seconds: 1800
+  remote_status:
+    status: provided
+    provider: required-statuses
+    blocking: true
+    scope: repo
+    required_statuses:
+      - ci
+    thresholds:
+      platform_minimum:
+        metric: required_statuses
+        policy: all_success
+      recommendation:
+        metric: required_statuses
+        policy: all_success

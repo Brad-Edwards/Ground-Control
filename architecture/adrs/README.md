@@ -19,6 +19,10 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 
 ## Index
 
+Two pre-existing duplicate numbers are listed as-is (`025` and `043`) so the
+index remains a complete discovery surface. Do not reuse ADR numbers for new
+records.
+
 | ADR | Title | Status |
 |-----|-------|--------|
 | [000](000-template.md) | ADR Template | — |
@@ -28,31 +32,58 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [004](004-code-quality-toolchain.md) | Code Quality Toolchain | Superseded by ADR-013 |
 | [005](005-apache-age-graph.md) | Apache AGE for Graph Database Capabilities | Accepted |
 | [011](011-requirements-data-model.md) | Requirements Data Model | Accepted |
-| [012](012-formal-methods-process.md) | Formal Methods Development Process | Accepted |
+| [012](012-formal-methods-process.md) | Formal Methods Development Process | Accepted (amended 2026-06-06; Java binding of ADR-057) |
 | [013](013-java-spring-boot-rewrite.md) | Java/Spring Boot Backend Rewrite | Accepted |
 | [014](014-pluggable-verification-architecture.md) | Pluggable Verification Architecture | Accepted |
 | [015](015-cloud-database-deployment.md) | Cloud Database Deployment | Withdrawn |
 | [016](016-project-scoping.md) | Project Scoping | Accepted |
-| [017](017-interactive-web-application.md) | Interactive Web Application | Accepted |
+| [017](017-interactive-web-application.md) | Interactive Web Application | Proposed |
 | [018](018-aws-ec2-deployment.md) | AWS EC2 Deployment | Superseded by ADR-030 |
 | [019](019-asset-topology-model.md) | Asset Topology and Boundary Relationships | Accepted |
 | [020](020-asset-cross-entity-linking.md) | Asset Cross-Entity Linking | Accepted |
-| [021](021-gated-agentic-development-loop.md) | Gated Agentic Development Loop | Accepted (amended by ADR-029, ADR-036) |
+| [021](021-gated-agentic-development-loop.md) | Gated Agentic Development Loop | Accepted (amended by ADR-029, ADR-036, ADR-060, ADR-061, ADR-062) |
 | [022](022-content-pack-distribution-architecture.md) | Content Pack Distribution Architecture | Accepted |
 | [023](023-plugin-architecture.md) | Plugin Architecture | Accepted |
 | [024](024-threat-model-entry-boundary.md) | Threat Model Entry Boundary | Accepted |
 | [025](025-backup-policy.md) | Backup Policy (GC-P021) | Accepted |
+| [025](025-knowledge-ingest-engine.md) | Knowledge Ingest Engine | Accepted |
 | [026](026-rest-api-access-control.md) | REST API Access Control (GC-P011) | Accepted |
 | [027](027-agent-neutral-implement-workflow-packaging.md) | Agent-Neutral Implement Workflow Packaging | Accepted (amended 2026-05-26, GC-O011/#989) |
 | [028](028-temporal-workflow-orchestration-boundary.md) | Temporal Workflow Orchestration Boundary | Accepted |
-| [029](029-issue-thread-gate-model.md) | Issue-Thread Gate Model | Accepted (amended 2026-05-26, GC-O011/#989) |
+| [029](029-issue-thread-gate-model.md) | Issue-Thread Gate Model | Accepted (amended by ADR-060, ADR-061, ADR-062) |
 | [030](030-on-prem-hetzner-deployment.md) | On-prem Hetzner Deployment | Accepted |
-| [031](031-codex-review-stopping-model.md) | Severity Rubric and Stopping Model for Pre-Push Codex Review | Proposed |
+| [031](031-codex-review-stopping-model.md) | Severity Rubric and Stopping Model for Pre-Push Codex Review | Accepted |
 | [032](032-age-query-construction-boundary.md) | AGE Query Construction Boundary | Accepted |
 | [033](033-authenticated-audit-actor-provenance.md) | Authenticated Audit Actor Provenance | Accepted |
 | [034](034-api-enum-contract-single-source.md) | API Enum Contract Single Source of Truth | Accepted |
-| [035](035-mcp-tool-catalog-curation.md) | MCP Tool Catalog Curation | Accepted |
-| [036](036-per-step-routing-tool-surfaces-telemetry.md) | Per-Step Model Routing, Durable-Record Tool Surfaces, and Step Telemetry (amends ADR-021) | Accepted (amended 2026-05-26, GC-O011/#989) |
+| [035](035-mcp-tool-catalog-curation.md) | MCP Tool Consolidation and Read-Only Query Escape Hatch | Accepted |
+| [036](036-per-step-routing-tool-surfaces-telemetry.md) | Per-Step Model Routing, Durable-Record Tool Surfaces, and Step Telemetry (amends ADR-021) | Accepted (amended 2026-06-06) |
 | [037](037-browser-session-access-control.md) | Browser Session Access Control | Accepted |
+| [038](038-finding-entity-boundary.md) | Finding Entity Boundary | Accepted |
+| [039](039-control-verification-subsystem.md) | Control Verification Subsystem (Tests + Effectiveness Assessments) | Accepted |
+| [040](040-test-case-domain.md) | Test case domain boundary | Accepted |
+| [041](041-test-case-step-format.md) | Step-based test case format | Accepted |
+| [042](042-test-case-bdd-gherkin-format.md) | BDD/Gherkin authored format for test cases | Accepted |
+| [043](043-asset-classification-subtype-extensibility.md) | Asset classification and subtype extensibility | Accepted |
+| [043](043-test-case-hierarchical-organization.md) | Test Case Hierarchical Organization | Accepted |
+| [044](044-test-plan-entity.md) | Test Plan Entity | Accepted |
+| [045](045-evidence-derivation-and-temporal-state-history.md) | Evidence Derivation and Temporal State History | Accepted |
+| [046](046-partial-knowledge-and-unknown-dependencies.md) | Partial knowledge and unknown dependency support | Accepted |
+| [047](047-test-suite-entity.md) | Test Suite Entity | Accepted |
+| [048](048-audit-entity-boundary.md) | Audit Entity Boundary | Accepted |
+| [049](049-test-run-entity.md) | Test Run Entity | Accepted |
+| [050](050-manual-test-execution-step-result.md) | Manual Test Execution Step Result | Accepted |
+| [051](051-sonarcloud-gate-recalibration.md) | SonarCloud gate recalibration (proposed) | Proposed (no live gate change shipped) |
+| [052](052-risk-control-mapping.md) | Risk-Control Mapping Aggregate (GC-T003) | Accepted |
+| [053](053-conversation-surface-hardening.md) | Conversation Surface Hardening | Accepted |
+| [054](054-documentation-coverage-gate.md) | Documentation coverage gate | Accepted |
+| [055](055-research-workflow-skills-and-citation-mcp.md) | Research workflow skills and citation MCP | Accepted |
+| [056](056-research-project-type-and-intake.md) | Research project type and intake metadata | Accepted |
+| [057](057-language-neutral-assurance-ladder-and-classifier.md) | Language-neutral assurance ladder and classifier | Accepted |
+| [058](058-gate-capability-provider-indirection-and-gate-packs.md) | Gate manifest, runner contract, and gate-pack bundles | Accepted |
+| [059](059-engineering-contract-operational-quality-spec.md) | The engineering contract | Accepted |
+| [060](060-lifecycle-determinism.md) | Lifecycle determinism | Accepted |
+| [061](061-governable-phase-marker-state-machine.md) | Governable phase-marker state machine | Accepted |
+| [062](062-portable-implement-engine-gate-pack-registry-and-consumer-adoption-model.md) | Portable /implement engine, gate-pack registry, and consumer adoption model | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.
