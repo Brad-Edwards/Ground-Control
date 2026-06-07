@@ -13,12 +13,7 @@
     "rules": {
       "recommended": true,
       "a11y": {
-        "recommended": true,
         "noLabelWithoutControl": "off"
-      },
-      "complexity": {
-        "recommended": true,
-        "useLiteralKeys": "off"
       }
     }
   }

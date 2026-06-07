@@ -280,20 +280,6 @@ interface ScopeControlsProps {
   onChange: (f: RiskScenarioWorkspaceFilters) => void;
 }
 
-function withOptionalRiskFilter<K extends keyof RiskScenarioWorkspaceFilters>(
-  filters: RiskScenarioWorkspaceFilters,
-  key: K,
-  value: RiskScenarioWorkspaceFilters[K] | undefined,
-): RiskScenarioWorkspaceFilters {
-  const next = { ...filters };
-  if (value === undefined) {
-    delete next[key];
-  } else {
-    Object.assign(next, { [key]: value });
-  }
-  return next;
-}
-
 function ScopeControls({ filters, onChange }: ScopeControlsProps) {
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-3">
@@ -303,13 +289,10 @@ function ScopeControls({ filters, onChange }: ScopeControlsProps) {
           className="rounded border border-border bg-background px-2 py-1 text-sm"
           value={filters.status ?? ""}
           onChange={(e) =>
-            onChange(
-              withOptionalRiskFilter(
-                filters,
-                "status",
-                (e.target.value as RiskScenarioStatus) || undefined,
-              ),
-            )
+            onChange({
+              ...filters,
+              status: (e.target.value as RiskScenarioStatus) || undefined,
+            })
           }
         >
           <option value="">All</option>
@@ -330,13 +313,10 @@ function ScopeControls({ filters, onChange }: ScopeControlsProps) {
           className="rounded border border-border bg-background px-2 py-1 text-sm"
           value={filters.asOf?.slice(0, 16) ?? ""}
           onChange={(e) =>
-            onChange(
-              withOptionalRiskFilter(
-                filters,
-                "asOf",
-                e.target.value ? `${e.target.value}:00Z` : undefined,
-              ),
-            )
+            onChange({
+              ...filters,
+              asOf: e.target.value ? `${e.target.value}:00Z` : undefined,
+            })
           }
         />
       </div>
@@ -371,7 +351,7 @@ export function RiskScenarioWorkspace() {
   }
 
   function exitCompare() {
-    setFilters((f) => withOptionalRiskFilter(f, "compare", undefined));
+    setFilters((f) => ({ ...f, compare: undefined }));
   }
 
   return (

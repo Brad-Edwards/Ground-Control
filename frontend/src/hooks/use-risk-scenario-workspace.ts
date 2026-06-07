@@ -41,20 +41,19 @@ export function useRiskScenarioWorkspace(
       const params: Record<string, string> = {
         project: activeProject?.identifier ?? "",
       };
-      if (filters.assetId) params["assetId"] = filters.assetId;
-      if (filters.status) params["status"] = filters.status;
+      if (filters.assetId) params.assetId = filters.assetId;
+      if (filters.status) params.status = filters.status;
       if (filters.methodologyProfileId)
-        params["methodologyProfileId"] = filters.methodologyProfileId;
-      if (filters.approvalState)
-        params["approvalState"] = filters.approvalState;
+        params.methodologyProfileId = filters.methodologyProfileId;
+      if (filters.approvalState) params.approvalState = filters.approvalState;
       if (filters.treatmentStatus)
-        params["treatmentStatus"] = filters.treatmentStatus;
-      if (filters.asOf) params["asOf"] = filters.asOf;
+        params.treatmentStatus = filters.treatmentStatus;
+      if (filters.asOf) params.asOf = filters.asOf;
       if (filters.freshnessWindowDays != null) {
-        params["freshnessWindowDays"] = String(filters.freshnessWindowDays);
+        params.freshnessWindowDays = String(filters.freshnessWindowDays);
       }
       if (filters.compare && filters.compare.length > 0) {
-        params["compare"] = filters.compare.join(",");
+        params.compare = filters.compare.join(",");
       }
       return apiFetch<RiskScenarioWorkspaceResponse>(
         "/risk-scenarios/workspace",

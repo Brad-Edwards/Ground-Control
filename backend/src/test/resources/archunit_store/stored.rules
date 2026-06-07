@@ -1,8 +1,0 @@
-#
-#Sun Jun 07 04:50:16 CEST 2026
-methods\ that\ are\ annotated\ with\ @ExceptionHandler\ should\ be\ declared\ in\ com.keplerops.groundcontrol.api.GlobalExceptionHandler=fc39e1c0-4805-427c-89f5-3792a15ee549
-methods\ that\ are\ declared\ in\ classes\ that\ are\ annotated\ with\ @RestController\ should\ have\ @Valid\ on\ every\ @RequestBody\ parameter=b587ac13-b8f9-4196-87fd-aa7035d8dc24
-methods\ that\ are\ public\ and\ are\ declared\ in\ classes\ that\ are\ annotated\ with\ @Service\ and\ have\ name\ matching\ '^(add|approve|archive|attach|complete|copy|create|delete|disable|enable|import|install|move|reorder|remove|register|reject|save|set|start|sync|transition|update|upgrade|supersede).*'\ should\ have\ @Transactional\ with\ readOnly\=false\ on\ the\ method\ or\ service\ class=08fcaa16-072f-4e7c-8e75-171f054f2bd8
-no\ classes\ should\ call\ method\ LoggerFactory.getLogger(Class)=5ffb4f98-c563-4279-8da0-92b066b5580c
-no\ classes\ that\ reside\ outside\ of\ package\ '..api..'\ should\ depend\ on\ classes\ that\ have\ fully\ qualified\ name\ 'org.springframework.http.ProblemDetail'\ or\ should\ depend\ on\ classes\ that\ have\ fully\ qualified\ name\ 'org.springframework.web.server.ResponseStatusException'=999285e4-8146-4bcc-803d-d2d242f048e3
-slices\ matching\ 'com.keplerops.groundcontrol.(*)..'\ should\ be\ free\ of\ cycles=5d6360c1-9e0b-4608-8d88-44f17b1322e4

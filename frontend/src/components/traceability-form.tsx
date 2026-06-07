@@ -36,8 +36,8 @@ export function TraceabilityForm({
     onSubmit({
       artifactType,
       artifactIdentifier,
-      ...(artifactUrl ? { artifactUrl } : {}),
-      ...(artifactTitle ? { artifactTitle } : {}),
+      artifactUrl: artifactUrl || undefined,
+      artifactTitle: artifactTitle || undefined,
       linkType,
     });
   }

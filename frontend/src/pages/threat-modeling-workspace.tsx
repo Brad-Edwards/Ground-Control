@@ -196,20 +196,6 @@ const STRIDE_VALUES: StrideCategory[] = [
 
 const STATUS_VALUES: ThreatModelStatus[] = ["DRAFT", "ACTIVE", "ARCHIVED"];
 
-function withOptionalThreatFilter<K extends keyof ThreatModelWorkspaceFilters>(
-  filters: ThreatModelWorkspaceFilters,
-  key: K,
-  value: ThreatModelWorkspaceFilters[K] | undefined,
-): ThreatModelWorkspaceFilters {
-  const next = { ...filters };
-  if (value === undefined) {
-    delete next[key];
-  } else {
-    Object.assign(next, { [key]: value });
-  }
-  return next;
-}
-
 function ScopeControls({ filters, onChange }: ScopeControlsProps) {
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-3">
@@ -219,13 +205,10 @@ function ScopeControls({ filters, onChange }: ScopeControlsProps) {
           className="rounded border border-border bg-background px-2 py-1 text-sm"
           value={filters.stride ?? ""}
           onChange={(e) =>
-            onChange(
-              withOptionalThreatFilter(
-                filters,
-                "stride",
-                (e.target.value as StrideCategory) || undefined,
-              ),
-            )
+            onChange({
+              ...filters,
+              stride: (e.target.value as StrideCategory) || undefined,
+            })
           }
         >
           <option value="">All</option>
@@ -243,13 +226,10 @@ function ScopeControls({ filters, onChange }: ScopeControlsProps) {
           className="rounded border border-border bg-background px-2 py-1 text-sm"
           value={filters.status ?? ""}
           onChange={(e) =>
-            onChange(
-              withOptionalThreatFilter(
-                filters,
-                "status",
-                (e.target.value as ThreatModelStatus) || undefined,
-              ),
-            )
+            onChange({
+              ...filters,
+              status: (e.target.value as ThreatModelStatus) || undefined,
+            })
           }
         >
           <option value="">All</option>
@@ -270,13 +250,10 @@ function ScopeControls({ filters, onChange }: ScopeControlsProps) {
           className="rounded border border-border bg-background px-2 py-1 text-sm"
           value={filters.asOf?.slice(0, 16) ?? ""}
           onChange={(e) =>
-            onChange(
-              withOptionalThreatFilter(
-                filters,
-                "asOf",
-                e.target.value ? `${e.target.value}:00Z` : undefined,
-              ),
-            )
+            onChange({
+              ...filters,
+              asOf: e.target.value ? `${e.target.value}:00Z` : undefined,
+            })
           }
         />
       </div>

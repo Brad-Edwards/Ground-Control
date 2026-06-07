@@ -6,26 +6,6 @@ workflow:
   completion_command: make check
   lint_command: cd backend && ./gradlew spotlessCheck
   format_command: cd backend && ./gradlew spotlessApply
-  engine:
-    version: 1.0.0
-  gate_manifest: .gc/gates.yaml
-  packs:
-    - id: jvm-gradle
-      version: 1.0.0
-      scope: backend
-      profile: spring
-    - id: node-ts
-      version: 1.0.0
-      scope: frontend
-      profile: react-vite
-    - id: node-ts
-      version: 1.0.0
-      scope: mcp/ground-control
-      profile: node-library
-    - id: docs-generic
-      version: 1.0.0
-      scope: .
-      profile: docs
 sonarcloud:
   project_key: Brad-Edwards_Ground-Control
   organization: brad-edwards
@@ -49,24 +29,19 @@ requirements:
     - GC-X001
     - OBS-042
 cross_cutting_concerns:
-  description: >
+  description: |
     Logger: SLF4J via @Slf4j; structured JSON logging via logstash-logback-encoder
-
     Validation: Bean Validation (jakarta.validation) + Spring @Validated; Zod on the React frontend
-
     Errors: ErrorResponse envelope (shared/web/ErrorResponse.java) routed through GlobalExceptionHandler
-
-    Auth: Spring Security (shared/security/) — bearer token against groundcontrol.security.credentials,
-    ROLE_USER/ROLE_ADMIN path matrix
-
+    Auth: Spring Security (shared/security/) — bearer token against groundcontrol.security.credentials, ROLE_USER/ROLE_ADMIN path matrix
     Audit: ActorHolder + MDC populated by ActorFilter from SecurityContext; @Audited entities use Hibernate Envers
-
-    Tests: @WebMvcTest controllers (with @AutoConfigureMockMvc(addFilters=false) for slice tests), @SpringBootTest
-    integration tests under @Tag("integration"), ArchUnit architecture tests, jqwik property tests
-
+    Tests: @WebMvcTest controllers (with @AutoConfigureMockMvc(addFilters=false) for slice tests), @SpringBootTest integration tests under @Tag("integration"), ArchUnit architecture tests, jqwik property tests
     HTTP: Spring's RestClient/WebClient as needed; standard Jackson ObjectMapper
-
     Config: @ConfigurationProperties POJOs registered via @ConfigurationPropertiesScan on GroundControlApplication
+# Per ADR-036 — opt in to /implement cost reduction. Routing resolves
+# stage/purpose names to concrete agent/model choices; telemetry appends one
+# JSONL line per routed step under .gc/telemetry/ (gitignored). Both are
+# operational and can be flipped off without changing the gate contract.
 routing:
   enabled: true
   default_provider: claude
@@ -141,6 +116,11 @@ routing:
       model: claude-haiku-4-5
 telemetry:
   enabled: true
+
+# Repo design vocabulary (#931). The principal-engineer rubric in the codex
+# preflight + pre-push reviewers consumes this when present and falls back to
+# workflow-level defaults when absent. Per-repo content; nothing here is
+# hardcoded into the workflow.
 architecture:
   vocabulary:
     patterns:
@@ -153,9 +133,7 @@ architecture:
       - name: Command DTO
         applies_to: write-path Service inputs; @Validated, immutable
       - name: WebMvcTest controller slice
-        applies_to: >-
-          controller unit tests that contribute to SonarCloud coverage (Testcontainers integration tests do not run in
-          the sonar CI job)
+        applies_to: controller unit tests that contribute to SonarCloud coverage (Testcontainers integration tests do not run in the sonar CI job)
     canonical_helpers:
       - name: ErrorResponse + GlobalExceptionHandler
         path: backend/src/main/java/com/keplerops/groundcontrol/shared/web/ErrorResponse.java
@@ -163,7 +141,7 @@ architecture:
       - name: ActorHolder / ActorFilter
         path: backend/src/main/java/com/keplerops/groundcontrol/shared/audit/ActorHolder.java
         purpose: MDC actor context populated from SecurityContext for audit trails
-      - name: '@ConfigurationProperties POJOs'
+      - name: "@ConfigurationProperties POJOs"
         purpose: configuration boundary; registered via @ConfigurationPropertiesScan on GroundControlApplication
       - name: SLF4J via @Slf4j
         purpose: structured JSON logging via logstash-logback-encoder
@@ -178,31 +156,17 @@ architecture:
         Controllers route through services; services own the aggregate; repositories own queries.
     binding_adrs:
       - id: ADR-027
-        one_liner: >-
-          .ground-control.yaml + gc_get_repo_ground_control_context are the agent-neutral context contract; nothing else
-          reads the file
+        one_liner: .ground-control.yaml + gc_get_repo_ground_control_context are the agent-neutral context contract; nothing else reads the file
       - id: ADR-029
         one_liner: the GitHub issue thread is the durable workflow record (decision records, phase markers, final report)
       - id: ADR-031
         one_liner: codex returns structured findings; the MCP server performs the GitHub writes
       - id: ADR-036
-        one_liner: >-
-          per-step routing + deterministic record-rendering tools + per-step telemetry, opt-in via routing.enabled /
-          telemetry.enabled
+        one_liner: per-step routing + deterministic record-rendering tools + per-step telemetry, opt-in via routing.enabled / telemetry.enabled
     anti_recommendations:
       - Do not introduce new abstractions below 3 call-sites — three similar lines beat a premature abstraction
-      - >-
-        Prefer @WebMvcTest controller slices over @SpringBootTest integration tests when coverage matters — the Sonar CI
-        job does not run Testcontainers
-      - >-
-        Do not hand-roll error envelopes — throw through GlobalExceptionHandler so ErrorResponse is the only shape
-        clients see
-      - >-
-        Do not add prompt text in skills/implement/SKILL.md that the MCP tools cannot enforce — the tool layer is the
-        trust boundary
-      - >-
-        Do not add comments that restate what the code obviously does; reserve comments for non-obvious WHY
-        (constraints, invariants, workaround context)
-      - >-
-        Do not invoke `gh` / `git` / `curl` from codex or claude sandboxes — the MCP server owns the privileged side
-        effects (ADR-027)
+      - Prefer @WebMvcTest controller slices over @SpringBootTest integration tests when coverage matters — the Sonar CI job does not run Testcontainers
+      - Do not hand-roll error envelopes — throw through GlobalExceptionHandler so ErrorResponse is the only shape clients see
+      - Do not add prompt text in skills/implement/SKILL.md that the MCP tools cannot enforce — the tool layer is the trust boundary
+      - Do not add comments that restate what the code obviously does; reserve comments for non-obvious WHY (constraints, invariants, workaround context)
+      - Do not invoke `gh` / `git` / `curl` from codex or claude sandboxes — the MCP server owns the privileged side effects (ADR-027)

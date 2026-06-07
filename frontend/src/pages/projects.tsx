@@ -190,7 +190,7 @@ function CreateProjectForm({
         onSubmit({
           identifier,
           name,
-          ...(description ? { description } : {}),
+          description: description || undefined,
         });
       }}
       className="space-y-4"
@@ -253,7 +253,7 @@ function EditProjectForm({
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSubmit({ name, ...(description ? { description } : {}) });
+        onSubmit({ name, description: description || undefined });
       }}
       className="space-y-4"
     >

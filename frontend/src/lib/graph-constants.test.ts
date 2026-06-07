@@ -29,15 +29,15 @@ describe("getNodeColor", () => {
   const req = { uid: "GC-A001", priority: "MUST", status: "ACTIVE", wave: 2 };
 
   it("returns series color by default", () => {
-    expect(getNodeColor(req, "series")).toBe(SERIES_COLORS["A"]);
+    expect(getNodeColor(req, "series")).toBe(SERIES_COLORS.A);
   });
 
   it("returns priority color", () => {
-    expect(getNodeColor(req, "priority")).toBe(PRIORITY_COLORS["MUST"]);
+    expect(getNodeColor(req, "priority")).toBe(PRIORITY_COLORS.MUST);
   });
 
   it("returns status color", () => {
-    expect(getNodeColor(req, "status")).toBe(STATUS_COLORS["ACTIVE"]);
+    expect(getNodeColor(req, "status")).toBe(STATUS_COLORS.ACTIVE);
   });
 
   it("returns wave color", () => {
@@ -61,9 +61,9 @@ describe("ENTITY_TYPE_COLORS", () => {
     // Locks in the frontend mirror for the backend GraphEntityType.EVIDENCE_ARTIFACT
     // node so the graph visualization does not fall through to the generic gray
     // entity color.
-    expect(ENTITY_TYPE_COLORS["EVIDENCE_ARTIFACT"]).toBeDefined();
+    expect(ENTITY_TYPE_COLORS.EVIDENCE_ARTIFACT).toBeDefined();
     expect(getEntityTypeColor("EVIDENCE_ARTIFACT")).toBe(
-      ENTITY_TYPE_COLORS["EVIDENCE_ARTIFACT"],
+      ENTITY_TYPE_COLORS.EVIDENCE_ARTIFACT,
     );
   });
 

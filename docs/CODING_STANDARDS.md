@@ -264,8 +264,8 @@ class TransitionPropertyTest {
 
 ### Coverage
 
-- Pre-alpha: 80% bundle line coverage minimum. This is enforced by JaCoCo in `make check`.
-- Post-alpha targets: keep the 80% floor and ratchet changed-code coverage through the gate manifest.
+- Pre-alpha: 30% minimum (current JaCoCo threshold). Will increase as the platform matures.
+- Post-alpha targets: domain 80%, API/infrastructure 70%.
 
 ## Logging
 

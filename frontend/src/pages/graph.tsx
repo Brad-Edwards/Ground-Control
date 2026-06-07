@@ -137,21 +137,21 @@ function getTooltipValue(data: Record<string, unknown>, key: string): string {
 export function getTooltipTags(
   data: Record<string, unknown>,
 ): Array<{ text: string; bg: string }> {
-  const entityType = String(data["entityType"] ?? "UNKNOWN");
+  const entityType = String(data.entityType ?? "UNKNOWN");
   const entityColor = getEntityTypeColor(entityType);
 
   if (entityType === "REQUIREMENT") {
     return [
       {
-        text: String(data["priority"] ?? ""),
-        bg: PRIORITY_COLORS[String(data["priority"] ?? "")] ?? "#555",
+        text: String(data.priority ?? ""),
+        bg: PRIORITY_COLORS[String(data.priority ?? "")] ?? "#555",
       },
       {
-        text: String(data["status"] ?? ""),
-        bg: STATUS_COLORS[String(data["status"] ?? "")] ?? "#555",
+        text: String(data.status ?? ""),
+        bg: STATUS_COLORS[String(data.status ?? "")] ?? "#555",
       },
-      { text: `Wave ${Number(data["wave"] ?? 0)}`, bg: "#6c7ee1" },
-      { text: String(data["type"] ?? ""), bg: "#4ecdc4" },
+      { text: `Wave ${Number(data.wave ?? 0)}`, bg: "#6c7ee1" },
+      { text: String(data.type ?? ""), bg: "#4ecdc4" },
     ].filter((tag) => tag.text);
   }
 
@@ -488,12 +488,12 @@ export function Graph() {
       const uidDiv = document.createElement("div");
       uidDiv.style.cssText =
         "font-size:11px;color:#6c7ee1;font-weight:600;margin-bottom:4px";
-      uidDiv.textContent = String(d["uid"] ?? d["entityType"] ?? d["id"] ?? "");
+      uidDiv.textContent = String(d.uid ?? d.entityType ?? d.id ?? "");
       container.appendChild(uidDiv);
 
       const titleDiv = document.createElement("div");
       titleDiv.style.cssText = "font-weight:600;margin-bottom:6px";
-      titleDiv.textContent = String(d["title"] ?? d["label"] ?? "");
+      titleDiv.textContent = String(d.title ?? d.label ?? "");
       container.appendChild(titleDiv);
 
       const metaDiv = document.createElement("div");
@@ -501,8 +501,8 @@ export function Graph() {
         "display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap";
 
       const typeTag = {
-        text: String(d["entityType"] ?? "UNKNOWN"),
-        bg: getEntityTypeColor(String(d["entityType"] ?? "")),
+        text: String(d.entityType ?? "UNKNOWN"),
+        bg: getEntityTypeColor(String(d.entityType ?? "")),
       };
       const detailTags = getTooltipTags(d);
 
@@ -515,11 +515,9 @@ export function Graph() {
       container.appendChild(metaDiv);
 
       const statement =
-        String(d["entityType"] ?? "") === "REQUIREMENT"
-          ? String(d["statement"] ?? "")
-          : String(
-              d["description"] ?? d["observationValue"] ?? d["effect"] ?? "",
-            );
+        String(d.entityType ?? "") === "REQUIREMENT"
+          ? String(d.statement ?? "")
+          : String(d.description ?? d.observationValue ?? d.effect ?? "");
       if (statement) {
         const stmtDiv = document.createElement("div");
         stmtDiv.style.cssText =
@@ -636,8 +634,7 @@ export function Graph() {
       }));
 
       const edges = filteredRelations.map((rel) => {
-        const style =
-          RELATION_STYLES[rel.edgeType] ?? RELATION_STYLES["RELATED"];
+        const style = RELATION_STYLES[rel.edgeType] ?? RELATION_STYLES.RELATED;
         return {
           data: {
             id: `e-${rel.id}`,
