@@ -18,10 +18,11 @@ function NavItem({
   children: React.ReactNode;
   end?: boolean;
 }) {
+  const navProps = end === undefined ? { to } : { to, end };
+
   return (
     <NavLink
-      to={to}
-      end={end}
+      {...navProps}
       className={({ isActive }) =>
         cn(
           "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",

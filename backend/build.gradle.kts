@@ -1,4 +1,6 @@
 import net.ltgt.gradle.errorprone.errorprone
+import net.ltgt.gradle.nullaway.nullaway
+import org.gradle.api.plugins.quality.Pmd
 
 plugins {
     java
@@ -7,6 +9,7 @@ plugins {
     id("com.diffplug.spotless") version "7.0.2"
     id("com.github.spotbugs") version "6.0.27"
     id("net.ltgt.errorprone") version "4.1.0"
+    id("net.ltgt.nullaway") version "3.1.0"
     id("org.sonarqube") version "6.0.1.5171"
     // Pitest mutation testing (#931). The `make test-quality` Makefile target
     // runs Pitest against the unit-test surface; the threshold is intentionally
@@ -16,6 +19,7 @@ plugins {
     // trying to close with an LLM pass.
     id("info.solidsoft.pitest") version "1.15.0"
     checkstyle
+    pmd
     jacoco
 }
 
@@ -90,6 +94,11 @@ dependencies {
 
     // Error Prone
     errorprone("com.google.errorprone:error_prone_core:2.36.0")
+    errorprone("com.uber.nullaway:nullaway:0.12.10")
+    compileOnly("org.jspecify:jspecify:1.0.0")
+
+    // SpotBugs security rules
+    spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.13.0")
 
     // Testing
     testImplementation("org.springframework.boot:spring-boot-starter-test")
@@ -111,15 +120,23 @@ dependencies {
     testImplementation("org.testcontainers:postgresql:1.21.1")
 }
 
+nullaway {
+    onlyNullMarked = true
+}
+
 tasks.withType<JavaCompile>().configureEach {
     options.errorprone.isEnabled.set(!quick)
     options.errorprone.disableWarningsInGeneratedCode = true
     options.errorprone.disable("MissingSummary")
+    options.errorprone.nullaway {
+        error()
+    }
 }
 
 if (quick) {
     tasks.withType<com.github.spotbugs.snom.SpotBugsTask>().configureEach { enabled = false }
     tasks.named("checkstyleMain") { enabled = false }
+    tasks.named("pmdMain") { enabled = false }
 }
 
 // Generate META-INF/build-info.properties so logback can read the version dynamically
@@ -210,16 +227,18 @@ tasks.check {
 pitest {
     junit5PluginVersion.set("1.2.1")
     pitestVersion.set("1.17.0")
-    targetClasses.set(listOf("com.keplerops.groundcontrol.*"))
+    val changedClassTargets = providers
+            .gradleProperty("pitestTargetClasses")
+            .map { raw -> raw.split(",").map(String::trim).filter(String::isNotEmpty) }
+    targetClasses.set(changedClassTargets.orElse(listOf("com.keplerops.groundcontrol.*")))
     // Mutators: default set is good enough for the initial calibration.
     mutators.set(listOf("DEFAULTS"))
     threads.set(4)
     outputFormats.set(listOf("HTML", "XML"))
     timestampedReports.set(false)
-    // Advisory-only thresholds (#931 codex F2). Score is in the report;
-    // build does not fail on low mutation/coverage during the calibration
-    // window. Tighten after the first ~5 PRs of evidence.
-    mutationThreshold.set(0)
+    // Whole-repo PIT stays advisory for calibration; changed-class PIT is a
+    // blocking ratchet with a 60% floor when the gate supplies target classes.
+    mutationThreshold.set(changedClassTargets.map { 60 }.orElse(0))
     coverageThreshold.set(0)
     failWhenNoMutations.set(false)
 }
@@ -232,7 +251,7 @@ spotbugs {
 
 tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
     reports.create("html") { required = true }
-    reports.create("xml") { required = false }
+    reports.create("xml") { required = true }
 }
 
 // Checkstyle
@@ -245,6 +264,71 @@ checkstyle {
 // Exclude checkstyle on test sources — focus on production code
 tasks.checkstyleTest {
     enabled = false
+}
+
+pmd {
+    toolVersion = "7.10.0"
+    ruleSetFiles = files("config/pmd/ruleset.xml")
+    ruleSets = emptyList()
+    isIgnoreFailures = true
+}
+
+tasks.withType<Pmd>().configureEach {
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+val pmdMain by tasks.existing(Pmd::class)
+val pmdRatchet by tasks.registering {
+    group = "verification"
+    description = "Fails when PMD reports a finding not present in config/pmd/baseline.txt."
+    dependsOn(pmdMain)
+
+    val baselineFile = layout.projectDirectory.file("config/pmd/baseline.txt")
+    val reportFile = layout.buildDirectory.file("reports/pmd/main.xml")
+    inputs.file(baselineFile)
+    inputs.file(reportFile)
+
+    doLast {
+        val baseline = baselineFile.asFile
+                .readLines()
+                .map(String::trim)
+                .filter { it.isNotEmpty() && !it.startsWith("#") }
+                .toSet()
+        val report = reportFile.get().asFile
+        if (!report.exists()) {
+            return@doLast
+        }
+        val document = javax.xml.parsers.DocumentBuilderFactory
+                .newInstance()
+                .newDocumentBuilder()
+                .parse(report)
+        val violations = document.getElementsByTagName("violation")
+        val findings = (0 until violations.length)
+                .map { violations.item(it) as org.w3c.dom.Element }
+                .map { violation ->
+                    val file = violation.parentNode as org.w3c.dom.Element
+                    listOf(
+                            file.getAttribute("name").removePrefix(projectDir.parentFile.absolutePath + "/"),
+                            violation.getAttribute("rule"),
+                            violation.getAttribute("beginline"),
+                            violation.textContent.trim().replace(Regex("\\s+"), " "))
+                            .joinToString("|")
+                }
+                .toSortedSet()
+        val newFindings = findings - baseline
+        if (newFindings.isNotEmpty()) {
+            throw GradleException(
+                    "PMD found ${newFindings.size} finding(s) outside config/pmd/baseline.txt:\n"
+                            + newFindings.joinToString("\n"))
+        }
+    }
+}
+
+tasks.check {
+    dependsOn(pmdRatchet)
 }
 
 apply(from = "gradle/openjml.gradle.kts")

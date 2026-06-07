@@ -2,7 +2,13 @@
        assert-backup-policy test-backup-restore-local vale-install vale-lint \
        ground-control-mcp-install sync-ground-control-policy scaffold-controller scaffold-audited-entity \
        scaffold-l2-state-machine sync-packs trigger-pack-sync dev clean up down docker-build smoke frontend-install frontend-dev \
-       frontend-build frontend-lint frontend-format frontend-test deploy deploy-infra
+       frontend-build frontend-lint frontend-format frontend-test frontend-gate mcp-gate gates deploy deploy-infra
+
+JAVA21_HOME := $(firstword $(wildcard /usr/lib/jvm/java-21-openjdk-amd64 /usr/lib/jvm/java-1.21.0-openjdk-amd64 /usr/lib/jvm/java-21* /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21*/x64))
+ifneq ($(JAVA21_HOME),)
+export JAVA_HOME ?= $(JAVA21_HOME)
+export PATH := $(JAVA_HOME)/bin:$(PATH)
+endif
 
 # --- Rapid dev loop (< 5s) ---
 
@@ -117,6 +123,16 @@ frontend-format: ## Format frontend code (Biome)
 
 frontend-test: ## Run frontend unit tests (Vitest)
 	cd frontend && npm test
+
+frontend-gate: ## Frontend deterministic gates: typecheck + Biome + dependency-cruiser + Vitest
+	cd frontend && npm run typecheck && npm run lint && npm run arch && npm test
+
+mcp-gate: ## MCP deterministic gates: JS type parse + ESLint + dependency-cruiser + node:test
+	node workflow/tools/materialize-pack-registry.mjs >/dev/null
+	cd mcp/ground-control && npm run typecheck && npm run lint && npm run arch && npm test
+
+gates: ground-control-mcp-install ## Run Ground Control's portable gate manifest locally
+	node workflow/tools/run-gates.mjs --repo . --issue "$${GC_ISSUE:-1075}" --base "$${BASE_REF:-origin/dev}" --head "$${HEAD_REF:-HEAD}" $${GC_GATE_CAPABILITIES:+--capabilities "$${GC_GATE_CAPABILITIES}"} $${GC_GATE_CHANGED_FILES:+--changed-files "$${GC_GATE_CHANGED_FILES}"}
 
 # --- Infrastructure ---
 

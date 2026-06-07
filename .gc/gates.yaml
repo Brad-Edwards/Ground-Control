@@ -1,0 +1,1848 @@
+schema_version: 1
+engine:
+  min_version: '>=1.0.0'
+  manifest_version: 1.0.0
+defaults:
+  timeout_seconds: 900
+  provider_missing: reviewer_fallback
+  fail_fast: false
+packs:
+  - id: jvm-gradle
+    version: 1.0.0
+    scope: backend
+  - id: node-ts
+    version: 1.0.0
+    scope: frontend
+  - id: node-ts
+    version: 1.0.0
+    scope: mcp/ground-control
+  - id: docs-generic
+    version: 1.0.0
+    scope: .
+gates:
+  - id: jvm-gradle.backend.format
+    capability: format
+    pack: jvm-gradle
+    cwd: backend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - backend/**/*.java
+        - backend/**/*.kt
+        - backend/build.gradle
+        - backend/build.gradle.kts
+        - backend/settings.gradle
+        - backend/settings.gradle.kts
+    provider: gradle-spotless
+    command: ./gradlew spotlessCheck
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.lint
+    capability: lint
+    pack: jvm-gradle
+    cwd: backend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - backend/src/main/**
+        - backend/config/**
+        - backend/build.gradle
+        - backend/build.gradle.kts
+    provider: gradle-checkstyle-pmd
+    command: ./gradlew checkstyleMain pmdRatchet
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.build
+    capability: build
+    pack: jvm-gradle
+    cwd: backend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - backend/src/**
+        - backend/build.gradle
+        - backend/build.gradle.kts
+        - backend/settings.gradle
+        - backend/settings.gradle.kts
+    provider: gradle-build
+    command: ./gradlew assemble -Pquick
+    timeout_seconds: 1800
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.type_safety
+    capability: type_safety
+    pack: jvm-gradle
+    cwd: backend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - backend/src/main/**
+        - backend/build.gradle
+        - backend/build.gradle.kts
+    provider: gradle-compile-static
+    command: ./gradlew compileJava
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.unit_tests
+    capability: unit_tests
+    pack: jvm-gradle
+    cwd: backend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - backend/src/main/**
+        - backend/src/test/**
+        - backend/build.gradle
+        - backend/build.gradle.kts
+    provider: gradle-test
+    command: ./gradlew test
+    timeout_seconds: 1800
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.integration_tests
+    capability: integration_tests
+    pack: jvm-gradle
+    cwd: backend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - backend/src/main/**
+        - backend/src/integrationTest/**
+        - backend/build.gradle
+        - backend/build.gradle.kts
+    provider: gradle-integration
+    command: ./gradlew integrationTest
+    timeout_seconds: 2400
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.contract_boundary
+    capability: contract_boundary
+    pack: jvm-gradle
+    cwd: backend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: reviewer_fallback
+    threshold:
+      metric: provider_declared
+      policy: reviewer_fallback
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  - id: jvm-gradle.backend.property_verification
+    capability: property_verification
+    pack: jvm-gradle
+    cwd: backend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - backend/src/main/**
+        - backend/src/test/**
+        - backend/build.gradle
+        - backend/build.gradle.kts
+    provider: jqwik
+    command: ./gradlew test --tests '*PropertyTest'
+    timeout_seconds: 1800
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.architecture
+    capability: architecture
+    pack: jvm-gradle
+    cwd: backend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - backend/src/main/**
+        - backend/src/test/**
+        - backend/build.gradle
+        - backend/build.gradle.kts
+    provider: archunit
+    command: ./gradlew test --tests '*ArchitectureTest'
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.complexity
+    capability: complexity
+    pack: jvm-gradle
+    cwd: backend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - backend/src/main/**
+        - backend/config/**
+    provider: checkstyle-pmd-complexity
+    command: ./gradlew checkstyleMain pmdRatchet
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.mutation
+    capability: mutation
+    pack: jvm-gradle
+    cwd: backend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - backend/src/main/**
+        - backend/src/test/**
+        - backend/build.gradle
+        - backend/build.gradle.kts
+    provider: pitest
+    command: node ../tools/gates/run-pitest-changed.mjs --repo ..
+    timeout_seconds: 3600
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.diff_coverage
+    capability: diff_coverage
+    pack: jvm-gradle
+    cwd: backend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - backend/src/main/**
+        - backend/src/test/**
+    provider: jacoco-diff-cover
+    command: ./gradlew test jacocoTestReport jacocoTestCoverageVerification
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.sast
+    capability: sast
+    pack: jvm-gradle
+    cwd: backend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - backend/src/main/**
+        - backend/build.gradle
+        - backend/build.gradle.kts
+    provider: spotbugs-findsecbugs
+    command: ./gradlew spotbugsMain
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.secret_scan
+    capability: secret_scan
+    pack: jvm-gradle
+    cwd: backend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - backend/**/*
+    provider: gitleaks
+    command: cd .. && pre-commit run gitleaks --all-files
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.dependency_policy
+    capability: dependency_policy
+    pack: jvm-gradle
+    cwd: backend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - backend/gradle.lockfile
+        - backend/build.gradle
+        - backend/build.gradle.kts
+        - backend/settings.gradle
+        - backend/settings.gradle.kts
+    provider: osv-gradle
+    command: ./gradlew dependencies --configuration runtimeClasspath
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.accessibility
+    capability: accessibility
+    pack: jvm-gradle
+    cwd: backend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: not_applicable
+    threshold:
+      metric: applicability
+      policy: not_applicable
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  - id: jvm-gradle.backend.docs_policy
+    capability: docs_policy
+    pack: jvm-gradle
+    cwd: backend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - backend/*.md
+        - backend/**/*.md
+        - backend/*.markdown
+        - backend/**/*.markdown
+        - backend/docs/**
+        - backend/architecture/adrs/**
+        - backend/.ground-control.yaml
+    provider: docs-profile
+    command: cd .. && make policy
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.traceability
+    capability: traceability
+    pack: jvm-gradle
+    cwd: backend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: reviewer_fallback
+    threshold:
+      metric: provider_declared
+      policy: reviewer_fallback
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  - id: jvm-gradle.backend.policy
+    capability: policy
+    pack: jvm-gradle
+    cwd: backend
+    blocking: true
+    scope: repo
+    applies_when:
+      paths:
+        - backend/**/*
+    provider: repo-policy
+    command: cd .. && make policy
+    timeout_seconds: 1800
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: jvm-gradle.backend.remote_status
+    capability: remote_status
+    pack: jvm-gradle
+    cwd: backend
+    blocking: true
+    scope: repo
+    applies_when:
+      paths: []
+    provider: required-statuses
+    required_statuses:
+      - ci
+    threshold:
+      metric: required_statuses
+      policy: all_success
+    thresholds:
+      platform_minimum:
+        metric: required_statuses
+        policy: all_success
+      recommendation:
+        metric: required_statuses
+        policy: all_success
+  - id: node-ts.frontend.format
+    capability: format
+    pack: node-ts
+    cwd: frontend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/**/*.ts
+        - frontend/**/*.tsx
+        - frontend/**/*.js
+        - frontend/**/*.jsx
+        - frontend/package.json
+        - frontend/biome.json
+        - frontend/.prettierrc*
+    provider: biome-prettier-script
+    command: npm run lint
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.lint
+    capability: lint
+    pack: node-ts
+    cwd: frontend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/**/*.ts
+        - frontend/**/*.tsx
+        - frontend/**/*.js
+        - frontend/**/*.jsx
+        - frontend/package.json
+        - frontend/biome.json
+        - frontend/eslint.config.*
+    provider: biome-eslint
+    command: npm run lint
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.build
+    capability: build
+    pack: node-ts
+    cwd: frontend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/src/**
+        - frontend/package.json
+        - frontend/tsconfig*.json
+        - frontend/vite.config.*
+    provider: package-build
+    command: npm run build
+    timeout_seconds: 1200
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.type_safety
+    capability: type_safety
+    pack: node-ts
+    cwd: frontend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/**/*.ts
+        - frontend/**/*.tsx
+        - frontend/tsconfig*.json
+        - frontend/package.json
+    provider: typescript
+    command: npm run typecheck
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.unit_tests
+    capability: unit_tests
+    pack: node-ts
+    cwd: frontend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/src/**
+        - frontend/test/**
+        - frontend/tests/**
+        - frontend/package.json
+    provider: node-test-runner
+    command: npm test
+    timeout_seconds: 1200
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.integration_tests
+    capability: integration_tests
+    pack: node-ts
+    cwd: frontend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/src/**
+        - frontend/tests/**
+        - frontend/playwright.config.*
+        - frontend/package.json
+    provider: playwright-or-script
+    command: npm run test:integration --if-present || npm run test:e2e --if-present
+    timeout_seconds: 1800
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.contract_boundary
+    capability: contract_boundary
+    pack: node-ts
+    cwd: frontend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: reviewer_fallback
+    threshold:
+      metric: provider_declared
+      policy: reviewer_fallback
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  - id: node-ts.frontend.property_verification
+    capability: property_verification
+    pack: node-ts
+    cwd: frontend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/src/**
+        - frontend/test/**
+        - frontend/tests/**
+        - frontend/package.json
+    provider: fast-check
+    command: npm run test:property --if-present
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.architecture
+    capability: architecture
+    pack: node-ts
+    cwd: frontend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/src/**
+        - frontend/package.json
+    provider: dependency-cruiser
+    command: npm run arch
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.complexity
+    capability: complexity
+    pack: node-ts
+    cwd: frontend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/**/*.ts
+        - frontend/**/*.tsx
+        - frontend/**/*.js
+        - frontend/**/*.jsx
+        - frontend/package.json
+    provider: biome-eslint-complexity
+    command: npm run lint
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.mutation
+    capability: mutation
+    pack: node-ts
+    cwd: frontend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/src/**
+        - frontend/test/**
+        - frontend/tests/**
+        - frontend/package.json
+    provider: stryker-js
+    command: echo "Stryker frontend mutation gate is not installed locally; tracked as adoption follow-up"
+    timeout_seconds: 3600
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    provider_missing: reviewer_fallback
+  - id: node-ts.frontend.diff_coverage
+    capability: diff_coverage
+    pack: node-ts
+    cwd: frontend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/src/**
+        - frontend/test/**
+        - frontend/tests/**
+    provider: vitest-diff-cover
+    command: npm run coverage --if-present
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.sast
+    capability: sast
+    pack: node-ts
+    cwd: frontend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/**/*.ts
+        - frontend/**/*.tsx
+        - frontend/**/*.js
+        - frontend/**/*.jsx
+        - frontend/package.json
+    provider: semgrep-ts-js
+    command: echo "Semgrep frontend diff-aware SAST is not installed locally; tracked as adoption follow-up"
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    provider_missing: reviewer_fallback
+  - id: node-ts.frontend.secret_scan
+    capability: secret_scan
+    pack: node-ts
+    cwd: frontend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/**/*
+    provider: gitleaks
+    command: cd .. && pre-commit run gitleaks --all-files
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.dependency_policy
+    capability: dependency_policy
+    pack: node-ts
+    cwd: frontend
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/package.json
+        - frontend/package-lock.json
+        - frontend/pnpm-lock.yaml
+        - frontend/yarn.lock
+    provider: npm-audit-ratchet
+    command: node ../tools/gates/npm-audit-ratchet.mjs --baseline ../.gc/baselines/npm-audit/frontend.json --package .
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.accessibility
+    capability: accessibility
+    pack: node-ts
+    cwd: frontend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/src/**/*.tsx
+        - frontend/src/**/*.jsx
+        - frontend/playwright.config.*
+        - frontend/package.json
+    provider: jsx-a11y-playwright-axe
+    command: echo "Axe/jsx-a11y browser accessibility gate is not installed locally; tracked as adoption follow-up"
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    provider_missing: reviewer_fallback
+  - id: node-ts.frontend.docs_policy
+    capability: docs_policy
+    pack: node-ts
+    cwd: frontend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - frontend/*.md
+        - frontend/**/*.md
+        - frontend/*.markdown
+        - frontend/**/*.markdown
+        - frontend/docs/**
+        - frontend/architecture/adrs/**
+        - frontend/.ground-control.yaml
+    provider: docs-profile
+    command: >-
+      if command -v vale >/dev/null 2>&1; then vale .; else echo 'vale not installed; docs policy provider unavailable';
+      exit 1; fi
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.traceability
+    capability: traceability
+    pack: node-ts
+    cwd: frontend
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: reviewer_fallback
+    threshold:
+      metric: provider_declared
+      policy: reviewer_fallback
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  - id: node-ts.frontend.policy
+    capability: policy
+    pack: node-ts
+    cwd: frontend
+    blocking: true
+    scope: repo
+    applies_when:
+      paths:
+        - frontend/**/*
+    provider: repo-policy
+    command: cd .. && make policy
+    timeout_seconds: 1800
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.frontend.remote_status
+    capability: remote_status
+    pack: node-ts
+    cwd: frontend
+    blocking: true
+    scope: repo
+    applies_when:
+      paths: []
+    provider: required-statuses
+    required_statuses:
+      - ci
+    threshold:
+      metric: required_statuses
+      policy: all_success
+    thresholds:
+      platform_minimum:
+        metric: required_statuses
+        policy: all_success
+      recommendation:
+        metric: required_statuses
+        policy: all_success
+  - id: node-ts.mcp.ground.control.format
+    capability: format
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/**/*.js
+        - mcp/ground-control/package.json
+        - mcp/ground-control/eslint.config.*
+    provider: biome-prettier-script
+    command: npm run lint
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.mcp.ground.control.lint
+    capability: lint
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/**/*.js
+        - mcp/ground-control/package.json
+        - mcp/ground-control/eslint.config.*
+    provider: biome-eslint
+    command: npm run lint
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.mcp.ground.control.build
+    capability: build
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/**/*.js
+        - mcp/ground-control/package.json
+    provider: package-build
+    command: npm run build --if-present
+    timeout_seconds: 1200
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.mcp.ground.control.type_safety
+    capability: type_safety
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/**/*.js
+        - mcp/ground-control/package.json
+    provider: typescript
+    command: npm run typecheck
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.mcp.ground.control.unit_tests
+    capability: unit_tests
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/**/*.js
+        - mcp/ground-control/package.json
+    provider: node-test-runner
+    command: npm test
+    timeout_seconds: 1200
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.mcp.ground.control.integration_tests
+    capability: integration_tests
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/src/**
+        - mcp/ground-control/tests/**
+        - mcp/ground-control/playwright.config.*
+        - mcp/ground-control/package.json
+    provider: playwright-or-script
+    command: echo "MCP has no separate integration test script; node:test is the package suite"
+    timeout_seconds: 1800
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    provider_missing: reviewer_fallback
+  - id: node-ts.mcp.ground.control.contract_boundary
+    capability: contract_boundary
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: reviewer_fallback
+    threshold:
+      metric: provider_declared
+      policy: reviewer_fallback
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  - id: node-ts.mcp.ground.control.property_verification
+    capability: property_verification
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/src/**
+        - mcp/ground-control/test/**
+        - mcp/ground-control/tests/**
+        - mcp/ground-control/package.json
+    provider: fast-check
+    command: echo "MCP has no fast-check property suite yet; tracked as adoption follow-up"
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    provider_missing: reviewer_fallback
+  - id: node-ts.mcp.ground.control.architecture
+    capability: architecture
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/**/*.js
+        - mcp/ground-control/package.json
+    provider: dependency-cruiser
+    command: npm run arch
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.mcp.ground.control.complexity
+    capability: complexity
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/**/*.js
+        - mcp/ground-control/package.json
+    provider: biome-eslint-complexity
+    command: npm run lint
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.mcp.ground.control.mutation
+    capability: mutation
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/src/**
+        - mcp/ground-control/test/**
+        - mcp/ground-control/tests/**
+        - mcp/ground-control/package.json
+    provider: stryker-js
+    command: echo "MCP Stryker mutation gate is not installed locally; tracked as adoption follow-up"
+    timeout_seconds: 3600
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    provider_missing: reviewer_fallback
+  - id: node-ts.mcp.ground.control.diff_coverage
+    capability: diff_coverage
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/src/**
+        - mcp/ground-control/test/**
+        - mcp/ground-control/tests/**
+    provider: vitest-diff-cover
+    command: echo "MCP diff coverage provider is not installed locally; tracked as adoption follow-up"
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    provider_missing: reviewer_fallback
+  - id: node-ts.mcp.ground.control.sast
+    capability: sast
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/**/*.ts
+        - mcp/ground-control/**/*.tsx
+        - mcp/ground-control/**/*.js
+        - mcp/ground-control/**/*.jsx
+        - mcp/ground-control/package.json
+    provider: semgrep-ts-js
+    command: echo "Semgrep MCP diff-aware SAST is not installed locally; tracked as adoption follow-up"
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    provider_missing: reviewer_fallback
+  - id: node-ts.mcp.ground.control.secret_scan
+    capability: secret_scan
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/**/*
+    provider: gitleaks
+    command: cd ../.. && pre-commit run gitleaks --all-files
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.mcp.ground.control.dependency_policy
+    capability: dependency_policy
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/package.json
+        - mcp/ground-control/package-lock.json
+        - mcp/ground-control/pnpm-lock.yaml
+        - mcp/ground-control/yarn.lock
+    provider: npm-audit-ratchet
+    command: >-
+      node ../../tools/gates/npm-audit-ratchet.mjs --baseline ../../.gc/baselines/npm-audit/mcp-ground-control.json
+      --package .
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.mcp.ground.control.accessibility
+    capability: accessibility
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider: jsx-a11y-playwright-axe
+    command: npm run test:a11y --if-present
+    threshold:
+      metric: wcag_violations
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: wcag_violations
+        max: 0
+      recommendation:
+        metric: wcag_2_1_aa_violations
+        max: 0
+    provider_missing: not_applicable
+  - id: node-ts.mcp.ground.control.docs_policy
+    capability: docs_policy
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - mcp/ground-control/*.md
+        - mcp/ground-control/**/*.md
+        - mcp/ground-control/*.markdown
+        - mcp/ground-control/**/*.markdown
+        - mcp/ground-control/docs/**
+        - mcp/ground-control/architecture/adrs/**
+        - mcp/ground-control/.ground-control.yaml
+    provider: docs-profile
+    command: >-
+      if command -v vale >/dev/null 2>&1; then vale .; else echo 'vale not installed; docs policy provider unavailable';
+      exit 1; fi
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.mcp.ground.control.traceability
+    capability: traceability
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: reviewer_fallback
+    threshold:
+      metric: provider_declared
+      policy: reviewer_fallback
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  - id: node-ts.mcp.ground.control.policy
+    capability: policy
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: true
+    scope: repo
+    applies_when:
+      paths:
+        - mcp/ground-control/**/*
+    provider: repo-policy
+    command: cd ../.. && make policy
+    timeout_seconds: 1800
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: node-ts.mcp.ground.control.remote_status
+    capability: remote_status
+    pack: node-ts
+    cwd: mcp/ground-control
+    blocking: true
+    scope: repo
+    applies_when:
+      paths: []
+    provider: required-statuses
+    required_statuses:
+      - ci
+    threshold:
+      metric: required_statuses
+      policy: all_success
+    thresholds:
+      platform_minimum:
+        metric: required_statuses
+        policy: all_success
+      recommendation:
+        metric: required_statuses
+        policy: all_success
+  - id: docs-generic.root.format
+    capability: format
+    pack: docs-generic
+    cwd: .
+    blocking: true
+    scope: repo
+    applies_when:
+      paths:
+        - '*.md'
+        - '**/*.md'
+        - '*.markdown'
+        - '**/*.markdown'
+        - docs/**
+        - architecture/adrs/**
+        - .ground-control.yaml
+    provider: pre-commit-docs-format
+    command: make policy
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: docs-generic.root.lint
+    capability: lint
+    pack: docs-generic
+    cwd: .
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - '*.md'
+        - '**/*.md'
+        - '*.markdown'
+        - '**/*.markdown'
+        - docs/**
+        - architecture/adrs/**
+        - .ground-control.yaml
+    provider: markdown-policy
+    command: make policy
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: docs-generic.root.build
+    capability: build
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: not_applicable
+    threshold:
+      metric: applicability
+      policy: not_applicable
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  - id: docs-generic.root.type_safety
+    capability: type_safety
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: not_applicable
+    threshold:
+      metric: applicability
+      policy: not_applicable
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  - id: docs-generic.root.unit_tests
+    capability: unit_tests
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: not_applicable
+    threshold:
+      metric: applicability
+      policy: not_applicable
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  - id: docs-generic.root.integration_tests
+    capability: integration_tests
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: not_applicable
+    threshold:
+      metric: applicability
+      policy: not_applicable
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  - id: docs-generic.root.contract_boundary
+    capability: contract_boundary
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: not_applicable
+    threshold:
+      metric: applicability
+      policy: not_applicable
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  - id: docs-generic.root.property_verification
+    capability: property_verification
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: not_applicable
+    threshold:
+      metric: applicability
+      policy: not_applicable
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  - id: docs-generic.root.architecture
+    capability: architecture
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: not_applicable
+    threshold:
+      metric: applicability
+      policy: not_applicable
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  - id: docs-generic.root.complexity
+    capability: complexity
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: not_applicable
+    threshold:
+      metric: applicability
+      policy: not_applicable
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  - id: docs-generic.root.mutation
+    capability: mutation
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: not_applicable
+    threshold:
+      metric: applicability
+      policy: not_applicable
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  - id: docs-generic.root.diff_coverage
+    capability: diff_coverage
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: not_applicable
+    threshold:
+      metric: applicability
+      policy: not_applicable
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  - id: docs-generic.root.sast
+    capability: sast
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - '**/*.yaml'
+        - '**/*.yml'
+        - '**/*.json'
+        - '**/*.md'
+    provider: semgrep-config
+    command: echo "Semgrep docs/config SAST is not installed locally; tracked as adoption follow-up"
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+    provider_missing: reviewer_fallback
+  - id: docs-generic.root.secret_scan
+    capability: secret_scan
+    pack: docs-generic
+    cwd: .
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - '**/*'
+    provider: gitleaks-detect-private-key
+    command: pre-commit run gitleaks --all-files
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: docs-generic.root.dependency_policy
+    capability: dependency_policy
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths:
+        - .github/workflows/**
+        - .pre-commit-config.yaml
+        - '**/*.yaml'
+        - '**/*.yml'
+    provider: workflow-policy
+    command: make policy
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: docs-generic.root.accessibility
+    capability: accessibility
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: not_applicable
+    threshold:
+      metric: applicability
+      policy: not_applicable
+    thresholds:
+      platform_minimum:
+        metric: applicability
+        policy: not_applicable
+      recommendation:
+        metric: applicability
+        policy: not_applicable
+  - id: docs-generic.root.docs_policy
+    capability: docs_policy
+    pack: docs-generic
+    cwd: .
+    blocking: true
+    scope: changed
+    applies_when:
+      paths:
+        - '*.md'
+        - '**/*.md'
+        - '*.markdown'
+        - '**/*.markdown'
+        - docs/**
+        - architecture/adrs/**
+        - .ground-control.yaml
+    provider: vale-markdown-policy
+    command: make policy
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: docs-generic.root.traceability
+    capability: traceability
+    pack: docs-generic
+    cwd: .
+    blocking: false
+    scope: changed
+    applies_when:
+      paths: []
+    provider_missing: reviewer_fallback
+    threshold:
+      metric: provider_declared
+      policy: reviewer_fallback
+    thresholds:
+      platform_minimum:
+        metric: provider_declared
+        policy: reviewer_fallback
+      recommendation:
+        metric: provider_declared
+        policy: deterministic_provider_when_adopted
+  - id: docs-generic.root.policy
+    capability: policy
+    pack: docs-generic
+    cwd: .
+    blocking: true
+    scope: repo
+    applies_when:
+      paths:
+        - '**/*'
+    provider: repo-policy-or-doc-policy
+    command: make policy
+    threshold:
+      metric: exit_code
+      max: 0
+    thresholds:
+      platform_minimum:
+        metric: exit_code
+        max: 0
+      recommendation:
+        metric: exit_code
+        max: 0
+  - id: docs-generic.root.remote_status
+    capability: remote_status
+    pack: docs-generic
+    cwd: .
+    blocking: true
+    scope: repo
+    applies_when:
+      paths: []
+    provider: required-statuses
+    required_statuses:
+      - ci
+    threshold:
+      metric: required_statuses
+      policy: all_success
+    thresholds:
+      platform_minimum:
+        metric: required_statuses
+        policy: all_success
+      recommendation:
+        metric: required_statuses
+        policy: all_success

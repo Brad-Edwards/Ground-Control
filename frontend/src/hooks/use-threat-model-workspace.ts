@@ -34,12 +34,12 @@ export function useThreatModelWorkspace(
       const params: Record<string, string> = {
         project: activeProject?.identifier ?? "",
       };
-      if (filters.assetId) params.assetId = filters.assetId;
-      if (filters.stride) params.stride = filters.stride;
-      if (filters.status) params.status = filters.status;
-      if (filters.asOf) params.asOf = filters.asOf;
+      if (filters.assetId) params["assetId"] = filters.assetId;
+      if (filters.stride) params["stride"] = filters.stride;
+      if (filters.status) params["status"] = filters.status;
+      if (filters.asOf) params["asOf"] = filters.asOf;
       if (filters.freshnessWindowDays != null) {
-        params.freshnessWindowDays = String(filters.freshnessWindowDays);
+        params["freshnessWindowDays"] = String(filters.freshnessWindowDays);
       }
       return apiFetch<ThreatModelWorkspaceResponse>(
         "/threat-models/workspace",

@@ -273,3 +273,8 @@ docs/notes
 # Workflow platform release artifacts: built by workflow/tools/materialize-pack-registry.mjs
 # and published to GitHub Releases, not version-controlled. gate-catalog.json metadata is tracked.
 workflow/releases/
+
+# Vendored workflow engine + gate-pack bundles: re-materialized from
+# .gc/workflow-lock.json by repo-setup / gc_install_workflow_assets, not committed.
+# The lockfile + .gc/gates.yaml manifest + .gc/gate-packs config ARE tracked.
+.gc/vendor/

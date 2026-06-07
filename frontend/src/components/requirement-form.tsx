@@ -68,20 +68,20 @@ export function RequirementForm({
         uid: trimmedUid,
         title: trimmedTitle,
         statement: trimmedStatement,
-        rationale: trimmedRationale || undefined,
+        ...(trimmedRationale ? { rationale: trimmedRationale } : {}),
         requirementType,
         priority,
-        wave: Number(wave) || undefined,
+        ...(Number(wave) ? { wave: Number(wave) } : {}),
       };
       onSubmit(data);
     } else {
       const data: UpdateRequirementRequest = {
         title: trimmedTitle,
         statement: trimmedStatement,
-        rationale: trimmedRationale || undefined,
+        ...(trimmedRationale ? { rationale: trimmedRationale } : {}),
         requirementType,
         priority,
-        wave: Number(wave) || undefined,
+        ...(Number(wave) ? { wave: Number(wave) } : {}),
       };
       onSubmit(data);
     }

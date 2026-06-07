@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="Ground Control JVM ratchets"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.github.io/schema/ruleset_2_0_0.xsd">
+    <description>Design and complexity rules adopted by the jvm-gradle gate pack.</description>
+
+    <rule ref="category/java/design.xml/GodClass"/>
+    <rule ref="category/java/design.xml/CyclomaticComplexity">
+        <properties>
+            <property name="methodReportLevel" value="15"/>
+        </properties>
+    </rule>
+</ruleset>

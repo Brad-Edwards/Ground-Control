@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suppressions PUBLIC
+    "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+    "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<suppressions>
+    <!-- Generated from the 50 pre-existing complexity/size findings during gate-pack adoption. -->
+    <suppress files="src/main/java/com/keplerops/groundcontrol/api/assets/AssetController\.java" checks="ParameterNumber" lines="73"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/api/export/ExportController\.java" checks="ParameterNumber" lines="45"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/api/riskscenarios/RiskScenarioWorkspaceController\.java" checks="ParameterNumber" lines="46"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/adrs/model/ArchitectureDecisionRecord\.java" checks="ParameterNumber" lines="65"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/assets/repository/OperationalAssetRepository\.java" checks="ParameterNumber" lines="62"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/assets/service/AssetService\.java" checks="ParameterNumber" lines="97"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/assets/service/AssetService\.java" checks="ParameterNumber" lines="257"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/assets/service/AssetService\.java" checks="ParameterNumber" lines="290"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/assets/service/CreateAssetCommand\.java" checks="ParameterNumber" lines="35"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/assets/service/CreateAssetCommand\.java" checks="ParameterNumber" lines="64"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/assets/service/UpdateAssetCommand\.java" checks="ParameterNumber" lines="77"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/assets/service/UpdateAssetCommand\.java" checks="ParameterNumber" lines="110"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/assets/service/UpdateAssetCommand\.java" checks="ParameterNumber" lines="149"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/controls/service/ControlService\.java" checks="ParameterNumber" lines="57"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/documents/service/DocumentExportService\.java" checks="ParameterNumber" lines="33"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/evidence/service/EvidenceArtifactService\.java" checks="ParameterNumber" lines="72"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/findings/service/FindingService\.java" checks="ParameterNumber" lines="48"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/graph/service/GraphTargetResolverService\.java" checks="ParameterNumber" lines="70"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/graph/service/RiskControlMappingGraphProjectionContributor\.java" checks="MethodLength" lines="92"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/graph/service/RiskGraphProjectionContributor\.java" checks="MethodLength" lines="46"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/graph/service/RiskGraphProjectionContributor\.java" checks="MethodLength" lines="159"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/graph/service/RiskGraphProjectionContributor\.java" checks="CyclomaticComplexity" lines="243"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/graph/service/ThreatModelGraphProjectionContributor\.java" checks="CyclomaticComplexity" lines="112"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/graph/service/ThreatModelGraphProjectionContributor\.java" checks="ParameterNumber" lines="112"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/EvidenceFreshnessAnalysisService\.java" checks="ParameterNumber" lines="70"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/EvidenceFreshnessAnalysisService\.java" checks="ParameterNumber" lines="320"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/EvidenceFreshnessAnalysisService\.java" checks="ParameterNumber" lines="355"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/VendorRiskAggregationService\.java" checks="MethodLength" lines="81"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/qualitygates/model/QualityGate\.java" checks="ParameterNumber" lines="56"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/requirements/service/ImportService\.java" checks="ParameterNumber" lines="57"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskcontrol/service/RiskControlMappingService\.java" checks="ParameterNumber" lines="51"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskcontrol/service/RiskControlMappingService\.java" checks="MethodLength" lines="74"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/MethodologyProfileService\.java" checks="ParameterNumber" lines="825"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/RiskAssessmentResultService\.java" checks="CyclomaticComplexity" lines="138"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/RiskAssessmentResultService\.java" checks="ParameterNumber" lines="138"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/RiskRegisterRecordService\.java" checks="ParameterNumber" lines="133"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/RiskScenarioLinkService\.java" checks="ParameterNumber" lines="37"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/RiskScenarioService\.java" checks="ParameterNumber" lines="53"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/RiskScenarioWorkspaceService\.java" checks="ParameterNumber" lines="99"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/RiskScenarioWorkspaceService\.java" checks="ParameterNumber" lines="134"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/RiskScenarioWorkspaceService\.java" checks="ParameterNumber" lines="294"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/RiskScenarioWorkspaceService\.java" checks="ParameterNumber" lines="343"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/TreatmentPlanService\.java" checks="ParameterNumber" lines="57"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/TreatmentPlanService\.java" checks="ParameterNumber" lines="191"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/testcases/service/CreateTestCaseCommand\.java" checks="ParameterNumber" lines="23"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/testcases/service/TestRunService\.java" checks="ParameterNumber" lines="64"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/testcases/service/TestSuiteService\.java" checks="ParameterNumber" lines="83"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/domain/threatmodels/service/ThreatModelService\.java" checks="ParameterNumber" lines="54"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/shared/security/BrowserSecurityConfig\.java" checks="MethodLength" lines="150"/>
+    <suppress files="src/main/java/com/keplerops/groundcontrol/shared/security/FirstAdminBootstrapRunner\.java" checks="MethodLength" lines="85"/>
+</suppressions>
