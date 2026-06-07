@@ -1,4 +1,4 @@
-import { appendFileSync, closeSync, cpSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { appendFileSync, closeSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath } from "node:path";
 import { execFile as execFileCb, spawn as spawnChild } from "node:child_process";
@@ -34,7 +34,7 @@ export function buildGroundControlContextSnippet(project = "your-project-id") {
   return [
     "## Ground Control Context",
     "",
-    "This repo's Ground Control project id, workflow commands, remote-quality",
+    "This repo's Ground Control project id, workflow commands, SonarCloud",
     "settings, and plan rules live in `.ground-control.yaml` at repo root.",
     "Agents read it via the `gc_get_repo_ground_control_context` MCP tool.",
   ].join("\n");
@@ -52,13 +52,11 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#   completion_command: <how to run the full CI gate>",
     "#   lint_command: <how to run the linter>",
     "#   format_command: <how to run the formatter>",
-    "#   # Per-reviewer pre-push caps. Omit to use MCP-tool defaults.",
-    "#   # Values below 2 are accepted for backward compatibility but run with",
-    "#   # the ADR-031 effective minimum cap of 2.",
+    "#   # Per-reviewer pre-push caps (issue #906). Omit to use MCP-tool defaults.",
     "#   codex_review:",
-    "#     pre_push_cap: 2",
+    "#     pre_push_cap: 1",
     "#   test_quality_review:",
-    "#     pre_push_cap: 2",
+    "#     pre_push_cap: 1",
     "#   # PR title validation (issue #896). Omit to use /implement skill defaults.",
     "#   pr_title:",
     "#     types: [security, added, changed, deprecated, removed, fixed,",
@@ -68,10 +66,6 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "# sonarcloud:",
     "#   project_key: <sonar-project-key>",
     "#   organization: <sonar-org>",
-    "# remote_quality:",
-    "#   tier: platform_minimum # or zero_overall_issues",
-    "#   # min_coverage: 80",
-    "#   # max_duplications: 3",
     "# rules:",
     "#   plan_rules: .gc/plan-rules.md",
     "# knowledge:",
@@ -1823,13 +1817,6 @@ function emptyWorkflowConfig() {
     lint_command: null,
     format_command: null,
     base_branch: null,
-    // Portable workflow-engine config (ADR-062). Null means the repository has
-    // not adopted versioned engine/packs yet; command-only legacy configs still
-    // work through the compatibility adapter in gc_run_gates.
-    engine: { version: null },
-    gate_manifest: null,
-    packs: [],
-    gate_overrides: {},
     // Per-reviewer pre-push cap defaults. `null` means "use the MCP tool
     // default" (issue #906 lowered the tool default from 3 to 1; repos that
     // want the old behavior set `pre_push_cap: 3` explicitly).
@@ -1842,104 +1829,6 @@ function emptyWorkflowConfig() {
     // tool-layer defaults at call time".
     integration_manager: { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null },
   };
-}
-
-const WORKFLOW_ENGINE_KEYS = ["version"];
-const WORKFLOW_PACK_KEYS = ["id", "version", "scope", "profile"];
-const WORKFLOW_PACK_ID_RE = /^[a-z0-9][a-z0-9._-]*$/;
-const WORKFLOW_OVERRIDE_KEY_RE = /^[A-Za-z0-9_.-]+$/;
-
-function normalizeWorkflowEngineConfig(raw) {
-  if (raw == null) return { ok: true, value: { version: null } };
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    return { ok: false, errors: ["workflow.engine must be a mapping when set"] };
-  }
-  const errors = [];
-  for (const key of Object.keys(raw)) {
-    if (!WORKFLOW_ENGINE_KEYS.includes(key)) {
-      errors.push(`workflow.engine has unknown key '${key}'`);
-    }
-  }
-  let version = null;
-  if (raw.version != null) {
-    if (typeof raw.version !== "string" || raw.version.trim() === "") {
-      errors.push("workflow.engine.version must be a non-empty string when set");
-    } else {
-      version = raw.version;
-    }
-  }
-  if (errors.length) return { ok: false, errors };
-  return { ok: true, value: { version } };
-}
-
-function normalizeWorkflowPacksConfig(raw) {
-  if (raw == null) return { ok: true, value: [] };
-  if (!Array.isArray(raw)) {
-    return { ok: false, errors: ["workflow.packs must be a list when set"] };
-  }
-  const errors = [];
-  const out = [];
-  raw.forEach((entry, i) => {
-    const prefix = `workflow.packs[${i}]`;
-    const before = errors.length;
-    if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
-      errors.push(`${prefix} must be a mapping`);
-      return;
-    }
-    for (const key of Object.keys(entry)) {
-      if (!WORKFLOW_PACK_KEYS.includes(key)) {
-        errors.push(`${prefix} has unknown key '${key}'`);
-      }
-    }
-    if (typeof entry.id !== "string" || !WORKFLOW_PACK_ID_RE.test(entry.id)) {
-      errors.push(`${prefix}.id must match ${WORKFLOW_PACK_ID_RE.source}`);
-    }
-    if (typeof entry.version !== "string" || entry.version.trim() === "") {
-      errors.push(`${prefix}.version must be a non-empty string`);
-    }
-    if (typeof entry.scope !== "string" || entry.scope.trim() === "") {
-      errors.push(`${prefix}.scope must be a non-empty repo-relative path`);
-    }
-    if (entry.profile != null && (typeof entry.profile !== "string" || entry.profile.trim() === "")) {
-      errors.push(`${prefix}.profile must be a non-empty string when set`);
-    }
-    if (errors.length === before) {
-      out.push({
-        id: entry.id,
-        version: entry.version,
-        scope: entry.scope,
-        profile: entry.profile ?? null,
-      });
-    }
-  });
-  if (errors.length) return { ok: false, errors };
-  return { ok: true, value: out };
-}
-
-function normalizeWorkflowGateOverrides(raw) {
-  if (raw == null) return { ok: true, value: {} };
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    return { ok: false, errors: ["workflow.gate_overrides must be a mapping when set"] };
-  }
-  const errors = [];
-  const out = {};
-  for (const [key, value] of Object.entries(raw)) {
-    if (!WORKFLOW_OVERRIDE_KEY_RE.test(key)) {
-      errors.push(`workflow.gate_overrides key '${key}' must match ${WORKFLOW_OVERRIDE_KEY_RE.source}`);
-      continue;
-    }
-    if (
-      value == null ||
-      !["string", "number", "boolean"].includes(typeof value) ||
-      (typeof value === "string" && value.trim() === "")
-    ) {
-      errors.push(`workflow.gate_overrides.${key} must be a non-empty scalar`);
-      continue;
-    }
-    out[key] = value;
-  }
-  if (errors.length) return { ok: false, errors };
-  return { ok: true, value: out };
 }
 
 // Normalize a workflow.pr_title block.  Allowed keys: types, subject_pattern,
@@ -2165,8 +2054,8 @@ function normalizeWorkflowConfig(raw) {
   }
   // Scalar string-typed keys handled inline; nested-mapping keys delegated to
   // their own normalizers below.
-  const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "base_branch", "gate_manifest"];
-  const allowedNested = ["engine", "packs", "gate_overrides", "codex_review", "test_quality_review", "pr_title", "integration_manager"];
+  const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "base_branch"];
+  const allowedNested = ["codex_review", "test_quality_review", "pr_title", "integration_manager"];
   const allowed = [...allowedScalar, ...allowedNested];
   const value = emptyWorkflowConfig();
   const errors = [];
@@ -2190,15 +2079,6 @@ function normalizeWorkflowConfig(raw) {
     }
     value[key] = v;
   }
-  const engineResult = normalizeWorkflowEngineConfig(raw.engine);
-  if (!engineResult.ok) errors.push(...engineResult.errors);
-  else value.engine = engineResult.value;
-  const packsResult = normalizeWorkflowPacksConfig(raw.packs);
-  if (!packsResult.ok) errors.push(...packsResult.errors);
-  else value.packs = packsResult.value;
-  const gateOverridesResult = normalizeWorkflowGateOverrides(raw.gate_overrides);
-  if (!gateOverridesResult.ok) errors.push(...gateOverridesResult.errors);
-  else value.gate_overrides = gateOverridesResult.value;
   const codexResult = normalizeReviewerConfig(raw.codex_review, "workflow.codex_review");
   if (!codexResult.ok) errors.push(...codexResult.errors);
   else value.codex_review = codexResult.value;
@@ -2239,50 +2119,6 @@ function normalizeSonarcloudConfig(raw) {
   }
   if (errors.length) return { ok: false, errors };
   return { ok: true, value: { project_key, organization } };
-}
-
-const REMOTE_QUALITY_TIERS = Object.freeze(["platform_minimum", "zero_overall_issues"]);
-
-function emptyRemoteQualityConfig() {
-  return {
-    tier: "platform_minimum",
-    min_coverage: null,
-    max_duplications: null,
-  };
-}
-
-function normalizeRemoteQualityConfig(raw) {
-  if (raw == null) {
-    return { ok: true, value: emptyRemoteQualityConfig() };
-  }
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    return { ok: false, errors: ["remote_quality must be a mapping, not a list or scalar"] };
-  }
-  const allowed = ["tier", "min_coverage", "max_duplications"];
-  const value = emptyRemoteQualityConfig();
-  const errors = [];
-  for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
-      errors.push(`remote_quality has unknown key '${key}'`);
-    }
-  }
-  if (raw.tier != null) {
-    if (!REMOTE_QUALITY_TIERS.includes(raw.tier)) {
-      errors.push(`remote_quality.tier must be one of: ${REMOTE_QUALITY_TIERS.join(", ")}`);
-    } else {
-      value.tier = raw.tier;
-    }
-  }
-  for (const key of ["min_coverage", "max_duplications"]) {
-    if (raw[key] == null) continue;
-    if (typeof raw[key] !== "number" || Number.isNaN(raw[key]) || raw[key] < 0 || raw[key] > 100) {
-      errors.push(`remote_quality.${key} must be a number in [0, 100] when set`);
-    } else {
-      value[key] = raw[key];
-    }
-  }
-  if (errors.length) return { ok: false, errors };
-  return { ok: true, value };
 }
 
 function normalizeRulesConfig(raw) {
@@ -2823,7 +2659,6 @@ export function parseGroundControlYaml(yamlText) {
     "github_repo",
     "workflow",
     "sonarcloud",
-    "remote_quality",
     "rules",
     "knowledge",
     "docs",
@@ -2871,9 +2706,6 @@ export function parseGroundControlYaml(yamlText) {
   const sonarResult = normalizeSonarcloudConfig(parsed.sonarcloud);
   if (!sonarResult.ok) errors.push(...sonarResult.errors);
 
-  const remoteQualityResult = normalizeRemoteQualityConfig(parsed.remote_quality);
-  if (!remoteQualityResult.ok) errors.push(...remoteQualityResult.errors);
-
   const rulesResult = normalizeRulesConfig(parsed.rules);
   if (!rulesResult.ok) errors.push(...rulesResult.errors);
 
@@ -2910,7 +2742,6 @@ export function parseGroundControlYaml(yamlText) {
       github_repo: githubRepo,
       workflow: workflowResult.value,
       sonarcloud: sonarResult.value,
-      remote_quality: remoteQualityResult.value,
       rules: {
         plan_rules_path: rulesResult.value.plan_rules_path,
       },
@@ -3034,24 +2865,6 @@ export async function getRepoGroundControlContext(repoPath) {
     const r = resolveRepoRelativePath(repoRoot, v, `example_paths.${field}`);
     if (!r.ok) docsPathErrors.push(r.error);
   }
-  const workflow = parseResult.value.workflow;
-  if (workflow.gate_manifest != null) {
-    const r = resolveRepoRelativePath(repoRoot, workflow.gate_manifest, "workflow.gate_manifest");
-    if (!r.ok) {
-      docsPathErrors.push(r.error);
-    } else {
-      const real = assertRealpathInRepo(repoRootRealForDocs, r.abs, "workflow.gate_manifest");
-      if (!real.ok) docsPathErrors.push(real.error);
-    }
-  }
-  workflow.packs.forEach((entry, i) => {
-    const field = `workflow.packs[${i}].scope`;
-    const r = resolveGateRepoPath(repoRoot, repoRootRealForDocs, entry.scope, field, { allowRoot: true });
-    if (!r.ok) {
-      docsPathErrors.push(r.error);
-      return;
-    }
-  });
   // architecture.vocabulary path-valued entries: same containment rules as
   // docs.* (lexical resolve + realpath containment). example_path on patterns
   // and path on canonical_helpers are repo-relative documentation pointers
@@ -3103,7 +2916,6 @@ export async function getRepoGroundControlContext(repoPath) {
     github_repo: parseResult.value.github_repo,
     workflow: parseResult.value.workflow,
     sonarcloud: parseResult.value.sonarcloud,
-    remote_quality: parseResult.value.remote_quality,
     rules: {
       plan_rules_path: rules.plan_rules_path,
       plan_rules_content: planRulesContent,
@@ -3117,3370 +2929,6 @@ export async function getRepoGroundControlContext(repoPath) {
     telemetry: parseResult.value.telemetry,
     architecture: parseResult.value.architecture,
     errors: [],
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Portable gate engine (ADR-058 / ADR-061 / ADR-062)
-// ---------------------------------------------------------------------------
-
-export const GATE_ENGINE_VERSION = "1.0.0";
-
-export const ENGINE_CAPABILITIES = Object.freeze([
-  "format",
-  "lint",
-  "build",
-  "type_safety",
-  "unit_tests",
-  "integration_tests",
-  "contract_boundary",
-  "property_verification",
-  "architecture",
-  "complexity",
-  "mutation",
-  "diff_coverage",
-  "sast",
-  "secret_scan",
-  "dependency_policy",
-  "accessibility",
-  "docs_policy",
-  "traceability",
-  "policy",
-  "remote_status",
-]);
-
-const ENGINE_CAPABILITY_SET = new Set(ENGINE_CAPABILITIES);
-const GATE_MANIFEST_ROOT_KEYS = ["schema_version", "engine", "defaults", "packs", "gates"];
-const GATE_MANIFEST_ENGINE_KEYS = ["min_version", "manifest_version"];
-const GATE_MANIFEST_DEFAULT_KEYS = ["timeout_seconds", "provider_missing", "fail_fast"];
-const GATE_MANIFEST_PACK_KEYS = ["id", "version", "scope"];
-const GATE_MANIFEST_GATE_KEYS = [
-  "id",
-  "capability",
-  "pack",
-  "provider",
-  "cwd",
-  "command",
-  "blocking",
-  "scope",
-  "applies_when",
-  "timeout_seconds",
-  "threshold",
-  "output",
-  "artifacts",
-  "config_paths",
-  "generated_files",
-  "provider_missing",
-  "required_statuses",
-];
-const GATE_MANIFEST_APPLIES_KEYS = ["paths"];
-const GATE_MANIFEST_THRESHOLD_KEYS = ["metric", "min", "max", "break", "severity", "policy"];
-const GATE_MANIFEST_OUTPUT_KEYS = ["type", "path", "metrics"];
-const GATE_SCOPES = Object.freeze(["repo", "changed"]);
-const GATE_PROVIDER_MISSING_POLICIES = Object.freeze(["fail", "reviewer_fallback", "not_applicable"]);
-const GATE_OUTPUT_TYPES = Object.freeze(["json"]);
-const GATE_SEVERITIES = Object.freeze(["info", "low", "medium", "high", "critical", "blocker"]);
-const GATE_TELEMETRY_SCHEMA_VERSION = 2;
-const GATE_DEFAULT_TIMEOUT_SECONDS = 900;
-const GATE_MAX_TIMEOUT_SECONDS = 86400;
-const GATE_OUTPUT_MAX_BYTES = 1024 * 1024;
-
-export const GATE_MANIFEST_JSON_SCHEMA = Object.freeze({
-  $schema: "https://json-schema.org/draft/2020-12/schema",
-  title: "Ground Control gate manifest",
-  type: "object",
-  additionalProperties: false,
-  required: ["schema_version", "gates"],
-  properties: {
-    schema_version: { const: 1 },
-    engine: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        min_version: { type: "string", minLength: 1 },
-        manifest_version: { type: "string", minLength: 1 },
-      },
-    },
-    defaults: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        timeout_seconds: { type: "integer", minimum: 1, maximum: GATE_MAX_TIMEOUT_SECONDS },
-        provider_missing: { enum: GATE_PROVIDER_MISSING_POLICIES },
-        fail_fast: { type: "boolean" },
-      },
-    },
-    packs: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["id", "version", "scope"],
-        properties: {
-          id: { type: "string", pattern: WORKFLOW_PACK_ID_RE.source },
-          version: { type: "string", minLength: 1 },
-          scope: { type: "string", minLength: 1 },
-        },
-      },
-    },
-    gates: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["id", "capability"],
-        properties: {
-          id: { type: "string", minLength: 1 },
-          capability: { enum: ENGINE_CAPABILITIES },
-          pack: { type: "string", minLength: 1 },
-          provider: { type: "string", minLength: 1 },
-          cwd: { type: "string", minLength: 1 },
-          command: { type: "string", minLength: 1 },
-          blocking: { type: "boolean" },
-          scope: { enum: GATE_SCOPES },
-          applies_when: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              paths: { type: "array", items: { type: "string", minLength: 1 } },
-            },
-          },
-          timeout_seconds: { type: "integer", minimum: 1, maximum: GATE_MAX_TIMEOUT_SECONDS },
-          threshold: {
-            type: "object",
-            additionalProperties: false,
-            required: ["metric"],
-            properties: {
-              metric: { type: "string", minLength: 1 },
-              min: { type: "number" },
-              max: { type: "number" },
-              break: { type: "number" },
-              severity: { enum: GATE_SEVERITIES },
-              policy: { type: "string", minLength: 1 },
-            },
-          },
-          output: {
-            type: "object",
-            additionalProperties: false,
-            required: ["type"],
-            properties: {
-              type: { enum: GATE_OUTPUT_TYPES },
-              path: { type: "string", minLength: 1 },
-              metrics: { type: "object" },
-            },
-          },
-          artifacts: { type: "array", items: { type: "string", minLength: 1 } },
-          config_paths: { type: "array", items: { type: "string", minLength: 1 } },
-          generated_files: { type: "array", items: { type: "string", minLength: 1 } },
-          provider_missing: { enum: GATE_PROVIDER_MISSING_POLICIES },
-          required_statuses: { type: "array", items: { type: "string", minLength: 1 } },
-        },
-      },
-    },
-  },
-});
-
-function isPlainMapping(value) {
-  return value != null && typeof value === "object" && !Array.isArray(value);
-}
-
-function pushUnknownKeyErrors(errors, prefix, raw, allowed) {
-  for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) errors.push(`${prefix} has unknown key '${key}'`);
-  }
-}
-
-function isPositiveBoundedInteger(value) {
-  return Number.isInteger(value) && value > 0 && value <= GATE_MAX_TIMEOUT_SECONDS;
-}
-
-function normalizeGateString(raw, field, errors, { required = false, pattern = null } = {}) {
-  if (raw == null) {
-    if (required) errors.push(`${field} is required`);
-    return null;
-  }
-  if (typeof raw !== "string" || raw.trim() === "") {
-    errors.push(`${field} must be a non-empty string`);
-    return null;
-  }
-  if (pattern && !pattern.test(raw)) {
-    errors.push(`${field} must match ${pattern.source}`);
-    return null;
-  }
-  return raw;
-}
-
-function resolveGateRepoPath(repoRoot, repoRootReal, rawPath, fieldName, { allowRoot = false, requireExisting = false } = {}) {
-  if (typeof rawPath !== "string" || rawPath.trim() === "") {
-    return { ok: false, error: `${fieldName} must be a non-empty repo-relative path` };
-  }
-  if (rawPath.includes("\0")) {
-    return { ok: false, error: `${fieldName} must not contain NUL bytes` };
-  }
-  if (isAbsolute(rawPath)) {
-    return { ok: false, error: `${fieldName} must be repo-relative (got absolute path '${rawPath}')` };
-  }
-  const abs = resolvePath(repoRoot, rawPath);
-  const rel = relative(repoRoot, abs);
-  if ((rel === "" && !allowRoot) || rel.startsWith("..") || isAbsolute(rel)) {
-    return { ok: false, error: `${fieldName} must stay inside the repository root (got '${rawPath}')` };
-  }
-  try {
-    if (requireExisting) {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- abs comes from a repo-relative manifest path
-      statSync(abs);
-    }
-    if (rel === "") {
-      const canonicalRoot = realpathSync(repoRoot);
-      if (canonicalRoot !== repoRootReal) {
-        return { ok: false, error: `${fieldName} canonical root mismatch` };
-      }
-      return { ok: true, rel: ".", abs };
-    }
-    const contain = assertRealpathInRepo(repoRootReal, abs, fieldName);
-    if (!contain.ok) return contain;
-  } catch (error) {
-    if (requireExisting && error.code === "ENOENT") {
-      return { ok: false, error: `${fieldName} references '${rawPath}' which does not exist` };
-    }
-    throw error;
-  }
-  return { ok: true, rel: rel === "" ? "." : rel, abs };
-}
-
-function validateGatePathPattern(raw, fieldName) {
-  if (typeof raw !== "string" || raw.trim() === "") {
-    return `${fieldName} must be a non-empty repo-relative path pattern`;
-  }
-  if (raw.includes("\0")) return `${fieldName} must not contain NUL bytes`;
-  if (isAbsolute(raw)) return `${fieldName} must be repo-relative`;
-  const normalized = raw.replace(/\\/g, "/");
-  if (normalized.split("/").includes("..")) {
-    return `${fieldName} must not contain '..' path segments`;
-  }
-  if (normalized.startsWith("../") || normalized === "..") {
-    return `${fieldName} must stay inside the repository root`;
-  }
-  return null;
-}
-
-function normalizeGatePathArray(raw, field, errors, repoRoot, repoRootReal) {
-  if (raw == null) return [];
-  if (!Array.isArray(raw)) {
-    errors.push(`${field} must be a list of repo-relative paths`);
-    return [];
-  }
-  const out = [];
-  raw.forEach((entry, i) => {
-    const resolved = resolveGateRepoPath(repoRoot, repoRootReal, entry, `${field}[${i}]`, { allowRoot: false });
-    if (!resolved.ok) {
-      errors.push(resolved.error);
-    } else {
-      out.push(resolved.rel);
-    }
-  });
-  return out;
-}
-
-function normalizeGateAppliesWhen(raw, field, errors) {
-  if (raw == null) return { paths: [] };
-  if (!isPlainMapping(raw)) {
-    errors.push(`${field} must be a mapping when set`);
-    return { paths: [] };
-  }
-  pushUnknownKeyErrors(errors, field, raw, GATE_MANIFEST_APPLIES_KEYS);
-  const paths = [];
-  if (raw.paths != null) {
-    if (!Array.isArray(raw.paths)) {
-      errors.push(`${field}.paths must be a list of repo-relative path patterns`);
-    } else {
-      raw.paths.forEach((entry, i) => {
-        const error = validateGatePathPattern(entry, `${field}.paths[${i}]`);
-        if (error) errors.push(error);
-        else paths.push(entry.replace(/\\/g, "/"));
-      });
-    }
-  }
-  return { paths };
-}
-
-function normalizeGateThreshold(raw, field, errors) {
-  if (raw == null) return null;
-  if (!isPlainMapping(raw)) {
-    errors.push(`${field} must be a mapping when set`);
-    return null;
-  }
-  pushUnknownKeyErrors(errors, field, raw, GATE_MANIFEST_THRESHOLD_KEYS);
-  const metric = normalizeGateString(raw.metric, `${field}.metric`, errors, { required: true });
-  const out = { metric };
-  for (const key of ["min", "max", "break"]) {
-    if (raw[key] == null) continue;
-    if (typeof raw[key] !== "number" || Number.isNaN(raw[key])) {
-      errors.push(`${field}.${key} must be a number when set`);
-    } else {
-      out[key] = raw[key];
-    }
-  }
-  if (raw.severity != null) {
-    if (!GATE_SEVERITIES.includes(raw.severity)) {
-      errors.push(`${field}.severity must be one of: ${GATE_SEVERITIES.join(", ")}`);
-    } else {
-      out.severity = raw.severity;
-    }
-  }
-  if (raw.policy != null) {
-    if (typeof raw.policy !== "string" || raw.policy.trim() === "") {
-      errors.push(`${field}.policy must be a non-empty string when set`);
-    } else {
-      out.policy = raw.policy;
-    }
-  }
-  return out;
-}
-
-function normalizeGateOutput(raw, field, errors, repoRoot, repoRootReal) {
-  if (raw == null) return null;
-  if (!isPlainMapping(raw)) {
-    errors.push(`${field} must be a mapping when set`);
-    return null;
-  }
-  pushUnknownKeyErrors(errors, field, raw, GATE_MANIFEST_OUTPUT_KEYS);
-  const type = normalizeGateString(raw.type, `${field}.type`, errors, { required: true });
-  if (type && !GATE_OUTPUT_TYPES.includes(type)) {
-    errors.push(`${field}.type must be one of: ${GATE_OUTPUT_TYPES.join(", ")}`);
-  }
-  let path = null;
-  if (raw.path != null) {
-    const resolved = resolveGateRepoPath(repoRoot, repoRootReal, raw.path, `${field}.path`, { allowRoot: false });
-    if (!resolved.ok) errors.push(resolved.error);
-    else path = resolved.rel;
-  }
-  const metrics = {};
-  if (raw.metrics != null) {
-    if (!isPlainMapping(raw.metrics)) {
-      errors.push(`${field}.metrics must be a mapping from metric name to JSON path string`);
-    } else {
-      for (const [metric, jsonPath] of Object.entries(raw.metrics)) {
-        if (typeof metric !== "string" || metric.trim() === "") {
-          errors.push(`${field}.metrics contains an empty metric name`);
-        } else if (typeof jsonPath !== "string" || jsonPath.trim() === "") {
-          errors.push(`${field}.metrics.${metric} must be a non-empty string`);
-        } else {
-          metrics[metric] = jsonPath;
-        }
-      }
-    }
-  }
-  return { type, path, metrics };
-}
-
-export function validateGateManifest(manifest, { repoRoot }) {
-  const errors = [];
-  if (!isPlainMapping(manifest)) {
-    return { ok: false, errors: [".gc/gates.yaml root must be a mapping"] };
-  }
-  pushUnknownKeyErrors(errors, "gate manifest", manifest, GATE_MANIFEST_ROOT_KEYS);
-  if (manifest.schema_version !== 1) {
-    errors.push("schema_version must be 1");
-  }
-  let repoRootReal;
-  try {
-    repoRootReal = realpathSync(repoRoot);
-  } catch (error) {
-    errors.push(`failed to canonicalize repo root ${repoRoot}: ${error.message}`);
-    repoRootReal = repoRoot;
-  }
-
-  const engine = { min_version: null, manifest_version: null };
-  if (manifest.engine != null) {
-    if (!isPlainMapping(manifest.engine)) {
-      errors.push("engine must be a mapping when set");
-    } else {
-      pushUnknownKeyErrors(errors, "engine", manifest.engine, GATE_MANIFEST_ENGINE_KEYS);
-      engine.min_version = normalizeGateString(manifest.engine.min_version, "engine.min_version", errors);
-      engine.manifest_version = normalizeGateString(manifest.engine.manifest_version, "engine.manifest_version", errors);
-    }
-  }
-
-  const defaults = {
-    timeout_seconds: GATE_DEFAULT_TIMEOUT_SECONDS,
-    provider_missing: "reviewer_fallback",
-    fail_fast: false,
-  };
-  if (manifest.defaults != null) {
-    if (!isPlainMapping(manifest.defaults)) {
-      errors.push("defaults must be a mapping when set");
-    } else {
-      pushUnknownKeyErrors(errors, "defaults", manifest.defaults, GATE_MANIFEST_DEFAULT_KEYS);
-      if (manifest.defaults.timeout_seconds != null) {
-        if (!isPositiveBoundedInteger(manifest.defaults.timeout_seconds)) {
-          errors.push(`defaults.timeout_seconds must be an integer in [1, ${GATE_MAX_TIMEOUT_SECONDS}]`);
-        } else {
-          defaults.timeout_seconds = manifest.defaults.timeout_seconds;
-        }
-      }
-      if (manifest.defaults.provider_missing != null) {
-        if (!GATE_PROVIDER_MISSING_POLICIES.includes(manifest.defaults.provider_missing)) {
-          errors.push(`defaults.provider_missing must be one of: ${GATE_PROVIDER_MISSING_POLICIES.join(", ")}`);
-        } else {
-          defaults.provider_missing = manifest.defaults.provider_missing;
-        }
-      }
-      if (manifest.defaults.fail_fast != null) {
-        if (typeof manifest.defaults.fail_fast !== "boolean") {
-          errors.push("defaults.fail_fast must be a boolean when set");
-        } else {
-          defaults.fail_fast = manifest.defaults.fail_fast;
-        }
-      }
-    }
-  }
-
-  const packs = [];
-  if (manifest.packs != null) {
-    if (!Array.isArray(manifest.packs)) {
-      errors.push("packs must be a list when set");
-    } else {
-      manifest.packs.forEach((entry, i) => {
-        const prefix = `packs[${i}]`;
-        const before = errors.length;
-        if (!isPlainMapping(entry)) {
-          errors.push(`${prefix} must be a mapping`);
-          return;
-        }
-        pushUnknownKeyErrors(errors, prefix, entry, GATE_MANIFEST_PACK_KEYS);
-        const id = normalizeGateString(entry.id, `${prefix}.id`, errors, { required: true, pattern: WORKFLOW_PACK_ID_RE });
-        const version = normalizeGateString(entry.version, `${prefix}.version`, errors, { required: true });
-        let scope = null;
-        if (entry.scope == null) {
-          errors.push(`${prefix}.scope is required`);
-        } else {
-          const resolved = resolveGateRepoPath(repoRoot, repoRootReal, entry.scope, `${prefix}.scope`, { allowRoot: true });
-          if (!resolved.ok) errors.push(resolved.error);
-          else scope = resolved.rel;
-        }
-        if (errors.length === before) packs.push({ id, version, scope });
-      });
-    }
-  }
-
-  const gateIds = new Set();
-  const gates = [];
-  if (!Array.isArray(manifest.gates)) {
-    errors.push("gates must be a list");
-  } else {
-    manifest.gates.forEach((entry, i) => {
-      const prefix = `gates[${i}]`;
-      const before = errors.length;
-      if (!isPlainMapping(entry)) {
-        errors.push(`${prefix} must be a mapping`);
-        return;
-      }
-      pushUnknownKeyErrors(errors, prefix, entry, GATE_MANIFEST_GATE_KEYS);
-      const id = normalizeGateString(entry.id, `${prefix}.id`, errors, { required: true });
-      if (id != null) {
-        if (gateIds.has(id)) errors.push(`gate id '${id}' is duplicated`);
-        gateIds.add(id);
-      }
-      const capability = normalizeGateString(entry.capability, `${prefix}.capability`, errors, { required: true });
-      if (capability && !ENGINE_CAPABILITY_SET.has(capability)) {
-        errors.push(`${prefix}.capability must be one of: ${ENGINE_CAPABILITIES.join(", ")}`);
-      }
-      const pack = normalizeGateString(entry.pack, `${prefix}.pack`, errors);
-      const provider = normalizeGateString(entry.provider, `${prefix}.provider`, errors);
-      let cwd = ".";
-      if (entry.cwd != null) {
-        const resolved = resolveGateRepoPath(repoRoot, repoRootReal, entry.cwd, `${prefix}.cwd`, { allowRoot: true });
-        if (!resolved.ok) errors.push(resolved.error);
-        else cwd = resolved.rel;
-      }
-      const command = normalizeGateString(entry.command, `${prefix}.command`, errors);
-      let blocking = true;
-      if (entry.blocking != null) {
-        if (typeof entry.blocking !== "boolean") errors.push(`${prefix}.blocking must be a boolean when set`);
-        else blocking = entry.blocking;
-      }
-      let scope = "repo";
-      if (entry.scope != null) {
-        if (!GATE_SCOPES.includes(entry.scope)) errors.push(`${prefix}.scope must be one of: ${GATE_SCOPES.join(", ")}`);
-        else scope = entry.scope;
-      }
-      let timeoutSeconds = null;
-      if (entry.timeout_seconds != null) {
-        if (!isPositiveBoundedInteger(entry.timeout_seconds)) {
-          errors.push(`${prefix}.timeout_seconds must be an integer in [1, ${GATE_MAX_TIMEOUT_SECONDS}]`);
-        } else {
-          timeoutSeconds = entry.timeout_seconds;
-        }
-      }
-      let providerMissing = null;
-      if (entry.provider_missing != null) {
-        if (!GATE_PROVIDER_MISSING_POLICIES.includes(entry.provider_missing)) {
-          errors.push(`${prefix}.provider_missing must be one of: ${GATE_PROVIDER_MISSING_POLICIES.join(", ")}`);
-        } else {
-          providerMissing = entry.provider_missing;
-        }
-      }
-      const appliesWhen = normalizeGateAppliesWhen(entry.applies_when, `${prefix}.applies_when`, errors);
-      const threshold = normalizeGateThreshold(entry.threshold, `${prefix}.threshold`, errors);
-      const output = normalizeGateOutput(entry.output, `${prefix}.output`, errors, repoRoot, repoRootReal);
-      const artifacts = normalizeGatePathArray(entry.artifacts, `${prefix}.artifacts`, errors, repoRoot, repoRootReal);
-      const configPaths = normalizeGatePathArray(entry.config_paths, `${prefix}.config_paths`, errors, repoRoot, repoRootReal);
-      const generatedFiles = normalizeGatePathArray(entry.generated_files, `${prefix}.generated_files`, errors, repoRoot, repoRootReal);
-      const requiredStatuses = [];
-      if (entry.required_statuses != null) {
-        if (!Array.isArray(entry.required_statuses)) {
-          errors.push(`${prefix}.required_statuses must be a list of strings`);
-        } else {
-          entry.required_statuses.forEach((statusName, j) => {
-            if (typeof statusName !== "string" || statusName.trim() === "") {
-              errors.push(`${prefix}.required_statuses[${j}] must be a non-empty string`);
-            } else {
-              requiredStatuses.push(statusName);
-            }
-          });
-        }
-      }
-      if (command == null && providerMissing == null && defaults.provider_missing === "fail" && capability !== "remote_status") {
-        errors.push(`${prefix}.command is required unless provider_missing is declared`);
-      }
-      if (errors.length === before) {
-        gates.push({
-          id,
-          capability,
-          pack,
-          provider,
-          cwd,
-          command,
-          blocking,
-          scope,
-          applies_when: appliesWhen,
-          timeout_seconds: timeoutSeconds,
-          threshold,
-          output,
-          artifacts,
-          config_paths: configPaths,
-          generated_files: generatedFiles,
-          provider_missing: providerMissing,
-          required_statuses: requiredStatuses,
-        });
-      }
-    });
-  }
-
-  if (errors.length) return { ok: false, errors };
-  return {
-    ok: true,
-    value: {
-      schema_version: 1,
-      engine,
-      defaults,
-      packs,
-      gates,
-    },
-  };
-}
-
-export function parseGateManifestYaml(yamlText, { repoRoot }) {
-  let parsed;
-  try {
-    parsed = parseYaml(yamlText);
-  } catch (error) {
-    return { ok: false, errors: [`Could not parse gate manifest: ${error.message}`] };
-  }
-  return validateGateManifest(parsed, { repoRoot });
-}
-
-const WORKFLOW_LOCK_ROOT_KEYS = ["schema_version", "engine", "packs"];
-const WORKFLOW_LOCK_ENGINE_KEYS = ["version", "checksum", "source_url", "compatible", "signer", "trust_policy", "installed_at"];
-const WORKFLOW_LOCK_PACK_KEYS = ["id", "version", "checksum", "source_url", "compatible_engine", "signer", "trust_policy", "installed_at"];
-
-export function validateWorkflowLock(lock, { manifest }) {
-  const errors = [];
-  if (!isPlainMapping(lock)) {
-    return { ok: false, errors: [".gc/workflow-lock.json root must be a mapping"] };
-  }
-  pushUnknownKeyErrors(errors, "workflow lock", lock, WORKFLOW_LOCK_ROOT_KEYS);
-  if (lock.schema_version !== 1) {
-    errors.push("workflow lock schema_version must be 1");
-  }
-  if (!isPlainMapping(lock.engine)) {
-    errors.push("workflow lock engine must be a mapping");
-  } else {
-    pushUnknownKeyErrors(errors, "workflow lock engine", lock.engine, WORKFLOW_LOCK_ENGINE_KEYS);
-    if (typeof lock.engine.version !== "string" || lock.engine.version.trim() === "") {
-      errors.push("workflow lock engine.version must be a non-empty string");
-    }
-    for (const key of ["checksum", "source_url", "compatible", "signer", "trust_policy", "installed_at"]) {
-      if (typeof lock.engine[key] !== "string" || lock.engine[key].trim() === "") {
-        errors.push(`workflow lock engine.${key} must be a non-empty string`);
-      }
-    }
-    if (lock.engine.checksum != null && normalizeSha256Checksum(lock.engine.checksum) == null) {
-      errors.push("workflow lock engine.checksum must be sha256:<64 hex chars>");
-    }
-  }
-  const lockPacks = [];
-  const seenLockPacks = new Set();
-  if (lock.packs != null) {
-    if (!Array.isArray(lock.packs)) {
-      errors.push("workflow lock packs must be a list when set");
-    } else {
-      lock.packs.forEach((entry, i) => {
-        const prefix = `workflow lock packs[${i}]`;
-        const before = errors.length;
-        if (!isPlainMapping(entry)) {
-          errors.push(`${prefix} must be a mapping`);
-          return;
-        }
-        pushUnknownKeyErrors(errors, prefix, entry, WORKFLOW_LOCK_PACK_KEYS);
-        const id = normalizeGateString(entry.id, `${prefix}.id`, errors, { required: true, pattern: WORKFLOW_PACK_ID_RE });
-        const version = normalizeGateString(entry.version, `${prefix}.version`, errors, { required: true });
-        for (const key of ["checksum", "source_url", "compatible_engine", "signer", "trust_policy", "installed_at"]) {
-          if (typeof entry[key] !== "string" || entry[key].trim() === "") {
-            errors.push(`${prefix}.${key} must be a non-empty string`);
-          }
-        }
-        if (entry.checksum != null && normalizeSha256Checksum(entry.checksum) == null) {
-          errors.push(`${prefix}.checksum must be sha256:<64 hex chars>`);
-        }
-        if (errors.length === before) {
-          if (seenLockPacks.has(id)) errors.push(`workflow lock packs duplicated id '${id}'`);
-          seenLockPacks.add(id);
-          lockPacks.push({ id, version, checksum: entry.checksum });
-        }
-      });
-    }
-  }
-  const lockById = new Map(lockPacks.map((pack) => [pack.id, pack.version]));
-  for (const pack of manifest.packs) {
-    if (!lockById.has(pack.id)) {
-      errors.push(`workflow lock is missing manifest pack '${pack.id}'`);
-    } else if (lockById.get(pack.id) !== pack.version) {
-      errors.push(`workflow lock pack '${pack.id}' version '${lockById.get(pack.id)}' does not match manifest version '${pack.version}'`);
-    }
-  }
-  if (errors.length) return { ok: false, errors };
-  return {
-    ok: true,
-    value: {
-      schema_version: lock.schema_version,
-      engine: { version: lock.engine.version, checksum: lock.engine.checksum },
-      packs: lockPacks,
-    },
-  };
-}
-
-const MCP_MODULE_DIR = dirname(fileURLToPath(import.meta.url));
-export const GATE_CATALOG_DEFAULT_PATH = join(resolvePath(MCP_MODULE_DIR, "../.."), "workflow/gate-catalog.json");
-const GATE_PACK_INSTALL_DEFAULT_ENGINE_CONSTRAINT = "^1.0.0";
-const GATE_PACK_ID_SAFE_RE = /^[a-z0-9][a-z0-9._-]*$/;
-
-function fileExists(path) {
-  try {
-    statSync(path);
-    return true;
-  } catch (error) {
-    if (error.code === "ENOENT") return false;
-    throw error;
-  }
-}
-
-function readJsonAbsolute(path, fieldName) {
-  try {
-    return JSON.parse(readAbsoluteTextFile(path));
-  } catch (error) {
-    return { __error: `${fieldName} could not be parsed as JSON: ${error.message}` };
-  }
-}
-
-function parseYamlFileAbsolute(path, fieldName) {
-  try {
-    return { ok: true, value: parseYaml(readAbsoluteTextFile(path)) };
-  } catch (error) {
-    return { ok: false, error: `${fieldName} could not be parsed as YAML: ${error.message}` };
-  }
-}
-
-function parseSemverTuple(raw) {
-  if (typeof raw !== "string") return null;
-  const match = raw.trim().match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
-  if (!match) return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
-function compareSemver(a, b) {
-  const aa = parseSemverTuple(a);
-  const bb = parseSemverTuple(b);
-  if (!aa || !bb) return null;
-  for (let i = 0; i < 3; i += 1) {
-    if (aa[i] < bb[i]) return -1;
-    if (aa[i] > bb[i]) return 1;
-  }
-  return 0;
-}
-
-function satisfiesSingleVersionComparator(version, comparator) {
-  const trimmed = comparator.trim();
-  if (trimmed === "" || trimmed === "*" || trimmed === "latest") return true;
-  if (trimmed.startsWith("^")) {
-    const base = trimmed.slice(1);
-    const v = parseSemverTuple(version);
-    const b = parseSemverTuple(base);
-    if (!v || !b) return false;
-    if (v[0] !== b[0]) return false;
-    return compareSemver(version, base) >= 0;
-  }
-  const opMatch = trimmed.match(/^(>=|<=|>|<|=)?\s*(\d+\.\d+\.\d+(?:[-+].*)?)$/);
-  if (!opMatch) return version === trimmed;
-  const op = opMatch[1] ?? "=";
-  const cmp = compareSemver(version, opMatch[2]);
-  if (cmp == null) return false;
-  if (op === ">=") return cmp >= 0;
-  if (op === "<=") return cmp <= 0;
-  if (op === ">") return cmp > 0;
-  if (op === "<") return cmp < 0;
-  return cmp === 0;
-}
-
-function versionSatisfies(version, constraint) {
-  if (constraint == null || constraint === "") return true;
-  return String(constraint)
-    .split(/\s+/)
-    .filter(Boolean)
-    .every((part) => satisfiesSingleVersionComparator(version, part));
-}
-
-function normalizeInstallScope(scope) {
-  const raw = scope == null || scope === "" ? "." : String(scope);
-  const normalized = raw.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "");
-  return normalized === "" ? "." : normalized;
-}
-
-function gateIdPrefix(packId, scope) {
-  const scopePart = normalizeInstallScope(scope) === "."
-    ? "root"
-    : normalizeInstallScope(scope).replace(/[^A-Za-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "");
-  return `${packId}.${scopePart}`;
-}
-
-function prefixPackPattern(scope, pattern) {
-  const normalizedScope = normalizeInstallScope(scope);
-  const normalizedPattern = String(pattern).replace(/\\/g, "/").replace(/^\.\/+/, "");
-  if (normalizedScope === ".") return normalizedPattern;
-  return `${normalizedScope}/${normalizedPattern}`;
-}
-
-export function computeGatePackDirectoryChecksum(packDir) {
-  const files = [];
-  function walk(current) {
-    for (const entry of readdirSync(current).sort()) {
-      const abs = join(current, entry);
-      const st = statSync(abs);
-      if (st.isDirectory()) walk(abs);
-      else files.push(abs);
-    }
-  }
-  walk(packDir);
-  const h = createHash("sha256");
-  for (const abs of files) {
-    const rel = relative(packDir, abs).replace(/\\/g, "/");
-    h.update(rel);
-    h.update("\0");
-    h.update(readFileSync(abs));
-    h.update("\0");
-  }
-  return h.digest("hex");
-}
-
-export function computeWorkflowArtifactChecksum(artifactPath) {
-  const st = statSync(artifactPath);
-  if (st.isDirectory()) return computeGatePackDirectoryChecksum(artifactPath);
-  if (!st.isFile()) throw new Error(`workflow artifact '${artifactPath}' must be a file or directory`);
-  return createHash("sha256").update(readFileSync(artifactPath)).digest("hex");
-}
-
-function normalizeSha256Checksum(raw) {
-  if (typeof raw !== "string") return null;
-  const value = raw.trim().replace(/^sha256:/i, "");
-  return /^[a-f0-9]{64}$/i.test(value) ? value.toLowerCase() : null;
-}
-
-function loadGateCatalog(catalogPath) {
-  const resolved = resolvePath(catalogPath ?? GATE_CATALOG_DEFAULT_PATH);
-  const json = readJsonAbsolute(resolved, "gate catalog");
-  if (json.__error) return { ok: false, error: "gate_catalog_invalid", message: json.__error };
-  if (!isPlainMapping(json) || json.schema_version !== 1 || !isPlainMapping(json.engine) || !Array.isArray(json.packs)) {
-    return {
-      ok: false,
-      error: "gate_catalog_invalid",
-      message: "gate catalog must be a schema_version=1 object with an engine mapping and packs[] list",
-    };
-  }
-  return { ok: true, catalog: json, catalog_path: resolved };
-}
-
-function resolveGateCatalogEngine({ catalog, versionConstraint }) {
-  const candidates = Array.isArray(catalog.engines) ? catalog.engines : [catalog.engine];
-  return candidates
-    .filter((entry) => entry && versionSatisfies(entry.version, versionConstraint))
-    .sort((a, b) => compareSemver(b.version, a.version) ?? 0)[0] ?? null;
-}
-
-function resolveGateCatalogEntry({ catalog, packId, versionConstraint }) {
-  const candidates = catalog.packs
-    .filter((entry) => entry && entry.id === packId && versionSatisfies(entry.version, versionConstraint))
-    .sort((a, b) => compareSemver(b.version, a.version) ?? 0);
-  return candidates[0] ?? null;
-}
-
-function resolveCatalogArtifactPath({ catalogPath, artifact }) {
-  if (typeof artifact !== "string" || artifact.trim() === "") {
-    return { ok: false, error: "gate_catalog_invalid", message: "catalog artifact path must be a non-empty string" };
-  }
-  if (isAbsolute(artifact)) {
-    return { ok: true, path: artifact };
-  }
-  const sourceRoot = resolvePath(MCP_MODULE_DIR, "../..");
-  const base = artifact.startsWith("workflow/") ? sourceRoot : dirname(catalogPath);
-  return { ok: true, path: resolvePath(base, artifact) };
-}
-
-async function materializeCatalogArtifact({ catalogPath, entry, artifactKind, checksumField = "sha256" }) {
-  const label = artifactKind === "engine" ? "workflow_engine" : "gate_pack";
-  const artifactPath = resolveCatalogArtifactPath({ catalogPath, artifact: entry.artifact ?? entry.source_url });
-  if (!artifactPath.ok) return artifactPath;
-  const expected = normalizeSha256Checksum(entry[checksumField] ?? entry.checksum);
-  if (expected == null) {
-    return {
-      ok: false,
-      error: `${label}_checksum_invalid`,
-      message: `${label} catalog entry must carry a sha256 checksum`,
-    };
-  }
-  let actual;
-  try {
-    actual = computeWorkflowArtifactChecksum(artifactPath.path);
-  } catch (error) {
-    return { ok: false, error: `${label}_artifact_invalid`, message: error.message };
-  }
-  if (actual !== expected) {
-    return {
-      ok: false,
-      error: `${label}_checksum_mismatch`,
-      message: `Checksum mismatch for ${artifactKind}@${entry.version}`,
-      expected,
-      actual,
-    };
-  }
-  const st = statSync(artifactPath.path);
-  if (st.isDirectory()) {
-    return { ok: true, artifact_path: artifactPath.path, source_path: artifactPath.path, sha256: actual, cleanup: null };
-  }
-  if (!/\.(?:tgz|tar\.gz)$/i.test(artifactPath.path)) {
-    return {
-      ok: false,
-      error: `${label}_artifact_invalid`,
-      message: `${label} artifact must be a directory or .tgz/.tar.gz archive`,
-    };
-  }
-  const tempDir = mkdtempSync(join(tmpdir(), `gc-${label}-`));
-  try {
-    await execFile("tar", ["-xzf", artifactPath.path, "-C", tempDir], { maxBuffer: 64 * 1024 * 1024 });
-  } catch (error) {
-    rmSync(tempDir, { recursive: true, force: true });
-    return {
-      ok: false,
-      error: `${label}_artifact_extract_failed`,
-      message: formatCommandFailure("tar -xzf workflow artifact", error),
-    };
-  }
-  return {
-    ok: true,
-    artifact_path: artifactPath.path,
-    source_path: tempDir,
-    sha256: actual,
-    cleanup: () => rmSync(tempDir, { recursive: true, force: true }),
-  };
-}
-
-function validateEngineSourceShape(engineSourcePath) {
-  const engineYamlPath = join(engineSourcePath, "workflow/engine/engine.yaml");
-  const fallbackEngineYamlPath = join(engineSourcePath, "engine.yaml");
-  const path = fileExists(engineYamlPath) ? engineYamlPath : fallbackEngineYamlPath;
-  const parsed = parseYamlFileAbsolute(path, "engine.yaml");
-  if (!parsed.ok) return { ok: false, error: "workflow_engine_invalid", message: parsed.error };
-  if (!isPlainMapping(parsed.value) || parsed.value.id !== "ground-control-implement-engine") {
-    return {
-      ok: false,
-      error: "workflow_engine_invalid",
-      message: "engine.yaml must identify id='ground-control-implement-engine'",
-    };
-  }
-  if (typeof parsed.value.version !== "string" || parsed.value.version.trim() === "") {
-    return { ok: false, error: "workflow_engine_invalid", message: "engine.yaml version must be a non-empty string" };
-  }
-  return { ok: true, engine: parsed.value };
-}
-
-function validatePackSourceShape(packSourcePath, packId) {
-  const packYamlPath = join(packSourcePath, "pack.yaml");
-  const capabilitiesYamlPath = join(packSourcePath, "capabilities.yaml");
-  const classifierYamlPath = join(packSourcePath, "classifier.yaml");
-  const packYaml = parseYamlFileAbsolute(packYamlPath, `${packId}/pack.yaml`);
-  if (!packYaml.ok) return packYaml;
-  const capabilitiesYaml = parseYamlFileAbsolute(capabilitiesYamlPath, `${packId}/capabilities.yaml`);
-  if (!capabilitiesYaml.ok) return capabilitiesYaml;
-  const classifierYaml = parseYamlFileAbsolute(classifierYamlPath, `${packId}/classifier.yaml`);
-  if (!classifierYaml.ok) return classifierYaml;
-  if (!isPlainMapping(packYaml.value) || packYaml.value.id !== packId) {
-    return { ok: false, error: "gate_pack_invalid", message: `${packId}/pack.yaml id does not match '${packId}'` };
-  }
-  if (!isPlainMapping(capabilitiesYaml.value) || !isPlainMapping(capabilitiesYaml.value.bindings)) {
-    return { ok: false, error: "gate_pack_invalid", message: `${packId}/capabilities.yaml must contain bindings` };
-  }
-  if (!isPlainMapping(classifierYaml.value) || classifierYaml.value.pack !== packId || !Array.isArray(classifierYaml.value.surfaces)) {
-    return {
-      ok: false,
-      error: "gate_pack_invalid",
-      message: `${packId}/classifier.yaml must be a mapping with pack='${packId}' and surfaces[]`,
-    };
-  }
-  for (const cap of Object.keys(capabilitiesYaml.value.bindings)) {
-    if (!ENGINE_CAPABILITY_SET.has(cap)) {
-      return { ok: false, error: "gate_pack_invalid", message: `${packId}/capabilities.yaml has unknown capability '${cap}'` };
-    }
-  }
-  for (const cap of ENGINE_CAPABILITIES) {
-    if (!isPlainMapping(capabilitiesYaml.value.bindings[cap])) {
-      return { ok: false, error: "gate_pack_invalid", message: `${packId}/capabilities.yaml must explicitly bind '${cap}'` };
-    }
-  }
-  return { ok: true, pack: packYaml.value, capabilities: capabilitiesYaml.value };
-}
-
-function generateManifestGatesFromPack({ packId, packVersion, scope, capabilitiesDoc }) {
-  const normalizedScope = normalizeInstallScope(scope);
-  const prefix = gateIdPrefix(packId, normalizedScope);
-  const gates = [];
-  for (const capability of ENGINE_CAPABILITIES) {
-    const binding = capabilitiesDoc.bindings[capability];
-    const status = binding.status;
-    if (!["provided", "provider_missing", "not_applicable"].includes(status)) {
-      throw new Error(`${packId}.${capability} binding has unsupported status '${status}'`);
-    }
-    const gate = {
-      id: `${prefix}.${capability}`,
-      capability,
-      pack: packId,
-      cwd: normalizedScope,
-      blocking: Boolean(binding.blocking),
-      scope: binding.scope === "repo" ? "repo" : "changed",
-      applies_when: {
-        paths: Array.isArray(binding.applies_when?.paths)
-          ? binding.applies_when.paths.map((pattern) => prefixPackPattern(normalizedScope, pattern))
-          : [],
-      },
-    };
-    if (binding.provider != null) gate.provider = String(binding.provider);
-    if (status === "provided") {
-      if (capability !== "remote_status") gate.command = String(binding.command);
-      if (Number.isInteger(binding.timeout_seconds)) gate.timeout_seconds = binding.timeout_seconds;
-      if (Array.isArray(binding.required_statuses)) gate.required_statuses = binding.required_statuses.map(String);
-    } else {
-      gate.provider_missing = status === "not_applicable" ? "not_applicable" : "reviewer_fallback";
-    }
-    if (binding.output != null) gate.output = binding.output;
-    if (binding.threshold != null) gate.threshold = binding.threshold;
-    gates.push(gate);
-  }
-  return {
-    pack: { id: packId, version: packVersion, scope: normalizedScope },
-    gate_prefix: prefix,
-    gates,
-  };
-}
-
-function loadExistingGateManifest(repoRoot) {
-  const manifestPath = join(repoRoot, ".gc/gates.yaml");
-  if (!fileExists(manifestPath)) {
-    return {
-      schema_version: 1,
-      engine: { min_version: ">=1.0.0", manifest_version: "1.0.0" },
-      defaults: { timeout_seconds: GATE_DEFAULT_TIMEOUT_SECONDS, provider_missing: "reviewer_fallback", fail_fast: false },
-      packs: [],
-      gates: [],
-    };
-  }
-  const parsed = parseYamlFileAbsolute(manifestPath, ".gc/gates.yaml");
-  if (!parsed.ok) throw new Error(parsed.error);
-  if (!isPlainMapping(parsed.value)) throw new Error(".gc/gates.yaml root must be a mapping");
-  return parsed.value;
-}
-
-function mergePackIntoManifest({ repoRoot, packManifestEntry, generatedGates, gatePrefix }) {
-  const manifest = loadExistingGateManifest(repoRoot);
-  manifest.schema_version = 1;
-  manifest.engine = manifest.engine ?? { min_version: ">=1.0.0", manifest_version: "1.0.0" };
-  manifest.defaults = manifest.defaults ?? { timeout_seconds: GATE_DEFAULT_TIMEOUT_SECONDS, provider_missing: "reviewer_fallback", fail_fast: false };
-  manifest.packs = Array.isArray(manifest.packs) ? manifest.packs : [];
-  manifest.gates = Array.isArray(manifest.gates) ? manifest.gates : [];
-  manifest.packs = manifest.packs.filter((entry) => !(entry?.id === packManifestEntry.id && normalizeInstallScope(entry.scope) === packManifestEntry.scope));
-  manifest.packs.push(packManifestEntry);
-  manifest.gates = manifest.gates.filter((gate) => !(gate?.pack === packManifestEntry.id && typeof gate.id === "string" && gate.id.startsWith(`${gatePrefix}.`)));
-  manifest.gates.push(...generatedGates);
-
-  mkdirSync(join(repoRoot, ".gc"), { recursive: true });
-  const validation = validateGateManifest(manifest, { repoRoot });
-  if (!validation.ok) {
-    return { ok: false, error: "gate_manifest_invalid", message: "generated gate manifest is invalid", errors: validation.errors };
-  }
-  writeFileSync(join(repoRoot, ".gc/gates.yaml"), dumpYaml(manifest, { lineWidth: 120, noRefs: true, sortKeys: false }));
-  return { ok: true, manifest: validation.value };
-}
-
-function mergePackIntoGroundControlYaml({ repoRoot, packId, versionConstraint, engineVersionConstraint, scope, profile }) {
-  const path = join(repoRoot, ".ground-control.yaml");
-  let raw = {};
-  if (fileExists(path)) {
-    const parsed = parseYamlFileAbsolute(path, ".ground-control.yaml");
-    if (!parsed.ok) throw new Error(parsed.error);
-    raw = isPlainMapping(parsed.value) ? parsed.value : {};
-  }
-  raw.schema_version = raw.schema_version ?? 1;
-  raw.project = raw.project ?? "local";
-  raw.workflow = isPlainMapping(raw.workflow) ? raw.workflow : {};
-  raw.workflow.engine = isPlainMapping(raw.workflow.engine) ? raw.workflow.engine : {};
-  raw.workflow.engine.version = engineVersionConstraint;
-  raw.workflow.gate_manifest = ".gc/gates.yaml";
-  const packs = Array.isArray(raw.workflow.packs) ? raw.workflow.packs : [];
-  const normalizedScope = normalizeInstallScope(scope);
-  const next = packs.filter((entry) => !(entry?.id === packId && normalizeInstallScope(entry.scope) === normalizedScope));
-  const packEntry = { id: packId, version: versionConstraint, scope: normalizedScope };
-  if (profile != null) packEntry.profile = profile;
-  next.push(packEntry);
-  raw.workflow.packs = next;
-  const parsedConfig = parseGroundControlYaml(dumpYaml(raw, { lineWidth: 120, noRefs: true, sortKeys: false }));
-  if (!parsedConfig.ok) {
-    return { ok: false, error: "ground_control_yaml_invalid", message: "updated .ground-control.yaml would be invalid", errors: parsedConfig.errors };
-  }
-  writeFileSync(path, dumpYaml(raw, { lineWidth: 120, noRefs: true, sortKeys: false }));
-  return { ok: true, workflow: parsedConfig.value.workflow };
-}
-
-function mergeWorkflowLock({ repoRoot, engineEntry, packEntry, manifest, installedAt }) {
-  const path = join(repoRoot, ".gc/workflow-lock.json");
-  let raw = {
-    schema_version: 1,
-    engine: {
-      version: GATE_ENGINE_VERSION,
-      checksum: null,
-      source_url: null,
-      compatible: ">=1.0.0 <2.0.0",
-      signer: "TODO: release signer",
-      trust_policy: "checksum-only-development",
-      installed_at: installedAt,
-    },
-    packs: [],
-  };
-  if (fileExists(path)) {
-    const parsed = readJsonAbsolute(path, ".gc/workflow-lock.json");
-    if (parsed.__error) throw new Error(parsed.__error);
-    if (isPlainMapping(parsed)) raw = parsed;
-  }
-  raw.schema_version = 1;
-  raw.engine = {
-    version: engineEntry.version,
-    checksum: `sha256:${normalizeSha256Checksum(engineEntry.sha256 ?? engineEntry.checksum)}`,
-    source_url: engineEntry.artifact ?? engineEntry.source_url,
-    compatible: engineEntry.compatible,
-    signer: engineEntry.signer,
-    trust_policy: engineEntry.trust_policy,
-    installed_at: installedAt,
-  };
-  raw.packs = Array.isArray(raw.packs) ? raw.packs : [];
-  raw.packs = raw.packs.filter((pack) => pack?.id !== packEntry.id);
-  raw.packs.push({
-    id: packEntry.id,
-    version: packEntry.version,
-    checksum: `sha256:${normalizeSha256Checksum(packEntry.sha256 ?? packEntry.checksum)}`,
-    source_url: packEntry.artifact ?? packEntry.source_url,
-    compatible_engine: packEntry.compatible_engine,
-    signer: packEntry.signer,
-    trust_policy: packEntry.trust_policy,
-    installed_at: installedAt,
-  });
-  const validation = validateWorkflowLock(raw, { manifest });
-  if (!validation.ok) {
-    return { ok: false, error: "workflow_lock_invalid", message: "generated workflow lock is invalid", errors: validation.errors };
-  }
-  writeFileSync(path, `${JSON.stringify(raw, null, 2)}\n`);
-  return { ok: true, lock: validation.value };
-}
-
-function copyPackTemplates({ repoRoot, packSourcePath, packYaml }) {
-  const copied = [];
-  const templates = Array.isArray(packYaml.install?.templates) ? packYaml.install.templates : [];
-  for (const template of templates) {
-    if (!isPlainMapping(template) || typeof template.source !== "string" || typeof template.target !== "string") {
-      throw new Error(`${packYaml.id} has malformed install.templates entry`);
-    }
-    const source = join(packSourcePath, template.source);
-    const resolvedTarget = resolveGateRepoPath(repoRoot, realpathSync(repoRoot), template.target, `${packYaml.id}.template.target`, { allowRoot: false });
-    if (!resolvedTarget.ok) throw new Error(resolvedTarget.error);
-    mkdirSync(dirname(resolvedTarget.abs), { recursive: true });
-    cpSync(source, resolvedTarget.abs, { recursive: true });
-    copied.push(resolvedTarget.rel);
-  }
-  return copied;
-}
-
-function detectNodePackageManager(scopeAbs) {
-  if (fileExists(join(scopeAbs, "pnpm-lock.yaml"))) return { command: "pnpm", args: ["add", "-D"] };
-  if (fileExists(join(scopeAbs, "yarn.lock"))) return { command: "yarn", args: ["add", "-D"] };
-  if (fileExists(join(scopeAbs, "package-lock.json")) || fileExists(join(scopeAbs, "package.json"))) {
-    return { command: "npm", args: ["install", "--save-dev"] };
-  }
-  return null;
-}
-
-function detectPythonPackageManager(scopeAbs) {
-  if (fileExists(join(scopeAbs, "uv.lock"))) return { command: "uv", args: ["add", "--dev"] };
-  if (fileExists(join(scopeAbs, "poetry.lock"))) return { command: "poetry", args: ["add", "--group", "dev"] };
-  if (fileExists(join(scopeAbs, "pyproject.toml"))) return { command: "python3", args: ["-m", "pip", "install"] };
-  if (fileExists(join(scopeAbs, "requirements.txt"))) return { command: "python3", args: ["-m", "pip", "install"] };
-  return null;
-}
-
-async function installPackDevDependencies({ repoRoot, scope, packYaml, installDependencies }) {
-  const deps = Array.isArray(packYaml.install?.dev_dependencies) ? packYaml.install.dev_dependencies : [];
-  if (deps.length === 0) return { status: "not_required", command: null, dependencies: [] };
-  if (installDependencies !== true) return { status: "skipped", reason: "install_dependencies=false", dependencies: deps };
-  const scopeAbs = resolvePath(repoRoot, normalizeInstallScope(scope) === "." ? "" : normalizeInstallScope(scope));
-  let detected = null;
-  if (packYaml.id === "node-ts") detected = detectNodePackageManager(scopeAbs);
-  else if (packYaml.id === "python") detected = detectPythonPackageManager(scopeAbs);
-  if (detected == null) {
-    return { status: "skipped", reason: "no supported package manager detected for dev dependency installation", dependencies: deps };
-  }
-  const args = [...detected.args, ...deps];
-  const result = await execFile(detected.command, args, { cwd: scopeAbs, maxBuffer: 64 * 1024 * 1024 });
-  return {
-    status: "installed",
-    command: [detected.command, ...args].join(" "),
-    dependencies: deps,
-    stdout: result.stdout,
-    stderr: result.stderr,
-  };
-}
-
-async function runWorkflowPackSelftest({ packId, catalogPath }) {
-  const runner = join(resolvePath(MCP_MODULE_DIR, "../.."), "workflow/tools/selftest-pack.mjs");
-  if (!fileExists(runner)) {
-    return { status: "missing", ok: false, reason: "selftest/run.mjs is missing" };
-  }
-  const result = await execFile("node", [runner, "--pack", packId, "--catalog", catalogPath], {
-    cwd: resolvePath(MCP_MODULE_DIR, "../.."),
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  const stdout = result.stdout.trim();
-  const parsed = stdout ? JSON.parse(stdout.split(/\r?\n/).at(-1)) : {};
-  return parsed;
-}
-
-export async function installWorkflowAssets({
-  repoPath,
-  packId,
-  versionConstraint = "1.0.0",
-  engineVersionConstraint = GATE_PACK_INSTALL_DEFAULT_ENGINE_CONSTRAINT,
-  scope = ".",
-  profile = null,
-  catalogPath = GATE_CATALOG_DEFAULT_PATH,
-  runSelftest = true,
-  installDependencies = true,
-  mode = "install",
-} = {}) {
-  if (typeof repoPath !== "string" || repoPath.trim() === "") {
-    return { ok: false, error: "workflow_asset_install_input_invalid", message: "repo_path is required" };
-  }
-  if (typeof packId !== "string" || !GATE_PACK_ID_SAFE_RE.test(packId)) {
-    return { ok: false, error: "workflow_asset_install_input_invalid", message: `pack_id must match ${GATE_PACK_ID_SAFE_RE.source}` };
-  }
-  if (typeof versionConstraint !== "string" || versionConstraint.trim() === "") {
-    return { ok: false, error: "workflow_asset_install_input_invalid", message: "version must be a non-empty semver constraint" };
-  }
-  if (typeof engineVersionConstraint !== "string" || engineVersionConstraint.trim() === "") {
-    return { ok: false, error: "workflow_asset_install_input_invalid", message: "engine_version must be a non-empty semver constraint" };
-  }
-  if (!["install", "upgrade"].includes(mode)) {
-    return { ok: false, error: "workflow_asset_install_input_invalid", message: "mode must be 'install' or 'upgrade'" };
-  }
-  let repoRoot;
-  try {
-    repoRoot = await ensureGitRepo(repoPath);
-  } catch (error) {
-    return { ok: false, error: "workflow_asset_install_repo_not_found", message: error.message };
-  }
-  const catalogResult = loadGateCatalog(catalogPath);
-  if (!catalogResult.ok) return catalogResult;
-  const engineEntry = resolveGateCatalogEngine({
-    catalog: catalogResult.catalog,
-    versionConstraint: engineVersionConstraint,
-  });
-  if (engineEntry == null) {
-    return {
-      ok: false,
-      error: "workflow_engine_not_found",
-      message: `No workflow engine satisfies version constraint '${engineVersionConstraint}'`,
-    };
-  }
-  const entry = resolveGateCatalogEntry({
-    catalog: catalogResult.catalog,
-    packId,
-    versionConstraint,
-  });
-  if (entry == null) {
-    return {
-      ok: false,
-      error: "gate_pack_not_found",
-      message: `No gate pack '${packId}' satisfies version constraint '${versionConstraint}'`,
-    };
-  }
-  const cleanup = [];
-  try {
-    const engineArtifact = await materializeCatalogArtifact({
-      catalogPath: catalogResult.catalog_path,
-      entry: engineEntry,
-      artifactKind: "engine",
-    });
-    if (!engineArtifact.ok) return engineArtifact;
-    if (engineArtifact.cleanup) cleanup.push(engineArtifact.cleanup);
-    const engineShape = validateEngineSourceShape(engineArtifact.source_path);
-    if (!engineShape.ok) return engineShape;
-
-    const packArtifact = await materializeCatalogArtifact({
-      catalogPath: catalogResult.catalog_path,
-      entry,
-      artifactKind: "pack",
-    });
-    if (!packArtifact.ok) return packArtifact;
-    if (packArtifact.cleanup) cleanup.push(packArtifact.cleanup);
-    const shape = validatePackSourceShape(packArtifact.source_path, packId);
-    if (!shape.ok) return shape;
-
-    const normalizedScope = normalizeInstallScope(scope);
-    const generated = generateManifestGatesFromPack({
-      packId,
-      packVersion: entry.version,
-      scope: normalizedScope,
-      capabilitiesDoc: shape.capabilities,
-    });
-    const engineVendorPath = join(repoRoot, ".gc/vendor/ground-control/engine", engineEntry.version);
-    rmSync(engineVendorPath, { recursive: true, force: true });
-    mkdirSync(dirname(engineVendorPath), { recursive: true });
-    cpSync(engineArtifact.source_path, engineVendorPath, { recursive: true });
-    const vendorPath = join(repoRoot, ".gc/vendor/ground-control/packs", packId, entry.version);
-    rmSync(vendorPath, { recursive: true, force: true });
-    mkdirSync(dirname(vendorPath), { recursive: true });
-    cpSync(packArtifact.source_path, vendorPath, { recursive: true });
-    const copiedTemplates = copyPackTemplates({ repoRoot, packSourcePath: packArtifact.source_path, packYaml: shape.pack });
-    const manifestResult = mergePackIntoManifest({
-      repoRoot,
-      packManifestEntry: generated.pack,
-      generatedGates: generated.gates,
-      gatePrefix: generated.gate_prefix,
-    });
-    if (!manifestResult.ok) return manifestResult;
-    const groundControlResult = mergePackIntoGroundControlYaml({
-      repoRoot,
-      packId,
-      versionConstraint,
-      engineVersionConstraint,
-      scope: normalizedScope,
-      profile,
-    });
-    if (!groundControlResult.ok) return groundControlResult;
-    const installedAt = new Date().toISOString();
-    const lockResult = mergeWorkflowLock({
-      repoRoot,
-      engineEntry: { ...engineEntry, sha256: engineArtifact.sha256 },
-      packEntry: { ...entry, sha256: packArtifact.sha256 },
-      manifest: manifestResult.manifest,
-      installedAt,
-    });
-    if (!lockResult.ok) return lockResult;
-    let dependencyInstall;
-    try {
-      dependencyInstall = await installPackDevDependencies({
-        repoRoot,
-        scope: normalizedScope,
-        packYaml: shape.pack,
-        installDependencies,
-      });
-    } catch (error) {
-      return {
-        ok: false,
-        error: "workflow_asset_dependency_install_failed",
-        message: formatCommandFailure("dependency install", error),
-      };
-    }
-    let selftest = { status: "skipped", reason: "run_selftest=false" };
-    if (runSelftest) {
-      try {
-        selftest = await runWorkflowPackSelftest({ packId, catalogPath: catalogResult.catalog_path });
-      } catch (error) {
-        return {
-          ok: false,
-          error: "workflow_asset_selftest_failed",
-          message: formatCommandFailure("pack selftest", error),
-        };
-      }
-    }
-    return {
-      ok: true,
-      operation: mode,
-      repo_path: repoRoot,
-      engine: {
-        version: engineEntry.version,
-        version_constraint: engineVersionConstraint,
-        checksum: `sha256:${engineArtifact.sha256}`,
-        compatible: engineEntry.compatible,
-      },
-      pack: {
-        id: packId,
-        version: entry.version,
-        version_constraint: versionConstraint,
-        scope: normalizedScope,
-        profile,
-        checksum: `sha256:${packArtifact.sha256}`,
-        compatible_engine: entry.compatible_engine,
-      },
-      engine_vendor_path: relative(repoRoot, engineVendorPath).replace(/\\/g, "/"),
-      vendor_path: relative(repoRoot, vendorPath).replace(/\\/g, "/"),
-      manifest_path: ".gc/gates.yaml",
-      lock_path: ".gc/workflow-lock.json",
-      ground_control_yaml: ".ground-control.yaml",
-      templates: copiedTemplates,
-      gates_written: generated.gates.length,
-      dependency_install: dependencyInstall,
-      selftest,
-      signing: {
-        status: "todo",
-        note: "Checksum verification is enforced; release signatures/provenance remain TODO before broad rollout.",
-      },
-    };
-  } finally {
-    for (const fn of cleanup.reverse()) {
-      try {
-        fn();
-      } catch {
-        // Temporary extraction cleanup is best-effort.
-      }
-    }
-  }
-}
-
-function sha256Hex(text) {
-  return createHash("sha256").update(text).digest("hex");
-}
-
-function stableJson(value) {
-  if (Array.isArray(value)) return `[${value.map((v) => stableJson(v)).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stableJson(value[k])}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function normalizeChangedPath(pathValue) {
-  return String(pathValue || "").replace(/\\/g, "/").replace(/^\.\/+/, "");
-}
-
-function globPatternToRegex(pattern) {
-  const normalized = normalizeChangedPath(pattern);
-  let out = "^";
-  for (let i = 0; i < normalized.length; i++) {
-    const ch = normalized[i];
-    if (ch === "*") {
-      if (normalized[i + 1] === "*") {
-        const prev = normalized[i - 1];
-        const next = normalized[i + 2];
-        if (prev === "/" && next === "/") {
-          out = out.slice(0, -1);
-          out += "(?:/.*)?/";
-          i += 2;
-        } else {
-          out += ".*";
-          i += 1;
-        }
-      } else {
-        out += "[^/]*";
-      }
-    } else if (ch === "?") {
-      out += "[^/]";
-    } else {
-      out += ch.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
-    }
-  }
-  out += "$";
-  return new RegExp(out);
-}
-
-export function pathMatchesGatePattern(pathValue, pattern) {
-  return globPatternToRegex(pattern).test(normalizeChangedPath(pathValue));
-}
-
-export function gateAppliesToChangedFiles(gate, changedFiles) {
-  const files = Array.isArray(changedFiles) ? changedFiles.map(normalizeChangedPath) : [];
-  if (gate.scope === "repo") return true;
-  if (gate.scope !== "changed") return false;
-  if (files.length === 0) return false;
-  const patterns = Array.isArray(gate.applies_when?.paths) ? gate.applies_when.paths : [];
-  if (patterns.length === 0) return true;
-  return files.some((file) => patterns.some((pattern) => pathMatchesGatePattern(file, pattern)));
-}
-
-export function selectApplicableGates(manifest, { changedFiles = [], capabilities = null, phase = "local" } = {}) {
-  const requested = Array.isArray(capabilities) && capabilities.length > 0 ? new Set(capabilities) : null;
-  return manifest.gates.filter((gate) => {
-    if (phase === "local" && gate.capability === "remote_status") return false;
-    if (phase === "remote" && gate.capability !== "remote_status") return false;
-    if (requested && !requested.has(gate.capability)) return false;
-    return gateAppliesToChangedFiles(gate, changedFiles);
-  });
-}
-
-function readJsonPath(payload, jsonPath) {
-  if (typeof jsonPath !== "string" || jsonPath.trim() === "") return undefined;
-  const pathText = jsonPath.startsWith("$.") ? jsonPath.slice(2) : jsonPath;
-  if (pathText === "$" || pathText === "") return payload;
-  return pathText.split(".").reduce((cur, part) => {
-    if (cur == null) return undefined;
-    if (/^\d+$/.test(part) && Array.isArray(cur)) return cur[Number(part)];
-    return cur[part];
-  }, payload);
-}
-
-function extractGateMetric(providerOutput, metric, metricsMap = {}) {
-  if (!providerOutput || typeof providerOutput !== "object") return undefined;
-  const mapped = metricsMap[metric];
-  if (mapped) return readJsonPath(providerOutput, mapped);
-  if (Object.prototype.hasOwnProperty.call(providerOutput, metric)) return providerOutput[metric];
-  if (providerOutput.metrics && Object.prototype.hasOwnProperty.call(providerOutput.metrics, metric)) {
-    return providerOutput.metrics[metric];
-  }
-  return undefined;
-}
-
-function severityRank(severity) {
-  const idx = GATE_SEVERITIES.indexOf(String(severity || "").toLowerCase());
-  return idx < 0 ? null : idx;
-}
-
-export function evaluateGateThreshold(threshold, providerOutput = null) {
-  if (threshold == null) return { ok: true, threshold: null };
-  const actual = extractGateMetric(providerOutput, threshold.metric, providerOutput?.__metrics_map ?? {});
-  const result = { metric: threshold.metric, actual };
-  const failures = [];
-  if (Object.prototype.hasOwnProperty.call(threshold, "min")) {
-    result.min = threshold.min;
-    if (typeof actual !== "number" || actual < threshold.min) failures.push("min");
-  }
-  if (Object.prototype.hasOwnProperty.call(threshold, "max")) {
-    result.max = threshold.max;
-    if (typeof actual !== "number" || actual > threshold.max) failures.push("max");
-  }
-  if (Object.prototype.hasOwnProperty.call(threshold, "break")) {
-    result.break = threshold.break;
-    if (typeof actual !== "number" || actual < threshold.break) failures.push("break");
-  }
-  if (Object.prototype.hasOwnProperty.call(threshold, "severity")) {
-    result.severity = threshold.severity;
-    const actualRank = severityRank(actual);
-    const allowedRank = severityRank(threshold.severity);
-    if (actualRank == null || allowedRank == null || actualRank > allowedRank) failures.push("severity");
-  }
-  if (Object.prototype.hasOwnProperty.call(threshold, "policy")) {
-    result.policy = threshold.policy;
-    if (actual !== threshold.policy) failures.push("policy");
-  }
-  return { ok: failures.length === 0, threshold: result, failures };
-}
-
-function synthesizeLegacyGate(id, capability, command) {
-  return {
-    id,
-    capability,
-    pack: null,
-    provider: "legacy_command",
-    cwd: ".",
-    command,
-    blocking: true,
-    scope: "repo",
-    applies_when: { paths: [] },
-    timeout_seconds: null,
-    threshold: null,
-    output: null,
-    artifacts: [],
-    config_paths: [],
-    generated_files: [],
-    provider_missing: null,
-    required_statuses: [],
-  };
-}
-
-export function synthesizeLegacyGateManifest(workflow) {
-  const gates = [];
-  if (workflow.completion_command) gates.push(synthesizeLegacyGate("legacy.policy", "policy", workflow.completion_command));
-  if (workflow.test_command) gates.push(synthesizeLegacyGate("legacy.unit_tests", "unit_tests", workflow.test_command));
-  if (workflow.lint_command) gates.push(synthesizeLegacyGate("legacy.lint", "lint", workflow.lint_command));
-  if (workflow.format_command) gates.push(synthesizeLegacyGate("legacy.format", "format", workflow.format_command));
-  if (gates.length === 0) return null;
-  return {
-    schema_version: 1,
-    engine: { min_version: null, manifest_version: "legacy" },
-    defaults: { timeout_seconds: GATE_DEFAULT_TIMEOUT_SECONDS, provider_missing: "fail", fail_fast: false },
-    packs: [],
-    gates,
-    legacy_mode: true,
-  };
-}
-
-export function applyGateOverrides(manifest, overrides = {}) {
-  if (!overrides || Object.keys(overrides).length === 0) return manifest;
-  const copy = JSON.parse(JSON.stringify(manifest));
-  for (const [key, value] of Object.entries(overrides)) {
-    const gate = [...copy.gates]
-      .sort((a, b) => b.id.length - a.id.length)
-      .find((candidate) => key === candidate.id || key.startsWith(`${candidate.id}.`));
-    if (!gate || key === gate.id) continue;
-    const tail = key.slice(gate.id.length + 1);
-    if (tail === "timeout_seconds" && isPositiveBoundedInteger(value)) {
-      gate.timeout_seconds = value;
-    } else if (tail === "blocking" && typeof value === "boolean") {
-      gate.blocking = value;
-    } else if (tail === "provider_missing" && GATE_PROVIDER_MISSING_POLICIES.includes(value)) {
-      gate.provider_missing = value;
-    } else if (tail.startsWith("threshold.")) {
-      if (gate.threshold == null) gate.threshold = { metric: tail.slice("threshold.".length) };
-      const thresholdKey = tail.slice("threshold.".length);
-      if (GATE_MANIFEST_THRESHOLD_KEYS.includes(thresholdKey) && thresholdKey !== "metric") {
-        gate.threshold[thresholdKey] = value;
-      }
-    }
-  }
-  return copy;
-}
-
-export async function computeGitDiffInfo(repoRoot, baseRef, headRef) {
-  if (!isSafeGitRefName(baseRef)) {
-    throw new Error(`base_ref '${baseRef}' is not a safe Git ref name`);
-  }
-  if (!isSafeGitRefName(headRef)) {
-    throw new Error(`head_ref '${headRef}' is not a safe Git ref name`);
-  }
-  const range = `${baseRef}...${headRef}`;
-  const [nameResult, nameStatusResult, diffResult] = await Promise.all([
-    execFile("git", ["-C", repoRoot, "diff", "--name-only", range], { maxBuffer: 64 * 1024 * 1024 }),
-    execFile("git", ["-C", repoRoot, "diff", "--name-status", range], { maxBuffer: 64 * 1024 * 1024 }),
-    execFile("git", ["-C", repoRoot, "diff", "--binary", range], { maxBuffer: 64 * 1024 * 1024 }),
-  ]);
-  const changedFiles = nameResult.stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .sort();
-  return {
-    base_ref: baseRef,
-    head_ref: headRef,
-    changed_files: changedFiles,
-    name_status: parseGitDiffNameStatus(nameStatusResult.stdout),
-    diff_hash: sha256Hex(diffResult.stdout),
-    diff_text: diffResult.stdout,
-    file_diffs: splitUnifiedDiffByFile(diffResult.stdout),
-  };
-}
-
-export function parseGitDiffNameStatus(text) {
-  if (typeof text !== "string" || text.trim() === "") return [];
-  return text.split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const parts = line.split("\t");
-      const rawStatus = parts[0] ?? "";
-      const status = rawStatus[0] ?? "";
-      if (status === "R" || status === "C") {
-        return {
-          status,
-          score: rawStatus.slice(1) || null,
-          old_path: normalizeChangedPath(parts[1] ?? ""),
-          path: normalizeChangedPath(parts[2] ?? parts[1] ?? ""),
-          raw: line,
-        };
-      }
-      return {
-        status,
-        score: null,
-        old_path: null,
-        path: normalizeChangedPath(parts[1] ?? ""),
-        raw: line,
-      };
-    })
-    .filter((entry) => entry.path !== "");
-}
-
-function splitUnifiedDiffByFile(diffText) {
-  const result = {};
-  if (typeof diffText !== "string" || diffText === "") return result;
-  const lines = diffText.split(/\r?\n/);
-  let current = null;
-  let buffer = [];
-  const flush = () => {
-    if (current) result[current] = buffer.join("\n");
-  };
-  for (const line of lines) {
-    const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
-    if (match) {
-      flush();
-      current = normalizeChangedPath(match[2]);
-      buffer = [line];
-    } else if (current) {
-      buffer.push(line);
-    }
-  }
-  flush();
-  return result;
-}
-
-export function buildGateCommandEnv(extra = {}) {
-  const allow = [
-    "PATH",
-    "HOME",
-    "TMPDIR",
-    "TEMP",
-    "TMP",
-    "LANG",
-    "LC_ALL",
-    "SHELL",
-    "CI",
-    "USER",
-    "LOGNAME",
-    "TERM",
-    "NO_COLOR",
-    "XDG_CACHE_HOME",
-    "npm_config_cache",
-  ];
-  const env = {};
-  for (const key of allow) {
-    if (typeof process.env[key] === "string") env[key] = process.env[key];
-  }
-  if (!env.PATH) env.PATH = "/usr/local/bin:/usr/bin:/bin";
-  env.GC_GATE_ENGINE_VERSION = GATE_ENGINE_VERSION;
-  for (const [key, value] of Object.entries(extra)) {
-    if (/^[A-Z0-9_]+$/.test(key) && typeof value === "string") env[key] = value;
-  }
-  return env;
-}
-
-export async function executeGateCommand({ command, cwd, timeoutSeconds, env = buildGateCommandEnv() }) {
-  return await new Promise((resolve) => {
-    const started = Date.now();
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    let settled = false;
-    const child = spawnChild("/bin/sh", ["-lc", command], {
-      cwd,
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const capAppend = (current, chunk) => {
-      if (Buffer.byteLength(current, "utf8") >= GATE_OUTPUT_MAX_BYTES) return current;
-      const next = current + chunk.toString("utf8");
-      if (Buffer.byteLength(next, "utf8") <= GATE_OUTPUT_MAX_BYTES) return next;
-      return Buffer.from(next, "utf8").subarray(0, GATE_OUTPUT_MAX_BYTES).toString("utf8");
-    };
-    child.stdout.on("data", (chunk) => { stdout = capAppend(stdout, chunk); });
-    child.stderr.on("data", (chunk) => { stderr = capAppend(stderr, chunk); });
-    const timer = setTimeout(() => {
-      timedOut = true;
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        // The process may have exited between timeout and kill.
-      }
-      setTimeout(() => {
-        try {
-          child.kill("SIGKILL");
-        } catch {
-          // Already exited.
-        }
-      }, KILL_GRACE_MS_DEFAULT);
-    }, timeoutSeconds * 1000);
-    const finish = (exitCode, signal, spawnError = null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve({
-        exit_code: typeof exitCode === "number" ? exitCode : null,
-        signal: signal ?? null,
-        timed_out: timedOut,
-        duration_ms: Date.now() - started,
-        stdout,
-        stderr,
-        error: spawnError ? spawnError.message : null,
-      });
-    };
-    child.on("error", (error) => finish(127, null, error));
-    child.on("close", (code, signal) => finish(code, signal));
-  });
-}
-
-function parseGateProviderOutput({ gate, repoRoot, commandResult }) {
-  if (gate.output == null) return { ok: true, value: null };
-  let rawText = commandResult.stdout;
-  if (gate.output.path) {
-    const resolved = resolveGateRepoPath(repoRoot, realpathSync(repoRoot), gate.output.path, `${gate.id}.output.path`, { allowRoot: false });
-    if (!resolved.ok) return { ok: false, error: resolved.error };
-    try {
-      rawText = readAbsoluteTextFile(resolved.abs);
-    } catch (error) {
-      return { ok: false, error: `could not read declared provider output '${gate.output.path}': ${error.message}` };
-    }
-  }
-  if (gate.output.type === "json") {
-    try {
-      const parsed = JSON.parse(rawText);
-      if (parsed && typeof parsed === "object") parsed.__metrics_map = gate.output.metrics || {};
-      return { ok: true, value: parsed };
-    } catch (error) {
-      return { ok: false, error: `could not parse JSON provider output for gate '${gate.id}': ${error.message}` };
-    }
-  }
-  return { ok: true, value: null };
-}
-
-function packVersionForGate(manifest, gate) {
-  if (!gate.pack) return null;
-  return manifest.packs.find((pack) => pack.id === gate.pack)?.version ?? null;
-}
-
-function gateProviderMissingResult({ gate, manifest, manifestHash, diffHash, commandHash }) {
-  const fallback = gate.provider_missing ?? manifest.defaults.provider_missing;
-  const reviewerFallbackUsed = fallback === "reviewer_fallback";
-  const notApplicable = fallback === "not_applicable";
-  const blockingSatisfied = gate.blocking !== true || reviewerFallbackUsed || notApplicable;
-  return {
-    gate_id: gate.id,
-    capability: gate.capability,
-    pack: gate.pack,
-    pack_version: packVersionForGate(manifest, gate),
-    provider: gate.provider,
-    blocking: gate.blocking,
-    outcome: "provider_missing",
-    ok: blockingSatisfied,
-    blocking_satisfied: blockingSatisfied,
-    fallback: reviewerFallbackUsed ? "reviewer_lens" : fallback,
-    provider_missing: true,
-    reviewer_fallback_used: reviewerFallbackUsed,
-    command_hash: commandHash,
-    manifest_hash: manifestHash,
-    diff_hash: diffHash,
-    telemetry: [
-      "provider_missing",
-      ...(reviewerFallbackUsed ? ["reviewer_fallback_used"] : []),
-      ...(notApplicable ? ["not_applicable"] : []),
-    ],
-    next_action: blockingSatisfied ? "route_residual_concern_to_reviewer_lens" : "install_provider_or_mark_gate_nonblocking",
-  };
-}
-
-async function runOneGate({ gate, manifest, repoRoot, manifestHash, diffHash, commandRunner }) {
-  const commandHash = gate.command ? sha256Hex(gate.command) : null;
-  if (gate.command == null) {
-    return gateProviderMissingResult({ gate, manifest, manifestHash, diffHash, commandHash });
-  }
-  const cwd = resolvePath(repoRoot, gate.cwd === "." ? "" : gate.cwd);
-  const timeoutSeconds = gate.timeout_seconds ?? manifest.defaults.timeout_seconds;
-  const commandResult = await commandRunner({
-    command: gate.command,
-    cwd,
-    timeoutSeconds,
-    env: buildGateCommandEnv({
-      GC_GATE_ID: gate.id,
-      GC_GATE_CAPABILITY: gate.capability,
-    }),
-  });
-  const providerOutputResult = parseGateProviderOutput({ gate, repoRoot, commandResult });
-  const providerOutput = providerOutputResult.ok ? providerOutputResult.value : null;
-  const thresholdResult = providerOutputResult.ok
-    ? evaluateGateThreshold(gate.threshold, providerOutput)
-    : { ok: false, threshold: gate.threshold, failures: ["provider_output"] };
-  const exitOk = commandResult.exit_code === 0 && commandResult.timed_out !== true && commandResult.error == null;
-  const ok = exitOk && providerOutputResult.ok && thresholdResult.ok;
-  return {
-    gate_id: gate.id,
-    capability: gate.capability,
-    pack: gate.pack,
-    pack_version: packVersionForGate(manifest, gate),
-    provider: gate.provider,
-    blocking: gate.blocking,
-    outcome: ok ? "passed" : "failed",
-    ok,
-    blocking_satisfied: ok || gate.blocking !== true,
-    exit_code: commandResult.exit_code,
-    signal: commandResult.signal,
-    timed_out: commandResult.timed_out,
-    duration_ms: commandResult.duration_ms ?? null,
-    stdout: commandResult.stdout ?? "",
-    stderr: commandResult.stderr ?? "",
-    command_hash: commandHash,
-    manifest_hash: manifestHash,
-    diff_hash: diffHash,
-    threshold: thresholdResult.threshold,
-    threshold_failures: thresholdResult.failures ?? [],
-    provider_output_error: providerOutputResult.ok ? null : providerOutputResult.error,
-    artifacts: gate.artifacts,
-    telemetry: [ok ? "passed" : "failed"],
-    next_action: ok ? "continue" : "fix_tests_and_rerun_gate",
-  };
-}
-
-function buildGateEffectivenessTelemetryRecord({ issueNumber, envelopeId, result, legacyMode }) {
-  const outcome = result.outcome ?? (result.ok === true ? "passed" : "failed");
-  const override = result.override === true || result.override_used === true;
-  const falsePositive = result.false_positive === true;
-  const escape = result.escape === true || result.review_escape === true || result.remote_escape === true;
-  return {
-    schema_version: GATE_TELEMETRY_SCHEMA_VERSION,
-    kind: "gate_effectiveness",
-    recorded_at: new Date().toISOString(),
-    issue_number: issueNumber,
-    envelope_id: envelopeId,
-    gate_id: result.gate_id,
-    capability: result.capability,
-    fired: true,
-    outcome,
-    blocking: result.blocking,
-    provider_missing: result.provider_missing === true,
-    reviewer_fallback_used: result.reviewer_fallback_used === true,
-    false_positive: falsePositive,
-    override,
-    escape,
-    pack: result.pack,
-    pack_version: result.pack_version,
-    legacy_mode: legacyMode === true,
-    duration_ms: result.duration_ms ?? null,
-    exit_code: result.exit_code ?? null,
-    threshold: result.threshold ?? null,
-  };
-}
-
-function appendGateEffectivenessTelemetry(repoRoot, issueNumber, envelopeId, results, legacyMode) {
-  try {
-    const rel = `.gc/telemetry/gate-effectiveness-${issueNumber}.jsonl`;
-    const resolved = resolveGateRepoPath(repoRoot, realpathSync(repoRoot), rel, "gate_effectiveness_telemetry_path", { allowRoot: false });
-    if (!resolved.ok) return null;
-    mkdirSync(dirname(resolved.abs), { recursive: true });
-    const lines = results.map((result) => JSON.stringify(buildGateEffectivenessTelemetryRecord({
-      issueNumber,
-      envelopeId,
-      result,
-      legacyMode,
-    })));
-    if (lines.length > 0) appendFileSync(resolved.abs, `${lines.join("\n")}\n`);
-    return resolved.rel;
-  } catch {
-    return null;
-  }
-}
-
-function summarizeDurationStats(values) {
-  const nums = (Array.isArray(values) ? values : [])
-    .filter((value) => typeof value === "number" && Number.isFinite(value))
-    .sort((a, b) => a - b);
-  if (nums.length === 0) return { count: 0, avg_ms: null, median_ms: null, max_ms: null };
-  const sum = nums.reduce((acc, value) => acc + value, 0);
-  const mid = Math.floor(nums.length / 2);
-  const median = nums.length % 2 === 1 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
-  return {
-    count: nums.length,
-    avg_ms: Math.round((sum / nums.length) * 100) / 100,
-    median_ms: median,
-    max_ms: nums[nums.length - 1],
-  };
-}
-
-export function summarizeGateTelemetryRecords(records) {
-  const arr = Array.isArray(records) ? records : [];
-  const byGate = new Map();
-  for (const record of arr) {
-    if (!record || typeof record !== "object") continue;
-    const gateId = typeof record.gate_id === "string" && record.gate_id.length > 0
-      ? record.gate_id
-      : "(unknown)";
-    if (!byGate.has(gateId)) {
-      byGate.set(gateId, {
-        gate_id: gateId,
-        capability: record.capability ?? null,
-        total_runs: 0,
-        fired_count: 0,
-        outcomes: {},
-        false_positive_count: 0,
-        override_count: 0,
-        escape_count: 0,
-        durations: [],
-      });
-    }
-    const item = byGate.get(gateId);
-    item.total_runs += 1;
-    if (record.fired !== false) item.fired_count += 1;
-    const outcome = typeof record.outcome === "string" && record.outcome.length > 0 ? record.outcome : "unknown";
-    item.outcomes[outcome] = (item.outcomes[outcome] ?? 0) + 1;
-    if (record.false_positive === true) item.false_positive_count += 1;
-    if (record.override === true || record.override_used === true) item.override_count += 1;
-    if (record.escape === true || record.review_escape === true || record.remote_escape === true) item.escape_count += 1;
-    if (typeof record.duration_ms === "number" && Number.isFinite(record.duration_ms)) {
-      item.durations.push(record.duration_ms);
-    }
-  }
-  const gates = [...byGate.values()].map((item) => ({
-    gate_id: item.gate_id,
-    capability: item.capability,
-    total_runs: item.total_runs,
-    fired_count: item.fired_count,
-    fire_rate: item.total_runs === 0 ? 0 : item.fired_count / item.total_runs,
-    outcomes: item.outcomes,
-    false_positive_count: item.false_positive_count,
-    false_positive_rate: item.total_runs === 0 ? 0 : item.false_positive_count / item.total_runs,
-    override_count: item.override_count,
-    override_rate: item.total_runs === 0 ? 0 : item.override_count / item.total_runs,
-    escape_count: item.escape_count,
-    escape_rate: item.total_runs === 0 ? 0 : item.escape_count / item.total_runs,
-    duration_ms: summarizeDurationStats(item.durations),
-  })).sort((a, b) => a.gate_id.localeCompare(b.gate_id));
-  return {
-    total_records: arr.length,
-    gates,
-  };
-}
-
-export async function runGateTelemetrySummary({ repoPath, issueNumber = null } = {}) {
-  if (typeof repoPath !== "string" || repoPath.length === 0) {
-    return { ok: false, error: "gate_telemetry_input_invalid", message: "repo_path is required" };
-  }
-  if (issueNumber != null && (!Number.isInteger(issueNumber) || issueNumber <= 0)) {
-    return { ok: false, error: "gate_telemetry_input_invalid", message: "issue_number must be a positive integer when supplied" };
-  }
-  let repoRoot;
-  try {
-    repoRoot = await ensureGitRepo(repoPath);
-  } catch (error) {
-    return { ok: false, error: "gate_telemetry_repo_not_found", message: error.message };
-  }
-  const telemetryDir = resolveGateRepoPath(repoRoot, realpathSync(repoRoot), ".gc/telemetry", "gate_telemetry_dir", {
-    allowRoot: false,
-  });
-  if (!telemetryDir.ok) return { ok: false, error: "gate_telemetry_path_invalid", message: telemetryDir.error };
-  const fileNames = [];
-  try {
-    if (issueNumber != null) {
-      fileNames.push(`gate-effectiveness-${issueNumber}.jsonl`);
-    } else {
-      fileNames.push(...readdirSync(telemetryDir.abs).filter((name) =>
-        /^gate-effectiveness-\d+\.jsonl$/.test(name)
-      ));
-    }
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return {
-        ok: true,
-        repo_path: repoRoot,
-        issue_number: issueNumber,
-        files: [],
-        summary: summarizeGateTelemetryRecords([]),
-      };
-    }
-    return { ok: false, error: "gate_telemetry_read_failed", message: error.message };
-  }
-  const records = [];
-  const files = [];
-  for (const name of fileNames.sort()) {
-    const rel = `.gc/telemetry/${name}`;
-    const resolved = resolveGateRepoPath(repoRoot, realpathSync(repoRoot), rel, "gate_telemetry_file", {
-      allowRoot: false,
-      requireExisting: false,
-    });
-    if (!resolved.ok) continue;
-    let text;
-    try {
-      text = readFileSync(resolved.abs, "utf8");
-    } catch (error) {
-      if (error.code === "ENOENT") continue;
-      return { ok: false, error: "gate_telemetry_read_failed", message: error.message, path: rel };
-    }
-    let count = 0;
-    for (const line of text.split(/\r?\n/)) {
-      if (line.trim() === "") continue;
-      try {
-        const record = JSON.parse(line);
-        records.push(record);
-        count += 1;
-      } catch {
-        return { ok: false, error: "gate_telemetry_parse_failed", message: `invalid JSONL record in ${rel}` };
-      }
-    }
-    files.push({ path: rel, records: count });
-  }
-  return {
-    ok: true,
-    repo_path: repoRoot,
-    issue_number: issueNumber,
-    files,
-    summary: summarizeGateTelemetryRecords(records),
-  };
-}
-
-function buildProcessLessonNoteFromGateTelemetry(summaryResult) {
-  const gates = Array.isArray(summaryResult?.summary?.gates) ? summaryResult.summary.gates : [];
-  const lines = [
-    `Process observations for issue #${summaryResult.issue_number}:`,
-    "",
-    `Gate telemetry records analysed: ${summaryResult?.summary?.total_records ?? 0}.`,
-  ];
-  if (gates.length === 0) {
-    lines.push("No gate-effectiveness records were present for this run.");
-    return lines.join("\n");
-  }
-  lines.push("");
-  for (const gate of gates) {
-    const outcomes = Object.entries(gate.outcomes ?? {})
-      .map(([name, count]) => `${name}=${count}`)
-      .join(", ");
-    lines.push(
-      `- ${gate.gate_id}: fired=${gate.fired_count}/${gate.total_runs}; outcomes=${outcomes || "none"}; ` +
-      `overrides=${gate.override_count}; false_positives=${gate.false_positive_count}; escapes=${gate.escape_count}; ` +
-      `avg_duration_ms=${gate.duration_ms?.avg_ms ?? "n/a"}.`,
-    );
-  }
-  return lines.join("\n");
-}
-
-export async function runCaptureProcessLessons({
-  repoPath,
-  issueNumber,
-  tags = ["implement", "gate-telemetry", "process-lesson"],
-  spawnIngest = defaultSpawnIngest,
-} = {}) {
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-    return { ok: false, error: "process_lesson_input_invalid", message: "issue_number must be a positive integer" };
-  }
-  const summary = await runGateTelemetrySummary({ repoPath, issueNumber });
-  if (!summary.ok) return summary;
-  const note = buildProcessLessonNoteFromGateTelemetry(summary);
-  return writeKnowledgeInbox({
-    repoPath: summary.repo_path,
-    note,
-    sourceType: "issue",
-    sourceRef: String(issueNumber),
-    tags,
-    spawnIngest,
-  });
-}
-
-function manifestPackVersions(manifest) {
-  return manifest.packs.map((pack) => ({ id: pack.id, version: pack.version, scope: pack.scope }));
-}
-
-export function computePackVersionsHash(packVersions) {
-  return sha256Hex(stableJson(packVersions));
-}
-
-function loadManifestOrLegacy({ repoRoot, context }) {
-  const workflow = context.workflow;
-  const manifestRel = workflow.gate_manifest ?? ".gc/gates.yaml";
-  const manifestAbs = resolvePath(repoRoot, manifestRel);
-  let manifestText = null;
-  try {
-    manifestText = readAbsoluteTextFile(manifestAbs);
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-    if (workflow.gate_manifest != null) {
-      return {
-        ok: false,
-        error: "gate_manifest_missing",
-        message: `workflow.gate_manifest references ${workflow.gate_manifest}, but that file does not exist`,
-      };
-    }
-    const legacy = synthesizeLegacyGateManifest(workflow);
-    if (legacy == null) {
-      return {
-        ok: true,
-        manifest: null,
-        manifest_text: null,
-        manifest_path: manifestRel,
-        manifest_hash: null,
-        legacy_mode: false,
-      };
-    }
-    return {
-      ok: true,
-      manifest: legacy,
-      manifest_text: stableJson(legacy),
-      manifest_path: null,
-      manifest_hash: sha256Hex(stableJson(legacy)),
-      legacy_mode: true,
-    };
-  }
-  const manifestResult = parseGateManifestYaml(manifestText, { repoRoot });
-  if (!manifestResult.ok) {
-    return {
-      ok: false,
-      error: "gate_manifest_invalid",
-      message: "gate manifest validation failed",
-      errors: manifestResult.errors,
-    };
-  }
-  const lockPath = join(repoRoot, ".gc/workflow-lock.json");
-  let lockText;
-  try {
-    lockText = readAbsoluteTextFile(lockPath);
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return {
-        ok: false,
-        error: "workflow_lock_missing",
-        message: ".gc/workflow-lock.json is required when a gate manifest is present",
-      };
-    }
-    throw error;
-  }
-  let lockJson;
-  try {
-    lockJson = JSON.parse(lockText);
-  } catch (error) {
-    return {
-      ok: false,
-      error: "workflow_lock_invalid",
-      message: `Could not parse .gc/workflow-lock.json: ${error.message}`,
-    };
-  }
-  const lockResult = validateWorkflowLock(lockJson, { manifest: manifestResult.value });
-  if (!lockResult.ok) {
-    return {
-      ok: false,
-      error: "workflow_lock_invalid",
-      message: "workflow lock validation failed",
-      errors: lockResult.errors,
-    };
-  }
-  const overridden = applyGateOverrides(manifestResult.value, workflow.gate_overrides);
-  return {
-    ok: true,
-    manifest: overridden,
-    manifest_text: manifestText,
-    manifest_path: manifestRel,
-    manifest_hash: sha256Hex(manifestText),
-    lock: lockResult.value,
-    legacy_mode: false,
-  };
-}
-
-function scopedPathForPack(pathValue, scope) {
-  const normalizedPath = normalizeChangedPath(pathValue);
-  const normalizedScope = normalizeInstallScope(scope);
-  if (normalizedScope === ".") return normalizedPath;
-  if (normalizedPath === normalizedScope) return "";
-  if (!normalizedPath.startsWith(`${normalizedScope}/`)) return null;
-  return normalizedPath.slice(normalizedScope.length + 1);
-}
-
-function compileClassifierRegex(raw, label) {
-  if (typeof raw !== "string" || raw.trim() === "") return null;
-  try {
-    return new RegExp(raw, "m");
-  } catch (error) {
-    throw new Error(`${label} has invalid regex ${JSON.stringify(raw)}: ${error.message}`);
-  }
-}
-
-function classifierAnyPathMatch(pathValue, patterns = []) {
-  if (!Array.isArray(patterns) || patterns.length === 0) return false;
-  return patterns.some((pattern) => pathMatchesGatePattern(pathValue, pattern));
-}
-
-function classifierAnyContentMatch(text, patterns = [], label = "classifier.content") {
-  if (!Array.isArray(patterns) || patterns.length === 0) return false;
-  const value = typeof text === "string" ? text : "";
-  return patterns.some((pattern) => compileClassifierRegex(pattern, label)?.test(value));
-}
-
-function classifierMatches(record, patterns = {}, label = "classifier") {
-  const pathPatterns = Array.isArray(patterns.path) ? patterns.path : [];
-  const contentPatterns = Array.isArray(patterns.content) ? patterns.content : [];
-  const pathOk = pathPatterns.length === 0 || classifierAnyPathMatch(record.scoped_path, pathPatterns);
-  const contentOk = contentPatterns.length === 0 || classifierAnyContentMatch(record.diff_text, contentPatterns, `${label}.content`);
-  return pathOk && contentOk;
-}
-
-function readClassifierYamlForPack(repoRoot, pack) {
-  const id = pack?.id;
-  const version = pack?.version;
-  if (typeof id !== "string" || id.trim() === "") return null;
-  const candidates = [];
-  if (typeof version === "string" && version.trim() !== "") {
-    candidates.push(join(repoRoot, ".gc/vendor/ground-control/packs", id, version, "classifier.yaml"));
-  }
-  candidates.push(join(resolvePath(MCP_MODULE_DIR, "../.."), "workflow/packs", id, "classifier.yaml"));
-  for (const path of candidates) {
-    if (!fileExists(path)) continue;
-    const parsed = parseYamlFileAbsolute(path, `${id}/classifier.yaml`);
-    if (!parsed.ok) throw new Error(parsed.error);
-    if (!isPlainMapping(parsed.value)) throw new Error(`${id}/classifier.yaml root must be a mapping`);
-    return parsed.value;
-  }
-  return null;
-}
-
-function buildDiffRecordsForPack(diffInfo, pack) {
-  const changedFiles = Array.isArray(diffInfo?.changed_files) ? diffInfo.changed_files : [];
-  const fileDiffs = diffInfo?.file_diffs && typeof diffInfo.file_diffs === "object"
-    ? diffInfo.file_diffs
-    : splitUnifiedDiffByFile(diffInfo?.diff_text ?? "");
-  return changedFiles
-    .map((pathValue) => {
-      const scoped = scopedPathForPack(pathValue, pack.scope ?? ".");
-      if (scoped == null) return null;
-      return {
-        path: normalizeChangedPath(pathValue),
-        scoped_path: scoped,
-        diff_text: typeof fileDiffs[normalizeChangedPath(pathValue)] === "string"
-          ? fileDiffs[normalizeChangedPath(pathValue)]
-          : "",
-      };
-    })
-    .filter(Boolean);
-}
-
-function classifierExcludesRecord(record, classifier) {
-  const exclude = classifier?.exclude ?? {};
-  if (classifierAnyPathMatch(record.scoped_path, exclude.paths ?? [])) return true;
-  if (classifierAnyContentMatch(record.diff_text, exclude.content ?? [], "classifier.exclude.content")) return true;
-  return false;
-}
-
-function artifactExists(records, artifactPatterns, label) {
-  if (!isPlainMapping(artifactPatterns)) return false;
-  return records.some((record) => classifierMatches(record, artifactPatterns, label));
-}
-
-export function classifyAssuranceSurfacesFromDiff({ manifest, diffInfo, repoRoot, commentBodies = [], issueNumber = null } = {}) {
-  const surfaces = [];
-  const obligations = [];
-  const packs = Array.isArray(manifest?.packs) ? manifest.packs : [];
-  for (const pack of packs) {
-    const classifier = readClassifierYamlForPack(repoRoot, pack);
-    if (classifier == null) continue;
-    const records = buildDiffRecordsForPack(diffInfo, pack);
-    if (records.length === 0) continue;
-    const noop = classifier.noop_when_all_paths_match;
-    if (Array.isArray(noop) && noop.length > 0 && records.every((record) => classifierAnyPathMatch(record.scoped_path, noop))) {
-      continue;
-    }
-    const include = classifier.include ?? {};
-    const considered = records.filter((record) => {
-      if (Array.isArray(include.paths) && include.paths.length > 0 && !classifierAnyPathMatch(record.scoped_path, include.paths)) {
-        return false;
-      }
-      return !classifierExcludesRecord(record, classifier);
-    });
-    for (const surfaceDef of Array.isArray(classifier.surfaces) ? classifier.surfaces : []) {
-      if (!isPlainMapping(surfaceDef) || typeof surfaceDef.type !== "string") continue;
-      const assurance = surfaceDef.assurance === "L2" ? "L2" : "L1";
-      for (const record of considered) {
-        if (!classifierMatches(record, surfaceDef.detect ?? {}, `${pack.id}.${surfaceDef.type}.detect`)) continue;
-        const surface = {
-          pack: pack.id,
-          pack_version: pack.version ?? null,
-          scope: pack.scope ?? ".",
-          path: record.path,
-          surface_type: surfaceDef.type,
-          assurance_level: assurance,
-          reason: surfaceDef.reason ?? null,
-        };
-        surfaces.push(surface);
-        const requirements = surfaceDef.requires ?? {};
-        const contractIssue = Number.isInteger(issueNumber) && issueNumber > 0
-          ? issueNumber
-          : Number.parseInt(commentBodies.__issue_number ?? "0", 10);
-        const contractMarker = latestBoundPhaseMarker(commentBodies, { issueNumber: contractIssue, phase: "contract" });
-        const hasContractMarker = contractMarker != null || commentBodies.__contract_marker_present === true;
-        const contractOk = hasContractMarker && artifactExists(considered, requirements.contract ?? {}, `${pack.id}.${surfaceDef.type}.requires.contract`);
-        const testOk = artifactExists(considered, requirements.test ?? {}, `${pack.id}.${surfaceDef.type}.requires.test`);
-        const propertyOk = assurance !== "L2" || artifactExists(considered, requirements.property_test ?? {}, `${pack.id}.${surfaceDef.type}.requires.property_test`);
-        const missing = [];
-        if (!hasContractMarker) missing.push("contract_phase_marker");
-        if (!contractOk) missing.push("contract_artifact");
-        if (!testOk) missing.push("test_artifact");
-        if (!propertyOk) missing.push("property_test_artifact");
-        obligations.push({
-          ...surface,
-          required: assurance === "L2"
-            ? ["contract_phase_marker", "contract_artifact", "test_artifact", "property_test_artifact"]
-            : ["contract_phase_marker", "contract_artifact", "test_artifact"],
-          missing: [...new Set(missing)],
-          ok: missing.length === 0,
-        });
-      }
-    }
-  }
-  return {
-    ok: obligations.every((item) => item.ok),
-    surfaces,
-    obligations,
-    missing: obligations.filter((item) => !item.ok),
-  };
-}
-
-async function evaluateAssuranceClassifierForGate({
-  repoRoot,
-  manifest,
-  diffInfo,
-  issueNumber,
-  owner,
-  name,
-  phaseCommentBodies = null,
-}) {
-  let bodies = phaseCommentBodies;
-  if (!Array.isArray(bodies) && owner && name) {
-    bodies = await readIssueCommentBodies(repoRoot, owner, name, issueNumber);
-  }
-  bodies = Array.isArray(bodies) ? bodies : [];
-  bodies.__issue_number = String(issueNumber);
-  bodies.__contract_marker_present = latestBoundPhaseMarker(bodies, { issueNumber, phase: "contract" }) != null;
-  try {
-    return classifyAssuranceSurfacesFromDiff({ manifest, diffInfo, repoRoot, commentBodies: bodies, issueNumber });
-  } catch (error) {
-    return {
-      ok: false,
-      error: "assurance_classifier_failed",
-      message: error.message,
-      surfaces: [],
-      obligations: [],
-      missing: [],
-    };
-  }
-}
-
-export async function runGates({
-  repoPath,
-  issueNumber,
-  baseRef = "origin/dev",
-  headRef = "HEAD",
-  phase = "local",
-  capabilities = null,
-  commandRunner = executeGateCommand,
-  diffInfo = null,
-  postMarker = true,
-  markerPoster = null,
-  phaseCommentBodies = null,
-} = {}) {
-  if (typeof repoPath !== "string" || repoPath.length === 0) {
-    return { ok: false, error: "gate_run_input_invalid", message: "repo_path is required" };
-  }
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-    return { ok: false, error: "gate_run_input_invalid", message: "issue_number must be a positive integer" };
-  }
-  if (!["local", "remote"].includes(phase)) {
-    return { ok: false, error: "gate_run_input_invalid", message: "phase must be 'local' or 'remote'" };
-  }
-  if (capabilities != null) {
-    if (!Array.isArray(capabilities) || capabilities.some((cap) => !ENGINE_CAPABILITY_SET.has(cap))) {
-      return {
-        ok: false,
-        error: "gate_run_input_invalid",
-        message: `capabilities must be drawn from: ${ENGINE_CAPABILITIES.join(", ")}`,
-      };
-    }
-  }
-
-  let repoRoot;
-  try {
-    repoRoot = await ensureGitRepo(repoPath);
-  } catch (error) {
-    return { ok: false, error: "gate_run_repo_not_found", message: error.message };
-  }
-  const context = await getRepoGroundControlContext(repoRoot);
-  if (context.status !== "ok") {
-    return {
-      ok: false,
-      error: "ground_control_context_invalid",
-      message: "gc_get_repo_ground_control_context did not return an ok context",
-      context_status: context.status,
-      errors: context.errors ?? [],
-    };
-  }
-  const manifestLoaded = loadManifestOrLegacy({ repoRoot, context });
-  if (!manifestLoaded.ok) return { ok: false, ...manifestLoaded, repo_path: repoRoot, issue_number: issueNumber };
-  if (manifestLoaded.manifest == null) {
-    const envelopeId = sha256Hex(stableJson({
-      repoRoot,
-      issueNumber,
-      baseRef,
-      headRef,
-      status: "provider_missing",
-      reason: "no_gate_manifest",
-    }));
-    return {
-      ok: true,
-      status: "degraded",
-      error: "provider_missing",
-      repo_path: repoRoot,
-      issue_number: issueNumber,
-      fallback: "reviewer_lens",
-      telemetry: ["provider_missing", "reviewer_fallback_used"],
-      envelope_id: envelopeId,
-      gates: [],
-      message: "No gate manifest or legacy workflow commands are configured; deterministic local gate coverage is unavailable.",
-    };
-  }
-
-  let effectiveDiffInfo = diffInfo;
-  if (effectiveDiffInfo == null) {
-    try {
-      effectiveDiffInfo = await computeGitDiffInfo(repoRoot, baseRef, headRef);
-    } catch (error) {
-      return {
-        ok: false,
-        error: "gate_diff_failed",
-        message: error.message,
-        repo_path: repoRoot,
-        issue_number: issueNumber,
-      };
-    }
-  }
-  const manifest = manifestLoaded.manifest;
-  let ownerNameForMarkers = null;
-  let commentBodiesForPhases = phaseCommentBodies;
-  if (phase === "local" && postMarker) {
-    try {
-      if (Array.isArray(commentBodiesForPhases)) {
-        ownerNameForMarkers = null;
-      } else {
-        ownerNameForMarkers = await getOwnerRepo(repoRoot);
-        commentBodiesForPhases = await readIssueCommentBodies(
-          repoRoot,
-          ownerNameForMarkers.owner,
-          ownerNameForMarkers.name,
-          issueNumber,
-        );
-      }
-    } catch (error) {
-      return {
-        ok: false,
-        error: "phase_marker_read_failed",
-        message: error.message,
-        repo_path: repoRoot,
-        issue_number: issueNumber,
-      };
-    }
-    const implGreen = evaluateBoundPhaseMarkerFreshness({
-      commentBodies: commentBodiesForPhases,
-      issueNumber,
-      phase: "impl_green",
-      expected: {
-        diff_hash: effectiveDiffInfo.diff_hash,
-      },
-    });
-    if (!implGreen.ok) {
-      return {
-        repo_path: repoRoot,
-        issue_number: issueNumber,
-        ok: false,
-        ...implGreen,
-      };
-    }
-  }
-  if (phase === "local") {
-    const classifierResult = await evaluateAssuranceClassifierForGate({
-      repoRoot,
-      manifest,
-      diffInfo: effectiveDiffInfo,
-      issueNumber,
-      owner: ownerNameForMarkers?.owner ?? null,
-      name: ownerNameForMarkers?.name ?? null,
-      phaseCommentBodies: commentBodiesForPhases,
-    });
-    if (!classifierResult.ok) {
-      return {
-        ok: false,
-        error: classifierResult.error ?? "assurance_artifacts_missing",
-        message: classifierResult.message ?? "ADR-057 assurance classifier found L1/L2 surfaces without the mandated contract and test artifacts.",
-        repo_path: repoRoot,
-        issue_number: issueNumber,
-        next_action: "post_contract_and_add_required_contract_tests_then_rerun_gc_run_gates",
-        classifier: classifierResult,
-      };
-    }
-  }
-  const applicable = selectApplicableGates(manifest, {
-    changedFiles: effectiveDiffInfo.changed_files,
-    capabilities,
-    phase,
-  });
-  const results = [];
-  for (const gate of applicable) {
-    const result = await runOneGate({
-      gate,
-      manifest,
-      repoRoot,
-      manifestHash: manifestLoaded.manifest_hash,
-      diffHash: effectiveDiffInfo.diff_hash,
-      commandRunner,
-    });
-    results.push(result);
-    if (manifest.defaults.fail_fast && result.blocking_satisfied !== true) break;
-  }
-  const packVersions = manifestPackVersions(manifest);
-  const packVersionsHash = computePackVersionsHash(packVersions);
-  const blockingFailure = results.find((result) => result.blocking === true && result.blocking_satisfied !== true);
-  const envelopeBase = {
-    repo_path: repoRoot,
-    issue_number: issueNumber,
-    base_ref: effectiveDiffInfo.base_ref ?? baseRef,
-    head_ref: effectiveDiffInfo.head_ref ?? headRef,
-    manifest_path: manifestLoaded.manifest_path,
-    manifest_hash: manifestLoaded.manifest_hash,
-    diff_hash: effectiveDiffInfo.diff_hash,
-    changed_files: effectiveDiffInfo.changed_files,
-    pack_versions: packVersions,
-    pack_versions_hash: packVersionsHash,
-    legacy_mode: manifestLoaded.legacy_mode === true,
-    gates: results,
-  };
-  const envelopeId = sha256Hex(stableJson(envelopeBase));
-  const telemetryPath = appendGateEffectivenessTelemetry(repoRoot, issueNumber, envelopeId, results, manifestLoaded.legacy_mode);
-  if (blockingFailure) {
-    return {
-      ok: false,
-      error: blockingFailure.outcome === "provider_missing" ? "provider_missing" : "blocking_gate_failed",
-      gate_id: blockingFailure.gate_id,
-      capability: blockingFailure.capability,
-      pack: blockingFailure.pack,
-      pack_version: blockingFailure.pack_version,
-      blocking: blockingFailure.blocking,
-      exit_code: blockingFailure.exit_code ?? null,
-      threshold: blockingFailure.threshold ?? null,
-      artifacts: blockingFailure.artifacts ?? [],
-      next_action: blockingFailure.next_action,
-      envelope_id: envelopeId,
-      telemetry_path: telemetryPath,
-      ...envelopeBase,
-    };
-  }
-
-  let marker = null;
-  if (phase === "local" && postMarker) {
-    const binding = {
-      repo: context.github_repo ?? null,
-      base_ref: envelopeBase.base_ref,
-      head_ref: envelopeBase.head_ref,
-      manifest_hash: manifestLoaded.manifest_hash,
-      diff_hash: effectiveDiffInfo.diff_hash,
-      pack_versions_hash: packVersionsHash,
-      envelope_id: envelopeId,
-    };
-    try {
-      if (markerPoster) {
-        marker = await markerPoster({ repoRoot, issueNumber, phase: "gates_green", binding });
-      } else {
-        const ownerName = ownerNameForMarkers ?? await getOwnerRepo(repoRoot);
-        marker = await postGatePhaseMarker(repoRoot, ownerName.owner, ownerName.name, issueNumber, "gates_green", binding);
-      }
-    } catch (error) {
-      return {
-        ok: false,
-        error: "gate_marker_post_failed",
-        message: error.message,
-        envelope_id: envelopeId,
-        telemetry_path: telemetryPath,
-        ...envelopeBase,
-      };
-    }
-  }
-  const degraded = results.some((result) => result.provider_missing === true);
-  return {
-    ok: true,
-    status: degraded ? "degraded" : "passed",
-    envelope_id: envelopeId,
-    telemetry_path: telemetryPath,
-    phase_marker: marker ? { phase: "gates_green", issue_number: issueNumber } : null,
-    marker,
-    ...envelopeBase,
-  };
-}
-
-function collectRequiredStatusesFromManifest(manifest, { changedFiles = [] } = {}) {
-  if (!manifest) return [];
-  const gates = selectApplicableGates(manifest, {
-    changedFiles,
-    capabilities: ["remote_status"],
-    phase: "remote",
-  });
-  const statuses = [];
-  for (const gate of gates) {
-    for (const statusName of gate.required_statuses || []) statuses.push(statusName);
-  }
-  return [...new Set(statuses)].sort();
-}
-
-function normalizeRemoteStatusName(statusName) {
-  return typeof statusName === "string" ? statusName.trim() : "";
-}
-
-function normalizeRemoteStatusValue(value) {
-  return typeof value === "string" ? value.toLowerCase() : "";
-}
-
-export function evaluateRequiredStatuses({ requiredStatuses, statusSnapshot }) {
-  const required = [...new Set((requiredStatuses || []).map(normalizeRemoteStatusName).filter(Boolean))].sort();
-  const snapshot = Array.isArray(statusSnapshot) ? statusSnapshot : [];
-  const byName = new Map();
-  for (const entry of snapshot) {
-    const name = normalizeRemoteStatusName(entry?.name ?? entry?.context);
-    if (!name) continue;
-    byName.set(name, entry);
-  }
-  const passed = [];
-  const pending = [];
-  const failed = [];
-  const missing = [];
-  for (const name of required) {
-    const entry = byName.get(name);
-    if (!entry) {
-      missing.push(name);
-      continue;
-    }
-    const conclusion = normalizeRemoteStatusValue(entry.conclusion ?? entry.state ?? entry.status);
-    const status = normalizeRemoteStatusValue(entry.status ?? entry.state ?? entry.conclusion);
-    if (["success", "passed", "pass", "ok"].includes(conclusion)) {
-      passed.push(name);
-    } else if (["failure", "failed", "error", "cancelled", "canceled", "timed_out", "action_required"].includes(conclusion)) {
-      failed.push({ name, conclusion });
-    } else if (["queued", "pending", "waiting", "in_progress", "requested", "expected"].includes(status) || conclusion === "") {
-      pending.push(name);
-    } else {
-      failed.push({ name, conclusion: conclusion || status || "unknown" });
-    }
-  }
-  if (failed.length > 0) return { ok: false, state: "failed", required, passed, pending, failed, missing };
-  if (missing.length > 0 || pending.length > 0) return { ok: false, state: "pending", required, passed, pending, failed, missing };
-  return { ok: true, state: "passed", required, passed, pending, failed, missing };
-}
-
-async function fetchRemoteStatusSnapshotFromGh({ repoRoot, prNumber }) {
-  const { stdout } = await execFile(
-    "gh",
-    ["pr", "view", String(prNumber), "--json", "headRefOid,statusCheckRollup,url"],
-    { cwd: repoRoot },
-  );
-  const data = JSON.parse(stdout);
-  const rollup = Array.isArray(data.statusCheckRollup) ? data.statusCheckRollup : [];
-  return {
-    head_sha: typeof data.headRefOid === "string" ? data.headRefOid : null,
-    statuses: rollup.map((entry) => ({
-      name: entry.name ?? entry.context ?? "",
-      status: entry.status ?? entry.state ?? "",
-      conclusion: entry.conclusion ?? entry.state ?? "",
-      id: entry.databaseId ?? entry.detailsUrl ?? entry.targetUrl ?? entry.name ?? entry.context ?? "",
-      url: entry.detailsUrl ?? entry.targetUrl ?? "",
-    })),
-  };
-}
-
-function providerResultIdsHash(statusSnapshot) {
-  const ids = (Array.isArray(statusSnapshot) ? statusSnapshot : [])
-    .map((entry) => entry?.id ?? entry?.url ?? entry?.name ?? "")
-    .filter((id) => String(id).length > 0)
-    .sort();
-  return sha256Hex(stableJson(ids));
-}
-
-const REMOTE_QUALITY_SEVERITIES = Object.freeze(["BLOCKER", "CRITICAL", "MAJOR", "MINOR", "INFO"]);
-const REMOTE_QUALITY_RATING_FIELDS = Object.freeze(["reliability", "security", "maintainability"]);
-const REMOTE_QUALITY_SONAR_MEASURES = Object.freeze([
-  "coverage",
-  "new_coverage",
-  "duplicated_lines_density",
-  "new_duplicated_lines_density",
-  "reliability_rating",
-  "new_reliability_rating",
-  "security_rating",
-  "new_security_rating",
-  "sqale_rating",
-  "new_maintainability_rating",
-  "software_quality_reliability_rating",
-  "new_software_quality_reliability_rating",
-  "software_quality_security_rating",
-  "new_software_quality_security_rating",
-  "software_quality_maintainability_rating",
-  "new_software_quality_maintainability_rating",
-]);
-
-function numericOrNull(value) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-}
-
-function normalizeQualityGateStatus(value) {
-  if (typeof value === "string") return value.trim().toUpperCase();
-  if (value && typeof value === "object") {
-    return normalizeQualityGateStatus(value.status ?? value.conclusion ?? value.state);
-  }
-  return "";
-}
-
-function qualityGatePassed(status) {
-  return ["OK", "PASS", "PASSED", "SUCCESS", "GREEN"].includes(normalizeQualityGateStatus(status));
-}
-
-function normalizeSeverityCounts(value) {
-  const counts = Object.fromEntries(REMOTE_QUALITY_SEVERITIES.map((severity) => [severity, 0]));
-  if (Array.isArray(value)) {
-    for (const issue of value) {
-      const severity = typeof issue?.severity === "string" ? issue.severity.toUpperCase() : "INFO";
-      if (Object.prototype.hasOwnProperty.call(counts, severity)) counts[severity] += 1;
-    }
-    return { counts, total: value.length, present: true };
-  }
-  if (value && typeof value === "object") {
-    const bySeverity = value.by_severity ?? value.bySeverity ?? value.severities ?? value;
-    for (const severity of REMOTE_QUALITY_SEVERITIES) {
-      counts[severity] = numericOrNull(bySeverity?.[severity] ?? bySeverity?.[severity.toLowerCase()]) ?? 0;
-    }
-    const total = numericOrNull(value.total ?? value.open_count ?? value.count);
-    return {
-      counts,
-      total: total ?? Object.values(counts).reduce((acc, item) => acc + item, 0),
-      present: true,
-    };
-  }
-  return { counts, total: null, present: false };
-}
-
-function sonarRatingToLetter(value) {
-  if (typeof value === "string") {
-    const trimmed = value.trim().toUpperCase();
-    if (/^[A-E]$/.test(trimmed)) return trimmed;
-    const numeric = numericOrNull(trimmed);
-    if (numeric != null) return sonarRatingToLetter(numeric);
-  }
-  const numeric = numericOrNull(value);
-  if (numeric == null) return null;
-  if (numeric <= 1) return "A";
-  if (numeric <= 2) return "B";
-  if (numeric <= 3) return "C";
-  if (numeric <= 4) return "D";
-  return "E";
-}
-
-function normalizeRemoteQualityRatings(raw = {}, measures = {}) {
-  const source = raw && typeof raw === "object" ? raw : {};
-  const out = {};
-  for (const field of REMOTE_QUALITY_RATING_FIELDS) {
-    const sonarMeasureKey = field === "maintainability" ? "sqale_rating" : `${field}_rating`;
-    const sonarQualityMeasureKey = `software_quality_${field}_rating`;
-    out[field] = sonarRatingToLetter(
-      source[field] ?? measures[sonarMeasureKey] ?? measures[sonarQualityMeasureKey],
-    );
-    out[`new_${field}`] = sonarRatingToLetter(
-      source[`new_${field}`]
-        ?? measures[`new_${sonarMeasureKey}`]
-        ?? measures[`new_software_quality_${field}_rating`],
-    );
-  }
-  return out;
-}
-
-function normalizeRemoteQualityHotspots(value) {
-  if (Array.isArray(value)) {
-    return {
-      to_review: value.length,
-      reviewed: value.length === 0,
-      present: true,
-    };
-  }
-  if (value && typeof value === "object") {
-    const toReview = numericOrNull(
-      value.to_review ?? value.toReview ?? value.open_count ?? value.openCount ?? value.pending_review,
-    );
-    const reviewed = value.reviewed === true || value.all_reviewed === true || toReview === 0;
-    return {
-      to_review: toReview,
-      reviewed,
-      present: true,
-    };
-  }
-  return { to_review: null, reviewed: false, present: false };
-}
-
-function normalizeRemoteQualityMeasures(raw = {}) {
-  const source = raw && typeof raw === "object" ? raw : {};
-  return {
-    coverage: {
-      overall: numericOrNull(source.coverage ?? source.overall_coverage ?? source.overallCoverage),
-      new: numericOrNull(source.new_coverage ?? source.newCoverage),
-    },
-    duplications: {
-      overall: numericOrNull(
-        source.duplications
-          ?? source.duplication
-          ?? source.duplicated_lines_density
-          ?? source.overall_duplications
-          ?? source.overallDuplications,
-      ),
-      new: numericOrNull(
-        source.new_duplications
-          ?? source.newDuplication
-          ?? source.new_duplicated_lines_density
-          ?? source.newDuplications,
-      ),
-    },
-  };
-}
-
-function normalizeRemoteQualityProviderResult(raw) {
-  const provider = typeof raw?.provider === "string" && raw.provider.trim() !== "" ? raw.provider.trim() : "unknown";
-  const rawMeasures = raw?.measures && typeof raw.measures === "object" ? raw.measures : {};
-  const measures = normalizeRemoteQualityMeasures({
-    ...rawMeasures,
-    coverage: raw?.coverage?.overall ?? raw?.coverage ?? rawMeasures.coverage,
-    new_coverage: raw?.coverage?.new ?? raw?.new_coverage ?? rawMeasures.new_coverage,
-    duplications: raw?.duplications?.overall ?? raw?.duplications ?? rawMeasures.duplications,
-    new_duplications: raw?.duplications?.new ?? raw?.new_duplications ?? rawMeasures.new_duplications,
-  });
-  const issuesRoot = raw?.issues && typeof raw.issues === "object" && !Array.isArray(raw.issues)
-    ? raw.issues
-    : {};
-  const newIssues = normalizeSeverityCounts(
-    issuesRoot.new ?? raw?.new_issues ?? raw?.issues_summary ?? raw?.issues,
-  );
-  const overallIssues = normalizeSeverityCounts(
-    issuesRoot.overall ?? raw?.overall_issues ?? raw?.overall_issues_summary,
-  );
-  const hotspotsRoot = raw?.security_hotspots ?? raw?.hotspots ?? {};
-  const newHotspots = normalizeRemoteQualityHotspots(
-    hotspotsRoot?.new ?? raw?.new_hotspots ?? raw?.hotspots_summary,
-  );
-  const overallHotspots = normalizeRemoteQualityHotspots(
-    hotspotsRoot?.overall ?? raw?.overall_hotspots,
-  );
-  const normalized = {
-    provider,
-    ok: raw?.ok !== false,
-    skipped: raw?.skipped === true,
-    error: raw?.error ?? null,
-    quality_gate: normalizeQualityGateStatus(raw?.quality_gate ?? raw?.qualityGate ?? raw?.projectStatus),
-    issues: {
-      new: {
-        total: newIssues.total,
-        by_severity: newIssues.counts,
-        present: newIssues.present,
-      },
-      overall: {
-        total: overallIssues.total,
-        by_severity: overallIssues.counts,
-        present: overallIssues.present,
-      },
-    },
-    ratings: normalizeRemoteQualityRatings(raw?.ratings, rawMeasures),
-    security_hotspots: {
-      new: newHotspots,
-      overall: overallHotspots,
-    },
-    coverage: measures.coverage,
-    duplications: measures.duplications,
-    export_path: raw?.full_issue_export_path ?? raw?.export_path ?? null,
-  };
-  return normalized;
-}
-
-function remoteQualityPolicyFromManifest(manifest, context, overridePolicy = null) {
-  const cfg = context?.remote_quality && typeof context.remote_quality === "object"
-    ? context.remote_quality
-    : emptyRemoteQualityConfig();
-  const policy = {
-    tier: cfg.tier ?? "platform_minimum",
-    min_coverage: cfg.min_coverage ?? null,
-    max_duplications: cfg.max_duplications ?? null,
-  };
-  if (overridePolicy && typeof overridePolicy === "object") {
-    if (overridePolicy.tier != null) policy.tier = overridePolicy.tier;
-    if (overridePolicy.min_coverage != null) policy.min_coverage = overridePolicy.min_coverage;
-    if (overridePolicy.max_duplications != null) policy.max_duplications = overridePolicy.max_duplications;
-  }
-  const remoteGates = Array.isArray(manifest?.gates)
-    ? manifest.gates.filter((gate) => gate?.capability === "remote_status")
-    : [];
-  for (const gate of remoteGates) {
-    if (gate?.threshold?.policy === "zero_overall_issues") policy.tier = "zero_overall_issues";
-    if (typeof gate?.threshold?.min === "number" && gate.threshold.metric === "coverage") {
-      policy.min_coverage = Math.max(policy.min_coverage ?? 0, gate.threshold.min);
-    }
-    if (typeof gate?.threshold?.max === "number" && gate.threshold.metric === "duplications") {
-      policy.max_duplications = Math.min(policy.max_duplications ?? 100, gate.threshold.max);
-    }
-  }
-  if (!REMOTE_QUALITY_TIERS.includes(policy.tier)) policy.tier = "platform_minimum";
-  return policy;
-}
-
-export function evaluateRemoteQualitySubstance({ providerResults = [], policy = null } = {}) {
-  const results = (Array.isArray(providerResults) ? providerResults : [providerResults])
-    .filter((item) => item != null)
-    .map(normalizeRemoteQualityProviderResult);
-  const effectivePolicy = {
-    ...emptyRemoteQualityConfig(),
-    ...(policy && typeof policy === "object" ? policy : {}),
-  };
-  const failures = [];
-  for (const result of results) {
-    if (result.skipped === true) continue;
-    const prefix = result.provider;
-    if (result.ok !== true || result.error != null) {
-      failures.push({ provider: prefix, reason: "provider_failed", error: result.error ?? null });
-    }
-    if (!qualityGatePassed(result.quality_gate)) {
-      failures.push({ provider: prefix, reason: "quality_gate_failed", actual: result.quality_gate || null });
-    }
-    for (const scope of ["new", "overall"]) {
-      if (result.issues[scope].present !== true || result.issues[scope].total == null) {
-        failures.push({ provider: prefix, reason: `${scope}_issues_missing` });
-      }
-    }
-    const newBlockerCritical =
-      (result.issues.new.by_severity.BLOCKER ?? 0) + (result.issues.new.by_severity.CRITICAL ?? 0);
-    if (newBlockerCritical > 0) {
-      failures.push({ provider: prefix, reason: "new_blocker_critical_issues", count: newBlockerCritical });
-    }
-    if (effectivePolicy.tier === "zero_overall_issues") {
-      const overallTotal = result.issues.overall.total;
-      if (typeof overallTotal !== "number" || overallTotal !== 0) {
-        failures.push({ provider: prefix, reason: "overall_issues_not_zero", count: overallTotal });
-      }
-    }
-    for (const field of REMOTE_QUALITY_RATING_FIELDS) {
-      if (result.ratings[field] == null) {
-        failures.push({ provider: prefix, reason: "rating_missing", rating: field });
-      } else if (result.ratings[field] !== "A") {
-        failures.push({ provider: prefix, reason: "rating_below_a", rating: field, actual: result.ratings[field] });
-      }
-    }
-    for (const scope of ["new", "overall"]) {
-      const hotspots = result.security_hotspots[scope];
-      if (hotspots.present !== true || hotspots.to_review == null) {
-        failures.push({ provider: prefix, reason: `${scope}_security_hotspots_missing` });
-      } else if (hotspots.to_review !== 0 || hotspots.reviewed !== true) {
-        failures.push({ provider: prefix, reason: `${scope}_security_hotspots_unreviewed`, count: hotspots.to_review });
-      }
-    }
-    if (result.coverage.overall == null) failures.push({ provider: prefix, reason: "coverage_missing", scope: "overall" });
-    if (result.coverage.new == null) failures.push({ provider: prefix, reason: "coverage_missing", scope: "new" });
-    if (result.duplications.overall == null) failures.push({ provider: prefix, reason: "duplications_missing", scope: "overall" });
-    if (result.duplications.new == null) failures.push({ provider: prefix, reason: "duplications_missing", scope: "new" });
-    if (typeof effectivePolicy.min_coverage === "number") {
-      if (typeof result.coverage.overall !== "number" || result.coverage.overall < effectivePolicy.min_coverage) {
-        failures.push({ provider: prefix, reason: "coverage_below_min", scope: "overall", actual: result.coverage.overall, min: effectivePolicy.min_coverage });
-      }
-      if (typeof result.coverage.new !== "number" || result.coverage.new < effectivePolicy.min_coverage) {
-        failures.push({ provider: prefix, reason: "coverage_below_min", scope: "new", actual: result.coverage.new, min: effectivePolicy.min_coverage });
-      }
-    }
-    if (typeof effectivePolicy.max_duplications === "number") {
-      if (typeof result.duplications.overall !== "number" || result.duplications.overall > effectivePolicy.max_duplications) {
-        failures.push({ provider: prefix, reason: "duplications_above_max", scope: "overall", actual: result.duplications.overall, max: effectivePolicy.max_duplications });
-      }
-      if (typeof result.duplications.new !== "number" || result.duplications.new > effectivePolicy.max_duplications) {
-        failures.push({ provider: prefix, reason: "duplications_above_max", scope: "new", actual: result.duplications.new, max: effectivePolicy.max_duplications });
-      }
-    }
-  }
-  return {
-    ok: failures.length === 0,
-    policy: effectivePolicy,
-    providers: results,
-    failures,
-  };
-}
-
-async function _fetchSonarIssuesByScope({ projectKey, prNumber = null, token, maxPages = 20 }) {
-  const out = [];
-  for (let page = 1; page <= maxPages; page++) {
-    const prQuery = prNumber == null ? "" : `&pullRequest=${encodeURIComponent(String(prNumber))}`;
-    const url = `${SONAR_BASE_URL}/api/issues/search?componentKeys=${encodeURIComponent(projectKey)}${prQuery}&resolved=false&ps=500&p=${page}`;
-    const resp = await _sonarFetchWithRetry(url, {
-      headers: { Authorization: _sonarAuthHeader(token), Accept: "application/json" },
-    });
-    if (!resp.ok) {
-      throw new Error(`sonar issues fetch failed (page ${page}): HTTP ${resp.status}`);
-    }
-    const data = await resp.json();
-    const issues = Array.isArray(data?.issues) ? data.issues : [];
-    out.push(...issues);
-    const total = typeof data?.total === "number" ? data.total : out.length;
-    if (out.length >= total) break;
-    if (issues.length === 0) break;
-  }
-  return out;
-}
-
-async function _fetchSonarHotspotsByScope({ projectKey, prNumber = null, token, maxPages = 20 }) {
-  const out = [];
-  for (let page = 1; page <= maxPages; page++) {
-    const prQuery = prNumber == null ? "" : `&pullRequest=${encodeURIComponent(String(prNumber))}`;
-    const url = `${SONAR_BASE_URL}/api/hotspots/search?projectKey=${encodeURIComponent(projectKey)}${prQuery}&status=TO_REVIEW&ps=500&p=${page}`;
-    const resp = await _sonarFetchWithRetry(url, {
-      headers: { Authorization: _sonarAuthHeader(token), Accept: "application/json" },
-    });
-    if (!resp.ok) {
-      throw new Error(`sonar hotspots fetch failed (page ${page}): HTTP ${resp.status}`);
-    }
-    const data = await resp.json();
-    const hotspots = Array.isArray(data?.hotspots) ? data.hotspots : [];
-    out.push(...hotspots);
-    const paging = data?.paging;
-    const total = typeof paging?.total === "number" ? paging.total : out.length;
-    if (out.length >= total) break;
-    if (hotspots.length === 0) break;
-  }
-  return out;
-}
-
-async function _fetchSonarMeasures({ projectKey, prNumber = null, token }) {
-  const prQuery = prNumber == null ? "" : `&pullRequest=${encodeURIComponent(String(prNumber))}`;
-  const url = `${SONAR_BASE_URL}/api/measures/component?component=${encodeURIComponent(projectKey)}${prQuery}&metricKeys=${REMOTE_QUALITY_SONAR_MEASURES.map(encodeURIComponent).join(",")}`;
-  const resp = await _sonarFetchWithRetry(url, {
-    headers: { Authorization: _sonarAuthHeader(token), Accept: "application/json" },
-  });
-  if (!resp.ok) {
-    throw new Error(`sonar measures fetch failed: HTTP ${resp.status}`);
-  }
-  const data = await resp.json();
-  const measures = {};
-  for (const item of Array.isArray(data?.component?.measures) ? data.component.measures : []) {
-    if (typeof item?.metric !== "string") continue;
-    const value = item.period?.value ?? item.value;
-    measures[item.metric] = numericOrNull(value) ?? value ?? null;
-  }
-  return measures;
-}
-
-async function fetchConfiguredRemoteQualityProviders({ repoRoot, prNumber }) {
-  const sonarConfig = _readSonarCloudConfigFromRepo(repoRoot);
-  if (sonarConfig === null) return [];
-  const token = process.env.SONAR_TOKEN;
-  if (typeof token !== "string" || token.length === 0) {
-    return [{
-      provider: "sonarcloud",
-      ok: false,
-      error: "sonar_token_missing",
-      quality_gate: "UNKNOWN",
-    }];
-  }
-  const projectKey = sonarConfig.projectKey;
-  const qg = await _fetchSonarQualityGate({ projectKey, prNumber, token });
-  if (qg.available !== true) {
-    return [{
-      provider: "sonarcloud",
-      ok: false,
-      error: "quality_gate_unavailable",
-      quality_gate: "NONE",
-    }];
-  }
-  const [newIssues, overallIssues, newHotspots, overallHotspots, prMeasures, overallMeasures] = await Promise.all([
-    _fetchSonarIssuesByScope({ projectKey, prNumber, token }),
-    _fetchSonarIssuesByScope({ projectKey, token }),
-    _fetchSonarHotspotsByScope({ projectKey, prNumber, token }),
-    _fetchSonarHotspotsByScope({ projectKey, token }),
-    _fetchSonarMeasures({ projectKey, prNumber, token }),
-    _fetchSonarMeasures({ projectKey, token }),
-  ]);
-  const measures = {
-    ...overallMeasures,
-    new_coverage: prMeasures.new_coverage ?? prMeasures.coverage ?? overallMeasures.new_coverage,
-    new_duplicated_lines_density:
-      prMeasures.new_duplicated_lines_density
-        ?? prMeasures.duplicated_lines_density
-        ?? overallMeasures.new_duplicated_lines_density,
-    new_reliability_rating: prMeasures.new_reliability_rating ?? prMeasures.reliability_rating ?? overallMeasures.new_reliability_rating,
-    new_security_rating: prMeasures.new_security_rating ?? prMeasures.security_rating ?? overallMeasures.new_security_rating,
-    new_maintainability_rating:
-      prMeasures.new_maintainability_rating
-        ?? prMeasures.sqale_rating
-        ?? overallMeasures.new_maintainability_rating,
-    new_software_quality_reliability_rating:
-      prMeasures.new_software_quality_reliability_rating
-        ?? prMeasures.software_quality_reliability_rating
-        ?? overallMeasures.new_software_quality_reliability_rating,
-    new_software_quality_security_rating:
-      prMeasures.new_software_quality_security_rating
-        ?? prMeasures.software_quality_security_rating
-        ?? overallMeasures.new_software_quality_security_rating,
-    new_software_quality_maintainability_rating:
-      prMeasures.new_software_quality_maintainability_rating
-        ?? prMeasures.software_quality_maintainability_rating
-        ?? overallMeasures.new_software_quality_maintainability_rating,
-  };
-  const payload = {
-    provider: "sonarcloud",
-    ok: true,
-    quality_gate: qg.status,
-    issues: {
-      new: summarizeSonarIssues(newIssues),
-      overall: summarizeSonarIssues(overallIssues),
-    },
-    security_hotspots: {
-      new: summarizeSonarHotspots(newHotspots),
-      overall: summarizeSonarHotspots(overallHotspots),
-    },
-    measures,
-    fetched_at: new Date().toISOString(),
-  };
-  payload.full_issue_export_path = _writeSonarExport(repoRoot, prNumber, payload);
-  return [payload];
-}
-
-export async function runWatchRequiredStatuses({
-  repoPath,
-  issueNumber,
-  prNumber,
-  baseRef = "origin/dev",
-  headRef = "HEAD",
-  headSha = null,
-  requiredStatuses = null,
-  statusSnapshot = null,
-  queuedTimeoutSeconds = 300,
-  totalTimeoutSeconds = 2700,
-  pollIntervalSeconds = 15,
-  diffInfo = null,
-  statusFetcher = fetchRemoteStatusSnapshotFromGh,
-  remoteQualityResults = null,
-  remoteQualityFetcher = fetchConfiguredRemoteQualityProviders,
-  remoteQualityPolicy = null,
-  postMarker = true,
-  markerPoster = null,
-} = {}) {
-  if (typeof repoPath !== "string" || repoPath.length === 0) {
-    return { ok: false, error: "required_status_input_invalid", message: "repo_path is required" };
-  }
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-    return { ok: false, error: "required_status_input_invalid", message: "issue_number must be a positive integer" };
-  }
-  if (!Number.isInteger(prNumber) || prNumber <= 0) {
-    return { ok: false, error: "required_status_input_invalid", message: "pr_number must be a positive integer" };
-  }
-  for (const [name, value] of [
-    ["queued_timeout_seconds", queuedTimeoutSeconds],
-    ["total_timeout_seconds", totalTimeoutSeconds],
-    ["poll_interval_seconds", pollIntervalSeconds],
-  ]) {
-    if (!Number.isInteger(value) || value < 0) {
-      return { ok: false, error: "required_status_input_invalid", message: `${name} must be a non-negative integer` };
-    }
-  }
-
-  let repoRoot;
-  try {
-    repoRoot = await ensureGitRepo(repoPath);
-  } catch (error) {
-    return { ok: false, error: "required_status_repo_not_found", message: error.message };
-  }
-  const context = await getRepoGroundControlContext(repoRoot);
-  if (context.status !== "ok") {
-    return {
-      ok: false,
-      error: "ground_control_context_invalid",
-      message: "gc_get_repo_ground_control_context did not return an ok context",
-      context_status: context.status,
-      errors: context.errors ?? [],
-    };
-  }
-  let effectiveDiffInfo = diffInfo;
-  if (effectiveDiffInfo == null) {
-    try {
-      effectiveDiffInfo = await computeGitDiffInfo(repoRoot, baseRef, headRef);
-    } catch (error) {
-      return { ok: false, error: "required_status_diff_failed", message: error.message };
-    }
-  }
-  const manifestLoaded = loadManifestOrLegacy({ repoRoot, context });
-  if (!manifestLoaded.ok) return { ok: false, ...manifestLoaded, repo_path: repoRoot, issue_number: issueNumber };
-  const manifestStatuses = manifestLoaded.manifest
-    ? collectRequiredStatusesFromManifest(manifestLoaded.manifest, { changedFiles: effectiveDiffInfo.changed_files })
-    : [];
-  const required = requiredStatuses == null
-    ? manifestStatuses
-    : [...new Set(requiredStatuses.map(normalizeRemoteStatusName).filter(Boolean))].sort();
-
-  const startMs = Date.now();
-  let snapshot = Array.isArray(statusSnapshot) ? statusSnapshot : null;
-  let effectiveHeadSha = headSha;
-  let evaluation = evaluateRequiredStatuses({ requiredStatuses: required, statusSnapshot: snapshot ?? [] });
-  while (true) {
-    if (snapshot == null) {
-      let fetched;
-      try {
-        fetched = await statusFetcher({ repoRoot, prNumber });
-      } catch (error) {
-        return {
-          ok: false,
-          error: "required_status_fetch_failed",
-          message: error.message,
-          pr_number: prNumber,
-        };
-      }
-      snapshot = fetched.statuses;
-      effectiveHeadSha = effectiveHeadSha ?? fetched.head_sha ?? null;
-      evaluation = evaluateRequiredStatuses({ requiredStatuses: required, statusSnapshot: snapshot });
-    }
-    if (evaluation.ok || evaluation.state === "failed" || statusSnapshot != null) break;
-    const elapsedSeconds = Math.floor((Date.now() - startMs) / 1000);
-    if (elapsedSeconds > totalTimeoutSeconds) {
-      return {
-        ok: false,
-        error: "required_status_watch_timed_out",
-        pr_number: prNumber,
-        required_statuses: required,
-        evaluation,
-        next_action: "wait_for_required_statuses_and_retry",
-      };
-    }
-    if (evaluation.missing.length > 0 && elapsedSeconds > queuedTimeoutSeconds) {
-      return {
-        ok: false,
-        error: "required_status_missing_too_long",
-        pr_number: prNumber,
-        required_statuses: required,
-        evaluation,
-        next_action: "verify_required_status_configuration",
-      };
-    }
-    await _sleepMs(pollIntervalSeconds * 1000);
-    snapshot = null;
-  }
-  const requiredStatusSetHash = sha256Hex(stableJson(required));
-  const resultIdsHash = providerResultIdsHash(snapshot);
-  let remoteQualityEvaluation = {
-    ok: true,
-    policy: remoteQualityPolicyFromManifest(manifestLoaded.manifest, context, remoteQualityPolicy),
-    providers: [],
-    failures: [],
-  };
-  if (evaluation.ok) {
-    let providerResults = remoteQualityResults;
-    if (providerResults == null) {
-      try {
-        providerResults = await remoteQualityFetcher({ repoRoot, prNumber, context, manifest: manifestLoaded.manifest });
-      } catch (error) {
-        return {
-          ok: false,
-          error: "remote_quality_fetch_failed",
-          message: error.message,
-          pr_number: prNumber,
-          next_action: "retry_remote_quality_provider_or_fix_configuration",
-        };
-      }
-    }
-    remoteQualityEvaluation = evaluateRemoteQualitySubstance({
-      providerResults,
-      policy: remoteQualityEvaluation.policy,
-    });
-  }
-  const remoteQualityHash = sha256Hex(stableJson({
-    policy: remoteQualityEvaluation.policy,
-    providers: remoteQualityEvaluation.providers,
-  }));
-  const envelopeBase = {
-    repo_path: repoRoot,
-    issue_number: issueNumber,
-    pr_number: prNumber,
-    base_ref: effectiveDiffInfo.base_ref ?? baseRef,
-    head_ref: effectiveDiffInfo.head_ref ?? headRef,
-    head_sha: effectiveHeadSha,
-    manifest_hash: manifestLoaded.manifest_hash,
-    diff_hash: effectiveDiffInfo.diff_hash,
-    required_statuses: required,
-    required_status_set_hash: requiredStatusSetHash,
-    provider_result_ids_hash: resultIdsHash,
-    remote_quality_hash: remoteQualityHash,
-    remote_quality: remoteQualityEvaluation,
-    evaluation,
-    statuses: snapshot ?? [],
-  };
-  const envelopeId = sha256Hex(stableJson(envelopeBase));
-  if (!evaluation.ok) {
-    return {
-      ok: false,
-      error: evaluation.state === "failed" ? "required_status_failed" : "required_status_pending",
-      next_action: evaluation.state === "failed" ? "fix_remote_status_and_retry" : "wait_for_required_statuses_and_retry",
-      envelope_id: envelopeId,
-      ...envelopeBase,
-    };
-  }
-  if (!remoteQualityEvaluation.ok) {
-    return {
-      ok: false,
-      error: "remote_quality_substance_failed",
-      message:
-        "Required remote statuses passed, but the provider's full quality result did not meet the configured bar. " +
-        "A green PR checkmark alone is not sufficient for remote_gates_green.",
-      next_action: "fix_remote_quality_findings_and_retry_gc_watch_required_statuses",
-      envelope_id: envelopeId,
-      ...envelopeBase,
-    };
-  }
-  let marker = null;
-  if (postMarker) {
-    const binding = {
-      repo: context.github_repo ?? null,
-      pr_number: prNumber,
-      head_sha: effectiveHeadSha,
-      manifest_hash: manifestLoaded.manifest_hash,
-      diff_hash: effectiveDiffInfo.diff_hash,
-      required_status_set_hash: requiredStatusSetHash,
-      provider_result_ids_hash: resultIdsHash,
-      remote_quality_hash: remoteQualityHash,
-      envelope_id: envelopeId,
-    };
-    try {
-      if (markerPoster) {
-        marker = await markerPoster({ repoRoot, issueNumber, phase: "remote_gates_green", binding });
-      } else {
-        const { owner, name } = await getOwnerRepo(repoRoot);
-        marker = await postGatePhaseMarker(repoRoot, owner, name, issueNumber, "remote_gates_green", binding);
-      }
-    } catch (error) {
-      return {
-        ok: false,
-        error: "required_status_marker_post_failed",
-        message: error.message,
-        envelope_id: envelopeId,
-        ...envelopeBase,
-      };
-    }
-  }
-  return {
-    ok: true,
-    status: required.length === 0 ? "no_required_statuses" : "passed",
-    envelope_id: envelopeId,
-    phase_marker: marker ? { phase: "remote_gates_green", issue_number: issueNumber } : null,
-    marker,
-    ...envelopeBase,
   };
 }
 
@@ -7015,435 +3463,7 @@ export async function runCodexArchitecturePreflight({
 // the agent passed in.
 // ---------------------------------------------------------------------------
 
-async function getPhaseCommentBodies({ repoRoot, owner, name, issueNumber, phaseCommentBodies = null }) {
-  if (Array.isArray(phaseCommentBodies)) return phaseCommentBodies;
-  return await readIssueCommentBodies(repoRoot, owner, name, issueNumber);
-}
-
-function phasesFromBodies(commentBodies, issueNumber) {
-  return parsePhaseMarkers(commentBodies, issueNumber);
-}
-
-async function postBoundWorkflowPhase({
-  repoRoot,
-  owner,
-  name,
-  issueNumber,
-  phase,
-  binding = {},
-  body = null,
-  markerPoster = null,
-}) {
-  if (markerPoster) {
-    return await markerPoster({ repoRoot, issueNumber, phase, binding, body });
-  }
-  return await postGatePhaseMarker(repoRoot, owner, name, issueNumber, phase, binding, { commentBody: body });
-}
-
-function validateOverride({ override, overrideReason, issueNumber }) {
-  if (override !== true) return null;
-  if (typeof overrideReason !== "string" || overrideReason.trim() === "") {
-    return {
-      ok: false,
-      error: "phase_override_missing_reason",
-      message:
-        "override=true requires a non-empty override_reason quoting the user's authorization to skip this phase prerequisite. " +
-        "Audits cannot distinguish legitimate overrides from accidents without a reason.",
-      issue_number: issueNumber,
-    };
-  }
-  return null;
-}
-
-function docsOnlyPath(pathValue) {
-  const p = normalizeChangedPath(pathValue);
-  return (
-    p === "README.md" ||
-    p === "CONTRIBUTING.md" ||
-    p === "CHANGELOG.md" ||
-    p.endsWith(".md") ||
-    p.endsWith(".markdown") ||
-    p.startsWith("docs/") ||
-    p.startsWith("architecture/") ||
-    p.startsWith("changelog.d/") ||
-    p.startsWith("skills/") ||
-    p.startsWith(".gc/")
-  );
-}
-
-function validateNonExecutableCarveout({ carveout, changedFiles }) {
-  if (carveout == null || typeof carveout !== "object") {
-    return { ok: false, error: "carveout must be an object" };
-  }
-  if (typeof carveout.reason !== "string" || carveout.reason.trim() === "") {
-    return { ok: false, error: "carveout.reason must be a non-empty string" };
-  }
-  if (typeof carveout.structural_gate !== "string" || carveout.structural_gate.trim() === "") {
-    return { ok: false, error: "carveout.structural_gate must be a non-empty string" };
-  }
-  const files = Array.isArray(changedFiles) ? changedFiles : [];
-  const nonDocs = files.filter((pathValue) => !docsOnlyPath(pathValue));
-  if (nonDocs.length > 0) {
-    return { ok: false, error: `non-executable carve-out only applies to documentation paths; non-doc paths: ${nonDocs.join(", ")}` };
-  }
-  return { ok: true };
-}
-
-async function computeWorkflowDiffBinding(repoRoot, baseRef, headRef, diffInfo) {
-  if (diffInfo != null) return diffInfo;
-  return await computeGitDiffInfo(repoRoot, baseRef, headRef);
-}
-
-const IMPLEMENTATION_CONTEXT_BINDING_ADRS = Object.freeze(["ADR-061", "ADR-062", "ADR-031", "ADR-036"]);
-const IMPLEMENTATION_CONTEXT_ADR_MAX_BYTES = 64 * 1024;
-const IMPLEMENTATION_CONTEXT_UID_RE = /\b[A-Z][A-Z0-9]+-[A-Z0-9]+(?:-\d+|\d+)\b/g;
-
-function extractRequirementUidsFromIssueBody(body) {
-  if (typeof body !== "string" || body.trim() === "") return [];
-  const section = (() => {
-    const start = body.indexOf("## Requirements");
-    if (start === -1) return body;
-    const after = body.slice(start + "## Requirements".length);
-    const nextHeader = after.search(/\n## /);
-    return nextHeader === -1 ? after : after.slice(0, nextHeader);
-  })();
-  return [...new Set([...section.matchAll(IMPLEMENTATION_CONTEXT_UID_RE)].map((m) => m[0]))].sort();
-}
-
-function normalizeAdrId(raw) {
-  if (typeof raw !== "string") return null;
-  const match = raw.trim().match(/^ADR-?(\d{3})$/i);
-  return match ? `ADR-${match[1]}` : null;
-}
-
-function readImplementationContextAdrs(repoRoot, context) {
-  const configured = Array.isArray(context?.architecture?.vocabulary?.binding_adrs)
-    ? context.architecture.vocabulary.binding_adrs.map((entry) => normalizeAdrId(entry?.id)).filter(Boolean)
-    : [];
-  const ids = [...new Set([...IMPLEMENTATION_CONTEXT_BINDING_ADRS, ...configured])].sort();
-  const adrDir = context?.docs?.adr_dir;
-  if (typeof adrDir !== "string" || adrDir.trim() === "") {
-    return ids.map((id) => ({ id, path: null, title: null, content: null, error: "adr_dir_not_configured" }));
-  }
-  const resolved = resolveRepoRelativePath(repoRoot, adrDir, "docs.adr_dir");
-  if (!resolved.ok) {
-    return ids.map((id) => ({ id, path: null, title: null, content: null, error: resolved.error }));
-  }
-  let entries = [];
-  try {
-    entries = readdirSync(resolved.abs);
-  } catch (error) {
-    return ids.map((id) => ({ id, path: null, title: null, content: null, error: error.message }));
-  }
-  return ids.map((id) => {
-    const num = id.slice(4);
-    const file = entries.find((entry) => entry.startsWith(`${num}-`) && entry.endsWith(".md"));
-    if (!file) return { id, path: null, title: null, content: null, error: "adr_file_not_found" };
-    const relPath = normalizeChangedPath(`${resolved.rel}/${file}`);
-    const absPath = join(resolved.abs, file);
-    let content;
-    try {
-      content = readAbsoluteTextFile(absPath);
-    } catch (error) {
-      return { id, path: relPath, title: null, content: null, error: error.message };
-    }
-    if (Buffer.byteLength(content, "utf8") > IMPLEMENTATION_CONTEXT_ADR_MAX_BYTES) {
-      content = Buffer.from(content, "utf8").subarray(0, IMPLEMENTATION_CONTEXT_ADR_MAX_BYTES).toString("utf8");
-    }
-    const title = content.split(/\r?\n/).find((line) => line.startsWith("# "))?.replace(/^#\s+/, "").trim() ?? null;
-    return { id, path: relPath, title, content, error: null };
-  });
-}
-
-function summarizeImplementationLinks(links) {
-  const arr = Array.isArray(links) ? links : [];
-  return arr.map((link) => ({
-    id: link?.id ?? null,
-    requirement_uid: link?.requirement_uid ?? link?.requirementUid ?? link?.source_uid ?? link?.sourceUid ?? null,
-    requirement_id: link?.requirement_id ?? link?.requirementId ?? link?.requirement ?? null,
-    link_type: link?.link_type ?? link?.linkType ?? null,
-    artifact_type: link?.artifact_type ?? link?.artifactType ?? null,
-    artifact_identifier: link?.artifact_identifier ?? link?.artifactIdentifier ?? null,
-    artifact_title: link?.artifact_title ?? link?.artifactTitle ?? null,
-  }));
-}
-
-async function implementationRequirementBundle(uid, project) {
-  const requirement = await getRequirementByUid(uid, project);
-  const links = await getTraceabilityLinks(requirement.id);
-  const implementsLinks = summarizeImplementationLinks(links).filter((link) => link.link_type === "IMPLEMENTS");
-  const testsLinks = summarizeImplementationLinks(links).filter((link) => link.link_type === "TESTS");
-  let impact = null;
-  let impactError = null;
-  try {
-    impact = await impactAnalysis(requirement.id);
-  } catch (error) {
-    impactError = error.message;
-  }
-  let graph = null;
-  let graphError = null;
-  try {
-    const [ancestors, descendants] = await Promise.all([
-      getAncestors(uid, 2, project),
-      getDescendants(uid, 2, project),
-    ]);
-    graph = { ancestors, descendants };
-  } catch (error) {
-    graphError = error.message;
-  }
-  return {
-    uid,
-    requirement,
-    traceability: summarizeImplementationLinks(links),
-    implements_artifacts: implementsLinks,
-    tests_artifacts: testsLinks,
-    neighborhood: {
-      impact,
-      impact_error: impactError,
-      graph,
-      graph_error: graphError,
-    },
-  };
-}
-
-export async function runGetImplementationContext({
-  repoPath,
-  issueNumber = null,
-  requirementUid = null,
-  project = null,
-  repo = null,
-  markerPoster = null,
-  issueContext = null,
-} = {}) {
-  if ((issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0)
-    && (typeof requirementUid !== "string" || requirementUid.trim() === "")) {
-    return {
-      ok: false,
-      error: "implementation_context_input_invalid",
-      message: "gc_get_implementation_context requires issue_number or requirement_uid",
-      issue_number: issueNumber ?? null,
-    };
-  }
-
-  let repoRoot;
-  try {
-    repoRoot = await ensureGitRepo(repoPath);
-  } catch (error) {
-    return { ok: false, error: "implementation_context_repo_not_found", message: error.message };
-  }
-  const context = await getRepoGroundControlContext(repoRoot);
-  if (context.status !== "ok") {
-    return {
-      ok: false,
-      error: "ground_control_context_invalid",
-      message: "gc_get_repo_ground_control_context did not return an ok context",
-      context_status: context.status,
-      errors: context.errors ?? [],
-    };
-  }
-
-  let effectiveIssueContext = issueContext;
-  if (issueNumber != null && effectiveIssueContext == null) {
-    effectiveIssueContext = await getIssueContext(issueNumber, repo, { cwd: repoRoot });
-  }
-  const bodyUids = extractRequirementUidsFromIssueBody(effectiveIssueContext?.body ?? "");
-  const requirementUids = [...new Set([
-    ...(typeof requirementUid === "string" && requirementUid.trim() !== "" ? [requirementUid.trim()] : []),
-    ...bodyUids,
-  ])].sort();
-
-  const requirements = [];
-  for (const uid of requirementUids) {
-    try {
-      requirements.push(await implementationRequirementBundle(uid, project ?? context.project ?? null));
-    } catch (error) {
-      return {
-        ok: false,
-        error: "implementation_context_requirement_lookup_failed",
-        message: `could not bundle requirement ${uid}: ${error.message}`,
-        uid,
-        issue_number: issueNumber,
-      };
-    }
-  }
-
-  let issueTraceability = [];
-  if (issueNumber != null) {
-    try {
-      issueTraceability = summarizeImplementationLinks(await getTraceabilityByArtifact("GITHUB_ISSUE", String(issueNumber)));
-    } catch {
-      issueTraceability = [];
-    }
-  }
-
-  const bindingAdrs = readImplementationContextAdrs(repoRoot, context);
-  const bundle = {
-    repo_path: repoRoot,
-    issue_number: issueNumber,
-    requirement_uid: requirementUid ?? null,
-    project: project ?? context.project ?? null,
-    ground_control_context: {
-      project: context.project,
-      github_repo: context.github_repo,
-      workflow: context.workflow,
-      docs: context.docs,
-      cross_cutting_concerns: context.cross_cutting_concerns,
-      architecture_vocabulary: context.architecture?.vocabulary ?? null,
-    },
-    issue: effectiveIssueContext,
-    binding_adrs: bindingAdrs,
-    requirements,
-    existing_implements_artifacts: requirements.flatMap((item) => item.implements_artifacts),
-    issue_traceability: issueTraceability,
-  };
-  const contextHash = sha256Hex(stableJson({
-    issue_number: issueNumber,
-    requirement_uids: requirementUids,
-    binding_adrs: bindingAdrs.map((adr) => ({ id: adr.id, path: adr.path, content_hash: adr.content ? sha256Hex(adr.content) : null })),
-    cross_cutting_concerns: context.cross_cutting_concerns,
-    implements: bundle.existing_implements_artifacts,
-  }));
-
-  let marker = null;
-  if (issueNumber != null) {
-    const binding = {
-      repo: context.github_repo ?? null,
-      context_hash: contextHash,
-      requirement_uids_hash: sha256Hex(stableJson(requirementUids)),
-      binding_adrs_hash: sha256Hex(stableJson(bindingAdrs.map((adr) => ({ id: adr.id, path: adr.path })))),
-    };
-    try {
-      if (markerPoster) {
-        marker = await markerPoster({ repoRoot, issueNumber, phase: "context_loaded", binding, body: "Implementation context loaded server-side." });
-      } else {
-        const ownerName = await getOwnerRepo(repoRoot);
-        marker = await postGatePhaseMarker(repoRoot, ownerName.owner, ownerName.name, issueNumber, "context_loaded", binding, {
-          commentBody: [
-            "Implementation context loaded server-side.",
-            "",
-            `- Requirements: ${requirementUids.length === 0 ? "(none)" : requirementUids.join(", ")}`,
-            `- Binding ADRs: ${bindingAdrs.map((adr) => adr.id).join(", ")}`,
-            `- Existing IMPLEMENTS artifacts: ${bundle.existing_implements_artifacts.length}`,
-          ].join("\n"),
-        });
-      }
-    } catch (error) {
-      return {
-        ok: false,
-        error: "context_loaded_marker_post_failed",
-        message: error.message,
-        issue_number: issueNumber,
-      };
-    }
-  }
-
-  return {
-    ok: true,
-    ...bundle,
-    context_hash: contextHash,
-    phase_marker: marker ? { phase: "context_loaded", issue_number: issueNumber } : null,
-    marker,
-  };
-}
-
-export async function runPostInterfaceContract({
-  repoPath,
-  issueNumber,
-  contractBody,
-  baseRef = "origin/dev",
-  headRef = "HEAD",
-  override = false,
-  overrideReason = null,
-  phaseCommentBodies = null,
-  markerPoster = null,
-  diffInfo = null,
-} = {}) {
-  if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
-    throw new Error("gc_post_interface_contract requires a positive integer issue_number");
-  }
-  if (typeof contractBody !== "string" || contractBody.trim() === "") {
-    throw new Error("gc_post_interface_contract requires a non-empty contract_body");
-  }
-  const repoRoot = await ensureGitRepo(repoPath);
-  const ownerRepo = markerPoster ? { owner: null, name: null } : await getOwnerRepo(repoRoot);
-  let commentBodies = phaseCommentBodies;
-
-  const overrideError = validateOverride({ override, overrideReason, issueNumber });
-  if (overrideError) return overrideError;
-  if (override !== true) {
-    if (!Array.isArray(commentBodies)) {
-      const ownerName = ownerRepo.owner == null ? await getOwnerRepo(repoRoot) : ownerRepo;
-      commentBodies = await getPhaseCommentBodies({ repoRoot, owner: ownerName.owner, name: ownerName.name, issueNumber });
-    }
-    const completed = phasesFromBodies(commentBodies, issueNumber);
-    const decision = evaluatePhasePrerequisite({
-      completed,
-      nextPhase: "contract",
-      requires: ["context_loaded", "preflight"],
-      issueNumber,
-    });
-    if (!decision.ok) {
-      return {
-        repo_path: repoRoot,
-        issue_number: issueNumber,
-        ok: false,
-        error: decision.error,
-        message: decision.message,
-        missing: decision.missing,
-        completed: decision.completed,
-        next_action: decision.missing.includes("context_loaded")
-          ? "run_gc_get_implementation_context_first"
-          : "run_gc_codex_architecture_preflight_first",
-      };
-    }
-  }
-
-  let effectiveDiffInfo;
-  try {
-    effectiveDiffInfo = await computeWorkflowDiffBinding(repoRoot, baseRef, headRef, diffInfo);
-  } catch (error) {
-    return { repo_path: repoRoot, issue_number: issueNumber, ok: false, error: "contract_diff_failed", message: error.message };
-  }
-  const binding = {
-    base_ref: effectiveDiffInfo.base_ref ?? baseRef,
-    head_ref: effectiveDiffInfo.head_ref ?? headRef,
-    diff_hash: effectiveDiffInfo.diff_hash ?? null,
-    contract_hash: sha256Hex(contractBody.trim()),
-  };
-  const ownerName = ownerRepo.owner == null && !markerPoster ? await getOwnerRepo(repoRoot) : ownerRepo;
-  const apiResponse = await postBoundWorkflowPhase({
-    repoRoot,
-    owner: ownerName.owner,
-    name: ownerName.name,
-    issueNumber,
-    phase: "contract",
-    binding,
-    body: contractBody.trim(),
-    markerPoster,
-  });
-  return {
-    repo_path: repoRoot,
-    issue_number: issueNumber,
-    ok: true,
-    phase_marker: { phase: "contract", issue_number: issueNumber },
-    binding,
-    engineering_contract: ENGINEERING_CONTRACT_PROPERTIES,
-    override: override === true,
-    override_reason: override === true ? overrideReason.trim() : null,
-    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
-    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
-  };
-}
-
-export async function runPostImplementationPlan({
-  repoPath,
-  issueNumber,
-  planBody,
-  override = false,
-  overrideReason = null,
-  phaseCommentBodies = null,
-  markerPoster = null,
-}) {
+export async function runPostImplementationPlan({ repoPath, issueNumber, planBody, override = false, overrideReason = null }) {
   if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
     throw new Error("gc_post_implementation_plan requires a positive integer issue_number");
   }
@@ -7452,28 +3472,29 @@ export async function runPostImplementationPlan({
   }
 
   const repoRoot = await ensureGitRepo(repoPath);
-  const ownerRepo = markerPoster ? { owner: null, name: null } : await getOwnerRepo(repoRoot);
+  const { owner, name } = await getOwnerRepo(repoRoot);
 
-  // Prerequisite check: the interface contract must have been posted for this
-  // issue. Override is
+  // Prerequisite check: preflight must have run for this issue. Override is
   // available for the same reason as the codex-review cap override — the user
   // can explicitly authorize skipping the gate (for tiny bug fixes where
-  // contract posting is overkill, for example). Override requires a non-empty reason.
-  const overrideError = validateOverride({ override, overrideReason, issueNumber });
-  if (overrideError) return overrideError;
-  if (override !== true) {
-    const commentBodies = await getPhaseCommentBodies({
-      repoRoot,
-      owner: ownerRepo.owner,
-      name: ownerRepo.name,
-      issueNumber,
-      phaseCommentBodies,
-    });
-    const completed = phasesFromBodies(commentBodies, issueNumber);
+  // preflight is overkill, for example). Override requires a non-empty reason.
+  if (override === true) {
+    if (typeof overrideReason !== "string" || overrideReason.trim() === "") {
+      return {
+        ok: false,
+        error: "phase_override_missing_reason",
+        message:
+          "override=true requires a non-empty override_reason quoting the user's authorization to skip preflight. " +
+          "Audits cannot distinguish legitimate overrides from accidents without a reason.",
+        issue_number: issueNumber,
+      };
+    }
+  } else {
+    const completed = await readCompletedPhases(repoRoot, owner, name, issueNumber);
     const decision = evaluatePhasePrerequisite({
       completed,
       nextPhase: "plan",
-      requires: ["context_loaded", "contract"],
+      requires: ["preflight"],
       issueNumber,
     });
     if (!decision.ok) {
@@ -7485,18 +3506,14 @@ export async function runPostImplementationPlan({
         message: decision.message,
         missing: decision.missing,
         completed: decision.completed,
-        next_action: decision.missing.includes("context_loaded")
-          ? "run_gc_get_implementation_context_first"
-          : "run_gc_post_interface_contract_first",
+        next_action: "run_gc_codex_architecture_preflight_first",
       };
     }
   }
 
   // Post the plan + the `plan` phase marker as a single combined comment so
   // the marker and the human-visible plan are the same thread artifact.
-  const apiResponse = markerPoster
-    ? await markerPoster({ repoRoot, issueNumber, phase: "plan", binding: {}, body: planBody })
-    : await postPhaseMarker(repoRoot, ownerRepo.owner, ownerRepo.name, issueNumber, "plan", { commentBody: planBody });
+  const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "plan", { commentBody: planBody });
 
   return {
     repo_path: repoRoot,
@@ -7505,266 +3522,6 @@ export async function runPostImplementationPlan({
     phase_marker: { phase: "plan", issue_number: issueNumber },
     override: override === true ? true : false,
     override_reason: override === true ? overrideReason.trim() : null,
-    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
-    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
-  };
-}
-
-export async function runAssertTestRed({
-  repoPath,
-  issueNumber,
-  testCommand = null,
-  baseRef = "origin/dev",
-  headRef = "HEAD",
-  carveout = null,
-  phaseCommentBodies = null,
-  markerPoster = null,
-  commandRunner = executeGateCommand,
-  diffInfo = null,
-} = {}) {
-  if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
-    throw new Error("gc_assert_test_red requires a positive integer issue_number");
-  }
-  const repoRoot = await ensureGitRepo(repoPath);
-  const ownerRepo = markerPoster ? { owner: null, name: null } : await getOwnerRepo(repoRoot);
-  const commentBodies = await getPhaseCommentBodies({
-    repoRoot,
-    owner: ownerRepo.owner,
-    name: ownerRepo.name,
-    issueNumber,
-    phaseCommentBodies,
-  });
-  const completed = phasesFromBodies(commentBodies, issueNumber);
-  const decision = evaluatePhasePrerequisite({
-    completed,
-    nextPhase: "test_red",
-    requires: ["plan"],
-    issueNumber,
-  });
-  if (!decision.ok) {
-    return {
-      repo_path: repoRoot,
-      issue_number: issueNumber,
-      ok: false,
-      error: decision.error,
-      message: decision.message,
-      missing: decision.missing,
-      completed: decision.completed,
-      next_action: "run_gc_post_implementation_plan_first",
-    };
-  }
-  let effectiveDiffInfo;
-  try {
-    effectiveDiffInfo = await computeWorkflowDiffBinding(repoRoot, baseRef, headRef, diffInfo);
-  } catch (error) {
-    return { repo_path: repoRoot, issue_number: issueNumber, ok: false, error: "test_red_diff_failed", message: error.message };
-  }
-
-  let evidence;
-  if (carveout != null) {
-    const carveoutResult = validateNonExecutableCarveout({ carveout, changedFiles: effectiveDiffInfo.changed_files });
-    if (!carveoutResult.ok) {
-      return {
-        repo_path: repoRoot,
-        issue_number: issueNumber,
-        ok: false,
-        error: "test_red_carveout_invalid",
-        message: carveoutResult.error,
-        next_action: "write_a_real_red_test_or_fix_the_carveout",
-      };
-    }
-    evidence = {
-      mode: "non_executable_carveout",
-      reason: carveout.reason.trim(),
-      structural_gate: carveout.structural_gate.trim(),
-    };
-  } else {
-    if (typeof testCommand !== "string" || testCommand.trim() === "") {
-      throw new Error("gc_assert_test_red requires test_command unless carveout is supplied");
-    }
-    const result = await commandRunner({
-      command: testCommand,
-      cwd: repoRoot,
-      timeoutSeconds: GATE_DEFAULT_TIMEOUT_SECONDS,
-      env: buildGateCommandEnv({ GC_PHASE: "test_red" }),
-    });
-    if (result.exit_code === 0 && result.timed_out !== true && result.error == null) {
-      return {
-        repo_path: repoRoot,
-        issue_number: issueNumber,
-        ok: false,
-        error: "test_red_not_red",
-        message: "The supplied test_command passed; test_red requires observing a relevant failing test or contract check before implementation.",
-        exit_code: result.exit_code,
-        stdout: result.stdout ?? "",
-        stderr: result.stderr ?? "",
-        next_action: "write_or_select_a_relevant_failing_test_and_retry",
-      };
-    }
-    evidence = {
-      mode: "red_command",
-      command_hash: sha256Hex(testCommand.trim()),
-      exit_code: result.exit_code,
-      timed_out: result.timed_out === true,
-      stdout: result.stdout ?? "",
-      stderr: result.stderr ?? "",
-    };
-  }
-
-  const binding = {
-    base_ref: effectiveDiffInfo.base_ref ?? baseRef,
-    head_ref: effectiveDiffInfo.head_ref ?? headRef,
-    red_diff_hash: effectiveDiffInfo.diff_hash ?? null,
-    evidence_mode: evidence.mode,
-    command_hash: evidence.command_hash ?? null,
-  };
-  const apiResponse = await postBoundWorkflowPhase({
-    repoRoot,
-    owner: ownerRepo.owner,
-    name: ownerRepo.name,
-    issueNumber,
-    phase: "test_red",
-    binding,
-    body: JSON.stringify(evidence, null, 2),
-    markerPoster,
-  });
-  return {
-    repo_path: repoRoot,
-    issue_number: issueNumber,
-    ok: true,
-    phase_marker: { phase: "test_red", issue_number: issueNumber },
-    binding,
-    evidence,
-    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
-    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
-  };
-}
-
-export async function runAssertImplGreen({
-  repoPath,
-  issueNumber,
-  testCommand = null,
-  baseRef = "origin/dev",
-  headRef = "HEAD",
-  carveout = null,
-  phaseCommentBodies = null,
-  markerPoster = null,
-  commandRunner = executeGateCommand,
-  diffInfo = null,
-} = {}) {
-  if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
-    throw new Error("gc_assert_impl_green requires a positive integer issue_number");
-  }
-  const repoRoot = await ensureGitRepo(repoPath);
-  const ownerRepo = markerPoster ? { owner: null, name: null } : await getOwnerRepo(repoRoot);
-  const commentBodies = await getPhaseCommentBodies({
-    repoRoot,
-    owner: ownerRepo.owner,
-    name: ownerRepo.name,
-    issueNumber,
-    phaseCommentBodies,
-  });
-  const completed = phasesFromBodies(commentBodies, issueNumber);
-  const decision = evaluatePhasePrerequisite({
-    completed,
-    nextPhase: "impl_green",
-    requires: ["test_red"],
-    issueNumber,
-  });
-  if (!decision.ok) {
-    return {
-      repo_path: repoRoot,
-      issue_number: issueNumber,
-      ok: false,
-      error: decision.error,
-      message: decision.message,
-      missing: decision.missing,
-      completed: decision.completed,
-      next_action: "run_gc_assert_test_red_first",
-    };
-  }
-  let effectiveDiffInfo;
-  try {
-    effectiveDiffInfo = await computeWorkflowDiffBinding(repoRoot, baseRef, headRef, diffInfo);
-  } catch (error) {
-    return { repo_path: repoRoot, issue_number: issueNumber, ok: false, error: "impl_green_diff_failed", message: error.message };
-  }
-
-  let evidence;
-  if (carveout != null) {
-    const carveoutResult = validateNonExecutableCarveout({ carveout, changedFiles: effectiveDiffInfo.changed_files });
-    if (!carveoutResult.ok) {
-      return {
-        repo_path: repoRoot,
-        issue_number: issueNumber,
-        ok: false,
-        error: "impl_green_carveout_invalid",
-        message: carveoutResult.error,
-        next_action: "run_targeted_tests_or_fix_the_carveout",
-      };
-    }
-    evidence = {
-      mode: "non_executable_carveout",
-      reason: carveout.reason.trim(),
-      structural_gate: carveout.structural_gate.trim(),
-    };
-  } else {
-    if (typeof testCommand !== "string" || testCommand.trim() === "") {
-      throw new Error("gc_assert_impl_green requires test_command unless carveout is supplied");
-    }
-    const result = await commandRunner({
-      command: testCommand,
-      cwd: repoRoot,
-      timeoutSeconds: GATE_DEFAULT_TIMEOUT_SECONDS,
-      env: buildGateCommandEnv({ GC_PHASE: "impl_green" }),
-    });
-    if (result.exit_code !== 0 || result.timed_out === true || result.error != null) {
-      return {
-        repo_path: repoRoot,
-        issue_number: issueNumber,
-        ok: false,
-        error: "impl_green_not_green",
-        message: "The supplied test_command did not pass; impl_green requires implementation plus targeted tests to be green.",
-        exit_code: result.exit_code,
-        timed_out: result.timed_out === true,
-        stdout: result.stdout ?? "",
-        stderr: result.stderr ?? "",
-        next_action: "fix_implementation_or_tests_and_retry",
-      };
-    }
-    evidence = {
-      mode: "green_command",
-      command_hash: sha256Hex(testCommand.trim()),
-      exit_code: result.exit_code,
-      stdout: result.stdout ?? "",
-      stderr: result.stderr ?? "",
-    };
-  }
-
-  const binding = {
-    base_ref: effectiveDiffInfo.base_ref ?? baseRef,
-    head_ref: effectiveDiffInfo.head_ref ?? headRef,
-    diff_hash: effectiveDiffInfo.diff_hash ?? null,
-    evidence_mode: evidence.mode,
-    command_hash: evidence.command_hash ?? null,
-  };
-  const apiResponse = await postBoundWorkflowPhase({
-    repoRoot,
-    owner: ownerRepo.owner,
-    name: ownerRepo.name,
-    issueNumber,
-    phase: "impl_green",
-    binding,
-    body: JSON.stringify(evidence, null, 2),
-    markerPoster,
-  });
-  return {
-    repo_path: repoRoot,
-    issue_number: issueNumber,
-    ok: true,
-    phase_marker: { phase: "impl_green", issue_number: issueNumber },
-    binding,
-    evidence,
     comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
     comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
   };
@@ -7801,39 +3558,6 @@ function buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode = "inline
 // a parse failure (see parseCodexReviewEnvelopeTail).
 export const REVIEW_NOTES_MAX = 2;
 export const REVIEW_VERDICTS = Object.freeze(["ship", "ship-with-fixes", "don't-ship"]);
-export const REVIEWER_LENSES = Object.freeze(["correctness", "security", "architecture", "test-strength"]);
-export const REVIEW_SEVERITIES = Object.freeze(["Minor", "Major", "Critical", "Blocking"]);
-export const REVIEW_CONVERGENCE_ACTIONS = Object.freeze([
-  "advance_to_next_phase",
-  "fix_findings_and_reinvoke",
-  "post_structured_decision_aid_and_escalate",
-  "record_terminal_escalation",
-]);
-
-const REVIEWER_LENS_SET = new Set(REVIEWER_LENSES);
-const REVIEW_SEVERITY_RANK = new Map(REVIEW_SEVERITIES.map((severity, idx) => [severity, idx]));
-const REVIEW_SEVERITY_ALIASES = new Map([
-  ["minor", "Minor"],
-  ["warning", "Minor"],
-  ["warn", "Minor"],
-  ["low", "Minor"],
-  ["major", "Major"],
-  ["medium", "Major"],
-  ["error", "Major"],
-  ["critical", "Critical"],
-  ["crit", "Critical"],
-  ["high", "Critical"],
-  ["blocking", "Blocking"],
-  ["blocker", "Blocking"],
-  ["block", "Blocking"],
-]);
-
-export function normalizeReviewHardCap(hardCap) {
-  if (typeof hardCap !== "number" || !Number.isFinite(hardCap) || hardCap < 1) {
-    return 2;
-  }
-  return Math.max(2, Math.trunc(hardCap));
-}
 
 const PRINCIPAL_ENGINEER_ANTI_RUBRIC = Object.freeze([
   "Renaming for clarity is NOT a finding unless the current name actively misleads.",
@@ -8011,90 +3735,21 @@ async function readVocabularyForReview(repoRoot, baseBranch) {
   return null;
 }
 
-export const ENGINEERING_CONTRACT_PROPERTIES = Object.freeze([
-  {
-    property: "Interface-first",
-    target: "A contract artifact precedes implementation; every new public symbol is exercised through the public surface.",
-    acceptance: "contract phase marker, plan-to-diff reconciliation, assurance classifier, contract_boundary, and tests tied to the declared contract.",
-    reviewer_question: "Does the diff implement every obligation in the posted interface contract through the public surface?",
-  },
-  {
-    property: "Whole-system fit",
-    target: "The change uses existing cross-cutting helpers, boundaries, and data models instead of reimplementing envelopes, logging, authorization, traceability, or validation helpers.",
-    acceptance: "architecture, policy, anti-hand-roll rules, and architecture review grounded in .ground-control.yaml vocabulary and binding ADRs.",
-    reviewer_question: "Does any new helper bypass an existing repository helper, boundary, or data model named in the repo vocabulary?",
-  },
-  {
-    property: "Right-sized simplicity",
-    target: "The implementation is the smallest design that satisfies the requirement and does not add scope outside the plan.",
-    acceptance: "complexity, policy, plan-to-diff reconciliation, scope-expansion refusal, and review grounded in the posted plan.",
-    reviewer_question: "Does the diff add scope or abstraction not required by the posted plan?",
-  },
-  {
-    property: "Realistic defensive coding",
-    target: "Inputs are validated at system boundaries; state transitions, security boundaries, and corruption-prone mutators carry explicit contracts and tests.",
-    acceptance: "ADR-057 assurance classifier, contract_boundary, and property_verification where classified L2.",
-    reviewer_question: "Does each classified boundary, transition, graph operation, or mutator carry the mandated contract and test artifact?",
-  },
-  {
-    property: "Test strength",
-    target: "Tests fail when the implementation is broken, not only when lines are executed.",
-    acceptance: "mutation, diff_coverage, property_verification, unit_tests, integration_tests, and test-strength review grounded in the posted contract.",
-    reviewer_question: "Would the changed tests fail if an obligation in the posted contract were broken?",
-  },
-  {
-    property: "Secure from the gate",
-    target: "The first draft avoids injection, server-side request forgery, unsafe deserialization, missing authorization, secret exposure, and insecure dependency changes.",
-    acceptance: "sast, secret_scan, dependency_policy, and security review grounded in CWE or attacker-model evidence.",
-    reviewer_question: "Does the diff introduce a concrete attacker path or weaken an existing control?",
-  },
-  {
-    property: "Architectural conformance",
-    target: "The diff stays inside declared boundaries and respects binding ADRs, package rules, and graph or traceability invariants.",
-    acceptance: "architecture, traceability, policy, ADR citations in the plan, phase-marker prerequisites, and architecture review grounded in binding ADRs.",
-    reviewer_question: "Does the diff violate a binding ADR, package rule, graph invariant, or traceability contract?",
-  },
-  {
-    property: "Extensibility seam",
-    target: "The design names the next expected variation and leaves the smallest useful seam for it.",
-    acceptance: "review grounded in the plan and interface contract.",
-    reviewer_question: "Does the contract name the next expected variation without adding speculative abstraction?",
-  },
-]);
-
-export function buildEngineeringContractSection() {
-  const lines = [
-    "## Engineering Contract (ADR-059)",
-    "",
-    "Use this same contract during generation and review. Each finding must cite the failed property and the artifact it evaluated.",
-    "",
-  ];
-  for (const entry of ENGINEERING_CONTRACT_PROPERTIES) {
-    lines.push(`- **${entry.property}**: ${entry.target}`);
-    lines.push(`  Acceptance path: ${entry.acceptance}`);
-    lines.push(`  Reviewer question: ${entry.reviewer_question}`);
-  }
-  return lines;
-}
-
 // Canonical principal-engineer rubric — single source consumed by codex core,
 // codex security, and test-quality reviewers. Tests assert the key phrases in
 // each consumer's prompt. The reviewer-specific subject-matter focus (e.g.
 // security STRIDE, test-quality false-assurance) lives in the consumer's own
 // prompt; this rubric carries the SHARED contract — verdict envelope, two-
 // pass, anti-rubric, sweep evidence, notes cap, tone.
-export function buildPrincipalEngineerRubric({ reviewerLabel, reviewerLens = null, vocabulary = null, findingFieldsDescription = "", findingExampleJson = "" } = {}) {
+export function buildPrincipalEngineerRubric({ reviewerLabel, vocabulary = null, findingFieldsDescription = "", findingExampleJson = "" } = {}) {
   if (typeof reviewerLabel !== "string" || reviewerLabel.trim() === "") {
     throw new Error("buildPrincipalEngineerRubric: reviewerLabel must be a non-empty string");
   }
-  const lens = normalizeReviewerLens(reviewerLens, reviewerLabel);
   const lines = [];
 
   lines.push("You are a principal/staff engineer reviewing this change. The goal is JUDGMENT, not finding accumulation.");
   lines.push("");
   lines.push(...buildVocabularySection(vocabulary));
-  lines.push("");
-  lines.push(...buildEngineeringContractSection());
   lines.push("");
   lines.push("Two-pass discipline:");
   lines.push("1. First, write `architectural_read` — one paragraph stating what a principal engineer would say about the SHAPE of this change. Does it fit the repo's vocabulary above? Cross-cutting concerns it touches. Where the design seam is. Whether it forecloses the obvious next variation. \"This is shaped correctly\" is a valid architectural_read.");
@@ -8114,10 +3769,8 @@ export function buildPrincipalEngineerRubric({ reviewerLabel, reviewerLens = nul
   lines.push("```");
   lines.push("{");
   lines.push('  "verdict": "ship" | "ship-with-fixes" | "don\'t-ship",');
-  lines.push(`  "reviewer_lens": "${lens}",`);
   lines.push('  "architectural_read": "<one paragraph, required, written first>",');
-  lines.push('  "findings": [<finding objects — see fields below>],');
-  lines.push('  "blocking": [<blocking finding objects copied from findings[]>],');
+  lines.push('  "blocking": [<finding objects — see fields below>],');
   lines.push(`  "notes": [<at most ${REVIEW_NOTES_MAX}; { \"text\": \"<one-line observation>\" }>]`);
   lines.push("}");
   lines.push("```");
@@ -8126,7 +3779,6 @@ export function buildPrincipalEngineerRubric({ reviewerLabel, reviewerLens = nul
   lines.push("- `verdict: ship` → `blocking` MUST be empty.");
   lines.push("- `verdict: ship-with-fixes` → `blocking` MUST be non-empty.");
   lines.push("- `verdict: don't-ship` → `blocking` MUST be non-empty AND include at least one `class` finding (or a one-off with `structural_blocker: true`). A `don't-ship` with only minor one-offs is rejected.");
-  lines.push("- `findings[]` and `blocking[]` contain full finding objects. For now every emitted finding is blocking; copy the same objects into both arrays. The MCP dispatcher computes `next_action` after parsing.");
   lines.push(`- \`notes\` length capped at ${REVIEW_NOTES_MAX}. Omit the key entirely when you have nothing material; \"no notes\" is the strongest signal.`);
   lines.push("- Do NOT invoke `gh`, `git`, `curl`, or any shell. The MCP server publishes the envelope after you return.");
   lines.push("- Do NOT include secrets, full file contents, environment dumps, or anything resembling credentials in any field. The body is published to a public thread.");
@@ -8143,7 +3795,7 @@ export function buildPrincipalEngineerRubric({ reviewerLabel, reviewerLens = nul
   lines.push("Example 1 — clean review, `ship` verdict (this IS a valid outcome):");
   lines.push("```");
   lines.push("===REVIEW===");
-  lines.push(`{"verdict":"ship","reviewer_lens":"${lens}","architectural_read":"This change adds a new Repository site for ScopedRequirementRepository.findActiveByWave; it reuses the existing scoped-query helper, matches the canonical pattern, and adds a @WebMvcTest controller slice that exercises both the happy path and the empty-result path. The seam is correct; no foreclosure of the obvious next variation (filtering by status range). I would ship this.","findings":[],"blocking":[]}`);
+  lines.push('{"verdict":"ship","architectural_read":"This change adds a new Repository site for ScopedRequirementRepository.findActiveByWave; it reuses the existing scoped-query helper, matches the canonical pattern, and adds a @WebMvcTest controller slice that exercises both the happy path and the empty-result path. The seam is correct; no foreclosure of the obvious next variation (filtering by status range). I would ship this.","blocking":[]}');
   lines.push("===END===");
   lines.push("```");
   lines.push("");
@@ -8152,13 +3804,10 @@ export function buildPrincipalEngineerRubric({ reviewerLabel, reviewerLens = nul
   lines.push("===REVIEW===");
   lines.push("{");
   lines.push('  "verdict": "ship-with-fixes",');
-  lines.push(`  "reviewer_lens": "${lens}",`);
   lines.push('  "architectural_read": "The change wires a new GRC analysis path, but bypasses the canonical ErrorResponse envelope and rolls its own per-endpoint error shapes. The shape recurs at three sites in this diff; the fix is one place (use GlobalExceptionHandler) not three.",');
   if (findingExampleJson.trim() !== "") {
-    lines.push(`  "findings": [${findingExampleJson}],`);
     lines.push(`  "blocking": [${findingExampleJson}]`);
   } else {
-    lines.push('  "findings": [<reviewer-specific finding example>],');
     lines.push('  "blocking": [<reviewer-specific finding example>]');
   }
   lines.push("}");
@@ -8249,7 +3898,6 @@ export function evaluateCodexReviewCycleCap({
   if (typeof priorCount !== "number" || !Number.isFinite(priorCount) || priorCount < 0) {
     throw new Error(`evaluateCodexReviewCycleCap: priorCount must be a non-negative number, got ${priorCount}`);
   }
-  const effectiveCap = normalizeReviewHardCap(hardCap);
 
   if (overrideCap === true) {
     if (typeof overrideReason !== "string" || overrideReason.trim() === "") {
@@ -8261,43 +3909,48 @@ export function evaluateCodexReviewCycleCap({
           "Audits cannot distinguish legitimate overrides from accidental ones without a reason.",
         pr_number: prNumber,
         prior_cycles: priorCount,
-        cap: effectiveCap,
-        configured_cap: hardCap,
+        cap: hardCap,
       };
     }
     return {
       ok: true,
       nextCycle: priorCount + 1,
-      cap: effectiveCap,
-      configured_cap: hardCap,
+      cap: hardCap,
       override: true,
       override_reason: overrideReason.trim(),
-      next_action: "fix_findings_and_reinvoke",
+      next_action: "fix_findings_then_summarize_and_escalate",
     };
   }
 
-  if (priorCount >= effectiveCap) {
+  if (priorCount >= hardCap) {
     return {
       ok: false,
       error: "codex_review_cap_reached",
       message:
-        `gc_codex_review convergence cap reached (${effectiveCap} cycles) for PR #${prNumber}. ` +
-        `Record terminal escalation or retry only with override_cap=true and override_reason="<user authorization>".`,
+        `gc_codex_review hard cap reached (${hardCap} cycles) for PR #${prNumber}. ` +
+        `Per GC-O007 / ADR-029, after cycle ${hardCap} you must (a) post a summary of findings + fixes ` +
+        `to the issue thread, then (b) escalate to the user and ask whether to run cycle ${hardCap + 1} ` +
+        `or ship as-is. Do not address findings by silently re-invoking codex. If the user authorizes ` +
+        `another cycle, retry with override_cap=true and override_reason="<their authorization>".`,
       pr_number: prNumber,
       prior_cycles: priorCount,
-      cap: effectiveCap,
-      configured_cap: hardCap,
-      next_action: "record_terminal_escalation",
+      cap: hardCap,
+      next_action: "post_summary_and_escalate_to_user",
     };
   }
 
+  // Cycle 1 returns next_action that nudges toward "fix findings"; cycle 2
+  // returns the stronger nudge that includes the summarize-and-escalate
+  // discipline (the gap that #794 was specifically filed to close).
   const nextCycle = priorCount + 1;
   return {
     ok: true,
     nextCycle,
-    cap: effectiveCap,
-    configured_cap: hardCap,
-    next_action: "fix_findings_and_reinvoke",
+    cap: hardCap,
+    next_action:
+      nextCycle === hardCap
+        ? "fix_all_findings_then_summarize_and_escalate"
+        : "fix_all_findings_and_push",
   };
 }
 
@@ -8462,7 +4115,7 @@ export function buildCodexVerifyCycleMarker({ prNumber, commentId, cycleNumber, 
 // set `workflow.codex_review.pre_push_cap: 3` in `.ground-control.yaml`;
 // runCodexReview resolves that knob via `resolveReviewerPrePushCap` and
 // passes the effective cap to `evaluateCodexReviewPrePushCycleCap`'s `hardCap`.
-export const CODEX_REVIEW_PREPUSH_HARD_CAP = 2;
+export const CODEX_REVIEW_PREPUSH_HARD_CAP = 1;
 export const CODEX_REVIEW_PREPUSH_MARKER_PREFIX = "<!-- gc:codex-prepush-cycle";
 // Matches `<!-- gc:codex-prepush-cycle issue="N" branch="..." cycle="M" ... -->`.
 // `branch` is JSON-encoded so it can carry slashes and escaped quotes; the
@@ -8531,7 +4184,6 @@ export function evaluateCodexReviewPrePushCycleCap({
       `evaluateCodexReviewPrePushCycleCap: priorCount must be a non-negative number, got ${priorCount}`,
     );
   }
-  const effectiveCap = normalizeReviewHardCap(hardCap);
 
   if (overrideCap === true) {
     if (typeof overrideReason !== "string" || overrideReason.trim() === "") {
@@ -8544,35 +4196,35 @@ export function evaluateCodexReviewPrePushCycleCap({
         issue_number: issueNumber,
         branch: branchName,
         prior_cycles: priorCount,
-        cap: effectiveCap,
-        configured_cap: hardCap,
+        cap: hardCap,
       };
     }
     return {
       ok: true,
       nextCycle: priorCount + 1,
-      cap: effectiveCap,
-      configured_cap: hardCap,
+      cap: hardCap,
       override: true,
       override_reason: overrideReason.trim(),
-      next_action: "fix_findings_and_reinvoke",
+      next_action: "fix_findings_then_summarize_and_escalate",
     };
   }
 
-  if (priorCount >= effectiveCap) {
+  if (priorCount >= hardCap) {
     return {
       ok: false,
       error: "codex_review_prepush_cap_reached",
       message:
-        `gc_codex_review pre-push convergence cap reached (${effectiveCap} cycles) for issue #${issueNumber} ` +
-        `on branch '${branchName}'. Record terminal escalation or retry only with override_cap=true and ` +
-        `override_reason="<user authorization>".`,
+        `gc_codex_review pre-push hard cap reached (${hardCap} cycles) for issue #${issueNumber} ` +
+        `on branch '${branchName}'. Per GC-O007 / ADR-029, after cycle ${hardCap} you must (a) post a ` +
+        `summary of findings + fixes to the issue thread, then (b) escalate to the user and ask whether ` +
+        `to run cycle ${hardCap + 1} or push as-is. Do not address findings by silently re-invoking ` +
+        `codex. If the user authorizes another cycle, retry with override_cap=true and ` +
+        `override_reason="<their authorization>".`,
       issue_number: issueNumber,
       branch: branchName,
       prior_cycles: priorCount,
-      cap: effectiveCap,
-      configured_cap: hardCap,
-      next_action: "record_terminal_escalation",
+      cap: hardCap,
+      next_action: "post_summary_and_escalate_to_user",
     };
   }
 
@@ -8580,9 +4232,11 @@ export function evaluateCodexReviewPrePushCycleCap({
   return {
     ok: true,
     nextCycle,
-    cap: effectiveCap,
-    configured_cap: hardCap,
-    next_action: "fix_findings_and_reinvoke",
+    cap: hardCap,
+    next_action:
+      nextCycle === hardCap
+        ? "fix_all_findings_then_summarize_and_escalate"
+        : "fix_all_findings_and_restage",
   };
 }
 
@@ -8644,7 +4298,7 @@ export function buildCodexReviewPrePushCycleMarker({
 
 // Default test-quality cap, lowered from 3 → 1 by issue #906 alongside the
 // codex-review default. Override via `workflow.test_quality_review.pre_push_cap`.
-export const TEST_QUALITY_REVIEW_HARD_CAP = 2;
+export const TEST_QUALITY_REVIEW_HARD_CAP = 1;
 
 // Resolve the effective per-reviewer pre-push cap from `.ground-control.yaml`.
 // Falls back to `moduleDefault` ONLY for legitimate absence (missing file,
@@ -8742,7 +4396,6 @@ export function evaluateTestQualityReviewCycleCap({
       `evaluateTestQualityReviewCycleCap: priorCount must be a non-negative number, got ${priorCount}`,
     );
   }
-  const effectiveCap = normalizeReviewHardCap(hardCap);
 
   if (overrideCap === true) {
     if (typeof overrideReason !== "string" || overrideReason.trim() === "") {
@@ -8755,35 +4408,35 @@ export function evaluateTestQualityReviewCycleCap({
         issue_number: issueNumber,
         branch: branchName,
         prior_cycles: priorCount,
-        cap: effectiveCap,
-        configured_cap: hardCap,
+        cap: hardCap,
       };
     }
     return {
       ok: true,
       nextCycle: priorCount + 1,
-      cap: effectiveCap,
-      configured_cap: hardCap,
+      cap: hardCap,
       override: true,
       override_reason: overrideReason.trim(),
-      next_action: "fix_findings_and_reinvoke",
+      next_action: "fix_findings_then_summarize_and_escalate",
     };
   }
 
-  if (priorCount >= effectiveCap) {
+  if (priorCount >= hardCap) {
     return {
       ok: false,
       error: "test_quality_review_cap_reached",
       message:
-        `gc_test_quality_review convergence cap reached (${effectiveCap} cycles) for issue #${issueNumber} ` +
-        `on branch '${branchName}'. Record terminal escalation or retry only with override_cap=true and ` +
-        `override_reason="<user authorization>".`,
+        `gc_test_quality_review hard cap reached (${hardCap} cycles) for issue #${issueNumber} ` +
+        `on branch '${branchName}'. Per ADR-029 / #884 follow-up, after cycle ${hardCap} you must ` +
+        `(a) post a summary of remaining findings + fix history to the issue thread, then (b) ` +
+        `escalate to the user and ask whether to run cycle ${hardCap + 1} or ship as-is. Do not ` +
+        `address findings by silently re-invoking the reviewer. If the user authorizes another ` +
+        `cycle, retry with override_cap=true and override_reason="<their authorization>".`,
       issue_number: issueNumber,
       branch: branchName,
       prior_cycles: priorCount,
-      cap: effectiveCap,
-      configured_cap: hardCap,
-      next_action: "record_terminal_escalation",
+      cap: hardCap,
+      next_action: "post_summary_and_escalate_to_user",
     };
   }
 
@@ -8791,9 +4444,11 @@ export function evaluateTestQualityReviewCycleCap({
   return {
     ok: true,
     nextCycle,
-    cap: effectiveCap,
-    configured_cap: hardCap,
-    next_action: "fix_findings_and_reinvoke",
+    cap: hardCap,
+    next_action:
+      nextCycle === hardCap
+        ? "fix_findings_then_summarize_and_escalate"
+        : "fix_findings_and_reinvoke",
   };
 }
 
@@ -8908,126 +4563,6 @@ export function buildPhaseMarker({ phase, issueNumber }) {
   ].join("\n");
 }
 
-const BOUND_PHASE_MARKER_RE = /<!--\s*gc:phase\s+([^]*?)-->/g;
-const PHASE_MARKER_ATTR_RE = /([a-z_]+)="([^"]*)"/g;
-const BOUND_PHASES = new Set([
-  "context_loaded",
-  "contract",
-  "test_red",
-  "impl_green",
-  "gates_green",
-  "remote_gates_green",
-  "traceability_reconciled",
-]);
-const PHASE_NEXT_ACTIONS = Object.freeze({
-  context_loaded: "run_gc_get_implementation_context",
-  contract: "run_gc_post_interface_contract",
-  test_red: "run_gc_assert_test_red",
-  impl_green: "run_gc_assert_impl_green",
-  gates_green: "rerun_gc_run_gates",
-  remote_gates_green: "rerun_gc_watch_required_statuses",
-  traceability_reconciled: "rerun_gc_assert_traceability_reconciled",
-});
-
-function markerAttr(value) {
-  return encodeURIComponent(String(value));
-}
-
-function unmarkerAttr(value) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-function parseMarkerAttrs(attrText) {
-  const attrs = {};
-  for (const match of attrText.matchAll(PHASE_MARKER_ATTR_RE)) {
-    attrs[match[1]] = unmarkerAttr(match[2]);
-  }
-  return attrs;
-}
-
-export function buildBoundPhaseMarker({ phase, issueNumber, binding = {}, body = null }) {
-  if (!BOUND_PHASES.has(phase)) {
-    throw new Error(`buildBoundPhaseMarker only supports: ${[...BOUND_PHASES].join(", ")}`);
-  }
-  const attrs = {
-    phase,
-    issue: String(issueNumber),
-    marker_schema: "1",
-    ...Object.fromEntries(Object.entries(binding).filter(([, value]) => value != null)),
-  };
-  const attrText = Object.entries(attrs)
-    .map(([key, value]) => `${key}="${markerAttr(value)}"`)
-    .join(" ");
-  const marker = [
-    `<!-- gc:phase ${attrText} -->`,
-    "",
-    `_gc workflow phase recorded: \`${phase}\` (issue #${issueNumber})._ ` +
-      "Posted by the MCP server after re-verifying the bound workflow state. " +
-      "Do not edit or delete — downstream tools use this marker and binding to detect stale results.",
-  ].join("\n");
-  return body ? `${marker}\n\n${body}` : marker;
-}
-
-export function parseBoundPhaseMarkers(commentBodies, { issueNumber, phase = null } = {}) {
-  const records = [];
-  if (!Array.isArray(commentBodies)) return records;
-  for (const body of commentBodies) {
-    if (typeof body !== "string") continue;
-    for (const match of body.matchAll(BOUND_PHASE_MARKER_RE)) {
-      const attrs = parseMarkerAttrs(match[1]);
-      const markerIssue = Number.parseInt(attrs.issue, 10);
-      if (Number.isInteger(issueNumber) && markerIssue !== issueNumber) continue;
-      if (phase && attrs.phase !== phase) continue;
-      const tail = body.slice((match.index ?? 0) + match[0].length).trim();
-      records.push({ phase: attrs.phase, issue_number: markerIssue, attrs, body: tail });
-    }
-  }
-  return records;
-}
-
-export function latestBoundPhaseMarker(commentBodies, { issueNumber, phase } = {}) {
-  const markers = parseBoundPhaseMarkers(commentBodies, { issueNumber, phase });
-  return markers.length > 0 ? markers[markers.length - 1] : null;
-}
-
-export function evaluateBoundPhaseMarkerFreshness({ commentBodies, issueNumber, phase, expected }) {
-  const markers = parseBoundPhaseMarkers(commentBodies, { issueNumber, phase });
-  if (markers.length === 0) {
-    return {
-      ok: false,
-      error: "missing_phase_marker",
-      missing: [phase],
-      next_action: PHASE_NEXT_ACTIONS[phase] ?? `run_${phase}_phase`,
-    };
-  }
-  const latest = markers[markers.length - 1];
-  const actual = {};
-  const expectedSubset = {};
-  const staleKeys = [];
-  for (const [key, value] of Object.entries(expected || {})) {
-    if (value == null) continue;
-    expectedSubset[key] = String(value);
-    actual[key] = latest.attrs[key] ?? null;
-    if (actual[key] !== String(value)) staleKeys.push(key);
-  }
-  if (staleKeys.length > 0) {
-    return {
-      ok: false,
-      error: "stale_phase_marker",
-      marker: phase,
-      stale_keys: staleKeys,
-      expected: expectedSubset,
-      actual,
-      next_action: PHASE_NEXT_ACTIONS[phase] ?? `rerun_${phase}_phase`,
-    };
-  }
-  return { ok: true, marker: phase, attrs: latest.attrs };
-}
-
 // Maximum bytes of diff text to inline into a codex review prompt. Beyond
 // this, we switch to a manifest (file list + numstat) and instruct codex to
 // fetch per-file diffs via shell. Keeps prompt size bounded so review latency
@@ -9058,11 +4593,9 @@ export function buildDiffBlock({ diffText, mode = "inline", manifest = null, bas
 // Codex finding field description shared by both core and security reviewers
 // (#931). The verdict envelope's `blocking` array contains items of this shape.
 const CODEX_FINDING_FIELDS_DESCRIPTION = [
-  '    `severity` — exactly "Minor", "Major", "Critical", or "Blocking". Critical/Blocking require independent cross-model confirmation before they control gating.',
   "    `path`   — repo-relative file path (string, no leading `/`, no `..` segments).",
   "    `line`   — line number in the new (RIGHT) side of the diff, as a positive integer. File-level comments are not yet supported; anchor every finding to a specific line in the diff.",
   "    `title`  — one-line summary, ≤200 characters, non-empty.",
-  "    `evidence` — one concise sentence tying the finding to the supplied requirement, contract, plan, ADR, gate result, or diff hunk.",
   "    `body`   — detailed explanation, ≤65322 characters, non-empty. Self-contained — do NOT reference 'see above'. Do NOT paste full file contents, secret values, or environment variables into the body.",
   '    `classification` — exactly "one-off" or "class".',
   "    `sweep_evidence` — REQUIRED when classification is \"one-off\". One-line statement of what you swept and what you did NOT find (e.g. \"grepped for `*Repository` calls across `backend/src/main` — 12 sites, all use the scoped helper; this site is the only bypass\"). Forbidden when classification is \"class\" (class findings document evidence via category.instances).",
@@ -9070,11 +4603,9 @@ const CODEX_FINDING_FIELDS_DESCRIPTION = [
   "    `structural_blocker` — optional boolean. Set to true on a one-off finding that warrants verdict=don't-ship (e.g. missing security boundary at a unique site). Implicit on class findings.",
 ].join("\n");
 
-const CODEX_CORE_FINDING_EXAMPLE = '{"severity":"Major","path":"backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java","line":42,"title":"Bypasses canonical ErrorResponse envelope","evidence":"The diff adds three controller error responses outside GlobalExceptionHandler, contrary to the repo boundary contract.","body":"Returns ResponseEntity<String> with a hand-rolled JSON shape instead of routing through GlobalExceptionHandler + ErrorResponse. Three call-sites in this diff do the same — fix at GlobalExceptionHandler not site-by-site.","classification":"class","category":{"shape":"controller method returning ResponseEntity<String> for error cases instead of throwing through GlobalExceptionHandler","instances":["backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java:42","backend/src/main/java/com/keplerops/groundcontrol/api/bar/BarController.java:55","backend/src/main/java/com/keplerops/groundcontrol/api/baz/BazController.java:88"]}}';
+const CODEX_CORE_FINDING_EXAMPLE = '{"path":"backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java","line":42,"title":"Bypasses canonical ErrorResponse envelope","body":"Returns ResponseEntity<String> with a hand-rolled JSON shape instead of routing through GlobalExceptionHandler + ErrorResponse. Three call-sites in this diff do the same — fix at GlobalExceptionHandler not site-by-site.","classification":"class","category":{"shape":"controller method returning ResponseEntity<String> for error cases instead of throwing through GlobalExceptionHandler","instances":["backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java:42","backend/src/main/java/com/keplerops/groundcontrol/api/bar/BarController.java:55","backend/src/main/java/com/keplerops/groundcontrol/api/baz/BazController.java:88"]}}';
 
-const CODEX_SECURITY_FINDING_EXAMPLE = '{"severity":"Critical","path":"deploy/scripts/sync.sh","line":99,"title":"Bearer token in curl argv","evidence":"The added curl command interpolates a bearer token into argv, exposing it through process listings on shared runners.","body":"Attacker model: other local users on the runner. Path: token is interpolated into curl -H argv; readable via /proc/<pid>/cmdline. Fix: pass through --config <(printf ...) or env-only header.","classification":"one-off","sweep_evidence":"grepped \\"curl -H\\" across deploy/scripts — 4 sites, 3 use --config; this site is the only one putting a secret in argv.","structural_blocker":true}';
-
-const CODEX_ARCHITECTURE_FINDING_EXAMPLE = '{"severity":"Major","path":"backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooService.java","line":73,"title":"Bypasses scoped repository boundary","evidence":"The diff adds a direct cross-project lookup instead of using the scoped repository helper required by the boundary contract.","body":"The service reaches across the project boundary with a raw repository call. The established service path routes through the scoped helper, which applies tenant/project constraints consistently. Fix by reusing the canonical helper rather than adding another local guard.","classification":"class","category":{"shape":"service method bypassing scoped repository helper for project-scoped reads","instances":["backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooService.java:73","backend/src/main/java/com/keplerops/groundcontrol/api/bar/BarService.java:118"]}}';
+const CODEX_SECURITY_FINDING_EXAMPLE = '{"path":"deploy/scripts/sync.sh","line":99,"title":"Bearer token in curl argv","body":"Attacker model: other local users on the runner. Path: token is interpolated into curl -H argv; readable via /proc/<pid>/cmdline. Fix: pass through --config <(printf ...) or env-only header.","classification":"one-off","sweep_evidence":"grepped \\"curl -H\\" across deploy/scripts — 4 sites, 3 use --config; this site is the only one putting a secret in argv.","structural_blocker":true}';
 
 export function buildCodexReviewCorePrompt({
   baseBranch,
@@ -9088,76 +4619,31 @@ export function buildCodexReviewCorePrompt({
   const lines = [
     buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode }),
     "",
-    "Review the code in this PR for correctness against the stated requirement, contract, implementation plan, and binding ADRs. The goal is principal-engineer JUDGMENT, not finding accumulation. Return `verdict: ship` when the change satisfies the obligations — that is a valid outcome.",
+    "Review the code in this PR for production-readiness. The goal is principal-engineer JUDGMENT, not finding accumulation. Return `verdict: ship` when the change is shaped correctly — that is a valid outcome.",
     "",
-    "A dedicated security reviewer and architecture reviewers run against the same diff in separate fresh contexts — do NOT spend effort on OWASP-style security findings or architectural preference calls here. If you notice one, a one-line `note` is enough; the matching lens will handle it.",
+    "A dedicated security reviewer runs against the same diff in parallel — do NOT spend effort on OWASP-style security findings here. If you notice something security-relevant, a one-line `note` is enough; the security reviewer will catch it.",
     "",
-    "Correctness anti-overcorrection discipline:",
-    "1. First extract the stated obligations from the requirement, contract, plan, and binding ADRs that are visible in the supplied artifacts.",
-    "2. Then audit the diff only against those obligations. Flag gaps in expected vs actual behavior; do not request unrelated improvements or speculative cleanups.",
-    "3. If no obligation is violated, return `verdict: ship`; clean is a valid outcome.",
+    "Sub-section the core review along two axes — keep each axis short and ranked. The notes cap (≤2 total) forces ranking; do not pad.",
     "",
-    "Correctness audit scope:",
-    "- Expected vs actual behavior for every stated obligation.",
-    "- Edge cases explicitly implied by the requirement or plan.",
-    "- Data-shape and API-contract compatibility introduced by the diff.",
-    "- Runtime behavior that would make tests pass while the requirement is still unsatisfied.",
+    "### Axis 1: Architecture-fit",
+    "- Does the change fit the repo's declared design vocabulary (see Repo vocabulary below)?",
+    "- Cross-cutting concerns and canonical helpers — does the change reuse the incumbents the repo already has, or re-implement them?",
+    "- Boundary contract — does the change respect the layering invariant?",
+    "- ADR alignment — does the change conflict with any binding ADR?",
+    "- This axis allows at most 1 non-blocking `note`.",
     "",
-    "What NOT to flag:",
-    "- Style, naming, helper extraction, or architecture preference unless it causes a concrete behavioral obligation to fail.",
-    "- Existing issues unchanged by this diff.",
-    "- Test-strength issues unless they prove the implementation behavior is wrong.",
+    "### Axis 2: Code-quality",
+    "- Fitness for purpose, maintainability, extensibility — does the change solve the stated problem and leave room for the next obvious variation without speculative abstraction?",
+    "- Tests pin real behavior (not just shape).",
+    "- This axis allows at most 1 non-blocking `note`. The total notes cap across both axes is 2.",
     "",
-    "This lens allows at most 2 non-blocking `notes`; rank them and do not pad.",
+    "Each axis emits findings into the SAME `blocking` array (when material) and the SAME `notes` array (when non-blocking). The axis is a thinking aid for YOU; the envelope is unified.",
     "",
     ...buildPrincipalEngineerRubric({
       reviewerLabel: "core",
-      reviewerLens: "correctness",
       vocabulary,
       findingFieldsDescription: CODEX_FINDING_FIELDS_DESCRIPTION,
       findingExampleJson: CODEX_CORE_FINDING_EXAMPLE,
-    }),
-    "",
-    ...buildDiffBlock({ diffText, mode: diffMode, manifest: diffManifest, baseRefDescriptor }),
-  ];
-  return lines.join("\n");
-}
-
-export function buildCodexArchitectureReviewPrompt({
-  baseBranch,
-  uncommitted,
-  diffText,
-  diffMode = "inline",
-  diffManifest = null,
-  baseRefDescriptor = null,
-  vocabulary = null,
-}) {
-  const lines = [
-    buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode }),
-    "",
-    "You are the architecture lens for this review. Focus only on architectural contract fit introduced by the diff: repo vocabulary, boundary contracts, binding ADRs, canonical helpers, layering, and cross-cutting concerns. Return `verdict: ship` when the change fits those contracts.",
-    "",
-    "Architecture audit scope:",
-    "- Does the change fit the repo's declared design vocabulary (see Repo vocabulary below)?",
-    "- Cross-cutting concerns and canonical helpers — does the change reuse the incumbents the repo already has, or re-implement them?",
-    "- Boundary contract — does the change respect layering and ownership invariants?",
-    "- ADR alignment — does the change conflict with any binding ADR or pre-declared plan constraint?",
-    "- Extensibility only where the stated requirement already implies the next variation; do not ask for speculative abstraction.",
-    "",
-    "What NOT to flag:",
-    "- Pure style, naming, file length, or helper extraction below the workflow anti-rubric threshold.",
-    "- Correctness bugs without architectural contract significance; the correctness lens owns those.",
-    "- Security bugs without architectural boundary significance; the security lens owns those.",
-    "- Static-analyzer categories already owned by repo-native gates unless the diff bypasses a binding architectural control.",
-    "",
-    "This lens allows at most 2 non-blocking `notes`; rank them and do not pad.",
-    "",
-    ...buildPrincipalEngineerRubric({
-      reviewerLabel: "architecture",
-      reviewerLens: "architecture",
-      vocabulary,
-      findingFieldsDescription: CODEX_FINDING_FIELDS_DESCRIPTION,
-      findingExampleJson: CODEX_ARCHITECTURE_FINDING_EXAMPLE,
     }),
     "",
     ...buildDiffBlock({ diffText, mode: diffMode, manifest: diffManifest, baseRefDescriptor }),
@@ -9202,7 +4688,6 @@ export function buildCodexSecurityReviewPrompt({
     "",
     ...buildPrincipalEngineerRubric({
       reviewerLabel: "security",
-      reviewerLens: "security",
       vocabulary,
       findingFieldsDescription: CODEX_FINDING_FIELDS_DESCRIPTION,
       findingExampleJson: CODEX_SECURITY_FINDING_EXAMPLE,
@@ -9368,474 +4853,6 @@ export function parseCodexReviewFindingsTail(stdout, repoRoot) {
   return { findings: envelope.blocking, body, envelope };
 }
 
-function normalizeReviewerLens(lens, fallback = "correctness") {
-  if (typeof lens === "string") {
-    const normalized = lens.trim().toLowerCase();
-    if (REVIEWER_LENS_SET.has(normalized)) return normalized;
-    if (normalized === "core") return "correctness";
-    if (normalized === "test_quality" || normalized === "test-quality" || normalized === "test-quality-review") return "test-strength";
-  }
-  if (typeof fallback === "string") {
-    const normalizedFallback = fallback.trim().toLowerCase();
-    if (REVIEWER_LENS_SET.has(normalizedFallback)) return normalizedFallback;
-    if (normalizedFallback === "core") return "correctness";
-    if (normalizedFallback === "test_quality" || normalizedFallback === "test-quality" || normalizedFallback === "test-quality-review") return "test-strength";
-  }
-  return "correctness";
-}
-
-export function normalizeReviewSeverity(severity) {
-  if (typeof severity !== "string" || severity.trim() === "") return "Major";
-  return REVIEW_SEVERITY_ALIASES.get(severity.trim().toLowerCase()) ?? "Major";
-}
-
-function lowerReviewSeverity(a, b) {
-  const left = normalizeReviewSeverity(a);
-  const right = normalizeReviewSeverity(b);
-  return REVIEW_SEVERITY_RANK.get(left) <= REVIEW_SEVERITY_RANK.get(right) ? left : right;
-}
-
-function normalizeSeverityOpinions(finding) {
-  const opinions = [];
-  const primary = normalizeReviewSeverity(finding?.severity);
-  opinions.push({
-    source: typeof finding?.reviewer_lens === "string" ? finding.reviewer_lens : "primary",
-    severity: primary,
-    confirmed: true,
-  });
-  const rawOpinions = Array.isArray(finding?.severity_opinions) ? finding.severity_opinions : [];
-  for (const opinion of rawOpinions) {
-    if (!opinion || typeof opinion !== "object") continue;
-    opinions.push({
-      source: typeof opinion.source === "string" && opinion.source.trim() !== "" ? opinion.source.trim() : "reviewer",
-      severity: normalizeReviewSeverity(opinion.severity),
-      confirmed: opinion.confirmed === true,
-    });
-  }
-  const confirmations = Array.isArray(finding?.confirmations) ? finding.confirmations : [];
-  for (const confirmation of confirmations) {
-    if (!confirmation || typeof confirmation !== "object") continue;
-    opinions.push({
-      source: typeof confirmation.reviewer === "string" && confirmation.reviewer.trim() !== ""
-        ? confirmation.reviewer.trim()
-        : "cross-model",
-      severity: normalizeReviewSeverity(confirmation.severity ?? finding?.severity),
-      confirmed: confirmation.confirmed !== false,
-    });
-  }
-  return opinions;
-}
-
-function normalizeReviewFinding(finding, lens, idx) {
-  const classification = finding?.classification === "class" ? "class" : "one-off";
-  const severityOpinions = normalizeSeverityOpinions({ ...finding, reviewer_lens: lens });
-  let effectiveSeverity = severityOpinions[0]?.severity ?? "Major";
-  for (const opinion of severityOpinions.slice(1)) {
-    effectiveSeverity = lowerReviewSeverity(effectiveSeverity, opinion.severity);
-  }
-  const primarySeverity = normalizeReviewSeverity(finding?.severity);
-  const needsConfirmation = primarySeverity === "Critical" || primarySeverity === "Blocking";
-  const confirmedByIndependentModel =
-    !needsConfirmation ||
-    severityOpinions.some((opinion) => opinion.confirmed === true && opinion.source !== lens && opinion.source !== "primary");
-  const path = typeof finding?.path === "string" && finding.path.trim() !== "" ? finding.path.trim() : null;
-  const line = Number.isInteger(finding?.line) && finding.line > 0 ? finding.line : null;
-  const location =
-    typeof finding?.location === "string" && finding.location.trim() !== ""
-      ? finding.location.trim()
-      : path
-        ? line != null ? `${path}:${line}` : path
-        : "(unlocated)";
-  return {
-    id: typeof finding?.id === "string" && finding.id.trim() !== "" ? finding.id.trim() : `${lens}-${idx + 1}`,
-    reviewer_lens: lens,
-    severity: primarySeverity,
-    effective_severity: effectiveSeverity,
-    severity_opinions: severityOpinions,
-    location,
-    title:
-      typeof finding?.title === "string" && finding.title.trim() !== ""
-        ? finding.title.trim()
-        : typeof finding?.problem === "string" && finding.problem.trim() !== ""
-          ? finding.problem.trim()
-          : "(no title)",
-    evidence:
-      typeof finding?.evidence === "string" && finding.evidence.trim() !== ""
-        ? finding.evidence.trim()
-        : typeof finding?.body === "string" && finding.body.trim() !== ""
-          ? finding.body.trim()
-          : typeof finding?.why_it_matters === "string" && finding.why_it_matters.trim() !== ""
-            ? finding.why_it_matters.trim()
-            : "",
-    classification,
-    sweep:
-      typeof finding?.sweep === "string" && finding.sweep.trim() !== ""
-        ? finding.sweep.trim()
-        : typeof finding?.sweep_evidence === "string" && finding.sweep_evidence.trim() !== ""
-          ? finding.sweep_evidence.trim()
-          : null,
-    category: finding?.category && typeof finding.category === "object" ? finding.category : null,
-    disposition: typeof finding?.disposition === "string" ? finding.disposition : "unresolved",
-    confirmation_required: needsConfirmation,
-    confirmation_satisfied: confirmedByIndependentModel,
-  };
-}
-
-function normalizeLensEnvelope(envelope, fallbackLens = "correctness") {
-  const lens = normalizeReviewerLens(envelope?.reviewer_lens, fallbackLens);
-  const verdict = REVIEW_VERDICTS.includes(envelope?.verdict) ? envelope.verdict : "ship-with-fixes";
-  const rawFindings = Array.isArray(envelope?.findings)
-    ? envelope.findings
-    : Array.isArray(envelope?.blocking)
-      ? envelope.blocking
-      : [];
-  const findings = rawFindings.map((finding, idx) => normalizeReviewFinding(finding, lens, idx));
-  const blocking = Array.isArray(envelope?.blocking) && envelope.blocking.length > 0
-    ? envelope.blocking.map((finding, idx) => normalizeReviewFinding(finding, lens, idx))
-    : findings.filter((finding) => finding.disposition === "unresolved");
-  return {
-    verdict,
-    reviewer_lens: lens,
-    architectural_read:
-      typeof envelope?.architectural_read === "string" && envelope.architectural_read.trim() !== ""
-        ? envelope.architectural_read.trim()
-        : typeof envelope?.summary === "string"
-          ? envelope.summary.trim()
-          : "",
-    findings,
-    blocking,
-    notes: Array.isArray(envelope?.notes) ? envelope.notes : [],
-  };
-}
-
-function normalizeGateResults(gateResults) {
-  if (Array.isArray(gateResults)) return gateResults;
-  if (Array.isArray(gateResults?.gates)) return gateResults.gates;
-  return [];
-}
-
-function summarizeSeverityCounts(findings) {
-  const counts = Object.fromEntries(REVIEW_SEVERITIES.map((severity) => [severity, 0]));
-  for (const finding of findings) {
-    counts[finding.effective_severity] = (counts[finding.effective_severity] ?? 0) + 1;
-  }
-  return counts;
-}
-
-function categoryKey(finding) {
-  if (finding.classification !== "class") return null;
-  if (finding.category && typeof finding.category.shape === "string" && finding.category.shape.trim() !== "") {
-    return finding.category.shape.trim();
-  }
-  return finding.title;
-}
-
-export function buildReviewConvergenceDecisionAid({
-  currentCycle,
-  cap,
-  findings,
-  gateResults,
-  providerMissingFallbacks,
-  blockingGateFailures,
-  unconfirmedCriticalOrBlocking,
-  cycleHistory = [],
-}) {
-  const previous = Array.isArray(cycleHistory) && cycleHistory.length > 0
-    ? cycleHistory[cycleHistory.length - 1]
-    : null;
-  const currentSeverityCounts = summarizeSeverityCounts(findings);
-  const previousSeverityCounts = previous && Array.isArray(previous.findings)
-    ? summarizeSeverityCounts(previous.findings.map((finding, idx) => normalizeReviewFinding(finding, finding.reviewer_lens ?? "correctness", idx)))
-    : null;
-  const currentCategories = new Set(findings.map(categoryKey).filter(Boolean));
-  const previousCategories = new Set(
-    previous && Array.isArray(previous.findings)
-      ? previous.findings.map(categoryKey).filter(Boolean)
-      : [],
-  );
-  const newCategories = [...currentCategories].filter((category) => !previousCategories.has(category));
-  const unresolved = findings.map((finding) => ({
-    id: finding.id,
-    reviewer_lens: finding.reviewer_lens,
-    severity: finding.severity,
-    effective_severity: finding.effective_severity,
-    location: finding.location,
-    title: finding.title,
-    classification: finding.classification,
-    confirmation_required: finding.confirmation_required,
-    confirmation_satisfied: finding.confirmation_satisfied,
-  }));
-  return {
-    cycle: currentCycle,
-    cap,
-    cycle_history: Array.isArray(cycleHistory) ? cycleHistory : [],
-    unresolved_findings: unresolved,
-    severity_trend: {
-      current: currentSeverityCounts,
-      previous: previousSeverityCounts,
-      delta: previousSeverityCounts
-        ? Object.fromEntries(REVIEW_SEVERITIES.map((severity) => [
-            severity,
-            currentSeverityCounts[severity] - previousSeverityCounts[severity],
-          ]))
-        : null,
-    },
-    new_categories: newCategories,
-    confirmation_status: {
-      unconfirmed_critical_or_blocking: unconfirmedCriticalOrBlocking.map((finding) => ({
-        id: finding.id,
-        reviewer_lens: finding.reviewer_lens,
-        severity: finding.severity,
-        location: finding.location,
-        title: finding.title,
-      })),
-    },
-    gate_results: gateResults.map((gate) => ({
-      gate_id: gate.gate_id ?? gate.id ?? null,
-      capability: gate.capability ?? null,
-      outcome: gate.outcome ?? null,
-      blocking: gate.blocking === true,
-      ok: gate.ok === true,
-      provider_missing: gate.provider_missing === true,
-      reviewer_fallback_used: gate.reviewer_fallback_used === true,
-      threshold: gate.threshold ?? null,
-    })),
-    provider_missing_fallbacks: providerMissingFallbacks.map((gate) => ({
-      gate_id: gate.gate_id ?? gate.id ?? null,
-      capability: gate.capability ?? null,
-      fallback: gate.fallback ?? "reviewer_lens",
-    })),
-    projected_value_of_another_cycle:
-      findings.length === 0 && blockingGateFailures.length === 0
-        ? "low: no unresolved reviewer findings or blocking gate failures remain"
-        : newCategories.length > 0
-          ? "medium: new categories appeared in the latest cycle; another cycle may find adjacent instances after fixes"
-          : "low-to-medium: remaining work is known; fix the listed items before considering another review cycle",
-    recommended_next_action:
-      findings.length === 0 && blockingGateFailures.length === 0
-        ? "advance_to_next_phase"
-        : "owner_decision_required",
-  };
-}
-
-const FIX_RISK_DOC_TEST_PATTERNS = [
-  /^docs\//,
-  /^architecture\/adrs\//,
-  /^skills\//,
-  /^changelog\.d\//,
-  /^mcp\/ground-control\/.*\.test\.js$/,
-  /(^|\/)(__tests__|test|tests)\//,
-  /\.(md|adoc|txt)$/i,
-];
-
-const FIX_RISK_CRITICAL_PATH_PATTERNS = [
-  /^mcp\/ground-control\/(lib|index)\.js$/,
-  /^tools\/policy\//,
-  /^\.github\/workflows\//,
-  /(^|\/)(security|auth|audit|migration|migrations|liquibase|flyway)(\/|\.|$)/i,
-  /^backend\/src\/main\/.*(Controller|Service|Repository|Security|Config)\.java$/,
-];
-
-function fixRiskPathMatches(pathValue, patterns) {
-  const normalized = normalizeChangedPath(pathValue);
-  return patterns.some((pattern) => pattern.test(normalized));
-}
-
-function normalizeFixRiskInput(input) {
-  if (typeof input === "string") return { risk: input };
-  if (input && typeof input === "object") return input;
-  return null;
-}
-
-export function classifyFixRisk({
-  changedFiles = [],
-  diffInfo = null,
-  behaviorChange = false,
-  criticalPathTouched = false,
-  testCoverage = null,
-  proposedFix = null,
-} = {}) {
-  const files = [
-    ...new Set([
-      ...(Array.isArray(changedFiles) ? changedFiles : []),
-      ...(Array.isArray(diffInfo?.changed_files) ? diffInfo.changed_files : []),
-    ].map(normalizeChangedPath).filter(Boolean)),
-  ];
-  const factors = [];
-  const testsPresent = testCoverage === true
-    || files.some((pathValue) => /(^|\/)(test|tests|__tests__)(\/|$)|\.test\.|Test\./.test(pathValue));
-  const docsOrTestsOnly = files.length > 0 && files.every((pathValue) =>
-    fixRiskPathMatches(pathValue, FIX_RISK_DOC_TEST_PATTERNS)
-  );
-  const criticalFiles = files.filter((pathValue) => fixRiskPathMatches(pathValue, FIX_RISK_CRITICAL_PATH_PATTERNS));
-  const proposedText = typeof proposedFix === "string" ? proposedFix : stableJson(proposedFix ?? {});
-  const textSignalsBehavior =
-    /\b(api|schema|migration|auth|security|permission|transaction|thread|async|lock|delete|rewrite|refactor|behavior)\b/i
-      .test(proposedText);
-  const effectiveBehaviorChange = behaviorChange === true || textSignalsBehavior;
-  if (docsOrTestsOnly) factors.push("docs_or_tests_only");
-  if (criticalPathTouched === true || criticalFiles.length > 0) factors.push("critical_path_touched");
-  if (effectiveBehaviorChange) factors.push("behavior_change");
-  if (!testsPresent) factors.push("no_area_test_coverage");
-  if (files.length > 8) factors.push("broad_blast_radius");
-  if ((criticalPathTouched === true || criticalFiles.length > 0) && effectiveBehaviorChange) {
-    factors.push("critical_behavior_change");
-  }
-
-  let risk = "low";
-  if (factors.includes("critical_behavior_change")
-    || (effectiveBehaviorChange && !testsPresent)
-    || files.length > 12) {
-    risk = "high";
-  } else if (criticalPathTouched === true || criticalFiles.length > 0 || effectiveBehaviorChange || files.length > 4 || !testsPresent) {
-    risk = "medium";
-  }
-  if (docsOrTestsOnly && !effectiveBehaviorChange && criticalFiles.length === 0) risk = "low";
-  return {
-    risk,
-    automatic: risk !== "high",
-    factors: [...new Set(factors)],
-    changed_files_count: files.length,
-    critical_paths: criticalFiles,
-    test_coverage_present: testsPresent,
-  };
-}
-
-function normalizeFixRiskSignal(input) {
-  const normalized = normalizeFixRiskInput(input);
-  if (normalized == null) return null;
-  if (["low", "medium", "high"].includes(normalized.risk)) return normalized;
-  return classifyFixRisk(normalized);
-}
-
-export function dispatchReviewConvergence({
-  lensEnvelopes = [],
-  gateResults = [],
-  priorCycles = 0,
-  currentCycle = null,
-  cap = 2,
-  exitGates = {},
-  cycleHistory = [],
-  terminalEscalationRecorded = false,
-  proposedFixRisk = null,
-} = {}) {
-  const effectiveCap = normalizeReviewHardCap(cap);
-  const cycle = Number.isInteger(currentCycle) && currentCycle > 0 ? currentCycle : priorCycles + 1;
-  const lenses = (Array.isArray(lensEnvelopes) ? lensEnvelopes : [])
-    .map((envelope, idx) => normalizeLensEnvelope(envelope, REVIEWER_LENSES[idx] ?? "correctness"));
-  const findings = lenses.flatMap((lens) => lens.blocking.length > 0 ? lens.blocking : lens.findings);
-  const gates = normalizeGateResults(gateResults);
-  const blockingGateFailures = gates.filter((gate) => gate?.blocking === true && gate?.blocking_satisfied !== true && gate?.ok !== true);
-  const providerMissing = gates.filter((gate) => gate?.provider_missing === true);
-  const providerMissingWithoutFallback = providerMissing.filter((gate) =>
-    gate?.blocking === true && gate?.reviewer_fallback_used !== true && gate?.ok !== true
-  );
-  const providerMissingFallbacks = providerMissing.filter((gate) => gate?.reviewer_fallback_used === true);
-  const unconfirmedCriticalOrBlocking = findings.filter((finding) =>
-    finding.confirmation_required === true && finding.confirmation_satisfied !== true
-  );
-  const hasClassFindings = findings.some((finding) => finding.classification === "class");
-  const severityCounts = summarizeSeverityCounts(findings);
-  const maxCritical = Number.isInteger(exitGates.max_critical) ? exitGates.max_critical : 0;
-  const maxBlocking = Number.isInteger(exitGates.max_blocking) ? exitGates.max_blocking : 0;
-  const exitGateFailures = [];
-  if ((severityCounts.Blocking ?? 0) > maxBlocking) exitGateFailures.push("max_blocking");
-  if ((severityCounts.Critical ?? 0) > maxCritical) exitGateFailures.push("max_critical");
-  if (hasClassFindings) exitGateFailures.push("no_unresolved_class_findings");
-  if (unconfirmedCriticalOrBlocking.length > 0) exitGateFailures.push("no_unconfirmed_critical_or_blocking");
-  if (blockingGateFailures.length > 0 || providerMissingWithoutFallback.length > 0) exitGateFailures.push("blocking_gates_satisfied");
-
-  const dirty =
-    lenses.some((lens) => lens.verdict !== "ship") ||
-    findings.length > 0 ||
-    blockingGateFailures.length > 0 ||
-    providerMissingWithoutFallback.length > 0 ||
-    exitGateFailures.length > 0;
-
-  const base = {
-    ok: true,
-    dispatcher: "review_convergence_v1",
-    cycle,
-    cap: effectiveCap,
-    configured_cap: cap,
-    lenses,
-    findings,
-    severity_counts: severityCounts,
-    gate_summary: {
-      total: gates.length,
-      blocking_failures: blockingGateFailures.length,
-      provider_missing: providerMissing.length,
-      reviewer_fallback_used: providerMissingFallbacks.length,
-    },
-    provider_missing_fallbacks: providerMissingFallbacks,
-    exit_gate_failures: [...new Set(exitGateFailures)],
-    unconfirmed_critical_or_blocking: unconfirmedCriticalOrBlocking,
-    degraded: providerMissingFallbacks.length > 0,
-  };
-
-  if (terminalEscalationRecorded === true) {
-    return {
-      ...base,
-      next_action: "record_terminal_escalation",
-      terminal: true,
-    };
-  }
-
-  if (!dirty) {
-    return {
-      ...base,
-      next_action: "advance_to_next_phase",
-      clean: true,
-      early_stop_allowed: true,
-    };
-  }
-
-  const decisionAid = buildReviewConvergenceDecisionAid({
-    currentCycle: cycle,
-    cap: effectiveCap,
-    findings,
-    gateResults: gates,
-    providerMissingFallbacks,
-    blockingGateFailures,
-    unconfirmedCriticalOrBlocking,
-    cycleHistory,
-  });
-  const fixRisk = normalizeFixRiskSignal(proposedFixRisk);
-  if (fixRisk?.risk === "high") {
-    return {
-      ...base,
-      next_action: "post_high_risk_fix_and_escalate",
-      escalation_reason: "high_risk_fix",
-      clean: false,
-      terminal: true,
-      early_stop_allowed: false,
-      decision_aid: {
-        ...decisionAid,
-        high_risk_fix: fixRisk,
-        recommended_next_action: "owner_sanity_check_required",
-      },
-    };
-  }
-
-  if (cycle >= effectiveCap) {
-    return {
-      ...base,
-      next_action: "post_structured_decision_aid_and_escalate",
-      clean: false,
-      early_stop_allowed: false,
-      decision_aid: decisionAid,
-    };
-  }
-
-  return {
-    ...base,
-    next_action: "fix_findings_and_reinvoke",
-    clean: false,
-    early_stop_allowed: false,
-    decision_aid: decisionAid,
-  };
-}
-
 // Validate the verdict envelope returned by both core and security reviewers
 // (issue #931). Returns the normalized envelope; throws on any shape violation.
 //
@@ -9941,9 +4958,7 @@ export function validateReviewEnvelope(raw, repoRoot) {
   if (errs.length) throw new Error(errs[0]);
   return {
     verdict: raw.verdict,
-    reviewer_lens: normalizeReviewerLens(raw.reviewer_lens, "correctness"),
     architectural_read: raw.architectural_read.trim(),
-    findings: blocking,
     blocking,
     notes,
   };
@@ -10101,20 +5116,12 @@ function validateFinding(raw, idx, repoRoot) {
   const finding = {
     path,
     line,
-    severity: normalizeReviewSeverity(raw.severity),
     title: truncateReviewProse(raw.title, FINDING_TITLE_MAX),
     body: truncateReviewProse(raw.body, FINDING_BODY_MAX),
-    evidence:
-      typeof raw.evidence === "string" && raw.evidence.trim() !== ""
-        ? truncateReviewProse(raw.evidence.trim(), FINDING_BODY_MAX)
-        : truncateReviewProse(raw.body, FINDING_BODY_MAX),
     classification: raw.classification,
   };
-  if (Array.isArray(raw.severity_opinions)) finding.severity_opinions = raw.severity_opinions;
-  if (Array.isArray(raw.confirmations)) finding.confirmations = raw.confirmations;
   if (category !== null) finding.category = category;
   if (sweepEvidence !== null) finding.sweep_evidence = sweepEvidence;
-  if (sweepEvidence !== null) finding.sweep = sweepEvidence;
   if (structuralBlocker) finding.structural_blocker = true;
   return finding;
 }
@@ -10531,32 +5538,6 @@ async function postPhaseMarker(repoRoot, owner, name, issueNumber, phase, extras
   }
 }
 
-async function postGatePhaseMarker(repoRoot, owner, name, issueNumber, phase, binding, extras = {}) {
-  const body = buildBoundPhaseMarker({
-    phase,
-    issueNumber,
-    binding,
-    body: extras.commentBody ?? null,
-  });
-  const { stdout } = await execFile(
-    "gh",
-    [
-      "api",
-      "--method",
-      "POST",
-      `/repos/${owner}/${name}/issues/${issueNumber}/comments`,
-      "-f",
-      `body=${body}`,
-    ],
-    { cwd: repoRoot },
-  );
-  try {
-    return JSON.parse(stdout);
-  } catch {
-    return null;
-  }
-}
-
 // Read the PR's issue-comments and count prior gc_codex_review cycle markers.
 // Issue-comments (not pull-request review comments) — the marker is a top-level
 // comment on the PR, which GitHub stores under the issue API.
@@ -10864,12 +5845,12 @@ async function runSingleCodexReview({ repoRoot, prompt, signal = undefined }) {
   }
 }
 
-// Default for whether to run Codex reviewers in parallel. Sequential is the
-// default because concurrent codex processes contend for CPU, file
+// Default for whether to run the two reviewers in parallel. Sequential is the
+// default because two concurrent codex processes contend for CPU, file
 // descriptors, and provider rate limits — and on a single-machine workflow
 // the wall-clock difference is small. Set GC_CODEX_REVIEW_PARALLEL=2 to
-// enable reviewer parallelism. Values other than 1 or 2 fall back to 1
-// (sequential).
+// re-enable the old parallel behavior. Values other than 1 or 2 fall back to
+// 1 (sequential).
 export const DEFAULT_CODEX_REVIEW_PARALLEL = (() => {
   const raw = Number.parseInt(process.env.GC_CODEX_REVIEW_PARALLEL || "", 10);
   return raw === 2 ? 2 : 1;
@@ -10916,14 +5897,13 @@ export const TEST_QUALITY_REVIEW_SCHEMA = {
   type: "object",
   properties: {
     verdict: { type: "string", enum: ["ship", "ship-with-fixes", "don't-ship"] },
-    reviewer_lens: { type: "string", enum: ["test-strength"] },
     architectural_read: { type: "string", minLength: 1 },
     blocking: {
       type: "array",
       items: {
         type: "object",
         properties: {
-          severity: { type: "string", enum: ["Minor", "Major", "Critical", "Blocking", "minor", "major", "critical", "blocking", "warning"] },
+          severity: { type: "string", enum: ["critical", "warning"] },
           location: { type: "string", minLength: 1 },
           problem: { type: "string", minLength: 1 },
           why_it_matters: { type: "string" },
@@ -10940,31 +5920,6 @@ export const TEST_QUALITY_REVIEW_SCHEMA = {
             additionalProperties: false,
           },
           structural_blocker: { type: "boolean" },
-          severity_opinions: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                source: { type: "string" },
-                severity: { type: "string", enum: ["Minor", "Major", "Critical", "Blocking", "minor", "major", "critical", "blocking", "warning"] },
-                confirmed: { type: "boolean" },
-              },
-              required: ["severity"],
-              additionalProperties: false,
-            },
-          },
-          confirmations: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                reviewer: { type: "string" },
-                severity: { type: "string", enum: ["Minor", "Major", "Critical", "Blocking", "minor", "major", "critical", "blocking", "warning"] },
-                confirmed: { type: "boolean" },
-              },
-              additionalProperties: false,
-            },
-          },
         },
         required: ["severity", "location", "problem", "fix", "classification"],
         additionalProperties: false,
@@ -11005,7 +5960,7 @@ export const TEST_QUALITY_REVIEW_TIMEOUT_MS = 600_000;
 // why_it_matters / fix) and findings carry classification + sweep_evidence +
 // category alongside.
 const TEST_QUALITY_FINDING_FIELDS_DESCRIPTION = [
-  '    `severity`        — "Critical" for false-assurance tests that can miss a broken public contract; "Minor" for lower-risk warnings. Lowercase "critical"/"warning" is accepted for compatibility.',
+  '    `severity`        — exactly "critical" or "warning".',
   "    `location`        — `<file>::<TestClass>::<test_method>` OR `<file>:<line>`.",
   "    `problem`         — what's wrong (non-empty).",
   "    `why_it_matters`  — what regression this test would miss (optional but recommended).",
@@ -11016,13 +5971,12 @@ const TEST_QUALITY_FINDING_FIELDS_DESCRIPTION = [
   "    `structural_blocker` — optional boolean. Set on a one-off that warrants verdict=don't-ship.",
 ].join("\n");
 
-const TEST_QUALITY_FINDING_EXAMPLE = '{"severity":"Critical","location":"backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FooServiceTest.java::FooServiceTest::createFoo_returns_the_new_foo","problem":"Test calls fooService.create(...) but only verifies that the mock fooRepository.save was called. No assertion on the returned Foo.","why_it_matters":"Refactoring FooService.create to return null would still pass this test.","fix":"Assert on the returned Foo (id, name, status) after calling create().","classification":"class","category":{"shape":"@Test method that only verifies a mock interaction without asserting on the SUT\'s return value or state change","instances":["backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FooServiceTest.java:42","backend/src/test/java/com/keplerops/groundcontrol/unit/domain/BarServiceTest.java:55"]}}';
+const TEST_QUALITY_FINDING_EXAMPLE = '{"severity":"critical","location":"backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FooServiceTest.java::FooServiceTest::createFoo_returns_the_new_foo","problem":"Test calls fooService.create(...) but only verifies that the mock fooRepository.save was called. No assertion on the returned Foo.","why_it_matters":"Refactoring FooService.create to return null would still pass this test.","fix":"Assert on the returned Foo (id, name, status) after calling create().","classification":"class","category":{"shape":"@Test method that only verifies a mock interaction without asserting on the SUT\'s return value or state change","instances":["backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FooServiceTest.java:42","backend/src/test/java/com/keplerops/groundcontrol/unit/domain/BarServiceTest.java:55"]}}';
 
 export function buildTestQualityReviewPrompt({
   baseBranch,
   changedTestFiles,
   vocabulary = null,
-  interfaceContract = null,
 }) {
   if (typeof baseBranch !== "string" || baseBranch.trim() === "") {
     throw new Error("buildTestQualityReviewPrompt: baseBranch must be a non-empty string");
@@ -11040,19 +5994,9 @@ export function buildTestQualityReviewPrompt({
     }
   }
   const listing = changedTestFiles.map((p) => `- ${p}`).join("\n");
-  const contractText =
-    typeof interfaceContract === "string" && interfaceContract.trim() !== ""
-      ? interfaceContract.trim()
-      : "No posted interface contract was found in the issue thread. Treat that as a workflow gap when tests cannot be tied to a public contract.";
   return [
     "You are reviewing test files changed against the base branch `" + baseBranch + "`.",
     "Your job is to identify TESTS THAT PROVIDE FALSE ASSURANCE — tests that pass but would still pass if the implementation were broken. Return `verdict: ship` when the tests are solid — that is a valid outcome.",
-    "",
-    "## Posted interface contract oracle",
-    "",
-    "Use this language-neutral contract as the oracle for test strength. A strong test suite proves the obligations below fail when broken; line coverage without obligation checks is insufficient.",
-    "",
-    contractText,
     "",
     "## Files to review",
     "",
@@ -11082,7 +6026,6 @@ export function buildTestQualityReviewPrompt({
     "",
     ...buildPrincipalEngineerRubric({
       reviewerLabel: "test-quality",
-      reviewerLens: "test-strength",
       vocabulary,
       findingFieldsDescription: TEST_QUALITY_FINDING_FIELDS_DESCRIPTION,
       findingExampleJson: TEST_QUALITY_FINDING_EXAMPLE,
@@ -11199,9 +6142,7 @@ export function parseTestQualityReviewEnvelope(stdout) {
 
   return {
     verdict: payload.verdict,
-    reviewer_lens: normalizeReviewerLens(payload.reviewer_lens, "test-strength"),
     architectural_read: payload.architectural_read.trim(),
-    findings: blocking,
     blocking,
     notes,
   };
@@ -11212,9 +6153,9 @@ function validateTestQualityFinding(raw, i) {
     throw new Error(`test-quality review blocking[${i}] is not an object`);
   }
   const { severity, location, problem, why_it_matters, fix, classification } = raw;
-  if (!REVIEW_SEVERITY_ALIASES.has(String(severity ?? "").trim().toLowerCase())) {
+  if (severity !== "critical" && severity !== "warning") {
     throw new Error(
-      `test-quality review blocking[${i}].severity must be one of ${REVIEW_SEVERITIES.join(", ")} (or legacy 'critical'/'warning'), got ${JSON.stringify(severity)}`,
+      `test-quality review blocking[${i}].severity must be 'critical' or 'warning', got ${JSON.stringify(severity)}`,
     );
   }
   if (typeof location !== "string" || location.trim() === "") {
@@ -11292,21 +6233,16 @@ function validateTestQualityFinding(raw, i) {
   }
 
   const finding = {
-    severity: normalizeReviewSeverity(severity),
+    severity,
     location: location.trim(),
     problem: problem.trim(),
-    title: problem.trim(),
-    evidence: typeof why_it_matters === "string" && why_it_matters.trim() !== "" ? why_it_matters.trim() : problem.trim(),
     why_it_matters: typeof why_it_matters === "string" ? why_it_matters.trim() : "",
     fix: fix.trim(),
     classification,
   };
-  if (Array.isArray(raw.severity_opinions)) finding.severity_opinions = raw.severity_opinions;
-  if (Array.isArray(raw.confirmations)) finding.confirmations = raw.confirmations;
   if (category !== null) finding.category = category;
   if (raw.sweep_evidence != null && classification === "one-off") {
     finding.sweep_evidence = truncateReviewProse(raw.sweep_evidence.trim(), FINDING_SWEEP_EVIDENCE_MAX);
-    finding.sweep = finding.sweep_evidence;
   }
   if (structuralBlocker) finding.structural_blocker = true;
   return finding;
@@ -11524,7 +6460,6 @@ export async function runTestQualityReview({
   baseBranch = null,
   issueNumber = null,
   prNumber = null,
-  gateResults = [],
   overrideCap = false,
   overrideReason = null,
   model = TEST_QUALITY_REVIEW_DEFAULT_MODEL,
@@ -11653,27 +6588,12 @@ export async function runTestQualityReview({
     includeUncommitted: true,
   });
   if (changedTestFiles.length === 0) {
-    const dispatch = dispatchReviewConvergence({
-      lensEnvelopes: [{
-        verdict: "ship",
-        reviewer_lens: "test-strength",
-        architectural_read: "No changed test files; test-strength lens has no reviewable test diff.",
-        findings: [],
-        blocking: [],
-        notes: [],
-      }],
-      gateResults,
-      priorCycles: priorCount,
-      currentCycle: decision.nextCycle,
-      cap: decision.cap,
-    });
     // Still record a cycle so the cap counts correctly. Preserve override
     // metadata in both the marker and the envelope so an authorized
     // cycle 4 with no changed tests still leaves a durable audit trail.
     const recordBody = buildTestQualityReviewFindingsComment({
       cycleNumber: decision.nextCycle,
       cap: decision.cap,
-      configuredCap: decision.configured_cap ?? decision.cap,
       issueNumber: effectiveIssue,
       branch: branchName,
       findings: [],
@@ -11689,7 +6609,7 @@ export async function runTestQualityReview({
       override: decision.override === true,
       overrideReason: decision.override_reason ?? null,
       recordBody,
-      hardCap: decision.cap,
+      hardCap: effectiveCap,
     });
     if (!markerWriteResult.ok) return markerWriteResult.envelope;
     return {
@@ -11699,11 +6619,9 @@ export async function runTestQualityReview({
       pr_number: prNumber,
       cycle: decision.nextCycle,
       cap: decision.cap,
-      configured_cap: decision.configured_cap ?? decision.cap,
       finding_count: 0,
       findings: [],
-      next_action: dispatch.next_action,
-      dispatcher: dispatch,
+      next_action: "post_clean_decision_record_and_advance_to_phase_c",
       findings_comment_url: markerWriteResult.recordUrl,
       changed_test_files: [],
       override: decision.override === true,
@@ -11715,17 +6633,10 @@ export async function runTestQualityReview({
   // Vocabulary sourced from trusted base ref when the PR touches the policy
   // file (#931 codex cycle-1 security finding F3). Same pattern as runCodexReview.
   const vocabulary = await readVocabularyForReview(repoRoot, effectiveBaseBranch);
-  let interfaceContract = null;
-  try {
-    interfaceContract = await readLatestInterfaceContractBody(repoRoot, owner, name, effectiveIssue);
-  } catch {
-    interfaceContract = null;
-  }
   const prompt = buildTestQualityReviewPrompt({
     baseBranch: effectiveBaseBranch,
     changedTestFiles,
     vocabulary,
-    interfaceContract,
   });
   let stdout;
   try {
@@ -11766,13 +6677,6 @@ export async function runTestQualityReview({
   }
 
   const findings = parsed.findings;
-  const dispatch = dispatchReviewConvergence({
-    lensEnvelopes: [parsed.envelope],
-    gateResults,
-    priorCycles: priorCount,
-    currentCycle: decision.nextCycle,
-    cap: decision.cap,
-  });
 
   // Disarm caller-controlled fields against reserved marker injection
   // (codex cycle-3 security finding F10: prompt-injected test files
@@ -11829,9 +6733,14 @@ export async function runTestQualityReview({
     recordBody,
     findingCount: findings.length,
     findings,
-    hardCap: decision.cap,
+    hardCap: effectiveCap,
   });
   if (!markerWriteResult.ok) return markerWriteResult.envelope;
+
+  const nextAction =
+    findings.length === 0
+      ? "post_clean_decision_record_and_advance_to_phase_c"
+      : decision.next_action;
 
   return {
     ok: true,
@@ -11840,12 +6749,10 @@ export async function runTestQualityReview({
     pr_number: prNumber,
     cycle: decision.nextCycle,
     cap: decision.cap,
-    configured_cap: decision.configured_cap ?? decision.cap,
     finding_count: findings.length,
     findings,
     architectural_read: parsed.envelope?.architectural_read,
-    next_action: dispatch.next_action,
-    dispatcher: dispatch,
+    next_action: nextAction,
     findings_comment_url: markerWriteResult.recordUrl,
     changed_test_files: changedTestFiles,
     override: decision.override === true,
@@ -11990,12 +6897,6 @@ async function readPriorTestQualityReviewCycleCount(repoRoot, owner, name, issue
   return parseTestQualityReviewCycleMarkers(bodies, issueNumber);
 }
 
-async function readLatestInterfaceContractBody(repoRoot, owner, name, issueNumber) {
-  const bodies = await readIssueCommentBodies(repoRoot, owner, name, issueNumber);
-  const marker = latestBoundPhaseMarker(bodies, { issueNumber, phase: "contract" });
-  return marker && typeof marker.body === "string" && marker.body.trim() !== "" ? marker.body.trim() : null;
-}
-
 // Helper: post an issue comment, return its HTML URL.
 async function postIssueCommentAndReturnUrl({ repoRoot, owner, name, issueNumber, body }) {
   const { stdout } = await execFile(
@@ -12089,7 +6990,6 @@ export async function runCodexReview({
   uncommitted = false,
   prNumber = null,
   issueNumber = null,
-  gateResults = [],
   overrideCap = false,
   overrideReason = null,
   overridePhaseGate = false,
@@ -12235,12 +7135,11 @@ export async function runCodexReview({
       branchName,
       cycleNumber: decision.nextCycle,
       cap: decision.cap,
-      configuredCap: decision.configured_cap ?? decision.cap,
       // Effective cap also held separately so the deferred marker write at
       // the end of the run uses the same value the decision was made against
       // (issue #906). decision.cap is the resolved value; we mirror it here
       // to avoid re-reading cfg later.
-      hardCap: decision.cap,
+      hardCap: effectivePrePushCap,
       nextAction: decision.next_action ?? null,
       override: decision.override === true,
       overrideReason: decision.override_reason ?? null,
@@ -12341,7 +7240,6 @@ export async function runCodexReview({
       prNumber: effectivePr,
       cycleNumber: decision.nextCycle,
       cap: decision.cap,
-      configuredCap: decision.configured_cap ?? decision.cap,
       nextAction: decision.next_action ?? null,
       override: decision.override === true,
       overrideReason: decision.override_reason ?? null,
@@ -12373,22 +7271,18 @@ export async function runCodexReview({
   };
   const corePrompt = buildCodexReviewCorePrompt(promptArgs);
   const securityPrompt = buildCodexSecurityReviewPrompt(promptArgs);
-  const architecturePrompt = buildCodexArchitectureReviewPrompt(promptArgs);
 
   let coreOutput;
   let securityOutput;
-  let architectureOutput;
   try {
     if (DEFAULT_CODEX_REVIEW_PARALLEL === 2) {
-      [coreOutput, securityOutput, architectureOutput] = await Promise.all([
+      [coreOutput, securityOutput] = await Promise.all([
         runSingleCodexReview({ repoRoot, prompt: corePrompt, signal }),
         runSingleCodexReview({ repoRoot, prompt: securityPrompt, signal }),
-        runSingleCodexReview({ repoRoot, prompt: architecturePrompt, signal }),
       ]);
     } else {
       coreOutput = await runSingleCodexReview({ repoRoot, prompt: corePrompt, signal });
       securityOutput = await runSingleCodexReview({ repoRoot, prompt: securityPrompt, signal });
-      architectureOutput = await runSingleCodexReview({ repoRoot, prompt: architecturePrompt, signal });
     }
   } catch (error) {
     throw new Error(`Codex review failed: ${formatCommandFailure("codex", error)}`);
@@ -12402,7 +7296,6 @@ export async function runCodexReview({
   const parseErrors = [];
   const core = parseReviewerTailSafely(coreOutput, repoRoot, "core", parseErrors);
   const security = parseReviewerTailSafely(securityOutput, repoRoot, "security", parseErrors);
-  const architecture = parseReviewerTailSafely(architectureOutput, repoRoot, "architecture", parseErrors);
 
   // Resolve owner/name once if any posting could happen. The pre-push and
   // gate paths above also resolved owner/name; cycleOwnership/prePushOwnership
@@ -12411,7 +7304,7 @@ export async function runCodexReview({
   let owner = cycleOwnership?.owner ?? prePushOwnership?.owner ?? null;
   let name = cycleOwnership?.name ?? prePushOwnership?.name ?? null;
   const willPost =
-    effectivePr != null && (core.findings.length > 0 || security.findings.length > 0 || architecture.findings.length > 0);
+    effectivePr != null && (core.findings.length > 0 || security.findings.length > 0);
   if (willPost && (owner == null || name == null)) {
     ({ owner, name } = await getOwnerRepo(repoRoot));
   }
@@ -12436,19 +7329,10 @@ export async function runCodexReview({
     reviewerLabel: "security",
     findings: security.findings,
   });
-  const architecturePostResults = await postCodexReviewFindings({
-    repoRoot,
-    owner,
-    name,
-    prNumber: effectivePr,
-    reviewerLabel: "architecture",
-    findings: architecture.findings,
-  });
 
   const postFailures = collectPostFailures([
     { reviewer: "core", results: corePostResults },
     { reviewer: "security", results: securityPostResults },
-    { reviewer: "architecture", results: architecturePostResults },
   ]);
 
   // Build the agent-facing comments list from the SUCCESSFUL POSTs. Codex's
@@ -12473,17 +7357,8 @@ export async function runCodexReview({
     findings: security.findings,
     reviewer: "security",
   });
-  const architectureComments = await buildReviewerCommentsList({
-    repoRoot,
-    owner,
-    name,
-    prNumber: effectivePr,
-    postResults: architecturePostResults,
-    findings: architecture.findings,
-    reviewer: "architecture",
-  });
 
-  const comments = dedupFindings([...coreComments, ...securityComments, ...architectureComments]);
+  const comments = dedupFindings([...coreComments, ...securityComments]);
 
   // Compute partialFailure here (used to shape the final response). A run
   // with parse_errors or post_failures is NOT a completed review — the
@@ -12497,8 +7372,7 @@ export async function runCodexReview({
   // a gap flagged in #793 post-push review cycle 2).
   const successfulPostCount =
     corePostResults.filter((r) => r.ok).length +
-    securityPostResults.filter((r) => r.ok).length +
-    architecturePostResults.filter((r) => r.ok).length;
+    securityPostResults.filter((r) => r.ok).length;
   const cycleConsumed = successfulPostCount > 0 || !partialFailure;
 
   const cycleSource = cycleOwnership ?? prePushOwnership ?? null;
@@ -12534,7 +7408,6 @@ export async function runCodexReview({
         branch: prePushOwnership ? prePushOwnership.branchName : null,
         coreReviewText: renderReviewerEnvelope(core),
         securityReviewText: renderReviewerEnvelope(security),
-        architectureReviewText: renderReviewerEnvelope(architecture),
         postedComments: comments,
       });
       // #804 review-cycle-1 finding 2: route the rendered body through the
@@ -12564,7 +7437,6 @@ export async function runCodexReview({
             parseErrors,
             core,
             security,
-            architecture,
           });
         }
       }
@@ -12604,7 +7476,6 @@ export async function runCodexReview({
           parseErrors,
           core,
           security,
-          architecture,
         });
       }
     }
@@ -12677,21 +7548,22 @@ export async function runCodexReview({
         parse_errors: parseErrors,
         core_review_text: core.body,
         security_review_text: security.body,
-        architecture_review_text: architecture.body,
         reviewers: [
           { name: "core", finding_count: core.findings.length },
           { name: "security", finding_count: security.findings.length },
-          { name: "architecture", finding_count: architecture.findings.length },
         ],
       };
     }
   }
 
   // When the cycle returned 0 findings AND no reviewer's tail failed to
-  // parse AND every POST landed, the pre-run cap evaluator is only a budget
-  // check. Normalize to the dispatcher clean action so the caller proceeds.
-  // Refusal envelopes (returned earlier with their own next_action) and
-  // override-cycle metadata are unaffected.
+  // parse AND every POST landed, the cap-evaluator's pre-run next_action
+  // ("fix_all_findings_..." / "fix_all_findings_then_summarize_...") is
+  // misleading — there is nothing to fix. Override to a clean signal so the
+  // caller proceeds (and so cycle 2 doesn't carry the cycle-2 escalation cue
+  // when there are no findings to summarize). Refusal envelopes (returned
+  // earlier with their own next_action) and override-cycle metadata are
+  // unaffected.
   //
   // Parse failures and post failures are explicitly NOT treated as "clean":
   // a malformed reviewer payload or a failed-to-land comment is a partial
@@ -12699,17 +7571,11 @@ export async function runCodexReview({
   // marker is written above, and the cycle/cap fields read null so the
   // agent treats the run as incomplete (closes gaps flagged in #793 review
   // cycles 1, 2, and 3).
-  const dispatch = cycleSource
-    ? dispatchReviewConvergence({
-        lensEnvelopes: [core.envelope, security.envelope, architecture.envelope].filter(Boolean),
-        gateResults,
-        currentCycle: cycleSource.cycleNumber,
-        cap: cycleSource.cap,
-      })
-    : null;
-  let effectiveNextAction = dispatch ? dispatch.next_action : cycleSource ? cycleSource.nextAction : null;
+  let effectiveNextAction = cycleSource ? cycleSource.nextAction : null;
   if (partialFailure) {
     effectiveNextAction = "address_parse_or_post_failures";
+  } else if (cycleSource != null && comments.length === 0) {
+    effectiveNextAction = "proceed_clean";
   }
   return {
     repo_path: repoRoot,
@@ -12728,16 +7594,14 @@ export async function runCodexReview({
     // blocking on `classification === "class"` only, so a codex `don't-ship`
     // justified by a one-off structural_blocker would fail validation. The
     // findings list already conveys the outcome.
-    architectural_read: mergeReviewerArchitecturalReads(core, security, architecture),
+    architectural_read: mergeReviewerArchitecturalReads(core, security),
     post_failures: postFailures,
     parse_errors: parseErrors,
     core_review_text: core.body,
     security_review_text: security.body,
-    architecture_review_text: architecture.body,
     reviewers: [
       { name: "core", finding_count: core.findings.length },
       { name: "security", finding_count: security.findings.length },
-      { name: "architecture", finding_count: architecture.findings.length },
     ],
     // Cycle is consumed iff at least one comment landed on the PR or there
     // were no failures at all (see cycleConsumed above). When suppressed,
@@ -12745,9 +7609,7 @@ export async function runCodexReview({
     // that wasn't incremented.
     cycle: cycleConsumed && cycleSource ? cycleSource.cycleNumber : null,
     cap: cycleConsumed && cycleSource ? cycleSource.cap : null,
-    configured_cap: cycleSource?.configuredCap ?? null,
     next_action: effectiveNextAction,
-    dispatcher: dispatch,
     override: cycleSource && cycleSource.override === true ? true : false,
     override_reason: cycleSource ? cycleSource.overrideReason : null,
     findings_comment_url: findingsCommentUrl,
@@ -12772,7 +7634,6 @@ function buildReviewCommentPostFailedEnvelope({
   parseErrors,
   core,
   security,
-  architecture = { findings: [], body: "" },
 }) {
   return {
     repo_path: repoRoot,
@@ -12798,11 +7659,9 @@ function buildReviewCommentPostFailedEnvelope({
     parse_errors: parseErrors,
     core_review_text: core.body,
     security_review_text: security.body,
-    architecture_review_text: architecture.body,
     reviewers: [
       { name: "core", finding_count: core.findings.length },
       { name: "security", finding_count: security.findings.length },
-      { name: "architecture", finding_count: architecture.findings.length },
     ],
   };
 }
@@ -12946,22 +7805,18 @@ export function renderReviewerEnvelope(reviewer) {
   return lines.join("\n").trim();
 }
 
-// Merge reviewer architectural_read fields into one string for the decision
-// record. Each reviewer's read is required-non-empty by validateReviewEnvelope;
-// returns undefined only when no envelope parsed.
-export function mergeReviewerArchitecturalReads(...reviewers) {
+// Merge the core + security reviewers' architectural_read into one string for
+// the decision record. Each reviewer's read is required-non-empty by
+// validateReviewEnvelope; returns undefined only when neither envelope parsed.
+export function mergeReviewerArchitecturalReads(core, security) {
   const parts = [];
-  const flattened = reviewers.length === 1 && Array.isArray(reviewers[0]) ? reviewers[0] : reviewers;
-  for (const reviewer of flattened) {
-    const read = reviewer?.envelope?.architectural_read;
-    if (typeof read !== "string" || read.trim() === "") continue;
-    const lens = normalizeReviewerLens(reviewer?.envelope?.reviewer_lens, reviewer?.reviewer ?? reviewer?.name ?? "core");
-    const label = lens === "correctness"
-      ? "Core reviewer"
-      : lens === "test-strength"
-        ? "Test-strength reviewer"
-        : `${lens[0].toUpperCase()}${lens.slice(1)} reviewer`;
-    parts.push(`**${label}:** ${read.trim()}`);
+  const coreRead = core?.envelope?.architectural_read;
+  const secRead = security?.envelope?.architectural_read;
+  if (typeof coreRead === "string" && coreRead.trim() !== "") {
+    parts.push(`**Core reviewer:** ${coreRead.trim()}`);
+  }
+  if (typeof secRead === "string" && secRead.trim() !== "") {
+    parts.push(`**Security reviewer:** ${secRead.trim()}`);
   }
   return parts.length > 0 ? parts.join("\n\n") : undefined;
 }
@@ -12975,7 +7830,6 @@ export function buildCodexReviewFindingsComments({
   branch = null,
   coreReviewText,
   securityReviewText,
-  architectureReviewText = null,
   postedComments = [],
 }) {
   const modeLabel = mode === "pre-push" ? "pre-push" : "post-push";
@@ -12983,24 +7837,19 @@ export function buildCodexReviewFindingsComments({
 
   const safeCore = disarmMarkerSequences(coreReviewText && coreReviewText.trim() !== "" ? coreReviewText : "_(empty)_");
   const safeSecurity = disarmMarkerSequences(securityReviewText && securityReviewText.trim() !== "" ? securityReviewText : "_(empty)_");
-  const safeArchitecture = architectureReviewText == null
-    ? null
-    : disarmMarkerSequences(architectureReviewText && architectureReviewText.trim() !== "" ? architectureReviewText : "_(empty)_");
-  const reviewerSections = [
-    ["Core review", safeCore],
-    ["Security review", safeSecurity],
-    ...(safeArchitecture == null ? [] : [["Architecture review", safeArchitecture]]),
-  ];
 
   // Try to fit everything in one body first.
   const singleBodyLines = [
     headerLine,
     "",
+    "## Core review",
+    "",
+    safeCore,
+    "",
+    "## Security review",
+    "",
+    safeSecurity,
   ];
-  reviewerSections.forEach(([label, text], idx) => {
-    if (idx > 0) singleBodyLines.push("");
-    singleBodyLines.push(`## ${label}`, "", text);
-  });
   if (modeLabel === "post-push" && Array.isArray(postedComments) && postedComments.length > 0) {
     singleBodyLines.push("", "## Inline comments");
     singleBodyLines.push("");
@@ -13019,14 +7868,19 @@ export function buildCodexReviewFindingsComments({
   // (each reviewer caps at FINDINGS_COMMENT_PER_REVIEWER_MAX) and a
   // pointer to the continuation comments. Then chunk the FULL reviewer
   // text into continuation bodies.
+  const primaryCore = truncateReviewText(safeCore, FINDINGS_COMMENT_PER_REVIEWER_MAX);
+  const primarySecurity = truncateReviewText(safeSecurity, FINDINGS_COMMENT_PER_REVIEWER_MAX);
   const primaryLines = [
     headerLine,
     "",
+    "## Core review",
+    "",
+    primaryCore,
+    "",
+    "## Security review",
+    "",
+    primarySecurity,
   ];
-  reviewerSections.forEach(([label, text], idx) => {
-    if (idx > 0) primaryLines.push("");
-    primaryLines.push(`## ${label}`, "", truncateReviewText(text, FINDINGS_COMMENT_PER_REVIEWER_MAX));
-  });
   if (modeLabel === "post-push" && Array.isArray(postedComments) && postedComments.length > 0) {
     primaryLines.push("", "## Inline comments");
     primaryLines.push("");
@@ -13059,7 +7913,8 @@ export function buildCodexReviewFindingsComments({
     });
   }
 
-  reviewerSections.forEach(([label, text]) => addContinuationsForSection(label, text));
+  addContinuationsForSection("Core review", safeCore);
+  addContinuationsForSection("Security review", safeSecurity);
 
   return bodies;
 }
@@ -13079,15 +7934,7 @@ export function buildCodexReviewFindingsComment(args) {
 // agent sees the failure without losing any successful findings.
 function parseReviewerTailSafely(stdout, repoRoot, reviewer, parseErrors) {
   try {
-    const parsed = parseCodexReviewFindingsTail(stdout, repoRoot);
-    if (parsed.envelope && typeof parsed.envelope === "object") {
-      parsed.envelope = {
-        ...parsed.envelope,
-        reviewer_lens: normalizeReviewerLens(parsed.envelope.reviewer_lens, reviewer),
-        findings: Array.isArray(parsed.envelope.findings) ? parsed.envelope.findings : parsed.envelope.blocking,
-      };
-    }
-    return parsed;
+    return parseCodexReviewFindingsTail(stdout, repoRoot);
   } catch (error) {
     parseErrors.push({ reviewer, error: error.message });
     return { findings: [], body: stdout };
@@ -16424,8 +11271,7 @@ export async function runPostFinalReport(input) {
   // path lets the user authorize a skip with a quoted rationale (the
   // input-shape validation for that override is done earlier).
   if (rest.lane !== "quickfix" && !phaseOverride) {
-    const commentBodies = await readIssueCommentBodies(repoRoot, owner, name, rest.issueNumber);
-    const completed = parsePhaseMarkers(commentBodies, rest.issueNumber);
+    const completed = await readCompletedPhases(repoRoot, owner, name, rest.issueNumber);
     const decision = evaluatePhasePrerequisite({
       completed,
       nextPhase: "final_report",
@@ -16443,36 +11289,6 @@ export async function runPostFinalReport(input) {
         completed: decision.completed,
         next_action: "run_gc_assert_traceability_reconciled_first",
       };
-    }
-    if (typeof rest.baseRef === "string" && rest.baseRef.trim() !== "") {
-      let liveDiff;
-      try {
-        liveDiff = await computeGitDiffInfo(repoRoot, rest.baseRef, rest.headRef ?? "HEAD");
-      } catch (error) {
-        return {
-          repo_path: repoRoot,
-          issue_number: rest.issueNumber,
-          ok: false,
-          error: "final_report_traceability_diff_failed",
-          message: error.message,
-          next_action: "verify_base_ref_and_rerun_gc_assert_traceability_reconciled",
-        };
-      }
-      const fresh = evaluateBoundPhaseMarkerFreshness({
-        commentBodies,
-        issueNumber: rest.issueNumber,
-        phase: "traceability_reconciled",
-        expected: { diff_hash: liveDiff.diff_hash },
-      });
-      if (!fresh.ok) {
-        return {
-          repo_path: repoRoot,
-          issue_number: rest.issueNumber,
-          ok: false,
-          ...fresh,
-          next_action: "rerun_gc_assert_traceability_reconciled_against_live_diff",
-        };
-      }
     }
   }
   let apiResponse = null;
@@ -16557,14 +11373,6 @@ const TRACEABILITY_TESTABLE_SURFACE_PREFIXES = [
   "tools/policy/",
 ];
 
-const TRACEABILITY_TEST_PATH_PATTERNS = [
-  "backend/src/test/**",
-  "frontend/src/**/*.test.*",
-  "frontend/src/**/*.spec.*",
-  "mcp/**/*.test.js",
-  "tools/tests/**",
-];
-
 function hasTestableSurfaceTarget(linksOfTypeImplements) {
   if (!Array.isArray(linksOfTypeImplements) || linksOfTypeImplements.length === 0) return false;
   for (const link of linksOfTypeImplements) {
@@ -16578,212 +11386,12 @@ function hasTestableSurfaceTarget(linksOfTypeImplements) {
   return false;
 }
 
-function traceabilityArtifactPathForStatus(entry) {
-  if (!entry || typeof entry !== "object") return "";
-  return entry.status === "D" ? normalizeChangedPath(entry.path) : normalizeChangedPath(entry.path);
-}
-
-function traceabilityPathIsExecutable(pathValue) {
-  const p = normalizeChangedPath(pathValue);
-  return TRACEABILITY_TESTABLE_SURFACE_PREFIXES.some((prefix) => p.startsWith(prefix));
-}
-
-function traceabilityPathIsTest(pathValue) {
-  const p = normalizeChangedPath(pathValue);
-  return TRACEABILITY_TEST_PATH_PATTERNS.some((pattern) => pathMatchesGatePattern(p, pattern))
-    || /(^|\/)(test|tests|__tests__)\//.test(p)
-    || /\.(test|spec)\.[cm]?[jt]sx?$/.test(p);
-}
-
-function traceabilityPathRequiresImplements(pathValue) {
-  return traceabilityPathIsExecutable(pathValue) && !traceabilityPathIsTest(pathValue);
-}
-
-function normalizeTraceabilityRequirementUid(link) {
-  if (!link || typeof link !== "object") return null;
-  return link.requirement_uid
-    ?? link.requirementUid
-    ?? link.uid
-    ?? link.source_uid
-    ?? link.sourceUid
-    ?? link.requirement?.uid
-    ?? null;
-}
-
-function traceabilitySuggestedAction({ entry, currentLinks, oldLinks = [] }) {
-  const status = entry.status;
-  const links = Array.isArray(currentLinks) ? currentLinks : [];
-  const old = Array.isArray(oldLinks) ? oldLinks : [];
-  const implementsLinks = links.filter((link) => link.link_type === "IMPLEMENTS");
-  if (status === "D") {
-    return links.length > 0 ? "remove_or_update_links_for_deleted_artifact" : "no_action";
-  }
-  if (status === "R") {
-    if (old.length > 0 && links.length === 0) return "move_existing_links_from_old_path_to_new_path";
-    if (traceabilityPathRequiresImplements(entry.path) && implementsLinks.length === 0) return "add_implements_link_for_renamed_artifact";
-    return "confirm_renamed_artifact_links";
-  }
-  if (traceabilityPathIsTest(entry.path)) {
-    return links.some((link) => link.link_type === "TESTS")
-      ? "confirm_tests_links"
-      : "add_tests_link_or_mark_test_incidental";
-  }
-  if (traceabilityPathRequiresImplements(entry.path)) {
-    return implementsLinks.length > 0
-      ? "confirm_implements_links"
-      : "add_implements_link_or_mark_requirement_free";
-  }
-  return links.length > 0 ? "confirm_current_links" : "no_action";
-}
-
-async function getIssueContextForTraceability(repoRoot, issueNumber, issueContext, repo) {
-  if (issueContext != null) return issueContext;
-  try {
-    return await getIssueContext(issueNumber, repo, { cwd: repoRoot });
-  } catch {
-    return null;
-  }
-}
-
-async function resolveTraceabilityInScopeRequirements({ repoRoot, issueNumber, project, repo, issueContext, requirements = null }) {
-  const explicit = Array.isArray(requirements)
-    ? requirements.map((item) => typeof item === "string" ? item : item?.uid).filter((uid) => typeof uid === "string" && uid.trim() !== "")
-    : [];
-  const effectiveIssue = await getIssueContextForTraceability(repoRoot, issueNumber, issueContext, repo);
-  const fromBody = extractRequirementUidsFromIssueBody(effectiveIssue?.body ?? "");
-  let fromIssueLinks = [];
-  try {
-    const links = summarizeImplementationLinks(await getTraceabilityByArtifact("GITHUB_ISSUE", String(issueNumber)));
-    fromIssueLinks = links.map(normalizeTraceabilityRequirementUid).filter((uid) => typeof uid === "string" && uid.trim() !== "");
-  } catch {
-    fromIssueLinks = [];
-  }
-  const uids = [...new Set([...explicit, ...fromBody, ...fromIssueLinks])].sort();
-  const resolved = [];
-  for (const uid of uids) {
-    const requirement = await getRequirementByUid(uid, project);
-    const links = summarizeImplementationLinks(await getTraceabilityLinks(requirement.id));
-    resolved.push({ uid, requirement, links });
-  }
-  return { issue: effectiveIssue, requirements: resolved };
-}
-
-export async function runReconcileTraceability({
-  repoPath,
-  issueNumber,
-  baseRef = "origin/dev",
-  headRef = "HEAD",
-  project = null,
-  repo = null,
-  issueContext = null,
-  requirements = null,
-  diffInfo = null,
-} = {}) {
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-    return { ok: false, error: "traceability_reconcile_input_invalid", message: "issue_number must be a positive integer" };
-  }
-  let repoRoot;
-  try {
-    repoRoot = await ensureGitRepo(repoPath);
-  } catch (error) {
-    return { ok: false, error: "traceability_reconcile_repo_not_found", message: error.message };
-  }
-  let effectiveDiffInfo = diffInfo;
-  if (effectiveDiffInfo == null) {
-    try {
-      effectiveDiffInfo = await computeGitDiffInfo(repoRoot, baseRef, headRef);
-    } catch (error) {
-      return { ok: false, error: "traceability_reconcile_diff_failed", message: error.message };
-    }
-  }
-  const nameStatus = Array.isArray(effectiveDiffInfo.name_status)
-    ? effectiveDiffInfo.name_status
-    : (Array.isArray(effectiveDiffInfo.changed_files)
-      ? effectiveDiffInfo.changed_files.map((path) => ({ status: "M", path: normalizeChangedPath(path), old_path: null, score: null, raw: `M\t${path}` }))
-      : []);
-  const worklist = [];
-  for (const entry of nameStatus) {
-    const path = traceabilityArtifactPathForStatus(entry);
-    let currentLinks = [];
-    let oldLinks = [];
-    try {
-      currentLinks = summarizeImplementationLinks(await getTraceabilityByArtifact("FILE", path));
-    } catch {
-      currentLinks = [];
-    }
-    if (entry.status === "R" && entry.old_path) {
-      try {
-        oldLinks = summarizeImplementationLinks(await getTraceabilityByArtifact("FILE", entry.old_path));
-      } catch {
-        oldLinks = [];
-      }
-    }
-    worklist.push({
-      status: entry.status,
-      path,
-      old_path: entry.old_path ?? null,
-      current_links: currentLinks,
-      old_links: oldLinks,
-      requires_implements: traceabilityPathRequiresImplements(path),
-      suggested_action: traceabilitySuggestedAction({ entry, currentLinks, oldLinks }),
-    });
-  }
-
-  let resolved;
-  try {
-    resolved = await resolveTraceabilityInScopeRequirements({
-      repoRoot,
-      issueNumber,
-      project,
-      repo,
-      issueContext,
-      requirements,
-    });
-  } catch (error) {
-    return {
-      ok: false,
-      error: "traceability_reconcile_requirement_lookup_failed",
-      message: error.message,
-      issue_number: issueNumber,
-    };
-  }
-  const gapSet = resolved.requirements
-    .filter((item) => !item.links.some((link) => link.link_type === "IMPLEMENTS"))
-    .map((item) => ({
-      uid: item.uid,
-      reason: "implements_missing",
-      status: item.requirement?.status ?? null,
-    }));
-
-  return {
-    ok: true,
-    repo_path: repoRoot,
-    issue_number: issueNumber,
-    base_ref: effectiveDiffInfo.base_ref ?? baseRef,
-    head_ref: effectiveDiffInfo.head_ref ?? headRef,
-    diff_hash: effectiveDiffInfo.diff_hash ?? null,
-    name_status: nameStatus,
-    worklist,
-    gap_set: gapSet,
-    in_scope_requirements: resolved.requirements.map((item) => ({
-      uid: item.uid,
-      id: item.requirement?.id ?? null,
-      status: item.requirement?.status ?? null,
-      implements_count: item.links.filter((link) => link.link_type === "IMPLEMENTS").length,
-      tests_count: item.links.filter((link) => link.link_type === "TESTS").length,
-    })),
-  };
-}
-
 export async function runAssertTraceabilityReconciled({
   repoPath,
   issueNumber,
   requirements,
   project = null,
   touchedFiles = [],
-  baseRef = null,
-  headRef = "HEAD",
-  diffInfo = null,
   override = false,
   overrideReason = null,
 }) {
@@ -16808,20 +11416,6 @@ export async function runAssertTraceabilityReconciled({
   }
 
   const repoRoot = await ensureGitRepo(repoPath);
-  let effectiveDiffInfo = diffInfo;
-  if (effectiveDiffInfo == null && baseRef != null) {
-    try {
-      effectiveDiffInfo = await computeGitDiffInfo(repoRoot, baseRef, headRef);
-    } catch (error) {
-      return {
-        ok: false,
-        error: "traceability_diff_failed",
-        message: error.message,
-        issue_number: issueNumber,
-        next_action: "verify_base_ref_and_retry_traceability_assertion",
-      };
-    }
-  }
 
   const checked = [];
   const failures = [];
@@ -16905,37 +11499,6 @@ export async function runAssertTraceabilityReconciled({
       }
     }
 
-    if (effectiveDiffInfo != null) {
-      const nameStatus = Array.isArray(effectiveDiffInfo.name_status)
-        ? effectiveDiffInfo.name_status
-        : (Array.isArray(effectiveDiffInfo.changed_files)
-          ? effectiveDiffInfo.changed_files.map((path) => ({ status: "M", path: normalizeChangedPath(path), old_path: null }))
-          : []);
-      for (const entry of nameStatus) {
-        const path = traceabilityArtifactPathForStatus(entry);
-        if (!path || entry.status === "D" || !traceabilityPathRequiresImplements(path)) continue;
-        let artifactLinks = [];
-        try {
-          artifactLinks = summarizeImplementationLinks(await getTraceabilityByArtifact("FILE", path));
-        } catch (error) {
-          return {
-            ok: false,
-            error: "traceability_artifact_links_lookup_failed",
-            message: `gc_assert_traceability_reconciled could not fetch links for ${path}: ${error.message}`,
-            issue_number: issueNumber,
-            path,
-          };
-        }
-        if (!artifactLinks.some((link) => link.link_type === "IMPLEMENTS")) {
-          failures.push({
-            path,
-            reason: "path_implements_missing",
-            status: entry.status,
-          });
-        }
-      }
-    }
-
     if (requirements.length === 0) {
       // Bug/refactor/maintenance run with no formal requirements. The marker
       // is still required, but the only check is that the issue does not
@@ -16976,11 +11539,11 @@ export async function runAssertTraceabilityReconciled({
       error: "traceability_not_reconciled",
       message:
         `Traceability reconciliation gate failed for issue #${issueNumber}: ` +
-        failures.map((f) => `${f.uid ?? f.path ?? "issue"}:${f.reason}`).join(", "),
+        failures.map((f) => `${f.uid ?? "issue"}:${f.reason}`).join(", "),
       issue_number: issueNumber,
       failures,
       checked,
-      next_action: "run_gc_reconcile_traceability_apply_worklist_and_retry_assertion",
+      next_action: "fix_traceability_in_step_16_and_retry",
     };
   }
 
@@ -16997,16 +11560,7 @@ export async function runAssertTraceabilityReconciled({
   const summary = summaryLines.join("\n");
 
   const { owner, name } = await getOwnerRepo(repoRoot);
-  const binding = {
-    base_ref: effectiveDiffInfo?.base_ref ?? baseRef ?? null,
-    head_ref: effectiveDiffInfo?.head_ref ?? headRef ?? null,
-    diff_hash: effectiveDiffInfo?.diff_hash ?? null,
-    requirements_hash: sha256Hex(stableJson(requirements.map((item) => ({
-      uid: item.uid,
-      statusIntent: item.statusIntent ?? "ACTIVE",
-    })))),
-  };
-  const apiResponse = await postGatePhaseMarker(repoRoot, owner, name, issueNumber, "traceability_reconciled", binding, {
+  const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "traceability_reconciled", {
     commentBody: summary,
   });
 
@@ -17017,7 +11571,6 @@ export async function runAssertTraceabilityReconciled({
     phase_marker: { phase: "traceability_reconciled", issue_number: issueNumber },
     override: override === true,
     override_reason: override === true ? overrideReason.trim() : null,
-    binding,
     checked,
     comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
     comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
@@ -18841,11 +13394,8 @@ export function summarizeReviewFindings(findings, topCategoriesLimit = 5) {
 // the cycle tool's `status` is a coarser classification used for
 // branching on the agent's side.
 function _statusForReviewerAction(nextAction, hasFindings) {
-  if (nextAction === "record_terminal_escalation") return "terminal";
-  if (nextAction === "post_structured_decision_aid_and_escalate") return "escalated";
-  if (nextAction === "post_summary_and_escalate_to_user") return "terminal";
+  if (nextAction === "post_summary_and_escalate_to_user") return "capped";
   if (
-    nextAction === "advance_to_next_phase" ||
     nextAction === "post_clean_decision_record_and_advance_to_phase_c" ||
     nextAction === "proceed_clean"
   ) {
@@ -18872,13 +13422,10 @@ function _statusForReviewerAction(nextAction, hasFindings) {
 // vocabulary for direct callers.
 export function normalizeReviewCycleNextAction(reviewerAction, status) {
   if (status === "clean") {
-    return "advance_to_next_phase";
+    return "post_clean_decision_record_and_advance_to_phase_c";
   }
-  if (status === "terminal") {
-    return "record_terminal_escalation";
-  }
-  if (status === "escalated") {
-    return "post_structured_decision_aid_and_escalate";
+  if (status === "capped") {
+    return "post_summary_and_escalate_to_user";
   }
   // For "findings" and "post_failed" the underlying vocabulary already
   // matches the wrapper's. Pass through.
@@ -18930,18 +13477,17 @@ async function _runReviewCycleShared({
   // Cap-refused: the underlying review did NOT consume a cycle (the
   // marker was not written). The agent must escalate to the user.
   // No decision record is posted.
-  if (status === "terminal") {
+  if (status === "capped") {
     return {
       ok: true,
       reviewer,
       cycle,
       cap,
-      status: "terminal",
-      next_action: normalizeReviewCycleNextAction(nextAction, "terminal"),
+      status: "capped",
+      next_action: normalizeReviewCycleNextAction(nextAction, "capped"),
       findings_summary: summary,
       findings_record_url: findingsRecordUrl,
       decision_record_url: null,
-      decision_aid: reviewResult.dispatcher?.decision_aid ?? null,
     };
   }
 
@@ -19005,8 +13551,6 @@ async function _runReviewCycleShared({
     findings_summary: summary,
     findings_record_url: findingsRecordUrl,
     decision_record_url: drResult.comment_url ?? null,
-    decision_aid: reviewResult.dispatcher?.decision_aid ?? null,
-    dispatcher: reviewResult.dispatcher ?? null,
   };
 }
 
@@ -19015,7 +13559,6 @@ export async function runCodexReviewCycle({
   issueNumber,
   baseBranch = null,
   uncommitted = true,
-  gateResults = [],
   overrideCap = false,
   overrideReason = null,
   signal = undefined,
@@ -19053,7 +13596,6 @@ export async function runCodexReviewCycle({
     baseBranch: baseBranch ?? "dev",
     uncommitted: true,
     issueNumber,
-    gateResults,
     overrideCap,
     overrideReason,
     signal,
@@ -19071,7 +13613,6 @@ export async function runTestQualityReviewCycle({
   repoPath,
   issueNumber,
   baseBranch = null,
-  gateResults = [],
   overrideCap = false,
   overrideReason = null,
   model = undefined,
@@ -19100,7 +13641,6 @@ export async function runTestQualityReviewCycle({
     repoPath,
     baseBranch,
     issueNumber,
-    gateResults,
     overrideCap,
     overrideReason,
     signal,
@@ -19301,7 +13841,6 @@ export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
   read_issue_context: { tier: "low" },
   architecture_preflight: { tier: "low" },
   codebase_assessment: { tier: "medium" },
-  contract_definition: { tier: "high", agent: "parent", fallback: "error" },
   planning: { tier: "high", agent: "parent", fallback: "error" },
   implementation: { tier: "medium" },
   clause_mapping: { tier: "medium" },
@@ -19312,7 +13851,7 @@ export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
   git_publish: { tier: "low" },
   pr_body: { tier: "low" },
   ci_monitor: { tier: "low" },
-  remote_quality: { tier: "low" },
+  sonarcloud: { tier: "low" },
   test_quality_review: { tier: "medium" },
   transition_reconcile: { tier: "medium" },
   close_issue: { tier: "low" },

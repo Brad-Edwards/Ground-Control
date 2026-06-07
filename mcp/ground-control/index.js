@@ -22,9 +22,7 @@
 //
 //   Workflow primitives the /implement skill calls by name (unchanged):
 //     gc_get_repo_ground_control_context, gc_codex_architecture_preflight,
-//     gc_post_interface_contract, gc_post_implementation_plan,
-//     gc_assert_test_red, gc_assert_impl_green, gc_run_gates,
-//     gc_codex_review, gc_codex_verify_finding,
+//     gc_codex_review, gc_codex_verify_finding, gc_post_implementation_plan,
 //     gc_create_github_issue, gc_dashboard_stats, gc_query,
 //     gc_get_requirement, gc_get_traceability, gc_get_traceability_by_artifact,
 //     gc_create_traceability_link, gc_delete_traceability_link,
@@ -77,21 +75,16 @@ import {
   getRepoGroundControlContext,
   runCodexArchitecturePreflight, runCodexReview, runCodexVerifyFinding,
   runTestQualityReview, TEST_QUALITY_REVIEW_HARD_CAP,
-  runPostInterfaceContract, runPostImplementationPlan,
-  runGetImplementationContext, runReconcileTraceability,
-  runAssertTestRed, runAssertImplGreen,
+  runPostImplementationPlan,
   runAssertTraceabilityReconciled, runCloseIssueAfterMerge,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
-  runGateTelemetrySummary, runCaptureProcessLessons,
-  runGetIssueThread, runGates, installWorkflowAssets, runWatchCiRun, runWatchSonarAnalysis,
-  runWatchRequiredStatuses,
+  runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
   runCodexReviewCycle, runTestQualityReviewCycle,
   startReviewJob, pollReviewJob, cancelReviewJob,
   runResolveWorkflowRoute,
   DECISION_RECORD_REVIEWERS, DECISION_RECORD_DECISIONS, DECISION_RECORD_CLASSIFICATIONS,
   PR_BODY_CHANGE_CLASSES, PR_REQUIREMENT_RE, EXACT_REQUIREMENT_UID_RE,
   TELEMETRY_TIERS, TELEMETRY_OUTCOMES,
-  ENGINE_CAPABILITIES,
   buildCodexReviewToolDescription, buildCodexReviewOverrideCapDescription,
   buildCodexReviewOverrideReasonDescription,
   CODEX_REVIEW_HARD_CAP, CODEX_REVIEW_PREPUSH_HARD_CAP,
@@ -385,64 +378,6 @@ server.tool(
 );
 
 server.tool(
-  "gc_run_gates",
-  "Run the portable local gate engine. Resolves .ground-control.yaml through gc_get_repo_ground_control_context, loads and validates the configured .gc/gates.yaml manifest plus .gc/workflow-lock.json, computes changed files and a diff hash from base_ref...head_ref, selects applicable capability gates, executes each command with a bounded timeout and sanitized environment, evaluates typed provider output and thresholds, records gate-effectiveness telemetry, and writes the gates_green phase marker only when applicable blocking local gates pass. If no manifest exists, legacy completion/test/lint/format workflow commands are adapted into temporary policy/unit_tests/lint/format gates and reported as legacy_mode without pack coverage.",
-  {
-    repo_path: z.string(),
-    issue_number: z.number().int().positive(),
-    base_ref: z.string().optional(),
-    head_ref: z.string().optional(),
-    phase: z.enum(["local", "remote"]).optional(),
-    capabilities: z.array(z.enum(ENGINE_CAPABILITIES)).optional(),
-  },
-  async ({ repo_path, issue_number, base_ref, head_ref, phase, capabilities }) => {
-    try {
-      return ok(JSON.stringify(await runGates({
-        repoPath: repo_path,
-        issueNumber: issue_number,
-        baseRef: base_ref ?? "origin/dev",
-        headRef: head_ref ?? "HEAD",
-        phase: phase ?? "local",
-        capabilities: capabilities ?? null,
-      }), null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.tool(
-  "gc_install_workflow_assets",
-  "Install or upgrade portable workflow engine and gate-pack release artifacts from gate-catalog.json. Resolves the engine and pack semver constraints, verifies release-artifact SHA-256 checksums, vendors the exact engine under .gc/vendor/ground-control/engine/<version>/ and pack under .gc/vendor/ground-control/packs/<pack-id>/<version>/, copies pack templates, writes or merges .gc/gates.yaml, updates .gc/workflow-lock.json and .ground-control.yaml workflow.packs[], optionally installs declared dev dependencies through the detected package manager, runs the pack self-test, and leaves a normal repository change. Signature/provenance enforcement is intentionally reported as TODO until release signing is cut; checksum and lockfile verification are real.",
-  {
-    repo_path: z.string(),
-    pack_id: z.string(),
-    version: z.string().optional(),
-    engine_version: z.string().optional(),
-    scope: z.string().optional(),
-    profile: z.string().optional(),
-    catalog_path: z.string().optional(),
-    run_selftest: z.boolean().optional(),
-    install_dependencies: z.boolean().optional(),
-    mode: z.enum(["install", "upgrade"]).optional(),
-  },
-  async ({ repo_path, pack_id, version, engine_version, scope, profile, catalog_path, run_selftest, install_dependencies, mode }) => {
-    try {
-      return ok(JSON.stringify(await installWorkflowAssets({
-        repoPath: repo_path,
-        packId: pack_id,
-        versionConstraint: version ?? "1.0.0",
-        engineVersionConstraint: engine_version ?? "^1.0.0",
-        scope: scope ?? ".",
-        profile: profile ?? null,
-        catalogPath: catalog_path ?? undefined,
-        runSelftest: run_selftest ?? true,
-        installDependencies: install_dependencies ?? true,
-        mode: mode ?? "install",
-      }), null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.tool(
   "gc_dashboard_stats",
   "Aggregate project health snapshot: requirement counts by status/wave, traceability coverage percentages, recent changes.",
   { project: z.string().optional().describe("Project identifier (auto-resolved if only one project)") },
@@ -570,7 +505,7 @@ const ASYNC_REVIEW_PARAM_DESC =
   "When true, start the review/preflight as a background job and return " +
   "{ok,status:'running',job_id} immediately instead of blocking the MCP call. " +
   "Poll the job with gc_codex_job (action='poll') until status='done', then dispatch " +
-  "on the dispatcher-computed result.next_action exactly as for the synchronous call. Use this in the /implement " +
+  "on result.next_action exactly as for the synchronous call. Use this in the /implement " +
   "workflow so a multi-minute review never trips the MCP client's tool-call timeout (issue #937).";
 
 server.tool(
@@ -640,58 +575,8 @@ server.tool(
 );
 
 server.tool(
-  "gc_get_implementation_context",
-  "Load the server-side implementation context bundle and write the bound context_loaded phase marker. Bundles the binding ADRs, cross-cutting-concern incumbents from .ground-control.yaml, existing IMPLEMENTS artifacts, and the related requirement neighbourhood before contract or planning can proceed.",
-  {
-    repo_path: z.string(),
-    issue_number: z.number().int().positive().optional(),
-    requirement_uid: z.string().regex(EXACT_REQUIREMENT_UID_RE).optional(),
-    project: z.string().optional(),
-    repo: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/).optional(),
-  },
-  async ({ repo_path, issue_number, requirement_uid, project, repo }) => {
-    try {
-      return ok(JSON.stringify(await runGetImplementationContext({
-        repoPath: repo_path,
-        issueNumber: issue_number ?? null,
-        requirementUid: requirement_uid ?? null,
-        project: project ?? null,
-        repo: repo ?? null,
-      }), null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.tool(
-  "gc_post_interface_contract",
-  "Post the language-neutral interface/behavior contract as a GitHub issue comment and write the bound 'contract' phase marker. Refuses unless context_loaded and preflight markers exist, unless override=true with a user-authorized override_reason. The contract is the public oracle for planning, tests, and review lenses: interfaces/signatures/DTOs/error envelopes/API shapes/invariants to implement.",
-  {
-    repo_path: z.string(),
-    issue_number: z.number().int().positive(),
-    contract_body: z.string().min(1),
-    base_ref: z.string().optional(),
-    head_ref: z.string().optional(),
-    override: z.boolean().optional(),
-    override_reason: z.string().optional(),
-  },
-  async ({ repo_path, issue_number, contract_body, base_ref, head_ref, override, override_reason }) => {
-    try {
-      return ok(JSON.stringify(await runPostInterfaceContract({
-        repoPath: repo_path,
-        issueNumber: issue_number,
-        contractBody: contract_body,
-        baseRef: base_ref ?? "origin/dev",
-        headRef: head_ref ?? "HEAD",
-        override: Boolean(override),
-        overrideReason: override_reason ?? null,
-      }), null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.tool(
   "gc_post_implementation_plan",
-  "Post the implementation plan as a comment on the GitHub issue. Refuses unless context_loaded and contract phase markers exist for the issue. Writes a 'plan' phase marker on success.",
+  "Post the implementation plan as a comment on the GitHub issue. Refuses unless a 'preflight' phase marker exists for the issue. Writes a 'plan' phase marker on success.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -710,96 +595,8 @@ server.tool(
 );
 
 server.tool(
-  "gc_reconcile_traceability",
-  "Compute the live git diff name-status server-side, reverse-lookup traceability by changed path, and return a structured worklist plus the gap set of in-scope requirements lacking IMPLEMENTS coverage. This replaces manual artifact discovery; the caller confirms and applies the worklist, then calls gc_assert_traceability_reconciled.",
-  {
-    repo_path: z.string(),
-    issue_number: z.number().int().positive(),
-    base_ref: z.string().optional(),
-    head_ref: z.string().optional(),
-    project: z.string().optional(),
-    repo: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/).optional(),
-    requirements: z.array(z.object({
-      uid: z.string().regex(EXACT_REQUIREMENT_UID_RE),
-      status_intent: z.enum(["ACTIVE", "DRAFT", "DEPRECATED", "ARCHIVED"]).optional(),
-    })).optional(),
-  },
-  async ({ repo_path, issue_number, base_ref, head_ref, project, repo, requirements }) => {
-    try {
-      return ok(JSON.stringify(await runReconcileTraceability({
-        repoPath: repo_path,
-        issueNumber: issue_number,
-        baseRef: base_ref ?? "origin/dev",
-        headRef: head_ref ?? "HEAD",
-        project: project ?? null,
-        repo: repo ?? null,
-        requirements: Array.isArray(requirements)
-          ? requirements.map((r) => ({ uid: r.uid, statusIntent: r.status_intent ?? "ACTIVE" }))
-          : null,
-      }), null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.tool(
-  "gc_assert_test_red",
-  "Verify and record the test_red phase. Runs the supplied relevant test/contract-check command and requires it to fail before implementation, or accepts a documented non-executable carve-out whose changed paths are docs-only. Refuses unless the plan marker exists. Writes a bound test_red marker only after re-verification.",
-  {
-    repo_path: z.string(),
-    issue_number: z.number().int().positive(),
-    test_command: z.string().optional(),
-    base_ref: z.string().optional(),
-    head_ref: z.string().optional(),
-    carveout: z.object({
-      reason: z.string().min(1),
-      structural_gate: z.string().min(1),
-    }).optional(),
-  },
-  async ({ repo_path, issue_number, test_command, base_ref, head_ref, carveout }) => {
-    try {
-      return ok(JSON.stringify(await runAssertTestRed({
-        repoPath: repo_path,
-        issueNumber: issue_number,
-        testCommand: test_command ?? null,
-        baseRef: base_ref ?? "origin/dev",
-        headRef: head_ref ?? "HEAD",
-        carveout: carveout ?? null,
-      }), null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.tool(
-  "gc_assert_impl_green",
-  "Verify and record the impl_green phase. Refuses unless test_red exists. Runs the supplied targeted test/contract-check command and requires it to pass, or accepts the same verified non-executable carve-out. Writes a bound impl_green marker only after re-verification; gc_run_gates refuses without a fresh impl_green marker.",
-  {
-    repo_path: z.string(),
-    issue_number: z.number().int().positive(),
-    test_command: z.string().optional(),
-    base_ref: z.string().optional(),
-    head_ref: z.string().optional(),
-    carveout: z.object({
-      reason: z.string().min(1),
-      structural_gate: z.string().min(1),
-    }).optional(),
-  },
-  async ({ repo_path, issue_number, test_command, base_ref, head_ref, carveout }) => {
-    try {
-      return ok(JSON.stringify(await runAssertImplGreen({
-        repoPath: repo_path,
-        issueNumber: issue_number,
-        testCommand: test_command ?? null,
-        baseRef: base_ref ?? "origin/dev",
-        headRef: head_ref ?? "HEAD",
-        carveout: carveout ?? null,
-      }), null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.tool(
   "gc_assert_traceability_reconciled",
-  "Assert that traceability reconciliation has landed for the issue and post a diff-bound 'traceability_reconciled' phase marker. Recomputes the live diff from base_ref...head_ref, re-fetches each in-scope requirement and changed artifact link from Ground Control, and refuses unless every executable changed path and ACTIVE requirement has IMPLEMENTS coverage plus required TESTS coverage. Downstream: gc_post_final_report refuses when the marker is missing or stale against the live diff. override=true + override_reason allows the user to authorize a skip with a quoted rationale.",
+  "Assert that traceability reconciliation has landed for the issue and post a 'traceability_reconciled' phase marker. Re-fetches each in-scope requirement (status_intent: ACTIVE or DRAFT) and its links from the Ground Control REST API and refuses unless every ACTIVE requirement has an IMPLEMENTS link AND, when the IMPLEMENTS link points at an executable surface (backend/src/main/**, frontend/src/**, mcp/**, tools/policy/**), at least one TESTS link. DRAFT requirements are TESTS-exempt. Empty requirements[] runs the orphaned-link audit instead. Downstream: gc_post_final_report refuses unless this marker exists for the issue. override=true + override_reason allows the user to authorize a skip with a quoted rationale.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -809,12 +606,10 @@ server.tool(
     })),
     project: z.string().optional(),
     touched_files: z.array(z.string()).optional(),
-    base_ref: z.string().optional(),
-    head_ref: z.string().optional(),
     override: z.boolean().optional(),
     override_reason: z.string().optional(),
   },
-  async ({ repo_path, issue_number, requirements, project, touched_files, base_ref, head_ref, override, override_reason }) => {
+  async ({ repo_path, issue_number, requirements, project, touched_files, override, override_reason }) => {
     try {
       return ok(JSON.stringify(await runAssertTraceabilityReconciled({
         repoPath: repo_path,
@@ -822,8 +617,6 @@ server.tool(
         requirements: requirements.map((r) => ({ uid: r.uid, statusIntent: r.status_intent ?? "ACTIVE" })),
         project: project ?? null,
         touchedFiles: touched_files ?? [],
-        baseRef: base_ref ?? "origin/dev",
-        headRef: head_ref ?? "HEAD",
         override: Boolean(override),
         overrideReason: override_reason ?? null,
       }), null, 2));
@@ -861,21 +654,19 @@ server.tool(
     uncommitted: z.boolean().optional(),
     pr_number: z.number().int().positive().optional(),
     issue_number: z.number().int().positive().optional(),
-    gate_results: z.array(z.any()).optional(),
     override_cap: z.boolean().optional().describe(buildCodexReviewOverrideCapDescription(CODEX_REVIEW_CAPS)),
     override_reason: z.string().optional().describe(buildCodexReviewOverrideReasonDescription(CODEX_REVIEW_CAPS)),
     override_phase_gate: z.boolean().optional(),
     override_phase_reason: z.string().optional(),
     async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, base_branch, uncommitted, pr_number, issue_number, gate_results, override_cap, override_reason, override_phase_gate, override_phase_reason, async: asyncMode }) => {
+  async ({ repo_path, base_branch, uncommitted, pr_number, issue_number, override_cap, override_reason, override_phase_gate, override_phase_reason, async: asyncMode }) => {
     try {
       const params = {
         repoPath: repo_path, baseBranch: base_branch ?? null,
         uncommitted: Boolean(uncommitted),
         prNumber: pr_number != null ? pr_number : null,
         issueNumber: issue_number != null ? issue_number : null,
-        gateResults: gate_results ?? [],
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
         overridePhaseGate: Boolean(override_phase_gate),
@@ -900,15 +691,16 @@ server.tool(
     `\`claude\` CLI (Sonnet 4.6 by default) with the review-tests rubric and the ` +
     `changed test-file paths, parses the structured JSON output (validated by --json-schema), posts ` +
     `the durable findings record + cycle marker to the issue thread, and returns a structured ` +
-    `envelope: \`{ ok, finding_count, findings, cycle, configured_cap, cap, next_action, dispatcher, findings_comment_url, ... }\`. ` +
-    `The \`next_action\` field is computed by the deterministic ADR-031 dispatcher: ` +
-    `"advance_to_next_phase" / "fix_findings_and_reinvoke" / ` +
-    `"post_structured_decision_aid_and_escalate" / "record_terminal_escalation". ` +
-    `Cycle 1 never collapses into escalation; caps below 2 run with effective cap 2. Replaces the prior Skill("review-tests") boundary, ` +
+    `envelope: \`{ ok, finding_count, findings, cycle, cap, next_action, findings_comment_url, ... }\`. ` +
+    `The \`next_action\` field is "fix_findings_and_reinvoke" / "post_clean_decision_record_and_advance_to_phase_c" / ` +
+    `"fix_findings_then_summarize_and_escalate" / "post_summary_and_escalate_to_user" — the parent ` +
+    `/implement workflow reads it as a directive. "fix_findings_then_summarize_and_escalate" is the ` +
+    `last-in-cap action: fix the findings, post the decision record, then summarize and escalate to the ` +
+    `user; it is NOT a normal re-invoke path. Replaces the prior Skill("review-tests") boundary, ` +
     `which produced prose findings that the autoregressive parent agent kept echoing back to the user ` +
     `instead of fixing in-turn (issue #884 v1 regression). Default cycle cap: ${TEST_QUALITY_REVIEW_HARD_CAP} per ` +
     `issue (issue #906; configurable per repo via \`workflow.test_quality_review.pre_push_cap\` in ` +
-    `.ground-control.yaml; configured bounds [1, 10], effective minimum [2]); cycle cap+1 requires override_cap=true + override_reason. ` +
+    `.ground-control.yaml; bounds [1, 10]); cycle cap+1 requires override_cap=true + override_reason. ` +
     `Authentication: the CLI invocation strips ANTHROPIC_API_KEY from the subprocess env so claude uses ` +
     `the host's OAuth session — see docs/DEVELOPMENT_WORKFLOW.md "Test-quality review engine".`,
   {
@@ -916,13 +708,12 @@ server.tool(
     base_branch: z.string().optional(),
     issue_number: z.number().int().positive().optional(),
     pr_number: z.number().int().positive().optional(),
-    gate_results: z.array(z.any()).optional(),
     override_cap: z.boolean().optional(),
     override_reason: z.string().optional(),
     model: z.string().optional(),
     async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, base_branch, issue_number, pr_number, gate_results, override_cap, override_reason, model, async: asyncMode }) => {
+  async ({ repo_path, base_branch, issue_number, pr_number, override_cap, override_reason, model, async: asyncMode }) => {
     try {
       const params = {
         repoPath: repo_path,
@@ -932,7 +723,6 @@ server.tool(
         baseBranch: base_branch ?? null,
         issueNumber: issue_number != null ? issue_number : null,
         prNumber: pr_number != null ? pr_number : null,
-        gateResults: gate_results ?? [],
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
         ...(model ? { model } : {}),
@@ -997,8 +787,6 @@ server.tool(
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
     pr_number: z.number().int().positive(),
-    base_ref: z.string().optional(),
-    head_ref: z.string().optional(),
     requirements: z.array(z.object({
       // Anchored UID match — `requirements[].uid` must BE a UID (codex cycle-4 F2).
       uid: z.string().regex(EXACT_REQUIREMENT_UID_RE),
@@ -1034,14 +822,12 @@ server.tool(
     override_traceability_gate: z.boolean().optional(),
     override_traceability_reason: z.string().optional(),
   },
-  async ({ repo_path, issue_number, pr_number, base_ref, head_ref, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, lane, documentation_outcome, override_traceability_gate, override_traceability_reason }) => {
+  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, lane, documentation_outcome, override_traceability_gate, override_traceability_reason }) => {
     try {
       return ok(JSON.stringify(await runPostFinalReport({
         repoPath: repo_path,
         issueNumber: issue_number,
         prNumber: pr_number,
-        baseRef: base_ref ?? "origin/dev",
-        headRef: head_ref ?? "HEAD",
         requirements,
         files: files ?? {},
         reviews,
@@ -1139,42 +925,6 @@ server.tool(
 );
 
 server.tool(
-  "gc_gate_telemetry_summary",
-  "Read gate-effectiveness telemetry from `.gc/telemetry/gate-effectiveness-<issue>.jsonl` and aggregate per-gate fire rate, outcomes, false-positive/override/escape rates, and duration statistics. Analytic only; it never changes in-run gate state.",
-  {
-    repo_path: z.string(),
-    issue_number: z.number().int().positive().optional(),
-  },
-  async ({ repo_path, issue_number }) => {
-    try {
-      return ok(JSON.stringify(await runGateTelemetrySummary({
-        repoPath: repo_path,
-        issueNumber: issue_number ?? null,
-      }), null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.tool(
-  "gc_capture_process_lessons",
-  "At run close, derive process observations from gate-effectiveness telemetry and write them through the repo's knowledge inbox, equivalent to a structured gc_remember call whose note is generated from telemetry rather than agent recollection.",
-  {
-    repo_path: z.string(),
-    issue_number: z.number().int().positive(),
-    tags: z.array(z.string()).optional(),
-  },
-  async ({ repo_path, issue_number, tags }) => {
-    try {
-      return ok(JSON.stringify(await runCaptureProcessLessons({
-        repoPath: repo_path,
-        issueNumber: issue_number,
-        tags: tags ?? undefined,
-      }), null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.tool(
   "gc_documentation_coverage",
   "Classify a list of repo-relative changed paths into surface classes and return their documentation targets. Surface classes: workflow, mcp_tool, config_parser, policy, adr, public_api, user_visible, doc, unclassified. outcome_required is true when any path belongs to a class that requires a documented outcome (workflow/mcp_tool/config_parser/policy/adr/public_api/user_visible). suggested_doc_targets is the deduped union of doc_targets across all classifications. Paths are validated for repo-containment — absolute paths and '..' escapes are rejected.",
   {
@@ -1237,25 +987,23 @@ server.tool(
 
 server.tool(
   "gc_codex_review_cycle",
-  "Pre-push codex-review cycle wrapper. Runs gc_codex_review (uncommitted=true) AND auto-posts the canonical per-cycle decision record (every finding gets decision='fix' with auto-rationale, the only decision the cycle tool can record without user authorization). Returns a compact envelope: {ok, reviewer, cycle, configured_cap, cap, status, next_action, dispatcher, findings_summary, findings_record_url, decision_record_url}. Verbatim review prose and per-finding bodies stay server-side via the underlying review's findings record — they never reach the agent through this tool. The subagent that drives the loop calls this tool once per cycle; on next_action='fix_findings_and_reinvoke' it fixes, self-verifies locally, re-stages, and re-invokes. On next_action='post_structured_decision_aid_and_escalate' it posts the structured cap decision aid and stops for owner authorization. wontfix / not-applicable decisions still require an explicit gc_post_decision_record call after user authorization.",
+  "Pre-push codex-review cycle wrapper. Runs gc_codex_review (uncommitted=true) AND auto-posts the canonical per-cycle decision record (every finding gets decision='fix' with auto-rationale, the only decision the cycle tool can record without user authorization). Returns a compact envelope: {ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url}. Verbatim review prose and per-finding bodies stay server-side via the underlying review's findings record — they never reach the agent through this tool. The subagent that drives the loop calls this tool once per cycle; on next_action='fix_findings_and_reinvoke' it fixes, self-verifies locally, re-stages, and re-invokes. wontfix / not-applicable decisions still require an explicit gc_post_decision_record call after user authorization.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
     base_branch: z.string().nullable().optional(),
     uncommitted: z.boolean().optional(),
-    gate_results: z.array(z.any()).optional(),
     override_cap: z.boolean().optional(),
     override_reason: z.string().nullable().optional(),
     async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, issue_number, base_branch, uncommitted, gate_results, override_cap, override_reason, async: asyncMode }) => {
+  async ({ repo_path, issue_number, base_branch, uncommitted, override_cap, override_reason, async: asyncMode }) => {
     try {
       const params = {
         repoPath: repo_path,
         issueNumber: issue_number,
         baseBranch: base_branch ?? null,
         uncommitted: uncommitted ?? true,
-        gateResults: gate_results ?? [],
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
       };
@@ -1272,24 +1020,22 @@ server.tool(
 
 server.tool(
   "gc_test_quality_review_cycle",
-  "Pre-push test-quality review cycle wrapper. Runs gc_test_quality_review AND auto-posts the canonical per-cycle decision record (reviewer='test-quality', every finding decision='fix' with auto-rationale). Same compact convergence envelope shape as gc_codex_review_cycle, including dispatcher-computed next_action and structured decision aid at a real cap. Verbatim reviewer prose stays server-side. Skips automatically when the diff has no test files (the underlying review handles that).",
+  "Pre-push test-quality review cycle wrapper. Runs gc_test_quality_review AND auto-posts the canonical per-cycle decision record (reviewer='test-quality', every finding decision='fix' with auto-rationale). Same compact envelope shape as gc_codex_review_cycle. Verbatim reviewer prose stays server-side. Skips automatically when the diff has no test files (the underlying review handles that).",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
     base_branch: z.string().nullable().optional(),
-    gate_results: z.array(z.any()).optional(),
     override_cap: z.boolean().optional(),
     override_reason: z.string().nullable().optional(),
     model: z.string().optional(),
     async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, issue_number, base_branch, gate_results, override_cap, override_reason, model, async: asyncMode }) => {
+  async ({ repo_path, issue_number, base_branch, override_cap, override_reason, model, async: asyncMode }) => {
     try {
       const params = {
         repoPath: repo_path,
         issueNumber: issue_number,
         baseBranch: base_branch ?? null,
-        gateResults: gate_results ?? [],
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
         model,
@@ -1329,7 +1075,7 @@ server.tool(
 
 server.tool(
   "gc_watch_sonar_analysis",
-  "Optional provider adapter that polls SonarCloud for a PR's quality gate and open issues / hotspots server-side. The engine-level remote gate is gc_watch_required_statuses with the remote_status capability; this tool remains available for repositories that still want the SonarCloud-specific summary/export. Returns one compact terminal envelope: {quality_gate, issues_summary, hotspots_summary, full_issue_export_path}. The MCP server holds the connection through the analysis propagation wait (60s default) and quality-gate polling (30 min default). When the repo has no sonarcloud block in .ground-control.yaml the tool returns ok=true skipped=true quality_gate='NONE'. SonarCloud REST authentication uses HTTP Basic with the SONAR_TOKEN env var as the username — the token is read at call time and passed only in the Authorization header (never argv, telemetry, export, or returned envelope). The full per-issue + per-hotspot payload is written server-side under `.gc/sonar/<pr>-<ts>.json` for on-demand drilldown; only summaries reach the caller.",
+  "Poll SonarCloud for a PR's quality gate and open issues / hotspots server-side. Returns one compact terminal envelope: {quality_gate, issues_summary, hotspots_summary, full_issue_export_path}. Designed for /implement Step 11: the agent makes one tool call; the MCP server holds the connection through the analysis propagation wait (60s default) and quality-gate polling (30 min default). When the repo has no sonarcloud block in .ground-control.yaml the tool returns ok=true skipped=true quality_gate='NONE' (mirrors the existing skip behavior). SonarCloud REST authentication uses HTTP Basic with the SONAR_TOKEN env var as the username — the token is read at call time and passed only in the Authorization header (never argv, telemetry, export, or returned envelope). The full per-issue + per-hotspot payload is written server-side under `.gc/sonar/<pr>-<ts>.json` for on-demand drilldown; only summaries reach the caller.",
   {
     repo_path: z.string(),
     pr_number: z.number().int().positive(),
@@ -1345,60 +1091,6 @@ server.tool(
         initialWaitSeconds: initial_wait_seconds ?? 60,
         totalTimeoutSeconds: total_timeout_seconds ?? 1800,
         pollIntervalSeconds: poll_interval_seconds ?? 30,
-      }), null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.tool(
-  "gc_watch_required_statuses",
-  "Watch provider-neutral required remote statuses for a pull request and verify remote-quality substance server-side. The status set comes from remote_status gates in the manifest unless required_statuses is supplied explicitly. The tool polls the PR status rollup when no status_snapshot is supplied, then checks configured provider results (for example SonarCloud quality gate, new and overall issues by severity, ratings, hotspots, coverage, duplications). It writes remote_gates_green only when both the required status set and the full provider-quality bar pass for the bound head SHA, manifest hash, diff hash, required-status-set hash, and remote-quality hash.",
-  {
-    repo_path: z.string(),
-    issue_number: z.number().int().positive(),
-    pr_number: z.number().int().positive(),
-    base_ref: z.string().optional(),
-    head_ref: z.string().optional(),
-    head_sha: z.string().optional(),
-    required_statuses: z.array(z.string().min(1)).optional(),
-    status_snapshot: z.array(z.object({
-      name: z.string().min(1),
-      status: z.string().optional(),
-      conclusion: z.string().optional(),
-      state: z.string().optional(),
-      id: z.union([z.string(), z.number()]).optional(),
-      url: z.string().optional(),
-    }).passthrough()).optional(),
-    queued_timeout_seconds: z.number().int().nonnegative().optional(),
-    total_timeout_seconds: z.number().int().nonnegative().optional(),
-    poll_interval_seconds: z.number().int().nonnegative().optional(),
-  },
-  async ({
-    repo_path,
-    issue_number,
-    pr_number,
-    base_ref,
-    head_ref,
-    head_sha,
-    required_statuses,
-    status_snapshot,
-    queued_timeout_seconds,
-    total_timeout_seconds,
-    poll_interval_seconds,
-  }) => {
-    try {
-      return ok(JSON.stringify(await runWatchRequiredStatuses({
-        repoPath: repo_path,
-        issueNumber: issue_number,
-        prNumber: pr_number,
-        baseRef: base_ref ?? "origin/dev",
-        headRef: head_ref ?? "HEAD",
-        headSha: head_sha ?? null,
-        requiredStatuses: required_statuses ?? null,
-        statusSnapshot: status_snapshot ?? null,
-        queuedTimeoutSeconds: queued_timeout_seconds ?? 300,
-        totalTimeoutSeconds: total_timeout_seconds ?? 2700,
-        pollIntervalSeconds: poll_interval_seconds ?? 15,
       }), null, 2));
     } catch (e) { return err(e); }
   },

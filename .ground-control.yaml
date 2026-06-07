@@ -9,8 +9,6 @@ workflow:
 sonarcloud:
   project_key: Brad-Edwards_Ground-Control
   organization: brad-edwards
-remote_quality:
-  tier: zero_overall_issues
 rules:
   plan_rules: .gc/plan-rules.md
 knowledge:
@@ -93,7 +91,7 @@ routing:
     ci_monitor:
       tier: low
       model: claude-haiku-4-5
-    remote_quality:
+    sonarcloud:
       tier: low
       model: claude-haiku-4-5
     test_quality_review:

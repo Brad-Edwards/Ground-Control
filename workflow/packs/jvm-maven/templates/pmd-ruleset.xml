@@ -1,2 +1,0 @@
-<?xml version="1.0"?>
-<ruleset name="Ground Control Maven rules" xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"><description>Pack-managed PMD rules.</description><rule ref="category/java/design.xml/CyclomaticComplexity"/></ruleset>

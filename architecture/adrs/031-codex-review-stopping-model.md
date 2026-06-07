@@ -2,222 +2,264 @@
 
 ## Status
 
-accepted
+Proposed
 
 ## Date
 
-2026-06-06
+2026-05-09
+
+> **Amended by issue #906 (2026-05-13):** The "three pre-push cycles per issue" baseline this ADR builds on is now a **configurable default of 1 cycle**. The cap value lives on the MCP tool as `CODEX_REVIEW_PREPUSH_HARD_CAP` and is overridden per-repo via `.ground-control.yaml::workflow.codex_review.pre_push_cap` (bounds `[1, 10]`). Repos that want the historical 3-cycle baseline this ADR describes set the knob explicitly. The severity rubric, stopping model, and `override_cap` escape semantics this ADR proposes are **unchanged**; only the default-cap-value assumption shifts. Empirical observation behind the drop: cycles 2 and 3 historically compounded the agent's own fix-introduced bugs more than they caught net-new bugs (for example, PR #903's 4-cycle run), and the catch-rate-vs-loop-cost tradeoff favors cycle-1 + CI / SonarCloud / human review for the typical diff. The "Sometimes a run goes 5+ cycles deep with real bugs every cycle" failure mode below still benefits from the `override_cap` escape; the "Sometimes a run reaches cycle 3 with all-Minor cosmetic findings" failure mode is moot under cap-1 (the cycle 3 boundary doesn't exist by default).
 
 ## Context
 
-ADR-021 and ADR-029 require pre-push review before `/implement` publishes a
-pull request. The previous review loop had a mechanical failure: the server
-cap evaluators at `mcp/ground-control/lib.js:3891` and `:4382` treated
-`nextCycle === hardCap` as the last-in-cap escalation path. With
-`pre_push_cap=1`, cycle 1 with any finding became "fix, summarize, and
-escalate" instead of "fix, re-review, and continue until clean." The result
-was a one-cycle loop that stopped in the middle of convergence.
+GC-O007 (amended by ADR-029) caps `gc_codex_review` at three pre-push cycles
+per issue and routes any "concern remaining after cycle 3" to a user-facing
+escalation comment. Empirically, two failure modes show up at the cap
+boundary:
 
-The workflow also needs to account for large language model (LLM) review
-failure modes. Reviewers can overcorrect clean code when prompted to find and
-fix defects. arXiv:2508.12358 documents this overcorrection pattern and shows
-that two-phase reflective and behavioral-comparison prompts reduce it.
-arXiv:2512.02304 documents a verifier-quality threshold: verification helps
-only when the verifier is accurate enough and independent enough to reduce
-false rejection.
+1. Sometimes a run goes 5+ cycles deep (with `override_cap=true`) and is
+   still surfacing real bugs every cycle. The override exists for exactly
+   this case and works.
+2. Sometimes a run reaches cycle 3 with all-`Minor` cosmetic findings and
+   the user is asked to authorize cycle 4 anyway, because the existing
+   workflow has no notion of "this round was so trivial we should have
+   stopped at cycle 2." The user's input is "vibes on whether the last
+   round of findings was bad enough to warrant another."
 
-The stopping model must therefore separate detection, fix, and advance. LLM
-reviewers may detect findings. The implementer fixes them. A non-LLM
-dispatcher decides whether the workflow advances, loops, or escalates from a
-parseable verdict envelope.
+The problem is structural: the workflow has a cycle cap but no severity
+classification on findings, no pre-declared exit criteria for a given run,
+no within-cap early stop signal, and no cross-model confirmation on the
+highest-impact (`Critical`) findings. With none of those, the user's
+terminal authorization at cycle 3 is unavoidably gut-feel.
+
+The established software-engineering literature on this problem is mature.
+Inspection-era work prescribes pre-declared numeric exit gates (Fagan IBM
+Sys. J. 1976; Gilb & Graham, *Software Inspection*, 1993). Empirical studies
+of inspection effectiveness show diminishing returns past two independent
+passes (Porter, Siy, Mockus, Votta ACM TOSEM 7(1), 1998; Biffl & Halling
+IEEE TSE 29(5), 2003). Capture-recapture defect-population estimation uses
+overlap between independent reviewers (Briand, El Emam, Freimut,
+Laitenberger IEEE TSE 26(6), 2000). Cost-benefit stopping is the framework
+that justifies all the others (Freimut, Briand, Vollei IEEE TSE 31(12),
+2005; Kemerer & Paulk IEEE TSE 2009).
+
+Two further bodies of work specifically address LLM-judge calibration. The
+rubric literature (Autorubric arXiv 2603.00077; LLM-Rubric
+arXiv 2501.00274) finds anchored few-shot examples per ordinal class are
+the strongest stabilizer. The bias literature documents systematic
+overcorrection (arXiv 2508.12358, 2025: LLMs prompted to find defects
+flag conforming code at higher rates; richer prompts make it worse) and
+adversarial-framing instability (arXiv 2603.18740: verdict flips in
+88.2% of cases). Severity inter-rater reliability is empirically poor in
+human-rated bug data too (Tian, Ali, Lo, Hassan EMSE 2016: 28.9 to 50.8%
+disagreement on duplicate-bug severity in OpenOffice / Mozilla / Eclipse).
+Implication: absolute severity counts are not trustworthy as stopping
+signals; deltas across cycles are.
+
+Industry severity standards include IEEE Std 1044-2009 (qualitative
+classes, no prescribed weights), CVSS v4.0 (0.0–10.0 numeric for security,
+with Base/Threat/Environmental decomposition), Capers Jones DRE work
+(Sev-1..Sev-4, no formal weights), and SARIF v2.1.0
+(`error`/`warning`/`note`/`none`). DREAD has been retired by Microsoft for
+subjectivity. None of these prescribes the {10,5,2,1}-style multiplicative
+weights commonly attributed to them; those are engineering convention.
 
 ## Decision
 
-The pre-push review loop is a convergence loop:
+Adopt a five-piece stopping model that refines GC-O007 without superseding
+it or weakening the existing cap. Each piece is a separate refining
+requirement so they can be implemented and tested independently.
 
-```text
-review -> if findings exist, fix -> re-review -> repeat
-```
+### 1. Severity classification on every finding (GC-X101)
 
-The loop ends only when one of these terminal conditions holds:
+Every `gc_codex_review` finding carries an IEEE 1044-2009-aligned class
+from `{Blocking, Critical, Major, Minor}`, plus a CVSS v4.0 Base vector +
+numeric score for security findings. The reviewer's prompt includes ≥2
+anchored example findings per class. Findings the reviewer cannot place
+are returned as `Minor` with `unclassified=true` rather than guessed.
 
-- a clean verdict envelope is posted and all blocking reviewer lenses report
-  `ship`;
-- a real cap of at least 2 cycles is reached and the dispatcher emits a
-  structured decision aid; or
-- an explicit terminal escalation state is recorded.
+### 2. Pre-declared exit gates per run (GC-X102)
 
-Cycle 1 must never collapse into escalation because findings exist. A
-configured hard cap below 2 is invalid as an effective stopping cap for
-issue-anchored `/implement` and `/quickfix` reviewer loops. The parser may
-accept legacy values such as `pre_push_cap=1` for compatibility, but the
-dispatcher floors the effective cap to 2. Repositories that need a single
-advisory review must model that as an advisory lens outside this convergence
-gate.
+Each `/implement` run declares numeric gates before cycle 1:
+`max_blocking=0`, `max_critical=0`, `max_major=N`,
+no-new-categories-in-final-cycle; these are recorded as a marker block in the plan
+comment. Meeting all gates terminates the loop early; missing them at the
+existing three-cycle cap triggers escalation.
 
-Every reviewer returns a parseable verdict envelope. The envelope includes:
+### 3. Severity-weighted early stop within the cap (GC-X103)
 
-- `verdict`: `ship`, `ship-with-fixes`, or `don't-ship`;
-- `reviewer_lens`: `correctness`, `security`, `architecture`, or
-  `test-strength`;
-- `architectural_read` or the lens-specific equivalent;
-- `findings[]`, each with severity, location, evidence, classification
-  (`one-off` or `class`), disposition state, and sweep evidence where needed;
-- `blocking[]`, derived from findings that block advance;
-- `notes[]`, bounded and non-blocking.
+After each cycle, compute a weighted score (Blocking=10, Critical=10,
+Major=5, Minor=1) and compare to cycle N-1. If cycle N's score is strictly
+less than 25% of cycle N-1's AND no `Critical`/`Blocking` was introduced,
+terminate without further cycles. The 25% threshold matches the lower
+bound of the empirical 25-50% per-pass detection-rate decay reported in
+inspection studies. Weights and threshold are engineering convention, not
+standards-prescribed.
 
-The review wrapper returns `next_action` beside the lens envelopes. That
-field is computed by the dispatcher, not by reviewer prose.
+### 4. Independent-reviewer confirmation for `Critical`/`Blocking` (GC-X104)
 
-The dispatcher owns advance. It reads all lens envelopes, `gc_run_gates`
-result envelopes from ADR-058, required remote status envelopes, prior cycle
-markers, and the cap state. It returns one of:
+A `Critical` or `Blocking` finding does not gate workflow termination,
+escalation, or "what blocks merge" rendering until confirmed by a second
+independent reviewer-model invocation (different model family or
+fresh-context session). Disagreement on classification → lower severity
+prevails for gating, both retained in audit. Confirmation does not consume
+a `gc_codex_review` cycle against the cap.
 
-- `advance_to_next_phase`;
-- `fix_findings_and_reinvoke`;
-- `post_structured_decision_aid_and_escalate`;
-- `record_terminal_escalation`.
+### 5. Structured cycle-3 escalation decision aid (GC-X105)
 
-Reviewer prose does not decide advance, loop, or escalation.
+When a run hits cycle 3 with gates not satisfied, the escalation comment
+includes severity-weighted scores per cycle, decay ratios, category-novelty
+signals, projected cycle-4 yield, count of unconfirmed `Critical` findings,
+and a recommended action from `{approve_cap_override,
+accept_remaining_findings_as_wontfix_with_rationale,
+stop_run_and_open_new_issue}` with supporting signals. Decision authority
+remains the user's; the requirement is that the decision input be
+structured signal rather than free-text vibes.
 
-The dispatcher treats `gc_run_gates` results as the deterministic gate surface.
-A blocking gate failure prevents advance until the gate passes or a terminal
-escalation is recorded. A `provider_missing` result never becomes a silent
-pass. If the manifest declares reviewer fallback for that missing capability,
-the dispatcher routes the gap to the matching reviewer lens and records
-telemetry such as `provider_missing` and `reviewer_fallback_used`. If the
-manifest marks the missing provider as blocking without fallback, the
-dispatcher refuses advance.
+### Invariants preserved
 
-The review set has four independent lenses:
+GC-O007's cap mechanics are unchanged. The override-cap path stays
+available for legitimate "I see this is still finding real things" cases.
+The five additions sit *inside* the cap, not in place of it.
 
-- **correctness**: checks the requirement, acceptance criteria, contract, and
-  plan against the diff;
-- **security**: checks trust boundaries, authorization, injection, server-side
-  request forgery, unsafe deserialization, secrets, dependency risk, and
-  attacker-model obligations;
-- **architecture**: checks binding Architecture Decision Records (ADRs),
-  package boundaries, cross-cutting helpers, traceability rules, and the
-  engineering contract;
-- **test-strength**: checks that tests exercise the public contract and are
-  backed by `mutation`, `diff_coverage`, or `property_verification` evidence
-  where the gate manifest requires it.
+The reviewer-of-record invariant (ADR-027 / ADR-029) is preserved: review
+tools always route through `gc_codex_review`, `gc_codex_verify_finding`,
+`gc_codex_architecture_preflight`. The independent-confirmation reviewer
+(GC-X104) is invoked through the same MCP boundary; it is not a new direct
+GitHub or LLM client.
 
-Each lens runs in a fresh context with edit tools removed. A lens sees the
-requirement, contract, plan, relevant ADR clauses, gate results, and diff. It
-does not see the implementation reasoning that produced the diff.
+Tool-layer enforcement boundary from ADR-029 is preserved: the MCP server
+is the enforcement point for severity classification, weighted-score
+computation, exit-gate evaluation, second-reviewer confirmation, and the
+escalation decision-aid marker. Skills do not duplicate this in prose; the
+workflow contract is enforced where the reviewer outputs are processed.
 
-Critical or Blocking findings require independent cross-model confirmation
-before they gate advance or escalation. Cross-model review is always available
-to the workflow. When the first reviewer and confirming reviewer disagree on
-severity, the lower severity controls gating and both opinions remain in the
-issue-thread record.
-
-The correctness lens must use an anti-overcorrection prompt structure. It must
-first extract requirement obligations and then audit the diff, or it must
-summarize expected behavior and actual behavior before comparing them. The lens
-flags only gaps against the stated requirement, contract, plan, or binding ADRs.
-It does not request unrelated improvements.
-
-The GC-X101 through GC-X105 mapping remains the implementation contract:
-
-- **GC-X101**: every finding carries a severity class (`Blocking`,
-  `Critical`, `Major`, or `Minor`) and evidence grounded in the supplied
-  artifact set. Security findings also carry a Common Vulnerability Scoring
-  System (CVSS) vector when applicable.
-- **GC-X102**: each run declares exit gates before cycle 1. Defaults are
-  `max_blocking=0`, `max_critical=0`, no unresolved class findings, and no
-  unconfirmed Critical or Blocking findings.
-- **GC-X103**: the dispatcher computes per-cycle delta, category novelty, and
-  severity-weighted trend. These signals can stop a loop early only when all
-  blocking gates are satisfied; they cannot advance a dirty loop.
-- **GC-X104**: Critical and Blocking findings need independent confirmation.
-  Confirmation does not consume a normal review cycle.
-- **GC-X105**: when the cap is reached without a clean verdict, the dispatcher
-  emits a structured decision aid. The aid includes cycle history, unresolved
-  findings, severity trend, new categories, confirmation status, gate results,
-  projected value of another cycle, and recommended next action.
-
-The decision aid is not an invitation for agent prose to decide. It is a
-terminal escalation artifact posted to the GitHub issue thread per ADR-029.
+The 25% threshold and `{10,10,5,1}` weights are stated as engineering
+convention. They may be tuned per-project via `.ground-control.yaml` in a
+future schema revision once telemetry from real runs justifies the
+per-project knob; the initial implementation hard-codes them.
 
 ## Consequences
 
-The workflow regains a real fix-and-re-review band. A finding on the first
-cycle causes repair and re-review, not an immediate cap-bound escalation.
+### Positive
 
-Clean review advances mechanically. If all blocking lenses return `ship` and
-the dispatcher sees no unresolved gate, the workflow moves to the next phase
-without stopping for a human confirmation turn.
+- The cycle-3 escalation prompt becomes structured signal (decay ratio,
+  category novelty, projected yield, unconfirmed-Critical count,
+  recommended action) instead of "should I do another cycle?" with no
+  inputs. This was the explicit user-pain motivating the work.
+- Within-cap early stop on severity decay eliminates the "cycle 2 was
+  trivial but we ran cycle 3 anyway" failure mode.
+- Independent confirmation of `Critical` findings absorbs the bulk of
+  LLM-judge overcorrection bias (arXiv 2508.12358) before that
+  classification gates anything user-facing, which is the highest-leverage point
+  for false positives in the loop.
+- Pre-declared exit gates make termination criteria a property of the run,
+  recorded in the issue thread per ADR-029, rather than an undocumented
+  in-run agent judgment.
+- Per-finding severity class is the input format that GC-X100 (fix-the-class
+  instruction injection) can also consume, so the two requirements compose
+  cleanly.
+- Aligns the workflow with the strongest empirical priors from the
+  inspection literature (2-3 passes captures the bulk; further passes are
+  exceptional) and the LLM-judge calibration literature (anchored examples
+  per class are the strongest stabilizer).
 
-Reviewer quality improves because lenses are independent, artifact-grounded,
-and constrained to stated obligations. Cross-model confirmation reduces the
-risk that one overcorrecting reviewer blocks the workflow with a false
-Critical or Blocking finding.
+### Negative
 
-The model adds cost. Fresh-context lenses, cross-model confirmation, and a
-minimum two-cycle cap are slower than a single pass. ADR-058's deterministic
-gate manifest and ADR-036's routing keep that cost focused on the surfaces
-where review adds value.
+- Five new refining requirements add surface area that must be implemented
+  and kept consistent. Partial implementation is worse than none for
+  GC-X103 and GC-X105 (both depend on GC-X101's classification existing on
+  every finding).
+- Independent-reviewer confirmation (GC-X104) doubles the cost in tokens
+  and wall time for any cycle that produced a `Critical` finding. Most
+  cycles will not, so steady-state cost increase is small, but worst-case
+  is non-trivial.
+- `{10,10,5,1}` weights are convention, not standards-prescribed. The ADR
+  records this honestly; implementations must not cite the weights as
+  IEEE 1044 / Capers Jones / CVSS prescriptions.
 
-Partial implementation is unsafe. If severity classes, dispatcher decisions,
-and decision aids do not ship together, the workflow can recreate the old
-failure with a different vocabulary.
+### Risks
+
+- **Severity rubric drift.** Anchored examples in the review prompt are
+  the highest-leverage stabilizer per the rubric-LLM literature; if the
+  examples drift to bad anchors over time, classification quality degrades
+  and the rest of the model loses signal. Mitigation: rubric examples live
+  in version control alongside the `gc_codex_review` prompt template;
+  changes to them are reviewed under the normal `/implement` workflow.
+- **Decay-rule false stops.** A 25% threshold could plausibly stop a run
+  that would have surfaced a real `Critical` in cycle 3. The conjunction
+  with "no `Critical` introduced this cycle" closes most of that gap, but
+  not all. Mitigation: GC-X105's decision aid still runs at cycle 3 if
+  gates aren't met, so legitimate continuation cases route through the
+  user.
+- **Independent reviewer collusion.** If both reviewer-model invocations
+  come from the same model family with similar training, they may share
+  the bias the second-reviewer step is supposed to correct for.
+  Mitigation: requirement language specifies "different model family OR
+  separately spawned session with no shared context"; implementation
+  should prefer the former where available.
+- **Audit-trail bloat.** Persisting both reviewer outputs for
+  `Critical`/`Blocking` findings + structured decision-aid marker blocks
+  adds material to issue threads that already get long under ADR-029. The
+  marker-block format absorbs most of the parsing cost; human-readable
+  rendering remains compact.
+- **Per-project tuning pressure.** Threshold and weights are hard-coded in
+  the initial implementation. Real telemetry from GC-X103 firing across
+  runs may show the 25% threshold is wrong for some project mix. The
+  escape valve is `.ground-control.yaml`, but introducing it before
+  evidence justifies it adds schema surface that may not pay for itself.
 
 ## Related Requirements
 
-- GC-O007 Gated Agentic Development Loop.
-- GC-X101 Severity classification of review findings.
-- GC-X102 Pre-declared exit gates for review loops.
-- GC-X103 Severity-weighted convergence signals.
-- GC-X104 Independent confirmation for Critical and Blocking findings.
-- GC-X105 Structured escalation decision aid.
+- GC-O007 Gated Agentic Development Loop (refined, not amended)
+- GC-X100 Codex review fix-the-class instruction (composes with GC-X101)
+- GC-X101 Severity classification of Codex review findings
+- GC-X102 Pre-declared exit gates for /implement Codex review loop
+- GC-X103 Severity-weighted early stop within Codex review cycle cap
+- GC-X104 Independent-reviewer confirmation for Critical findings
+- GC-X105 Structured cycle-3 escalation decision aid
 
 ## Related ADRs
 
-- ADR-021: Gated Agentic Development Loop.
-- ADR-027: Agent-Neutral Implement Workflow Packaging.
-- ADR-029: Issue-Thread Gate Model.
-- ADR-036: Per-Step Model Routing, Durable-Record Tool Surfaces, and Step Telemetry.
-- ADR-058: Gate manifest, runner contract, and gate-pack bundles.
-- ADR-059: The engineering contract.
-- ADR-061: Governable phase-marker state machine.
-- ADR-062: Portable /implement engine, gate-pack registry, and consumer
-  adoption model.
+- ADR-021 Gated Agentic Development Loop (the base contract this refines)
+- ADR-029 Issue-Thread Gate Model (durable record + tool-layer enforcement
+  boundary preserved)
+- ADR-027 Agent-Neutral Implement Workflow Packaging (reviewer-of-record
+  invariant preserved)
 
-## References
+## Amendments
 
-- arXiv:2508.12358, overcorrection in LLM code verification and
-  anti-overcorrection prompt structures.
-- arXiv:2512.02304, verifier-quality threshold and false-rejection risk.
-- Issue #1075, `/implement` workflow redesign.
+**2026-05-19 (issue #931): verdict envelope replaces the findings-only tail.**
+Codex now emits a JSON object inside `===REVIEW===...===END===` containing
+`verdict` (`ship` | `ship-with-fixes` | `don't-ship`), required non-empty
+`architectural_read`, `blocking[]` (the validated finding objects this ADR
+documents, plus a required `sweep_evidence` field on one-off classifications
+and an optional `structural_blocker` boolean), and optional `notes[]` capped
+at 2. Cycle stopping and override semantics are unchanged. The principal-
+engineer motivation: a clean review now returns `verdict: ship` as a
+first-class outcome rather than the reviewer being structurally pushed to
+manufacture findings. See issue #931 and the preflight note at
+`architecture/notes/ai-review-recalibration-preflight.md`.
 
-## Amendment (2026-06-06, Phase 4)
+**2026-05-21 (issue #937): codex review runs as an async job.** `gc_codex_review`
+and the `gc_codex_review_cycle` wrapper gain an opt-in `async` mode: the tool
+spawns the `codex exec` child as a background job and returns a `job_id`
+immediately; the new `gc_codex_job` tool polls for the verdict envelope or
+cancels the job (the cancel aborts an `AbortController` whose signal kills the
+child, so nothing is orphaned). Run synchronously, the call blocked past the
+MCP client's per-call timeout and the client abandoned it while the child ran
+on (issue #893). The stopping model this ADR defines is **unchanged**: the
+per-issue cycle cap, the `gc:codex-review-cycle` marker family, the
+`override_cap` semantics, and the `verdict: ship` clean outcome all behave
+exactly as before. Async changes only how the agent waits for a cycle's
+result, never when the loop stops. See ADR-036 (amendments) for the job model.
 
-The test-strength lens now treats the posted interface contract as its oracle.
-The MCP prompt builder reads the latest `contract` phase marker from the issue
-thread when available and injects that contract into the review prompt. The
-same ADR-059 engineering contract used at contract/plan generation is embedded
-as the reviewer rubric, so review questions map back to enforceable gates or
-grounded reviewer checks rather than ad hoc preference. `gc_run_gates`
-classifier results remain deterministic input to the dispatcher: an unresolved
-ADR-057 contract/test artifact obligation blocks advance before reviewer prose
-can treat the surface as clean.
+**Amendment: renderer summary byte caps (#964).** `gc_render_pr_body` and `gc_post_final_report` now enforce reject-not-truncate byte caps on their caller-controlled summary fields. `gc_post_decision_record` (the per-cycle decision-record surface this ADR's stopping model writes to) is unchanged at the schema layer; its caller-controlled prose fields (`notes[].text`, finding rationales, titles) already had per-field caps. The canonical succinctness rule lives in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)`.
 
-## Amendment (2026-06-06, Phase 5 of issue #1075)
+**Amendment: issue close mechanism (#862 typed-action-items PR).** The /implement Step 18 no longer runs `gh issue close`. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step 9) when the user merges the PR. Step 18 only removes the `in-progress` label set in Step 1. Closing from the agent decoupled the close event from the merge: an unmerged or rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open issues on revert). Step 19 (final report) is correspondingly tightened: traceability reconciliation (Steps 15 through 17) is an explicit precondition, and no earlier step surfaces a user-facing "complete" signal (prior escalations are for input, not for "done"). The /quickfix sibling lane is updated in lockstep.
 
-The dispatcher now handles remote-quality repair risk as a first-class stop
-reason. The zero-deferral rule still requires every remote-quality finding to
-be fixed, including pre-existing provider findings surfaced by the configured
-ratchet. Before applying a fix, the deterministic classifier assigns risk from
-the diff blast radius, behavior-change scope, critical-path touch, test
-coverage of the touched area, and the proposed fix shape.
+**2026-05-26 (issue #989).** The `/integrate` lane (GC-O011) does not invoke `gc_codex_review` or `gc_test_quality_review`. The stopping model and cycle caps defined by this ADR apply only to issue-anchored lanes (`/implement`, `/quickfix`). The integration lane's completion gate uses the repo's configured `workflow.completion_command` and post-push CI/Sonar watches; there is no per-cycle Codex reviewer in that lane.
 
-Low and medium risk fixes return the existing automatic repair action. High
-risk fixes return `post_high_risk_fix_and_escalate` with
-`escalation_reason: "high_risk_fix"`, a proposed fix summary, and risk
-rationale. This is the only routine owner sanity-check stop in the completion
-loop and is distinct from `post_structured_decision_aid_and_escalate`, which
-still represents review non-convergence or cap exhaustion. A high-risk stop
-does not authorize deferral; it pauses for owner confirmation of the proposed
-fix path.
+**2026-05-26 (issue #989 merge carve-out).** The `mode=merge` path of the `/integrate` lane executes inside the MCP server subprocess and invokes no Codex review. The stopping model is unaffected.
+
+**2026-05-30 (issue #1058).** The new `gc_assert_traceability_reconciled` and `gc_close_issue_after_merge` MCP tools (issue #1058) gate the /implement workflow's transition-reconciliation and post-merge close paths, respectively. Neither tool runs a Codex review or any other reviewer cycle, so the stopping model and per-cycle caps in this ADR are unaffected. The pre-push Codex review at Step 6.5 and test-quality review at Step 6.6 remain the only Codex-driven cycles; the new tools are workflow-gate primitives consumed by Steps 17 and 20.
