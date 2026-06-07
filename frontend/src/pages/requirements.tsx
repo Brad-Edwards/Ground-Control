@@ -51,11 +51,11 @@ export function Requirements() {
   const sort = `${sortField},${sortDir}`;
 
   const { data, isLoading } = useRequirements({
-    status: statusFilter || undefined,
-    type: typeFilter || undefined,
-    priority: priorityFilter || undefined,
-    wave: waveFilter || undefined,
-    search: searchFilter || undefined,
+    ...(statusFilter ? { status: statusFilter } : {}),
+    ...(typeFilter ? { type: typeFilter } : {}),
+    ...(priorityFilter ? { priority: priorityFilter } : {}),
+    ...(waveFilter ? { wave: waveFilter } : {}),
+    ...(searchFilter ? { search: searchFilter } : {}),
     page,
     size,
     sort,
@@ -120,10 +120,9 @@ export function Requirements() {
           setSelected(new Set());
           toast({
             title: `Transitioned ${result.totalSucceeded} requirements`,
-            description:
-              result.totalFailed > 0
-                ? `${result.totalFailed} failed`
-                : undefined,
+            ...(result.totalFailed > 0
+              ? { description: `${result.totalFailed} failed` }
+              : {}),
             variant: result.totalFailed > 0 ? "error" : "success",
           });
         },

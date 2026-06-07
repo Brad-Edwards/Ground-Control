@@ -11,6 +11,10 @@
 <module name="Checker">
     <property name="charset" value="UTF-8"/>
     <property name="severity" value="error"/>
+    <module name="SuppressionFilter">
+        <property name="file" value="${config_loc}/suppressions.xml"/>
+        <property name="optional" value="false"/>
+    </module>
 
     <module name="TreeWalker">
         <!-- Naming conventions -->
@@ -50,6 +54,18 @@
         <!-- Miscellaneous -->
         <module name="UpperEll"/>
         <module name="ArrayTypeStyle"/>
+
+        <!-- Complexity and size ratchets. Existing violations are line-scoped
+             in suppressions.xml; new violations fail checkstyleMain. -->
+        <module name="CyclomaticComplexity">
+            <property name="max" value="15"/>
+        </module>
+        <module name="MethodLength">
+            <property name="max" value="80"/>
+        </module>
+        <module name="ParameterNumber">
+            <property name="max" value="7"/>
+        </module>
     </module>
 
     <!-- File-level checks -->

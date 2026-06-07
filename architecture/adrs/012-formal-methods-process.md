@@ -220,3 +220,14 @@ Java Modeling Language (JML), Bean Validation, OpenJML Extended Static Checking
 L0-L3 capabilities when a JVM gate pack selects them. This ADR does not define
 the platform-wide assurance ladder and does not impose consumer-specific
 coverage cleanup work on the portable `/implement` engine.
+
+## Amendment (2026-06-07)
+
+Ground Control's consumer adoption of the JVM gate pack adds NullAway with
+JSpecify package markers as a static nullness provider for the JVM type-safety
+gate. The initial annotated package is `domain/requirements/state/` via a
+package-level `@NullMarked` declaration. This is a compile-time type-safety
+ratchet and does not reclassify the assurance levels above: the existing
+L0/L1/L2/L3 rows, OpenJML scope, and jqwik property-test expectations remain
+unchanged. Additional `@NullMarked` package expansion should follow the same
+policy synchronization path whenever it touches a formal-methods state surface.

@@ -1,0 +1,9 @@
+{
+  "package": "frontend",
+  "counts": {
+    "critical": 1,
+    "high": 4,
+    "moderate": 2,
+    "low": 0
+  }
+}
