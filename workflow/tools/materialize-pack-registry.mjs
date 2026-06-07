@@ -705,8 +705,8 @@ const packs = [
       format: provided("pre-commit-docs-format", "if command -v pre-commit >/dev/null 2>&1; then pre-commit run --all-files; else node .gc/gate-packs/docs-generic/check-docs.mjs; fi", docsPaths, { scope: "repo" }),
       lint: provided("markdown-policy", "node .gc/gate-packs/docs-generic/check-docs.mjs", docsPaths, {
         thresholds: {
-          platform_minimum: { metric: "doc_errors", max: 0 },
-          recommendation: { metric: "doc_errors", max: 0 },
+          platform_minimum: { metric: "exit_code", max: 0 },
+          recommendation: { metric: "exit_code", max: 0 },
         },
       }),
       build: notApplicable("docs-generic does not compile product code."),
@@ -725,8 +725,8 @@ const packs = [
       accessibility: notApplicable("docs-generic has no rendered UI accessibility surface by default."),
       docs_policy: provided("vale-markdown-policy", "node .gc/gate-packs/docs-generic/check-docs.mjs", docsPaths, {
         thresholds: {
-          platform_minimum: { metric: "doc_errors", max: 0 },
-          recommendation: { metric: "doc_errors", max: 0 },
+          platform_minimum: { metric: "exit_code", max: 0 },
+          recommendation: { metric: "exit_code", max: 0 },
         },
       }),
       traceability: missing("Ground Control traceability requires a configured project and live server context."),

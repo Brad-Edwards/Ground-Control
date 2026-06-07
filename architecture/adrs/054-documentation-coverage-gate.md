@@ -224,3 +224,14 @@ the ADR-021/029/031/036 amendments. `docs/DOC_STYLE.md` names these as part of
 the portable gate-engine documentation surface. No change to the Vale rule set,
 the `tools/install-vale.sh` installer, or the `.vale.ini` configuration is
 required.
+
+**2026-06-07 (issue #1075 gate-engine threshold and path-match fixes).** Fixed
+portable gate-engine threshold materialization from pack `thresholds` tiers,
+tightened `workflow.gate_overrides` threshold metric handling, and corrected
+leading `**/` path matching so root-level files select gates such as
+`secret_scan`. The workflow contract is documented in
+`docs/DEVELOPMENT_WORKFLOW.md` and the threshold ownership model remains in
+ADR-058 and ADR-062. `docs/DOC_STYLE.md` names threshold tiers, override
+semantics, path matching, and eval coverage as portable gate-engine
+documentation surfaces. No change to the Vale rule set, the
+`tools/install-vale.sh` installer, or the `.vale.ini` configuration is required.

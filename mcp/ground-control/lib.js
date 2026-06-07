@@ -3166,6 +3166,7 @@ const GATE_MANIFEST_GATE_KEYS = [
   "applies_when",
   "timeout_seconds",
   "threshold",
+  "thresholds",
   "output",
   "artifacts",
   "config_paths",
@@ -3175,6 +3176,7 @@ const GATE_MANIFEST_GATE_KEYS = [
 ];
 const GATE_MANIFEST_APPLIES_KEYS = ["paths"];
 const GATE_MANIFEST_THRESHOLD_KEYS = ["metric", "min", "max", "break", "severity", "policy"];
+const GATE_MANIFEST_THRESHOLD_TIER_KEYS = ["platform_minimum", "recommendation"];
 const GATE_MANIFEST_OUTPUT_KEYS = ["type", "path", "metrics"];
 const GATE_SCOPES = Object.freeze(["repo", "changed"]);
 const GATE_PROVIDER_MISSING_POLICIES = Object.freeze(["fail", "reviewer_fallback", "not_applicable"]);
@@ -3184,6 +3186,20 @@ const GATE_TELEMETRY_SCHEMA_VERSION = 2;
 const GATE_DEFAULT_TIMEOUT_SECONDS = 900;
 const GATE_MAX_TIMEOUT_SECONDS = 86400;
 const GATE_OUTPUT_MAX_BYTES = 1024 * 1024;
+
+const GATE_MANIFEST_THRESHOLD_JSON_SCHEMA = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  required: ["metric"],
+  properties: {
+    metric: { type: "string", minLength: 1 },
+    min: { type: "number" },
+    max: { type: "number" },
+    break: { type: "number" },
+    severity: { enum: GATE_SEVERITIES },
+    policy: { type: "string", minLength: 1 },
+  },
+});
 
 export const GATE_MANIFEST_JSON_SCHEMA = Object.freeze({
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -3246,17 +3262,13 @@ export const GATE_MANIFEST_JSON_SCHEMA = Object.freeze({
             },
           },
           timeout_seconds: { type: "integer", minimum: 1, maximum: GATE_MAX_TIMEOUT_SECONDS },
-          threshold: {
+          threshold: GATE_MANIFEST_THRESHOLD_JSON_SCHEMA,
+          thresholds: {
             type: "object",
             additionalProperties: false,
-            required: ["metric"],
             properties: {
-              metric: { type: "string", minLength: 1 },
-              min: { type: "number" },
-              max: { type: "number" },
-              break: { type: "number" },
-              severity: { enum: GATE_SEVERITIES },
-              policy: { type: "string", minLength: 1 },
+              platform_minimum: GATE_MANIFEST_THRESHOLD_JSON_SCHEMA,
+              recommendation: GATE_MANIFEST_THRESHOLD_JSON_SCHEMA,
             },
           },
           output: {
@@ -3436,6 +3448,23 @@ function normalizeGateThreshold(raw, field, errors) {
     }
   }
   return out;
+}
+
+function normalizeGateThresholdTiers(raw, field, errors) {
+  if (raw == null) return null;
+  if (!isPlainMapping(raw)) {
+    errors.push(`${field} must be a mapping when set`);
+    return null;
+  }
+  pushUnknownKeyErrors(errors, field, raw, GATE_MANIFEST_THRESHOLD_TIER_KEYS);
+  const out = {};
+  for (const tier of GATE_MANIFEST_THRESHOLD_TIER_KEYS) {
+    if (raw[tier] == null) continue;
+    const before = errors.length;
+    const normalized = normalizeGateThreshold(raw[tier], `${field}.${tier}`, errors);
+    if (errors.length === before && normalized != null) out[tier] = normalized;
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 function normalizeGateOutput(raw, field, errors, repoRoot, repoRootReal) {
@@ -3623,6 +3652,7 @@ export function validateGateManifest(manifest, { repoRoot }) {
       }
       const appliesWhen = normalizeGateAppliesWhen(entry.applies_when, `${prefix}.applies_when`, errors);
       const threshold = normalizeGateThreshold(entry.threshold, `${prefix}.threshold`, errors);
+      const thresholds = normalizeGateThresholdTiers(entry.thresholds, `${prefix}.thresholds`, errors);
       const output = normalizeGateOutput(entry.output, `${prefix}.output`, errors, repoRoot, repoRootReal);
       const artifacts = normalizeGatePathArray(entry.artifacts, `${prefix}.artifacts`, errors, repoRoot, repoRootReal);
       const configPaths = normalizeGatePathArray(entry.config_paths, `${prefix}.config_paths`, errors, repoRoot, repoRootReal);
@@ -3657,6 +3687,7 @@ export function validateGateManifest(manifest, { repoRoot }) {
           applies_when: appliesWhen,
           timeout_seconds: timeoutSeconds,
           threshold,
+          thresholds,
           output,
           artifacts,
           config_paths: configPaths,
@@ -4091,7 +4122,24 @@ function generateManifestGatesFromPack({ packId, packVersion, scope, capabilitie
       gate.provider_missing = status === "not_applicable" ? "not_applicable" : "reviewer_fallback";
     }
     if (binding.output != null) gate.output = binding.output;
-    if (binding.threshold != null) gate.threshold = binding.threshold;
+    const thresholdTiers = {};
+    if (isPlainMapping(binding.thresholds)) {
+      if (binding.thresholds.platform_minimum != null) {
+        thresholdTiers.platform_minimum = JSON.parse(JSON.stringify(binding.thresholds.platform_minimum));
+      }
+      if (binding.thresholds.recommendation != null) {
+        thresholdTiers.recommendation = JSON.parse(JSON.stringify(binding.thresholds.recommendation));
+      }
+    }
+    if (thresholdTiers.platform_minimum != null) {
+      gate.threshold = thresholdTiers.platform_minimum;
+    } else if (binding.threshold != null) {
+      gate.threshold = JSON.parse(JSON.stringify(binding.threshold));
+    }
+    if (gate.threshold != null && Object.keys(thresholdTiers).length > 0 && thresholdTiers.platform_minimum == null) {
+      thresholdTiers.platform_minimum = JSON.parse(JSON.stringify(gate.threshold));
+    }
+    if (Object.keys(thresholdTiers).length > 0) gate.thresholds = thresholdTiers;
     gates.push(gate);
   }
   return {
@@ -4496,7 +4544,7 @@ function normalizeChangedPath(pathValue) {
   return String(pathValue || "").replace(/\\/g, "/").replace(/^\.\/+/, "");
 }
 
-function globPatternToRegex(pattern) {
+export function globPatternToRegex(pattern) {
   const normalized = normalizeChangedPath(pattern);
   let out = "^";
   for (let i = 0; i < normalized.length; i++) {
@@ -4505,9 +4553,8 @@ function globPatternToRegex(pattern) {
       if (normalized[i + 1] === "*") {
         const prev = normalized[i - 1];
         const next = normalized[i + 2];
-        if (prev === "/" && next === "/") {
-          out = out.slice(0, -1);
-          out += "(?:/.*)?/";
+        if ((i === 0 || prev === "/") && next === "/") {
+          out += "(?:[^/]+/)*";
           i += 2;
         } else {
           out += ".*";
@@ -4647,9 +4694,15 @@ export function synthesizeLegacyGateManifest(workflow) {
 }
 
 export function applyGateOverrides(manifest, overrides = {}) {
-  if (!overrides || Object.keys(overrides).length === 0) return manifest;
+  if (!overrides || Object.keys(overrides).length === 0) return { ok: true, manifest };
   const copy = JSON.parse(JSON.stringify(manifest));
-  for (const [key, value] of Object.entries(overrides)) {
+  const entries = Object.entries(overrides).sort(([left], [right]) => {
+    const leftMetric = left.endsWith(".threshold.metric");
+    const rightMetric = right.endsWith(".threshold.metric");
+    if (leftMetric === rightMetric) return 0;
+    return leftMetric ? -1 : 1;
+  });
+  for (const [key, value] of entries) {
     const gate = [...copy.gates]
       .sort((a, b) => b.id.length - a.id.length)
       .find((candidate) => key === candidate.id || key.startsWith(`${candidate.id}.`));
@@ -4662,14 +4715,35 @@ export function applyGateOverrides(manifest, overrides = {}) {
     } else if (tail === "provider_missing" && GATE_PROVIDER_MISSING_POLICIES.includes(value)) {
       gate.provider_missing = value;
     } else if (tail.startsWith("threshold.")) {
-      if (gate.threshold == null) gate.threshold = { metric: tail.slice("threshold.".length) };
       const thresholdKey = tail.slice("threshold.".length);
-      if (GATE_MANIFEST_THRESHOLD_KEYS.includes(thresholdKey) && thresholdKey !== "metric") {
+      if (!GATE_MANIFEST_THRESHOLD_KEYS.includes(thresholdKey)) continue;
+      if (thresholdKey === "metric") {
+        if (typeof value !== "string" || value.trim() === "") {
+          return {
+            ok: false,
+            error: "override_invalid_threshold_metric",
+            gate_id: gate.id,
+            override_key: key,
+            message: `${key} must be a non-empty metric string`,
+          };
+        }
+        if (gate.threshold == null) gate.threshold = { metric: value };
+        else gate.threshold.metric = value;
+      } else {
+        if (gate.threshold == null || typeof gate.threshold.metric !== "string" || gate.threshold.metric.trim() === "") {
+          return {
+            ok: false,
+            error: "override_requires_explicit_metric",
+            gate_id: gate.id,
+            override_key: key,
+            message: `${key} cannot be applied until ${gate.id}.threshold.metric names the provider metric to compare`,
+          };
+        }
         gate.threshold[thresholdKey] = value;
       }
     }
   }
-  return copy;
+  return { ok: true, manifest: copy };
 }
 
 export async function computeGitDiffInfo(repoRoot, baseRef, headRef) {
@@ -4838,7 +4912,7 @@ export async function executeGateCommand({ command, cwd, timeoutSeconds, env = b
 }
 
 function parseGateProviderOutput({ gate, repoRoot, commandResult }) {
-  if (gate.output == null) return { ok: true, value: null };
+  if (gate.output == null) return { ok: true, value: { exit_code: commandResult.exit_code } };
   let rawText = commandResult.stdout;
   if (gate.output.path) {
     const resolved = resolveGateRepoPath(repoRoot, realpathSync(repoRoot), gate.output.path, `${gate.id}.output.path`, { allowRoot: false });
@@ -5276,9 +5350,15 @@ function loadManifestOrLegacy({ repoRoot, context }) {
     };
   }
   const overridden = applyGateOverrides(manifestResult.value, workflow.gate_overrides);
+  if (!overridden.ok) {
+    return {
+      ok: false,
+      ...overridden,
+    };
+  }
   return {
     ok: true,
-    manifest: overridden,
+    manifest: overridden.manifest,
     manifest_text: manifestText,
     manifest_path: manifestRel,
     manifest_hash: sha256Hex(manifestText),

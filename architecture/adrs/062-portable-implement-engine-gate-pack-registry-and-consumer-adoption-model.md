@@ -199,6 +199,12 @@ Threshold ownership has three tiers:
   pre-existing violations with an expiry, but it may not lower below the
   platform minimum.
 
+Generated manifests carry both pack tiers in `thresholds.platform_minimum` and
+`thresholds.recommendation`; `threshold` is the active enforced threshold. A
+`gate_overrides` operator override such as `.threshold.min` is valid only when
+that active threshold already has a metric or the same override set supplies
+`.threshold.metric`.
+
 `repo-setup` installs and upgrades workflow assets through the MCP installer
 `gc_install_workflow_assets`. The installer resolves semver constraints,
 verifies checksums and signatures, vendors exact artifacts, writes

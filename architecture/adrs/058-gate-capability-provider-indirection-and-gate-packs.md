@@ -266,6 +266,11 @@ Threshold ownership has three tiers:
   pre-existing violations with an expiry, but it may not lower below the
   platform minimum.
 
+Pack-generated manifests retain those tiers under `thresholds.platform_minimum`
+and `thresholds.recommendation`. The active `threshold` is the enforced platform
+minimum by default; repository ratchets update the active threshold and must name
+the metric explicitly when the gate does not already carry one.
+
 Existing `.ground-control.yaml` files with only `completion_command`,
 `test_command`, or `lint_command` keep working until packs are installed. The
 compatibility adapter synthesizes a temporary manifest with legacy `policy`,
