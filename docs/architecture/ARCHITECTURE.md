@@ -65,6 +65,7 @@ backend/src/main/java/com/keplerops/groundcontrol/
 │   ├── projects/                 # Project entity, repository, service
 │   ├── baselines/                # Baseline entity, repository, service
 │   ├── verification/             # VerificationResult entity, VerificationStatus/AssuranceLevel enums, repository, service
+│   ├── evidence/                 # EvidenceArtifact aggregate plus evidence collection adapter contracts
 │   ├── plugins/                  # Plugin interface, PluginRegistry, RegisteredPlugin entity, PluginType/PluginLifecycleState enums
 │   └── requirements/
 │       ├── model/                # JPA entities (Requirement, RequirementRelation, TraceabilityLink, RequirementEmbedding, etc.)
@@ -213,6 +214,7 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 - Multi-tenancy
 - Search
 - Concrete verifier adapter implementations in `infrastructure/verifiers/` (ADR-014 §6). The `VerifierAdapter` port interface and request/outcome contracts are defined in the domain layer; future work is implementing adapters for each prover (OpenJML, TLA+/TLC, OPA/Rego, Frama-C, manual review).
+- Concrete evidence collection adapter implementations. The `EvidenceCollectionAdapter` port interface, request/result contracts, and classpath/dynamic descriptor registry are defined in the domain layer; external-system collectors belong in infrastructure or trusted plugin code.
 - Traceability Matrix view (`/traceability`) and Audit Timeline view (`/audit`) in the frontend
 - Apache AGE is optional—the app gracefully degrades to JPA-only analysis when AGE is unavailable
 
@@ -221,6 +223,7 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 - `specs/tla/` for design-level verification artifacts and state-machine specs, aligned with ADR-014
 - Verification result storage (VerificationResult entity with eager-loaded target/requirement, enums, CRUD API, MCP tools)—ADR-014 §2 common schema
 - Pluggable verifier adapter interface (`VerifierAdapter`, `VerificationRequest`, `VerificationOutcome`)—ADR-014 §6 port contract for multi-tool integration
+- Pluggable evidence collection adapter interface (`EvidenceCollectionAdapter`, `EvidenceCollectionRequest`, `EvidenceCollectionResult`) plus `EvidenceCollectionAdapterRegistry` in the evidence service package. This is the GC-S001 port contract for agent-invoked external evidence collection.
 - Self-referential traceability enforcement—`check_live_policy.mjs` verifies substantive code files have reverse traceability links to requirements (GC-O002), using the `GET /requirements/traceability/by-artifact` reverse lookup endpoint. Lookup errors are tracked separately for debuggability when the endpoint is unavailable.
 
 ## MethodologyProfile Aggregate and Risk Terminology Crosswalk (GC-T012)

@@ -1017,7 +1017,7 @@ All endpoints accept an optional `project` query parameter.
 All endpoints accept an optional `project` query parameter.
 
 **Filters on GET list:**
-- `type` (enum)—PACK_HANDLER, REGISTRY_BACKEND, VALIDATOR, POLICY_HOOK, VERIFIER, EMBEDDING_PROVIDER, GRAPH_CONTRIBUTOR, CUSTOM
+- `type` (enum)—PACK_HANDLER, REGISTRY_BACKEND, VALIDATOR, POLICY_HOOK, VERIFIER, EVIDENCE_COLLECTOR, EMBEDDING_PROVIDER, GRAPH_CONTRIBUTOR, CUSTOM
 - `capability` (string)—filter by capability tag
 - `project` (string)—filter dynamic plugins by project
 
