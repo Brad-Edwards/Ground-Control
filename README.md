@@ -7,8 +7,8 @@ An automated software factory that connects requirements, code, controls, and
 observability over a single data layer—with traceability throughout.
 
 Ground Control unifies the software lifecycle into one graph-native platform.
-Every artifact—requirement, code file, test, ADR, verification result,
-security control—is a node. Every relationship is an edge. One query can
+Every artifact is a node: requirement, code file, test, ADR, verification
+result, or security control. Every relationship is an edge. One query can
 answer "which security requirements have no formal verification in the last
 30 days?" or "what breaks if this interface changes?" No tool-hopping, no
 stale spreadsheets, no traceability theater.
@@ -107,6 +107,20 @@ by entity with an `action` discriminator—`gc_requirement`, `gc_asset`,
 consolidated tools don't pre-bake. See the
 [MCP server docs](mcp/ground-control/README.md) for the full tool reference,
 per-action contracts, and `gc_query` semantics.
+
+### Quality Gate Platform
+
+Ground Control hosts the portable `/implement` quality gate platform and is
+its first consumer. The engine source lives in `mcp/ground-control/`, gate-pack
+sources live in `workflow/packs/`, and this repository adopts the packs through
+`.ground-control.yaml` and `.gc/gates.yaml`. Host installs skip `.gc/vendor/`;
+non-host consumers vendor release artifacts or run gates through the shared
+host MCP server.
+
+For consumer onboarding, see
+[`docs/GATE_PACK_ONBOARDING.md`](docs/GATE_PACK_ONBOARDING.md). For the
+architecture, see
+[`ADR-062`](architecture/adrs/062-portable-implement-engine-gate-pack-registry-and-consumer-adoption-model.md).
 
 ## Development
 
