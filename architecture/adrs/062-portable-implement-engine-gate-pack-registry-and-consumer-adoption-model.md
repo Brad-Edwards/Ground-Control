@@ -199,6 +199,12 @@ Threshold ownership has three tiers:
   pre-existing violations with an expiry, but it may not lower below the
   platform minimum.
 
+Generated manifests carry both pack tiers in `thresholds.platform_minimum` and
+`thresholds.recommendation`; `threshold` is the active enforced threshold. A
+`gate_overrides` operator override such as `.threshold.min` is valid only when
+that active threshold already has a metric or the same override set supplies
+`.threshold.metric`.
+
 `repo-setup` installs and upgrades workflow assets through the MCP installer
 `gc_install_workflow_assets`. The installer resolves semver constraints,
 verifies checksums and signatures, vendors exact artifacts, writes
@@ -294,6 +300,14 @@ traceability staleness, lockfile shape, and legacy command compatibility with
 deterministic pass/fail checks. `.github/workflows/workflow-platform.yml` runs
 release validation, the eval suite, and the seven-pack self-test matrix on
 changes to `skills/`, `mcp/`, or `workflow/`.
+
+**2026-06-07 (PR #1077).** The Python pack's command contract is project
+environment first. Pack-provided Python tools run through
+`.gc/gate-packs/python/gc-python-run`, which selects `uv`, Poetry, Hatch,
+an active or local virtual environment, or a generated `.venv` with exact pack
+tool pins before executing the requested tool. The CI self-test setup installs
+`uv` rather than a global pytest, and the Python self-test fixture declares its
+pytest dependency in `pyproject.toml` so `uv run` exercises the same contract.
 
 ## References
 

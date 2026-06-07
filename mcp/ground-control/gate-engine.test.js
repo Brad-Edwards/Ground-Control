@@ -8,6 +8,7 @@ import {
   ENGINE_CAPABILITIES,
   GATE_CATALOG_DEFAULT_PATH,
   GATE_MANIFEST_JSON_SCHEMA,
+  applyGateOverrides,
   buildBoundPhaseMarker,
   buildPhaseMarker,
   buildTestQualityReviewPrompt,
@@ -20,8 +21,11 @@ import {
   evaluateGateThreshold,
   evaluateRemoteQualitySubstance,
   evaluateRequiredStatuses,
+  globPatternToRegex,
   installWorkflowAssets,
+  parseGateManifestYaml,
   parseGroundControlYaml,
+  pathMatchesGatePattern,
   runGateTelemetrySummary,
   runGetImplementationContext,
   runReconcileTraceability,
@@ -276,6 +280,30 @@ describe("gate pack catalog and installer", () => {
     });
   });
 
+  it("installs pack-supplied platform minimum and recommendation thresholds into generated gates", async () => {
+    await withTempRepo(async (repo) => {
+      writeFileSync(join(repo, "pyproject.toml"), "[project]\nname = \"threshold-fixture\"\nversion = \"0.1.0\"\n");
+      const result = await installWorkflowAssets({
+        repoPath: repo,
+        packId: "python",
+        versionConstraint: "1.0.0",
+        scope: ".",
+        profile: "default",
+        installDependencies: false,
+        runSelftest: false,
+      });
+      assert.equal(result.ok, true, JSON.stringify(result));
+
+      const manifest = parseGateManifestYaml(readFileSync(join(repo, ".gc/gates.yaml"), "utf8"), { repoRoot: repo });
+      assert.equal(manifest.ok, true, JSON.stringify(manifest));
+      const mutationGate = manifest.value.gates.find((gate) => gate.id === "python.root.mutation");
+      assert.ok(mutationGate, "python mutation gate should be generated");
+      assert.deepEqual(mutationGate.threshold, { metric: "mutation_score", min: 60 });
+      assert.deepEqual(mutationGate.thresholds?.platform_minimum, { metric: "mutation_score", min: 60 });
+      assert.deepEqual(mutationGate.thresholds?.recommendation, { metric: "mutation_score", min: 80 });
+    });
+  });
+
   it("refuses to install a pack when the catalog checksum does not match", async () => {
     await withTempRepo(async (repo) => {
       const catalog = JSON.parse(readFileSync(GATE_CATALOG_DEFAULT_PATH, "utf8"));
@@ -367,6 +395,74 @@ describe("gate selection and thresholds", () => {
       capabilities: ["unit_tests", "policy"],
     });
     assert.deepEqual(selected.map((gate) => gate.id), ["a", "c"]);
+  });
+
+  it("matches leading double-star patterns against repo-root and nested files", () => {
+    assert.equal(globPatternToRegex("**/*").test(".env"), true);
+    assert.equal(pathMatchesGatePattern(".env", "**/*"), true);
+    assert.equal(pathMatchesGatePattern("src/main.rs", "**/*"), true);
+    assert.equal(pathMatchesGatePattern("main.rs", "**/*.rs"), true);
+    assert.equal(pathMatchesGatePattern("src/main.rs", "**/*.rs"), true);
+    assert.equal(pathMatchesGatePattern("Cargo.toml", "**/Cargo.toml"), true);
+    assert.equal(pathMatchesGatePattern("crates/foo/Cargo.toml", "**/Cargo.toml"), true);
+    assert.equal(pathMatchesGatePattern("src/lib/foo.js", "src/**/*.js"), true);
+  });
+
+  it("selects shipped pack secret_scan gates for a root-only secret diff", async () => {
+    const catalog = JSON.parse(readFileSync(GATE_CATALOG_DEFAULT_PATH, "utf8"));
+    for (const entry of catalog.packs) {
+      await withTempRepo(async (repo) => {
+        writeFileSync(join(repo, ".env"), "SECRET_TOKEN=test\n");
+        const install = await installWorkflowAssets({
+          repoPath: repo,
+          packId: entry.id,
+          versionConstraint: "1.0.0",
+          scope: ".",
+          profile: "default",
+          installDependencies: false,
+          runSelftest: false,
+        });
+        assert.equal(install.ok, true, `${entry.id} install failed: ${JSON.stringify(install)}`);
+        const manifest = parseGateManifestYaml(readFileSync(join(repo, ".gc/gates.yaml"), "utf8"), { repoRoot: repo });
+        assert.equal(manifest.ok, true, `${entry.id} manifest failed: ${JSON.stringify(manifest)}`);
+        const selected = selectApplicableGates(manifest.value, {
+          changedFiles: [".env"],
+          capabilities: ["secret_scan"],
+        });
+        assert.deepEqual(selected.map((gate) => gate.id), [`${entry.id}.root.secret_scan`], `${entry.id} secret_scan should cover root .env`);
+      });
+    }
+  });
+
+  it("applies threshold overrides without inventing metrics from operator names", () => {
+    const baseManifest = {
+      gates: [
+        { id: "backend.mutation", capability: "mutation", threshold: null },
+        { id: "backend.coverage", capability: "diff_coverage", threshold: { metric: "changed_line_coverage", min: 80 } },
+      ],
+    };
+
+    const operatorOnly = applyGateOverrides(baseManifest, { "backend.mutation.threshold.min": 60 });
+    assert.equal(operatorOnly.ok, false);
+    assert.equal(operatorOnly.error, "override_requires_explicit_metric");
+    assert.equal(operatorOnly.gate_id, "backend.mutation");
+
+    const paired = applyGateOverrides(baseManifest, {
+      "backend.mutation.threshold.metric": "mutation_score",
+      "backend.mutation.threshold.min": 60,
+    });
+    assert.equal(paired.ok, true, JSON.stringify(paired));
+    assert.deepEqual(
+      paired.manifest.gates.find((gate) => gate.id === "backend.mutation").threshold,
+      { metric: "mutation_score", min: 60 },
+    );
+
+    const existingMetric = applyGateOverrides(baseManifest, { "backend.coverage.threshold.min": 90 });
+    assert.equal(existingMetric.ok, true, JSON.stringify(existingMetric));
+    assert.deepEqual(
+      existingMetric.manifest.gates.find((gate) => gate.id === "backend.coverage").threshold,
+      { metric: "changed_line_coverage", min: 90 },
+    );
   });
 
   it("evaluates numeric, severity, and policy thresholds", () => {

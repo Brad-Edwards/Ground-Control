@@ -266,6 +266,11 @@ Threshold ownership has three tiers:
   pre-existing violations with an expiry, but it may not lower below the
   platform minimum.
 
+Pack-generated manifests retain those tiers under `thresholds.platform_minimum`
+and `thresholds.recommendation`. The active `threshold` is the enforced platform
+minimum by default; repository ratchets update the active threshold and must name
+the metric explicitly when the gate does not already carry one.
+
 Existing `.ground-control.yaml` files with only `completion_command`,
 `test_command`, or `lint_command` keep working until packs are installed. The
 compatibility adapter synthesizes a temporary manifest with legacy `policy`,
@@ -357,6 +362,15 @@ Each of the seven supported packs has a matrix entry with the expected
 toolchain setup, and unexpected self-test skips fail that entry. The same
 workflow runs `workflow/tools/verify-workflow-release.mjs` to validate catalog
 checksums.
+
+**2026-06-07 (PR #1077).** The Python pack no longer invokes Python tools as
+bare host commands. It ships `.gc/gate-packs/python/gc-python-run`, an
+executable POSIX launcher that resolves `uv run`, `poetry run`, `hatch run`,
+`$VIRTUAL_ENV`, `.venv`, `venv`, or a generated `.venv` with the pack's pinned
+fallback tools, in that order. Python capability bindings call that launcher
+for pytest, Ruff, type checking, mutation, coverage, Bandit, pip-audit
+fallbacks, nox, and pre-commit. Non-Python providers such as Gitleaks remain
+outside this Python environment contract.
 
 ## References
 
