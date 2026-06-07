@@ -2,21 +2,12 @@
 
 This document is the single source of truth for how the pre-push reviewers (codex at Step 6.5, test-quality at Step 6.6) drive their fix loops. Step 6.5 and Step 6.6 reference this file by path; the orchestrator does as well. Do not restate these rules elsewhere — keep them here.
 
-Both AI-assisted reviews run **pre-push**: codex review at Step 6.5, test-quality review at Step 6.6. There is no post-PR review step (former Steps 12/13 were merged out by issues #804 and #906). Both follow the **same convergence loop**, driven by the cycle wrapper tools (`gc_codex_review_cycle` and `gc_test_quality_review_cycle`, issue #934) and the deterministic ADR-031 dispatcher in the MCP layer.
-
-The review set has four lenses:
-
-- **correctness** (Codex core): requirement, contract, plan, and expected behavior.
-- **security** (Codex security): trust boundaries, authorization, injection, secrets, dependency risk, and attacker-model obligations.
-- **architecture** (Codex architecture): binding ADRs, package boundaries, shared helpers, and workflow contracts.
-- **test-strength** (test-quality): whether tests exercise the public contract, using `gc_run_gates` mutation / diff-coverage results when the gate manifest supplies them.
-
-Reviewer prose never decides whether the workflow advances. Each lens returns a verdict envelope (`verdict`, `reviewer_lens`, `findings[]`, `blocking[]`, `notes[]`); the MCP dispatcher computes `next_action` from those envelopes, gate results, provider-missing telemetry, confirmation state, and cap state.
+Both AI-assisted reviews run **pre-push**: codex review at Step 6.5, test-quality review at Step 6.6. There is no post-PR review step (former Steps 12/13 were merged out by issues #804 and #906). Both follow the **same loop**, driven by the cycle wrapper tools (`gc_codex_review_cycle` and `gc_test_quality_review_cycle`, issue #934).
 
 ## The loop
 
-1. **Invoke the cycle tool as a background job, then poll.** Call the cycle wrapper (`gc_codex_review_cycle` / `gc_test_quality_review_cycle`) with `async=true`; it returns `{ok:true, status:"running", job_id}` immediately. A review legitimately runs for several minutes, so it runs in a background job rather than blocking the MCP call past the client's tool-call timeout (issue #937). Poll `gc_codex_job` with `action="poll"` and the `job_id` every ~60s until it returns `status:"done"`; the cycle envelope is then in the poll response's `result` field — `{ok, reviewer, cycle, configured_cap, cap, status, next_action, dispatcher, findings_summary, findings_record_url, decision_record_url}`. The cycle wrapper still runs the underlying review AND auto-posts the per-cycle decision record; `async` only changes how the agent waits for the result. A poll returning `error:"job_not_found"` means the job expired or the MCP server restarted — start a fresh job. `gc_codex_job` with `action="cancel"` abandons a stuck job and kills its child process. Verbatim review prose stays server-side in the underlying review's findings record.
-2. **Read the FULL envelope.** Do not stop after the first field. `configured_cap` records the repo setting; `cap` is the effective ADR-031 cap and is never below 2. `dispatcher` carries the normalized lens verdicts, gate state, confirmation state, and any structured decision aid. `findings_summary` carries `one_off_count`, `class_count`, and `top_categories[]` (grouped by `category.shape`, summed instance counts).
+1. **Invoke the cycle tool as a background job, then poll.** Call the cycle wrapper (`gc_codex_review_cycle` / `gc_test_quality_review_cycle`) with `async=true`; it returns `{ok:true, status:"running", job_id}` immediately. A review legitimately runs for several minutes, so it runs in a background job rather than blocking the MCP call past the client's tool-call timeout (issue #937). Poll `gc_codex_job` with `action="poll"` and the `job_id` every ~60s until it returns `status:"done"`; the cycle envelope is then in the poll response's `result` field — `{ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url}`. The cycle wrapper still runs the underlying review AND auto-posts the per-cycle decision record; `async` only changes how the agent waits for the result. A poll returning `error:"job_not_found"` means the job expired or the MCP server restarted — start a fresh job. `gc_codex_job` with `action="cancel"` abandons a stuck job and kills its child process. Verbatim review prose stays server-side in the underlying review's findings record.
+2. **Read the FULL envelope.** Do not stop after the first field. `findings_summary` carries `one_off_count`, `class_count`, and `top_categories[]` (grouped by `category.shape`, summed instance counts).
 3. **Classify each finding before touching anything: `one-off` or `class`.** Codex review supplies `classification` (and, for `class` findings, `category = {shape, instances}`) on each finding object. The cycle wrapper preserves the classification when auto-building the decision record entries. If a finding arrived without a classification (e.g. test-quality review, which does not yet emit it consistently), classify it yourself first.
    - **`one-off`** — this exact site, no analogues. Apply the named fix to the named site. This is the existing path.
    - **`class`** — this site is one instance of a recurring pattern (the same brittle construction, the same missing pre-condition, the same bypassed helper). **STOP. Do not apply the named fix to the named site yet.** Instead:
@@ -37,15 +28,11 @@ Reviewer prose never decides whether the workflow advances. Each lens returns a 
 
 6. **Self-verify the fix locally before re-invoking the cycle tool.** Re-run the relevant test suite, the completion gate (`cfg.workflow.completion_command`), and `make policy` after every fix. Local verification proves the fix does the agent's intended thing — but the reviewer's re-read is what catches what the agent didn't intend, including defects in the fix code itself.
 
-7. **Dispatch on `next_action`, do not infer from prose.** The dispatcher returns exactly one of these actions:
+7. **Dispatch on `next_action`, do not blindly re-invoke.** The loop continues only on `next_action: "fix_findings_and_reinvoke"`: fix, self-verify, re-stage (`git add -A`), re-invoke the cycle tool. On `next_action: "fix_findings_then_summarize_and_escalate"` (the **last-in-cap** action — under the cap-1 default this fires on cycle 1 when findings are present) fix and self-verify but **do not re-invoke**; summarize the cap-reached state to the user and let them authorize an over-cap cycle via `override_cap=true` + `override_reason` if they want one. On `next_action: "post_clean_decision_record_and_advance_to_phase_c"` the cycle tool has already posted the clean decision record and the reviewer is done — advance to the next step in the same turn.
 
-   - `advance_to_next_phase` — all blocking gates are satisfied, all blocking lenses report `ship`, and the durable decision record is present. Advance in the same turn.
-   - `fix_findings_and_reinvoke` — fix every finding, self-verify, re-stage (`git add -A`), and re-invoke the cycle tool. This is the only dirty-loop action. **Cycle 1 must never collapse into escalation because findings exist.**
-   - `post_high_risk_fix_and_escalate` — the deterministic fix-risk classifier marked the proposed fix high risk (`escalation_reason: "high_risk_fix"`). STOP, post the proposed fix and risk rationale to the issue thread, and wait for the user's sanity-check. This is separate from the convergence cap and is the only routine stop for risky fixes.
-   - `post_structured_decision_aid_and_escalate` — a real cap has been reached with unresolved findings or gates. Post/surface the dispatcher decision aid (cycle history, unresolved findings, severity trend, new categories, confirmation status, gate state, and recommendation) and wait for owner authorization. Do not keep looping unless the owner authorizes `override_cap=true` + `override_reason`.
-   - `record_terminal_escalation` — a terminal condition exists before another review can run. Record the terminal escalation and stop.
+   The reason caps exist is bounded review depth — each pass surfaces one or two classes of defect that the prior pass couldn't reach, but cycle 2/3 gains compound the agent's own fix-introduced bugs more than they catch net-new bugs (the empirical observation that drove the #906 cap-1 default). Cycles are NOT for "fix verification" (that's the agent's own loop); they are for finding new classes of defect in the *current* state of the diff. The status field on the cycle envelope mirrors `next_action` — `clean` / `findings` / `capped` / `post_failed` — for ease of branching.
 
-   The status field mirrors the dispatcher decision for coarse branching (`clean`, `findings`, `escalated`, `terminal`, or tool failure states), but `next_action` is the authoritative directive. Caps bound review depth; they do not replace the fix-and-re-review convergence loop. Severity-weighted early-stop is allowed only when every blocking gate is satisfied and the loop is clean; it can never advance a dirty loop.
+   On `next_action: "post_summary_and_escalate_to_user"` (`status: "capped"`), the cycle tool did NOT run a review (the cap was already reached). No fix work to do; summarize the cap state to the user and let them decide whether to authorize an over-cap cycle.
 
 ## Update succinctness (canonical)
 
@@ -68,16 +55,15 @@ The orchestrator drives each reviewer through a single subagent invocation (issu
 
 ```json
 {
-  "status": "clean" | "escalated" | "terminal",
+  "status": "clean" | "escalated" | "capped",
   "cycles_run": <int>,
   "summary": "<one-line summary of what was found and fixed>",
   "commit_shas": [],
   "decision_record_urls": [ "<URL per cycle>" ],
-  "escalation_reason": null,
-  "decision_aid_url": null
+  "escalation_reason": null
 }
 ```
 
-`commit_shas` is empty pre-push (no commits between cycles). `escalation_reason` is null when `status: "clean"`; a string when `status: "escalated"` or `status: "terminal"`. `decision_aid_url` is non-null when the dispatcher produced a structured cap decision aid and it was posted.
+`commit_shas` is empty pre-push (no commits between cycles). `escalation_reason` is null when `status: "clean"`; a string when `status: "escalated"` or `status: "capped"`.
 
 The parent sees only this envelope — never verbatim review prose, never per-finding bodies, never the cycle tool's full output.

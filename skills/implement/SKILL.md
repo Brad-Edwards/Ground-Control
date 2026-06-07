@@ -39,7 +39,6 @@ The parent never sees verbatim subagent prose, raw `gh`/`git` output, full file 
 | 2 | `read_issue_context` | `steps/step-02-read-issue-context.md` |
 | 2.5 | `architecture_preflight` | `steps/step-02.5-architecture-preflight.md` |
 | 3 | `codebase_assessment` | `steps/step-03-codebase-assessment.md` |
-| 3.5 | `contract_definition` | `steps/step-03.5-interface-contract.md` |
 | 4 | `planning` | `steps/step-04-planning.md` |
 | 4.4 | `implementation` | `steps/step-04.4-tdd.md` |
 | 4.5 | `clause_mapping` | `steps/step-04.5-clause-mapping.md` |
@@ -51,7 +50,7 @@ The parent never sees verbatim subagent prose, raw `gh`/`git` output, full file 
 | 8 | `git_publish` | `steps/step-08-commit-push.md` |
 | 9 | `pr_body` | `steps/step-09-pr-body.md` |
 | 10 | `ci_monitor` | `steps/step-10-ci-monitor.md` |
-| 11 | `remote_quality` | `steps/step-11-sonarcloud.md` |
+| 11 | `sonarcloud` | `steps/step-11-sonarcloud.md` |
 | 15 | `transition_reconcile` | `steps/step-15-transition.md` |
 | 16 | `transition_reconcile` | `steps/step-16-reconcile.md` |
 | 17 | `transition_reconcile` | `steps/step-17-verify.md` |
@@ -64,12 +63,11 @@ Steps 12, 13, 14 are intentional tombstones (post-push Codex review collapsed in
 ## Phase boundaries (control flow)
 
 - **Phase A** (Steps 1 → 4.5), **Phase B** (Steps 5 → 6.6), **Phase C** (Steps 7 → 8), **Phase D** (Steps 9 → 19), and **Phase E** (Step 20) run in fixed order. Phase E is the post-merge close phase (issue #1058) — see "Issue close mechanism" below.
-- **Contract-first marker chain:** Step 2 writes `context_loaded`; Step 2.5 writes `preflight`; Step 3.5 writes `contract`; Step 4 writes `plan`; Step 4.4 writes `test_red` and `impl_green`; Step 6 writes `gates_green`; Step 11 writes `remote_gates_green`; Step 15 writes `traceability_reconciled`. Each MCP tool re-verifies its predecessor marker and bound state before writing the next marker.
 - **Step 4 work-already-complete branch**: when Step 4's envelope returns `work_already_complete: true`, skip Steps 4.4 / 4.5 / 5 / 6 / 6.5 / 6.6 / 7 / 8 / 9 / 10 / 11 (there's no diff to push) and jump to Step 15 to reconcile Ground Control state.
 - **Step 10 CI failure**: on `ci_conclusion != "success"`, fix locally, return to Step 7 (re-stage), Step 8 (commit + push), then Step 10 again.
-- **Step 11 remote-quality findings**: same loop—fix, push, re-run Step 10, then Step 11. `gc_watch_required_statuses` verifies required remote statuses and full provider-quality substance server-side; a green PR checkmark alone is not enough. Low/medium-risk fixes continue automatically. A `high_risk_fix` dispatcher decision is the routine stop: post the proposed fix and risk rationale to the issue and wait for the user.
+- **Step 11 SonarCloud findings**: same loop—fix, push, re-run Step 10, then Step 11. Cap: 5 SonarCloud iterations.
 - **Steps 6.5 / 6.6 escalated or capped**: STOP and wait for the user. The label set in Step 1 stays until Step 18 clears it. Do not push commits while waiting.
-- **Traceability before report (Step 15 → 19)**: Step 15 performs status transitions, calls `gc_reconcile_traceability` to derive the worklist from the live diff, applies confirmed link changes, and calls `gc_assert_traceability_reconciled` with the same base/head refs. The marker is bound to the live diff hash; `gc_post_final_report` refuses if it is missing or stale. Steps 16 and 17 are compatibility tombstones that point back to Step 15.
+- **Traceability before report (Steps 15 → 17 → 19)**: Ground Control state reconciliation (status transitions in Step 15, IMPLEMENTS/TESTS link reconciliation in Step 16, verification + `gc_assert_traceability_reconciled` in Step 17) is a precondition for the final report. The `traceability_reconciled` phase marker written by `gc_assert_traceability_reconciled` is enforced server-side by `gc_post_final_report` (issue #1058) — without the marker the tool refuses. The Step 19 report is the user-facing "this is done—review and merge" signal; it must reflect the reconciled Ground Control graph, not the pre-reconciliation state. Do not surface any earlier user-facing "complete" message—prior steps that escalate to the user escalate because input is needed, not because the workflow is finished.
 - **Issue close mechanism (issue #1058)**: the GitHub issue is closed at **Phase E (Step 20)** by `gc_close_issue_after_merge`, which verifies the linked PR is merged (`merged_at` non-null AND state `MERGED`) before running the close. The `Closes #<issue-number>` keyword in the PR body (rendered by `gc_render_pr_body` in Step 9) remains as the GitHub UI cross-link and may auto-close at merge time; Step 20 is the idempotent backup that no-ops when the issue is already closed. Step 18 only removes the `in-progress` label; it does NOT run `gh issue close` directly. Closing from the agent without the merge-verification gate decouples the close from the merge — an unmerged or rolled-back PR would leave a closed issue with no shipped code behind it, and GitHub does not re-open on revert. Phase E is invoked by re-running `/implement <issue>` after the merge; Step 1's orchestrator detects the Phase A–D markers present + merged-PR + open-issue state and short-circuits to Step 20.
 - **Single human touchpoint**: PR merge (between Phase D and Phase E). The orchestrator never runs `gh pr merge`. Phase E runs autonomously when the user re-invokes `/implement` after the merge — there is no synchronous user gate inside Phase E.
 
@@ -101,5 +99,3 @@ Routing is opt-in per repo via `routing.enabled` in `.ground-control.yaml` (defa
 ## Telemetry (ADR-036)
 
 When `telemetry.enabled` is true, the orchestrator calls `gc_log_step_telemetry` at the end of every routed step. The writer appends one JSONL line to `.gc/telemetry/<issue>-<sanitized-branch>.jsonl` (gitignored, repo-relative, containment-validated). `wall_time_ms` is mandatory and measured by the orchestrator around its dispatch. `input_tokens` / `output_tokens` are `null` when the harness does not surface them (Claude Code today). Telemetry is operational measurement only—it never gates any phase, never replaces the issue thread as the durable record, and never feeds back into the cycle-cap counter.
-
-Gate-effectiveness telemetry is separate: `gc_run_gates` and `gc_watch_required_statuses` record per-gate fire/outcome/override/escape/duration data, and `gc_gate_telemetry_summary` reads it for analysis. At close, derive process observations from that summary and capture them via `gc_remember` (or `gc_capture_process_lessons`, which writes through the same knowledge-inbox path). Do not use telemetry counts as in-run gates.
