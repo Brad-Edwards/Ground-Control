@@ -1,14 +1,14 @@
 # Ground Control
 
 [![CI](https://github.com/KeplerOps/Ground-Control/actions/workflows/ci.yml/badge.svg)](https://github.com/KeplerOps/Ground-Control/actions/workflows/ci.yml)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=KeplerOps_Ground-Control&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=KeplerOps_Ground-Control)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Brad-Edwards_Ground-Control&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Brad-Edwards_Ground-Control)
 
 An automated software factory that connects requirements, code, controls, and
 observability over a single data layer—with traceability throughout.
 
 Ground Control unifies the software lifecycle into one graph-native platform.
-Every artifact—requirement, code file, test, ADR, verification result,
-security control—is a node. Every relationship is an edge. One query can
+Every artifact (requirement, code file, test, ADR, verification result,
+security control) is a node. Every relationship is an edge. One query can
 answer "which security requirements have no formal verification in the last
 30 days?" or "what breaks if this interface changes?" No tool-hopping, no
 stale spreadsheets, no traceability theater.
