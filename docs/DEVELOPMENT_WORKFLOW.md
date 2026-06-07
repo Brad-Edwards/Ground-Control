@@ -202,6 +202,13 @@ Each gate pack contains:
 - `installer.mjs`: a pack-local installer shim.
 - `selftest/`: a generated fixture contract and runnable self-test.
 
+The Python pack installs `.gc/gate-packs/python/gc-python-run` and routes
+Python tools through it instead of invoking bare host commands. The launcher
+selects `uv run`, `poetry run`, `hatch run`, `$VIRTUAL_ENV`, `.venv`, `venv`,
+or a generated `.venv` with the pack's pinned fallback tools, in that order.
+Each invocation writes one stderr line naming the selected runner. Non-Python
+providers such as Gitleaks remain outside this launcher.
+
 `workflow/tools/materialize-pack-registry.mjs` builds the release surface. It
 materializes the seven initial packs (`rust-cargo`, `python`, `jvm-gradle`,
 `jvm-maven`, `node-ts`, `cpp-cmake`, and `docs-generic`), writes

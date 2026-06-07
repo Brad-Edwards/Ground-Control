@@ -301,6 +301,14 @@ deterministic pass/fail checks. `.github/workflows/workflow-platform.yml` runs
 release validation, the eval suite, and the seven-pack self-test matrix on
 changes to `skills/`, `mcp/`, or `workflow/`.
 
+**2026-06-07 (PR #1077).** The Python pack's command contract is project
+environment first. Pack-provided Python tools run through
+`.gc/gate-packs/python/gc-python-run`, which selects `uv`, Poetry, Hatch,
+an active or local virtual environment, or a generated `.venv` with exact pack
+tool pins before executing the requested tool. The CI self-test setup installs
+`uv` rather than a global pytest, and the Python self-test fixture declares its
+pytest dependency in `pyproject.toml` so `uv run` exercises the same contract.
+
 ## References
 
 - ADR-021: Gated Agentic Development Loop.

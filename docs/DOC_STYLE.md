@@ -172,7 +172,9 @@ classifier, `gc_get_implementation_context`,
 amendment record; no new prose-style rule is needed unless the change alters
 this documentation coverage model. Changes to threshold-tier materialization,
 `workflow.gate_overrides` semantics, gate path matching, or workflow-engine eval
-coverage are part of the same portable gate-engine documentation surface.
+coverage are part of the same portable gate-engine documentation surface. The
+Python gate-pack environment launcher and its installer behavior are also part
+of that surface.
 
 Review-convergence MCP changes for `/implement` are workflow-contract changes.
 Document dispatcher actions, reviewer-lens envelopes, effective caps,

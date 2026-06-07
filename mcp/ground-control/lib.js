@@ -1,4 +1,4 @@
-import { appendFileSync, closeSync, cpSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, cpSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath } from "node:path";
 import { execFile as execFileCb, spawn as spawnChild } from "node:child_process";
@@ -4278,6 +4278,7 @@ function copyPackTemplates({ repoRoot, packSourcePath, packYaml }) {
     if (!resolvedTarget.ok) throw new Error(resolvedTarget.error);
     mkdirSync(dirname(resolvedTarget.abs), { recursive: true });
     cpSync(source, resolvedTarget.abs, { recursive: true });
+    if (template.executable === true) chmodSync(resolvedTarget.abs, 0o755);
     copied.push(resolvedTarget.rel);
   }
   return copied;
@@ -4292,11 +4293,29 @@ function detectNodePackageManager(scopeAbs) {
   return null;
 }
 
-function detectPythonPackageManager(scopeAbs) {
-  if (fileExists(join(scopeAbs, "uv.lock"))) return { command: "uv", args: ["add", "--dev"] };
-  if (fileExists(join(scopeAbs, "poetry.lock"))) return { command: "poetry", args: ["add", "--group", "dev"] };
-  if (fileExists(join(scopeAbs, "pyproject.toml"))) return { command: "python3", args: ["-m", "pip", "install"] };
-  if (fileExists(join(scopeAbs, "requirements.txt"))) return { command: "python3", args: ["-m", "pip", "install"] };
+async function commandExists(command) {
+  try {
+    await execFile(command, ["--version"], { maxBuffer: 1024 * 1024 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function pyprojectHasSection(scopeAbs, sectionPattern) {
+  const pyprojectPath = join(scopeAbs, "pyproject.toml");
+  if (!fileExists(pyprojectPath)) return false;
+  const text = readFileSync(pyprojectPath, "utf8");
+  return new RegExp(`^\\s*\\[${sectionPattern}\\]\\s*(?:#.*)?$`, "m").test(text);
+}
+
+async function detectPythonPackageManager(scopeAbs) {
+  if ((fileExists(join(scopeAbs, "uv.lock")) || fileExists(join(scopeAbs, "pyproject.toml"))) && await commandExists("uv")) {
+    return { command: "uv", args: ["add", "--dev"] };
+  }
+  if ((fileExists(join(scopeAbs, "poetry.lock")) || pyprojectHasSection(scopeAbs, "tool\\.poetry")) && await commandExists("poetry")) {
+    return { command: "poetry", args: ["add", "--group", "dev"] };
+  }
   return null;
 }
 
@@ -4307,7 +4326,7 @@ async function installPackDevDependencies({ repoRoot, scope, packYaml, installDe
   const scopeAbs = resolvePath(repoRoot, normalizeInstallScope(scope) === "." ? "" : normalizeInstallScope(scope));
   let detected = null;
   if (packYaml.id === "node-ts") detected = detectNodePackageManager(scopeAbs);
-  else if (packYaml.id === "python") detected = detectPythonPackageManager(scopeAbs);
+  else if (packYaml.id === "python") detected = await detectPythonPackageManager(scopeAbs);
   if (detected == null) {
     return { status: "skipped", reason: "no supported package manager detected for dev dependency installation", dependencies: deps };
   }

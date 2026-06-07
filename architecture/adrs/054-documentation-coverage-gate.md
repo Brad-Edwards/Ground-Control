@@ -235,3 +235,13 @@ ADR-058 and ADR-062. `docs/DOC_STYLE.md` names threshold tiers, override
 semantics, path matching, and eval coverage as portable gate-engine
 documentation surfaces. No change to the Vale rule set, the
 `tools/install-vale.sh` installer, or the `.vale.ini` configuration is required.
+
+**2026-06-07 (PR #1077 Python gate-pack environment launcher).** Updated the
+Python gate pack so Python tools run through the project environment via
+`.gc/gate-packs/python/gc-python-run`, and adjusted `installWorkflowAssets` to
+honor executable pack templates and avoid a global pip fallback for Python dev
+dependency installation. The workflow contract is documented in
+`docs/DEVELOPMENT_WORKFLOW.md`, ADR-058, and ADR-062. `docs/DOC_STYLE.md` names
+the Python launcher and installer behavior as part of the portable gate-engine
+documentation surface. No change to the Vale rule set, the `tools/install-vale.sh`
+installer, or the `.vale.ini` configuration is required.
