@@ -108,6 +108,20 @@ consolidated tools don't pre-bake. See the
 [MCP server docs](mcp/ground-control/README.md) for the full tool reference,
 per-action contracts, and `gc_query` semantics.
 
+### Quality Gate Platform
+
+Ground Control hosts the portable `/implement` quality gate platform and is
+its first consumer. The engine source lives in `mcp/ground-control/`, gate-pack
+sources live in `workflow/packs/`, and this repository adopts the packs through
+`.ground-control.yaml` and `.gc/gates.yaml`. Host installs skip `.gc/vendor/`;
+non-host consumers vendor release artifacts or run gates through the shared
+host MCP server.
+
+For consumer onboarding, see
+[`docs/GATE_PACK_ONBOARDING.md`](docs/GATE_PACK_ONBOARDING.md). For the
+architecture, see
+[`ADR-062`](architecture/adrs/062-portable-implement-engine-gate-pack-registry-and-consumer-adoption-model.md).
+
 ## Development
 
 ```bash

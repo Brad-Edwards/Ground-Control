@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -301,6 +301,33 @@ describe("gate pack catalog and installer", () => {
       assert.deepEqual(mutationGate.threshold, { metric: "mutation_score", min: 60 });
       assert.deepEqual(mutationGate.thresholds?.platform_minimum, { metric: "mutation_score", min: 60 });
       assert.deepEqual(mutationGate.thresholds?.recommendation, { metric: "mutation_score", min: 80 });
+    });
+  });
+
+  it("skips vendoring when installing into the workflow engine host", async () => {
+    await withTempRepo(async (repo) => {
+      mkdirSync(join(repo, "mcp/ground-control"), { recursive: true });
+      writeFileSync(join(repo, "mcp/ground-control/lib.js"), "export const host = true;\n");
+      writeFileSync(join(repo, "README.md"), "# Fixture\n\nDocs are present.\n");
+      const result = await installWorkflowAssets({
+        repoPath: repo,
+        packId: "docs-generic",
+        versionConstraint: "1.0.0",
+        scope: ".",
+        profile: "docs",
+        installDependencies: false,
+        runSelftest: false,
+      });
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(result.engine_vendor_path, null);
+      assert.equal(result.vendor_path, null);
+      assert.deepEqual(result.vendoring, {
+        status: "skipped",
+        reason: "target repository contains mcp/ground-control/lib.js and is the workflow engine host",
+      });
+      assert.equal(existsSync(join(repo, ".gc/vendor")), false);
+      assert.equal(existsSync(join(repo, ".gc/gates.yaml")), true);
+      assert.equal(existsSync(join(repo, ".gc/workflow-lock.json")), true);
     });
   });
 

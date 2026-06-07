@@ -245,3 +245,15 @@ dependency installation. The workflow contract is documented in
 the Python launcher and installer behavior as part of the portable gate-engine
 documentation surface. No change to the Vale rule set, the `tools/install-vale.sh`
 installer, or the `.vale.ini` configuration is required.
+
+**2026-06-07 (PR #1078 gate-pack onboarding and host vendoring).** Added
+`docs/GATE_PACK_ONBOARDING.md` as the canonical consumer onboarding guide,
+added `workflow/README.md` for the platform directory, and documented that
+`installWorkflowAssets` skips `.gc/vendor/` when the target repository is the
+Ground Control engine host. The workflow contract is documented in
+`docs/GATE_PACK_ONBOARDING.md`, `docs/DEVELOPMENT_WORKFLOW.md`,
+`workflow/README.md`, ADR-058, and ADR-062. `docs/DOC_STYLE.md` names consumer
+onboarding and host-vendoring behavior as part of the portable gate-engine
+documentation surface. No change to the Vale rule set, the
+`tools/install-vale.sh` installer, or the `.vale.ini` configuration is
+required.

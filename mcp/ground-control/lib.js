@@ -4090,6 +4090,10 @@ function validatePackSourceShape(packSourcePath, packId) {
   return { ok: true, pack: packYaml.value, capabilities: capabilitiesYaml.value };
 }
 
+function isWorkflowEngineHost(repoRoot) {
+  return fileExists(join(repoRoot, "mcp/ground-control/lib.js"));
+}
+
 function generateManifestGatesFromPack({ packId, packVersion, scope, capabilitiesDoc }) {
   const normalizedScope = normalizeInstallScope(scope);
   const prefix = gateIdPrefix(packId, normalizedScope);
@@ -4442,14 +4446,28 @@ export async function installWorkflowAssets({
       scope: normalizedScope,
       capabilitiesDoc: shape.capabilities,
     });
+    const engineHost = isWorkflowEngineHost(repoRoot);
     const engineVendorPath = join(repoRoot, ".gc/vendor/ground-control/engine", engineEntry.version);
-    rmSync(engineVendorPath, { recursive: true, force: true });
-    mkdirSync(dirname(engineVendorPath), { recursive: true });
-    cpSync(engineArtifact.source_path, engineVendorPath, { recursive: true });
     const vendorPath = join(repoRoot, ".gc/vendor/ground-control/packs", packId, entry.version);
-    rmSync(vendorPath, { recursive: true, force: true });
-    mkdirSync(dirname(vendorPath), { recursive: true });
-    cpSync(packArtifact.source_path, vendorPath, { recursive: true });
+    let vendoring;
+    if (engineHost) {
+      vendoring = {
+        status: "skipped",
+        reason: "target repository contains mcp/ground-control/lib.js and is the workflow engine host",
+      };
+    } else {
+      rmSync(engineVendorPath, { recursive: true, force: true });
+      mkdirSync(dirname(engineVendorPath), { recursive: true });
+      cpSync(engineArtifact.source_path, engineVendorPath, { recursive: true });
+      rmSync(vendorPath, { recursive: true, force: true });
+      mkdirSync(dirname(vendorPath), { recursive: true });
+      cpSync(packArtifact.source_path, vendorPath, { recursive: true });
+      vendoring = {
+        status: "installed",
+        engine_vendor_path: relative(repoRoot, engineVendorPath).replace(/\\/g, "/"),
+        vendor_path: relative(repoRoot, vendorPath).replace(/\\/g, "/"),
+      };
+    }
     const copiedTemplates = copyPackTemplates({ repoRoot, packSourcePath: packArtifact.source_path, packYaml: shape.pack });
     const manifestResult = mergePackIntoManifest({
       repoRoot,
@@ -4522,8 +4540,9 @@ export async function installWorkflowAssets({
         checksum: `sha256:${packArtifact.sha256}`,
         compatible_engine: entry.compatible_engine,
       },
-      engine_vendor_path: relative(repoRoot, engineVendorPath).replace(/\\/g, "/"),
-      vendor_path: relative(repoRoot, vendorPath).replace(/\\/g, "/"),
+      engine_vendor_path: engineHost ? null : relative(repoRoot, engineVendorPath).replace(/\\/g, "/"),
+      vendor_path: engineHost ? null : relative(repoRoot, vendorPath).replace(/\\/g, "/"),
+      vendoring,
       manifest_path: ".gc/gates.yaml",
       lock_path: ".gc/workflow-lock.json",
       ground_control_yaml: ".ground-control.yaml",
