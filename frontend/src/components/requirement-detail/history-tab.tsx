@@ -55,15 +55,6 @@ function formatFieldValue(value: unknown): string {
   return String(value);
 }
 
-function withoutFilter<K extends keyof TimelineFilters>(
-  filters: TimelineFilters,
-  key: K,
-): TimelineFilters {
-  const next = { ...filters };
-  delete next[key];
-  return next;
-}
-
 function FieldDiff({
   changes,
 }: {
@@ -128,16 +119,16 @@ function TimelineEntryCard({ entry }: { entry: TimelineEntryResponse }) {
         {entry.snapshot && (
           <div className="mt-1.5 text-xs text-muted-foreground">
             {entry.changeCategory === "REQUIREMENT" && (
-              <span>{entry.snapshot["title"] as string}</span>
+              <span>{entry.snapshot.title as string}</span>
             )}
             {entry.changeCategory === "RELATION" && (
-              <span>{entry.snapshot["relationType"] as string} relation</span>
+              <span>{entry.snapshot.relationType as string} relation</span>
             )}
             {entry.changeCategory === "TRACEABILITY_LINK" && (
               <span>
-                {entry.snapshot["linkType"] as string}{" "}
-                {entry.snapshot["artifactType"] as string}:{" "}
-                {entry.snapshot["artifactIdentifier"] as string}
+                {entry.snapshot.linkType as string}{" "}
+                {entry.snapshot.artifactType as string}:{" "}
+                {entry.snapshot.artifactIdentifier as string}
               </span>
             )}
           </div>
@@ -198,11 +189,10 @@ export function HistoryTab({ requirementId }: { requirementId: string }) {
                 name="changeCategory"
                 checked={filters.changeCategory === cat}
                 onChange={() =>
-                  setFilters((f) =>
-                    f.changeCategory === cat
-                      ? withoutFilter(f, "changeCategory")
-                      : { ...f, changeCategory: cat },
-                  )
+                  setFilters((f) => ({
+                    ...f,
+                    changeCategory: f.changeCategory === cat ? undefined : cat,
+                  }))
                 }
                 className="accent-primary"
               />
@@ -213,7 +203,7 @@ export function HistoryTab({ requirementId }: { requirementId: string }) {
             <button
               type="button"
               onClick={() =>
-                setFilters((f) => withoutFilter(f, "changeCategory"))
+                setFilters((f) => ({ ...f, changeCategory: undefined }))
               }
               className="text-xs text-muted-foreground hover:text-foreground"
             >
@@ -231,11 +221,12 @@ export function HistoryTab({ requirementId }: { requirementId: string }) {
                 : ""
             }
             onChange={(e) =>
-              setFilters((f) =>
-                e.target.value
-                  ? { ...f, from: new Date(e.target.value).toISOString() }
-                  : withoutFilter(f, "from"),
-              )
+              setFilters((f) => ({
+                ...f,
+                from: e.target.value
+                  ? new Date(e.target.value).toISOString()
+                  : undefined,
+              }))
             }
             className={`${inputClass} text-xs w-32`}
           />
@@ -246,16 +237,12 @@ export function HistoryTab({ requirementId }: { requirementId: string }) {
               filters.to ? new Date(filters.to).toISOString().split("T")[0] : ""
             }
             onChange={(e) =>
-              setFilters((f) =>
-                e.target.value
-                  ? {
-                      ...f,
-                      to: new Date(
-                        `${e.target.value}T23:59:59.999Z`,
-                      ).toISOString(),
-                    }
-                  : withoutFilter(f, "to"),
-              )
+              setFilters((f) => ({
+                ...f,
+                to: e.target.value
+                  ? new Date(`${e.target.value}T23:59:59.999Z`).toISOString()
+                  : undefined,
+              }))
             }
             className={`${inputClass} text-xs w-32`}
           />

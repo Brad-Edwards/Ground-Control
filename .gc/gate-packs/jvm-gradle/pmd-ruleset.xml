@@ -1,6 +1,0 @@
-<?xml version="1.0"?>
-<ruleset name="Ground Control JVM rules" xmlns="http://pmd.sourceforge.net/ruleset/2.0.0">
-  <description>Pack-managed PMD design rules.</description>
-  <rule ref="category/java/design.xml/CyclomaticComplexity"><properties><property name="methodReportLevel" value="15"/></properties></rule>
-  <rule ref="category/java/design.xml/ExcessiveMethodLength" />
-</ruleset>

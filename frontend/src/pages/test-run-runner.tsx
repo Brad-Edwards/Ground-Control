@@ -295,7 +295,6 @@ function ActiveCasePanel({
   run: {
     id: string;
     status: TestRunStatus;
-    currentCaseResultId: string | null;
     currentStepResultId: string | null;
   };
   caseResult: TestRunCaseResultResponse;
@@ -311,7 +310,10 @@ function ActiveCasePanel({
   const updateCursor = useUpdateTestRunCursor(run.id);
 
   const [notesDraft, setNotesDraft] = useState(caseResult.notes ?? "");
-  useEffect(() => setNotesDraft(caseResult.notes ?? ""), [caseResult.notes]);
+  useEffect(
+    () => setNotesDraft(caseResult.notes ?? ""),
+    [caseResult.id, caseResult.notes],
+  );
 
   const steps = stepResults ?? [];
   const activeStepIndex = useMemo(() => {
@@ -332,8 +334,11 @@ function ActiveCasePanel({
   useEffect(() => {
     if (isLoading) return;
     const desiredStepId = activeStep?.id ?? null;
+    const currentCase = (
+      run as unknown as { currentCaseResultId: string | null }
+    ).currentCaseResultId;
     if (
-      run.currentCaseResultId === caseResult.id &&
+      currentCase === caseResult.id &&
       run.currentStepResultId === desiredStepId
     ) {
       return;
@@ -342,14 +347,9 @@ function ActiveCasePanel({
       currentCaseResultId: caseResult.id,
       currentStepResultId: desiredStepId,
     });
-  }, [
-    caseResult.id,
-    activeStep?.id,
-    isLoading,
-    run.currentCaseResultId,
-    run.currentStepResultId,
-    updateCursor.mutate,
-  ]);
+    // updateCursor.mutate is stable; intentionally excluding to avoid loops.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseResult.id, activeStep?.id, isLoading]);
 
   const handleSetCaseStatus = useCallback(
     (status: TestRunCaseResultStatus) => {
@@ -492,7 +492,7 @@ function StepViewport({
 }) {
   const updateStep = useUpdateTestRunStepResult(runId, caseResultId, step.id);
   const [commentDraft, setCommentDraft] = useState(step.comment ?? "");
-  useEffect(() => setCommentDraft(step.comment ?? ""), [step.comment]);
+  useEffect(() => setCommentDraft(step.comment ?? ""), [step.id, step.comment]);
 
   const handleSetStatus = useCallback(
     (status: TestRunCaseResultStatus) => {

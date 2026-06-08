@@ -1,9 +1,0 @@
-{
-  "package": "mcp/ground-control",
-  "counts": {
-    "critical": 0,
-    "high": 1,
-    "moderate": 4,
-    "low": 0
-  }
-}

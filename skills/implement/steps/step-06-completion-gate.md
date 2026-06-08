@@ -8,7 +8,7 @@ tier: low
 
 Implementation is NOT ready for commit until ALL of the following are verified:
 
-1. **Portable completion gate passes**—call `gc_run_gates` with `repo_path`, `issue_number`, `phase: "local"`, and the Step 1 base/head refs. The tool loads `.gc/gates.yaml` or legacy workflow commands, computes the diff hash, re-verifies a fresh `impl_green` marker, runs applicable gates, runs the ADR-057 assurance classifier, and writes `gates_green` only when every blocking condition is satisfied. Do not write `gates_green` manually. If the tool returns `assurance_artifacts_missing`, add the classified surface's contract/test/property artifact and re-run the relevant Step 3.5 / 4.4 marker tools.
+1. **Completion gate passes**—run `cfg.workflow.completion_command`. If that field is null, fall back to `cfg.workflow.test_command`. If both are null, ask the user what the completion gate command should be for this repo (do not guess). Confirm the command exits successfully.
 2. **Changelog fragment present (or legitimately absent)**—if the diff touches application source (backend/frontend/MCP source, or `tools/` outside `tools/policy/` and `tools/tests/`), `git diff --name-only` MUST contain a valid fragment under `changelog.d/<issue>.<type>.md` (or `changelog.d/+<slug>.<type>.md`), type ∈ `security`/`added`/`changed`/`deprecated`/`removed`/`fixed`. A direct `CHANGELOG.md` edit does NOT satisfy a source-changing diff—that branch would re-open the rebase-storm pathology the convention exists to prevent. Direct `CHANGELOG.md` edits are reserved for release-collation commits, which by definition touch only `CHANGELOG.md` and the fragments they consumed (no source). CI-only diffs (only `.github/workflows/`) and docs-only diffs (`docs/**`, `architecture/**`, `README.md`, `CONTRIBUTING.md`, `.gc/**`, `skills/**`, etc.) carry no source paths and require no signal. `make policy` and `.claude/hooks/verify-implementation.sh` both encode the same predicate; if either flags `changelog-signal-missing` / `changelog-fragment-invalid-name`, add or rename the fragment.
 3. **Step 4.5 clause mapping was completed**—if you skipped it, go back and do it now.
 4. **If the documentation-only carve-out from Step 4.4 was declared**, re-validate it against the *actual* diff right now. The check must cover both committed AND uncommitted/untracked changes, since Step 6 runs *before* the Step 7/8 stage-and-commit step:
@@ -28,7 +28,6 @@ If any check fails, fix it before proceeding. Do NOT move to Phase C until every
   "status": "ok",
   "cached_for_next_step": {
     "completion_gate_passed": true,
-    "gates_green_phase_marker_written": true,
     "changelog_fragment_path": "<path or null when carve-out applies>",
     "carveout_revalidated": false
   }

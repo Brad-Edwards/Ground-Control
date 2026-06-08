@@ -43,7 +43,6 @@ import {
   buildCodexArchitecturePreflightPrompt,
   buildCodexArchitectureExecArgs,
   buildCodexReviewCorePrompt,
-  buildCodexArchitectureReviewPrompt,
   buildCodexSecurityReviewPrompt,
   buildCodexReviewExecArgs,
   buildDiffBlock,
@@ -60,14 +59,11 @@ import {
   buildCodexReviewToolDescription,
   buildCodexReviewOverrideCapDescription,
   buildCodexReviewOverrideReasonDescription,
-  dispatchReviewConvergence,
-  normalizeReviewHardCap,
   CODEX_REVIEW_HARD_CAP,
   CODEX_REVIEW_CYCLE_MARKER_PREFIX,
   parsePhaseMarkers,
   evaluatePhasePrerequisite,
   buildPhaseMarker,
-  buildBoundPhaseMarker,
   PHASE_MARKER_PREFIX,
   parseCodexVerifyCycleMarkers,
   evaluateCodexVerifyCycleCap,
@@ -594,21 +590,12 @@ describe("parseGroundControlYaml", () => {
       lint_command: null,
       format_command: null,
       base_branch: null,
-      engine: { version: null },
-      gate_manifest: null,
-      packs: [],
-      gate_overrides: {},
       codex_review: { pre_push_cap: null },
       test_quality_review: { pre_push_cap: null },
       pr_title: null,
       integration_manager: { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null },
     });
     assert.equal(result.value.sonarcloud, null);
-    assert.deepEqual(result.value.remote_quality, {
-      tier: "platform_minimum",
-      min_coverage: null,
-      max_duplications: null,
-    });
     assert.equal(result.value.rules.plan_rules_path, null);
     assert.equal(result.value.knowledge, null);
   });
@@ -641,7 +628,6 @@ describe("parseGroundControlYaml", () => {
     assert.equal(result.value.workflow.completion_command, "make check");
     assert.equal(result.value.sonarcloud.project_key, "KeplerOps_Ground-Control");
     assert.equal(result.value.sonarcloud.organization, "KeplerOps");
-    assert.equal(result.value.remote_quality.tier, "platform_minimum");
     assert.equal(result.value.rules.plan_rules_path, ".gc/plan-rules.md");
     assert.deepEqual(result.value.knowledge, {
       dir: "docs/knowledge",
@@ -860,25 +846,6 @@ describe("parseGroundControlYaml", () => {
     const result = parseGroundControlYaml(yaml);
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes("organization")));
-  });
-
-  it("parses the remote_quality ratchet tier and metric thresholds", () => {
-    const yaml = [
-      "schema_version: 1",
-      "project: x",
-      "remote_quality:",
-      "  tier: zero_overall_issues",
-      "  min_coverage: 80",
-      "  max_duplications: 3",
-      "",
-    ].join("\n");
-    const result = parseGroundControlYaml(yaml);
-    assert.equal(result.ok, true, JSON.stringify(result.errors));
-    assert.deepEqual(result.value.remote_quality, {
-      tier: "zero_overall_issues",
-      min_coverage: 80,
-      max_duplications: 3,
-    });
   });
 
   it("parses a knowledge section with only dir and leaves overrides null", () => {
@@ -2059,7 +2026,7 @@ describe("buildCodexArchitectureExecArgs", () => {
 describe("buildCodexReviewCorePrompt", () => {
   const diff = "diff --git a/Foo.java b/Foo.java\n+public class Foo {}";
 
-  it("demands a correctness review of the provided diff against stated obligations", () => {
+  it("demands a principal-engineer review of the provided diff and partitions by axis", () => {
     const prompt = buildCodexReviewCorePrompt({
       baseBranch: "dev",
       uncommitted: false,
@@ -2067,11 +2034,12 @@ describe("buildCodexReviewCorePrompt", () => {
       diffText: diff,
     });
     assert.ok(prompt.includes("against `dev`"));
-    assert.ok(prompt.includes("correctness against the stated requirement"));
+    assert.ok(prompt.includes("production-readiness"));
     assert.ok(prompt.includes("principal-engineer JUDGMENT"));
-    assert.ok(prompt.includes("Correctness anti-overcorrection discipline"));
-    assert.ok(prompt.includes("Expected vs actual behavior"));
-    assert.ok(!prompt.includes("Architecture-fit"));
+    // Reviewer-axis split (Change 6): the core prompt now partitions into
+    // architecture-fit + code-quality sub-sections with their own note caps.
+    assert.ok(prompt.includes("Architecture-fit"));
+    assert.ok(prompt.includes("Code-quality"));
     // verdict envelope is the contract output, not free-form findings.
     assert.ok(prompt.includes("verdict"));
     assert.ok(prompt.includes("architectural_read"));
@@ -2139,7 +2107,6 @@ describe("buildCodexReviewCorePrompt", () => {
       diffText: diff,
     });
     assert.ok(prompt.includes("dedicated security reviewer"));
-    assert.ok(prompt.includes("architecture reviewers"));
     assert.ok(!/- Security —/.test(prompt));
   });
 
@@ -2231,35 +2198,6 @@ describe("buildCodexReviewCorePrompt", () => {
     assert.ok(prompt.includes("<<<DIFF-MANIFEST"));
     assert.ok(prompt.includes("git diff origin/dev...HEAD -- <path>"));
     assert.ok(!prompt.includes("do not re-derive it from git"));
-  });
-});
-
-describe("buildCodexArchitectureReviewPrompt", () => {
-  const diff = "diff --git a/FooService.java b/FooService.java\n+repo.findById(id);";
-
-  it("focuses the architecture lens on boundary contracts and binding ADRs", () => {
-    const prompt = buildCodexArchitectureReviewPrompt({
-      baseBranch: "dev",
-      uncommitted: false,
-      diffText: diff,
-    });
-    assert.ok(prompt.includes("architecture lens"));
-    assert.ok(prompt.includes("boundary contracts"));
-    assert.ok(prompt.includes("binding ADRs"));
-    assert.ok(prompt.includes("canonical helpers"));
-    assert.ok(prompt.includes("[architecture]"));
-    assert.ok(prompt.includes('"reviewer_lens": "architecture"'));
-  });
-
-  it("keeps architecture findings scoped away from correctness and security-only issues", () => {
-    const prompt = buildCodexArchitectureReviewPrompt({
-      baseBranch: "dev",
-      uncommitted: false,
-      diffText: diff,
-    });
-    assert.ok(prompt.includes("Correctness bugs without architectural contract significance"));
-    assert.ok(prompt.includes("Security bugs without architectural boundary significance"));
-    assert.ok(prompt.includes("do not ask for speculative abstraction"));
   });
 });
 
@@ -3302,7 +3240,7 @@ describe("buildCodexReviewFindingsComment", () => {
   // findings record to the resolved issue thread. The helper is pure
   // (no IO) so it is testable without shims.
 
-  it("composes a pre-push body with cycle metadata and reviewer verbatim text", () => {
+  it("composes a pre-push body with cycle metadata and both reviewers' verbatim text", () => {
     const body = buildCodexReviewFindingsComment({
       cycleNumber: 1,
       cap: 3,
@@ -3311,7 +3249,6 @@ describe("buildCodexReviewFindingsComment", () => {
       branch: "804-collapse",
       coreReviewText: "Core review prose with **markdown**.\n- finding 1\n- finding 2",
       securityReviewText: "Security reviewer found nothing exploitable.",
-      architectureReviewText: "Architecture reviewer found the boundary fit.",
       postedComments: [],
     });
     // Header carries cycle, cap, mode, branch.
@@ -3323,7 +3260,6 @@ describe("buildCodexReviewFindingsComment", () => {
     assert.match(body, /Core review prose with \*\*markdown\*\*/);
     assert.match(body, /- finding 1/);
     assert.match(body, /Security reviewer found nothing exploitable/);
-    assert.match(body, /Architecture reviewer found the boundary fit/);
     // No inline-comment block when there are no posted comments.
     assert.ok(!/Inline comments/.test(body));
   });
@@ -3637,38 +3573,45 @@ describe("parseCodexReviewCycleMarkers", () => {
 });
 
 describe("evaluateCodexReviewCycleCap", () => {
-  it("allows cycle 1 when no priors exist and surfaces the convergence-loop action", () => {
+  it("allows cycle 1 when no priors exist and surfaces a fix-and-push next_action", () => {
     const result = evaluateCodexReviewCycleCap({ priorCount: 0, prNumber: 792 });
     assert.equal(result.ok, true);
     assert.equal(result.nextCycle, 1);
     assert.equal(result.cap, CODEX_REVIEW_HARD_CAP);
-    assert.equal(result.next_action, "fix_findings_and_reinvoke");
+    assert.equal(result.next_action, "fix_all_findings_and_push");
     assert.notEqual(result.override, true);
   });
 
-  it("allows cycle 2 after one prior with the standard convergence-loop action", () => {
+  it("allows cycle 2 after one prior with the standard fix-and-push next_action", () => {
+    // Cap-3 (issue #804) — cycle 2 is no longer the last cycle, so it
+    // returns the normal fix_all_findings_and_push next_action. The
+    // summarize-and-escalate discipline shifts to cycle 3 (the new last).
     const result = evaluateCodexReviewCycleCap({ priorCount: 1, prNumber: 792 });
     assert.equal(result.ok, true);
     assert.equal(result.nextCycle, 2);
-    assert.equal(result.next_action, "fix_findings_and_reinvoke");
+    assert.equal(result.next_action, "fix_all_findings_and_push");
   });
 
-  it("allows cycle 3 under cap-3 and leaves dirty/clean dispatch to the convergence dispatcher", () => {
+  it("allows cycle 3 (the last cycle under cap-3) with the summarize-and-escalate discipline", () => {
+    // Cap-3 (issue #804) — cycle 3 is the new "must fix all + summarize +
+    // escalate before the user authorizes a hypothetical cycle 4" cycle.
     const result = evaluateCodexReviewCycleCap({ priorCount: 2, prNumber: 792 });
     assert.equal(result.ok, true);
     assert.equal(result.nextCycle, 3);
-    assert.equal(result.next_action, "fix_findings_and_reinvoke");
+    assert.equal(result.next_action, "fix_all_findings_then_summarize_and_escalate");
   });
 
   it("refuses cycle 4 (cap reached) and tells the agent what to do instead", () => {
+    // Cap-3 (issue #804) — cycle 4 is the first refused cycle.
     const result = evaluateCodexReviewCycleCap({ priorCount: 3, prNumber: 792 });
     assert.equal(result.ok, false);
     assert.equal(result.error, "codex_review_cap_reached");
     assert.equal(result.prior_cycles, 3);
     assert.equal(result.cap, 3);
     assert.equal(result.pr_number, 792);
-    assert.equal(result.next_action, "record_terminal_escalation");
-    assert.match(result.message, /convergence cap reached/);
+    assert.equal(result.next_action, "post_summary_and_escalate_to_user");
+    assert.match(result.message, /hard cap reached/);
+    assert.match(result.message, /escalate to the user/);
     assert.match(result.message, /override_cap=true/);
   });
 
@@ -3700,7 +3643,7 @@ describe("evaluateCodexReviewCycleCap", () => {
     assert.equal(result.override, true);
     assert.equal(result.nextCycle, 4);
     assert.match(result.override_reason, /yes run cycle 4 to verify/);
-    assert.equal(result.next_action, "fix_findings_and_reinvoke");
+    assert.equal(result.next_action, "fix_findings_then_summarize_and_escalate");
   });
 
   it("rejects overrideCap=true without an overrideReason (audit requirement)", () => {
@@ -4007,166 +3950,13 @@ describe("parseCodexReviewPrePushCycleMarkers", () => {
   });
 });
 
-describe("review convergence dispatcher (ADR-031 / issue #1075 Phase 3)", () => {
-  function finding(overrides = {}) {
-    return {
-      id: "F1",
-      severity: "Major",
-      location: "src/Foo.java:10",
-      title: "Requirement gap",
-      evidence: "Requirement says X; diff implements Y.",
-      classification: "one-off",
-      sweep: "scanned adjacent handlers; no analogue",
-      ...overrides,
-    };
-  }
-
-  it("cycle-1-no-collapse: cap=1 with findings still loops because effective cap is at least 2", () => {
-    const r = dispatchReviewConvergence({
-      currentCycle: 1,
-      cap: 1,
-      lensEnvelopes: [{
-        verdict: "ship-with-fixes",
-        reviewer_lens: "correctness",
-        findings: [finding()],
-        blocking: [finding()],
-      }],
-    });
-    assert.equal(normalizeReviewHardCap(1), 2);
-    assert.equal(r.cap, 2);
-    assert.equal(r.next_action, "fix_findings_and_reinvoke");
-    assert.equal(r.clean, false);
-  });
-
-  it("converges until clean and advances only when lenses and blocking gates are clean", () => {
-    const dirty = dispatchReviewConvergence({
-      currentCycle: 1,
-      cap: 2,
-      lensEnvelopes: [{
-        verdict: "ship-with-fixes",
-        reviewer_lens: "architecture",
-        findings: [finding({ reviewer_lens: "architecture" })],
-        blocking: [finding({ reviewer_lens: "architecture" })],
-      }],
-      gateResults: [{ gate_id: "unit", capability: "unit_tests", blocking: true, ok: true, blocking_satisfied: true, outcome: "passed" }],
-    });
-    assert.equal(dirty.next_action, "fix_findings_and_reinvoke");
-
-    const clean = dispatchReviewConvergence({
-      currentCycle: 2,
-      cap: 2,
-      lensEnvelopes: [
-        { verdict: "ship", reviewer_lens: "correctness", findings: [], blocking: [] },
-        { verdict: "ship", reviewer_lens: "security", findings: [], blocking: [] },
-      ],
-      gateResults: [{ gate_id: "unit", capability: "unit_tests", blocking: true, ok: true, blocking_satisfied: true, outcome: "passed" }],
-    });
-    assert.equal(clean.next_action, "advance_to_next_phase");
-    assert.equal(clean.early_stop_allowed, true);
-  });
-
-  it("emits a structured decision aid at the real cap when still dirty", () => {
-    const r = dispatchReviewConvergence({
-      currentCycle: 2,
-      cap: 2,
-      lensEnvelopes: [{
-        verdict: "don't-ship",
-        reviewer_lens: "security",
-        findings: [finding({ severity: "Blocking", reviewer_lens: "security" })],
-        blocking: [finding({ severity: "Blocking", reviewer_lens: "security" })],
-      }],
-      gateResults: [{ gate_id: "mutation", capability: "mutation", blocking: true, ok: false, blocking_satisfied: false, outcome: "failed" }],
-    });
-    assert.equal(r.next_action, "post_structured_decision_aid_and_escalate");
-    assert.equal(r.decision_aid.cycle, 2);
-    assert.equal(r.decision_aid.cap, 2);
-    assert.equal(r.decision_aid.unresolved_findings.length, 1);
-    assert.equal(r.decision_aid.gate_results[0].gate_id, "mutation");
-  });
-
-  it("tracks cross-model confirmation for Critical/Blocking findings", () => {
-    const unconfirmed = dispatchReviewConvergence({
-      currentCycle: 1,
-      cap: 2,
-      lensEnvelopes: [{
-        verdict: "ship-with-fixes",
-        reviewer_lens: "security",
-        findings: [finding({ severity: "Critical", reviewer_lens: "security" })],
-        blocking: [finding({ severity: "Critical", reviewer_lens: "security" })],
-      }],
-    });
-    assert.equal(unconfirmed.unconfirmed_critical_or_blocking.length, 1);
-
-    const confirmed = dispatchReviewConvergence({
-      currentCycle: 1,
-      cap: 2,
-      lensEnvelopes: [{
-        verdict: "ship-with-fixes",
-        reviewer_lens: "security",
-        findings: [finding({
-          severity: "Critical",
-          reviewer_lens: "security",
-          confirmations: [{ reviewer: "claude", severity: "Critical", confirmed: true }],
-        })],
-        blocking: [finding({
-          severity: "Critical",
-          reviewer_lens: "security",
-          confirmations: [{ reviewer: "claude", severity: "Critical", confirmed: true }],
-        })],
-      }],
-    });
-    assert.equal(confirmed.unconfirmed_critical_or_blocking.length, 0);
-  });
-
-  it("records provider-missing reviewer fallback without treating the deterministic provider as passed", () => {
-    const r = dispatchReviewConvergence({
-      currentCycle: 1,
-      cap: 2,
-      lensEnvelopes: [{ verdict: "ship", reviewer_lens: "test-strength", findings: [], blocking: [] }],
-      gateResults: [{
-        gate_id: "diffcov",
-        capability: "diff_coverage",
-        blocking: true,
-        ok: true,
-        blocking_satisfied: true,
-        outcome: "provider_missing",
-        provider_missing: true,
-        reviewer_fallback_used: true,
-        fallback: "reviewer_lens",
-      }],
-    });
-    assert.equal(r.next_action, "advance_to_next_phase");
-    assert.equal(r.degraded, true);
-    assert.equal(r.gate_summary.provider_missing, 1);
-    assert.equal(r.provider_missing_fallbacks[0].capability, "diff_coverage");
-  });
-
-  it("uses the lower severity for gating when cross-model severity opinions disagree", () => {
-    const r = dispatchReviewConvergence({
-      currentCycle: 1,
-      cap: 2,
-      lensEnvelopes: [{
-        verdict: "ship-with-fixes",
-        reviewer_lens: "security",
-        findings: [finding({
-          severity: "Critical",
-          confirmations: [{ reviewer: "claude", severity: "Major", confirmed: true }],
-        })],
-        blocking: [finding({
-          severity: "Critical",
-          confirmations: [{ reviewer: "claude", severity: "Major", confirmed: true }],
-        })],
-      }],
-    });
-    assert.equal(r.findings[0].severity, "Critical");
-    assert.equal(r.findings[0].effective_severity, "Major");
-    assert.equal(r.severity_counts.Critical, 0);
-    assert.equal(r.severity_counts.Major, 1);
-  });
-});
-
 describe("evaluateCodexReviewPrePushCycleCap", () => {
-  it("allows cycle 1 under the default two-cycle convergence cap", () => {
+  // Default (no hardCap arg) — issue #906 dropped the module-default cap from
+  // 3 to 1. Cycle 1 is therefore the only allowed in-cap cycle; next_action
+  // is the "this is the last cycle" disposition. Repos that want the
+  // historical cap-3 behavior set `.ground-control.yaml::workflow.codex_review.pre_push_cap: 3`;
+  // those tests are below in the explicit-cap section.
+  it("allows cycle 1 under the cap-1 default with the summarize-and-escalate disposition", () => {
     const r = evaluateCodexReviewPrePushCycleCap({
       priorCount: 0,
       issueNumber: 796,
@@ -4175,48 +3965,24 @@ describe("evaluateCodexReviewPrePushCycleCap", () => {
     assert.equal(r.ok, true);
     assert.equal(r.nextCycle, 1);
     assert.equal(r.cap, CODEX_REVIEW_PREPUSH_HARD_CAP);
-    assert.equal(r.cap, 2);
-    assert.equal(r.next_action, "fix_findings_and_reinvoke");
+    assert.equal(r.cap, 1);
+    // Cycle 1 IS the last cycle under cap 1, so the agent must fix every
+    // finding then summarize + escalate, not run cycle 2.
+    assert.equal(r.next_action, "fix_all_findings_then_summarize_and_escalate");
     assert.notEqual(r.override, true);
   });
 
-  it("allows cycle 2 under the default cap and leaves dirty/clean dispatch to the convergence dispatcher", () => {
+  it("refuses cycle 2 under the cap-1 default with codex_review_prepush_cap_reached", () => {
     const r = evaluateCodexReviewPrePushCycleCap({
       priorCount: 1,
       issueNumber: 796,
       branchName: "796-foo",
     });
-    assert.equal(r.ok, true);
-    assert.equal(r.nextCycle, 2);
-    assert.equal(r.cap, 2);
-    assert.equal(r.next_action, "fix_findings_and_reinvoke");
-  });
-
-  it("refuses cycle 3 under the default cap with terminal escalation action", () => {
-    const r = evaluateCodexReviewPrePushCycleCap({
-      priorCount: 2,
-      issueNumber: 796,
-      branchName: "796-foo",
-    });
     assert.equal(r.ok, false);
     assert.equal(r.error, "codex_review_prepush_cap_reached");
-    assert.equal(r.prior_cycles, 2);
-    assert.equal(r.cap, 2);
-    assert.equal(r.next_action, "record_terminal_escalation");
-  });
-
-  it("floors a configured cap of 1 to the real two-cycle convergence cap", () => {
-    const r = evaluateCodexReviewPrePushCycleCap({
-      priorCount: 0,
-      issueNumber: 796,
-      branchName: "796-foo",
-      hardCap: 1,
-    });
-    assert.equal(r.ok, true);
-    assert.equal(r.nextCycle, 1);
-    assert.equal(r.cap, 2);
-    assert.equal(r.configured_cap, 1);
-    assert.equal(r.next_action, "fix_findings_and_reinvoke");
+    assert.equal(r.prior_cycles, 1);
+    assert.equal(r.cap, 1);
+    assert.equal(r.next_action, "post_summary_and_escalate_to_user");
   });
 
   // Explicit cap-3 — historical default (issue #804) and the contract repos
@@ -4232,7 +3998,7 @@ describe("evaluateCodexReviewPrePushCycleCap", () => {
     assert.equal(r.ok, true);
     assert.equal(r.nextCycle, 1);
     assert.equal(r.cap, 3);
-    assert.equal(r.next_action, "fix_findings_and_reinvoke");
+    assert.equal(r.next_action, "fix_all_findings_and_restage");
   });
 
   it("allows cycle 2 under explicit cap-3 with the standard fix-and-restage next_action", () => {
@@ -4244,10 +4010,10 @@ describe("evaluateCodexReviewPrePushCycleCap", () => {
     });
     assert.equal(r.ok, true);
     assert.equal(r.nextCycle, 2);
-    assert.equal(r.next_action, "fix_findings_and_reinvoke");
+    assert.equal(r.next_action, "fix_all_findings_and_restage");
   });
 
-  it("allows cycle 3 under explicit cap-3 with the convergence-loop action", () => {
+  it("allows cycle 3 under explicit cap-3 with the summarize-and-escalate discipline", () => {
     const r = evaluateCodexReviewPrePushCycleCap({
       priorCount: 2,
       issueNumber: 796,
@@ -4256,7 +4022,7 @@ describe("evaluateCodexReviewPrePushCycleCap", () => {
     });
     assert.equal(r.ok, true);
     assert.equal(r.nextCycle, 3);
-    assert.equal(r.next_action, "fix_findings_and_reinvoke");
+    assert.equal(r.next_action, "fix_all_findings_then_summarize_and_escalate");
   });
 
   it("refuses cycle 4 under explicit cap-3 with codex_review_prepush_cap_reached", () => {
@@ -4272,8 +4038,9 @@ describe("evaluateCodexReviewPrePushCycleCap", () => {
     assert.equal(r.cap, 3);
     assert.equal(r.issue_number, 796);
     assert.equal(r.branch, "796-foo");
-    assert.equal(r.next_action, "record_terminal_escalation");
-    assert.match(r.message, /convergence cap reached/);
+    assert.equal(r.next_action, "post_summary_and_escalate_to_user");
+    assert.match(r.message, /hard cap reached/);
+    assert.match(r.message, /escalate to the user/);
     assert.match(r.message, /override_cap=true/);
   });
 
@@ -4319,7 +4086,7 @@ describe("evaluateCodexReviewPrePushCycleCap", () => {
     assert.equal(r.override, true);
     assert.equal(r.nextCycle, 4);
     assert.match(r.override_reason, /yes run cycle 4 to verify/);
-    assert.equal(r.next_action, "fix_findings_and_reinvoke");
+    assert.equal(r.next_action, "fix_findings_then_summarize_and_escalate");
   });
 
   it("rejects overrideCap=true without an overrideReason (audit requirement)", () => {
@@ -4662,7 +4429,7 @@ process.exit(2);
         assert.equal(result.cap, CODEX_REVIEW_PREPUSH_HARD_CAP);
         assert.equal(result.issue_number, 796);
         assert.equal(result.branch, "796-x");
-        assert.equal(result.next_action, "record_terminal_escalation");
+        assert.equal(result.next_action, "post_summary_and_escalate_to_user");
         assert.equal(result.finding_count, 0);
         assert.deepEqual(result.comments, []);
       });
@@ -4935,8 +4702,9 @@ process.stdin.on("end", () => {
         assert.equal(result.cycle, 1);
         assert.equal(result.cap, CODEX_REVIEW_PREPUSH_HARD_CAP);
         assert.equal(result.finding_count, 0);
-        // Clean cycle should signal dispatcher-computed advance.
-        assert.equal(result.next_action, "advance_to_next_phase");
+        // Clean cycle should signal "proceed_clean" — the cap-evaluator's
+        // pre-run "fix..." hint is overridden when there are no findings.
+        assert.equal(result.next_action, "proceed_clean");
         assert.equal(result.override, false);
         // Issue #793: the new tail format must round-trip cleanly. parse_errors
         // populated would mean the test passed for the wrong reason
@@ -5049,7 +4817,7 @@ process.stdin.on("end", () => {
         assert.equal(result.branch, "feature-x");
         assert.equal(result.cycle, 1);
         assert.equal(result.finding_count, 0);
-        assert.equal(result.next_action, "advance_to_next_phase");
+        assert.equal(result.next_action, "proceed_clean");
       });
     } finally {
       shim.cleanup();
@@ -5160,16 +4928,16 @@ process.stdin.on("end", () => {
         assert.equal(result.pr_number, 520);
         assert.deepEqual(result.parse_errors, []);
         assert.deepEqual(result.post_failures, []);
-        // All codex reviewers (core, security, architecture) emit the same two findings against
+        // Both reviewers (core, security) emit the same two findings against
         // the same shimmed prompt response. dedupFindings keys on path + line +
-        // title-prefix; the reviewer title prefixes are different, so the
-        // entries don't collapse. Expect 2 findings × 3 reviewers = 6
+        // title-prefix; the [core] / [security] title prefixes are different,
+        // so the entries don't collapse. Expect 2 findings × 2 reviewers = 4
         // entries.
-        assert.equal(result.finding_count, 6);
+        assert.equal(result.finding_count, 4);
         const reviewers = new Set(result.comments.map((c) =>
-          c.title.startsWith("[core]") ? "core" : c.title.startsWith("[security]") ? "security" : c.title.startsWith("[architecture]") ? "architecture" : null,
+          c.title.startsWith("[core]") ? "core" : c.title.startsWith("[security]") ? "security" : null,
         ));
-        assert.deepEqual([...reviewers].sort(), ["architecture", "core", "security"]);
+        assert.deepEqual([...reviewers].sort(), ["core", "security"]);
         for (const c of result.comments) {
           assert.equal(c.comment_id, 7001);
           assert.match(c.html_url, /example\.test/);
@@ -5408,14 +5176,14 @@ process.stdin.on("end", () => {
           uncommitted: false,
           prNumber: 520,
         });
-        // 1 finding x 3 reviewers (core + security + architecture) → 3 POST attempts → 3
+        // 1 finding x 2 reviewers (core + security) → 2 POST attempts → 2
         // failures.
-        assert.equal(result.post_failures.length, 3);
+        assert.equal(result.post_failures.length, 2);
         for (const f of result.post_failures) {
           assert.equal(f.path, "src/foo.java");
           assert.equal(f.line, 42);
           assert.match(f.error, /HTTP 422|not in PR diff hunk/);
-          assert.ok(["core", "security", "architecture"].includes(f.reviewer));
+          assert.ok(f.reviewer === "core" || f.reviewer === "security");
         }
         // Failed POSTs don't appear in `comments` — the verify-finding loop
         // can't operate on them. They live ONLY in post_failures.
@@ -5665,7 +5433,7 @@ process.stdin.on("end", () => {
         assert.equal(result.ok, false);
         assert.equal(result.error, "review_partial_failure");
         assert.equal(result.next_action, "address_parse_or_post_failures");
-        assert.equal(result.parse_errors.length, 3);
+        assert.equal(result.parse_errors.length, 2);
       });
     } finally {
       shim.cleanup();
@@ -5723,7 +5491,7 @@ process.stdin.on("end", () => {
           prNumber: 520,
         });
         // post_failures is the source of truth for failed POSTs.
-        assert.equal(result.post_failures.length, 3);
+        assert.equal(result.post_failures.length, 2);
         // comments contains ONLY successfully-posted findings (none here).
         assert.equal(result.comments.length, 0);
         assert.equal(result.finding_count, 0);
@@ -5780,8 +5548,9 @@ process.stdin.on("end", () => {
           uncommitted: false,
           prNumber: 520,
         });
-        // parse_errors carries one entry per reviewer that failed to parse.
-        assert.equal(result.parse_errors.length, 3);
+        // parse_errors carries one entry per reviewer that failed to parse
+        // (both core and security reviewers see the same malformed tail).
+        assert.equal(result.parse_errors.length, 2);
         // The signal must NOT be proceed_clean — there's no proof the review
         // was actually clean.
         assert.notEqual(result.next_action, "proceed_clean");
@@ -8210,7 +7979,10 @@ describe("parseTestQualityReviewCycleMarkers", () => {
 });
 
 describe("evaluateTestQualityReviewCycleCap", () => {
-  it("allows cycle 1 under the default two-cycle convergence cap", () => {
+  // Default (no hardCap) — cap dropped from 3 → 1 by issue #906. Cycle 1 is
+  // therefore the only allowed in-cap cycle and its next_action is the
+  // "last in-cap cycle" disposition.
+  it("allows cycle 1 under the cap-1 default with the summarize-and-escalate disposition", () => {
     const r = evaluateTestQualityReviewCycleCap({
       priorCount: 0,
       issueNumber: 884,
@@ -8219,46 +7991,20 @@ describe("evaluateTestQualityReviewCycleCap", () => {
     assert.equal(r.ok, true);
     assert.equal(r.nextCycle, 1);
     assert.equal(r.cap, TEST_QUALITY_REVIEW_HARD_CAP);
-    assert.equal(r.cap, 2);
-    assert.equal(r.next_action, "fix_findings_and_reinvoke");
+    assert.equal(r.cap, 1);
+    assert.equal(r.next_action, "fix_findings_then_summarize_and_escalate");
   });
 
-  it("allows cycle 2 under the default cap and leaves dirty/clean dispatch to the convergence dispatcher", () => {
+  it("refuses cycle 2 under the cap-1 default with test_quality_review_cap_reached", () => {
     const r = evaluateTestQualityReviewCycleCap({
       priorCount: 1,
       issueNumber: 884,
       branchName: "884-x",
     });
-    assert.equal(r.ok, true);
-    assert.equal(r.nextCycle, 2);
-    assert.equal(r.cap, 2);
-    assert.equal(r.next_action, "fix_findings_and_reinvoke");
-  });
-
-  it("refuses cycle 3 under the default cap with terminal escalation action", () => {
-    const r = evaluateTestQualityReviewCycleCap({
-      priorCount: 2,
-      issueNumber: 884,
-      branchName: "884-x",
-    });
     assert.equal(r.ok, false);
     assert.equal(r.error, "test_quality_review_cap_reached");
-    assert.equal(r.cap, 2);
-    assert.equal(r.next_action, "record_terminal_escalation");
-  });
-
-  it("floors a configured cap of 1 to the real two-cycle convergence cap", () => {
-    const r = evaluateTestQualityReviewCycleCap({
-      priorCount: 0,
-      issueNumber: 884,
-      branchName: "884-x",
-      hardCap: 1,
-    });
-    assert.equal(r.ok, true);
-    assert.equal(r.nextCycle, 1);
-    assert.equal(r.cap, 2);
-    assert.equal(r.configured_cap, 1);
-    assert.equal(r.next_action, "fix_findings_and_reinvoke");
+    assert.equal(r.cap, 1);
+    assert.equal(r.next_action, "post_summary_and_escalate_to_user");
   });
 
   // Explicit cap-3 — historical default (issue #884 follow-up). Repos restore
@@ -8276,7 +8022,7 @@ describe("evaluateTestQualityReviewCycleCap", () => {
     assert.equal(r.next_action, "fix_findings_and_reinvoke");
   });
 
-  it("allows cycle 3 under explicit cap-3 with fix_findings_and_reinvoke next_action", () => {
+  it("returns escalate next_action for cycle 3 (last in-cap) under explicit cap-3", () => {
     const r = evaluateTestQualityReviewCycleCap({
       priorCount: 2,
       issueNumber: 884,
@@ -8285,7 +8031,7 @@ describe("evaluateTestQualityReviewCycleCap", () => {
     });
     assert.equal(r.ok, true);
     assert.equal(r.nextCycle, 3);
-    assert.equal(r.next_action, "fix_findings_and_reinvoke");
+    assert.equal(r.next_action, "fix_findings_then_summarize_and_escalate");
   });
 
   it("refuses cycle 4 under explicit cap-3 without override", () => {
@@ -8299,7 +8045,7 @@ describe("evaluateTestQualityReviewCycleCap", () => {
     assert.equal(r.error, "test_quality_review_cap_reached");
     assert.equal(r.prior_cycles, 3);
     assert.equal(r.cap, 3);
-    assert.equal(r.next_action, "record_terminal_escalation");
+    assert.equal(r.next_action, "post_summary_and_escalate_to_user");
   });
 
   it("requires override_reason when overrideCap=true", () => {
@@ -8503,7 +8249,7 @@ describe("parseTestQualityReviewFindings (verdict envelope, #931)", () => {
     const stdout = JSON.stringify({ type: "result", result: inner });
     const r = parseTestQualityReviewFindings(stdout);
     assert.equal(r.findings.length, 1);
-    assert.equal(r.findings[0].severity, "Critical");
+    assert.equal(r.findings[0].severity, "critical");
     assert.equal(r.findings[0].location, "tools/tests/test_policy.py::Foo::test_bar");
     assert.equal(r.findings[0].fix, "assert on the return value");
     assert.equal(r.envelope.verdict, "ship-with-fixes");
@@ -8566,7 +8312,7 @@ describe("parseTestQualityReviewFindings (verdict envelope, #931)", () => {
       },
     ]);
     const r = parseTestQualityReviewFindings(stdout);
-    assert.equal(r.findings[0].severity, "Minor");
+    assert.equal(r.findings[0].severity, "warning");
     assert.equal(r.findings[0].why_it_matters, "");
   });
 
@@ -8606,7 +8352,7 @@ describe("parseTestQualityReviewFindings (verdict envelope, #931)", () => {
     });
     const r = parseTestQualityReviewFindings(stdout);
     assert.equal(r.findings.length, 1);
-    assert.equal(r.findings[0].severity, "Critical");
+    assert.equal(r.findings[0].severity, "critical");
     assert.equal(r.findings[0].fix, "Add an assertion on the return value.");
   });
 
@@ -8663,17 +8409,7 @@ describe("TEST_QUALITY_REVIEW_FINDINGS_SCHEMA (verdict envelope, #931)", () => {
     assert.ok(TEST_QUALITY_REVIEW_FINDINGS_SCHEMA.required.includes("blocking"));
     assert.deepEqual(TEST_QUALITY_REVIEW_FINDINGS_SCHEMA.properties.verdict.enum, ["ship", "ship-with-fixes", "don't-ship"]);
     const item = TEST_QUALITY_REVIEW_FINDINGS_SCHEMA.properties.blocking.items;
-    assert.deepEqual(item.properties.severity.enum, [
-      "Minor",
-      "Major",
-      "Critical",
-      "Blocking",
-      "minor",
-      "major",
-      "critical",
-      "blocking",
-      "warning",
-    ]);
+    assert.deepEqual(item.properties.severity.enum, ["critical", "warning"]);
     assert.ok(item.required.includes("severity"));
     assert.ok(item.required.includes("location"));
     assert.ok(item.required.includes("problem"));
@@ -11093,7 +10829,7 @@ describe("normalizeReviewCycleNextAction (issue #934 fix-list)", () => {
     const { normalizeReviewCycleNextAction } = await import("./lib.js");
     assert.equal(
       normalizeReviewCycleNextAction("proceed_clean", "clean"),
-      "advance_to_next_phase",
+      "post_clean_decision_record_and_advance_to_phase_c",
     );
   });
 
@@ -11101,26 +10837,18 @@ describe("normalizeReviewCycleNextAction (issue #934 fix-list)", () => {
     const { normalizeReviewCycleNextAction } = await import("./lib.js");
     assert.equal(
       normalizeReviewCycleNextAction(
-        "advance_to_next_phase",
+        "post_clean_decision_record_and_advance_to_phase_c",
         "clean",
       ),
-      "advance_to_next_phase",
+      "post_clean_decision_record_and_advance_to_phase_c",
     );
   });
 
-  it("normalizes terminal status to record_terminal_escalation", async () => {
+  it("normalizes capped status to post_summary_and_escalate_to_user", async () => {
     const { normalizeReviewCycleNextAction } = await import("./lib.js");
     assert.equal(
-      normalizeReviewCycleNextAction("anything", "terminal"),
-      "record_terminal_escalation",
-    );
-  });
-
-  it("normalizes escalated status to the structured decision-aid action", async () => {
-    const { normalizeReviewCycleNextAction } = await import("./lib.js");
-    assert.equal(
-      normalizeReviewCycleNextAction("anything", "escalated"),
-      "post_structured_decision_aid_and_escalate",
+      normalizeReviewCycleNextAction("anything", "capped"),
+      "post_summary_and_escalate_to_user",
     );
   });
 
@@ -11132,10 +10860,10 @@ describe("normalizeReviewCycleNextAction (issue #934 fix-list)", () => {
     );
     assert.equal(
       normalizeReviewCycleNextAction(
-        "post_structured_decision_aid_and_escalate",
+        "fix_findings_then_summarize_and_escalate",
         "findings",
       ),
-      "post_structured_decision_aid_and_escalate",
+      "fix_findings_then_summarize_and_escalate",
     );
   });
 
@@ -11250,7 +10978,7 @@ describe("async review-job registry (gc_codex_job, issue #937)", () => {
     assert.equal(running.status, "running");
     assert.equal(running.job_id, start.job_id);
 
-    const envelope = { ok: true, next_action: "advance_to_next_phase" };
+    const envelope = { ok: true, next_action: "post_clean_decision_record_and_advance_to_phase_c" };
     resolveRun(envelope);
     await flush();
 
@@ -11402,22 +11130,20 @@ describe("renderReviewerEnvelope — findings-record renderer (issue #966)", () 
 });
 
 describe("mergeReviewerArchitecturalReads — decision-record read (issue #966)", () => {
-  it("merges reviewer reads with lens labels", async () => {
+  it("merges both reviewers' reads with labels", async () => {
     const { mergeReviewerArchitecturalReads } = await import("./lib.js");
     const out = mergeReviewerArchitecturalReads(
-      { envelope: { reviewer_lens: "correctness", architectural_read: "core says ok" } },
-      { envelope: { reviewer_lens: "security", architectural_read: "security flags a token" } },
-      { envelope: { reviewer_lens: "architecture", architectural_read: "architecture fits" } },
+      { envelope: { architectural_read: "core says ok" } },
+      { envelope: { architectural_read: "security flags a token" } },
     );
     assert.match(out, /\*\*Core reviewer:\*\* core says ok/);
     assert.match(out, /\*\*Security reviewer:\*\* security flags a token/);
-    assert.match(out, /\*\*Architecture reviewer:\*\* architecture fits/);
   });
 
   it("returns just the present reviewer when one envelope is missing", async () => {
     const { mergeReviewerArchitecturalReads } = await import("./lib.js");
     const out = mergeReviewerArchitecturalReads(
-      { envelope: { reviewer_lens: "correctness", architectural_read: "core only" } },
+      { envelope: { architectural_read: "core only" } },
       { body: "parse failed" },
     );
     assert.match(out, /\*\*Core reviewer:\*\* core only/);
@@ -12493,12 +12219,6 @@ describe("buildSuggestedGroundControlYaml covers all parser-accepted keys", () =
     assert.ok(yaml.includes("test_quality_review"), "template must mention test_quality_review");
   });
 
-  it("covers remote_quality in the suggested template", () => {
-    const yaml = buildSuggestedGroundControlYaml();
-    assert.ok(yaml.includes("remote_quality"), "template must mention remote_quality");
-    assert.ok(yaml.includes("zero_overall_issues"), "template must mention the stricter remote-quality tier");
-  });
-
   it("covers architecture.vocabulary sub-schema keys in the suggested template", () => {
     const yaml = buildSuggestedGroundControlYaml();
     assert.ok(yaml.includes("vocabulary"), "template must mention vocabulary");
@@ -13259,47 +12979,6 @@ process.exit(2);
         assert.equal(r.ok, false);
         assert.equal(r.error, "phase_prerequisite_missing");
         assert.deepEqual(r.missing, ["traceability_reconciled"]);
-      });
-    } finally {
-      shim.cleanup();
-    }
-  });
-
-  it("refuses when traceability_reconciled is stale against the live diff", async () => {
-    const staleMarker = buildBoundPhaseMarker({
-      phase: "traceability_reconciled",
-      issueNumber: 1058,
-      binding: { diff_hash: "stale-diff", requirements_hash: "reqs" },
-    });
-    const shim = makeShimRepo({
-      ghHandler: {
-        routes: [
-          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
-          { argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"], stdout: slurp([{ body: staleMarker }]) },
-        ],
-      },
-    });
-    try {
-      writeFileSync(join(shim.repoDir, "README"), "base\n");
-      execFileSync("git", ["-C", shim.repoDir, "add", "README"]);
-      execFileSync("git", ["-C", shim.repoDir, "commit", "-q", "-m", "base"]);
-      execFileSync("git", ["-C", shim.repoDir, "branch", "base"]);
-      writeFileSync(join(shim.repoDir, "README"), "changed\n");
-      execFileSync("git", ["-C", shim.repoDir, "add", "README"]);
-      execFileSync("git", ["-C", shim.repoDir, "commit", "-q", "-m", "change"]);
-      await withShimPath(shim.binDir, async () => {
-        const { runPostFinalReport } = await import("./lib.js");
-        const r = await runPostFinalReport({
-          repoPath: shim.repoDir,
-          issueNumber: 1058, prNumber: 42,
-          baseRef: "base", headRef: "HEAD",
-          requirements: [],
-          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
-          ciStatus: "green", sonarStatus: "passed",
-        });
-        assert.equal(r.ok, false);
-        assert.equal(r.error, "stale_phase_marker");
-        assert.equal(r.next_action, "rerun_gc_assert_traceability_reconciled_against_live_diff");
       });
     } finally {
       shim.cleanup();

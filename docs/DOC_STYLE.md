@@ -156,35 +156,3 @@ the tool description strings in `index.js` and the skill prose under
 the prose-side guardrail. The surface addition is recorded in the ADR-054
 amendment and the changelog fragment; no new DOC_STYLE.md prose is needed
 unless a new style rule is being established.
-
-Portable gate-engine MCP tools added for `/implement` platform work are a
-broader workflow contract than a single skill step. Document `gc_run_gates`,
-`gc_install_workflow_assets`, `.gc/gates.yaml`, `.gc/workflow-lock.json`,
-the gate-pack catalog, workflow release artifacts, pack self-tests, workflow
-engine evals, provider-missing fallback, gate-effectiveness telemetry,
-`contract`, `test_red`, `impl_green`, `gates_green`, `context_loaded`,
-`remote_gates_green`, `traceability_reconciled`, the ADR-057 assurance
-classifier, `gc_get_implementation_context`,
-`gc_reconcile_traceability`, `gc_watch_required_statuses`,
-`gc_gate_telemetry_summary`, and `gc_capture_process_lessons` in
-`docs/DEVELOPMENT_WORKFLOW.md`. Keep the tool description strings in
-`mcp/ground-control/index.js` aligned with that reference. ADR-054 carries the
-amendment record; no new prose-style rule is needed unless the change alters
-this documentation coverage model. Changes to threshold-tier materialization,
-`workflow.gate_overrides` semantics, gate path matching, or workflow-engine eval
-coverage are part of the same portable gate-engine documentation surface. The
-Python gate-pack environment launcher and its installer behavior are also part
-of that surface. Consumer onboarding and host-vendoring behavior are documented
-in `docs/GATE_PACK_ONBOARDING.md`, `docs/DEVELOPMENT_WORKFLOW.md`, and
-`workflow/README.md`; Ground Control's adoption-specific baselines remain in
-`docs/GATE_PACK_ADOPTION.md`.
-
-Review-convergence MCP changes for `/implement` are workflow-contract changes.
-Document dispatcher actions, reviewer-lens envelopes, effective caps,
-provider-missing fallback, and structured decision aids in ADR-031,
-`docs/DEVELOPMENT_WORKFLOW.md`, `docs/WORKFLOW.md`, and the
-`skills/implement/steps/` review-loop files. Keep `gc_codex_review`,
-`gc_codex_review_cycle`, `gc_test_quality_review`, and
-`gc_test_quality_review_cycle` tool descriptions aligned with those surfaces.
-ADR-054 carries the amendment record; no new prose-style rule is needed unless
-the change alters this documentation coverage model.

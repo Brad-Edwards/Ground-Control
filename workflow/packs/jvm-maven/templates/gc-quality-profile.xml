@@ -1,4 +1,0 @@
-<profile>
-  <id>gc-quality</id>
-  <build><plugins><!-- Merge into pluginManagement when adopting this pack. --></plugins></build>
-</profile>
