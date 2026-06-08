@@ -24,8 +24,13 @@ version = "0.20.1"
 
 sonar {
     properties {
-        property("sonar.projectKey", "KeplerOps_Ground-Control")
-        property("sonar.organization", "keplerops")
+        property("sonar.projectKey", "Brad-Edwards_Ground-Control")
+        property("sonar.organization", "brad-edwards")
+        property("sonar.sources", "src/main/java")
+        property("sonar.tests", "src/test/java")
+        property("sonar.exclusions", "**/node_modules/**,**/.gradle/**,**/build/**,**/dist/**,**/coverage/**,**/*.min.js,bin/**,backend/bin/**,../workflow/releases/**,workflow/releases/**")
+        property("sonar.java.binaries", "build/classes")
+        property("sonar.coverage.jacoco.xmlReportPaths", "build/reports/jacoco/test/jacocoTestReport.xml")
     }
 }
 
