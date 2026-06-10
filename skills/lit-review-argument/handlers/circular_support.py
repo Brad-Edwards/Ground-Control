@@ -10,15 +10,15 @@ from __future__ import annotations
 
 from pyargdown import ArgdownMultiDiGraph, Conclusion
 
+WHITE, GREY, BLACK = 0, 1, 2
 
-def check_circular_support(
-    argdown: ArgdownMultiDiGraph,
-) -> tuple[list[str], list[str]]:
-    """Return ``(failures, infos)`` for rule D."""
 
+def _build_adjacency(argdown: ArgdownMultiDiGraph) -> dict[str, list[str]]:
+    """Build the support graph as an adjacency list keyed by node label."""
     adjacency: dict[str, list[str]] = {}
 
     def add_edge(src: str, dst: str) -> None:
+        """Record a directed edge ``src -> dst`` in the adjacency list."""
         adjacency.setdefault(src, []).append(dst)
 
     for argument in argdown.arguments:
@@ -30,30 +30,44 @@ def check_circular_support(
             else:
                 add_edge(member.proposition_label, argument.label)
 
-    WHITE, GREY, BLACK = 0, 1, 2
+    return adjacency
+
+
+def _find_cycle_from(
+    node: str,
+    adjacency: dict[str, list[str]],
+    color: dict[str, int],
+    path: list[str],
+) -> list[str] | None:
+    """Return the first back-edge cycle reachable from ``node``, else ``None``."""
+    color[node] = GREY
+    for nxt in adjacency.get(node, []):
+        state = color.get(nxt, WHITE)
+        if state == GREY:
+            back_idx = path.index(nxt) if nxt in path else 0
+            return path[back_idx:] + [node, nxt]
+        if state == WHITE:
+            cycle = _find_cycle_from(nxt, adjacency, color, path + [node])
+            if cycle is not None:
+                return cycle
+    color[node] = BLACK
+    return None
+
+
+def check_circular_support(
+    argdown: ArgdownMultiDiGraph,
+) -> tuple[list[str], list[str]]:
+    """Return ``(failures, infos)`` for rule D."""
+
+    adjacency = _build_adjacency(argdown)
+
     color: dict[str, int] = {}
-    cycle: list[str] | None = None
+    for node in adjacency.keys():
+        if color.get(node, WHITE) == WHITE:
+            cycle = _find_cycle_from(node, adjacency, color, [])
+            if cycle is not None:
+                return [f"D circular support — {' -> '.join(cycle)}"], []
 
-    def dfs(node: str, path: list[str]) -> bool:
-        nonlocal cycle
-        color[node] = GREY
-        for nxt in adjacency.get(node, []):
-            state = color.get(nxt, WHITE)
-            if state == GREY:
-                back_idx = path.index(nxt) if nxt in path else 0
-                cycle = path[back_idx:] + [node, nxt]
-                return True
-            if state == WHITE and dfs(nxt, path + [node]):
-                return True
-        color[node] = BLACK
-        return False
-
-    for node in list(adjacency.keys()):
-        if color.get(node, WHITE) == WHITE and dfs(node, []):
-            break
-
-    if cycle is not None:
-        return [f"D circular support — {' -> '.join(cycle)}"], []
     return [], []
 
 

@@ -21,6 +21,7 @@ from . import http
 PREFIX_RE = re.compile(r"^([a-z]+):(.+)$")
 ARXIV_API_COOLDOWN_SECONDS = 600.0
 _ARXIV_API_COOLDOWN_UNTIL = 0.0
+SUPPORTED_PREFIXES = ["doi", "arxiv", "pmid", "isbn"]
 
 
 def parse_identifier(identifier: str) -> tuple[str, str]:
@@ -34,18 +35,16 @@ def parse_identifier(identifier: str) -> tuple[str, str]:
 def resolve_identifier(identifier: str) -> dict[str, Any]:
     """Resolve a prefixed identifier to CSL-JSON or return a structured error."""
     prefix, accession = parse_identifier(identifier)
+    resolver = _RESOLVERS.get(prefix)
     try:
-        if prefix == "doi":
-            return resolve_doi(accession)
-        if prefix == "arxiv":
-            return resolve_arxiv(accession)
-        if prefix in ("pmid", "pubmed"):
-            return resolve_pmid(accession)
-        if prefix == "isbn":
-            return resolve_isbn(accession)
+        if resolver is not None:
+            return resolver(accession)
         if prefix == "raw":
-            return {"error": f"identifier has no recognised prefix: {identifier!r}", "supported": ["doi", "arxiv", "pmid", "isbn"]}
-        return {"error": f"unsupported identifier prefix: {prefix!r}", "supported": ["doi", "arxiv", "pmid", "isbn"]}
+            return {
+                "error": f"identifier has no recognised prefix: {identifier!r}",
+                "supported": SUPPORTED_PREFIXES,
+            }
+        return {"error": f"unsupported identifier prefix: {prefix!r}", "supported": SUPPORTED_PREFIXES}
     except Exception as e:
         return {"error": f"resolution failed for {identifier!r}: {type(e).__name__}: {e}"}
 
@@ -55,10 +54,9 @@ def resolve_doi(doi: str) -> dict[str, Any]:
     url = f"https://doi.org/{doi}"
     with http.client() as c:
         resp = c.get(url, headers={"Accept": "application/vnd.citationstyles.csl+json"})
-    if resp.status_code == 404:
-        return {"error": f"DOI not found: {doi}", "tried": [url]}
     if resp.status_code >= 400:
-        return {"error": f"DOI lookup HTTP {resp.status_code}: {doi}", "tried": [url]}
+        msg = f"DOI not found: {doi}" if resp.status_code == 404 else f"DOI lookup HTTP {resp.status_code}: {doi}"
+        return {"error": msg, "tried": [url]}
     try:
         data = resp.json()
     except Exception as e:
@@ -66,47 +64,59 @@ def resolve_doi(doi: str) -> dict[str, Any]:
     return {"csl": data, "source": "doi-content-negotiation", "identifier": f"doi:{doi}"}
 
 
-def resolve_arxiv(arxiv_id: str) -> dict[str, Any]:
-    """arXiv API → CSL-JSON. arXiv returns Atom XML."""
+def _arxiv_text_of(elem: ET.Element | None) -> str | None:
+    """Return the stripped text of an XML element, or None if absent."""
+    return (elem.text or "").strip() if elem is not None else None
+
+
+def _fetch_arxiv_api(arxiv_id: str, url: str) -> tuple[Any | None, dict[str, Any] | None]:
+    """Query the arXiv API, returning ``(response, None)`` on success or
+    ``(None, result)`` when a fallback/error result should be returned directly.
+
+    Updates the module-level API cooldown on transport failures and HTTP 429.
+    """
     global _ARXIV_API_COOLDOWN_UNTIL
-    arxiv_id = arxiv_id.strip()
-    url = f"https://export.arxiv.org/api/query?id_list={arxiv_id}"
     if time.monotonic() < _ARXIV_API_COOLDOWN_UNTIL:
-        return resolve_arxiv_abs_page(arxiv_id, tried=[f"{url} (skipped: arXiv API cooldown)"])
+        return None, resolve_arxiv_abs_page(arxiv_id, tried=[f"{url} (skipped: arXiv API cooldown)"])
     try:
         with http.client(timeout=10.0) as c:
             resp = c.get(url)
     except Exception as exc:
         _ARXIV_API_COOLDOWN_UNTIL = time.monotonic() + ARXIV_API_COOLDOWN_SECONDS
-        return resolve_arxiv_abs_page(arxiv_id, tried=[f"{url} ({type(exc).__name__})"])
+        return None, resolve_arxiv_abs_page(arxiv_id, tried=[f"{url} ({type(exc).__name__})"])
     if resp.status_code >= 400:
         if resp.status_code == 429:
             _ARXIV_API_COOLDOWN_UNTIL = time.monotonic() + ARXIV_API_COOLDOWN_SECONDS
-            return resolve_arxiv_abs_page(arxiv_id, tried=[url])
-        return {"error": f"arXiv HTTP {resp.status_code}: {arxiv_id}", "tried": [url]}
-    ns = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+            return None, resolve_arxiv_abs_page(arxiv_id, tried=[url])
+        return None, {"error": f"arXiv HTTP {resp.status_code}: {arxiv_id}", "tried": [url]}
+    return resp, None
+
+
+def _parse_arxiv_entry(
+    resp_text: str, arxiv_id: str, url: str, ns: dict[str, str]
+) -> tuple[ET.Element | None, dict[str, Any] | None]:
+    """Parse arXiv Atom XML and locate the entry element.
+
+    Returns ``(entry, None)`` on success or ``(None, error)`` when parsing fails
+    or no entry is present.
+    """
     try:
-        root = ET.fromstring(resp.text)
+        root = ET.fromstring(resp_text)
     except ET.ParseError as e:
-        return {"error": f"arXiv returned malformed XML: {e}", "tried": [url]}
+        return None, {"error": f"arXiv returned malformed XML: {e}", "tried": [url]}
     entry = root.find("atom:entry", ns)
     if entry is None:
-        return {"error": f"arXiv entry not found for {arxiv_id}", "tried": [url]}
+        return None, {"error": f"arXiv entry not found for {arxiv_id}", "tried": [url]}
+    return entry, None
 
-    def text_of(elem):
-        return (elem.text or "").strip() if elem is not None else None
 
-    title = text_of(entry.find("atom:title", ns))
-    summary = text_of(entry.find("atom:summary", ns))
-    published = text_of(entry.find("atom:published", ns))
-    primary_doi = None
-    doi_elem = entry.find("arxiv:doi", ns)
-    if doi_elem is not None:
-        primary_doi = text_of(doi_elem)
+def _arxiv_entry_to_csl(entry: ET.Element, arxiv_id: str, ns: dict[str, str]) -> dict[str, Any]:
+    """Map a parsed arXiv Atom ``<entry>`` element to CSL-JSON."""
+    primary_doi = _arxiv_text_of(entry.find("arxiv:doi", ns))
 
     authors: list[dict[str, str]] = []
     for a in entry.findall("atom:author", ns):
-        name = text_of(a.find("atom:name", ns)) or ""
+        name = _arxiv_text_of(a.find("atom:name", ns)) or ""
         parts = name.rsplit(" ", 1)
         if len(parts) == 2:
             authors.append({"given": parts[0], "family": parts[1]})
@@ -116,23 +126,41 @@ def resolve_arxiv(arxiv_id: str) -> dict[str, Any]:
     csl: dict[str, Any] = {
         "id": f"arxiv:{arxiv_id}",
         "type": "article",
-        "title": title,
+        "title": _arxiv_text_of(entry.find("atom:title", ns)),
         "author": authors,
-        "abstract": summary,
+        "abstract": _arxiv_text_of(entry.find("atom:summary", ns)),
         "publisher": "arXiv",
         "URL": f"https://arxiv.org/abs/{arxiv_id}",
     }
     if primary_doi:
         csl["DOI"] = primary_doi
+    published = _arxiv_text_of(entry.find("atom:published", ns))
     if published:
         year = published[:4]
         if year.isdigit():
             csl["issued"] = {"date-parts": [[int(year)]]}
             csl["date-published-arxiv"] = published
+    return csl
+
+
+def resolve_arxiv(arxiv_id: str) -> dict[str, Any]:
+    """arXiv API → CSL-JSON. arXiv returns Atom XML."""
+    arxiv_id = arxiv_id.strip()
+    url = f"https://export.arxiv.org/api/query?id_list={arxiv_id}"
+    resp, fallback = _fetch_arxiv_api(arxiv_id, url)
+    if fallback is not None:
+        return fallback
+    ns = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+    entry, error = _parse_arxiv_entry(resp.text, arxiv_id, url, ns)
+    if error is not None:
+        return error
+    csl = _arxiv_entry_to_csl(entry, arxiv_id, ns)
     return {"csl": csl, "source": "arxiv", "identifier": f"arxiv:{arxiv_id}"}
 
 
 class _ArxivMetaParser(HTMLParser):
+    """Collect ``<meta>`` name/property → content pairs from an arXiv abstract page."""
+
     def __init__(self) -> None:
         super().__init__()
         self.metadata: dict[str, list[str]] = {}
@@ -189,6 +217,7 @@ def resolve_arxiv_abs_page(arxiv_id: str, tried: list[str] | None = None) -> dic
 
 
 def _first(metadata: dict[str, list[str]], *keys: str) -> str | None:
+    """Return the first non-empty value among ``keys`` in ``metadata``, else None."""
     for key in keys:
         values = metadata.get(key)
         if values:
@@ -197,6 +226,7 @@ def _first(metadata: dict[str, list[str]], *keys: str) -> str | None:
 
 
 def _name_to_csl(name: str) -> dict[str, str]:
+    """Split an author ``name`` into CSL given/family parts (or a literal fallback)."""
     if "," in name:
         family, given = [part.strip() for part in name.split(",", 1)]
         return {"given": given, "family": family}
@@ -204,6 +234,14 @@ def _name_to_csl(name: str) -> dict[str, str]:
     if len(parts) == 2:
         return {"given": parts[0], "family": parts[1]}
     return {"literal": name}
+
+
+def _pmid_doi(rec: dict[str, Any]) -> str | None:
+    """Return the DOI from an NCBI record's ``articleids``, or None."""
+    for aid in rec.get("articleids", []):
+        if aid.get("idtype") == "doi":
+            return aid.get("value")
+    return None
 
 
 def resolve_pmid(pmid: str) -> dict[str, Any]:
@@ -224,11 +262,7 @@ def resolve_pmid(pmid: str) -> dict[str, Any]:
     issued: dict[str, Any] | None = None
     if pub_year.isdigit():
         issued = {"date-parts": [[int(pub_year)]]}
-    doi = None
-    for aid in rec.get("articleids", []):
-        if aid.get("idtype") == "doi":
-            doi = aid.get("value")
-            break
+    doi = _pmid_doi(rec)
     csl: dict[str, Any] = {
         "id": f"pmid:{pmid}",
         "type": "article-journal",
@@ -281,3 +315,12 @@ def resolve_isbn(isbn: str) -> dict[str, Any]:
     if pub_year:
         csl["issued"] = {"date-parts": [[pub_year]]}
     return {"csl": csl, "source": "openlibrary", "identifier": f"isbn:{isbn_clean}"}
+
+
+_RESOLVERS = {
+    "doi": resolve_doi,
+    "arxiv": resolve_arxiv,
+    "pmid": resolve_pmid,
+    "pubmed": resolve_pmid,
+    "isbn": resolve_isbn,
+}

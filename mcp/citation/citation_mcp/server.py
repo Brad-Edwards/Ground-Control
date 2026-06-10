@@ -142,14 +142,22 @@ def _self_test() -> int:
     print("[citation-mcp] self-test starting", file=sys.stderr)
     tools = sorted(t.name for t in mcp._tool_manager.list_tools())
     print(f"[citation-mcp] {len(tools)} tools registered: {tools}", file=sys.stderr)
-    expected = {"cite_resolve", "cite_search", "cite_forward", "zotero_add", "oa_locate", "zotero_attach_pdf", "zotero_search"}
+    expected = {
+        "cite_resolve",
+        "cite_search",
+        "cite_forward",
+        "zotero_add",
+        "oa_locate",
+        "zotero_attach_pdf",
+        "zotero_search",
+    }
     missing = expected - set(tools)
     extra = set(tools) - expected
     if missing or extra:
         print(f"[citation-mcp] tool set mismatch — missing={missing} extra={extra}", file=sys.stderr)
         return 2
     # Verify imports work
-    from . import http as _http, resolve as _r, search as _s, oa as _o, zotero_ingest as _zi  # noqa: F401
+    from . import http as _http, zotero_ingest as _zi
 
     print(f"[citation-mcp] mailto: {_http.mailto()}", file=sys.stderr)
     print(f"[citation-mcp] translation_server_url: {_zi.translation_server_url()}", file=sys.stderr)
@@ -158,6 +166,7 @@ def _self_test() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse CLI args and run the citation MCP server (or its self-test)."""
     parser = argparse.ArgumentParser(prog="citation-mcp")
     parser.add_argument("--self-test", action="store_true", help="run offline self-test and exit")
     args = parser.parse_args(argv)
