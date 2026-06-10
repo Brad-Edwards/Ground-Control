@@ -11699,6 +11699,132 @@ function hasTestableSurfaceTarget(linksOfTypeImplements) {
   return false;
 }
 
+// Evaluate the traceability state of a single requirement entry. Returns an
+// object with `earlyReturn` set to a terminal response when the input is
+// invalid or a lookup fails, otherwise `{ checkedEntry, failures }` describing
+// the per-requirement audit result. Extracted from
+// runAssertTraceabilityReconciled to keep that function's complexity bounded.
+async function evaluateRequirementTraceability({ item, index, project, issueNumber }) {
+  if (!item || typeof item !== "object" || typeof item.uid !== "string" || item.uid.trim() === "") {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "traceability_input_invalid",
+        message: `requirements[${index}] must be { uid: <non-empty string>, statusIntent: 'ACTIVE'|'DRAFT' }`,
+        issue_number: issueNumber,
+      },
+    };
+  }
+  const statusIntent = typeof item.statusIntent === "string" ? item.statusIntent : "ACTIVE";
+  if (!STATUSES.includes(statusIntent)) {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "traceability_input_invalid",
+        message: `requirements[${index}].statusIntent='${statusIntent}' must be one of ${STATUSES.join(", ")}`,
+        issue_number: issueNumber,
+      },
+    };
+  }
+  let requirement;
+  try {
+    requirement = await getRequirementByUid(item.uid, project);
+  } catch (error) {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "traceability_requirement_lookup_failed",
+        message: `gc_assert_traceability_reconciled could not resolve requirement ${item.uid}: ${error.message}`,
+        issue_number: issueNumber,
+        uid: item.uid,
+      },
+    };
+  }
+  const actualStatus = requirement && typeof requirement.status === "string" ? requirement.status : null;
+  if (actualStatus !== statusIntent) {
+    return {
+      checkedEntry: { uid: item.uid, status: actualStatus, implements_count: 0, tests_count: 0 },
+      failures: [{
+        uid: item.uid,
+        reason: "status_mismatch",
+        expected: statusIntent,
+        actual: actualStatus,
+      }],
+    };
+  }
+  let links = [];
+  try {
+    links = await getTraceabilityLinks(requirement.id);
+  } catch (error) {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "traceability_links_lookup_failed",
+        message: `gc_assert_traceability_reconciled could not fetch links for ${item.uid}: ${error.message}`,
+        issue_number: issueNumber,
+        uid: item.uid,
+      },
+    };
+  }
+  const linksArray = Array.isArray(links) ? links : [];
+  const implementsLinks = linksArray.filter((l) => l?.link_type === "IMPLEMENTS");
+  const testsLinks = linksArray.filter((l) => l?.link_type === "TESTS");
+  const checkedEntry = {
+    uid: item.uid,
+    status: actualStatus,
+    implements_count: implementsLinks.length,
+    tests_count: testsLinks.length,
+  };
+  const failures = [];
+  if (statusIntent === "ACTIVE" && implementsLinks.length === 0) {
+    failures.push({ uid: item.uid, reason: "implements_missing" });
+    return { checkedEntry, failures };
+  }
+  // DRAFT requirements are exempt from the TESTS check — by definition
+  // they have no executable behavior yet to test. ACTIVE requirements
+  // with an IMPLEMENTS link pointing at the testable-surface set must
+  // carry at least one TESTS link.
+  if (statusIntent === "ACTIVE"
+    && hasTestableSurfaceTarget(implementsLinks)
+    && testsLinks.length === 0) {
+    failures.push({ uid: item.uid, reason: "tests_missing" });
+  }
+  return { checkedEntry, failures };
+}
+
+// Bug/refactor/maintenance run with no formal requirements. The marker is
+// still required, but the only check is that the issue does not carry an
+// orphaned GITHUB_ISSUE-shaped traceability link — that would indicate prior
+// reconciliation drift the agent failed to clean up. Returns `{ earlyReturn }`
+// on lookup failure, otherwise `{ failures }`.
+async function checkOrphanedIssueLinks(issueNumber) {
+  try {
+    const issueLinks = await getTraceabilityByArtifact("GITHUB_ISSUE", String(issueNumber));
+    const orphaned = Array.isArray(issueLinks)
+      ? issueLinks.filter((l) => l?.link_type === "IMPLEMENTS")
+      : [];
+    // We allow orphaned IMPLEMENTS links here: if the requirement they
+    // point at no longer exists, that's a different reconciliation
+    // problem (Step 16). The check we ARE running: are there any links
+    // at all on an issue whose run had no requirements? If yes, the
+    // agent should have either claimed them in requirements[] or
+    // deleted them. We surface this as a failure so the agent loops back.
+    if (orphaned.length > 0) {
+      return { failures: [{ issue: issueNumber, reason: "orphaned_issue_link", count: orphaned.length }] };
+    }
+    return { failures: [] };
+  } catch (error) {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "traceability_issue_links_lookup_failed",
+        message: `gc_assert_traceability_reconciled could not fetch issue links: ${error.message}`,
+        issue_number: issueNumber,
+      },
+    };
+  }
+}
+
 export async function runAssertTraceabilityReconciled({
   repoPath,
   issueNumber,
@@ -11712,9 +11838,13 @@ export async function runAssertTraceabilityReconciled({
     throw new Error("gc_assert_traceability_reconciled requires a positive integer issue_number");
   }
   if (!Array.isArray(requirements)) {
-    throw new Error("gc_assert_traceability_reconciled requires requirements to be an array");
+    throw new TypeError("gc_assert_traceability_reconciled requires requirements to be an array");
   }
 
+  // Validated, trimmed override reason — non-null only when override===true
+  // passed the gate below. Capturing it here lets later code rely on a plain
+  // string and avoids re-deriving (or re-null-checking) overrideReason.
+  let overrideReasonTrimmed = null;
   if (override === true) {
     if (typeof overrideReason !== "string" || overrideReason.trim() === "") {
       return {
@@ -11726,6 +11856,7 @@ export async function runAssertTraceabilityReconciled({
         issue_number: issueNumber,
       };
     }
+    overrideReasonTrimmed = overrideReason.trim();
   }
 
   const repoRoot = await ensureGitRepo(repoPath);
@@ -11735,114 +11866,21 @@ export async function runAssertTraceabilityReconciled({
 
   if (override !== true) {
     for (let i = 0; i < requirements.length; i++) {
-      const item = requirements[i];
-      if (!item || typeof item !== "object" || typeof item.uid !== "string" || item.uid.trim() === "") {
-        return {
-          ok: false,
-          error: "traceability_input_invalid",
-          message: `requirements[${i}] must be { uid: <non-empty string>, statusIntent: 'ACTIVE'|'DRAFT' }`,
-          issue_number: issueNumber,
-        };
-      }
-      const statusIntent = typeof item.statusIntent === "string" ? item.statusIntent : "ACTIVE";
-      if (!STATUSES.includes(statusIntent)) {
-        return {
-          ok: false,
-          error: "traceability_input_invalid",
-          message: `requirements[${i}].statusIntent='${statusIntent}' must be one of ${STATUSES.join(", ")}`,
-          issue_number: issueNumber,
-        };
-      }
-      let requirement;
-      try {
-        requirement = await getRequirementByUid(item.uid, project);
-      } catch (error) {
-        return {
-          ok: false,
-          error: "traceability_requirement_lookup_failed",
-          message: `gc_assert_traceability_reconciled could not resolve requirement ${item.uid}: ${error.message}`,
-          issue_number: issueNumber,
-          uid: item.uid,
-        };
-      }
-      const actualStatus = requirement && typeof requirement.status === "string" ? requirement.status : null;
-      if (actualStatus !== statusIntent) {
-        failures.push({
-          uid: item.uid,
-          reason: "status_mismatch",
-          expected: statusIntent,
-          actual: actualStatus,
-        });
-        checked.push({ uid: item.uid, status: actualStatus, implements_count: 0, tests_count: 0 });
-        continue;
-      }
-      let links = [];
-      try {
-        links = await getTraceabilityLinks(requirement.id);
-      } catch (error) {
-        return {
-          ok: false,
-          error: "traceability_links_lookup_failed",
-          message: `gc_assert_traceability_reconciled could not fetch links for ${item.uid}: ${error.message}`,
-          issue_number: issueNumber,
-          uid: item.uid,
-        };
-      }
-      const linksArray = Array.isArray(links) ? links : [];
-      const implementsLinks = linksArray.filter((l) => l && l.link_type === "IMPLEMENTS");
-      const testsLinks = linksArray.filter((l) => l && l.link_type === "TESTS");
-      checked.push({
-        uid: item.uid,
-        status: actualStatus,
-        implements_count: implementsLinks.length,
-        tests_count: testsLinks.length,
+      const result = await evaluateRequirementTraceability({
+        item: requirements[i],
+        index: i,
+        project,
+        issueNumber,
       });
-      if (statusIntent === "ACTIVE" && implementsLinks.length === 0) {
-        failures.push({ uid: item.uid, reason: "implements_missing" });
-        continue;
-      }
-      // DRAFT requirements are exempt from the TESTS check — by definition
-      // they have no executable behavior yet to test. ACTIVE requirements
-      // with an IMPLEMENTS link pointing at the testable-surface set must
-      // carry at least one TESTS link.
-      if (statusIntent === "ACTIVE"
-        && hasTestableSurfaceTarget(implementsLinks)
-        && testsLinks.length === 0) {
-        failures.push({ uid: item.uid, reason: "tests_missing" });
-      }
+      if (result.earlyReturn) return result.earlyReturn;
+      if (result.checkedEntry) checked.push(result.checkedEntry);
+      if (result.failures) failures.push(...result.failures);
     }
 
     if (requirements.length === 0) {
-      // Bug/refactor/maintenance run with no formal requirements. The marker
-      // is still required, but the only check is that the issue does not
-      // carry an orphaned GITHUB_ISSUE-shaped traceability link — that would
-      // indicate prior reconciliation drift the agent failed to clean up.
-      try {
-        const issueLinks = await getTraceabilityByArtifact("GITHUB_ISSUE", String(issueNumber));
-        const orphaned = Array.isArray(issueLinks)
-          ? issueLinks.filter((l) => l && l.link_type === "IMPLEMENTS")
-          : [];
-        // We allow orphaned IMPLEMENTS links here: if the requirement they
-        // point at no longer exists, that's a different reconciliation
-        // problem (Step 16). The check we ARE running: are there any links
-        // at all on an issue whose run had no requirements? If yes, the
-        // agent should have either claimed them in requirements[] or
-        // deleted them. We surface this as a failure so the agent loops back.
-        if (orphaned.length > 0) {
-          failures.push({
-            issue: issueNumber,
-            reason: "orphaned_issue_link",
-            count: orphaned.length,
-          });
-        }
-      } catch (error) {
-        return {
-          ok: false,
-          error: "traceability_issue_links_lookup_failed",
-          message: `gc_assert_traceability_reconciled could not fetch issue links: ${error.message}`,
-          issue_number: issueNumber,
-        };
-      }
+      const orphanResult = await checkOrphanedIssueLinks(issueNumber);
+      if (orphanResult.earlyReturn) return orphanResult.earlyReturn;
+      failures.push(...orphanResult.failures);
     }
   }
 
@@ -11862,7 +11900,7 @@ export async function runAssertTraceabilityReconciled({
 
   const summaryLines = [];
   if (override === true) {
-    summaryLines.push(`_override=true; reason: ${overrideReason.trim()}_`);
+    summaryLines.push(`_override=true; reason: ${overrideReasonTrimmed}_`);
   } else if (requirements.length === 0) {
     summaryLines.push(`_no in-scope requirements; touched-files audit clean._`);
   } else {
@@ -11883,7 +11921,7 @@ export async function runAssertTraceabilityReconciled({
     ok: true,
     phase_marker: { phase: "traceability_reconciled", issue_number: issueNumber },
     override: override === true,
-    override_reason: override === true ? overrideReason.trim() : null,
+    override_reason: override === true ? overrideReasonTrimmed : null,
     checked,
     comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
     comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
@@ -11964,43 +12002,70 @@ async function findPrForIssue(repoRoot, owner, name, issueNumber) {
   return [...prs.values()];
 }
 
-export async function runCloseIssueAfterMerge({ repoPath, issueNumber, prNumber = null }) {
-  if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
-    throw new Error("gc_close_issue_after_merge requires a positive integer issue_number");
-  }
-  if (prNumber != null && (!Number.isInteger(prNumber) || prNumber <= 0)) {
-    throw new Error("gc_close_issue_after_merge pr_number must be a positive integer when supplied");
-  }
-
-  const repoRoot = await ensureGitRepo(repoPath);
-  const { owner, name } = await getOwnerRepo(repoRoot);
-
-  let pr = null;
-  if (prNumber != null) {
-    // Codex review cycle 1 (issue #1058): a caller-supplied pr_number must
-    // be verified as linked to the issue before being used as the close
-    // gate. Trusting the caller's pr_number for the issue→PR relationship
-    // would defeat the gate's purpose: a stale cached PR number or a
-    // malicious caller could pass any merged PR from this repo paired with
-    // an unrelated open issue and cause the wrong issue to close. Resolve
-    // the issue's actual linked PRs from the timeline and require the
-    // supplied PR number to appear in that set; only then proceed to
-    // fetch the PR's merged_at / state for the merge-status gate.
-    let linkedPrs;
+// Resolve the PR that the post-merge close gate should evaluate for an issue.
+// When no pr_number is supplied, the linked PRs are read from the issue
+// timeline and the merged one is preferred. When a pr_number IS supplied it
+// must be verified as linked to the issue first. Returns `{ earlyReturn }` on
+// lookup failure or refusal, otherwise `{ pr }`. Extracted from
+// runCloseIssueAfterMerge to keep that function's complexity bounded.
+async function resolvePrForClose({ repoRoot, owner, name, issueNumber, prNumber }) {
+  if (prNumber == null) {
+    let prs;
     try {
-      linkedPrs = await findPrForIssue(repoRoot, owner, name, issueNumber);
+      prs = await findPrForIssue(repoRoot, owner, name, issueNumber);
     } catch (error) {
       return {
+        earlyReturn: {
+          ok: false,
+          error: "close_pr_lookup_failed",
+          message: error.message,
+          issue_number: issueNumber,
+        },
+      };
+    }
+    const merged = prs.find((p) => p.state === "MERGED" && p.mergedAt);
+    if (merged) return { pr: merged };
+    if (prs.length === 0) {
+      return {
+        earlyReturn: {
+          ok: false,
+          error: "close_no_linked_pr",
+          message: `gc_close_issue_after_merge could not find any PR linked to issue #${issueNumber}; expected a merged PR with the issue cross-referenced.`,
+          issue_number: issueNumber,
+          next_action: "open_or_link_a_pr_first",
+        },
+      };
+    }
+    return { pr: prs[0] };
+  }
+
+  // Codex review cycle 1 (issue #1058): a caller-supplied pr_number must
+  // be verified as linked to the issue before being used as the close
+  // gate. Trusting the caller's pr_number for the issue→PR relationship
+  // would defeat the gate's purpose: a stale cached PR number or a
+  // malicious caller could pass any merged PR from this repo paired with
+  // an unrelated open issue and cause the wrong issue to close. Resolve
+  // the issue's actual linked PRs from the timeline and require the
+  // supplied PR number to appear in that set; only then proceed to
+  // fetch the PR's merged_at / state for the merge-status gate.
+  let linkedPrs;
+  try {
+    linkedPrs = await findPrForIssue(repoRoot, owner, name, issueNumber);
+  } catch (error) {
+    return {
+      earlyReturn: {
         ok: false,
         error: "close_pr_lookup_failed",
         message: error.message,
         issue_number: issueNumber,
         pr_number: prNumber,
-      };
-    }
-    const matched = linkedPrs.find((p) => p.number === prNumber);
-    if (!matched) {
-      return {
+      },
+    };
+  }
+  const matched = linkedPrs.find((p) => p.number === prNumber);
+  if (!matched) {
+    return {
+      earlyReturn: {
         ok: false,
         error: "close_pr_not_linked_to_issue",
         message:
@@ -12012,38 +12077,28 @@ export async function runCloseIssueAfterMerge({ repoPath, issueNumber, prNumber 
         pr_number: prNumber,
         linked_pr_numbers: linkedPrs.map((p) => p.number),
         next_action: "omit_pr_number_or_pass_a_linked_pr",
-      };
-    }
-    pr = matched;
-  } else {
-    let prs;
-    try {
-      prs = await findPrForIssue(repoRoot, owner, name, issueNumber);
-    } catch (error) {
-      return {
-        ok: false,
-        error: "close_pr_lookup_failed",
-        message: error.message,
-        issue_number: issueNumber,
-      };
-    }
-    const merged = prs.find((p) => p.state === "MERGED" && p.mergedAt);
-    if (merged) {
-      pr = merged;
-    } else if (prs.length === 0) {
-      return {
-        ok: false,
-        error: "close_no_linked_pr",
-        message: `gc_close_issue_after_merge could not find any PR linked to issue #${issueNumber}; expected a merged PR with the issue cross-referenced.`,
-        issue_number: issueNumber,
-        next_action: "open_or_link_a_pr_first",
-      };
-    } else {
-      pr = prs[0];
-    }
+      },
+    };
+  }
+  return { pr: matched };
+}
+
+export async function runCloseIssueAfterMerge({ repoPath, issueNumber, prNumber = null }) {
+  if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error("gc_close_issue_after_merge requires a positive integer issue_number");
+  }
+  if (prNumber != null && (!Number.isInteger(prNumber) || prNumber <= 0)) {
+    throw new Error("gc_close_issue_after_merge pr_number must be a positive integer when supplied");
   }
 
-  if (!pr || !pr.mergedAt || pr.state !== "MERGED") {
+  const repoRoot = await ensureGitRepo(repoPath);
+  const { owner, name } = await getOwnerRepo(repoRoot);
+
+  const resolved = await resolvePrForClose({ repoRoot, owner, name, issueNumber, prNumber });
+  if (resolved.earlyReturn) return resolved.earlyReturn;
+  const pr = resolved.pr;
+
+  if (!pr?.mergedAt || pr.state !== "MERGED") {
     return {
       ok: false,
       error: "close_pr_not_merged",
@@ -12058,6 +12113,15 @@ export async function runCloseIssueAfterMerge({ repoPath, issueNumber, prNumber 
     };
   }
 
+  return closeIssueIdempotently({ repoRoot, owner, name, issueNumber, pr });
+}
+
+// Close the issue idempotently once the merge gate has passed. Reads the
+// current issue state to support re-runs (returns already_closed=true without
+// emitting a duplicate close), otherwise PATCHes it closed. Returns the
+// terminal response object. Extracted from runCloseIssueAfterMerge to keep
+// that function's complexity bounded.
+async function closeIssueIdempotently({ repoRoot, owner, name, issueNumber, pr }) {
   // Check current issue state to support idempotent re-runs.
   let issueState;
   try {

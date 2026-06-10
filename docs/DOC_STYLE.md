@@ -156,3 +156,11 @@ added for GC-O012 / #1099) are documented by the tool description strings in
 check in `tools/policy/checks.py` is the prose-side guardrail. The surface
 addition is recorded in the ADR-054 amendment and the changelog fragment; no
 new DOC_STYLE.md prose is needed unless a new style rule is being established.
+and `gc_close_issue_after_merge` added for GC-O007 / #1058) are documented by
+the tool description strings in `index.js` and the skill prose under
+`skills/implement/`. The matching policy check in `tools/policy/checks.py` is
+the prose-side guardrail. The surface addition is recorded in the ADR-054
+amendment and the changelog fragment; no new DOC_STYLE.md prose is needed
+unless a new style rule is being established.
+
+The 2026-06-10 SonarCloud remediation (#1085) refactored `mcp/ground-control/lib.js` and `index.js` internals without changing any prose style rule or documented-surface classification; no new DOC_STYLE.md rule is established.

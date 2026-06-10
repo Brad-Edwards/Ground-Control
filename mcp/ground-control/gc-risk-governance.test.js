@@ -23,6 +23,11 @@ const ORIGINAL_API_TOKEN = process.env.GROUND_CONTROL_API_TOKEN;
 
 const SCHEMA = z.object(gcRiskGovernanceZodShape);
 
+// Reused fixed UUID fixtures. Extracted to named constants so the same literal
+// is not duplicated across unrelated test blocks (Sonar S1192).
+const UUID_ONES = "11111111-1111-1111-1111-111111111111";
+const UUID_AS = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+
 function makeFetchSpy({ status = 200, body = { id: "ent-uuid" } } = {}) {
   const calls = [];
   globalThis.fetch = async (url, opts) => {
@@ -137,7 +142,7 @@ describe("risk_assessment_result update allowlist (#878)", () => {
 });
 
 describe("risk_assessment_result wire body (#878)", () => {
-  const SCENARIO = "11111111-1111-1111-1111-111111111111";
+  const SCENARIO = UUID_ONES;
   const REGISTER = "22222222-2222-2222-2222-222222222222";
   const PROFILE = "33333333-3333-3333-3333-333333333333";
 
@@ -230,7 +235,7 @@ describe("risk_assessment_result wire body (#878)", () => {
     await callHandler({
       entity: "risk_assessment_result",
       action: "update",
-      id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      id: UUID_AS,
       project: "proj-a",
       risk_scenario_id: SCENARIO, // must NOT reach the wire
       methodology_profile_id: PROFILE,
@@ -239,7 +244,7 @@ describe("risk_assessment_result wire body (#878)", () => {
     });
     assert.equal(calls.length, 1);
     assert.equal(calls[0].method, "PUT");
-    assert.match(calls[0].url, /\/api\/v1\/risk-assessment-results\/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\b/);
+    assert.match(calls[0].url, new RegExp(`/api/v1/risk-assessment-results/${UUID_AS}\\b`));
     assert.ok(!("riskScenarioId" in calls[0].body));
     assert.equal(calls[0].body.methodologyProfileId, PROFILE);
     assert.equal(calls[0].body.analystIdentity, "agent-b");
@@ -465,7 +470,7 @@ describe("treatment_plan wire body (#880)", () => {
       reassessment_triggers: [
         { category: "ASSESSMENT_REFRESH", note: "new evidence" },
         { category: "CONTROL_STATE_CHANGED", target_type: "CONTROL",
-          target_entity_id: "11111111-1111-1111-1111-111111111111" },
+          target_entity_id: UUID_ONES },
       ],
     });
     assert.equal(calls.length, 1);
@@ -485,7 +490,7 @@ describe("treatment_plan wire body (#880)", () => {
       reassessmentTriggers: [
         { category: "ASSESSMENT_REFRESH", note: "new evidence" },
         { category: "CONTROL_STATE_CHANGED", targetType: "CONTROL",
-          targetEntityId: "11111111-1111-1111-1111-111111111111" },
+          targetEntityId: UUID_ONES },
       ],
     });
   });
@@ -548,7 +553,7 @@ describe("treatment_plan wire body (#880)", () => {
 
   it("handler sends methodologyProfileId and methodologyStrategyKey on create with strategy OTHER", async () => {
     const calls = makeFetchSpy();
-    const PROF = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const PROF = UUID_AS;
     await callHandler({
       entity: "treatment_plan",
       action: "create",
@@ -673,7 +678,7 @@ describe("methodology_profile crosswalkEntries round-trip (GC-T012)", () => {
     await callHandler({
       entity: "methodology_profile",
       action: "update",
-      id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      id: UUID_AS,
       project: "proj-a",
       crosswalk_entries: [entry],
     });

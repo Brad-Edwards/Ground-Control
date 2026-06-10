@@ -1,4 +1,13 @@
 import {
+  AsOfDateControl,
+  AssetsSection,
+  IndicatorBadge,
+  ScopeControlsShell,
+  WorkspaceLinkList,
+  WorkspaceShell,
+  WorkspaceStatusSelect,
+} from "@/components/workspace-shared";
+import {
   type ThreatModelWorkspaceFilters,
   useThreatModelWorkspace,
 } from "@/hooks/use-threat-model-workspace";
@@ -14,49 +23,30 @@ import { useState } from "react";
 
 // ── Staleness badge ──────────────────────────────────────────────────────────
 
-function StaleBadge({ state }: { state: FreshnessState }) {
-  const styleMap: Record<FreshnessState, string> = {
-    FRESH: "bg-green-100 text-green-800",
-    STALE: "bg-yellow-100 text-yellow-800",
-    EXPIRED: "bg-red-100 text-red-800",
-    SUPERSEDED: "bg-gray-100 text-gray-700",
-    NO_OBSERVATIONS: "bg-slate-100 text-slate-600",
-  };
-  const labelMap: Record<FreshnessState, string> = {
-    FRESH: "Fresh",
-    STALE: "Stale",
-    EXPIRED: "Expired",
-    SUPERSEDED: "Superseded",
-    NO_OBSERVATIONS: "No evidence",
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${styleMap[state]}`}
-      aria-label={`Evidence freshness: ${state}`}
-    >
-      {labelMap[state]}
-    </span>
-  );
-}
+const FRESHNESS_STYLE_MAP: Record<FreshnessState, string> = {
+  FRESH: "bg-green-100 text-green-800",
+  STALE: "bg-yellow-100 text-yellow-800",
+  EXPIRED: "bg-red-100 text-red-800",
+  SUPERSEDED: "bg-gray-100 text-gray-700",
+  NO_OBSERVATIONS: "bg-slate-100 text-slate-600",
+};
 
-// ── Asset row ────────────────────────────────────────────────────────────────
+const FRESHNESS_LABEL_MAP: Record<FreshnessState, string> = {
+  FRESH: "Fresh",
+  STALE: "Stale",
+  EXPIRED: "Expired",
+  SUPERSEDED: "Superseded",
+  NO_OBSERVATIONS: "No evidence",
+};
 
-function AssetRow({ asset }: { asset: WorkspaceAsset }) {
+function StaleBadge({ state }: Readonly<{ state: FreshnessState }>) {
   return (
-    <tr className="border-b border-border last:border-0">
-      <td className="py-2 pr-4 font-mono text-sm">{asset.uid}</td>
-      <td className="py-2 pr-4 text-sm">{asset.name}</td>
-      <td className="py-2 pr-4 text-xs text-muted-foreground">
-        {asset.assetType}
-      </td>
-      <td className="py-2 text-xs">
-        {asset.boundary && (
-          <span className="rounded bg-blue-100 px-1.5 py-0.5 text-blue-800">
-            Boundary
-          </span>
-        )}
-      </td>
-    </tr>
+    <IndicatorBadge
+      state={state}
+      styleMap={FRESHNESS_STYLE_MAP}
+      labelMap={FRESHNESS_LABEL_MAP}
+      ariaPrefix="Evidence freshness"
+    />
   );
 }
 
@@ -65,10 +55,10 @@ function AssetRow({ asset }: { asset: WorkspaceAsset }) {
 function FlowRow({
   flow,
   assetMap,
-}: {
+}: Readonly<{
   flow: WorkspaceFlow;
   assetMap: Map<string, WorkspaceAsset>;
-}) {
+}>) {
   const src = assetMap.get(flow.sourceAssetId);
   const tgt = assetMap.get(flow.targetAssetId);
   return (
@@ -77,7 +67,7 @@ function FlowRow({
         {src?.uid ?? flow.sourceAssetId}
       </td>
       <td className="py-2 pr-4 text-xs text-muted-foreground">
-        {flow.relationType.replace(/_/g, " ")}
+        {flow.relationType.replaceAll("_", " ")}
       </td>
       <td className="py-2 font-mono text-sm">
         {tgt?.uid ?? flow.targetAssetId}
@@ -88,12 +78,13 @@ function FlowRow({
 
 // ── Threat entry card ────────────────────────────────────────────────────────
 
-function ThreatEntryCard({ entry }: { entry: WorkspaceThreatEntry }) {
+function ThreatEntryCard({ entry }: Readonly<{ entry: WorkspaceThreatEntry }>) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <div className="mb-2 flex items-start justify-between gap-2">
         <div>
           <span className="font-mono text-sm font-semibold">{entry.uid}</span>
+          {/* no rendered space: visual gap is provided by ml-2 */}
           <span className="ml-2 text-sm text-muted-foreground">
             {entry.title}
           </span>
@@ -104,76 +95,21 @@ function ThreatEntryCard({ entry }: { entry: WorkspaceThreatEntry }) {
           </span>
           {entry.stride && (
             <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-800">
-              {entry.stride.replace(/_/g, " ")}
+              {entry.stride.replaceAll("_", " ")}
             </span>
           )}
           <StaleBadge state={entry.staleIndicator} />
         </div>
       </div>
 
-      {entry.linkedControls.length > 0 && (
-        <div className="mt-2">
-          <p className="mb-1 text-xs font-medium text-muted-foreground">
-            Linked controls
-          </p>
-          <ul className="space-y-0.5">
-            {entry.linkedControls.map((link, i) => (
-              <li key={link.targetEntityId ?? i} className="text-xs">
-                {link.targetUrl ? (
-                  <a
-                    href={link.targetUrl}
-                    className="text-primary underline"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {link.targetTitle ??
-                      link.targetIdentifier ??
-                      link.targetEntityId}
-                  </a>
-                ) : (
-                  <span>
-                    {link.targetTitle ??
-                      link.targetIdentifier ??
-                      link.targetEntityId}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {entry.linkedRequirements.length > 0 && (
-        <div className="mt-2">
-          <p className="mb-1 text-xs font-medium text-muted-foreground">
-            Linked requirements
-          </p>
-          <ul className="space-y-0.5">
-            {entry.linkedRequirements.map((link, i) => (
-              <li key={link.targetEntityId ?? i} className="text-xs">
-                {link.targetUrl ? (
-                  <a
-                    href={link.targetUrl}
-                    className="text-primary underline"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {link.targetTitle ??
-                      link.targetIdentifier ??
-                      link.targetEntityId}
-                  </a>
-                ) : (
-                  <span>
-                    {link.targetTitle ??
-                      link.targetIdentifier ??
-                      link.targetEntityId}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <WorkspaceLinkList
+        heading="Linked controls"
+        links={entry.linkedControls}
+      />
+      <WorkspaceLinkList
+        heading="Linked requirements"
+        links={entry.linkedRequirements}
+      />
     </div>
   );
 }
@@ -181,8 +117,8 @@ function ThreatEntryCard({ entry }: { entry: WorkspaceThreatEntry }) {
 // ── Scope controls ───────────────────────────────────────────────────────────
 
 interface ScopeControlsProps {
-  filters: ThreatModelWorkspaceFilters;
-  onChange: (f: ThreatModelWorkspaceFilters) => void;
+  readonly filters: ThreatModelWorkspaceFilters;
+  readonly onChange: (f: ThreatModelWorkspaceFilters) => void;
 }
 
 const STRIDE_VALUES: StrideCategory[] = [
@@ -198,10 +134,16 @@ const STATUS_VALUES: ThreatModelStatus[] = ["DRAFT", "ACTIVE", "ARCHIVED"];
 
 function ScopeControls({ filters, onChange }: ScopeControlsProps) {
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-3">
+    <ScopeControlsShell>
       <div>
-        <label className="mb-1 block text-xs font-medium">STRIDE</label>
+        <label
+          htmlFor="stride-filter"
+          className="mb-1 block text-xs font-medium"
+        >
+          STRIDE
+        </label>
         <select
+          id="stride-filter"
           className="rounded border border-border bg-background px-2 py-1 text-sm"
           value={filters.stride ?? ""}
           onChange={(e) =>
@@ -214,50 +156,23 @@ function ScopeControls({ filters, onChange }: ScopeControlsProps) {
           <option value="">All</option>
           {STRIDE_VALUES.map((s) => (
             <option key={s} value={s}>
-              {s.replace(/_/g, " ")}
+              {s.replaceAll("_", " ")}
             </option>
           ))}
         </select>
       </div>
 
-      <div>
-        <label className="mb-1 block text-xs font-medium">Status</label>
-        <select
-          className="rounded border border-border bg-background px-2 py-1 text-sm"
-          value={filters.status ?? ""}
-          onChange={(e) =>
-            onChange({
-              ...filters,
-              status: (e.target.value as ThreatModelStatus) || undefined,
-            })
-          }
-        >
-          <option value="">All</option>
-          {STATUS_VALUES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </div>
+      <WorkspaceStatusSelect
+        value={filters.status}
+        options={STATUS_VALUES}
+        onChange={(status) => onChange({ ...filters, status })}
+      />
 
-      <div>
-        <label className="mb-1 block text-xs font-medium">
-          As of (ISO date)
-        </label>
-        <input
-          type="datetime-local"
-          className="rounded border border-border bg-background px-2 py-1 text-sm"
-          value={filters.asOf?.slice(0, 16) ?? ""}
-          onChange={(e) =>
-            onChange({
-              ...filters,
-              asOf: e.target.value ? `${e.target.value}:00Z` : undefined,
-            })
-          }
-        />
-      </div>
-    </div>
+      <AsOfDateControl
+        value={filters.asOf}
+        onChange={(asOf) => onChange({ ...filters, asOf })}
+      />
+    </ScopeControlsShell>
   );
 }
 
@@ -272,68 +187,24 @@ export function ThreatModelingWorkspace() {
   );
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Threat Modeling Workspace</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Scoped operational assets, trust boundaries, data flows, and threat
-          entries with staleness indicators.
-        </p>
-      </div>
-
-      <ScopeControls filters={filters} onChange={setFilters} />
-
-      {isLoading && (
-        <div className="flex min-h-[20vh] items-center justify-center text-muted-foreground">
-          Loading workspace&hellip;
-        </div>
-      )}
-
-      {isError && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-          {error instanceof Error ? error.message : "Failed to load workspace."}
-        </div>
-      )}
-
+    <WorkspaceShell
+      title="Threat Modeling Workspace"
+      description="Scoped operational assets, trust boundaries, data flows, and threat entries with staleness indicators."
+      controls={<ScopeControls filters={filters} onChange={setFilters} />}
+      isLoading={isLoading}
+      isError={isError}
+      error={error}
+      hasData={!!data}
+    >
       {data && (
         <>
           {/* Assets */}
-          <section aria-labelledby="assets-heading">
-            <h2 id="assets-heading" className="mb-2 text-lg font-medium">
-              Assets
-              <span className="ml-2 text-sm font-normal text-muted-foreground">
-                ({data.assetCount})
-              </span>
-            </h2>
-            {data.assets.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No assets in scope.
-              </p>
-            ) : (
-              <div className="overflow-auto rounded-lg border border-border">
-                <table className="w-full text-left">
-                  <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2">UID</th>
-                      <th className="px-3 py-2">Name</th>
-                      <th className="px-3 py-2">Type</th>
-                      <th className="px-3 py-2">Flags</th>
-                    </tr>
-                  </thead>
-                  <tbody className="px-3">
-                    {data.assets.map((asset) => (
-                      <AssetRow key={asset.id} asset={asset} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+          <AssetsSection assets={data.assets} count={data.assetCount} />
 
           {/* Flows */}
           <section aria-labelledby="flows-heading">
             <h2 id="flows-heading" className="mb-2 text-lg font-medium">
-              Flows
+              <span>Flows</span>
               <span className="ml-2 text-sm font-normal text-muted-foreground">
                 ({data.flowCount})
               </span>
@@ -363,7 +234,7 @@ export function ThreatModelingWorkspace() {
           {/* Threat entries */}
           <section aria-labelledby="entries-heading">
             <h2 id="entries-heading" className="mb-2 text-lg font-medium">
-              Threat Entries
+              <span>Threat Entries</span>
               <span className="ml-2 text-sm font-normal text-muted-foreground">
                 ({data.entryCount})
               </span>
@@ -382,6 +253,6 @@ export function ThreatModelingWorkspace() {
           </section>
         </>
       )}
-    </div>
+    </WorkspaceShell>
   );
 }

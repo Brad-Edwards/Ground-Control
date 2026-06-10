@@ -11,7 +11,7 @@ because it functions the same way for the closure check.
 
 from __future__ import annotations
 
-from pyargdown import ArgdownMultiDiGraph, Conclusion, Valence
+from pyargdown import ArgdownMultiDiGraph, Valence
 
 
 _ATTACK_VALENCES = {Valence.ATTACK, Valence.CONTRADICT, Valence.UNDERCUT}

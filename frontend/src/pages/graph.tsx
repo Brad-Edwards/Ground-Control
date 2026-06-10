@@ -134,6 +134,115 @@ function getTooltipValue(data: Record<string, unknown>, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+function firstTooltipString(
+  data: Record<string, unknown>,
+  ...keys: string[]
+): string {
+  for (const key of keys) {
+    const value = data[key];
+    if (typeof value === "string" && value) {
+      return value;
+    }
+  }
+  return "";
+}
+
+const TOOLTIP_FIELDS_BY_ENTITY_TYPE: Record<
+  string,
+  Array<{ label: string; key: string }>
+> = {
+  OPERATIONAL_ASSET: [
+    { label: "Asset Type", key: "assetType" },
+    { label: "Name", key: "assetName" },
+    { label: "Knowledge", key: "knowledgeState" },
+  ],
+  OBSERVATION: [
+    { label: "Category", key: "category" },
+    { label: "Source", key: "source" },
+    { label: "Confidence", key: "confidence" },
+  ],
+  RISK_SCENARIO: [
+    { label: "Status", key: "status" },
+    { label: "Threat", key: "threat" },
+    { label: "Method", key: "method" },
+  ],
+  RISK_REGISTER_RECORD: [
+    { label: "Status", key: "status" },
+    { label: "Owner", key: "owner" },
+    { label: "Cadence", key: "reviewCadence" },
+  ],
+  RISK_ASSESSMENT_RESULT: [
+    { label: "Approval", key: "approvalState" },
+    { label: "Confidence", key: "confidence" },
+    { label: "Analyst", key: "analystIdentity" },
+  ],
+  TREATMENT_PLAN: [
+    { label: "Strategy", key: "strategy" },
+    { label: "Status", key: "status" },
+    { label: "Owner", key: "owner" },
+  ],
+  METHODOLOGY_PROFILE: [
+    { label: "Family", key: "family" },
+    { label: "Version", key: "version" },
+    { label: "Status", key: "status" },
+  ],
+  CONTROL: [
+    { label: "Status", key: "status" },
+    { label: "Owner", key: "owner" },
+    { label: "Category", key: "category" },
+    { label: "Source", key: "source" },
+  ],
+  CONTROL_TEST: [
+    { label: "Methodology", key: "methodology" },
+    { label: "Conclusion", key: "conclusion" },
+    { label: "Tester", key: "testerIdentity" },
+  ],
+  CONTROL_EFFECTIVENESS_ASSESSMENT: [
+    { label: "Design", key: "designEffectiveness" },
+    { label: "Operating", key: "operatingEffectiveness" },
+    { label: "Assessor", key: "assessor" },
+  ],
+  VERIFICATION_RESULT: [
+    { label: "Prover", key: "prover" },
+    { label: "Result", key: "result" },
+    { label: "Assurance", key: "assuranceLevel" },
+  ],
+  THREAT_MODEL: [
+    { label: "Status", key: "status" },
+    { label: "Threat", key: "threatSource" },
+    { label: "Stride", key: "stride" },
+  ],
+  FINDING: [
+    { label: "Status", key: "status" },
+    { label: "Type", key: "findingType" },
+    { label: "Severity", key: "severity" },
+    { label: "Owner", key: "owner" },
+  ],
+  EVIDENCE_ARTIFACT: [
+    { label: "Type", key: "evidenceType" },
+    { label: "Assurance", key: "assuranceLevel" },
+    { label: "Derived by", key: "derivedBy" },
+  ],
+  AUDIT: [
+    { label: "Type", key: "auditType" },
+    { label: "Status", key: "status" },
+    { label: "Created by", key: "createdBy" },
+  ],
+  RISK_CONTROL_MAPPING: [
+    { label: "Role", key: "controlRole" },
+    { label: "Objective", key: "mappingObjective" },
+  ],
+  SCOPED_CONTROL_IMPLEMENTATION: [
+    { label: "Name", key: "name" },
+    { label: "Control", key: "controlUid" },
+  ],
+  DOCUMENT: [
+    { label: "Version", key: "version" },
+    { label: "Created by", key: "createdBy" },
+    { label: "Updated", key: "updatedAt" },
+  ],
+};
+
 export function getTooltipTags(
   data: Record<string, unknown>,
 ): Array<{ text: string; bg: string }> {
@@ -155,103 +264,7 @@ export function getTooltipTags(
     ].filter((tag) => tag.text);
   }
 
-  const fieldsByEntityType: Record<
-    string,
-    Array<{ label: string; key: string }>
-  > = {
-    OPERATIONAL_ASSET: [
-      { label: "Asset Type", key: "assetType" },
-      { label: "Name", key: "assetName" },
-      { label: "Knowledge", key: "knowledgeState" },
-    ],
-    OBSERVATION: [
-      { label: "Category", key: "category" },
-      { label: "Source", key: "source" },
-      { label: "Confidence", key: "confidence" },
-    ],
-    RISK_SCENARIO: [
-      { label: "Status", key: "status" },
-      { label: "Threat", key: "threat" },
-      { label: "Method", key: "method" },
-    ],
-    RISK_REGISTER_RECORD: [
-      { label: "Status", key: "status" },
-      { label: "Owner", key: "owner" },
-      { label: "Cadence", key: "reviewCadence" },
-    ],
-    RISK_ASSESSMENT_RESULT: [
-      { label: "Approval", key: "approvalState" },
-      { label: "Confidence", key: "confidence" },
-      { label: "Analyst", key: "analystIdentity" },
-    ],
-    TREATMENT_PLAN: [
-      { label: "Strategy", key: "strategy" },
-      { label: "Status", key: "status" },
-      { label: "Owner", key: "owner" },
-    ],
-    METHODOLOGY_PROFILE: [
-      { label: "Family", key: "family" },
-      { label: "Version", key: "version" },
-      { label: "Status", key: "status" },
-    ],
-    CONTROL: [
-      { label: "Status", key: "status" },
-      { label: "Owner", key: "owner" },
-      { label: "Category", key: "category" },
-      { label: "Source", key: "source" },
-    ],
-    CONTROL_TEST: [
-      { label: "Methodology", key: "methodology" },
-      { label: "Conclusion", key: "conclusion" },
-      { label: "Tester", key: "testerIdentity" },
-    ],
-    CONTROL_EFFECTIVENESS_ASSESSMENT: [
-      { label: "Design", key: "designEffectiveness" },
-      { label: "Operating", key: "operatingEffectiveness" },
-      { label: "Assessor", key: "assessor" },
-    ],
-    VERIFICATION_RESULT: [
-      { label: "Prover", key: "prover" },
-      { label: "Result", key: "result" },
-      { label: "Assurance", key: "assuranceLevel" },
-    ],
-    THREAT_MODEL: [
-      { label: "Status", key: "status" },
-      { label: "Threat", key: "threatSource" },
-      { label: "Stride", key: "stride" },
-    ],
-    FINDING: [
-      { label: "Status", key: "status" },
-      { label: "Type", key: "findingType" },
-      { label: "Severity", key: "severity" },
-      { label: "Owner", key: "owner" },
-    ],
-    EVIDENCE_ARTIFACT: [
-      { label: "Type", key: "evidenceType" },
-      { label: "Assurance", key: "assuranceLevel" },
-      { label: "Derived by", key: "derivedBy" },
-    ],
-    AUDIT: [
-      { label: "Type", key: "auditType" },
-      { label: "Status", key: "status" },
-      { label: "Created by", key: "createdBy" },
-    ],
-    RISK_CONTROL_MAPPING: [
-      { label: "Role", key: "controlRole" },
-      { label: "Objective", key: "mappingObjective" },
-    ],
-    SCOPED_CONTROL_IMPLEMENTATION: [
-      { label: "Name", key: "name" },
-      { label: "Control", key: "controlUid" },
-    ],
-    DOCUMENT: [
-      { label: "Version", key: "version" },
-      { label: "Created by", key: "createdBy" },
-      { label: "Updated", key: "updatedAt" },
-    ],
-  };
-
-  return (fieldsByEntityType[entityType] ?? [])
+  return (TOOLTIP_FIELDS_BY_ENTITY_TYPE[entityType] ?? [])
     .map((field) => {
       const value = getTooltipValue(data, field.key);
       return value
@@ -516,8 +529,8 @@ export function Graph() {
 
       const statement =
         String(d.entityType ?? "") === "REQUIREMENT"
-          ? String(d.statement ?? "")
-          : String(d.description ?? d.observationValue ?? d.effect ?? "");
+          ? firstTooltipString(d, "statement")
+          : firstTooltipString(d, "description", "observationValue", "effect");
       if (statement) {
         const stmtDiv = document.createElement("div");
         stmtDiv.style.cssText =
