@@ -39,6 +39,7 @@ The parent never sees verbatim subagent prose, raw `gh`/`git` output, full file 
 | 2 | `read_issue_context` | `steps/step-02-read-issue-context.md` |
 | 2.5 | `architecture_preflight` | `steps/step-02.5-architecture-preflight.md` |
 | 3 | `codebase_assessment` | `steps/step-03-codebase-assessment.md` |
+| 3.5 | `grc_screening` | `steps/step-03.5-grc-screening.md` |
 | 4 | `planning` | `steps/step-04-planning.md` |
 | 4.4 | `implementation` | `steps/step-04.4-tdd.md` |
 | 4.5 | `clause_mapping` | `steps/step-04.5-clause-mapping.md` |

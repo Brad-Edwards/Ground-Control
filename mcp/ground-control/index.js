@@ -78,11 +78,13 @@ import {
   runPostImplementationPlan,
   runAssertTraceabilityReconciled, runCloseIssueAfterMerge,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
+  runPostGrcScreening,
   runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
   runCodexReviewCycle, runTestQualityReviewCycle,
   startReviewJob, pollReviewJob, cancelReviewJob,
   runResolveWorkflowRoute,
   DECISION_RECORD_REVIEWERS, DECISION_RECORD_DECISIONS, DECISION_RECORD_CLASSIFICATIONS,
+  GRC_SCREENING_VERDICTS,
   PR_BODY_CHANGE_CLASSES, PR_REQUIREMENT_RE, EXACT_REQUIREMENT_UID_RE,
   TELEMETRY_TIERS, TELEMETRY_OUTCOMES,
   buildCodexReviewToolDescription, buildCodexReviewOverrideCapDescription,
@@ -775,6 +777,48 @@ server.tool(
       return ok(JSON.stringify(await runPostDecisionRecord({
         repoPath: repo_path, issueNumber: issue_number, cycle, reviewer, findings,
         verdict, architectural_read, notes,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_post_grc_screening",
+  "Post the canonical Step 3.5 GRC screening record as a comment on the GitHub issue. Accepts one of three verdicts: 'security_relevant' (threat-model entries, risk scenarios, controls, and CODE links were created/updated/confirmed during this run — entities_created/updated/confirmed and code_links required), 'not_security_relevant' (change does not touch a security-relevant surface — rationale required, entity/link arrays empty), 'no_baseline' (project has no threat-model baseline — explicit declination, not a clean verdict). Renders a schema-versioned 'gc.implement.grc-screening/v1' record with machine-parseable marker family 'gc:grc-screening'; runs the sensitive-content filter and body-size cap before posting; writes the grc_screening phase marker on success. Rejects caller-controlled fields carrying reserved '<!-- gc:' marker sequences. Returns {ok, verdict, comment_url, comment_id, phase_marker_posted}.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    verdict: z.enum(GRC_SCREENING_VERDICTS),
+    rationale: z.string().min(1),
+    entities_created: z.array(z.object({
+      type: z.string().min(1).optional(),
+      uid: z.string().min(1),
+    })).optional().default([]),
+    entities_updated: z.array(z.object({
+      type: z.string().min(1).optional(),
+      uid: z.string().min(1),
+    })).optional().default([]),
+    entities_confirmed: z.array(z.object({
+      type: z.string().min(1).optional(),
+      uid: z.string().min(1),
+    })).optional().default([]),
+    code_links: z.array(z.object({
+      owner_type: z.string().min(1).optional(),
+      owner_uid: z.string().min(1).optional(),
+      target_identifier: z.string().min(1),
+    })).optional().default([]),
+  },
+  async ({ repo_path, issue_number, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links }) => {
+    try {
+      return ok(JSON.stringify(await runPostGrcScreening({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        verdict,
+        rationale,
+        entities_created: entities_created ?? [],
+        entities_updated: entities_updated ?? [],
+        entities_confirmed: entities_confirmed ?? [],
+        code_links: code_links ?? [],
       }), null, 2));
     } catch (e) { return err(e); }
   },

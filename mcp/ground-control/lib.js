@@ -10567,6 +10567,319 @@ export async function runPostDecisionRecord({ repoPath, issueNumber, cycle, revi
 }
 
 // ---------------------------------------------------------------------------
+// GRC screening renderer (gc_post_grc_screening)
+// ---------------------------------------------------------------------------
+//
+// Step 3.5 of /implement gates the run on a threat/risk screening verdict.
+// The agent reads the existing threat/risk workspaces, classifies the planned
+// change surface, and posts one of three deterministic verdicts:
+//   - security_relevant: threat-model entries, risk scenarios, controls, and
+//     CODE links were created/updated/confirmed during the run.
+//   - not_security_relevant: one-line rationale; no silent skip.
+//   - no_baseline: explicit declination when the project has no baseline.
+//
+// The issue-thread record is the durable workflow state per ADR-029. The
+// marker family is `gc:grc-screening` — distinct from `gc:phase`,
+// `gc:decision-record`, and `gc:final-report` so downstream sweeps can
+// detect screening records without confusing them with other markers.
+
+export const GRC_SCREENING_VERDICTS = Object.freeze([
+  "security_relevant",
+  "not_security_relevant",
+  "no_baseline",
+]);
+
+// Byte cap for the rationale field. Reject-not-truncate: the tool returns a
+// structured error so the caller can tighten the prose.
+export const GRC_SCREENING_RATIONALE_MAX = 800;
+
+const GRC_SCREENING_SCHEMA_VERSION = "gc.implement.grc-screening/v1";
+
+export function buildGrcScreeningMarker({ issueNumber, verdict, schema }) {
+  const schemaAttr = schema ? ` schema="${schema}"` : "";
+  const verdictAttr = verdict ? ` verdict="${verdict}"` : "";
+  return `<!-- gc:grc-screening issue="${issueNumber}"${schemaAttr}${verdictAttr} -->`;
+}
+
+export function validateGrcScreeningInput(input) {
+  const errors = [];
+  if (input == null || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, errors: ["input must be an object"] };
+  }
+  const { issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links } = input;
+
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    errors.push("issueNumber must be a positive integer");
+  }
+
+  if (typeof verdict !== "string" || !GRC_SCREENING_VERDICTS.includes(verdict)) {
+    errors.push(`verdict must be one of: ${GRC_SCREENING_VERDICTS.join(", ")}`);
+  }
+
+  if (typeof rationale !== "string" || rationale.trim() === "") {
+    errors.push("rationale must be a non-empty string");
+  } else if (Buffer.byteLength(rationale, "utf8") > GRC_SCREENING_RATIONALE_MAX) {
+    errors.push(`rationale exceeds ${GRC_SCREENING_RATIONALE_MAX}-byte cap`);
+  }
+  // Reserved-marker injection checks are done in the runner (runPostGrcScreening),
+  // not here, so the runner can return a distinct grc_screening_reserved_marker
+  // error code instead of conflating it with input validation failures. This
+  // mirrors the runPostDecisionRecord pattern.
+
+  // Validate entity ref arrays
+  for (const [arrayName, arr] of [
+    ["entities_created", entities_created],
+    ["entities_updated", entities_updated],
+    ["entities_confirmed", entities_confirmed],
+  ]) {
+    if (!Array.isArray(arr)) {
+      errors.push(`${arrayName} must be an array`);
+    } else {
+      arr.forEach((ref, i) => {
+        if (ref == null || typeof ref !== "object") {
+          errors.push(`${arrayName}[${i}] must be an object`);
+          return;
+        }
+        if (typeof ref.uid !== "string" || ref.uid.trim() === "") {
+          errors.push(`${arrayName}[${i}].uid must be a non-empty string`);
+        }
+      });
+    }
+  }
+
+  // Validate code_links array
+  if (!Array.isArray(code_links)) {
+    errors.push("code_links must be an array");
+  } else {
+    code_links.forEach((link, i) => {
+      if (link == null || typeof link !== "object") {
+        errors.push(`code_links[${i}] must be an object`);
+        return;
+      }
+      if (typeof link.target_identifier !== "string" || link.target_identifier.trim() === "") {
+        errors.push(`code_links[${i}].target_identifier must be a non-empty string`);
+      }
+    });
+  }
+
+  // security_relevant requires at least one entity and at least one code_link
+  if (errors.length === 0 && verdict === "security_relevant") {
+    const totalEntities = (entities_created?.length ?? 0) + (entities_updated?.length ?? 0) + (entities_confirmed?.length ?? 0);
+    if (totalEntities === 0) {
+      errors.push("security_relevant verdict requires at least one entity in entities_created, entities_updated, or entities_confirmed");
+    }
+    if ((code_links?.length ?? 0) === 0) {
+      errors.push("security_relevant verdict requires at least one entry in code_links");
+    }
+  }
+
+  if (errors.length) return { ok: false, errors };
+  return { ok: true };
+}
+
+export function buildGrcScreeningRecord({ issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links }) {
+  const validation = validateGrcScreeningInput({ issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links });
+  if (!validation.ok) {
+    throw new Error(`buildGrcScreeningRecord input invalid: ${validation.errors.join("; ")}`);
+  }
+  const lines = [];
+  lines.push(buildGrcScreeningMarker({ issueNumber, verdict, schema: GRC_SCREENING_SCHEMA_VERSION }));
+  lines.push("");
+  lines.push(`## GRC screening record — issue #${issueNumber}`);
+  lines.push("");
+  lines.push(`**Schema:** \`${GRC_SCREENING_SCHEMA_VERSION}\`  `);
+  lines.push(`**Verdict:** \`${verdict}\`  `);
+  lines.push("");
+  lines.push(`**Rationale:** ${rationale}`);
+
+  if (verdict === "security_relevant") {
+    lines.push("");
+    lines.push("**Entities created:**");
+    if (entities_created.length === 0) {
+      lines.push("- _(none)_");
+    } else {
+      for (const e of entities_created) lines.push(`- \`${e.uid}\` (${e.type ?? "unknown"})`);
+    }
+    lines.push("");
+    lines.push("**Entities updated:**");
+    if (entities_updated.length === 0) {
+      lines.push("- _(none)_");
+    } else {
+      for (const e of entities_updated) lines.push(`- \`${e.uid}\` (${e.type ?? "unknown"})`);
+    }
+    lines.push("");
+    lines.push("**Entities confirmed:**");
+    if (entities_confirmed.length === 0) {
+      lines.push("- _(none)_");
+    } else {
+      for (const e of entities_confirmed) lines.push(`- \`${e.uid}\` (${e.type ?? "unknown"})`);
+    }
+    lines.push("");
+    lines.push("**Code links (targetType=CODE):**");
+    for (const link of code_links) {
+      lines.push(`- \`${link.target_identifier}\` (owner: ${link.owner_type ?? "unknown"} \`${link.owner_uid ?? ""}\`)`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+// Runner: validate → render → sensitive-content filter → body-size cap →
+// argv-based gh api post → write grc_screening phase marker via postPhaseMarker.
+// Returns a structured envelope; failures are refused before any network I/O.
+export async function runPostGrcScreening({ repoPath, issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links }) {
+  const validation = validateGrcScreeningInput({ issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links });
+  if (!validation.ok) {
+    return {
+      ok: false,
+      error: "grc_screening_input_invalid",
+      message: validation.errors.join("; "),
+      issue_number: issueNumber ?? null,
+    };
+  }
+
+  // Reject reserved marker sequences in ALL caller-controlled string fields
+  // that are rendered into the durable comment body. This covers every field
+  // that reaches buildGrcScreeningRecord — rationale, entity uid and type,
+  // and code_link target_identifier, owner_type, and owner_uid. Adding a new
+  // rendered field means adding it here too; that is the single enforcement
+  // point for the reserved-marker trust boundary (ADR-057).
+  const fieldsToCheck = [
+    ["rationale", rationale],
+  ];
+  for (const [arrayName, arr] of [
+    ["entities_created", entities_created],
+    ["entities_updated", entities_updated],
+    ["entities_confirmed", entities_confirmed],
+  ]) {
+    if (Array.isArray(arr)) {
+      arr.forEach((ref, i) => {
+        if (ref) {
+          if (typeof ref.uid === "string") {
+            fieldsToCheck.push([`${arrayName}[${i}].uid`, ref.uid]);
+          }
+          if (typeof ref.type === "string") {
+            fieldsToCheck.push([`${arrayName}[${i}].type`, ref.type]);
+          }
+        }
+      });
+    }
+  }
+  if (Array.isArray(code_links)) {
+    code_links.forEach((link, i) => {
+      if (link) {
+        if (typeof link.target_identifier === "string") {
+          fieldsToCheck.push([`code_links[${i}].target_identifier`, link.target_identifier]);
+        }
+        if (typeof link.owner_type === "string") {
+          fieldsToCheck.push([`code_links[${i}].owner_type`, link.owner_type]);
+        }
+        if (typeof link.owner_uid === "string") {
+          fieldsToCheck.push([`code_links[${i}].owner_uid`, link.owner_uid]);
+        }
+      }
+    });
+  }
+  for (const [fieldName, value] of fieldsToCheck) {
+    const err = rejectReservedMarkerSequence(value, fieldName);
+    if (err) {
+      return {
+        ok: false,
+        error: "grc_screening_reserved_marker",
+        message: err,
+        issue_number: issueNumber,
+        next_action: "remove_reserved_marker_prefix_and_retry",
+      };
+    }
+  }
+
+  const body = buildGrcScreeningRecord({ issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links });
+
+  const sensitiveError = detectSensitiveBodyContent(body);
+  if (sensitiveError) {
+    return {
+      ok: false,
+      error: "grc_screening_body_rejected",
+      message: sensitiveError,
+      issue_number: issueNumber,
+      next_action: "scrub_secrets_from_fields_and_retry",
+    };
+  }
+
+  if (Buffer.byteLength(body, "utf8") > GITHUB_ISSUE_COMMENT_BODY_MAX) {
+    return {
+      ok: false,
+      error: "grc_screening_body_too_large",
+      message: `rendered body is ${Buffer.byteLength(body, "utf8")} bytes; GitHub's issue-comment body cap is ${GITHUB_ISSUE_COMMENT_BODY_MAX} bytes`,
+      issue_number: issueNumber,
+      next_action: "reduce_rationale_or_entity_count_and_retry",
+    };
+  }
+
+  const repoRoot = await ensureGitRepo(repoPath);
+  const { owner, name } = await getOwnerRepo(repoRoot);
+
+  let apiResponse = null;
+  try {
+    const { stdout } = await execFile(
+      "gh",
+      [
+        "api",
+        "--method",
+        "POST",
+        `/repos/${owner}/${name}/issues/${issueNumber}/comments`,
+        "-f",
+        `body=${body}`,
+      ],
+      { cwd: repoRoot },
+    );
+    try {
+      apiResponse = JSON.parse(stdout);
+    } catch {
+      apiResponse = null;
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: "grc_screening_post_failed",
+      message: extractGhErrorMessage(error),
+      issue_number: issueNumber,
+      next_action: "retry_after_resolving_gh_failure",
+    };
+  }
+
+  // Write the grc_screening phase marker so the workflow can detect the
+  // gate has run. The marker is written after the record is posted so
+  // the phase marker only lands on successful post.
+  try {
+    await postPhaseMarker(repoRoot, owner, name, issueNumber, "grc_screening");
+  } catch {
+    // Phase marker failure is non-fatal — the screening record is already
+    // posted. Return success with a note so the caller can re-run the marker
+    // if needed rather than losing the posted record.
+    return {
+      ok: true,
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      verdict,
+      comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+      comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+      phase_marker_posted: false,
+    };
+  }
+
+  return {
+    ok: true,
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    verdict,
+    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+    phase_marker_posted: true,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Final report renderer (gc_post_final_report)
 // ---------------------------------------------------------------------------
 //
@@ -13905,6 +14218,7 @@ export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
   read_issue_context: { tier: "low" },
   architecture_preflight: { tier: "low" },
   codebase_assessment: { tier: "medium" },
+  grc_screening: { tier: "medium" },
   planning: { tier: "high", agent: "parent", fallback: "error" },
   implementation: { tier: "medium" },
   clause_mapping: { tier: "medium" },
