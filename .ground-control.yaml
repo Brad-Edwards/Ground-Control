@@ -57,6 +57,9 @@ routing:
     codebase_assessment:
       tier: medium
       model: claude-sonnet-4-6
+    grc_screening:
+      tier: medium
+      model: claude-sonnet-4-6
     planning:
       tier: high
       model: claude-opus-4-7

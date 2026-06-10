@@ -22,7 +22,7 @@ The user picks the lane explicitly at invocation time. The issue is the durable 
 
 ## Per-step model routing (ADR-036)
 
-Routes through the same `gc_resolve_workflow_route` resolver as `/implement` (see ADR-036 + `skills/implement/SKILL.md` § "Per-step model routing"). Stages reused: `issue_branch_resolution`, `codebase_assessment`, `implementation`, `precommit`, `completion_gate`, `review_cycle_1_consume` (only when `--review`), `review_fix_application`, `git_publish`, `pr_body`, `ci_monitor`, `sonarcloud`, `test_quality_review` (only when `--review`), `close_issue`. Stages NOT used (because the skill drops them): `architecture_preflight`, `planning`, `clause_mapping`, `transition_reconcile`, `final_report`. Routing and telemetry are opt-in per repo via `.ground-control.yaml` (same `cfg.routing.enabled` and `cfg.telemetry.enabled` knobs).
+Routes through the same `gc_resolve_workflow_route` resolver as `/implement` (see ADR-036 + `skills/implement/SKILL.md` § "Per-step model routing"). Stages reused: `issue_branch_resolution`, `codebase_assessment`, `implementation`, `precommit`, `completion_gate`, `review_cycle_1_consume` (only when `--review`), `review_fix_application`, `git_publish`, `pr_body`, `ci_monitor`, `sonarcloud`, `test_quality_review` (only when `--review`), `close_issue`. Stages NOT used (because the skill drops them): `architecture_preflight`, `grc_screening`, `planning`, `clause_mapping`, `transition_reconcile`, `final_report`. Routing and telemetry are opt-in per repo via `.ground-control.yaml` (same `cfg.routing.enabled` and `cfg.telemetry.enabled` knobs).
 
 ## Invocation
 
