@@ -575,13 +575,13 @@ class PolicyChecksTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("enum-contract-source-missing", codes)
 
-    def test_enum_contract_normalized_concept_positive(self):
+    def test_enum_contract_normalized_concept_positive(self) -> None:
         # GC-T012: NORMALIZED_CONCEPTS in api.ts and lib.js must match NormalizedConcept.java
         violations = run_enum_contract_check(root=REPO_ROOT)
         labels = {v.details[0] if v.details else "" for v in violations}
         self.assertNotIn("NormalizedConcept", " ".join(labels))
 
-    def test_enum_contract_normalized_concept_drift(self):
+    def test_enum_contract_normalized_concept_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             self._copy_enum_sources(root)
@@ -598,13 +598,13 @@ class PolicyChecksTest(unittest.TestCase):
             self.assertIn("NormalizedConcept", details)
             self.assertIn("TREATMENT", details)
 
-    def test_enum_contract_crosswalk_vocabulary_surface_positive(self):
+    def test_enum_contract_crosswalk_vocabulary_surface_positive(self) -> None:
         # GC-T012: CROSSWALK_VOCABULARY_SURFACES in api.ts and lib.js must match CrosswalkVocabularySurface.java
         violations = run_enum_contract_check(root=REPO_ROOT)
         labels = {v.details[0] if v.details else "" for v in violations}
         self.assertNotIn("CrosswalkVocabularySurface", " ".join(labels))
 
-    def test_enum_contract_crosswalk_vocabulary_surface_drift(self):
+    def test_enum_contract_crosswalk_vocabulary_surface_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             self._copy_enum_sources(root)
@@ -1826,20 +1826,21 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             if rel_path in overrides:
                 override = overrides[rel_path]
                 if override is None:
-                    continue  # file intentionally missing
+                    # file intentionally missing
+                    continue
                 body = override
             path = root / rel_path
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(body, encoding="utf-8")
 
-    def test_check_passes_when_all_four_surfaces_carry_required_tokens(self):
+    def test_check_passes_when_all_four_surfaces_carry_required_tokens(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root)
             violations = run_traceability_reconciliation_gate_contract(root=root)
             self.assertEqual(violations, [])
 
-    def test_check_flags_step17_missing_gc_assert_traceability_reconciled(self):
+    def test_check_flags_step17_missing_gc_assert_traceability_reconciled(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
@@ -1851,7 +1852,7 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-step17-missing", codes)
 
-    def test_check_flags_step19_missing_traceability_reconciled_marker_name(self):
+    def test_check_flags_step19_missing_traceability_reconciled_marker_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
@@ -1863,7 +1864,7 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-step19-missing", codes)
 
-    def test_check_flags_step20_missing_file(self):
+    def test_check_flags_step20_missing_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
@@ -1874,7 +1875,7 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-step20-missing", codes)
 
-    def test_check_flags_skill_missing_phase_e(self):
+    def test_check_flags_skill_missing_phase_e(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
@@ -1886,7 +1887,7 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-skill-missing", codes)
 
-    def test_check_flags_skill_missing_close_tool_name(self):
+    def test_check_flags_skill_missing_close_tool_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={

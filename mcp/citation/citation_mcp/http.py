@@ -11,6 +11,7 @@ DEFAULT_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 
 
 def mailto() -> str:
+    """Return the contact email for the polite-pool mailto parameter."""
     return os.environ.get("CITATION_MCP_MAILTO", "j.bradley.edwards@gmail.com")
 
 

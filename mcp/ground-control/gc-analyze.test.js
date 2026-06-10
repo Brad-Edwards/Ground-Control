@@ -19,6 +19,9 @@ const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_BASE_URL = process.env.GC_BASE_URL;
 const ORIGINAL_API_TOKEN = process.env.GROUND_CONTROL_API_TOKEN;
 
+const OMITS_UNDEFINED_PARAMS = "omits undefined params";
+const RETURNS_JSON_BODY = "returns the JSON body";
+
 function makeFetchSpy({ status = 200, body = {} } = {}) {
   const calls = [];
   globalThis.fetch = async (url, opts) => {
@@ -69,7 +72,7 @@ describe("analyzeEvidenceFreshness (GC-L007)", () => {
     assert.equal(url.searchParams.get("controlId"), "00000000-0000-0000-0000-000000000002");
   });
 
-  it("omits undefined params", async () => {
+  it(OMITS_UNDEFINED_PARAMS, async () => {
     const calls = makeFetchSpy();
 
     await analyzeEvidenceFreshness({ project: "ground-control" });
@@ -83,7 +86,7 @@ describe("analyzeEvidenceFreshness (GC-L007)", () => {
     assert.equal(url.searchParams.get("controlId"), null);
   });
 
-  it("returns the JSON body", async () => {
+  it(RETURNS_JSON_BODY, async () => {
     makeFetchSpy({ body: { analysisKind: "evidence_freshness", counts: { fresh: 3 } } });
 
     const result = await analyzeEvidenceFreshness({ project: "ground-control" });
@@ -127,7 +130,7 @@ describe("analyzeObservationProjection (GC-L007)", () => {
     assert.equal(url.searchParams.get("controlId"), "00000000-0000-0000-0000-000000000003");
   });
 
-  it("returns the JSON body", async () => {
+  it(RETURNS_JSON_BODY, async () => {
     // Mirrors the evidence_freshness "returns the JSON body" test — locks in
     // that the helper actually parses the response, not just dispatches the
     // request. lib.js's request() applies toSnakeCase to the response, but
@@ -167,7 +170,7 @@ describe("aggregateVendorRisk (GC-L007)", () => {
     assert.equal(url.searchParams.get("vendorAssetId"), "00000000-0000-0000-0000-00000000000a");
   });
 
-  it("omits undefined params", async () => {
+  it(OMITS_UNDEFINED_PARAMS, async () => {
     const calls = makeFetchSpy();
 
     await aggregateVendorRisk({ project: "ground-control" });
@@ -179,7 +182,7 @@ describe("aggregateVendorRisk (GC-L007)", () => {
     assert.equal(url.searchParams.get("vendorAssetId"), null);
   });
 
-  it("returns the JSON body", async () => {
+  it(RETURNS_JSON_BODY, async () => {
     makeFetchSpy({
       body: { analysisKind: "vendor_risk_aggregation", vendors: [] },
     });
@@ -218,7 +221,7 @@ describe("analyzeNistAssessment (GC-T014)", () => {
     );
   });
 
-  it("omits undefined params", async () => {
+  it(OMITS_UNDEFINED_PARAMS, async () => {
     const calls = makeFetchSpy();
 
     await analyzeNistAssessment({ project: "ground-control" });
@@ -269,7 +272,7 @@ describe("analyzeNistAssessment (GC-T014)", () => {
 
     const camel = toCamelCase(payload);
     // The outer keys are renamed but the inner methodology-defined keys are NOT.
-    assert.deepEqual(Object.keys(camel.inputFactors).sort(), [
+    assert.deepEqual(Object.keys(camel.inputFactors).sort((a, b) => a.localeCompare(b)), [
       "assessment_timeframe",
       "impact_level",
       "likelihood_adverse_impact",
@@ -277,10 +280,13 @@ describe("analyzeNistAssessment (GC-T014)", () => {
       "likelihood_overall",
       "threat_source_relevance",
     ]);
-    assert.deepEqual(Object.keys(camel.computedOutputs).sort(), ["matrix_cell", "risk_level"]);
+    assert.deepEqual(
+      Object.keys(camel.computedOutputs).sort((a, b) => a.localeCompare(b)),
+      ["matrix_cell", "risk_level"],
+    );
 
     const snake = toSnakeCase(camel);
-    assert.deepEqual(Object.keys(snake.input_factors).sort(), [
+    assert.deepEqual(Object.keys(snake.input_factors).sort((a, b) => a.localeCompare(b)), [
       "assessment_timeframe",
       "impact_level",
       "likelihood_adverse_impact",
