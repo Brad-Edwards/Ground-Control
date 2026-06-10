@@ -350,11 +350,16 @@ def run_controller_contracts(changed_files: list[str], root: Path = REPO_ROOT) -
     if "mcp/ground-control/lib.js" not in changed_files:
         missing.append("mcp/ground-control/lib.js")
     # MCP server adapter companion: most tools register inline in index.js, but
-    # gc_risk_governance was factored into gc-risk-governance.js (its Zod shape,
-    # description, and handler live there; index.js only registers the imports).
-    # Either file satisfies the MCP-adapter requirement for risk-governance
-    # controllers; index.js stays mandatory for any tool still registered inline.
-    adapter_files = ("mcp/ground-control/index.js", "mcp/ground-control/gc-risk-governance.js")
+    # gc_risk_governance and gc_risk_scenario were factored into gc-risk-governance.js
+    # and gc-risk-scenario.js respectively (their Zod shapes, descriptions, and handlers
+    # live there; index.js only registers the imports). Either file satisfies the
+    # MCP-adapter requirement for those controllers; index.js stays mandatory for any
+    # tool still registered inline.
+    adapter_files = (
+        "mcp/ground-control/index.js",
+        "mcp/ground-control/gc-risk-governance.js",
+        "mcp/ground-control/gc-risk-scenario.js",
+    )
     if not any(adapter in changed_files for adapter in adapter_files):
         missing.append("one of: " + ", ".join(adapter_files))
     if missing:
@@ -961,6 +966,7 @@ FRONTEND_API_TYPES_PATH = "frontend/src/types/api.ts"
 MCP_LIB_PATH = "mcp/ground-control/lib.js"
 _ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state"
 _AUDIT_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state"
+_RISK_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state"
 
 # Java enum body: from the opening `{` to whichever comes first — the `;` that
 # terminates the constant list (present when the enum has methods/fields, e.g.
@@ -1018,6 +1024,54 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
     # by UI and exposed by the MCP gc_audit tool.
     EnumContract("AuditType", f"{_AUDIT_ENUM_STATE_DIR}/AuditType.java", "AuditType", "AUDIT_TYPES", "AUDIT_TYPES"),
     EnumContract("AuditStatus", f"{_AUDIT_ENUM_STATE_DIR}/AuditStatus.java", "AuditStatus", "AUDIT_STATUSES", "AUDIT_STATUSES"),
+    # GC-T014 NIST SP 800-30 Rev. 1 enums. Mirrored at the
+    # /api/v1/analysis/grc/nist-sp-800-30 boundary (NistAssessmentResponse) and
+    # in the MCP gc_analyze nist_assessment kind payload. ADR-034.
+    EnumContract(
+        "ThreatEventKind",
+        f"{_RISK_ENUM_STATE_DIR}/ThreatEventKind.java",
+        "ThreatEventKind",
+        "THREAT_EVENT_KINDS",
+        "THREAT_EVENT_KINDS",
+    ),
+    EnumContract(
+        "ThreatSourceRelevance",
+        f"{_RISK_ENUM_STATE_DIR}/ThreatSourceRelevance.java",
+        "ThreatSourceRelevance",
+        "THREAT_SOURCE_RELEVANCES",
+        "THREAT_SOURCE_RELEVANCES",
+    ),
+    EnumContract(
+        "NistLikelihoodBand",
+        f"{_RISK_ENUM_STATE_DIR}/NistLikelihoodBand.java",
+        "NistLikelihoodBand",
+        "NIST_LIKELIHOOD_BANDS",
+        "NIST_LIKELIHOOD_BANDS",
+    ),
+    EnumContract(
+        "NistImpactBand",
+        f"{_RISK_ENUM_STATE_DIR}/NistImpactBand.java",
+        "NistImpactBand",
+        "NIST_IMPACT_BANDS",
+        "NIST_IMPACT_BANDS",
+    ),
+    # GC-T012 crosswalk vocabulary enums. Mirrored at the
+    # /api/v1/methodology-profiles boundary and in the MCP gc_risk_governance
+    # methodology_profile handler Zod shape. ADR-034.
+    EnumContract(
+        "NormalizedConcept",
+        f"{_RISK_ENUM_STATE_DIR}/NormalizedConcept.java",
+        "NormalizedConcept",
+        "NORMALIZED_CONCEPTS",
+        "NORMALIZED_CONCEPTS",
+    ),
+    EnumContract(
+        "CrosswalkVocabularySurface",
+        f"{_RISK_ENUM_STATE_DIR}/CrosswalkVocabularySurface.java",
+        "CrosswalkVocabularySurface",
+        "CROSSWALK_VOCABULARY_SURFACES",
+        "CROSSWALK_VOCABULARY_SURFACES",
+    ),
 )
 
 
@@ -1671,6 +1725,101 @@ def run_test_quality_decision_record_contract(
     return violations
 
 
+# ---------------------------------------------------------------------------
+# Traceability-reconciliation gate contract (issue #1058)
+#
+# Asserts the /implement workflow's traceability + post-merge close gate
+# is wired across all four prose surfaces. The MCP-tool layer enforces:
+#   - Step 17 calls gc_assert_traceability_reconciled to write the
+#     traceability_reconciled phase marker.
+#   - Step 19 (gc_post_final_report) refuses without that marker.
+#   - Step 20 (Phase E) calls gc_close_issue_after_merge after PR merge.
+#   - SKILL.md documents Phase E and gc_close_issue_after_merge as the
+#     canonical close path.
+#
+# This check is the prose-side guardrail that catches drift between the
+# enforcement and the contract documentation. A future skill edit that
+# strips one of these references would silently break the contract for
+# any reader of the skill; the check prevents that.
+# ---------------------------------------------------------------------------
+
+IMPLEMENT_STEP_17_PATH = "skills/implement/steps/step-17-verify.md"
+IMPLEMENT_STEP_19_PATH = "skills/implement/steps/step-19-final-report.md"
+IMPLEMENT_STEP_20_PATH = "skills/implement/steps/step-20-close-issue-on-merge.md"
+
+
+def run_traceability_reconciliation_gate_contract(
+    *,
+    root: Path = REPO_ROOT,
+) -> list[Violation]:
+    """Assert the issue #1058 traceability + post-merge close gate is wired.
+
+    The gate has three MCP-tool surfaces and four prose anchors:
+
+      step-17-verify.md       must mention `gc_assert_traceability_reconciled`
+      step-19-final-report.md must mention `traceability_reconciled` (the marker name)
+      step-20-close-issue-on-merge.md must exist AND mention `gc_close_issue_after_merge`
+      SKILL.md                must mention `Phase E` AND `gc_close_issue_after_merge`
+
+    Emits one violation per missing anchor with a stable code so CI surfaces
+    the specific gap. A repo whose policy-tests file isn't yet up to date
+    (e.g., the test fixture path needs a workflow run) flags here rather
+    than going silent.
+    """
+    violations: list[Violation] = []
+
+    requirements = (
+        (
+            IMPLEMENT_STEP_17_PATH,
+            ("gc_assert_traceability_reconciled",),
+            "traceability-gate-step17-missing",
+            "Step 17 must call gc_assert_traceability_reconciled after verification (issue #1058).",
+        ),
+        (
+            IMPLEMENT_STEP_19_PATH,
+            ("traceability_reconciled",),
+            "traceability-gate-step19-missing",
+            "Step 19 must document the traceability_reconciled phase-marker prerequisite (issue #1058).",
+        ),
+        (
+            IMPLEMENT_STEP_20_PATH,
+            ("gc_close_issue_after_merge",),
+            "traceability-gate-step20-missing",
+            "Step 20 (Phase E post-merge close) must exist and mention gc_close_issue_after_merge (issue #1058).",
+        ),
+        (
+            IMPLEMENT_SKILL_PATH,
+            ("Phase E", "gc_close_issue_after_merge"),
+            "traceability-gate-skill-missing",
+            "SKILL.md must document Phase E and the gc_close_issue_after_merge close path (issue #1058).",
+        ),
+    )
+
+    for rel_path, tokens, code, message in requirements:
+        path = root / rel_path
+        if not path.exists():
+            violations.append(
+                Violation(
+                    code=code,
+                    message=f"{rel_path} is missing — required by the issue #1058 traceability gate contract.",
+                    details=[f"expected at {rel_path}", *(f"must mention: {t}" for t in tokens)],
+                )
+            )
+            continue
+        text = path.read_text(encoding="utf-8")
+        missing_tokens = [t for t in tokens if t not in text]
+        if missing_tokens:
+            violations.append(
+                Violation(
+                    code=code,
+                    message=message,
+                    details=[f"in {rel_path}", *(f"missing: '{t}'" for t in missing_tokens)],
+                )
+            )
+
+    return violations
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run repo policy checks.")
     parser.add_argument("--base", help="Git base ref to diff against.")
@@ -1747,6 +1896,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_deploy_compose_credential_passthrough())
     violations.extend(run_enum_contract_check())
     violations.extend(run_test_quality_decision_record_contract())
+    violations.extend(run_traceability_reconciliation_gate_contract())
 
     if not args.skip_pr_body:
         body = _resolve_pr_body(args)

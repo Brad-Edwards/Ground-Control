@@ -66,6 +66,38 @@ describe("ENTITY_TYPE_COLORS", () => {
       ENTITY_TYPE_COLORS.EVIDENCE_ARTIFACT,
     );
   });
+
+  // GC-G007: every backend GraphEntityType value must have an entry in
+  // ENTITY_TYPE_COLORS so the graph visualization never silently falls
+  // through to the generic grey fallback for a shipped entity type.
+  const backendEntityTypes = [
+    "REQUIREMENT",
+    "OPERATIONAL_ASSET",
+    "OBSERVATION",
+    "RISK_SCENARIO",
+    "RISK_REGISTER_RECORD",
+    "RISK_ASSESSMENT_RESULT",
+    "TREATMENT_PLAN",
+    "METHODOLOGY_PROFILE",
+    "EVIDENCE_ARTIFACT",
+    "CONTROL",
+    "CONTROL_LINK",
+    "CONTROL_TEST",
+    "CONTROL_EFFECTIVENESS_ASSESSMENT",
+    "VERIFICATION_RESULT",
+    "THREAT_MODEL",
+    "FINDING",
+    "AUDIT",
+    "AUDIT_LINK",
+    "RISK_CONTROL_MAPPING",
+    "SCOPED_CONTROL_IMPLEMENTATION",
+    "DOCUMENT",
+  ] as const;
+
+  it.each(backendEntityTypes)("has a color entry for %s", (entityType) => {
+    expect(ENTITY_TYPE_COLORS[entityType]).toBeDefined();
+    expect(typeof ENTITY_TYPE_COLORS[entityType]).toBe("string");
+  });
 });
 
 describe("getColorMap", () => {

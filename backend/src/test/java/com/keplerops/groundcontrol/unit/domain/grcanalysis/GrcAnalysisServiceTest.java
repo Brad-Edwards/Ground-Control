@@ -7,6 +7,8 @@ import static org.mockito.Mockito.when;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionMode;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionService;
@@ -37,6 +39,9 @@ class GrcAnalysisServiceTest {
 
     @Mock
     private VendorRiskAggregationService vendorRiskAggregationService;
+
+    @Mock
+    private NistAssessmentService nistAssessmentService;
 
     @InjectMocks
     private GrcAnalysisService service;
@@ -116,5 +121,31 @@ class GrcAnalysisServiceTest {
 
         assertThat(actual).isSameAs(expected);
         verify(vendorRiskAggregationService).aggregate(projectId, asOf, 90, vendorAssetId);
+    }
+
+    @Test
+    void nistAssessment_delegatesToNistAssessmentService() {
+        UUID projectId = UUID.randomUUID();
+        UUID assessmentId = UUID.randomUUID();
+        UUID scenarioId = UUID.randomUUID();
+        Instant asOf = Instant.parse("2026-05-29T00:00:00Z");
+        NistAssessmentResult expected = new NistAssessmentResult(
+                "nist_assessment",
+                "ground-control",
+                asOf,
+                "nist-sp800-30-rev1-5x5-matrix-v1",
+                "ordinal",
+                "qualitative ordinal levels",
+                "rule",
+                List.of(),
+                new NistAssessmentResult.Counts(0, java.util.Map.of(), 0),
+                List.of());
+        when(nistAssessmentService.analyze(projectId, asOf, assessmentId, scenarioId))
+                .thenReturn(expected);
+
+        NistAssessmentResult actual = service.nistAssessment(projectId, asOf, assessmentId, scenarioId);
+
+        assertThat(actual).isSameAs(expected);
+        verify(nistAssessmentService).analyze(projectId, asOf, assessmentId, scenarioId);
     }
 }

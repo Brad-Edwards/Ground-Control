@@ -65,6 +65,7 @@ backend/src/main/java/com/keplerops/groundcontrol/
 │   ├── projects/                 # Project entity, repository, service
 │   ├── baselines/                # Baseline entity, repository, service
 │   ├── verification/             # VerificationResult entity, VerificationStatus/AssuranceLevel enums, repository, service
+│   ├── evidence/                 # EvidenceArtifact aggregate plus evidence collection adapter contracts
 │   ├── plugins/                  # Plugin interface, PluginRegistry, RegisteredPlugin entity, PluginType/PluginLifecycleState enums
 │   └── requirements/
 │       ├── model/                # JPA entities (Requirement, RequirementRelation, TraceabilityLink, RequirementEmbedding, etc.)
@@ -156,9 +157,40 @@ exports (alongside `request_id` / `tenant_id`). See [ADR-033](../../architecture
 
 **API:** RequirementController (9 REST endpoints), AnalysisController (5 endpoints), ImportController, SyncController, GraphController. GlobalExceptionHandler maps domain exceptions to HTTP error envelopes.
 
-**Frontend:** React 19 / TypeScript SPA served as embedded static resources from the Spring Boot JAR. Views: Dashboard (project health metrics), Requirements Explorer (browse/filter/author), Requirement Detail (fields, relations, traceability, audit), Dependency Graph (Cytoscape.js DAG visualization). See [ADR-017](../../architecture/adrs/017-interactive-web-application.md).
+**Read-side workspace endpoints (GC-Q010):** `GET /api/v1/threat-models/workspace` assembles scoped operational assets, boundaries, active flows, threat model entries (with linked controls, requirements, and evidence-freshness staleness indicators) as a read-only composition over existing aggregates. Optional query parameters: `assetId`, `stride` (`StrideCategory` enum), `status` (`ThreatModelStatus` enum), `asOf` (ISO 8601 instant), `freshnessWindowDays` (default 90, positive). Staleness per entry is the worst dominant evidence-freshness state across linked assets, computed by `EvidenceFreshnessAnalysisService.assetScopedEvidenceFreshness` (same substrate as the vendor-risk view). No new JPA aggregate or migration.
+
+**Read-side workspace endpoints (GC-Q009):** `GET /api/v1/risk-scenarios/workspace` assembles risk scenarios with their linked operational assets, controls, findings, evidence, requirements, risk assessments, treatment plans, and risk register memberships as a read-only composition over existing aggregates. Optional query parameters: `assetId`, `status` (`RiskScenarioStatus` enum), `methodologyProfileId`, `approvalState` (`RiskAssessmentApprovalStatus` enum), `treatmentStatus` (`TreatmentPlanStatus` enum), `asOf` (ISO 8601 instant), `freshnessWindowDays` (default 90, positive), `compare` (comma-separated UUIDs, max 10). Review indicator uses explicit signals only: `reassessmentRequiredAt` (highest severity) > register `nextReviewAt` > evidence freshness dominant state (never `updatedAt` or Envers history). No new JPA aggregate or migration.
+
+**Frontend:** React 19 / TypeScript SPA served as embedded static resources from the Spring Boot JAR. Views: Dashboard (project health metrics), Requirements Explorer (browse/filter/author), Requirement Detail (fields, relations, traceability, audit), Dependency Graph (Cytoscape.js DAG visualization), Threat Modeling Workspace (`p/:projectId/threat-modeling`, GC-Q010), Risk Scenario Workspace (`p/:projectId/risk-scenarios`, GC-Q009). See [ADR-017](../../architecture/adrs/017-interactive-web-application.md).
 
 **Tooling:** Status state machine with JML contracts (verified by OpenJML ESC + Z3), Flyway migrations, Spotless/Error Prone/SpotBugs/Checkstyle/JaCoCo, ArchUnit architecture tests, CI pipeline (build + test + integration + verify), production Dockerfile, GHCR publishing, E2E integration tests.
+
+## Mixed-Entity Graph Participants
+
+The mixed-entity graph (materialized via `AgeGraphService` + Apache AGE) now includes the following first-class domain participants, each backed by a `GraphProjectionContributor` that emits typed nodes into the project-scoped graph: Requirement, OperationalAsset (and Observation), RiskScenario, Control, ControlTest, ControlEffectivenessAssessment, VerificationResult, ThreatModel, Finding, EvidenceArtifact, Audit, RiskControlMapping, and Document (added GC-G007). GitHub Issues, external code references, and other artifacts without a backend aggregate remain external targets addressed by identifier only, not first-class graph nodes. Every first-class participant exposes a stable `graphNodeId` field on its REST response (via `GraphIds.nodeId`) for client-side graph navigation. Property keys emitted by contributors must be registered in `AgeGraphService.APPROVED_PROPERTY_KEYS` (ADR-032), and each new contributor must ship a regression test asserting that registration.
+
+## Mixed-Entity Graph Operations
+
+The four public operations on the mixed-entity graph (GC-G008) are:
+
+- `GET /api/v1/graph/visualization`—returns the full project-scoped graph as a flat node+edge list.
+- `POST /api/v1/graph/subgraph/query`—extracts a subgraph anchored at caller-supplied root node IDs.
+- `POST /api/v1/graph/traversal/query`—BFS neighborhood traversal with configurable depth and optional entity-type filter.
+- `POST /api/v1/graph/paths/query`—shortest-path queries between two node IDs.
+
+**Routing:** `GraphController` → `MixedGraphService` → `MixedGraphClient` → `AgeGraphService` (with JPA-projection fallback when Apache AGE is unavailable, per ADR-032). The JPA fallback builds the same `GraphProjection` shape from JPA aggregates so callers receive a consistent response regardless of AGE availability.
+
+**Node IDs** follow the form `GraphEntityType:UUID` (for example, `CONTROL:a1b2c3d4-…`), produced by `GraphIds.nodeId`. All four endpoints accept node IDs in this format; IDs are validated against the resolved project's projection (not globally), so cross-project references are always rejected.
+
+**Project-scope enforcement:** every operation resolves a single project (via the `project` query parameter) before the graph projection is built. Caller-supplied node IDs are validated only after that projection is materialized, ensuring no cross-project data leaks through traversal.
+
+**Traversal bounds:** `GraphTraversalLimits` is the canonical bound policy covering:
+- Maximum root node count per request.
+- Maximum BFS depth cap.
+- Projection node and edge caps (guards against pathologically large graphs).
+- Path result count cap (limits `paths/query` result sets).
+
+**Legacy compatibility:** `/api/v1/requirements/graph/**` routes remain available as requirement-only compatibility endpoints. They must not be extended for mixed-entity traversal; all new cross-entity graph operations go through `/api/v1/graph/**`.
 
 ## Status Drift Analysis
 
@@ -182,6 +214,7 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 - Multi-tenancy
 - Search
 - Concrete verifier adapter implementations in `infrastructure/verifiers/` (ADR-014 §6). The `VerifierAdapter` port interface and request/outcome contracts are defined in the domain layer; future work is implementing adapters for each prover (OpenJML, TLA+/TLC, OPA/Rego, Frama-C, manual review).
+- Concrete evidence collection adapter implementations. The `EvidenceCollectionAdapter` port interface, request/result contracts, and classpath/dynamic descriptor registry are defined in the domain layer; external-system collectors belong in infrastructure or trusted plugin code.
 - Traceability Matrix view (`/traceability`) and Audit Timeline view (`/audit`) in the frontend
 - Apache AGE is optional—the app gracefully degrades to JPA-only analysis when AGE is unavailable
 
@@ -190,7 +223,22 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 - `specs/tla/` for design-level verification artifacts and state-machine specs, aligned with ADR-014
 - Verification result storage (VerificationResult entity with eager-loaded target/requirement, enums, CRUD API, MCP tools)—ADR-014 §2 common schema
 - Pluggable verifier adapter interface (`VerifierAdapter`, `VerificationRequest`, `VerificationOutcome`)—ADR-014 §6 port contract for multi-tool integration
+- Pluggable evidence collection adapter interface (`EvidenceCollectionAdapter`, `EvidenceCollectionRequest`, `EvidenceCollectionResult`) plus `EvidenceCollectionAdapterRegistry` in the evidence service package. This is the GC-S001 port contract for agent-invoked external evidence collection.
 - Self-referential traceability enforcement—`check_live_policy.mjs` verifies substantive code files have reverse traceability links to requirements (GC-O002), using the `GET /requirements/traceability/by-artifact` reverse lookup endpoint. Lookup errors are tracked separately for debuggability when the endpoint is unavailable.
+
+## MethodologyProfile Aggregate and Risk Terminology Crosswalk (GC-T012)
+
+`MethodologyProfile` is the aggregate that defines a risk assessment methodology in a project scope. Each profile carries its input/output JSON schemas, an optional treatment-strategy vocabulary, and (from GC-T012) a **profile-scoped crosswalk** list.
+
+### Crosswalk model
+
+A crosswalk entry maps one concrete source field path (within a profile's `inputSchema`, `outputSchema`, or `treatmentStrategyVocabulary`) to one value in the normalized ten-concept vocabulary: `THREAT_SOURCE`, `THREAT_EVENT`, `VULNERABILITY_OR_EXPOSURE`, `ASSET`, `PROCESS_OR_OBJECTIVE`, `CONSEQUENCE_OR_EFFECT`, `CONTROL`, `LIKELIHOOD_OR_FREQUENCY`, `IMPACT_OR_LOSS_MAGNITUDE`, `TREATMENT`.
+
+The crosswalk is **classifier-only**. It is a declarative labeling layer. It does not aggregate cross-methodology risk scores, collapse method-specific fields into a single ambiguous value, or rewrite assessment result payloads. Assessment outputs remain traceable to their originating methodology profile via `methodologyProfileId`/`profileKey`/`family`/`version` on every `RiskAssessmentResult`.
+
+The crosswalk list is persisted as a JSON-typed `TEXT` column (`crosswalk_entries`) on the `methodology_profile` table via `JacksonTextCollectionConverters.CrosswalkEntryListConverter`. The column is audited via `methodology_profile_aud` under Envers/ADR-026 parity. No separate table is used; the crosswalk is small per profile and is always fetched with the profile.
+
+The two supporting enums (`NormalizedConcept`, `CrosswalkVocabularySurface`) are mirrored at the MCP (`lib.js` constant arrays) and frontend (`api.ts` union types + const arrays) boundaries per ADR-034, and enforced by `tools/policy/checks.py::ENUM_CONTRACT_INVENTORY`.
 
 ## Knowledge Ingest Engine (repo-local, out of the product model)
 

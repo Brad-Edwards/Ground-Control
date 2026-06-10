@@ -178,9 +178,9 @@ ESC runs on **pure logic classes** with no String constructor parameters and no 
 Other `state/` packages contain simple value enums (L0) that are **not** ESC-verified:
 - `domain/assets/state/`: `AssetType`, `AssetLinkTargetType`, `AssetLinkType`, `AssetRelationType`, `ObservationCategory`, plus the GC-M012 trio `AssetCriticality` / `AssetEnvironment` / `AssetScope`, plus the GC-M011 `AssetSubtypeSchemaStatus` (`ACTIVE → DEPRECATED`; mirrors `MethodologyProfileStatus`; pure value enum; the one-ACTIVE-per-`(project, assetType, subtype)` invariant lives in `AssetService.registerSubtypeSchema` rather than the enum, so the enum itself stays L0), plus the GC-M018 `KnowledgeState` (`CONFIRMED` / `PROVISIONAL` / `UNKNOWN`; pure value enum with an explicit-strength `atLeast` comparator—strength is declared as a numeric field rather than read from `Enum.ordinal()` because errorprone's `EnumOrdinal` flags ordinal-based comparison; no transitions, no invariants)
 - `domain/controls/state/`: `ControlFunction`, `ControlStatus`, `ControlLinkTargetType`, `ControlLinkType`, `ControlTestMethodology`, `ControlTestConclusion`, `ControlEffectivenessRating` (ADR-039: pure value enums for GC-I012/GC-I013—no transitions, no invariants)
-- `domain/riskscenarios/state/`—risk scenario link and status enums; per GC-T004 / C6 adds `ActionItemStatus` (`PLANNED`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `CANCELED`) as the typed status tag on `TreatmentPlan` action items. Distinct from `TreatmentPlanStatus` (item `DONE` ≠ plan `COMPLETED`); no transitions or invariants on the enum, L0.
+- `domain/riskscenarios/state/`—risk scenario link and status enums; per GC-T004 / C6 adds `ActionItemStatus` (`PLANNED`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `CANCELED`) as the typed status tag on `TreatmentPlan` action items. Distinct from `TreatmentPlanStatus` (item `DONE` ≠ plan `COMPLETED`); no transitions or invariants on the enum, L0. Per GC-T012 also adds `NormalizedConcept` (the ten cross-methodology risk concepts: `THREAT_SOURCE`, `THREAT_EVENT`, `VULNERABILITY_OR_EXPOSURE`, `ASSET`, `PROCESS_OR_OBJECTIVE`, `CONSEQUENCE_OR_EFFECT`, `CONTROL`, `LIKELIHOOD_OR_FREQUENCY`, `IMPACT_OR_LOSS_MAGNITUDE`, `TREATMENT`) and `CrosswalkVocabularySurface` (`INPUT_SCHEMA`, `OUTPUT_SCHEMA`, `TREATMENT_STRATEGY_VOCABULARY`); pure value enums classifying `CrosswalkEntry` rows on `MethodologyProfile`; no transitions or invariants on the enums; semantic validation lives in `MethodologyProfileService.validateCrosswalkEntries` (duplicate-tuple, surface-presence, field-path resolution, conversion-rule requires scale/units), not on the enum; L0.
 - `domain/riskcontrol/state/`: `MappingControlRole` (`PREVENTIVE`, `DETECTIVE`, `CORRECTIVE`, `DETERRENT`, `COMPENSATING`, `RECOVERY`, `DIRECTIVE`; pure value enum for GC-T003—no transitions, no invariants; L0)
-- `domain/plugins/state/`: `PluginType`, `PluginLifecycleState` enums
+- `domain/plugins/state/`: `PluginType` (`EVIDENCE_COLLECTOR` included for GC-S001 adapter registration), `PluginLifecycleState` enums
 - `domain/controlpacks/state/`: `ControlPackLifecycleState`, `ControlPackEntryStatus` enums
 - `domain/packregistry/state/`: `PackType`, `CatalogStatus`, `TrustOutcome`, `InstallOutcome`, `TrustPolicyField`, `TrustPolicyRuleOperator` enums
 - `domain/threatmodels/state/`: `ThreatModelStatus` (simple DRAFT→ACTIVE→ARCHIVED lifecycle, same pattern as `RiskScenarioStatus`), `StrideCategory`, `ThreatModelLinkTargetType` (now includes `FINDING` per GC-H009—still a pure value enum, no invariants; dispatch lives in `GraphTargetResolverService`), `ThreatModelLinkType` (pure value enums, no invariants; ADR-024 treats threat modeling as an analysis surface at L0)
@@ -389,3 +389,25 @@ restore procedure.
 - PRs require: `./gradlew check` passes (build + spotlessCheck + test + jacocoTestReport).
 - Commit messages: imperative mood. `Add risk scoring engine` not `Added risk scoring engine`.
 - Pre-commit hooks run file checks + gitleaks + Spotless auto-format + `./gradlew check` (full CI-equivalent: build + tests + static analysis + coverage) + `./gradlew openjmlEsc` (formal verification of JML contracts in ESC scope) + Terraform fmt/validate + Checkov IaC security scanning (on `deploy/terraform/`). Do not bypass with `--no-verify`.
+
+## Enum placement under `domain/**/state/`
+
+The `state/` package holds two distinct kinds of enums and the formal-methods
+classification depends on which kind:
+
+- **State machines.** Enums that define a `canTransitionTo(...)` lifecycle,
+  for example `TreatmentPlanStatus` and `ControlStatus`. These are L1+
+  contract surfaces; transition rules must be unit-tested and ADR-012's L1
+  rule applies.
+- **Tag enums.** Enums that are pure classifiers with no transition surface,
+  for example `AssetLinkTargetType`, the `ReassessmentTriggerCategory` /
+  `ReassessmentTriggerTargetType` added for GC-T004 / C8 in issue #863,
+  and the NIST SP 800-30 Rev. 1 classifiers `ThreatEventKind`,
+  `ThreatSourceRelevance`, `NistLikelihoodBand`, and `NistImpactBand` added
+  for GC-T014 / #721. These are L0 data; the placement under `state/`
+  follows convention only.
+
+When adding a new file under `state/`, classify it explicitly in the file
+header or the introducing PR's plan. The policy rule that requires this
+section to be touched alongside new state files is a forcing function; the
+real classification is the one above.

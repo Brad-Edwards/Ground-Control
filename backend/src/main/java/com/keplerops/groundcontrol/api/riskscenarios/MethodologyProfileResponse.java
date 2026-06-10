@@ -2,10 +2,12 @@ package com.keplerops.groundcontrol.api.riskscenarios;
 
 import com.keplerops.groundcontrol.domain.graph.model.GraphEntityType;
 import com.keplerops.groundcontrol.domain.graph.model.GraphIds;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.CrosswalkEntry;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyProfileStatus;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -22,6 +24,7 @@ public record MethodologyProfileResponse(
         Map<String, Object> outputSchema,
         MethodologyProfileStatus status,
         Map<String, Object> treatmentStrategyVocabulary,
+        List<CrosswalkEntry> crosswalkEntries,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -39,6 +42,7 @@ public record MethodologyProfileResponse(
                 profile.getOutputSchema(),
                 profile.getStatus(),
                 profile.getTreatmentStrategyVocabulary(),
+                profile.getCrosswalkEntries(),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt());
     }

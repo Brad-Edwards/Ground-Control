@@ -7,6 +7,7 @@ import com.keplerops.groundcontrol.domain.audits.repository.AuditRepository;
 import com.keplerops.groundcontrol.domain.audits.state.AuditLinkTargetType;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlRepository;
 import com.keplerops.groundcontrol.domain.controls.state.ControlLinkTargetType;
+import com.keplerops.groundcontrol.domain.documents.repository.DocumentRepository;
 import com.keplerops.groundcontrol.domain.evidence.repository.EvidenceArtifactRepository;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.findings.repository.FindingRepository;
@@ -17,6 +18,7 @@ import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmen
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskRegisterRecordRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.TreatmentPlanRepository;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerTargetType;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkTargetType;
 import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelRepository;
 import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelLinkTargetType;
@@ -47,6 +49,7 @@ public class GraphTargetResolverService {
     private static final String LABEL_FINDING = "Finding";
     private static final String LABEL_AUDIT = "Audit";
     private static final String LABEL_EVIDENCE = "Evidence";
+    private static final String LABEL_DOCUMENT = "Document";
 
     private final RequirementRepository requirementRepository;
     private final OperationalAssetRepository assetRepository;
@@ -62,6 +65,7 @@ public class GraphTargetResolverService {
     private final FindingRepository findingRepository;
     private final AuditRepository auditRepository;
     private final EvidenceArtifactRepository evidenceArtifactRepository;
+    private final DocumentRepository documentRepository;
 
     public GraphTargetResolverService(
             RequirementRepository requirementRepository,
@@ -77,7 +81,8 @@ public class GraphTargetResolverService {
             VerificationResultRepository verificationResultRepository,
             FindingRepository findingRepository,
             AuditRepository auditRepository,
-            EvidenceArtifactRepository evidenceArtifactRepository) {
+            EvidenceArtifactRepository evidenceArtifactRepository,
+            DocumentRepository documentRepository) {
         this.requirementRepository = requirementRepository;
         this.assetRepository = assetRepository;
         this.observationRepository = observationRepository;
@@ -92,6 +97,7 @@ public class GraphTargetResolverService {
         this.findingRepository = findingRepository;
         this.auditRepository = auditRepository;
         this.evidenceArtifactRepository = evidenceArtifactRepository;
+        this.documentRepository = documentRepository;
     }
 
     public ValidatedTarget validateAssetTarget(
@@ -362,6 +368,47 @@ public class GraphTargetResolverService {
                     targetEntityId, findingRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_FINDING);
             case FRAMEWORK, EXTERNAL -> externalTarget(targetIdentifier);
         };
+    }
+
+    public ValidatedTarget validateReassessmentTriggerTarget(
+            UUID projectId, ReassessmentTriggerTargetType targetType, UUID targetEntityId, String targetIdentifier) {
+        return switch (targetType) {
+            case ASSET -> internalTarget(
+                    targetEntityId, assetRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_ASSET);
+            case CONTROL -> internalTarget(
+                    targetEntityId, controlRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_CONTROL);
+            case RISK_SCENARIO -> internalTarget(
+                    targetEntityId,
+                    riskScenarioRepository.existsByIdAndProjectId(targetEntityId, projectId),
+                    LABEL_RISK_SCENARIO);
+            case RISK_REGISTER_RECORD -> internalTarget(
+                    targetEntityId,
+                    riskRegisterRecordRepository
+                            .findByIdAndProjectIdWithScenarios(targetEntityId, projectId)
+                            .isPresent(),
+                    LABEL_RISK_REGISTER_RECORD);
+            case RISK_ASSESSMENT_RESULT -> internalTarget(
+                    targetEntityId,
+                    riskAssessmentResultRepository
+                            .findByIdAndProjectIdWithObservations(targetEntityId, projectId)
+                            .isPresent(),
+                    LABEL_RISK_ASSESSMENT_RESULT);
+            case TREATMENT_PLAN -> internalTarget(
+                    targetEntityId,
+                    treatmentPlanRepository
+                            .findByIdAndProjectId(targetEntityId, projectId)
+                            .isPresent(),
+                    LABEL_TREATMENT_PLAN);
+            case EXTERNAL -> externalTarget(targetIdentifier);
+        };
+    }
+
+    public ValidatedTarget validateDocumentTarget(UUID projectId, UUID targetEntityId) {
+        if (targetEntityId == null) {
+            throw new DomainValidationException(LABEL_DOCUMENT + " links require targetEntityId");
+        }
+        return internalTarget(
+                targetEntityId, documentRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_DOCUMENT);
     }
 
     private ValidatedTarget internalTarget(UUID targetEntityId, boolean exists, String label) {

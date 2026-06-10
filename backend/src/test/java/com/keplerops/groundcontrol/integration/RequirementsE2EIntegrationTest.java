@@ -518,6 +518,13 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "122", // V122: create risk_control_mapping_audit
                         "123", // V123: create mapping_evidence_audit (Envers @ElementCollection shadow)
                         "124", // V124: add treatment_plan methodology binding columns (GC-T004 C5)
-                        "125"); // V125: add methodology_profile treatment_strategy_vocabulary (GC-T004 C5)
+                        "125", // V125: add methodology_profile treatment_strategy_vocabulary (GC-T004 C5)
+                        "126", // V126: add risk_assessment_result reassessment_required_at (GC-T004 C8)
+                        "127", // V127: FAIR-CRST rename risk_scenario axes + drop vulnerability (GC-T013)
+                        "128", // V128: expand seeded NIST SP 800-30 Rev. 1 profile schema (GC-T014)
+                        "129", // V129: add methodology_profile crosswalk_entries column (GC-T012)
+                        "130", // V130: add methodology_profile_aud crosswalk_entries column (GC-T012 audit parity)
+                        "131", // V131: add project.type + create research_intake (ADR-056, #999)
+                        "132"); // V132: create research_intake_audit (ADR-056, #999)
     }
 }

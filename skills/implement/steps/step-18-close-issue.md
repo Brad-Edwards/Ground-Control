@@ -6,7 +6,7 @@ tier: low
 
 # Step 18: Clear the In-Progress Label
 
-The GitHub issue is closed **by `Closes #<issue-number>` in the PR body** when the user merges the PR. That is the only canonical close mechanism: the issue closes atomically with the merge that ships the work, the close event carries the merging commit and PR number, and there is exactly one timeline event tying the issue to the code. Do NOT run `gh issue close` here. Closing the issue from the agent decouples the close from the merge; an unmerged or rolled-back PR then leaves a closed issue with no shipped code behind it, and GitHub does not re-open issues on PR revert.
+The GitHub issue is **not** closed at Step 18. Two paths drive the actual close: (a) the `Closes #<issue-number>` keyword in the PR body fires GitHub's auto-close when the user merges, and (b) the agent re-enters at **Phase E (Step 20)** after the merge and calls `gc_close_issue_after_merge`, which verifies `merged_at` non-null before running the close (issue #1058). The tool is idempotent — if GitHub already auto-closed via the keyword, Step 20 sees `already_closed: true` and no-ops. Do NOT run `gh issue close` from Step 18; closing the issue from the agent before merge decouples the close from the merge, and an unmerged or rolled-back PR would then leave a closed issue with no shipped code behind it (GitHub does not re-open issues on PR revert).
 
 Step 18 only clears the `in-progress` flag set in Step 1:
 
@@ -24,9 +24,9 @@ The label says, "an agent is actively working this issue." By the time Step 18 r
   "cached_for_next_step": {
     "issue_closed": false,
     "in_progress_label_removed": true,
-    "close_mechanism": "pr_body_closes_keyword"
+    "close_mechanism": "phase_e_gc_close_issue_after_merge"
   }
 }
 ```
 
-`issue_closed` is `false` because the issue stays open until the PR merges. `close_mechanism` records the contract (`pr_body_closes_keyword`) so downstream readers know the close path is not the agent.
+`issue_closed` is `false` because the issue stays open until the PR merges and Phase E (Step 20) verifies-and-closes. `close_mechanism` records the contract (`phase_e_gc_close_issue_after_merge`) so downstream readers know the close path is a structured MCP-tool gate, not free-form `gh issue close`.

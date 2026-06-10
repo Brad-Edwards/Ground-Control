@@ -29,6 +29,7 @@ from tools.policy.checks import (
     run_no_deferral_disposition_check,
     run_pr_body_check,
     run_test_quality_decision_record_contract,
+    run_traceability_reconciliation_gate_contract,
 )
 
 
@@ -488,6 +489,12 @@ class PolicyChecksTest(unittest.TestCase):
                 "ChangeCategory",
                 "AuditType",
                 "AuditStatus",
+                "ThreatEventKind",
+                "ThreatSourceRelevance",
+                "NistLikelihoodBand",
+                "NistImpactBand",
+                "NormalizedConcept",
+                "CrosswalkVocabularySurface",
             },
         )
         for contract in ENUM_CONTRACT_INVENTORY:
@@ -567,6 +574,52 @@ class PolicyChecksTest(unittest.TestCase):
             violations = run_enum_contract_check(root=root)
             codes = {v.code for v in violations}
             self.assertIn("enum-contract-source-missing", codes)
+
+    def test_enum_contract_normalized_concept_positive(self):
+        # GC-T012: NORMALIZED_CONCEPTS in api.ts and lib.js must match NormalizedConcept.java
+        violations = run_enum_contract_check(root=REPO_ROOT)
+        labels = {v.details[0] if v.details else "" for v in violations}
+        self.assertNotIn("NormalizedConcept", " ".join(labels))
+
+    def test_enum_contract_normalized_concept_drift(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._copy_enum_sources(root)
+            api_ts = root / FRONTEND_API_TYPES_PATH
+            text = api_ts.read_text(encoding="utf-8")
+            # Remove TREATMENT from both the union and the constant array.
+            text = text.replace('  | "TREATMENT"\n', "")
+            text = text.replace('  "TREATMENT",\n', "")
+            api_ts.write_text(text, encoding="utf-8")
+            violations = run_enum_contract_check(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("enum-contract-drift", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("NormalizedConcept", details)
+            self.assertIn("TREATMENT", details)
+
+    def test_enum_contract_crosswalk_vocabulary_surface_positive(self):
+        # GC-T012: CROSSWALK_VOCABULARY_SURFACES in api.ts and lib.js must match CrosswalkVocabularySurface.java
+        violations = run_enum_contract_check(root=REPO_ROOT)
+        labels = {v.details[0] if v.details else "" for v in violations}
+        self.assertNotIn("CrosswalkVocabularySurface", " ".join(labels))
+
+    def test_enum_contract_crosswalk_vocabulary_surface_drift(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._copy_enum_sources(root)
+            api_ts = root / FRONTEND_API_TYPES_PATH
+            text = api_ts.read_text(encoding="utf-8")
+            # Remove OUTPUT_SCHEMA from the constant array.
+            text = text.replace('  "OUTPUT_SCHEMA",\n', "")
+            text = text.replace('  | "OUTPUT_SCHEMA"\n', "")
+            api_ts.write_text(text, encoding="utf-8")
+            violations = run_enum_contract_check(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("enum-contract-drift", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("CrosswalkVocabularySurface", details)
+            self.assertIn("OUTPUT_SCHEMA", details)
 
     def test_deferral_classifier_matches_golden_cases(self):
         # The shared golden-case file is the single source of truth for what
@@ -1733,6 +1786,117 @@ class TestQualityDecisionRecordContractTest(unittest.TestCase):
         # Graceful skip — no hard fail, no fixture-error either
         codes = [v.code for v in violations]
         self.assertNotIn("doc-coverage-outcome-missing", codes)
+
+
+# ---------------------------------------------------------------------------
+# Traceability-reconciliation gate contract (issue #1058).
+#
+# Tests that the prose surfaces required by the gate stay in sync with the
+# MCP-tool enforcement. The check reads four files; tests use a temp REPO_ROOT
+# overlay so the gate doesn't fight the real repo state during test runs.
+# ---------------------------------------------------------------------------
+
+
+class TraceabilityReconciliationGateContractTest(unittest.TestCase):
+    """Structural gate for the issue #1058 traceability + post-merge close gate."""
+
+    _FILES = {
+        "skills/implement/SKILL.md": (
+            "## Phase boundaries\n\nPhase E is the post-merge close phase.\n"
+            "Phase E calls `gc_close_issue_after_merge` after the user merges.\n"
+        ),
+        "skills/implement/steps/step-17-verify.md": (
+            "# Step 17: Verify Ground Control State Landed\n\n"
+            "Call `gc_assert_traceability_reconciled` to post the marker.\n"
+        ),
+        "skills/implement/steps/step-19-final-report.md": (
+            "# Step 19: Report\n\n"
+            "`gc_post_final_report` refuses without `traceability_reconciled`.\n"
+        ),
+        "skills/implement/steps/step-20-close-issue-on-merge.md": (
+            "# Step 20: Close the Issue (Phase E, Post-Merge)\n\n"
+            "Calls `gc_close_issue_after_merge` to verify merged_at and close.\n"
+        ),
+    }
+
+    def _populate(self, root: Path, overrides: dict[str, str | None] | None = None) -> None:
+        """Write each fixture file under root; overrides=None to skip a file or replace its body."""
+        overrides = overrides or {}
+        for rel_path, body in self._FILES.items():
+            if rel_path in overrides:
+                override = overrides[rel_path]
+                if override is None:
+                    continue  # file intentionally missing
+                body = override
+            path = root / rel_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+
+    def test_check_passes_when_all_four_surfaces_carry_required_tokens(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._populate(root)
+            violations = run_traceability_reconciliation_gate_contract(root=root)
+            self.assertEqual(violations, [])
+
+    def test_check_flags_step17_missing_gc_assert_traceability_reconciled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._populate(root, overrides={
+                "skills/implement/steps/step-17-verify.md":
+                    "# Step 17: Verify Ground Control State Landed\n\nNo MCP call.\n",
+            })
+            violations = run_traceability_reconciliation_gate_contract(root=root)
+            self.assertTrue(violations)
+            codes = {v.code for v in violations}
+            self.assertIn("traceability-gate-step17-missing", codes)
+
+    def test_check_flags_step19_missing_traceability_reconciled_marker_name(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._populate(root, overrides={
+                "skills/implement/steps/step-19-final-report.md":
+                    "# Step 19: Report\n\nFinal report posted.\n",
+            })
+            violations = run_traceability_reconciliation_gate_contract(root=root)
+            self.assertTrue(violations)
+            codes = {v.code for v in violations}
+            self.assertIn("traceability-gate-step19-missing", codes)
+
+    def test_check_flags_step20_missing_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._populate(root, overrides={
+                "skills/implement/steps/step-20-close-issue-on-merge.md": None,
+            })
+            violations = run_traceability_reconciliation_gate_contract(root=root)
+            self.assertTrue(violations)
+            codes = {v.code for v in violations}
+            self.assertIn("traceability-gate-step20-missing", codes)
+
+    def test_check_flags_skill_missing_phase_e(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._populate(root, overrides={
+                "skills/implement/SKILL.md":
+                    "## Phase boundaries\n\nPhases A-D run in order; call `gc_close_issue_after_merge` at the end.\n",
+            })
+            violations = run_traceability_reconciliation_gate_contract(root=root)
+            self.assertTrue(violations)
+            codes = {v.code for v in violations}
+            self.assertIn("traceability-gate-skill-missing", codes)
+
+    def test_check_flags_skill_missing_close_tool_name(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._populate(root, overrides={
+                "skills/implement/SKILL.md":
+                    "## Phase boundaries\n\nPhase E runs after merge; the user authorizes the close.\n",
+            })
+            violations = run_traceability_reconciliation_gate_contract(root=root)
+            self.assertTrue(violations)
+            codes = {v.code for v in violations}
+            self.assertIn("traceability-gate-skill-missing", codes)
 
 
 # ---------------------------------------------------------------------------

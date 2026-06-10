@@ -81,4 +81,19 @@ class GrcAnalysisIntegrationTest extends BaseIntegrationTest {
                                 "not a first-class vendor aggregate; modeled as OperationalAsset.THIRD_PARTY"
                                         + " per GC-L009 carve-out"))));
     }
+
+    @Test
+    void nistAssessment_returnsMethodologyAttributedEnvelopeForSeedProject() throws Exception {
+        mockMvc.perform(get("/api/v1/analysis/grc/nist-sp-800-30").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisKind", is("nist_assessment")))
+                .andExpect(jsonPath("$.project", is("ground-control")))
+                .andExpect(jsonPath("$.derivationMethod", is("nist-sp800-30-rev1-5x5-matrix-v1")))
+                .andExpect(jsonPath("$.scale", is("ordinal")))
+                .andExpect(jsonPath("$.units", is("qualitative ordinal levels")))
+                .andExpect(jsonPath("$.matrixConversionRule").exists())
+                .andExpect(jsonPath("$.assessments").isArray())
+                .andExpect(jsonPath("$.counts.total").isNumber())
+                .andExpect(jsonPath("$.limitations").isArray());
+    }
 }

@@ -89,6 +89,7 @@ When in doubt, use L0 during pre-alpha. The bar rises at beta.
 | `domain/requirements/state/StatusDriftSignal.java` | L0 | Pure value enum; `switch`-mapped `defaultConfidence()` accessor, no transitions or invariants (status-drift analysis support per ADR-011 §9) |
 | `domain/evidence/state/EvidenceType.java` | L0 | Pure value enum; semantic role tag on `EvidenceArtifact` (GC-M016 / ADR-044), no transitions or invariants |
 | `domain/evidence/state/EvidenceSourceKind.java` | L0 | Pure value enum; internal-vs-external source-reference discriminator (GC-M016 / ADR-044), with an `isInternal()` predicate but no state transitions |
+| `domain/plugins/state/PluginType.java` | L0 | Pure plugin capability enum; `EVIDENCE_COLLECTOR` identifies GC-S001 evidence adapter registrations, with no transitions or invariants |
 | `domain/requirements/service/StatusDriftService.java` | L0 | Read-only derived analysis (ADR-011 §9); a service, not a state machine or security boundary—one-test-per-behavior is sufficient |
 | `domain/exception/` | L0 | Data carriers only |
 | `api/GlobalExceptionHandler` | L0 | Mapping layer, no domain logic |
@@ -194,6 +195,17 @@ SDD extends TDD by adding contracts as a specification layer:
 - Assurance levels L0-L3 are codified as the `AssuranceLevel` enum in `domain/verification/state/AssuranceLevel.java`.
 - Verification outcomes are codified as the `VerificationStatus` enum in `domain/verification/state/VerificationStatus.java`.
 - Both enums are used by the `VerificationResult` entity (ADR-014 §2, GC-F001).
+- Not every enum under `domain/**/state/` is a state machine. Tag enums that
+  do not define a `canTransitionTo` lifecycle (for example,
+  `ReassessmentTriggerCategory` and `ReassessmentTriggerTargetType` added for
+  GC-T004 / C8 in issue #863; `ThreatEventKind`, `ThreatSourceRelevance`,
+  `NistLikelihoodBand`, and `NistImpactBand` added for GC-T014 / #721 to
+  carry NIST SP 800-30 Rev. 1 vocabulary at the API/MCP boundary;
+  `NormalizedConcept` and `CrosswalkVocabularySurface` added for GC-T012 /
+  #719 to classify cross-methodology crosswalk entries on
+  `MethodologyProfile`) are L0 data classifiers, not L1+ contract surfaces;
+  placement under `state/` follows the existing repo convention for
+  domain-enum location, not an assertion that JML contracts apply.
 
 ## Related ADRs
 

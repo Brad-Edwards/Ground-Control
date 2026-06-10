@@ -7,8 +7,8 @@ workflow:
   lint_command: cd backend && ./gradlew spotlessCheck
   format_command: cd backend && ./gradlew spotlessApply
 sonarcloud:
-  project_key: KeplerOps_Ground-Control
-  organization: KeplerOps
+  project_key: Brad-Edwards_Ground-Control
+  organization: brad-edwards
 rules:
   plan_rules: .gc/plan-rules.md
 knowledge:
@@ -107,6 +107,9 @@ routing:
       tier: low
       model: claude-haiku-4-5
     final_report:
+      tier: low
+      model: claude-haiku-4-5
+    close_issue_after_merge:
       tier: low
       model: claude-haiku-4-5
 telemetry:

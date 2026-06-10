@@ -50,6 +50,12 @@ describe("gcAuditZodShape", () => {
   const schema = z.object(gcAuditZodShape);
 
   it("preserves every backend create body field through Zod parse", () => {
+    // Supply every backend-recognized field. The assertion is that none get
+    // silently stripped — if the Zod shape lacks a key, parse drops the
+    // caller's value and the wire body is missing it (issue #875 for the
+    // threat-model variant). Optional fields absent from the input are
+    // dropped by Zod by design, so this test must include every field it
+    // expects to round-trip.
     const parsed = schema.parse({
       action: "create",
       uid: "AUDIT-1",
@@ -57,6 +63,7 @@ describe("gcAuditZodShape", () => {
       audit_type: "INTERNAL",
       scope_description: "All prod systems.",
       objectives: ["Assess controls"],
+      phases: [{ kind: "PLANNING" }],
       team_members: ["alice"],
     });
     for (const k of GC_AUDIT_CREATE_BODY_FIELDS) {

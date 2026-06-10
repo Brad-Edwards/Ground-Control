@@ -83,15 +83,12 @@ public class RiskScenarioService {
                 project,
                 command.uid(),
                 command.title(),
-                command.threatSource(),
-                command.threatEvent(),
-                command.affectedObject(),
-                command.consequence());
+                command.threat(),
+                command.method(),
+                command.asset(),
+                command.effect());
         scenario.setTimeHorizon(command.timeHorizon());
         scenario.setCreatedBy(ActorHolder.get());
-        if (command.vulnerability() != null) {
-            scenario.setVulnerability(command.vulnerability());
-        }
 
         var saved = riskScenarioRepository.save(scenario);
         log.info(
@@ -110,29 +107,26 @@ public class RiskScenarioService {
         // partial update could corrupt records the create path would refuse.
         // Mirrors ThreatModelService.update (issue #876).
         rejectBlankIfPresent("title", command.title());
-        rejectBlankIfPresent("threatSource", command.threatSource());
-        rejectBlankIfPresent("threatEvent", command.threatEvent());
-        rejectBlankIfPresent("affectedObject", command.affectedObject());
-        rejectBlankIfPresent("consequence", command.consequence());
+        rejectBlankIfPresent("threat", command.threat());
+        rejectBlankIfPresent("method", command.method());
+        rejectBlankIfPresent("asset", command.asset());
+        rejectBlankIfPresent("effect", command.effect());
         rejectBlankIfPresent("timeHorizon", command.timeHorizon());
 
         if (command.title() != null) {
             scenario.setTitle(command.title());
         }
-        if (command.threatSource() != null) {
-            scenario.setThreatSource(command.threatSource());
+        if (command.threat() != null) {
+            scenario.setThreat(command.threat());
         }
-        if (command.threatEvent() != null) {
-            scenario.setThreatEvent(command.threatEvent());
+        if (command.method() != null) {
+            scenario.setMethod(command.method());
         }
-        if (command.affectedObject() != null) {
-            scenario.setAffectedObject(command.affectedObject());
+        if (command.asset() != null) {
+            scenario.setAsset(command.asset());
         }
-        if (command.vulnerability() != null) {
-            scenario.setVulnerability(command.vulnerability());
-        }
-        if (command.consequence() != null) {
-            scenario.setConsequence(command.consequence());
+        if (command.effect() != null) {
+            scenario.setEffect(command.effect());
         }
         if (command.timeHorizon() != null) {
             scenario.setTimeHorizon(command.timeHorizon());

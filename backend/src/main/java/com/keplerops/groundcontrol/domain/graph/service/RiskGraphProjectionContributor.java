@@ -51,11 +51,10 @@ public class RiskGraphProjectionContributor implements GraphProjectionContributo
                     Map<String, Object> properties = new LinkedHashMap<>();
                     properties.put("title", scenario.getTitle());
                     properties.put("status", scenario.getStatus().name());
-                    properties.put("threatSource", scenario.getThreatSource());
-                    properties.put("threatEvent", scenario.getThreatEvent());
-                    properties.put("affectedObject", scenario.getAffectedObject());
-                    properties.put("vulnerability", scenario.getVulnerability());
-                    properties.put("consequence", scenario.getConsequence());
+                    properties.put("threat", scenario.getThreat());
+                    properties.put("method", scenario.getMethod());
+                    properties.put("asset", scenario.getAsset());
+                    properties.put("effect", scenario.getEffect());
                     properties.put("timeHorizon", scenario.getTimeHorizon());
                     properties.put("createdBy", scenario.getCreatedBy());
                     return new GraphNode(

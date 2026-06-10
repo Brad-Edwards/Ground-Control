@@ -66,6 +66,11 @@ row unless the caller is explicitly editing that same result.
   contract for `entity=risk_assessment_result` must mirror the backend
   create/update DTO fields for this aggregate, not the generic register-record
   or scenario fields.
+- Enum mirrors: `RiskAssessmentApprovalStatus` is the backend authority for
+  approval-state transitions. MCP `RISK_ASSESSMENT_APPROVAL_STATUSES` and any
+  future frontend union/constant for this enum are mirrors; if the enum changes,
+  update every mirror and add a policy inventory row or focused mirror test so
+  drift is not caught only by a runtime 422.
 
 ## Cross-Cutting Layers
 
@@ -111,6 +116,13 @@ row unless the caller is explicitly editing that same result.
   `GROUND_CONTROL_PACK_REGISTRY_ADMIN_TOKEN`. Do not add per-tool HTTP clients,
   caller-supplied headers, caller-supplied tokens, or ad hoc URL construction
   for assessment results.
+- Opaque value-bag keys: `inputFactors`, `uncertaintyMetadata`, and
+  `computedOutputs` are methodology-defined maps. Transport mappers may rename
+  the top-level DTO fields (`input_factors` -> `inputFactors`) but must preserve
+  nested keys exactly (for example FAIR keys such as `threat_event_frequency`).
+  If MCP handles these fields, include both snake_case and camelCase names in
+  the shared opaque-value-key guard instead of adding entity-local map copying or
+  letting `toCamelCase` recurse through methodology payloads.
 - Tests and policy: controller changes need `@WebMvcTest`; semantic rules need
   service tests; approval-state rules need state-machine tests; graph/evidence
   behavior needs projection and resolver coverage; schema changes need migration
@@ -182,6 +194,9 @@ paths instead of adding assessment-only evidence tables.
 - Do not route typed assessment fields through `metadata`; the backend has
   first-class fields for methodology inputs, outputs, evidence, timing,
   assumptions, and analyst identity.
+- Do not recursively rename keys inside methodology-defined value bags; schema
+  matching depends on the persisted keys staying exactly as supplied by the
+  methodology profile and caller.
 - Do not add a `scenario_id` mapping as a blanket workaround if the entity's
   real backend association is `riskScenarioId`; prefer the explicit
   `risk_scenario_id` field for assessment results.

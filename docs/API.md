@@ -34,6 +34,45 @@ http://localhost:8000/api/v1/
 
 ## Endpoints
 
+### Projects
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/projects` | ProjectRequest | 201 | Create a project (optional `type` + nested `researchIntake`) |
+| GET | `/projects` |—| 200 | List projects (includes `type` and `researchIntake` when present) |
+| GET | `/projects/{identifier}` |—| 200 | Get a project by identifier |
+| PUT | `/projects/{identifier}` | UpdateProjectRequest | 200 | Update name / description |
+| PUT | `/projects/{identifier}/research-intake` | ResearchIntakeRequest | 200 | Replace the research intake on a RESEARCH project (404 if no intake exists; 422 if not RESEARCH) |
+
+`ProjectRequest` fields (ADR-056):
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `identifier` | string (`[a-z0-9-]+`, ≤ 50) | yes | Unique, immutable |
+| `name` | string (≤ 255) | yes | |
+| `description` | string | no | TEXT |
+| `type` | enum `SOFTWARE` \| `GRC` \| `RESEARCH` | no | Defaults to `SOFTWARE` |
+| `researchIntake` | `ResearchIntakeRequest` | required iff `type=RESEARCH` | 422 if mismatched |
+
+`ResearchIntakeRequest` fields (issue #999):
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `goal` | string (≤ 4000) | yes | Research goal narrative |
+| `paperContext` | string (≤ 8000) | no | Paper / project context |
+| `contributionType` | enum | yes | `TAXONOMY` \| `REVIEW` \| `EMPIRICAL_STUDY` \| `METHODOLOGY` \| `POSITION` \| `OTHER` |
+| `intendedOutput` | enum | yes | `SCOPING_REVIEW` \| `SYSTEMATIC_REVIEW` \| `SYSTEMATIC_MAP` \| `CRITICAL_REVIEW` \| `NARRATIVE_REVIEW` \| `TARGETED_RELATED_WORK` \| `TAXONOMY_PAPER` \| `OTHER` |
+| `autonomyLevel` | enum | yes | `COPILOT` \| `AUTONOMOUS` |
+| `allowedTools` | array of string (≤ 100 each, ≤ 100 entries) | yes | Empty list means no tools authorised; null is rejected |
+| `privacyConstraints` | string (≤ 4000) | no | Free-form |
+| `budgetTokens` | integer ≥ 0 | no | Token cap; null = unbounded |
+| `budgetWallClockMinutes` | integer ≥ 0 | no | Wall-clock cap; null = unbounded |
+| `budgetCostUsdMicros` | integer ≥ 0 | no | Cost cap in USD micros (1 USD = 1,000,000); null = unbounded |
+
+The seven non-`OTHER` `intendedOutput` values mirror the method keys in
+`skills/lit-review/methodology/catalog.yaml` so the phase-1 lit-review skill
+can derive a methodology choice from the intake (ADR-055).
+
 ### Requirements
 
 | Method | Path | Body | Status | Purpose |
@@ -226,15 +265,17 @@ Every response is methodology-attributed and structured for agent
 consumption: `analysisKind`, `project`, `asOf`, `derivationMethod`,
 `inputs`/`outputs`/`limitations` sections, per
 `architecture/notes/mcp-grc-analysis-tools-preflight.md`. No generic
-`risk_score`; no executions of FAIR / FAIR-CAM / NIST methodology engines
-(those are tracked in GC-T011 / GC-I017 / GC-T014 and ship their own
-analysis endpoints when the engine lands).
+`risk_score`; no executions of FAIR / FAIR-CAM methodology engines (those
+are tracked in GC-T011 / GC-I017 and ship their own analysis endpoints when
+the engine lands). NIST SP 800-30 Rev. 1 ships under GC-T014 / #721 as the
+`nist-sp-800-30` endpoint below.
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | GET | `/analysis/grc/evidence-freshness` |—| 200 | Per-evidence / per-observation / per-control-test freshness state given an `asOf` and `freshnessWindowDays`. |
 | GET | `/analysis/grc/observation-projection?mode=ASSET_EXPOSURE\|CONTROL_STATE` |—| 200 | Current-state projection from observations; ASSET_EXPOSURE flags assets with active observations; CONTROL_STATE joins through `ControlEffectivenessAssessment`. |
 | GET | `/analysis/grc/vendor-risk` |—| 200 | Aggregation over `OperationalAsset` of `AssetType.THIRD_PARTY` (findings, observations, evidence freshness, mapped controls). |
+| GET | `/analysis/grc/nist-sp-800-30` |—| 200 | NIST SP 800-30 Rev. 1 methodology-attributed view over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `NIST_SP800_30_R1`. Decodes inputs into threat source, threat event (`ADVERSARIAL` / `NON_ADVERSARIAL`), vulnerabilities, predisposing conditions, threat-source relevance, multi-dimensional likelihood, impact level, and assessment timeframe; computes overall likelihood (analyst-supplied or derived per Table G-5) and risk level (per Table I-2) as ordinal bands with explicit `scale`/`units` and a matrix cell label. |
 
 `GET /analysis/grc/evidence-freshness` accepts:
 
@@ -265,6 +306,36 @@ analysis endpoints when the engine lands).
 | `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp; freshness is computed against this |
 | `freshnessWindowDays` | int (positive) | 90 | Window used to label vendor-attached evidence as `STALE`/`FRESH`. Non-positive values return `400`. |
 | `vendorAssetId` | UUID |—| Narrow to a single third-party asset (otherwise rolls up every `AssetType.THIRD_PARTY` row). Must belong to the resolved project or `404`. |
+
+`GET /analysis/grc/nist-sp-800-30` accepts:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `project` | string | auto-resolved | Project identifier |
+| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the response envelope |
+| `riskAssessmentResultId` | UUID |—| Filter to a single `RiskAssessmentResult`; returns `404` if missing, `422` if the row is not bound to a `NIST_SP800_30_R1` `MethodologyProfile` |
+| `riskScenarioId` | UUID |—| Narrow to assessments under one `RiskScenario` |
+
+Response shape: top-level `analysisKind: "nist_assessment"`, `project`,
+`asOf`, `derivationMethod` (`"nist-sp800-30-rev1-5x5-matrix-v1"`), `scale`
+(`"ordinal"`), `units` (`"qualitative ordinal levels"`),
+`matrixConversionRule` (Table I-2 attribution), an `assessments` array, a
+`counts` summary (`total`, `byRiskLevel`, `withLimitations`), and a
+top-level `limitations` array. Each assessment item carries
+`assessmentId` / `riskScenarioId` / `methodologyProfileId` / `profileKey`
+(`NIST_SP800_30_R1`) / `family` / `version` / `assessmentAt` /
+`timeHorizon` / `analystIdentity` / `approvalState`, structured `inputs`
+(`threatSource`, `threatEvent`, `threatEventKind`, `vulnerabilities`,
+`predisposingConditions`, `threatSourceRelevance`, `likelihoodInitiation`,
+`likelihoodAdverseImpact`, `likelihoodOverall`, `impactLevel`,
+`assessmentTimeframe`), structured `outputs` (`overallLikelihood`,
+`impactLevel`, `riskLevel`, `matrixCell` (for example `L3-I4`), `derivation`),
+`evidenceRefs`, and per-row `limitations`. Adversarial-only fields
+(`threat_source_characteristics.capability` / `intent` / `targeting`) are
+preserved verbatim from inputs but a `limitations` entry is emitted when
+they appear on a non-adversarial event. Ordinal bands MUST NOT be
+normalized into a cross-methodology numeric score without an explicit
+method label and conversion rule.
 
 Every response carries a `limitations` array. For the vendor-risk endpoint
 that array always includes a note that vendors are modeled as
@@ -751,24 +822,96 @@ MCP surface: `gc_observation` with actions `create`, `update`, `delete`, `latest
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/admin/graph/materialize` |—| 200 | Materialize graph (AGE) |
-| GET | `/graph/ancestors/{uid}?depth=N` |—| 200 | Ancestor UIDs |
-| GET | `/graph/descendants/{uid}?depth=N` |—| 200 | Descendant UIDs |
-| GET | `/graph/visualization?entityTypes=X,Y` |—| 200 | Full graph (filterable by entity type) |
-| GET | `/graph/subgraph?roots=X&entityTypes=Y` |—| 200 | Subgraph (filterable by entity type) |
-| GET | `/graph/paths?source=X&target=Y` |—| 200 | All paths between two UIDs (with edges) |
+| GET | `/graph/visualization?project=&entityTypes=` |—| 200 | Mixed-entity graph projection |
+| POST | `/graph/subgraph/query?project=` | GraphNeighborhoodQueryRequest | 200 | Mixed-entity subgraph around root graph node IDs |
+| POST | `/graph/traversal/query?project=` | GraphNeighborhoodQueryRequest | 200 | Mixed-entity bounded traversal from root graph node IDs |
+| POST | `/graph/paths/query?project=` | GraphPathsQueryRequest | 200 | Mixed-entity path between two graph node IDs |
+| GET | `/requirements/graph/ancestors/{uid}?project=&depth=N` |—| 200 | Requirement-only ancestor UIDs |
+| GET | `/requirements/graph/descendants/{uid}?project=&depth=N` |—| 200 | Requirement-only descendant UIDs |
+| GET | `/requirements/graph/paths?project=&source=&target=` |—| 200 | Requirement-only paths by UID |
 
-`entityTypes` is an optional comma-separated list (for example, `REQUIREMENT`). When omitted, all entity types are returned. Each node includes an `entityType` field.
+`project` is required on graph routes. `entityTypes` is an optional repeated
+query parameter on visualization, for example
+`entityTypes=REQUIREMENT&entityTypes=OPERATIONAL_ASSET`. Query request bodies
+use graph node IDs of the form `GraphEntityType:UUID`, not requirement UIDs.
+When omitted, `entityTypes` means all entity types. Filtering prunes both nodes
+and edges.
 
-**Path response shape:**
+**GraphNeighborhoodQueryRequest:**
+
+```json
+{
+  "rootNodeIds": ["REQUIREMENT:00000000-0000-0000-0000-000000000001"],
+  "maxDepth": 2,
+  "entityTypes": ["REQUIREMENT", "OPERATIONAL_ASSET"]
+}
+```
+
+**GraphPathsQueryRequest:**
+
+```json
+{
+  "sourceNodeId": "REQUIREMENT:00000000-0000-0000-0000-000000000001",
+  "targetNodeId": "OPERATIONAL_ASSET:00000000-0000-0000-0000-000000000002",
+  "maxDepth": 4,
+  "entityTypes": ["REQUIREMENT", "OPERATIONAL_ASSET"]
+}
+```
+
+**Graph visualization / subgraph response shape:**
+
+```json
+{
+  "nodes": [
+    {
+      "id": "REQUIREMENT:00000000-0000-0000-0000-000000000001",
+      "domainId": "00000000-0000-0000-0000-000000000001",
+      "entityType": "REQUIREMENT",
+      "projectIdentifier": "ground-control",
+      "uid": "GC-A001",
+      "label": "GC-A001",
+      "properties": { "title": "Example", "status": "ACTIVE" }
+    },
+    {
+      "id": "OPERATIONAL_ASSET:00000000-0000-0000-0000-000000000002",
+      "domainId": "00000000-0000-0000-0000-000000000002",
+      "entityType": "OPERATIONAL_ASSET",
+      "projectIdentifier": "ground-control",
+      "uid": "ASSET-001",
+      "label": "Asset 001",
+      "properties": { "assetType": "SERVICE" }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "edgeType": "ASSOCIATED",
+      "sourceId": "REQUIREMENT:00000000-0000-0000-0000-000000000001",
+      "targetId": "OPERATIONAL_ASSET:00000000-0000-0000-0000-000000000002",
+      "sourceEntityType": "REQUIREMENT",
+      "targetEntityType": "OPERATIONAL_ASSET",
+      "properties": {}
+    }
+  ],
+  "totalNodes": 2,
+  "totalEdges": 1,
+  "rootNodeIds": ["REQUIREMENT:00000000-0000-0000-0000-000000000001"]
+}
+```
+
+Visualization responses omit `rootNodeIds`. Subgraph and traversal responses
+include it.
+
+**Mixed graph path response shape:**
 
 ```json
 [
   {
-    "nodes": ["REQ-A", "REQ-B", "REQ-C"],
-    "edges": [
-      { "sourceUid": "REQ-A", "targetUid": "REQ-B", "relationType": "DEPENDS_ON" },
-      { "sourceUid": "REQ-B", "targetUid": "REQ-C", "relationType": "PARENT" }
-    ]
+    "nodeIds": [
+      "REQUIREMENT:00000000-0000-0000-0000-000000000001",
+      "OPERATIONAL_ASSET:00000000-0000-0000-0000-000000000002"
+    ],
+    "edgeTypes": ["ASSOCIATED"]
   }
 ]
 ```
@@ -874,7 +1017,7 @@ All endpoints accept an optional `project` query parameter.
 All endpoints accept an optional `project` query parameter.
 
 **Filters on GET list:**
-- `type` (enum)—PACK_HANDLER, REGISTRY_BACKEND, VALIDATOR, POLICY_HOOK, VERIFIER, EMBEDDING_PROVIDER, GRAPH_CONTRIBUTOR, CUSTOM
+- `type` (enum)—PACK_HANDLER, REGISTRY_BACKEND, VALIDATOR, POLICY_HOOK, VERIFIER, EVIDENCE_COLLECTOR, EMBEDDING_PROVIDER, GRAPH_CONTRIBUTOR, CUSTOM
 - `capability` (string)—filter by capability tag
 - `project` (string)—filter dynamic plugins by project
 
@@ -922,6 +1065,7 @@ must be non-blank), `reason` (optional, max 500).
 | PUT | `/threat-models/{id}/status` | `{"status": "ACTIVE"}` | 200 | Transition lifecycle status |
 | GET | `/threat-models/{id}/requirements` |—| 200 | List requirements linked to a threat model |
 | GET | `/threat-models/{id}/trace` |—| 200 | End-to-end security trace: assets, controls, requirements, and per-requirement implementing artifacts |
+| GET | `/threat-models/workspace` |—| 200 | Read-only workspace: scoped assets, flows, threat entries with linked controls/requirements and staleness indicators (GC-Q010) |
 | POST | `/threat-models/{id}/links` | ThreatModelLinkRequest | 201 | Create threat-model link |
 | GET | `/threat-models/{id}/links` |—| 200 | List links for a threat model |
 | DELETE | `/threat-models/{id}/links/{linkId}` |—| 204 | Delete threat-model link |
@@ -1000,11 +1144,18 @@ association).
 | PUT | `/risk-scenarios/{id}/status` | `{"status": "ACTIVE"}` | 200 | Transition lifecycle status |
 | GET | `/risk-scenarios/{id}/requirements` |—| 200 | List requirements linked to a risk scenario |
 | GET | `/risk-scenarios/{id}/trace` |—| 200 | End-to-end security trace: assets, controls, requirements, and per-requirement implementing artifacts |
+| GET | `/risk-scenarios/workspace` |—| 200 | Read-only workspace: risk scenarios with linked assets, controls, findings, evidence, assessments, treatments, and register memberships; explicit-signal review indicator (GC-Q009) |
 | POST | `/risk-scenarios/{id}/links` | RiskScenarioLinkRequest | 201 | Create risk-scenario link |
 | GET | `/risk-scenarios/{id}/links` |—| 200 | List links for a risk scenario |
 | DELETE | `/risk-scenarios/{id}/links/{linkId}` |—| 204 | Delete risk-scenario link |
 
 All endpoints accept an optional `project` query parameter (required in multi-project deployments).
+
+**RiskScenarioRequest fields (FAIR-CRST scoping axes):** `uid` (required, max 20), `title` (required, max 200), `threat` (required, min 10, no max), `method` (required, min 10, no max), `asset` (required, min 10, no max), `effect` (required, min 10, no max), `timeHorizon` (required, max 100). The `vulnerability` field has been removed.
+
+**UpdateRiskScenarioRequest fields:** `title`, `threat`, `method`, `asset`, `effect`, `timeHorizon`, all optional (partial update). Required fields (`threat`, `method`, `asset`, `effect`) reject blank strings when present.
+
+**RiskScenarioResponse fields:** all request fields (minus validation constraints), plus `id`, `graphNodeId`, `projectIdentifier`, `status`, `fairSentence` (derived, never stored), `createdAt`, `updatedAt`, `createdBy`. The `fairSentence` field renders `"{threat} impacts {asset} via {method}, causing {effect}"` and is computed on every response.
 
 `GET /{id}/trace` returns a `SecurityTraceResponse` with `sourceType` (`RISK_SCENARIO`), `sourceId`, `sourceUid`,
 `sourceTitle`, `assets[]`, `controls[]`, and `requirements[]`. Each requirement entry carries `requirement`
@@ -1025,9 +1176,38 @@ issues, and controls). Unknown `id` → 404 `not_found`.
 
 All endpoints accept an optional `project` query parameter (required in multi-project deployments).
 
-**MethodologyProfileRequest fields:** `profileKey` (required, max 100), `name` (required, max 200), `version` (required, max 50), `family` (required, enum: FAIR, NIST_SP800_30_R1, ISO_27005, CUSTOM), `description` (optional), `inputSchema` (optional JSON object: methodology assessment input vocabulary), `outputSchema` (optional JSON object: methodology assessment output vocabulary), `treatmentStrategyVocabulary` (optional JSON object—strategy vocabulary keyed by stable strategy key; the value object is profile/pack-defined and may carry display labels, semantics, or other metadata), `status` (optional, enum: ACTIVE, DEPRECATED; defaults to ACTIVE).
+**MethodologyProfileRequest fields:** `profileKey` (required, max 100), `name` (required, max 200), `version` (required, max 50), `family` (required, enum: FAIR, NIST_SP800_30_R1, ISO_27005, CUSTOM), `description` (optional), `inputSchema` (optional JSON object: methodology assessment input vocabulary), `outputSchema` (optional JSON object: methodology assessment output vocabulary), `treatmentStrategyVocabulary` (optional JSON object; strategy vocabulary keyed by stable strategy key, with the value object profile or pack defined and carrying display labels, semantics, or other metadata), `status` (optional, enum: ACTIVE, DEPRECATED; defaults to ACTIVE), `crosswalkEntries` (optional list of `CrosswalkEntry` objects; see below).
 
-`UpdateMethodologyProfileRequest` carries the same field set minus `profileKey`; null fields are left unchanged.
+`UpdateMethodologyProfileRequest` carries the same field set minus `profileKey`; null fields are left unchanged. A null `crosswalkEntries` leaves the existing list intact; an empty list clears it; a non-null list replaces it in full.
+
+**CrosswalkEntry fields (GC-T012):** `normalizedConcept` (required, enum: `THREAT_SOURCE`, `THREAT_EVENT`, `VULNERABILITY_OR_EXPOSURE`, `ASSET`, `PROCESS_OR_OBJECTIVE`, `CONSEQUENCE_OR_EFFECT`, `CONTROL`, `LIKELIHOOD_OR_FREQUENCY`, `IMPACT_OR_LOSS_MAGNITUDE`, `TREATMENT`), `vocabularySurface` (required, enum: `INPUT_SCHEMA`, `OUTPUT_SCHEMA`, `TREATMENT_STRATEGY_VOCABULARY`), `sourceFieldPath` (required, max 400; dotted path into the named surface's schema properties), `sourceTermLabel` (optional, max 200), `sourceTermDefinition` (optional, max 2000), `scale` (optional, max 100), `units` (optional, max 100), `conversionRule` (optional, max 400; requires `scale` or `units` to be set), `limitations` (optional, max 400).
+
+Semantic validation: duplicate `(normalizedConcept, vocabularySurface, sourceFieldPath)` tuples within the same profile → 422 `duplicate_crosswalk_entry`; surface referenced but corresponding schema is null → 422 `crosswalk_surface_not_present`; `sourceFieldPath` not found in the surface schema's properties → 422 `crosswalk_unknown_field_path`; `conversionRule` set with both `scale` and `units` null → 422 `crosswalk_conversion_rule_missing_scale_or_units`.
+
+**Example `crosswalkEntries` payload:**
+```json
+[
+  {
+    "normalizedConcept": "LIKELIHOOD_OR_FREQUENCY",
+    "vocabularySurface": "INPUT_SCHEMA",
+    "sourceFieldPath": "loss_event_frequency",
+    "sourceTermLabel": "Loss Event Frequency",
+    "scale": "continuous",
+    "units": "annual events",
+    "conversionRule": "LEF = TEF × Vulnerability"
+  },
+  {
+    "normalizedConcept": "IMPACT_OR_LOSS_MAGNITUDE",
+    "vocabularySurface": "INPUT_SCHEMA",
+    "sourceFieldPath": "primary_loss_magnitude",
+    "sourceTermLabel": "Primary Loss Magnitude",
+    "scale": "continuous",
+    "units": "monetary"
+  }
+]
+```
+
+The seeded profiles (`FAIR_V3_0`, `NIST_SP800_30_R1`, `ISO_27005_V2022`) ship with starter crosswalk entries pre-populated on first project list.
 
 `(project_id, profile_key, version)` is unique. Conflict on duplicate create returns 409 `conflict`.
 

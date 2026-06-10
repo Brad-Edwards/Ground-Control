@@ -13,14 +13,22 @@ import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.findings.repository.FindingLinkRepository;
 import com.keplerops.groundcontrol.domain.findings.state.FindingLinkTargetType;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.riskscenarios.events.ControlStateChangedEvent;
+import com.keplerops.groundcontrol.domain.riskscenarios.events.ReassessmentSignal;
+import com.keplerops.groundcontrol.domain.riskscenarios.events.ReassessmentSourceEntityType;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerCategory;
 import java.io.Serializable;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +39,11 @@ public class ControlService {
     private static final Logger log = LoggerFactory.getLogger(ControlService.class);
     private static final String DETAIL_CONTROL_UID = "controlUid";
 
+    // GC-T004 / C8 (#863): event-payload field keys hoisted out of inline literals
+    // so each rename is one site, not three.
+    private static final String FIELD_STATUS = "status";
+    private static final String FIELD_EFFECTIVENESS = "effectiveness";
+
     private final ControlRepository controlRepository;
     private final ControlLinkRepository controlLinkRepository;
     private final ControlTestRepository controlTestRepository;
@@ -38,7 +51,9 @@ public class ControlService {
     private final FindingLinkRepository findingLinkRepository;
     private final AuditLinkRepository auditLinkRepository;
     private final ProjectService projectService;
+    private final ApplicationEventPublisher eventPublisher;
 
+    @SuppressWarnings("java:S107") // service aggregates eight collaborators from the constructor on purpose
     public ControlService(
             ControlRepository controlRepository,
             ControlLinkRepository controlLinkRepository,
@@ -46,7 +61,8 @@ public class ControlService {
             ControlEffectivenessAssessmentRepository effectivenessAssessmentRepository,
             FindingLinkRepository findingLinkRepository,
             AuditLinkRepository auditLinkRepository,
-            ProjectService projectService) {
+            ProjectService projectService,
+            ApplicationEventPublisher eventPublisher) {
         this.controlRepository = controlRepository;
         this.controlLinkRepository = controlLinkRepository;
         this.controlTestRepository = controlTestRepository;
@@ -54,6 +70,7 @@ public class ControlService {
         this.findingLinkRepository = findingLinkRepository;
         this.auditLinkRepository = auditLinkRepository;
         this.projectService = projectService;
+        this.eventPublisher = eventPublisher;
     }
 
     public Control create(CreateControlCommand command) {
@@ -98,6 +115,7 @@ public class ControlService {
         if (command.methodologyFactors() != null) {
             control.setMethodologyFactors(command.methodologyFactors());
         }
+        var oldEffectiveness = control.getEffectiveness();
         if (command.effectiveness() != null) {
             control.setEffectiveness(command.effectiveness());
         }
@@ -109,6 +127,19 @@ public class ControlService {
         }
         control = controlRepository.save(control);
         log.info("control_updated: uid={} id={}", control.getUid(), control.getId());
+        if (!java.util.Objects.equals(oldEffectiveness, control.getEffectiveness())) {
+            // GC-T004 / C8 (#863): control effectiveness is a mitigation-context change
+            // per the preflight scope (status + effectiveness only).
+            eventPublisher.publishEvent(new ControlStateChangedEvent(new ReassessmentSignal(
+                    control.getProject().getId(),
+                    ReassessmentTriggerCategory.CONTROL_STATE_CHANGED,
+                    ReassessmentSourceEntityType.CONTROL,
+                    control.getId(),
+                    Set.of(FIELD_EFFECTIVENESS),
+                    fieldMap(FIELD_EFFECTIVENESS, oldEffectiveness),
+                    fieldMap(FIELD_EFFECTIVENESS, control.getEffectiveness()),
+                    Instant.now())));
+        }
         return control;
     }
 
@@ -137,9 +168,21 @@ public class ControlService {
 
     public Control transitionStatus(UUID projectId, UUID id, ControlStatus newStatus) {
         var control = findOrThrow(projectId, id);
+        var oldStatus = control.getStatus();
         control.transitionStatus(newStatus);
         control = controlRepository.save(control);
         log.info("control_status_changed: uid={} status={}", control.getUid(), newStatus);
+        if (oldStatus != control.getStatus()) {
+            eventPublisher.publishEvent(new ControlStateChangedEvent(new ReassessmentSignal(
+                    control.getProject().getId(),
+                    ReassessmentTriggerCategory.CONTROL_STATE_CHANGED,
+                    ReassessmentSourceEntityType.CONTROL,
+                    control.getId(),
+                    Set.of(FIELD_STATUS),
+                    fieldMap(FIELD_STATUS, oldStatus),
+                    fieldMap(FIELD_STATUS, control.getStatus()),
+                    Instant.now())));
+        }
         return control;
     }
 
@@ -211,5 +254,14 @@ public class ControlService {
         controlLinkRepository.deleteAll(outboundLinks);
         controlRepository.delete(control);
         log.info("control_deleted: uid={} id={} outbound_links_deleted={}", control.getUid(), id, outboundLinks.size());
+    }
+
+    private static Map<String, Object> fieldMap(String key, Object value) {
+        // HashMap (not Map.of) because the value may legitimately be null —
+        // Map.of rejects null values and we want the absent-vs-null distinction
+        // to survive into the listener.
+        Map<String, Object> m = HashMap.newHashMap(1);
+        m.put(key, value);
+        return m;
     }
 }

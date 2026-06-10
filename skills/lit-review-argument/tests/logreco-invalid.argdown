@@ -1,0 +1,17 @@
+===
+title: "LogReco invalid map — phase-4 formal-validity fixture"
+===
+
+// Structurally clean map whose argument is a textbook affirming-the-consequent
+// fallacy: from `A -> B` and `B`, infer `A`. Z3 must reject this as not
+// deductively valid. The structural checks still pass — the failure is
+// material validity only, exposed by --logreco.
+
+[Thesis]: Socrates is a human. {formalization: "Human(socrates)", declarations: {Human: "predicate", socrates: "individual"}}
+
+<Affirming The Consequent>
+
+(1) If something is human then it is mortal. {formalization: "all x.(Human(x) -> Mortal(x))", declarations: {Human: "predicate", Mortal: "predicate"}, evidence: "synthesis.md §1"}
+(2) Socrates is mortal. {formalization: "Mortal(socrates)", declarations: {socrates: "individual"}, evidence: "synthesis.md §2"}
+-- {from: ["1", "2"]} --
+(3) [Thesis]

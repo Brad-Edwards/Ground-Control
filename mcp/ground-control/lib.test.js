@@ -12584,3 +12584,710 @@ describe("parseGroundControlYaml workflow.integration_manager", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// gc_assert_traceability_reconciled (issue #1058)
+// ---------------------------------------------------------------------------
+
+describe("runAssertTraceabilityReconciled", () => {
+  function makeTempRepo() {
+    const dir = mkdtempSync(join(tmpdir(), "gc-trc-test-"));
+    execFileSync("git", ["-C", dir, "init", "-q"]);
+    execFileSync("git", ["-C", dir, "config", "user.email", "t@example.com"]);
+    execFileSync("git", ["-C", dir, "config", "user.name", "t"]);
+    writeFileSync(join(dir, "README"), "x\n");
+    execFileSync("git", ["-C", dir, "add", "README"]);
+    execFileSync("git", ["-C", dir, "commit", "-q", "-m", "init"]);
+    return dir;
+  }
+
+  // Hermetic gh shim for happy-path tests that reach the postPhaseMarker
+  // step. The shim returns canned responses for `gh repo view --json
+  // nameWithOwner` and the issue-comment POST so the marker post succeeds,
+  // and the test can assert the real success envelope (r.ok=true, r.comment_id)
+  // rather than using a throw-from-gh as a proxy for "the gate passed."
+  // Test-quality review cycle 1 (issue #1058) flagged the prior proxy-assertion
+  // pattern as a class finding; this helper closes the category by giving
+  // every happy-path test in this suite a real return value to assert against.
+  function makeShimRepoForAssert({ commentId = 9001 } = {}) {
+    const repoDir = mkdtempSync(join(tmpdir(), "gc-trc-shim-"));
+    execFileSync("git", ["-C", repoDir, "init", "-q"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.email", "t@example.com"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.name", "t"]);
+    writeFileSync(join(repoDir, "README"), "x\n");
+    execFileSync("git", ["-C", repoDir, "add", "README"]);
+    execFileSync("git", ["-C", repoDir, "commit", "-q", "-m", "init"]);
+    const binDir = mkdtempSync(join(tmpdir(), "gc-trc-bin-"));
+    const ghHandler = {
+      routes: [
+        { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+        { argv_prefix: ["api", "--method", "POST"], stdout: JSON.stringify({ id: commentId, html_url: `https://github.com/fake/repo/issues/1058#issuecomment-${commentId}` }) },
+      ],
+    };
+    const configPath = join(binDir, "config.json");
+    writeFileSync(configPath, JSON.stringify(ghHandler));
+    const ghShim = `#!/usr/bin/env node
+const fs = require("node:fs");
+const cfg = JSON.parse(fs.readFileSync(${JSON.stringify(configPath)}, "utf8"));
+const argv = process.argv.slice(2);
+function match(prefix) { return prefix.every((p, i) => argv[i] === p); }
+for (const route of cfg.routes) {
+  if (match(route.argv_prefix)) {
+    if (route.exit_code != null && route.exit_code !== 0) {
+      process.stderr.write(route.stderr || "");
+      process.exit(route.exit_code);
+    }
+    process.stdout.write(route.stdout || "");
+    process.exit(0);
+  }
+}
+process.stderr.write("gh shim: unhandled argv: " + JSON.stringify(argv) + "\\n");
+process.exit(2);
+`;
+    writeFileSync(join(binDir, "gh"), ghShim, { mode: 0o755 });
+    return {
+      repoDir, binDir,
+      cleanup() { rmSync(repoDir, { recursive: true, force: true }); rmSync(binDir, { recursive: true, force: true }); },
+    };
+  }
+
+  async function withShimPath(binDir, fn) {
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${binDir}:${oldPath}`;
+    try { return await fn(); } finally { process.env.PATH = oldPath; }
+  }
+
+  // The runner calls Ground Control REST via global fetch() (getRequirementByUid +
+  // getTraceabilityLinks + getTraceabilityByArtifact). Mock fetch to drive
+  // each test's response shape without needing a live backend. Failure paths
+  // (status_mismatch, implements_missing, tests_missing, orphaned_issue_link)
+  // short-circuit BEFORE postPhaseMarker so they need no gh shim. Happy-path
+  // tests use makeShimRepoForAssert / withShimPath above.
+
+  function mockFetchForRequirements(routesByUrl) {
+    const originalFetch = globalThis.fetch;
+    const originalBase = process.env.GC_BASE_URL;
+    process.env.GC_BASE_URL = "http://test.invalid";
+    globalThis.fetch = async (url) => {
+      const u = url.toString();
+      for (const [pattern, handler] of routesByUrl) {
+        if (u.includes(pattern)) {
+          const r = await handler(u);
+          return {
+            status: r.status ?? 200,
+            ok: (r.status ?? 200) < 400,
+            text: async () => JSON.stringify(r.body ?? null),
+            json: async () => r.body ?? null,
+          };
+        }
+      }
+      return {
+        status: 404, ok: false,
+        text: async () => JSON.stringify({ error: { code: "NOT_FOUND", message: `no route for ${u}` } }),
+      };
+    };
+    return () => {
+      globalThis.fetch = originalFetch;
+      if (originalBase === undefined) delete process.env.GC_BASE_URL;
+      else process.env.GC_BASE_URL = originalBase;
+    };
+  }
+
+  it("refuses when override=true but override_reason is empty (input validation)", async () => {
+    const dir = makeTempRepo();
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      const r = await runAssertTraceabilityReconciled({
+        repoPath: dir, issueNumber: 1,
+        requirements: [], override: true, overrideReason: "",
+      });
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "traceability_override_missing_reason");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("throws on invalid issue_number", async () => {
+    const dir = makeTempRepo();
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      await assert.rejects(
+        runAssertTraceabilityReconciled({
+          repoPath: dir, issueNumber: 0, requirements: [],
+        }),
+        /positive integer issue_number/,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses with status_mismatch when requirement is DRAFT but statusIntent='ACTIVE'", async () => {
+    const dir = makeTempRepo();
+    const restore = mockFetchForRequirements([
+      ["/api/v1/requirements/uid/GC-X001", async () => ({ body: { id: "uuid-1", status: "DRAFT" } })],
+    ]);
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      const r = await runAssertTraceabilityReconciled({
+        repoPath: dir, issueNumber: 1058,
+        requirements: [{ uid: "GC-X001", statusIntent: "ACTIVE" }],
+      });
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "traceability_not_reconciled");
+      assert.ok(r.failures.some((f) => f.reason === "status_mismatch" && f.uid === "GC-X001"));
+    } finally {
+      restore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses with implements_missing when ACTIVE requirement has no IMPLEMENTS link", async () => {
+    const dir = makeTempRepo();
+    const restore = mockFetchForRequirements([
+      ["/api/v1/requirements/uid/GC-X002", async () => ({ body: { id: "uuid-2", status: "ACTIVE" } })],
+      ["/api/v1/requirements/uuid-2/traceability", async () => ({
+        body: [{ link_type: "DOCUMENTS", artifact_type: "ADR", artifact_identifier: "ADR-001" }],
+      })],
+    ]);
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      const r = await runAssertTraceabilityReconciled({
+        repoPath: dir, issueNumber: 1058,
+        requirements: [{ uid: "GC-X002", statusIntent: "ACTIVE" }],
+      });
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "traceability_not_reconciled");
+      assert.ok(r.failures.some((f) => f.reason === "implements_missing" && f.uid === "GC-X002"));
+    } finally {
+      restore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses with tests_missing when IMPLEMENTS points at executable surface but no TESTS link exists", async () => {
+    const dir = makeTempRepo();
+    const restore = mockFetchForRequirements([
+      ["/api/v1/requirements/uid/GC-X003", async () => ({ body: { id: "uuid-3", status: "ACTIVE" } })],
+      ["/api/v1/requirements/uuid-3/traceability", async () => ({
+        body: [{ link_type: "IMPLEMENTS", artifact_type: "FILE", artifact_identifier: "backend/src/main/java/Foo.java" }],
+      })],
+    ]);
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      const r = await runAssertTraceabilityReconciled({
+        repoPath: dir, issueNumber: 1058,
+        requirements: [{ uid: "GC-X003", statusIntent: "ACTIVE" }],
+      });
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "traceability_not_reconciled");
+      assert.ok(r.failures.some((f) => f.reason === "tests_missing" && f.uid === "GC-X003"));
+    } finally {
+      restore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("DRAFT requirement passes WITHOUT TESTS link (forward-looking exemption)", async () => {
+    const shim = makeShimRepoForAssert({ commentId: 9004 });
+    const restore = mockFetchForRequirements([
+      ["/api/v1/requirements/uid/GC-X004", async () => ({ body: { id: "uuid-4", status: "DRAFT" } })],
+      ["/api/v1/requirements/uuid-4/traceability", async () => ({
+        body: [{ link_type: "DOCUMENTS", artifact_type: "ADR", artifact_identifier: "ADR-002" }],
+      })],
+    ]);
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      const r = await withShimPath(shim.binDir, () =>
+        runAssertTraceabilityReconciled({
+          repoPath: shim.repoDir, issueNumber: 1058,
+          requirements: [{ uid: "GC-X004", statusIntent: "DRAFT" }],
+        }),
+      );
+      assert.equal(r.ok, true);
+      assert.equal(r.comment_id, 9004);
+      assert.deepEqual(r.phase_marker, { phase: "traceability_reconciled", issue_number: 1058 });
+      assert.equal(r.checked[0].uid, "GC-X004");
+      assert.equal(r.checked[0].status, "DRAFT");
+    } finally {
+      restore();
+      shim.cleanup();
+    }
+  });
+
+  it("ACTIVE requirement with IMPLEMENTS link pointing at NON-executable surface passes WITHOUT TESTS", async () => {
+    // The testable-surface heuristic: links pointing at docs/, architecture/,
+    // skills/, changelog.d/, .github/workflows/ are not testable behavior.
+    const shim = makeShimRepoForAssert({ commentId: 9005 });
+    const restore = mockFetchForRequirements([
+      ["/api/v1/requirements/uid/GC-X005", async () => ({ body: { id: "uuid-5", status: "ACTIVE" } })],
+      ["/api/v1/requirements/uuid-5/traceability", async () => ({
+        body: [{ link_type: "IMPLEMENTS", artifact_type: "FILE", artifact_identifier: "docs/some.md" }],
+      })],
+    ]);
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      const r = await withShimPath(shim.binDir, () =>
+        runAssertTraceabilityReconciled({
+          repoPath: shim.repoDir, issueNumber: 1058,
+          requirements: [{ uid: "GC-X005", statusIntent: "ACTIVE" }],
+        }),
+      );
+      assert.equal(r.ok, true);
+      assert.equal(r.comment_id, 9005);
+      assert.equal(r.checked[0].implements_count, 1);
+      assert.equal(r.checked[0].tests_count, 0);
+    } finally {
+      restore();
+      shim.cleanup();
+    }
+  });
+
+  it("empty requirements[] + orphaned GITHUB_ISSUE link refuses with orphaned_issue_link", async () => {
+    const dir = makeTempRepo();
+    const restore = mockFetchForRequirements([
+      ["/api/v1/requirements/traceability/by-artifact", async () => ({
+        body: [{ link_type: "IMPLEMENTS", artifact_type: "GITHUB_ISSUE", artifact_identifier: "1058" }],
+      })],
+    ]);
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      const r = await runAssertTraceabilityReconciled({
+        repoPath: dir, issueNumber: 1058,
+        requirements: [],
+      });
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "traceability_not_reconciled");
+      assert.ok(r.failures.some((f) => f.reason === "orphaned_issue_link"));
+    } finally {
+      restore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("override=true with non-empty reason bypasses the per-requirement checks", async () => {
+    const shim = makeShimRepoForAssert({ commentId: 9006 });
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      // No fetch mocking — override skips REST entirely. With the gh shim
+      // in place, the marker post succeeds and we can assert the real
+      // success envelope.
+      const r = await withShimPath(shim.binDir, () =>
+        runAssertTraceabilityReconciled({
+          repoPath: shim.repoDir, issueNumber: 1058,
+          requirements: [{ uid: "GC-X999", statusIntent: "ACTIVE" }],
+          override: true, overrideReason: "user authorized: doc-only diff after merge freeze",
+        }),
+      );
+      assert.equal(r.ok, true);
+      assert.equal(r.override, true);
+      assert.equal(r.override_reason, "user authorized: doc-only diff after merge freeze");
+      assert.equal(r.comment_id, 9006);
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("requirement lookup error returns traceability_requirement_lookup_failed envelope", async () => {
+    const dir = makeTempRepo();
+    const restore = mockFetchForRequirements([
+      ["/api/v1/requirements/uid/GC-X007", async () => ({
+        status: 500, body: { error: { code: "GC_X007", message: "backend error" } },
+      })],
+    ]);
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      const r = await runAssertTraceabilityReconciled({
+        repoPath: dir, issueNumber: 1058,
+        requirements: [{ uid: "GC-X007", statusIntent: "ACTIVE" }],
+      });
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "traceability_requirement_lookup_failed");
+      assert.equal(r.uid, "GC-X007");
+    } finally {
+      restore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runPostFinalReport — traceability_reconciled prerequisite (issue #1058)
+// ---------------------------------------------------------------------------
+
+describe("runPostFinalReport traceability_reconciled prerequisite (issue #1058)", () => {
+  function makeShimRepo({ ghHandler }) {
+    const repoDir = mkdtempSync(join(tmpdir(), "gc-trc-final-"));
+    execFileSync("git", ["-C", repoDir, "init", "-q"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.email", "t@example.com"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.name", "t"]);
+    writeFileSync(join(repoDir, "README"), "x\n");
+    execFileSync("git", ["-C", repoDir, "add", "README"]);
+    execFileSync("git", ["-C", repoDir, "commit", "-q", "-m", "init"]);
+    const binDir = mkdtempSync(join(tmpdir(), "gc-trc-bin-"));
+    const configPath = join(binDir, "config.json");
+    writeFileSync(configPath, JSON.stringify(ghHandler));
+    const ghShim = `#!/usr/bin/env node
+const fs = require("node:fs");
+const cfg = JSON.parse(fs.readFileSync(${JSON.stringify(configPath)}, "utf8"));
+const argv = process.argv.slice(2);
+function match(prefix) { return prefix.every((p, i) => argv[i] === p); }
+for (const route of cfg.routes) {
+  if (match(route.argv_prefix)) {
+    if (route.exit_code != null && route.exit_code !== 0) {
+      process.stderr.write(route.stderr || "");
+      process.exit(route.exit_code);
+    }
+    process.stdout.write(route.stdout || "");
+    process.exit(0);
+  }
+}
+process.stderr.write("gh shim: unhandled argv: " + JSON.stringify(argv) + "\\n");
+process.exit(2);
+`;
+    const ghPath = join(binDir, "gh");
+    writeFileSync(ghPath, ghShim, { mode: 0o755 });
+    return { repoDir, binDir, cleanup() { rmSync(repoDir, { recursive: true, force: true }); rmSync(binDir, { recursive: true, force: true }); } };
+  }
+  async function withShimPath(binDir, fn) {
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${binDir}:${oldPath}`;
+    try { return await fn(); } finally { process.env.PATH = oldPath; }
+  }
+  function slurp(comments) { return JSON.stringify([comments]); }
+
+  it("refuses with phase_prerequisite_missing when no traceability_reconciled marker exists", async () => {
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          { argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"], stdout: slurp([]) },
+        ],
+      },
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const { runPostFinalReport } = await import("./lib.js");
+        const r = await runPostFinalReport({
+          repoPath: shim.repoDir,
+          issueNumber: 1058, prNumber: 42,
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+          ciStatus: "green", sonarStatus: "passed",
+        });
+        assert.equal(r.ok, false);
+        assert.equal(r.error, "phase_prerequisite_missing");
+        assert.deepEqual(r.missing, ["traceability_reconciled"]);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("override_traceability_gate=true with reason bypasses the prerequisite", async () => {
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          // POST to issues/.../comments returns a synthetic posted-comment body
+          { argv_prefix: ["api", "--method", "POST"], stdout: JSON.stringify({ id: 9001, html_url: "https://github.com/fake/repo/issues/1058#issuecomment-9001" }) },
+        ],
+      },
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const { runPostFinalReport } = await import("./lib.js");
+        const r = await runPostFinalReport({
+          repoPath: shim.repoDir,
+          issueNumber: 1058, prNumber: 42,
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+          ciStatus: "green", sonarStatus: "passed",
+          overrideTraceabilityGate: true,
+          overrideTraceabilityReason: "user-authorized post-merge backfill on 2026-05-30",
+        });
+        assert.equal(r.ok, true);
+        assert.equal(r.comment_id, 9001);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("override_traceability_gate=true with empty reason refuses with override_missing_reason", async () => {
+    const shim = makeShimRepo({ ghHandler: { routes: [] } });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const { runPostFinalReport } = await import("./lib.js");
+        const r = await runPostFinalReport({
+          repoPath: shim.repoDir,
+          issueNumber: 1058, prNumber: 42,
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "x" }],
+          ciStatus: "green", sonarStatus: "passed",
+          overrideTraceabilityGate: true, overrideTraceabilityReason: "",
+        });
+        assert.equal(r.ok, false);
+        assert.equal(r.error, "final_report_override_missing_reason");
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("lane='quickfix' bypasses the traceability prerequisite without override", async () => {
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          { argv_prefix: ["api", "--method", "POST"], stdout: JSON.stringify({ id: 9002, html_url: "https://github.com/fake/repo/issues/1058#issuecomment-9002" }) },
+        ],
+      },
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const { runPostFinalReport } = await import("./lib.js");
+        const r = await runPostFinalReport({
+          repoPath: shim.repoDir,
+          issueNumber: 1058, prNumber: 42,
+          requirements: [],
+          reviews: [],
+          ciStatus: "green", sonarStatus: "passed",
+          lane: "quickfix",
+        });
+        assert.equal(r.ok, true);
+        assert.equal(r.comment_id, 9002);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// gc_close_issue_after_merge (issue #1058)
+// ---------------------------------------------------------------------------
+
+describe("runCloseIssueAfterMerge", () => {
+  function makeShimRepo({ ghHandler }) {
+    const repoDir = mkdtempSync(join(tmpdir(), "gc-close-test-"));
+    execFileSync("git", ["-C", repoDir, "init", "-q"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.email", "t@example.com"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.name", "t"]);
+    writeFileSync(join(repoDir, "README"), "x\n");
+    execFileSync("git", ["-C", repoDir, "add", "README"]);
+    execFileSync("git", ["-C", repoDir, "commit", "-q", "-m", "init"]);
+    const binDir = mkdtempSync(join(tmpdir(), "gc-close-bin-"));
+    const configPath = join(binDir, "config.json");
+    writeFileSync(configPath, JSON.stringify(ghHandler));
+    const ghShim = `#!/usr/bin/env node
+const fs = require("node:fs");
+const cfg = JSON.parse(fs.readFileSync(${JSON.stringify(configPath)}, "utf8"));
+const argv = process.argv.slice(2);
+function match(prefix) { return prefix.every((p, i) => argv[i] === p); }
+for (const route of cfg.routes) {
+  if (match(route.argv_prefix)) {
+    if (route.exit_code != null && route.exit_code !== 0) {
+      process.stderr.write(route.stderr || "");
+      process.exit(route.exit_code);
+    }
+    process.stdout.write(route.stdout || "");
+    process.exit(0);
+  }
+}
+process.stderr.write("gh shim: unhandled argv: " + JSON.stringify(argv) + "\\n");
+process.exit(2);
+`;
+    const ghPath = join(binDir, "gh");
+    writeFileSync(ghPath, ghShim, { mode: 0o755 });
+    return { repoDir, binDir, cleanup() { rmSync(repoDir, { recursive: true, force: true }); rmSync(binDir, { recursive: true, force: true }); } };
+  }
+  async function withShimPath(binDir, fn) {
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${binDir}:${oldPath}`;
+    try { return await fn(); } finally { process.env.PATH = oldPath; }
+  }
+
+  it("throws on invalid issue_number (input validation)", async () => {
+    const shim = makeShimRepo({ ghHandler: { routes: [] } });
+    try {
+      const { runCloseIssueAfterMerge } = await import("./lib.js");
+      await assert.rejects(
+        runCloseIssueAfterMerge({ repoPath: shim.repoDir, issueNumber: 0 }),
+        /positive integer issue_number/,
+      );
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("refuses with close_no_linked_pr when no PR is linked to the issue", async () => {
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          // GraphQL timeline returns no PR cross-references.
+          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({ data: { repository: { issue: { timelineItems: { nodes: [] } } } } }) },
+        ],
+      },
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const { runCloseIssueAfterMerge } = await import("./lib.js");
+        const r = await runCloseIssueAfterMerge({ repoPath: shim.repoDir, issueNumber: 1058 });
+        assert.equal(r.ok, false);
+        assert.equal(r.error, "close_no_linked_pr");
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("refuses with close_pr_not_merged when linked PR has merged_at=null and state=open", async () => {
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({
+            data: { repository: { issue: { timelineItems: { nodes: [
+              { __typename: "CrossReferencedEvent", source: { __typename: "PullRequest", number: 42, state: "OPEN", mergedAt: null, url: "https://github.com/fake/repo/pull/42" } },
+            ] } } } },
+          }) },
+        ],
+      },
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const { runCloseIssueAfterMerge } = await import("./lib.js");
+        const r = await runCloseIssueAfterMerge({ repoPath: shim.repoDir, issueNumber: 1058 });
+        assert.equal(r.ok, false);
+        assert.equal(r.error, "close_pr_not_merged");
+        assert.equal(r.pr_state, "OPEN");
+        assert.equal(r.pr_merged_at, null);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("closes open issue when linked PR is merged", async () => {
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({
+            data: { repository: { issue: { timelineItems: { nodes: [
+              { __typename: "CrossReferencedEvent", source: { __typename: "PullRequest", number: 42, state: "MERGED", mergedAt: "2026-05-30T10:00:00Z", url: "https://github.com/fake/repo/pull/42" } },
+            ] } } } },
+          }) },
+          // Issue lookup — current state=open.
+          { argv_prefix: ["api", "/repos/fake/repo/issues/1058"], stdout: JSON.stringify({ number: 1058, state: "open" }) },
+          // PATCH close.
+          { argv_prefix: ["api", "--method", "PATCH"], stdout: JSON.stringify({ number: 1058, state: "closed" }) },
+        ],
+      },
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const { runCloseIssueAfterMerge } = await import("./lib.js");
+        const r = await runCloseIssueAfterMerge({ repoPath: shim.repoDir, issueNumber: 1058 });
+        assert.equal(r.ok, true);
+        assert.equal(r.already_closed, false);
+        assert.equal(r.pr_number, 42);
+        assert.equal(r.pr_merged_at, "2026-05-30T10:00:00Z");
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("idempotent no-op when issue is already closed", async () => {
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({
+            data: { repository: { issue: { timelineItems: { nodes: [
+              { __typename: "CrossReferencedEvent", source: { __typename: "PullRequest", number: 42, state: "MERGED", mergedAt: "2026-05-30T10:00:00Z", url: "https://github.com/fake/repo/pull/42" } },
+            ] } } } },
+          }) },
+          // Issue is already closed.
+          { argv_prefix: ["api", "/repos/fake/repo/issues/1058"], stdout: JSON.stringify({ number: 1058, state: "closed" }) },
+        ],
+      },
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const { runCloseIssueAfterMerge } = await import("./lib.js");
+        const r = await runCloseIssueAfterMerge({ repoPath: shim.repoDir, issueNumber: 1058 });
+        assert.equal(r.ok, true);
+        assert.equal(r.already_closed, true);
+        assert.equal(r.pr_number, 42);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  // Codex review cycle 1 (issue #1058): a caller-supplied pr_number must be
+  // verified as linked to the issue before it gates the close. Without this
+  // check, a caller could pass any merged PR + an unrelated issue number and
+  // cause the wrong issue to close. The runner now resolves the issue's
+  // timeline first and refuses if the supplied PR is not present.
+  it("refuses with close_pr_not_linked_to_issue when supplied pr_number is not in the issue's timeline-linked PR set", async () => {
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          // Issue 1058's timeline links PR 42 (merged).
+          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({
+            data: { repository: { issue: { timelineItems: { nodes: [
+              { __typename: "CrossReferencedEvent", source: { __typename: "PullRequest", number: 42, state: "MERGED", mergedAt: "2026-05-30T10:00:00Z", url: "https://github.com/fake/repo/pull/42" } },
+            ] } } } },
+          }) },
+        ],
+      },
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const { runCloseIssueAfterMerge } = await import("./lib.js");
+        // Caller passes PR #99, which is NOT one of issue 1058's linked PRs.
+        const r = await runCloseIssueAfterMerge({ repoPath: shim.repoDir, issueNumber: 1058, prNumber: 99 });
+        assert.equal(r.ok, false);
+        assert.equal(r.error, "close_pr_not_linked_to_issue");
+        assert.deepEqual(r.linked_pr_numbers, [42]);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("uses the supplied pr_number when it IS in the issue's timeline-linked PR set", async () => {
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({
+            data: { repository: { issue: { timelineItems: { nodes: [
+              { __typename: "CrossReferencedEvent", source: { __typename: "PullRequest", number: 42, state: "MERGED", mergedAt: "2026-05-30T10:00:00Z", url: "https://github.com/fake/repo/pull/42" } },
+            ] } } } },
+          }) },
+          { argv_prefix: ["api", "/repos/fake/repo/issues/1058"], stdout: JSON.stringify({ number: 1058, state: "open" }) },
+          { argv_prefix: ["api", "--method", "PATCH"], stdout: JSON.stringify({ number: 1058, state: "closed" }) },
+        ],
+      },
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const { runCloseIssueAfterMerge } = await import("./lib.js");
+        const r = await runCloseIssueAfterMerge({ repoPath: shim.repoDir, issueNumber: 1058, prNumber: 42 });
+        assert.equal(r.ok, true);
+        assert.equal(r.already_closed, false);
+        assert.equal(r.pr_number, 42);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+});

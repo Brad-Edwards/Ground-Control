@@ -56,11 +56,10 @@ describe("gcRiskScenarioZodShape (issue #876)", () => {
       action: "create",
       uid: "RS-1",
       title: "T",
-      threat_source: "src",
-      threat_event: "evt",
-      affected_object: "aff",
-      vulnerability: "vuln",
-      consequence: "loss",
+      threat: "src",
+      method: "evt",
+      asset: "aff",
+      effect: "loss",
       time_horizon: "12 months",
     });
     for (const k of GC_RISK_SCENARIO_CREATE_BODY_FIELDS) {
@@ -73,10 +72,10 @@ describe("gcRiskScenarioZodShape (issue #876)", () => {
       action: "create",
       uid: "RS-1",
       title: "T",
-      threat_source: "src",
-      threat_event: "evt",
-      affected_object: "aff",
-      consequence: "loss",
+      threat: "src",
+      method: "evt",
+      asset: "aff",
+      effect: "loss",
       time_horizon: "12 months",
       description: "should-be-stripped",
     });
@@ -98,20 +97,33 @@ describe("gcRiskScenarioZodShape (issue #876)", () => {
   it("rejects an unknown action enum value", () => {
     assert.throws(() => schema.parse({ action: "merge" }));
   });
+
+  it("strips deprecated 'vulnerability' field (no longer on RiskScenarioRequest)", () => {
+    const parsed = schema.parse({
+      action: "create",
+      uid: "RS-1",
+      title: "T",
+      threat: "src",
+      vulnerability: "should-not-appear",
+    });
+    assert.ok(!("vulnerability" in parsed));
+  });
 });
 
 describe("GC_RISK_SCENARIO_CREATE_BODY_FIELDS (issue #876)", () => {
-  it("contains every backend @NotBlank create field plus optional vulnerability", () => {
+  it("contains every backend FAIR-CRST @NotBlank create field", () => {
     for (const required of [
-      "uid", "title", "threat_source", "threat_event",
-      "affected_object", "consequence", "time_horizon",
+      "uid", "title", "threat", "method", "asset", "effect", "time_horizon",
     ]) {
       assert.ok(
         GC_RISK_SCENARIO_CREATE_BODY_FIELDS.includes(required),
         `${required} missing from create body allowlist`,
       );
     }
-    assert.ok(GC_RISK_SCENARIO_CREATE_BODY_FIELDS.includes("vulnerability"));
+  });
+
+  it("does NOT contain deprecated 'vulnerability' (dropped in FAIR-CRST rename)", () => {
+    assert.ok(!GC_RISK_SCENARIO_CREATE_BODY_FIELDS.includes("vulnerability"));
   });
 
   it("does NOT contain 'description' (backend has no such field)", () => {
@@ -129,10 +141,9 @@ describe("GC_RISK_SCENARIO_CREATE_BODY_FIELDS (issue #876)", () => {
 });
 
 describe("GC_RISK_SCENARIO_UPDATE_BODY_FIELDS (issue #876)", () => {
-  it("contains every backend Update DTO field", () => {
+  it("contains every backend FAIR-CRST Update DTO field", () => {
     for (const f of [
-      "title", "threat_source", "threat_event",
-      "affected_object", "vulnerability", "consequence", "time_horizon",
+      "title", "threat", "method", "asset", "effect", "time_horizon",
     ]) {
       assert.ok(GC_RISK_SCENARIO_UPDATE_BODY_FIELDS.includes(f));
     }
@@ -140,6 +151,10 @@ describe("GC_RISK_SCENARIO_UPDATE_BODY_FIELDS (issue #876)", () => {
 
   it("does NOT contain create-only 'uid' (UpdateRiskScenarioRequest has no uid)", () => {
     assert.ok(!GC_RISK_SCENARIO_UPDATE_BODY_FIELDS.includes("uid"));
+  });
+
+  it("does NOT contain deprecated 'vulnerability'", () => {
+    assert.ok(!GC_RISK_SCENARIO_UPDATE_BODY_FIELDS.includes("vulnerability"));
   });
 
   it("does NOT contain 'description', 'status', 'metadata', 'methodology_profile_id'", () => {
@@ -159,17 +174,16 @@ describe("GC_RISK_SCENARIO_ACTIONS", () => {
 });
 
 describe("gcRiskScenarioToolHandler create (issue #876)", () => {
-  it("sends every required field to /api/v1/risk-scenarios as camelCase", async () => {
+  it("sends every required FAIR-CRST field to /api/v1/risk-scenarios as camelCase", async () => {
     const calls = makeFetchSpy();
     await gcRiskScenarioToolHandler({
       action: "create",
       uid: "RS-1",
       title: "Title",
-      threat_source: "Source",
-      threat_event: "Event",
-      affected_object: "AffObject",
-      vulnerability: "Vuln",
-      consequence: "Loss",
+      threat: "Source",
+      method: "Event",
+      asset: "AffObject",
+      effect: "Loss",
       time_horizon: "12 months",
       project: "proj-a",
     });
@@ -180,11 +194,10 @@ describe("gcRiskScenarioToolHandler create (issue #876)", () => {
     assert.deepEqual(calls[0].body, {
       uid: "RS-1",
       title: "Title",
-      threatSource: "Source",
-      threatEvent: "Event",
-      affectedObject: "AffObject",
-      vulnerability: "Vuln",
-      consequence: "Loss",
+      threat: "Source",
+      method: "Event",
+      asset: "AffObject",
+      effect: "Loss",
       timeHorizon: "12 months",
     });
   });
@@ -195,10 +208,10 @@ describe("gcRiskScenarioToolHandler create (issue #876)", () => {
       action: "create",
       uid: "RS-1",
       title: "Title",
-      threat_source: "Source",
-      threat_event: "Event",
-      affected_object: "AffObject",
-      consequence: "Loss",
+      threat: "Source",
+      method: "Event",
+      asset: "AffObject",
+      effect: "Loss",
       time_horizon: "12 months",
       description: "ignored",
       status: "ACTIVE",
@@ -208,23 +221,25 @@ describe("gcRiskScenarioToolHandler create (issue #876)", () => {
     assert.equal(calls.length, 1);
     const sent = Object.keys(calls[0].body).sort();
     assert.deepEqual(sent, [
-      "affectedObject", "consequence", "threatEvent", "threatSource",
+      "asset", "effect", "method", "threat",
       "timeHorizon", "title", "uid",
     ]);
   });
 
-  it("omits 'vulnerability' from the wire body when not provided (it is optional)", async () => {
+  it("does NOT forward deprecated 'vulnerability' field", async () => {
     const calls = makeFetchSpy();
     await gcRiskScenarioToolHandler({
       action: "create",
       uid: "RS-1",
       title: "Title",
-      threat_source: "Source",
-      threat_event: "Event",
-      affected_object: "AffObject",
-      consequence: "Loss",
+      threat: "Source",
+      method: "Event",
+      asset: "AffObject",
+      effect: "Loss",
       time_horizon: "12 months",
+      vulnerability: "should-be-dropped",
     });
+    assert.equal(calls.length, 1);
     assert.ok(!("vulnerability" in calls[0].body));
   });
 
@@ -235,10 +250,10 @@ describe("gcRiskScenarioToolHandler create (issue #876)", () => {
         action: "create",
         uid: "RS-1",
         title: "T",
-        threat_source: "s",
-        threat_event: "e",
-        affected_object: "a",
-        consequence: "c",
+        threat: "s",
+        method: "e",
+        asset: "a",
+        effect: "c",
         time_horizon: "h",
       };
       delete args[missing];
@@ -254,17 +269,16 @@ describe("gcRiskScenarioToolHandler create (issue #876)", () => {
 describe("gcRiskScenarioToolHandler update (issue #876)", () => {
   const ID = "22222222-2222-2222-2222-222222222222";
 
-  it("PUTs to /api/v1/risk-scenarios/<id> with the camelCase update body", async () => {
+  it("PUTs to /api/v1/risk-scenarios/<id> with the camelCase FAIR-CRST update body", async () => {
     const calls = makeFetchSpy();
     await gcRiskScenarioToolHandler({
       action: "update",
       id: ID,
       title: "New title",
-      threat_source: "src2",
-      threat_event: "evt2",
-      affected_object: "aff2",
-      vulnerability: "vuln2",
-      consequence: "loss2",
+      threat: "src2",
+      method: "evt2",
+      asset: "aff2",
+      effect: "loss2",
       time_horizon: "6 months",
       project: "proj-a",
     });
@@ -273,11 +287,10 @@ describe("gcRiskScenarioToolHandler update (issue #876)", () => {
     assert.match(calls[0].url, new RegExp(`/api/v1/risk-scenarios/${ID}\\b`));
     assert.deepEqual(calls[0].body, {
       title: "New title",
-      threatSource: "src2",
-      threatEvent: "evt2",
-      affectedObject: "aff2",
-      vulnerability: "vuln2",
-      consequence: "loss2",
+      threat: "src2",
+      method: "evt2",
+      asset: "aff2",
+      effect: "loss2",
       timeHorizon: "6 months",
     });
   });
@@ -350,9 +363,9 @@ describe("gcRiskScenarioToolHandler other actions", () => {
       target_title: "GC-X001",
       // these must not leak into the link body
       title: "should-not-leak",
-      threat_source: "should-not-leak",
-      affected_object: "should-not-leak",
-      consequence: "should-not-leak",
+      threat: "should-not-leak",
+      asset: "should-not-leak",
+      effect: "should-not-leak",
     });
     assert.equal(calls.length, 1);
     assert.equal(calls[0].method, "POST");

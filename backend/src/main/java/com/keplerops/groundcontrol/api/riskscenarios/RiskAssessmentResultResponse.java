@@ -32,6 +32,7 @@ public record RiskAssessmentResultResponse(
         List<String> evidenceRefs,
         String notes,
         List<UUID> observationIds,
+        Instant reassessmentRequiredAt,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -65,6 +66,7 @@ public record RiskAssessmentResultResponse(
                 result.getObservations().stream()
                         .map(observation -> observation.getId())
                         .toList(),
+                result.getReassessmentRequiredAt(),
                 result.getCreatedAt(),
                 result.getUpdatedAt());
     }

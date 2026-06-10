@@ -7,6 +7,7 @@
 // the developer-local mirror of that gate.
 export type Status = "DRAFT" | "ACTIVE" | "DEPRECATED" | "ARCHIVED";
 export const STATUSES: Status[] = ["DRAFT", "ACTIVE", "DEPRECATED", "ARCHIVED"];
+export type RiskScenarioStatus = "DRAFT" | "ACTIVE" | "ARCHIVED";
 export type Priority = "MUST" | "SHOULD" | "COULD" | "WONT";
 export const PRIORITIES: Priority[] = ["MUST", "SHOULD", "COULD", "WONT"];
 export type ControlFunction =
@@ -596,7 +597,19 @@ export type GraphEntityType =
   | "RISK_ASSESSMENT_RESULT"
   | "TREATMENT_PLAN"
   | "METHODOLOGY_PROFILE"
-  | "EVIDENCE_ARTIFACT";
+  | "EVIDENCE_ARTIFACT"
+  | "CONTROL"
+  | "CONTROL_LINK"
+  | "CONTROL_TEST"
+  | "CONTROL_EFFECTIVENESS_ASSESSMENT"
+  | "VERIFICATION_RESULT"
+  | "THREAT_MODEL"
+  | "FINDING"
+  | "AUDIT"
+  | "AUDIT_LINK"
+  | "RISK_CONTROL_MAPPING"
+  | "SCOPED_CONTROL_IMPLEMENTATION"
+  | "DOCUMENT";
 
 // GC-M012 asset ownership / criticality / scope vocabularies. Mirrors the
 // backend `AssetCriticality`, `AssetEnvironment`, and `AssetScope` enums; ADR-012
@@ -638,6 +651,111 @@ export const KNOWLEDGE_STATES: KnowledgeState[] = [
   "CONFIRMED",
   "PROVISIONAL",
   "UNKNOWN",
+];
+
+// GC-T012: normalized cross-methodology risk concept vocabulary and crosswalk
+// surface types. Single-sourced from backend NormalizedConcept and
+// CrosswalkVocabularySurface enums under domain/riskscenarios/state/.
+// Mirror policy per ADR-034 — declaration order matches the Java enum order;
+// enforced by tools/policy/checks.py::ENUM_CONTRACT_INVENTORY.
+export type NormalizedConcept =
+  | "THREAT_SOURCE"
+  | "THREAT_EVENT"
+  | "VULNERABILITY_OR_EXPOSURE"
+  | "ASSET"
+  | "PROCESS_OR_OBJECTIVE"
+  | "CONSEQUENCE_OR_EFFECT"
+  | "CONTROL"
+  | "LIKELIHOOD_OR_FREQUENCY"
+  | "IMPACT_OR_LOSS_MAGNITUDE"
+  | "TREATMENT";
+export const NORMALIZED_CONCEPTS: NormalizedConcept[] = [
+  "THREAT_SOURCE",
+  "THREAT_EVENT",
+  "VULNERABILITY_OR_EXPOSURE",
+  "ASSET",
+  "PROCESS_OR_OBJECTIVE",
+  "CONSEQUENCE_OR_EFFECT",
+  "CONTROL",
+  "LIKELIHOOD_OR_FREQUENCY",
+  "IMPACT_OR_LOSS_MAGNITUDE",
+  "TREATMENT",
+];
+
+export type CrosswalkVocabularySurface =
+  | "INPUT_SCHEMA"
+  | "OUTPUT_SCHEMA"
+  | "TREATMENT_STRATEGY_VOCABULARY";
+export const CROSSWALK_VOCABULARY_SURFACES: CrosswalkVocabularySurface[] = [
+  "INPUT_SCHEMA",
+  "OUTPUT_SCHEMA",
+  "TREATMENT_STRATEGY_VOCABULARY",
+];
+
+export interface CrosswalkEntry {
+  normalizedConcept: NormalizedConcept;
+  vocabularySurface: CrosswalkVocabularySurface;
+  sourceFieldPath: string;
+  sourceTermLabel?: string | null;
+  sourceTermDefinition?: string | null;
+  scale?: string | null;
+  units?: string | null;
+  conversionRule?: string | null;
+  limitations?: string | null;
+}
+
+// GC-T014 NIST SP 800-30 Rev. 1 enums. Single-sourced from backend
+// ThreatEventKind, ThreatSourceRelevance, NistLikelihoodBand, NistImpactBand.
+// Mirror policy per ADR-034 — every constant array below must match the
+// backend enum order; enforced by tools/policy/checks.py::ENUM_CONTRACT_INVENTORY.
+export type ThreatEventKind = "ADVERSARIAL" | "NON_ADVERSARIAL";
+export const THREAT_EVENT_KINDS: ThreatEventKind[] = [
+  "ADVERSARIAL",
+  "NON_ADVERSARIAL",
+];
+
+export type ThreatSourceRelevance =
+  | "CONFIRMED"
+  | "EXPECTED"
+  | "ANTICIPATED"
+  | "PREDICTED"
+  | "POSSIBLE"
+  | "NOT_APPLICABLE";
+export const THREAT_SOURCE_RELEVANCES: ThreatSourceRelevance[] = [
+  "CONFIRMED",
+  "EXPECTED",
+  "ANTICIPATED",
+  "PREDICTED",
+  "POSSIBLE",
+  "NOT_APPLICABLE",
+];
+
+export type NistLikelihoodBand =
+  | "VERY_LOW"
+  | "LOW"
+  | "MODERATE"
+  | "HIGH"
+  | "VERY_HIGH";
+export const NIST_LIKELIHOOD_BANDS: NistLikelihoodBand[] = [
+  "VERY_LOW",
+  "LOW",
+  "MODERATE",
+  "HIGH",
+  "VERY_HIGH",
+];
+
+export type NistImpactBand =
+  | "VERY_LOW"
+  | "LOW"
+  | "MODERATE"
+  | "HIGH"
+  | "VERY_HIGH";
+export const NIST_IMPACT_BANDS: NistImpactBand[] = [
+  "VERY_LOW",
+  "LOW",
+  "MODERATE",
+  "HIGH",
+  "VERY_HIGH",
 ];
 
 // GC-U001 / ADR-047 Audit entity enums. Single-sourced from backend
@@ -735,6 +853,24 @@ export interface RequirementResponse {
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
+}
+
+export interface RiskScenarioResponse {
+  id: string;
+  graphNodeId: string;
+  projectIdentifier: string;
+  uid: string;
+  title: string;
+  status: RiskScenarioStatus;
+  threat: string;
+  method: string;
+  asset: string;
+  effect: string;
+  timeHorizon: string;
+  fairSentence: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string | null;
 }
 
 export interface RelationResponse {
@@ -1077,4 +1213,241 @@ export interface GitHubIssueRequest {
   repo?: string;
   extraBody?: string;
   labels?: string[];
+}
+
+// GC-Q010 — Threat Modeling Workspace types.
+// Enum mirrors: StrideCategory, ThreatModelStatus, AssetType, and freshness
+// state strings must track the backend Java enums (ADR-034 enum contract).
+// Policy check: tools/policy/checks.py::run_enum_contract_check.
+export type StrideCategory =
+  | "SPOOFING"
+  | "TAMPERING"
+  | "REPUDIATION"
+  | "INFORMATION_DISCLOSURE"
+  | "DENIAL_OF_SERVICE"
+  | "ELEVATION_OF_PRIVILEGE";
+
+export type ThreatModelStatus = "DRAFT" | "ACTIVE" | "ARCHIVED";
+
+export type AssetType =
+  | "APPLICATION"
+  | "SERVICE"
+  | "SYSTEM"
+  | "DATABASE"
+  | "NETWORK"
+  | "HOST"
+  | "CONTAINER"
+  | "IDENTITY"
+  | "DATA_STORE"
+  | "ENDPOINT"
+  | "INTEGRATION"
+  | "WORKLOAD"
+  | "THIRD_PARTY"
+  | "BOUNDARY"
+  | "OTHER";
+
+export type AssetRelationType =
+  | "CONTAINS"
+  | "DEPENDS_ON"
+  | "COMMUNICATES_WITH"
+  | "TRUST_BOUNDARY"
+  | "SUPPORTS"
+  | "ACCESSES"
+  | "DATA_FLOW";
+
+// Evidence freshness dominant-state values (mirrors EvidenceFreshnessAnalysisService constants).
+export type FreshnessState =
+  | "FRESH"
+  | "STALE"
+  | "EXPIRED"
+  | "SUPERSEDED"
+  | "NO_OBSERVATIONS";
+
+export interface WorkspaceAsset {
+  id: string;
+  uid: string;
+  name: string;
+  assetType: AssetType;
+  boundary: boolean;
+}
+
+export interface WorkspaceFlow {
+  id: string;
+  sourceAssetId: string;
+  targetAssetId: string;
+  relationType: AssetRelationType;
+}
+
+export interface WorkspaceLink {
+  targetEntityId: string | null;
+  targetIdentifier: string | null;
+  targetTitle: string | null;
+  targetUrl: string | null;
+}
+
+export interface WorkspaceThreatEntry {
+  id: string;
+  uid: string;
+  title: string;
+  status: ThreatModelStatus;
+  stride: StrideCategory | null;
+  linkedAssetIds: string[];
+  linkedControls: WorkspaceLink[];
+  linkedRequirements: WorkspaceLink[];
+  staleIndicator: FreshnessState;
+}
+
+export interface ThreatModelWorkspaceResponse {
+  assets: WorkspaceAsset[];
+  flows: WorkspaceFlow[];
+  entries: WorkspaceThreatEntry[];
+  assetCount: number;
+  flowCount: number;
+  entryCount: number;
+}
+
+// GC-T012 / GC-T004: MethodologyProfile response and request types.
+// Mirrors backend MethodologyProfileResponse / MethodologyProfileRequest /
+// UpdateMethodologyProfileRequest field-for-field.
+export interface MethodologyProfile {
+  id: string;
+  graphNodeId: string;
+  projectIdentifier: string;
+  profileKey: string;
+  name: string;
+  version: string;
+  family: string;
+  description?: string | null;
+  inputSchema?: Record<string, unknown> | null;
+  outputSchema?: Record<string, unknown> | null;
+  status: string;
+  treatmentStrategyVocabulary?: Record<string, unknown> | null;
+  crosswalkEntries?: CrosswalkEntry[] | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MethodologyProfileRequest {
+  profileKey: string;
+  name: string;
+  version: string;
+  family: string;
+  description?: string | null;
+  inputSchema?: Record<string, unknown> | null;
+  outputSchema?: Record<string, unknown> | null;
+  status?: string | null;
+  treatmentStrategyVocabulary?: Record<string, unknown> | null;
+  crosswalkEntries?: CrosswalkEntry[] | null;
+}
+
+export interface UpdateMethodologyProfileRequest {
+  name?: string | null;
+  version?: string | null;
+  family?: string | null;
+  description?: string | null;
+  inputSchema?: Record<string, unknown> | null;
+  outputSchema?: Record<string, unknown> | null;
+  status?: string | null;
+  treatmentStrategyVocabulary?: Record<string, unknown> | null;
+  crosswalkEntries?: CrosswalkEntry[] | null;
+}
+
+// GC-Q009 — Risk Scenario Workspace types.
+// Enum mirrors: RiskScenarioStatus (already declared above at line 10),
+// RiskAssessmentApprovalStatus, TreatmentPlanStatus,
+// TreatmentStrategy, RiskRegisterStatus must track the backend Java enums (ADR-034 enum contract).
+// Policy check: tools/policy/checks.py::run_enum_contract_check.
+
+export type RiskAssessmentApprovalStatus =
+  | "DRAFT"
+  | "SUBMITTED"
+  | "APPROVED"
+  | "REJECTED";
+
+export type TreatmentPlanStatus =
+  | "PLANNED"
+  | "IN_PROGRESS"
+  | "BLOCKED"
+  | "COMPLETED"
+  | "CANCELED";
+
+export type TreatmentStrategy =
+  | "MITIGATE"
+  | "ACCEPT"
+  | "TRANSFER"
+  | "SHARE"
+  | "AVOID"
+  | "OTHER";
+
+export type RiskRegisterStatus =
+  | "IDENTIFIED"
+  | "ANALYZING"
+  | "ASSESSED"
+  | "TREATING"
+  | "MONITORING"
+  | "ACCEPTED"
+  | "CLOSED";
+
+// Review indicator values for risk scenario workspace (explicit-signals-only per GC-Q009 preflight).
+export type ScenarioReviewState =
+  | "REASSESSMENT_REQUIRED"
+  | "REVIEW_DUE"
+  | "EVIDENCE_STALE"
+  | "CURRENT"
+  | "NO_SIGNAL";
+
+export interface WorkspaceAssessment {
+  id: string;
+  methodologyProfileName: string | null;
+  approvalState: RiskAssessmentApprovalStatus;
+  assessmentAt: string | null;
+  confidence: string | null;
+  reassessmentRequiredAt: string | null;
+  hasComputedOutputs: boolean;
+}
+
+export interface WorkspaceTreatment {
+  id: string;
+  uid: string;
+  title: string;
+  strategy: TreatmentStrategy;
+  status: TreatmentPlanStatus;
+  owner: string | null;
+  dueDate: string | null;
+}
+
+export interface WorkspaceRegisterRef {
+  id: string;
+  uid: string;
+  title: string;
+  status: RiskRegisterStatus;
+}
+
+export interface WorkspaceScenario {
+  id: string;
+  uid: string;
+  title: string;
+  status: RiskScenarioStatus;
+  threat: string;
+  method: string;
+  asset: string;
+  effect: string;
+  timeHorizon: string | null;
+  fairSentence: string;
+  linkedAssetIds: string[];
+  linkedControls: WorkspaceLink[];
+  linkedFindings: WorkspaceLink[];
+  linkedEvidence: WorkspaceLink[];
+  linkedRequirements: WorkspaceLink[];
+  assessments: WorkspaceAssessment[];
+  treatments: WorkspaceTreatment[];
+  registerRecords: WorkspaceRegisterRef[];
+  reviewIndicator: ScenarioReviewState;
+}
+
+export interface RiskScenarioWorkspaceResponse {
+  scenarios: WorkspaceScenario[];
+  assets: WorkspaceAsset[];
+  scenarioCount: number;
+  assetCount: number;
 }

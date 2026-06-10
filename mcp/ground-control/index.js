@@ -47,7 +47,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import {
   // ---- project/requirement/relation/traceability ----
-  listProjects, createProject,
+  listProjects, createProject, replaceResearchIntake,
   getRequirementByUid, listRequirements, createRequirement, updateRequirement,
   transitionStatus, bulkTransitionStatus, archiveRequirement, cloneRequirement,
   createRelation, getRelations, deleteRelation,
@@ -60,6 +60,8 @@ import {
   getDashboardStats,
   // ---- GC-L007 GRC analysis ----
   analyzeEvidenceFreshness, analyzeObservationProjection, aggregateVendorRisk,
+  // ---- GC-T014 NIST SP 800-30 Rev. 1 assessment ----
+  analyzeNistAssessment,
   // ---- history / exports (kept for completeness even though tools route to gc_query) ----
   getRequirementHistory, getRelationHistory, getTraceabilityLinkHistory,
   getRequirementTimeline, getRequirementDiff, getProjectTimeline,
@@ -74,6 +76,7 @@ import {
   runCodexArchitecturePreflight, runCodexReview, runCodexVerifyFinding,
   runTestQualityReview, TEST_QUALITY_REVIEW_HARD_CAP,
   runPostImplementationPlan,
+  runAssertTraceabilityReconciled, runCloseIssueAfterMerge,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
   runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
   runCodexReviewCycle, runTestQualityReviewCycle,
@@ -117,11 +120,11 @@ import {
   deleteObservation, listLatestObservations,
   createRiskScenario, listRiskScenarios, getRiskScenario, updateRiskScenario,
   deleteRiskScenario, transitionRiskScenarioStatus, getRiskScenarioRequirements,
-  getRiskScenarioTrace,
+  getRiskScenarioTrace, getRiskScenarioWorkspace,
   createRiskScenarioLink, listRiskScenarioLinks, deleteRiskScenarioLink,
   createThreatModel, listThreatModels, getThreatModel, updateThreatModel,
   deleteThreatModel, transitionThreatModelStatus, getThreatModelLinkedRequirements,
-  getThreatModelTrace,
+  getThreatModelTrace, getThreatModelWorkspace,
   createThreatModelLink, listThreatModelLinks, deleteThreatModelLink,
   createMethodologyProfile, listMethodologyProfiles, getMethodologyProfile,
   updateMethodologyProfile, deleteMethodologyProfile,
@@ -591,6 +594,55 @@ server.tool(
   },
 );
 
+server.tool(
+  "gc_assert_traceability_reconciled",
+  "Assert that traceability reconciliation has landed for the issue and post a 'traceability_reconciled' phase marker. Re-fetches each in-scope requirement (status_intent: ACTIVE or DRAFT) and its links from the Ground Control REST API and refuses unless every ACTIVE requirement has an IMPLEMENTS link AND, when the IMPLEMENTS link points at an executable surface (backend/src/main/**, frontend/src/**, mcp/**, tools/policy/**), at least one TESTS link. DRAFT requirements are TESTS-exempt. Empty requirements[] runs the orphaned-link audit instead. Downstream: gc_post_final_report refuses unless this marker exists for the issue. override=true + override_reason allows the user to authorize a skip with a quoted rationale.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    requirements: z.array(z.object({
+      uid: z.string().regex(EXACT_REQUIREMENT_UID_RE),
+      status_intent: z.enum(["ACTIVE", "DRAFT", "DEPRECATED", "ARCHIVED"]).optional(),
+    })),
+    project: z.string().optional(),
+    touched_files: z.array(z.string()).optional(),
+    override: z.boolean().optional(),
+    override_reason: z.string().optional(),
+  },
+  async ({ repo_path, issue_number, requirements, project, touched_files, override, override_reason }) => {
+    try {
+      return ok(JSON.stringify(await runAssertTraceabilityReconciled({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        requirements: requirements.map((r) => ({ uid: r.uid, statusIntent: r.status_intent ?? "ACTIVE" })),
+        project: project ?? null,
+        touchedFiles: touched_files ?? [],
+        override: Boolean(override),
+        overrideReason: override_reason ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_close_issue_after_merge",
+  "Canonical post-merge close path for the /implement workflow's Phase E (Step 20). Verifies the issue's linked PR is merged (merged_at non-null AND state=MERGED) before running `gh issue close`; refuses otherwise. Idempotent — re-running on an already-closed issue returns ok with already_closed=true. The PR body's `Closes #<n>` keyword remains the GitHub cross-link for sidebar / timeline purposes, but this tool is the gate-enforcing close path. pr_number is optional; when omitted the tool resolves the merged PR for the issue via the GitHub timeline.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    pr_number: z.number().int().positive().optional(),
+  },
+  async ({ repo_path, issue_number, pr_number }) => {
+    try {
+      return ok(JSON.stringify(await runCloseIssueAfterMerge({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        prNumber: pr_number ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
 const CODEX_REVIEW_CAPS = { postPushCap: CODEX_REVIEW_HARD_CAP, prepushCap: CODEX_REVIEW_PREPUSH_HARD_CAP };
 
 server.tool(
@@ -767,8 +819,10 @@ server.tool(
       outcome: z.enum(["updated", "verified_unchanged", "not_updated_authorized"]),
       rationale: z.string().optional(),
     }).optional(),
+    override_traceability_gate: z.boolean().optional(),
+    override_traceability_reason: z.string().optional(),
   },
-  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, lane, documentation_outcome }) => {
+  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, lane, documentation_outcome, override_traceability_gate, override_traceability_reason }) => {
     try {
       return ok(JSON.stringify(await runPostFinalReport({
         repoPath: repo_path,
@@ -784,6 +838,8 @@ server.tool(
         lane: lane ?? null,
         summary: summary ?? null,
         documentation_outcome: documentation_outcome ?? null,
+        overrideTraceabilityGate: Boolean(override_traceability_gate),
+        overrideTraceabilityReason: override_traceability_reason ?? null,
       }), null, 2));
     } catch (e) { return err(e); }
   },
@@ -1366,9 +1422,12 @@ const ANALYZE_KINDS = [
   "cycles", "orphans", "coverage_gaps", "impact", "cross_wave",
   "consistency", "completeness", "status_drift", "similarity", "work_order",
   // GC-L007 — GRC analyses on existing substrates. Methodology-execution
-  // engines (FAIR / FAIR-CAM / NIST) and compliance-framework analyses are
-  // tracked separately and ship their own kinds when those engines land.
+  // engines (FAIR / FAIR-CAM) and compliance-framework analyses are tracked
+  // separately and ship their own kinds when those engines land.
   "evidence_freshness", "observation_exposure", "control_state", "vendor_risk_aggregation",
+  // GC-T014 — NIST SP 800-30 Rev. 1 risk-assessment view (methodology-attributed
+  // envelope from /api/v1/analysis/grc/nist-sp-800-30).
+  "nist_assessment",
 ];
 
 server.tool(
@@ -1378,7 +1437,8 @@ server.tool(
     `evidence_freshness→{project?, as_of?, freshness_window_days?, include_superseded?, asset_id?, control_id?}; ` +
     `observation_exposure→{project?, as_of?, asset_id?}; ` +
     `control_state→{project?, as_of?, asset_id?, control_id?}; ` +
-    `vendor_risk_aggregation→{project?, as_of?, freshness_window_days?, vendor_asset_id?}. ` +
+    `vendor_risk_aggregation→{project?, as_of?, freshness_window_days?, vendor_asset_id?}; ` +
+    `nist_assessment→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
     `Others take {project?}.`,
   {
     kind: z.enum(ANALYZE_KINDS),
@@ -1394,6 +1454,9 @@ server.tool(
     asset_id: z.string().uuid().optional(),
     control_id: z.string().uuid().optional(),
     vendor_asset_id: z.string().uuid().optional(),
+    // GC-T014 NIST assessment params
+    risk_assessment_result_id: z.string().uuid().optional(),
+    risk_scenario_id: z.string().uuid().optional(),
   },
   async (args) => {
     try {
@@ -1444,6 +1507,13 @@ server.tool(
             asOf: args.as_of,
             freshnessWindowDays: args.freshness_window_days,
             vendorAssetId: args.vendor_asset_id,
+          }), null, 2));
+        case "nist_assessment":
+          return ok(JSON.stringify(await analyzeNistAssessment({
+            project: args.project,
+            asOf: args.as_of,
+            riskAssessmentResultId: args.risk_assessment_result_id,
+            riskScenarioId: args.risk_scenario_id,
           }), null, 2));
         default: return err(new Error(`Unknown kind: ${args.kind}`));
       }
@@ -1643,6 +1713,65 @@ server.tool(
     try {
       const result = await gcThreatModelToolHandler(args);
       return result === null ? ok("Deleted") : ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_risk_scenario_workspace: GC-Q009. Read-only composition endpoint returning
+// risk scenarios with linked assets, controls, findings, evidence, assessments,
+// treatments, and register memberships. Review indicator uses only explicit signals.
+server.tool(
+  "gc_risk_scenario_workspace",
+  "Read-only Risk Scenario Workspace (GC-Q009). Returns scoped risk scenarios with " +
+    "linked operational assets, controls, findings, evidence, requirements, assessments " +
+    "(methodologyProfileName, approvalState, hasComputedOutputs, reassessmentRequiredAt), " +
+    "treatment plans, and risk register memberships. Review indicator is an explicit-signal " +
+    "rollup: REASSESSMENT_REQUIRED > REVIEW_DUE > EVIDENCE_STALE > CURRENT > NO_SIGNAL. " +
+    "Optional filters: assetId (UUID), status (RiskScenarioStatus), methodologyProfileId (UUID), " +
+    "approvalState (RiskAssessmentApprovalStatus), treatmentStatus (TreatmentPlanStatus), " +
+    "asOf (ISO-8601 instant), freshnessWindowDays (default 90), compare (array of ≤10 UUIDs).",
+  {
+    project: z.string().optional(),
+    assetId: z.string().uuid().optional(),
+    status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
+    methodologyProfileId: z.string().uuid().optional(),
+    approvalState: z.enum(["DRAFT", "SUBMITTED", "APPROVED", "REJECTED"]).optional(),
+    treatmentStatus: z.enum(["PLANNED", "IN_PROGRESS", "BLOCKED", "COMPLETED", "CANCELED"]).optional(),
+    asOf: z.string().optional(),
+    freshnessWindowDays: z.number().int().positive().optional(),
+    compare: z.array(z.string().uuid()).max(10).optional(),
+  },
+  async ({ project, assetId, status, methodologyProfileId, approvalState, treatmentStatus, asOf, freshnessWindowDays, compare }) => {
+    try {
+      const result = await getRiskScenarioWorkspace({ project, assetId, status, methodologyProfileId, approvalState, treatmentStatus, asOf, freshnessWindowDays, compare });
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_threat_model_workspace: GC-Q010. Read-only composition endpoint returning
+// scoped assets (with boundary distinction), active flows, and threat entries
+// with linked controls, requirements, and evidence-freshness staleness indicators.
+server.tool(
+  "gc_threat_model_workspace",
+  "Read-only Threat Modeling Workspace (GC-Q010). Returns scoped operational assets, " +
+    "trust boundaries, active flows, and threat entries with linked controls, " +
+    "requirements, and per-entry evidence-freshness staleness indicators. " +
+    "Optional filters: assetId (UUID), stride (StrideCategory enum), " +
+    "status (ThreatModelStatus enum), asOf (ISO-8601 instant), " +
+    "freshnessWindowDays (default 90).",
+  {
+    project: z.string().optional(),
+    assetId: z.string().uuid().optional(),
+    stride: z.enum(["SPOOFING", "TAMPERING", "REPUDIATION", "INFORMATION_DISCLOSURE", "DENIAL_OF_SERVICE", "ELEVATION_OF_PRIVILEGE"]).optional(),
+    status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
+    asOf: z.string().optional(),
+    freshnessWindowDays: z.number().int().positive().optional(),
+  },
+  async ({ project, assetId, stride, status, asOf, freshnessWindowDays }) => {
+    try {
+      const result = await getThreatModelWorkspace({ project, assetId, stride, status, asOf, freshnessWindowDays });
+      return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },
 );
@@ -2577,6 +2706,7 @@ const ADMIN_ACTIONS = [
   "import_strictdoc", "import_reqif", "sync_github", "sync_github_prs",
   "embed_requirement", "embed_project", "embedding_status",
   "materialize_graph", "create_project", "list_projects",
+  "replace_research_intake",
   "run_sweep", "run_sweep_all",
   "export_audit_timeline", "export_requirements", "export_sweep_report", "export_document",
 ];
@@ -2602,6 +2732,25 @@ if (ADMIN_TOOLS_ENABLED) {
       format: z.string().optional(),
       from: z.string().optional(),
       to: z.string().optional(),
+      // Project type + research intake (ADR-056, issue #999).
+      type: z.enum(["SOFTWARE", "GRC", "RESEARCH"]).optional(),
+      research_intake: z.object({
+        goal: z.string(),
+        paperContext: z.string().optional(),
+        contributionType: z.enum([
+          "TAXONOMY", "REVIEW", "EMPIRICAL_STUDY", "METHODOLOGY", "POSITION", "OTHER",
+        ]),
+        intendedOutput: z.enum([
+          "SCOPING_REVIEW", "SYSTEMATIC_REVIEW", "SYSTEMATIC_MAP", "CRITICAL_REVIEW",
+          "NARRATIVE_REVIEW", "TARGETED_RELATED_WORK", "TAXONOMY_PAPER", "OTHER",
+        ]),
+        autonomyLevel: z.enum(["COPILOT", "AUTONOMOUS"]),
+        allowedTools: z.array(z.string()),
+        privacyConstraints: z.string().optional(),
+        budgetTokens: z.number().int().nonnegative().optional(),
+        budgetWallClockMinutes: z.number().int().nonnegative().optional(),
+        budgetCostUsdMicros: z.number().int().nonnegative().optional(),
+      }).optional(),
     },
     async (args) => {
       try {
@@ -2617,7 +2766,21 @@ if (ADMIN_TOOLS_ENABLED) {
           case "list_projects": return ok(JSON.stringify(await listProjects(), null, 2));
           case "create_project": {
             reqArg(args, "identifier", "create_project"); reqArg(args, "name", "create_project");
-            return ok(JSON.stringify(await createProject({ identifier: args.identifier, name: args.name, description: args.description }), null, 2));
+            // type + researchIntake are optional (ADR-056); the backend defaults
+            // type to SOFTWARE and enforces "researchIntake iff type=RESEARCH".
+            const body = {
+              identifier: args.identifier,
+              name: args.name,
+              description: args.description,
+            };
+            if (args.type) body.type = args.type;
+            if (args.research_intake) body.researchIntake = args.research_intake;
+            return ok(JSON.stringify(await createProject(body), null, 2));
+          }
+          case "replace_research_intake": {
+            reqArg(args, "identifier", "replace_research_intake");
+            reqArg(args, "research_intake", "replace_research_intake");
+            return ok(JSON.stringify(await replaceResearchIntake(args.identifier, args.research_intake), null, 2));
           }
           case "run_sweep": return ok(JSON.stringify(await runSweep(args.project), null, 2));
           case "run_sweep_all": return ok(JSON.stringify(await runSweepAll(), null, 2));

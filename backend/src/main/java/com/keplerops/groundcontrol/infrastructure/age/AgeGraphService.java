@@ -182,14 +182,12 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
             "confidence",
             // Risk-scenario projection.
             "category",
-            "threatSource",
-            "threatEvent",
-            "vulnerability",
-            "consequence",
-            "affectedObject",
+            "threat",
+            "method",
+            "asset",
+            "effect",
             "stride",
             "timeHorizon",
-            "effect",
             "property",
             "strategy",
             // Treatment / control / verification.
@@ -219,7 +217,11 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
             "designEffectiveness",
             "operatingEffectiveness",
             "assessor",
-            "assessedAt");
+            "assessedAt",
+            // Document projection (GC-G007). updatedAt is also referenced here for
+            // the first time; all other Document keys (title, version, description,
+            // createdBy, createdAt) were already present from earlier contributors.
+            "updatedAt");
     // AGE's ag_catalog.cypher() function takes cstring/cstring/agtype. Its first two arguments
     // are parsed at SQL parse time by AGE's parser hook, so they cannot be JDBC bind parameters
     // — they must be SQL literals. The third argument (params agtype) is the user-data carrier

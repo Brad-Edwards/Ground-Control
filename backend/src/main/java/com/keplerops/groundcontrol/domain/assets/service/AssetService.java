@@ -24,13 +24,21 @@ import com.keplerops.groundcontrol.domain.findings.repository.FindingLinkReposit
 import com.keplerops.groundcontrol.domain.findings.state.FindingLinkTargetType;
 import com.keplerops.groundcontrol.domain.graph.service.GraphTargetResolverService;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
+import com.keplerops.groundcontrol.domain.riskscenarios.events.AssetStateChangedEvent;
+import com.keplerops.groundcontrol.domain.riskscenarios.events.ReassessmentSignal;
+import com.keplerops.groundcontrol.domain.riskscenarios.events.ReassessmentSourceEntityType;
+import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerCategory;
 import java.io.Serializable;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,6 +52,35 @@ public class AssetService {
     private static final String DETAIL_FIELD = "field";
     private static final String DETAIL_LIMIT = "limit";
 
+    // GC-T004 / C8 (#863): risk-bearing asset field keys hoisted out of inline
+    // literals so each rename is one site, not three. Used by the snapshot,
+    // changed-set diff, and event payload builders.
+    private static final String FIELD_ASSET_TYPE = "assetType";
+    private static final String FIELD_ENVIRONMENT = "environment";
+    private static final String FIELD_CRITICALITY = "criticality";
+    private static final String FIELD_SCOPE_DESIGNATION = "scopeDesignation";
+    private static final String FIELD_BUSINESS_CONTEXT = "businessContext";
+    private static final String FIELD_OWNER = "owner";
+    private static final String FIELD_STEWARD = "steward";
+    private static final String FIELD_KNOWLEDGE_STATE = "knowledgeState";
+    private static final String FIELD_ARCHIVED_AT = "archivedAt";
+
+    /**
+     * Risk-bearing asset fields tracked by GC-T004 / C8 (#863). A change in any of these on
+     * {@code update} fires an {@link AssetStateChangedEvent} so the reassessment listener can
+     * route on which fields moved. Drawn from the preflight: asset type, environment,
+     * criticality, scope, business context, ownership, stewardship, and knowledge state.
+     */
+    private static final Set<String> RISK_BEARING_FIELDS = Set.of(
+            FIELD_ASSET_TYPE,
+            FIELD_ENVIRONMENT,
+            FIELD_CRITICALITY,
+            FIELD_SCOPE_DESIGNATION,
+            FIELD_BUSINESS_CONTEXT,
+            FIELD_OWNER,
+            FIELD_STEWARD,
+            FIELD_KNOWLEDGE_STATE);
+
     private final OperationalAssetRepository assetRepository;
     private final AssetRelationRepository relationRepository;
     private final AssetLinkRepository linkRepository;
@@ -54,7 +91,9 @@ public class AssetService {
     private final GraphTargetResolverService graphTargetResolverService;
     private final AssetSubtypeSchemaRepository subtypeSchemaRepository;
     private final AssetSubtypeValidator subtypeValidator;
+    private final ApplicationEventPublisher eventPublisher;
 
+    @SuppressWarnings("java:S107") // service aggregates eleven collaborators from the constructor on purpose
     public AssetService(
             OperationalAssetRepository assetRepository,
             AssetRelationRepository relationRepository,
@@ -65,7 +104,8 @@ public class AssetService {
             ProjectRepository projectRepository,
             GraphTargetResolverService graphTargetResolverService,
             AssetSubtypeSchemaRepository subtypeSchemaRepository,
-            AssetSubtypeValidator subtypeValidator) {
+            AssetSubtypeValidator subtypeValidator,
+            ApplicationEventPublisher eventPublisher) {
         this.assetRepository = assetRepository;
         this.relationRepository = relationRepository;
         this.linkRepository = linkRepository;
@@ -76,6 +116,7 @@ public class AssetService {
         this.graphTargetResolverService = graphTargetResolverService;
         this.subtypeSchemaRepository = subtypeSchemaRepository;
         this.subtypeValidator = subtypeValidator;
+        this.eventPublisher = eventPublisher;
     }
 
     public OperationalAsset create(CreateAssetCommand command) {
@@ -86,8 +127,8 @@ public class AssetService {
         // (codex cycle-4 finding 1). Cheap-fail before the project lookup.
         bounded("uid", command.uid(), OperationalAssetBounds.UID);
         bounded("name", command.name(), OperationalAssetBounds.NAME);
-        bounded("owner", command.owner(), OperationalAssetBounds.OWNER);
-        bounded("steward", command.steward(), OperationalAssetBounds.STEWARD);
+        bounded(FIELD_OWNER, command.owner(), OperationalAssetBounds.OWNER);
+        bounded(FIELD_STEWARD, command.steward(), OperationalAssetBounds.STEWARD);
         bounded(FIELD_SUBTYPE, command.subtype(), OperationalAssetBounds.SUBTYPE);
 
         var project = projectRepository
@@ -163,15 +204,27 @@ public class AssetService {
 
     public OperationalAsset update(UUID projectId, UUID id, UpdateAssetCommand command) {
         var asset = getById(projectId, id);
+        var oldSnapshot = riskBearingSnapshot(asset);
         applyAssetUpdates(asset, command);
-        return assetRepository.save(asset);
+        var saved = assetRepository.save(asset);
+        publishStateChangeIfRiskFieldsMoved(saved, oldSnapshot);
+        return saved;
     }
 
+    /**
+     * Deprecated UUID-only overload routes through the same C8 publisher path as the
+     * project-scoped {@link #update(UUID, UUID, UpdateAssetCommand)}; project id is resolved
+     * from the loaded aggregate so reassessment signal routing is not silently skipped on
+     * legacy call sites (GC-T004 / C8, issue #863).
+     */
     @Deprecated(forRemoval = false)
     public OperationalAsset update(UUID id, UpdateAssetCommand command) {
         var asset = assetRepository.findById(id).orElseThrow(() -> new NotFoundException("Asset not found: " + id));
+        var oldSnapshot = riskBearingSnapshot(asset);
         applyAssetUpdates(asset, command);
-        return assetRepository.save(asset);
+        var saved = assetRepository.save(asset);
+        publishStateChangeIfRiskFieldsMoved(saved, oldSnapshot);
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -279,14 +332,18 @@ public class AssetService {
     public OperationalAsset archive(UUID projectId, UUID id) {
         var asset = getById(projectId, id);
         asset.archive();
-        return assetRepository.save(asset);
+        var saved = assetRepository.save(asset);
+        publishArchive(saved);
+        return saved;
     }
 
     @Deprecated(forRemoval = false)
     public OperationalAsset archive(UUID id) {
         var asset = getById(id);
         asset.archive();
-        return assetRepository.save(asset);
+        var saved = assetRepository.save(asset);
+        publishArchive(saved);
+        return saved;
     }
 
     public void delete(UUID projectId, UUID id) {
@@ -705,13 +762,13 @@ public class AssetService {
         // Non-controller callers must hit the same envelope as DTO-validated ones.
         bounded("name", command.name(), OperationalAssetBounds.NAME);
         if (!command.clearOwner()) {
-            bounded("owner", command.owner(), OperationalAssetBounds.OWNER);
+            bounded(FIELD_OWNER, command.owner(), OperationalAssetBounds.OWNER);
         }
         if (!command.clearSteward()) {
-            bounded("steward", command.steward(), OperationalAssetBounds.STEWARD);
+            bounded(FIELD_STEWARD, command.steward(), OperationalAssetBounds.STEWARD);
         }
         if (!command.clearSubtype()) {
-            bounded("subtype", command.subtype(), OperationalAssetBounds.SUBTYPE);
+            bounded(FIELD_SUBTYPE, command.subtype(), OperationalAssetBounds.SUBTYPE);
         }
         applyCoreFieldUpdates(asset, command);
         applyMetadataUpdates(asset, command);
@@ -841,8 +898,8 @@ public class AssetService {
                             + command.subtype() + " was committed first",
                     "asset_subtype_schema_active_conflict",
                     Map.of(
-                            "assetType", command.assetType().name(),
-                            "subtype", command.subtype()));
+                            FIELD_ASSET_TYPE, command.assetType().name(),
+                            FIELD_SUBTYPE, command.subtype()));
         }
     }
 
@@ -981,5 +1038,69 @@ public class AssetService {
         if (knowledgeState != null) {
             relation.setKnowledgeState(knowledgeState);
         }
+    }
+
+    // ----- GC-T004 / C8 (#863): reassessment publisher -----
+
+    /**
+     * Snapshot of the asset's risk-bearing fields immediately before mutation. Compared
+     * to the post-save state to decide whether to publish {@link AssetStateChangedEvent}.
+     * The snapshot uses raw field references (not getters that synthesize state) so
+     * publish-on-no-op-write is impossible.
+     */
+    private Map<String, Object> riskBearingSnapshot(OperationalAsset asset) {
+        Map<String, Object> snap = new HashMap<>();
+        snap.put(FIELD_ASSET_TYPE, asset.getAssetType());
+        snap.put(FIELD_ENVIRONMENT, asset.getEnvironment());
+        snap.put(FIELD_CRITICALITY, asset.getCriticality());
+        snap.put(FIELD_SCOPE_DESIGNATION, asset.getScopeDesignation());
+        snap.put(FIELD_BUSINESS_CONTEXT, asset.getBusinessContext());
+        snap.put(FIELD_OWNER, asset.getOwner());
+        snap.put(FIELD_STEWARD, asset.getSteward());
+        snap.put(FIELD_KNOWLEDGE_STATE, asset.getKnowledgeState());
+        return snap;
+    }
+
+    private void publishStateChangeIfRiskFieldsMoved(OperationalAsset saved, Map<String, Object> oldSnap) {
+        var newSnap = riskBearingSnapshot(saved);
+        Set<String> changed = new HashSet<>();
+        Map<String, Object> oldVals = new HashMap<>();
+        Map<String, Object> newVals = new HashMap<>();
+        for (String field : RISK_BEARING_FIELDS) {
+            var oldVal = oldSnap.get(field);
+            var newVal = newSnap.get(field);
+            if (!java.util.Objects.equals(oldVal, newVal)) {
+                changed.add(field);
+                oldVals.put(field, oldVal);
+                newVals.put(field, newVal);
+            }
+        }
+        if (changed.isEmpty()) {
+            return;
+        }
+        eventPublisher.publishEvent(new AssetStateChangedEvent(new ReassessmentSignal(
+                saved.getProject().getId(),
+                ReassessmentTriggerCategory.ASSET_STATE_CHANGED,
+                ReassessmentSourceEntityType.ASSET,
+                saved.getId(),
+                changed,
+                oldVals,
+                newVals,
+                Instant.now())));
+    }
+
+    private void publishArchive(OperationalAsset saved) {
+        // Archive is intrinsically a transition to "archived" — the listener treats it as
+        // a risk-bearing change regardless of which fields moved. archivedAt is the
+        // only field carried in the changed-field set so consumers can route on it.
+        eventPublisher.publishEvent(new AssetStateChangedEvent(new ReassessmentSignal(
+                saved.getProject().getId(),
+                ReassessmentTriggerCategory.ASSET_STATE_CHANGED,
+                ReassessmentSourceEntityType.ASSET,
+                saved.getId(),
+                Set.of(FIELD_ARCHIVED_AT),
+                Map.of(),
+                Map.of(FIELD_ARCHIVED_AT, saved.getArchivedAt()),
+                Instant.now())));
     }
 }

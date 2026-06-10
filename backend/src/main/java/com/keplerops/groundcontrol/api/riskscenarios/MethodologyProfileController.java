@@ -47,7 +47,8 @@ public class MethodologyProfileController {
                 request.inputSchema(),
                 request.outputSchema(),
                 request.status(),
-                request.treatmentStrategyVocabulary())));
+                request.treatmentStrategyVocabulary(),
+                request.crosswalkEntries())));
     }
 
     @GetMapping
@@ -81,7 +82,8 @@ public class MethodologyProfileController {
                         request.inputSchema(),
                         request.outputSchema(),
                         request.status(),
-                        request.treatmentStrategyVocabulary())));
+                        request.treatmentStrategyVocabulary(),
+                        request.crosswalkEntries())));
     }
 
     @DeleteMapping("/{id}")

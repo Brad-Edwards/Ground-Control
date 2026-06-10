@@ -87,6 +87,15 @@ public class RiskAssessmentResult extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String notes;
 
+    /**
+     * Reassessment-needed timestamp set by the C8 listener
+     * ({@code ReassessmentSignalService}) when an upstream treatment, asset,
+     * or control change implicates this assessment row. Read-only signal —
+     * the row is otherwise unchanged. Null means no outstanding signal.
+     */
+    @Column(name = "reassessment_required_at")
+    private Instant reassessmentRequiredAt;
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "risk_assessment_result_observation",
@@ -235,5 +244,13 @@ public class RiskAssessmentResult extends BaseEntity {
 
     public Set<Observation> getObservations() {
         return observations;
+    }
+
+    public Instant getReassessmentRequiredAt() {
+        return reassessmentRequiredAt;
+    }
+
+    public void setReassessmentRequiredAt(Instant reassessmentRequiredAt) {
+        this.reassessmentRequiredAt = reassessmentRequiredAt;
     }
 }

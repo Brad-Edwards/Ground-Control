@@ -95,6 +95,15 @@ A new MCP tool `gc_documentation_coverage` exposes the classifier to agents:
 input `{ repo_path, changed_paths[] }`, output
 `{ ok, classifications[], outcome_required, suggested_doc_targets[] }`.
 
+**MCP-surface additions are classified `mcp_tool`.** New `gc_admin` actions
+(for example `replace_research_intake` in issue #999) or any future
+`gc_*` tool registered in `mcp/ground-control/index.js` inherit the existing
+`mcp_tool` classification on path basis; the closed-vocabulary classifier
+does not need an update per-action. The gate-sync rule
+(`doc-coverage-gate-sync` in `architecture/policies/adr-policy.json`) fires
+whenever the listed trigger paths change so this ADR and `DOC_STYLE.md` stay
+current with the actual classifier surface.
+
 ## Consequences
 
 - PRs that modify a classified surface must supply `documentation_outcome` or
@@ -138,6 +147,12 @@ input `{ repo_path, changed_paths[] }`, output
   per-step telemetry.
 - Issue #896: Enforce documentation coverage + style as an explicit workflow
   step.
+- Issue #863 / GC-T004 C8: extended the MCP `gc_risk_governance` Zod shape and
+  the `TO_CAMEL` map in `mcp/ground-control/lib.js` for typed reassessment
+  triggers and the `reassessment_required_at` response field. The change is
+  an additive surface extension governed by the same gate; the underlying
+  classifier already covered `mcp/ground-control/lib.js` as a `config_parser`
+  surface, so no classification update was needed.
 - Google Developer Documentation Style Guide: https://developers.google.com/style
 - Diátaxis: https://diataxis.fr/
 - Vale: https://vale.sh/
@@ -152,3 +167,17 @@ input `{ repo_path, changed_paths[] }`, output
 **2026-05-26 (issue #989 merge carve-out).** The `lib.js` change in this commit adds `INTEGRATION_MANAGER_MERGE_STRATEGIES` and extends `normalizeIntegrationManagerConfig` with the `merge_strategy` field. These changes are to the integration manager config parser, not to any documentation coverage gate surface. No change to the Vale rule set, the `.vale.ini` configuration, or `docs/DOC_STYLE.md` is required.
 
 **2026-05-26 (issue #989 SDK schema hotfix).** Re-registered `gc_integration_manager` via `server.tool(name, desc, zodShape, handler)` so the SDK's `safeParseAsync` path resolves; the prior `server.registerTool({inputSchema: <raw JSON Schema>})` form crashed every invocation with `v3Schema.safeParseAsync is not a function`. The fix touches `mcp/ground-control/index.js` only; no change to the Vale rule set, the `.vale.ini` configuration, the doc-coverage classifier, or any documentation target surface.
+
+**2026-05-28 (issue #720 FAIR risk scenario refactor).** The `gc_risk_scenario` MCP tool field renames (`threat_source`→`threat`, `threat_event`→`method`, `affected_object`→`asset`, `consequence`→`effect`) required updating the `TO_CAMEL` mapping in `mcp/ground-control/lib.js` to remove obsolete snake_case bindings and add the new derived field `fair_sentence` mapping. Additionally, `tools/policy/checks.py` was updated to recognize `mcp/ground-control/gc-risk-scenario.js` as a valid MCP-adapter file (alongside `gc-risk-governance.js`) for the `controller-parity` policy check. These are config-parser and policy surfaces; no change to the Vale rule set, the `.vale.ini` configuration, or `docs/DOC_STYLE.md` itself.
+
+**2026-05-29 (issue #721 GC-T014 NIST SP 800-30 assessment).** Added a new `gc_analyze` kind `nist_assessment` (registered in `mcp/ground-control/index.js`) and the matching `analyzeNistAssessment` helper in `mcp/ground-control/lib.js`. Extended `OPAQUE_VALUE_KEYS` in `lib.js` with methodology-defined value-bag keys (`inputFactors` / `computedOutputs` / `uncertaintyMetadata` / `inputSchema` / `outputSchema` / `treatmentStrategyVocabulary`) so NIST profile-defined inner keys (`threat_source_relevance`, `likelihood_initiation`, `likelihood_adverse_impact`, etc.) reach the caller verbatim, per the GC-T014 preflight note. Extended `tools/policy/checks.py::ENUM_CONTRACT_INVENTORY` with four NIST tag enums (`ThreatEventKind`, `ThreatSourceRelevance`, `NistLikelihoodBand`, `NistImpactBand`) so ADR-034's enum-mirror gate covers them. Documentation lives in `docs/API.md` (`GET /api/v1/analysis/grc/nist-sp-800-30`) and the tool description in `mcp/ground-control/index.js`. No change to the Vale rule set, `.vale.ini`, the classifier, or `docs/DOC_STYLE.md`.
+
+**2026-05-29 (issue #721 follow-on, MCP test regression fix).** The `gc_risk_scenario` FAIR-CRST rename in #720 removed the `threat_source` → `threatSource` and `threat_event` → `threatEvent` entries from `TO_CAMEL` in `mcp/ground-control/lib.js`. The `gc_threat_model` tool still uses those snake_case field names on its public surface (per ADR-034); Jackson was silently dropping the fields on the wire so threat models created via MCP shipped without the threat source or event. Restored both mappings. Also corrected the `gcAuditZodShape` "preserves every backend create body field through Zod parse" test to supply `phases` in the input. Zod by design drops absent optional fields from the parsed object, so the original test was self-defeating. No change to the Vale rule set, `.vale.ini`, the classifier, or `docs/DOC_STYLE.md`.
+
+**2026-05-29 (issue #748 GC-Q010 Threat Modeling Workspace).** The `getThreatModelWorkspace` function was added to `mcp/ground-control/lib.js` as a thin API client for the new `GET /api/v1/threat-models/workspace` endpoint. This is an additive API-client surface (mirrors the pattern for `createThreatModelLink`, `listThreatModelLinks`, etc.); the underlying classifier already covers `mcp/ground-control/lib.js` as a surface, so no classification update is needed. No change to the Vale rule set, the `.vale.ini` configuration, or `docs/DOC_STYLE.md` itself.
+
+**2026-05-29 (issue #719 GC-T012 multi-framework risk terminology crosswalk).** Added the `NORMALIZED_CONCEPTS` and `CROSSWALK_VOCABULARY_SURFACES` constant arrays to `mcp/ground-control/lib.js` mirroring the two new Java enums (`NormalizedConcept`, `CrosswalkVocabularySurface`) on `MethodologyProfile`. Extended `tools/policy/checks.py::ENUM_CONTRACT_INVENTORY` with the two new rows so ADR-034's enum-mirror gate covers them. Extended the `gc_risk_governance` `methodology_profile` Zod shape with an optional `crosswalk_entries` array. Documentation lives in `docs/API.md` (`MethodologyProfileRequest` / `CrosswalkEntry` field reference) and `docs/architecture/ARCHITECTURE.md` (`MethodologyProfile` aggregate section). These are config-parser, policy-inventory, and MCP-adapter surfaces; no change to the Vale rule set, `.vale.ini`, the classifier, or `docs/DOC_STYLE.md`.
+
+**2026-05-29 (issue #747 GC-Q009 Risk Scenario Workspace).** The `getRiskScenarioWorkspace` function was added to `mcp/ground-control/lib.js` as a thin API client for the new `GET /api/v1/risk-scenarios/workspace` endpoint, and the `gc_risk_scenario_workspace` tool was registered in `mcp/ground-control/index.js`. These are additive API-client and tool-registration surfaces; the underlying classifier already covers `mcp/ground-control/lib.js` and `mcp/ground-control/index.js`. No change to the Vale rule set, the `.vale.ini` configuration, or `docs/DOC_STYLE.md` itself.
+
+**2026-05-30 (issue #1058 traceability + post-merge close gate at MCP tool layer).** Added `runAssertTraceabilityReconciled` and `runCloseIssueAfterMerge` to `mcp/ground-control/lib.js`, registered the matching `gc_assert_traceability_reconciled` and `gc_close_issue_after_merge` MCP tools in `mcp/ground-control/index.js`, and extended `runPostFinalReport` to refuse without the `traceability_reconciled` phase marker. Added `run_traceability_reconciliation_gate_contract` to `tools/policy/checks.py` as the prose-side guardrail for the four anchor files (`skills/implement/SKILL.md`, `skills/implement/steps/step-17-verify.md`, `skills/implement/steps/step-19-final-report.md`, `skills/implement/steps/step-20-close-issue-on-merge.md`). The tool documentation lives in the tool descriptions in `mcp/ground-control/index.js` and in the skill prose under `skills/implement/`. These are MCP-adapter, config-parser, and policy surfaces; no change to the Vale rule set, the `tools/install-vale.sh` installer, the `.vale.ini` configuration, or `docs/DOC_STYLE.md`.
