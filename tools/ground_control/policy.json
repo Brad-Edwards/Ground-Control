@@ -21,6 +21,15 @@
       "thresholdMode": "current"
     },
     {
+      "name": "Active DOCUMENTS Coverage",
+      "description": "Prevent regressions in documentation traceability for ACTIVE requirements.",
+      "metricType": "COVERAGE",
+      "metricParam": "DOCUMENTS",
+      "scopeStatus": "ACTIVE",
+      "operator": "GTE",
+      "thresholdMode": "current"
+    },
+    {
       "name": "Active Orphan Count",
       "description": "ACTIVE requirements must not become disconnected from the graph.",
       "metricType": "ORPHAN_COUNT",

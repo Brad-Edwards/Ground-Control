@@ -154,7 +154,7 @@ gc_create_quality_gate(
 )
 ```
 
-Available metrics: `COVERAGE` (% of requirements with a link type), `ORPHAN_COUNT`, `COMPLETENESS`. Gates evaluate in CI via `gc_evaluate_quality_gates`.
+Available (and enforced) metric types: `COVERAGE` (% of requirements with a given link type: `IMPLEMENTS`, `TESTS`, or `DOCUMENTS`), `ORPHAN_COUNT`, and `COMPLETENESS`. Gates evaluate in CI via `gc_evaluate_quality_gates`, and the `/implement` completion gate (Step 6) blocks a run on any failing gate via `gc_assert_quality_gates`; its failure envelope lists each failing gate as `{name, metric_type, threshold, actual}`.
 
 For this repository, the human-maintained policy entrypoints are:
 
@@ -231,6 +231,8 @@ gc_evaluate_quality_gates(project: "my-system")
 ```
 
 Returns overall pass/fail + per-gate details (actual value vs. threshold). Fix failures: write missing tests, link orphaned requirements, clean up duplicates.
+
+This evaluation is also wired into the `/implement` completion gate: `gc_assert_quality_gates(project: "my-system")` wraps the same server-side evaluation and refuses (`ok: false`) when any enabled gate fails, returning only the failing gates as `{name, metric_type, threshold, actual}` so the run is blocked with an actionable error before the change is committed.
 
 ### Architecture + Review Pipeline
 

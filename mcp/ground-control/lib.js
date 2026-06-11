@@ -12032,6 +12032,68 @@ export async function runAssertTraceabilityReconciled({
 }
 
 // ---------------------------------------------------------------------------
+// gc_assert_quality_gates (issue #1101)
+//
+// Server-side quality-gate completion gate for /implement Step 6. Wraps the
+// existing QualityGateService.evaluate contract (POST /api/v1/quality-gates/
+// evaluate, exposed here as evaluateQualityGates) and shapes the result into a
+// mechanical pass/fail envelope. On failure it returns ONLY the failing gates,
+// each as {name, metric_type, threshold, actual} so the fix is obvious from the
+// error alone (issue #1101 scope item 2). The backend owns all gate math; this
+// boundary only renames fields and selects failures — it never re-evaluates.
+// ---------------------------------------------------------------------------
+
+// Backend gate result (snake_cased by request()) → workflow envelope shape.
+// `operator` is carried alongside the four issue-required keys so the failure
+// message can read "actual=X, expected GTE Y" without a second lookup.
+function shapeQualityGateResult(gate) {
+  return {
+    name: gate.gate_name,
+    metric_type: gate.metric_type,
+    operator: gate.operator,
+    threshold: gate.threshold,
+    actual: gate.actual_value,
+  };
+}
+
+// Pure transform: an evaluation result → the assertion envelope. Kept separate
+// from the REST call so the pass and fail envelopes are unit-testable with no
+// I/O (issue #1101 acceptance criterion: tests cover pass and fail envelopes).
+export function buildQualityGateAssertion(evaluation, project) {
+  const gates = Array.isArray(evaluation?.gates) ? evaluation.gates : [];
+  const failing = gates.filter((g) => g?.passed !== true).map(shapeQualityGateResult);
+  if (failing.length > 0) {
+    return {
+      ok: false,
+      error: "quality_gates_failed",
+      message:
+        `Quality gate evaluation failed for project '${project}': ` +
+        failing
+          .map((f) => `${f.name} (${f.metric_type}) actual=${f.actual}, expected ${f.operator} ${f.threshold}`)
+          .join("; "),
+      project,
+      failing_gates: failing,
+      next_action: "fix_failing_quality_gates_and_retry",
+    };
+  }
+  return {
+    ok: true,
+    project,
+    total_gates: Number.isInteger(evaluation?.total_gates) ? evaluation.total_gates : gates.length,
+    passed_count: Number.isInteger(evaluation?.passed_count) ? evaluation.passed_count : gates.length,
+    evaluated: gates.map(shapeQualityGateResult),
+  };
+}
+
+export async function runAssertQualityGates({ project }) {
+  if (typeof project !== "string" || project.trim() === "") {
+    throw new Error("gc_assert_quality_gates requires a non-empty project");
+  }
+  const trimmed = project.trim();
+  return buildQualityGateAssertion(await evaluateQualityGates(trimmed), trimmed);
+}
+
+// ---------------------------------------------------------------------------
 // gc_assert_grc_reconciled (issue #1100)
 //
 // Server-side GRC reconciliation gate. Reads the GRC screening record from

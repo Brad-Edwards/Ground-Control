@@ -151,7 +151,7 @@ DOC_STYLE.md prose is needed unless a new style rule is being established.
 New /implement workflow-gate MCP tools added to `mcp/ground-control/lib.js`
 and `mcp/ground-control/index.js` (for example, `gc_assert_traceability_reconciled`
 and `gc_close_issue_after_merge` added for GC-O007 / #1058, `gc_post_grc_screening`
-added for GC-O012 / #1099, or `gc_assert_grc_reconciled` added for #1100) are
+added for GC-O012 / #1099, `gc_assert_grc_reconciled` added for #1100, or `gc_assert_quality_gates` added for #1101) are
 documented by the tool description strings in `index.js` and the skill prose
 under `skills/implement/`. The matching policy check in `tools/policy/checks.py`
 is the prose-side guardrail. The surface addition is recorded in the ADR-054
