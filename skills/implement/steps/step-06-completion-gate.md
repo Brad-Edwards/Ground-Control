@@ -19,6 +19,8 @@ Implementation is NOT ready for commit until ALL of the following are verified:
 
 5. **Vale prose linting (ADR-054).** `make policy` runs Vale on docs touched in the diff. If `.tools/vale/current/vale` is missing, run `bash tools/install-vale.sh` and retry—do not skip. Vale enforces the Google Developer Documentation Style Guide and Diátaxis structure (see ADR-054 and `docs/DOC_STYLE.md`); fix every reported error before proceeding. Whole-file scope on touch: pre-existing violations in any diff-touched `.md` are part of the diff's required cleanup.
 
+6. **Quality gates pass.** Call `gc_assert_quality_gates` with `project: cfg.project`. The tool evaluates the project's enabled quality gates server-side (`QualityGateService.evaluate`) and returns a mechanical pass/fail envelope—this is not an agent judgment call. If it returns `ok: false`, the run is **blocked**: `failing_gates[]` lists each failing gate as `{name, metric_type, threshold, actual}` (only the gates that failed), so the metric to fix is obvious from the error alone. Fix the underlying metric—add the missing IMPLEMENTS / TESTS / DOCUMENTS traceability links for the project's ACTIVE requirements, resolve orphaned or incomplete requirements—then re-run. The enforced metric types are COVERAGE (over IMPLEMENTS / TESTS / DOCUMENTS link coverage), ORPHAN_COUNT, and COMPLETENESS. Do NOT proceed to Phase C while any enabled gate fails. (If `gc_assert_quality_gates` is not yet exposed by the running MCP server—it shipped in issue #1101—fall back to `gc_quality_gate action=evaluate` with the same project and block on `passed: false`; the dedicated tool applies once the server restarts.)
+
 If any check fails, fix it before proceeding. Do NOT move to Phase C until every check passes.
 
 ## Return contract
@@ -29,7 +31,8 @@ If any check fails, fix it before proceeding. Do NOT move to Phase C until every
   "cached_for_next_step": {
     "completion_gate_passed": true,
     "changelog_fragment_path": "<path or null when carve-out applies>",
-    "carveout_revalidated": false
+    "carveout_revalidated": false,
+    "quality_gates_passed": true
   }
 }
 ```
