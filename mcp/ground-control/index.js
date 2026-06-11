@@ -76,7 +76,7 @@ import {
   runCodexArchitecturePreflight, runCodexReview, runCodexVerifyFinding,
   runTestQualityReview, TEST_QUALITY_REVIEW_HARD_CAP,
   runPostImplementationPlan,
-  runAssertTraceabilityReconciled, runCloseIssueAfterMerge,
+  runAssertTraceabilityReconciled, runAssertGrcReconciled, runCloseIssueAfterMerge,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
   runPostGrcScreening,
   runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
@@ -621,6 +621,33 @@ server.tool(
         touchedFiles: touched_files ?? [],
         override: Boolean(override),
         overrideReason: override_reason ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_assert_grc_reconciled",
+  "Assert that GRC reconciliation has landed for the issue and post a 'grc_reconciled' phase marker. " +
+  "Reads the GRC screening record posted by gc_post_grc_screening (Step 3.5) from the issue thread. " +
+  "For 'security_relevant' verdicts: resolves each entity ref (threat_model → getThreatModelByUid, " +
+  "risk_scenario → getRiskScenarioByUid, control → getControlByUid) and verifies that each claimed " +
+  "CODE link exists on the owner entity (listThreatModelLinks / listRiskScenarioLinks / listControlLinks " +
+  "filtered to target_type=CODE). Any gap → refuses with ok:false, error:'grc_not_reconciled', missing[]. " +
+  "For 'not_security_relevant' / 'no_baseline' verdicts: passes immediately (no entity or link checks). " +
+  "There is no tool-level override: a free-text reason is not a server-verifiable authorization, so the single audited skip for the completion-gate prerequisite is gc_post_final_report's phase override, which bypasses both markers together. " +
+  "Downstream: gc_post_final_report refuses unless both traceability_reconciled AND grc_reconciled markers exist.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    project: z.string().optional(),
+  },
+  async ({ repo_path, issue_number, project }) => {
+    try {
+      return ok(JSON.stringify(await runAssertGrcReconciled({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        project: project ?? null,
       }), null, 2));
     } catch (e) { return err(e); }
   },

@@ -33,6 +33,10 @@ Introduce a dedicated screening step (Step 3.5, stage id `grc_screening`) in the
 
 **Routing.** The `grc_screening` stage is added to `DEFAULT_IMPLEMENT_ROUTING_STAGES` (tier: medium) and to `.ground-control.yaml` routing.stages.
 
+**Completion assertion (issue #1100).** The companion assertion is `gc_assert_grc_reconciled`, a deterministic MCP tool consumed by `/implement` Step 17 after the existing Ground Control traceability verification. It verifies the canonical `gc:grc-screening` record rather than introducing a second screening schema. For `security_relevant`, it re-fetches the named threat-model entries, risk scenarios, controls, and their `targetType=CODE` links from the Ground Control REST API and refuses when a claimed entity or link is absent. Missing-link failures must identify the owner entity UID, target identifier, and link type/target type so the caller can repair the graph. `not_security_relevant` and `no_baseline` are successful assertion outcomes, but the returned envelope echoes the verdict so the completion record can carry the declination explicitly. The assertion may use existing entity-by-UID and link-list endpoints; add backend read support only when the existing API cannot answer a required check without trusting caller input.
+
+**Assertion phase marker.** A successful assertion writes a distinct `grc_reconciled` phase marker. Downstream report gating may require both `traceability_reconciled` and `grc_reconciled`; do not overload the existing `grc_screening` marker, which only means the screening record was posted, not that its claimed links were re-verified.
+
 ## Consequences
 
 - Every `/implement` run on a project with a threat-model baseline must post a screening record before the planning step. Empty-baseline projects post a `no_baseline` declination.

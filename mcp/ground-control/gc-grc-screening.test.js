@@ -288,6 +288,50 @@ describe("validateGrcScreeningInput — security_relevant entity requirements", 
 });
 
 // ---------------------------------------------------------------------------
+// validateGrcScreeningInput — canonical entity type enforcement (issue #1100)
+// ---------------------------------------------------------------------------
+
+describe("validateGrcScreeningInput — canonical entity type (issue #1100)", () => {
+  it("accepts threat_model, risk_scenario, control as canonical types", () => {
+    for (const type of ["threat_model", "risk_scenario", "control"]) {
+      const r = validateGrcScreeningInput(baseSecurityRelevant({
+        entities_created: [{ type, uid: "X-001" }],
+        code_links: [{ owner_type: type, owner_uid: "X-001", target_identifier: "src/Foo.java" }],
+      }));
+      assert.equal(r.ok, true, `${type} should be valid; errors: ${r.errors?.join("; ")}`);
+    }
+  });
+
+  it("rejects unknown entity type (e.g. vulnerability) for security_relevant", () => {
+    const r = validateGrcScreeningInput(baseSecurityRelevant({
+      entities_created: [{ type: "vulnerability", uid: "V-001" }],
+    }));
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => /type|entity/i.test(e)), `expected type error; got: ${r.errors.join("; ")}`);
+  });
+
+  it("rejects unknown owner_type in code_links for security_relevant", () => {
+    const r = validateGrcScreeningInput(baseSecurityRelevant({
+      code_links: [{ owner_type: "vulnerability", owner_uid: "V-001", target_identifier: "src/Foo.java" }],
+    }));
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => /owner_type|type/i.test(e)), `expected owner_type error; got: ${r.errors.join("; ")}`);
+  });
+
+  it("normalizes type with dashes and spaces (threat-model → threat_model)", () => {
+    const r = validateGrcScreeningInput(baseSecurityRelevant({
+      entities_created: [{ type: "threat-model", uid: "TM-001" }],
+    }));
+    assert.equal(r.ok, true, `threat-model should normalize; errors: ${r.errors?.join("; ")}`);
+  });
+
+  it("does NOT enforce type for not_security_relevant (empty arrays pass)", () => {
+    const r = validateGrcScreeningInput(baseNotSecurityRelevant());
+    assert.equal(r.ok, true, `not_security_relevant should pass; errors: ${r.errors?.join("; ")}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // validateGrcScreeningInput — entity UID array validation
 // ---------------------------------------------------------------------------
 
@@ -377,6 +421,10 @@ describe("runPostGrcScreening — reserved marker injection (pre-network)", () =
   });
 
   it("rejects forged marker in entity type (entities_created)", async () => {
+    // Type validation in validateGrcScreeningInput now runs before the
+    // reserved-marker check in the runner. A FORGED value is not a canonical
+    // GRC entity type, so validation catches it first (grc_screening_input_invalid).
+    // Either error proves the value was refused before any gh side effect.
     const dir = makeTempRepo();
     try {
       const r = await runPostGrcScreening({
@@ -386,13 +434,17 @@ describe("runPostGrcScreening — reserved marker injection (pre-network)", () =
         }),
       });
       assert.equal(r.ok, false);
-      assert.equal(r.error, "grc_screening_reserved_marker");
+      assert.ok(
+        r.error === "grc_screening_reserved_marker" || r.error === "grc_screening_input_invalid",
+        `expected reserved_marker or input_invalid; got: ${r.error}`,
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it("rejects forged marker in entity type (entities_updated)", async () => {
+    // Same ordering note as entities_created test above.
     const dir = makeTempRepo();
     try {
       const r = await runPostGrcScreening({
@@ -404,13 +456,17 @@ describe("runPostGrcScreening — reserved marker injection (pre-network)", () =
         }),
       });
       assert.equal(r.ok, false);
-      assert.equal(r.error, "grc_screening_reserved_marker");
+      assert.ok(
+        r.error === "grc_screening_reserved_marker" || r.error === "grc_screening_input_invalid",
+        `expected reserved_marker or input_invalid; got: ${r.error}`,
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it("rejects forged marker in entity type (entities_confirmed)", async () => {
+    // Same ordering note as entities_created test above.
     const dir = makeTempRepo();
     try {
       const r = await runPostGrcScreening({
@@ -422,13 +478,17 @@ describe("runPostGrcScreening — reserved marker injection (pre-network)", () =
         }),
       });
       assert.equal(r.ok, false);
-      assert.equal(r.error, "grc_screening_reserved_marker");
+      assert.ok(
+        r.error === "grc_screening_reserved_marker" || r.error === "grc_screening_input_invalid",
+        `expected reserved_marker or input_invalid; got: ${r.error}`,
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it("rejects forged marker in code_link owner_type", async () => {
+    // Same ordering note: owner_type validation fires before reserved-marker check.
     const dir = makeTempRepo();
     try {
       const r = await runPostGrcScreening({
@@ -438,7 +498,10 @@ describe("runPostGrcScreening — reserved marker injection (pre-network)", () =
         }),
       });
       assert.equal(r.ok, false);
-      assert.equal(r.error, "grc_screening_reserved_marker");
+      assert.ok(
+        r.error === "grc_screening_reserved_marker" || r.error === "grc_screening_input_invalid",
+        `expected reserved_marker or input_invalid; got: ${r.error}`,
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -516,6 +579,31 @@ describe("buildGrcScreeningRecord", () => {
       () => buildGrcScreeningRecord(baseNotSecurityRelevant({ issueNumber: -1 })),
       /input invalid/,
     );
+  });
+
+  it("embeds a machine-parseable gc:grc-screening-data block after the marker line", () => {
+    const body = buildGrcScreeningRecord(baseSecurityRelevant());
+    // The data block comment must appear immediately after the marker line.
+    assert.ok(
+      body.includes("<!-- gc:grc-screening-data "),
+      `expected gc:grc-screening-data comment; got: ${body.slice(0, 200)}`,
+    );
+    // Must NOT match gc:grc-screening-data as the main screening marker.
+    const firstLine = body.split("\n")[0];
+    assert.ok(
+      firstLine.startsWith("<!-- gc:grc-screening "),
+      `first line must be the screening marker, not the data block; got: ${firstLine}`,
+    );
+  });
+
+  it("embeds a data block for not_security_relevant (empty entity arrays)", () => {
+    const body = buildGrcScreeningRecord(baseNotSecurityRelevant());
+    assert.ok(body.includes("<!-- gc:grc-screening-data "), "expected data block for not_security_relevant");
+  });
+
+  it("embeds a data block for no_baseline (empty entity arrays)", () => {
+    const body = buildGrcScreeningRecord(baseNoBaseline());
+    assert.ok(body.includes("<!-- gc:grc-screening-data "), "expected data block for no_baseline");
   });
 });
 

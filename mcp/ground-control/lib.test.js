@@ -12836,7 +12836,10 @@ describe("runPostFinalReport traceability_reconciled prerequisite (issue #1058)"
         });
         assert.equal(r.ok, false);
         assert.equal(r.error, "phase_prerequisite_missing");
-        assert.deepEqual(r.missing, ["traceability_reconciled"]);
+        // Both traceability_reconciled and grc_reconciled are now required
+        // (issue #1100 added grc_reconciled to the final-report prerequisite).
+        assert.ok(r.missing.includes("traceability_reconciled"), `expected traceability_reconciled in missing; got: ${JSON.stringify(r.missing)}`);
+        assert.ok(r.missing.includes("grc_reconciled"), `expected grc_reconciled in missing; got: ${JSON.stringify(r.missing)}`);
       });
     } finally {
       shim.cleanup();
@@ -13111,4 +13114,3 @@ describe("runCloseIssueAfterMerge", () => {
     }
   });
 });
-

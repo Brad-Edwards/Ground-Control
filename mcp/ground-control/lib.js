@@ -10595,6 +10595,70 @@ export const GRC_SCREENING_RATIONALE_MAX = 800;
 
 const GRC_SCREENING_SCHEMA_VERSION = "gc.implement.grc-screening/v1";
 
+// Canonical GRC entity types recognized by the workflow. Used to reject
+// unknown type values in security_relevant verdicts at the tool boundary.
+export const GRC_ENTITY_TYPES = Object.freeze(["threat_model", "risk_scenario", "control"]);
+
+// Normalize a caller-supplied entity type string to match GRC_ENTITY_TYPES:
+// lowercase, replace dashes and spaces with underscores.
+function normalizeEntityType(type) {
+  if (typeof type !== "string") return type;
+  return type.toLowerCase().replace(/[-\s]/g, "_");
+}
+
+// ---------------------------------------------------------------------------
+// Structured data block: serialize / parse
+// ---------------------------------------------------------------------------
+// A machine-parseable HTML comment emitted by buildGrcScreeningRecord and
+// consumed by parseGrcScreeningData. This lets runAssertGrcReconciled read
+// back the verdict + entity/link arrays without re-parsing the Markdown prose.
+// The format is: <!-- gc:grc-screening-data {compact-JSON} -->
+// "gc:grc-screening-data" is distinct from "gc:grc-screening" (the marker
+// family); the regex below does NOT match the main marker.
+
+export function serializeGrcScreeningData({ schema, verdict, entities_created, entities_updated, entities_confirmed, code_links }) {
+  const payload = { schema, verdict, entities_created, entities_updated, entities_confirmed, code_links };
+  return `<!-- gc:grc-screening-data ${JSON.stringify(payload)} -->`;
+}
+
+// Regex for the main marker (does NOT match the -data variant).
+// Uses a negative lookahead so gc:grc-screening-data bodies are ignored here.
+const GRC_SCREENING_MARKER_RE = /<!--\s*gc:grc-screening(?!-data)\s+issue="(\d+)"[^]*?-->/g;
+const GRC_SCREENING_DATA_RE = /<!--\s*gc:grc-screening-data\s+(\{[^]*?\})\s*-->/g;
+
+// Scan an array of comment bodies for GRC screening data blocks. Returns the
+// payload object from the LATEST block whose accompanying marker has
+// issue="<issueNumber>", or null if no such block is found. Tolerates
+// malformed JSON (skip, continue scanning).
+export function parseGrcScreeningData(commentBodies, issueNumber) {
+  if (!Array.isArray(commentBodies)) return null;
+  let latest = null;
+  for (const body of commentBodies) {
+    if (typeof body !== "string") continue;
+    // Check if this body contains a screening marker for the right issue
+    let hasMarkerForIssue = false;
+    GRC_SCREENING_MARKER_RE.lastIndex = 0;
+    for (const m of body.matchAll(GRC_SCREENING_MARKER_RE)) {
+      if (Number.parseInt(m[1], 10) === issueNumber) {
+        hasMarkerForIssue = true;
+        break;
+      }
+    }
+    if (!hasMarkerForIssue) continue;
+    // Extract the latest data block from this body
+    GRC_SCREENING_DATA_RE.lastIndex = 0;
+    for (const dm of body.matchAll(GRC_SCREENING_DATA_RE)) {
+      try {
+        const parsed = JSON.parse(dm[1]);
+        latest = parsed; // last match wins within a body
+      } catch {
+        // malformed JSON — skip this block
+      }
+    }
+  }
+  return latest;
+}
+
 export function buildGrcScreeningMarker({ issueNumber, verdict, schema }) {
   const schemaAttr = schema ? ` schema="${schema}"` : "";
   const verdictAttr = verdict ? ` verdict="${verdict}"` : "";
@@ -10643,6 +10707,14 @@ export function validateGrcScreeningInput(input) {
         if (typeof ref.uid !== "string" || ref.uid.trim() === "") {
           errors.push(`${arrayName}[${i}].uid must be a non-empty string`);
         }
+        // For security_relevant, reject entity types that don't normalize to
+        // a canonical GRC entity type. type is optional for other verdicts.
+        if (verdict === "security_relevant" && typeof ref.type === "string" && ref.type !== "") {
+          const normalized = normalizeEntityType(ref.type);
+          if (!GRC_ENTITY_TYPES.includes(normalized)) {
+            errors.push(`${arrayName}[${i}].type "${ref.type}" is not a canonical GRC entity type (must be one of: ${GRC_ENTITY_TYPES.join(", ")})`);
+          }
+        }
       });
     }
   }
@@ -10658,6 +10730,14 @@ export function validateGrcScreeningInput(input) {
       }
       if (typeof link.target_identifier !== "string" || link.target_identifier.trim() === "") {
         errors.push(`code_links[${i}].target_identifier must be a non-empty string`);
+      }
+      // For security_relevant, reject owner_type values that don't normalize
+      // to a canonical GRC entity type. owner_type is optional for other verdicts.
+      if (verdict === "security_relevant" && typeof link.owner_type === "string" && link.owner_type !== "") {
+        const normalized = normalizeEntityType(link.owner_type);
+        if (!GRC_ENTITY_TYPES.includes(normalized)) {
+          errors.push(`code_links[${i}].owner_type "${link.owner_type}" is not a canonical GRC entity type (must be one of: ${GRC_ENTITY_TYPES.join(", ")})`);
+        }
       }
     });
   }
@@ -10684,6 +10764,18 @@ export function buildGrcScreeningRecord({ issueNumber, verdict, rationale, entit
   }
   const lines = [];
   lines.push(buildGrcScreeningMarker({ issueNumber, verdict, schema: GRC_SCREENING_SCHEMA_VERSION }));
+  // Machine-parseable data block — emitted for ALL verdicts so the companion
+  // gc_assert_grc_reconciled can recover the structured payload without
+  // re-parsing the Markdown prose. Entity arrays are empty for non-security
+  // verdicts by definition (validateGrcScreeningInput already enforced this).
+  lines.push(serializeGrcScreeningData({
+    schema: GRC_SCREENING_SCHEMA_VERSION,
+    verdict,
+    entities_created,
+    entities_updated,
+    entities_confirmed,
+    code_links,
+  }));
   lines.push("");
   lines.push(`## GRC screening record — issue #${issueNumber}`);
   lines.push("");
@@ -10789,6 +10881,17 @@ export async function runPostGrcScreening({ repoPath, issueNumber, verdict, rati
         message: err,
         issue_number: issueNumber,
         next_action: "remove_reserved_marker_prefix_and_retry",
+      };
+    }
+    // Also reject bare HTML comment delimiters (<!-- without gc: prefix, and -->)
+    // to prevent any comment breakout from the data block.
+    if (typeof value === "string" && (value.includes("<!--") || value.includes("-->"))) {
+      return {
+        ok: false,
+        error: "grc_screening_reserved_marker",
+        message: `${fieldName}: caller-controlled text carries an HTML comment delimiter (<!-- or -->); refused to prevent comment breakout`,
+        issue_number: issueNumber,
+        next_action: "remove_html_comment_delimiter_and_retry",
       };
     }
   }
@@ -11588,7 +11691,7 @@ export async function runPostFinalReport(input) {
     const decision = evaluatePhasePrerequisite({
       completed,
       nextPhase: "final_report",
-      requires: ["traceability_reconciled"],
+      requires: ["traceability_reconciled", "grc_reconciled"],
       issueNumber: rest.issueNumber,
     });
     if (!decision.ok) {
@@ -11600,7 +11703,7 @@ export async function runPostFinalReport(input) {
         message: decision.message,
         missing: decision.missing,
         completed: decision.completed,
-        next_action: "run_gc_assert_traceability_reconciled_first",
+        next_action: "run_gc_assert_traceability_reconciled_and_gc_assert_grc_reconciled_first",
       };
     }
   }
@@ -11923,6 +12026,269 @@ export async function runAssertTraceabilityReconciled({
     override: override === true,
     override_reason: override === true ? overrideReasonTrimmed : null,
     checked,
+    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// gc_assert_grc_reconciled (issue #1100)
+//
+// Server-side GRC reconciliation gate. Reads the GRC screening record from
+// the issue thread (written by gc_post_grc_screening at Step 3.5) and for
+// security_relevant verdicts verifies that every claimed entity and CODE link
+// actually exists in the Ground Control REST API. On success, posts a
+// `grc_reconciled` phase marker so gc_post_final_report can enforce the gate.
+//
+// Verdict routing:
+//   not_security_relevant / no_baseline → pass immediately, echo verdict, post marker.
+//   security_relevant → resolve each entity ref; for each code_link, list links
+//     for the owner entity and verify target_identifier is present. Any gap → refuse.
+//   override=true + non-empty override_reason → skip checks, post marker with reason.
+// ---------------------------------------------------------------------------
+
+// Map entity type → REST getter function (returns entity or throws on 404/error).
+function getEntityGetter(type) {
+  const normalized = normalizeEntityType(type);
+  if (normalized === "threat_model") return (uid, project) => getThreatModelByUid(uid, project);
+  if (normalized === "risk_scenario") return (uid, project) => getRiskScenarioByUid(uid, project);
+  if (normalized === "control") return (uid, project) => getControlByUid(uid, project);
+  return null;
+}
+
+// Map entity type → function that lists CODE links for an entity id.
+// Returns an array of link objects; each has target_type, target_identifier.
+async function fetchCodeLinksForOwner(type, ownerId, project) {
+  const normalized = normalizeEntityType(type);
+  if (normalized === "threat_model") {
+    // listThreatModelLinks is positional (ownerId, project); no targetType filter —
+    // filter CODE client-side.
+    const links = await listThreatModelLinks(ownerId, project);
+    return Array.isArray(links) ? links.filter((l) => l?.target_type === "CODE") : [];
+  }
+  if (normalized === "risk_scenario") {
+    const links = await listRiskScenarioLinks(ownerId, { targetType: "CODE", project });
+    return Array.isArray(links) ? links : [];
+  }
+  if (normalized === "control") {
+    const links = await listControlLinks(ownerId, { targetType: "CODE", project });
+    return Array.isArray(links) ? links : [];
+  }
+  return null; // unknown type
+}
+
+// Composite cache key for a resolved GRC entity: normalized type + uid. Keying
+// by uid alone would conflate entities of different types that share a uid and
+// could verify a CODE link against the wrong aggregate (codex cycle-1 finding).
+function grcEntityKey(type, uid) {
+  return `${normalizeEntityType(type)}::${uid}`;
+}
+
+export async function runAssertGrcReconciled({
+  repoPath,
+  issueNumber,
+  project = null,
+}) {
+  if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error("gc_assert_grc_reconciled requires a positive integer issue_number");
+  }
+
+  // No tool-level override exists by design (codex cycle-1 security finding): a
+  // free-text "reason" is not a server-verifiable authorization, so an
+  // unconditional skip here would let any caller mint the grc_reconciled marker
+  // and bypass the security_relevant entity/link checks. The single audited skip
+  // path for the completion-gate prerequisite is gc_post_final_report's
+  // phaseOverride, which bypasses BOTH traceability_reconciled and
+  // grc_reconciled together rather than adding a second per-tool bypass.
+  const repoRoot = await ensureGitRepo(repoPath);
+  const { owner, name } = await getOwnerRepo(repoRoot);
+
+  // Read issue comment bodies and parse the screening record.
+  const bodies = await readIssueCommentBodies(repoRoot, owner, name, issueNumber);
+  const record = parseGrcScreeningData(bodies, issueNumber);
+
+  if (!record) {
+    return {
+      ok: false,
+      error: "grc_screening_record_missing",
+      issue_number: issueNumber,
+      next_action: "run_step_3.5_grc_screening_first",
+    };
+  }
+
+  const { verdict, entities_created = [], entities_updated = [], entities_confirmed = [], code_links = [] } = record;
+
+  // For non-security verdicts the gate passes immediately — echo verdict.
+  if (verdict !== "security_relevant") {
+    const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "grc_reconciled", {
+      commentBody: `_GRC verdict: \`${verdict}\` — no entity or code-link verification required._`,
+    });
+    return {
+      ok: true,
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      verdict,
+      missing: [],
+      checked: 0,
+      phase_marker: { phase: "grc_reconciled", issue_number: issueNumber },
+      comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+      comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+    };
+  }
+
+  // security_relevant: verify all entity refs and code links.
+  const missing = [];
+  let checked = 0;
+
+  // Collect all entity refs across created/updated/confirmed.
+  const allEntityRefs = [
+    ...entities_created.map((e) => ({ ...e, _source: "entities_created" })),
+    ...entities_updated.map((e) => ({ ...e, _source: "entities_updated" })),
+    ...entities_confirmed.map((e) => ({ ...e, _source: "entities_confirmed" })),
+  ];
+
+  // Resolve each entity. The maps are keyed by normalized-type + uid (NOT uid
+  // alone) so a threat_model and a risk_scenario that happen to share a UID are
+  // never conflated — keying by uid alone could resolve a CODE link against the
+  // wrong aggregate type (codex cycle-1 core finding). entityIdByKey maps the
+  // composite key → fetched entity id (used by the code_link pass);
+  // missingEntityKeys records keys that failed to resolve so the code_link pass
+  // can distinguish "owner already flagged missing" from "owner never listed as
+  // an entity" (the latter is resolved directly, not skipped).
+  const entityIdByKey = new Map();
+  const missingEntityKeys = new Set();
+
+  for (const ref of allEntityRefs) {
+    const { type, uid } = ref;
+    const key = grcEntityKey(type, uid);
+    const getter = getEntityGetter(type);
+    if (!getter) {
+      missing.push({ kind: "entity", type, uid, reason: "unknown_entity_type" });
+      missingEntityKeys.add(key);
+      checked++;
+      continue;
+    }
+    let entity;
+    try {
+      entity = await getter(uid, project);
+    } catch (error) {
+      // 404 → entity genuinely absent; add to missing[] and continue.
+      // Any other status → unexpected backend error; abort with structured error.
+      if (error && error.status === 404) {
+        missing.push({ kind: "entity", type, uid, reason: "entity_missing" });
+        missingEntityKeys.add(key);
+        checked++;
+        continue;
+      }
+      return {
+        ok: false,
+        error: "grc_entity_lookup_failed",
+        message: `Failed to look up ${type} entity ${uid}: ${error.message}`,
+        issue_number: issueNumber,
+      };
+    }
+    if (!entity || !entity.id) {
+      missing.push({ kind: "entity", type, uid, reason: "entity_missing" });
+      missingEntityKeys.add(key);
+      checked++;
+      continue;
+    }
+    entityIdByKey.set(key, entity.id);
+    checked++;
+  }
+
+  // Verify each code_link.
+  for (const link of code_links) {
+    const { owner_type, owner_uid, target_identifier } = link;
+    const ownerNormalized = normalizeEntityType(owner_type);
+    if (!GRC_ENTITY_TYPES.includes(ownerNormalized)) {
+      missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "unknown_owner_type" });
+      checked++;
+      continue;
+    }
+    const ownerKey = grcEntityKey(owner_type, owner_uid);
+    let ownerId = entityIdByKey.get(ownerKey);
+    if (ownerId === undefined) {
+      if (missingEntityKeys.has(ownerKey)) {
+        // Owner was listed as an entity (same type + uid) but failed to resolve
+        // above; the gate already fails on that entity. Nothing more to verify.
+        checked++;
+        continue;
+      }
+      // Owner is not among the listed entities. Resolve it directly so an
+      // unlisted owner cannot slip an unverified code_link past the gate.
+      const ownerGetter = getEntityGetter(owner_type); // non-null: owner_type validated above
+      try {
+        const ownerEntity = await ownerGetter(owner_uid, project);
+        if (!ownerEntity || !ownerEntity.id) {
+          missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "owner_missing" });
+          checked++;
+          continue;
+        }
+        ownerId = ownerEntity.id;
+      } catch (error) {
+        if (error && error.status === 404) {
+          missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "owner_missing" });
+          checked++;
+          continue;
+        }
+        return {
+          ok: false,
+          error: "grc_entity_lookup_failed",
+          message: `Failed to look up ${owner_type} owner ${owner_uid}: ${error.message}`,
+          issue_number: issueNumber,
+        };
+      }
+    }
+    let codeLinks;
+    try {
+      codeLinks = await fetchCodeLinksForOwner(owner_type, ownerId, project);
+    } catch (error) {
+      return {
+        ok: false,
+        error: "grc_links_lookup_failed",
+        message: `Failed to list CODE links for ${owner_type} ${owner_uid}: ${error.message}`,
+        issue_number: issueNumber,
+      };
+    }
+    if (codeLinks === null) {
+      missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "unknown_owner_type" });
+      checked++;
+      continue;
+    }
+    const found = codeLinks.some((l) => l?.target_identifier === target_identifier);
+    if (!found) {
+      missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "code_link_missing" });
+    }
+    checked++;
+  }
+
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      error: "grc_not_reconciled",
+      verdict,
+      missing,
+      checked,
+      issue_number: issueNumber,
+      next_action: "create_missing_grc_links_and_retry",
+    };
+  }
+
+  // All checks passed — post the grc_reconciled phase marker.
+  const summaryLines = [`_GRC verdict: \`${verdict}\` — ${checked} entity/link check(s) passed._`];
+  const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "grc_reconciled", {
+    commentBody: summaryLines.join("\n"),
+  });
+
+  return {
+    ok: true,
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    verdict,
+    missing: [],
+    checked,
+    phase_marker: { phase: "grc_reconciled", issue_number: issueNumber },
     comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
     comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
   };
