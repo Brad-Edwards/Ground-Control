@@ -9296,6 +9296,15 @@ export async function deleteAuditLink(auditId, linkId, project) {
 
 export const CONTROL_STATUSES = ["DRAFT", "PROPOSED", "IMPLEMENTED", "OPERATIONAL", "DEPRECATED", "RETIRED"];
 export const CONTROL_FUNCTIONS = ["PREVENTIVE", "DETECTIVE", "CORRECTIVE", "COMPENSATING"];
+export const CONTROL_WORKSPACE_QUEUE_REASONS = [
+  "OWNER_MISSING",
+  "STATUS_DRAFT",
+  "TEST_EVIDENCE_MISSING",
+  "ASSESSMENT_MISSING",
+  "OPEN_EXCEPTION",
+  "EFFECTIVENESS_WEAK",
+  "CURRENT",
+];
 export const CONTROL_LINK_TARGET_TYPES = [
   "ASSET", "RISK_SCENARIO", "RISK_REGISTER_RECORD", "RISK_ASSESSMENT_RESULT",
   "TREATMENT_PLAN", "METHODOLOGY_PROFILE", "OBSERVATION", "REQUIREMENT",
@@ -9662,6 +9671,41 @@ export async function getControl(id, project) {
 
 export async function getControlByUid(uid, project) {
   return request("GET", `/api/v1/controls/uid/${encodeURIComponent(uid)}`, { params: { project } });
+}
+
+/**
+ * GET /api/v1/controls/workspace — read-only Control and Assurance Workspace
+ * per GC-Q011. Returns catalog controls with scoped implementations, tests,
+ * effectiveness assessments, observation-backed evidence summaries, findings,
+ * risk mappings, and owner queue reasons.
+ *
+ * @param {object} params
+ * @param {string} [params.project] - project identifier or UUID
+ * @param {string} [params.status] - filter by status (ControlStatus enum)
+ * @param {string} [params.controlFunction] - filter by control function enum
+ * @param {string} [params.owner] - case-insensitive owner substring
+ * @param {string} [params.queue] - filter by owner queue reason
+ * @param {string} [params.asOf] - ISO-8601 instant for as-of assurance state
+ * @param {number} [params.freshnessWindowDays] - freshness window in days (default 90)
+ */
+export async function getControlAssuranceWorkspace({
+  project,
+  status,
+  controlFunction,
+  owner,
+  queue,
+  asOf,
+  freshnessWindowDays,
+} = {}) {
+  const params = {};
+  if (project != null) params.project = project;
+  if (status != null) params.status = status;
+  if (controlFunction != null) params.controlFunction = controlFunction;
+  if (owner != null) params.owner = owner;
+  if (queue != null) params.queue = queue;
+  if (asOf != null) params.asOf = asOf;
+  if (freshnessWindowDays != null) params.freshnessWindowDays = String(freshnessWindowDays);
+  return request("GET", "/api/v1/controls/workspace", { params });
 }
 
 export async function updateControl(id, data, project) {

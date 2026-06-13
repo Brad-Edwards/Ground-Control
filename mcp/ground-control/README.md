@@ -133,6 +133,7 @@ GETs (history, timeline, exports, list-by-X) onto `gc_query`.
 | `gc_risk_scenario` | create, update, delete, transition, requirements, link_* |
 | `gc_threat_model` | create, update, delete, transition, link_* |
 | `gc_control` | create, update, delete, transition, link_* |
+| `gc_control_assurance_workspace` | read-only GC-Q011 control catalog, assurance evidence, findings, mappings, and owner queue view |
 | `gc_derivation` | run, list_runs, get_run, list_facts, list_capture_limits |
 | `gc_risk_governance` | `{entity, action}` over methodology_profile, risk_register_record, risk_assessment_result, treatment_plan, verification_result |
 | `gc_analyze` | cycles, orphans, coverage_gaps, impact, cross_wave, consistency, completeness, status_drift, similarity, work_order, evidence_freshness, observation_exposure, control_state, vendor_risk_aggregation |
