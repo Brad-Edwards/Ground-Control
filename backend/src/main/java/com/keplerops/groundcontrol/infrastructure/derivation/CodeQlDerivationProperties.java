@@ -12,6 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "groundcontrol.derivation.codeql", ignoreUnknownFields = false)
 public class CodeQlDerivationProperties {
 
+    private static final String TYPESCRIPT_LANGUAGE = "typescript";
     private static final Pattern PINNED_PACK =
             Pattern.compile("^[a-z0-9_.-]+/[a-z0-9_.-]+@\\d+\\.\\d+\\.\\d+(?:[-+][a-z0-9_.-]+)?$");
 
@@ -94,10 +95,10 @@ public class CodeQlDerivationProperties {
         if (queryPack == null) {
             queryPack = queryPacks.get(normalized);
         }
-        if (queryPack == null && "typescript".equals(normalized)) {
+        if (queryPack == null && TYPESCRIPT_LANGUAGE.equals(normalized)) {
             queryPack = queryPacks.get(normalizeKey(projectIdentifier) + ".javascript");
         }
-        if (queryPack == null && "typescript".equals(normalized)) {
+        if (queryPack == null && TYPESCRIPT_LANGUAGE.equals(normalized)) {
             queryPack = queryPacks.get("javascript");
         }
         return Optional.ofNullable(queryPack).filter(value -> !value.isBlank());
@@ -126,7 +127,7 @@ public class CodeQlDerivationProperties {
         var defaults = new LinkedHashMap<String, String>();
         defaults.put("java", "codeql/java-queries@1.10.1");
         defaults.put("javascript", "codeql/javascript-queries@2.2.1");
-        defaults.put("typescript", "codeql/javascript-queries@2.2.1");
+        defaults.put(TYPESCRIPT_LANGUAGE, "codeql/javascript-queries@2.2.1");
         defaults.put("python", "codeql/python-queries@1.6.1");
         return defaults;
     }

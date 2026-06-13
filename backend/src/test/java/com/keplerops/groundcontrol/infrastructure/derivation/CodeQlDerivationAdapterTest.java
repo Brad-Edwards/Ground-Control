@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.infrastructure.derivation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keplerops.groundcontrol.domain.derivation.service.DerivationAdapterRequest;
@@ -67,12 +68,11 @@ class CodeQlDerivationAdapterTest {
 
     @Test
     void mutableQueryPackSelectorsAreNotPinned() {
-        assertThat(CodeQlDerivationProperties.isPinnedQueryPack("codeql/java-queries@1.10.1"))
-                .isTrue();
-        assertThat(CodeQlDerivationProperties.isPinnedQueryPack("codeql/java-queries@latest"))
-                .isFalse();
-        assertThat(CodeQlDerivationProperties.isPinnedQueryPack("codeql/java-queries@main"))
-                .isFalse();
+        assertThat(List.of(
+                        CodeQlDerivationProperties.isPinnedQueryPack("codeql/java-queries@1.10.1"),
+                        CodeQlDerivationProperties.isPinnedQueryPack("codeql/java-queries@latest"),
+                        CodeQlDerivationProperties.isPinnedQueryPack("codeql/java-queries@main")))
+                .containsExactly(true, false, false);
     }
 
     @Test
@@ -136,6 +136,34 @@ class CodeQlDerivationAdapterTest {
             assertThat(limit.detail()).contains("CodeQL execution failed for language java");
             assertThat(limit.detail()).doesNotContain("raw-secret-value");
         });
+    }
+
+    @Test
+    void processRunnerDetectsRunnableCodeQlExecutable() throws Exception {
+        var executable = repoRoot.resolve("codeql-fake");
+        Files.writeString(
+                executable,
+                "#!/usr/bin/env bash\n"
+                        + "if [ \"$1\" = \"version\" ]; then\n"
+                        + "  printf '{\"version\":\"2.23.9\"}'\n"
+                        + "  exit 0\n"
+                        + "fi\n"
+                        + "exit 1\n");
+        assertThat(executable.toFile().setExecutable(true)).isTrue();
+        var runner = new CodeQlDerivationAdapter.ProcessCodeQlCommandRunner();
+
+        assertThat(runner.canRun(executable.toString(), Duration.ofSeconds(3))).isTrue();
+    }
+
+    @Test
+    void processRunnerCapturesStdoutAndRejectsOversizedOutput() {
+        var runner = new CodeQlDerivationAdapter.ProcessCodeQlCommandRunner();
+
+        assertThat(runner.run(List.of("bash", "-c", "printf codeql-output"), repoRoot, Duration.ofSeconds(3), 64))
+                .isEqualTo("codeql-output");
+        assertThatThrownBy(
+                        () -> runner.run(List.of("bash", "-c", "printf oversized"), repoRoot, Duration.ofSeconds(3), 4))
+                .hasRootCauseInstanceOf(IllegalStateException.class);
     }
 
     private CodeQlDerivationAdapter adapter(CodeQlDerivationProperties properties, FakeRunner runner) {

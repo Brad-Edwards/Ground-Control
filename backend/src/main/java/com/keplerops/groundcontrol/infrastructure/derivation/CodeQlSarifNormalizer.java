@@ -25,6 +25,7 @@ import java.util.TreeMap;
 
 class CodeQlSarifNormalizer {
 
+    private static final String LOCATIONS_FIELD = "locations";
     private static final int MAX_LOCATIONS = 50;
     private static final int MAX_CODE_FLOW_LOCATIONS = 100;
 
@@ -43,13 +44,13 @@ class CodeQlSarifNormalizer {
             Instant derivedAt) {
         try {
             var root = objectMapper.readTree(sarifJson);
+            var context = new NormalizationContext(language, queryPack, request, toolVersion, derivedAt);
             var facts = new ArrayList<DerivedSystemModelFact>();
             for (JsonNode run : iterable(root.path("runs"))) {
                 var rules = rulesById(run);
                 var resultIndex = 0;
                 for (JsonNode result : iterable(run.path("results"))) {
-                    var fact = normalizeResult(
-                            language, queryPack, request, toolVersion, derivedAt, rules, result, resultIndex);
+                    var fact = normalizeResult(context, rules, result, resultIndex);
                     if (fact != null) {
                         facts.add(fact);
                     }
@@ -63,18 +64,11 @@ class CodeQlSarifNormalizer {
     }
 
     private DerivedSystemModelFact normalizeResult(
-            String language,
-            String queryPack,
-            DerivationAdapterRequest request,
-            String toolVersion,
-            Instant derivedAt,
-            Map<String, RuleMetadata> rules,
-            JsonNode result,
-            int resultIndex) {
+            NormalizationContext context, Map<String, RuleMetadata> rules, JsonNode result, int resultIndex) {
         var ruleId = text(result, "ruleId");
         var rule = rules.getOrDefault(ruleId, RuleMetadata.empty(ruleId));
         var message = text(result.path("message"), "text");
-        var primaryLocations = locationsFrom(result.path("locations"), MAX_LOCATIONS);
+        var primaryLocations = locationsFrom(result.path(LOCATIONS_FIELD), MAX_LOCATIONS);
         var primary = primaryLocations.isEmpty() ? null : primaryLocations.getFirst();
         var codeFlowLocations = codeFlowLocationsFrom(result);
         var allLocations = new ArrayList<SarifLocation>();
@@ -82,24 +76,24 @@ class CodeQlSarifNormalizer {
         allLocations.addAll(codeFlowLocations);
         if (primary == null
                 || !matchesScope(
-                        allLocations, request.scope().mode(), request.scope().paths())) {
+                        allLocations,
+                        context.request().scope().mode(),
+                        context.request().scope().paths())) {
             return null;
         }
 
         var factKind = classifyFactKind(rule, message, !codeFlowLocations.isEmpty());
         var findingIdentity = findingIdentity(result, primary, resultIndex);
-        var factKey = factKey(
-                language, queryPack, request.scope().commitSha(), factKind, ruleId, primary, message, findingIdentity);
+        var factKey = factKey(context, factKind, ruleId, primary, message, findingIdentity);
         var provenance = new DerivationFactProvenance(
                 "codeql-derivation",
                 "CodeQL",
-                toolVersion,
+                context.toolVersion(),
                 "codeql-query-packs",
-                queryPack,
-                request.scope().commitSha(),
-                derivedAt);
-        var payload =
-                payload(language, queryPack, request, rule, message, resultIndex, primaryLocations, codeFlowLocations);
+                context.queryPack(),
+                context.request().scope().commitSha(),
+                context.derivedAt());
+        var payload = payload(context, rule, message, resultIndex, primaryLocations, codeFlowLocations);
         return new DerivedSystemModelFact(
                 factKind,
                 factKey,
@@ -111,9 +105,7 @@ class CodeQlSarifNormalizer {
     }
 
     private Map<String, Object> payload(
-            String language,
-            String queryPack,
-            DerivationAdapterRequest request,
+            NormalizationContext context,
             RuleMetadata rule,
             String message,
             int resultIndex,
@@ -121,9 +113,9 @@ class CodeQlSarifNormalizer {
             List<SarifLocation> codeFlowLocations) {
         var boundaries = boundaries(primaryLocations, codeFlowLocations);
         var payload = new LinkedHashMap<String, Object>();
-        payload.put("language", language);
-        payload.put("queryPack", queryPack);
-        payload.put("scopeMode", request.scope().mode().name());
+        payload.put("language", context.language());
+        payload.put("queryPack", context.queryPack());
+        payload.put("scopeMode", context.request().scope().mode().name());
         payload.put("ruleId", rule.id());
         payload.put("ruleName", rule.name());
         payload.put("ruleTags", rule.tags());
@@ -131,7 +123,7 @@ class CodeQlSarifNormalizer {
         payload.put("message", message);
         payload.put("resultIndex", resultIndex);
         payload.put(
-                "locations",
+                LOCATIONS_FIELD,
                 primaryLocations.stream().map(SarifLocation::toPayload).toList());
         payload.put(
                 "codeFlowLocations",
@@ -201,7 +193,7 @@ class CodeQlSarifNormalizer {
         var locations = new ArrayList<SarifLocation>();
         for (JsonNode codeFlow : iterable(result.path("codeFlows"))) {
             for (JsonNode threadFlow : iterable(codeFlow.path("threadFlows"))) {
-                for (JsonNode threadFlowLocation : iterable(threadFlow.path("locations"))) {
+                for (JsonNode threadFlowLocation : iterable(threadFlow.path(LOCATIONS_FIELD))) {
                     var location = locationFrom(threadFlowLocation.path("location"));
                     if (location != null) {
                         locations.add(location);
@@ -265,9 +257,7 @@ class CodeQlSarifNormalizer {
     }
 
     private static String factKey(
-            String language,
-            String queryPack,
-            String commitSha,
+            NormalizationContext context,
             SystemModelFactKind factKind,
             String ruleId,
             SarifLocation primary,
@@ -275,12 +265,12 @@ class CodeQlSarifNormalizer {
             String findingIdentity) {
         return "codeql:%s:%s:%s"
                 .formatted(
-                        language,
+                        context.language(),
                         factKind.name().toLowerCase(Locale.ROOT),
                         sha256(
-                                language,
-                                queryPack,
-                                commitSha,
+                                context.language(),
+                                context.queryPack(),
+                                context.request().scope().commitSha(),
                                 factKind.name(),
                                 ruleId,
                                 primary.path(),
@@ -382,6 +372,13 @@ class CodeQlSarifNormalizer {
     private static Iterable<JsonNode> iterable(JsonNode node) {
         return node != null && node.isArray() ? node::elements : List.<JsonNode>of();
     }
+
+    private record NormalizationContext(
+            String language,
+            String queryPack,
+            DerivationAdapterRequest request,
+            String toolVersion,
+            Instant derivedAt) {}
 
     private record RuleMetadata(String id, String name, String shortDescription, List<String> tags, String severity) {
 

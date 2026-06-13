@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -35,6 +36,9 @@ import org.springframework.stereotype.Component;
 @Profile("!test")
 public class CodeQlDerivationAdapter implements DerivationAdapter {
 
+    private static final String CODEQL_WORK_DIRECTORY = ".gc/codeql";
+    private static final String VERSION_COMMAND = "version";
+    private static final String VERSION_FIELD = "version";
     private static final Set<String> SUPPORTED_LANGUAGES = Set.of("java", "javascript", "typescript", "python");
     private static final Set<String> SUPPORTED_SURFACES = Set.of("application");
     private static final Set<DerivationScopeMode> SUPPORTED_SCOPE_MODES =
@@ -51,6 +55,7 @@ public class CodeQlDerivationAdapter implements DerivationAdapter {
     private final CodeQlCommandRunner commandRunner;
     private final CodeQlSarifNormalizer normalizer;
 
+    @Autowired
     public CodeQlDerivationAdapter(CodeQlDerivationProperties properties, ObjectMapper objectMapper) {
         this(properties, objectMapper, new ProcessCodeQlCommandRunner());
     }
@@ -127,7 +132,7 @@ public class CodeQlDerivationAdapter implements DerivationAdapter {
         var repositoryRoot = repositoryRoot();
         Path tempDir = null;
         try {
-            tempDir = Files.createTempDirectory("gc-codeql-");
+            tempDir = Files.createTempDirectory(codeQlWorkRoot(repositoryRoot), "run-");
             var databasePath = tempDir.resolve(language.codeQlLanguage() + "-db");
             var sarifPath = tempDir.resolve(language.codeQlLanguage() + ".sarif");
             var createCommand = databaseCreateCommand(language.codeQlLanguage(), repositoryRoot, databasePath);
@@ -203,12 +208,12 @@ public class CodeQlDerivationAdapter implements DerivationAdapter {
     private String resolveToolVersion() {
         try {
             var output = commandRunner.run(
-                    List.of(properties.getCliPath(), "version", "--format=json"),
+                    List.of(properties.getCliPath(), VERSION_COMMAND, "--format=json"),
                     repositoryRoot(),
                     shortTimeout(properties.getTimeout()),
                     8192);
             var root = objectMapper.readTree(output);
-            var version = root.path("version").asText("");
+            var version = root.path(VERSION_FIELD).asText("");
             return version.isBlank() ? "unknown" : version;
         } catch (RuntimeException | IOException exception) {
             return "unknown";
@@ -246,6 +251,13 @@ public class CodeQlDerivationAdapter implements DerivationAdapter {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
+    private static Path codeQlWorkRoot(Path repositoryRoot) throws IOException {
+        var workRoot =
+                repositoryRoot.resolve(CODEQL_WORK_DIRECTORY).toAbsolutePath().normalize();
+        Files.createDirectories(workRoot);
+        return workRoot;
+    }
+
     private static void deleteRecursively(Path path) {
         if (path == null || !Files.exists(path)) {
             return;
@@ -272,12 +284,12 @@ public class CodeQlDerivationAdapter implements DerivationAdapter {
 
     private record LanguagePlan(String requestedLanguage, String codeQlLanguage) {}
 
-    private static class ProcessCodeQlCommandRunner implements CodeQlCommandRunner {
+    static class ProcessCodeQlCommandRunner implements CodeQlCommandRunner {
 
         @Override
         public boolean canRun(String executable, Duration timeout) {
             try {
-                run(List.of(executable, "version", "--format=json"), Path.of("."), timeout, 8192);
+                run(List.of(executable, VERSION_COMMAND, "--format=json"), Path.of("."), timeout, 8192);
                 return true;
             } catch (RuntimeException exception) {
                 return false;
