@@ -27,6 +27,24 @@ jobs:
           fetch-depth: 0
       - name: Show Python version
         run: python3 --version
+      - name: Install pre-commit
+        run: |
+          python3 -m pip install --user pre-commit
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Pre-commit file hygiene and secret scan
+        run: |
+          for hook in \
+            trailing-whitespace \
+            end-of-file-fixer \
+            check-yaml \
+            check-json \
+            check-added-large-files \
+            check-merge-conflict \
+            detect-private-key \
+            gitleaks
+          do
+            pre-commit run "$hook" --all-files
+          done
       # Policy tests include a renderer-vs-check_pr_body compose check
       # (`test_gc_render_pr_body_*_output_passes_check_pr_body`) that spawns
       # `node tools/render_pr_body_fixture.mjs`, which imports the MCP
@@ -336,6 +354,11 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: cd backend && ./gradlew build sonar -Dsonar.qualitygate.wait=true --no-daemon
+      - name: Fail on new SonarCloud issues
+        if: github.ref_type != 'tag'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: python3 tools/sonar/assert_no_new_issues.py --project-key Brad-Edwards_Ground-Control
 
   # ---------------------------------------------------------------------------
   # Verification (branches off test, runs in parallel with integration)

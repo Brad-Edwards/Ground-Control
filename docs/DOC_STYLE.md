@@ -154,6 +154,12 @@ same convention: `docs/API.md` documents `/api/v1/derivations`, the adapter
 description documents the MCP action contract, and the changelog fragment
 records the temporal change. No new style rule is established here.
 
+CI strictness policy checks in `tools/policy/checks.py` follow the same
+documentation pattern: `docs/DEVELOPMENT_WORKFLOW.md` documents the current
+merge-gate contract, `tools/sonar/README.md` documents Sonar-specific helper
+scripts, and ADR-054 records the policy-surface amendment. No new style rule
+is established here.
+
 New /implement workflow-gate MCP tools added to `mcp/ground-control/lib.js`
 and `mcp/ground-control/index.js` (for example, `gc_assert_traceability_reconciled`
 and `gc_close_issue_after_merge` added for GC-O007 / #1058, `gc_post_grc_screening`

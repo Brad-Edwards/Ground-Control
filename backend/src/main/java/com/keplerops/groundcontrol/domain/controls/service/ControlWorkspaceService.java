@@ -32,6 +32,7 @@ import com.keplerops.groundcontrol.domain.riskcontrol.model.RiskControlMapping;
 import com.keplerops.groundcontrol.domain.riskcontrol.model.ScopedControlImplementation;
 import com.keplerops.groundcontrol.domain.riskcontrol.repository.RiskControlMappingRepository;
 import com.keplerops.groundcontrol.domain.riskcontrol.repository.ScopedControlImplementationRepository;
+import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -285,18 +286,28 @@ public class ControlWorkspaceService {
 
     private WorkspaceRiskMapping toRiskMapping(RiskControlMapping mapping) {
         var scenario = mapping.getRiskScenario();
-        var record = mapping.getRiskRegisterRecord();
+        var riskRecord = mapping.getRiskRegisterRecord();
+        var riskUid = scenario == null ? uidOf(riskRecord) : scenario.getUid();
+        var riskTitle = scenario == null ? titleOf(riskRecord) : scenario.getTitle();
         return new WorkspaceRiskMapping(
                 mapping.getId(),
                 nameOf(mapping.getControlRole()),
-                scenario != null ? scenario.getUid() : record == null ? null : record.getUid(),
-                scenario != null ? scenario.getTitle() : record == null ? null : record.getTitle(),
+                riskUid,
+                riskTitle,
                 preview(mapping.getMappingObjective()),
                 mapping.getEvidenceRefs() == null
                         ? List.of()
                         : mapping.getEvidenceRefs().stream()
                                 .map(this::toMappingEvidenceRef)
                                 .toList());
+    }
+
+    private String uidOf(RiskRegisterRecord riskRecord) {
+        return riskRecord == null ? null : riskRecord.getUid();
+    }
+
+    private String titleOf(RiskRegisterRecord riskRecord) {
+        return riskRecord == null ? null : riskRecord.getTitle();
     }
 
     private ControlWorkspaceResult.WorkspaceMappingEvidenceRef toMappingEvidenceRef(MappingEvidenceRef ref) {
