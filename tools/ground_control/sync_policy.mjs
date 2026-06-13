@@ -13,6 +13,7 @@ import {
 import {
   adrDecisionDate,
   adrStatus,
+  adrTitle,
   compareGateShape,
   findAdrPathByUid,
   gateActualValue,
@@ -95,7 +96,7 @@ for (const adrUid of config.trackedAdrs) {
   const repoAdr = parseRepoAdr(await readText(path.relative(repoRoot, adrFile)));
   const liveAdr = await getAdrByUid(adrUid, project);
 
-  if (liveAdr.title !== repoAdr.title || adrDecisionDate(liveAdr) !== repoAdr.decisionDate) {
+  if (adrTitle(liveAdr) !== repoAdr.title || adrDecisionDate(liveAdr) !== repoAdr.decisionDate) {
     if (checkMode) {
       drift.push(`${adrUid} title/date drifted between repo and Ground Control.`);
     } else {
