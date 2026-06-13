@@ -8,6 +8,15 @@ accepted
 
 2026-06-10
 
+> **Amended and superseded in part by ADR-058 (2026-06-12):** This ADR remains
+> the v1 screening-record decision and the historical basis for Step 3.5, but
+> ADR-058 replaces the long-term target contract. The v2 GRC program computes
+> screening from derived facts as `impact_set`, `gap_set`, and `stale_set`.
+> A missing threat-model baseline no longer produces a passing `no_baseline`
+> declination; it creates a scoped gap set that must be modeled, controlled, or
+> dispositioned before completion. `not_security_relevant` becomes a derived
+> empty-impact/empty-gap result rather than an agent assertion.
+
 ## Context
 
 The June 6 redesign revert (issue #1089) demonstrated that prose-only workflow gates can be short-circuited—an agent can skip a prose instruction without any tooling enforcement. The GRC-in-the-loop requirement (GC-O012) mandates that every `/implement` run classify its change surface against the project's threat/risk workspaces before planning, but a prose instruction alone carries no enforcement weight.
