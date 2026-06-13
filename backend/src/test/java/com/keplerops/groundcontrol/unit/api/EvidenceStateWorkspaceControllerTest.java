@@ -1,8 +1,6 @@
 package com.keplerops.groundcontrol.unit.api;
 
 import static org.hamcrest.Matchers.is;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -44,7 +42,7 @@ class EvidenceStateWorkspaceControllerTest {
     @Test
     void workspaceMapsQueryParamsAndReturnsComposedExplorer() throws Exception {
         when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
-        when(workspaceService.workspace(eq(PROJECT_ID), eq(AS_OF), eq(30), eq(true), eq(ASSET_ID), eq(CONTROL_ID)))
+        when(workspaceService.workspace(PROJECT_ID, AS_OF, 30, true, ASSET_ID, CONTROL_ID))
                 .thenReturn(sampleWorkspace());
 
         mockMvc.perform(get("/api/v1/evidence-state/workspace")
@@ -77,7 +75,7 @@ class EvidenceStateWorkspaceControllerTest {
     @Test
     void workspaceUsesDefaultFreshnessWindowAndSupersededFlag() throws Exception {
         when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
-        when(workspaceService.workspace(eq(PROJECT_ID), any(), eq(90), eq(false), eq(null), eq(null)))
+        when(workspaceService.workspace(PROJECT_ID, null, 90, false, null, null))
                 .thenReturn(emptyWorkspace());
 
         mockMvc.perform(get("/api/v1/evidence-state/workspace").param("project", "ground-control"))
@@ -85,7 +83,7 @@ class EvidenceStateWorkspaceControllerTest {
                 .andExpect(jsonPath("$.artifactCount", is(0)))
                 .andExpect(jsonPath("$.observationCount", is(0)));
 
-        verify(workspaceService).workspace(eq(PROJECT_ID), eq(null), eq(90), eq(false), eq(null), eq(null));
+        verify(workspaceService).workspace(PROJECT_ID, null, 90, false, null, null);
     }
 
     private static EvidenceStateWorkspaceResult sampleWorkspace() {

@@ -163,18 +163,16 @@ public class EvidenceStateWorkspaceService {
 
     private List<EvidenceArtifactItem> composeArtifacts(
             List<EvidenceArtifact> rows, boolean includeSuperseded, WorkspaceContext context) {
-        var artifacts = new ArrayList<EvidenceArtifactItem>();
-        for (var artifact : rows) {
-            var freshness = context.artifactFreshness().get(artifact.getId());
-            if (freshness == null) {
-                continue;
-            }
-            if (!includeSuperseded && artifact.getSupersededByArtifactId() != null) {
-                continue;
-            }
-            artifacts.add(composeArtifact(artifact, freshness, context));
-        }
-        return artifacts;
+        return rows.stream()
+                .filter(artifact -> hasFreshness(artifact, context))
+                .filter(artifact -> includeSuperseded || artifact.getSupersededByArtifactId() == null)
+                .map(artifact ->
+                        composeArtifact(artifact, context.artifactFreshness().get(artifact.getId()), context))
+                .toList();
+    }
+
+    private boolean hasFreshness(EvidenceArtifact artifact, WorkspaceContext context) {
+        return context.artifactFreshness().containsKey(artifact.getId());
     }
 
     private EvidenceArtifactItem composeArtifact(
@@ -231,48 +229,66 @@ public class EvidenceStateWorkspaceService {
         if (source.sourceEntityId() == null) {
             return;
         }
+        var sourceId = source.sourceEntityId();
         switch (source.sourceKind()) {
-            case OBSERVATION -> {
-                var observation = context.observationsById().get(source.sourceEntityId());
-                if (observation != null) {
-                    assets.add(toAssetLink(observation.getAsset()));
-                    for (var assessment : context.riskAssessments()) {
-                        if (assessment.getObservations().contains(observation)) {
-                            assessments.add(toAssessmentLink(assessment));
-                        }
-                    }
-                }
-            }
-            case CONTROL_TEST -> {
-                var test = context.controlTestsById().get(source.sourceEntityId());
-                if (test != null) {
-                    controls.add(toControlLink(test.getControl()));
-                }
-            }
-            case CONTROL_EFFECTIVENESS_ASSESSMENT -> {
-                var assessment = context.controlAssessmentsById().get(source.sourceEntityId());
-                if (assessment != null) {
-                    controls.add(toControlLink(assessment.getControl()));
-                }
-            }
-            case RISK_ASSESSMENT_RESULT -> {
-                var assessment = context.riskAssessmentsById().get(source.sourceEntityId());
-                if (assessment != null) {
-                    assessments.add(toAssessmentLink(assessment));
-                }
-            }
-            case FINDING -> {
-                var finding = context.findingsById().get(source.sourceEntityId());
-                if (finding != null) {
-                    findings.add(toFindingLink(finding));
-                }
-            }
+            case OBSERVATION -> collectObservationImpact(sourceId, context, assets, assessments);
+            case CONTROL_TEST -> collectControlTestImpact(sourceId, context, controls);
+            case CONTROL_EFFECTIVENESS_ASSESSMENT -> collectControlAssessmentImpact(sourceId, context, controls);
+            case RISK_ASSESSMENT_RESULT -> collectRiskAssessmentImpact(sourceId, context, assessments);
+            case FINDING -> collectFindingImpact(sourceId, context, findings);
             case VERIFICATION_RESULT, ATTESTATION, EXTERNAL -> {
                 // Provenance-only sources are represented in the source list without impact traversal.
             }
             default -> {
                 // Future source kinds remain visible as provenance without widening impact traversal.
             }
+        }
+    }
+
+    private void collectObservationImpact(
+            UUID sourceId, WorkspaceContext context, Set<WorkspaceLink> assets, Set<WorkspaceLink> assessments) {
+        var observation = context.observationsById().get(sourceId);
+        if (observation == null) {
+            return;
+        }
+        assets.add(toAssetLink(observation.getAsset()));
+        collectRiskAssessmentsForObservation(observation, context, assessments);
+    }
+
+    private void collectRiskAssessmentsForObservation(
+            Observation observation, WorkspaceContext context, Set<WorkspaceLink> assessments) {
+        for (var assessment : context.riskAssessments()) {
+            if (assessment.getObservations().contains(observation)) {
+                assessments.add(toAssessmentLink(assessment));
+            }
+        }
+    }
+
+    private void collectControlTestImpact(UUID sourceId, WorkspaceContext context, Set<WorkspaceLink> controls) {
+        var test = context.controlTestsById().get(sourceId);
+        if (test != null) {
+            controls.add(toControlLink(test.getControl()));
+        }
+    }
+
+    private void collectControlAssessmentImpact(UUID sourceId, WorkspaceContext context, Set<WorkspaceLink> controls) {
+        var assessment = context.controlAssessmentsById().get(sourceId);
+        if (assessment != null) {
+            controls.add(toControlLink(assessment.getControl()));
+        }
+    }
+
+    private void collectRiskAssessmentImpact(UUID sourceId, WorkspaceContext context, Set<WorkspaceLink> assessments) {
+        var assessment = context.riskAssessmentsById().get(sourceId);
+        if (assessment != null) {
+            assessments.add(toAssessmentLink(assessment));
+        }
+    }
+
+    private void collectFindingImpact(UUID sourceId, WorkspaceContext context, Set<WorkspaceLink> findings) {
+        var finding = context.findingsById().get(sourceId);
+        if (finding != null) {
+            findings.add(toFindingLink(finding));
         }
     }
 

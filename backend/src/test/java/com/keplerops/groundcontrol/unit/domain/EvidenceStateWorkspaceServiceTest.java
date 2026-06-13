@@ -3,7 +3,6 @@ package com.keplerops.groundcontrol.unit.domain;
 import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.assets.model.Observation;
@@ -184,7 +183,7 @@ class EvidenceStateWorkspaceServiceTest {
         when(observationRepository.findAllByIdInAndProjectId(List.of(OBSERVATION_ID), PROJECT_ID))
                 .thenReturn(List.of(observation));
         when(controlTestRepository.findByProjectIdAndTestDateLessThanEqualOrderByTestDateDesc(
-                        eq(PROJECT_ID), eq(LocalDate.parse("2026-06-01"))))
+                        PROJECT_ID, LocalDate.parse("2026-06-01")))
                 .thenReturn(List.of(controlTest));
         when(controlEffectivenessAssessmentRepository
                         .findByProjectIdAndAssessedAtLessThanEqualOrderByControlIdAscAssessedAtDesc(
