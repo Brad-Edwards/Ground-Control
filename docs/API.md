@@ -1479,6 +1479,7 @@ The `unmapped-records` endpoint accepts `transitive` (boolean, default `true`). 
 | GET | `/evidence-artifacts` |—| 200 | List artifacts (optional `evidenceType`, `includeSuperseded` filters) |
 | GET | `/evidence-artifacts/{id}` |—| 200 | Get an artifact by UUID |
 | POST | `/evidence-artifacts/{id}/supersede` | EvidenceArtifactRequest | 201 | Create a new artifact and link the prior one as superseded |
+| GET | `/evidence-state/workspace` | - | 200 | Evidence and State Explorer workspace: artifacts, observations, freshness, provenance, affected assets, controls, assessments, and findings |
 
 The aggregate is append-only: there is no PUT and no DELETE. The only post-create
 mutation is `/supersede`, which writes the prior artifact's
@@ -1509,6 +1510,14 @@ The list endpoint excludes superseded artifacts by default; pass
 `HAS_SOURCE` edge per internal-kind source pointing at the existing graph node
 for the source entity, and a `SUPERSEDED_BY` edge from a prior artifact to its
 replacement once supersede has run.
+
+`GET /evidence-state/workspace` accepts optional `project`, `assetId`,
+`controlId`, `asOf`, `freshnessWindowDays` (default 90), and
+`includeSuperseded` (default false) query parameters. The response is a
+read-only composition for GC-Q012 with bounded evidence summaries, observation
+previews, freshness counts from `EvidenceFreshnessAnalysisService`, provenance
+source refs, affected assets, linked controls, downstream risk assessments, and
+linked findings. It does not return raw evidence payloads or storage paths.
 
 ### Test Cases (TC-001 / ADR-040)
 

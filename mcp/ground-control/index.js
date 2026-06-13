@@ -120,6 +120,7 @@ import {
   // ---- risk domain ----
   createObservation, listObservations, getObservation, updateObservation,
   deleteObservation, listLatestObservations,
+  getEvidenceStateWorkspace,
   createRiskScenario, listRiskScenarios, getRiskScenario, updateRiskScenario,
   deleteRiskScenario, transitionRiskScenarioStatus, getRiskScenarioRequirements,
   getRiskScenarioWorkspace,
@@ -1894,6 +1895,32 @@ server.tool(
   async (args) => {
     try {
       const result = await gcEvidenceToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_evidence_state_workspace: GC-Q012. Read-only composition endpoint returning
+// evidence artifacts, observations, freshness, provenance, and downstream impact.
+server.tool(
+  "gc_evidence_state_workspace",
+  "Read-only Evidence and State Explorer (GC-Q012). Returns project-scoped " +
+    "evidence artifacts, observations, freshness counts, provenance source refs, " +
+    "affected assets, linked controls, downstream assessments, and linked findings. " +
+    "Responses contain bounded summaries and links, not raw evidence payloads. " +
+    "Optional filters: assetId (UUID), controlId (UUID), asOf (ISO-8601 instant), " +
+    "freshnessWindowDays (default 90), includeSuperseded (default false).",
+  {
+    project: z.string().optional(),
+    assetId: z.string().uuid().optional(),
+    controlId: z.string().uuid().optional(),
+    asOf: z.string().optional(),
+    freshnessWindowDays: z.number().int().positive().optional(),
+    includeSuperseded: z.boolean().optional(),
+  },
+  async ({ project, assetId, controlId, asOf, freshnessWindowDays, includeSuperseded }) => {
+    try {
+      const result = await getEvidenceStateWorkspace({ project, assetId, controlId, asOf, freshnessWindowDays, includeSuperseded });
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },

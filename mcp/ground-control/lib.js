@@ -9116,6 +9116,37 @@ export async function supersedeEvidenceArtifact(id, data, project) {
   });
 }
 
+/**
+ * GET /api/v1/evidence-state/workspace — read-only workspace composition per
+ * GC-Q012. Returns scoped evidence artifacts, observations, freshness counts,
+ * provenance source refs, affected assets, controls, assessments, and findings.
+ *
+ * @param {object} params
+ * @param {string} [params.project] - project identifier or UUID
+ * @param {string} [params.assetId] - filter evidence to this asset UUID
+ * @param {string} [params.controlId] - filter evidence to this control UUID
+ * @param {string} [params.asOf] - ISO-8601 instant for freshness reference
+ * @param {number} [params.freshnessWindowDays] - freshness window in days (default 90)
+ * @param {boolean} [params.includeSuperseded] - include superseded artifacts
+ */
+export async function getEvidenceStateWorkspace({
+  project,
+  assetId,
+  controlId,
+  asOf,
+  freshnessWindowDays,
+  includeSuperseded,
+} = {}) {
+  const params = {};
+  if (project != null) params.project = project;
+  if (assetId != null) params.assetId = assetId;
+  if (controlId != null) params.controlId = controlId;
+  if (asOf != null) params.asOf = asOf;
+  if (freshnessWindowDays != null) params.freshnessWindowDays = String(freshnessWindowDays);
+  if (includeSuperseded != null) params.includeSuperseded = String(includeSuperseded);
+  return request("GET", "/api/v1/evidence-state/workspace", { params });
+}
+
 // ---------------------------------------------------------------------------
 // NIST SP 800-30 Rev. 1 enums (GC-T014, ADR-034 mirror policy)
 // ---------------------------------------------------------------------------
