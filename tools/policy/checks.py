@@ -1732,8 +1732,10 @@ def run_test_quality_decision_record_contract(
 # is wired across all four prose surfaces. The MCP-tool layer enforces:
 #   - Step 17 calls gc_assert_traceability_reconciled to write the
 #     traceability_reconciled phase marker.
-#   - Step 19 (gc_post_final_report) refuses without that marker.
-#   - Step 20 (Phase E) calls gc_close_issue_after_merge after PR merge.
+#   - Step 19 (gc_post_final_report) refuses without that marker and requires a
+#     plain_english_outcome for the user-facing closeout.
+#   - Step 20 (Phase E) calls gc_close_issue_after_merge after PR merge and
+#     surfaces a next_issue_recommendation envelope when one is available.
 #   - SKILL.md documents Phase E and gc_close_issue_after_merge as the
 #     canonical close path.
 #
@@ -1752,14 +1754,14 @@ def run_traceability_reconciliation_gate_contract(
     *,
     root: Path = REPO_ROOT,
 ) -> list[Violation]:
-    """Assert the issue #1058 traceability + post-merge close gate is wired.
+    """Assert the traceability + closeout gate prose surfaces are wired.
 
     The gate has three MCP-tool surfaces and four prose anchors:
 
       step-17-verify.md       must mention `gc_assert_traceability_reconciled`
-      step-19-final-report.md must mention `traceability_reconciled` (the marker name)
-      step-20-close-issue-on-merge.md must exist AND mention `gc_close_issue_after_merge`
-      SKILL.md                must mention `Phase E` AND `gc_close_issue_after_merge`
+      step-19-final-report.md must mention `traceability_reconciled` and `plain_english_outcome`
+      step-20-close-issue-on-merge.md must exist AND mention `gc_close_issue_after_merge` and `next_issue_recommendation`
+      SKILL.md                must mention `Phase E`, `gc_close_issue_after_merge`, and `next_issue_recommendation`
 
     Emits one violation per missing anchor with a stable code so CI surfaces
     the specific gap. A repo whose policy-tests file isn't yet up to date
@@ -1777,21 +1779,21 @@ def run_traceability_reconciliation_gate_contract(
         ),
         (
             IMPLEMENT_STEP_19_PATH,
-            ("traceability_reconciled",),
+            ("traceability_reconciled", "plain_english_outcome"),
             "traceability-gate-step19-missing",
-            "Step 19 must document the traceability_reconciled phase-marker prerequisite (issue #1058).",
+            "Step 19 must document the traceability_reconciled prerequisite and plain_english_outcome closeout field (issues #1058/#1156).",
         ),
         (
             IMPLEMENT_STEP_20_PATH,
-            ("gc_close_issue_after_merge",),
+            ("gc_close_issue_after_merge", "next_issue_recommendation"),
             "traceability-gate-step20-missing",
-            "Step 20 (Phase E post-merge close) must exist and mention gc_close_issue_after_merge (issue #1058).",
+            "Step 20 (Phase E post-merge close) must exist and mention gc_close_issue_after_merge plus next_issue_recommendation (issues #1058/#1156).",
         ),
         (
             IMPLEMENT_SKILL_PATH,
-            ("Phase E", "gc_close_issue_after_merge"),
+            ("Phase E", "gc_close_issue_after_merge", "next_issue_recommendation"),
             "traceability-gate-skill-missing",
-            "SKILL.md must document Phase E and the gc_close_issue_after_merge close path (issue #1058).",
+            "SKILL.md must document Phase E, the gc_close_issue_after_merge close path, and next_issue_recommendation (issues #1058/#1156).",
         ),
     )
 
