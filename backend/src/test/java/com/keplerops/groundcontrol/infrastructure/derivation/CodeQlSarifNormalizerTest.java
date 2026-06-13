@@ -10,6 +10,7 @@ import com.keplerops.groundcontrol.domain.derivation.state.DerivationScopeMode;
 import com.keplerops.groundcontrol.domain.derivation.state.SystemModelFactKind;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -109,13 +110,11 @@ class CodeQlSarifNormalizerTest {
                         SystemModelFactKind.DATA_FLOW,
                         SystemModelFactKind.EXTERNAL_INTERACTION,
                         SystemModelFactKind.DATA_FLOW);
-        assertThat(result.facts().getFirst().payload())
-                .extractingByKey("locations")
-                .asList()
-                .first()
-                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
-                .containsEntry("endLine", 12)
-                .containsEntry("endColumn", 24);
+        assertThat(result.facts().getFirst().payload().get("locations"))
+                .isInstanceOfSatisfying(List.class, locations -> assertThat(locations.getFirst())
+                        .isInstanceOfSatisfying(Map.class, location -> assertThat(location)
+                                .containsEntry("endLine", 12)
+                                .containsEntry("endColumn", 24)));
     }
 
     @Test
@@ -139,8 +138,9 @@ class CodeQlSarifNormalizerTest {
 
     @Test
     void invalidSarifFailsWithoutPersistingRawOutput() {
-        assertThatThrownBy(
-                        () -> normalizer.normalize("java", QUERY_PACK, "{", request(fullScope()), "2.23.9", DERIVED_AT))
+        var request = request(fullScope());
+
+        assertThatThrownBy(() -> normalizer.normalize("java", QUERY_PACK, "{", request, "2.23.9", DERIVED_AT))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Unable to parse CodeQL SARIF output");
     }
