@@ -13,6 +13,11 @@ const Analysis = lazy(() =>
 const Dashboard = lazy(() =>
   import("@/pages/dashboard").then((m) => ({ default: m.Dashboard })),
 );
+const EvidenceStateExplorer = lazy(() =>
+  import("@/pages/evidence-state-explorer").then((m) => ({
+    default: m.EvidenceStateExplorer,
+  })),
+);
 const Graph = lazy(() =>
   import("@/pages/graph").then((m) => ({ default: m.Graph })),
 );
@@ -105,6 +110,7 @@ export function AppRoutes() {
           <Route path="test-runs/:runId/run" element={<TestRunRunner />} />
           <Route path="graph" element={<Graph />} />
           <Route path="analysis" element={<Analysis />} />
+          <Route path="evidence-state" element={<EvidenceStateExplorer />} />
           <Route path="threat-modeling" element={<ThreatModelingWorkspace />} />
           <Route path="risk-scenarios" element={<RiskScenarioWorkspace />} />
           <Route path="admin" element={<Admin />} />

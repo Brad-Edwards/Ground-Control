@@ -1263,6 +1263,24 @@ export type FreshnessState =
   | "SUPERSEDED"
   | "NO_OBSERVATIONS";
 
+export type EvidenceType =
+  | "OBSERVATION_SUMMARY"
+  | "CONTROL_TEST_SUMMARY"
+  | "ASSURANCE_CONCLUSION"
+  | "VERIFICATION_SUMMARY"
+  | "ATTESTATION"
+  | "MIXED";
+
+export type EvidenceSourceKind =
+  | "OBSERVATION"
+  | "CONTROL_TEST"
+  | "CONTROL_EFFECTIVENESS_ASSESSMENT"
+  | "VERIFICATION_RESULT"
+  | "RISK_ASSESSMENT_RESULT"
+  | "FINDING"
+  | "ATTESTATION"
+  | "EXTERNAL";
+
 export interface WorkspaceAsset {
   id: string;
   uid: string;
@@ -1304,6 +1322,73 @@ export interface ThreatModelWorkspaceResponse {
   assetCount: number;
   flowCount: number;
   entryCount: number;
+}
+
+// GC-Q012 — Evidence and State Explorer types.
+export interface EvidenceFreshnessCounts {
+  fresh: number;
+  stale: number;
+  expired: number;
+  superseded: number;
+  currentlyValid: number;
+}
+
+export interface EvidenceStateProvenanceSource {
+  sourceKind: EvidenceSourceKind;
+  sourceEntityId: string | null;
+  sourceIdentifier: string | null;
+  role: string | null;
+  label: string | null;
+}
+
+export interface EvidenceStateArtifact {
+  id: string;
+  uid: string;
+  title: string;
+  summaryPreview: string;
+  evidenceType: EvidenceType;
+  derivedAt: string;
+  ageDays: number;
+  freshnessState: FreshnessState;
+  supersededByArtifactId: string | null;
+  derivedBy: string | null;
+  assuranceLevel: string | null;
+  confidence: string | null;
+  sources: EvidenceStateProvenanceSource[];
+  affectedAssets: WorkspaceLink[];
+  linkedControls: WorkspaceLink[];
+  downstreamAssessments: WorkspaceLink[];
+  linkedFindings: WorkspaceLink[];
+}
+
+export interface EvidenceStateObservation {
+  id: string;
+  assetId: string;
+  assetUid: string;
+  category: string;
+  observationKey: string;
+  valuePreview: string;
+  source: string | null;
+  evidenceRef: string | null;
+  observedAt: string;
+  expiresAt: string | null;
+  ageDays: number;
+  freshnessState: FreshnessState;
+  confidence: string | null;
+  evidenceArtifacts: WorkspaceLink[];
+  downstreamAssessments: WorkspaceLink[];
+  linkedFindings: WorkspaceLink[];
+}
+
+export interface EvidenceStateWorkspaceResponse {
+  assets: WorkspaceAsset[];
+  evidenceArtifacts: EvidenceStateArtifact[];
+  observations: EvidenceStateObservation[];
+  counts: EvidenceFreshnessCounts;
+  limitations: string[];
+  assetCount: number;
+  artifactCount: number;
+  observationCount: number;
 }
 
 // GC-T012 / GC-T004: MethodologyProfile response and request types.

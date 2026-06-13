@@ -39,14 +39,14 @@ omissions are visible at the tool boundary.
 A documentation coverage gate is added to the `/implement` workflow with three
 executable layers:
 
-**Layer 1—changed-surface classifier (`classifyChangedSurface` in lib.js).**
+**Layer 1: changed-surface classifier (`classifyChangedSurface` in lib.js).**
 A closed-vocabulary function maps repo paths to surface classes and documentation
 targets. Surface classes: `workflow`, `mcp_tool`, `config_parser`, `policy`,
 `adr`, `public_api`, `user_visible`, `doc`, `unclassified`. When any path
 classifies as one of the first five non-doc surfaces, `outcome_required` is
 true and the PR body must carry a `documentation_outcome` field.
 
-**Layer 2—structured outcome field in PR body and final report.**
+**Layer 2: structured outcome field in PR body and final report.**
 `validatePrBodyInput` and `validateFinalReportInput` accept an optional
 `documentation_outcome: { outcome, rationale? }` field. The outcome enum is
 closed: `updated`, `verified_unchanged`, `not_updated_authorized`. Only the
@@ -54,7 +54,7 @@ third value permits a rationale string (1-2000 characters); the other two
 reject it (strict). When `outcome_required` is true and the field is absent,
 the renderer rejects the input rather than posting an incomplete record.
 
-**Layer 3—Vale prose linter wired into `make policy`, CI, and pre-commit.**
+**Layer 3: Vale prose linter wired into `make policy`, CI, and pre-commit.**
 Vale with the `errata-ai/Google` package enforces the Google Developer
 Documentation Style Guide on docs modified in the current diff. The binary is
 pinned to a specific version, verified by SHA-256 checksum, and installed by
@@ -181,6 +181,8 @@ current with the actual classifier surface.
 **2026-05-29 (issue #719 GC-T012 multi-framework risk terminology crosswalk).** Added the `NORMALIZED_CONCEPTS` and `CROSSWALK_VOCABULARY_SURFACES` constant arrays to `mcp/ground-control/lib.js` mirroring the two new Java enums (`NormalizedConcept`, `CrosswalkVocabularySurface`) on `MethodologyProfile`. Extended `tools/policy/checks.py::ENUM_CONTRACT_INVENTORY` with the two new rows so ADR-034's enum-mirror gate covers them. Extended the `gc_risk_governance` `methodology_profile` Zod shape with an optional `crosswalk_entries` array. Documentation lives in `docs/API.md` (`MethodologyProfileRequest` / `CrosswalkEntry` field reference) and `docs/architecture/ARCHITECTURE.md` (`MethodologyProfile` aggregate section). These are config-parser, policy-inventory, and MCP-adapter surfaces; no change to the Vale rule set, `.vale.ini`, the classifier, or `docs/DOC_STYLE.md`.
 
 **2026-05-29 (issue #747 GC-Q009 Risk Scenario Workspace).** The `getRiskScenarioWorkspace` function was added to `mcp/ground-control/lib.js` as a thin API client for the new `GET /api/v1/risk-scenarios/workspace` endpoint, and the `gc_risk_scenario_workspace` tool was registered in `mcp/ground-control/index.js`. These are additive API-client and tool-registration surfaces; the underlying classifier already covers `mcp/ground-control/lib.js` and `mcp/ground-control/index.js`. No change to the Vale rule set, the `.vale.ini` configuration, or `docs/DOC_STYLE.md` itself.
+
+**2026-06-13 (issue #750 GC-Q012 Evidence and State Explorer).** The `getEvidenceStateWorkspace` function was added to `mcp/ground-control/lib.js` as a thin API client for the new `GET /api/v1/evidence-state/workspace` endpoint, and the `gc_evidence_state_workspace` tool was registered in `mcp/ground-control/index.js`. These are additive API-client and tool-registration surfaces. Documentation lives in `docs/API.md`, the tool description in `mcp/ground-control/index.js`, and the workspace architecture entry in `docs/architecture/ARCHITECTURE.md`; the classifier already covers the MCP trigger paths. No change to the Vale rule set, the `.vale.ini` configuration, or `docs/DOC_STYLE.md` itself.
 
 **2026-05-30 (issue #1058 traceability + post-merge close gate at MCP tool layer).** Added `runAssertTraceabilityReconciled` and `runCloseIssueAfterMerge` to `mcp/ground-control/lib.js`, registered the matching `gc_assert_traceability_reconciled` and `gc_close_issue_after_merge` MCP tools in `mcp/ground-control/index.js`, and extended `runPostFinalReport` to refuse without the `traceability_reconciled` phase marker. Added `run_traceability_reconciliation_gate_contract` to `tools/policy/checks.py` as the prose-side guardrail for the four anchor files (`skills/implement/SKILL.md`, `skills/implement/steps/step-17-verify.md`, `skills/implement/steps/step-19-final-report.md`, `skills/implement/steps/step-20-close-issue-on-merge.md`). The tool documentation lives in the tool descriptions in `mcp/ground-control/index.js` and in the skill prose under `skills/implement/`. These are MCP-adapter, config-parser, and policy surfaces; no change to the Vale rule set, the `tools/install-vale.sh` installer, the `.vale.ini` configuration, or `docs/DOC_STYLE.md`.
 
