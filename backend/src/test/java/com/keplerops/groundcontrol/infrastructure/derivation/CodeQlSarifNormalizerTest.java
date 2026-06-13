@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.infrastructure.derivation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keplerops.groundcontrol.domain.derivation.service.DerivationAdapterRequest;
@@ -94,6 +95,54 @@ class CodeQlSarifNormalizerTest {
 
         assertThat(result.facts()).hasSize(2);
         assertThat(result.facts()).extracting("factKey").doesNotHaveDuplicates();
+    }
+
+    @Test
+    void classifiesSecretExternalReachabilityAndFallbackFindings() {
+        var result = normalizer.normalize(
+                "java", QUERY_PACK, sarifWithClassificationKinds(), request(fullScope()), "2.23.9", DERIVED_AT);
+
+        assertThat(result.facts())
+                .extracting("factKind")
+                .containsExactly(
+                        SystemModelFactKind.SECRET_USAGE,
+                        SystemModelFactKind.DATA_FLOW,
+                        SystemModelFactKind.EXTERNAL_INTERACTION,
+                        SystemModelFactKind.DATA_FLOW);
+        assertThat(result.facts().getFirst().payload())
+                .extractingByKey("locations")
+                .asList()
+                .first()
+                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+                .containsEntry("endLine", 12)
+                .containsEntry("endColumn", 24);
+    }
+
+    @Test
+    void skipsResultsWithoutPrimaryLocations() {
+        var result = normalizer.normalize(
+                "java", QUERY_PACK, sarifWithoutLocations(), request(fullScope()), "2.23.9", DERIVED_AT);
+
+        assertThat(result.facts()).isEmpty();
+    }
+
+    @Test
+    void pathScopedDerivationRequiresRequestedPaths() {
+        var scope = new DerivationScope(
+                DerivationScopeMode.PATH_SET, COMMIT, null, List.of(), Set.of("java"), Set.of("application"));
+
+        var result = normalizer.normalize(
+                "java", QUERY_PACK, sarifWithEntryPointAndTaintFlow(), request(scope), "2.23.9", DERIVED_AT);
+
+        assertThat(result.facts()).isEmpty();
+    }
+
+    @Test
+    void invalidSarifFailsWithoutPersistingRawOutput() {
+        assertThatThrownBy(
+                        () -> normalizer.normalize("java", QUERY_PACK, "{", request(fullScope()), "2.23.9", DERIVED_AT))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Unable to parse CodeQL SARIF output");
     }
 
     private static DerivationScope fullScope() {
@@ -239,6 +288,135 @@ class CodeQlSarifNormalizerTest {
                               }
                             }
                           ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """;
+    }
+
+    private static String sarifWithClassificationKinds() {
+        return """
+                {
+                  "version": "2.1.0",
+                  "runs": [
+                    {
+                      "tool": {
+                        "driver": {
+                          "name": "CodeQL",
+                          "rules": [
+                            {
+                              "id": "java/hardcoded-secret",
+                              "name": "Hard-coded credential",
+                              "shortDescription": { "text": "Credential material is embedded" },
+                              "properties": { "tags": ["security", "secret"] }
+                            },
+                            {
+                              "id": "java/reachable-call",
+                              "name": "Call graph reachability",
+                              "shortDescription": { "text": "Reachability path" },
+                              "properties": { "tags": ["reachability"] }
+                            },
+                            {
+                              "id": "java/network-client",
+                              "name": "Network client",
+                              "shortDescription": { "text": "HTTP call leaves the service" },
+                              "properties": { "tags": ["external", "http"] }
+                            },
+                            {
+                              "id": "java/unknown-finding",
+                              "name": "Unclassified finding",
+                              "shortDescription": { "text": "General CodeQL finding" },
+                              "properties": { "tags": ["quality"] }
+                            }
+                          ]
+                        }
+                      },
+                      "results": [
+                        {
+                          "ruleId": "java/hardcoded-secret",
+                          "message": { "text": "Credential material is embedded." },
+                          "locations": [
+                            {
+                              "physicalLocation": {
+                                "artifactLocation": { "uri": "./backend\\\\src\\\\main\\\\java\\\\com\\\\example\\\\Secrets.java" },
+                                "region": {
+                                  "startLine": 10,
+                                  "startColumn": 5,
+                                  "endLine": 12,
+                                  "endColumn": 24
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "ruleId": "java/reachable-call",
+                          "message": { "text": "Reachability path detected." },
+                          "locations": [
+                            {
+                              "physicalLocation": {
+                                "artifactLocation": { "uri": "backend/src/main/java/com/example/Reachable.java" },
+                                "region": { "startLine": 22 }
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "ruleId": "java/network-client",
+                          "message": { "text": "HTTP call leaves the service." },
+                          "locations": [
+                            {
+                              "physicalLocation": {
+                                "artifactLocation": { "uri": "backend/src/main/java/com/example/HttpClient.java" },
+                                "region": { "startLine": 33 }
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "ruleId": "java/unknown-finding",
+                          "message": { "text": "General CodeQL finding." },
+                          "locations": [
+                            {
+                              "physicalLocation": {
+                                "artifactLocation": { "uri": "backend/src/main/java/com/example/General.java" },
+                                "region": { "startLine": 44 }
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """;
+    }
+
+    private static String sarifWithoutLocations() {
+        return """
+                {
+                  "version": "2.1.0",
+                  "runs": [
+                    {
+                      "tool": {
+                        "driver": {
+                          "name": "CodeQL",
+                          "rules": [
+                            {
+                              "id": "java/locationless",
+                              "name": "Locationless finding",
+                              "shortDescription": { "text": "No primary location" },
+                              "properties": { "tags": ["quality"] }
+                            }
+                          ]
+                        }
+                      },
+                      "results": [
+                        {
+                          "ruleId": "java/locationless",
+                          "message": { "text": "No primary location." }
                         }
                       ]
                     }

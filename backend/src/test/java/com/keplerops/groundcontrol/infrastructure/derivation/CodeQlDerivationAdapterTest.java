@@ -67,6 +67,31 @@ class CodeQlDerivationAdapterTest {
     }
 
     @Test
+    void availableOnlyWhenEnabledPinnedAndRunnable() {
+        var runner = new FakeRunner();
+        var adapter = adapter(properties(Map.of("java", "codeql/java-queries@1.10.1")), runner);
+
+        assertThat(adapter.isAvailable()).isTrue();
+
+        runner.runnable = false;
+        assertThat(adapter.isAvailable()).isFalse();
+
+        var disabled = properties(Map.of("java", "codeql/java-queries@1.10.1"));
+        disabled.setEnabled(false);
+        assertThat(adapter(disabled, new FakeRunner()).isAvailable()).isFalse();
+    }
+
+    @Test
+    void publicConstructorUsesProcessRunner() {
+        var props = properties(Map.of("java", "codeql/java-queries@1.10.1"));
+        props.setRepositoryRoot(repoRoot);
+
+        var adapter = new CodeQlDerivationAdapter(props, new ObjectMapper());
+
+        assertThat(adapter.descriptor().adapterId()).isEqualTo("codeql-derivation");
+    }
+
+    @Test
     void mutableQueryPackSelectorsAreNotPinned() {
         assertThat(List.of(
                         CodeQlDerivationProperties.isPinnedQueryPack("codeql/java-queries@1.10.1"),
@@ -90,15 +115,13 @@ class CodeQlDerivationAdapterTest {
             assertThat(fact.provenance().toolVersion()).isEqualTo("2.23.9");
             assertThat(fact.provenance().rulesetVersion()).isEqualTo("codeql/java-queries@1.10.1");
         });
-        assertThat(runner.commands).anySatisfy(command -> {
-            assertThat(command).contains("database", "create", "--language=java");
-            assertThat(command)
-                    .contains("--source-root=" + repoRoot.toAbsolutePath().normalize());
-        });
-        assertThat(runner.commands).anySatisfy(command -> {
-            assertThat(command).contains("database", "analyze", "codeql/java-queries@1.10.1");
-            assertThat(command).anyMatch(value -> value.startsWith("--output="));
-        });
+        assertThat(runner.commands)
+                .anySatisfy(command -> assertThat(command)
+                        .contains("database", "create", "--language=java")
+                        .contains("--source-root=" + repoRoot.toAbsolutePath().normalize()))
+                .anySatisfy(command -> assertThat(command)
+                        .contains("database", "analyze", "codeql/java-queries@1.10.1")
+                        .anyMatch(value -> value.startsWith("--output=")));
     }
 
     @Test
@@ -139,16 +162,49 @@ class CodeQlDerivationAdapterTest {
     }
 
     @Test
+    void deriveReturnsCaptureLimitWhenLanguagePinIsMissing() {
+        var adapter = adapter(properties(Map.of("java", "codeql/java-queries@1.10.1")), new FakeRunner());
+
+        var result = adapter.derive(request(new DerivationScope(
+                DerivationScopeMode.FULL_REPO, COMMIT, null, List.of(), Set.of("python"), Set.of("application"))));
+
+        assertThat(result.facts()).isEmpty();
+        assertThat(result.captureLimits()).singleElement().satisfies(limit -> {
+            assertThat(limit.reason()).isEqualTo(CaptureLimitReason.TOOL_UNAVAILABLE);
+            assertThat(limit.language()).isEqualTo("python");
+            assertThat(limit.detail()).contains("query pack pin is not configured");
+        });
+    }
+
+    @Test
+    void deriveReturnsCaptureLimitWhenSarifExceedsConfiguredOutputLimit() {
+        var props = properties(Map.of("java", "codeql/java-queries@1.10.1"));
+        props.setMaxOutputBytes(4);
+        var adapter = adapter(props, new FakeRunner());
+
+        var result = adapter.derive(request(new DerivationScope(
+                DerivationScopeMode.FULL_REPO, COMMIT, null, List.of(), Set.of("java"), Set.of("application"))));
+
+        assertThat(result.facts()).isEmpty();
+        assertThat(result.captureLimits()).singleElement().satisfies(limit -> {
+            assertThat(limit.reason()).isEqualTo(CaptureLimitReason.TOOL_EXECUTION_FAILED);
+            assertThat(limit.detail()).contains("raw tool output was not persisted");
+        });
+    }
+
+    @Test
     void processRunnerDetectsRunnableCodeQlExecutable() throws Exception {
         var executable = repoRoot.resolve("codeql-fake");
         Files.writeString(
                 executable,
-                "#!/usr/bin/env bash\n"
-                        + "if [ \"$1\" = \"version\" ]; then\n"
-                        + "  printf '{\"version\":\"2.23.9\"}'\n"
-                        + "  exit 0\n"
-                        + "fi\n"
-                        + "exit 1\n");
+                """
+                #!/usr/bin/env bash
+                if [ "$1" = "version" ]; then
+                  printf '{"version":"2.23.9"}'
+                  exit 0
+                fi
+                exit 1
+                """);
         assertThat(executable.toFile().setExecutable(true)).isTrue();
         var runner = new CodeQlDerivationAdapter.ProcessCodeQlCommandRunner();
 
@@ -254,10 +310,11 @@ class CodeQlDerivationAdapterTest {
         private final List<List<String>> commands = new ArrayList<>();
         private String sarif = sarifForPath("backend/src/main/java/com/example/Controller.java");
         private boolean failAnalyze;
+        private boolean runnable = true;
 
         @Override
         public boolean canRun(String executable, Duration timeout) {
-            return true;
+            return runnable;
         }
 
         @Override
