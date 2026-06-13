@@ -54,5 +54,27 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [035](035-mcp-tool-catalog-curation.md) | MCP Tool Catalog Curation | Accepted |
 | [036](036-per-step-routing-tool-surfaces-telemetry.md) | Per-Step Model Routing, Durable-Record Tool Surfaces, and Step Telemetry (amends ADR-021) | Accepted (amended 2026-05-26, GC-O011/#989) |
 | [037](037-browser-session-access-control.md) | Browser Session Access Control | Accepted |
+| [038](038-finding-entity-boundary.md) | Finding Entity Boundary | Accepted |
+| [039](039-control-verification-subsystem.md) | Control Verification Subsystem (Tests + Effectiveness Assessments) | Accepted |
+| [040](040-test-case-domain.md) | Test Case Domain Boundary | Accepted |
+| [041](041-test-case-step-format.md) | Step-Based Test Case Format | Accepted |
+| [042](042-test-case-bdd-gherkin-format.md) | BDD/Gherkin Authored Format for Test Cases | Accepted |
+| [043](043-asset-classification-subtype-extensibility.md) | Asset Classification and Subtype Extensibility | Accepted |
+| [043](043-test-case-hierarchical-organization.md) | Test Case Hierarchical Organization | Accepted |
+| [044](044-test-plan-entity.md) | Test Plan Entity | Accepted |
+| [045](045-evidence-derivation-and-temporal-state-history.md) | Evidence Derivation and Temporal State History | Accepted |
+| [046](046-partial-knowledge-and-unknown-dependencies.md) | Partial Knowledge and Unknown Dependency Support | Accepted |
+| [047](047-test-suite-entity.md) | Test Suite Entity | Accepted |
+| [048](048-audit-entity-boundary.md) | Audit Entity Boundary | Accepted |
+| [049](049-test-run-entity.md) | Test Run Entity | Accepted |
+| [050](050-manual-test-execution-step-result.md) | Manual Test Execution Step Result | Accepted |
+| [051](051-sonarcloud-gate-recalibration.md) | SonarCloud Gate Recalibration | Proposed |
+| [052](052-risk-control-mapping.md) | Risk-Control Mapping Aggregate (GC-T003) | Accepted |
+| [053](053-conversation-surface-hardening.md) | Conversation Surface Hardening | Accepted |
+| [054](054-documentation-coverage-gate.md) | Documentation Coverage Gate | Accepted |
+| [055](055-research-workflow-skills-and-citation-mcp.md) | Research Workflow Skills and Citation MCP | Accepted |
+| [056](056-research-project-type-and-intake.md) | Research Project Type and Intake Metadata | Accepted |
+| [057](057-per-run-grc-screening-gate.md) | Per-run GRC Screening Gate in /implement | Accepted (amended/superseded in part by ADR-058) |
+| [058](058-derivation-first-continuous-grc.md) | Derivation-First Continuous GRC | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.
