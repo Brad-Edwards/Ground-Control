@@ -121,6 +121,7 @@ import {
   createObservation, listObservations, getObservation, updateObservation,
   deleteObservation, listLatestObservations,
   getEvidenceStateWorkspace,
+  getControlAssuranceWorkspace, CONTROL_STATUSES, CONTROL_FUNCTIONS, CONTROL_WORKSPACE_QUEUE_REASONS,
   createRiskScenario, listRiskScenarios, getRiskScenario, updateRiskScenario,
   deleteRiskScenario, transitionRiskScenarioStatus, getRiskScenarioRequirements,
   getRiskScenarioWorkspace,
@@ -1926,6 +1927,44 @@ server.tool(
   async ({ project, assetId, controlId, asOf, freshnessWindowDays, includeSuperseded }) => {
     try {
       const result = await getEvidenceStateWorkspace({ project, assetId, controlId, asOf, freshnessWindowDays, includeSuperseded });
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_control_assurance_workspace: GC-Q011. Read-only composition endpoint
+// returning controls with implementations, tests, evidence, findings, risk
+// mappings, assessments, and owner work-queue reasons.
+server.tool(
+  "gc_control_assurance_workspace",
+  "Read-only Control and Assurance Workspace (GC-Q011). Returns project-scoped " +
+    "control catalog entries with scoped implementations, control tests, " +
+    "effectiveness assessments, observation-backed evidence summaries, linked " +
+    "findings/exceptions, risk mappings, and owner queue reasons. Responses " +
+    "contain bounded summaries and links, not raw evidence payloads. Optional " +
+    "filters: status (ControlStatus), controlFunction (ControlFunction), owner " +
+    "substring, queue (owner queue reason), asOf (ISO-8601 instant), " +
+    "freshnessWindowDays (default 90).",
+  {
+    project: z.string().optional(),
+    status: z.enum(CONTROL_STATUSES).optional(),
+    controlFunction: z.enum(CONTROL_FUNCTIONS).optional(),
+    owner: z.string().optional(),
+    queue: z.enum(CONTROL_WORKSPACE_QUEUE_REASONS).optional(),
+    asOf: z.string().optional(),
+    freshnessWindowDays: z.number().int().positive().optional(),
+  },
+  async ({ project, status, controlFunction, owner, queue, asOf, freshnessWindowDays }) => {
+    try {
+      const result = await getControlAssuranceWorkspace({
+        project,
+        status,
+        controlFunction,
+        owner,
+        queue,
+        asOf,
+        freshnessWindowDays,
+      });
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },

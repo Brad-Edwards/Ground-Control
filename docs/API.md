@@ -1410,6 +1410,28 @@ entity), EVIDENCED_BY (audit is evidenced by the linked artifact), FOLLOWS_UP_ON
 `FINAL_REPORT` can transition back to `DRAFT_REPORT` for rework. `CLOSED` is
 terminal.
 
+### Controls and Assurance Workspace (GC-Q011)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/controls/workspace` |—| 200 | Read-only Control and Assurance Workspace: catalog controls, scoped implementations, tests, evidence summaries, effectiveness assessments, exceptions, risk mappings, and owner queue reasons |
+
+`GET /controls/workspace` accepts optional `project`, `status`
+(`ControlStatus`: DRAFT, PROPOSED, IMPLEMENTED, OPERATIONAL, DEPRECATED,
+RETIRED), `controlFunction` (`ControlFunction`: PREVENTIVE, DETECTIVE,
+CORRECTIVE, COMPENSATING), `owner` (case-insensitive substring), `queue`
+(`OWNER_MISSING`, `STATUS_DRAFT`, `TEST_EVIDENCE_MISSING`,
+`ASSESSMENT_MISSING`, `OPEN_EXCEPTION`, `EFFECTIVENESS_WEAK`, `CURRENT`),
+`asOf` (ISO-8601 instant), and `freshnessWindowDays` (default 90, positive)
+query parameters.
+
+The response is a read-only composition over existing aggregates. Each control
+includes bounded previews for catalog text, scoped implementations, control
+tests, control-effectiveness assessments, `EvidenceArtifact` summaries sourced
+from tests or assessments, linked findings/exceptions, risk-control mappings
+with mapping-owned `evidenceRefs` summaries, and computed owner queue reasons.
+It does not return raw evidence payloads or persist a second assurance state.
+
 ### Control Tests (GC-I012)
 
 | Method | Path | Body | Status | Purpose |

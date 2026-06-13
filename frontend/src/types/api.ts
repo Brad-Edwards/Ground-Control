@@ -21,6 +21,21 @@ export const CONTROL_FUNCTIONS: ControlFunction[] = [
   "CORRECTIVE",
   "COMPENSATING",
 ];
+export type ControlStatus =
+  | "DRAFT"
+  | "PROPOSED"
+  | "IMPLEMENTED"
+  | "OPERATIONAL"
+  | "DEPRECATED"
+  | "RETIRED";
+export const CONTROL_STATUSES: ControlStatus[] = [
+  "DRAFT",
+  "PROPOSED",
+  "IMPLEMENTED",
+  "OPERATIONAL",
+  "DEPRECATED",
+  "RETIRED",
+];
 export type MappingControlRole =
   | "PREVENTIVE"
   | "DETECTIVE"
@@ -1389,6 +1404,114 @@ export interface EvidenceStateWorkspaceResponse {
   assetCount: number;
   artifactCount: number;
   observationCount: number;
+}
+
+// GC-Q011 - Control and Assurance Workspace types.
+export type ControlTestConclusion = "EFFECTIVE" | "INEFFECTIVE" | "NOT_TESTED";
+
+export type ControlEffectivenessRating =
+  | "EFFECTIVE"
+  | "PARTIALLY_EFFECTIVE"
+  | "INEFFECTIVE";
+
+export type ControlWorkspaceQueueReason =
+  | "OWNER_MISSING"
+  | "STATUS_DRAFT"
+  | "TEST_EVIDENCE_MISSING"
+  | "ASSESSMENT_MISSING"
+  | "OPEN_EXCEPTION"
+  | "EFFECTIVENESS_WEAK"
+  | "CURRENT";
+
+export interface ControlWorkspaceScopedImplementation {
+  id: string;
+  uid: string;
+  name: string;
+  implementationScope: string | null;
+  operationalAssetId: string | null;
+  operationalAssetUid: string | null;
+  operationalAssetName: string | null;
+}
+
+export interface ControlWorkspaceControlTest {
+  id: string;
+  uid: string;
+  methodology: string;
+  conclusion: ControlTestConclusion;
+  testerIdentity: string;
+  testDate: string;
+  notesPreview: string | null;
+}
+
+export interface ControlWorkspaceAssessment {
+  id: string;
+  uid: string;
+  designEffectiveness: ControlEffectivenessRating;
+  operatingEffectiveness: ControlEffectivenessRating;
+  assessedAt: string;
+  assessor: string;
+  supportingTestIds: string[];
+}
+
+export interface ControlWorkspaceEvidence {
+  id: string;
+  uid: string;
+  title: string;
+  summaryPreview: string;
+  evidenceType: EvidenceType;
+  derivedAt: string;
+}
+
+export interface ControlWorkspaceFinding {
+  id: string;
+  uid: string;
+  title: string;
+  findingType: string;
+  severity: string;
+  status: string;
+  owner: string | null;
+  dueDate: string | null;
+}
+
+export interface ControlWorkspaceMappingEvidenceRef {
+  evidenceRef: string;
+  evidenceNotePreview: string | null;
+  evidenceArtifactId: string | null;
+}
+
+export interface ControlWorkspaceRiskMapping {
+  id: string;
+  controlRole: string;
+  targetIdentifier: string | null;
+  targetTitle: string | null;
+  mappingObjective: string | null;
+  evidenceRefs: ControlWorkspaceMappingEvidenceRef[];
+}
+
+export interface ControlWorkspaceControl {
+  id: string;
+  uid: string;
+  title: string;
+  descriptionPreview: string | null;
+  objectivePreview: string | null;
+  controlFunction: ControlFunction;
+  status: ControlStatus;
+  owner: string | null;
+  implementationScopePreview: string | null;
+  category: string | null;
+  source: string | null;
+  scopedImplementations: ControlWorkspaceScopedImplementation[];
+  tests: ControlWorkspaceControlTest[];
+  assessments: ControlWorkspaceAssessment[];
+  evidence: ControlWorkspaceEvidence[];
+  findings: ControlWorkspaceFinding[];
+  riskMappings: ControlWorkspaceRiskMapping[];
+  queueReasons: ControlWorkspaceQueueReason[];
+}
+
+export interface ControlAssuranceWorkspaceResponse {
+  controls: ControlWorkspaceControl[];
+  controlCount: number;
 }
 
 // GC-T012 / GC-T004: MethodologyProfile response and request types.

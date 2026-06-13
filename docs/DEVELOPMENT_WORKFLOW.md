@@ -281,7 +281,7 @@ One mandatory pre-implementation architecture pass, then a single pre-push codex
 | Stage | What it catches | How it runs |
 |-------|-----------------|-------------|
 | Codex architecture preflight | Cross-cutting concerns, reuse opportunities, abstraction/concept confusion, need for ADR/design guidance before coding | `gc_codex_architecture_preflight` |
-| SonarCloud | Coverage, code smells, duplication, security hotspots, open issues on the PR | CI job + `$SONAR_TOKEN` sweep of `api/issues/search` and `api/hotspots/search` for this PR |
+| SonarCloud | Coverage, code smells, duplication, security hotspots, open issues on the PR | CI `sonar` job waits for the quality gate, then `tools/sonar/assert_no_new_issues.py` fails on any open issue in the new-code leak period |
 | Trivy (advisory) | Container image vulnerabilities, Dockerfile/IaC misconfigurations, in-image secrets | CI job; SARIF artifact `trivy-sarif` on the workflow run page; non-blocking |
 | OSV-scanner (advisory) | CVEs in Java/Gradle dependencies (read from `backend/gradle.lockfile`) | CI job; SARIF artifact `osv-scanner-sarif` on the workflow run page; non-blocking |
 | Codex review (pre-push, Step 6.5) | Fitness for purpose, architectural soundness, maintainability, extensibility, security, established patterns, consistency with the larger codebase. Codex returns structured findings; the MCP server posts a verbatim findings record to the resolved issue thread from the host side; the coding agent dispatches on the returned `next_action` (re-invoke only on `fix_findings_and_reinvoke`; on `fix_findings_then_summarize_and_escalate` fix + escalate without re-invoke). There is no PR yet at Step 6.5, so no inline PR comments are written by the SKILL—inline anchored comments only happen if a direct caller invokes `gc_codex_review` post-push (with a `pr_number`), which the SKILL no longer drives (issue #804). | `gc_codex_review` (`uncommitted=true`); MCP posts the issue-thread findings record |
@@ -337,6 +337,10 @@ PreToolUse hook on `Bash`. The user owns every actual merge. Blocked uncondition
 
 - `architecture/policies/adr-policy.json` defines machine-readable ADR guardrails
 - `python3 bin/policy` enforces ADR/workflow, controller/MCP/docs, migration, and PR-body policy
+- `python3 bin/policy` also pins the #1155 CI strictness baseline:
+  selected pre-commit hygiene and secret-scan hooks run in CI, the Sonar job
+  fails on new issues, and `.github/branch-protection-baseline.json` requires
+  strict status checks for `main` and `dev` while retaining admin bypass
 - `make policy` is the common path for Claude, Codex, pre-commit, and CI
 - `make sync-ground-control-policy` and `make policy-live` keep Ground Control quality gates and ADR metadata aligned when a live GC instance is available
 
