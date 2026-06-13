@@ -226,6 +226,10 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 - Pluggable evidence collection adapter interface (`EvidenceCollectionAdapter`, `EvidenceCollectionRequest`, `EvidenceCollectionResult`) plus `EvidenceCollectionAdapterRegistry` in the evidence service package. This is the GC-S001 port contract for agent-invoked external evidence collection.
 - Self-referential traceability enforcement—`check_live_policy.mjs` verifies substantive code files have reverse traceability links to requirements (GC-O002), using the `GET /requirements/traceability/by-artifact` reverse lookup endpoint. Lookup errors are tracked separately for debuggability when the endpoint is unavailable.
 - Server-side quality gates (`QualityGateService.evaluate`) synced from `tools/ground_control/policy.json`, evaluated in CI (`make policy-live`) and enforced at the `/implement` completion gate via `gc_assert_quality_gates`. Enforced metric types are `COVERAGE` (IMPLEMENTS / TESTS / DOCUMENTS link coverage for ACTIVE requirements), `ORPHAN_COUNT`, and `COMPLETENESS`; a failing gate blocks the run with a `{name, metric_type, threshold, actual}` envelope.
+- ADR metadata drift checks (`check_adr_drift.mjs` and `sync_policy.mjs`) use
+  `tools/ground_control/common.mjs` to normalize the live ADR title from the
+  API's `folder_title` field, keeping repo ADR titles and live Ground Control
+  records comparable under the MCP client's response normalization.
 
 ## MethodologyProfile Aggregate and Risk Terminology Crosswalk (GC-T012)
 

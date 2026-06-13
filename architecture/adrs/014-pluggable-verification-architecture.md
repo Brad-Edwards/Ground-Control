@@ -132,7 +132,16 @@ TLA+ is adopted for verifying Ground Control's own design-level properties:
 
 TLA+ specs live in `specs/tla/` at the repository root, versioned with code. TLC model checking runs as part of the verification pipeline.
 
-Implementation is staged. The repository now carries versioned TLA+ specs and policy sync tooling that keeps verification-oriented ADR and quality-gate metadata aligned. The policy-synced quality-gate set (`tools/ground_control/policy.json`) enforces implementation, test, and documentation traceability coverage plus orphan and completeness checks; it is evaluated in CI (`make policy-live`) and at the `/implement` completion gate via `gc_assert_quality_gates`. The common `VerificationResult` domain entity is implemented; verifier execution/orchestration adapters remain future work.
+Implementation is staged. The repository now carries versioned TLA+ specs and
+policy sync tooling that keeps verification-oriented ADR and quality-gate
+metadata aligned. The policy-synced quality-gate set
+(`tools/ground_control/policy.json`) enforces implementation, test, and
+documentation traceability coverage plus orphan and completeness checks; it is
+evaluated in CI (`make policy-live`) and at the `/implement` completion gate
+via `gc_assert_quality_gates`. Live ADR metadata checks read the ADR title from
+the API's `folder_title` response field, matching the sync payload used when
+repo ADR titles drift. The common `VerificationResult` domain entity is
+implemented; verifier execution/orchestration adapters remain future work.
 
 ### 5. Separation of concerns
 
