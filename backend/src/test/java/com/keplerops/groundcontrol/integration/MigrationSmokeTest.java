@@ -53,7 +53,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "079", "080", "081", "082", "083", "084", "085", "086", "087", "088", "089", "090", "091",
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
-                        "123", "124", "125", "126", "127", "128", "129", "130", "131", "132");
+                        "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134");
     }
 
     @Test
@@ -1058,6 +1058,39 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                                 + " budget_tokens, budget_wall_clock_minutes, budget_cost_usd_micros,"
                                 + " created_at, updated_at"
                                 + " FROM research_intake_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        // V133-V134: GC-GRC-001 derivation fact store. Pin the live tables and
+        // audit shadow columns so every normalized fact keeps reproducible
+        // provenance and every unsupported scope remains queryable as a
+        // machine-readable capture limit.
+        entityManager.createNativeQuery("SELECT 1 FROM derivation_run LIMIT 1").getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM system_model_fact LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM derivation_capture_limit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM derivation_run_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM system_model_fact_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM derivation_capture_limit_audit LIMIT 1")
+                .getResultList();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT fact_kind, schema_version, fact_key, adapter_id,"
+                                + " tool_name, tool_version, ruleset_name, ruleset_version,"
+                                + " commit_sha, derived_at, created_at, updated_at"
+                                + " FROM system_model_fact_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT reason, language, surface, commit_sha, captured_at,"
+                                + " created_at, updated_at"
+                                + " FROM derivation_capture_limit_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }

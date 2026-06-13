@@ -9148,6 +9148,50 @@ export async function getEvidenceStateWorkspace({
 }
 
 // ---------------------------------------------------------------------------
+// Derivation API functions (GC-GRC-001)
+// ---------------------------------------------------------------------------
+
+export const DERIVATION_SCOPE_MODES = ["FULL_REPO", "DIFF", "PATH_SET"];
+export const SYSTEM_MODEL_FACT_KINDS = [
+  "COMPONENT",
+  "TRUST_BOUNDARY",
+  "DATA_FLOW",
+  "ENTRY_POINT",
+  "TAINT_PATH",
+  "SECRET_USAGE",
+  "EXTERNAL_INTERACTION",
+  "DATA_CLASSIFICATION_HINT",
+];
+export const CAPTURE_LIMIT_REASONS = [
+  "UNSUPPORTED_LANGUAGE",
+  "UNSUPPORTED_SURFACE",
+  "DISABLED_ADAPTER",
+  "TOOL_UNAVAILABLE",
+  "SCOPE_UNSUPPORTED",
+  "TOOL_EXECUTION_FAILED",
+];
+
+export async function runDerivation(data, project) {
+  return request("POST", "/api/v1/derivations/runs", { body: data, params: { project } });
+}
+
+export async function listDerivationRuns({ project } = {}) {
+  return request("GET", "/api/v1/derivations/runs", { params: { project } });
+}
+
+export async function getDerivationRun(id, project) {
+  return request("GET", `/api/v1/derivations/runs/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function listDerivationFacts({ project, runId, factKind } = {}) {
+  return request("GET", "/api/v1/derivations/facts", { params: { project, runId, factKind } });
+}
+
+export async function listDerivationCaptureLimits({ project, runId, reason } = {}) {
+  return request("GET", "/api/v1/derivations/capture-limits", { params: { project, runId, reason } });
+}
+
+// ---------------------------------------------------------------------------
 // NIST SP 800-30 Rev. 1 enums (GC-T014, ADR-034 mirror policy)
 // ---------------------------------------------------------------------------
 

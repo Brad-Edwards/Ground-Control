@@ -121,6 +121,10 @@ export function adrDecisionDate(adr) {
   return adr.decisionDate ?? adr.decision_date;
 }
 
+export function adrTitle(adr) {
+  return adr.title ?? adr.folderTitle ?? adr.folder_title;
+}
+
 export function adrStatus(adr) {
   return adr.status;
 }

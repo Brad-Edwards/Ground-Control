@@ -149,6 +149,11 @@ endpoints follow the same pattern: record the surface addition in the ADR-054
 amendment and the changelog fragment; no new DOC_STYLE.md prose is needed
 unless a new style rule is being established.
 
+The GC-GRC-001 derivation API helpers and `gc_derivation` MCP tool follow the
+same convention: `docs/API.md` documents `/api/v1/derivations`, the adapter
+description documents the MCP action contract, and the changelog fragment
+records the temporal change. No new style rule is established here.
+
 New /implement workflow-gate MCP tools added to `mcp/ground-control/lib.js`
 and `mcp/ground-control/index.js` (for example, `gc_assert_traceability_reconciled`
 and `gc_close_issue_after_merge` added for GC-O007 / #1058, `gc_post_grc_screening`

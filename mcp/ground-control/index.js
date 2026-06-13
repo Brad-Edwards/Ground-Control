@@ -31,7 +31,7 @@
 //   Consolidated entity tools (one per entity, action-discriminated):
 //     gc_requirement, gc_relation, gc_adr, gc_document, gc_section,
 //     gc_asset, gc_observation, gc_risk_scenario, gc_threat_model,
-//     gc_control, gc_risk_governance, gc_risk_control_mapping, gc_analyze, gc_graph, gc_baseline,
+//     gc_control, gc_derivation, gc_risk_governance, gc_risk_control_mapping, gc_analyze, gc_graph, gc_baseline,
 //     gc_quality_gate, gc_admin, gc_pack
 //
 // Pure GETs (history, timeline, exports, list-by-X) are NOT registered as
@@ -243,6 +243,11 @@ import {
   gcEvidenceToolHandler,
   GC_EVIDENCE_DESCRIPTION,
 } from "./gc-evidence.js";
+import {
+  gcDerivationZodShape,
+  gcDerivationToolHandler,
+  GC_DERIVATION_DESCRIPTION,
+} from "./gc-derivation.js";
 import {
   gcAuditZodShape,
   gcAuditToolHandler,
@@ -1921,6 +1926,19 @@ server.tool(
   async ({ project, assetId, controlId, asOf, freshnessWindowDays, includeSuperseded }) => {
     try {
       const result = await getEvidenceStateWorkspace({ project, assetId, controlId, asOf, freshnessWindowDays, includeSuperseded });
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_derivation: GC-GRC-001 normalized system-model facts and capture limits.
+server.tool(
+  "gc_derivation",
+  GC_DERIVATION_DESCRIPTION,
+  gcDerivationZodShape,
+  async (args) => {
+    try {
+      const result = await gcDerivationToolHandler(args);
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },

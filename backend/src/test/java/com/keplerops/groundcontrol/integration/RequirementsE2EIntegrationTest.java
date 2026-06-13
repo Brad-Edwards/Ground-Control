@@ -525,6 +525,8 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "129", // V129: add methodology_profile crosswalk_entries column (GC-T012)
                         "130", // V130: add methodology_profile_aud crosswalk_entries column (GC-T012 audit parity)
                         "131", // V131: add project.type + create research_intake (ADR-056, #999)
-                        "132"); // V132: create research_intake_audit (ADR-056, #999)
+                        "132", // V132: create research_intake_audit (ADR-056, #999)
+                        "133", // V133: create derivation run/fact/capture-limit tables (GC-GRC-001)
+                        "134"); // V134: create derivation audit tables (GC-GRC-001)
     }
 }

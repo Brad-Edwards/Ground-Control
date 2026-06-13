@@ -1005,6 +1005,53 @@ All endpoints accept an optional `project` query parameter.
 (optional, traceability link UUID), `requirementId` (optional), `property` (optional),
 `evidence` (optional, JSON object), `expiresAt` (optional, ISO 8601).
 
+### Derivations (GC-GRC-001)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/derivations/runs` | DerivationRunRequest | 201 | Run server-side derivation for a repository scope |
+| GET | `/derivations/runs` |—| 200 | List derivation runs |
+| GET | `/derivations/runs/{id}` |—| 200 | Get one derivation run |
+| GET | `/derivations/facts` |—| 200 | List normalized system-model facts |
+| GET | `/derivations/capture-limits` |—| 200 | List capture-limit records |
+
+All endpoints accept an optional `project` query parameter. Facts and capture
+limits are persisted server-side. The API does not accept caller-supplied fact
+payloads.
+
+**Filters:**
+- `runId` (UUID) filters facts or capture limits by derivation run.
+- `factKind` filters facts by `COMPONENT`, `TRUST_BOUNDARY`, `DATA_FLOW`,
+  `ENTRY_POINT`, `TAINT_PATH`, `SECRET_USAGE`, `EXTERNAL_INTERACTION`, or
+  `DATA_CLASSIFICATION_HINT`.
+- `reason` filters capture limits by `UNSUPPORTED_LANGUAGE`,
+  `UNSUPPORTED_SURFACE`, `DISABLED_ADAPTER`, `TOOL_UNAVAILABLE`,
+  `SCOPE_UNSUPPORTED`, or `TOOL_EXECUTION_FAILED`.
+
+**DerivationRunRequest fields:** `scopeMode` (required: `FULL_REPO`,
+`PATH_SET`, or `DIFF`), `commitSha` (required, 7 to 64 lowercase hex
+characters), `baseCommitSha` (required for `DIFF` only), `paths` (required
+for `PATH_SET`, forbidden for `FULL_REPO`), `languages` (required string
+set), and `surfaces` (required string set).
+
+**SystemModelFact fields:** `id`, `derivationRunId`, `projectIdentifier`,
+`factKind`, `schemaVersion`, `factKey`, `label`, `summary`, `sourcePath`,
+`payload`, `provenance`, `createdAt`, and `updatedAt`. `provenance` carries
+`adapterId`, `toolName`, `toolVersion`, `rulesetName`, `rulesetVersion`,
+`commitSha`, and `derivedAt`. Payloads are normalized metadata. Raw source
+content, raw analyzer output, raw diffs, stderr, and secret values are
+rejected.
+
+**CaptureLimit fields:** `id`, `derivationRunId`, `projectIdentifier`,
+`adapterId`, `reason`, `language`, `surface`, `detail`, `commitSha`,
+`capturedAt`, `createdAt`, and `updatedAt`.
+
+MCP surface: `gc_derivation` with actions `run`, `list_runs`, `get_run`,
+`list_facts`, and `list_capture_limits`. `run` requires `scope_mode`,
+`commit_sha`, `languages`, and `surfaces`; `base_commit_sha` is required when
+`scope_mode=DIFF`; `paths` is required when `scope_mode=PATH_SET`. Readback
+actions map `run_id`, `fact_kind`, and `reason` to the REST filters above.
+
 ### Plugins
 
 | Method | Path | Body | Status | Purpose |
