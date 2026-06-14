@@ -16,6 +16,7 @@ import {
   gcControlToolHandler,
   CONTROL_FIELDS,
 } from "./gc-control.js";
+import { getControlAssuranceWorkspace } from "./lib.js";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_BASE_URL = process.env.GC_BASE_URL;
@@ -402,5 +403,51 @@ describe("control_effectiveness_assessment delete (GC-I013)", () => {
     assert.equal(calls.length, 1);
     assert.equal(calls[0].method, "DELETE");
     assert.equal(result, null);
+  });
+});
+
+describe("getControlAssuranceWorkspace", () => {
+  it("GETs /controls/workspace with camelCase query params", async () => {
+    const calls = makeFetchSpy({
+      status: 200,
+      body: { controls: [], controlCount: 0 },
+    });
+
+    await getControlAssuranceWorkspace({
+      project: "ground-control",
+      status: "OPERATIONAL",
+      controlFunction: "PREVENTIVE",
+      owner: "alice",
+      queue: "CURRENT",
+      asOf: "2026-06-01T12:00:00Z",
+      freshnessWindowDays: 30,
+    });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "GET");
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/controls/workspace");
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("status"), "OPERATIONAL");
+    assert.equal(url.searchParams.get("controlFunction"), "PREVENTIVE");
+    assert.equal(url.searchParams.get("owner"), "alice");
+    assert.equal(url.searchParams.get("queue"), "CURRENT");
+    assert.equal(url.searchParams.get("asOf"), "2026-06-01T12:00:00Z");
+    assert.equal(url.searchParams.get("freshnessWindowDays"), "30");
+  });
+
+  it("omits undefined filters", async () => {
+    const calls = makeFetchSpy({ status: 200, body: { controls: [], controlCount: 0 } });
+
+    await getControlAssuranceWorkspace({ project: "ground-control" });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("status"), null);
+    assert.equal(url.searchParams.get("controlFunction"), null);
+    assert.equal(url.searchParams.get("owner"), null);
+    assert.equal(url.searchParams.get("queue"), null);
+    assert.equal(url.searchParams.get("asOf"), null);
+    assert.equal(url.searchParams.get("freshnessWindowDays"), null);
   });
 });

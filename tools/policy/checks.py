@@ -14,11 +14,40 @@ from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ADR_POLICY_PATH = REPO_ROOT / "architecture" / "policies" / "adr-policy.json"
+BRANCH_PROTECTION_BASELINE_PATH = Path(".github/branch-protection-baseline.json")
+CI_WORKFLOW_PATH = Path(".github/workflows/ci.yml")
+PRE_COMMIT_CONFIG_PATH = Path(".pre-commit-config.yaml")
+SONAR_NEW_ISSUE_GATE_PATH = Path("tools/sonar/assert_no_new_issues.py")
 CONTROLLER_PATH_RE = re.compile(
     r"^backend/src/main/java/com/keplerops/groundcontrol/api/.+Controller\.java$"
 )
 MIGRATION_PATH_RE = re.compile(r"^backend/src/main/resources/db/migration/V\d+__.+\.sql$")
 PR_REQUIREMENT_RE = re.compile(r"\b[A-Z][A-Z0-9]+-[A-Z0-9]+(?:-\d+|\d+)\b")
+CI_STRICTNESS_BRANCHES = ("main", "dev")
+CI_STRICTNESS_REQUIRED_CONTEXTS = frozenset(
+    {
+        "GitGuardian Security Checks",
+        "SonarCloud Code Analysis",
+        "build",
+        "integration",
+        "osv-scanner",
+        "policy",
+        "sonar",
+        "test",
+        "trivy",
+        "verify",
+    }
+)
+CI_PRE_COMMIT_HOOKS = (
+    "trailing-whitespace",
+    "end-of-file-fixer",
+    "check-yaml",
+    "check-json",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "detect-private-key",
+    "gitleaks",
+)
 
 # ---------------------------------------------------------------------------
 # Deferral-disposition classifier (issue #830, ADR-029).
@@ -867,6 +896,165 @@ def run_documentation_coverage_check(
         ]
 
     return []
+
+
+def run_ci_strictness_contract(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert the repo carries the CI strictness baseline from issue #1155."""
+    violations: list[Violation] = []
+    workflow_path = root / CI_WORKFLOW_PATH
+    pre_commit_path = root / PRE_COMMIT_CONFIG_PATH
+    sonar_gate_path = root / SONAR_NEW_ISSUE_GATE_PATH
+    branch_protection_path = root / BRANCH_PROTECTION_BASELINE_PATH
+
+    if not workflow_path.exists():
+        violations.append(
+            Violation(
+                code="ci-strictness-workflow-missing",
+                message="CI workflow is missing, so required merge checks cannot be verified.",
+                details=[f"expected at {CI_WORKFLOW_PATH.as_posix()}"],
+            )
+        )
+        return violations
+
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    if "python3 -m pip install --user pre-commit" not in workflow_text:
+        violations.append(
+            Violation(
+                code="ci-strictness-precommit-install",
+                message="CI policy job must install pre-commit before running hygiene and secret-scan hooks.",
+                details=[f"expected install command in {CI_WORKFLOW_PATH.as_posix()}"],
+            )
+        )
+    missing_workflow_hooks = [
+        hook
+        for hook in CI_PRE_COMMIT_HOOKS
+        if hook not in workflow_text or 'pre-commit run "$hook" --all-files' not in workflow_text
+    ]
+    if missing_workflow_hooks:
+        violations.append(
+            Violation(
+                code="ci-strictness-precommit-hooks",
+                message="CI policy job must run the pre-commit file-hygiene and secret-scan hooks.",
+                details=[*(f"missing workflow hook run: {hook}" for hook in missing_workflow_hooks)],
+            )
+        )
+
+    if not pre_commit_path.exists():
+        violations.append(
+            Violation(
+                code="ci-strictness-precommit-config-missing",
+                message="pre-commit config is missing, so local hygiene and secret-scan hooks cannot be verified.",
+                details=[f"expected at {PRE_COMMIT_CONFIG_PATH.as_posix()}"],
+            )
+        )
+    else:
+        pre_commit_text = pre_commit_path.read_text(encoding="utf-8")
+        missing_config_hooks = [hook for hook in CI_PRE_COMMIT_HOOKS if f"id: {hook}" not in pre_commit_text]
+        if missing_config_hooks:
+            violations.append(
+                Violation(
+                    code="ci-strictness-precommit-config-hooks",
+                    message=".pre-commit-config.yaml must define every CI-enforced hygiene and secret-scan hook.",
+                    details=[*(f"missing configured hook: {hook}" for hook in missing_config_hooks)],
+                )
+            )
+
+    if "-Dsonar.qualitygate.wait=true" not in workflow_text:
+        violations.append(
+            Violation(
+                code="ci-strictness-sonar-qualitygate-wait",
+                message="SonarCloud CI must wait for the quality gate result.",
+                details=[f"missing -Dsonar.qualitygate.wait=true in {CI_WORKFLOW_PATH.as_posix()}"],
+            )
+        )
+    if SONAR_NEW_ISSUE_GATE_PATH.as_posix() not in workflow_text:
+        violations.append(
+            Violation(
+                code="ci-strictness-sonar-new-issue-gate",
+                message="SonarCloud CI must fail when Sonar reports any new open issue.",
+                details=[f"missing {SONAR_NEW_ISSUE_GATE_PATH.as_posix()} invocation"],
+            )
+        )
+    if not sonar_gate_path.exists():
+        violations.append(
+            Violation(
+                code="ci-strictness-sonar-gate-script-missing",
+                message="SonarCloud new-issue gate script is missing.",
+                details=[f"expected at {SONAR_NEW_ISSUE_GATE_PATH.as_posix()}"],
+            )
+        )
+
+    if not branch_protection_path.exists():
+        violations.append(
+            Violation(
+                code="ci-strictness-branch-protection-missing",
+                message="Versioned branch-protection baseline is missing.",
+                details=[f"expected at {BRANCH_PROTECTION_BASELINE_PATH.as_posix()}"],
+            )
+        )
+        return violations
+
+    try:
+        baseline = load_json(branch_protection_path)
+    except json.JSONDecodeError as exc:
+        violations.append(
+            Violation(
+                code="ci-strictness-branch-protection-invalid",
+                message="Versioned branch-protection baseline is not valid JSON.",
+                details=[str(exc)],
+            )
+        )
+        return violations
+
+    branches = baseline.get("branches", {})
+    for branch in CI_STRICTNESS_BRANCHES:
+        config = branches.get(branch)
+        if not isinstance(config, dict):
+            violations.append(
+                Violation(
+                    code="ci-strictness-branch-protection-branch",
+                    message=f"{branch} must be present in the branch-protection baseline.",
+                    details=[f"missing branches.{branch}"],
+                )
+            )
+            continue
+        if config.get("changes_land_via_pull_request") is not True:
+            violations.append(
+                Violation(
+                    code="ci-strictness-branch-protection-pr",
+                    message=f"{branch} must require changes to land via pull request.",
+                    details=[f"branches.{branch}.changes_land_via_pull_request must be true"],
+                )
+            )
+        if config.get("admin_bypass_allowed") is not True:
+            violations.append(
+                Violation(
+                    code="ci-strictness-branch-protection-admin-bypass",
+                    message=f"{branch} must retain admin bypass.",
+                    details=[f"branches.{branch}.admin_bypass_allowed must be true"],
+                )
+            )
+        required_status_checks = config.get("required_status_checks", {})
+        if required_status_checks.get("strict") is not True:
+            violations.append(
+                Violation(
+                    code="ci-strictness-branch-protection-strict",
+                    message=f"{branch} required status checks must use strict mode.",
+                    details=[f"branches.{branch}.required_status_checks.strict must be true"],
+                )
+            )
+        contexts = set(required_status_checks.get("contexts", []))
+        missing_contexts = sorted(CI_STRICTNESS_REQUIRED_CONTEXTS - contexts)
+        if missing_contexts:
+            violations.append(
+                Violation(
+                    code="ci-strictness-branch-protection-contexts",
+                    message=f"{branch} branch protection must require all PR CI contexts.",
+                    details=[*(f"missing required context: {context}" for context in missing_contexts)],
+                )
+            )
+
+    return violations
 
 
 def run_deploy_compose_credential_passthrough(root: Path = REPO_ROOT) -> list[Violation]:
@@ -1895,6 +2083,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_controller_contracts(changed_files))
     violations.extend(run_migration_policy(changed_files))
     violations.extend(run_changelog_fragment_check(changed_files))
+    violations.extend(run_ci_strictness_contract())
     violations.extend(run_deploy_compose_credential_passthrough())
     violations.extend(run_enum_contract_check())
     violations.extend(run_test_quality_decision_record_contract())

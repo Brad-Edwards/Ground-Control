@@ -18,6 +18,11 @@ const EvidenceStateExplorer = lazy(() =>
     default: m.EvidenceStateExplorer,
   })),
 );
+const ControlAssuranceWorkspace = lazy(() =>
+  import("@/pages/control-assurance-workspace").then((m) => ({
+    default: m.ControlAssuranceWorkspace,
+  })),
+);
 const Graph = lazy(() =>
   import("@/pages/graph").then((m) => ({ default: m.Graph })),
 );
@@ -110,6 +115,10 @@ export function AppRoutes() {
           <Route path="test-runs/:runId/run" element={<TestRunRunner />} />
           <Route path="graph" element={<Graph />} />
           <Route path="analysis" element={<Analysis />} />
+          <Route
+            path="control-assurance"
+            element={<ControlAssuranceWorkspace />}
+          />
           <Route path="evidence-state" element={<EvidenceStateExplorer />} />
           <Route path="threat-modeling" element={<ThreatModelingWorkspace />} />
           <Route path="risk-scenarios" element={<RiskScenarioWorkspace />} />

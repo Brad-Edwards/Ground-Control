@@ -21,6 +21,7 @@ from tools.policy.checks import (
     read_changed_files,
     run_adr_guard,
     run_changelog_fragment_check,
+    run_ci_strictness_contract,
     run_controller_contracts,
     run_deploy_compose_credential_passthrough,
     run_documentation_coverage_check,
@@ -225,6 +226,35 @@ class PolicyChecksTest(unittest.TestCase):
             "## Traceability\n\n- IMPLEMENTS: foo\n- TESTS: bar\n"
         )
         self.assertEqual(check_pr_body(body), [])
+
+    def test_ci_strictness_contract_passes_on_repo(self):
+        violations = run_ci_strictness_contract(root=REPO_ROOT)
+        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
+
+    def test_ci_strictness_contract_rejects_non_strict_branch_protection(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            for rel in [
+                ".github/workflows/ci.yml",
+                ".pre-commit-config.yaml",
+                "tools/sonar/assert_no_new_issues.py",
+                ".github/branch-protection-baseline.json",
+            ]:
+                src = REPO_ROOT / rel
+                dst = root / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+            baseline_path = root / ".github/branch-protection-baseline.json"
+            baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+            baseline["branches"]["dev"]["required_status_checks"]["strict"] = False
+            baseline["branches"]["dev"]["required_status_checks"]["contexts"].remove("policy")
+            baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+
+            violations = run_ci_strictness_contract(root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("ci-strictness-branch-protection-strict", codes)
+            self.assertIn("ci-strictness-branch-protection-contexts", codes)
 
     def test_deploy_compose_credential_passthrough_passes_on_committed_file(self):
         # The committed deploy/docker/docker-compose.prod.yml must enumerate the

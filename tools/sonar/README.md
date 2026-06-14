@@ -13,6 +13,18 @@ artifacts, lives under this directory.
 
 - `profiles/`: quality profile XML backups exported via
   `GET /api/qualityprofiles/backup`. One file per profile per capture date.
+- `assert_no_new_issues.py`: CI guard that queries SonarCloud after scanner
+  completion and fails the job when the current pull request or branch has
+  any open issue in the new-code leak period.
+
+## New-issue gate
+
+The CI `sonar` job runs Gradle with `-Dsonar.qualitygate.wait=true`, then runs
+`tools/sonar/assert_no_new_issues.py`. The script uses `SONAR_TOKEN` only for
+SonarCloud API authentication, derives the pull request number from the GitHub
+event payload, and prints only issue metadata when it fails. This keeps the
+repo-side merge gate stricter than a SonarCloud project gate that may still
+allow non-blocking code smells.
 
 ## File naming
 

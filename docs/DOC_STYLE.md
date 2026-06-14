@@ -144,15 +144,21 @@ amendment record lives in ADR-054. No new sections in this style guide.
 
 New API client functions added to `mcp/ground-control/lib.js` (for example,
 `getThreatModelWorkspace` for GC-Q010, `getRiskScenarioWorkspace` for GC-Q009,
-or `getEvidenceStateWorkspace` for GC-Q012) that directly mirror backend
-endpoints follow the same pattern: record the surface addition in the ADR-054
-amendment and the changelog fragment; no new DOC_STYLE.md prose is needed
-unless a new style rule is being established.
+`getControlAssuranceWorkspace` for GC-Q011, or `getEvidenceStateWorkspace` for
+GC-Q012) that directly mirror backend endpoints follow the same pattern: record
+the surface addition in the ADR-054 amendment and the changelog fragment; no new
+DOC_STYLE.md prose is needed unless a new style rule is being established.
 
 The GC-GRC-001 derivation API helpers and `gc_derivation` MCP tool follow the
 same convention: `docs/API.md` documents `/api/v1/derivations`, the adapter
 description documents the MCP action contract, and the changelog fragment
 records the temporal change. No new style rule is established here.
+
+CI strictness policy checks in `tools/policy/checks.py` follow the same
+documentation pattern: `docs/DEVELOPMENT_WORKFLOW.md` documents the current
+merge-gate contract, `tools/sonar/README.md` documents Sonar-specific helper
+scripts, and ADR-054 records the policy-surface amendment. No new style rule
+is established here.
 
 New /implement workflow-gate MCP tools or fields added to
 `mcp/ground-control/lib.js` and `mcp/ground-control/index.js` are documented by
