@@ -53,7 +53,7 @@ public class McpTelemetryController {
                 request.durationMs(),
                 request.project(),
                 request.ts());
-        telemetryService.record(command);
+        telemetryService.recordEvent(command);
     }
 
     /**

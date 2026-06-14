@@ -120,7 +120,7 @@ class McpTelemetryServiceTest {
     void recordMapsAllCommandFieldsOntoTheSavedEvent() {
         var command = new RecordMcpToolEventCommand("gc_query", "list", "ok", 42L, "ground-control", FROM);
 
-        service.record(command);
+        service.recordEvent(command);
 
         // Capture the persisted entity and assert every field is mapped from the command,
         // so a swapped accessor, a wrong duration source, or a dropped project would fail.

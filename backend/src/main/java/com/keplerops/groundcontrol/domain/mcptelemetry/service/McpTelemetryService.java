@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Provides two operations:
  * <ul>
- *   <li>{@link #record(RecordMcpToolEventCommand)} — persist one event (transactional write).
+ *   <li>{@link #recordEvent(RecordMcpToolEventCommand)} — persist one event (transactional write).
  *   <li>{@link #aggregate(Instant, Instant)} — read-only aggregation over a time window.
  * </ul>
  *
@@ -49,7 +49,7 @@ public class McpTelemetryService {
      * Persist one MCP tool call event.
      */
     @Transactional
-    public void record(RecordMcpToolEventCommand command) {
+    public void recordEvent(RecordMcpToolEventCommand command) {
         var event = new McpToolEvent(
                 command.tool(),
                 command.action(),

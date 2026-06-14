@@ -60,7 +60,7 @@ class McpTelemetryControllerTest {
                                         """))
                 .andExpect(status().isCreated());
 
-        verify(telemetryService).record(any());
+        verify(telemetryService).recordEvent(any());
     }
 
     @Test
@@ -83,7 +83,7 @@ class McpTelemetryControllerTest {
 
         var captor = ArgumentCaptor.forClass(
                 com.keplerops.groundcontrol.domain.mcptelemetry.service.RecordMcpToolEventCommand.class);
-        verify(telemetryService).record(captor.capture());
+        verify(telemetryService).recordEvent(captor.capture());
         var cmd = captor.getValue();
         org.junit.jupiter.api.Assertions.assertEquals("gc_finding", cmd.tool());
         org.junit.jupiter.api.Assertions.assertEquals("create", cmd.action());
