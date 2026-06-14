@@ -45,6 +45,11 @@ const Requirements = lazy(() =>
 const TestRuns = lazy(() =>
   import("@/pages/test-runs").then((m) => ({ default: m.TestRuns })),
 );
+const TraceabilityMatrix = lazy(() =>
+  import("@/pages/traceability-matrix").then((m) => ({
+    default: m.TraceabilityMatrix,
+  })),
+);
 const TestRunRunner = lazy(() =>
   import("@/pages/test-run-runner").then((m) => ({ default: m.TestRunRunner })),
 );
@@ -117,6 +122,7 @@ export function AppRoutes() {
           <Route path="portfolio" element={<GrcPortfolio />} />
           <Route path="requirements" element={<Requirements />} />
           <Route path="requirements/:id" element={<RequirementDetail />} />
+          <Route path="traceability-matrix" element={<TraceabilityMatrix />} />
           <Route path="test-runs" element={<TestRuns />} />
           <Route path="test-runs/:runId/run" element={<TestRunRunner />} />
           <Route path="graph" element={<Graph />} />

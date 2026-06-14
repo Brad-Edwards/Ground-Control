@@ -1052,6 +1052,14 @@ export interface TraceabilityLinkResponse {
   updatedAt: string;
 }
 
+// GC-Q003 — Traceability Matrix. Mirrors the backend RequirementWithLinksResponse
+// row: a requirement paired with its traceability links. When the matrix endpoint
+// is queried with a `linkType` filter, `links` carries only links of that type.
+export interface RequirementWithLinksResponse {
+  requirement: RequirementResponse;
+  links: TraceabilityLinkResponse[];
+}
+
 export interface RequirementHistoryResponse {
   revisionNumber: number;
   revisionType: RevisionType;

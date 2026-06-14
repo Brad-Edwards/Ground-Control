@@ -12,6 +12,7 @@ import com.keplerops.groundcontrol.domain.requirements.service.TraceabilityServi
 import com.keplerops.groundcontrol.domain.requirements.service.UpdateRequirementCommand;
 import com.keplerops.groundcontrol.domain.requirements.state.ArtifactType;
 import com.keplerops.groundcontrol.domain.requirements.state.ChangeCategory;
+import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
 import com.keplerops.groundcontrol.domain.requirements.state.Priority;
 import com.keplerops.groundcontrol.domain.requirements.state.RequirementType;
 import com.keplerops.groundcontrol.domain.requirements.state.Status;
@@ -82,6 +83,23 @@ public class RequirementController {
         var projectId = projectService.resolveProjectId(project);
         var filter = new RequirementFilter(status, type, priority, wave, search);
         return requirementService.list(projectId, pageable, filter).map(RequirementResponse::from);
+    }
+
+    @GetMapping("/matrix")
+    public Page<RequirementWithLinksResponse> matrix(
+            Pageable pageable,
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) Status status,
+            @RequestParam(required = false) RequirementType type,
+            @RequestParam(required = false) Priority priority,
+            @RequestParam(required = false) Integer wave,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) LinkType linkType) {
+        var projectId = projectService.resolveProjectId(project);
+        var filter = new RequirementFilter(status, type, priority, wave, search);
+        return requirementService
+                .getTraceabilityMatrix(projectId, pageable, filter, linkType)
+                .map(RequirementWithLinksResponse::from);
     }
 
     @GetMapping("/{id}")

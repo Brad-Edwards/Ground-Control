@@ -3,6 +3,7 @@ package com.keplerops.groundcontrol.unit.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.TestUtil;
@@ -15,6 +16,7 @@ import com.keplerops.groundcontrol.domain.qualitygates.repository.QualityGateRep
 import com.keplerops.groundcontrol.domain.qualitygates.state.MetricType;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import com.keplerops.groundcontrol.domain.requirements.model.RequirementRelation;
+import com.keplerops.groundcontrol.domain.requirements.model.TraceabilityLink;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRelationRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.TraceabilityLinkRepository;
@@ -22,7 +24,9 @@ import com.keplerops.groundcontrol.domain.requirements.service.CloneRequirementC
 import com.keplerops.groundcontrol.domain.requirements.service.CreateRequirementCommand;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementFilter;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementService;
+import com.keplerops.groundcontrol.domain.requirements.service.RequirementWithLinks;
 import com.keplerops.groundcontrol.domain.requirements.service.UpdateRequirementCommand;
+import com.keplerops.groundcontrol.domain.requirements.state.ArtifactType;
 import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
 import com.keplerops.groundcontrol.domain.requirements.state.Priority;
 import com.keplerops.groundcontrol.domain.requirements.state.RelationType;
@@ -824,6 +828,89 @@ class RequirementServiceTest {
             assertThatThrownBy(() -> service.deleteRelation(reqId, relationId))
                     .isInstanceOf(NotFoundException.class)
                     .hasMessage("Relation not found: " + relationId);
+        }
+    }
+
+    @Nested
+    class TraceabilityMatrix {
+
+        private TraceabilityLink linkOf(Requirement req, LinkType linkType, String artifactId) {
+            return new TraceabilityLink(req, ArtifactType.CODE_FILE, artifactId, linkType);
+        }
+
+        @Test
+        void groupsLinksByRequirementWithoutNPlusOne() {
+            var reqA = makeRequirement("REQ-A");
+            var reqB = makeRequirement("REQ-B");
+            var idA = UUID.randomUUID();
+            var idB = UUID.randomUUID();
+            setId(reqA, idA);
+            setId(reqB, idB);
+            when(requirementRepository.findAll(any(Specification.class), any(Pageable.class)))
+                    .thenReturn(new PageImpl<>(List.of(reqA, reqB)));
+            when(traceabilityLinkRepository.findByRequirementIdIn(any()))
+                    .thenReturn(List.of(
+                            linkOf(reqA, LinkType.IMPLEMENTS, "a/Impl.java"),
+                            linkOf(reqA, LinkType.TESTS, "a/ImplTest.java"),
+                            linkOf(reqB, LinkType.DOCUMENTS, "docs/b.md")));
+
+            var page = service.getTraceabilityMatrix(
+                    PROJECT_ID, Pageable.unpaged(), new RequirementFilter(null, null, null, null, null), null);
+
+            assertThat(page.getContent()).hasSize(2);
+            var rowA = rowFor(page, idA);
+            var rowB = rowFor(page, idB);
+            assertThat(rowA.links()).hasSize(2);
+            assertThat(rowB.links()).hasSize(1);
+            assertThat(rowB.links().get(0).getLinkType()).isEqualTo(LinkType.DOCUMENTS);
+        }
+
+        @Test
+        void filtersByLinkTypeButKeepsGapRequirements() {
+            var reqA = makeRequirement("REQ-A");
+            var reqB = makeRequirement("REQ-B");
+            var idA = UUID.randomUUID();
+            var idB = UUID.randomUUID();
+            setId(reqA, idA);
+            setId(reqB, idB);
+            when(requirementRepository.findAll(any(Specification.class), any(Pageable.class)))
+                    .thenReturn(new PageImpl<>(List.of(reqA, reqB)));
+            when(traceabilityLinkRepository.findByRequirementIdIn(any()))
+                    .thenReturn(List.of(
+                            linkOf(reqA, LinkType.IMPLEMENTS, "a/Impl.java"),
+                            linkOf(reqA, LinkType.TESTS, "a/ImplTest.java"),
+                            linkOf(reqB, LinkType.DOCUMENTS, "docs/b.md")));
+
+            var page = service.getTraceabilityMatrix(
+                    PROJECT_ID,
+                    Pageable.unpaged(),
+                    new RequirementFilter(null, null, null, null, null),
+                    LinkType.IMPLEMENTS);
+
+            // Only A's IMPLEMENTS link survives the filter.
+            assertThat(rowFor(page, idA).links()).hasSize(1);
+            assertThat(rowFor(page, idA).links().get(0).getLinkType()).isEqualTo(LinkType.IMPLEMENTS);
+            // B has no IMPLEMENTS link but still appears as a gap row, not dropped.
+            assertThat(rowFor(page, idB).links()).isEmpty();
+        }
+
+        @Test
+        void emptyRequirementPageSkipsTheLinkQuery() {
+            when(requirementRepository.findAll(any(Specification.class), any(Pageable.class)))
+                    .thenReturn(new PageImpl<>(List.of()));
+
+            var page = service.getTraceabilityMatrix(
+                    PROJECT_ID, Pageable.unpaged(), new RequirementFilter(null, null, null, null, null), null);
+
+            assertThat(page.getContent()).isEmpty();
+            verifyNoInteractions(traceabilityLinkRepository);
+        }
+
+        private RequirementWithLinks rowFor(Page<RequirementWithLinks> page, UUID requirementId) {
+            return page.getContent().stream()
+                    .filter(row -> row.requirement().getId().equals(requirementId))
+                    .findFirst()
+                    .orElseThrow();
         }
     }
 }
