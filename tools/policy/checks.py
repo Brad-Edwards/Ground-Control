@@ -1914,14 +1914,15 @@ def run_test_quality_decision_record_contract(
 
 
 # ---------------------------------------------------------------------------
-# Traceability-reconciliation gate contract (issue #1058)
+# Traceability-reconciliation gate contract (issues #1058, #1103)
 #
 # Asserts the /implement workflow's traceability + post-merge close gate
-# is wired across all four prose surfaces. The MCP-tool layer enforces:
-#   - Step 17 calls gc_assert_traceability_reconciled to write the
-#     traceability_reconciled phase marker.
-#   - Step 19 (gc_post_final_report) refuses without that marker and requires a
-#     plain_english_outcome for the user-facing closeout.
+# is wired across all prose surfaces. The MCP-tool layer enforces:
+#   - Step 17 calls gc_assert_completion, which sequences
+#     gc_assert_traceability_reconciled (posting traceability_reconciled),
+#     gc_assert_grc_reconciled (posting grc_reconciled), and
+#     gc_post_final_report in one deterministic call. plain_english_outcome
+#     is required for the user-facing closeout.
 #   - Step 20 (Phase E) calls gc_close_issue_after_merge after PR merge and
 #     surfaces a next_issue_recommendation envelope when one is available.
 #   - SKILL.md documents Phase E and gc_close_issue_after_merge as the
@@ -1933,8 +1934,7 @@ def run_test_quality_decision_record_contract(
 # any reader of the skill; the check prevents that.
 # ---------------------------------------------------------------------------
 
-IMPLEMENT_STEP_17_PATH = "skills/implement/steps/step-17-verify.md"
-IMPLEMENT_STEP_19_PATH = "skills/implement/steps/step-19-final-report.md"
+IMPLEMENT_STEP_17_PATH = "skills/implement/steps/step-17-completion.md"
 IMPLEMENT_STEP_20_PATH = "skills/implement/steps/step-20-close-issue-on-merge.md"
 
 
@@ -1944,12 +1944,14 @@ def run_traceability_reconciliation_gate_contract(
 ) -> list[Violation]:
     """Assert the traceability + closeout gate prose surfaces are wired.
 
-    The gate has three MCP-tool surfaces and four prose anchors:
+    The gate has two MCP-tool surfaces and three prose anchors:
 
-      step-17-verify.md       must mention `gc_assert_traceability_reconciled`
-      step-19-final-report.md must mention `traceability_reconciled` and `plain_english_outcome`
-      step-20-close-issue-on-merge.md must exist AND mention `gc_close_issue_after_merge` and `next_issue_recommendation`
-      SKILL.md                must mention `Phase E`, `gc_close_issue_after_merge`, and `next_issue_recommendation`
+      step-17-completion.md   must mention `gc_assert_completion`,
+                              `traceability_reconciled`, and `plain_english_outcome`
+      step-20-close-issue-on-merge.md must exist AND mention `gc_close_issue_after_merge`
+                              and `next_issue_recommendation`
+      SKILL.md                must mention `Phase E`, `gc_close_issue_after_merge`,
+                              and `next_issue_recommendation`
 
     Emits one violation per missing anchor with a stable code so CI surfaces
     the specific gap. A repo whose policy-tests file isn't yet up to date
@@ -1961,15 +1963,9 @@ def run_traceability_reconciliation_gate_contract(
     requirements = (
         (
             IMPLEMENT_STEP_17_PATH,
-            ("gc_assert_traceability_reconciled",),
+            ("gc_assert_completion", "traceability_reconciled", "plain_english_outcome"),
             "traceability-gate-step17-missing",
-            "Step 17 must call gc_assert_traceability_reconciled after verification (issue #1058).",
-        ),
-        (
-            IMPLEMENT_STEP_19_PATH,
-            ("traceability_reconciled", "plain_english_outcome"),
-            "traceability-gate-step19-missing",
-            "Step 19 must document the traceability_reconciled prerequisite and plain_english_outcome closeout field (issues #1058/#1156).",
+            "Step 17 must use gc_assert_completion with traceability_reconciled and plain_english_outcome (issue #1103).",
         ),
         (
             IMPLEMENT_STEP_20_PATH,

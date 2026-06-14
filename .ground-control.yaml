@@ -106,9 +106,6 @@ routing:
     transition_reconcile:
       tier: medium
       model: claude-sonnet-4-6
-    close_issue:
-      tier: low
-      model: claude-haiku-4-5
     final_report:
       tier: low
       model: claude-haiku-4-5

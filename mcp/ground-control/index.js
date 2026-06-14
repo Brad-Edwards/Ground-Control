@@ -77,6 +77,7 @@ import {
   runTestQualityReview, TEST_QUALITY_REVIEW_HARD_CAP,
   runPostImplementationPlan,
   runAssertTraceabilityReconciled, runAssertGrcReconciled, runAssertQualityGates, runCloseIssueAfterMerge,
+  runAssertCompletion,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
   runPostGrcScreening,
   runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
@@ -953,6 +954,88 @@ server.tool(
         documentation_outcome: documentation_outcome ?? null,
         overrideTraceabilityGate: Boolean(override_traceability_gate),
         overrideTraceabilityReason: override_traceability_reason ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_assert_completion",
+  "Run the Phase D completion assertions (traceability reconciliation + GRC reconciliation) then post the final report in one deterministic call. " +
+  "Composes gc_assert_traceability_reconciled, gc_assert_grc_reconciled, and gc_post_final_report. " +
+  "Fail-fast: validates the final-report input before any side effects. " +
+  "Returns assertions[] (one entry per assertion: {name, ok, comment_url, comment_id}) plus final_report {comment_url, comment_id}. " +
+  "Gates inherited from the composed runners: traceability reconciliation (ACTIVE requirements must have IMPLEMENTS links + TESTS links on executable surfaces), " +
+  "GRC reconciliation (security_relevant screening records must have entity refs + CODE links resolved), " +
+  "CI green, Sonar pass-or-skipped, sensitive-content/no-defer/reserved-marker scrubs, reviews present, body size. " +
+  "The in-progress label removal is optional best-effort and is NOT a gate here. " +
+  "Do NOT remove or call the individual gc_assert_traceability_reconciled / gc_assert_grc_reconciled / gc_post_final_report tools separately when using this composite tool.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    pr_number: z.number().int().positive(),
+    requirements: z.array(z.object({
+      uid: z.string().regex(EXACT_REQUIREMENT_UID_RE),
+      title: z.string().min(1),
+      status: z.enum(["ACTIVE", "DRAFT", "DEPRECATED", "ARCHIVED"]),
+      note: z.string().optional(),
+    })).default([]),
+    files: z.object({
+      added: z.array(z.string().min(1)).optional(),
+      modified: z.array(z.string().min(1)).optional(),
+      renamed: z.array(z.string().min(1)).optional(),
+      deleted: z.array(z.string().min(1)).optional(),
+    }).optional(),
+    reviews: z.array(z.object({
+      reviewer: z.string().min(1),
+      summary: z.string().min(1).max(FINAL_REPORT_REVIEW_SUMMARY_MAX),
+    })),
+    traceability: z.object({
+      added: z.array(z.string()).optional(),
+      updated: z.array(z.string()).optional(),
+      deleted: z.array(z.string()).optional(),
+      notes: z.string().optional(),
+    }).optional(),
+    ci_status: z.enum(["green", "red", "skipped"]),
+    sonar_status: z.enum(["passed", "failed", "skipped"]),
+    plan_comment_url: z.string().optional(),
+    summary: z.string().max(FINAL_REPORT_SUMMARY_MAX).optional(),
+    plain_english_outcome: z.string().min(1).max(FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX).optional(),
+    documentation_outcome: z.object({
+      outcome: z.enum(["updated", "verified_unchanged", "not_updated_authorized"]),
+      rationale: z.string().optional(),
+    }).optional(),
+    touched_files: z.array(z.string()).optional(),
+    project: z.string().optional(),
+    override: z.boolean().optional(),
+    override_reason: z.string().optional(),
+  },
+  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, plain_english_outcome, documentation_outcome, touched_files, project, override, override_reason }) => {
+    try {
+      return ok(JSON.stringify(await runAssertCompletion({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        prNumber: pr_number,
+        requirements: requirements.map((r) => ({
+          uid: r.uid,
+          title: r.title,
+          status: r.status,
+          note: r.note ?? undefined,
+          statusIntent: r.status,
+        })),
+        files: files ?? {},
+        reviews,
+        traceability: traceability ?? {},
+        ciStatus: ci_status,
+        sonarStatus: sonar_status,
+        planCommentUrl: plan_comment_url ?? null,
+        summary: summary ?? null,
+        plainEnglishOutcome: plain_english_outcome ?? null,
+        documentation_outcome: documentation_outcome ?? null,
+        touchedFiles: touched_files ?? [],
+        project: project ?? null,
+        override: Boolean(override),
+        overrideReason: override_reason ?? null,
       }), null, 2));
     } catch (e) { return err(e); }
   },

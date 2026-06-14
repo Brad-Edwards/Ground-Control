@@ -238,6 +238,8 @@ set, the thresholds, the Vale rule set, the `tools/install-vale.sh` installer,
 and `.vale.ini` are unchanged; no new `docs/DOC_STYLE.md` style rule is
 established.
 
+**2026-06-14 (issue #1103 Phase D consolidation).** Added `runAssertCompletion` to `mcp/ground-control/lib.js` and registered `gc_assert_completion` in `mcp/ground-control/index.js`. Updated `tools/policy/checks.py` to point the traceability-gate contract check at the consolidated `step-17-completion.md` surface (now requiring `gc_assert_completion`, `traceability_reconciled`, and `plain_english_outcome`). These are MCP-adapter and policy-surface changes. The documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new `docs/DOC_STYLE.md` style rule is established.
+
 **2026-06-14 (issue #1104 MCP tool-usage telemetry).** Added the internal
 handler-boundary telemetry wrapper `installToolTelemetry` and the `err()`
 `_meta` outcome-code channel to `mcp/ground-control/index.js`, and an

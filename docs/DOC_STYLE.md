@@ -195,6 +195,8 @@ the changelog fragment. This refines an existing workflow-gate tool and touches
 no documentation-coverage surface; no new DOC_STYLE.md style rule is
 established.
 
+The 2026-06-14 Phase D consolidation (#1103) added `gc_assert_completion` to `mcp/ground-control/lib.js` and `index.js`, updated `tools/policy/checks.py` for the consolidated Step 17 surface, and reorganized the /implement SKILL step prose. No new DOC_STYLE.md style rule is established.
+
 The MCP tool-usage telemetry capture (#1104 / ADR-059) follows the same
 documentation pattern. It adds an internal handler-boundary instrumentation
 wrapper (`installToolTelemetry`) in `mcp/ground-control/index.js`, an
