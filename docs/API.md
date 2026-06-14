@@ -79,6 +79,7 @@ can derive a methodology choice from the intake (ADR-055).
 |--------|------|------|--------|---------|
 | POST | `/requirements` | RequirementRequest | 201 | Create requirement |
 | GET | `/requirements` |—| 200 | List requirements (paginated, filterable) |
+| GET | `/requirements/matrix` |—| 200 | Traceability matrix: requirements paired with their traceability links (GC-Q003) |
 | GET | `/requirements/{id}` |—| 200 | Get requirement by UUID |
 | GET | `/requirements/uid/{uid}` |—| 200 | Get requirement by UID |
 | PUT | `/requirements/{id}` | UpdateRequirementRequest | 200 | Update requirement (partial) |
@@ -94,6 +95,16 @@ requirement transitions require the requirement to already have a
 error with `code=documentation_link_missing` and `missingLinkType=DOCUMENTS`.
 Bulk transitions keep best-effort semantics: items missing that link are
 reported in the per-item failure list, and eligible items still transition.
+
+`GET /requirements/matrix` returns a paged list of matrix rows. Each row is
+`{ requirement, links }`, where `requirement` is a `RequirementResponse` and
+`links` is an array of `TraceabilityLinkResponse`. It accepts optional `project`
+(identifier or UUID), `status` (`Status`: DRAFT, ACTIVE, DEPRECATED, ARCHIVED),
+`wave` (integer), and `linkType` (`LinkType`: IMPLEMENTS, TESTS, DOCUMENTS,
+CONSTRAINS, VERIFIES) query parameters, plus the standard `page`, `size`, and
+`sort` pageable parameters. When `linkType` is set, each row returns only links
+of that type, and requirements with no matching link still appear with an empty
+`links` array.
 
 ### Relations
 

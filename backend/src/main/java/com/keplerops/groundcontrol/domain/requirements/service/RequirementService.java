@@ -9,6 +9,7 @@ import com.keplerops.groundcontrol.domain.qualitygates.repository.QualityGateRep
 import com.keplerops.groundcontrol.domain.qualitygates.state.MetricType;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import com.keplerops.groundcontrol.domain.requirements.model.RequirementRelation;
+import com.keplerops.groundcontrol.domain.requirements.model.TraceabilityLink;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRelationRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementSpecifications;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -215,6 +217,30 @@ public class RequirementService {
     public Page<Requirement> list(UUID projectId, Pageable pageable, RequirementFilter filter) {
         var spec = RequirementSpecifications.fromFilter(projectId, filter);
         return requirementRepository.findAll(spec, pageable);
+    }
+
+    /**
+     * Assembles one page of the traceability matrix (GC-Q003): each requirement
+     * matching {@code filter} paired with its traceability links. The links for
+     * the whole page are fetched in a single {@code IN} query (no N+1), then
+     * grouped per requirement. When {@code linkType} is non-null only links of
+     * that type are included; requirements with no matching link still appear
+     * with an empty link list so coverage gaps remain visible.
+     */
+    @Transactional(readOnly = true)
+    public Page<RequirementWithLinks> getTraceabilityMatrix(
+            UUID projectId, Pageable pageable, RequirementFilter filter, LinkType linkType) {
+        Page<Requirement> page = list(projectId, pageable, filter);
+        List<UUID> requirementIds =
+                page.getContent().stream().map(Requirement::getId).toList();
+        Map<UUID, List<TraceabilityLink>> linksByRequirement = requirementIds.isEmpty()
+                ? Map.of()
+                : traceabilityLinkRepository.findByRequirementIdIn(requirementIds).stream()
+                        .filter(link -> linkType == null || link.getLinkType() == linkType)
+                        .collect(Collectors.groupingBy(
+                                link -> link.getRequirement().getId()));
+        return page.map(requirement ->
+                new RequirementWithLinks(requirement, linksByRequirement.getOrDefault(requirement.getId(), List.of())));
     }
 
     public Requirement clone(UUID sourceId, CloneRequirementCommand command) {

@@ -105,6 +105,9 @@ export function AppLayout() {
                   Dashboard
                 </NavItem>
                 <NavItem to={`${base}/requirements`}>Requirements</NavItem>
+                <NavItem to={`${base}/traceability-matrix`}>
+                  Traceability Matrix
+                </NavItem>
                 <NavItem to={`${base}/test-runs`}>Test Runs</NavItem>
                 <NavItem to={`${base}/graph`}>Graph</NavItem>
                 <NavItem to={`${base}/analysis`}>Analysis</NavItem>

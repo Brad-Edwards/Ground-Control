@@ -213,3 +213,5 @@ requirement DRAFT kept it out of active-status project coverage until after
 the completion gate had already passed. The backend uses the existing
 quality-gate and traceability repositories; no new coverage schema, endpoint,
 or frontend-only validation layer was added.
+
+**2026-06-14 (issue #689 GC-Q003 Traceability Matrix).** The `getTraceabilityMatrix` function was added to `mcp/ground-control/lib.js` as a thin API client for the new `GET /api/v1/requirements/matrix` endpoint, and the `gc_traceability_matrix` read tool was registered in `mcp/ground-control/index.js`. These are additive API-client and tool-registration surfaces. Documentation lives in `docs/API.md` and the tool description in `mcp/ground-control/index.js`; the classifier already covers the MCP trigger paths. The doc-coverage classifier, Vale rule set, `tools/install-vale.sh` installer, and `.vale.ini` configuration are unchanged; no new `docs/DOC_STYLE.md` style rule is established.

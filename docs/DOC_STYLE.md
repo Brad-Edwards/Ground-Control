@@ -144,10 +144,13 @@ amendment record lives in ADR-054. No new sections in this style guide.
 
 New API client functions added to `mcp/ground-control/lib.js` (for example,
 `getThreatModelWorkspace` for GC-Q010, `getRiskScenarioWorkspace` for GC-Q009,
-`getControlAssuranceWorkspace` for GC-Q011, or `getEvidenceStateWorkspace` for
-GC-Q012) that directly mirror backend endpoints follow the same pattern: record
-the surface addition in the ADR-054 amendment and the changelog fragment; no new
-DOC_STYLE.md prose is needed unless a new style rule is being established.
+`getControlAssuranceWorkspace` for GC-Q011, `getEvidenceStateWorkspace` for
+GC-Q012, or `getTraceabilityMatrix` for GC-Q003) that directly mirror backend
+endpoints follow the same pattern: record the surface addition in the ADR-054
+amendment and the changelog fragment; no new DOC_STYLE.md prose is needed unless
+a new style rule is being established. The matching `gc_traceability_matrix` read
+tool for GC-Q003 mirrors the new `GET /api/v1/requirements/matrix` endpoint and
+needs no new style rule.
 
 The GC-GRC-001 derivation API helpers and `gc_derivation` MCP tool follow the
 same convention: `docs/API.md` documents `/api/v1/derivations`, the adapter
