@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.unit.api.security;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -23,6 +24,7 @@ import org.springframework.security.provisioning.JdbcUserDetailsManager;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -69,6 +71,19 @@ class ApiSecurityConfigTest {
         @GetMapping("/api/v1/pack-install-records/echo")
         String installEcho() {
             return "install-ok";
+        }
+
+        // MCP tool-usage telemetry: GET reads under the prefix are admin-only, POST capture is
+        // open to any authenticated session (issue #1104). Fake "/echo" paths so the stub does not
+        // collide with the real McpTelemetryController mappings when the full context loads.
+        @GetMapping("/api/v1/mcp-tool-usage/echo")
+        String mcpToolUsageRead() {
+            return "mcp-usage-ok";
+        }
+
+        @PostMapping("/api/v1/mcp-tool-usage/echo")
+        String mcpToolUsageCapture() {
+            return "mcp-capture-ok";
         }
 
         @GetMapping("/")
@@ -131,11 +146,28 @@ class ApiSecurityConfigTest {
                     "/api/v1/analysis/sweep/echo",
                     "/api/v1/pack-registry/echo",
                     "/api/v1/trust-policies/echo",
-                    "/api/v1/pack-install-records/echo"
+                    "/api/v1/pack-install-records/echo",
+                    "/api/v1/mcp-tool-usage/echo"
                 })
         void userTokenOnAdminPath_returns403(String adminPath) throws Exception {
             mockMvc.perform(get(adminPath).header("Authorization", "Bearer user-token-aaa"))
                     .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void adminTokenOnMcpToolUsageRead_returns200() throws Exception {
+            mockMvc.perform(get("/api/v1/mcp-tool-usage/echo").header("Authorization", "Bearer admin-token-bbb"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("mcp-usage-ok"));
+        }
+
+        @Test
+        void userTokenOnMcpToolUsageCapture_returns200() throws Exception {
+            // The capture write must stay reachable by any authenticated session; only GET reads
+            // under the prefix are admin-gated.
+            mockMvc.perform(post("/api/v1/mcp-tool-usage/echo").header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("mcp-capture-ok"));
         }
 
         @Test

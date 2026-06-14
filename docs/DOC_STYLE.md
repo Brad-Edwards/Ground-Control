@@ -196,3 +196,13 @@ no documentation-coverage surface; no new DOC_STYLE.md style rule is
 established.
 
 The 2026-06-14 Phase D consolidation (#1103) added `gc_assert_completion` to `mcp/ground-control/lib.js` and `index.js`, updated `tools/policy/checks.py` for the consolidated Step 17 surface, and reorganized the /implement SKILL step prose. No new DOC_STYLE.md style rule is established.
+
+The MCP tool-usage telemetry capture (#1104 / ADR-059) follows the same
+documentation pattern. It adds an internal handler-boundary instrumentation
+wrapper (`installToolTelemetry`) in `mcp/ground-control/index.js`, an
+admin-token routing entry for the aggregate read in
+`mcp/ground-control/lib.js`, and the new `McpTelemetryController` endpoints
+documented in `docs/API.md`. Capture is internal to the adapter (no new
+public `gc_*` tool is registered), so the doc-coverage classifier surface set
+is unchanged. The surface addition is recorded in the ADR-054 amendment and
+the changelog fragment; no new DOC_STYLE.md style rule is established.
