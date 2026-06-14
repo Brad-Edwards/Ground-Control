@@ -1053,6 +1053,27 @@ export async function listRequirements({ status, type, priority, wave, search, p
   });
 }
 
+/**
+ * GET /api/v1/requirements/matrix — read-only Traceability Matrix view per
+ * GC-Q003. Returns a paged list of rows, each pairing a requirement with its
+ * traceability links. When linkType is set the server returns only links of
+ * that type; requirements with no matching link still appear with an empty
+ * links array.
+ *
+ * @param {object} params
+ * @param {string} [params.project] - project identifier or UUID
+ * @param {string} [params.status] - filter by requirement status (Status enum)
+ * @param {number} [params.wave] - filter by wave number
+ * @param {string} [params.linkType] - return only links of this type (LinkType enum)
+ * @param {number} [params.page] - zero-based page index
+ * @param {number} [params.size] - page size
+ */
+export async function getTraceabilityMatrix({ project, status, wave, linkType, page, size } = {}) {
+  return request("GET", "/api/v1/requirements/matrix", {
+    params: { project, status, wave, linkType, page, size },
+  });
+}
+
 export async function createRequirement(data, project) {
   return request("POST", "/api/v1/requirements", { body: data, params: { project } });
 }

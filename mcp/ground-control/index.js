@@ -48,7 +48,7 @@ import { z } from "zod";
 import {
   // ---- project/requirement/relation/traceability ----
   listProjects, createProject, replaceResearchIntake,
-  getRequirementByUid, listRequirements, createRequirement, updateRequirement,
+  getRequirementByUid, listRequirements, getTraceabilityMatrix, createRequirement, updateRequirement,
   transitionStatus, bulkTransitionStatus, archiveRequirement, cloneRequirement,
   createRelation, getRelations, deleteRelation,
   getTraceabilityLinks, getTraceabilityByArtifact, createTraceabilityLink,
@@ -2058,6 +2058,34 @@ server.tool(
         asOf,
         freshnessWindowDays,
       });
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_traceability_matrix: GC-Q003. Read-only matrix composition. Also routes
+// through gc_query against /api/v1/requirements/matrix. Returns a paged list of
+// rows pairing each requirement with its traceability links.
+server.tool(
+  "gc_traceability_matrix",
+  "Read-only Traceability Matrix view (GC-Q003). Returns a paged list of rows, " +
+    "each pairing a requirement with its traceability links, for the matrix view. " +
+    "This is a read that also routes through gc_query against " +
+    "/api/v1/requirements/matrix. When linkType is set, only links of that type " +
+    "are returned; requirements with no matching link still appear with an empty " +
+    "links array. Optional filters: project, status (Status), wave (int), " +
+    "linkType (LinkType), plus page and size pagination.",
+  {
+    project: z.string().optional(),
+    status: z.enum(STATUSES).optional(),
+    wave: z.number().int().optional(),
+    linkType: z.enum(LINK_TYPES).optional(),
+    page: z.number().int().nonnegative().optional(),
+    size: z.number().int().positive().optional(),
+  },
+  async ({ project, status, wave, linkType, page, size }) => {
+    try {
+      const result = await getTraceabilityMatrix({ project, status, wave, linkType, page, size });
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },

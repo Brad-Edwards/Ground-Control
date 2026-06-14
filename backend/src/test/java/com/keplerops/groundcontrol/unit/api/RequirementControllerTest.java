@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.unit.api;
 
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.ArgumentMatchers.any;
@@ -40,6 +41,7 @@ import com.keplerops.groundcontrol.domain.requirements.service.RelationRevision;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementFilter;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementService;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementVersionDiff;
+import com.keplerops.groundcontrol.domain.requirements.service.RequirementWithLinks;
 import com.keplerops.groundcontrol.domain.requirements.service.TimelineEntry;
 import com.keplerops.groundcontrol.domain.requirements.service.TraceabilityLinkChange;
 import com.keplerops.groundcontrol.domain.requirements.service.TraceabilityLinkRevision;
@@ -233,6 +235,57 @@ class RequirementControllerTest {
                             .param("search", "test"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.content[0].uid", is("REQ-001")));
+        }
+    }
+
+    @Nested
+    class TraceabilityMatrixEndpoint {
+
+        private TraceabilityLink linkFor(Requirement req) {
+            var link = new TraceabilityLink(req, ArtifactType.CODE_FILE, "backend/src/Main.java", LinkType.IMPLEMENTS);
+            setField(link, "id", UUID.randomUUID());
+            return link;
+        }
+
+        @Test
+        void returns200WithRequirementsAndGroupedLinks() throws Exception {
+            var req = createRequirement("REQ-MX-1");
+            var row = new RequirementWithLinks(req, List.of(linkFor(req)));
+            when(requirementService.getTraceabilityMatrix(
+                            eq(PROJECT_ID), any(Pageable.class), any(RequirementFilter.class), any()))
+                    .thenReturn(new PageImpl<>(List.of(row)));
+
+            mockMvc.perform(get("/api/v1/requirements/matrix"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content[0].requirement.uid", is("REQ-MX-1")))
+                    .andExpect(jsonPath("$.content[0].links[0].linkType", is("IMPLEMENTS")))
+                    .andExpect(jsonPath(
+                            "$.content[0].links[0].requirementId",
+                            is(req.getId().toString())));
+        }
+
+        @Test
+        void passesLinkTypeFilterToService() throws Exception {
+            var req = createRequirement("REQ-MX-2");
+            var row = new RequirementWithLinks(req, List.of(linkFor(req)));
+            when(requirementService.getTraceabilityMatrix(
+                            eq(PROJECT_ID), any(Pageable.class), any(RequirementFilter.class), eq(LinkType.IMPLEMENTS)))
+                    .thenReturn(new PageImpl<>(List.of(row)));
+
+            mockMvc.perform(get("/api/v1/requirements/matrix").param("linkType", "IMPLEMENTS"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content[0].requirement.uid", is("REQ-MX-2")));
+        }
+
+        @Test
+        void returns200WithEmptyContentWhenNoRequirements() throws Exception {
+            when(requirementService.getTraceabilityMatrix(
+                            eq(PROJECT_ID), any(Pageable.class), any(RequirementFilter.class), any()))
+                    .thenReturn(new PageImpl<>(List.of()));
+
+            mockMvc.perform(get("/api/v1/requirements/matrix"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content", hasSize(0)));
         }
     }
 

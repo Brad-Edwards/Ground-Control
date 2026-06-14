@@ -171,7 +171,9 @@ class RequirementControllerIntegrationTest extends BaseIntegrationTest {
     void getRelations_returns200() throws Exception {
         var id = createAndReturnId("REQ-C-010");
 
-        mockMvc.perform(get("/api/v1/requirements/" + id + "/relations")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/requirements/" + id + "/relations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
     }
 
     @Test
@@ -368,5 +370,60 @@ class RequirementControllerIntegrationTest extends BaseIntegrationTest {
 
         mockMvc.perform(delete("/api/v1/requirements/" + sourceId + "/relations/" + relationId))
                 .andExpect(status().isNoContent());
+    }
+
+    private String createRequirementWithWave(String uid, int wave) throws Exception {
+        var body = new HashMap<String, Object>(validRequest(uid));
+        body.put("wave", wave);
+        var result = mockMvc.perform(post("/api/v1/requirements")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return objectMapper
+                .readTree(result.getResponse().getContentAsString())
+                .get("id")
+                .asText();
+    }
+
+    private void addTraceabilityLink(String requirementId, String artifactType, String artifactId, String linkType)
+            throws Exception {
+        var body = Map.of(
+                "artifactType", artifactType,
+                "artifactIdentifier", artifactId,
+                "linkType", linkType);
+        mockMvc.perform(post("/api/v1/requirements/" + requirementId + "/traceability")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void matrix_returnsRequirementsWithGroupedLinks() throws Exception {
+        var id1 = createRequirementWithWave("REQ-MX-001", 991);
+        createRequirementWithWave("REQ-MX-002", 991);
+        addTraceabilityLink(id1, "TEST", "backend/src/test/FooTest.java", "TESTS");
+
+        mockMvc.perform(get("/api/v1/requirements/matrix").param("wave", "991").param("sort", "uid,asc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(2)))
+                .andExpect(jsonPath("$.content[0].requirement.uid", is("REQ-MX-001")))
+                .andExpect(jsonPath("$.content[0].links", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].links[0].linkType", is("TESTS")))
+                .andExpect(jsonPath("$.content[1].requirement.uid", is("REQ-MX-002")))
+                .andExpect(jsonPath("$.content[1].links", hasSize(0)));
+    }
+
+    @Test
+    void matrix_filtersByLinkTypeKeepingGapRequirements() throws Exception {
+        var id1 = createRequirementWithWave("REQ-MX-010", 992);
+        addTraceabilityLink(id1, "TEST", "backend/src/test/BarTest.java", "TESTS");
+
+        // Filtering to DOCUMENTS excludes the TESTS link; the requirement still appears with an empty link list.
+        mockMvc.perform(get("/api/v1/requirements/matrix").param("wave", "992").param("linkType", "DOCUMENTS"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].requirement.uid", is("REQ-MX-010")))
+                .andExpect(jsonPath("$.content[0].links", hasSize(0)));
     }
 }
