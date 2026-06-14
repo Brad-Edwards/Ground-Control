@@ -274,6 +274,62 @@ class AuditServiceDiffTest {
     }
 
     @Nested
+    class SnapshotMapperDiffMethods {
+
+        @Test
+        void computeAdditionDiff_producesNullToValueChanges() {
+            var snapshot = Map.<String, Object>of("title", "First Title", "status", "DRAFT");
+
+            var diff = SnapshotMapper.computeAdditionDiff(snapshot);
+
+            assertThat(diff).containsKey("title");
+            assertThat(diff.get("title").oldValue()).isNull();
+            assertThat(diff.get("title").newValue()).isEqualTo("First Title");
+            assertThat(diff).containsKey("status");
+            assertThat(diff.get("status").oldValue()).isNull();
+            assertThat(diff.get("status").newValue()).isEqualTo("DRAFT");
+        }
+
+        @Test
+        void computeRemovalDiff_producesValueToNullChanges() {
+            var snapshot = Map.<String, Object>of("title", "Deleted Title", "status", "ACTIVE");
+
+            var diff = SnapshotMapper.computeRemovalDiff(snapshot);
+
+            assertThat(diff).containsKey("title");
+            assertThat(diff.get("title").oldValue()).isEqualTo("Deleted Title");
+            assertThat(diff.get("title").newValue()).isNull();
+            assertThat(diff).containsKey("status");
+            assertThat(diff.get("status").oldValue()).isEqualTo("ACTIVE");
+            assertThat(diff.get("status").newValue()).isNull();
+        }
+
+        @Test
+        void computeRemovalDiff_skipsNullValues() {
+            var snapshot = new java.util.LinkedHashMap<String, Object>();
+            snapshot.put("title", "Value");
+            snapshot.put("statement", null);
+
+            var diff = SnapshotMapper.computeRemovalDiff(snapshot);
+
+            assertThat(diff).containsKey("title");
+            assertThat(diff).doesNotContainKey("statement");
+        }
+
+        @Test
+        void computeAdditionDiff_emptySnapshot_producesEmptyDiff() {
+            var diff = SnapshotMapper.computeAdditionDiff(Map.of());
+            assertThat(diff).isEmpty();
+        }
+
+        @Test
+        void computeRemovalDiff_emptySnapshot_producesEmptyDiff() {
+            var diff = SnapshotMapper.computeRemovalDiff(Map.of());
+            assertThat(diff).isEmpty();
+        }
+    }
+
+    @Nested
     class ReplayToAliveSnapshots {
 
         @Test

@@ -56,9 +56,10 @@ export interface TimelineFilters {
 export function useRequirementTimeline(
   requirementId: string | undefined,
   filters?: TimelineFilters,
+  expand?: boolean,
 ) {
   return useQuery({
-    queryKey: ["timeline", requirementId, filters],
+    queryKey: ["timeline", requirementId, filters, expand],
     queryFn: () =>
       apiFetch<TimelineEntryResponse[]>(
         `/requirements/${requirementId}/timeline`,
@@ -67,6 +68,7 @@ export function useRequirementTimeline(
             changeCategory: filters?.changeCategory,
             from: filters?.from,
             to: filters?.to,
+            expand: expand ? "true" : undefined,
           },
         },
       ),

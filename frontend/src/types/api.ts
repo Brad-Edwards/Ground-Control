@@ -1065,7 +1065,10 @@ export interface RequirementHistoryResponse {
   revisionType: RevisionType;
   timestamp: string;
   actor: string;
+  reason?: string;
   snapshot: RequirementResponse;
+  changes: Record<string, FieldChangeResponse>;
+  truncated: boolean;
 }
 
 export interface RelationHistoryResponse {
@@ -1101,6 +1104,7 @@ export const CHANGE_CATEGORIES: ChangeCategory[] = [
 export interface FieldChangeResponse {
   oldValue: unknown;
   newValue: unknown;
+  truncated: boolean;
 }
 
 export interface TimelineEntryResponse {
@@ -1108,10 +1112,12 @@ export interface TimelineEntryResponse {
   revisionType: RevisionType;
   timestamp: string;
   actor: string;
+  reason?: string;
   changeCategory: ChangeCategory;
   entityId: string;
   snapshot: Record<string, unknown>;
   changes: Record<string, FieldChangeResponse>;
+  truncated: boolean;
 }
 
 export interface RequirementSummaryResponse {

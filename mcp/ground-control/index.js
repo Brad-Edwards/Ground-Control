@@ -1330,7 +1330,7 @@ const REQUIREMENT_ACTIONS = ["list", "create", "update", "delete", "archive", "c
 server.tool(
   "gc_requirement",
   `Requirement operations (action-discriminated). Actions: ${REQUIREMENT_ACTIONS.join(", ")}. ` +
-    `Reads (list/get/history/diff/timeline) route through gc_query against /api/v1/requirements. ` +
+    `Reads (list/get/history/diff/timeline) route through gc_query against /api/v1/requirements; the history and timeline GETs accept an optional expand=true query param (pass it via gc_query params) to return full field values, since string change values over 200 chars are truncated by default with a truncated flag. ` +
     `Status transitions live on gc_transition_status / gc_bulk_transition_status (workflow primitives). ` +
     `Required fields per action: create→{uid,title,statement}; update→{id}; delete/archive→{id}; clone→{source_uid,new_uid}.`,
   {

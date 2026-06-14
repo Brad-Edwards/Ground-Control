@@ -39,6 +39,7 @@ import com.keplerops.groundcontrol.domain.requirements.service.FieldChange;
 import com.keplerops.groundcontrol.domain.requirements.service.RelationChange;
 import com.keplerops.groundcontrol.domain.requirements.service.RelationRevision;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementFilter;
+import com.keplerops.groundcontrol.domain.requirements.service.RequirementRevision;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementService;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementVersionDiff;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementWithLinks;
@@ -683,6 +684,30 @@ class RequirementControllerTest {
     }
 
     @Nested
+    class RequirementHistory {
+
+        @Test
+        void historyIncludesChangesWithNullOldValueForAdd() throws Exception {
+            var req = createRequirement("REQ-001");
+            var revision = new RequirementRevision(
+                    1,
+                    Instant.now(),
+                    "ADD",
+                    "test-user",
+                    null,
+                    req,
+                    Map.of("title", new FieldChange(null, "Title for REQ-001")));
+            when(auditService.getRequirementHistory(req.getId())).thenReturn(List.of(revision));
+
+            mockMvc.perform(get("/api/v1/requirements/" + req.getId() + "/history"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].changes.title.oldValue").doesNotExist())
+                    .andExpect(jsonPath("$[0].changes.title.newValue", is("Title for REQ-001")))
+                    .andExpect(jsonPath("$[0].truncated", is(false)));
+        }
+    }
+
+    @Nested
     class RelationHistory {
 
         @Test
@@ -775,6 +800,56 @@ class RequirementControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[0].changes.title.oldValue", is("Old Title")))
                     .andExpect(jsonPath("$[0].changes.title.newValue", is("New Title")));
+        }
+
+        @Test
+        void timelineDefaultTruncatesLongChangeValue() throws Exception {
+            var reqId = UUID.randomUUID();
+            var longValue = "A".repeat(300);
+            var changes = Map.of("statement", new FieldChange("short", longValue));
+            var entry = new TimelineEntry(
+                    2,
+                    "MOD",
+                    Instant.parse("2026-03-21T05:00:00Z"),
+                    "test-user",
+                    null,
+                    ChangeCategory.REQUIREMENT,
+                    reqId,
+                    Map.of("statement", longValue),
+                    changes);
+            when(auditService.getRequirementTimeline(eq(reqId), any(), any(), any(), any(), eq(100), eq(0)))
+                    .thenReturn(List.of(entry));
+
+            mockMvc.perform(get("/api/v1/requirements/" + reqId + "/timeline"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].changes.statement.newValue").value(longValue.substring(0, 200)))
+                    .andExpect(jsonPath("$[0].changes.statement.truncated", is(true)))
+                    .andExpect(jsonPath("$[0].truncated", is(true)));
+        }
+
+        @Test
+        void timelineExpandTrueReturnsFullValueNotTruncated() throws Exception {
+            var reqId = UUID.randomUUID();
+            var longValue = "B".repeat(300);
+            var changes = Map.of("statement", new FieldChange("short", longValue));
+            var entry = new TimelineEntry(
+                    2,
+                    "MOD",
+                    Instant.parse("2026-03-21T05:00:00Z"),
+                    "test-user",
+                    null,
+                    ChangeCategory.REQUIREMENT,
+                    reqId,
+                    Map.of("statement", longValue),
+                    changes);
+            when(auditService.getRequirementTimeline(eq(reqId), any(), any(), any(), any(), eq(100), eq(0)))
+                    .thenReturn(List.of(entry));
+
+            mockMvc.perform(get("/api/v1/requirements/" + reqId + "/timeline").param("expand", "true"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].changes.statement.newValue").value(longValue))
+                    .andExpect(jsonPath("$[0].changes.statement.truncated", is(false)))
+                    .andExpect(jsonPath("$[0].truncated", is(false)));
         }
 
         @Test

@@ -134,20 +134,22 @@ of that type, and requirements with no matching link still appear with an empty
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| GET | `/requirements/{id}/history` | - | 200 | Requirement revision history |
+| GET | `/requirements/{id}/history` | - | 200 | Requirement revision history (with per-revision field diffs) |
 | GET | `/requirements/{id}/relations/{relationId}/history` | - | 200 / 404 | Relation revision history. Returns 404 if `relationId` does not belong to `id` (the requirement is neither the source nor the target of the relation). |
 | GET | `/requirements/{id}/traceability/{linkId}/history` | - | 200 / 404 | Traceability link revision history. Returns 404 if `linkId` does not belong to `id`. |
 | GET | `/requirements/{id}/timeline` | - | 200 | Unified audit timeline |
+| GET | `/requirements/{id}/diff?fromRevision=A&toRevision=B` | - | 200 / 400 / 404 | Structured diff between two revisions (field, relation, and traceability-link changes) |
 
-`GET /requirements/{id}/timeline` accepts query parameters:
+`GET /requirements/{id}/timeline` and `GET /requirements/{id}/history` accept query parameters:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `changeCategory` | enum | REQUIREMENT, RELATION, TRACEABILITY_LINK |
-| `from` | ISO-8601 instant | Start of date range |
-| `to` | ISO-8601 instant | End of date range |
-| `limit` | integer | Max entries to return (default 100) |
-| `offset` | integer | Number of entries to skip (default 0) |
+| `changeCategory` | enum | REQUIREMENT, RELATION, TRACEABILITY_LINK (timeline only) |
+| `from` | ISO-8601 instant | Start of date range (timeline only) |
+| `to` | ISO-8601 instant | End of date range (timeline only) |
+| `limit` | integer | Max entries to return, default 100 (timeline only) |
+| `offset` | integer | Number of entries to skip, default 0 (timeline only) |
+| `expand` | boolean | When false (default), string change values longer than 200 characters are truncated and `truncated=true` is set. When true, full values are returned. |
 
 **TimelineEntryResponse:**
 
@@ -160,9 +162,20 @@ of that type, and requirements with no matching link still appear with an empty
   "changeCategory": "REQUIREMENT",
   "entityId": "uuid",
   "snapshot": { "title": "New Title", "status": "ACTIVE", "..." : "..." },
-  "changes": { "title": { "oldValue": "Old Title", "newValue": "New Title" } }
+  "changes": { "title": { "oldValue": "Old Title", "newValue": "New Title", "truncated": false } },
+  "truncated": false
 }
 ```
+
+**FieldChangeResponse** (within `changes`):
+
+```json
+{ "oldValue": null, "newValue": "value", "truncated": false }
+```
+
+String `oldValue` or `newValue` longer than 200 characters are truncated to 200 characters when `expand=false` (the default). When any field in an entry is truncated, `truncated: true` is set on the entry. Use `?expand=true` to fetch full values.
+
+ADD revisions carry `(null, value)` diffs for each field. DEL revisions carry `(value, null)` diffs.
 
 ### Analysis
 

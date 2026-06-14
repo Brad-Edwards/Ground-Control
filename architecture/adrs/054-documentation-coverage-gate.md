@@ -10,6 +10,8 @@ accepted
 
 > **Style sync for issue #751 (2026-06-14):** Repository-wide Vale cleanup normalized punctuation in documentation prose. This ADR's documentation coverage gate stays the same.
 
+> **Sync note for issue #1107 (2026-06-14):** The `gc_requirement` history/timeline reads gained an `expand` passthrough (MCP `lib.js`/`index.js`) so callers can fetch full, untruncated audit-diff field values; the new audit-diff API surface is documented in `docs/API.md`. The `classifyChangedSurface` surface vocabulary and `outcome_required` mapping are unchanged.
+
 ## Context
 
 Changes that modify workflow behavior, MCP tool surfaces, config parsing,
