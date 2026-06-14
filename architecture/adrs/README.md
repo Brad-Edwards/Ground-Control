@@ -71,7 +71,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [051](051-sonarcloud-gate-recalibration.md) | SonarCloud Gate Recalibration | Proposed |
 | [052](052-risk-control-mapping.md) | Risk-Control Mapping Aggregate (GC-T003) | Accepted |
 | [053](053-conversation-surface-hardening.md) | Conversation Surface Hardening | Accepted |
-| [054](054-documentation-coverage-gate.md) | Documentation Coverage Gate | Accepted |
+| [054](054-documentation-coverage-gate.md) | Documentation Coverage Gate | Accepted (amended 2026-06-14, #1102) |
 | [055](055-research-workflow-skills-and-citation-mcp.md) | Research Workflow Skills and Citation MCP | Accepted |
 | [056](056-research-project-type-and-intake.md) | Research Project Type and Intake Metadata | Accepted |
 | [057](057-per-run-grc-screening-gate.md) | Per-run GRC Screening Gate in /implement | Accepted (amended/superseded in part by ADR-058) |
