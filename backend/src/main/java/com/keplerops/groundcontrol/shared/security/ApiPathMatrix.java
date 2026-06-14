@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.shared.security;
 
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AuthorizeHttpRequestsConfigurer;
 
@@ -64,6 +65,13 @@ final class ApiPathMatrix {
                 .requestMatchers("/api/v1/trust-policies/**")
                 .hasRole(ROLE_ADMIN)
                 .requestMatchers("/api/v1/pack-install-records/**")
+                .hasRole(ROLE_ADMIN)
+                // MCP tool-usage reads are cross-project operational telemetry, so every GET under
+                // this prefix is admin-only: an ordinary authenticated caller (e.g. via gc_query)
+                // must not read other projects' tool usage. The capture write (POST /events) is NOT
+                // gated here — every authenticated MCP session must record its own events — so it
+                // falls through to the authenticated() rule below.
+                .requestMatchers(HttpMethod.GET, "/api/v1/mcp-tool-usage", "/api/v1/mcp-tool-usage/**")
                 .hasRole(ROLE_ADMIN)
                 .requestMatchers("/api/v1/**")
                 .authenticated()

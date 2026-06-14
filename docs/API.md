@@ -1030,6 +1030,37 @@ All endpoints accept an optional `project` query parameter.
 (optional, traceability link UUID), `requirementId` (optional), `property` (optional),
 `evidence` (optional, JSON object), `expiresAt` (optional, ISO 8601).
 
+### MCP Tool Usage Telemetry (issue #1104 / ADR-059)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/mcp-tool-usage/events` | RecordMcpToolEventRequest | 201 | Capture one MCP tool call event |
+| GET | `/mcp-tool-usage` | - | 200 (ROLE_ADMIN; 403 otherwise) | Read aggregated usage statistics |
+
+The capture endpoint accepts a closed event shape only. Unknown or oversized
+fields fail at the API boundary.
+
+**RecordMcpToolEventRequest fields:** `tool` (required, max 200 chars),
+`action` (optional, max 200 chars), `outcome` (required, max 100 chars),
+`durationMs` (required, non-negative long), `project` (optional, max 200
+chars), `ts` (required ISO 8601 instant).
+
+**GET query parameters:** `from` and `to` (ISO 8601 instants). If both are
+omitted, the response covers the last 24 hours. The maximum window is 31 days.
+Window validation failures return 422 `validation_error`.
+
+**Aggregate response shape:** `{from, to, tools: [{tool, count, errorRate, p50Ms, p95Ms, p99Ms}]}`.
+`errorRate` is the fraction of calls whose `outcome` is not `"ok"`. Latency
+percentiles use the nearest-rank formula. An empty window returns an empty
+`tools` list.
+
+The aggregate read is **ROLE_ADMIN only** (gated in `ApiPathMatrix`): it exposes
+cross-project tool usage, so an ordinary authenticated caller is rejected with
+403. `gc_query` lists `GET /api/v1/mcp-tool-usage` in its allowlist and routes it
+with the admin token, so only an admin-credentialed MCP session can read it. The
+POST capture path stays reachable by any authenticated session and is internal to
+the MCP adapter (not in the `gc_query` allowlist).
+
 ### Derivations (GC-GRC-001)
 
 | Method | Path | Body | Status | Purpose |

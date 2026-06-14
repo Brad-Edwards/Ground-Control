@@ -289,6 +289,7 @@ import {
   GC_INTEGRATION_MANAGER_DESCRIPTION,
   GC_INTEGRATION_MANAGER_INPUT_SCHEMA,
 } from "./gc-integrate.js";
+import { installToolTelemetry } from "./telemetry.js";
 
 // Load .env from cwd before any auth header is composed.
 function loadDotenvFromCwd() {
@@ -329,7 +330,12 @@ function err(e) {
       text += `\nDetail: ${JSON.stringify(e.detail, null, 2)}`;
     }
   }
-  return { content: [{ type: "text", text }], isError: true };
+  const outcomeCode = (e && e.name === "RequestError" && e.code) ? e.code : "error";
+  return {
+    content: [{ type: "text", text }],
+    isError: true,
+    _meta: { "groundcontrol/outcomeCode": outcomeCode },
+  };
 }
 
 // pick / reqArg moved to lib.js so the extracted per-tool modules
@@ -346,6 +352,12 @@ const ADMIN_TOOLS_ENABLED =
   process.env.GC_MCP_ADMIN === "yes";
 
 const server = new McpServer({ name: "ground-control", version: "1.0.0" });
+
+// Install per-tool telemetry capture (ADR-059, issue #1104).
+// Must run BEFORE any server.tool / server.registerTool registration so all
+// tools are wrapped. Fail-open: a telemetry write failure never affects the
+// original tool result.
+installToolTelemetry(server);
 
 // ============================================================================
 // WORKFLOW PRIMITIVES — kept by name; /implement and /ship skills call these.

@@ -527,6 +527,7 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "131", // V131: add project.type + create research_intake (ADR-056, #999)
                         "132", // V132: create research_intake_audit (ADR-056, #999)
                         "133", // V133: create derivation run/fact/capture-limit tables (GC-GRC-001)
-                        "134"); // V134: create derivation audit tables (GC-GRC-001)
+                        "134", // V134: create derivation audit tables (GC-GRC-001)
+                        "135"); // V135: create mcp_tool_event (issue #1104 / ADR-059)
     }
 }
