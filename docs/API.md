@@ -87,6 +87,14 @@ can derive a methodology choice from the intake (ADR-055).
 | POST | `/requirements/{id}/clone` | CloneRequirementRequest | 201 | Clone requirement |
 | POST | `/requirements/{id}/archive` |—| 200 | Archive requirement |
 
+When an enabled quality gate covers `metricType=COVERAGE`,
+`metricParam=DOCUMENTS`, and `scopeStatus=ACTIVE`, DRAFT-to-ACTIVE
+requirement transitions require the requirement to already have a
+`DOCUMENTS` traceability link. Missing coverage returns a 422 validation
+error with `code=documentation_link_missing` and `missingLinkType=DOCUMENTS`.
+Bulk transitions keep best-effort semantics: items missing that link are
+reported in the per-item failure list, and eligible items still transition.
+
 ### Relations
 
 | Method | Path | Body | Status | Purpose |
@@ -790,6 +798,12 @@ MCP surface: `gc_observation` with actions `create`, `update`, `delete`, `latest
 - `metricParam`: Required for `COVERAGE`—a LinkType (`IMPLEMENTS`, `TESTS`, `DOCUMENTS`, `CONSTRAINS`, `VERIFIES`)
 - `scopeStatus`: Filter requirements by status. Omit to check all non-archived
 - `operator`: `GTE` (>=), `LTE` (<=), `EQ` (==), `GT` (>), `LT` (<)
+
+An active `DOCUMENTS` coverage gate is also consumed by the `/implement`
+completion gate. The MCP wrapper checks each PR in-scope requirement for a
+`DOCUMENTS` traceability link regardless of requirement status, then the
+backend transition endpoint enforces the same link requirement at
+DRAFT-to-ACTIVE time.
 
 **QualityGateEvaluationResponse** (`POST /quality-gates/evaluate`):
 

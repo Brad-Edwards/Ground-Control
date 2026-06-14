@@ -143,4 +143,120 @@ describe("runAssertQualityGates input validation", () => {
   it("rejects a missing project without touching the REST API", async () => {
     await assert.rejects(() => runAssertQualityGates({}), /non-empty project/);
   });
+
+  it("requires callers to explicitly pass requirements[]", async () => {
+    await assert.rejects(
+      () => runAssertQualityGates({ project: "demo" }),
+      /requires requirements\[\]/,
+    );
+  });
+});
+
+function mockFetch(routesByUrl) {
+  const originalFetch = globalThis.fetch;
+  const originalBase = process.env.GC_BASE_URL;
+  process.env.GC_BASE_URL = "http://test.invalid";
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    for (const [pattern, handler] of routesByUrl) {
+      if (u.includes(pattern)) {
+        const r = await handler(u);
+        return {
+          status: r.status ?? 200,
+          ok: (r.status ?? 200) < 400,
+          text: async () => JSON.stringify(r.body ?? null),
+          json: async () => r.body ?? null,
+        };
+      }
+    }
+    return {
+      status: 404,
+      ok: false,
+      text: async () => JSON.stringify({ error: { code: "NOT_FOUND", message: `no route for ${u}` } }),
+    };
+  };
+  return () => {
+    globalThis.fetch = originalFetch;
+    if (originalBase === undefined) delete process.env.GC_BASE_URL;
+    else process.env.GC_BASE_URL = originalBase;
+  };
+}
+
+describe("runAssertQualityGates in-scope DOCUMENTS coverage", () => {
+  const activeDocumentsGateEvaluation = {
+    passed: true,
+    total_gates: 1,
+    passed_count: 1,
+    failed_count: 0,
+    gates: [
+      {
+        gate_name: "Active DOCUMENTS Coverage",
+        metric_type: "COVERAGE",
+        metric_param: "DOCUMENTS",
+        scope_status: "ACTIVE",
+        operator: "GTE",
+        threshold: 100,
+        actual_value: 100,
+        passed: true,
+      },
+    ],
+  };
+
+  it("checks in-scope DRAFT requirements when the active DOCUMENTS gate exists", async () => {
+    const restore = mockFetch([
+      ["/api/v1/quality-gates/evaluate", async () => ({ body: activeDocumentsGateEvaluation })],
+      ["/api/v1/requirements/uid/GC-X001", async () => ({ body: { id: "uuid-1", uid: "GC-X001", status: "DRAFT" } })],
+      ["/api/v1/requirements/uuid-1/traceability", async () => ({ body: [] })],
+    ]);
+    try {
+      const result = await runAssertQualityGates({
+        project: "demo",
+        requirements: [{ uid: "GC-X001", statusIntent: "DRAFT" }],
+      });
+
+      assert.equal(result.ok, false);
+      assert.equal(result.error, "in_scope_documentation_coverage_failed");
+      assert.deepEqual(result.missing_documents, [
+        { uid: "GC-X001", status: "DRAFT", missing_link_type: "DOCUMENTS" },
+      ]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("does not require in-scope DOCUMENTS links when the DOCUMENTS gate is inactive", async () => {
+    const restore = mockFetch([
+      ["/api/v1/quality-gates/evaluate", async () => ({
+        body: {
+          passed: true,
+          total_gates: 1,
+          passed_count: 1,
+          failed_count: 0,
+          gates: [
+            {
+              gate_name: "Active TESTS Coverage",
+              metric_type: "COVERAGE",
+              metric_param: "TESTS",
+              scope_status: "ACTIVE",
+              operator: "GTE",
+              threshold: 100,
+              actual_value: 100,
+              passed: true,
+            },
+          ],
+        },
+      })],
+    ]);
+    try {
+      const result = await runAssertQualityGates({
+        project: "demo",
+        requirements: [{ uid: "GC-X001", statusIntent: "DRAFT" }],
+      });
+
+      assert.equal(result.ok, true);
+      assert.equal(result.in_scope_documents_checked, false);
+    } finally {
+      restore();
+    }
+  });
 });
