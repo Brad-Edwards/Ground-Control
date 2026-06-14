@@ -196,3 +196,18 @@ current with the actual classifier surface.
 **2026-06-13 (issue #1114 GC-GRC-001 derivation adapter port).** Added the `/api/v1/derivations` REST surface, the `gc_derivation` MCP adapter, derivation API helpers in `mcp/ground-control/lib.js`, and the `/api/v1/derivations` read prefix in `gc_query`. Documentation lives in `docs/API.md` for the REST schema, `mcp/ground-control/README.md` for the tool catalog and query allowlist, and the `gc_derivation` adapter description for the MCP action contract. These are public API, MCP-adapter, and config-parser surfaces. The doc-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new `docs/DOC_STYLE.md` style rule is established.
 
 **2026-06-13 (issue #1155 CI strictness baseline).** Added `run_ci_strictness_contract` to `tools/policy/checks.py` so `make policy` verifies the CI strictness surfaces: selected pre-commit hygiene and secret-scan hooks run in the CI policy job, the Sonar job waits for the quality gate and invokes `tools/sonar/assert_no_new_issues.py`, and `.github/branch-protection-baseline.json` records strict required checks for `main` and `dev` with admin bypass retained. Documentation lives in `docs/DEVELOPMENT_WORKFLOW.md` and `tools/sonar/README.md`. This is a policy-surface extension; the doc-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged. No new `docs/DOC_STYLE.md` style rule is established.
+
+**2026-06-14 (issue #1102 documentation coverage status-hole closure).**
+The active `DOCUMENTS` coverage gate now has two status-independent
+enforcement points. First, `/implement` Step 6 calls
+`gc_assert_quality_gates` with the issue's `in_scope_requirements[]`; when an
+enabled `COVERAGE` gate with `metricParam=DOCUMENTS` and
+`scopeStatus=ACTIVE` exists, the tool verifies each in-scope requirement has a
+`DOCUMENTS` traceability link regardless of DRAFT or ACTIVE status. Second,
+`RequirementService` rejects DRAFT-to-ACTIVE transitions for requirements
+missing a `DOCUMENTS` link while that gate is active, including per-item
+failures in bulk transition. This closes the prior escape where keeping a
+requirement DRAFT kept it out of active-status project coverage until after
+the completion gate had already passed. The backend uses the existing
+quality-gate and traceability repositories; no new coverage schema, endpoint,
+or frontend-only validation layer was added.

@@ -12169,10 +12169,54 @@ function shapeQualityGateResult(gate) {
   return {
     name: gate.gate_name,
     metric_type: gate.metric_type,
+    metric_param: gate.metric_param,
+    scope_status: gate.scope_status,
     operator: gate.operator,
     threshold: gate.threshold,
     actual: gate.actual_value,
   };
+}
+
+function gateField(gate, snakeKey, camelKey = null) {
+  if (gate == null || typeof gate !== "object") return undefined;
+  if (gate[snakeKey] !== undefined) return gate[snakeKey];
+  if (camelKey != null && gate[camelKey] !== undefined) return gate[camelKey];
+  return undefined;
+}
+
+function isActiveDocumentsCoverageGate(gate) {
+  return gateField(gate, "metric_type", "metricType") === "COVERAGE"
+    && gateField(gate, "metric_param", "metricParam") === "DOCUMENTS"
+    && gateField(gate, "scope_status", "scopeStatus") === "ACTIVE";
+}
+
+async function findMissingInScopeDocumentsLinks({ evaluation, project, requirements }) {
+  const gates = Array.isArray(evaluation?.gates) ? evaluation.gates : [];
+  const documentsGateActive = gates.some(isActiveDocumentsCoverageGate);
+  if (!documentsGateActive || !Array.isArray(requirements) || requirements.length === 0) {
+    return { ok: true, checked: false, missing: [] };
+  }
+
+  const missing = [];
+  for (const item of requirements) {
+    if (!item || typeof item !== "object" || typeof item.uid !== "string" || item.uid.trim() === "") {
+      return {
+        ok: false,
+        error: "in_scope_requirement_input_invalid",
+        message: "requirements[] entries must be { uid: <non-empty string>, statusIntent?: <status> }",
+      };
+    }
+    const uid = item.uid.trim();
+    const requirement = await getRequirementByUid(uid, project);
+    const actualStatus = typeof requirement?.status === "string" ? requirement.status : null;
+    const links = await getTraceabilityLinks(requirement.id);
+    const hasDocumentsLink = Array.isArray(links) && links.some((link) => link?.link_type === "DOCUMENTS");
+    if (!hasDocumentsLink) {
+      missing.push({ uid, status: actualStatus, missing_link_type: "DOCUMENTS" });
+    }
+  }
+
+  return { ok: true, checked: true, missing };
 }
 
 // Pure transform: an evaluation result → the assertion envelope. Kept separate
@@ -12204,12 +12248,52 @@ export function buildQualityGateAssertion(evaluation, project) {
   };
 }
 
-export async function runAssertQualityGates({ project }) {
+export async function runAssertQualityGates({ project, requirements }) {
   if (typeof project !== "string" || project.trim() === "") {
     throw new Error("gc_assert_quality_gates requires a non-empty project");
   }
+  if (!Array.isArray(requirements)) {
+    throw new Error("gc_assert_quality_gates requires requirements[]; pass [] when there are no in-scope requirements");
+  }
   const trimmed = project.trim();
-  return buildQualityGateAssertion(await evaluateQualityGates(trimmed), trimmed);
+  const evaluation = await evaluateQualityGates(trimmed);
+  const assertion = buildQualityGateAssertion(evaluation, trimmed);
+  if (assertion.ok !== true) {
+    return assertion;
+  }
+
+  const inScopeDocuments = await findMissingInScopeDocumentsLinks({
+    evaluation,
+    project: trimmed,
+    requirements,
+  });
+  if (inScopeDocuments.ok !== true) {
+    return {
+      ok: false,
+      error: inScopeDocuments.error,
+      message: inScopeDocuments.message,
+      project: trimmed,
+      next_action: "fix_in_scope_requirement_input_and_retry",
+    };
+  }
+  if (inScopeDocuments.missing.length > 0) {
+    return {
+      ok: false,
+      error: "in_scope_documentation_coverage_failed",
+      message:
+        "Active DOCUMENTS Coverage requires every in-scope requirement to carry a DOCUMENTS traceability link, " +
+        "regardless of status: " +
+        inScopeDocuments.missing.map((m) => `${m.uid} (${m.status ?? "unknown"}) missing ${m.missing_link_type}`).join("; "),
+      project: trimmed,
+      missing_documents: inScopeDocuments.missing,
+      next_action: "add_documents_traceability_links_and_retry",
+    };
+  }
+
+  return {
+    ...assertion,
+    in_scope_documents_checked: inScopeDocuments.checked,
+  };
 }
 
 // ---------------------------------------------------------------------------

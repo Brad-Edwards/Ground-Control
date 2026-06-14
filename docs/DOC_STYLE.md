@@ -170,4 +170,12 @@ is the prose-side guardrail. The surface addition is recorded in the ADR-054
 amendment and the changelog fragment; no new DOC_STYLE.md prose is needed
 unless a new style rule is being established.
 
+Extensions to existing /implement workflow-gate MCP tools follow the same
+documentation pattern. The #1102 `gc_assert_quality_gates` extension adds
+PR-scoped `DOCUMENTS` traceability enforcement for in-scope requirements, and
+the backend DRAFT-to-ACTIVE transition rule enforces the same requirement-link
+contract. The current behavior is documented in `docs/DEVELOPMENT_WORKFLOW.md`,
+`docs/API.md`, and `skills/implement/steps/step-06-completion-gate.md`, with
+the durable rationale in ADR-054. No new DOC_STYLE.md style rule is established.
+
 The 2026-06-10 SonarCloud remediation (#1085) refactored `mcp/ground-control/lib.js` and `index.js` internals without changing any prose style rule or documented-surface classification; no new DOC_STYLE.md rule is established.

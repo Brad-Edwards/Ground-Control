@@ -11,15 +11,19 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
+import com.keplerops.groundcontrol.domain.qualitygates.repository.QualityGateRepository;
+import com.keplerops.groundcontrol.domain.qualitygates.state.MetricType;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import com.keplerops.groundcontrol.domain.requirements.model.RequirementRelation;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRelationRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
+import com.keplerops.groundcontrol.domain.requirements.repository.TraceabilityLinkRepository;
 import com.keplerops.groundcontrol.domain.requirements.service.CloneRequirementCommand;
 import com.keplerops.groundcontrol.domain.requirements.service.CreateRequirementCommand;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementFilter;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementService;
 import com.keplerops.groundcontrol.domain.requirements.service.UpdateRequirementCommand;
+import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
 import com.keplerops.groundcontrol.domain.requirements.state.Priority;
 import com.keplerops.groundcontrol.domain.requirements.state.RelationType;
 import com.keplerops.groundcontrol.domain.requirements.state.RequirementType;
@@ -61,13 +65,25 @@ class RequirementServiceTest {
     private ProjectRepository projectRepository;
 
     @Mock
+    private QualityGateRepository qualityGateRepository;
+
+    @Mock
+    private TraceabilityLinkRepository traceabilityLinkRepository;
+
+    @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     private RequirementService service;
 
     @BeforeEach
     void setUp() {
-        service = new RequirementService(requirementRepository, relationRepository, projectRepository, eventPublisher);
+        service = new RequirementService(
+                requirementRepository,
+                relationRepository,
+                projectRepository,
+                qualityGateRepository,
+                traceabilityLinkRepository,
+                eventPublisher);
     }
 
     private static Requirement makeRequirement(String uid) {
@@ -165,6 +181,7 @@ class RequirementServiceTest {
 
             var result = service.getByUid(PROJECT_ID, "REQ-001");
             assertThat(result).isNotNull();
+            assertThat(result.getUid()).isEqualTo("REQ-001");
         }
 
         @Test
@@ -285,6 +302,38 @@ class RequirementServiceTest {
 
             assertThatThrownBy(() -> service.transitionStatus(id, Status.ARCHIVED))
                     .isInstanceOf(DomainValidationException.class);
+        }
+
+        @Test
+        void rejectsDraftToActiveWhenActiveDocumentsCoverageGateIsMissingDocumentsLink() {
+            var id = UUID.randomUUID();
+            var req = makeRequirement("REQ-001");
+            when(requirementRepository.findById(id)).thenReturn(Optional.of(req));
+            when(qualityGateRepository.existsByProjectIdAndEnabledTrueAndMetricTypeAndMetricParamAndScopeStatus(
+                            PROJECT_ID, MetricType.COVERAGE, LinkType.DOCUMENTS.name(), Status.ACTIVE))
+                    .thenReturn(true);
+            when(traceabilityLinkRepository.existsByRequirementIdAndLinkType(id, LinkType.DOCUMENTS))
+                    .thenReturn(false);
+
+            assertThatThrownBy(() -> service.transitionStatus(id, Status.ACTIVE))
+                    .isInstanceOf(DomainValidationException.class)
+                    .hasMessageContaining("DOCUMENTS")
+                    .hasMessageContaining("REQ-001");
+        }
+
+        @Test
+        void allowsDraftToActiveWithoutDocumentsLinkWhenDocumentsCoverageGateIsInactive() {
+            var id = UUID.randomUUID();
+            var req = makeRequirement("REQ-001");
+            when(requirementRepository.findById(id)).thenReturn(Optional.of(req));
+            when(qualityGateRepository.existsByProjectIdAndEnabledTrueAndMetricTypeAndMetricParamAndScopeStatus(
+                            PROJECT_ID, MetricType.COVERAGE, LinkType.DOCUMENTS.name(), Status.ACTIVE))
+                    .thenReturn(false);
+            when(requirementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = service.transitionStatus(id, Status.ACTIVE);
+
+            assertThat(result.getStatus()).isEqualTo(Status.ACTIVE);
         }
     }
 
@@ -445,6 +494,7 @@ class RequirementServiceTest {
 
             var result = service.getRelations(id);
             assertThat(result).isNotNull();
+            assertThat(result).isEmpty();
         }
 
         @Test
@@ -549,6 +599,32 @@ class RequirementServiceTest {
 
             assertThat(result.succeeded()).isEmpty();
             assertThat(result.failed()).hasSize(2);
+        }
+
+        @Test
+        void missingDocumentsLinkFailureDoesNotStopOtherBulkTransitions() {
+            var missingDocsId = UUID.randomUUID();
+            var validId = UUID.randomUUID();
+            var missingDocsReq = makeRequirement("REQ-MISSING-DOCS");
+            var validReq = makeRequirement("REQ-VALID");
+
+            when(requirementRepository.findById(missingDocsId)).thenReturn(Optional.of(missingDocsReq));
+            when(requirementRepository.findById(validId)).thenReturn(Optional.of(validReq));
+            when(qualityGateRepository.existsByProjectIdAndEnabledTrueAndMetricTypeAndMetricParamAndScopeStatus(
+                            PROJECT_ID, MetricType.COVERAGE, LinkType.DOCUMENTS.name(), Status.ACTIVE))
+                    .thenReturn(true);
+            when(traceabilityLinkRepository.existsByRequirementIdAndLinkType(missingDocsId, LinkType.DOCUMENTS))
+                    .thenReturn(false);
+            when(traceabilityLinkRepository.existsByRequirementIdAndLinkType(validId, LinkType.DOCUMENTS))
+                    .thenReturn(true);
+            when(requirementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = service.bulkTransitionStatus(List.of(missingDocsId, validId), Status.ACTIVE);
+
+            assertThat(result.succeeded()).extracting(Requirement::getUid).containsExactly("REQ-VALID");
+            assertThat(result.failed()).hasSize(1);
+            assertThat(result.failed().getFirst().uid()).isEqualTo("REQ-MISSING-DOCS");
+            assertThat(result.failed().getFirst().error()).contains("DOCUMENTS");
         }
     }
 

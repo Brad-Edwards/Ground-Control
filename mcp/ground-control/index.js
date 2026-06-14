@@ -662,13 +662,20 @@ server.tool(
 
 server.tool(
   "gc_assert_quality_gates",
-  "Assert that the project's enabled quality gates pass. Calls the server-side QualityGateService.evaluate contract (POST /api/v1/quality-gates/evaluate) and refuses (ok:false) when any enabled gate fails, returning failing_gates[] — ONLY the failing gates, each as {name, metric_type, threshold, actual} (plus operator) — so the fix is obvious from the error alone. On success returns {ok:true, project, total_gates, passed_count, evaluated[]}. Used by the /implement completion gate (Step 6) to block a run on a failing quality gate; the backend owns all gate math, this boundary only shapes the envelope. Enforced metric types: COVERAGE (over IMPLEMENTS / TESTS / DOCUMENTS link coverage), ORPHAN_COUNT, COMPLETENESS.",
+  "Assert that the project's enabled quality gates pass. Calls the server-side QualityGateService.evaluate contract (POST /api/v1/quality-gates/evaluate) and refuses (ok:false) when any enabled gate fails, returning failing_gates[] — ONLY the failing gates, each as {name, metric_type, threshold, actual} (plus operator) — so the fix is obvious from the error alone. Callers must pass requirements[]; use [] only as an explicit no-in-scope-requirements declaration. When the active DOCUMENTS coverage gate exists, also verifies every in-scope requirement has a DOCUMENTS traceability link regardless of status; missing links return error='in_scope_documentation_coverage_failed'. Used by the /implement completion gate (Step 6) to block a run on failing project gates or PR-scoped documentation coverage. Enforced metric types: COVERAGE (over IMPLEMENTS / TESTS / DOCUMENTS link coverage), ORPHAN_COUNT, COMPLETENESS.",
   {
     project: z.string(),
+    requirements: z.array(z.object({
+      uid: z.string(),
+      status_intent: z.enum(["ACTIVE", "DRAFT", "DEPRECATED", "ARCHIVED"]).optional(),
+    })),
   },
-  async ({ project }) => {
+  async ({ project, requirements }) => {
     try {
-      return ok(JSON.stringify(await runAssertQualityGates({ project }), null, 2));
+      return ok(JSON.stringify(await runAssertQualityGates({
+        project,
+        requirements: requirements.map((r) => ({ uid: r.uid, statusIntent: r.status_intent ?? "ACTIVE" })),
+      }), null, 2));
     } catch (e) { return err(e); }
   },
 );
