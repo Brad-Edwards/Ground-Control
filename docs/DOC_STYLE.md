@@ -194,3 +194,5 @@ with the durable rationale in the ADR-054 amendment and the temporal change in
 the changelog fragment. This refines an existing workflow-gate tool and touches
 no documentation-coverage surface; no new DOC_STYLE.md style rule is
 established.
+
+The 2026-06-14 Phase D consolidation (#1103) added `gc_assert_completion` to `mcp/ground-control/lib.js` and `index.js`, updated `tools/policy/checks.py` for the consolidated Step 17 surface, and reorganized the /implement SKILL step prose. No new DOC_STYLE.md style rule is established.

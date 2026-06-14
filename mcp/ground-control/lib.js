@@ -11846,6 +11846,15 @@ export async function runPostFinalReport(input) {
   // input-shape validation for that override is done earlier).
   if (rest.lane !== "quickfix" && !phaseOverride) {
     const completed = await readCompletedPhases(repoRoot, owner, name, rest.issueNumber);
+    // In-process-only union: used by runAssertCompletion to avoid a GitHub
+    // read-after-write race on markers it just posted. NOT in the MCP schema
+    // so external callers cannot set this; it affects ONLY the phase-marker
+    // prereq check, never CI/Sonar/review/content gates.
+    if (Array.isArray(rest.internalVerifiedPhases)) {
+      for (const p of rest.internalVerifiedPhases) {
+        completed.add(p);
+      }
+    }
     const decision = evaluatePhasePrerequisite({
       completed,
       nextPhase: "final_report",
@@ -15087,7 +15096,6 @@ export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
   sonarcloud: { tier: "low" },
   test_quality_review: { tier: "medium" },
   transition_reconcile: { tier: "medium" },
-  close_issue: { tier: "low" },
   final_report: { tier: "low" },
   close_issue_after_merge: { tier: "low" },
 });
@@ -15872,4 +15880,157 @@ export async function acquireIntegrationLock(repoRoot, { retries = 0 } = {}) {
     retries,
     lockedMessage: `integration run is already in progress at: ${canonical}`,
   });
+}
+
+// ---------------------------------------------------------------------------
+// gc_assert_completion (issue #1103)
+//
+// Composes runAssertTraceabilityReconciled + runAssertGrcReconciled +
+// runPostFinalReport into a single deterministic call for Phase D completion.
+// Fail-fast: validates the final-report input before any side effects.
+// Returns {ok, assertions[], final_report} on success or
+// {ok:false, error, message, assertions[], final_report:null} on failure.
+// The internalVerifiedPhases union in runPostFinalReport is used here to
+// avoid a GitHub read-after-write race on markers this function just posted.
+// ---------------------------------------------------------------------------
+
+export async function runAssertCompletion(input) {
+  const {
+    repoPath,
+    issueNumber,
+    prNumber,
+    requirements = [],
+    files,
+    reviews,
+    traceability,
+    ciStatus,
+    sonarStatus,
+    planCommentUrl,
+    summary,
+    plainEnglishOutcome,
+    documentation_outcome,
+    touchedFiles = [],
+    project = null,
+    override = false,
+    overrideReason = null,
+  } = input;
+
+  const assertions = [];
+
+  // Fail-fast: validate the final-report sub-input BEFORE any side effects.
+  const subInput = {
+    issueNumber,
+    prNumber,
+    requirements: requirements.map((r) => ({
+      uid: r.uid,
+      title: r.title ?? r.uid,
+      status: r.status ?? r.statusIntent ?? "ACTIVE",
+      note: r.note ?? undefined,
+    })),
+    files: files ?? {},
+    reviews: reviews ?? [],
+    traceability: traceability ?? {},
+    ciStatus,
+    sonarStatus,
+    planCommentUrl: planCommentUrl ?? null,
+    summary: summary ?? null,
+    plainEnglishOutcome: plainEnglishOutcome ?? null,
+    documentation_outcome: documentation_outcome ?? null,
+    lane: "implement",
+  };
+  const validation = validateFinalReportInput(subInput);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      error: "completion_final_report_input_invalid",
+      message: validation.errors.join("; "),
+      issue_number: issueNumber,
+      assertions,
+      final_report: null,
+    };
+  }
+
+  // Step 1: traceability assertion
+  const trace = await runAssertTraceabilityReconciled({
+    repoPath,
+    issueNumber,
+    requirements: requirements.map((r) => ({
+      uid: r.uid,
+      statusIntent: r.statusIntent ?? r.status ?? "ACTIVE",
+    })),
+    project,
+    touchedFiles,
+    override,
+    overrideReason,
+  });
+  assertions.push({
+    name: "traceability_reconciled",
+    ok: trace.ok,
+    comment_url: trace.comment_url ?? null,
+    comment_id: trace.comment_id ?? null,
+  });
+  if (!trace.ok) {
+    return {
+      ok: false,
+      error: trace.error,
+      message: trace.message,
+      issue_number: issueNumber,
+      assertions,
+      final_report: null,
+      next_action: trace.next_action ?? null,
+    };
+  }
+
+  // Step 2: GRC assertion
+  const grc = await runAssertGrcReconciled({ repoPath, issueNumber, project });
+  assertions.push({
+    name: "grc_reconciled",
+    ok: grc.ok,
+    verdict: grc.verdict ?? null,
+    comment_url: grc.comment_url ?? null,
+    comment_id: grc.comment_id ?? null,
+  });
+  if (!grc.ok) {
+    return {
+      ok: false,
+      error: grc.error,
+      message: grc.message,
+      issue_number: issueNumber,
+      assertions,
+      final_report: null,
+      next_action: grc.next_action ?? null,
+    };
+  }
+
+  // Step 3: final report (use internalVerifiedPhases to avoid read-after-write race)
+  const report = await runPostFinalReport({
+    ...subInput,
+    repoPath,
+    issueNumber,
+    prNumber,
+    internalVerifiedPhases: ["traceability_reconciled", "grc_reconciled"],
+  });
+  if (!report.ok) {
+    return {
+      ok: false,
+      error: report.error,
+      message: report.message,
+      issue_number: issueNumber,
+      assertions,
+      final_report: null,
+      next_action: report.next_action ?? null,
+    };
+  }
+
+  return {
+    ok: true,
+    repo_path: report.repo_path,
+    issue_number: issueNumber,
+    pr_number: prNumber,
+    assertions,
+    final_report: {
+      comment_url: report.comment_url,
+      comment_id: report.comment_id,
+    },
+  };
 }
