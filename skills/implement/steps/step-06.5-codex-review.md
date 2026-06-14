@@ -6,11 +6,11 @@ tier: high
 
 # Step 6.5: Pre-push Codex Review (single subagent invocation)
 
-This step is driven by **one subagent invocation** that owns the entire codex review loop end-to-end. The parent never sees verbatim review prose or per-finding bodies — only a short envelope from the subagent.
+This step is driven by **one subagent invocation** that owns the entire codex review loop end-to-end. The parent never sees verbatim review prose or per-finding bodies - only a short envelope from the subagent.
 
 Per issue #934 item 2, the parent dispatches a single subagent for this step. The subagent runs the loop in [_review-loop-rules.md](_review-loop-rules.md) against the cycle tool (`gc_codex_review_cycle`, issue #934 item 3) until clean or cap-reached, then returns the envelope below.
 
-The codex review is THE review pass for the PR — there is no second post-push codex review (see issue #804). Merge-commit drift relative to the target branch is the responsibility of CI (compile/tests/integration) and SonarCloud (quality), not a separate codex pass.
+The codex review is THE review pass for the PR - there is no second post-push codex review (see issue #804). Merge-commit drift relative to the target branch is the responsibility of CI (compile/tests/integration) and SonarCloud (quality), not a separate codex pass.
 
 ## Subagent prompt template
 
@@ -20,9 +20,9 @@ The orchestrator spawns the subagent with this prompt (substituting `{issue_numb
 >
 > Loop:
 > 1. Stage everything with `git add -A`.
-> 2. Call the `gc_codex_review_cycle` MCP tool with `repo_path={repo_path}`, `issue_number={issue_number}`, `uncommitted=true`, `async=true`. It returns immediately with `{ok:true, status:"running", job_id}` — the dual reviewers (core + security) run in a background job so the multi-minute review never trips the MCP client tool-call timeout (issue #937).
+> 2. Call the `gc_codex_review_cycle` MCP tool with `repo_path={repo_path}`, `issue_number={issue_number}`, `uncommitted=true`, `async=true`. It returns immediately with `{ok:true, status:"running", job_id}` - the dual reviewers (core + security) run in a background job so the multi-minute review never trips the MCP client tool-call timeout (issue #937).
 > 3. Poll the job: call `gc_codex_job` with `action="poll"`, `job_id=<the job_id from step 2>`. While it returns `status:"running"`, sleep ~60s and poll again (a codex review legitimately runs several minutes). When it returns `status:"done"`, the cycle envelope is in the response's `result` field. If a poll returns `error:"job_not_found"` (job expired or MCP server restarted), restart from step 2. To abandon a stuck job, call `gc_codex_job` with `action="cancel"`.
-> 4. Read the cycle envelope from the poll response's `result` (`{ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url}`). Do NOT echo verbatim review prose — that stays server-side in the underlying review's findings record. Dispatch on `next_action`:
+> 4. Read the cycle envelope from the poll response's `result` (`{ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url}`). Do NOT echo verbatim review prose - that stays server-side in the underlying review's findings record. Dispatch on `next_action`:
 >    - `post_clean_decision_record_and_advance_to_phase_c` → return `status: "clean"`. The decision record was auto-posted.
 >    - `fix_findings_and_reinvoke` → classify findings (one-off vs class), fix them per the loop rules, self-verify locally (`cfg.workflow.completion_command`, `make policy`, the relevant test suite), `git add -A`, then re-invoke the cycle tool.
 >    - `fix_findings_then_summarize_and_escalate` (last-in-cap) → fix and self-verify, but do NOT re-invoke; return `status: "escalated"`.
@@ -56,5 +56,5 @@ This step file IS the subagent's instruction set. The orchestrator receives the 
 ## Notes
 
 - **Cap source**: the cycle tool reads `workflow.codex_review.pre_push_cap` from `.ground-control.yaml`; default 1 per issue #906. The cap is enforced at the MCP layer (issue #794 / #796), NOT in subagent prose.
-- **Findings record**: every successful cycle posts a verbatim findings comment to the resolved issue thread (per ADR-029). The comment carries the cycle/cap/mode header and both reviewers' verbatim text. The cycle wrapper's envelope includes `findings_record_url` so the subagent can hand it back if needed — but the parent does not need to read it.
+- **Findings record**: every successful cycle posts a verbatim findings comment to the resolved issue thread (per ADR-029). The comment carries the cycle/cap/mode header and both reviewers' verbatim text. The cycle wrapper's envelope includes `findings_record_url` so the subagent can hand it back if needed - but the parent does not need to read it.
 - **Skip predicate**: skip this step only if the diff is so trivial (one-liner typo fix) that codex would have nothing to find. When in doubt, run it.

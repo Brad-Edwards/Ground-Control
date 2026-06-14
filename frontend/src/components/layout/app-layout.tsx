@@ -89,7 +89,7 @@ export function AppLayout() {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4">
+        <div className="mx-auto flex min-h-14 max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2">
           <Link
             to={projectId ? `${base}/` : "/"}
             className="flex items-center gap-2 font-semibold"
@@ -98,12 +98,13 @@ export function AppLayout() {
             <span>Ground Control</span>
           </Link>
 
-          <nav className="flex items-center gap-1">
+          <nav className="flex flex-wrap items-center gap-1">
             {projectId && (
               <>
                 <NavItem to={`${base}/`} end>
                   Dashboard
                 </NavItem>
+                <NavItem to={`${base}/portfolio`}>Portfolio</NavItem>
                 <NavItem to={`${base}/requirements`}>Requirements</NavItem>
                 <NavItem to={`${base}/test-runs`}>Test Runs</NavItem>
                 <NavItem to={`${base}/graph`}>Graph</NavItem>

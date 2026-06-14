@@ -6,7 +6,7 @@ tier: low
 
 # Step 18: Clear the In-Progress Label
 
-The GitHub issue is **not** closed at Step 18. Two paths drive the actual close: (a) the `Closes #<issue-number>` keyword in the PR body fires GitHub's auto-close when the user merges, and (b) the agent re-enters at **Phase E (Step 20)** after the merge and calls `gc_close_issue_after_merge`, which verifies `merged_at` non-null before running the close (issue #1058). The tool is idempotent — if GitHub already auto-closed via the keyword, Step 20 sees `already_closed: true` and no-ops. Do NOT run `gh issue close` from Step 18; closing the issue from the agent before merge decouples the close from the merge, and an unmerged or rolled-back PR would then leave a closed issue with no shipped code behind it (GitHub does not re-open issues on PR revert).
+The GitHub issue is **not** closed at Step 18. Two paths drive the actual close: (a) the `Closes #<issue-number>` keyword in the PR body fires GitHub's auto-close when the user merges, and (b) the agent re-enters at **Phase E (Step 20)** after the merge and calls `gc_close_issue_after_merge`, which verifies `merged_at` non-null before running the close (issue #1058). The tool is idempotent - if GitHub already auto-closed via the keyword, Step 20 sees `already_closed: true` and no-ops. Do NOT run `gh issue close` from Step 18; closing the issue from the agent before merge decouples the close from the merge, and an unmerged or rolled-back PR would then leave a closed issue with no shipped code behind it (GitHub does not re-open issues on PR revert).
 
 Step 18 only clears the `in-progress` flag set in Step 1:
 

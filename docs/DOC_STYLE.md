@@ -27,7 +27,7 @@ semicolon cannot carry.
 Soft budget: at most one em-dash per paragraph, typically zero. If a paragraph
 has two, rewrite one.
 
-Em-dash chains (`X—Y—Z`) should almost always be reordered into separate
+Em-dash chains (`X - Y - Z`) should almost always be reordered into separate
 clauses.
 
 This pattern was surfaced in shifter #704, where agent-written prose accumulated
@@ -40,7 +40,7 @@ prose-lint gate. See `.vale/styles/GoogleProject/EmDashDensity.yml`.
 
 - **Voice and tense:** [Google Developer Documentation Style Guide](https://developers.google.com/style).
   Present-tense default, plain English, concision.
-- **Structure:** [Diátaxis](https://diataxis.fr/)—every doc is one of
+- **Structure:** [Diátaxis](https://diataxis.fr/) - every doc is one of
   `tutorial`, `how-to`, `reference`, or `explanation`. Reference and how-to
   docs do not contain roadmaps or meta-commentary by construction.
 
@@ -56,13 +56,13 @@ also trigger the `doc-coverage-gate-sync` rule per ADR-054, which requires this
 file and ADR-054 to stay current with the classifier surface they describe.
 Adding a new MCP tool or `gc_admin` action does not require new style rules
 here unless the action introduces a new doc-shape (a new request/response
-schema, for example)—in that case document the schema under the relevant
+schema, for example) - in that case document the schema under the relevant
 service section in `docs/API.md`, which Vale lints on touch.
 
 ## Scope: whole file on first touch
 
 When a `.md` / `.markdown` file appears in the current diff (added, copied,
-modified, or renamed vs the base ref), Vale lints it in its entirety—not just
+modified, or renamed vs the base ref), Vale lints it in its entirety - not just
 the changed lines. A one-line edit to a previously untouched document brings
 the whole file into scope; all of its style violations must be fixed in that
 PR. Untouched docs are not linted.

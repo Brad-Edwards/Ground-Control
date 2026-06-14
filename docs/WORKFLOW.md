@@ -347,7 +347,7 @@ The agent doesn't need to leave the editor. Requirements, code, tests, and trace
 
 **2026-05-19 (issue #931).** Pre-push reviewers (`gc_codex_review`,
 `gc_test_quality_review`) return a verdict envelope with `verdict`,
-`architectural_read`, `blocking`, and capped `notes`—instead of a
+`architectural_read`, `blocking`, and capped `notes` - instead of a
 `findings[]`-only payload. The decision-record renderer
 (`gc_post_decision_record`) accepts and renders the new shape. `.ground-
 control.yaml` gains an optional `architecture.vocabulary` block that the

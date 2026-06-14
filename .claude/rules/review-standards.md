@@ -4,8 +4,8 @@
   Do not categorize issues as "defer" or "low priority" to avoid
   doing work. If the fix is straightforward, do it.
 
-- Never recommend deferring fixes because of "time constraints",
-  "scope", or "follow-up PRs". You are an LLM. You do not have
+- Never recommend deferring fixes because of "time constraints,"
+  "scope," or "follow-up PRs." You are an LLM. You do not have
   time constraints. Just do the work.
 
 - The only valid reason to stop and consult the user is if a fix

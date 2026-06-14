@@ -10,28 +10,28 @@ Proposed
 
 ## Context
 
-Ground Control is currently a headless system with two interfaces: a REST API (for programmatic access) and MCP tools (for AI agents). Both are effective for their target users, but human users — architects reviewing traceability, developers checking coverage, leads planning waves — lack a visual interface.
+Ground Control is currently a headless system with two interfaces: a REST API (for programmatic access) and MCP tools (for AI agents). Both are effective for their target users, but human users - architects reviewing traceability, developers checking coverage, leads planning waves - lack a visual interface.
 
 The absence of a UI forces humans to interact with Ground Control through:
 
-- **curl/Postman** — Functional but hostile for browsing, filtering, and cross-referencing
-- **MCP via AI agents** — Effective for targeted queries but poor for exploratory analysis and pattern recognition
-- **Raw database queries** — Dangerous and unsustainable
+- **curl/Postman** - Functional but hostile for browsing, filtering, and cross-referencing
+- **MCP via AI agents** - Effective for targeted queries but poor for exploratory analysis and pattern recognition
+- **Raw database queries** - Dangerous and unsustainable
 
 Key use cases that demand a visual interface:
 
-1. **Traceability audit** — "Is every ACTIVE requirement implemented and tested?" requires a matrix view, not scrolling through JSON arrays
-2. **Wave planning** — Seeing 80+ requirements organized by wave, status, and priority simultaneously, not 20-item paginated API responses
-3. **Dependency understanding** — The requirement DAG is inherently spatial; cycles, clusters, and critical paths are visual patterns
-4. **Health monitoring** — Coverage percentages, orphan counts, and wave progress are dashboard metrics, not individual API calls
-5. **Change investigation** — "What changed since last week?" needs a timeline with diffs, not audit table queries
+1. **Traceability audit** - "Is every ACTIVE requirement implemented and tested?" requires a matrix view, not scrolling through JSON arrays
+2. **Wave planning** - Seeing 80+ requirements organized by wave, status, and priority simultaneously, not 20-item paginated API responses
+3. **Dependency understanding** - The requirement DAG is inherently spatial; cycles, clusters, and critical paths are visual patterns
+4. **Health monitoring** - Coverage percentages, orphan counts, and wave progress are dashboard metrics, not individual API calls
+5. **Change investigation** - "What changed since last week?" needs a timeline with diffs, not audit table queries
 
 ### Constraints
 
-- Must consume the existing REST API — no direct database access from the frontend
-- Must work with project scoping (ADR-016) — all views are project-contextualized
+- Must consume the existing REST API - no direct database access from the frontend
+- Must work with project scoping (ADR-016) - all views are project-contextualized
 - Must not require a separate deployment for simple use cases (embedded or co-deployed preferred)
-- The backend team (currently one developer) must be able to build and maintain it — framework choice must optimize for productivity, not team scaling
+- The backend team (currently one developer) must be able to build and maintain it - framework choice must optimize for productivity, not team scaling
 
 ## Decision
 
@@ -45,11 +45,11 @@ Build a single-page application using React 19 with TypeScript, bundled with Vit
 | Language | TypeScript 5.x | Type safety at the UI boundary; catches API contract drift at compile time |
 | Bundler | Vite 6.x | Fast dev server, simple config, production-ready output |
 | Routing | React Router 7.x | Standard SPA routing |
-| State | TanStack Query 5.x | Server state management with caching, deduplication, background refresh — avoids manual fetch/cache boilerplate |
+| State | TanStack Query 5.x | Server state management with caching, deduplication, background refresh - avoids manual fetch/cache boilerplate |
 | Tables | TanStack Table 8.x | Headless table library; handles sorting, filtering, pagination without opinionated UI |
 | Charts | Recharts 2.x | Lightweight, composable, React-native charting for dashboard metrics |
-| Graph viz (structured) | React Flow 12.x | Explicit DAG layouts with hierarchy, custom nodes — for requirement detail local neighborhood view |
-| Graph viz (exploratory) | Sigma.js + Graphology | Force-directed graph exploration with graph algorithms, filtering, and search — for the `/graph` whole-graph view |
+| Graph viz (structured) | React Flow 12.x | Explicit DAG layouts with hierarchy, custom nodes - for requirement detail local neighborhood view |
+| Graph viz (exploratory) | Sigma.js + Graphology | Force-directed graph exploration with graph algorithms, filtering, and search - for the `/graph` whole-graph view |
 | Styling | Tailwind CSS 4.x | Utility-first CSS; fast iteration without maintaining a separate stylesheet |
 | Component lib | shadcn/ui | Copy-paste components built on Radix primitives; no library lock-in, fully customizable |
 
@@ -63,9 +63,9 @@ Browser ──► SPA (React) ──► REST API ──► Spring Boot Backend
                          (same API that MCP tools use)
 ```
 
-- **No BFF (Backend for Frontend)** — The REST API already returns the data shapes the UI needs. Adding a BFF layer doubles the API surface for no gain at this scale.
-- **TanStack Query as the data layer** — Every API call goes through TanStack Query, which handles caching, refetching, optimistic updates, and loading/error states. No Redux, no manual state management for server data.
-- **OpenAPI-generated types** — Generate TypeScript types from the Spring Boot OpenAPI spec (via `openapi-typescript`). This ensures the UI and API stay in sync at compile time.
+- **No BFF (Backend for Frontend)** - The REST API already returns the data shapes the UI needs. Adding a BFF layer doubles the API surface for no gain at this scale.
+- **TanStack Query as the data layer** - Every API call goes through TanStack Query, which handles caching, refetching, optimistic updates, and loading/error states. No Redux, no manual state management for server data.
+- **OpenAPI-generated types** - Generate TypeScript types from the Spring Boot OpenAPI spec (via `openapi-typescript`). This ensures the UI and API stay in sync at compile time.
 
 ### 3. Deployment: Embedded Static Assets
 
@@ -79,7 +79,7 @@ A Gradle task runs `npm run build` and copies the output to `resources/static/`.
 
 For development, Vite's dev server proxies `/api` requests to Spring Boot (port 8080), enabling hot reload without rebuilding the backend.
 
-**Future option**: If the frontend grows or needs CDN distribution, it can be split into a separate deployment behind the same domain. The architecture supports this without code changes — only deployment topology changes.
+**Future option**: If the frontend grows or needs CDN distribution, it can be split into a separate deployment behind the same domain. The architecture supports this without code changes - only deployment topology changes.
 
 ### 4. Core Views
 
@@ -96,7 +96,7 @@ Six views, mapped to requirements GC-Q001 through GC-Q006:
 
 ### 5. Project Context
 
-All views are scoped to a single project (per ADR-016). A project selector in the navigation bar sets the active project. The selection persists in the URL (e.g., `/projects/ground-control/requirements`) and local storage.
+All views are scoped to a single project (per ADR-016). A project selector in the navigation bar sets the active project. The selection persists in the URL (for example, `/projects/ground-control/requirements`) and local storage.
 
 When only one project exists, the selector is hidden and the project is implicit.
 
@@ -104,18 +104,18 @@ When only one project exists, the selector is hidden and the project is implicit
 
 ### Positive
 
-- Architects get a traceability matrix and dependency graph — the two views that are effectively impossible through API calls alone
-- Wave planning becomes visual — seeing all requirements by status/wave simultaneously enables better prioritization
-- Onboarding improves — new team members can explore requirements without learning API endpoints or MCP tools
-- The dashboard creates accountability — coverage gaps and orphans are visible to everyone, not just whoever remembers to run the analysis
-- Embedded deployment keeps operations simple — one JAR, one port, one process
+- Architects get a traceability matrix and dependency graph - the two views that are effectively impossible through API calls alone
+- Wave planning becomes visual - seeing all requirements by status/wave simultaneously enables better prioritization
+- Onboarding improves - new team members can explore requirements without learning API endpoints or MCP tools
+- The dashboard creates accountability - coverage gaps and orphans are visible to everyone, not just whoever remembers to run the analysis
+- Embedded deployment keeps operations simple - one JAR, one port, one process
 
 ### Negative
 
-- Frontend adds a second technology stack (React/TypeScript) to a Java backend codebase — increases the skill surface
+- Frontend adds a second technology stack (React/TypeScript) to a Java backend codebase - increases the skill surface
 - UI testing (component tests, E2E tests) adds another test layer to maintain
 - The UI will lag behind API features unless discipline is maintained on GC-A012 (Dual API Exposure) parity
-- Embedded deployment couples frontend build to backend build — CI time increases
+- Embedded deployment couples frontend build to backend build - CI time increases
 
 ### Risks
 
@@ -131,13 +131,13 @@ When only one project exists, the selector is hidden and the project is implicit
 
 ### Dependency Graph Prototype (2026-03-14)
 
-A prototype of the dependency graph view (GC-Q005) was built using Cytoscape.js + dagre layout as a single static HTML file served via nginx container. It successfully renders the full Ground Control requirement set (170+ nodes, 100+ edges) with interactive pan/zoom, node selection with neighborhood highlighting, multi-dimensional color coding (series, priority, status, wave), and switchable DAG layouts. This validates that lightweight browser-based graph rendering is sufficient for the dependency graph view and that React Flow (proposed above) is not strictly required — Cytoscape.js with dagre provides equivalent capability with zero build tooling. See `tools/roadmap-viewer/index.html`.
+A prototype of the dependency graph view (GC-Q005) was built using Cytoscape.js + dagre layout as a single static HTML file served via nginx container. It successfully renders the full Ground Control requirement set (170+ nodes, 100+ edges) with interactive pan/zoom, node selection with neighborhood highlighting, multi-dimensional color coding (series, priority, status, wave), and switchable DAG layouts. This validates that lightweight browser-based graph rendering is sufficient for the dependency graph view and that React Flow (proposed above) is not strictly required - Cytoscape.js with dagre provides equivalent capability with zero build tooling. See `tools/roadmap-viewer/index.html`.
 
 ## Related ADRs
 
-- [ADR-011](011-requirements-data-model.md) — Data model the UI visualizes
-- [ADR-013](013-java-spring-boot-rewrite.md) — Backend stack the UI consumes
-- [ADR-016](016-project-scoping.md) — Project scoping drives the project selector and view filtering
+- [ADR-011](011-requirements-data-model.md) - Data model the UI visualizes
+- [ADR-013](013-java-spring-boot-rewrite.md) - Backend stack the UI consumes
+- [ADR-016](016-project-scoping.md) - Project scoping drives the project selector and view filtering
 
 ## Related Requirements
 

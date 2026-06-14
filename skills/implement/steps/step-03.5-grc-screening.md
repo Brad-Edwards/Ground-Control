@@ -22,7 +22,7 @@ Before planning, classify the planned change surface against the project's exist
    - **Empty baseline** → verdict `no_baseline`. Skip to step 5.
    - **Change does not touch a security-relevant surface** → verdict `not_security_relevant`. Write a concise rationale (one to three sentences). Skip to step 5.
    - **Change touches a security-relevant surface** → verdict `security_relevant`. Proceed to step 4.
-4. For `security_relevant` runs only — before posting the record:
+4. For `security_relevant` runs only - before posting the record:
    - Use `gc_threat_model`, `gc_risk_scenario`, and `gc_control` to create, update, or confirm the threat-model entries and risk scenarios that the planned change affects.
    - Use the existing link tools to attach `targetType=CODE` links from the affected threat-model or risk-scenario entities to the repo-relative paths that will change.
    - Collect the UIDs of every entity created, updated, or confirmed, and every CODE link's `target_identifier`.

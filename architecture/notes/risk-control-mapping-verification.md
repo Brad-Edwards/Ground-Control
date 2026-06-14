@@ -1,4 +1,4 @@
-# GC-T003 Risk Scenario-Control Mapping — Verification Record
+# GC-T003 Risk Scenario-Control Mapping - Verification Record
 
 Issue: #824
 Requirement: GC-T003 (DRAFT, wave 4)
@@ -46,11 +46,11 @@ count; this summary line and the changelog fragment must match it.
 
 ## Clause-by-clause evidence
 
-### C1 — Bidirectional many-to-many mapping. **PARTIAL.**
+### C1 - Bidirectional many-to-many mapping. **PARTIAL.**
 
 The requirement covers two cross-products: `controls OR scoped control
 implementations` against `risk scenarios OR risk register records`. Of
-those four combinations, only one — catalog-control ↔ scenario — has
+those four combinations, only one - catalog-control ↔ scenario - has
 two-sided link infrastructure today.
 
 - **Catalog control ↔ scenario (two-sided).**
@@ -113,7 +113,7 @@ two-sided link infrastructure today.
   choice, or (c) scope GC-T003 to catalog-control endpoints only and
   note the deviation from the requirement statement.
 
-### C2 — Asset / operational-boundary context. **PARTIAL.**
+### C2 - Asset / operational-boundary context. **PARTIAL.**
 
 The asset concept is reachable, but not as a field on the mapping row
 itself.
@@ -135,7 +135,7 @@ somewhere explicit" on the mapping; "explicit" requires either a
 column on the mapping row or a structural invariant enforced by the
 service.
 
-### C3 — Objective, role, scope on the mapping. **UNSATISFIED.**
+### C3 - Objective, role, scope on the mapping. **UNSATISFIED.**
 
 The link rows have no columns for these.
 
@@ -159,10 +159,10 @@ role (this control acts as preventive for scenario X but detective
 for record Y), and mapping-specific scope (the portion of the catalog
 control that applies to this mapping endpoint) have no storage.
 Adding these requires either columns on the existing link tables or a
-dedicated mapping entity that the link tables defer to — and the
+dedicated mapping entity that the link tables defer to - and the
 endpoint shape depends on C1's scoped-implementation decision.
 
-### C4 — Methodology-specific influence. **UNSATISFIED.**
+### C4 - Methodology-specific influence. **UNSATISFIED.**
 
 No storage exists on the mapping for FAIR frequency / magnitude
 reduction factors or for qualitative likelihood / consequence reduction.
@@ -186,7 +186,7 @@ preflight (§Incumbents) names the reusable storage shape:
 `JacksonTextCollectionConverters` for an arbitrary structured payload,
 not a feature-local parser. Today there is no field to put it in.
 
-### C5 — Unmapped scenarios OR register records. **UNSATISFIED.**
+### C5 - Unmapped scenarios OR register records. **UNSATISFIED.**
 
 The requirement covers both kinds of mapping endpoint on the risk side.
 Neither has the query.
@@ -196,10 +196,10 @@ prerequisite.**
 
 1. **`link_type` filter.** Both link tables carry semantic `link_type`
    values that distinguish a mitigation/mapping from a generic
-   association. `RiskScenarioLink` uses `RiskScenarioLinkType` —
+   association. `RiskScenarioLink` uses `RiskScenarioLinkType` -
    `MITIGATED_BY` is the mitigation form; `ASSOCIATED` is not.
    `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state/RiskScenarioLinkType.java`
-   `ControlLink` uses `ControlLinkType` — `MITIGATES` and `MAPS_TO`
+   `ControlLink` uses `ControlLinkType` - `MITIGATES` and `MAPS_TO`
    are the mapping forms; `ASSOCIATED` is not.
    `backend/src/main/java/com/keplerops/groundcontrol/domain/controls/state/ControlLinkType.java`
    A scenario "associated" to a control without a mitigation link
@@ -222,7 +222,7 @@ prerequisite.**
 3. **Structural prerequisite.** The cleanest long-term answer is the
    canonical mapping owner / mechanical consistency invariant from
    recommendation 1/2. Until that lands, both filters above are a
-   stop-gap that papers over the C1 divergence risk — they reduce
+   stop-gap that papers over the C1 divergence risk - they reduce
    false positives but cannot fully detect a mitigation that exists
    only on one side when both sides should have agreed. The unmapped
    queries are therefore conditionally correct on the owner /
@@ -248,12 +248,12 @@ prerequisite.**
   `backend/src/main/java/com/keplerops/groundcontrol/domain/controls/repository/ControlLinkRepository.java:14-33`
 
 - **Register records with no mapped controls.** Today this is
-  one-sided — and the one side that exists is the control side.
+  one-sided - and the one side that exists is the control side.
   `RiskRegisterRecordRepository` has no control-mapping query at all,
   because records have no link table of their own (see C1). The
   scenario-to-record edge (`RiskScenarioLink(target_type =
   RISK_REGISTER_RECORD, link_type=REGISTERED_IN)` or similar) does
-  NOT establish control coverage of the record — that edge connects
+  NOT establish control coverage of the record - that edge connects
   a scenario to a record and has no control endpoint, so it cannot
   prove the record is mitigated by any control. Including it in the
   UNION would let a record appear "mapped" with zero linked controls,
@@ -284,13 +284,13 @@ project and optionally by asset/boundary, filtered to the mapping
 `link_type` set so generic `ASSOCIATED` rows do not mask the gap, and
 conditioned on the canonical mapping owner / consistency invariant
 from recommendation 1/2 to fully eliminate the C1 divergence risk:
-  (a) **C5a — UNION across both control↔scenario projections.**
+  (a) **C5a - UNION across both control↔scenario projections.**
   Scenarios in P that appear in NEITHER the scenario-side projection
   (`RiskScenarioLink(target_type=CONTROL, link_type=MITIGATED_BY)`)
   NOR the control-side reverse projection
   (`ControlLink(target_type=RISK_SCENARIO, link_type ∈ {MITIGATES,
   MAPS_TO})` with `target_entity_id = scenario_id`).
-  (b) **C5b — direct + optional transitive (no scenario-side
+  (b) **C5b - direct + optional transitive (no scenario-side
   shortcut).** Direct: records in P that do NOT appear as
   `target_entity_id` of any `ControlLink(target_type=RISK_REGISTER_RECORD,
   link_type ∈ {MITIGATES, MAPS_TO})`. Optional transitive (the
@@ -300,10 +300,10 @@ from recommendation 1/2 to fully eliminate the C1 divergence risk:
   `RiskScenarioLink(target_type=RISK_REGISTER_RECORD, …)` edge is
   NOT counted because it has no control endpoint.
 The preflight (§Extensibility) requires this read side be reusable by
-API, MCP, graph, and verification surfaces — not buried in one-off
+API, MCP, graph, and verification surfaces - not buried in one-off
 report logic.
 
-### C6 — Controls not mapped to any relevant scenario. **UNSATISFIED.**
+### C6 - Controls not mapped to any relevant scenario. **UNSATISFIED.**
 
 The requirement statement's C6 wording is "controls not mapped to any
 relevant scenario." Two interpretations of "relevant scenario" are
@@ -321,7 +321,7 @@ document the choice:
   workflows.
 - **Transitive-through-record interpretation.** A control is also
   "mapped to a relevant scenario" if it is mapped to a register
-  record whose `riskScenarios` set is non-empty — i.e., the
+  record whose `riskScenarios` set is non-empty - that is, the
   record-side mapping transitively covers the record's scenarios.
   Anchored in `RiskRegisterRecord.riskScenarios`.
   `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/model/RiskRegisterRecord.java:67-72`
@@ -355,7 +355,7 @@ link_type=MITIGATED_BY)`) and control-side
 (`ControlLink(target_type=RISK_SCENARIO, link_type ∈ {MITIGATES,
 MAPS_TO})`) projections to avoid false positives from C1 divergence.
 
-### C7 — GC-I013 evaluation results feed linked risk assessments. **BLOCKED-BY-DEPENDENCY.**
+### C7 - GC-I013 evaluation results feed linked risk assessments. **BLOCKED-BY-DEPENDENCY.**
 
 GC-I013 is DRAFT. The preflight (§Boundary) is explicit:
 > until a first-class control effectiveness assessment model exists,
@@ -376,21 +376,21 @@ GC-I013 is DRAFT. The preflight (§Boundary) is explicit:
 explicitly scoped against the future model). This PR does not
 implement GC-I013.
 
-### C8 — Mapping-anchored observations / evidence feed linked risk assessments. **PARTIAL.**
+### C8 - Mapping-anchored observations / evidence feed linked risk assessments. **PARTIAL.**
 
 The reusable infrastructure exists on the assessment side, but the
-GC-T003 propagation — *from a mapping into a linked assessment* — does
+GC-T003 propagation - *from a mapping into a linked assessment* - does
 not. The reviewers caught me crediting generic assessment-side storage
 toward the mapping-side feed.
 
 - **Reusable infrastructure (not the GC-T003 contract).**
   `RiskAssessmentResult` has an explicit many-to-many to `Observation`
   via `risk_assessment_result_observation`. This proves *assessments
-  can attach observations* — it does not prove *mapped observations
+  can attach observations* - it does not prove *mapped observations
   flow from a mapping into a linked assessment*.
   `RiskAssessmentResult.java:90-95`
   Evidence on an assessment is captured only as
-  `List<String> evidenceRefs` — free-form identifiers, not a typed
+  `List<String> evidenceRefs` - free-form identifiers, not a typed
   link.
   `RiskAssessmentResult.java:83-85`
 
@@ -423,7 +423,7 @@ silently drops mapping provenance.
   mapping" language drops out and observations/evidence feed
   assessments without mapping provenance. The plain
   `RiskAssessmentResult ↔ Observation` join is insufficient
-  on its own — the mapping provenance does not have to live in a
+  on its own - the mapping provenance does not have to live in a
   duplicate `Observation` model, but it does have to exist
   somewhere addressable.
   `RiskAssessmentResult.java:90-95`
@@ -449,7 +449,7 @@ Until all three decisions land, C8 reads as PARTIAL.
 `RiskScenarioLinkService.create()` validates internal targets via
 `GraphTargetResolverService.validateRiskScenarioTarget(...)` at
 `RiskScenarioLinkService.java:49-50`. `ControlLinkService.create()`
-does not call any graph target resolver — it accepts any
+does not call any graph target resolver - it accepts any
 `(targetType, targetEntityId, targetIdentifier)` triple without
 project-scope validation.
 `ControlLinkService.java:29-49`
@@ -457,17 +457,17 @@ project-scope validation.
 This is independently called out in the preflight (§Incumbents): the
 GC-T003 implementation must not model itself after the looser
 `ControlLink` behavior. The fix belongs on issue #258 alongside the
-schema work — same-project target validation is a precondition for any
+schema work - same-project target validation is a precondition for any
 mapping that wants to claim semantic consistency.
 
 ## Dependency status
 
-- **GC-I001 Control Catalog** — **ACTIVE** (verified via
+- **GC-I001 Control Catalog** - **ACTIVE** (verified via
   `gc_get_requirement`). Catalog-level control identity, objective,
   function, status, and effectiveness summary exist on `Control`.
   `Control.java:33-65` Sufficient to anchor C3's catalog side. The
   mapping-specific overlay is still needed.
-- **GC-I013 Control Effectiveness Assessment** — **DRAFT**. Blocks C7.
+- **GC-I013 Control Effectiveness Assessment** - **DRAFT**. Blocks C7.
 
 ## Recommendation to #258
 
@@ -483,7 +483,7 @@ set of GC-T003 work, in the order the preflight (§Boundary,
      and ControlLink both carry the mapping).
    - **Record-side bidirection** is one-sided today (only ControlLink
      points at records; there is no `RiskRegisterRecordLink`). Add the
-     missing side — either a `RiskRegisterRecordLink` entity or a
+     missing side - either a `RiskRegisterRecordLink` entity or a
      record-side service that reads through `ControlLinkRepository` via
      a new reverse query.
    - **Scoped control implementations** have no first-class entity.
@@ -527,7 +527,7 @@ set of GC-T003 work, in the order the preflight (§Boundary,
      `ControlLink(target_type=RISK_REGISTER_RECORD, link_type ∈
      {MITIGATES, MAPS_TO})`. The scenario-to-record edge
      (`RiskScenarioLink(target_type=RISK_REGISTER_RECORD, …)`) is
-     NOT counted — it has no control endpoint and cannot prove the
+     NOT counted - it has no control endpoint and cannot prove the
      record is mitigated. Optional transitive form (parallel to C6's
      transitive-through-record path, flowing through a real control
      at each step): also exclude records whose
@@ -550,12 +550,12 @@ set of GC-T003 work, in the order the preflight (§Boundary,
 
 6. **Close the target-validation asymmetry** between
    `ControlLinkService.create()` and
-   `RiskScenarioLinkService.create()` by routing both — and any new
-   record-side service — through `GraphTargetResolverService`.
+   `RiskScenarioLinkService.create()` by routing both - and any new
+   record-side service - through `GraphTargetResolverService`.
 
 7. **Define the mapping-to-assessment observation / evidence feed
    (C8).** Three sub-decisions, all required:
-   - **Mapping-owned provenance edge** (or explicit C8 narrowing) —
+   - **Mapping-owned provenance edge** (or explicit C8 narrowing) -
      because the existing `RiskAssessmentResult ↔ Observation` join
      records assessment↔observation but not mapping↔observation, it
      cannot carry which mapping supplied a given observation. Add a
@@ -563,17 +563,17 @@ set of GC-T003 work, in the order the preflight (§Boundary,
      edge) so retraction, re-scoping, and per-mapping validation are
      possible. Alternatively, narrow C8 in the requirement statement
      so the "anchored on a mapping" phrasing is dropped.
-   - **Propagation trigger** — specify how mapping-anchored
+   - **Propagation trigger** - specify how mapping-anchored
      observations / evidence reach the `RiskAssessmentResult` linked
      to the same scenario or record (service-layer push, read-time
      join over the new provenance relation, or shared graph
      projection). This is what `ControlLinkService.create()` and
      `RiskScenarioLinkService.create()` lack today.
-   - **Evidence shape** — keep `evidenceRefs` as strings (and scope
+   - **Evidence shape** - keep `evidenceRefs` as strings (and scope
      GC-T003 around that) or upgrade to a typed `evidence_link` that
      can also carry mapping provenance.
 
 8. **Defer C7** wire to assessments until GC-I013 lands.
 
 This list is consistent with the preflight guardrails; it is not a
-design — design lives on #258 once the work is taken on.
+design - design lives on #258 once the work is taken on.

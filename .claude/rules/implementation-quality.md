@@ -13,7 +13,7 @@ paths:
   implementations, or defer work.
 
 - Never recommend deferring a fix or improvement "for later" or
-  "in a follow-up". If something is broken or missing, fix it now.
+  "in a follow-up." If something is broken or missing, fix it now.
   Tech debt has zero justification when the fix is within reach.
 
 - Always check your implementation against the full requirement

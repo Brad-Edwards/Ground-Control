@@ -154,7 +154,7 @@ flowchart TB
   S15[15 · Transition in-scope requirements DRAFT → ACTIVE]
   S16[16 · Reconcile traceability against diff]
   S17[17 · Verify GC state landed]
-  S18[18 · Report—DO NOT MERGE]
+  S18[18 · Report - DO NOT MERGE]
   End([User reviews PR and merges])
 
   Start --> S1
@@ -215,7 +215,7 @@ claude --print
        --allowedTools "Read Glob Grep"
 ```
 
-with the prompt on stdin and `ANTHROPIC_API_KEY` **stripped from the subprocess env**. The strip is intentional: when the env var is set, `claude` uses it preferentially over the host's OAuth session; the env-var-anchored account is often empty (set up but never funded) while the OAuth account is what the user actually uses. Stripping forces OAuth—the canonical user-driven auth path that also powers the parent /implement run.
+with the prompt on stdin and `ANTHROPIC_API_KEY` **stripped from the subprocess env**. The strip is intentional: when the env var is set, `claude` uses it preferentially over the host's OAuth session; the env-var-anchored account is often empty (set up but never funded) while the OAuth account is what the user actually uses. Stripping forces OAuth - the canonical user-driven auth path that also powers the parent /implement run.
 
 **Operator quickstart:**
 1. Run `claude login` on the host once (credentials persist in `~/.claude`).
@@ -227,7 +227,7 @@ with the prompt on stdin and `ANTHROPIC_API_KEY` **stripped from the subprocess 
 
 The legacy `Skill("review-tests")` path was removed in #884 v2. Existing host installs at `~/.claude/skills/review-tests/` and `~/.codex/prompts/review-tests.md` are orphaned and can be deleted manually; `bin/install-skills.sh` no longer installs them.
 - **Step 15 transitions each in-scope requirement to `ACTIVE`.** This MUST happen BEFORE Step 16's traceability reconciliation: the Ground Control API enforces `IMPLEMENTS-only-on-ACTIVE`, so reconciling first against a still-DRAFT requirement silently fails. Forward-looking requirements (the diff documents/references but does not deliver) stay DRAFT and use `DOCUMENTS` links instead in Step 16.
-- **Step 16 is traceability reconciliation, not link creation.** It walks every added/modified/renamed/deleted file in the diff, finds existing IMPLEMENTS/TESTS links pointing at each, and updates/deletes/creates links so the Ground Control graph matches reality after the change. Runs with zero in-scope requirements still reconcile, because a bug fix may have touched files linked to other requirements whose links are now stale. Deleting the sole implementation of a requirement is escalated to the user rather than silently removing the link. When the diff *finalizes* a requirement (for example, an ADR clarification or changelog fragment that ships the requirement) but the structural implementation lives in pre-existing files shipped under a sibling requirement, Step 16 backfills IMPLEMENTS links onto those pre-existing artifacts of record. The backfill is bounded by the requirement's concrete subject matter—not a whole-repo scan.
+- **Step 16 is traceability reconciliation, not link creation.** It walks every added/modified/renamed/deleted file in the diff, finds existing IMPLEMENTS/TESTS links pointing at each, and updates/deletes/creates links so the Ground Control graph matches reality after the change. Runs with zero in-scope requirements still reconcile, because a bug fix may have touched files linked to other requirements whose links are now stale. Deleting the sole implementation of a requirement is escalated to the user rather than silently removing the link. When the diff *finalizes* a requirement (for example, an ADR clarification or changelog fragment that ships the requirement) but the structural implementation lives in pre-existing files shipped under a sibling requirement, Step 16 backfills IMPLEMENTS links onto those pre-existing artifacts of record. The backfill is bounded by the requirement's concrete subject matter - not a whole-repo scan.
 - **Step 17** re-verifies Ground Control state matches reality after Steps 15–16. These three steps run LAST, after every reviewer has signed off, so Ground Control never runs ahead of code that hasn't passed review. Zero in-scope requirements → Step 15 is a no-op; Step 16 still reconciles; Step 17 still audits.
 - **Every downstream failure loops back to step 9** (stage + commit + push), which is the single re-entry point for fix commits. The completion gate (step 8), the pre-push codex review (step 8.5), and the GC verify (step 17) are the loops that target earlier steps, because they correspond to local-only / pre-PR / GC-only state respectively.
 
@@ -262,7 +262,7 @@ evidence belongs to the ADR-014 verifier/runtime-evidence adapter world.
 
 ## Per-step routing, tool surfaces, and telemetry (ADR-036)
 
-Per ADR-036 the `/implement` skill carries three cost-side optimizations layered on top of the GC-O007 gate model (which is unchanged on the contract—one human touchpoint at PR merge, ADR-029's configurable pre-push Codex cap [default 1 cycle per #906; per-repo override via `workflow.codex_review.pre_push_cap`], zero deferral, four-phase structure).
+Per ADR-036 the `/implement` skill carries three cost-side optimizations layered on top of the GC-O007 gate model (which is unchanged on the contract - one human touchpoint at PR merge, ADR-029's configurable pre-push Codex cap [default 1 cycle per #906; per-repo override via `workflow.codex_review.pre_push_cap`], zero deferral, four-phase structure).
 
 | Optimization | What it changes | Opt-in knob |
 |--------------|-----------------|-------------|
@@ -270,13 +270,13 @@ Per ADR-036 the `/implement` skill carries three cost-side optimizations layered
 | Durable-record MCP tools | `gc_post_decision_record` (Step 6.5 cycle decisions), `gc_post_final_report` (Step 19 summary), `gc_render_pr_body` (Step 9 PR body) replace agent free-prose with deterministic structured-input renderers. All three filter sensitive content, post under a structured marker family, and reject `decision: "defer"` server-side. `gc_post_final_report` also requires `/implement` callers to pass `plain_english_outcome`, which renders an Outcome section before the structured evidence. | Always available; SKILL calls them unconditionally once the tools are present |
 | Traceability + post-merge close gates (#1058/#1156) | `gc_assert_traceability_reconciled` (Step 17) re-fetches each in-scope requirement and its IMPLEMENTS / TESTS links from the Ground Control REST API and posts a `traceability_reconciled` phase marker on success; `gc_post_final_report` (Step 19) refuses to publish without that marker; `gc_close_issue_after_merge` (Step 20 / Phase E) verifies the linked PR's `merged_at` non-null AND state `MERGED` before closing the issue, idempotent on already-closed issues. After a successful close, the tool returns a best-effort `next_issue_recommendation` or an explicit no-recommendation/failure reason. The /quickfix lane is requirement-free and exempt from the traceability and outcome gate; a bounded `override_traceability_gate=true` + `override_traceability_reason` escape lets the user authorize a phase-marker skip with a quoted rationale. | Always on for `/implement`; `lane: "quickfix"` opts out of the traceability and outcome prerequisites |
 | GRC reconciliation gate (#1100, v1; ADR-058 target v2) | `gc_assert_grc_reconciled` (Step 17, after `gc_assert_traceability_reconciled`) reads the GRC screening record written by `gc_post_grc_screening` (Step 3.5) from the issue thread and verifies it server-side: for `security_relevant` verdicts it resolves each entity ref (threat model, risk scenario, control) via the REST API and confirms each claimed `CODE` link exists on the owner entity; for `not_security_relevant` / `no_baseline` v1 verdicts the gate passes immediately. ADR-058 evolves this to computed `impact_set` / `gap_set` / `stale_set` coverage: a missing baseline is a gap set to address, and completion verifies required coverage, controls, efficacy tests, or authorized dispositions rather than only verifying what the v1 record claimed. On success it posts the `grc_reconciled` phase marker. `gc_post_final_report` (Step 19) now requires **both** `traceability_reconciled` **and** `grc_reconciled` markers before publishing. The /quickfix lane is exempt from the gate. The assertion has no per-tool override; a user-authorized skip of the completion-gate prerequisite is taken at `gc_post_final_report`'s phase override, which bypasses both markers together. | Always on for `/implement`; `lane: "quickfix"` opts out; a user-authorized skip is taken at the final-report phase override |
-| Per-step telemetry | `gc_log_step_telemetry` writes one JSONL line per routed step to `.gc/telemetry/<issue>-<sanitized-branch>.jsonl` (gitignored, repo-relative, containment-validated). Operational measurement only—never workflow state. The tool refuses with `telemetry_disabled` when the opt-in knob is off; the agent prose is not the gate. Summarizer reports wall time + token counts (when present) per step and per model; dollar-cost translation is future work. Target: `make implement-cost-summary`. | `.ground-control.yaml` → `telemetry.enabled` (default `false`) |
+| Per-step telemetry | `gc_log_step_telemetry` writes one JSONL line per routed step to `.gc/telemetry/<issue>-<sanitized-branch>.jsonl` (gitignored, repo-relative, containment-validated). Operational measurement only - never workflow state. The tool refuses with `telemetry_disabled` when the opt-in knob is off; the agent prose is not the gate. Summarizer reports wall time + token counts (when present) per step and per model; dollar-cost translation is future work. Target: `make implement-cost-summary`. | `.ground-control.yaml` → `telemetry.enabled` (default `false`) |
 
 Each new tool is Temporal-shaped (deterministic, structured-input/output, no LLM call) so GC-O009 inherits them as activities when the Temporal workflow lands.
 
 ## Review Pipeline
 
-One mandatory pre-implementation architecture pass, then a single pre-push codex review pass (Step 6.5), then test-quality review before the user sees the PR. The post-push codex review (former Step 12) was removed by issue #804—the canonical codex pass is the pre-push one, which catches everything codex would normally flag while collapsing the asymmetric "post-push finding → guaranteed CI/SonarCloud roundtrip" cost. Merge-commit drift relative to base is the responsibility of CI (compile/tests/integration) and SonarCloud (quality), not a separate codex pass.
+One mandatory pre-implementation architecture pass, then a single pre-push codex review pass (Step 6.5), then test-quality review before the user sees the PR. The post-push codex review (former Step 12) was removed by issue #804 - the canonical codex pass is the pre-push one, which catches everything codex would normally flag while collapsing the asymmetric "post-push finding → guaranteed CI/SonarCloud roundtrip" cost. Merge-commit drift relative to base is the responsibility of CI (compile/tests/integration) and SonarCloud (quality), not a separate codex pass.
 
 | Stage | What it catches | How it runs |
 |-------|-----------------|-------------|
@@ -284,7 +284,7 @@ One mandatory pre-implementation architecture pass, then a single pre-push codex
 | SonarCloud | Coverage, code smells, duplication, security hotspots, open issues on the PR | CI `sonar` job waits for the quality gate, then `tools/sonar/assert_no_new_issues.py` fails on any open issue in the new-code leak period |
 | Trivy (advisory) | Container image vulnerabilities, Dockerfile/IaC misconfigurations, in-image secrets | CI job; SARIF artifact `trivy-sarif` on the workflow run page; non-blocking |
 | OSV-scanner (advisory) | CVEs in Java/Gradle dependencies (read from `backend/gradle.lockfile`) | CI job; SARIF artifact `osv-scanner-sarif` on the workflow run page; non-blocking |
-| Codex review (pre-push, Step 6.5) | Fitness for purpose, architectural soundness, maintainability, extensibility, security, established patterns, consistency with the larger codebase. Codex returns structured findings; the MCP server posts a verbatim findings record to the resolved issue thread from the host side; the coding agent dispatches on the returned `next_action` (re-invoke only on `fix_findings_and_reinvoke`; on `fix_findings_then_summarize_and_escalate` fix + escalate without re-invoke). There is no PR yet at Step 6.5, so no inline PR comments are written by the SKILL—inline anchored comments only happen if a direct caller invokes `gc_codex_review` post-push (with a `pr_number`), which the SKILL no longer drives (issue #804). | `gc_codex_review` (`uncommitted=true`); MCP posts the issue-thread findings record |
+| Codex review (pre-push, Step 6.5) | Fitness for purpose, architectural soundness, maintainability, extensibility, security, established patterns, consistency with the larger codebase. Codex returns structured findings; the MCP server posts a verbatim findings record to the resolved issue thread from the host side; the coding agent dispatches on the returned `next_action` (re-invoke only on `fix_findings_and_reinvoke`; on `fix_findings_then_summarize_and_escalate` fix + escalate without re-invoke). There is no PR yet at Step 6.5, so no inline PR comments are written by the SKILL - inline anchored comments only happen if a direct caller invokes `gc_codex_review` post-push (with a `pr_number`), which the SKILL no longer drives (issue #804). | `gc_codex_review` (`uncommitted=true`); MCP posts the issue-thread findings record |
 | `gc_test_quality_review` (Step 6.6) | Assertion-free tests, mock-only assertions, integration-as-unit, tests that can't detect regressions | `gc_test_quality_review` MCP tool (shells out to `claude --print --model claude-sonnet-4-6` by default; full mechanism in `architecture/notes/test-quality-review-engine.md`) |
 
 **Async execution (issue #937).** The codex review, codex architecture preflight, and test-quality review tools each spawn a child process (`codex exec` / `claude --print`) that legitimately runs for several minutes. Run synchronously, a single MCP tool-call blocked past the MCP client's per-call timeout; the client abandoned the call and the orphaned child left the workflow with no result handle (issue #893). All five tools (`gc_codex_architecture_preflight`, `gc_codex_review`, `gc_codex_review_cycle`, `gc_test_quality_review`, `gc_test_quality_review_cycle`) now take an opt-in `async` flag (default `false`; synchronous behavior unchanged for direct callers). With `async: true` the tool starts a background job and returns `{ok, status: "running", job_id}` immediately; the new `gc_codex_job` tool polls for the result envelope (`status: "done"` carries the full review result under `result`) or cancels a stuck job (cancel aborts an `AbortController` whose signal kills the child, so nothing is orphaned). The `/implement` step files (2.5 / 6.5 / 6.6) drive the start-then-poll loop. Client-side, `.claude/settings.json` sets `MCP_TOOL_TIMEOUT` / `MCP_TIMEOUT` so long-running MCP tools (including `gc_watch_ci_run` and `gc_watch_sonar_analysis`) have headroom. Full design in ADR-036 (amendments).
@@ -296,9 +296,9 @@ All preflight/review stages operate under the same rule: **fix everything, defer
 ## Guardrails
 
 ### Deny Rules (`~/.claude/settings.json`)
-- `Bash(gh pr merge*)`—Claude cannot merge PRs
-- `Bash(gh api */merge*)`—Claude cannot merge via API
-- `Bash(git merge *)`—Claude cannot merge branches
+- `Bash(gh pr merge*)` - Claude cannot merge PRs
+- `Bash(gh api */merge*)` - Claude cannot merge via API
+- `Bash(git merge *)` - Claude cannot merge branches
 
 ### Attribution (`~/.claude/settings.json`)
 ```json
@@ -316,21 +316,21 @@ After editing a hook file under `.claude/hooks/` in the repo, re-run `scripts/bo
 
 One user-level hook is deliberately NOT in the repo: `~/.claude/hooks/block-break-system-packages.sh`. It's a generic pip/apt safety gate unrelated to the Ground-Control workflow, so it stays host-local and `bootstrap-claude-workflow.sh` leaves it alone.
 
-#### Stop Hook—`verify-implementation.sh`
+#### Stop Hook - `verify-implementation.sh`
 Blocks Claude from completing, but **only when `/implement` was invoked in the current session**. Scoped by process ID (`$PPID`) so concurrent Claude windows on the same branch don't interfere.
 
 Universal checks (all repos):
-- Changelog fragment missing (when source files changed)—the hook requires a valid fragment under `changelog.d/<issue>.<type>.md` (or `+<slug>.<type>.md`), type ∈ `security`/`added`/`changed`/`deprecated`/`removed`/`fixed`. CI-only diffs (only `.github/workflows/`) and docs-only diffs (only docs/architecture/skills/metadata) are skipped. Refactors under application source still file a fragment (no "pure refactor" carve-out—enforcement is path-based). Direct `CHANGELOG.md` edits do NOT satisfy a source-changing diff. The source-path predicate and fragment vocabulary mirror `tools/policy/checks.py`—the `hook-matches-policy-vocabulary` and `hook-gates-on-application-source-predicate` policy tests keep them in sync.
+- Changelog fragment missing (when source files changed) - the hook requires a valid fragment under `changelog.d/<issue>.<type>.md` (or `+<slug>.<type>.md`), type ∈ `security`/`added`/`changed`/`deprecated`/`removed`/`fixed`. CI-only diffs (only `.github/workflows/`) and docs-only diffs (only docs/architecture/skills/metadata) are skipped. Refactors under application source still file a fragment (no "pure refactor" carve-out - enforcement is path-based). Direct `CHANGELOG.md` edits do NOT satisfy a source-changing diff. The source-path predicate and fragment vocabulary mirror `tools/policy/checks.py` - the `hook-matches-policy-vocabulary` and `hook-gates-on-application-source-predicate` policy tests keep them in sync.
 
 Project-specific checks (`.claude/hooks/verify-extra.sh`, sourced if present):
 - shared repo-native policy script (`bin/policy`) over the changed-file set
 
-The hook no longer enforces `/review` and `/security-review`—those were removed from the `/implement` skill in favor of `gc_codex_review` + `gc_test_quality_review`. The `/implement` skill itself is the enforcement point for review coverage; the hook only guards the changelog signal + repo policy.
+The hook no longer enforces `/review` and `/security-review` - those were removed from the `/implement` skill in favor of `gc_codex_review` + `gc_test_quality_review`. The `/implement` skill itself is the enforcement point for review coverage; the hook only guards the changelog signal + repo policy.
 
-#### Skill Call Logging—`log-skill-call.sh`
-PostToolUse hook on `Skill`—writes JSONL to `/tmp/claude-skill-log/<PID>.jsonl` (per-session, not per-branch). The Stop hook previously read this log to verify `/review` and `/security-review` were actually invoked; it's still wired up for forward compat in case we reintroduce skill-based checks. Stale logs (>24 h) are auto-pruned.
+#### Skill Call Logging - `log-skill-call.sh`
+PostToolUse hook on `Skill` - writes JSONL to `/tmp/claude-skill-log/<PID>.jsonl` (per-session, not per-branch). The Stop hook previously read this log to verify `/review` and `/security-review` were actually invoked; it's still wired up for forward compat in case we reintroduce skill-based checks. Stale logs (>24 h) are auto-pruned.
 
-#### Git Merge Guard—`git-merge-guard.py`
+#### Git Merge Guard - `git-merge-guard.py`
 PreToolUse hook on `Bash`. The user owns every actual merge. Blocked unconditionally: `git merge`, `gh pr merge`, `git reset --hard`, and a plain `git push --force` / `git push -f`. A `git push --force-with-lease` to a *feature* branch is allowed (that's the rebase-feature-branch-onto-base-then-update-the-PR flow), but a force-push of any kind to a ref named `main` or `dev` is blocked.
 
 ### Repo-Native Policy Layer
@@ -449,8 +449,8 @@ Pass `--dry-run` to the `/integrate` skill to see what the queue would contain w
 
 Workflow skills live in **two** repo roots, each with its own installer. The two name sets are disjoint, so the two install paths can never resolve the same name to different definitions:
 
-- **`skills/<name>/SKILL.md`**—agent-neutral skills shared by Claude Code *and* Codex (per ADR-027). `bin/install-skills.sh` installs each into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and (legacy alias) `~/.codex/prompts/<name>.md`.
-- **`.claude/skills/<name>/SKILL.md`**—Claude-Code-only skills. `scripts/bootstrap-claude-workflow.sh` symlinks each into `~/.claude/skills/<name>` (see **Tooling** below).
+- **`skills/<name>/SKILL.md`** - agent-neutral skills shared by Claude Code *and* Codex (per ADR-027). `bin/install-skills.sh` installs each into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and (legacy alias) `~/.codex/prompts/<name>.md`.
+- **`.claude/skills/<name>/SKILL.md`** - Claude-Code-only skills. `scripts/bootstrap-claude-workflow.sh` symlinks each into `~/.claude/skills/<name>` (see **Tooling** below).
 
 In both cases this repo is the source of truth: edit the `SKILL.md`, commit, and the change takes effect for the next Claude Code (or Codex) session on a host whose install paths are symlinks into the repo. Re-run the relevant installer after a host reset.
 
@@ -458,7 +458,7 @@ In both cases this repo is the source of truth: edit the `SKILL.md`, commit, and
 |-------|-----------|---------|
 | `/implement <issue-number \| uid>` | `skills/` | Full end-to-end: plan through PR-ready |
 | `/integrate` | `skills/` | Approved-PR integration manager: rebase, gate, verify, and push a queue of approved PRs (prepare-only; see GC-O011) |
-| `gc_test_quality_review` | `mcp/ground-control/` | Test-quality review—MCP tool (per #884 v2; replaces the prior `/review-tests` Skill) |
+| `gc_test_quality_review` | `mcp/ground-control/` | Test-quality review - MCP tool (per #884 v2; replaces the prior `/review-tests` Skill) |
 | `/ship` | `.claude/skills/` | Ship an already-committed branch (CI, reviews, fix, report) |
 | `/stage` | `.claude/skills/` | Stage files + pre-commit loop |
 | `/gh-workflow-monitor` | `.claude/skills/` | Monitor GitHub Actions workflow runs |
@@ -471,7 +471,7 @@ Repo-local scripts live under `scripts/` (bash) and `bin/` (Python). The ones yo
 
 | Command | Purpose |
 |---------|---------|
-| `scripts/bootstrap-claude-workflow.sh` | Wire the Claude-Code-only surfaces from `~/.claude/`: the `.claude/skills/<name>/` skills (symlinked—edit takes effect live) and the `WORKFLOW_HOOKS` allowlist under `.claude/hooks/` (**copied** as real files so runtime does not depend on which branch this repo is checked out to). Idempotent; safe to re-run. Pass `--dry-run` to preview, `--force` to clobber non-matching host content. The hook allowlist is explicit, so generic host-local hooks (for example, `block-break-system-packages.sh`) are left alone. Re-run after editing a hook file in the repo to push the new version into `~/.claude/hooks/`. Does **not** touch the `skills/<name>/` agent-neutral skills—that's `bin/install-skills.sh`'s job. |
+| `scripts/bootstrap-claude-workflow.sh` | Wire the Claude-Code-only surfaces from `~/.claude/`: the `.claude/skills/<name>/` skills (symlinked - edit takes effect live) and the `WORKFLOW_HOOKS` allowlist under `.claude/hooks/` (**copied** as real files so runtime does not depend on which branch this repo is checked out to). Idempotent; safe to re-run. Pass `--dry-run` to preview, `--force` to clobber non-matching host content. The hook allowlist is explicit, so generic host-local hooks (for example, `block-break-system-packages.sh`) are left alone. Re-run after editing a hook file in the repo to push the new version into `~/.claude/hooks/`. Does **not** touch the `skills/<name>/` agent-neutral skills - that's `bin/install-skills.sh`'s job. |
 | `bin/install-skills.sh` | Install the agent-neutral `skills/<name>/` skills (currently just `/implement`; the prior `/review-tests` was removed in #884 v2 in favor of the `gc_test_quality_review` MCP tool) into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and `~/.codex/prompts/<name>.md` (legacy alias). Symlinks by default (`--copy` to hard-copy, `--dry-run` to preview, `--no-codex` to skip the Codex targets, `--force` to overwrite divergent host content). Idempotent; refuses to clobber unmanaged host targets without `--force`. |
 | `scripts/pack-sync.sh` | Trigger the `pack-registry-sync` GitHub workflow against this repo. |
 | `bin/policy` | Run the repo-native policy guardrails (ADR sync, controller/MCP/docs parity, migration policy, PR-body checks). Invoked by `make policy`, pre-commit, and CI. |
@@ -489,12 +489,12 @@ bin/install-skills.sh                  # skills/* (agent-neutral) into ~/.claude
 ```
 
 `scripts/bootstrap-claude-workflow.sh` walks:
-- `.claude/skills/*/`—every skill directory gets a matching `~/.claude/skills/<name>` **symlink**. Editing a skill in the repo takes effect immediately in the next session.
-- `.claude/hooks/`—only the hooks listed in the script's `WORKFLOW_HOOKS` allowlist (`git-merge-guard.py`, `block-defer-language.py`, `log-skill-call.sh`, `verify-implementation.sh`) are installed as **real file copies** at `~/.claude/hooks/<name>`. Editing a hook in the repo requires re-running this script to push the new version out. Repo-scoped hooks (`protect_files.sh`, `verify-extra.sh`) stay where they are because they're wired via `$CLAUDE_PROJECT_DIR` in `.claude/settings.json`, not via `~/.claude/`.
+- `.claude/skills/*/` - every skill directory gets a matching `~/.claude/skills/<name>` **symlink**. Editing a skill in the repo takes effect immediately in the next session.
+- `.claude/hooks/` - only the hooks listed in the script's `WORKFLOW_HOOKS` allowlist (`git-merge-guard.py`, `block-defer-language.py`, `log-skill-call.sh`, `verify-implementation.sh`) are installed as **real file copies** at `~/.claude/hooks/<name>`. Editing a hook in the repo requires re-running this script to push the new version out. Repo-scoped hooks (`protect_files.sh`, `verify-extra.sh`) stay where they are because they're wired via `$CLAUDE_PROJECT_DIR` in `.claude/settings.json`, not via `~/.claude/`.
 
-`bin/install-skills.sh` symlinks each `skills/<name>/` directory (currently `/implement`; the prior `/review-tests` was removed in #884 v2—see `architecture/notes/test-quality-review-engine.md`) into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and `~/.codex/prompts/<name>.md`. Pass `--no-codex` if Codex isn't on the host.
+`bin/install-skills.sh` symlinks each `skills/<name>/` directory (currently `/implement`; the prior `/review-tests` was removed in #884 v2 - see `architecture/notes/test-quality-review-engine.md`) into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and `~/.codex/prompts/<name>.md`. Pass `--no-codex` if Codex isn't on the host.
 
-If a pre-existing host file or directory has local changes that are NOT in the repo, the script refuses to clobber it and exits non-zero—re-run with `--force` only after you've confirmed the repo copy is the version you want. Already-correct entries are left alone.
+If a pre-existing host file or directory has local changes that are NOT in the repo, the script refuses to clobber it and exits non-zero - re-run with `--force` only after you've confirmed the repo copy is the version you want. Already-correct entries are left alone.
 
 ## Test tooling beyond unit tests (#931)
 
@@ -504,7 +504,7 @@ complementary test-quality signals:
 | Signal | Purpose | How to run |
 |--------|---------|-----------|
 | **Mutation testing (Pitest)** | Directly measures whether the unit tests detect breakage. A high mutation-kill score is a stronger signal than line coverage. | `make test-quality` |
-| **Property-based testing (jqwik)** | Already wired on five domain surfaces—cycle detection, finding-status state machine, impact analysis, audit-status state machine, requirement-status transitions. Property tests find edge cases TDD misses by construction. | `make test` (runs alongside the unit suite) |
+| **Property-based testing (jqwik)** | Already wired on five domain surfaces - cycle detection, finding-status state machine, impact analysis, audit-status state machine, requirement-status transitions. Property tests find edge cases TDD misses by construction. | `make test` (runs alongside the unit suite) |
 | **Dependency / SBOM scanning (OSV + Trivy)** | OSV-scanner runs against `backend/gradle.lockfile` in CI. Findings are advisory, **except**: any new CRITICAL CVE fails the job (added in #931). Trivy scans the deploy image + IaC, advisory-only. | `.github/workflows/ci.yml` (`osv-scanner` job) |
 
 Pitest's initial thresholds are intentionally loose (60% mutation, 0% coverage)

@@ -28,7 +28,7 @@ implementation plan.
 - Prefer a curated default tool catalog plus an explicit expanded catalog
   parameter over many near-identical MCP server entrypoints. A split server can
   be a packaging option later, but the selection seam should be data-driven so
-  adding a future "risk", "documents", or "admin" catalog is configuration, not
+  adding a future "risk," "documents," or "admin" catalog is configuration, not
   copy-paste registration code.
 
 ## Cross-Cutting Concerns to Reuse

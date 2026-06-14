@@ -26,7 +26,7 @@ of truth per ADR-027.
 - Treat reverse artifact lookup as the existing reconciliation primitive:
   `gc_get_traceability_by_artifact` / `GET /requirements/traceability/by-artifact`.
   Do not add another repo scanner, database table, or workflow schema for link
-  discovery. The MCP surface answers "is path X already linked?" — it does not
+  discovery. The MCP surface answers "is path X already linked?" - it does not
   surface unknown candidates from a requirement statement, so the agent's own
   bounded `git ls-files` / `git grep` (NOT `grep -r`) against the requirement's
   named subsystems and identifiers is what feeds candidates into the

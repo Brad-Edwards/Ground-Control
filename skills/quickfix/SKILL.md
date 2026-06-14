@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 Canonical, agent-neutral implementation of the Ground Control `/quickfix` workflow. A purpose-built fast lane for **straightforward, lower-risk fixes** that don't warrant the full `/implement` ceremony (preflight, plan post, AI-assisted reviews, final-report tool, requirement transitions). Drops the ceremony designed for requirement-driven multi-clause work; keeps every mechanical guardrail the repo enforces.
 
-**Sibling to `skills/implement/SKILL.md`.** This skill cross-references the canonical full workflow at every step rather than duplicating prose—the contract surfaces (branch shape, in-progress signal, changelog fragment, PR-title rules, `gc_render_pr_body`, CI/SonarCloud, no-deferral, user-owns-merge) are identical. The only differences are the dropped ceremony.
+**Sibling to `skills/implement/SKILL.md`.** This skill cross-references the canonical full workflow at every step rather than duplicating prose - the contract surfaces (branch shape, in-progress signal, changelog fragment, PR-title rules, `gc_render_pr_body`, CI/SonarCloud, no-deferral, user-owns-merge) are identical. The only differences are the dropped ceremony.
 
 ## When to pick `/quickfix` vs `/implement`
 
@@ -18,7 +18,7 @@ Judgment call, gating heuristic:
 - **`/quickfix`** when the fix is obvious from the issue description, touches **< ~10 files**, has **no architectural footprint**, and the agent has no open design questions. Examples: parser bug, doc typo, SonarCloud finding cleanup, dependency bump, lint fix, narrow refactor with no behavior change, "the reviewer told me exactly what to do" follow-up.
 - **`/implement`** when the issue carries a `## Requirements` section (UIDs in scope), or the diff is wider than ~10 files, or the design is unsettled, or there's any cross-aggregate blast radius. Anything that benefits from a codex production-readiness pass + test-quality review.
 
-The user picks the lane explicitly at invocation time. The issue is the durable anchor—a `/quickfix` run can be upgraded to `/implement` mid-flight by re-invoking `/implement <same-issue>`.
+The user picks the lane explicitly at invocation time. The issue is the durable anchor - a `/quickfix` run can be upgraded to `/implement` mid-flight by re-invoking `/implement <same-issue>`.
 
 ## Per-step model routing (ADR-036)
 
@@ -37,7 +37,7 @@ The `<issue-number>` argument is a plain GitHub issue number, a `#`-prefixed int
 
 After resolving the issue, **fetch its body and reject if it carries a `## Requirements` section with one or more UID bullets** (same parse rule `/implement` Step 1 uses). A requirement-scoped issue must go through `/implement` so the status transitions and traceability reconciliation run; `/quickfix` would intentionally skip them and ship the issue closed with the requirement lifecycle untouched. On a `## Requirements`-bearing issue, STOP and tell the user to re-invoke `/implement <issue-number>`.
 
-An empty `## Requirements` section (heading present, zero UID bullets) is acceptable—it documents intent that the issue is requirement-free.
+An empty `## Requirements` section (heading present, zero UID bullets) is acceptable - it documents intent that the issue is requirement-free.
 
 ---
 
@@ -47,11 +47,11 @@ An empty `## Requirements` section (heading present, zero UID bullets) is accept
 
 **Reuses the issue-anchored mechanics of `skills/implement/SKILL.md` Step 1**, but **NOT** its UID classification / requirement-resolution path. Same `gc_get_repo_ground_control_context` call, same `gh issue develop --checkout --base {cfg.workflow.base_branch|default dev} --name <issue>-<short-slug>` invocation, same branch-shape post-check (≤ 50 chars, ASCII-only, `[a-z0-9-]`), same LinkedBranch repair when renaming, same in-progress label + pickup comment.
 
-**Diverges from `/implement` Step 1 on input classification.** `/quickfix` accepts only issue references (plain integer, `#`-prefixed integer, or `issue:N`). If the user passed a requirement UID (anything matching the `<letters>-<letters/digits>` pattern), STOP and tell them to use `/implement <uid>`—the UID lane requires the requirement lifecycle (status transitions, traceability reconciliation) that `/quickfix` intentionally drops. Do NOT invoke the `/implement` UID-to-issue shim from this lane.
+**Diverges from `/implement` Step 1 on input classification.** `/quickfix` accepts only issue references (plain integer, `#`-prefixed integer, or `issue:N`). If the user passed a requirement UID (anything matching the `<letters>-<letters/digits>` pattern), STOP and tell them to use `/implement <uid>` - the UID lane requires the requirement lifecycle (status transitions, traceability reconciliation) that `/quickfix` intentionally drops. Do NOT invoke the `/implement` UID-to-issue shim from this lane.
 
 After the issue is fetched, run the **hard precondition** from the Invocation section above: parse the issue body's `## Requirements` section; reject if it has one or more UID bullets; an empty section is acceptable.
 
-Do NOT duplicate the rest of the Step 1 prose here—read `skills/implement/SKILL.md` Step 1 for the branch/label/pickup mechanics in full; this skill defers to it verbatim for those.
+Do NOT duplicate the rest of the Step 1 prose here - read `skills/implement/SKILL.md` Step 1 for the branch/label/pickup mechanics in full; this skill defers to it verbatim for those.
 
 ### Step Q2.5: NO Codex Architecture Preflight
 
@@ -59,7 +59,7 @@ Do NOT duplicate the rest of the Step 1 prose here—read `skills/implement/SKIL
 
 ### Step Q3: Light Codebase Coverage
 
-Read the issue body + thread (`gh issue view <issue-number> --comments`). Glance at the cross-cutting concerns (`cfg.cross_cutting_concerns.description`) to use existing helpers rather than re-implementing them. Skip the full ADR / coding-standards / knowledge-base walk that `/implement` Step 3 does—for fix-shaped work it's overhead.
+Read the issue body + thread (`gh issue view <issue-number> --comments`). Glance at the cross-cutting concerns (`cfg.cross_cutting_concerns.description`) to use existing helpers rather than re-implementing them. Skip the full ADR / coding-standards / knowledge-base walk that `/implement` Step 3 does - for fix-shaped work it's overhead.
 
 If the cross-cutting concerns inventory turns up something non-trivial (a canonical incumbent the fix should build on, an existing helper that does this exact thing already), use it. The "use existing helpers" rule is not optional just because the ceremony is lighter.
 
@@ -71,7 +71,7 @@ If during implementation the diff grows unexpectedly large (10+ files) or surfac
 
 ### Step Q4.4: Implement
 
-Apply the fix. TDD is **encouraged** but not policed for `/quickfix` runs—for a one-file parser bug the test that catches it usually drops in alongside the fix without a formal red-green-refactor cycle. The existing test suite + Step Q6 completion gate are the safety net.
+Apply the fix. TDD is **encouraged** but not policed for `/quickfix` runs - for a one-file parser bug the test that catches it usually drops in alongside the fix without a formal red-green-refactor cycle. The existing test suite + Step Q6 completion gate are the safety net.
 
 The full TDD discipline from `skills/implement/SKILL.md` Step 4.4 (write failing test first, watch it fail for the right reason, make it pass with minimum code, refactor with green, repeat per clause) applies whenever the fix introduces new behavior. It's just not enforced as a per-clause invariant for fix-shaped work.
 
@@ -89,7 +89,7 @@ The full TDD discipline from `skills/implement/SKILL.md` Step 4.4 (write failing
 
 1. Completion gate command exits successfully (`cfg.workflow.completion_command` or `cfg.workflow.test_command` fallback).
 2. Changelog fragment present for source-changing diffs (`changelog.d/<issue>.<type>.md`).
-3. Clause/criterion mapping done. For `/quickfix` runs the issue title + body + any user comments are the acceptance contract (`/quickfix` runs are requirement-free by definition—if the issue has a `## Requirements` section, the user should be using `/implement` instead).
+3. Clause/criterion mapping done. For `/quickfix` runs the issue title + body + any user comments are the acceptance contract (`/quickfix` runs are requirement-free by definition - if the issue has a `## Requirements` section, the user should be using `/implement` instead).
 4. Documentation-only carve-out re-validation (path check + content check). Same rules as `/implement`.
 
 Do NOT move to Phase C until all four pass.
@@ -123,7 +123,7 @@ When `--review` is absent, both steps skip. The skill still posts no decision re
 
 ### Step Q9: Create PR
 
-**Identical to `skills/implement/SKILL.md` Step 9**—same `gc_render_pr_body` call (with `requirement_uids: []` since `/quickfix` runs are requirement-free), same PR-title validation rules (single conventional-commit type + lowercase subject + per-repo override via `workflow.pr_title`), same `Closes #<issue-number>` wiring through the renderer.
+**Identical to `skills/implement/SKILL.md` Step 9** - same `gc_render_pr_body` call (with `requirement_uids: []` since `/quickfix` runs are requirement-free), same PR-title validation rules (single conventional-commit type + lowercase subject + per-repo override via `workflow.pr_title`), same `Closes #<issue-number>` wiring through the renderer.
 
 The renderer's `change_class` is typically `source` for `/quickfix` runs; `doc-only` for pure documentation fixes; `source+migration` is unusual for `/quickfix` and is a signal that the run probably wanted `/implement` instead.
 
@@ -139,7 +139,7 @@ If `cfg.sonarcloud` is null, skip; proceed to Step Q18.
 
 ### Steps Q15–Q17: NO Requirement Transitions or Traceability Reconciliation
 
-`/quickfix` runs are scoped to fix-shaped work, not requirement-shaped work—no `gc_transition_status` calls, no `gc_create_traceability_link` reconciliation against in-scope UIDs. The `in_scope_requirements[]` list is by definition empty for a `/quickfix` run.
+`/quickfix` runs are scoped to fix-shaped work, not requirement-shaped work - no `gc_transition_status` calls, no `gc_create_traceability_link` reconciliation against in-scope UIDs. The `in_scope_requirements[]` list is by definition empty for a `/quickfix` run.
 
 **Exception: link maintenance on touched files.** If the diff modifies a file that has an existing IMPLEMENTS / TESTS link to some requirement and the behavior moved, update that link per `skills/implement/SKILL.md` Step 16's deletion-and-renaming rules (same `gc_get_traceability_by_artifact` + `gc_delete_traceability_link` + `gc_create_traceability_link` pattern). Default for a typical `/quickfix` run is no link changes; the fix preserves behavior, and the existing links remain valid.
 
@@ -160,10 +160,10 @@ The slim payload should populate:
 - `plain_english_outcome`: optional for quickfix. Omit unless the lightweight close comment needs a separate outcome line; never use it to bypass the `summary` requirement.
 - `reviews`: one entry per reviewer that ran (for example, `{reviewer: "codex", summary: "1 cycle, 0 findings"}`). Empty array when `--review` was not supplied.
 - `requirements`: empty array (`/quickfix` is requirement-free by precondition; if link maintenance touched UIDs per the Q15–Q17 exception, mention them in `summary` rather than fabricating a requirement entry).
-- `pr_number`: the **open** PR number from Step Q9—the comment is posted before the user-owned merge, so do NOT wait for the PR to be merged before calling this. The PR URL is rendered into the comment body by the tool.
+- `pr_number`: the **open** PR number from Step Q9 - the comment is posted before the user-owned merge, so do NOT wait for the PR to be merged before calling this. The PR URL is rendered into the comment body by the tool.
 - `ci_status` / `sonar_status`: `"green"` / `"passed"` for a successful run; `"skipped"` only when `cfg.sonarcloud` is null.
 
-**You MUST NOT merge the PR.** Same rule as `/implement` Step 19. The user reviews and merges. Step Q19 runs **before** the merge; any prose suggesting a "merged PR link" is incorrect—at this point the PR is still open by contract.
+**You MUST NOT merge the PR.** Same rule as `/implement` Step 19. The user reviews and merges. Step Q19 runs **before** the merge; any prose suggesting a "merged PR link" is incorrect - at this point the PR is still open by contract.
 
 ---
 
@@ -186,13 +186,13 @@ Every mechanical guardrail the repo enforces. Adding to this list is a `bin/poli
 
 Each drop is intentional and reversible mid-flight by re-invoking `/implement <same-issue>`.
 
-- **Codex architecture preflight** (`gc_codex_architecture_preflight`)—the design is settled at intake.
-- **Plan post + plan-phase marker** (`gc_post_implementation_plan`)—diff is the plan; PR is the durable record.
-- **Pre-push codex review** + **pre-push test-quality review** by default—off unless `--review` is supplied. Both still respect the configured cap (default 1) when enabled.
+- **Codex architecture preflight** (`gc_codex_architecture_preflight`) - the design is settled at intake.
+- **Plan post + plan-phase marker** (`gc_post_implementation_plan`) - diff is the plan; PR is the durable record.
+- **Pre-push codex review** + **pre-push test-quality review** by default - off unless `--review` is supplied. Both still respect the configured cap (default 1) when enabled.
 - **Final-report tool full payload.** `gc_post_final_report` still runs (so its sensitive-content / no-defer / reserved-marker scrubs protect the public close comment on every driver), but with a slim payload: empty `requirements`, empty-or-one-line-per-reviewer `reviews`, no `traceability` block. The structured tool boundary is the only driver-neutral filter; a direct `gh issue comment` would bypass it.
 - **Implement-only outcome requirement.** Issue #1156 makes `plain_english_outcome` mandatory for `/implement` Step 19, but quickfix remains exempt because its closeout is intentionally lightweight and requirement-free.
-- **Requirement status transitions** (`gc_transition_status`)—`/quickfix` runs are requirement-free by definition.
-- **Traceability reconciliation** (`gc_create_traceability_link` / `gc_delete_traceability_link`)—only the touched-file link-maintenance path runs (and even that is rare for a typical `/quickfix` run).
+- **Requirement status transitions** (`gc_transition_status`) - `/quickfix` runs are requirement-free by definition.
+- **Traceability reconciliation** (`gc_create_traceability_link` / `gc_delete_traceability_link`) - only the touched-file link-maintenance path runs (and even that is rare for a typical `/quickfix` run).
 
 ## Upgrading mid-flight
 
@@ -205,12 +205,12 @@ The user picks. Do not silently upgrade.
 
 ## References
 
-- `skills/implement/SKILL.md`—canonical full workflow this skill mirrors.
-- ADR-021 (Gated Agentic Development Loop)—the lane contract this builds on.
-- ADR-029 (Issue-Thread Gate Model)—durable record + decision-record contract.
-- ADR-031 (Codex Review Stopping Model)—the cap-1 default + override semantics this skill inherits.
-- ADR-036 (Per-Step Routing / Tool Surfaces / Telemetry)—routing tier semantics + MCP-tool surfaces.
-- `architecture/notes/quickfix-workflow-lane-preflight.md`—preflight design context for this skill.
+- `skills/implement/SKILL.md` - canonical full workflow this skill mirrors.
+- ADR-021 (Gated Agentic Development Loop) - the lane contract this builds on.
+- ADR-029 (Issue-Thread Gate Model) - durable record + decision-record contract.
+- ADR-031 (Codex Review Stopping Model) - the cap-1 default + override semantics this skill inherits.
+- ADR-036 (Per-Step Routing / Tool Surfaces / Telemetry) - routing tier semantics + MCP-tool surfaces.
+- `architecture/notes/quickfix-workflow-lane-preflight.md` - preflight design context for this skill.
 
 ## Amendments
 
@@ -229,7 +229,7 @@ jobs: `gc_codex_review` / `gc_test_quality_review` are called with
 `async: true` and the job is polled via the new `gc_codex_job` tool, exactly
 as the /implement Step 6.5 / 6.6 prose this lane defers to now describes. The
 cap-1 default, `override_cap` semantics, and the `gc_post_decision_record`
-contract this lane inherits are unchanged—async only changes how the agent
+contract this lane inherits are unchanged - async only changes how the agent
 waits for a review cycle's result, so the multi-minute child process is not
 orphaned by the MCP client's tool-call timeout (issue #893). See ADR-036
 (amendments) for the job model.

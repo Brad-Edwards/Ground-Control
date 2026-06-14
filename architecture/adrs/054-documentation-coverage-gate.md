@@ -8,6 +8,8 @@ accepted
 
 2026-05-23
 
+> **Style sync for issue #751 (2026-06-14):** Repository-wide Vale cleanup normalized punctuation in documentation prose. This ADR's documentation coverage gate stays the same.
+
 ## Context
 
 Changes that modify workflow behavior, MCP tool surfaces, config parsing,

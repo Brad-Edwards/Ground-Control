@@ -1,6 +1,6 @@
 # ADR-051: SonarCloud gate recalibration (proposed)
 
-- Status: PROPOSED — no live gate change shipped with this ADR
+- Status: PROPOSED - no live gate change shipped with this ADR
 - Date: 2026-05-19
 - Issue: #931
 
@@ -9,22 +9,22 @@
 The /implement workflow's Step 11 enforces a "drive SonarCloud to zero" rule:
 every open finding on the PR (regardless of severity, type, or pre-existing
 state) must be fixed before merge. Recent commit history shows this rule
-generates 1–3 "Fix SonarCloud findings (cycle N)" commits per PR — by
+generates 1–3 "Fix SonarCloud findings (cycle N)" commits per PR - by
 inspection, the heaviest single CI/Sonar cost generator in the workflow.
 
 The empirical observation is that the gate is partly miscalibrated:
 
-- **High-signal findings** — security hotspots, bugs, vulnerabilities,
-  cognitive-complexity violations, BLOCKER/CRITICAL smells — track real defect
+- **High-signal findings** - security hotspots, bugs, vulnerabilities,
+  cognitive-complexity violations, BLOCKER/CRITICAL smells - track real defect
   risk. Driving these to zero is correct.
-- **Long-tail INFO/MINOR code smells** — naming conventions, nullable-return
+- **Long-tail INFO/MINOR code smells** - naming conventions, nullable-return
   micro-patterns, very short methods, "consider replacing X with Y"
-  recommendations — are marginal signal. Many of them are pre-existing on the
+  recommendations - are marginal signal. Many of them are pre-existing on the
   PR's diff area (Sonar reports them on lines the PR touched even when the
   PR did not introduce them). Fixing them generates churn for low defect-risk
   payoff.
 
-The current rule also lacks a sharp coverage signal — coverage is part of
+The current rule also lacks a sharp coverage signal - coverage is part of
 the Sonar quality gate but the rule "no open issues" is the bind, not
 coverage.
 
@@ -46,7 +46,7 @@ The proposed recalibrated gate:
 | Coverage | Sonar quality gate | **Diff coverage ≥ 80% on changed Java files** |
 
 The "no new MINOR/INFO smells in diff" rule still drives the long tail toward
-zero over time — every PR introduces nothing new — without forcing the
+zero over time - every PR introduces nothing new - without forcing the
 current PR to clear unrelated pre-existing smells the diff didn't introduce.
 
 ## Consequences
@@ -59,7 +59,7 @@ If activated:
 - Pre-existing MINOR/INFO smell debt is acknowledged but not fixed in-line
   with feature work. Either (a) the workflow gains a separate "Sonar
   cleanup" lane that periodically clears the long tail, or (b) the
-  debt is tolerated indefinitely. Most mature teams pick (a) — a periodic
+  debt is tolerated indefinitely. Most mature teams pick (a) - a periodic
   cleanup PR that touches no functional code.
 - Diff coverage becomes a first-class gate. The current rule treats coverage
   as part of the quality-gate-pass-through; making it explicit lets us
@@ -107,9 +107,9 @@ If not activated:
 
 ## References
 
-- Issue #931 — Recalibrate AI review + preflight toward principal-engineer
+- Issue #931 - Recalibrate AI review + preflight toward principal-engineer
   judgment. Section "Test tooling → SonarCloud gate recalibration."
-- ADR-029 — Issue thread gate model (the cycle-bloat problem this ADR
+- ADR-029 - Issue thread gate model (the cycle-bloat problem this ADR
   contributes to addressing).
-- ADR-036 — Per-step routing + telemetry (operational cost reduction
+- ADR-036 - Per-step routing + telemetry (operational cost reduction
   framework this ADR sits inside).

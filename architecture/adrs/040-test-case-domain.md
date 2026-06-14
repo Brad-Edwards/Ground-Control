@@ -8,20 +8,20 @@
 
 Ground Control needs a first-class test management subsystem (see TC-001
 through TC-00X in Wave 1). TC-001 introduces the entity that anchors that
-subsystem: the **test case** — a reusable, version-controlled, project-scoped
+subsystem: the **test case** - a reusable, version-controlled, project-scoped
 definition of an intended test (manual, automated, or hybrid).
 
 Several adjacent aggregates already exist in the domain layer:
 
-- `ControlTest` (ADR-039 control verification subsystem) — an executed
+- `ControlTest` (ADR-039 control verification subsystem) - an executed
   control-evidence record with methodology, tester identity, conclusion,
   and a test date. It records *what happened during a control evaluation*,
   not *the definition of a reusable test*.
 - `VerificationResult` (formal-methods prover output for requirements and
   traceability links).
-- `TraceabilityLink` with `ArtifactType.TEST` — pointers into external or
+- `TraceabilityLink` with `ArtifactType.TEST` - pointers into external or
   repo-local test code, not first-class test rows.
-- `Requirement` — owns product requirements, MoSCoW priority
+- `Requirement` - owns product requirements, MoSCoW priority
   (`MUST/SHOULD/COULD`), and the `DRAFT/ACTIVE/DEPRECATED/ARCHIVED`
   lifecycle.
 
@@ -70,7 +70,7 @@ preflight guardrail, this ADR introduces a separate enum.
 
 A dedicated `TestCasePriority` enum with values `CRITICAL`, `HIGH`, `MEDIUM`,
 `LOW`. This matches the convention in TestRail, Zephyr Scale, Xray, qTest,
-PractiTest, and Azure Test Plans — every best-of-breed test-management tool
+PractiTest, and Azure Test Plans - every best-of-breed test-management tool
 referenced in the TC-001 rationale uses a severity-ordered vocabulary, not
 MoSCoW. Reusing `Requirement.Priority` (`MUST/SHOULD/COULD`) would
 mismatch every domain peer and would force test-management UI copy to read
@@ -88,7 +88,7 @@ Stored as `Long estimatedDurationSeconds` (column
 `estimated_duration_seconds BIGINT`, nullable). One explicit, unambiguous
 representation per the preflight extensibility guidance. Java code that needs
 a `Duration` object converts at the boundary; clients render minutes/hours as
-appropriate. Free-form strings ("about 5 minutes") are not supported — that
+appropriate. Free-form strings ("about 5 minutes") are not supported - that
 is the parsing hazard the preflight explicitly warned against.
 
 ### Rich text
@@ -102,7 +102,7 @@ sanitized renderer lands, the existing fields are forward-compatible.
 ### UID + project scoping
 
 Test cases are project-scoped. The `(project_id, uid)` pair is unique. Lookups
-by UID alone are not exposed — every read/write/list path includes
+by UID alone are not exposed - every read/write/list path includes
 `projectId`, matching the established `Control` and `Requirement` patterns
 (ADR-016).
 
@@ -124,7 +124,7 @@ plug into without restructuring the entity.
 **Not graph-visible yet.** Graph projection (`GraphEntityType.TEST_CASE`,
 mixed-graph traversal) is deferred. When test cases need to participate in
 the cross-aggregate graph alongside requirements/controls/risks, a follow-on
-requirement adds the projection contributor — TC-001 alone has no inbound
+requirement adds the projection contributor - TC-001 alone has no inbound
 graph traffic to support.
 
 **MCP surface ships with the controller.** The `controller-parity` policy
@@ -151,7 +151,7 @@ parity policy mandates.
 list gains exactly one entry (`test_case_audit`). The pre-existing gap for
 `control_audit` / `control_link_audit` (introduced by V046/V047, never
 back-filled into the retention list) is flagged on the issue thread and
-deferred to a separate targeted PR — fixing two unrelated audit-retention
+deferred to a separate targeted PR - fixing two unrelated audit-retention
 omissions while introducing a new domain expands the blast radius of this
 change for no reviewability win.
 

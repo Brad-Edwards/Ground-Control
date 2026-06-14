@@ -53,7 +53,7 @@ evidence, they are not the control-to-risk relationship.
   `risk_assessment_result_observation` join only records which observations an
   assessment includes; it carries no mapping provenance. If GC-T003 keeps the
   "observations and evidence anchored on a mapping" phrasing, the implementation
-  must add a mapping-owned provenance edge (e.g., `mapping_observation` /
+  must add a mapping-owned provenance edge (for example, `mapping_observation` /
   `mapping_evidence`, or an equivalent graph projection) on top of the existing
   storage so per-mapping retraction, re-scoping, and validation are possible.
   Alternatively, narrow C8 so observations/evidence feed assessments without

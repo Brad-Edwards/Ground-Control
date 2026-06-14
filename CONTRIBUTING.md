@@ -6,7 +6,7 @@
 
 - Java 21 (Eclipse Temurin recommended)
 - Docker Engine 24+ and Docker Compose v2
-- Gradle 8.x (via included wrapper — no manual install needed)
+- Gradle 8.x (via included wrapper - no manual install needed)
 
 ### Local Development Setup
 
@@ -32,7 +32,7 @@ make dev                           # Spring Boot on :8000
 
 | Target | Description |
 |--------|-------------|
-| `make rapid` | Format + compile, no tests or static analysis (~1s warm) |
+| `make rapid` | Format + compile, no tests or static analysis (~1 second warm) |
 | `make test` | Run unit tests (no static analysis) |
 | `make check` | Full build + tests + static analysis + coverage (CI-equivalent) |
 | `make verify` | check + integration tests + OpenJML ESC |
@@ -48,9 +48,9 @@ Use `make rapid` for the inner dev loop. Use `make check` before pushing.
 
 ## Branch Strategy
 
-- `main` — production-ready, protected
-- `dev` — integration branch, all PRs target this
-- `feature/*` — feature branches, branched from `dev`
+- `main` - production-ready, protected
+- `dev` - integration branch, all PRs target this
+- `feature/*` - feature branches, branched from `dev`
 
 ## Coding Standards
 
@@ -89,7 +89,7 @@ api/ -> domain/ <- infrastructure/
 ```
 
 - `domain/` has **zero** Spring web imports (no controllers, no HTTP)
-- `api/` depends on `domain/` — never imports `infrastructure/`
+- `api/` depends on `domain/` - never imports `infrastructure/`
 - `infrastructure/` implements interfaces defined in `domain/`
 
 Enforced by ArchUnit tests in `ArchitectureTest.java`.
@@ -117,9 +117,9 @@ backend/src/test/java/com/keplerops/groundcontrol/
 ```
 
 - **JUnit 5** for unit and integration tests
-- **jqwik** for property-based testing (state machines, enums) — tagged `@Tag("slow")`
+- **jqwik** for property-based testing (state machines, enums) - tagged `@Tag("slow")`
 - **Testcontainers** for integration tests (PostgreSQL 16, Apache AGE)
 - **ArchUnit** for architecture rule enforcement
 - **Repo policy checks** via `make policy` for ADR/workflow parity, controller docs/MCP parity, migration companion updates, and PR body requirements
 - Test names describe behavior: `archiveFromDraftFails`, not `testArchiveMethod`
-- Tests are independent — no shared mutable state (except ordered E2E tests using `@TestInstance(PER_CLASS)`)
+- Tests are independent - no shared mutable state (except ordered E2E tests using `@TestInstance(PER_CLASS)`)

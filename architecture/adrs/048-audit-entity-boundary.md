@@ -10,16 +10,16 @@ Accepted
 
 ## Context
 
-GC-U001 requires a first-class `Audit` aggregate. An audit is the governed record of a structured review activity — internal, external, regulatory, or special — producing a scoped, lifecycle-managed, and traceable audit plan and report. Audit activity is the source of `Finding` records, but the two must remain separate: a finding is a deficiency or observation claim with its own lifecycle; an audit is the bounded activity that may produce findings and is also associated with risk records, evidence, and compliance frameworks.
+GC-U001 requires a first-class `Audit` aggregate. An audit is the governed record of a structured review activity - internal, external, regulatory, or special - producing a scoped, lifecycle-managed, and traceable audit plan and report. Audit activity is the source of `Finding` records, but the two must remain separate: a finding is a deficiency or observation claim with its own lifecycle; an audit is the bounded activity that may produce findings and is also associated with risk records, evidence, and compliance frameworks.
 
 Existing adjacent aggregates that must not be conflated with `Audit`:
 
 - `Finding` captures a specific deficiency or issue claim with severity, remediation tracking, and owner assignment.
 - `EvidenceArtifact` captures a single, immutable piece of collected evidence with its own derivation and supersession lifecycle.
-- `RiskScenario` and `RiskRegisterRecord` carry risk framing and register governance — not the audit activity itself.
+- `RiskScenario` and `RiskRegisterRecord` carry risk framing and register governance - not the audit activity itself.
 - `domain/audit/` (package) and `/api/v1/audit/**` (path) already belong to the Envers audit trail service; the new aggregate must live at `domain/audits/` and `/api/v1/audits/**` to avoid collisions.
 
-Five link substrates (`AssetLinkTargetType.AUDIT`, `FindingLinkTargetType.AUDIT`, `RiskScenarioLinkTargetType.AUDIT_RECORD`) had `AUDIT` reserved as an unmodeled external placeholder. Until `Audit` exists as a first-class entity, those reverse-lookup paths cannot be made consistent — links referencing audits stored a string in `targetIdentifier` and bypassed project-scoped existence checks.
+Five link substrates (`AssetLinkTargetType.AUDIT`, `FindingLinkTargetType.AUDIT`, `RiskScenarioLinkTargetType.AUDIT_RECORD`) had `AUDIT` reserved as an unmodeled external placeholder. Until `Audit` exists as a first-class entity, those reverse-lookup paths cannot be made consistent - links referencing audits stored a string in `targetIdentifier` and bypassed project-scoped existence checks.
 
 Without an explicit architectural decision, the likely failure modes are:
 
@@ -63,9 +63,9 @@ The lifecycle uses the same enum-transition pattern as `FindingStatus`, `TestPla
 
 Three sibling link substrates carried `AUDIT` / `AUDIT_RECORD` as external placeholder values before this ADR:
 
-- `AssetLinkTargetType.AUDIT` — promoted to internal; `GraphTargetResolverService.validateAssetTarget` now enforces project-scoped existence via `AuditRepository.existsByIdAndProjectId`.
-- `FindingLinkTargetType.AUDIT` — promoted to internal; `validateFindingTarget` enforces the same check.
-- `RiskScenarioLinkTargetType.AUDIT_RECORD` — promoted to internal (enum value name kept `AUDIT_RECORD`); `validateRiskScenarioTarget` enforces the same check.
+- `AssetLinkTargetType.AUDIT` - promoted to internal; `GraphTargetResolverService.validateAssetTarget` now enforces project-scoped existence via `AuditRepository.existsByIdAndProjectId`.
+- `FindingLinkTargetType.AUDIT` - promoted to internal; `validateFindingTarget` enforces the same check.
+- `RiskScenarioLinkTargetType.AUDIT_RECORD` - promoted to internal (enum value name kept `AUDIT_RECORD`); `validateRiskScenarioTarget` enforces the same check.
 
 `ControlLinkTargetType` and `ThreatModelLinkTargetType` have no `AUDIT` value and are unaffected.
 

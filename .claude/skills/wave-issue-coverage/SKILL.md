@@ -1,6 +1,6 @@
 ---
 name: wave-issue-coverage
-description: For each DRAFT requirement in a given Ground Control wave (or all waves), ensure a GitHub issue covers it and is bidirectionally linked. Use when the user asks to "cover wave N requirements with issues", "back-fill issues for draft requirements", or similar. Requires the Ground Control MCP and `gh` CLI.
+description: For each DRAFT requirement in a given Ground Control wave (or all waves), ensure a GitHub issue covers it and is bidirectionally linked. Use when the user asks to "cover wave N requirements with issues," "back-fill issues for draft requirements," or similar. Requires the Ground Control MCP and `gh` CLI.
 ---
 
 # Wave Issue Coverage
@@ -9,14 +9,14 @@ Back-fill GitHub issue coverage for DRAFT Ground Control requirements in a given
 
 ## Inputs
 
-- **wave**: integer wave number (e.g. `1`, `2`, `3`) OR the literal string `all`
+- **wave**: integer wave number (for example `1`, `2`, `3`) OR the literal string `all`
   - `all` → process every wave that has DRAFT requirements, smallest wave first
 
 ## Preconditions
 
 1. Read `.ground-control.yaml` at the repo root via `gc_get_repo_ground_control_context` to obtain:
-   - `project` — Ground Control project identifier
-   - `github_repo` — `owner/repo` for `gh` calls
+   - `project` - Ground Control project identifier
+   - `github_repo` - `owner/repo` for `gh` calls
    These values are passed to every MCP and `gh` call in this workflow. Do not hard-code them.
 2. The GC MCP server (`mcp__ground-control__*`) must be available.
 3. `gh auth status` must be authenticated with write access to `github_repo`.
@@ -37,12 +37,12 @@ Pick based on the size of the work list:
 
 | Count | Tracker |
 |---|---|
-| ≤ 25 | `TaskCreate` — one task per requirement, processed in order |
+| ≤ 25 | `TaskCreate` - one task per requirement, processed in order |
 | > 25 | A temp file at `/tmp/wave-issue-coverage-<wave>-<timestamp>.md` with a checkbox per requirement; update inline as each completes |
 
-For the temp-file path, use a single in-progress `TaskCreate` task ("Process wave N coverage — see temp file") so the user still sees forward motion in their TaskList.
+For the temp-file path, use a single in-progress `TaskCreate` task ("Process wave N coverage - see temp file") so the user still sees forward motion in their TaskList.
 
-### 3. Process sequentially — DO NOT parallelize
+### 3. Process sequentially - DO NOT parallelize
 
 For each requirement, in order:
 
@@ -61,18 +61,18 @@ For each requirement, in order:
    - **No relevant issue** → create a new issue (step 6).
 
 5. **Link existing issue + update body**
-   - If GC has no link to the issue yet, call `gc_create_traceability_link` with `link_type=DOCUMENTS` (DRAFT requirements reject `IMPLEMENTS` — see Notes).
+   - If GC has no link to the issue yet, call `gc_create_traceability_link` with `link_type=DOCUMENTS` (DRAFT requirements reject `IMPLEMENTS` - see Notes).
    - Read the current issue body; if it does not already have a `## Requirements` section, prepend one:
      ```markdown
      ## Requirements
 
-     - <UID> — <Requirement Title>
+     - <UID> - <Requirement Title>
      ```
      If it has one but the UID is missing, add the bullet to the existing list. Save via `gh issue edit <n> --body-file <tempfile>`.
    - Apply labels (step 7).
 
 6. **Create new issue**
-   - Call `gc_create_github_issue` with `uid=<UID>`, `project=<project>`, `repo=<github_repo>`, `extra_body="## Requirements\n\n- <UID> — <Title>"`, and `labels=[...]` (step 7 list).
+   - Call `gc_create_github_issue` with `uid=<UID>`, `project=<project>`, `repo=<github_repo>`, `extra_body="## Requirements\n\n- <UID> - <Title>"`, and `labels=[...]` (step 7 list).
    - The MCP tool will return a warning that the auto-link failed because the requirement is DRAFT (it tries `IMPLEMENTS`). Manually create the link with `gc_create_traceability_link` using `link_type=DOCUMENTS`.
 
 7. **Tag the issue**
@@ -96,7 +96,7 @@ For each requirement, in order:
 
 ### 4. Report back
 
-Single short summary: how many requirements processed, how many already had coverage, how many issues created. Do NOT enumerate everything done — the user will read the TaskList or temp file if they want detail.
+Single short summary: how many requirements processed, how many already had coverage, how many issues created. Do NOT enumerate everything done - the user will read the TaskList or temp file if they want detail.
 
 ## Notes
 
@@ -106,7 +106,7 @@ Single short summary: how many requirements processed, how many already had cove
 - **Don't invent labels**: if a topic label doesn't exist in `gh label list`, skip it rather than creating it. The only label this skill creates is `wave-<N>` when missing.
 - **Idempotency**: re-running this skill on the same wave should be a no-op for already-covered requirements. The presence of a `GITHUB_ISSUE` traceability link AND a `## Requirements` section listing the UID AND `requirement` + `wave-<N>` labels means there is nothing to do; move on.
 
-## Quick reference — MCP calls
+## Quick reference - MCP calls
 
 ```text
 gc_get_repo_ground_control_context(repo_path=<absolute repo path>)

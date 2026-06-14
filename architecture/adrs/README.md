@@ -21,7 +21,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 
 | ADR | Title | Status |
 |-----|-------|--------|
-| [000](000-template.md) | ADR Template | — |
+| [000](000-template.md) | ADR Template | - |
 | [001](001-django-backend.md) | Python 3.12+ with Django and django-ninja for Backend | Superseded by ADR-013 |
 | [002](002-postgresql-database.md) | PostgreSQL as Primary Database | Accepted |
 | [003](003-design-by-contract.md) | Design by Contract with icontract | Superseded by ADR-013 |

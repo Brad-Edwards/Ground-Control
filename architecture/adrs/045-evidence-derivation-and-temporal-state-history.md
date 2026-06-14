@@ -20,7 +20,7 @@ The codebase already owns the input layers:
 
 - `Observation` (GC-M015) is a `@Audited`, time-stamped state fact about an asset, with `findLatestByAssetId(now)` as the current-state projection and `findByAssetId` as the full ordered history.
 - `ControlTest` (GC-I012 / ADR-039) is the per-execution control evidence artifact.
-- `ControlEffectivenessAssessment` (GC-I013 / ADR-039) is the per-control assurance conclusion — multiple rows over time form the historical assurance series, ordered by `assessedAt DESC`.
+- `ControlEffectivenessAssessment` (GC-I013 / ADR-039) is the per-control assurance conclusion - multiple rows over time form the historical assurance series, ordered by `assessedAt DESC`.
 - `VerificationResult` (ADR-014) is the prover/tool evidence record for a requirement target.
 - `RiskAssessmentResult` is the methodology-scoped risk conclusion.
 - `Finding` (GC-V001 / ADR-038) is the governed deficiency record.
@@ -80,9 +80,9 @@ The `sources` list is persisted as JSON in a single TEXT column via a new `Evide
 - Internal kinds (`OBSERVATION`, `CONTROL_TEST`, `CONTROL_EFFECTIVENESS_ASSESSMENT`, `VERIFICATION_RESULT`, `RISK_ASSESSMENT_RESULT`, `FINDING`) require `sourceEntityId` to resolve to a project-scoped row in the corresponding repository. `sourceIdentifier` must be null. Cross-project references fail closed with `NotFoundException` (code `evidence_source_target_not_found`).
 - External kinds (`ATTESTATION`, `EXTERNAL`) require a non-blank `sourceIdentifier`. `sourceEntityId` must be null.
 
-`role` is free text (e.g., `"primary"`, `"supporting"`) preserved on the artifact for provenance. It is not validated semantically.
+`role` is free text (for example, `"primary"`, `"supporting"`) preserved on the artifact for provenance. It is not validated semantically.
 
-Mirroring the `FindingLink` target convention keeps the source-reference seam parameterized by data rather than by controller branches: adding a new internal source kind requires extending `EvidenceSourceKind`, mapping it in the service's existence-check switch, and updating the graph projection — no new entity, no new resolver, no new controller route.
+Mirroring the `FindingLink` target convention keeps the source-reference seam parameterized by data rather than by controller branches: adding a new internal source kind requires extending `EvidenceSourceKind`, mapping it in the service's existence-check switch, and updating the graph projection - no new entity, no new resolver, no new controller route.
 
 ### 4. Append-only enforcement
 
@@ -94,7 +94,7 @@ The controller exposes no PUT and no DELETE. The only post-create mutation is `P
 
 Envers records every revision (including the single supersede write), so the audit history of any one artifact tells the full story without the canonical row being mutated to represent a new fact. There is no in-place edit path and no soft-delete; consumers that want a corrected summary publish a new artifact and supersede.
 
-The append-only contract is the API-boundary half of clause C2 of GC-M016 ("without overwriting prior state"); the service-layer state check on supersede is the second half. The database carries no shape-level guard — the service is the single enforcement point.
+The append-only contract is the API-boundary half of clause C2 of GC-M016 ("without overwriting prior state"); the service-layer state check on supersede is the second half. The database carries no shape-level guard - the service is the single enforcement point.
 
 ### 5. Graph integration via the existing mixed-graph projection
 
@@ -106,7 +106,7 @@ The append-only contract is the API-boundary half of clause C2 of GC-M016 ("with
 
 No bespoke evidence-graph endpoint, no direct AGE writes from the controller or service. JPA remains the source of truth; the graph is the read-side projection that makes cross-source queries ("which artifacts cite Observation X?") traversable.
 
-This ADR does not promote the `EVIDENCE` constant in `FindingLinkTargetType`, `AssetLinkTargetType`, `ControlLinkTargetType`, `RiskScenarioLinkTargetType`, or `ThreatModelLinkTargetType` from external to internal. Those substrates encode a separate inbound-link consistency rule (ADR-038) whose graduation is a one-place edit per substrate against `validateFindingTarget` / `validateAssetTarget` / etc. plus the corresponding `*GraphProjectionContributor` — independent of GC-M016's derivation semantics.
+This ADR does not promote the `EVIDENCE` constant in `FindingLinkTargetType`, `AssetLinkTargetType`, `ControlLinkTargetType`, `RiskScenarioLinkTargetType`, or `ThreatModelLinkTargetType` from external to internal. Those substrates encode a separate inbound-link consistency rule (ADR-038) whose graduation is a one-place edit per substrate against `validateFindingTarget` / `validateAssetTarget` / etc. plus the corresponding `*GraphProjectionContributor` - independent of GC-M016's derivation semantics.
 
 ### 6. Three-layer read contract
 
@@ -133,7 +133,7 @@ The MCP `gc_query` allowlist (`mcp/ground-control/gc-query.js`) gains `/api/v1/e
 ### Positive
 
 - The three GC-M016 layers (current / historical / summary) are addressable at separate API endpoints that consumers can wire to without ambiguity.
-- Summarized evidence is durable, audited, and never silently overwritten — the supersede chain makes prior conclusions traceable.
+- Summarized evidence is durable, audited, and never silently overwritten - the supersede chain makes prior conclusions traceable.
 - The source-reference dual-mode keeps the derivation seam parameterized by data: extending to new internal source kinds is a one-place edit in the service's existence-check switch plus the graph projection.
 - Existing project scoping, auditing, validation, exception mapping, logging, authorization, and graph projection are reused. No parallel substrates.
 - The graph projection makes "which artifacts cite source X" traversable through the existing mixed-graph endpoint, not a bespoke evidence query path.
@@ -141,7 +141,7 @@ The MCP `gc_query` allowlist (`mcp/ground-control/gc-query.js`) gains `/api/v1/e
 ### Negative
 
 - `MigrationSmokeTest` and `RequirementsE2EIntegrationTest` carry two more hardcoded version entries plus the corresponding audit-table assertions.
-- `JacksonTextCollectionConverters` grows one more converter; the JSON-stored `sources` list is not SQL-queryable on its own — the graph projection is the cross-entity query path.
+- `JacksonTextCollectionConverters` grows one more converter; the JSON-stored `sources` list is not SQL-queryable on its own - the graph projection is the cross-entity query path.
 - `RiskAssessmentResultRepository` and `ObservationRepository` gain a small `existsByIdAndProjectId` query so the service can validate sources without fetching unrelated `JOIN FETCH` data.
 
 ### Risks
@@ -152,16 +152,16 @@ The MCP `gc_query` allowlist (`mcp/ground-control/gc-query.js`) gains `/api/v1/e
 
 ## References
 
-- GC-M016 — Evidence Derivation and Temporal State History (Wave 4, FUNCTIONAL, MUST)
-- `architecture/notes/evidence-derivation-temporal-state-preflight.md` — Codex preflight architecture note
-- GC-M013 — Asset Topology and Boundary Relationships (Wave 4)
-- GC-M014 — External Identifiers and Source Provenance (Wave 4)
-- GC-M015 — Observation and State Fact Entity (Wave 4)
-- GC-M017 — Asset-Centric Traceability and Impact Context (Wave 4)
-- ADR-014 — Pluggable Verification Architecture
-- ADR-026 — REST API Security Chain
-- ADR-033 — Authenticated Audit Actor Provenance
-- ADR-034 — Single-Source Enum Policy
-- ADR-035 — MCP Curation
-- ADR-038 — Finding Entity Boundary (defines the inbound EVIDENCE placeholder substrates)
-- ADR-039 — Control Verification Subsystem (defines ControlTest and ControlEffectivenessAssessment as evidence-and-conclusion seams)
+- GC-M016 - Evidence Derivation and Temporal State History (Wave 4, FUNCTIONAL, MUST)
+- `architecture/notes/evidence-derivation-temporal-state-preflight.md` - Codex preflight architecture note
+- GC-M013 - Asset Topology and Boundary Relationships (Wave 4)
+- GC-M014 - External Identifiers and Source Provenance (Wave 4)
+- GC-M015 - Observation and State Fact Entity (Wave 4)
+- GC-M017 - Asset-Centric Traceability and Impact Context (Wave 4)
+- ADR-014 - Pluggable Verification Architecture
+- ADR-026 - REST API Security Chain
+- ADR-033 - Authenticated Audit Actor Provenance
+- ADR-034 - Single-Source Enum Policy
+- ADR-035 - MCP Curation
+- ADR-038 - Finding Entity Boundary (defines the inbound EVIDENCE placeholder substrates)
+- ADR-039 - Control Verification Subsystem (defines ControlTest and ControlEffectivenessAssessment as evidence-and-conclusion seams)

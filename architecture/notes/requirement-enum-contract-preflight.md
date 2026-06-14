@@ -13,7 +13,7 @@ for that work. It is not an implementation plan.
   the backend API contract, not hand-authored as an independent schema. ADR-017
   already names OpenAPI-generated TypeScript types as the intended frontend
   boundary.
-- MCP enum constants must stay a generated or mechanically-checked mirror of
+- MCP enum constants must stay a generated or mechanically checked mirror of
   the same backend enum set. Do not add an MCP-only enum taxonomy.
 - Request contract ownership stays split by layer: DTO shape validation in
   `api/requirements/*Request.java`, semantic validation in
@@ -111,8 +111,8 @@ Source of Truth*):
   `run_enum_contract_check` (`tools/policy/checks.py`) parses them and asserts
   the `frontend/src/types/api.ts` unions/constants and the
   `mcp/ground-control/lib.js` constants match. It runs in the `policy` CI job on
-  every PR. The check is parameterized by `ENUM_CONTRACT_INVENTORY` — adding an
-  enum is one row (the extensibility seam above) — and covers every API-exposed
+  every PR. The check is parameterized by `ENUM_CONTRACT_INVENTORY` - adding an
+  enum is one row (the extensibility seam above) - and covers every API-exposed
   enum: `RequirementType`, `RelationType`, `ArtifactType`, `LinkType`, `Status`,
   `Priority`, `SyncStatus`, `ChangeCategory`. The parsers strip comments before
   extracting, and the Java parser reads only the constant list (up to the first
