@@ -493,8 +493,7 @@ class RequirementServiceTest {
             when(relationRepository.findByTargetIdWithEntities(id)).thenReturn(List.of());
 
             var result = service.getRelations(id);
-            assertThat(result).isNotNull();
-            assertThat(result).isEmpty();
+            assertThat(result).isNotNull().isEmpty();
         }
 
         @Test

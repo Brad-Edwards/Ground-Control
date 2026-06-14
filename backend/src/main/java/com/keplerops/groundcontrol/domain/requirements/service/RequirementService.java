@@ -80,6 +80,10 @@ public class RequirementService {
 
     @Transactional(readOnly = true)
     public Requirement getById(UUID id) {
+        return findRequired(id);
+    }
+
+    private Requirement findRequired(UUID id) {
         return requirementRepository
                 .findById(id)
                 .orElseThrow(() -> new NotFoundException("Requirement not found: " + id));
@@ -93,7 +97,7 @@ public class RequirementService {
     }
 
     public Requirement update(UUID id, UpdateRequirementCommand command) {
-        var requirement = getById(id);
+        var requirement = findRequired(id);
         boolean textChanged = false;
         if (command.title() != null && !command.title().equals(requirement.getTitle())) {
             requirement.setTitle(command.title());
@@ -129,7 +133,7 @@ public class RequirementService {
     @ signals (NotFoundException e) !requirementRepository.existsById(id);
     @ signals (DomainValidationException e) !\old(getById(id)).getStatus().canTransitionTo(newStatus); @*/
     public Requirement transitionStatus(UUID id, Status newStatus) {
-        var requirement = getById(id);
+        var requirement = findRequired(id);
         validateDocumentationCoverageForActivation(id, requirement, newStatus);
         requirement.transitionStatus(newStatus);
         return requirementRepository.save(requirement);
@@ -141,7 +145,7 @@ public class RequirementService {
         for (UUID id : ids) {
             Requirement requirement = null;
             try {
-                requirement = getById(id);
+                requirement = findRequired(id);
                 if (!requirement.getStatus().canTransitionTo(newStatus)) {
                     failed.add(new BulkFailureDetail(
                             id.toString(),
@@ -168,7 +172,7 @@ public class RequirementService {
     @ signals (NotFoundException e) !requirementRepository.existsById(id);
     @ signals (DomainValidationException e) !\old(getById(id)).getStatus().canTransitionTo(Status.ARCHIVED); @*/
     public Requirement archive(UUID id) {
-        var requirement = getById(id);
+        var requirement = findRequired(id);
         requirement.archive();
         return requirementRepository.save(requirement);
     }
@@ -187,8 +191,8 @@ public class RequirementService {
             throw new ConflictException(
                     "Relation " + relationType + " already exists between " + sourceId + " and " + targetId);
         }
-        var source = getById(sourceId);
-        var target = getById(targetId);
+        var source = findRequired(sourceId);
+        var target = findRequired(targetId);
         if (!source.getProject().getId().equals(target.getProject().getId())) {
             throw new DomainValidationException("Cannot create relation between requirements in different projects");
         }
@@ -199,7 +203,7 @@ public class RequirementService {
     @Transactional(readOnly = true)
     public List<RequirementRelation> getRelations(UUID requirementId) {
         // Verify requirement exists
-        getById(requirementId);
+        findRequired(requirementId);
         var outgoing = relationRepository.findBySourceIdWithEntities(requirementId);
         var incoming = relationRepository.findByTargetIdWithEntities(requirementId);
         var combined = new ArrayList<RequirementRelation>(outgoing);
@@ -214,7 +218,7 @@ public class RequirementService {
     }
 
     public Requirement clone(UUID sourceId, CloneRequirementCommand command) {
-        var source = getById(sourceId);
+        var source = findRequired(sourceId);
         var project = source.getProject();
 
         String normalizedUid = command.newUid().toUpperCase(java.util.Locale.ROOT);
