@@ -218,4 +218,24 @@ or frontend-only validation layer was added.
 
 **2026-06-14 (issue #689 GC-Q003 Traceability Matrix).** The `getTraceabilityMatrix` function was added to `mcp/ground-control/lib.js` as a thin API client for the new `GET /api/v1/requirements/matrix` endpoint, and the `gc_traceability_matrix` read tool was registered in `mcp/ground-control/index.js`. These are additive API-client and tool-registration surfaces. Documentation lives in `docs/API.md` and the tool description in `mcp/ground-control/index.js`; the classifier already covers the MCP trigger paths. The doc-coverage classifier, Vale rule set, `tools/install-vale.sh` installer, and `.vale.ini` configuration are unchanged; no new `docs/DOC_STYLE.md` style rule is established.
 
+**2026-06-14 (next-issue recommendation skips umbrella/tracking issues).**
+Refined the `gc_close_issue_after_merge` next-issue recommendation in
+`mcp/ground-control/lib.js` so an umbrella or tracking issue is never handed
+back as the next thing to pick up after a merge-verified close. The new pure
+helpers `isUmbrellaNextIssueCandidate` and `selectNextIssueRecommendation` drop
+a candidate when it carries an `epic`/`umbrella`/`tracking`/`meta` marker
+label, a `Tracking:`/`Epic:`/`Umbrella:` or bracketed title prefix,
+GitHub-native sub-issues (`sub_issues_summary.total > 0`), or a body task list
+that checks off five or more child issues. The task-list threshold separates a
+coordinating tracking issue (dozens of issue-referencing checkboxes) from a
+leaf requirement issue (a handful of acceptance-criteria checkboxes that
+reference no issues). This refines the credible-next-issue filter added for
+#1156; the matching prose anchor is the recommendation source description in
+`skills/implement/steps/step-20-close-issue-on-merge.md`, and the changelog
+fragment records the temporal change. These are MCP-adapter and
+workflow-policy changes. The documentation-coverage classifier, its surface
+set, the thresholds, the Vale rule set, the `tools/install-vale.sh` installer,
+and `.vale.ini` are unchanged; no new `docs/DOC_STYLE.md` style rule is
+established.
+
 **2026-06-14 (issue #1103 Phase D consolidation).** Added `runAssertCompletion` to `mcp/ground-control/lib.js` and registered `gc_assert_completion` in `mcp/ground-control/index.js`. Updated `tools/policy/checks.py` to point the traceability-gate contract check at the consolidated `step-17-completion.md` surface (now requiring `gc_assert_completion`, `traceability_reconciled`, and `plain_english_outcome`). These are MCP-adapter and policy-surface changes. The documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new `docs/DOC_STYLE.md` style rule is established.

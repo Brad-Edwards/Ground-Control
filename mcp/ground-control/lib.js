@@ -12776,6 +12776,22 @@ const NEXT_ISSUE_BLOCKED_LABELS = new Set([
   "invalid",
 ]);
 const NEXT_ISSUE_READY_LABELS = new Set(["ready", "actionable", "help wanted", "good first issue"]);
+// Umbrella / tracking / epic issues coordinate a basket of child issues; they
+// are not a single actionable unit of work, so /implement must never hand one
+// back as the next thing to pick up. We detect them three independent ways
+// (any one is sufficient) so the signal survives whichever convention an issue
+// uses: a marker label, a marker title prefix, or a body task list that
+// enumerates child issues.
+const NEXT_ISSUE_UMBRELLA_LABELS = new Set(["epic", "umbrella", "tracking", "meta"]);
+const NEXT_ISSUE_UMBRELLA_TITLE_RE =
+  /^(?:tracking|epic|umbrella)\s*:|^\[\s*(?:tracking|epic|umbrella|meta)\s*\]/i;
+// A body task list that checks off this many or more child issues (checkbox
+// lines that reference another issue) reads as an umbrella even without a
+// marker label or title prefix. Leaf requirement issues carry only a handful of
+// acceptance-criteria checkboxes and reference zero issues, so the threshold
+// cleanly separates the two without catching an issue that merely mentions a
+// dependency or two in passing.
+const NEXT_ISSUE_UMBRELLA_TASKLIST_THRESHOLD = 5;
 
 function issueLabelNames(issue) {
   if (!Array.isArray(issue?.labels)) return [];
@@ -12790,6 +12806,33 @@ function normalizedIssueLabels(issue) {
 
 function isBlockedNextIssueCandidate(labels) {
   return labels.some((label) => NEXT_ISSUE_BLOCKED_LABELS.has(label));
+}
+
+function countIssueReferencingChecklistItems(body) {
+  if (typeof body !== "string" || body === "") return 0;
+  let count = 0;
+  for (const line of body.split("\n")) {
+    if (/^\s*[-*]\s+\[[ xX]\]/.test(line) && /#\d+/.test(line)) count += 1;
+  }
+  return count;
+}
+
+export function isUmbrellaNextIssueCandidate(issue) {
+  // GitHub-native sub-issue parent (works even when the body uses no task list).
+  const subIssueTotal = issue?.sub_issues_summary?.total;
+  if (typeof subIssueTotal === "number" && subIssueTotal > 0) return true;
+
+  const labels = normalizedIssueLabels(issue);
+  if (labels.some((label) => NEXT_ISSUE_UMBRELLA_LABELS.has(label))) return true;
+
+  const title = typeof issue?.title === "string" ? issue.title.trim() : "";
+  // Strip leading markdown emphasis/quote markers before matching the prefix.
+  const normalizedTitle = title.replace(/^[>*_#\s]+/, "");
+  if (NEXT_ISSUE_UMBRELLA_TITLE_RE.test(normalizedTitle)) return true;
+
+  return (
+    countIssueReferencingChecklistItems(issue?.body) >= NEXT_ISSUE_UMBRELLA_TASKLIST_THRESHOLD
+  );
 }
 
 function nextIssuePriorityScore(labels) {
@@ -12828,25 +12871,7 @@ function buildNextIssueReason(issue) {
   return "It is the most recently updated open issue that is not blocked or in progress.";
 }
 
-async function findNextIssueRecommendation({ repoRoot, owner, name, issueNumber }) {
-  const { stdout } = await execFile(
-    "gh",
-    [
-      "api", "--method", "GET",
-      `/repos/${owner}/${name}/issues`,
-      "-F", "state=open",
-      "-F", "per_page=50",
-      "-F", "sort=updated",
-      "-F", "direction=desc",
-    ],
-    { cwd: repoRoot },
-  );
-  let issues;
-  try {
-    issues = JSON.parse(stdout);
-  } catch {
-    throw new Error("GitHub issue list response was not valid JSON");
-  }
+export function selectNextIssueRecommendation(issues, issueNumber) {
   const candidates = Array.isArray(issues)
     ? issues
       .filter((issue) => issue && typeof issue === "object")
@@ -12854,6 +12879,7 @@ async function findNextIssueRecommendation({ repoRoot, owner, name, issueNumber 
       .filter((issue) => issue.number !== issueNumber)
       .filter((issue) => typeof issue.title === "string" && issue.title.trim() !== "")
       .filter((issue) => !isBlockedNextIssueCandidate(normalizedIssueLabels(issue)))
+      .filter((issue) => !isUmbrellaNextIssueCandidate(issue))
       .map(scoreNextIssueCandidate)
     : [];
 
@@ -12875,6 +12901,28 @@ async function findNextIssueRecommendation({ repoRoot, owner, name, issueNumber 
     },
     reason: null,
   };
+}
+
+async function findNextIssueRecommendation({ repoRoot, owner, name, issueNumber }) {
+  const { stdout } = await execFile(
+    "gh",
+    [
+      "api", "--method", "GET",
+      `/repos/${owner}/${name}/issues`,
+      "-F", "state=open",
+      "-F", "per_page=50",
+      "-F", "sort=updated",
+      "-F", "direction=desc",
+    ],
+    { cwd: repoRoot },
+  );
+  let issues;
+  try {
+    issues = JSON.parse(stdout);
+  } catch {
+    throw new Error("GitHub issue list response was not valid JSON");
+  }
+  return selectNextIssueRecommendation(issues, issueNumber);
 }
 
 async function attachNextIssueRecommendation({ closeResult, repoRoot, owner, name, issueNumber }) {

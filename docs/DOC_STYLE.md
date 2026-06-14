@@ -185,4 +185,14 @@ the durable rationale in ADR-054. No new DOC_STYLE.md style rule is established.
 
 The 2026-06-10 SonarCloud remediation (#1085) refactored `mcp/ground-control/lib.js` and `index.js` internals without changing any prose style rule or documented-surface classification; no new DOC_STYLE.md rule is established.
 
+The next-issue recommendation refinement (umbrella/tracking exclusion) follows
+the same documentation pattern. `gc_close_issue_after_merge` now skips
+umbrella/tracking issues when it picks the issue to recommend after a
+merge-verified close. The current behavior is documented in the recommendation
+source description in `skills/implement/steps/step-20-close-issue-on-merge.md`,
+with the durable rationale in the ADR-054 amendment and the temporal change in
+the changelog fragment. This refines an existing workflow-gate tool and touches
+no documentation-coverage surface; no new DOC_STYLE.md style rule is
+established.
+
 The 2026-06-14 Phase D consolidation (#1103) added `gc_assert_completion` to `mcp/ground-control/lib.js` and `index.js`, updated `tools/policy/checks.py` for the consolidated Step 17 surface, and reorganized the /implement SKILL step prose. No new DOC_STYLE.md style rule is established.

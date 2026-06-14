@@ -123,6 +123,8 @@ import {
   INTEGRATION_MANAGER_MERGE_STRATEGIES,
   INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN,
   INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX,
+  isUmbrellaNextIssueCandidate,
+  selectNextIssueRecommendation,
 } from "./lib.js";
 
 // ---------------------------------------------------------------------------
@@ -13199,5 +13201,89 @@ describe("runCloseIssueAfterMerge", () => {
     } finally {
       shim.cleanup();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Next-issue recommendation: umbrella / tracking issue exclusion
+// ---------------------------------------------------------------------------
+
+describe("isUmbrellaNextIssueCandidate", () => {
+  const issue = (over) => ({ number: 1, title: "Do a thing", labels: [], body: "", ...over });
+
+  it("flags a `Tracking:` title prefix", () => {
+    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "Tracking: production readiness" })), true);
+  });
+
+  it("flags `Epic:` and `Umbrella:` title prefixes case-insensitively", () => {
+    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "epic: graph rewrite" })), true);
+    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "UMBRELLA: wave 7" })), true);
+  });
+
+  it("flags a bracketed `[Epic]` / `[Meta]` tag at the title start", () => {
+    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "[Epic] big feature" })), true);
+    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "[meta] housekeeping" })), true);
+  });
+
+  it("flags a marker label (epic/umbrella/tracking/meta)", () => {
+    assert.equal(isUmbrellaNextIssueCandidate(issue({ labels: [{ name: "Epic" }] })), true);
+    assert.equal(isUmbrellaNextIssueCandidate(issue({ labels: [{ name: "tracking" }] })), true);
+  });
+
+  it("flags a GitHub-native sub-issue parent (sub_issues_summary.total > 0)", () => {
+    assert.equal(
+      isUmbrellaNextIssueCandidate(issue({ sub_issues_summary: { total: 4, completed: 1 } })),
+      true,
+    );
+  });
+
+  it("flags a body task list that checks off many child issues", () => {
+    const body = ["intro", ...Array.from({ length: 6 }, (_, i) => `- [ ] do thing ${i} — #${100 + i}`)].join("\n");
+    assert.equal(isUmbrellaNextIssueCandidate(issue({ body })), true);
+  });
+
+  it("does NOT flag a leaf requirement with acceptance-criteria checkboxes and no issue refs", () => {
+    const body = [
+      "## Acceptance",
+      "- [ ] Incremental derivation reuses cache",
+      "- [ ] Provenance change invalidates affected facts",
+      "- [ ] Cost reported in telemetry",
+    ].join("\n");
+    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "GC-GRC-033: caching", body })), false);
+  });
+
+  it("does NOT flag an ordinary issue that mentions a couple of dependency issues", () => {
+    const body = ["- [ ] blocked by #12", "- [ ] depends on #34"].join("\n");
+    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "Fix the parser", body })), false);
+  });
+
+  it("does NOT flag a normal issue whose title merely contains the word tracking", () => {
+    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "Add request tracking header" })), false);
+  });
+});
+
+describe("selectNextIssueRecommendation", () => {
+  const umbrella = { number: 820, title: "Tracking: production readiness", labels: [], body: "", html_url: "u/820", updated_at: "2026-06-14T00:00:00Z" };
+  const leaf = { number: 689, title: "GC-Q003: Traceability Matrix", labels: [{ name: "wave-2" }], body: "", html_url: "u/689", updated_at: "2026-06-13T00:00:00Z" };
+
+  it("skips an umbrella issue even when it is the most recently updated candidate", () => {
+    const result = selectNextIssueRecommendation([umbrella, leaf], 1);
+    assert.equal(result.recommendation.issue_number, 689);
+  });
+
+  it("returns no recommendation when only umbrella/blocked issues remain", () => {
+    const blocked = { number: 5, title: "blocked thing", labels: [{ name: "blocked" }], body: "", html_url: "u/5" };
+    const result = selectNextIssueRecommendation([umbrella, blocked], 1);
+    assert.equal(result.recommendation, null);
+    assert.match(result.reason, /No credible next issue/);
+  });
+
+  it("still excludes the current issue, PRs, and untitled rows alongside umbrellas", () => {
+    const pr = { number: 700, title: "a PR", pull_request: {}, labels: [], body: "" };
+    const current = { number: 689, title: "GC-Q003", labels: [], body: "", html_url: "u/689" };
+    const untitled = { number: 12, title: "   ", labels: [], body: "", html_url: "u/12" };
+    const good = { number: 690, title: "Fix the parser", labels: [], body: "", html_url: "u/690" };
+    const result = selectNextIssueRecommendation([umbrella, pr, current, untitled, good], 689);
+    assert.equal(result.recommendation.issue_number, 690);
   });
 });
