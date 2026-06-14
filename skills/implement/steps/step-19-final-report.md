@@ -15,6 +15,7 @@ tier: low
 Per ADR-036, the final summary is posted via the deterministic **`gc_post_final_report`** MCP tool, not free-form `gh issue comment` prose. Pass:
 
 - `repo_path`, `issue_number`, `pr_number`
+- `plain_english_outcome`: required for `/implement`; 1-3 short sentences explaining what the change lets product users, operators, or maintainers do now. Use product/operator language where possible. Do not duplicate the files/tests/traceability checklist.
 - `requirements`: array of `{ uid, title, status, note? }`—one entry per UID in `in_scope_requirements[]`; `status` is the new status (`ACTIVE` for implemented, `DRAFT` for forward-looking with a `note` like `"forward-looking"`).
 - `files`: `{ added: [...], modified: [...], renamed: [...], deleted: [...] }` (any key may be omitted).
 - `reviews`: array of `{ reviewer, summary }`—one per reviewer (`codex`, `test-quality`, `sonarcloud`, etc.) with a one-line summary like `"3 cycles, all fix, 0 remaining"`.
@@ -22,7 +23,7 @@ Per ADR-036, the final summary is posted via the deterministic **`gc_post_final_
 - `ci_status`: `"green"` (or `"red"`; never `"skipped"` for a real PR).
 - `sonar_status`: `"passed"`, `"failed"`, or `"skipped"` (when `cfg.sonarcloud` is null).
 - `plan_comment_url`: the URL cached in Step 4 from `gc_post_implementation_plan`.
-- `summary` (optional): one extra paragraph if there is something the structured fields don't cover. Update length follows the canonical succinctness rule in `skills/implement/steps/_review-loop-rules.md`.
+- `summary` (optional): one extra paragraph if there is something the structured fields and `plain_english_outcome` don't cover. Update length follows the canonical succinctness rule in `skills/implement/steps/_review-loop-rules.md`.
 - `documentation_outcome` (optional): same `{ outcome, rationale? }` shape as Step 9. Pass when the diff touched a classified surface (when `gc_documentation_coverage` returned `outcome_required: true`).
 
 The tool renders the canonical final-report Markdown, filters sensitive content, posts to the issue thread under a `gc:final-report` marker, and returns `{ ok, comment_url, comment_id }`. Cache the URL.

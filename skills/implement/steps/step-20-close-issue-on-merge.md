@@ -15,13 +15,24 @@ The canonical close path is the MCP tool `gc_close_issue_after_merge`, NOT the a
 1. Call `gc_close_issue_after_merge` with `repo_path` and `issue_number`.
    - Optional: pass `pr_number` to skip the PR-resolution timeline lookup; the tool fetches the PR directly. When omitted, the tool resolves the merged PR from the issue's GitHub timeline.
 2. Read the returned envelope:
-   - `{ ok: true, already_closed: false, pr_number, pr_merged_at, pr_url }` — the tool closed the issue. Continue to the orchestrator's wrap-up.
-   - `{ ok: true, already_closed: true, pr_number }` — GitHub already auto-closed the issue via `Closes #<n>`. Idempotent no-op success; continue.
+   - `{ ok: true, already_closed: false, pr_number, pr_merged_at, pr_url, next_issue_recommendation }` — the tool closed the issue. Continue to the orchestrator's wrap-up and surface the recommendation if present.
+   - `{ ok: true, already_closed: true, pr_number, next_issue_recommendation }` — GitHub already auto-closed the issue via `Closes #<n>`. Idempotent no-op success; continue and surface the recommendation if present.
    - `{ ok: false, error: "close_pr_not_merged", pr_state, pr_merged_at, next_action: "wait_for_user_to_merge_the_pr" }` — the linked PR is open or closed-without-merge. Surface to the user; do not retry until the user has actually merged. This is the gate doing its job: an open or force-closed PR must not trigger an issue close.
    - `{ ok: false, error: "close_no_linked_pr" }` — no PR is linked to the issue. Surface to the user. This typically means the agent is being invoked on the wrong issue, or `/implement` was used as a dry-run that never opened a PR.
    - Other `ok: false` envelopes (gh failures, lookup failures): surface to the user with the tool's `message`.
 
 The tool is idempotent and safe to retry. Re-running on an already-closed issue returns `already_closed: true` with `ok: true`.
+
+## Next-issue recommendation
+
+After the merge-verified close succeeds, `gc_close_issue_after_merge` performs a best-effort recommendation lookup and returns `next_issue_recommendation`.
+
+- Source: GitHub open issue metadata from the current repository, filtered to exclude pull requests, the current issue, and issues labeled blocked, in-progress, needs-info, wontfix, duplicate, or invalid. Ready/actionable/help-wanted labels, priority labels, milestone presence, and recent update order affect ranking.
+- Success shape: `{ issue_number, title, url, reason, source }`. The reason is one sentence explaining why the issue is a credible next pick.
+- No credible issue: `next_issue_recommendation` is `null` and `next_issue_recommendation_reason` explains that no suitable issue was available.
+- Lookup failure: closure remains successful. `next_issue_recommendation` is `null`, `next_issue_recommendation_error` carries the lookup failure, and the orchestrator reports that no recommendation could be made.
+
+Do not invent a recommendation outside the returned envelope. Recommendation lookup is advisory and never weakens the merge-verified issue-close gate.
 
 ## Why this step exists (issue #1058)
 
@@ -37,7 +48,14 @@ Before issue #1058, the only enforcement that the issue closes coherently with t
     "already_closed": false,
     "pr_number": <int>,
     "pr_merged_at": "<ISO-8601>",
-    "pr_url": "<URL>"
+    "pr_url": "<URL>",
+    "next_issue_recommendation": {
+      "issue_number": <int>,
+      "title": "<title>",
+      "url": "<URL>",
+      "reason": "<one sentence>",
+      "source": "<source description>"
+    }
   }
 }
 ```

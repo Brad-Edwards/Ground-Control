@@ -1834,6 +1834,7 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
         "skills/implement/SKILL.md": (
             "## Phase boundaries\n\nPhase E is the post-merge close phase.\n"
             "Phase E calls `gc_close_issue_after_merge` after the user merges.\n"
+            "The close envelope includes `next_issue_recommendation` when available.\n"
         ),
         "skills/implement/steps/step-17-verify.md": (
             "# Step 17: Verify Ground Control State Landed\n\n"
@@ -1842,10 +1843,12 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
         "skills/implement/steps/step-19-final-report.md": (
             "# Step 19: Report\n\n"
             "`gc_post_final_report` refuses without `traceability_reconciled`.\n"
+            "Pass `plain_english_outcome` for the Outcome section.\n"
         ),
         "skills/implement/steps/step-20-close-issue-on-merge.md": (
             "# Step 20: Close the Issue (Phase E, Post-Merge)\n\n"
             "Calls `gc_close_issue_after_merge` to verify merged_at and close.\n"
+            "The returned `next_issue_recommendation` names a follow-up issue when available.\n"
         ),
     }
 
@@ -1882,7 +1885,7 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-step17-missing", codes)
 
-    def test_check_flags_step19_missing_traceability_reconciled_marker_name(self) -> None:
+    def test_check_flags_step19_missing_traceability_reconciled_marker_or_outcome_field(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
@@ -1894,11 +1897,36 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-step19-missing", codes)
 
+    def test_check_flags_step19_missing_outcome_field_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._populate(root, overrides={
+                "skills/implement/steps/step-19-final-report.md":
+                    "# Step 19: Report\n\n"
+                    "`gc_post_final_report` refuses without `traceability_reconciled`.\n",
+            })
+            violations = run_traceability_reconciliation_gate_contract(root=root)
+            self.assertTrue(violations)
+            codes = {v.code for v in violations}
+            self.assertIn("traceability-gate-step19-missing", codes)
+
     def test_check_flags_step20_missing_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
                 "skills/implement/steps/step-20-close-issue-on-merge.md": None,
+            })
+            violations = run_traceability_reconciliation_gate_contract(root=root)
+            self.assertTrue(violations)
+            codes = {v.code for v in violations}
+            self.assertIn("traceability-gate-step20-missing", codes)
+
+    def test_check_flags_step20_missing_recommendation_anchor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._populate(root, overrides={
+                "skills/implement/steps/step-20-close-issue-on-merge.md":
+                    "# Step 20: Close the Issue\n\nCalls `gc_close_issue_after_merge` only.\n",
             })
             violations = run_traceability_reconciliation_gate_contract(root=root)
             self.assertTrue(violations)
@@ -1917,12 +1945,25 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-skill-missing", codes)
 
-    def test_check_flags_skill_missing_close_tool_name(self) -> None:
+    def test_check_flags_skill_missing_close_tool_name_or_recommendation(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
                 "skills/implement/SKILL.md":
                     "## Phase boundaries\n\nPhase E runs after merge; the user authorizes the close.\n",
+            })
+            violations = run_traceability_reconciliation_gate_contract(root=root)
+            self.assertTrue(violations)
+            codes = {v.code for v in violations}
+            self.assertIn("traceability-gate-skill-missing", codes)
+
+    def test_check_flags_skill_missing_recommendation_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._populate(root, overrides={
+                "skills/implement/SKILL.md":
+                    "## Phase boundaries\n\n"
+                    "Phase E runs after merge; call `gc_close_issue_after_merge`.\n",
             })
             violations = run_traceability_reconciliation_gate_contract(root=root)
             self.assertTrue(violations)

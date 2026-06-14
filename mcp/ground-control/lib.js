@@ -10296,6 +10296,7 @@ const GITHUB_ISSUE_COMMENT_BODY_MAX = 65535;
 // GITHUB_ISSUE_COMMENT_BODY_MAX.
 export const PR_BODY_SUMMARY_MAX = 1200;
 export const FINAL_REPORT_SUMMARY_MAX = 800;
+export const FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX = 600;
 export const FINAL_REPORT_REVIEW_SUMMARY_MAX = 240;
 
 // Caller-controlled text fields are rendered into GitHub issue-comment bodies
@@ -11314,7 +11315,7 @@ export function validateFinalReportInput(input) {
   if (input == null || typeof input !== "object") {
     return { ok: false, errors: ["input must be an object"] };
   }
-  const { issueNumber, prNumber, requirements, files, reviews, traceability, ciStatus, sonarStatus, planCommentUrl, summary, lane } = input;
+  const { issueNumber, prNumber, requirements, files, reviews, traceability, ciStatus, sonarStatus, planCommentUrl, summary, lane, plainEnglishOutcome } = input;
   if (lane != null && lane !== "implement" && lane !== "quickfix") {
     errors.push("lane must be 'implement' or 'quickfix' when set");
   }
@@ -11405,6 +11406,18 @@ export function validateFinalReportInput(input) {
       `summary exceeds the final-report summary cap of ${FINAL_REPORT_SUMMARY_MAX} bytes (got ${Buffer.byteLength(summary, "utf8")}). A final-report summary is one tight paragraph — restated context and hedging are the usual offenders.`,
     );
   }
+  const requiresPlainEnglishOutcome = lane !== "quickfix";
+  if (plainEnglishOutcome == null) {
+    if (requiresPlainEnglishOutcome) {
+      errors.push("plainEnglishOutcome is required for /implement final reports");
+    }
+  } else if (typeof plainEnglishOutcome !== "string" || plainEnglishOutcome.trim() === "") {
+    errors.push("plainEnglishOutcome must be a non-empty string when set");
+  } else if (Buffer.byteLength(plainEnglishOutcome, "utf8") > FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX) {
+    errors.push(
+      `plainEnglishOutcome exceeds the final-report plain-English outcome cap of ${FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX} bytes (got ${Buffer.byteLength(plainEnglishOutcome, "utf8")}). Keep it to 1-3 plain-language sentences.`,
+    );
+  }
   // Optional documentation_outcome field (issue #896, ADR-054).
   if (input.documentation_outcome != null) {
     const docResult = validateDocumentationOutcome(input.documentation_outcome);
@@ -11421,7 +11434,7 @@ export function buildFinalReport(input) {
   if (!validation.ok) {
     throw new Error(`buildFinalReport input invalid: ${validation.errors.join("; ")}`);
   }
-  const { issueNumber, prNumber, requirements, files = {}, reviews, traceability = {}, ciStatus, sonarStatus, planCommentUrl, summary, lane } = input;
+  const { issueNumber, prNumber, requirements, files = {}, reviews, traceability = {}, ciStatus, sonarStatus, planCommentUrl, summary, lane, plainEnglishOutcome } = input;
   // Slim quickfix renderer (issue #906 codex cycle-3 F2). When lane='quickfix'
   // the close comment is structurally smaller: no "In-scope requirements",
   // no "Traceability reconciliation", no "Reviews" section when empty.
@@ -11439,6 +11452,10 @@ export function buildFinalReport(input) {
   lines.push("");
   lines.push(`**PR:** #${prNumber}  `);
   if (planCommentUrl) lines.push(`**Plan:** ${planCommentUrl}`);
+  lines.push("");
+  lines.push("### Outcome");
+  lines.push("");
+  lines.push(plainEnglishOutcome.trim());
   if (summary) {
     lines.push("");
     lines.push(summary.trim());
@@ -11715,6 +11732,7 @@ export async function runPostFinalReport(input) {
   // Reject caller-controlled fields carrying reserved `<!-- gc:` marker
   // syntax (codex cycle-2 security finding; same shape as runPostDecisionRecord).
   const callerStringFields = [
+    ["plainEnglishOutcome", rest.plainEnglishOutcome],
     ["summary", rest.summary],
     ["planCommentUrl", rest.planCommentUrl],
   ];
@@ -12630,6 +12648,141 @@ async function resolvePrForClose({ repoRoot, owner, name, issueNumber, prNumber 
   return { pr: matched };
 }
 
+const NEXT_ISSUE_RECOMMENDATION_SOURCE =
+  "GitHub open issues (/issues?state=open&sort=updated&direction=desc, first 50)";
+const NEXT_ISSUE_BLOCKED_LABELS = new Set([
+  "blocked",
+  "in-progress",
+  "needs-info",
+  "needs info",
+  "needs-user",
+  "needs user",
+  "wontfix",
+  "duplicate",
+  "invalid",
+]);
+const NEXT_ISSUE_READY_LABELS = new Set(["ready", "actionable", "help wanted", "good first issue"]);
+
+function issueLabelNames(issue) {
+  if (!Array.isArray(issue?.labels)) return [];
+  return issue.labels
+    .map((label) => (typeof label?.name === "string" ? label.name.trim() : ""))
+    .filter((label) => label.length > 0);
+}
+
+function normalizedIssueLabels(issue) {
+  return issueLabelNames(issue).map((label) => label.toLowerCase());
+}
+
+function isBlockedNextIssueCandidate(labels) {
+  return labels.some((label) => NEXT_ISSUE_BLOCKED_LABELS.has(label));
+}
+
+function nextIssuePriorityScore(labels) {
+  let score = 0;
+  for (const label of labels) {
+    if (label === "priority:p0" || label === "p0" || label === "critical") score += 30;
+    else if (label === "priority:p1" || label === "p1" || label === "high-priority") score += 24;
+    else if (label === "priority:p2" || label === "p2") score += 18;
+    else if (label.startsWith("priority:")) score += 10;
+  }
+  return score;
+}
+
+function scoreNextIssueCandidate(issue, index) {
+  const labels = normalizedIssueLabels(issue);
+  let score = nextIssuePriorityScore(labels);
+  for (const label of labels) {
+    if (NEXT_ISSUE_READY_LABELS.has(label)) score += 20;
+  }
+  if (typeof issue?.milestone?.title === "string" && issue.milestone.title.trim() !== "") score += 4;
+  if (typeof issue?.updated_at === "string" && issue.updated_at.trim() !== "") score += 1;
+  return { issue, score, index };
+}
+
+function buildNextIssueReason(issue) {
+  const labels = normalizedIssueLabels(issue);
+  const namedSignals = [];
+  for (const label of labels) {
+    if (NEXT_ISSUE_READY_LABELS.has(label) || label.startsWith("priority:") || ["p0", "p1", "p2", "critical", "high-priority"].includes(label)) {
+      namedSignals.push(label);
+    }
+  }
+  if (namedSignals.length > 0) {
+    return `It is open, not blocked or in progress, and labeled ${namedSignals.slice(0, 3).join(", ")}.`;
+  }
+  return "It is the most recently updated open issue that is not blocked or in progress.";
+}
+
+async function findNextIssueRecommendation({ repoRoot, owner, name, issueNumber }) {
+  const { stdout } = await execFile(
+    "gh",
+    [
+      "api", "--method", "GET",
+      `/repos/${owner}/${name}/issues`,
+      "-F", "state=open",
+      "-F", "per_page=50",
+      "-F", "sort=updated",
+      "-F", "direction=desc",
+    ],
+    { cwd: repoRoot },
+  );
+  let issues;
+  try {
+    issues = JSON.parse(stdout);
+  } catch {
+    throw new Error("GitHub issue list response was not valid JSON");
+  }
+  const candidates = Array.isArray(issues)
+    ? issues
+      .filter((issue) => issue && typeof issue === "object")
+      .filter((issue) => !issue.pull_request)
+      .filter((issue) => issue.number !== issueNumber)
+      .filter((issue) => typeof issue.title === "string" && issue.title.trim() !== "")
+      .filter((issue) => !isBlockedNextIssueCandidate(normalizedIssueLabels(issue)))
+      .map(scoreNextIssueCandidate)
+    : [];
+
+  if (candidates.length === 0) {
+    return {
+      recommendation: null,
+      reason: "No credible next issue was available from the open GitHub issue list.",
+    };
+  }
+  candidates.sort((a, b) => (b.score - a.score) || (a.index - b.index));
+  const best = candidates[0].issue;
+  return {
+    recommendation: {
+      issue_number: best.number,
+      title: best.title.trim(),
+      url: typeof best.html_url === "string" ? best.html_url : null,
+      reason: buildNextIssueReason(best),
+      source: NEXT_ISSUE_RECOMMENDATION_SOURCE,
+    },
+    reason: null,
+  };
+}
+
+async function attachNextIssueRecommendation({ closeResult, repoRoot, owner, name, issueNumber }) {
+  try {
+    const result = await findNextIssueRecommendation({ repoRoot, owner, name, issueNumber });
+    return {
+      ...closeResult,
+      next_issue_recommendation: result.recommendation,
+      next_issue_recommendation_reason: result.reason,
+      next_issue_recommendation_source: NEXT_ISSUE_RECOMMENDATION_SOURCE,
+    };
+  } catch (error) {
+    return {
+      ...closeResult,
+      next_issue_recommendation: null,
+      next_issue_recommendation_reason: "Recommendation lookup failed after the issue close succeeded.",
+      next_issue_recommendation_error: extractGhErrorMessage(error),
+      next_issue_recommendation_source: NEXT_ISSUE_RECOMMENDATION_SOURCE,
+    };
+  }
+}
+
 export async function runCloseIssueAfterMerge({ repoPath, issueNumber, prNumber = null }) {
   if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
     throw new Error("gc_close_issue_after_merge requires a positive integer issue_number");
@@ -12660,7 +12813,9 @@ export async function runCloseIssueAfterMerge({ repoPath, issueNumber, prNumber 
     };
   }
 
-  return closeIssueIdempotently({ repoRoot, owner, name, issueNumber, pr });
+  const closeResult = await closeIssueIdempotently({ repoRoot, owner, name, issueNumber, pr });
+  if (!closeResult.ok) return closeResult;
+  return attachNextIssueRecommendation({ closeResult, repoRoot, owner, name, issueNumber });
 }
 
 // Close the issue idempotently once the merge gate has passed. Reads the

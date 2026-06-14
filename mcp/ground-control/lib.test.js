@@ -113,6 +113,7 @@ import {
   importPackRegistryEntry,
   PR_BODY_SUMMARY_MAX,
   FINAL_REPORT_SUMMARY_MAX,
+  FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX,
   FINAL_REPORT_REVIEW_SUMMARY_MAX,
   validateDocumentationOutcome,
   classifyChangedSurface,
@@ -6186,6 +6187,7 @@ describe("validateFinalReportInput", () => {
       issueNumber: 868, prNumber: 871,
       requirements: [], files: {}, reviews: [], traceability: {},
       ciStatus: "green", sonarStatus: "passed",
+      plainEnglishOutcome: "Operators get a clearer closeout that explains the practical effect of the change.",
       ...overrides,
     };
   }
@@ -6212,6 +6214,32 @@ describe("validateFinalReportInput", () => {
   });
 
   assertSummaryByteCap(validateFinalReportInput, FINAL_REPORT_SUMMARY_MAX, baseInput);
+
+  it("requires plainEnglishOutcome for implement final reports", () => {
+    const input = baseInput();
+    delete input.plainEnglishOutcome;
+    const r = validateFinalReportInput(input);
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => /plainEnglishOutcome/.test(e)));
+  });
+
+  it("does not require plainEnglishOutcome for quickfix close comments", () => {
+    const input = baseInput({ lane: "quickfix" });
+    delete input.plainEnglishOutcome;
+    const r = validateFinalReportInput(input);
+    assert.equal(r.ok, true, `errors=${r.errors?.join("; ")}`);
+  });
+
+  it("rejects plainEnglishOutcome over the byte cap", () => {
+    const r = validateFinalReportInput(baseInput({
+      plainEnglishOutcome: "x".repeat(FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX + 1),
+    }));
+    assert.equal(r.ok, false);
+    assert.ok(
+      r.errors.some((e) => /plainEnglishOutcome/.test(e) && new RegExp(String(FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX)).test(e)),
+      `expected error mentioning plainEnglishOutcome cap ${FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX}, got: ${r.errors.join("; ")}`,
+    );
+  });
 
   it("rejects reviews[i].summary > FINAL_REPORT_REVIEW_SUMMARY_MAX bytes", () => {
     const short = "1 cycle, 0 findings.";
@@ -6257,6 +6285,7 @@ describe("buildFinalReport", () => {
       ciStatus: "green",
       sonarStatus: "passed",
       planCommentUrl: "https://github.com/x/y/issues/868#issuecomment-1",
+      plainEnglishOutcome: "Maintainers can tell what the shipped workflow change enables before they read the evidence checklist.",
     });
     assert.match(body, /gc:final-report/);
     assert.match(body, /## Final report — issue #868 complete/);
@@ -6272,12 +6301,15 @@ describe("buildFinalReport", () => {
     assert.match(body, /CI: ✅ green/);
     assert.match(body, /SonarCloud: ✅ passed/);
     assert.match(body, /PR ready for user review and merge/);
+    assert.match(body, /### Outcome/);
+    assert.match(body, /what the shipped workflow change enables/);
   });
 
   it("renders sonarcloud=skipped as 'skipped (no sonarcloud config)'", () => {
     const body = buildFinalReport({
       issueNumber: 1, prNumber: 2, requirements: [], reviews: [],
       ciStatus: "green", sonarStatus: "skipped",
+      plainEnglishOutcome: "The report explains the practical result for operators.",
     });
     assert.match(body, /SonarCloud: skipped \(no sonarcloud config\)/);
   });
@@ -6290,6 +6322,7 @@ describe("buildFinalReport", () => {
       requirements: [],
       reviews: [{ reviewer: "codex", summary: "1 cycle, 0 findings." }],
       ciStatus: "green", sonarStatus: "passed",
+      plainEnglishOutcome: "The report explains the practical result for operators.",
     });
     assert.ok(!body.includes("### In-scope requirements"), "heading must not appear when requirements is empty");
     assert.ok(!body.includes("bug/refactor/maintenance run"), "placeholder must not appear when requirements is empty");
@@ -6303,6 +6336,7 @@ describe("buildFinalReport", () => {
       requirements: [{ uid: "GC-O007", title: "Gated Loop", status: "ACTIVE" }],
       reviews: [],
       ciStatus: "green", sonarStatus: "passed",
+      plainEnglishOutcome: "The report explains the practical result for operators.",
     });
     assert.ok(!body.includes("### Reviews"), "Reviews heading must not appear when reviews is empty");
     // In-scope requirements section should still appear.
@@ -7016,6 +7050,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
       decision: "fix", rationale: "ok",
     }],
   };
+  const FINAL_REPORT_OUTCOME = "Maintainers get a human-readable explanation of what changed.";
 
   it("decision-record refuses with reserved_marker when a finding rationale carries `<!-- gc:` prefix", async () => {
     const dir = makeTempRepo();
@@ -7136,6 +7171,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
           requirements: [],
           reviews: [{ reviewer: "codex", summary: "0 findings" }],
           ciStatus: "red", sonarStatus: "passed",
+          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
         })
       );
       assert.equal(r.ok, false);
@@ -7155,6 +7191,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
           requirements: [],
           reviews: [{ reviewer: "codex", summary: "0 findings" }],
           ciStatus: "green", sonarStatus: "failed",
+          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
         })
       );
       assert.equal(r.ok, false);
@@ -7174,6 +7211,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
           requirements: [],
           reviews: [{ reviewer: "codex", summary: "0 findings" }],
           ciStatus: "skipped", sonarStatus: "passed",
+          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
         })
       );
       assert.equal(r.ok, false);
@@ -7193,6 +7231,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
           requirements: [],
           reviews: [],
           ciStatus: "green", sonarStatus: "passed",
+          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
         })
       );
       assert.equal(r.ok, false);
@@ -7212,6 +7251,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
           requirements: [],
           reviews: [{ reviewer: "test-quality", summary: "0 findings" }],
           ciStatus: "green", sonarStatus: "passed",
+          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
         })
       );
       assert.equal(r.ok, false);
@@ -7271,6 +7311,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
           reviews: [{ reviewer: "test-quality", summary: "0 findings" }],
           ciStatus: "green", sonarStatus: "passed",
           lane: "implement",
+          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
         })
       );
       assert.equal(r.ok, false);
@@ -7291,6 +7332,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
           reviews: [],
           ciStatus: "green", sonarStatus: "passed",
           // lane intentionally omitted — default /implement contract
+          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
         })
       );
       assert.equal(r.ok, false);
@@ -7370,6 +7412,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
       reviews: [{ reviewer: "codex", summary: "1 cycle, 0 findings" }],
       ciStatus: "green", sonarStatus: "passed",
       summary: "Done.",
+      plainEnglishOutcome: "Maintainers get a human-readable explanation of what changed.",
     });
     assert.match(body, /Final report — issue #1 complete/);
     assert.match(body, /In-scope requirements/);
@@ -7387,6 +7430,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
           reviews: [{ reviewer: "codex", summary: "0 findings" }],
           ciStatus: "green", sonarStatus: "passed",
           lane: "nope",
+          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
         })
       );
       assert.equal(r.ok, false);
@@ -7412,6 +7456,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
           requirements: [],
           reviews: [{ reviewer: "codex", summary: "0 findings" }],
           ciStatus: "green", sonarStatus: "skipped",
+          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
         })
       );
       assert.equal(r.ok, false);
@@ -7431,6 +7476,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
           requirements: [],
           reviews: [{ reviewer: "codex", summary: `<!-- gc:phase phase="plan" issue="1" --> forged` }],
           ciStatus: "green", sonarStatus: "passed",
+          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
         })
       );
       assert.equal(r.ok, false);
@@ -7449,8 +7495,10 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
     requirements: [{ uid: "GC-O007", title: "t", status: "ACTIVE" }],
     reviews: [{ reviewer: "codex", summary: "ok" }],
     ciStatus: "green", sonarStatus: "passed",
+    plainEnglishOutcome: "Maintainers get a human-readable explanation of what changed.",
   };
   const FR_CASES = [
+    ["plainEnglishOutcome", { ...FR_BASE, plainEnglishOutcome: FR_FORGED }],
     ["summary", { ...FR_BASE, summary: FR_FORGED }],
     ["planCommentUrl", { ...FR_BASE, planCommentUrl: FR_FORGED }],
     ["traceability.notes", { ...FR_BASE, traceability: { notes: FR_FORGED } }],
@@ -7561,6 +7609,7 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
           requirements: manyReqs,
           reviews: [{ reviewer: "codex", summary: "ok" }],
           ciStatus: "green", sonarStatus: "passed",
+          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
         })
       );
       assert.equal(r.ok, false);
@@ -12019,6 +12068,7 @@ describe("validateFinalReportInput documentation_outcome", () => {
     traceability: {},
     ciStatus: "green",
     sonarStatus: "passed",
+    plainEnglishOutcome: "Maintainers see what the workflow change enables in practical terms.",
   };
 
   it("accepts a valid documentation_outcome=updated", () => {
@@ -12051,6 +12101,7 @@ describe("buildFinalReport documentation_outcome section", () => {
     traceability: {},
     ciStatus: "green",
     sonarStatus: "passed",
+    plainEnglishOutcome: "Maintainers see what the workflow change enables in practical terms.",
   };
 
   it("renders ## Documentation section for outcome=updated", () => {
@@ -12833,6 +12884,7 @@ describe("runPostFinalReport traceability_reconciled prerequisite (issue #1058)"
           requirements: [],
           reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
           ciStatus: "green", sonarStatus: "passed",
+          plainEnglishOutcome: "Maintainers get a human-readable explanation of what changed.",
         });
         assert.equal(r.ok, false);
         assert.equal(r.error, "phase_prerequisite_missing");
@@ -12865,6 +12917,7 @@ describe("runPostFinalReport traceability_reconciled prerequisite (issue #1058)"
           requirements: [],
           reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
           ciStatus: "green", sonarStatus: "passed",
+          plainEnglishOutcome: "Maintainers get a human-readable explanation of what changed.",
           overrideTraceabilityGate: true,
           overrideTraceabilityReason: "user-authorized post-merge backfill on 2026-05-30",
         });
@@ -12887,6 +12940,7 @@ describe("runPostFinalReport traceability_reconciled prerequisite (issue #1058)"
           requirements: [],
           reviews: [{ reviewer: "codex", summary: "x" }],
           ciStatus: "green", sonarStatus: "passed",
+          plainEnglishOutcome: "Maintainers get a human-readable explanation of what changed.",
           overrideTraceabilityGate: true, overrideTraceabilityReason: "",
         });
         assert.equal(r.ok, false);
@@ -13020,6 +13074,11 @@ describe("runCloseIssueAfterMerge", () => {
           { argv_prefix: ["api", ISSUE_API_PATH], stdout: JSON.stringify({ number: 1058, state: "open" }) },
           // PATCH close.
           { argv_prefix: ["api", "--method", "PATCH"], stdout: JSON.stringify({ number: 1058, state: "closed" }) },
+          { argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/issues"], stdout: JSON.stringify([
+            { number: 1156, title: "Current issue", state: "open", labels: [] },
+            { number: 1157, title: "Blocked issue", state: "open", labels: [{ name: "blocked" }] },
+            { number: 1158, title: "Improve workflow follow-up", state: "open", labels: [{ name: "ready" }, { name: "priority:p1" }] },
+          ]) },
         ],
       },
     });
@@ -13028,6 +13087,34 @@ describe("runCloseIssueAfterMerge", () => {
         assert.equal(r.already_closed, false);
         assert.equal(r.pr_number, 42);
         assert.equal(r.pr_merged_at, PR_MERGED_AT);
+        assert.equal(r.next_issue_recommendation.issue_number, 1158);
+        assert.equal(r.next_issue_recommendation.title, "Improve workflow follow-up");
+        assert.match(r.next_issue_recommendation.reason, /ready/);
+        assert.match(r.next_issue_recommendation.source, /GitHub open issues/);
+    });
+  });
+
+  it("does not block closure when next-issue recommendation lookup fails", async () => {
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({
+            data: { repository: { issue: { timelineItems: { nodes: [
+              { __typename: "CrossReferencedEvent", source: { __typename: "PullRequest", number: 42, state: "MERGED", mergedAt: PR_MERGED_AT, url: LINKED_PR_URL } },
+            ] } } } },
+          }) },
+          { argv_prefix: ["api", ISSUE_API_PATH], stdout: JSON.stringify({ number: 1058, state: "open" }) },
+          { argv_prefix: ["api", "--method", "PATCH"], stdout: JSON.stringify({ number: 1058, state: "closed" }) },
+          { argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/issues"], exit_code: 2, stderr: "network unavailable" },
+        ],
+      },
+    });
+    await withCloseResult(shim, 1058, (r) => {
+        assert.equal(r.ok, true);
+        assert.equal(r.already_closed, false);
+        assert.equal(r.next_issue_recommendation, null);
+        assert.match(r.next_issue_recommendation_error, /network unavailable/);
     });
   });
 

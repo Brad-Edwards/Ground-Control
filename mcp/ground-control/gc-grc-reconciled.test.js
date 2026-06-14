@@ -712,6 +712,7 @@ describe("runPostFinalReport grc_reconciled prerequisite (issue #1100)", () => {
         const r = await runPostFinalReport({
           repoPath: shim.repoDir,
           issueNumber: 1100, prNumber: 42,
+          plainEnglishOutcome: "Maintainers get a clear outcome before the reconciled evidence.",
           requirements: [],
           reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
           ciStatus: "green", sonarStatus: "passed",
@@ -743,6 +744,7 @@ describe("runPostFinalReport grc_reconciled prerequisite (issue #1100)", () => {
         const r = await runPostFinalReport({
           repoPath: shim.repoDir,
           issueNumber: 1100, prNumber: 42,
+          plainEnglishOutcome: "Maintainers get a clear outcome before the reconciled evidence.",
           requirements: [],
           reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
           ciStatus: "green", sonarStatus: "passed",
