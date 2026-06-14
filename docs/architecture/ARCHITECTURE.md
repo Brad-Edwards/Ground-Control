@@ -1,4 +1,4 @@
-# Ground Control—Architecture
+# Ground Control - Architecture
 
 ## Mission
 
@@ -95,7 +95,7 @@ api/ -> domain/ <- infrastructure/
 ```
 
 - `domain/` has no imports from `api/` or `infrastructure/` and no Spring web imports
-- `api/` depends on `domain/`—never imports `infrastructure/`
+- `api/` depends on `domain/` - never imports `infrastructure/`
 - `infrastructure/` implements interfaces defined in `domain/`
 
 Enforced at compile time by ArchUnit tests in `ArchitectureTest.java`.
@@ -104,9 +104,9 @@ Enforced at compile time by ArchUnit tests in `ArchitectureTest.java`.
 
 Spring profiles drive environment-specific behavior:
 
-- `application.yml`—base config (datasource, JPA, Flyway, server port, security defaults)
-- `application-dev.yml`—local dev (`groundcontrol.security.enabled=false`)
-- `application-test.yml`—test overrides (Testcontainers, security disabled)
+- `application.yml` - base config (datasource, JPA, Flyway, server port, security defaults)
+- `application-dev.yml` - local dev (`groundcontrol.security.enabled=false`)
+- `application-test.yml` - test overrides (Testcontainers, security disabled)
 
 Environment variables use the `GC_` prefix (for example, `GC_DATABASE_URL`, `GC_SERVER_PORT`). See `.env.example`.
 
@@ -139,7 +139,7 @@ both `ApiSecurityConfig` (bearer traffic) and `BrowserSecurityConfig`
 `/index.html`) and SPA client routes require a browser session; unauthenticated
 navigation redirects to `/login`, while API-shaped unauthenticated XHRs receive
 the standard JSON 401 envelope. Controllers do not perform per-method auth
-checks—the one deliberate exception,
+checks - the one deliberate exception,
 `PackRegistryAccessGuard`, is a defense-in-depth bridge that re-derives the
 admin principal from the same `SecurityContext` and re-asserts `ROLE_ADMIN`
 (see ADR-033 §4). `ActorFilter` runs after the security chain so audit
@@ -151,7 +151,7 @@ exports (alongside `request_id` / `tenant_id`). See [ADR-033](../../architecture
 
 ### Exists
 
-**Domain entities:** Requirement, RequirementRelation, TraceabilityLink, GitHubIssueSync, RequirementImport—all JPA with Envers auditing.
+**Domain entities:** Requirement, RequirementRelation, TraceabilityLink, GitHubIssueSync, RequirementImport - all JPA with Envers auditing.
 
 **Services:** RequirementService (9 methods), TraceabilityService (forward and reverse artifact lookup), ImportService (StrictDoc parser + idempotent import), GitHubIssueSyncService (CLI-based GitHub sync), AnalysisService (cycle/orphan/coverage/impact/cross-wave; status drift belongs here as read-only analysis), AgeGraphService (Apache AGE graph materialization + Cypher queries).
 
@@ -165,7 +165,9 @@ exports (alongside `request_id` / `tenant_id`). See [ADR-033](../../architecture
 
 **Read-side workspace endpoints (GC-Q012):** `GET /api/v1/evidence-state/workspace` assembles evidence artifacts, observations, evidence freshness, provenance source refs, affected assets, linked controls, downstream risk assessments, and linked findings as a read-only composition over existing aggregates. Optional query parameters: `assetId`, `controlId`, `asOf` (ISO 8601 instant), `freshnessWindowDays` (default 90, positive), and `includeSuperseded` (default false). Freshness is delegated to `EvidenceFreshnessAnalysisService`; the workspace adds bounded summaries and links only, avoiding raw evidence payloads, storage paths, and cross-project traversal. No new JPA aggregate or migration.
 
-**Frontend:** React 19 / TypeScript SPA served as embedded static resources from the Spring Boot JAR. Views: Dashboard (project health metrics), Requirements Explorer (browse/filter/author), Requirement Detail (fields, relations, traceability, audit), Dependency Graph (Cytoscape.js DAG visualization), Control and Assurance Workspace (`p/:projectId/control-assurance`, GC-Q011), Evidence and State Explorer (`p/:projectId/evidence-state`, GC-Q012), Threat Modeling Workspace (`p/:projectId/threat-modeling`, GC-Q010), Risk Scenario Workspace (`p/:projectId/risk-scenarios`, GC-Q009). See [ADR-017](../../architecture/adrs/017-interactive-web-application.md).
+**Portfolio reporting view (GC-Q013):** The SPA route `p/:projectId/portfolio` composes the existing read-only GRC workspaces and list endpoints into portfolio summaries for risk posture, control health, evidence freshness, finding trends, asset criticality concentration, and FAIR/NIST/ISO methodology coverage. It is a frontend read-model composition over canonical project-scoped data, preserves UIDs and graph node identifiers for drill-down into the graph/workspace surfaces, and introduces no new persistence, backend reporting aggregate, or methodology engine.
+
+**Frontend:** React 19 / TypeScript SPA served as embedded static resources from the Spring Boot JAR. Views: Dashboard (project health metrics), GRC Portfolio (`p/:projectId/portfolio`, GC-Q013), Requirements Explorer (browse/filter/author), Requirement Detail (fields, relations, traceability, audit), Dependency Graph (Cytoscape.js DAG visualization), Control and Assurance Workspace (`p/:projectId/control-assurance`, GC-Q011), Evidence and State Explorer (`p/:projectId/evidence-state`, GC-Q012), Threat Modeling Workspace (`p/:projectId/threat-modeling`, GC-Q010), Risk Scenario Workspace (`p/:projectId/risk-scenarios`, GC-Q009). See [ADR-017](../../architecture/adrs/017-interactive-web-application.md).
 
 **Tooling:** Status state machine with JML contracts (verified by OpenJML ESC + Z3), Flyway migrations, Spotless/Error Prone/SpotBugs/Checkstyle/JaCoCo, ArchUnit architecture tests, CI pipeline (build + test + integration + verify), production Dockerfile, GHCR publishing, E2E integration tests.
 
@@ -177,10 +179,10 @@ The mixed-entity graph (materialized via `AgeGraphService` + Apache AGE) now inc
 
 The four public operations on the mixed-entity graph (GC-G008) are:
 
-- `GET /api/v1/graph/visualization`—returns the full project-scoped graph as a flat node+edge list.
-- `POST /api/v1/graph/subgraph/query`—extracts a subgraph anchored at caller-supplied root node IDs.
-- `POST /api/v1/graph/traversal/query`—BFS neighborhood traversal with configurable depth and optional entity-type filter.
-- `POST /api/v1/graph/paths/query`—shortest-path queries between two node IDs.
+- `GET /api/v1/graph/visualization` - returns the full project-scoped graph as a flat node+edge list.
+- `POST /api/v1/graph/subgraph/query` - extracts a subgraph anchored at caller-supplied root node IDs.
+- `POST /api/v1/graph/traversal/query` - BFS neighborhood traversal with configurable depth and optional entity-type filter.
+- `POST /api/v1/graph/paths/query` - shortest-path queries between two node IDs.
 
 **Routing:** `GraphController` → `MixedGraphService` → `MixedGraphClient` → `AgeGraphService` (with JPA-projection fallback when Apache AGE is unavailable, per ADR-032). The JPA fallback builds the same `GraphProjection` shape from JPA aggregates so callers receive a consistent response regardless of AGE availability.
 
@@ -202,8 +204,8 @@ Status drift analysis is a read-only requirements-domain analysis. It flags requ
 
 The analysis must build on the existing graph contracts:
 
-- Requirements are project-scoped per ADR-016; all status drift queries must resolve a single project, and every evidence signal must be derived from data owned by that project. Never compare UIDs across projects without project context, and never read project- or repo-unscoped caches (for example, the GitHub issue/PR sync tables) from this path—a project-scoped analysis must not surface another project's (or another repo's) artifacts.
-- Evidence is link-based: an `IMPLEMENTS` traceability link on a `DRAFT` requirement (the strongest signal—`IMPLEMENTS` to an issue is allowed pre-`ACTIVE` in the GC-O007/#794 shape), a `DOCUMENTS` link to an `ACCEPTED` ADR (`ArchitectureDecisionRecord` + `TraceabilityLink` with `artifactType=ADR`, `linkType=DOCUMENTS`), a non-`IMPLEMENTS` link to a GitHub issue or pull request, or a non-`IMPLEMENTS` link to a code/test/spec/proof artifact. A `DOCUMENTS` link is evidence, not an implementation link.
+- Requirements are project-scoped per ADR-016; all status drift queries must resolve a single project, and every evidence signal must be derived from data owned by that project. Never compare UIDs across projects without project context, and never read project- or repo-unscoped caches (for example, the GitHub issue/PR sync tables) from this path - a project-scoped analysis must not surface another project's (or another repo's) artifacts.
+- Evidence is link-based: an `IMPLEMENTS` traceability link on a `DRAFT` requirement (the strongest signal - `IMPLEMENTS` to an issue is allowed pre-`ACTIVE` in the GC-O007/#794 shape), a `DOCUMENTS` link to an `ACCEPTED` ADR (`ArchitectureDecisionRecord` + `TraceabilityLink` with `artifactType=ADR`, `linkType=DOCUMENTS`), a non-`IMPLEMENTS` link to a GitHub issue or pull request, or a non-`IMPLEMENTS` link to a code/test/spec/proof artifact. A `DOCUMENTS` link is evidence, not an implementation link.
 - Traceability identifiers follow ADR-011 conventions. GitHub issues and pull requests use raw decimal identifiers; ADRs use ADR UIDs; code/test/config evidence uses repo-relative identifiers. Do not add alternate encodings such as `#42`, `owner/repo#42`, `file:...`, or `adr:021`.
 - The analysis path must not shell out to `gh` or scan arbitrary filesystem paths; network and process execution belong in the GitHub sync adapter, not the analysis service.
 
@@ -220,15 +222,15 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 - Concrete verifier adapter implementations in `infrastructure/verifiers/` (ADR-014 §6). The `VerifierAdapter` port interface and request/outcome contracts are defined in the domain layer; future work is implementing adapters for each prover (OpenJML, TLA+/TLC, OPA/Rego, Frama-C, manual review).
 - Concrete evidence collection adapter implementations. The `EvidenceCollectionAdapter` port interface, request/result contracts, and classpath/dynamic descriptor registry are defined in the domain layer; external-system collectors belong in infrastructure or trusted plugin code.
 - Traceability Matrix view (`/traceability`) and Audit Timeline view (`/audit`) in the frontend
-- Apache AGE is optional—the app gracefully degrades to JPA-only analysis when AGE is unavailable
+- Apache AGE is optional - the app gracefully degrades to JPA-only analysis when AGE is unavailable
 
 ### Exists now
 
 - `specs/tla/` for design-level verification artifacts and state-machine specs, aligned with ADR-014
-- Verification result storage (VerificationResult entity with eager-loaded target/requirement, enums, CRUD API, MCP tools)—ADR-014 §2 common schema
-- Pluggable verifier adapter interface (`VerifierAdapter`, `VerificationRequest`, `VerificationOutcome`)—ADR-014 §6 port contract for multi-tool integration
+- Verification result storage (VerificationResult entity with eager-loaded target/requirement, enums, CRUD API, MCP tools) - ADR-014 §2 common schema
+- Pluggable verifier adapter interface (`VerifierAdapter`, `VerificationRequest`, `VerificationOutcome`) - ADR-014 §6 port contract for multi-tool integration
 - Pluggable evidence collection adapter interface (`EvidenceCollectionAdapter`, `EvidenceCollectionRequest`, `EvidenceCollectionResult`) plus `EvidenceCollectionAdapterRegistry` in the evidence service package. This is the GC-S001 port contract for agent-invoked external evidence collection.
-- Self-referential traceability enforcement—`check_live_policy.mjs` verifies substantive code files have reverse traceability links to requirements (GC-O002), using the `GET /requirements/traceability/by-artifact` reverse lookup endpoint. Lookup errors are tracked separately for debuggability when the endpoint is unavailable.
+- Self-referential traceability enforcement - `check_live_policy.mjs` verifies substantive code files have reverse traceability links to requirements (GC-O002), using the `GET /requirements/traceability/by-artifact` reverse lookup endpoint. Lookup errors are tracked separately for debuggability when the endpoint is unavailable.
 - Server-side quality gates (`QualityGateService.evaluate`) synced from `tools/ground_control/policy.json`, evaluated in CI (`make policy-live`) and enforced at the `/implement` completion gate via `gc_assert_quality_gates`. Enforced metric types are `COVERAGE` (IMPLEMENTS / TESTS / DOCUMENTS link coverage for ACTIVE requirements), `ORPHAN_COUNT`, and `COMPLETENESS`; a failing gate blocks the run with a `{name, metric_type, threshold, actual}` envelope.
 - ADR metadata drift checks (`check_adr_drift.mjs` and `sync_policy.mjs`) use
   `tools/ground_control/common.mjs` to normalize the live ADR title from the

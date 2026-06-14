@@ -1,4 +1,4 @@
-# ADR-052 — Risk-Control Mapping Aggregate (GC-T003)
+# ADR-052 - Risk-Control Mapping Aggregate (GC-T003)
 
 **Status:** Accepted
 **Date:** 2026-05-21
@@ -38,10 +38,10 @@ fields.
 
 ### 2. Polymorphic endpoints via paired nullable FKs
 
-The control-side and risk-side each have two nullable FK columns (e.g.
+The control-side and risk-side each have two nullable FK columns (for example
 `control_id` / `scoped_implementation_id`; `risk_scenario_id` /
 `risk_register_record_id`). A DB `CHECK` constraint on each side enforces
-exactly-one (XOR). Service-layer `validateExactlyOne*` guards reject violations
+exactly one (XOR). Service-layer `validateExactlyOne*` guards reject violations
 before hitting the DB.
 
 This pattern mirrors the existing `ControlLink`/`RiskScenarioLink` polymorphism
@@ -50,7 +50,7 @@ and avoids a table-per-endpoint proliferation.
 ### 3. ScopedControlImplementation
 
 A lightweight `@Audited` entity scoping a catalog `Control` to a specific
-implementation context (e.g. "Email Gateway") with an optional `OperationalAsset`
+implementation context (for example "Email Gateway") with an optional `OperationalAsset`
 boundary. Motivates the control-side polymorphism: callers that have decomposed
 a catalog control into implementation units map at the SCI level rather than the
 catalog level.

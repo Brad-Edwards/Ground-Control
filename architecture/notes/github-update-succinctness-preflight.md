@@ -16,7 +16,7 @@ It does not implement skill edits, renderer changes, tests, or policy updates.
   renderers; agents should not bypass them with free-form `gh issue comment`
   or hand-authored PR bodies.
 - Treat succinctness as a rendering and workflow-surface contract, not a new
-  domain abstraction. Do not introduce a "verbosity service", separate schema,
+  domain abstraction. Do not introduce a "verbosity service," separate schema,
   prompt DSL, local state file, database table, or policy engine for this.
 - Define the canonical rule once in workflow prose and reference it from the
   per-step files and `/quickfix` surface: "a GitHub update gives exactly what's
@@ -101,7 +101,7 @@ It does not implement skill edits, renderer changes, tests, or policy updates.
 - Do not conflate "short" with "missing required evidence." A final report
   still needs CI/Sonar status and PR readiness; a PR body still needs policy
   sections; a decision record still needs every finding's disposition.
-- Do not add placeholder text such as "None", "N/A", or "No changes" in
+- Do not add placeholder text such as "None," "N/A," or "No changes" in
   optional sections that can simply be omitted. Keep placeholders only where a
   policy gate or durable-record reader depends on an explicit marker.
 - Do not create duplicate succinctness rubrics in every step file. The more

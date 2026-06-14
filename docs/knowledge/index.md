@@ -16,7 +16,7 @@ rather than creating a duplicate. See `SCHEMA.md` for the full conventions.
 Format of each entry is:
 
 ```
-- [page-title](relative/path.md) — one-line summary. Tags: tag1, tag2
+- [page-title](relative/path.md) - one-line summary. Tags: tag1, tag2
 ```
 
 ## Topics

@@ -7,7 +7,7 @@ Always do the right thing, not the easy thing.
 
 This is a Java 21 / Spring Boot 3.4 / Gradle project.
 
-- Rapid dev loop: `make rapid` (format + compile, ~3-5s)
+- Rapid dev loop: `make rapid` (format + compile, ~3-5 seconds)
 - Test: `make test` (unit tests, no static analysis)
 - Policy: `make policy` (repo-native ADR/workflow guardrails shared by Claude and Codex)
 - Format: `cd backend && ./gradlew spotlessApply`

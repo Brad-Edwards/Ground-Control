@@ -61,13 +61,13 @@ canonical principal and authorities consumed by `ActorFilter`.
 - `ApiSecurityConfig` is the primary authorization boundary: it performs authentication
   and the `ROLE_USER` / `ROLE_ADMIN` path matrix. The single deliberate exception is
   `PackRegistryAccessGuard.requireAdminActor()`, a defense-in-depth bridge invoked per
-  pack-registry endpoint. It does *not* introduce a parallel auth model — when security is
+  pack-registry endpoint. It does *not* introduce a parallel auth model - when security is
   enabled it re-derives the admin principal from the same `SecurityContext` (never from
   headers or request bodies), re-asserts `ROLE_ADMIN`, and throws `AuthenticationException`
   if no authenticated admin principal is in scope, so a misconfiguration that left the
   pack-registry path out of the security matrix fails closed. When
   `groundcontrol.security.enabled=false` (dev/test profile) the guard, like `ActorFilter`,
-  falls back to `ActorHolder` (`X-Actor` or `anonymous`) — the same explicit dev
+  falls back to `ActorHolder` (`X-Actor` or `anonymous`) - the same explicit dev
   convenience described in §2, not a production path. New controllers must not add their
   own auth checks; they rely on `ApiSecurityConfig`, and where they need the principal as
   an audit field they read it from the `SecurityContext` (or, in the security-disabled dev
@@ -82,7 +82,7 @@ canonical principal and authorities consumed by `ActorFilter`.
 - Audit persistence stays on Envers plus `GroundControlRevisionListener`; do not create
   a second revision table or feature-local audit writer.
 - Logging stays on `RequestLoggingFilter`, `ActorFilter`, MDC, and Logback. Tokens and
-  raw authorization headers must never be logged. The actor MDC key is `actor_id` —
+  raw authorization headers must never be logged. The actor MDC key is `actor_id` -
   `ActorFilter` writes it and `logback-spring.xml`'s production JSON appender lists it
   under `<includeMdcKeyName>`; the two must stay in sync (`ActorFilterTest` pins the key
   `ActorFilter` writes), and the `_id` suffix matches the sibling correlation keys

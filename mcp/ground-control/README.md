@@ -41,7 +41,7 @@ root (the cwd it was launched from) at startup:
 
 ```sh
 # In each repo where you start Claude Code / Codex against Ground Control:
-cp .env.example .env       # if your repo has the template — Ground-Control does
+cp .env.example .env       # if your repo has the template - Ground-Control does
 chmod 600 .env
 # Edit .env and set GROUND_CONTROL_API_TOKEN=<32-byte-hex token>
 ```

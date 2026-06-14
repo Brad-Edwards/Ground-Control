@@ -19,7 +19,7 @@ accepted
 
 ## Context
 
-The June 6 redesign revert (issue #1089) demonstrated that prose-only workflow gates can be short-circuited—an agent can skip a prose instruction without any tooling enforcement. The GRC-in-the-loop requirement (GC-O012) mandates that every `/implement` run classify its change surface against the project's threat/risk workspaces before planning, but a prose instruction alone carries no enforcement weight.
+The June 6 redesign revert (issue #1089) demonstrated that prose-only workflow gates can be short-circuited - an agent can skip a prose instruction without any tooling enforcement. The GRC-in-the-loop requirement (GC-O012) mandates that every `/implement` run classify its change surface against the project's threat/risk workspaces before planning, but a prose instruction alone carries no enforcement weight.
 
 Additionally, the existing `/implement` workflow has no structured record of whether a given run was screened for security relevance. Post-run assertions (issue #1100) need a machine-parseable record to verify that the gate ran and what verdict it produced.
 

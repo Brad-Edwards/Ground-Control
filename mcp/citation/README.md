@@ -10,7 +10,7 @@ Used by the `lit-review`, `lit-review-plan`, `lit-review-search`, `lit-review-ar
 |---|---|
 | `cite_resolve` | Resolve `doi:` / `arxiv:` / `pmid:` / `isbn:` identifiers to canonical CSL-JSON. |
 | `cite_search` | Search OpenAlex (default) or Crossref for candidate works by title / keywords / author. |
-| `cite_forward` | Forward citations (works that cite a given DOI) via OpenAlex—closes backward + forward snowballing. |
+| `cite_forward` | Forward citations (works that cite a given DOI) via OpenAlex - closes backward + forward snowballing. |
 | `oa_locate` | Look up OA locations for a DOI via Unpaywall. Caches results 15 min so `zotero_attach_pdf` can enforce OA-only attachment. |
 | `zotero_search` | Search the user's Zotero library for existing items. |
 | `zotero_add` | Ingest a citation into the user's Zotero library via translation-server. Idempotent on DOI. |
@@ -21,14 +21,14 @@ Used by the `lit-review`, `lit-review-plan`, `lit-review-search`, `lit-review-ar
 The launcher `mcp/citation/bin/citation-mcp.sh` auto-bootstraps the venv on first run (idempotent), so the `.mcp.json` `citation` entry just invokes the launcher and the venv is created on demand. Manual bootstrap is only needed if you want to run the self-test before Claude Code first starts the server.
 
 ```sh
-# From repo root—manual bootstrap (optional; the launcher does this lazily)
+# From repo root - manual bootstrap (optional; the launcher does this lazily)
 python3 -m venv mcp/citation/.venv
 mcp/citation/.venv/bin/pip install -e mcp/citation/
 
 # Required for zotero_add (one-time, idempotent restart)
 docker run -d --rm -p 1969:1969 zotero/translation-server
 
-# Offline self-test—no network, no Zotero
+# Offline self-test - no network, no Zotero
 mcp/citation/bin/citation-mcp.sh --self-test
 ```
 

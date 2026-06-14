@@ -10,10 +10,10 @@ Accepted
 
 ## Context
 
-[ADR-018](./018-aws-ec2-deployment.md) put Ground Control on a `t3a.small` EC2 instance in the `catalyst-dev` AWS account, behind Tailscale, with EBS for data and S3 for backups. That decision served its purpose — it got the workload off the developer's laptop and onto durable infrastructure — but several pressures accumulated:
+[ADR-018](./018-aws-ec2-deployment.md) put Ground Control on a `t3a.small` EC2 instance in the `catalyst-dev` AWS account, behind Tailscale, with EBS for data and S3 for backups. That decision served its purpose - it got the workload off the developer's laptop and onto durable infrastructure - but several pressures accumulated:
 
 - **Capacity ceiling.** `t3a.small` is 2 vCPU / 1.9 GB RAM. The JVM was capped at `-Xmx512m`, leaving no room for Lucene/AGE workload growth or the embedding-pipeline experiments that ADR-033 anticipates. Vertical scale on EC2 means money and reboot.
-- **Single-account AWS dependency.** The deployment pulled in EC2, EBS, S3, DLM, IAM (OIDC role + policies), VPC defaults, plus the cron-driven backup script writing to S3. Every move added more AWS surface and more "now we also need…".
+- **Single-account AWS dependency.** The deployment pulled in EC2, EBS, S3, DLM, IAM (OIDC role + policies), VPC defaults, plus the cron-driven backup script writing to S3. Every move added more AWS surface and more "now we also need…."
 - **No ergonomic fit with the rest of the fleet.** `aurora` (Proxmox VE 9, fabricator runner host) and the Hetzner box (`red-dragon`, 8c/16t / 128 GB / 2× 1 TB NVMe) are both already in the operator's tailnet. Running one workload in AWS while every other workload is on-prem fragments the operational model. ADR-018's "single-tenant Tailnet-only" intent fit better with the rest of the on-prem fleet than with EC2.
 - **Cost trajectory.** EC2+EBS+S3 was ~$17/mo on-demand. Marginal in absolute terms, but it scaled with disk and snapshot retention, and it was AWS spend the rest of the workload didn't have.
 
@@ -25,12 +25,12 @@ Run Ground Control on `red-dragon` (Hetzner dedicated, AMD Ryzen 7 3700X / 128 G
 
 ### Architecture
 
-- **Compute** — Single host (`red-dragon`), Ubuntu, Docker Engine 29.x, Docker Compose v5.x. PostgreSQL+AGE container + Spring Boot backend container managed by `/opt/gc/docker-compose.yml`.
-- **Access** — Tailscale-only. `red-dragon`'s sshd binds to the tailnet IP (`100.98.28.66:22`) only; no public SSH. Application reachable on tailnet at `http://red-dragon:8000`.
-- **Storage** — `/data/postgres` bind-mounted into the database container (Postgres data); `/data/backups` for `pg_dump` artifacts. Both on the host's main NVMe array.
-- **Image registry** — GHCR (`ghcr.io/keplerops/ground-control`). The CI workflow's previous dual-push to GHCR + ECR is replaced by GHCR-only.
-- **Deploy path** — push to `main` → CI (`.github/workflows/ci.yml`) → `deploy` job runs on a fabricator-managed runner that joined the tailnet at first boot (per [`KeplerOps/fabricator` PR #14](https://github.com/KeplerOps/fabricator/pull/14)) → SSH to `gc-deploy@red-dragon` → forced command `/opt/gc/deploy.sh` does `docker compose pull && docker compose up -d` and verifies `/actuator/health`. No public ingress is required at any point.
-- **Backups** — `pg_dump -Fc` cron 3×/day to `/data/backups/`, retention 30 days local. Off-box copy via rsync over the tailnet to `aurora` (or another tailnet target — see [ADR-025](./025-backup-policy.md) amendment for current mechanism). EBS DLM snapshots and the S3 bucket from ADR-018 are removed.
+- **Compute** - Single host (`red-dragon`), Ubuntu, Docker Engine 29.x, Docker Compose v5.x. PostgreSQL+AGE container + Spring Boot backend container managed by `/opt/gc/docker-compose.yml`.
+- **Access** - Tailscale-only. `red-dragon`'s sshd binds to the tailnet IP (`100.98.28.66:22`) only; no public SSH. Application reachable on tailnet at `http://red-dragon:8000`.
+- **Storage** - `/data/postgres` bind-mounted into the database container (Postgres data); `/data/backups` for `pg_dump` artifacts. Both on the host's main NVMe array.
+- **Image registry** - GHCR (`ghcr.io/keplerops/ground-control`). The CI workflow's previous dual-push to GHCR + ECR is replaced by GHCR-only.
+- **Deploy path** - push to `main` → CI (`.github/workflows/ci.yml`) → `deploy` job runs on a fabricator-managed runner that joined the tailnet at first boot (per [`KeplerOps/fabricator` PR #14](https://github.com/KeplerOps/fabricator/pull/14)) → SSH to `gc-deploy@red-dragon` → forced command `/opt/gc/deploy.sh` does `docker compose pull && docker compose up -d` and verifies `/actuator/health`. No public ingress is required at any point.
+- **Backups** - `pg_dump -Fc` cron 3×/day to `/data/backups/`, retention 30 days local. Off-box copy via rsync over the tailnet to `aurora` (or another tailnet target - see [ADR-025](./025-backup-policy.md) amendment for current mechanism). EBS DLM snapshots and the S3 bucket from ADR-018 are removed.
 
 ### CI runner asymmetry
 
@@ -38,8 +38,8 @@ CI's `policy`, `build`, `test`, `integration`, `sonar`, `verify`, `docker`, and 
 
 Two jobs are the **deliberate exceptions** and stay on the fabricator-managed self-hosted runner pool because they need to reach the tailnet:
 
-- `deploy` — SSHes to `gc-deploy@red-dragon` (see "Runner → red-dragon network path" below).
-- `policy-live` — when `vars.GC_BASE_URL` is set, it talks to the live Ground Control instance, which is the tailnet-only `red-dragon` deployment. The var is currently unset so the job is skipped, but the runner choice has to match the intended target rather than the empty-default behavior, otherwise enabling the var silently breaks the live policy gate.
+- `deploy` - SSHes to `gc-deploy@red-dragon` (see "Runner → red-dragon network path" below).
+- `policy-live` - when `vars.GC_BASE_URL` is set, it talks to the live Ground Control instance, which is the tailnet-only `red-dragon` deployment. The var is currently unset so the job is skipped, but the runner choice has to match the intended target rather than the empty-default behavior, otherwise enabling the var silently breaks the live policy gate.
 
 If/when this repo adds the `tailscale/github-action` and a Tailscale OAuth secret, both exception jobs can move to `ubuntu-latest` too and the asymmetry disappears.
 
@@ -67,12 +67,12 @@ The tailnet ACL contains:
 command="/opt/gc/deploy.sh",restrict <ed25519-pubkey>
 ```
 
-The forced command + `restrict` (which disables port-forwarding, X11, agent-forwarding, PTY, user-rc) means the deploy key cannot do anything except invoke the deploy script — no shell access, no lateral pivot. The corresponding private key lives in two places only: the operator's local file (created during the migration) and the `RED_DRAGON_DEPLOY_KEY` GitHub repo secret on `KeplerOps/Ground-Control`. `RED_DRAGON_KNOWN_HOSTS` carries the host-key fingerprints so the runner verifies it's talking to the real `red-dragon`.
+The forced command + `restrict` (which disables port-forwarding, X11, agent-forwarding, PTY, user-rc) means the deploy key cannot do anything except invoke the deploy script - no shell access, no lateral pivot. The corresponding private key lives in two places only: the operator's local file (created during the migration) and the `RED_DRAGON_DEPLOY_KEY` GitHub repo secret on `KeplerOps/Ground-Control`. `RED_DRAGON_KNOWN_HOSTS` carries the host-key fingerprints so the runner verifies it's talking to the real `red-dragon`.
 
 ### What ADR-018 retains
 
 - Single-tenant, Tailscale-only access model.
-- Apache AGE-on-Postgres (ADR-005) — same image (`apache/age:release_PG16_1.6.0`).
+- Apache AGE-on-Postgres (ADR-005) - same image (`apache/age:release_PG16_1.6.0`).
 - ADR-026 access-control model (Bearer-token + IP allowlist) is unchanged.
 - Backup policy *intent* (GC-P021): three dump cadence, off-box durability, retention floor. The mechanism changes (rsync-to-aurora replaces S3); the contract does not.
 
@@ -135,7 +135,7 @@ Pending after this PR merges:
 
 ## Related ADRs
 
-- ADR-018 — superseded by this ADR.
-- ADR-005 — Apache AGE on Postgres (preserved, same image).
-- ADR-025 — Backup Policy (mechanism amendment).
-- ADR-026 — REST API Access Control (preserved, unchanged).
+- ADR-018 - superseded by this ADR.
+- ADR-005 - Apache AGE on Postgres (preserved, same image).
+- ADR-025 - Backup Policy (mechanism amendment).
+- ADR-026 - REST API Access Control (preserved, unchanged).

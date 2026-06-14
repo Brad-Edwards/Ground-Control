@@ -8,6 +8,8 @@ accepted
 
 2026-05-23
 
+> **Style sync for issue #751 (2026-06-14):** Repository-wide Vale cleanup normalized punctuation in documentation prose. This ADR's documentation coverage gate stays the same.
+
 ## Context
 
 Changes that modify workflow behavior, MCP tool surfaces, config parsing,
@@ -213,6 +215,8 @@ requirement DRAFT kept it out of active-status project coverage until after
 the completion gate had already passed. The backend uses the existing
 quality-gate and traceability repositories; no new coverage schema, endpoint,
 or frontend-only validation layer was added.
+
+**2026-06-14 (issue #689 GC-Q003 Traceability Matrix).** The `getTraceabilityMatrix` function was added to `mcp/ground-control/lib.js` as a thin API client for the new `GET /api/v1/requirements/matrix` endpoint, and the `gc_traceability_matrix` read tool was registered in `mcp/ground-control/index.js`. These are additive API-client and tool-registration surfaces. Documentation lives in `docs/API.md` and the tool description in `mcp/ground-control/index.js`; the classifier already covers the MCP trigger paths. The doc-coverage classifier, Vale rule set, `tools/install-vale.sh` installer, and `.vale.ini` configuration are unchanged; no new `docs/DOC_STYLE.md` style rule is established.
 
 **2026-06-14 (next-issue recommendation skips umbrella/tracking issues).**
 Refined the `gc_close_issue_after_merge` next-issue recommendation in

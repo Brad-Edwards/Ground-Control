@@ -10,7 +10,7 @@ Accepted
 
 ## Revision
 
-2026-03-09 — Updated to reflect ADR-013 (Java/Spring Boot rewrite). Decision unchanged.
+2026-03-09 - Updated to reflect ADR-013 (Java/Spring Boot rewrite). Decision unchanged.
 
 ## Context
 
@@ -37,4 +37,4 @@ Ground Control needs a relational database. PostgreSQL is the primary data store
 
 ### Risks
 
-- None significant — PostgreSQL is the standard choice for Spring Boot projects
+- None significant - PostgreSQL is the standard choice for Spring Boot projects

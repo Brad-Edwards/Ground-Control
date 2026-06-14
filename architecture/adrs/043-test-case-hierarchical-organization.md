@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — 2026-05-17.
+Accepted - 2026-05-17.
 
 ## Context
 
@@ -43,7 +43,7 @@ Folders and test cases use **independent** `sort_order` axes within
 each container. The tree renders folders first (sorted by their
 `sort_order`), then test cases (sorted by their `sort_order`). This
 matches best-of-breed UX (folders sit above leaves in file explorers
-and test repositories) and keeps reorder queries simple — each
+and test repositories) and keeps reorder queries simple - each
 operation rewrites at most N rows in one container of one entity type.
 
 A unified ordering across heterogeneous entities was considered and
@@ -94,7 +94,7 @@ clones authored children through their owning services
 is unchanged.
 
 Copy placement uses the **same convention as move**: `parentFolderId`
-is the explicit target — a UUID names the folder, `null` (or omitted)
+is the explicit target - a UUID names the folder, `null` (or omitted)
 means the project root. The earlier "null preserves the source's
 folder" semantic was rejected because it conflated JSON omission and
 explicit null, leaving the project root unreachable for a copy from a
@@ -105,7 +105,7 @@ A copy without a `newUid` is rejected. Auto-generating UIDs would
 either leak naming conventions into the domain or force callers to
 clean up afterwards; explicit naming keeps the contract obvious.
 
-`actualResult` is **not** copied for step children — it is run-time
+`actualResult` is **not** copied for step children - it is run-time
 evidence (ADR-041), not part of the test-case definition.
 
 ### Folder deletion
@@ -185,7 +185,7 @@ probes for the new tables/columns/indexes.
 
 ## Related
 
-- TC-005 — Hierarchical Test Case Organization (Wave 1)
+- TC-005 - Hierarchical Test Case Organization (Wave 1)
 - ADR-040 Test Case Domain
 - ADR-041 Test Case Step Format
 - ADR-042 Test Case BDD/Gherkin Format

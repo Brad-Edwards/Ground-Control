@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — 2026-05-17.
+Accepted - 2026-05-17.
 
 ## Context
 
@@ -55,17 +55,17 @@ scalar text fields.
 
 The `TestPlan` entity carries:
 
-- `id` (UUID PK, `BaseEntity`) — the load-bearing extensibility seam
+- `id` (UUID PK, `BaseEntity`) - the load-bearing extensibility seam
   (see below).
-- `project_id` (FK to `project`) — project scope, mirroring every
+- `project_id` (FK to `project`) - project scope, mirroring every
   other test-management aggregate. `@NotAudited` on the JPA mapping.
-- `uid` (`VARCHAR(50)`, client-supplied, unique per project) — same
+- `uid` (`VARCHAR(50)`, client-supplied, unique per project) - same
   convention as `TestCase.uid`. The pair `(project_id, uid)` is
   uniquely indexed; the service throws `ConflictException` on a
   duplicate.
 - `name` (`VARCHAR(200)`, required, non-blank).
 - `description` (TEXT, optional).
-- `product`, `version`, `build` — bounded scalar text columns
+- `product`, `version`, `build` - bounded scalar text columns
   (`VARCHAR(200)`, `VARCHAR(100)`, `VARCHAR(100)` respectively), all
   optional. These are *release coordinate text*, not foreign keys
   into a Product / Release / Build catalog; see the next section for
@@ -113,7 +113,7 @@ We did not reuse `TestCaseStatus`, `Requirement.Status`, or
 lifecycles (`DRAFT`/`APPROVED`/`DEPRECATED`/`ARCHIVED`) rather than
 the execution lifecycle a plan needs.
 
-### Extensibility — the load-bearing seam
+### Extensibility - the load-bearing seam
 
 The TC-006 clause "ability to group multiple test runs under a single
 plan" is satisfied by `TestPlan.id` being a stable UUID PK that a
@@ -134,16 +134,16 @@ Routes live under `/api/v1/test-plans/**` so the existing auth
 allow-list, IP guard, browser session / CSRF chain (ADR-037), and
 actor-filter chain apply unchanged:
 
-- `POST /api/v1/test-plans` — create a plan in the resolved project.
-- `GET /api/v1/test-plans` — list plans for the resolved project,
+- `POST /api/v1/test-plans` - create a plan in the resolved project.
+- `GET /api/v1/test-plans` - list plans for the resolved project,
   ordered by `createdAt DESC` (most-recent-first).
-- `GET /api/v1/test-plans/{id}` — get by UUID.
-- `GET /api/v1/test-plans/uid/{uid}` — get by project-scoped UID.
-- `PUT /api/v1/test-plans/{id}` — partial update; null leaves a field
+- `GET /api/v1/test-plans/{id}` - get by UUID.
+- `GET /api/v1/test-plans/uid/{uid}` - get by project-scoped UID.
+- `PUT /api/v1/test-plans/{id}` - partial update; null leaves a field
   alone, `clearXxx: true` clears it (matches `UpdateTestCaseRequest`).
-- `PUT /api/v1/test-plans/{id}/status` — transition status; legality
+- `PUT /api/v1/test-plans/{id}/status` - transition status; legality
   delegated to the entity.
-- `DELETE /api/v1/test-plans/{id}` — delete plan.
+- `DELETE /api/v1/test-plans/{id}` - delete plan.
 
 ### Persistence
 
@@ -194,11 +194,11 @@ hardcoded version list is extended.
 ## Related
 
 - ADR-040 (Test case domain), ADR-041 (Step format), ADR-042 (Gherkin
-  format), ADR-043 (Hierarchical organisation) — sibling aggregates
+  format), ADR-043 (Hierarchical organisation) - sibling aggregates
   inside the `testcases` boundary.
-- ADR-033 (Authenticated audit actor provenance) — Envers actor wiring
+- ADR-033 (Authenticated audit actor provenance) - Envers actor wiring
   that `TestPlan` inherits unchanged.
-- ADR-034 (API enum contract) — `TestPlanStatus` is single-sourced in
+- ADR-034 (API enum contract) - `TestPlanStatus` is single-sourced in
   the domain state package and mirrored in `frontend/src/types/api.ts`.
-- ADR-037 (Browser session access control) — the session / CSRF chain
+- ADR-037 (Browser session access control) - the session / CSRF chain
   that `/api/v1/test-plans/**` rides through.

@@ -12,7 +12,7 @@ accepted
 
 Ground Control's research project type needs working artifact infrastructure: a methodology contract, an executable literature-review plan, a citation-grounded search and charting workflow, an argument-architecture phase, and a drafting phase whose prose can only cite sources present in the evidence base. The 14 GC-RSCH-F* requirements in scope for issue #1032 (F005–F009, F012, F014, F017, F019, F020, F024, F028, F030, F038) name what that infrastructure must do; F038 specifically calls for explicit rationale when a working asset is replaced rather than reused.
 
-A separate single-purpose repository (now retired) developed and field-tested most of these artifacts against real failure modes—citation hallucination (88 partially hallucinated references in one drafting run), domain leakage into methodology outputs, invented procedural detail, imported framing without provenance, and synthesis claims unsupported by the charted corpus. The two most valuable disciplines it ended on are:
+A separate single-purpose repository (now retired) developed and field-tested most of these artifacts against real failure modes - citation hallucination (88 partially hallucinated references in one drafting run), domain leakage into methodology outputs, invented procedural detail, imported framing without provenance, and synthesis claims unsupported by the charted corpus. The two most valuable disciplines it ended on are:
 
 - methodology requirements extracted from primary methodology sources, never paraphrased from memory; and
 - the two-state source rule: a source is either fully in the review with full text read and charted, or recorded as an access gap and not charted.
@@ -29,17 +29,17 @@ Ground Control ships five Claude skills, one methodology catalog, one determinis
 
 | Skill | Purpose |
 |---|---|
-| `lit-review` | Phase 1—pick the methodology; read the catalog's primary sources; extract the requirements specification a downstream plan must satisfy. |
-| `lit-review-plan` | Phase 2—fill the phase-1 requirements with domain content; produce an executable lit-review plan. |
-| `lit-review-search` | Phase 3—run the plan: search, screen, chart fully in sources, record access gaps, synthesise. Output is the evidence base, not paper prose. |
-| `lit-review-argument` | Phase 4—build the paper's argument architecture: section outline plus validated Argdown argument map with grounded premises and modelled objections. |
-| `lit-review-draft` | Phase 5—draft the manuscript from the phase-4 architecture and the phase-3 evidence base; cite only included-set sources; apply the voice contract; pass the model-tell blocklist. |
+| `lit-review` | Phase 1 - pick the methodology; read the catalog's primary sources; extract the requirements specification a downstream plan must satisfy. |
+| `lit-review-plan` | Phase 2 - fill the phase-1 requirements with domain content; produce an executable lit-review plan. |
+| `lit-review-search` | Phase 3 - run the plan: search, screen, chart fully in sources, record access gaps, synthesise. Output is the evidence base, not paper prose. |
+| `lit-review-argument` | Phase 4 - build the paper's argument architecture: section outline plus validated Argdown argument map with grounded premises and modelled objections. |
+| `lit-review-draft` | Phase 5 - draft the manuscript from the phase-4 architecture and the phase-3 evidence base; cite only included-set sources; apply the voice contract; pass the model-tell blocklist. |
 
 Skill chaining: `lit-review` auto-chains into `lit-review-plan` into `lit-review-search` (one user invocation, three phases). `lit-review-argument` is user-invoked after evidence review; `lit-review-draft` is user-invoked after argument review. Gates are surfaced with recommendation + reasoning as they arise, never punted to an end-of-document backlog.
 
 **Methodology catalog (`skills/lit-review/methodology/catalog.yaml`).**
 
-Co-located with the phase-1 skill that loads it. Method key → primary methodology source Zotero keys + titles + PDF availability. Lookup-only—no prose summaries. Ships with seven entries: `scoping`, `systematic`, `mapping`, `critical`, `narrative_conceptual`, `targeted_related_work`, `taxonomy_development`.
+Co-located with the phase-1 skill that loads it. Method key → primary methodology source Zotero keys + titles + PDF availability. Lookup-only - no prose summaries. Ships with seven entries: `scoping`, `systematic`, `mapping`, `critical`, `narrative_conceptual`, `targeted_related_work`, `taxonomy_development`.
 
 **Citation MCP (`mcp/citation/`).**
 
@@ -49,8 +49,8 @@ Registered in `.mcp.json` under server name `citation`; skills reference its too
 
 **Documentation.**
 
-- `docs/research/RESEARCH_WORKFLOW.md`—Ground Control-native overview of the five-phase pipeline, the citation MCP, and the bootstrap steps.
-- `docs/knowledge/research-workflow/auto-research-requirements-and-oss-assessment.md`—historical FR/NFR + OSS landscape assessment retained as a knowledge-base reference for future build-vs-adopt calls.
+- `docs/research/RESEARCH_WORKFLOW.md` - Ground Control-native overview of the five-phase pipeline, the citation MCP, and the bootstrap steps.
+- `docs/knowledge/research-workflow/auto-research-requirements-and-oss-assessment.md` - historical FR/NFR + OSS landscape assessment retained as a knowledge-base reference for future build-vs-adopt calls.
 
 ## Asset disposition
 
@@ -62,7 +62,7 @@ Sourced from the retired research repository. Disposition reflects what each ass
 | `methodology/catalog.yaml` | KEPT verbatim, relocated | Catalog is lookup-only; co-locating with the skill that loads it removes a top-level directory the host repo does not need. |
 | Argdown validation tooling (`validate-argument-map.sh`, structural handlers, tests) | MIGRATED in issue #1045 | Node `@argdown/cli` + custom `check-argument-structure.mjs` replaced by `argdown-feedback` (Python; DebateLab @ KIT). Reasons in the "Argdown validator migration (#1045)" section below. |
 | Voice contract (`writing-style.md`) | KEPT verbatim | Model-tell blocklist is the only mechanical guard against language-model writing tells. |
-| Citation MCP Python package | KEPT verbatim (renamed) | Determinism in bibliographic resolution is not replaced by stronger model reasoning—see `auto-research-requirements-and-oss-assessment.md`. |
+| Citation MCP Python package | KEPT verbatim (renamed) | Determinism in bibliographic resolution is not replaced by stronger model reasoning - see `auto-research-requirements-and-oss-assessment.md`. |
 | Project handoff (`AGENTS.md`) | DROPPED in favor of `docs/research/RESEARCH_WORKFLOW.md` | Host-repo-specific overview deserves a Ground Control-native rewrite, not a port of source-repo bootstrap text. |
 | Source repo's `pyproject.toml` for citation MCP | ADAPTED | Package name dropped to `citation-mcp` (no source-repo prefix). Dependencies unchanged. |
 | Source repo's `.ground-control.yaml`, `.gc/plan-rules.md` | DROPPED | Ground Control already has its own; duplicating would conflict. |
@@ -84,7 +84,7 @@ Sourced from the retired research repository. Disposition reflects what each ass
 - Skills run in workspaces the user chooses; per-paper artifacts (`requirements.md`, `lit-review-plan.md`, `synthesis.md`, etc.) live in the workspace, not in this repository.
 - ADR-029 still applies: workflow decisions during a research run belong on the issue thread, not in workspace-local files.
 - The drafting phase emits IEEE-format LaTeX manuscripts; this introduces no new repository-level requirement on Ground Control, since manuscripts live in workspaces.
-- Future work: a project-type registration on the Java domain side (so a Ground Control project can be marked `RESEARCH`) is out of scope for this ADR—existing project plumbing already accepts user-applied type labels. If a typed enum is later wanted, that is a separate ADR.
+- Future work: a project-type registration on the Java domain side (so a Ground Control project can be marked `RESEARCH`) is out of scope for this ADR - existing project plumbing already accepts user-applied type labels. If a typed enum is later wanted, that is a separate ADR.
 
 ## Argdown validator migration (#1045)
 
@@ -106,4 +106,4 @@ The phase-4 validator originally shipped with this ADR as a Node script (`@argdo
 
 **Place the methodology catalog at the repository root.** Rejected: the catalog is only loaded by one skill, and the host repository has no other top-level data directories. Co-location with the loader keeps the skill self-contained.
 
-**Adopt PaperQA / LatteReview / AgentSLR / STORM as the core rather than the source-repo design.** Rejected per `auto-research-requirements-and-oss-assessment.md`: no single existing OSS project provides method-aware requirements contract + strict source-state discipline + Zotero/citation grounding + systematic charting + synthesis traceability as a coherent tool. Those projects are useful as bounded adapters (full-text Q&A, screening, extraction, drafting) downstream of an evidence base—not as governance.
+**Adopt PaperQA / LatteReview / AgentSLR / STORM as the core rather than the source-repo design.** Rejected per `auto-research-requirements-and-oss-assessment.md`: no single existing OSS project provides method-aware requirements contract + strict source-state discipline + Zotero/citation grounding + systematic charting + synthesis traceability as a coherent tool. Those projects are useful as bounded adapters (full-text Q&A, screening, extraction, drafting) downstream of an evidence base - not as governance.
