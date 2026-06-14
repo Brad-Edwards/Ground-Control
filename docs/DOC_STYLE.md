@@ -181,3 +181,5 @@ contract. The current behavior is documented in `docs/DEVELOPMENT_WORKFLOW.md`,
 the durable rationale in ADR-054. No new DOC_STYLE.md style rule is established.
 
 The 2026-06-10 SonarCloud remediation (#1085) refactored `mcp/ground-control/lib.js` and `index.js` internals without changing any prose style rule or documented-surface classification; no new DOC_STYLE.md rule is established.
+
+The 2026-06-14 Phase D consolidation (#1103) added `gc_assert_completion` to `mcp/ground-control/lib.js` and `index.js`, updated `tools/policy/checks.py` for the consolidated Step 17 surface, and reorganized the /implement SKILL step prose. No new DOC_STYLE.md style rule is established.

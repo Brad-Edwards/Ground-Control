@@ -145,9 +145,9 @@ If `cfg.sonarcloud` is null, skip; proceed to Step Q18.
 
 If a `/quickfix` run touches files in a way that warrants requirement transitions, that's a signal the run should have been `/implement`. Surface to the user and re-invoke `/implement <same-issue>` rather than partial-completing the requirement work in the lighter lane.
 
-### Step Q18: Clear In-Progress Label
+### Step Q18: Clear In-Progress Label (optional best-effort)
 
-**Identical to `skills/implement/SKILL.md` Step 18.** The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step Q9) at PR merge. Step Q18 only removes the `in-progress` label: `gh issue edit <issue-number> --remove-label in-progress`. Do NOT run `gh issue close` from the agent: closing decouples the close event from the merge, and a rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open on revert).
+The `in-progress` label removal is **optional best-effort** for `/quickfix` (as it is for `/implement` per issue #1103). After Step Q19 posts the close comment, you MAY run `gh issue edit <issue-number> --remove-label in-progress` and skip on failure. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step Q9) at PR merge. Do NOT run `gh issue close` from the agent: closing decouples the close event from the merge, and a rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open on revert).
 
 ### Step Q19: Lightweight Close Comment (via `gc_post_final_report`)
 
