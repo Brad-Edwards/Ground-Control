@@ -32,7 +32,7 @@ A `Plugin` interface in the domain layer defines the extension contract:
 - Default no-op lifecycle methods: `initialize()`, `start()`, `stop()`
 - `isAvailable()` reports readiness
 
-Lifecycle methods are default no-ops because most plugins are stateless. Plugins that need lifecycle management (e.g., connection pool initialization) override specific methods.
+Lifecycle methods are default no-ops because most plugins are stateless. Plugins that need lifecycle management (for example, connection pool initialization) override specific methods.
 
 ### 2. Typed Plugin Categories
 
@@ -48,7 +48,7 @@ The `PluginRegistry` service manages two sources of plugins:
 
 **Built-in plugins** are classpath-discovered Spring beans implementing `Plugin`. They are collected via `List<Plugin>` constructor injection and initialized at application startup via `@PostConstruct`. This follows the established `GraphProjectionRegistryService` pattern.
 
-**Dynamic plugins** are registered at runtime (e.g., when a content pack is installed) and persisted in a `registered_plugin` database table. They survive application restarts because their registrations are stored in PostgreSQL. The registry loads them from the database alongside classpath plugins.
+**Dynamic plugins** are registered at runtime (for example, when a content pack is installed) and persisted in a `registered_plugin` database table. They survive application restarts because their registrations are stored in PostgreSQL. The registry loads them from the database alongside classpath plugins.
 
 `PluginRegistry` is a runtime inventory and metadata persistence service, not a package registry, dependency solver, or trust-policy engine. Any future plugin installation workflow introduced for GC-P016 must resolve artifacts, evaluate compatibility and trust policy, and persist an auditable policy decision before it invokes dynamic registration.
 

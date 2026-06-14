@@ -13,8 +13,8 @@ record, plus shared core attributes, subtype-specific metadata, and **schema
 layering where needed**.
 
 The existing `OperationalAsset` aggregate already carries shared core
-attributes (uid, name, description, owner, steward, environment, criticality,
-business context, scope designation — GC-M012 introduced the last six) and
+attributes (uid, name, description, owner, `steward`, environment, criticality,
+business context, scope designation - GC-M012 introduced the last six) and
 classifies via the `AssetType` enum
 (`APPLICATION / SERVICE / SYSTEM / DATABASE / NETWORK / HOST / CONTAINER /
 IDENTITY / DATA_STORE / ENDPOINT / INTEGRATION / WORKLOAD / THIRD_PARTY /
@@ -29,7 +29,7 @@ What's missing:
 
 1. A way to express **narrower kinds under `AssetType`** without proliferating
    enum values or per-vendor parallel aggregates (the codex architecture
-   preflight for #722 explicitly rejected both — `AssetType` is "the
+   preflight for #722 explicitly rejected both - `AssetType` is "the
    high-level class, not the place for every cloud, endpoint, identity, data,
    or vendor product variant," and parallel `ServiceAsset` / `IdentityAsset`
    records would need their own future ADR).
@@ -43,7 +43,7 @@ What's missing:
 
 The preflight also constrained the shape of any schema-validation work to a
 single reusable component behind `AssetService`, one error-detail shape, and
-no asset-specific JSON-Schema dependency — the existing repo helpers
+no asset-specific JSON-Schema dependency - the existing repo helpers
 (`StringObjectMapConverter`, `DomainValidationException`,
 `GlobalExceptionHandler`, the `ApiPathMatrix`) own validation and persistence
 already.
@@ -76,10 +76,10 @@ Universal bounds (apply regardless of registered schema):
 - `≤ 100` characters per key
 - `≤ 4096` characters per string value
 - Values must be `String`, `Number`, `Boolean`, or `null`. Nested objects
-  and arrays are intentionally rejected — they invite schema drift and make
+  and arrays are intentionally rejected - they invite schema drift and make
   the metadata bag opaque to graph / search projection.
 
-Metadata replacement on update is atomic — a non-null `metadata` field in
+Metadata replacement on update is atomic - a non-null `metadata` field in
 `UpdateAssetCommand` replaces the entire map. Partial-key merges are
 intentionally not supported; the cost of an ambiguous merge semantic
 (reset vs. patch vs. delete-by-null-value) outweighs the convenience. A
@@ -96,15 +96,15 @@ A new aggregate `AssetSubtypeSchema` keyed
   `(project, assetType, subtype)`; registering a second ACTIVE row auto-
   deprecates the prior ACTIVE row (enforced in `AssetService.registerSubtype
   Schema`).
-- `schema_body: Map<String, Object>` — the schema body. The repo defines a
+- `schema_body: Map<String, Object>` - the schema body. The repo defines a
   minimal field-shape language for it (see below).
-- `description: TEXT` — optional narrative.
+- `description: TEXT` - optional narrative.
 
 CRUD lives behind `AssetService` (`registerSubtypeSchema`,
 `updateSubtypeSchema`, `deprecateSubtypeSchema`, `getSubtypeSchema`,
 `getActiveSubtypeSchema`, `listSubtypeSchemas`). A new
 `AssetSubtypeSchemaController` exposes the wire surface at
-`/api/v1/assets/subtype-schemas` — inside the existing `/api/v1/assets/**`
+`/api/v1/assets/subtype-schemas` - inside the existing `/api/v1/assets/**`
 path matrix, so security stays under ADR-026 / ADR-037 (no controller-local
 auth, no new role enums).
 
@@ -156,7 +156,7 @@ without parsing prose.
 `OPERATIONAL_ASSET` node property map alongside the existing
 `assetType / owner / steward / environment / criticality / business
 Context / scopeDesignation` properties. `metadata` is **intentionally not
-projected** — it is free-form, high-cardinality, and may carry per-asset
+projected** - it is free-form, high-cardinality, and may carry per-asset
 detail that does not belong on a graph node visible to every projection
 consumer. Graph search by subtype joins on a stable, low-cardinality
 discriminator; graph search by metadata is out of scope.
@@ -174,10 +174,10 @@ discriminator; graph search by metadata is out of scope.
   aggregate would force duplication across every join surface.
 - **A free-form `metadata` bag with no schema mechanism.** Satisfies clauses
   3 and 4 but leaves clause 5 (`schema layering where needed`) unmet. The
-  requirement is "shall support," not "may support" — the model must offer
+  requirement is "shall support," not "may support" - the model must offer
   the seam.
 - **Embedding the schema on the asset row itself** (each asset carries its
-  own `subtypeSchema`). Defeats the point of schema layering — schemas are
+  own `subtypeSchema`). Defeats the point of schema layering - schemas are
   meant to apply across all assets of the same subtype, not co-vary per
   record.
 - **Pulling in an external JSON-Schema library**
@@ -196,7 +196,7 @@ discriminator; graph search by metadata is out of scope.
   reclassify any asset.
 - The migration adds two nullable columns plus a new table; rollback is
   straightforward (drop columns, drop table). No data migration is
-  required — existing rows keep `subtype = NULL` and `metadata = NULL` and
+  required - existing rows keep `subtype = NULL` and `metadata = NULL` and
   remain valid under the bounds-only validation path.
 - MCP `gc_asset` gains `subtype`, `metadata`, the four matching clear
   flags, and six subtype-schema registry actions (`subtype_schema_create`,
@@ -205,7 +205,7 @@ discriminator; graph search by metadata is out of scope.
   the existing tool keeps the catalog flat (ADR-035).
 - Schema authors define their own field-shape contracts using the minimal
   language above. The validator enforces structural shape; semantic
-  validation (e.g., "this region must be a known AWS region") remains a
+  validation (for example, "this region must be a known AWS region") remains a
   caller concern.
 - Audit history follows existing Envers patterns. Both new asset columns
   ride the `operational_asset_audit` table (V073 / V074); the new

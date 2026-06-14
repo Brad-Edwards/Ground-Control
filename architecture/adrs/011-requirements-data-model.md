@@ -10,9 +10,9 @@ Accepted
 
 ## Revision
 
-2026-03-09 — Implementation details updated to reflect ADR-013 (Java/Spring Boot rewrite). Core decisions unchanged.
-2026-04-10 — Traceability identifier conventions updated to match the implemented service, ADR reverse-lookup, and GitHub sync contracts.
-2026-05-10 — Status drift analysis boundary added: derived implementation evidence is a sweep finding, not a traceability edge or lifecycle mutation.
+2026-03-09 - Implementation details updated to reflect ADR-013 (Java/Spring Boot rewrite). Core decisions unchanged.
+2026-04-10 - Traceability identifier conventions updated to match the implemented service, ADR reverse-lookup, and GitHub sync contracts.
+2026-05-10 - Status drift analysis boundary added: derived implementation evidence is a sweep finding, not a traceability edge or lifecycle mutation.
 
 ## Context
 
@@ -27,7 +27,7 @@ The system must:
 
 Key constraints:
 
-- Requirements form a **DAG** (directed acyclic graph), not a tree — a requirement can have multiple parents
+- Requirements form a **DAG** (directed acyclic graph), not a tree - a requirement can have multiple parents
 - The system must dogfood itself: Ground Control manages its own requirements
 - Apache AGE (graph extension for PostgreSQL) is available for optimized traversal queries
 
@@ -94,14 +94,14 @@ See [Phase 1 design notes](../notes/phase1-requirements-design.md#service-layer-
 
 Ground Control keeps `IMPLEMENTS` links restricted to `ACTIVE` requirements. That rule remains load-bearing: `DRAFT` requirements may have implementation-like evidence before formal verification and transition, but that evidence must not be stored by weakening the traceability constraint or by introducing a second implementation-link schema.
 
-Status drift detection is therefore modeled as read-only analysis output. Every signal is derived from data owned by the requirement's own project — its `DRAFT` requirements, their canonical traceability links, and accepted ADR records. It deliberately does **not** read the GitHub issue/PR sync tables, because those caches are not project- or repo-scoped, so reading them from a project-scoped analysis could surface another project's (or another repo's, including a private one's) artifacts. The output carries confidence and evidence artifacts so a user or agent can verify the clauses and then run the normal status transition and traceability reconciliation workflow.
+Status drift detection is therefore modeled as read-only analysis output. Every signal is derived from data owned by the requirement's own project - its `DRAFT` requirements, their canonical traceability links, and accepted ADR records. It deliberately does **not** read the GitHub issue/PR sync tables, because those caches are not project- or repo-scoped, so reading them from a project-scoped analysis could surface another project's (or another repo's, including a private one's) artifacts. The output carries confidence and evidence artifacts so a user or agent can verify the clauses and then run the normal status transition and traceability reconciliation workflow.
 
 Status drift analysis must not:
 
 - transition requirements automatically
 - create `IMPLEMENTS` links for `DRAFT` requirements through the public traceability path
 - encode artifacts outside the existing `ArtifactType` / `LinkType` conventions
-- bypass project scoping, read project- or repo-unscoped caches (e.g. the GitHub issue/PR sync tables), or assume UID uniqueness outside a project
+- bypass project scoping, read project- or repo-unscoped caches (for example the GitHub issue/PR sync tables), or assume UID uniqueness outside a project
 - shell out to GitHub or scan arbitrary filesystem paths from the analysis service
 
 ### Data Model
@@ -123,7 +123,7 @@ See also [ADR-014](014-pluggable-verification-architecture.md) for `Verification
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
 | id | UUID | PK, generated | `@GeneratedValue(strategy = UUID)` |
-| uid | String(50) | Unique, not null | Human-readable: "W2-RISK", "REQ-001" |
+| uid | String(50) | Unique, not null | Human-readable: "W2-RISK," "REQ-001" |
 | title | String(255) | Not null | |
 | statement | TEXT | Not null | |
 | rationale | TEXT | Default "" | |
@@ -161,12 +161,12 @@ See also [ADR-014](014-pluggable-verification-architecture.md) for `Verification
 
 #### TraceabilityLink
 
-Connects requirements to external artifacts. `artifactIdentifier` is interpreted in the context of `artifactType`; it is not a globally-prefixed mini-schema.
+Connects requirements to external artifacts. `artifactIdentifier` is interpreted in the context of `artifactType`; it is not a globally prefixed mini-schema.
 
 Canonical conventions:
-- `GITHUB_ISSUE`, `PULL_REQUEST` — raw decimal number stored as a string (for example `"42"`), so sync services can parse and refresh URL/title/state
-- `ADR`, `RISK_SCENARIO`, `CONTROL` — the Ground Control UID (for example `"ADR-021"`, `"RS-001"`, `"CTRL-001"`), so reverse lookup resolves by domain UID
-- `CODE_FILE`, `TEST`, `CONFIG`, `POLICY`, `SPEC`, `PROOF`, `DOCUMENTATION` — repo-relative path or other stable repo-local identifier
+- `GITHUB_ISSUE`, `PULL_REQUEST` - raw decimal number stored as a string (for example `"42"`), so sync services can parse and refresh URL/title/state
+- `ADR`, `RISK_SCENARIO`, `CONTROL` - the Ground Control UID (for example `"ADR-021"`, `"RS-001"`, `"CTRL-001"`), so reverse lookup resolves by domain UID
+- `CODE_FILE`, `TEST`, `CONFIG`, `POLICY`, `SPEC`, `PROOF`, `DOCUMENTATION` - repo-relative path or other stable repo-local identifier
 - `artifactUrl` and `artifactTitle` are denormalized display/sync fields, not identity keys
 
 Do not introduce alternate encodings for the same artifact (`#42`, `owner/repo#42`, `file:...`, `adr:021`) in new data. Self-referential dogfooding must reuse this existing link model rather than adding a GC-specific traceability abstraction.
@@ -222,7 +222,7 @@ Audit trail for each import/sync operation.
 
 ### Positive
 
-- DAG model is more expressive than a tree — accurately represents real requirement relationships
+- DAG model is more expressive than a tree - accurately represents real requirement relationships
 - UUID PKs are safe for API exposure and future multi-tenant distribution
 - AGE-as-query-layer avoids consistency issues while enabling powerful graph queries
 - Envers provides automatic audit trail with minimal configuration
@@ -246,8 +246,8 @@ Audit trail for each import/sync operation.
 
 ## Related ADRs
 
-- [ADR-002](002-postgresql-database.md) — PostgreSQL as primary database
-- [ADR-005](005-apache-age-graph.md) — Apache AGE for graph capabilities
-- [ADR-012](012-formal-methods-process.md) — SDD methodology and assurance levels
-- [ADR-013](013-java-spring-boot-rewrite.md) — Java/Spring Boot backend
-- [ADR-014](014-pluggable-verification-architecture.md) — Pluggable verification architecture (VerificationResult as connected artifact)
+- [ADR-002](002-postgresql-database.md) - PostgreSQL as primary database
+- [ADR-005](005-apache-age-graph.md) - Apache AGE for graph capabilities
+- [ADR-012](012-formal-methods-process.md) - SDD methodology and assurance levels
+- [ADR-013](013-java-spring-boot-rewrite.md) - Java/Spring Boot backend
+- [ADR-014](014-pluggable-verification-architecture.md) - Pluggable verification architecture (VerificationResult as connected artifact)

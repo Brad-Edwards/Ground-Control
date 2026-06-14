@@ -14,14 +14,14 @@ Issue [#243](https://github.com/KeplerOps/Ground-Control/issues/243) (P0,
 security) documented that the Ground Control backend exposed every REST
 endpoint without authentication or authorization. Any caller who could
 reach `:8000` could create, modify, archive, import, sync, and materialize
-arbitrary data — including triggering GitHub syncs and rebuilding graph
+arbitrary data - including triggering GitHub syncs and rebuilding graph
 state. Before #243 the only access control was an in-controller bearer
 token on `/api/v1/pack-registry/**` (`PackRegistryAccessGuard`). All other
 controllers, including `RequirementController`, `ImportController`,
 `SyncController`, `GraphController`, `AnalysisController`, were reachable
 unauthenticated.
 
-GC-P011 ("Access Control", NON_FUNCTIONAL, MUST, wave 1) states:
+GC-P011 ("Access Control," NON_FUNCTIONAL, MUST, wave 1) states:
 
 > The system shall support configurable access restrictions such that only
 > authorized users or network locations can reach the application. Access
@@ -37,25 +37,25 @@ sufficient.
 Add an application-layer access control stack centred on Spring Security.
 Configuration is driven from `groundcontrol.security.*` (a new
 `@ConfigurationProperties` bean) so policy is editable in `application.yml`
-or via `GC_SECURITY_*` environment variables — zero code change is needed
+or via `GC_SECURITY_*` environment variables - zero code change is needed
 to rotate credentials, adjust roles, or change the IP allowlist.
 
 The chain is wired by `ApiSecurityConfig` in this order:
 
-1. **`IpAllowlistFilter`** — rejects requests whose source `remoteAddr` is
+1. **`IpAllowlistFilter`** - rejects requests whose source `remoteAddr` is
    outside any configured CIDR. Empty allowlist is opt-out (token auth
    alone). Spring's `IpAddressMatcher` evaluates the CIDRs. The filter
    intentionally does NOT honour `X-Forwarded-For`; in deployments behind
    a reverse proxy, the proxy must terminate the IP gate or set the source
    IP via `RemoteIpFilter` configured separately and explicitly.
-2. **`BearerTokenAuthFilter`** — parses `Authorization: Bearer <token>`,
+2. **`BearerTokenAuthFilter`** - parses `Authorization: Bearer <token>`,
    compares against the configured credential list with `MessageDigest.isEqual`
    for constant-time compare (mirrors the pre-existing pack-registry
    pattern), and on match sets a `UsernamePasswordAuthenticationToken` with
    `ROLE_USER` or `ROLE_ADMIN` in the `SecurityContext`. Tokens are never
    logged. Wrong scheme, missing header, or bad token leaves the context
    empty (anonymous).
-3. **Spring Security authorization** — path matrix:
+3. **Spring Security authorization** - path matrix:
 
    | Path | Authority |
    |------|-----------|
@@ -68,7 +68,7 @@ The chain is wired by `ApiSecurityConfig` in this order:
    | Other `/api/v1/**` | authenticated (USER or ADMIN) |
    | Anything else | denyAll |
 
-4. **`ApiAuthenticationEntryPoint` / `ApiAccessDeniedHandler`** — emit 401
+4. **`ApiAuthenticationEntryPoint` / `ApiAccessDeniedHandler`** - emit 401
    and 403 respectively using the existing `ErrorResponse` JSON envelope so
    wire format stays consistent with `GlobalExceptionHandler`. Underlying
    exception messages are NOT echoed in response bodies. The 401 response
@@ -101,7 +101,7 @@ favour of the unified `groundcontrol.security.credentials` store with
 | `test` | `false` | existing 200+ controller tests do not need to mint tokens |
 
 Even when `enabled=false` the framework filter chain still owns request
-mapping; it just degrades to `permitAll()`. The chain is never absent —
+mapping; it just degrades to `permitAll()`. The chain is never absent -
 disabling Spring Security entirely would silently regress to the
 pre-#243 posture if the flag flipped.
 
@@ -127,7 +127,7 @@ pre-#243 posture if the flag flipped.
 - Every `/api/v1/**` endpoint is now authenticated by default.
 - Admin endpoints require an explicit `ROLE_ADMIN` principal.
 - Operators can rotate credentials and adjust the IP allowlist via env
-  vars or yaml — no code change, no rebuild, just a restart.
+  vars or yaml - no code change, no rebuild, just a restart.
 - Pack registry admin auth is now part of the same surface as the rest of
   the API; no second credential store to manage.
 - `ActorFilter` audit identity tracks the authenticated principal, so
@@ -150,17 +150,17 @@ pre-#243 posture if the flag flipped.
 
 ## Alternatives considered
 
-- **OAuth2/OIDC via Spring Authorization Server or an external IdP** —
+- **OAuth2/OIDC via Spring Authorization Server or an external IdP** -
   superior identity model but requires deploying an IdP. Deferred until
   the deployment topology grows beyond a single operator.
-- **mTLS with client certs at the load balancer** — strong but creates
+- **mTLS with client certs at the load balancer** - strong but creates
   certificate-management overhead disproportionate to the current threat
   model.
-- **Per-controller `@PreAuthorize` annotations only** — rejected; spreads
+- **Per-controller `@PreAuthorize` annotations only** - rejected; spreads
   authorization logic across 35+ controllers (codex preflight flagged
   this as the primary anti-pattern to avoid). The path-matrix approach
   keeps the policy in one place.
-- **Network isolation only (no application-layer auth)** — explicitly
+- **Network isolation only (no application-layer auth)** - explicitly
   rejected by GC-P011 ("only authorized **users** or network locations")
   and by codex preflight ("do not rely on deployment documentation,
   reverse-proxy examples, or agent/user hooks as the only enforcement

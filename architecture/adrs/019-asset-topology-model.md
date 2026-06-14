@@ -21,7 +21,7 @@ The system must:
 
 Key constraints:
 
-- The asset graph is **not** constrained to be a DAG — some relationship types (e.g., COMMUNICATES_WITH) legitimately form cycles
+- The asset graph is **not** constrained to be a DAG - some relationship types (for example, COMMUNICATES_WITH) legitimately form cycles
 - The existing `GraphAlgorithms` utility (cycle detection, BFS reachability, topological sort) is pure and domain-agnostic
 - Apache AGE is available but not required for initial implementation
 
@@ -81,8 +81,8 @@ Unlike requirement relations (which enforce DAG structure for certain types), as
 
 **Negative:**
 - Relational storage limits practical graph size to thousands of nodes (sufficient for operational asset inventories)
-- No native graph query language (Cypher) for ad-hoc traversal — AGE integration can be added later
+- No native graph query language (Cypher) for ad-hoc traversal - AGE integration can be added later
 
 **Risks:**
-- Cross-entity-type relations (asset-to-requirement) may be needed for unified system model traversal — can be addressed via TraceabilityLink or a new linking mechanism
+- Cross-entity-type relations (asset-to-requirement) may be needed for unified system model traversal - can be addressed via TraceabilityLink or a new linking mechanism
 - If GraphAlgorithms evolves to become requirements-specific, the assets domain would need its own copy or the utility should be extracted to a shared package

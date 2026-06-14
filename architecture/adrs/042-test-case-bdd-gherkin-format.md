@@ -40,7 +40,7 @@ alongside the other `TestCase` state enums.
 
 The `TestCase` entity gains a non-null `format` column (V076,
 `VARCHAR(20) NOT NULL DEFAULT 'STEP_BASED'`). Existing pre-TC-004 rows
-back-fill to `STEP_BASED` via the column default — no separate DML required.
+back-fill to `STEP_BASED` via the column default - no separate DML required.
 V077 adds the matching nullable column on `test_case_audit` for Envers parity.
 
 `format` is **set on create and immutable thereafter**. Mutation would orphan
@@ -53,7 +53,7 @@ ever needs format migration, it adds an explicit migration endpoint with its
 own cascade rules; for now the simpler invariant wins.
 
 Reusing `TestCaseType` as a format discriminator was rejected per the
-preflight — `AUTOMATED` is not synonymous with Gherkin (an automated test
+preflight - `AUTOMATED` is not synonymous with Gherkin (an automated test
 case may use step rows or Gherkin or neither), and overloading the field
 would conflict with existing UI copy and policy semantics that already treat
 the three type values as orthogonal to authoring representation.
@@ -71,7 +71,7 @@ Fields:
 
 - `id` UUID PK via `BaseEntity`.
 - `test_case_id` UUID FK to `test_case(id)`; `@ManyToOne(fetch = LAZY)`.
-- `source` TEXT NOT NULL — the canonical authored `.feature` text, stored
+- `source` TEXT NOT NULL - the canonical authored `.feature` text, stored
   verbatim.
 
 There is no `parsedScenarioCount`, `hasOutlines`, or any other parser-derived
@@ -120,7 +120,7 @@ so retention sweep covers it.
 The validator at
 `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/service/GherkinValidator.java`
 wraps `io.cucumber:gherkin:39.1.0`. This is the Cucumber organisation's pure
-Gherkin parser — Apache 2.0, no execution surface, no glue loading, no
+Gherkin parser - Apache 2.0, no execution surface, no glue loading, no
 remote fetch, no temp files. The transitive `io.cucumber:messages` carries
 the AST message types only; both libraries are widely deployed and present a
 small OSV-scan surface.
@@ -142,7 +142,7 @@ The validator enforces, in order:
 
 Validation failures surface `DomainValidationException` with code
 `invalid_gherkin_source` and details that carry `line`, `column`, `keyword`,
-and `field` only — never the source text, parser stack traces, `Examples`
+and `field` only - never the source text, parser stack traces, `Examples`
 cell content, or filesystem paths. This is the error-envelope guardrail from
 the preflight; a dedicated unit test (`errorDetailsNeverLeakSourceText`)
 asserts a distinctive source token does not appear anywhere in the exception
@@ -158,18 +158,18 @@ a downstream requirement needs configurability, bind through a validated
 A `STEP_BASED` test case cannot accept a Gherkin document; a `GHERKIN` test
 case cannot accept step rows. Enforcement lives in two service methods:
 
-- `TestCaseGherkinService.requireGherkinTestCase` — POST/PUT to the Gherkin
+- `TestCaseGherkinService.requireGherkinTestCase` - POST/PUT to the Gherkin
   endpoint against a non-`GHERKIN` parent returns HTTP 422
   `invalid_test_case_format` with `expected: GHERKIN` and the actual format
   in the details.
-- `TestCaseStepService.create` — POST step against a non-`STEP_BASED` parent
+- `TestCaseStepService.create` - POST step against a non-`STEP_BASED` parent
   returns HTTP 409 with a message naming the parent's actual format.
 
 The asymmetry (422 vs 409) follows existing repo conventions:
 `DomainValidationException` is the "wrong shape" signal (422), while
 `ConflictException` is the "right shape, wrong state of resource" signal
-(409). The step path is the latter — the step body is well-formed, but the
-parent's state forbids it; the Gherkin path is the former — the parent's
+(409). The step path is the latter - the step body is well-formed, but the
+parent's state forbids it; the Gherkin path is the former - the parent's
 state is incompatible with the operation at the validation layer.
 
 ### API surface
@@ -185,7 +185,7 @@ Singleton sub-resource: there is no `gherkinId` in the path because each
 parent has at most one. The DTOs are deliberately minimal:
 
 - `TestCaseGherkinRequest { source }`
-- `UpdateTestCaseGherkinRequest { source }` — full replacement; no
+- `UpdateTestCaseGherkinRequest { source }` - full replacement; no
   null-means-no-change semantic because the resource is a single field.
 - `TestCaseGherkinResponse { id, testCaseId, source, createdAt, updatedAt }`.
 
@@ -225,7 +225,7 @@ enum and the JS mirror surfaces immediately.
 `frontend/src/types/api.ts` ships `TestCaseFormat` (typed union + const
 array), `TestCaseGherkinRequest`, `UpdateTestCaseGherkinRequest`, and
 `TestCaseGherkinResponse` interfaces. The frontend does not implement a
-Gherkin renderer in this PR — clients are expected to display the stored
+Gherkin renderer in this PR - clients are expected to display the stored
 source via a safe text/Markdown path. Introducing
 `dangerouslySetInnerHTML` or an unsafe HTML sink is **not** part of TC-004.
 
@@ -247,30 +247,30 @@ source via a safe text/Markdown path. Introducing
 
 ## Alternatives considered
 
-1. **Store Gherkin source in `TestCase.description`.** Rejected — the
+1. **Store Gherkin source in `TestCase.description`.** Rejected - the
    description is a Markdown rich-text field with its own size budget and
    no validation pass. Conflating Gherkin source with description would
    lose the parse-time validation guard, lose the format-vs-children
    invariant, and silently change the meaning of `description` on the API
    surface.
 2. **Parse Gherkin into ordered step rows and reuse `TestCaseStep`.**
-   Rejected per the preflight — flattening Given/When/Then into
+   Rejected per the preflight - flattening Given/When/Then into
    `action`/`expectedResult`/`actualResult` loses Scenario boundaries,
    Scenario Outline identity, tags, and `Examples` parameters. The
    reconstruction problem (round-trip to authored source) is intractable
    without storing the original anyway.
 3. **Make `TestCaseType.AUTOMATED` imply Gherkin.** Rejected per the
-   preflight — `AUTOMATED` is "this test has automation-stage support",
-   not "the authoring format is Gherkin". The two axes are independent.
-4. **DB-level `ON DELETE CASCADE` for parent deletion.** Rejected — same
+   preflight - `AUTOMATED` is "this test has automation-stage support,"
+   not "the authoring format is Gherkin." The two axes are independent.
+4. **DB-level `ON DELETE CASCADE` for parent deletion.** Rejected - same
    audit-fidelity reasoning as ADR-041. Hibernate-routed deletes capture
    Envers revisions; DB-level cascades silently skip them.
-5. **Allow format mutation on update.** Rejected — would orphan existing
+5. **Allow format mutation on update.** Rejected - would orphan existing
    step rows or Gherkin documents and force a "migrate my children too"
    path TC-004 does not need. A future migration requirement can add an
    explicit endpoint.
 6. **Store parsed scenario metadata on `TestCaseGherkin`.** Rejected for
-   TC-004 — clients that need a structured view can re-parse the source.
+   TC-004 - clients that need a structured view can re-parse the source.
    Adding derived columns now would double-book the canonical source and
    require an explicit sync invariant the requirement does not justify.
 7. **Hand-roll a regex-based Gherkin reader.** Rejected per the preflight

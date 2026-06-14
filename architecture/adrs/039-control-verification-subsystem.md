@@ -7,14 +7,14 @@ Accepted (2026-05-13)
 ## Context
 
 `Control` is the catalog row for a control (objective, function, status, owner,
-implementation scope). It tells you *what* a control is — not whether it was
+implementation scope). It tells you *what* a control is - not whether it was
 ever tested or whether it works.
 
 Two adjacent durable concerns were missing:
 
 - **Control testing (GC-I012).** Audit/compliance workflows need a per-test
   evidence record that captures the methodology used (inquiry, observation,
-  inspection, re-performance — PCAOB AS 2201), the test steps, the expected and
+  inspection, re-performance - PCAOB AS 2201), the test steps, the expected and
   actual results, the conclusion, the tester identity, and the test date.
   Auditors point at specific test rows when defending an opinion.
 
@@ -49,12 +49,12 @@ The two have different lifecycles and different consumers:
 - A `ControlTest` is *one execution* of a test plan. There can be many tests
   per control over time. The fields are step-grained (steps, expected, actual,
   conclusion) and methodology-grained.
-- A `ControlEffectivenessAssessment` is a *rating* — a judgment that may
+- A `ControlEffectivenessAssessment` is a *rating* - a judgment that may
   consume zero or more tests as supporting evidence but is its own decision
   with its own assessor. Its consumers are different (future GC-T003
   risk-scoring code reads ratings, not test steps).
 
-Conflating them — e.g., adding rating fields to `ControlTest` — would force
+Conflating them - for example, adding rating fields to `ControlTest` - would force
 auditors to interpret the rating from execution details and would block GC-T003
 from reading a clean rating signal.
 
@@ -63,7 +63,7 @@ from reading a clean rating signal.
 `Control.effectiveness` is a free-form `Map<String, Object>` that can summarize
 the *current* rating for convenience. It is **not** the source of truth:
 
-- It is mutable in place — no audit history of who changed what when, beyond
+- It is mutable in place - no audit history of who changed what when, beyond
   the parent control's revision history.
 - It has no methodology, no assessor, no rationale.
 - It cannot represent multiple tests / multiple assessments.
@@ -74,7 +74,7 @@ assessment state, not the assessment history.
 ### Boundaries against adjacent aggregates
 
 - `Observation`: an asset/system fact. A `ControlTest` may *use* observations
-  as evidence, but it is not an observation — observations have no
+  as evidence, but it is not an observation - observations have no
   methodology, no expected/actual structure, no tester identity.
 - `VerificationResult`: prover / requirement evidence. Not a control test.
 - `RiskAssessmentResult`: methodology-specific risk computation output.
@@ -101,7 +101,7 @@ required.
 ### Tester identity vs. audit actor
 
 `testerIdentity` (on `ControlTest`) and `assessor` (on
-`ControlEffectivenessAssessment`) are **domain provenance** — the human or
+`ControlEffectivenessAssessment`) are **domain provenance** - the human or
 process named in the audit narrative. They do **not** replace the
 authenticated audit actor on the Envers revision record (per ADR-033). Both
 exist intentionally: the audit actor is *who pushed the row*; the domain
@@ -110,9 +110,9 @@ sometimes the auditor logs a row on behalf of a tester.
 
 ### REST surface
 
-- `/api/v1/control-tests` — POST / GET `{id}` / GET (with optional `controlId`
+- `/api/v1/control-tests` - POST / GET `{id}` / GET (with optional `controlId`
   filter) / PUT / DELETE.
-- `/api/v1/control-effectiveness-assessments` — same shape.
+- `/api/v1/control-effectiveness-assessments` - same shape.
 
 No nested-under-control routes. The `controlId` is a body field on create and a
 query parameter on list. The flat surface mirrors `gc_risk_governance` /
@@ -127,7 +127,7 @@ back-compat) with values `control` / `control_test` /
 create/update/delete only; reads route through `gc_query`. The handler logic
 is extracted into `mcp/ground-control/gc-control.js` (mirroring the
 `gc-risk-governance.js` extraction from #878) so the dispatch is testable in
-isolation. No new top-level MCP tool is added — the consolidated surface is
+isolation. No new top-level MCP tool is added - the consolidated surface is
 preserved per ADR-035.
 
 ### Graph projection

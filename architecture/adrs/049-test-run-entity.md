@@ -12,14 +12,14 @@ Accepted
 
 TC-008 (Wave 1, MUST) requires the system to provide a Test Run entity:
 the execution-time record for one pass through a test suite, with a
-unique ID, name, associated test plan, assigned tester(s), environment,
+unique ID, name, associated test plan, assigned testers, environment,
 build/version, status, start/end timestamps, and individual test case
 execution results.
 
 The existing test-management aggregates cover authored test definitions
-(`TestCase`, `TestCaseStep`, `TestCaseGherkin`, `TestCaseFolder` —
+(`TestCase`, `TestCaseStep`, `TestCaseGherkin`, `TestCaseFolder` -
 ADR-040 / ADR-041 / ADR-042 / ADR-043), the planning container
-(`TestPlan` — ADR-044), and the selection container (`TestSuite` —
+(`TestPlan` - ADR-044), and the selection container (`TestSuite` -
 ADR-047). None of them is an execution record:
 
 - `TestCase` is authored intent, not a per-pass outcome.
@@ -118,7 +118,7 @@ multiplicity is the right home for "the team retried after a build
 fix," not a status-flip on the prior run.
 
 `TestRunCaseResultStatus`: `NOT_RUN`, `PASSED`, `FAILED`, `BLOCKED`,
-`SKIPPED`. Result statuses have **no** transition graph — a tester
+`SKIPPED`. Result statuses have **no** transition graph - a tester
 may flip a result freely as re-tests, descopes, and unblocks happen
 over the life of a run. Validation is "must be a known enum
 constant"; the enum is the authority.
@@ -135,7 +135,7 @@ Testers are **not**:
   table to session credentials; adding business-assignment fields
   would conflate session storage with provenance).
 - comma-separated text or JSON arrays on `TestRun` (the preflight
-  explicitly forbids that — rows must remain queryable, validated, and
+  explicitly forbids that - rows must remain queryable, validated, and
   audited).
 - audit actors. The audit actor on every mutation is still the
   authenticated principal via `ActorFilter`; assigned testers are the
@@ -152,13 +152,13 @@ release, then drop it.
 
 - `test_run_id` (FK to run, NOT NULL, cascade-delete by service).
 - `test_case_id` (FK to case, NOT NULL, restrict-delete via FK).
-- `test_case_uid` (`VARCHAR(50)`, NOT NULL) — snapshot at create.
-- `test_case_title` (`VARCHAR(200)`, NOT NULL) — snapshot at create.
+- `test_case_uid` (`VARCHAR(50)`, NOT NULL) - snapshot at create.
+- `test_case_title` (`VARCHAR(200)`, NOT NULL) - snapshot at create.
 - `status` (`TestRunCaseResultStatus`, NOT NULL, default `NOT_RUN`).
 - `notes` (TEXT, optional).
 - `BaseEntity` timestamps mirrored into the audit shadow.
 
-`(test_run_id, test_case_id)` is unique per run — a run carries at
+`(test_run_id, test_case_id)` is unique per run - a run carries at
 most one result row per snapshotted case.
 
 The snapshot fields are intentional duplication: they preserve case
@@ -186,7 +186,7 @@ actual instants at which testing began and ended.
 
 The `end_at >= start_at` cross-field invariant is enforced atomically
 on both create and update, mirroring the `TestPlan.applyScheduleUpdate`
-pattern: per-field setters compare against the currently-stored
+pattern: per-field setters compare against the currently stored
 counterpart, so a whole-window shift is reconciled once and applied as
 a unit before validation.
 
@@ -196,20 +196,20 @@ Routes live under `/api/v1/test-runs/**` and are picked up by the
 existing shared `/api/v1/** .authenticated()` rule in
 `ApiPathMatrix`; no path-matrix change is required.
 
-- `POST /api/v1/test-runs` — create.
-- `GET /api/v1/test-runs` — list (`createdAt DESC`).
-- `GET /api/v1/test-runs/{id}` — by UUID.
-- `GET /api/v1/test-runs/uid/{uid}` — by project-scoped UID.
-- `PUT /api/v1/test-runs/{id}` — partial update with `clearXxx` flags.
-- `PUT /api/v1/test-runs/{id}/status` — transition.
-- `DELETE /api/v1/test-runs/{id}` — delete (cascades children).
-- `POST /api/v1/test-runs/{id}/testers` — add tester.
-- `GET /api/v1/test-runs/{id}/testers` — list testers.
-- `DELETE /api/v1/test-runs/{id}/testers/{testerName}` — remove tester.
-- `GET /api/v1/test-runs/{id}/results` — list per-case results.
-- `PUT /api/v1/test-runs/{id}/results/{testCaseId}` — update status + notes.
+- `POST /api/v1/test-runs` - create.
+- `GET /api/v1/test-runs` - list (`createdAt DESC`).
+- `GET /api/v1/test-runs/{id}` - by UUID.
+- `GET /api/v1/test-runs/uid/{uid}` - by project-scoped UID.
+- `PUT /api/v1/test-runs/{id}` - partial update with `clearXxx` flags.
+- `PUT /api/v1/test-runs/{id}/status` - transition.
+- `DELETE /api/v1/test-runs/{id}` - delete (cascades children).
+- `POST /api/v1/test-runs/{id}/testers` - add tester.
+- `GET /api/v1/test-runs/{id}/testers` - list testers.
+- `DELETE /api/v1/test-runs/{id}/testers/{testerName}` - remove tester.
+- `GET /api/v1/test-runs/{id}/results` - list per-case results.
+- `PUT /api/v1/test-runs/{id}/results/{testCaseId}` - update status + notes.
 
-Mode is not relevant on a run — the suite's mode picks the snapshot
+Mode is not relevant on a run - the suite's mode picks the snapshot
 strategy at create, after which the run owns the snapshot. There is no
 `/{id}/mode` endpoint.
 
@@ -254,7 +254,7 @@ enums and DTO shapes per ADR-034.
   happened during one pass.*
 - Re-running a suite for a new build/version produces a new
   `TestRun`; audit linkage from the prior run survives unchanged.
-- Snapshotting on create is the explicit trade-off — once a run is
+- Snapshotting on create is the explicit trade-off - once a run is
   created, suite edits do not propagate. That is by design (the
   preflight requires it), and a future "preview against the live
   suite" UI affordance can read the live resolver without touching
@@ -285,7 +285,7 @@ enums and DTO shapes per ADR-034.
   ADR-037 bounds those tables to session-credential storage.
   Extending them with business-assignment fields confuses session
   identity with run provenance.
-- **Skip the snapshot — read the suite resolver every time.**
+- **Skip the snapshot - read the suite resolver every time.**
   Rejected: a run is supposed to be evidence. Re-resolving the
   live suite turns "what did we run" into "what would we run
   today" and makes audit history fictional.
@@ -299,15 +299,15 @@ enums and DTO shapes per ADR-034.
 
 - ADR-040 (Test case domain), ADR-041 (Step format), ADR-042
   (Gherkin format), ADR-043 (Hierarchical organisation), ADR-044
-  (Test Plan entity), ADR-047 (Test Suite entity) — sibling
+  (Test Plan entity), ADR-047 (Test Suite entity) - sibling
   aggregates inside the `testcases` boundary.
-- ADR-033 (Authenticated audit actor provenance) — Envers actor
+- ADR-033 (Authenticated audit actor provenance) - Envers actor
   wiring `TestRun` inherits unchanged.
-- ADR-034 (API enum contract single source of truth) —
+- ADR-034 (API enum contract single source of truth) -
   `TestRunStatus` / `TestRunCaseResultStatus` are single-sourced in
   the domain `state` package and mirrored in `frontend/src/types/api.ts`
   and `mcp/ground-control/lib.js`.
-- ADR-037 (Browser session access control) — the session / CSRF
+- ADR-037 (Browser session access control) - the session / CSRF
   chain `/api/v1/test-runs/**` rides through.
-- `architecture/notes/test-run-entity-preflight.md` — design input
+- `architecture/notes/test-run-entity-preflight.md` - design input
   for this ADR.

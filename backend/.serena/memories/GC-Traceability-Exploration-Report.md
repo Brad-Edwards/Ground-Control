@@ -13,7 +13,7 @@ Ground Control implements a sophisticated traceability system connecting require
 **Purpose:** Links a requirement to an external artifact for traceability
 
 **Key Fields:**
-- `requirement` (Requirement): The source requirement (ManyToOne, FetchType.LAZY, required)
+- `requirement` (Requirement): The source requirement (ManyToOne, `FetchType.LAZY`, required)
 - `artifactType` (ArtifactType enum): Type of the artifact
 - `artifactIdentifier` (String): Unique identifier in external system (max 500 chars)
 - `linkType` (LinkType enum): Nature of the relationship
@@ -252,9 +252,9 @@ RELATED       - source related to target
 ```
 
 **DAG Types (used for impact analysis):**
-- RelationType.PARENT
-- RelationType.DEPENDS_ON
-- RelationType.REFINES
+- `RelationType.PARENT`
+- `RelationType.DEPENDS_ON`
+- `RelationType.REFINES`
 
 ---
 
@@ -303,7 +303,7 @@ public Set<Requirement> impactAnalysis(UUID requirementId) {
 **DAG_TYPES Constant (Line 35-36):**
 ```java
 private static final List<RelationType> DAG_TYPES =
-    List.of(RelationType.PARENT, RelationType.DEPENDS_ON, RelationType.REFINES);
+    List.of(`RelationType.PARENT`, `RelationType.DEPENDS_ON`, `RelationType.REFINES`);
 ```
 
 ---
@@ -423,7 +423,7 @@ public record GraphNode(
     String domainId,                    // UUID as string
     GraphEntityType entityType,         // Entity type in graph
     String projectIdentifier,           // Project ID as string
-    String uid,                         // Human-readable UID (e.g., "REQ-001")
+    String uid,                         // Human-readable UID (for example, "REQ-001")
     String label,                       // Display label
     Map<String, Object> properties      // Flexible metadata
 )
@@ -437,7 +437,7 @@ public record GraphNode(
 ```java
 public record GraphEdge(
     String id,                          // Edge ID
-    String edgeType,                    // Relation/link type (e.g., "DEPENDS_ON")
+    String edgeType,                    // Relation/link type (for example, "DEPENDS_ON")
     String sourceId,                    // Source node ID
     String targetId,                    // Target node ID
     GraphEntityType sourceEntityType,   // Source entity type

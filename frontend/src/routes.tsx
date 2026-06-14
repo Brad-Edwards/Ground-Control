@@ -18,6 +18,11 @@ const EvidenceStateExplorer = lazy(() =>
     default: m.EvidenceStateExplorer,
   })),
 );
+const GrcPortfolio = lazy(() =>
+  import("@/pages/grc-portfolio").then((m) => ({
+    default: m.GrcPortfolio,
+  })),
+);
 const ControlAssuranceWorkspace = lazy(() =>
   import("@/pages/control-assurance-workspace").then((m) => ({
     default: m.ControlAssuranceWorkspace,
@@ -114,6 +119,7 @@ export function AppRoutes() {
           }
         >
           <Route index element={<Dashboard />} />
+          <Route path="portfolio" element={<GrcPortfolio />} />
           <Route path="requirements" element={<Requirements />} />
           <Route path="requirements/:id" element={<RequirementDetail />} />
           <Route path="traceability-matrix" element={<TraceabilityMatrix />} />

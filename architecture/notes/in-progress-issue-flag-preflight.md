@@ -104,11 +104,11 @@ values together avoids scattering literals through multiple workflow steps.
 
 Implemented in issue #842 and recorded as an amendment to ADR-021:
 
-- `skills/implement/SKILL.md` Step 1 gains sub-step 12 — after `gh issue develop
+- `skills/implement/SKILL.md` Step 1 gains sub-step 12 - after `gh issue develop
   --checkout` (and `git branch --show-current` to capture the actual branch), it
   creates the `in-progress` label if the repo lacks it
   (`gh label create in-progress --color FBCA04 --description "…" 2>/dev/null || true`
-  — no `--force`, so an existing label's color/description is left untouched),
+ - no `--force`, so an existing label's color/description is left untouched),
   applies it (`gh issue edit <n> --add-label in-progress`), and posts a short
   pickup comment (driver, the captured branch, ISO-8601 UTC timestamp). Failures
   are surfaced before Step 2; the label persists on escalation.
@@ -117,8 +117,8 @@ Implemented in issue #842 and recorded as an amendment to ADR-021:
   in the Step 19 report rather than reported as a clean close.
 - `docs/DEVELOPMENT_WORKFLOW.md` and `docs/WORKFLOW.md` describe the flag in
   their workflow walkthroughs; ADR-021 carries the amendment blockquote. No new
-  policy rule was added — the existing `workflow-guardrail-sync` rule already
+  policy rule was added - the existing `workflow-guardrail-sync` rule already
   enforces the SKILL ↔ docs ↔ ADR-021 sync.
 - The label name / color / description and pickup-comment fields are stated
-  together as one convention block in the SKILL prose — the seam for a repo that
+  together as one convention block in the SKILL prose - the seam for a repo that
   wants a different visible label.

@@ -75,9 +75,9 @@ Fields (mapped to ADR-014 schema):
 
 | Java field | Column | Type | Nullable | Notes |
 |-----------|--------|------|----------|-------|
-| project | project_id | FK -> project | NOT NULL | @NotAudited, FetchType.EAGER (matches Control) |
-| target | target_id | FK -> traceability_link | nullable | @NotAudited, FetchType.LAZY |
-| requirement | requirement_id | FK -> requirement | nullable | @NotAudited, FetchType.LAZY |
+| project | project_id | FK -> project | NOT NULL | @NotAudited, `FetchType.EAGER` (matches Control) |
+| target | target_id | FK -> traceability_link | nullable | @NotAudited, `FetchType.LAZY` |
+| requirement | requirement_id | FK -> requirement | nullable | @NotAudited, `FetchType.LAZY` |
 | prover | prover | VARCHAR(50) | NOT NULL | Tool identifier string |
 | property | property | TEXT | nullable | Formal property checked |
 | result | result | VARCHAR(20) | NOT NULL | Enum: PROVEN, REFUTED, TIMEOUT, UNKNOWN, ERROR |
