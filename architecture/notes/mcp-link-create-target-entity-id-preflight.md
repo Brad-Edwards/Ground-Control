@@ -110,7 +110,7 @@ generated controllers, or tool-specific duplicate schemas.
   recreates the exact drift class in #877.
 - Do not fold link fields into entity create/update allowlists.
 - Do not weaken backend validation, add compatibility aliases, or catch and
-  rewrite 422s to hide wrong target-slot usage.
+  rewrite 422 responses to hide wrong target-slot usage.
 - Do not add new exception hierarchies, auth paths, graph write paths, or
   persistence shortcuts for this adapter bug.
 - Do not treat MCP catalog visibility as authorization. Backend auth remains

@@ -8,6 +8,8 @@ Accepted
 
 2026-05-11
 
+> **Style sync for issue #751 (2026-06-14):** Repository-wide Vale cleanup normalized punctuation in workflow prose. This ADR's routing and durable-record tool contracts stay the same.
+
 ## Context
 
 ADR-021 ("Gated Agentic Development Loop") and ADR-029 ("Issue-Thread Gate Model")

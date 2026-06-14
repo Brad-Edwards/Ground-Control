@@ -10,13 +10,13 @@ Accepted
 
 ## Context
 
-The requirement and traceability vocabularies — `RequirementType`,
-`RelationType`, `ArtifactType`, `LinkType` — are expressed three times:
+The requirement and traceability vocabularies - `RequirementType`,
+`RelationType`, `ArtifactType`, `LinkType` - are expressed three times:
 
 - **Backend**: Java enums under
   `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state/`.
   Jackson binds request/response JSON against these, so they are the *semantic*
-  authority — an unknown enum string is rejected by the parser before any domain
+  authority - an unknown enum string is rejected by the parser before any domain
   mutation.
 - **MCP**: constant arrays in `mcp/ground-control/lib.js`, used to validate tool
   arguments before forwarding to the REST API.
@@ -30,7 +30,7 @@ impossible values (`PERFORMANCE`, `SECURITY`, `DATA` for requirement type;
 for artifact type; `TRACES_TO`, `DERIVED_FROM` for link type), which produced
 avoidable 4xx round-trips. A partial fix (issue #433, commit `0086699`)
 centralized the frontend literals into `api.ts` constants and added a
-frontend test — but the test compared one hand-written list to another
+frontend test - but the test compared one hand-written list to another
 hand-written list (so it only *moved* the drift), it does not run in PR CI
 (the frontend test suite is not part of `ci.yml`), and it introduced the
 *inverse* drift: `ArtifactType` in `api.ts` dropped `PULL_REQUEST`,
@@ -41,12 +41,12 @@ ADR-017 (*Interactive Web Application*) contemplates OpenAPI-generated
 TypeScript types as the eventual frontend boundary. That generator does not
 exist yet, and standing it up (a Gradle task to emit the spec, an
 `openapi-typescript` step, a regen workflow, drift-detection on the generated
-file) is a larger change than this issue warrants. A narrower mechanism — a
+file) is a larger change than this issue warrants. A narrower mechanism - a
 *source extractor* that reads the Java enum files and asserts the mirrors match
-— meets the contract today without that machinery.
+ - meets the contract today without that machinery.
 
 The repo's `bin/policy` already runs on every pull request (the `policy` job in
-`ci.yml`) and hosts comparable static post-conditions (e.g. the ADR-026 compose
+`ci.yml`) and hosts comparable static post-conditions (for example the ADR-026 compose
 credential-passthrough check), so it is the natural home for the gate. Adding a
 new parallel policy runner is explicitly avoided (`.gc/plan-rules.md`).
 
@@ -63,7 +63,7 @@ new parallel policy runner is explicitly avoided (`.gc/plan-rules.md`).
    one MCP-inline literal that remained (`ChangeCategory` in `index.js`) is moved
    to a `CHANGE_CATEGORIES` constant in `lib.js`. `SyncStatus` was already drifted
    (`api.ts` had `SYNCED`/`NOT_SYNCED`/`ERROR`; the backend has `SYNCED`/`STALE`/
-   `BROKEN`) — this PR fixes it.
+   `BROKEN`) - this PR fixes it.
 
 2. **`bin/policy` enforces the contract.** `tools/policy/checks.py` gains
    `run_enum_contract_check`, a static post-condition (independent of the
@@ -75,10 +75,10 @@ new parallel policy runner is explicitly avoided (`.gc/plan-rules.md`).
      declaration order.
 
    The parsers strip `//` and `/* ... */` comments before extracting literals or
-   enum tokens, so a value commented *out* of a mirror — or one that exists only
-   inside a comment — does not silently satisfy the check; and the Java parser
+   enum tokens, so a value commented *out* of a mirror - or one that exists only
+   inside a comment - does not silently satisfy the check; and the Java parser
    reads only the constant list (up to the first `;` or `}`), so enums with
-   methods/fields (e.g. `Status`) parse correctly. A missing source file, an
+   methods/fields (for example `Status`) parse correctly. A missing source file, an
    unparseable enum/const/union, or any value mismatch is a `make policy`
    failure. The check is parameterized by `ENUM_CONTRACT_INVENTORY`: covering
    another mirrored enum is one inventory row, not new parsing logic. This is the
@@ -86,9 +86,9 @@ new parallel policy runner is explicitly avoided (`.gc/plan-rules.md`).
 
 3. **`bin/policy` is the authoritative CI gate**, because the frontend
    vitest/`tsc` checks do not run in PR CI today. `frontend/src/types/enum-contract.test.ts`
-   is kept as the developer-local mirror — rewritten to read the actual Java
+   is kept as the developer-local mirror - rewritten to read the actual Java
    enum source files (so it is not the "manual list vs manual list" anti-pattern)
-   — but it is a convenience, not the gate. (If a frontend PR job is later added
+ - but it is a convenience, not the gate. (If a frontend PR job is later added
    to `ci.yml`, it becomes a redundant second gate, which is fine.)
 
 4. **Request-DTO required-field alignment** rides alongside this contract but is
@@ -105,7 +105,7 @@ new parallel policy runner is explicitly avoided (`.gc/plan-rules.md`).
    by sync, ADR, risk, or control workflows (`PULL_REQUEST`, `RISK_SCENARIO`,
    `CONTROL`, ...) stay in all three layers even when a current UI screen does
    not surface a dedicated affordance for them. Aliases (`GITHUB_PR`) and
-   identifier prefixes (`github_pr:`) are not introduced — ADR-011 scopes
+   identifier prefixes (`github_pr:`) are not introduced - ADR-011 scopes
    artifact identifiers by `ArtifactType`.
 
 This ADR refines, and does not supersede, ADR-017: OpenAPI-generated frontend
@@ -125,13 +125,13 @@ contract. The architecture rationale captured during preflight lives in
 - Adding or changing an enum is a localized, checkable operation: change the
   Java enum, update the two mirrors, `make policy` confirms.
 - No new runtime surface, endpoint, exception type, auth/audit change, or
-  migration; the check reads tracked source files only — no network, tokens, or
-  argv exposure — consistent with the other `bin/policy` checks.
+  migration; the check reads tracked source files only - no network, tokens, or
+  argv exposure - consistent with the other `bin/policy` checks.
 
 ### Negative
 
 - The mirrors are still hand-maintained; the check catches divergence but does
-  not eliminate the edit. (OpenAPI codegen would; that trade — more machinery —
+  not eliminate the edit. (OpenAPI codegen would; that trade - more machinery -
   was judged not worth it for this issue.)
 - Two mechanical parsers of Java enum syntax now exist (Python in `bin/policy`,
   TypeScript in `enum-contract.test.ts`). Java enum declarations are trivial to

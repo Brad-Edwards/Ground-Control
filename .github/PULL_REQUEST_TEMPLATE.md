@@ -43,5 +43,5 @@
 - [ ] No business logic in API layer
 - [ ] Domain layer has no framework imports
 - [ ] Envers `@Audited` on new entities if applicable
-- [ ] Changelog fragment added under `changelog.d/<issue>.<type>.md` (or `+<slug>.<type>.md`), or no fragment needed (CI-only / docs-only change — refactors under application source still file a fragment). See `changelog.d/README.md`.
+- [ ] Changelog fragment added under `changelog.d/<issue>.<type>.md` (or `+<slug>.<type>.md`), or no fragment needed (CI-only / docs-only change - refactors under application source still file a fragment). See `changelog.d/README.md`.
 - [ ] Architectural docs updated if stack, package structure, or key behaviors changed (`docs/architecture/ARCHITECTURE.md`, `docs/CODING_STANDARDS.md`, relevant ADRs)

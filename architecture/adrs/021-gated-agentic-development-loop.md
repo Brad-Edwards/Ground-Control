@@ -8,6 +8,8 @@ Accepted
 
 2026-04-05
 
+> **Style sync for issue #751 (2026-06-14):** Repository-wide Vale cleanup normalized punctuation in workflow prose. This ADR's gate contract stays the same.
+
 ## Context
 
 Ground Control is built by AI agents using the `/implement` skill, which orchestrates the full lifecycle from requirement to merged PR. The skill has evolved to include multiple quality gates, automated reviewers, and human checkpoints, but the gate structure is defined only in the skill's markdown instructions. It is not captured as a requirement, not traceable, and not self-documenting within Ground Control's own graph.

@@ -10,7 +10,7 @@ accepted
 
 ## Context
 
-Ground Control projects are the top-level workspace abstraction. Until now the `project` entity carried only `identifier`, `name`, and `description`—software, GRC, and (after ADR-055) research workspaces were distinguished by convention, not by schema. The acceptance criteria for issue #999 require:
+Ground Control projects are the top-level workspace abstraction. Until now the `project` entity carried only `identifier`, `name`, and `description` - software, GRC, and (after ADR-055) research workspaces were distinguished by convention, not by schema. The acceptance criteria for issue #999 require:
 
 - a user can create or update a project as type Research,
 - research intake fields are persisted and returned through the API,
@@ -49,7 +49,7 @@ Changes to research intake matter for provenance once the workflow phases run on
 - `IntendedOutput`: `SCOPING_REVIEW`, `SYSTEMATIC_REVIEW`, `SYSTEMATIC_MAP`, `CRITICAL_REVIEW`, `NARRATIVE_REVIEW`, `TARGETED_RELATED_WORK`, `TAXONOMY_PAPER`, `OTHER`. The seven non-`OTHER` values mirror the seven method keys in `skills/lit-review/methodology/catalog.yaml` so the downstream `lit-review` phase-1 skill can derive a methodology choice from the intake. `OTHER` keeps the enum open at the edges without making the field free-form.
 - `AutonomyLevel`: `COPILOT`, `AUTONOMOUS`. Matches the user-gate vocabulary in the lit-review skills.
 
-Closed enums match how the codebase represents `TreatmentStrategy`, `TreatmentPlanStatus`, `ActionItemStatus`—invalid values are 422 at the API boundary with a `validValues` hint, the existing `ErrorResponse` envelope shape.
+Closed enums match how the codebase represents `TreatmentStrategy`, `TreatmentPlanStatus`, `ActionItemStatus` - invalid values are 422 at the API boundary with a `validValues` hint, the existing `ErrorResponse` envelope shape.
 
 ### 5. `allowedTools` as a typed `Set<String>`
 
@@ -57,9 +57,9 @@ Tool identifiers (for example, `cite_resolve`, `python`, `web_search`) are opera
 
 ### 6. Budget fields are typed and optional
 
-- `budgetTokens BIGINT` (nullable)—token cap; `null` means unbounded.
-- `budgetWallClockMinutes INTEGER` (nullable)—wall-clock cap; `null` means unbounded.
-- `budgetCostUsdMicros BIGINT` (nullable)—cost cap in USD micros (1 USD = 1,000,000 micros). `BIGINT` micros avoid `DECIMAL` round-trips in Jackson and Postgres-driver edge cases; conversion to USD for display is the API/UI's job.
+- `budgetTokens BIGINT` (nullable) - token cap; `null` means unbounded.
+- `budgetWallClockMinutes INTEGER` (nullable) - wall-clock cap; `null` means unbounded.
+- `budgetCostUsdMicros BIGINT` (nullable) - cost cap in USD micros (1 USD = 1,000,000 micros). `BIGINT` micros avoid `DECIMAL` round-trips in Jackson and Postgres-driver edge cases; conversion to USD for display is the API/UI's job.
 
 Each is individually optional. Service-layer logging records when an intake is created with no caps (`research_intake_created: no_budget_caps=true`) so operators can audit unbounded runs.
 
@@ -70,14 +70,14 @@ Two layers:
 - **Bean Validation at the API boundary** (`ProjectRequest`, `UpdateProjectRequest`). A custom class-level constraint `@ResearchIntakeRequired` rejects payloads where `type = RESEARCH` and `researchIntake` is null, or where `type != RESEARCH` and `researchIntake` is non-null. 422 with the existing `validation_error` envelope shape.
 - **Service-layer guard** (`ProjectService.validateIntakeAgainstType`). Mirrors the same rule for bypass writes that skip API validation (programmatic creates from tests, migrations, or future intra-backend callers). This is the same defence-in-depth pattern PR #997 used for typed action items: API constraint + service guard.
 
-`update` allows `type` to change only via an explicit `changeProjectType` operation (out of scope for this PR—no AC requires it). Updating intake fields on an existing RESEARCH project goes through `PUT /api/v1/projects/{identifier}/research-intake`, decoupled from project name/description updates so each field has clean change tracking.
+`update` allows `type` to change only via an explicit `changeProjectType` operation (out of scope for this PR - no AC requires it). Updating intake fields on an existing RESEARCH project goes through `PUT /api/v1/projects/{identifier}/research-intake`, decoupled from project name/description updates so each field has clean change tracking.
 
 ### 8. API shape
 
-- `POST /api/v1/projects`—accepts `{identifier, name, description, type?, researchIntake?}`. `type` defaults to `SOFTWARE` if omitted.
-- `GET /api/v1/projects` and `GET /api/v1/projects/{identifier}`—include `type` always; `researchIntake` is present when `type = RESEARCH`, absent otherwise.
-- `PUT /api/v1/projects/{identifier}`—name/description updates (unchanged plus the validation guard).
-- `PUT /api/v1/projects/{identifier}/research-intake`—full replacement of the intake row for a RESEARCH project; 422 if the project is not RESEARCH (semantic validation error, not a resource-state conflict); 404 if the project doesn't exist or has no intake; 422 on field-level validation errors.
+- `POST /api/v1/projects` - accepts `{identifier, name, description, type?, researchIntake?}`. `type` defaults to `SOFTWARE` if omitted.
+- `GET /api/v1/projects` and `GET /api/v1/projects/{identifier}` - include `type` always; `researchIntake` is present when `type = RESEARCH`, absent otherwise.
+- `PUT /api/v1/projects/{identifier}` - name/description updates (unchanged plus the validation guard).
+- `PUT /api/v1/projects/{identifier}/research-intake` - full replacement of the intake row for a RESEARCH project; 422 if the project is not RESEARCH (semantic validation error, not a resource-state conflict); 404 if the project doesn't exist or has no intake; 422 on field-level validation errors.
 
 Per the plan rules, every new endpoint ships with `@WebMvcTest` controller slice tests (the sonar CI job does not run Testcontainers).
 
@@ -85,13 +85,13 @@ Per the plan rules, every new endpoint ships with `@WebMvcTest` controller slice
 
 - Existing rows in `project` get `type = SOFTWARE` via V126. Existing API clients that omit `type` continue to get `SOFTWARE`. No breaking change for non-research callers.
 - `GC-RSCH-F001` and `GC-RSCH-R007` transition DRAFT → ACTIVE with this PR. `GC-RSCH-R001`, `GC-RSCH-F002`, `GC-RSCH-N011` stay DRAFT with `DOCUMENTS` links to issue #999; subsequent issues materialise the workflow phases, task classification, and observability on top of the intake foundation this ADR delivers.
-- Future work—phase state machine, task classification per phase, observability of gates and cost—extends `ResearchIntake` and adds sibling aggregates (for example, `ResearchRun`, `PhaseGate`) rather than re-shaping `Project`.
+- Future work - phase state machine, task classification per phase, observability of gates and cost - extends `ResearchIntake` and adds sibling aggregates (for example, `ResearchRun`, `PhaseGate`) rather than re-shaping `Project`.
 - The frontend gets the project type in every list/detail response and can route to research-specific intake forms. Frontend work is out of scope for this PR (no UI is required for backend AC); the React side picks this up in a separate issue.
 
 ## Alternatives considered
 
 **Allow `type` to change post-creation via plain `PUT /api/v1/projects/{id}`.** Rejected: changing a project's type after creation has cascading effects on adjacent data (a RESEARCH→SOFTWARE flip would orphan the intake row; a SOFTWARE→RESEARCH flip would require synthesising an intake from nothing). Out of scope for this PR; if a use case appears, a dedicated `changeProjectType` operation with explicit operator authorisation is the right shape.
 
-**Make `type` part of the `identifier` (`research/foo`, `software/bar`).** Rejected: identifier is currently a single segment; restructuring it would break every external reference (Linear, dashboards, URLs, traceability links—the `project_identifier` field in every requirement currently carries the unsegmented form). The schema column `type` is the right tool.
+**Make `type` part of the `identifier` (`research/foo`, `software/bar`).** Rejected: identifier is currently a single segment; restructuring it would break every external reference (Linear, dashboards, URLs, traceability links - the `project_identifier` field in every requirement currently carries the unsegmented form). The schema column `type` is the right tool.
 
-**Store the seven `IntendedOutput` values by reference to `skills/lit-review/methodology/catalog.yaml`.** Rejected: the backend should not load + parse a skill-side YAML at runtime; the enum is the contract, the catalog is the agent-side method-source mapping that consumes the enum's choices. If the catalog adds an eighth method, that's an enum addition (ADR + migration) plus a catalog entry—both are deliberate decisions.
+**Store the seven `IntendedOutput` values by reference to `skills/lit-review/methodology/catalog.yaml`.** Rejected: the backend should not load + parse a skill-side YAML at runtime; the enum is the contract, the catalog is the agent-side method-source mapping that consumes the enum's choices. If the catalog adds an eighth method, that's an enum addition (ADR + migration) plus a catalog entry - both are deliberate decisions.

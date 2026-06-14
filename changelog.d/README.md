@@ -3,7 +3,7 @@
 This directory holds **per-PR changelog fragments** consumed by
 [`towncrier`](https://towncrier.readthedocs.io/) at release time. The
 convention exists so concurrent PRs can never conflict on the same line
-range of `CHANGELOG.md` — every change writes to its own fragment path.
+range of `CHANGELOG.md` - every change writes to its own fragment path.
 
 The fragment workflow is required by ADR-021 (Phase B, amended by issue
 #848) and enforced by:
@@ -30,7 +30,7 @@ You **do not** need a fragment for:
   etc.).
 
 There is **no "pure refactor" carve-out**. The enforcement is
-path-based — `tools/policy/checks.py` cannot tell a behavior-preserving
+path-based - `tools/policy/checks.py` cannot tell a behavior-preserving
 refactor from a feature change, and an unenforceable carve-out is a
 contract you cannot rely on. A refactor that touches application
 source still files a fragment, even if it's a one-line
@@ -75,7 +75,7 @@ silently skip a misspelled fragment.
 
 ## Fragment contents
 
-One short Markdown bullet (or a few — towncrier wraps them). Write the
+One short Markdown bullet (or a few - towncrier wraps them). Write the
 release-notes line: *what changed for the user*, not *what the diff
 did*. Towncrier collates the line under the appropriate `### <Type>`
 heading at release time, appending `(#<issue>)` automatically when the
@@ -89,7 +89,7 @@ Adopt towncrier-style changelog fragments. PRs now drop a fragment under
 
 ## Release-time collation
 
-At release time, the maintainer runs (per-repo trigger — manual, on
+At release time, the maintainer runs (per-repo trigger - manual, on
 tag, on push to `main`, however the repo prefers):
 
 ```bash
@@ -109,7 +109,7 @@ hand-edits the top of `CHANGELOG.md` with a new `## [X.Y.Z]` entry.
 The first PR lands. The second PR's `CHANGELOG.md` now conflicts with
 `dev` on the same line range. The PR author rebases, CI re-runs
 (15 minutes), `dev` advances again, conflict again, rebase again. On a
-fast-moving day this becomes a rebase storm — the conflict is purely
+fast-moving day this becomes a rebase storm - the conflict is purely
 structural (two PRs cannot edit the same line range without
 conflicting), and the time burned on it is wasted.
 

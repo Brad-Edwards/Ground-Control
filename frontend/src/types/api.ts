@@ -888,6 +888,66 @@ export interface RiskScenarioResponse {
   createdBy: string | null;
 }
 
+export interface AssetResponse {
+  id: string;
+  graphNodeId: string;
+  projectIdentifier: string;
+  uid: string;
+  name: string;
+  description: string | null;
+  assetType: AssetType;
+  owner: string | null;
+  steward: string | null;
+  environment: AssetEnvironment;
+  criticality: AssetCriticality;
+  businessContext: string | null;
+  scopeDesignation: AssetScope;
+  subtype: string | null;
+  metadata: Record<string, unknown>;
+  knowledgeState: KnowledgeState;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FindingType =
+  | "AUDIT_FINDING"
+  | "CONTROL_DEFICIENCY"
+  | "POLICY_VIOLATION"
+  | "VULNERABILITY"
+  | "EXCEPTION_ESCALATION";
+
+export type FindingSeverity =
+  | "CRITICAL"
+  | "HIGH"
+  | "MEDIUM"
+  | "LOW"
+  | "INFORMATIONAL";
+
+export type FindingStatus =
+  | "OPEN"
+  | "REMEDIATION_IN_PROGRESS"
+  | "REMEDIATION_COMPLETE"
+  | "VERIFIED_CLOSED";
+
+export interface FindingResponse {
+  id: string;
+  graphNodeId: string;
+  projectIdentifier: string;
+  uid: string;
+  title: string;
+  findingType: FindingType;
+  severity: FindingSeverity;
+  status: FindingStatus;
+  description: string;
+  rootCauseAnalysis: string | null;
+  owner: string | null;
+  dueDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string | null;
+}
+
 export interface RelationResponse {
   id: string;
   sourceId: string;

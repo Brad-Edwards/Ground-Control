@@ -32,7 +32,7 @@ TC-009 deliberately does NOT add.
 Without an explicit decision the failure modes are:
 
 - runner evidence creeps onto `TestCaseStep.actualResult`, conflating
-  authored content with run-time data — exactly the boundary ADR-041
+  authored content with run-time data - exactly the boundary ADR-041
   defined `actualResult` to keep clear.
 - a parallel `ExecutionSession` / `ManualRun` domain is invented even though
   the run aggregate already has frozen membership, status semantics, and
@@ -59,21 +59,21 @@ sits below `TestRunCaseResult` in the cascade tree.
 
 Fields:
 
-- `testRunCaseResult` — `@Audited(NOT_AUDITED)` `@ManyToOne` parent. The
+- `testRunCaseResult` - `@Audited(NOT_AUDITED)` `@ManyToOne` parent. The
   audit shadow stores the FK value but Envers does not audit the parent
   entity reference itself; the same pattern `TestRunCaseResult` uses for
   its run / case parents.
-- `testCaseStep` — `@Audited(NOT_AUDITED)` `@ManyToOne` to the authored
+- `testCaseStep` - `@Audited(NOT_AUDITED)` `@ManyToOne` to the authored
   step. Kept as a live FK so join queries can correlate evidence to the
   step's identity; the snapshot fields are authoritative for replay.
 - `stepNumberSnapshot`, `actionSnapshot`, `expectedResultSnapshot`,
-  `snapshotOrder` — authored content captured at run-create time. Later
+  `snapshotOrder` - authored content captured at run-create time. Later
   edits to the authored step never rewrite a run's historical evidence
   (mirrors the `TestRunCaseResult.testCaseUid` / `testCaseTitle` snapshot
   semantics).
-- `status` — runtime outcome; reuses `TestRunCaseResultStatus` (see §2).
-- `comment` — per-step tester note (TEXT, nullable). User evidence.
-- `executedAt` — `Instant` (nullable). Set by the runner when the tester
+- `status` - runtime outcome; reuses `TestRunCaseResultStatus` (see §2).
+- `comment` - per-step tester note (TEXT, nullable). User evidence.
+- `executedAt` - `Instant` (nullable). Set by the runner when the tester
   records a non-`NOT_RUN` status; cleared by the explicit clear flag.
 
 The table carries unique constraints on
@@ -90,7 +90,7 @@ split documentation, the SQL CHECK, the frontend mirror, and the MCP enum
 export for no semantic gain, violating the ADR-034 enum-contract.
 
 Step status flips are unconstrained (same convention as
-`TestRunCaseResult.status`) — a tester may flip PASSED → FAILED on re-test
+`TestRunCaseResult.status`) - a tester may flip PASSED → FAILED on re-test
 or BLOCKED → SKIPPED on descope.
 
 ### 3. Snapshot happens at run-create time, not on first interaction
@@ -101,7 +101,7 @@ with zero authored steps yield zero step-result rows. The MAX_RESOLVED
 cap (500 cases) bounds the upfront write cost; at typical step counts the
 extra rows are inconsequential.
 
-The alternative — snapshot lazily on first interaction with a case — was
+The alternative - snapshot lazily on first interaction with a case - was
 rejected because (a) it requires special "first-touch" logic in the
 service, (b) authored steps can be edited between run-create and
 first-interaction in ways that change the snapshot the tester sees, and
@@ -110,14 +110,14 @@ eager-snapshot-at-create.
 
 ### 4. Pause and resume use a non-audited cursor on `TestRun`
 
-Two nullable UUID columns on `test_run` — `current_case_result_id` and
-`current_step_result_id` — capture "where the tester left off." They are
+Two nullable UUID columns on `test_run` - `current_case_result_id` and
+`current_step_result_id` - capture "where the tester left off." They are
 `@NotAudited` so cursor movement does not produce a `test_run_audit`
 revision; if it did, every step recorded would write a redundant run
 revision, bloating the audit log with no compliance value (the per-step
 revisions on `test_run_step_result_audit` already record what changed).
 
-The cursor references rows by identity only — no FK constraint, no entity
+The cursor references rows by identity only - no FK constraint, no entity
 mapping. Deleting a stale case-result or step-result must not be blocked by
 a stale cursor pointer, and the service layer null-handles a cursor that no
 longer resolves.
@@ -125,11 +125,11 @@ longer resolves.
 Pause is the implicit state where the tester closed the tab. Resume reads
 the cursor on mount and selects the corresponding case + step.
 
-The alternative — extend `TestRunStatus` with a `PAUSED` value — was
+The alternative - extend `TestRunStatus` with a `PAUSED` value - was
 rejected because (a) a paused run is still an in-progress run from the
 lifecycle perspective (no new transition arcs, no new terminal semantics),
 and (b) the new state would have to be mirrored in `TestRunStatus`'s
-transition graph, the SQL CHECK, the frontend enum, and the MCP export —
+transition graph, the SQL CHECK, the frontend enum, and the MCP export -
 expensive for no functional gain. The cursor design carries pause as
 runner state, not lifecycle state.
 
@@ -150,16 +150,16 @@ case-status surface; the new step-level endpoint
 
 Three new endpoints extend `TestRunController`:
 
-- `GET /api/v1/test-runs/{id}/results/{caseResultId}/steps` — list the
+- `GET /api/v1/test-runs/{id}/results/{caseResultId}/steps` - list the
   step-result rows for a case, ordered by `snapshot_order`.
 - `PUT /api/v1/test-runs/{id}/results/{caseResultId}/steps/{stepResultId}`
-  — record/update a single step result (status required; comment +
+ - record/update a single step result (status required; comment +
   `executedAt` optional with explicit clear flags).
-- `PUT /api/v1/test-runs/{id}/cursor` — set / clear the pause-resume
+- `PUT /api/v1/test-runs/{id}/cursor` - set / clear the pause-resume
   cursor.
 
 Keeping them under the existing `/api/v1/test-runs/**` glob means the
-`ApiPathMatrix` bearer/session auth chain applies unchanged — no
+`ApiPathMatrix` bearer/session auth chain applies unchanged - no
 runner-local auth.
 
 ## Consequences
@@ -174,15 +174,15 @@ runner-local auth.
   edits never rewrite a run's historical evidence.
 - The cursor adds resume capability with zero audit-log bloat. Closing the
   tab mid-run is a recoverable interruption rather than a lost session.
-- Future extensions — attachments, defect linkage, multi-tester handoff,
-  autosave heuristics — extend the run-side step-result row without
+- Future extensions - attachments, defect linkage, multi-tester handoff,
+  autosave heuristics - extend the run-side step-result row without
   changing authored `TestCaseStep` or re-resolving `TestSuite`.
 
 ### Negative
 
 - Run-create writes scale with `O(cases × avg_steps_per_case)`. With the
   existing 500-case cap and typical step counts in the 5-15 range, this is
-  a few thousand inserts per run-create — well within an ORM transaction.
+  a few thousand inserts per run-create - well within an ORM transaction.
   If step counts grow large enough to matter, the snapshot loop is
   trivially batched.
 - A new audit-shadow table joins the `AuditRetentionJob` cleanup list. One
@@ -205,7 +205,7 @@ runner-local auth.
 ### A. Step evidence as a JSON blob on `TestRunCaseResult`
 
 Rejected. A JSON blob defeats query-by-status, validation, retention, and
-audit history — the four properties this whole aggregate exists to provide.
+audit history - the four properties this whole aggregate exists to provide.
 
 ### B. Lazy snapshot on first step-result interaction
 
@@ -224,21 +224,21 @@ Rejected. See §4. Pause is runner state, not lifecycle state.
 
 ### E. Cursor as a separate `test_run_runner_state` child table
 
-Rejected for the MVP — two columns on `test_run` is simpler. Reconsider if
+Rejected for the MVP - two columns on `test_run` is simpler. Reconsider if
 multi-tester runs need per-tester cursor state, which would push the
 cursor to a child row keyed by tester.
 
 ## References
 
-- ADR-049 — Test Run Entity. This ADR builds directly on §1 (run as a
+- ADR-049 - Test Run Entity. This ADR builds directly on §1 (run as a
   separate aggregate), §2 (snapshot resolution on the run side), and §3
   (dedicated execution-status vocabulary).
-- ADR-041 — Test Case Step Format. The "authored content is not run-time
+- ADR-041 - Test Case Step Format. The "authored content is not run-time
   evidence" boundary is the load-bearing reason TC-009 cannot write into
   `TestCaseStep.actualResult`.
-- ADR-034 — API Enum Contract: Single Source. The reason step status
+- ADR-034 - API Enum Contract: Single Source. The reason step status
   reuses the case-level enum rather than inventing a parallel one.
-- ADR-037 — Browser Session Access Control. The shared CSRF chain the
+- ADR-037 - Browser Session Access Control. The shared CSRF chain the
   runner UI uses for all writes.
-- `architecture/notes/manual-test-execution-runner-preflight.md` — binding
+- `architecture/notes/manual-test-execution-runner-preflight.md` - binding
   guardrails this ADR consumes.

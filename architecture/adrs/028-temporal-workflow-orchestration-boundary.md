@@ -79,7 +79,7 @@ projection to drive workflow execution.
 
 Every workflow execution is scoped to a Ground Control project using
 `ProjectService` resolution and project-scoped repository queries. Project
-identifier, requirement UID(s), issue number, workflow type, and outcome must be
+identifier, requirement UIDs, issue number, workflow type, and outcome must be
 recorded as Temporal Search Attributes where Temporal supports querying them.
 
 Project scoping is not tenant isolation. Until a separate tenant model exists,
@@ -130,7 +130,7 @@ responses through Temporal history.
 ### Human Gates
 
 Per ADR-029 the workflow has exactly one synchronous human gate: PR merge.
-Merge ratification is not a Temporal signal — GitHub's merge action is the
+Merge ratification is not a Temporal signal - GitHub's merge action is the
 authoritative event, observed by the Temporal workflow via webhook or polling.
 Signal endpoints (if introduced for forward-looking gates such as long-running
 review-finding decisions or operator overrides) use existing
@@ -141,7 +141,7 @@ workflow outside the caller's project scope.
 Plan and review-finding decisions are recorded as comments on the GitHub issue
 thread (per ADR-029); they are durable transports, not Temporal signals. The
 Temporal workflow may read them for observability but does not block on
-synchronous human input for plan approval — that gate was removed by ADR-029
+synchronous human input for plan approval - that gate was removed by ADR-029
 before Temporal lands.
 
 If GC-O009's draft requirement text, issue prose, or older workflow notes refer

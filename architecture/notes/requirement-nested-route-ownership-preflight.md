@@ -57,7 +57,7 @@ changes.
   history. Ownership must be checked before returning Envers revisions so audit
   history cannot be used as a cross-resource read side channel.
 - Error responses must continue through `ErrorResponse` with stable
-  `error.code = "not_found"` for deterministic 404s. Do not echo unrelated
+  `error.code = "not_found"` for deterministic 404 responses. Do not echo unrelated
   parent/child linkage details into response `detail`.
 
 ## Extensibility

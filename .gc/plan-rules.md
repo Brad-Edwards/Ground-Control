@@ -6,7 +6,7 @@ Mandatory constraints the `/implement` skill applies during plan phase.
   lists in `MigrationSmokeTest.java` and
   `RequirementsE2EIntegrationTest.java`.
 - Plans that add `@Audited` JPA entities MUST add `@NotAudited` on any
-  `@ManyToOne` references to non-audited entities (e.g., Project), and
+  `@ManyToOne` references to non-audited entities (for example, Project), and
   MUST include a Flyway migration for the `_audit` table.
 - Plans that add API endpoints MUST include `@WebMvcTest` controller
   unit tests (not just integration tests). The sonar CI job does not run
@@ -21,10 +21,10 @@ Mandatory constraints the `/implement` skill applies during plan phase.
   only) and docs-only diffs (paths under `docs/**`, `architecture/**`,
   `README.md`, `CONTRIBUTING.md`, `.gc/**`, `skills/**`, and equivalent
   metadata) may ship without a fragment. There is no "pure refactor"
-  carve-out — the policy is path-based, so a behavior-preserving
+  carve-out - the policy is path-based, so a behavior-preserving
   refactor under an application-source path still files a fragment
   (a one-line `### Changed - Internal refactor of X` is fine). Do NOT
-  edit `CHANGELOG.md` directly — release-time `towncrier build`
+  edit `CHANGELOG.md` directly - release-time `towncrier build`
   collates fragments into the changelog. See `changelog.d/README.md`
   for the convention. Enforced by
   `tools/policy/checks.py::run_changelog_fragment_check` (codes

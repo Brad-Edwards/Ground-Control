@@ -10,7 +10,7 @@ Accepted
 
 ## Context
 
-GC-M010 requires operational assets to be linkable to requirements, controls, risk scenarios, threat-model entries, findings, evidence, audits, and external artifacts. ADR-019 anticipated this need and identified it as a risk: "Cross-entity-type relations (asset-to-requirement) may be needed for unified system model traversal — can be addressed via TraceabilityLink or a new linking mechanism."
+GC-M010 requires operational assets to be linkable to requirements, controls, risk scenarios, threat-model entries, findings, evidence, audits, and external artifacts. ADR-019 anticipated this need and identified it as a risk: "Cross-entity-type relations (asset-to-requirement) may be needed for unified system model traversal - can be addressed via TraceabilityLink or a new linking mechanism."
 
 The existing linking mechanisms are:
 
