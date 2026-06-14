@@ -230,7 +230,11 @@ public class RequirementService {
     @Transactional(readOnly = true)
     public Page<RequirementWithLinks> getTraceabilityMatrix(
             UUID projectId, Pageable pageable, RequirementFilter filter, LinkType linkType) {
-        Page<Requirement> page = list(projectId, pageable, filter);
+        // Inline the requirement query rather than calling list(): a self-invocation of the
+        // @Transactional list() would bypass the Spring proxy (java:S6809), and this method
+        // already runs in a read-only transaction.
+        var spec = RequirementSpecifications.fromFilter(projectId, filter);
+        Page<Requirement> page = requirementRepository.findAll(spec, pageable);
         List<UUID> requirementIds =
                 page.getContent().stream().map(Requirement::getId).toList();
         Map<UUID, List<TraceabilityLink>> linksByRequirement = requirementIds.isEmpty()

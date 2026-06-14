@@ -244,8 +244,6 @@ class RequirementControllerTest {
         private TraceabilityLink linkFor(Requirement req) {
             var link = new TraceabilityLink(req, ArtifactType.CODE_FILE, "backend/src/Main.java", LinkType.IMPLEMENTS);
             setField(link, "id", UUID.randomUUID());
-            setField(link, "createdAt", Instant.now());
-            setField(link, "updatedAt", Instant.now());
             return link;
         }
 
