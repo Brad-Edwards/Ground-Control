@@ -160,15 +160,17 @@ merge-gate contract, `tools/sonar/README.md` documents Sonar-specific helper
 scripts, and ADR-054 records the policy-surface amendment. No new style rule
 is established here.
 
-New /implement workflow-gate MCP tools added to `mcp/ground-control/lib.js`
-and `mcp/ground-control/index.js` (for example, `gc_assert_traceability_reconciled`
-and `gc_close_issue_after_merge` added for GC-O007 / #1058, `gc_post_grc_screening`
-added for GC-O012 / #1099, `gc_assert_grc_reconciled` added for #1100, or `gc_assert_quality_gates` added for #1101) are
-documented by the tool description strings in `index.js` and the skill prose
-under `skills/implement/`. The matching policy check in `tools/policy/checks.py`
-is the prose-side guardrail. The surface addition is recorded in the ADR-054
-amendment and the changelog fragment; no new DOC_STYLE.md prose is needed
-unless a new style rule is being established.
+New /implement workflow-gate MCP tools or fields added to
+`mcp/ground-control/lib.js` and `mcp/ground-control/index.js` are documented by
+the tool description strings in `index.js` and the skill prose under
+`skills/implement/`. Examples include `gc_assert_traceability_reconciled` and
+`gc_close_issue_after_merge` for GC-O007 / #1058, `gc_post_grc_screening` for
+GC-O012 / #1099, `gc_assert_grc_reconciled` for #1100,
+`gc_assert_quality_gates` for #1101, and `plain_english_outcome` /
+`next_issue_recommendation` for #1156. The matching policy check in
+`tools/policy/checks.py` is the prose-side guardrail. The surface addition is
+recorded in the ADR-054 amendment and the changelog fragment; no new
+DOC_STYLE.md prose is needed unless a new style rule is being established.
 
 Extensions to existing /implement workflow-gate MCP tools follow the same
 documentation pattern. The #1102 `gc_assert_quality_gates` extension adds

@@ -215,6 +215,7 @@ import {
   GOVERNANCE_FIELDS,
   PR_BODY_SUMMARY_MAX,
   FINAL_REPORT_SUMMARY_MAX,
+  FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX,
   FINAL_REPORT_REVIEW_SUMMARY_MAX,
   KNOWLEDGE_SOURCE_TYPES,
   writeKnowledgeInbox,
@@ -880,7 +881,7 @@ server.tool(
 
 server.tool(
   "gc_post_final_report",
-  "Post the canonical /implement Step 19 final report (or the /quickfix Step Q19 slim close comment) as a comment on the GitHub issue. Renders structured input (in-scope requirements, files-by-change-kind, reviews, traceability reconciliation, CI/SonarCloud status) into the standard final-report Markdown layout. Pass lane='quickfix' (issue #906) to enable the slim payload — empty reviews[] and no codex-entry requirement — for the /quickfix lane where AI-assisted reviews are opt-in; every other gate (CI green, Sonar pass-or-legit-skipped, sensitive-content / no-defer / reserved-marker scrubs) still applies. Replaces free-prose Step 19 comments. Returns the posted comment's URL and id. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
+  "Post the canonical /implement Step 19 final report (or the /quickfix Step Q19 slim close comment) as a comment on the GitHub issue. Renders structured input (plain_english_outcome, in-scope requirements, files-by-change-kind, reviews, traceability reconciliation, CI/SonarCloud status) into the standard final-report Markdown layout. `plain_english_outcome` is required for /implement and renders the short product/operator outcome section; lane='quickfix' keeps the slim payload where AI reviews and the outcome field are optional. Every gate (CI green, Sonar pass-or-legit-skipped, sensitive-content / no-defer / reserved-marker scrubs) still applies. Replaces free-prose Step 19 comments. Returns the posted comment's URL and id. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -912,6 +913,7 @@ server.tool(
     sonar_status: z.enum(["passed", "failed", "skipped"]),
     plan_comment_url: z.string().optional(),
     summary: z.string().max(FINAL_REPORT_SUMMARY_MAX).optional(),
+    plain_english_outcome: z.string().min(1).max(FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX).optional(),
     lane: z.enum(["implement", "quickfix"]).optional(),
     documentation_outcome: z.object({
       outcome: z.enum(["updated", "verified_unchanged", "not_updated_authorized"]),
@@ -920,7 +922,7 @@ server.tool(
     override_traceability_gate: z.boolean().optional(),
     override_traceability_reason: z.string().optional(),
   },
-  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, lane, documentation_outcome, override_traceability_gate, override_traceability_reason }) => {
+  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, plain_english_outcome, lane, documentation_outcome, override_traceability_gate, override_traceability_reason }) => {
     try {
       return ok(JSON.stringify(await runPostFinalReport({
         repoPath: repo_path,
@@ -935,6 +937,7 @@ server.tool(
         planCommentUrl: plan_comment_url ?? null,
         lane: lane ?? null,
         summary: summary ?? null,
+        plainEnglishOutcome: plain_english_outcome ?? null,
         documentation_outcome: documentation_outcome ?? null,
         overrideTraceabilityGate: Boolean(override_traceability_gate),
         overrideTraceabilityReason: override_traceability_reason ?? null,
