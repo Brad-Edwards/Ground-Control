@@ -76,5 +76,6 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [056](056-research-project-type-and-intake.md) | Research Project Type and Intake Metadata | Accepted |
 | [057](057-per-run-grc-screening-gate.md) | Per-run GRC Screening Gate in /implement | Accepted (amended/superseded in part by ADR-058) |
 | [058](058-derivation-first-continuous-grc.md) | Derivation-First Continuous GRC | Accepted |
+| [059](059-mcp-usage-telemetry.md) | MCP Tool Usage Telemetry | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.

@@ -923,7 +923,11 @@ function requiresAdminRole(path) {
     || path.startsWith("/api/v1/pack-install-records")
     || path.startsWith("/api/v1/admin/")
     || path.startsWith("/api/v1/embeddings")
-    || path.startsWith("/api/v1/analysis/sweep");
+    || path.startsWith("/api/v1/analysis/sweep")
+    // The MCP tool-usage aggregate read is admin-only (cross-project operational
+    // telemetry). Exact match so the capture write (/api/v1/mcp-tool-usage/events),
+    // which any authenticated session must reach, keeps the ordinary API token.
+    || path === "/api/v1/mcp-tool-usage";
 }
 
 // Forwards a bearer token on `/api/v1/**` requests so the MCP server can talk

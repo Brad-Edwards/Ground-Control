@@ -53,7 +53,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "079", "080", "081", "082", "083", "084", "085", "086", "087", "088", "089", "090", "091",
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
-                        "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134");
+                        "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135");
     }
 
     @Test
@@ -1071,6 +1071,14 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         entityManager
                 .createNativeQuery("SELECT 1 FROM derivation_capture_limit LIMIT 1")
                 .getResultList();
+        // V135: mcp_tool_event (issue #1104 / ADR-059). Append-only operational
+        // telemetry; no _audit shadow (rows are never mutated).
+        entityManager.createNativeQuery("SELECT 1 FROM mcp_tool_event LIMIT 1").getResultList();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT tool, action, outcome, duration_ms, project, event_ts, created_at"
+                                + " FROM mcp_tool_event LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
         entityManager
                 .createNativeQuery("SELECT 1 FROM derivation_run_audit LIMIT 1")
                 .getResultList();
