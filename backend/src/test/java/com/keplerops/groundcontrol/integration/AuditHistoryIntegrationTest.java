@@ -368,20 +368,32 @@ class AuditHistoryIntegrationTest extends BaseIntegrationTest {
 
     @Test
     @Order(21)
-    void diff_emptyWhenSameRevision() throws Exception {
-        var historyResult = mockMvc.perform(get("/api/v1/requirements/" + requirementId + "/history"))
+    void diff_emptyWhenNoChangesBetweenRevisions() throws Exception {
+        // The timeline spans all categories (requirement, relation, traceability link), so its
+        // highest revisionNumber is the last revision that touched this requirement in any way -
+        // unlike /history, which only reports requirement field revisions and would miss later
+        // relation/link operations.
+        var timelineResult = mockMvc.perform(get("/api/v1/requirements/" + requirementId + "/timeline"))
                 .andExpect(status().isOk())
                 .andReturn();
-        var historyJson = objectMapper.readTree(historyResult.getResponse().getContentAsString());
-        int lastRevision =
-                historyJson.get(historyJson.size() - 1).get("revisionNumber").asInt();
+        var timelineJson = objectMapper.readTree(timelineResult.getResponse().getContentAsString());
+        int maxRevision = 0;
+        for (var entry : timelineJson) {
+            maxRevision = Math.max(maxRevision, entry.get("revisionNumber").asInt());
+        }
 
-        // Diff between lastRevision and lastRevision+1 (no changes in between)
+        // Diffing the latest revision against a higher, non-existent revision yields no changes:
+        // the requirement, its relations, and its traceability links are all unchanged after
+        // maxRevision, so all three change collections must be empty (this also guards against
+        // phantom ADDED/MODIFIED entries from the snapshot resolution when toRevision exceeds the
+        // highest real revision).
         mockMvc.perform(get("/api/v1/requirements/" + requirementId + "/diff")
-                        .param("fromRevision", String.valueOf(lastRevision))
-                        .param("toRevision", String.valueOf(lastRevision + 100)))
+                        .param("fromRevision", String.valueOf(maxRevision))
+                        .param("toRevision", String.valueOf(maxRevision + 100)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.fieldChanges").isEmpty());
+                .andExpect(jsonPath("$.fieldChanges").isEmpty())
+                .andExpect(jsonPath("$.relationChanges").isEmpty())
+                .andExpect(jsonPath("$.traceabilityLinkChanges").isEmpty());
     }
 
     @Test
@@ -408,5 +420,104 @@ class AuditHistoryIntegrationTest extends BaseIntegrationTest {
     @Order(24)
     void diff_missingParams_returns400() throws Exception {
         mockMvc.perform(get("/api/v1/requirements/" + requirementId + "/diff")).andExpect(status().isBadRequest());
+    }
+
+    // --- ADD/MOD/DEL diffs on timeline and history ---
+
+    @Test
+    @Order(30)
+    void history_addRevision_hasAdditionDiff() throws Exception {
+        // AUDIT-001 was created in step 1 — its first revision should carry (null, value) diffs
+        mockMvc.perform(get("/api/v1/requirements/" + requirementId + "/history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].revisionType", is("ADD")))
+                .andExpect(jsonPath("$[0].changes.title.oldValue").doesNotExist())
+                .andExpect(jsonPath("$[0].changes.title.newValue", is("Audit test requirement")));
+    }
+
+    @Test
+    @Order(31)
+    void history_modRevision_hasFieldDiff() throws Exception {
+        // Second revision (title MOD) should carry old vs new
+        mockMvc.perform(get("/api/v1/requirements/" + requirementId + "/history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[1].revisionType", is("MOD")))
+                .andExpect(jsonPath("$[1].changes.title.oldValue", is("Audit test requirement")))
+                .andExpect(jsonPath("$[1].changes.title.newValue", is("Updated audit title")));
+    }
+
+    @Test
+    @Order(32)
+    void timeline_addEntry_hasAdditionDiff() throws Exception {
+        // Relation ADD event should carry (null, value) diffs
+        mockMvc.perform(get("/api/v1/requirements/" + requirementId + "/timeline")
+                        .param("changeCategory", "RELATION"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].revisionType", is("ADD")))
+                .andExpect(jsonPath("$[0].changes.relationType.oldValue").doesNotExist())
+                .andExpect(jsonPath("$[0].changes.relationType.newValue", is("DEPENDS_ON")));
+    }
+
+    @Test
+    @Order(33)
+    void timeline_traceabilityLinkAdd_hasAdditionDiff() throws Exception {
+        mockMvc.perform(get("/api/v1/requirements/" + requirementId + "/timeline")
+                        .param("changeCategory", "TRACEABILITY_LINK"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].revisionType", is("ADD")))
+                .andExpect(jsonPath("$[0].changes.artifactType.oldValue").doesNotExist())
+                .andExpect(jsonPath("$[0].changes.artifactType.newValue", is("CODE_FILE")));
+    }
+
+    @Test
+    @Order(34)
+    void timeline_statusTransition_showsStatusFieldDiff() throws Exception {
+        // Status was transitioned from DRAFT to ACTIVE in step 5
+        mockMvc.perform(get("/api/v1/requirements/" + requirementId + "/timeline")
+                        .param("changeCategory", "REQUIREMENT"))
+                .andExpect(status().isOk())
+                // Status transition is the newest entry (first in reversed-chronological order)
+                .andExpect(jsonPath("$[0].revisionType", is("MOD")))
+                .andExpect(jsonPath("$[0].changes.status.oldValue", is("DRAFT")))
+                .andExpect(jsonPath("$[0].changes.status.newValue", is("ACTIVE")));
+    }
+
+    @Test
+    @Order(35)
+    void timeline_longStatementTruncatedByDefault() throws Exception {
+        // Create a requirement with a long statement
+        var longStatement = "X".repeat(300);
+        var createBody = Map.of(
+                "uid", "AUDIT-LONG",
+                "title", "Long statement req",
+                "statement", longStatement,
+                "requirementType", "FUNCTIONAL",
+                "priority", "MUST");
+        var createResult = mockMvc.perform(post("/api/v1/requirements")
+                        .header("X-Actor", "test-user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createBody)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        var longReqId = objectMapper
+                .readTree(createResult.getResponse().getContentAsString())
+                .get("id")
+                .asText();
+
+        // Default (no expand) - change value should be truncated to 200 chars, truncated=true
+        mockMvc.perform(get("/api/v1/requirements/" + longReqId + "/timeline").param("changeCategory", "REQUIREMENT"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].changes.statement.newValue", is(longStatement.substring(0, 200))))
+                .andExpect(jsonPath("$[0].changes.statement.truncated", is(true)))
+                .andExpect(jsonPath("$[0].truncated", is(true)));
+
+        // With expand=true - full value, truncated=false
+        mockMvc.perform(get("/api/v1/requirements/" + longReqId + "/timeline")
+                        .param("changeCategory", "REQUIREMENT")
+                        .param("expand", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].changes.statement.newValue", is(longStatement)))
+                .andExpect(jsonPath("$[0].changes.statement.truncated", is(false)))
+                .andExpect(jsonPath("$[0].truncated", is(false)));
     }
 }

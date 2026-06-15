@@ -155,9 +155,10 @@ public class RequirementController {
     }
 
     @GetMapping("/{id}/history")
-    public List<RequirementHistoryResponse> getHistory(@PathVariable UUID id) {
+    public List<RequirementHistoryResponse> getHistory(
+            @PathVariable UUID id, @RequestParam(defaultValue = "false") boolean expand) {
         return auditService.getRequirementHistory(id).stream()
-                .map(RequirementHistoryResponse::from)
+                .map(revision -> RequirementHistoryResponse.from(revision, expand))
                 .toList();
     }
 
@@ -169,9 +170,10 @@ public class RequirementController {
             @RequestParam(required = false) Instant from,
             @RequestParam(required = false) Instant to,
             @RequestParam(defaultValue = "100") int limit,
-            @RequestParam(defaultValue = "0") int offset) {
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "false") boolean expand) {
         return auditService.getRequirementTimeline(id, changeCategory, actor, from, to, limit, offset).stream()
-                .map(TimelineEntryResponse::from)
+                .map(entry -> TimelineEntryResponse.from(entry, expand))
                 .toList();
     }
 
