@@ -129,6 +129,8 @@ convention: a new kind value in `ANALYZE_KINDS` (for example
 separate user-facing prose page per kind, no new sections in this style
 guide.
 
+Per-action required-field enumeration in an action-multiplexed tool's description string (issue #1169) is a contract-surface edit to that tool's description, not a new doc page.
+
 Mirrored API-boundary enum constants follow the same convention: the
 `NORMALIZED_CONCEPTS` and `CROSSWALK_VOCABULARY_SURFACES` arrays added to
 `mcp/ground-control/lib.js` for GC-T012 / #719 mirror two new Java enums on
