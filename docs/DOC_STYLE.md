@@ -2,6 +2,8 @@
 
 > **Sync note for issue #1107 (2026-06-14):** The audit-diff API reference (`docs/API.md`) and the `gc_requirement` MCP tool description were reviewed against these rules when the requirement history/timeline `expand` parameter was added. No style rule changed.
 
+> **Sync note for issue #1106 (2026-06-15):** The new MCP write-contract gate docs (`docs/DEVELOPMENT_WORKFLOW.md`, `mcp/ground-control/README.md`, and the ADR-034 amendment) were reviewed against these rules. No style rule changed.
+
 ## Rules
 
 Docs describe the system as it ships on the current commit. Write in present

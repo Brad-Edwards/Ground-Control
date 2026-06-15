@@ -14,6 +14,7 @@ import {
   RISK_ASSESSMENT_APPROVAL_STATUSES,
   TREATMENT_STRATEGIES,
   ASSURANCE_LEVELS,
+  VERIFICATION_STATUSES,
   GOVERNANCE_FIELDS,
   NORMALIZED_CONCEPTS,
   CROSSWALK_VOCABULARY_SURFACES,
@@ -149,10 +150,31 @@ export const gcRiskGovernanceZodShape = {
     }
   })).optional(),
   reassessment_required_at: z.string().optional(),
+  // verification_result fields (#1106 — mirrors VerificationResultRequest).
+  // target_id / requirement_id are optional UUIDs; prover is the required
+  // principal name; property is the JML / contract property string; result
+  // is the VerificationStatus enum; evidence is a free-form Map<String,Object>.
+  target_id: z.string().uuid().optional(),
+  requirement_id: z.string().uuid().optional(),
+  prover: z.string().optional(),
+  property: z.string().optional(),
+  result: z.enum(VERIFICATION_STATUSES).optional(),
+  evidence: z.record(z.any()).optional(),
+  expires_at: z.string().optional(),
+  // legacy / methodology_profile fields kept for transition + other entities
   outcome: z.string().optional(),
   assurance_level: z.enum(ASSURANCE_LEVELS).optional(),
   verified_at: z.string().optional(),
   metadata: z.record(z.any()).optional(),
+  // methodology_profile fields (#1106 — mirrors MethodologyProfileRequest).
+  // profile_key is the immutable key set at create; version is the semantic
+  // version string; input_schema / output_schema / treatment_strategy_vocabulary
+  // are NIST-methodology-defined Map<String,Object> bags (opaque values).
+  profile_key: z.string().optional(),
+  version: z.string().optional(),
+  input_schema: z.record(z.any()).optional(),
+  output_schema: z.record(z.any()).optional(),
+  treatment_strategy_vocabulary: z.record(z.any()).optional(),
   // GC-T012: profile-scoped crosswalk entries. Forwarded verbatim to the
   // REST API after toCamelCase conversion (crosswalk_entries → crosswalkEntries).
   crosswalk_entries: z.array(z.object({
@@ -173,10 +195,12 @@ export const GC_RISK_GOVERNANCE_DESCRIPTION =
   `Entity: ${GC_RISK_GOVERNANCE_ENTITIES.join(", ")}. Actions: ${GC_RISK_GOVERNANCE_ACTIONS.join(", ")}. ` +
   `Reads (list, get) route through gc_query. ` +
   `Per-entity create fields (snake_case; round-trip to backend camelCase): ` +
+  `methodology_profile={profile_key,name,version,family,description,input_schema,output_schema,status,treatment_strategy_vocabulary,crosswalk_entries}; ` +
   `risk_register_record={uid,title,owner,review_cadence,next_review_at,category_tags,decision_metadata,asset_scope_summary,risk_scenario_ids}; ` +
   `risk_assessment_result={risk_scenario_id,risk_register_record_id,methodology_profile_id,analyst_identity,assumptions,input_factors,observation_date,assessment_at,time_horizon,confidence,uncertainty_metadata,computed_outputs,evidence_refs,notes,observation_ids}; ` +
-  `treatment_plan={uid,title,risk_scenario_id,risk_register_record_id,strategy,owner,rationale,due_date,status,action_items,reassessment_triggers[{category,target_type,target_entity_id,target_identifier,note}],methodology_profile_id,methodology_strategy_key}. ` +
-  `Update DTOs drop create-only foreign keys (uid; risk_register_record_id for treatment_plan; risk_scenario_id for risk_assessment_result) and status fields whose changes go through the transition action. ` +
+  `treatment_plan={uid,title,risk_scenario_id,risk_register_record_id,strategy,owner,rationale,due_date,status,action_items,reassessment_triggers[{category,target_type,target_entity_id,target_identifier,note}],methodology_profile_id,methodology_strategy_key}; ` +
+  `verification_result={target_id,requirement_id,prover,property,result,assurance_level,evidence,verified_at,expires_at}. ` +
+  `Update DTOs drop create-only foreign keys (uid; risk_register_record_id for treatment_plan; risk_scenario_id for risk_assessment_result; profile_key for methodology_profile) and status fields whose changes go through the transition action. ` +
   `Unknown fields are dropped — never tunneled through metadata.`;
 
 /**

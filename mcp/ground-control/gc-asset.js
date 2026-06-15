@@ -38,16 +38,34 @@ export const GC_ASSET_ACTIONS = [
   "subtype_schema_get", "subtype_schema_get_active", "subtype_schema_list",
 ];
 
-// Body fields for the asset create / update actions (mirrors AssetRequest /
-// UpdateAssetRequest). Used by both create and update — the backend ignores
-// unknown fields in the PUT body.
-export const GC_ASSET_FIELDS = [
+// Body fields for the asset CREATE action — mirrors AssetRequest.
+// AssetRequest has uid (required) and no clear_* flags (those are update-only).
+export const GC_ASSET_CREATE_FIELDS = [
   "uid",
   "name",
   "description",
   "asset_type",
-  "parent_id",
-  // GC-M012 ownership/criticality/scope metadata + clear flags.
+  // GC-M012 ownership/criticality/scope metadata.
+  "owner",
+  "steward",
+  "environment",
+  "criticality",
+  "business_context",
+  "scope_designation",
+  // GC-M011 subtype + metadata bag.
+  "subtype",
+  "metadata",
+  // GC-M018 knowledge / completeness state.
+  "knowledge_state",
+];
+
+// Body fields for the asset UPDATE action — mirrors UpdateAssetRequest.
+// UpdateAssetRequest has clear_* flags and no uid (identity is the path param).
+export const GC_ASSET_UPDATE_FIELDS = [
+  "name",
+  "description",
+  "asset_type",
+  // GC-M012 ownership/criticality/scope metadata.
   "owner",
   "steward",
   "environment",
@@ -60,7 +78,7 @@ export const GC_ASSET_FIELDS = [
   "clear_criticality",
   "clear_business_context",
   "clear_scope_designation",
-  // GC-M011 subtype + metadata + clear flags.
+  // GC-M011 subtype + metadata bag + clear flags.
   "subtype",
   "metadata",
   "clear_subtype",
@@ -177,11 +195,11 @@ export async function gcAssetToolHandler(args) {
       reqArg(args, "uid", "create");
       reqArg(args, "name", "create");
       reqArg(args, "asset_type", "create");
-      return createAsset(pick(args, GC_ASSET_FIELDS), args.project);
+      return createAsset(pick(args, GC_ASSET_CREATE_FIELDS), args.project);
     }
     case "update": {
       reqArg(args, "id", "update");
-      return updateAsset(args.id, pick(args, GC_ASSET_FIELDS), args.project);
+      return updateAsset(args.id, pick(args, GC_ASSET_UPDATE_FIELDS), args.project);
     }
     case "delete": {
       reqArg(args, "id", "delete");

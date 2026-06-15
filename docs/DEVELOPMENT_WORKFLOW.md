@@ -344,6 +344,33 @@ PreToolUse hook on `Bash`. The user owns every actual merge. Blocked uncondition
 - `make policy` is the common path for Claude, Codex, pre-commit, and CI
 - `make sync-ground-control-policy` and `make policy-live` keep Ground Control quality gates and ADR metadata aligned when a live GC instance is available
 
+### MCP–Backend Write-Contract Gate (ADR-034, #1106)
+
+`make mcp-openapi-contract` (CI job `mcp-contract`) fails the build when an MCP
+write tool's request-body field allowlist or enum mirror drifts from the
+backend's generated OpenAPI contract. It is **separate from `make policy`**: the
+contract is compared against the Springdoc OpenAPI generated from the *current
+backend build*, which requires booting the full Spring context (Testcontainers
+Postgres + AGE), which the Python-only `policy` job cannot do. The flow is:
+
+1. `generateContractOpenApi` (Gradle, `McpOpenApiContractSpecTest`) boots the app
+   via Testcontainers, captures `/api/openapi.json`, and writes
+   `backend/build/contract/openapi.json`.
+2. `node --test mcp/ground-control/openapi-contract.test.js` imports the live MCP
+   field arrays (`GOVERNANCE_FIELDS`, `CONTROL_FIELDS`, the per-tool
+   `*_BODY_FIELDS`, `LINK_CREATE_BODY_FIELDS`) and asserts, per tool/entity/action
+   inventory row, that every MCP field maps to an OpenAPI request-schema property
+   and every required property has a mirror, with narrow, rationale-bearing
+   exclusions for path/query params, server-populated, transition-only, and
+   create-only fields.
+
+Initial coverage is the GRC write tools (`gc_risk_governance`, `gc_threat_model`,
+`gc_risk_scenario`, `gc_control`, `gc_evidence`, `gc_finding`, `gc_audit`,
+`gc_observation`, `gc_asset`) plus the shared `link_create` body. **Adding the
+next write tool is one inventory row** in `openapi-contract.test.js` (plus an
+exported field array if the adapter lacks one), never a new checker. Anchored by
+requirement GC-O013.
+
 ## /integrate: Approved PR Integration Manager
 
 The `/integrate` lane is the workflow path for preparing maintainer-approved pull requests against the latest base branch of a target repository. It is a lane for maintainers and release operators who need to rebase a queue of already-approved PRs to a clean state. By default the lane operates in **prepare-only** mode: it rebases, gates, verifies, and pushes, but it does not merge. Passing `--mode merge` enables the merge carve-out from the ADR-029 amendment (2026-05-26): the lane also executes `gh pr merge` for each PR it marks ready, per the configured `merge_strategy`. The `enqueue` mode remains reserved and refuses at runtime.
