@@ -9,6 +9,7 @@ from tools.policy.checks import (
     ENUM_CONTRACT_INVENTORY,
     FRONTEND_API_TYPES_PATH,
     MCP_LIB_PATH,
+    POLL_LOOP_ROUTING_STAGES,
     REPO_ROOT,
     check_pr_body,
     classify_deferral_language,
@@ -17,6 +18,7 @@ from tools.policy.checks import (
     parse_const_string_array,
     parse_fragment_filename,
     parse_java_enum_constants,
+    parse_routing_agents,
     parse_ts_union_literals,
     read_changed_files,
     run_adr_guard,
@@ -31,6 +33,7 @@ from tools.policy.checks import (
     run_pr_body_check,
     run_test_quality_decision_record_contract,
     run_traceability_reconciliation_gate_contract,
+    run_workflow_routing_contract,
 )
 
 
@@ -255,6 +258,86 @@ class PolicyChecksTest(unittest.TestCase):
             codes = {item.code for item in violations}
             self.assertIn("ci-strictness-branch-protection-strict", codes)
             self.assertIn("ci-strictness-branch-protection-contexts", codes)
+
+    def test_poll_loop_routing_stages_are_the_async_poll_steps(self):
+        self.assertEqual(
+            POLL_LOOP_ROUTING_STAGES,
+            frozenset(
+                {"architecture_preflight", "review_cycle_1_consume", "test_quality_review"}
+            ),
+        )
+
+    def test_parse_routing_agents_defaults_absent_agent_to_subagent(self):
+        text = (
+            "routing:\n"
+            "  enabled: true\n"
+            "  stages:\n"
+            "    architecture_preflight:\n"
+            "      tier: low\n"
+            "      model: claude-haiku-4-5\n"
+            "      agent: parent\n"
+            "    codebase_assessment:\n"
+            "      tier: medium\n"
+            "      model: claude-sonnet-4-6\n"
+        )
+        agents = parse_routing_agents(text)
+        self.assertEqual(agents["architecture_preflight"], "parent")
+        self.assertEqual(agents["codebase_assessment"], "subagent")
+
+    def test_workflow_routing_contract_passes_on_repo(self):
+        violations = run_workflow_routing_contract(root=REPO_ROOT)
+        self.assertEqual(
+            violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}"
+        )
+
+    def test_workflow_routing_contract_flags_poll_stage_routed_to_subagent(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            # test_quality_review (a poll-loop stage) has no agent: key, so it
+            # defaults to subagent — which the contract must reject.
+            (root / ".ground-control.yaml").write_text(
+                "routing:\n"
+                "  enabled: true\n"
+                "  stages:\n"
+                "    architecture_preflight:\n"
+                "      tier: low\n"
+                "      agent: parent\n"
+                "    review_cycle_1_consume:\n"
+                "      tier: high\n"
+                "      agent: parent\n"
+                "    test_quality_review:\n"
+                "      tier: medium\n"
+                "      model: claude-sonnet-4-6\n",
+                encoding="utf-8",
+            )
+            violations = run_workflow_routing_contract(root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("workflow-routing-poll-loop-subagent", codes)
+            self.assertTrue(
+                any("test_quality_review" in v.message for v in violations),
+                msg=f"expected test_quality_review flagged: {[v.render() for v in violations]}",
+            )
+
+    def test_workflow_routing_contract_flags_missing_poll_stage(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / ".ground-control.yaml").write_text(
+                "routing:\n"
+                "  enabled: true\n"
+                "  stages:\n"
+                "    codebase_assessment:\n"
+                "      tier: medium\n",
+                encoding="utf-8",
+            )
+            violations = run_workflow_routing_contract(root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("workflow-routing-stage-missing", codes)
+
+    def test_workflow_routing_contract_reports_missing_config(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            violations = run_workflow_routing_contract(root=Path(tmp_dir))
+            codes = {item.code for item in violations}
+            self.assertIn("workflow-routing-config-missing", codes)
 
     def test_deploy_compose_credential_passthrough_passes_on_committed_file(self):
         # The committed deploy/docker/docker-compose.prod.yml must enumerate the

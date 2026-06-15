@@ -190,7 +190,8 @@ export const GC_RISK_GOVERNANCE_DESCRIPTION =
   `verification_result={prover,result,assurance_level,verified_at,target_id,requirement_id,property,evidence,expires_at}. ` +
   `Required on create: methodology_profile→{profile_key,name,version,family}; verification_result→{prover,result,assurance_level,verified_at}. ` +
   `Update DTOs drop create-only foreign keys (uid; risk_register_record_id for treatment_plan; risk_scenario_id for risk_assessment_result) and status fields whose changes go through the transition action. ` +
-  `Unknown fields are dropped — never tunneled through metadata.`;
+  `Unknown fields are dropped — never tunneled through metadata. ` +
+  `Required fields per action: risk_register_record/create→{uid,title}; risk_assessment_result/create→{risk_scenario_id,methodology_profile_id}; treatment_plan/create→{uid,title,risk_register_record_id,strategy}; */update and */delete→{id}; risk_register_record|treatment_plan/transition→{id,status}; risk_assessment_result/transition_approval→{id,approval_state}.`;
 
 /**
  * Pure adapter handler for gc_risk_governance. Validates per-entity status,
@@ -215,7 +216,7 @@ export async function gcRiskGovernanceToolHandler(args) {
     }
     case "risk_register_record": {
       switch (args.action) {
-        case "create": return createRiskRegisterRecord(data, args.project);
+        case "create": reqArg(args, "uid", "create"); reqArg(args, "title", "create"); return createRiskRegisterRecord(data, args.project);
         case "update": reqArg(args, "id", "update"); return updateRiskRegisterRecord(args.id, data, args.project);
         case "delete": reqArg(args, "id", "delete"); await deleteRiskRegisterRecord(args.id, args.project); return null;
         case "transition":
@@ -227,7 +228,7 @@ export async function gcRiskGovernanceToolHandler(args) {
     }
     case "risk_assessment_result": {
       switch (args.action) {
-        case "create": return createRiskAssessmentResult(data, args.project);
+        case "create": reqArg(args, "risk_scenario_id", "create"); reqArg(args, "methodology_profile_id", "create"); return createRiskAssessmentResult(data, args.project);
         case "update": reqArg(args, "id", "update"); return updateRiskAssessmentResult(args.id, data, args.project);
         case "delete": reqArg(args, "id", "delete"); await deleteRiskAssessmentResult(args.id, args.project); return null;
         case "transition_approval":
@@ -239,7 +240,7 @@ export async function gcRiskGovernanceToolHandler(args) {
     }
     case "treatment_plan": {
       switch (args.action) {
-        case "create": return createTreatmentPlan(data, args.project);
+        case "create": reqArg(args, "uid", "create"); reqArg(args, "title", "create"); reqArg(args, "risk_register_record_id", "create"); reqArg(args, "strategy", "create"); return createTreatmentPlan(data, args.project);
         case "update": reqArg(args, "id", "update"); return updateTreatmentPlan(args.id, data, args.project);
         case "delete": reqArg(args, "id", "delete"); await deleteTreatmentPlan(args.id, args.project); return null;
         case "transition":
