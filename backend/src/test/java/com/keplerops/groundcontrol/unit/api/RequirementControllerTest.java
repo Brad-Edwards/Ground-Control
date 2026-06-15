@@ -691,7 +691,7 @@ class RequirementControllerTest {
             var req = createRequirement("REQ-001");
             var revision = new RequirementRevision(
                     1,
-                    Instant.now(),
+                    Instant.parse("2026-01-01T00:00:00Z"),
                     "ADD",
                     "test-user",
                     null,

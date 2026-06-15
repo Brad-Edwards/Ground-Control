@@ -318,8 +318,7 @@ class AuditServiceDiffTest {
 
             var diff = SnapshotMapper.computeRemovalDiff(snapshot);
 
-            assertThat(diff).containsKey("title");
-            assertThat(diff).doesNotContainKey("statement");
+            assertThat(diff).containsKey("title").doesNotContainKey("statement");
         }
 
         @Test

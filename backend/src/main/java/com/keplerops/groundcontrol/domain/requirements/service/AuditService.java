@@ -69,14 +69,12 @@ public class AuditService {
             var revType = (RevisionType) row[2];
             var snapshot = SnapshotMapper.fromRequirement(entity);
 
-            Map<String, FieldChange> changes;
-            if (revType == RevisionType.ADD) {
-                changes = SnapshotMapper.computeAdditionDiff(snapshot);
-            } else if (revType == RevisionType.DEL) {
-                changes = previous != null ? SnapshotMapper.computeRemovalDiff(previous) : Map.of();
-            } else {
-                changes = previous != null ? SnapshotMapper.computeDiff(previous, snapshot) : Map.of();
-            }
+            Map<String, FieldChange> changes =
+                    switch (revType) {
+                        case ADD -> SnapshotMapper.computeAdditionDiff(snapshot);
+                        case DEL -> previous != null ? SnapshotMapper.computeRemovalDiff(previous) : Map.of();
+                        default -> previous != null ? SnapshotMapper.computeDiff(previous, snapshot) : Map.of();
+                    };
 
             revisions.add(new RequirementRevision(
                     revInfo.getId(),
@@ -392,14 +390,16 @@ public class AuditService {
             var revType = (RevisionType) row[2];
 
             var snapshot = SnapshotMapper.fromRequirement(entity);
-            Map<String, FieldChange> changes;
-            if (revType == RevisionType.ADD) {
-                changes = SnapshotMapper.computeAdditionDiff(snapshot);
-            } else if (revType == RevisionType.DEL) {
-                changes = previousSnapshot != null ? SnapshotMapper.computeRemovalDiff(previousSnapshot) : Map.of();
-            } else {
-                changes = previousSnapshot != null ? SnapshotMapper.computeDiff(previousSnapshot, snapshot) : Map.of();
-            }
+            Map<String, FieldChange> changes =
+                    switch (revType) {
+                        case ADD -> SnapshotMapper.computeAdditionDiff(snapshot);
+                        case DEL -> previousSnapshot != null
+                                ? SnapshotMapper.computeRemovalDiff(previousSnapshot)
+                                : Map.of();
+                        default -> previousSnapshot != null
+                                ? SnapshotMapper.computeDiff(previousSnapshot, snapshot)
+                                : Map.of();
+                    };
 
             entries.add(new TimelineEntry(
                     revInfo.getId(),
@@ -442,14 +442,12 @@ public class AuditService {
 
             var snapshot = SnapshotMapper.fromRelation(entity);
             var prev = previousSnapshots.get(entity.getId());
-            Map<String, FieldChange> changes;
-            if (revType == RevisionType.ADD) {
-                changes = SnapshotMapper.computeAdditionDiff(snapshot);
-            } else if (revType == RevisionType.DEL) {
-                changes = prev != null ? SnapshotMapper.computeRemovalDiff(prev) : Map.of();
-            } else {
-                changes = prev != null ? SnapshotMapper.computeDiff(prev, snapshot) : Map.of();
-            }
+            Map<String, FieldChange> changes =
+                    switch (revType) {
+                        case ADD -> SnapshotMapper.computeAdditionDiff(snapshot);
+                        case DEL -> prev != null ? SnapshotMapper.computeRemovalDiff(prev) : Map.of();
+                        default -> prev != null ? SnapshotMapper.computeDiff(prev, snapshot) : Map.of();
+                    };
 
             entries.add(new TimelineEntry(
                     revInfo.getId(),
@@ -490,14 +488,12 @@ public class AuditService {
 
             var snapshot = SnapshotMapper.fromTraceabilityLink(entity);
             var prev = previousSnapshots.get(entity.getId());
-            Map<String, FieldChange> changes;
-            if (revType == RevisionType.ADD) {
-                changes = SnapshotMapper.computeAdditionDiff(snapshot);
-            } else if (revType == RevisionType.DEL) {
-                changes = prev != null ? SnapshotMapper.computeRemovalDiff(prev) : Map.of();
-            } else {
-                changes = prev != null ? SnapshotMapper.computeDiff(prev, snapshot) : Map.of();
-            }
+            Map<String, FieldChange> changes =
+                    switch (revType) {
+                        case ADD -> SnapshotMapper.computeAdditionDiff(snapshot);
+                        case DEL -> prev != null ? SnapshotMapper.computeRemovalDiff(prev) : Map.of();
+                        default -> prev != null ? SnapshotMapper.computeDiff(prev, snapshot) : Map.of();
+                    };
 
             entries.add(new TimelineEntry(
                     revInfo.getId(),
