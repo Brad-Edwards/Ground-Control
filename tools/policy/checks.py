@@ -49,6 +49,18 @@ CI_PRE_COMMIT_HOOKS = (
     "gitleaks",
 )
 
+GROUND_CONTROL_YAML_PATH = Path(".ground-control.yaml")
+# /implement routing stages whose step drives a gc_codex_job async poll loop
+# (gc_codex_architecture_preflight / gc_codex_review_cycle /
+# gc_test_quality_review_cycle, all called with async=true then polled). A
+# dispatched subagent cannot drive that loop — a `Bash run_in_background sleep`
+# poll-wait notification lands in the parent's stream, not the subagent's, so
+# the subagent ends its turn and returns a degenerate envelope (issue #1168).
+# These stages MUST resolve to agent: parent.
+POLL_LOOP_ROUTING_STAGES = frozenset(
+    {"architecture_preflight", "review_cycle_1_consume", "test_quality_review"}
+)
+
 # ---------------------------------------------------------------------------
 # Deferral-disposition classifier (issue #830, ADR-029).
 #
@@ -2062,6 +2074,104 @@ def render_and_exit(violations: list[Violation]) -> int:
     return 1
 
 
+def parse_routing_agents(text: str) -> dict[str, str]:
+    """Map each ``routing.stages.<stage>`` to its resolved ``agent`` value.
+
+    A stage with no explicit ``agent:`` key resolves to ``"subagent"`` — the
+    ``gc_resolve_workflow_route`` default. Indentation-based parse (no YAML
+    dependency) to match the stdlib-only policy framework; the routing block is
+    machine-maintained and regularly two-space-indented. Returns an empty dict
+    when there is no ``routing.stages`` block.
+    """
+    agents: dict[str, str] = {}
+    in_routing = False
+    in_stages = False
+    current_stage: str | None = None
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip(" "))
+        if indent == 0:
+            in_routing = stripped.startswith("routing:")
+            in_stages = False
+            current_stage = None
+            continue
+        if not in_routing:
+            continue
+        if indent == 2:
+            in_stages = stripped.startswith("stages:")
+            current_stage = None
+            continue
+        if not in_stages:
+            continue
+        if indent == 4 and stripped.endswith(":"):
+            current_stage = stripped[:-1].strip()
+            agents.setdefault(current_stage, "subagent")
+            continue
+        if indent == 6 and current_stage is not None and stripped.startswith("agent:"):
+            value = stripped.split(":", 1)[1].strip()
+            if " #" in value:  # strip any inline comment
+                value = value.split(" #", 1)[0].strip()
+            if value:
+                agents[current_stage] = value
+    return agents
+
+
+def run_workflow_routing_contract(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert async-poll /implement routing stages resolve to ``agent: parent``.
+
+    A static post-condition (independent of ``changed_files``) so any edit that
+    routes a ``gc_codex_job`` poll-loop stage back to a subagent fails
+    ``make policy`` (issue #1168). Emits:
+      ``workflow-routing-config-missing``    — ``.ground-control.yaml`` is absent.
+      ``workflow-routing-stage-missing``     — a poll-loop stage is not declared.
+      ``workflow-routing-poll-loop-subagent`` — a poll-loop stage resolves to a
+                                                subagent instead of the parent.
+    """
+    violations: list[Violation] = []
+    config_path = root / GROUND_CONTROL_YAML_PATH
+    if not config_path.exists():
+        violations.append(
+            Violation(
+                code="workflow-routing-config-missing",
+                message=".ground-control.yaml is missing — workflow routing cannot be verified.",
+                details=[f"expected at {GROUND_CONTROL_YAML_PATH.as_posix()}"],
+            )
+        )
+        return violations
+
+    agents = parse_routing_agents(config_path.read_text(encoding="utf-8"))
+    if not agents:
+        # No routing.stages block (routing not configured); nothing to enforce.
+        return violations
+
+    for stage in sorted(POLL_LOOP_ROUTING_STAGES):
+        if stage not in agents:
+            violations.append(
+                Violation(
+                    code="workflow-routing-stage-missing",
+                    message=f"Routing stage '{stage}' is missing from .ground-control.yaml routing.stages.",
+                    details=[
+                        "poll-loop stages must be declared and routed to agent: parent (issue #1168)",
+                    ],
+                )
+            )
+            continue
+        if agents[stage] != "parent":
+            violations.append(
+                Violation(
+                    code="workflow-routing-poll-loop-subagent",
+                    message=f"Routing stage '{stage}' drives a gc_codex_job poll loop and must use agent: parent.",
+                    details=[
+                        f"resolved agent: {agents[stage]}",
+                        "a dispatched subagent cannot resume on the background-sleep poll notification (issue #1168)",
+                    ],
+                )
+            )
+    return violations
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     explicit_files = args.files if args.files is not None else args.paths
@@ -2082,6 +2192,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_ci_strictness_contract())
     violations.extend(run_deploy_compose_credential_passthrough())
     violations.extend(run_enum_contract_check())
+    violations.extend(run_workflow_routing_contract())
     violations.extend(run_test_quality_decision_record_contract())
     violations.extend(run_traceability_reconciliation_gate_contract())
 
