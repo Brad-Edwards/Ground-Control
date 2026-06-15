@@ -10088,7 +10088,7 @@ export async function createVerificationResult(data, project) {
   // request(). All other fields go through the normal toCamelCase path.
   const { evidence: evidenceMap, ...rest } = data;
   const rawBody = { ...toCamelCase(rest) };
-  if (evidenceMap !== undefined) rawBody.evidence = { ...evidenceMap };
+  if (evidenceMap !== undefined) rawBody.evidence = evidenceMap;
   return request("POST", "/api/v1/verification-results", { rawBody, params: { project } });
 }
 
@@ -10107,7 +10107,7 @@ export async function updateVerificationResult(id, data, project) {
   // must not be camel-cased. Build the camelCase body explicitly.
   const { evidence: evidenceMap, ...rest } = data;
   const rawBody = { ...toCamelCase(rest) };
-  if (evidenceMap !== undefined) rawBody.evidence = { ...evidenceMap };
+  if (evidenceMap !== undefined) rawBody.evidence = evidenceMap;
   return request("PUT", `/api/v1/verification-results/${encodeURIComponent(id)}`, {
     rawBody,
     params: { project },

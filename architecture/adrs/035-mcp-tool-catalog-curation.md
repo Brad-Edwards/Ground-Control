@@ -145,6 +145,31 @@ across SDK versions. The handler-side `reqArg` check is the actual gate.
 The cost is slightly looser type information in the JSON Schema sent to
 clients, but the description text fills the gap.
 
+#### 2026-06-15 amendment: per-action branch schemas are still SDK-blocked
+
+Issue #1105 re-evaluated whether consolidated tools can publish per-action
+required fields as JSON Schema branches while keeping the ADR-035 tool
+consolidation. The current locked MCP SDK installation is
+`@modelcontextprotocol/sdk` 1.27.1. A throwaway SDK probe against
+`McpServer`, `Client`, and `InMemoryTransport` produced three constraints:
+
+- `server.registerTool({ inputSchema: <raw JSON Schema with anyOf> })` still
+  does not work as a tool contract. `tools/list` publishes an empty object
+  schema and `tools/call` fails before the handler with
+  `v3Schema.safeParseAsync is not a function`.
+- A top-level Zod `discriminatedUnion` validates calls, but `tools/list`
+  publishes `{ "type": "object", "properties": {} }` because the SDK only
+  converts normalized object schemas for tool metadata.
+- A top-level Zod object wrapped in `superRefine` also validates calls, but it
+  is a Zod effects schema and likewise publishes an empty object schema.
+
+Therefore, the accepted catalog contract remains flat Zod object schemas plus
+handler-side `reqArg()` required-field validation. The public descriptions must
+continue to enumerate per-action requirements until the SDK can both parse and
+publish a branch-aware object schema. A future retry must add an end-to-end
+SDK regression that exercises `client.listTools()` and `client.callTool()` for
+the candidate shape before changing the production tool schemas.
+
 ### 2. `gc_query` (read-only REST escape hatch)
 
 A new MCP tool registered always (it is part of the workflow primitives

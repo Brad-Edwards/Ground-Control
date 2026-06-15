@@ -58,6 +58,8 @@ jobs:
         run: npm --prefix mcp/ground-control ci
       - name: Policy tool tests
         run: python3 -m unittest discover -s tools/tests -p 'test_*.py'
+      - name: MCP server tests
+        run: npm --prefix mcp/ground-control test
       - name: Repo policy checks
         if: github.event_name == 'pull_request'
         run: python3 bin/policy --base "origin/${{ github.base_ref }}"

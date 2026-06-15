@@ -204,11 +204,6 @@ describe("risk_assessment_result wire body (#878)", () => {
       uid: "RAR-1",
       title: "drop me",
       description: "drop me",
-      // Number-shaped scenarios are excluded from the Zod schema's positive
-      // pattern, but a typed caller could still include `qualitative_value:
-      // "HIGH"`. Use the Zod-acceptable shape and confirm the handler drops
-      // it on its own.
-      qualitative_value: "HIGH",
       approval_state: "DRAFT",
       metadata: { stale: true },
       // 'status' is intentionally omitted: validateGovernanceStatus rejects
@@ -223,8 +218,7 @@ describe("risk_assessment_result wire body (#878)", () => {
     assert.equal(calls[0].body.methodologyProfileId, PROFILE);
     // Negative: stale fields did not reach the wire.
     for (const stale of [
-      "uid", "title", "description", "qualitativeValue",
-      "scenarioId", "approvalState", "metadata",
+      "uid", "title", "description", "approvalState", "metadata",
     ]) {
       assert.ok(!(stale in calls[0].body), `${stale} leaked onto the wire`);
     }
@@ -616,6 +610,199 @@ describe("treatment_plan wire body (#880)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// methodology_profile create reqArg guards (#1173)
+// ---------------------------------------------------------------------------
+
+describe("methodology_profile create reqArg guards (#1173)", () => {
+  it("rejects when profile_key is missing", async () => {
+    makeFetchSpy();
+    await assert.rejects(
+      () => callHandler({
+        entity: "methodology_profile",
+        action: "create",
+        name: "MyProfile",
+        version: "1.0",
+        family: "FAIR",
+      }),
+      (err) => {
+        assert.match(err.message, /'profile_key' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("rejects when name is missing", async () => {
+    makeFetchSpy();
+    await assert.rejects(
+      () => callHandler({
+        entity: "methodology_profile",
+        action: "create",
+        profile_key: "MY_PROFILE",
+        version: "1.0",
+        family: "FAIR",
+      }),
+      (err) => {
+        assert.match(err.message, /'name' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("rejects when version is missing", async () => {
+    makeFetchSpy();
+    await assert.rejects(
+      () => callHandler({
+        entity: "methodology_profile",
+        action: "create",
+        profile_key: "MY_PROFILE",
+        name: "MyProfile",
+        family: "FAIR",
+      }),
+      (err) => {
+        assert.match(err.message, /'version' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("rejects when family is missing", async () => {
+    makeFetchSpy();
+    await assert.rejects(
+      () => callHandler({
+        entity: "methodology_profile",
+        action: "create",
+        profile_key: "MY_PROFILE",
+        name: "MyProfile",
+        version: "1.0",
+      }),
+      (err) => {
+        assert.match(err.message, /'family' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("create with all four required fields POSTs camelCase profileKey, name, version, family to /api/v1/methodology-profiles", async () => {
+    const calls = makeFetchSpy({ body: { id: "prof-uuid" } });
+    await callHandler({
+      entity: "methodology_profile",
+      action: "create",
+      project: "proj-a",
+      profile_key: "MY_PROFILE",
+      name: "MyProfile",
+      version: "1.0",
+      family: "FAIR",
+      description: "Test profile",
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "POST");
+    assert.match(calls[0].url, /\/api\/v1\/methodology-profiles\b/);
+    assert.equal(calls[0].body.profileKey, "MY_PROFILE");
+    assert.equal(calls[0].body.name, "MyProfile");
+    assert.equal(calls[0].body.version, "1.0");
+    assert.equal(calls[0].body.family, "FAIR");
+    assert.equal(calls[0].body.description, "Test profile");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// verification_result create reqArg guards (#1173)
+// ---------------------------------------------------------------------------
+
+describe("verification_result create reqArg guards (#1173)", () => {
+  const BASE = {
+    entity: "verification_result",
+    action: "create",
+    prover: "agent-x",
+    result: "PROVEN",
+    assurance_level: "L1",
+    verified_at: "2026-06-15T00:00:00Z",
+  };
+
+  it("rejects when prover is missing", async () => {
+    makeFetchSpy();
+    const { prover: _drop, ...args } = BASE;
+    await assert.rejects(
+      () => callHandler(args),
+      (err) => {
+        assert.match(err.message, /'prover' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("rejects when result is missing", async () => {
+    makeFetchSpy();
+    const { result: _drop, ...args } = BASE;
+    await assert.rejects(
+      () => callHandler(args),
+      (err) => {
+        assert.match(err.message, /'result' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("rejects when assurance_level is missing", async () => {
+    makeFetchSpy();
+    const { assurance_level: _drop, ...args } = BASE;
+    await assert.rejects(
+      () => callHandler(args),
+      (err) => {
+        assert.match(err.message, /'assurance_level' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("rejects when verified_at is missing", async () => {
+    makeFetchSpy();
+    const { verified_at: _drop, ...args } = BASE;
+    await assert.rejects(
+      () => callHandler(args),
+      (err) => {
+        assert.match(err.message, /'verified_at' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("create with all four required fields POSTs camelCase prover, result, assuranceLevel, verifiedAt to /api/v1/verification-results without stale keys", async () => {
+    const calls = makeFetchSpy({ body: { id: "vr-uuid" } });
+    await callHandler({
+      entity: "verification_result",
+      action: "create",
+      project: "proj-a",
+      prover: "agent-x",
+      result: "PROVEN",
+      assurance_level: "L1",
+      verified_at: "2026-06-15T00:00:00Z",
+      target_id: UUID_ONES,
+      requirement_id: UUID_AS,
+      property: "confidentiality",
+      evidence: "audit-log-ref",
+      expires_at: "2027-06-15T00:00:00Z",
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "POST");
+    assert.match(calls[0].url, /\/api\/v1\/verification-results\b/);
+    assert.equal(calls[0].body.prover, "agent-x");
+    assert.equal(calls[0].body.result, "PROVEN");
+    assert.equal(calls[0].body.assuranceLevel, "L1");
+    assert.equal(calls[0].body.verifiedAt, "2026-06-15T00:00:00Z");
+    assert.equal(calls[0].body.targetId, UUID_ONES);
+    assert.equal(calls[0].body.requirementId, UUID_AS);
+    assert.equal(calls[0].body.property, "confidentiality");
+    assert.equal(calls[0].body.evidence, "audit-log-ref");
+    assert.equal(calls[0].body.expiresAt, "2027-06-15T00:00:00Z");
+    // Must NOT contain the old bogus keys.
+    for (const stale of ["uid", "title", "outcome", "status"]) {
+      assert.ok(!(stale in calls[0].body), `stale key '${stale}' leaked onto the wire`);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GC-T012 methodology_profile crosswalk entries round-trip
 // ---------------------------------------------------------------------------
 
@@ -648,7 +835,9 @@ describe("methodology_profile crosswalkEntries round-trip (GC-T012)", () => {
       entity: "methodology_profile",
       action: "create",
       project: "proj-a",
+      profile_key: "NIST_SP800_30_R1",
       name: "NIST SP 800-30 Rev. 1",
+      version: "1.0",
       description: "NIST qualitative",
       family: "NIST_SP800_30_R1",
       crosswalk_entries: [entry],
