@@ -112,7 +112,8 @@ export const GC_CONTROL_DESCRIPTION =
   `supporting_test_ids is a list of ControlTest UUIDs that must belong to the same control as the assessment; ` +
   `the backend emits SUPPORTED_BY graph edges from the assessment to each listed test. ` +
   `Update DTOs drop create-only foreign keys (control_id, uid); a non-null supporting_test_ids replaces the list wholesale. ` +
-  `Reads (list, get, links_list) route through gc_query.`;
+  `Reads (list, get, links_list) route through gc_query. ` +
+  `Required fields per action: control/create→{title}; */update/delete→{id}; control/transition→{id,status}; control/link_create→{control_id,target_type,link_type}; control/link_delete→{control_id,link_id}; control_test/create and control_effectiveness_assessment/create→{control_id,uid}.`;
 
 /**
  * Pure adapter handler for gc_control. Picks action-scoped body fields per

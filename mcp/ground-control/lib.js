@@ -1472,8 +1472,9 @@ export async function syncGithubPrs(owner, repo) {
 // History functions
 // ---------------------------------------------------------------------------
 
-export async function getRequirementHistory(id) {
-  return request("GET", `/api/v1/requirements/${encodeURIComponent(id)}/history`);
+export async function getRequirementHistory(id, expand) {
+  const qs = expand ? "?expand=true" : "";
+  return request("GET", `/api/v1/requirements/${encodeURIComponent(id)}/history${qs}`);
 }
 
 // Returns 404 if `relId` does not belong to `reqId` (i.e. the requirement is
@@ -1489,7 +1490,7 @@ export async function getTraceabilityLinkHistory(reqId, linkId) {
   return request("GET", `/api/v1/requirements/${encodeURIComponent(reqId)}/traceability/${encodeURIComponent(linkId)}/history`);
 }
 
-export async function getRequirementTimeline(id, changeCategory, actor, from, to, limit, offset) {
+export async function getRequirementTimeline(id, changeCategory, actor, from, to, limit, offset, expand) {
   const params = new URLSearchParams();
   if (changeCategory) params.set("changeCategory", changeCategory);
   if (actor) params.set("actor", actor);
@@ -1497,6 +1498,7 @@ export async function getRequirementTimeline(id, changeCategory, actor, from, to
   if (to) params.set("to", to);
   if (limit != null) params.set("limit", String(limit));
   if (offset != null) params.set("offset", String(offset));
+  if (expand) params.set("expand", "true");
   const qs = params.toString();
   return request("GET", `/api/v1/requirements/${encodeURIComponent(id)}/timeline${qs ? `?${qs}` : ""}`);
 }
@@ -15341,8 +15343,8 @@ export const GOVERNANCE_STATUS_ENUMS = {
 // the shared TO_CAMEL map in this file. Issues #878/#879/#880.
 export const GOVERNANCE_FIELDS = {
   methodology_profile: {
-    create: ["name", "description", "family", "status", "metadata", "crosswalk_entries"],
-    update: ["name", "description", "family", "status", "metadata", "crosswalk_entries"],
+    create: ["profile_key", "version", "name", "description", "family", "status", "metadata", "crosswalk_entries"],
+    update: ["version", "name", "description", "family", "status", "metadata", "crosswalk_entries"],
   },
   risk_register_record: {
     create: [
@@ -15387,12 +15389,12 @@ export const GOVERNANCE_FIELDS = {
   },
   verification_result: {
     create: [
-      "uid", "title", "description", "outcome", "status",
-      "assurance_level", "verified_at", "metadata",
+      "prover", "result", "assurance_level", "verified_at",
+      "target_id", "requirement_id", "property", "evidence", "expires_at",
     ],
     update: [
-      "title", "description", "outcome", "status",
-      "assurance_level", "verified_at", "metadata",
+      "prover", "result", "assurance_level", "verified_at",
+      "target_id", "requirement_id", "property", "evidence", "expires_at",
     ],
   },
 };
