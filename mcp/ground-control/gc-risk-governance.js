@@ -14,6 +14,7 @@ import {
   RISK_ASSESSMENT_APPROVAL_STATUSES,
   TREATMENT_STRATEGIES,
   ASSURANCE_LEVELS,
+  VERIFICATION_STATUSES,
   GOVERNANCE_FIELDS,
   NORMALIZED_CONCEPTS,
   CROSSWALK_VOCABULARY_SURFACES,
@@ -53,6 +54,8 @@ export const gcRiskGovernanceZodShape = {
   // (action, entity, id, project) don't leak into the DTO.
   uid: z.string().optional(),
   name: z.string().optional(),
+  profile_key: z.string().optional(),
+  version: z.string().optional(),
   title: z.string().optional(),
   description: z.string().optional(),
   family: z.enum(METHODOLOGY_FAMILIES).optional(),
@@ -152,6 +155,13 @@ export const gcRiskGovernanceZodShape = {
   outcome: z.string().optional(),
   assurance_level: z.enum(ASSURANCE_LEVELS).optional(),
   verified_at: z.string().optional(),
+  prover: z.string().optional(),
+  result: z.enum(VERIFICATION_STATUSES).optional(),
+  target_id: z.string().uuid().optional(),
+  requirement_id: z.string().uuid().optional(),
+  property: z.string().optional(),
+  evidence: z.string().optional(),
+  expires_at: z.string().optional(),
   metadata: z.record(z.any()).optional(),
   // GC-T012: profile-scoped crosswalk entries. Forwarded verbatim to the
   // REST API after toCamelCase conversion (crosswalk_entries → crosswalkEntries).
@@ -173,9 +183,12 @@ export const GC_RISK_GOVERNANCE_DESCRIPTION =
   `Entity: ${GC_RISK_GOVERNANCE_ENTITIES.join(", ")}. Actions: ${GC_RISK_GOVERNANCE_ACTIONS.join(", ")}. ` +
   `Reads (list, get) route through gc_query. ` +
   `Per-entity create fields (snake_case; round-trip to backend camelCase): ` +
+  `methodology_profile={profile_key,name,version,family,description,status,crosswalk_entries}; ` +
   `risk_register_record={uid,title,owner,review_cadence,next_review_at,category_tags,decision_metadata,asset_scope_summary,risk_scenario_ids}; ` +
   `risk_assessment_result={risk_scenario_id,risk_register_record_id,methodology_profile_id,analyst_identity,assumptions,input_factors,observation_date,assessment_at,time_horizon,confidence,uncertainty_metadata,computed_outputs,evidence_refs,notes,observation_ids}; ` +
-  `treatment_plan={uid,title,risk_scenario_id,risk_register_record_id,strategy,owner,rationale,due_date,status,action_items,reassessment_triggers[{category,target_type,target_entity_id,target_identifier,note}],methodology_profile_id,methodology_strategy_key}. ` +
+  `treatment_plan={uid,title,risk_scenario_id,risk_register_record_id,strategy,owner,rationale,due_date,status,action_items,reassessment_triggers[{category,target_type,target_entity_id,target_identifier,note}],methodology_profile_id,methodology_strategy_key}; ` +
+  `verification_result={prover,result,assurance_level,verified_at,target_id,requirement_id,property,evidence,expires_at}. ` +
+  `Required on create: methodology_profile→{profile_key,name,version,family}; verification_result→{prover,result,assurance_level,verified_at}. ` +
   `Update DTOs drop create-only foreign keys (uid; risk_register_record_id for treatment_plan; risk_scenario_id for risk_assessment_result) and status fields whose changes go through the transition action. ` +
   `Unknown fields are dropped — never tunneled through metadata. ` +
   `Required fields per action: risk_register_record/create→{uid,title}; risk_assessment_result/create→{risk_scenario_id,methodology_profile_id}; treatment_plan/create→{uid,title,risk_register_record_id,strategy}; */update and */delete→{id}; risk_register_record|treatment_plan/transition→{id,status}; risk_assessment_result/transition_approval→{id,approval_state}.`;
@@ -195,7 +208,7 @@ export async function gcRiskGovernanceToolHandler(args) {
   switch (args.entity) {
     case "methodology_profile": {
       switch (args.action) {
-        case "create": return createMethodologyProfile(data, args.project);
+        case "create": reqArg(args, "profile_key", "create"); reqArg(args, "name", "create"); reqArg(args, "version", "create"); reqArg(args, "family", "create"); return createMethodologyProfile(data, args.project);
         case "update": reqArg(args, "id", "update"); return updateMethodologyProfile(args.id, data, args.project);
         case "delete": reqArg(args, "id", "delete"); await deleteMethodologyProfile(args.id, args.project); return null;
         default: throw new Error(`Action '${args.action}' not valid for methodology_profile`);
@@ -239,7 +252,7 @@ export async function gcRiskGovernanceToolHandler(args) {
     }
     case "verification_result": {
       switch (args.action) {
-        case "create": return createVerificationResult(data, args.project);
+        case "create": reqArg(args, "prover", "create"); reqArg(args, "result", "create"); reqArg(args, "assurance_level", "create"); reqArg(args, "verified_at", "create"); return createVerificationResult(data, args.project);
         case "update": reqArg(args, "id", "update"); return updateVerificationResult(args.id, data, args.project);
         case "delete": reqArg(args, "id", "delete"); await deleteVerificationResult(args.id, args.project); return null;
         default: throw new Error(`Action '${args.action}' not valid for verification_result`);

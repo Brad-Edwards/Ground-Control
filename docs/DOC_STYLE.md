@@ -212,3 +212,5 @@ documented in `docs/API.md`. Capture is internal to the adapter (no new
 public `gc_*` tool is registered), so the doc-coverage classifier surface set
 is unchanged. The surface addition is recorded in the ADR-054 amendment and
 the changelog fragment; no new DOC_STYLE.md style rule is established.
+
+Correcting a `GOVERNANCE_FIELDS` create/update allowlist in `mcp/ground-control/lib.js` to match the backend DTO (issue #1173) is a config-parser fix recorded in an ADR-054 amendment, not a new doc page.
