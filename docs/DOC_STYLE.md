@@ -1,5 +1,7 @@
 # Documentation style
 
+> **Sync note for issue #1107 (2026-06-14):** The audit-diff API reference (`docs/API.md`) and the `gc_requirement` MCP tool description were reviewed against these rules when the requirement history/timeline `expand` parameter was added. No style rule changed.
+
 ## Rules
 
 Docs describe the system as it ships on the current commit. Write in present

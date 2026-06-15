@@ -65,6 +65,28 @@ public final class SnapshotMapper {
         return diff;
     }
 
+    /**
+     * Computes an "addition" diff for a snapshot that has no prior state — every field
+     * is represented as {@code (null, newValue)}.
+     */
+    public static Map<String, FieldChange> computeAdditionDiff(Map<String, Object> snapshot) {
+        return computeDiff(Map.of(), snapshot);
+    }
+
+    /**
+     * Computes a "removal" diff for a snapshot that no longer exists — every non-null
+     * field is represented as {@code (oldValue, null)}.
+     */
+    public static Map<String, FieldChange> computeRemovalDiff(Map<String, Object> previousSnapshot) {
+        var diff = new LinkedHashMap<String, FieldChange>();
+        for (var entry : previousSnapshot.entrySet()) {
+            if (entry.getValue() != null) {
+                diff.put(entry.getKey(), new FieldChange(entry.getValue(), null));
+            }
+        }
+        return diff;
+    }
+
     /** Computes added/removed/modified relation changes between two point-in-time snapshot maps. */
     public static List<RelationChange> computeRelationChanges(
             Map<UUID, Map<String, Object>> fromMap, Map<UUID, Map<String, Object>> toMap) {
