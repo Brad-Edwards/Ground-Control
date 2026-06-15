@@ -608,6 +608,9 @@ class PolicyChecksTest(unittest.TestCase):
                 "NistImpactBand",
                 "NormalizedConcept",
                 "CrosswalkVocabularySurface",
+                "VerificationStatus",
+                "AssuranceLevel",
+                "MethodologyFamily",
             },
         )
         for contract in ENUM_CONTRACT_INVENTORY:

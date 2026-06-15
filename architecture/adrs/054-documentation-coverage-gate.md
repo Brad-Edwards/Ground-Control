@@ -12,6 +12,8 @@ accepted
 
 > **Sync note for issue #1107 (2026-06-14):** The `gc_requirement` history/timeline reads gained an `expand` passthrough (MCP `lib.js`/`index.js`) so callers can fetch full, untruncated audit-diff field values; the new audit-diff API surface is documented in `docs/API.md`. The `classifyChangedSurface` surface vocabulary and `outcome_required` mapping are unchanged.
 
+> **Sync note for issue #1176 (2026-06-15):** Extended `tools/policy/checks.py::ENUM_CONTRACT_INVENTORY` with three new enum-contract entries (`VerificationStatus`, `AssuranceLevel`, `MethodologyFamily`) so ADR-034's enum-mirror gate covers GRC verification enums. Added corresponding TypeScript union types and constant arrays to `frontend/src/types/api.ts`, mirrored the enum values at the MCP layer, and updated MethodologyProfile interface field types from string to MethodologyFamily per ADR-034. The classifier, Vale rules, `.vale.ini`, and `docs/DOC_STYLE.md` style rules are unchanged.
+
 ## Context
 
 Changes that modify workflow behavior, MCP tool surfaces, config parsing,

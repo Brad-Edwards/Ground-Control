@@ -1167,6 +1167,7 @@ MCP_LIB_PATH = "mcp/ground-control/lib.js"
 _ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state"
 _AUDIT_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state"
 _RISK_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state"
+_VERIFICATION_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/verification/state"
 
 # Java enum body: from the opening `{` to whichever comes first — the `;` that
 # terminates the constant list (present when the enum has methods/fields, e.g.
@@ -1272,6 +1273,33 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
         "CROSSWALK_VOCABULARY_SURFACES",
         "CROSSWALK_VOCABULARY_SURFACES",
     ),
+    # GC-GRC: Verification and Assurance Enums. VerificationStatus and
+    # AssuranceLevel are domain/verification/state enums used in evidence/control
+    # verification workflows; MethodologyFamily is a domain/riskscenarios/state
+    # enum used in methodology-profile selection. All three are mirrored at the
+    # frontend TypeScript boundary and MCP surfaces. ADR-034.
+    EnumContract(
+        "VerificationStatus",
+        f"{_VERIFICATION_ENUM_STATE_DIR}/VerificationStatus.java",
+        "VerificationStatus",
+        "VERIFICATION_STATUSES",
+        "VERIFICATION_STATUSES",
+    ),
+    EnumContract(
+        "AssuranceLevel",
+        f"{_VERIFICATION_ENUM_STATE_DIR}/AssuranceLevel.java",
+        "AssuranceLevel",
+        "ASSURANCE_LEVELS",
+        "ASSURANCE_LEVELS",
+    ),
+    EnumContract(
+        "MethodologyFamily",
+        f"{_RISK_ENUM_STATE_DIR}/MethodologyFamily.java",
+        "MethodologyFamily",
+        "METHODOLOGY_FAMILIES",
+        "METHODOLOGY_FAMILIES",
+    ),
+
 )
 
 
