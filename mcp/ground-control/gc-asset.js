@@ -163,7 +163,8 @@ export const GC_ASSET_DESCRIPTION =
   `Actions: ${GC_ASSET_ACTIONS.join(", ")}. ` +
   `link_create requires target_type + link_type; pass target_entity_id for internal ` +
   `target types or target_identifier for external types. target_url / target_title are optional. ` +
-  `Reads (list, get, get_by_uid, find_by_external_id, links, external_ids) route through gc_query.`;
+  `Reads (list, get, get_by_uid, find_by_external_id, links, external_ids) route through gc_query. ` +
+  `Required fields per action: create→{uid,name,asset_type}; update/delete/archive/impact_analysis→{id}; relation_create→{source_id,target_id,relation_type}; relation_update/relation_delete→{asset_id,relation_id}; extract_subgraph→{roots}; link_create→{asset_id,target_type,link_type}; link_delete→{asset_id,link_id}; external_id_create→{asset_id,namespace,external_id}; external_id_update/external_id_delete→{asset_id,external_id_record_id}; subtype_schema_create→{asset_type,subtype,schema_version,schema_body}; subtype_schema_update/subtype_schema_deprecate/subtype_schema_get→{schema_id}; subtype_schema_get_active→{asset_type,subtype}; detect_cycles→{} and subtype_schema_list→{} (no required fields).`;
 
 /**
  * Pure adapter handler for gc_asset. Validates required fields, picks
