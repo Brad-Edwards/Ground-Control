@@ -1420,7 +1420,8 @@ const RELATION_ACTIONS = ["create", "get", "delete"];
 server.tool(
   "gc_relation",
   `Requirement-to-requirement relations. Actions: ${RELATION_ACTIONS.join(", ")}. ` +
-    `Reads (history) route through gc_query.`,
+    `Reads (history) route through gc_query. ` +
+    `Required fields per action: create→{source_id,target_id,relation_type}; get→{requirement_id}; delete→{requirement_id,id}.`,
   {
     action: z.enum(RELATION_ACTIONS),
     id: z.string().uuid().optional(),
@@ -1457,7 +1458,8 @@ const ADR_ACTIONS = ["create", "update", "delete", "transition", "requirements"]
 server.tool(
   "gc_adr",
   `ADR operations. Actions: ${ADR_ACTIONS.join(", ")}. ` +
-    `Reads (list, get) route through gc_query.`,
+    `Reads (list, get) route through gc_query. ` +
+    `Required fields per action: create→{uid,title}; update/delete/requirements→{id}; transition→{id,status}.`,
   {
     action: z.enum(ADR_ACTIONS),
     id: z.string().uuid().optional(),
@@ -1508,7 +1510,8 @@ const DOCUMENT_ACTIONS = ["create", "update", "delete", "grammar_set", "grammar_
 server.tool(
   "gc_document",
   `Document operations + grammar + reading-order. Actions: ${DOCUMENT_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, grammar_get) route through gc_query.`,
+    `Reads (list, get, grammar_get) route through gc_query. ` +
+    `Required fields per action: create→{title}; update/delete/grammar_delete/reading_order→{id}; grammar_set→{id,grammar}.`,
   {
     action: z.enum(DOCUMENT_ACTIONS),
     id: z.string().uuid().optional(),
@@ -1558,7 +1561,8 @@ const SECTION_ACTIONS = ["create", "update", "delete", "tree", "content_add", "c
 server.tool(
   "gc_section",
   `Section + section-content operations. Actions: ${SECTION_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, content_list) route through gc_query.`,
+    `Reads (list, get, content_list) route through gc_query. ` +
+    `Required fields per action: create→{document_id,title}; update/delete→{id}; tree→{document_id}; content_add→{id,content_type}; content_update/content_delete→{content_id}.`,
   {
     action: z.enum(SECTION_ACTIONS),
     id: z.string().uuid().optional(),
@@ -1820,7 +1824,8 @@ const QUALITY_GATE_ACTIONS = ["create", "update", "delete", "evaluate"];
 server.tool(
   "gc_quality_gate",
   `Quality gate operations. Actions: ${QUALITY_GATE_ACTIONS.join(", ")}. ` +
-    `Reads (list, get) route through gc_query.`,
+    `Reads (list, get) route through gc_query. ` +
+    `Required fields per action: create→{name,metric_type}; update/delete→{id}; evaluate→{} (no required fields; optional project scopes it).`,
   {
     action: z.enum(QUALITY_GATE_ACTIONS),
     id: z.string().uuid().optional(),
@@ -2151,7 +2156,8 @@ server.tool(
   "gc_test_case",
   `Test case operations (TC-001 / ADR-040 + TC-002 / ADR-041 + TC-004 / ADR-042). ` +
     `Actions: ${TEST_CASE_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, get-by-uid, step-list, step-get, gherkin-get) route through gc_query.`,
+    `Reads (list, get, get-by-uid, step-list, step-get, gherkin-get) route through gc_query. ` +
+    `Required fields per action: create→{uid,title,type,priority}; update/delete/move→{id}; transition→{id,status}; step-create→{test_case_id,step_number,step_action,expected_result}; step-update/step-delete→{test_case_id,step_id}; gherkin-create/gherkin-update→{test_case_id,gherkin_source}; gherkin-delete→{test_case_id}; folder-create→{folder_title}; folder-update/folder-delete/folder-move→{folder_id}; folder-reorder→{ordered_folder_ids}; copy→{id,new_uid}; reorder→{ordered_test_case_ids}.`,
   {
     action: z.enum(TEST_CASE_ACTIONS),
     id: z.string().uuid().optional(),
@@ -2431,7 +2437,8 @@ server.tool(
   "gc_test_plan",
   `Test plan operations (TC-006 / ADR-044). ` +
     `Actions: ${TEST_PLAN_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, get-by-uid) route through gc_query.`,
+    `Reads (list, get, get-by-uid) route through gc_query. ` +
+    `Required fields per action: create→{uid,name}; update/delete→{id}; transition→{id,status}.`,
   {
     action: z.enum(TEST_PLAN_ACTIONS),
     id: z.string().uuid().optional(),
@@ -2526,7 +2533,8 @@ server.tool(
   "gc_test_suite",
   `Test suite operations (TC-007 / ADR-047). ` +
     `Actions: ${TEST_SUITE_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, get-by-uid) route through gc_query.`,
+    `Reads (list, get, get-by-uid) route through gc_query. ` +
+    `Required fields per action: create→{uid,name,population_mode}; update/delete/resolve→{id}; add_member/remove_member→{id,test_case_id}; reorder_members→{id,ordered_test_case_ids}; add_source_requirement/remove_source_requirement→{id,requirement_id}.`,
   {
     action: z.enum(TEST_SUITE_ACTIONS),
     id: z.string().uuid().optional(),
@@ -2684,7 +2692,8 @@ server.tool(
   "gc_test_run",
   `Test run operations (TC-008 / ADR-049). ` +
     `Actions: ${TEST_RUN_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, get-by-uid, testers, results) route through gc_query.`,
+    `Reads (list, get, get-by-uid, testers, results) route through gc_query. ` +
+    `Required fields per action: create→{uid,name,test_plan_id,test_suite_id}; update/delete/update_cursor→{id}; transition→{id,status}; add_tester/remove_tester→{id,tester_name}; update_result→{id,test_case_id,result_status}; list_step_results→{id,case_result_id}; update_step_result→{id,case_result_id,step_result_id,step_status}.`,
   {
     action: z.enum(TEST_RUN_ACTIONS),
     id: z.string().uuid().optional(),

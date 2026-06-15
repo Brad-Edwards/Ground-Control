@@ -53,9 +53,11 @@ diff via `make policy`, the CI `policy` job, and the pre-commit `vale-prose-lint
 hook. The hook installs Vale via `tools/install-vale.sh` on first need; no
 manual `make vale-install` step is required.
 
-MCP-surface changes (`mcp/ground-control/index.js`, `mcp/ground-control/lib.js`)
-also trigger the `doc-coverage-gate-sync` rule per ADR-054, which requires this
-file and ADR-054 to stay current with the classifier surface they describe.
+Changes to any doc-coverage gate surface - `mcp/ground-control/index.js`,
+`mcp/ground-control/lib.js`, `tools/policy/checks.py`, `tools/install-vale.sh`,
+`.vale.ini`, or this file - trigger the `doc-coverage-gate-sync` rule per
+ADR-054, which requires this file and ADR-054 to stay current with the gate
+surface they describe.
 Adding a new MCP tool or `gc_admin` action does not require new style rules
 here unless the action introduces a new doc-shape (a new request/response
 schema, for example) - in that case document the schema under the relevant
@@ -126,6 +128,8 @@ convention: a new kind value in `ANALYZE_KINDS` (for example
 `gc_analyze` tool description string in `mcp/ground-control/index.js`. No
 separate user-facing prose page per kind, no new sections in this style
 guide.
+
+Per-action required-field enumeration in an action-multiplexed tool's description string (issue #1169) is a contract-surface edit to that tool's description, not a new doc page.
 
 Mirrored API-boundary enum constants follow the same convention: the
 `NORMALIZED_CONCEPTS` and `CROSSWALK_VOCABULARY_SURFACES` arrays added to
