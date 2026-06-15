@@ -15343,8 +15343,8 @@ export const GOVERNANCE_STATUS_ENUMS = {
 // the shared TO_CAMEL map in this file. Issues #878/#879/#880.
 export const GOVERNANCE_FIELDS = {
   methodology_profile: {
-    create: ["name", "description", "family", "status", "metadata", "crosswalk_entries"],
-    update: ["name", "description", "family", "status", "metadata", "crosswalk_entries"],
+    create: ["profile_key", "version", "name", "description", "family", "status", "metadata", "crosswalk_entries"],
+    update: ["version", "name", "description", "family", "status", "metadata", "crosswalk_entries"],
   },
   risk_register_record: {
     create: [
@@ -15389,12 +15389,12 @@ export const GOVERNANCE_FIELDS = {
   },
   verification_result: {
     create: [
-      "uid", "title", "description", "outcome", "status",
-      "assurance_level", "verified_at", "metadata",
+      "prover", "result", "assurance_level", "verified_at",
+      "target_id", "requirement_id", "property", "evidence", "expires_at",
     ],
     update: [
-      "title", "description", "outcome", "status",
-      "assurance_level", "verified_at", "metadata",
+      "prover", "result", "assurance_level", "verified_at",
+      "target_id", "requirement_id", "property", "evidence", "expires_at",
     ],
   },
 };
