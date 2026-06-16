@@ -125,11 +125,11 @@ amendments to ADR-054, not documentation edits.
 
 New `gc_analyze` kinds backed by a fixed REST endpoint follow the same
 convention: a new kind value in `ANALYZE_KINDS` (for example
-`nist_assessment` added for GC-T014 / #721) plus an adapter helper in
-`lib.js` is documented by the endpoint entry in `docs/API.md` and the
-`gc_analyze` tool description string in `mcp/ground-control/index.js`. No
-separate user-facing prose page per kind, no new sections in this style
-guide.
+`nist_assessment` added for GC-T014 / #721; `fair_quantitative` added for
+GC-T011 / #723) plus an adapter helper in `lib.js` is documented by the
+endpoint entry in `docs/API.md` and the `gc_analyze` tool description string
+in `mcp/ground-control/index.js`. No separate user-facing prose page per
+kind, no new sections in this style guide.
 
 Per-action required-field enumeration in an action-multiplexed tool's description string (issue #1169) is a contract-surface edit to that tool's description, not a new doc page.
 

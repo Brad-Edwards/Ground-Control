@@ -1258,6 +1258,22 @@ export async function analyzeNistAssessment({
   });
 }
 
+// GC-T011 — FAIR v3.0 quantitative risk analysis helper. Returns the
+// methodology-attributed envelope from /api/v1/analysis/grc/fair-quantitative
+// verbatim; FAIR factor map keys (threat_event_frequency, primary_loss_magnitude,
+// etc.) must NOT be camel/snake-rewritten, so the relevant outer keys are guarded
+// by OPAQUE_VALUE_KEYS above.
+export async function analyzeFairQuantitative({
+  project,
+  asOf,
+  riskAssessmentResultId,
+  riskScenarioId,
+} = {}) {
+  return request("GET", "/api/v1/analysis/grc/fair-quantitative", {
+    params: { project, asOf, riskAssessmentResultId, riskScenarioId },
+  });
+}
+
 // Strict containment predicate. Both arguments MUST already be canonical
 // realpaths — call `realpathSync` on each side before invoking this. Returns
 // true iff `canonicalPath` is strictly inside `canonicalRoot` (rejects the

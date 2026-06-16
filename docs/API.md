@@ -297,10 +297,9 @@ Every response is methodology-attributed and structured for agent
 consumption: `analysisKind`, `project`, `asOf`, `derivationMethod`,
 `inputs`/`outputs`/`limitations` sections, per
 `architecture/notes/mcp-grc-analysis-tools-preflight.md`. No generic
-`risk_score`; no executions of FAIR / FAIR-CAM methodology engines (those
-are tracked in GC-T011 / GC-I017 and ship their own analysis endpoints when
-the engine lands). NIST SP 800-30 Rev. 1 ships under GC-T014 / #721 as the
-`nist-sp-800-30` endpoint below.
+`risk_score`; NIST SP 800-30 Rev. 1 ships under GC-T014 / #721 as the
+`nist-sp-800-30` endpoint and FAIR v3.0 quantitative analysis ships under
+GC-T011 / #723 as the `fair-quantitative` endpoint.
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
@@ -308,6 +307,7 @@ the engine lands). NIST SP 800-30 Rev. 1 ships under GC-T014 / #721 as the
 | GET | `/analysis/grc/observation-projection?mode=ASSET_EXPOSURE\|CONTROL_STATE` | - | 200 | Current-state projection from observations; ASSET_EXPOSURE flags assets with active observations; CONTROL_STATE joins through `ControlEffectivenessAssessment`. |
 | GET | `/analysis/grc/vendor-risk` | - | 200 | Aggregation over `OperationalAsset` of `AssetType.THIRD_PARTY` (findings, observations, evidence freshness, mapped controls). |
 | GET | `/analysis/grc/nist-sp-800-30` | - | 200 | NIST SP 800-30 Rev. 1 methodology-attributed view over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `NIST_SP800_30_R1`. Decodes inputs into threat source, threat event (`ADVERSARIAL` / `NON_ADVERSARIAL`), vulnerabilities, predisposing conditions, threat-source relevance, multi-dimensional likelihood, impact level, and assessment timeframe; computes overall likelihood (analyst-supplied or derived per Table G-5) and risk level (per Table I-2) as ordinal bands with explicit `scale`/`units` and a matrix cell label. |
+| GET | `/analysis/grc/fair-quantitative` | - | 200 | FAIR v3.0 quantitative risk analysis over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `FAIR`. Derives Loss Event Frequency (LEF = TEF × Vulnerability), Loss Magnitude (LM = PLM + SLEF × SLM), and Annualized Loss Expectancy (ALE = LEF × LM) via three-point estimation with optional Monte Carlo percentiles. Returns a methodology-attributed envelope with `scale: "continuous"`, `units: "monetary"`, and per-item limitations for missing sub-factors or absent percentiles. |
 
 `GET /analysis/grc/evidence-freshness` accepts:
 
@@ -348,7 +348,7 @@ the engine lands). NIST SP 800-30 Rev. 1 ships under GC-T014 / #721 as the
 | `riskAssessmentResultId` | UUID | - | Filter to a single `RiskAssessmentResult`; returns `404` if missing, `422` if the row is not bound to a `NIST_SP800_30_R1` `MethodologyProfile` |
 | `riskScenarioId` | UUID | - | Narrow to assessments under one `RiskScenario` |
 
-Response shape: top-level `analysisKind: "nist_assessment"`, `project`,
+Response shape for `GET /analysis/grc/nist-sp-800-30`: top-level `analysisKind: "nist_assessment"`, `project`,
 `asOf`, `derivationMethod` (`"nist-sp800-30-rev1-5x5-matrix-v1"`), `scale`
 (`"ordinal"`), `units` (`"qualitative ordinal levels"`),
 `matrixConversionRule` (Table I-2 attribution), an `assessments` array, a
@@ -368,6 +368,31 @@ preserved verbatim from inputs but a `limitations` entry is emitted when
 they appear on a non-adversarial event. Ordinal bands MUST NOT be
 normalized into a cross-methodology numeric score without an explicit
 method label and conversion rule.
+
+`GET /analysis/grc/fair-quantitative` accepts:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `project` | string | auto-resolved | Project identifier |
+| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the response envelope |
+| `riskAssessmentResultId` | UUID | - | Filter to a single `RiskAssessmentResult`; returns `404` if missing, `422` if the row is not bound to a `FAIR` `MethodologyProfile` |
+| `riskScenarioId` | UUID | - | Narrow to assessments under one `RiskScenario` |
+
+Response shape for `GET /analysis/grc/fair-quantitative`: top-level `analysisKind: "fair_quantitative"`, `project`,
+`asOf`, `derivationMethod` (`"fair-v3.0-three-point-v1"`), `scale` (`"continuous"`), `units` (`"monetary"`),
+`currency` (from `primary_loss_magnitude.currency`, default `"USD"`), an `assessments` array, a
+`counts` summary (`total`, `byRiskLevel`, `withLimitations`), and a top-level `limitations` array.
+Each assessment item carries standard identity fields plus structured `inputs` (all FAIR factor maps as
+opaque pass-through: `threatEventFrequency`, `contactFrequency`, `probabilityOfAction`, `vulnerability`,
+`threatCapability`, `resistanceStrength`, `lossEventFrequency`, `primaryLossMagnitude`,
+`secondaryLossEventFrequency`, `secondaryLossMagnitude`, `fairCam`, `fairMam`, `uncertaintyMetadata`)
+and structured `outputs` (`lossEventFrequency`, `lossMagnitude`, `annualizedLossExpectancy` as three-point
+records with `low`/`likely`/`high`, plus `currency`, `percentiles` (from persisted Monte Carlo outputs),
+`riskLevel` (pass-through from `computedOutputs.risk_level`), and `derivation`). Derivation precedence:
+persisted `computedOutputs` wins over analyst-supplied `loss_event_frequency` input, which wins over
+derived `TEF × Vulnerability`. When ALE is not persisted, a `limitations` entry notes absent Monte Carlo
+percentiles. Sub-factor limitations are emitted when TEF is present without `contact_frequency`/`probability_of_action`
+or when vulnerability is present without `threat_capability`/`resistance_strength`.
 
 Every response carries a `limitations` array. For the vendor-risk endpoint
 that array always includes a note that vendors are modeled as
