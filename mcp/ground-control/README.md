@@ -285,6 +285,19 @@ be related, linked, or analyzed.
 
 **Link type:** `IMPLEMENTS`, `TESTS`, `DOCUMENTS`, `CONSTRAINS`, `VERIFIES`
 
+## Write-contract drift gate (ADR-034, #1106)
+
+Each write tool's request-body field allowlist and enum mirror is checked against
+the backend's generated OpenAPI contract by `make mcp-openapi-contract` (CI job
+`mcp-contract`). The inventory lives in `openapi-contract.test.js`: one row per
+tool/entity/action naming the exported field array (for example
+`GC_AUDIT_CREATE_BODY_FIELDS`, `CONTROL_FIELDS.control.create`,
+`GOVERNANCE_FIELDS.<entity>.<action>`, `LINK_CREATE_BODY_FIELDS`) and the OpenAPI
+request schema it must agree with. When you add or change a write tool's fields,
+update its exported array and add or adjust the matching inventory row, and the
+gate fails the build on drift, naming the tool, field, and which side diverged.
+Requirement: GC-O013.
+
 ## Status Transitions
 
 Forward-only. No backward transitions.

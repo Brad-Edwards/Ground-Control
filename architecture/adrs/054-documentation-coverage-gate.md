@@ -12,6 +12,8 @@ accepted
 
 > **Sync note for issue #1107 (2026-06-14):** The `gc_requirement` history/timeline reads gained an `expand` passthrough (MCP `lib.js`/`index.js`) so callers can fetch full, untruncated audit-diff field values; the new audit-diff API surface is documented in `docs/API.md`. The `classifyChangedSurface` surface vocabulary and `outcome_required` mapping are unchanged.
 
+> **Sync note for issue #1106 (2026-06-15):** The MCP–backend write-contract drift gate exported `TO_CAMEL` / `OPAQUE_VALUE_KEYS` from `mcp/ground-control/lib.js` and corrected the drifted `GOVERNANCE_FIELDS` allowlists (consumed by the new `mcp/ground-control/openapi-contract.test.js`), and fixed the `gc_control` / `gc_asset` / `gc_risk_governance` adapter field allowlists and Zod shapes to match the backend DTOs. No new public `gc_*` tool is registered; the `classifyChangedSurface` surface vocabulary, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged. The new gate's own documentation lives in `docs/DEVELOPMENT_WORKFLOW.md`, `mcp/ground-control/README.md`, and the ADR-034 amendment.
+
 ## Context
 
 Changes that modify workflow behavior, MCP tool surfaces, config parsing,

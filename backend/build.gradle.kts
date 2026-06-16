@@ -168,6 +168,20 @@ tasks.register<Test>("ageTest") {
     jvmArgs("-XX:+EnableDynamicAgentLoading")
 }
 
+// MCP–backend contract spec capture (issue #1106, ADR-034).
+// Runs only McpOpenApiContractSpecTest (tagged "integration") via Testcontainers,
+// writes backend/build/contract/openapi.json for the Node contract test.
+tasks.register<Test>("generateContractOpenApi") {
+    description = "Generates backend/build/contract/openapi.json for the MCP contract test"
+    group = "verification"
+    useJUnitPlatform {
+        includeTags("integration")
+        filter { includeTestsMatching("*McpOpenApiContractSpecTest") }
+    }
+    shouldRunAfter(tasks.test)
+    jvmArgs("-XX:+EnableDynamicAgentLoading")
+}
+
 tasks.jacocoTestReport {
     dependsOn(tasks.test)
     // Merge coverage from integration tests when available
