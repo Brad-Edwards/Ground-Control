@@ -177,39 +177,30 @@ public class FairQuantitativeAnalysisService {
         MethodologyProfile profile = row.getMethodologyProfile();
         List<String> limitations = new ArrayList<>();
 
-        Map<String, Object> tef = asMap(inputs.get(KEY_TEF));
-        Map<String, Object> cf = asMap(inputs.get(KEY_CONTACT_FREQUENCY));
-        Map<String, Object> poa = asMap(inputs.get(KEY_PROB_OF_ACTION));
-        Map<String, Object> vuln = asMap(inputs.get(KEY_VULNERABILITY));
-        Map<String, Object> tcap = asMap(inputs.get(KEY_THREAT_CAPABILITY));
-        Map<String, Object> rs = asMap(inputs.get(KEY_RESISTANCE_STRENGTH));
-        Map<String, Object> analystLef = asMap(inputs.get(KEY_LEF));
-        Map<String, Object> plm = asMap(inputs.get(KEY_PLM));
-        Map<String, Object> slef = asMap(inputs.get(KEY_SLEF));
-        Map<String, Object> slm = asMap(inputs.get(KEY_SLM));
-        Map<String, Object> fairCam = asMap(inputs.get(KEY_FAIR_CAM));
-        Map<String, Object> fairMam = asMap(inputs.get(KEY_FAIR_MAM));
-        Map<String, Object> uncertainty = row.getUncertaintyMetadata();
+        ParsedFactors f = new ParsedFactors(
+                asMap(inputs.get(KEY_TEF)),
+                asMap(inputs.get(KEY_CONTACT_FREQUENCY)),
+                asMap(inputs.get(KEY_PROB_OF_ACTION)),
+                asMap(inputs.get(KEY_VULNERABILITY)),
+                asMap(inputs.get(KEY_THREAT_CAPABILITY)),
+                asMap(inputs.get(KEY_RESISTANCE_STRENGTH)),
+                asMap(inputs.get(KEY_LEF)),
+                asMap(inputs.get(KEY_PLM)),
+                asMap(inputs.get(KEY_SLEF)),
+                asMap(inputs.get(KEY_SLM)),
+                asMap(inputs.get(KEY_FAIR_CAM)),
+                asMap(inputs.get(KEY_FAIR_MAM)),
+                row.getUncertaintyMetadata());
 
-        String currency = resolveCurrency(plm);
+        String currency = resolveCurrency(f.plm());
 
-        boolean[] validFlags =
-                runInvariantValidation(tef, cf, poa, vuln, tcap, rs, analystLef, plm, slm, slef, currency, limitations);
-        boolean tefValid = validFlags[0];
-        boolean vulnValid = validFlags[1];
-        boolean analystLefValid = validFlags[2];
-        boolean plmValid = validFlags[3];
-        boolean slmValid = validFlags[4];
-        boolean slefValid = validFlags[5];
-        boolean currenciesMatch = validFlags[6];
+        ValidationFlags flags = runInvariantValidation(f, currency, limitations);
 
-        addSubFactorCompletenessWarnings(tef, cf, poa, vuln, tcap, rs, limitations);
+        addSubFactorCompletenessWarnings(f, limitations);
 
-        FairLefResult lefComputed = deriveLossEventFrequency(
-                persistedOutputs, analystLef, tef, vuln, tefValid, vulnValid, analystLefValid, limitations);
+        FairLefResult lefComputed = deriveLossEventFrequency(persistedOutputs, f, flags, limitations);
 
-        FairQuantitativeAnalysisResult.ThreePoint lmResult =
-                deriveLossMagnitude(plm, slef, slm, plmValid, slefValid, slmValid, currenciesMatch, limitations);
+        FairQuantitativeAnalysisResult.ThreePoint lmResult = deriveLossMagnitude(f, flags, limitations);
 
         FairAleResult aleComputed =
                 deriveAnnualizedLossExpectancy(persistedOutputs, lefComputed.result(), lmResult, currency, limitations);
@@ -218,7 +209,19 @@ public class FairQuantitativeAnalysisService {
         String riskLevel = resolveRiskLevel(persistedOutputs);
 
         var typedInputs = new FairQuantitativeAnalysisResult.Inputs(
-                tef, cf, poa, vuln, tcap, rs, analystLef, plm, slef, slm, fairCam, fairMam, uncertainty);
+                f.tef(),
+                f.cf(),
+                f.poa(),
+                f.vuln(),
+                f.tcap(),
+                f.rs(),
+                f.analystLef(),
+                f.plm(),
+                f.slef(),
+                f.slm(),
+                f.fairCam(),
+                f.fairMam(),
+                f.uncertainty());
         var typedOutputs = new FairQuantitativeAnalysisResult.Outputs(
                 lefComputed.result(),
                 lmResult,
@@ -246,44 +249,30 @@ public class FairQuantitativeAnalysisService {
      * <p>Invariants enforced (FAIR v3.0 + FAIR-MAM schema semantics):
      * three-point ordering (low &lt;= likely &lt;= high), non-negativity, probability
      * bounds [0,1] for applicable factors, and currency consistency between PLM and SLM.
-     *
-     * <p>Returns a boolean array indexed as: [tefValid, vulnValid, analystLefValid,
-     * plmValid, slmValid, slefValid, currenciesMatch].
+     * Sub-factors (tcap, rs, cf, poa) are validated for invariants but are not direct
+     * derivation inputs; their validity flags are not returned.
      */
-    private static boolean[] runInvariantValidation(
-            Map<String, Object> tef,
-            Map<String, Object> cf,
-            Map<String, Object> poa,
-            Map<String, Object> vuln,
-            Map<String, Object> tcap,
-            Map<String, Object> rs,
-            Map<String, Object> analystLef,
-            Map<String, Object> plm,
-            Map<String, Object> slm,
-            Map<String, Object> slef,
-            String currency,
-            List<String> limitations) {
-        // Probability-bounded [0,1] factors — return values gate downstream derivation steps;
-        // sub-factors (tcap, rs) are validated for invariants but are not direct derivation inputs.
-        boolean vulnValid = validateThreePointFactor(KEY_VULNERABILITY, vuln, true, limitations);
-        validateThreePointFactor(KEY_THREAT_CAPABILITY, tcap, true, limitations);
-        validateThreePointFactor(KEY_RESISTANCE_STRENGTH, rs, true, limitations);
-        boolean slefValid = validateThreePointFactor(KEY_SLEF, slef, true, limitations);
+    private static ValidationFlags runInvariantValidation(ParsedFactors f, String currency, List<String> limitations) {
+        // Probability-bounded [0,1] factors
+        boolean vulnValid = validateThreePointFactor(KEY_VULNERABILITY, f.vuln(), true, limitations);
+        validateThreePointFactor(KEY_THREAT_CAPABILITY, f.tcap(), true, limitations);
+        validateThreePointFactor(KEY_RESISTANCE_STRENGTH, f.rs(), true, limitations);
+        boolean slefValid = validateThreePointFactor(KEY_SLEF, f.slef(), true, limitations);
 
-        // Non-negative frequency factors (no upper bound) — cf and poa are sub-factors only.
-        boolean tefValid = validateThreePointFactor(KEY_TEF, tef, false, limitations);
-        validateThreePointFactor(KEY_CONTACT_FREQUENCY, cf, false, limitations);
-        validateThreePointFactor(KEY_PROB_OF_ACTION, poa, false, limitations);
-        boolean analystLefValid = validateThreePointFactor(KEY_LEF, analystLef, false, limitations);
+        // Non-negative frequency factors (no upper bound); cf and poa are sub-factors only.
+        boolean tefValid = validateThreePointFactor(KEY_TEF, f.tef(), false, limitations);
+        validateThreePointFactor(KEY_CONTACT_FREQUENCY, f.cf(), false, limitations);
+        validateThreePointFactor(KEY_PROB_OF_ACTION, f.poa(), false, limitations);
+        boolean analystLefValid = validateThreePointFactor(KEY_LEF, f.analystLef(), false, limitations);
 
         // Non-negative monetary factors (no upper bound)
-        boolean plmValid = validateThreePointFactor(KEY_PLM, plm, false, limitations);
-        boolean slmValid = validateThreePointFactor(KEY_SLM, slm, false, limitations);
+        boolean plmValid = validateThreePointFactor(KEY_PLM, f.plm(), false, limitations);
+        boolean slmValid = validateThreePointFactor(KEY_SLM, f.slm(), false, limitations);
 
         // Currency consistency for SLM: must match PLM currency before combining
         boolean currenciesMatch = true;
-        if (slm != null && slm.containsKey(KEY_CURRENCY)) {
-            String slmCurrency = String.valueOf(slm.get(KEY_CURRENCY));
+        if (f.slm() != null && f.slm().containsKey(KEY_CURRENCY)) {
+            String slmCurrency = String.valueOf(f.slm().get(KEY_CURRENCY));
             if (!slmCurrency.equals(currency)) {
                 currenciesMatch = false;
                 limitations.add("mixed currencies not converted: primary_loss_magnitude uses " + currency
@@ -292,25 +281,51 @@ public class FairQuantitativeAnalysisService {
             }
         }
 
-        return new boolean[] {tefValid, vulnValid, analystLefValid, plmValid, slmValid, slefValid, currenciesMatch};
+        return new ValidationFlags(
+                tefValid, vulnValid, analystLefValid, plmValid, slmValid, slefValid, currenciesMatch);
     }
 
-    private static void addSubFactorCompletenessWarnings(
+    private static void addSubFactorCompletenessWarnings(ParsedFactors f, List<String> limitations) {
+        if (f.tef() != null && f.cf() == null && f.poa() == null) {
+            limitations.add(
+                    "threat_event_frequency provided without contact_frequency and probability_of_action sub-factors");
+        }
+        if (f.vuln() != null && f.tcap() == null && f.rs() == null) {
+            limitations.add("vulnerability provided without threat_capability and resistance_strength sub-factors");
+        }
+    }
+
+    /**
+     * All parsed three-point factor maps extracted from a single row's input-factors map.
+     * Passed as a single carrier to derivation helpers to avoid wide parameter lists.
+     */
+    private record ParsedFactors(
             Map<String, Object> tef,
             Map<String, Object> cf,
             Map<String, Object> poa,
             Map<String, Object> vuln,
             Map<String, Object> tcap,
             Map<String, Object> rs,
-            List<String> limitations) {
-        if (tef != null && cf == null && poa == null) {
-            limitations.add(
-                    "threat_event_frequency provided without contact_frequency and probability_of_action sub-factors");
-        }
-        if (vuln != null && tcap == null && rs == null) {
-            limitations.add("vulnerability provided without threat_capability and resistance_strength sub-factors");
-        }
-    }
+            Map<String, Object> analystLef,
+            Map<String, Object> plm,
+            Map<String, Object> slef,
+            Map<String, Object> slm,
+            Map<String, Object> fairCam,
+            Map<String, Object> fairMam,
+            Map<String, Object> uncertainty) {}
+
+    /**
+     * Validation flags produced by a single FAIR invariant validation pass.
+     * Each boolean corresponds to one factor or cross-factor check.
+     */
+    private record ValidationFlags(
+            boolean tefValid,
+            boolean vulnValid,
+            boolean analystLefValid,
+            boolean plmValid,
+            boolean slmValid,
+            boolean slefValid,
+            boolean currenciesMatch) {}
 
     /**
      * Result carrier for LEF derivation — holds the three-point value (may be null when
@@ -323,14 +338,7 @@ public class FairQuantitativeAnalysisService {
      * analyst-supplied input, then TEF × Vulnerability arithmetic.
      */
     private static FairLefResult deriveLossEventFrequency(
-            Map<String, Object> persistedOutputs,
-            Map<String, Object> analystLef,
-            Map<String, Object> tef,
-            Map<String, Object> vuln,
-            boolean tefValid,
-            boolean vulnValid,
-            boolean analystLefValid,
-            List<String> limitations) {
+            Map<String, Object> persistedOutputs, ParsedFactors f, ValidationFlags flags, List<String> limitations) {
         // 1. Check persisted computedOutputs.loss_event_frequency
         FairLefResult persisted = tryPersistedLef(persistedOutputs);
         if (persisted != null) {
@@ -338,15 +346,15 @@ public class FairQuantitativeAnalysisService {
         }
 
         // 2. Analyst-supplied loss_event_frequency input (only if invariants hold)
-        if (analystLef != null && analystLefValid) {
-            FairQuantitativeAnalysisResult.ThreePoint tp = parseThreePoint(analystLef);
+        if (f.analystLef() != null && flags.analystLefValid()) {
+            FairQuantitativeAnalysisResult.ThreePoint tp = parseThreePoint(f.analystLef());
             if (tp != null) {
                 return new FairLefResult(tp, "analyst-supplied");
             }
         }
 
         // 3. Derive from TEF × Vulnerability (only if both factors are invariant-valid)
-        return deriveLefFromTefVuln(tef, vuln, tefValid, vulnValid, limitations);
+        return deriveLefFromTefVuln(f.tef(), f.vuln(), flags.tefValid(), flags.vulnValid(), limitations);
     }
 
     private static FairLefResult tryPersistedLef(Map<String, Object> persistedOutputs) {
@@ -387,25 +395,18 @@ public class FairQuantitativeAnalysisService {
 
     /** Derives Loss Magnitude from PLM plus optional SLEF×SLM secondary loss. */
     private static FairQuantitativeAnalysisResult.ThreePoint deriveLossMagnitude(
-            Map<String, Object> plm,
-            Map<String, Object> slef,
-            Map<String, Object> slm,
-            boolean plmValid,
-            boolean slefValid,
-            boolean slmValid,
-            boolean currenciesMatch,
-            List<String> limitations) {
-        if (plm == null) {
+            ParsedFactors f, ValidationFlags flags, List<String> limitations) {
+        if (f.plm() == null) {
             limitations.add("not-derivable: primary_loss_magnitude missing");
             return null;
         }
-        if (!plmValid) {
+        if (!flags.plmValid()) {
             // Invariant violation already recorded above; suppress LM
             return null;
         }
-        Double pLow = asDouble(plm.get(KEY_LOW));
-        Double pLikely = asDouble(plm.get(KEY_LIKELY));
-        Double pHigh = asDouble(plm.get(KEY_HIGH));
+        Double pLow = asDouble(f.plm().get(KEY_LOW));
+        Double pLikely = asDouble(f.plm().get(KEY_LIKELY));
+        Double pHigh = asDouble(f.plm().get(KEY_HIGH));
         if (pLow == null || pLikely == null || pHigh == null) {
             return null;
         }
@@ -413,13 +414,13 @@ public class FairQuantitativeAnalysisService {
         double lmLikely = pLikely;
         double lmHigh = pHigh;
         // Add secondary loss only when both SLEF and SLM are valid AND currencies match
-        if (slef != null && slm != null && slefValid && slmValid && currenciesMatch) {
-            Double seLow = asDouble(slef.get(KEY_LOW));
-            Double seLikely = asDouble(slef.get(KEY_LIKELY));
-            Double seHigh = asDouble(slef.get(KEY_HIGH));
-            Double smLow = asDouble(slm.get(KEY_LOW));
-            Double smLikely = asDouble(slm.get(KEY_LIKELY));
-            Double smHigh = asDouble(slm.get(KEY_HIGH));
+        if (f.slef() != null && f.slm() != null && flags.slefValid() && flags.slmValid() && flags.currenciesMatch()) {
+            Double seLow = asDouble(f.slef().get(KEY_LOW));
+            Double seLikely = asDouble(f.slef().get(KEY_LIKELY));
+            Double seHigh = asDouble(f.slef().get(KEY_HIGH));
+            Double smLow = asDouble(f.slm().get(KEY_LOW));
+            Double smLikely = asDouble(f.slm().get(KEY_LIKELY));
+            Double smHigh = asDouble(f.slm().get(KEY_HIGH));
             if (seLow != null
                     && seLikely != null
                     && seHigh != null
