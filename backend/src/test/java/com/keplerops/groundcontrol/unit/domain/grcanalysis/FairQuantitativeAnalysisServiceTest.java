@@ -16,7 +16,9 @@ import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskAssessmentResu
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -35,11 +38,16 @@ import org.mockito.quality.Strictness;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class FairQuantitativeAnalysisServiceTest {
 
+    private static final Instant FIXED_NOW = Instant.parse("2026-01-01T00:00:00Z");
+
     @Mock
     private RiskAssessmentResultRepository riskAssessmentResultRepository;
 
     @Mock
     private ProjectRepository projectRepository;
+
+    @Spy
+    private Clock clock = Clock.fixed(FIXED_NOW, ZoneOffset.UTC);
 
     @InjectMocks
     private FairQuantitativeAnalysisService service;
@@ -672,11 +680,9 @@ class FairQuantitativeAnalysisServiceTest {
         when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
                 .thenReturn(List.of());
 
-        Instant before = Instant.now().minusSeconds(2);
         FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
-        Instant after = Instant.now().plusSeconds(2);
 
-        assertThat(result.asOf()).isBetween(before, after);
+        assertThat(result.asOf()).isEqualTo(FIXED_NOW);
     }
 
     @Test
