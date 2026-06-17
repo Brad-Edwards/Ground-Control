@@ -81,4 +81,15 @@ public class GrcAnalysisController {
         return NistAssessmentResponse.from(
                 grcAnalysisService.nistAssessment(projectId, asOf, riskAssessmentResultId, riskScenarioId));
     }
+
+    @GetMapping("/fair-quantitative")
+    public FairQuantitativeAnalysisResponse fairQuantitative(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false) UUID riskAssessmentResultId,
+            @RequestParam(required = false) UUID riskScenarioId) {
+        UUID projectId = projectService.resolveProjectId(project);
+        return FairQuantitativeAnalysisResponse.from(
+                grcAnalysisService.fairQuantitative(projectId, asOf, riskAssessmentResultId, riskScenarioId));
+    }
 }

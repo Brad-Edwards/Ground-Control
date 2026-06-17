@@ -9,13 +9,15 @@ SONAR_PROJECT = REPO_ROOT / "sonar-project.properties"
 
 
 class SonarConfigTest(unittest.TestCase):
-    def test_gradle_sonar_targets_active_brad_edwards_project(self) -> None:
+    def test_gradle_sonar_targets_active_autarchy_ai_project(self) -> None:
         gradle_config = BACKEND_GRADLE.read_text(encoding="utf-8")
 
-        self.assertIn('property("sonar.projectKey", "Brad-Edwards_Ground-Control")', gradle_config)
-        self.assertIn('property("sonar.organization", "brad-edwards")', gradle_config)
+        self.assertIn('property("sonar.projectKey", "autarchy-ai_Ground-Control")', gradle_config)
+        self.assertIn('property("sonar.organization", "autarchy-ai")', gradle_config)
         self.assertNotIn("KeplerOps_Ground-Control", gradle_config)
         self.assertNotIn('property("sonar.organization", "keplerops")', gradle_config)
+        self.assertNotIn("Brad-Edwards_Ground-Control", gradle_config)
+        self.assertNotIn('property("sonar.organization", "brad-edwards")', gradle_config)
 
     def test_gradle_sonar_scope_is_explicit(self) -> None:
         gradle_config = BACKEND_GRADLE.read_text(encoding="utf-8")
@@ -28,8 +30,10 @@ class SonarConfigTest(unittest.TestCase):
     def test_repo_sonar_properties_match_gradle_project_identity(self) -> None:
         properties = SONAR_PROJECT.read_text(encoding="utf-8")
 
-        self.assertIn("sonar.projectKey=Brad-Edwards_Ground-Control", properties)
-        self.assertIn("sonar.organization=brad-edwards", properties)
+        self.assertIn("sonar.projectKey=autarchy-ai_Ground-Control", properties)
+        self.assertIn("sonar.organization=autarchy-ai", properties)
+        self.assertNotIn("Brad-Edwards_Ground-Control", properties)
+        self.assertNotIn("sonar.organization=brad-edwards", properties)
 
 
 if __name__ == "__main__":

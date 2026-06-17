@@ -371,6 +371,10 @@ next write tool is one inventory row** in `openapi-contract.test.js` (plus an
 exported field array if the adapter lacks one), never a new checker. Anchored by
 requirement GC-O013.
 
+### GRC Read Analysis: `gc_analyze` kinds
+
+`gc_analyze` is the MCP tool for compute-heavy analysis operations. GRC read-analysis kinds route to `GrcAnalysisController` endpoints and return methodology-attributed envelopes: `nist_assessment` (GC-T014) calls `GET /api/v1/analysis/grc/nist-sp-800-30` and returns a NIST SP 800-30 Rev. 1 risk-assessment view; `fair_quantitative` (GC-T011) calls `GET /api/v1/analysis/grc/fair-quantitative` and returns a FAIR v3.0 quantitative risk-analysis view with derived LEF, LM, and ALE values. Both kinds accept `project`, `as_of`, `risk_assessment_result_id`, and `risk_scenario_id` parameters. Full endpoint contracts are in `docs/API.md`.
+
 ## /integrate: Approved PR Integration Manager
 
 The `/integrate` lane is the workflow path for preparing maintainer-approved pull requests against the latest base branch of a target repository. It is a lane for maintainers and release operators who need to rebase a queue of already-approved PRs to a clean state. By default the lane operates in **prepare-only** mode: it rebases, gates, verifies, and pushes, but it does not merge. Passing `--mode merge` enables the merge carve-out from the ADR-029 amendment (2026-05-26): the lane also executes `gh pr merge` for each PR it marks ready, per the configured `merge_strategy`. The `enqueue` mode remains reserved and refuses at runtime.

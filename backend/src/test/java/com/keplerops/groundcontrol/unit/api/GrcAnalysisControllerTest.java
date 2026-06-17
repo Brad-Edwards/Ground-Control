@@ -15,6 +15,7 @@ import com.keplerops.groundcontrol.api.grcanalysis.GrcAnalysisController;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionMode;
@@ -337,6 +338,129 @@ class GrcAnalysisControllerTest {
                             "Risk assessment result is not bound to a NIST_SP800_30_R1 methodology profile"));
 
             mockMvc.perform(get("/api/v1/analysis/grc/nist-sp-800-30")
+                            .param("project", "ground-control")
+                            .param("riskAssessmentResultId", UUID.randomUUID().toString()))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+    }
+
+    @Nested
+    class FairQuantitativeAnalysis {
+
+        private FairQuantitativeAnalysisResult.FairAssessmentItem sampleItem() {
+            var inputs = new FairQuantitativeAnalysisResult.Inputs(
+                    java.util.Map.of("low", 1.0, "likely", 2.0, "high", 4.0),
+                    null,
+                    null,
+                    java.util.Map.of("low", 0.1, "likely", 0.2, "high", 0.4),
+                    null,
+                    null,
+                    null,
+                    java.util.Map.of("low", 1000.0, "likely", 5000.0, "high", 20000.0, "currency", "USD"),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
+            var outputs = new FairQuantitativeAnalysisResult.Outputs(
+                    new FairQuantitativeAnalysisResult.ThreePoint(0.1, 0.4, 1.6),
+                    new FairQuantitativeAnalysisResult.ThreePoint(1000.0, 5000.0, 20000.0),
+                    new FairQuantitativeAnalysisResult.ThreePoint(100.0, 2000.0, 32000.0),
+                    "USD",
+                    null,
+                    "HIGH",
+                    "derived: LEF = TEF × Vulnerability");
+            return new FairQuantitativeAnalysisResult.FairAssessmentItem(
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    "FAIR_V3_0",
+                    "FAIR",
+                    "3.0",
+                    Instant.parse("2026-05-29T00:00:00Z"),
+                    "12 months",
+                    "analyst@example",
+                    "DRAFT",
+                    inputs,
+                    outputs,
+                    List.of(),
+                    List.of("ALE percentiles absent (Monte-Carlo not recomputed)"));
+        }
+
+        private FairQuantitativeAnalysisResult sampleResult(
+                List<FairQuantitativeAnalysisResult.FairAssessmentItem> items) {
+            return new FairQuantitativeAnalysisResult(
+                    "fair_quantitative",
+                    "ground-control",
+                    Instant.parse("2026-05-29T00:00:00Z"),
+                    "fair-v3.0-three-point-v1",
+                    "continuous",
+                    "monetary",
+                    "USD",
+                    items,
+                    new FairQuantitativeAnalysisResult.Counts(
+                            items.size(), java.util.Map.of("HIGH", items.size()), items.size()),
+                    List.of());
+        }
+
+        @Test
+        void happyPath_returns200WithMethodologyAttribution() throws Exception {
+            when(grcAnalysisService.fairQuantitative(eq(PROJECT_ID), any(), any(), any()))
+                    .thenReturn(sampleResult(List.of(sampleItem())));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-quantitative").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("fair_quantitative")))
+                    .andExpect(jsonPath("$.project", is("ground-control")))
+                    .andExpect(jsonPath("$.derivationMethod", is("fair-v3.0-three-point-v1")))
+                    .andExpect(jsonPath("$.scale", is("continuous")))
+                    .andExpect(jsonPath("$.units", is("monetary")))
+                    .andExpect(jsonPath("$.currency", is("USD")))
+                    .andExpect(jsonPath("$.assessments", hasSize(1)))
+                    .andExpect(jsonPath("$.assessments[0].profileKey", is("FAIR_V3_0")))
+                    .andExpect(jsonPath("$.assessments[0].family", is("FAIR")))
+                    .andExpect(jsonPath("$.assessments[0].outputs.lossEventFrequency.low", is(0.1)))
+                    .andExpect(jsonPath("$.assessments[0].outputs.lossMagnitude.likely", is(5000.0)))
+                    .andExpect(jsonPath("$.assessments[0].outputs.annualizedLossExpectancy.high", is(32000.0)))
+                    .andExpect(jsonPath("$.assessments[0].outputs.riskLevel", is("HIGH")))
+                    .andExpect(jsonPath("$.counts.total", is(1)))
+                    .andExpect(jsonPath("$.limitations").isArray());
+        }
+
+        @Test
+        void emptyResult_returns200WithEmptyArray() throws Exception {
+            when(grcAnalysisService.fairQuantitative(eq(PROJECT_ID), any(), any(), any()))
+                    .thenReturn(sampleResult(List.of()));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-quantitative").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.assessments", hasSize(0)))
+                    .andExpect(jsonPath("$.counts.total", is(0)));
+        }
+
+        @Test
+        void projectNotFound_returns404() throws Exception {
+            when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-quantitative").param("project", "missing"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void invalidUuid_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-quantitative")
+                            .param("project", "ground-control")
+                            .param("riskAssessmentResultId", "not-a-uuid"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void nonFairProfile_throwsValidationError_returns422() throws Exception {
+            when(grcAnalysisService.fairQuantitative(eq(PROJECT_ID), any(), any(), any()))
+                    .thenThrow(new DomainValidationException(
+                            "Risk assessment result is not bound to a FAIR methodology profile"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-quantitative")
                             .param("project", "ground-control")
                             .param("riskAssessmentResultId", UUID.randomUUID().toString()))
                     .andExpect(status().isUnprocessableEntity());
