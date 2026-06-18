@@ -67,7 +67,7 @@ routing:
       model: claude-sonnet-4-6
     planning:
       tier: high
-      model: claude-opus-4-7
+      model: claude-opus-4-8
       agent: parent
       fallback: error
     implementation:
@@ -84,7 +84,7 @@ routing:
       model: claude-haiku-4-5
     review_cycle_1_consume:
       tier: high
-      model: claude-opus-4-7
+      model: claude-opus-4-8
       agent: parent
       fallback: error
     review_fix_application:

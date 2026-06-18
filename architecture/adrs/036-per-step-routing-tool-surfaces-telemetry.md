@@ -64,7 +64,7 @@ The `/implement` SKILL declares a stable **workflow step id** plus a
 |------|---------------------|---------------------|
 | `low` | Mechanical action, polling, gh wrapping, file reads | `claude-haiku-4-5` |
 | `medium` | Bounded reading + applying a designed decision; structured drafting | `claude-sonnet-4-6` |
-| `high` | Architectural reasoning, novel-fork interpretation, first-cycle review consume | `claude-opus-4-7` (the parent) |
+| `high` | Architectural reasoning, novel-fork interpretation, first-cycle review consume | `claude-opus-4-8` (the parent) |
 
 Drivers map tier to a concrete model. Claude Code drivers spawn an `Agent`
 subagent with the corresponding model for routed steps. Codex drivers have no
