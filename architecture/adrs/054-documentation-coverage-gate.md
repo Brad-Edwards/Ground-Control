@@ -14,6 +14,8 @@ accepted
 
 > **Sync note for issue #1106 (2026-06-15):** The MCP–backend write-contract drift gate exported `TO_CAMEL` / `OPAQUE_VALUE_KEYS` from `mcp/ground-control/lib.js` and corrected the drifted `GOVERNANCE_FIELDS` allowlists (consumed by the new `mcp/ground-control/openapi-contract.test.js`), and fixed the `gc_control` / `gc_asset` / `gc_risk_governance` adapter field allowlists and Zod shapes to match the backend DTOs. No new public `gc_*` tool is registered; the `classifyChangedSurface` surface vocabulary, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged. The new gate's own documentation lives in `docs/DEVELOPMENT_WORKFLOW.md`, `mcp/ground-control/README.md`, and the ADR-034 amendment.
 
+> **Sync note for issue #1180 (2026-06-18):** Added optional `short_code` field to `.ground-control.yaml` config parsing (`parseGroundControlYaml` in `mcp/ground-control/lib.js`): validated as uppercase alphanumeric 1–8 characters, absent defaults to null, surfaced via `getRepoGroundControlContext`. The implement-workflow skills (`step-01-issue-branch-resolution.md`, `step-20-close-issue-on-merge.md`) were updated to rename the tmux session when `$TMUX` is set and `cfg.short_code` is non-null. No new public `gc_*` tool is registered; the `classifyChangedSurface` surface vocabulary and `outcome_required` mapping are unchanged.
+
 ## Context
 
 Changes that modify workflow behavior, MCP tool surfaces, config parsing,

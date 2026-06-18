@@ -47,6 +47,7 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "",
     "# Optional fields:",
     "# github_repo: owner/repo",
+    "# short_code: GC  # Optional: short project code for tmux session renaming (1-8 uppercase alphanumeric)",
     "# workflow:",
     "#   test_command: <how to run tests>",
     "#   completion_command: <how to run the full CI gate>",
@@ -2737,6 +2738,7 @@ export function parseGroundControlYaml(yamlText) {
     "routing",
     "telemetry",
     "architecture",
+    "short_code",
   ];
   for (const key of Object.keys(parsed)) {
     if (!allowedTop.includes(key)) {
@@ -2766,6 +2768,20 @@ export function parseGroundControlYaml(yamlText) {
       errors.push("github_repo must be a non-empty string when set");
     } else {
       githubRepo = parsed.github_repo;
+    }
+  }
+
+  let shortCode = null;
+  if (parsed.short_code != null) {
+    if (
+      typeof parsed.short_code !== "string" ||
+      !/^[A-Z][A-Z0-9]{0,7}$/.test(parsed.short_code)
+    ) {
+      errors.push(
+        'short_code must match ^[A-Z][A-Z0-9]{0,7}$ (1-8 uppercase alphanumeric characters, e.g. "GC"), if provided',
+      );
+    } else {
+      shortCode = parsed.short_code;
     }
   }
 
@@ -2809,6 +2825,7 @@ export function parseGroundControlYaml(yamlText) {
     value: {
       project,
       github_repo: githubRepo,
+      short_code: shortCode,
       workflow: workflowResult.value,
       sonarcloud: sonarResult.value,
       rules: {
@@ -2983,6 +3000,7 @@ export async function getRepoGroundControlContext(repoPath) {
     status: "ok",
     project: parseResult.value.project,
     github_repo: parseResult.value.github_repo,
+    short_code: parseResult.value.short_code,
     workflow: parseResult.value.workflow,
     sonarcloud: parseResult.value.sonarcloud,
     rules: {

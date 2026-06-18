@@ -602,6 +602,7 @@ describe("parseGroundControlYaml", () => {
     assert.equal(result.ok, true);
     assert.equal(result.value.project, "aces-sdl");
     assert.equal(result.value.github_repo, null);
+    assert.equal(result.value.short_code, null);
     assert.deepEqual(result.value.workflow, {
       test_command: null,
       completion_command: null,
@@ -1265,6 +1266,115 @@ describe("parseGroundControlYaml", () => {
       "",
     ], "boundary_contract.description must be a non-empty string");
   });
+
+  describe("short_code", () => {
+    it("parses short_code: GC", () => {
+      const result = parseYamlLines([
+        "schema_version: 1",
+        "project: x",
+        "short_code: GC",
+        "",
+      ]);
+      assert.equal(result.ok, true);
+      assert.equal(result.value.short_code, "GC");
+    });
+
+    it("parses short_code: GC1", () => {
+      const result = parseYamlLines([
+        "schema_version: 1",
+        "project: x",
+        "short_code: GC1",
+        "",
+      ]);
+      assert.equal(result.ok, true);
+      assert.equal(result.value.short_code, "GC1");
+    });
+
+    it("parses short_code: ABCD1234 (8 chars)", () => {
+      const result = parseYamlLines([
+        "schema_version: 1",
+        "project: x",
+        "short_code: ABCD1234",
+        "",
+      ]);
+      assert.equal(result.ok, true);
+      assert.equal(result.value.short_code, "ABCD1234");
+    });
+
+    it("parses short_code: A (single uppercase letter)", () => {
+      const result = parseYamlLines([
+        "schema_version: 1",
+        "project: x",
+        "short_code: A",
+        "",
+      ]);
+      assert.equal(result.ok, true);
+      assert.equal(result.value.short_code, "A");
+    });
+
+    it("returns short_code: null when short_code is absent", () => {
+      const result = parseYamlLines([
+        "schema_version: 1",
+        "project: x",
+        "",
+      ]);
+      assert.equal(result.ok, true);
+      assert.equal(result.value.short_code, null);
+    });
+
+    it("rejects short_code: empty string", () => {
+      expectYamlError([
+        "schema_version: 1",
+        "project: x",
+        'short_code: ""',
+        "",
+      ], "short_code");
+    });
+
+    it("rejects short_code: gc (lowercase)", () => {
+      expectYamlError([
+        "schema_version: 1",
+        "project: x",
+        "short_code: gc",
+        "",
+      ], "short_code");
+    });
+
+    it("rejects short_code with embedded space", () => {
+      expectYamlError([
+        "schema_version: 1",
+        "project: x",
+        'short_code: "GC 1"',
+        "",
+      ], "short_code");
+    });
+
+    it("rejects short_code with special character", () => {
+      expectYamlError([
+        "schema_version: 1",
+        "project: x",
+        'short_code: "GC!"',
+        "",
+      ], "short_code");
+    });
+
+    it("rejects short_code: ABCDE1234 (9 chars — too long)", () => {
+      expectYamlError([
+        "schema_version: 1",
+        "project: x",
+        "short_code: ABCDE1234",
+        "",
+      ], "short_code");
+    });
+    it("rejects short_code: 1GC (starts with digit)", () => {
+      expectYamlError([
+        "schema_version: 1",
+        "project: x",
+        "short_code: 1GC",
+        "",
+      ], "short_code");
+    });
+  });
 });
 
 describe("getRepoGroundControlContext", () => {
@@ -1794,6 +1904,39 @@ describe("getRepoGroundControlContext", () => {
       assert.equal(result.status, "ok");
       assert.equal(result.knowledge.dir, "wiki");
       assert.equal(result.knowledge.schema, "wiki/SCHEMA.md");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces short_code when present in .ground-control.yaml", async () => {
+    const dir = makeTempRepo();
+    try {
+      writeYamlConfig(dir, [
+        "schema_version: 1",
+        "project: test-project",
+        "short_code: GC",
+        "",
+      ]);
+      const result = await getRepoGroundControlContext(dir);
+      assert.equal(result.status, "ok");
+      assert.equal(result.short_code, "GC");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns short_code: null when absent from .ground-control.yaml", async () => {
+    const dir = makeTempRepo();
+    try {
+      writeYamlConfig(dir, [
+        "schema_version: 1",
+        "project: test-project",
+        "",
+      ]);
+      const result = await getRepoGroundControlContext(dir);
+      assert.equal(result.status, "ok");
+      assert.equal(result.short_code, null);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

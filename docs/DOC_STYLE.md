@@ -4,6 +4,8 @@
 
 > **Sync note for issue #1106 (2026-06-15):** The new MCP write-contract gate docs (`docs/DEVELOPMENT_WORKFLOW.md`, `mcp/ground-control/README.md`, and the ADR-034 amendment) were reviewed against these rules. No style rule changed.
 
+> **Sync note for issue #1180 (2026-06-18):** The `short_code` config-parser addition and tmux session-rename skill updates were reviewed against these rules. No style rule changed.
+
 ## Rules
 
 Docs describe the system as it ships on the current commit. Write in present
