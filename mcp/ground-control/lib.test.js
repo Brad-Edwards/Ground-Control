@@ -6718,6 +6718,25 @@ describe("buildTelemetryRecord", () => {
     assert.match(r.ts, /^\d{4}-\d{2}-\d{2}T/);
   });
 
+  it("records the config-derived expected_model for each tier (issue #1181)", () => {
+    assert.equal(buildTelemetryRecord(baseInput({ tier: "low" })).expected_model, CLAUDE_MODEL_BY_TIER.low);
+    assert.equal(buildTelemetryRecord(baseInput({ tier: "medium" })).expected_model, CLAUDE_MODEL_BY_TIER.medium);
+    assert.equal(buildTelemetryRecord(baseInput({ tier: "high" })).expected_model, CLAUDE_MODEL_BY_TIER.high);
+  });
+
+  it("flags model_matches_expected true when the reported model is the tier's canonical model", () => {
+    const r = buildTelemetryRecord(baseInput({ tier: "medium", model: CLAUDE_MODEL_BY_TIER.medium }));
+    assert.equal(r.model_matches_expected, true);
+  });
+
+  it("flags model_matches_expected false when the reported model diverges from the tier (routing-drift signal)", () => {
+    // A medium step reporting an opus model — the exact divergence seen in the
+    // real .gc/telemetry data that motivated #1181.
+    const r = buildTelemetryRecord(baseInput({ tier: "medium", model: CLAUDE_MODEL_BY_TIER.high }));
+    assert.equal(r.expected_model, CLAUDE_MODEL_BY_TIER.medium);
+    assert.equal(r.model_matches_expected, false);
+  });
+
   it("accepts optional token counts", () => {
     const r = buildTelemetryRecord(baseInput({ inputTokens: 8421, outputTokens: 612 }));
     assert.equal(r.input_tokens, 8421);

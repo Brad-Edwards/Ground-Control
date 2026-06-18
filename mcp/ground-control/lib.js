@@ -15142,7 +15142,14 @@ export function _resetReviewJobsForTest() {
 // to the agent. Path is `.gc/telemetry/<issue>-<sanitized-branch>.jsonl`,
 // repo-relative, validated via `resolveRepoRelativePath` + `assertRealpathInRepo`.
 
-export const TELEMETRY_SCHEMA_VERSION = "gc.implement.telemetry/v1";
+// v2 (issue #1181): records now carry `expected_model` (the canonical model
+// for the step's tier, derived server-side from CLAUDE_MODEL_BY_TIER) and a
+// `model_matches_expected` consistency flag. The caller-supplied `model` is
+// self-reported by the orchestrator and was demonstrably unreliable (tier/model
+// mismatches, intra-run contradictions); the flag surfaces that divergence in
+// the data instead of trusting the reported value. This is recorded, never
+// gating — telemetry stays operational measurement only (ADR-036).
+export const TELEMETRY_SCHEMA_VERSION = "gc.implement.telemetry/v2";
 export const TELEMETRY_TIERS = Object.freeze(["low", "medium", "high"]);
 export const TELEMETRY_OUTCOMES = Object.freeze(["ok", "error", "skipped"]);
 export const ROUTING_TIERS = TELEMETRY_TIERS;
@@ -15222,6 +15229,14 @@ export function buildTelemetryRecord(input) {
     step,
     tier,
     model,
+    // Config-derived ground truth for the step's tier (issue #1181). `tier` is
+    // validated against TELEMETRY_TIERS above, so this lookup is always defined.
+    // `model_matches_expected` is the tier/model consistency assertion: false
+    // means the reported model diverged from the tier's canonical model — the
+    // signal that routing did not land where the tier intended (or the
+    // orchestrator mis-reported). Never gates; analysis-only.
+    expected_model: CLAUDE_MODEL_BY_TIER[tier],
+    model_matches_expected: model === CLAUDE_MODEL_BY_TIER[tier],
     wall_time_ms: wallTimeMs,
     input_tokens: inputTokens,
     output_tokens: outputTokens,

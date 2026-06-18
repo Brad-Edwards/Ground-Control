@@ -220,3 +220,5 @@ the changelog fragment; no new DOC_STYLE.md style rule is established.
 Correcting a `GOVERNANCE_FIELDS` create/update allowlist in `mcp/ground-control/lib.js` to match the backend DTO (issue #1173) is a config-parser fix recorded in an ADR-054 amendment, not a new doc page.
 
 Bumping the `CLAUDE_MODEL_BY_TIER.high` routing-default model id in `mcp/ground-control/lib.js` from `claude-opus-4-7` to `claude-opus-4-8` (issue #1181) is a constant change recorded in an ADR-054 amendment, not a new doc page or style rule.
+
+Adding `expected_model` and `model_matches_expected` to the `/implement` step-telemetry record in `mcp/ground-control/lib.js` (issue #1181, schema `gc.implement.telemetry/v2`) is a telemetry-record field addition documented in ADR-036 and recorded in an ADR-054 amendment, not a new doc page or style rule.
