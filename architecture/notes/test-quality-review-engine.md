@@ -179,7 +179,7 @@ Default model: `claude-sonnet-4-6`. Chosen by the user in #884 v2 as
 the right cost/quality balance for false-assurance-test detection.
 
 The MCP tool accepts an optional `model` parameter; pass a different
-model alias (`claude-haiku-4-5`, `claude-opus-4-7`, etc.) or full ID
+model alias (`claude-haiku-4-5`, `claude-opus-4-8`, etc.) or full ID
 to override on a per-call basis. The /implement SKILL does not set
 `model`, so it uses the default. Future per-repo configuration could
 live in `.ground-control.yaml` under a new `review.test_quality.model`
