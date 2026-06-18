@@ -285,3 +285,12 @@ This is a one-line routing-default model-id change, not a documentation-coverage
 gate surface: the `run_documentation_coverage_check` classifier, the Vale rule
 set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new
 `docs/DOC_STYLE.md` style rule is established.
+
+**2026-06-18 (issue #1181 telemetry consistency fields).** A second
+`mcp/ground-control/lib.js` change under #1181 adds `expected_model` and
+`model_matches_expected` to the `/implement` step-telemetry record (schema
+bumped to `gc.implement.telemetry/v2`), documented in ADR-036's telemetry
+contract. This is an internal telemetry-record field addition, not a
+documentation-coverage gate surface: the `run_documentation_coverage_check`
+classifier, the Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
+unchanged, and no new `docs/DOC_STYLE.md` style rule is established.
