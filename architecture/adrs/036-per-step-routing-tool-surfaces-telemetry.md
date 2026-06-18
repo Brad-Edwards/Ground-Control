@@ -158,13 +158,15 @@ Each routed step writes one JSONL line via `gc_log_step_telemetry` to
 
 ```json
 {
-  "schema": "gc.implement.telemetry/v1",
+  "schema": "gc.implement.telemetry/v2",
   "ts": "2026-05-11T07:00:00Z",
   "issue": 868,
   "branch": "868-route-tools-telem",
   "step": "4.5",
   "tier": "medium",
-  "model": "sonnet",
+  "model": "claude-sonnet-4-6",
+  "expected_model": "claude-sonnet-4-6",
+  "model_matches_expected": true,
   "wall_time_ms": 12480,
   "input_tokens": 8421,
   "output_tokens": 612,
@@ -172,6 +174,19 @@ Each routed step writes one JSONL line via `gc_log_step_telemetry` to
 }
 ```
 
+- `expected_model` and `model_matches_expected` (schema v2, issue #1181) are
+  derived server-side from the step's `tier` via `CLAUDE_MODEL_BY_TIER`. The
+  `model` field itself is self-reported by the orchestrator and was found
+  unreliable in the recorded data (tier/model mismatches, intra-run
+  contradictions, model ids that postdated the config). `model_matches_expected`
+  is a recorded tier/model **consistency assertion**: `false` flags a record
+  whose reported model diverged from the tier's canonical model - routing that
+  did not land where the tier intended, or a mis-report. It is recorded, never
+  gating; telemetry stays operational measurement only. Capturing the *actual*
+  dispatched-subagent model from the harness (rather than the reported value)
+  remains future work tracked in #1181. Note that high-tier `agent: parent`
+  steps run on the parent session model, so the configured `high:` id is
+  advisory for those steps.
 - `wall_time_ms` is mandatory; the agent measures around its delegation calls.
 - `input_tokens` and `output_tokens` are optional; Claude Code's `Agent` tool
   does not surface per-call counts today, so the writer accepts `null`. When
