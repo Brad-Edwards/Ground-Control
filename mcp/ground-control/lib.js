@@ -15153,7 +15153,7 @@ export const ROUTING_STAGE_NAME_RE = /^[a-z][a-z0-9_-]*$/;
 export const CLAUDE_MODEL_BY_TIER = Object.freeze({
   low: "claude-haiku-4-5",
   medium: "claude-sonnet-4-6",
-  high: "claude-opus-4-7",
+  high: "claude-opus-4-8",
 });
 export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
   issue_branch_resolution: { tier: "low" },

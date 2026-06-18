@@ -278,3 +278,12 @@ This follows the `gc_analyze`-kind extension pattern already established for
 MCP-shape-extensions`. The documentation-coverage classifier, Vale rule set,
 `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new `docs/DOC_STYLE.md`
 style rule is established.
+
+**2026-06-18 (issue #1181 model-tier refresh).** The `mcp/ground-control/lib.js`
+change in this commit bumps the `CLAUDE_MODEL_BY_TIER.high` routing-default
+constant from `claude-opus-4-7` to `claude-opus-4-8` (with the matching
+high-tier `.ground-control.yaml` stages `planning` and `review_cycle_1_consume`).
+This is a one-line routing-default model-id change, not a documentation-coverage
+gate surface: the `run_documentation_coverage_check` classifier, the Vale rule
+set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new
+`docs/DOC_STYLE.md` style rule is established.
