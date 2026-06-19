@@ -47,6 +47,7 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "",
     "# Optional fields:",
     "# github_repo: owner/repo",
+    "# short_code: GC  # Optional: short project code for tmux session renaming (1-8 uppercase alphanumeric)",
     "# workflow:",
     "#   test_command: <how to run tests>",
     "#   completion_command: <how to run the full CI gate>",
@@ -432,7 +433,7 @@ export function reqArg(args, key, action) {
 // Field name mapping (snake_case MCP <-> camelCase API)
 // ---------------------------------------------------------------------------
 
-const TO_CAMEL = {
+export const TO_CAMEL = {
   requirement_type: "requirementType",
   artifact_type: "artifactType",
   artifact_identifier: "artifactIdentifier",
@@ -775,6 +776,12 @@ const TO_CAMEL = {
   draft_requirements_scanned: "draftRequirementsScanned",
   minimum_confidence: "minimumConfidence",
   strongest_signal: "strongestSignal",
+  // #1106 — methodology profile treatment strategy vocabulary. The camelCase
+  // form is already in OPAQUE_VALUE_KEYS; the snake_case form needs an explicit
+  // entry here so toCamelCase sees it and OPAQUE_VALUE_KEYS guards both forms.
+  treatment_strategy_vocabulary: "treatmentStrategyVocabulary",
+  // #1106 — verification result. evidence is a Map<String,Object> (opaque).
+  // OPAQUE_VALUE_KEYS already has no entry for it — add both forms.
   // GC-U001 / ADR-047 — Audit entity. snake_case MCP args → camelCase backend
   // DTO fields. Missing entries would cause Jackson to silently drop the fields.
   audit_id: "auditId",
@@ -799,7 +806,7 @@ const TO_SNAKE = Object.fromEntries(Object.entries(TO_CAMEL).map(([k, v]) => [v,
 // Example: `metadata: { cloud_account_id: "123" }` must be persisted with the
 // inner key `cloud_account_id`, not `cloudAccountId`. See codex pre-push
 // review on #722.
-const OPAQUE_VALUE_KEYS = new Set([
+export const OPAQUE_VALUE_KEYS = new Set([
   "metadata",
   "schemaBody",
   "schema_body",
@@ -822,6 +829,21 @@ const OPAQUE_VALUE_KEYS = new Set([
   "output_schema",
   "treatmentStrategyVocabulary",
   "treatment_strategy_vocabulary",
+  // #1106 — ControlRequest/UpdateControlRequest: methodologyFactors and
+  // effectiveness are Map<String,Object> bags whose inner keys are
+  // methodology-defined and must not be camel-cased.
+  "methodologyFactors",
+  "methodology_factors",
+  "effectiveness",
+  // #1106 — RiskRegisterRecordRequest.decisionMetadata is Map<String,Object>.
+  "decisionMetadata",
+  "decision_metadata",
+  // NOTE: VerificationResultRequest.evidence is also a Map<String,Object>, but
+  // "evidence" is also used as a structured array field in analysis responses
+  // (toSnakeCase path). OPAQUE_VALUE_KEYS is consulted by both directions, so
+  // adding "evidence" here would block toSnakeCase from recursing into response
+  // evidence arrays. Instead, createVerificationResult/updateVerificationResult
+  // build the camelCase body explicitly (rawBody) to preserve evidence inner keys.
 ]);
 
 function copyShallow(value) {
@@ -965,7 +987,7 @@ export function addAuthorizationHeader(path, headers) {
   }
 }
 
-async function request(method, path, { body, params, formData } = {}) {
+async function request(method, path, { body, rawBody, params, formData } = {}) {
   const url = buildUrl(path, params);
   const options = { method };
 
@@ -973,6 +995,11 @@ async function request(method, path, { body, params, formData } = {}) {
     options.headers = { "X-Actor": "mcp-server" };
     options.body = formData;
     // Let fetch set Content-Type with boundary for multipart
+  } else if (rawBody !== undefined) {
+    // Pre-built camelCase object — skip toCamelCase() (used when the body
+    // contains opaque-map fields whose inner keys must not be transformed).
+    options.headers = { "Content-Type": "application/json", "X-Actor": "mcp-server" };
+    options.body = JSON.stringify(rawBody);
   } else if (body !== undefined) {
     options.headers = { "Content-Type": "application/json", "X-Actor": "mcp-server" };
     options.body = JSON.stringify(toCamelCase(body));
@@ -1228,6 +1255,22 @@ export async function analyzeNistAssessment({
   riskScenarioId,
 } = {}) {
   return request("GET", "/api/v1/analysis/grc/nist-sp-800-30", {
+    params: { project, asOf, riskAssessmentResultId, riskScenarioId },
+  });
+}
+
+// GC-T011 — FAIR v3.0 quantitative risk analysis helper. Returns the
+// methodology-attributed envelope from /api/v1/analysis/grc/fair-quantitative
+// verbatim; FAIR factor map keys (threat_event_frequency, primary_loss_magnitude,
+// etc.) must NOT be camel/snake-rewritten, so the relevant outer keys are guarded
+// by OPAQUE_VALUE_KEYS above.
+export async function analyzeFairQuantitative({
+  project,
+  asOf,
+  riskAssessmentResultId,
+  riskScenarioId,
+} = {}) {
+  return request("GET", "/api/v1/analysis/grc/fair-quantitative", {
     params: { project, asOf, riskAssessmentResultId, riskScenarioId },
   });
 }
@@ -2695,6 +2738,7 @@ export function parseGroundControlYaml(yamlText) {
     "routing",
     "telemetry",
     "architecture",
+    "short_code",
   ];
   for (const key of Object.keys(parsed)) {
     if (!allowedTop.includes(key)) {
@@ -2724,6 +2768,20 @@ export function parseGroundControlYaml(yamlText) {
       errors.push("github_repo must be a non-empty string when set");
     } else {
       githubRepo = parsed.github_repo;
+    }
+  }
+
+  let shortCode = null;
+  if (parsed.short_code != null) {
+    if (
+      typeof parsed.short_code !== "string" ||
+      !/^[A-Z][A-Z0-9]{0,7}$/.test(parsed.short_code)
+    ) {
+      errors.push(
+        'short_code must match ^[A-Z][A-Z0-9]{0,7}$ (1-8 uppercase alphanumeric characters, e.g. "GC"), if provided',
+      );
+    } else {
+      shortCode = parsed.short_code;
     }
   }
 
@@ -2767,6 +2825,7 @@ export function parseGroundControlYaml(yamlText) {
     value: {
       project,
       github_repo: githubRepo,
+      short_code: shortCode,
       workflow: workflowResult.value,
       sonarcloud: sonarResult.value,
       rules: {
@@ -2941,6 +3000,7 @@ export async function getRepoGroundControlContext(repoPath) {
     status: "ok",
     project: parseResult.value.project,
     github_repo: parseResult.value.github_repo,
+    short_code: parseResult.value.short_code,
     workflow: parseResult.value.workflow,
     sonarcloud: parseResult.value.sonarcloud,
     rules: {
@@ -10056,7 +10116,14 @@ export const VERIFICATION_STATUSES = ["PROVEN", "REFUTED", "TIMEOUT", "UNKNOWN",
 export const ASSURANCE_LEVELS = ["L0", "L1", "L2", "L3"];
 
 export async function createVerificationResult(data, project) {
-  return request("POST", "/api/v1/verification-results", { body: data, params: { project } });
+  // evidence is a Map<String,Object> — inner keys are user/tool-defined and
+  // must NOT be camel-cased by toCamelCase(). Build the camelCase body
+  // explicitly and pass it as rawBody to skip the toCamelCase() pass in
+  // request(). All other fields go through the normal toCamelCase path.
+  const { evidence: evidenceMap, ...rest } = data;
+  const rawBody = { ...toCamelCase(rest) };
+  if (evidenceMap !== undefined) rawBody.evidence = evidenceMap;
+  return request("POST", "/api/v1/verification-results", { rawBody, params: { project } });
 }
 
 export async function listVerificationResults({ requirementId, prover, result, project } = {}) {
@@ -10070,8 +10137,13 @@ export async function getVerificationResult(id, project) {
 }
 
 export async function updateVerificationResult(id, data, project) {
+  // Same opaque-map treatment as createVerificationResult: evidence inner keys
+  // must not be camel-cased. Build the camelCase body explicitly.
+  const { evidence: evidenceMap, ...rest } = data;
+  const rawBody = { ...toCamelCase(rest) };
+  if (evidenceMap !== undefined) rawBody.evidence = evidenceMap;
   return request("PUT", `/api/v1/verification-results/${encodeURIComponent(id)}`, {
-    body: data,
+    rawBody,
     params: { project },
   });
 }
@@ -15070,7 +15142,14 @@ export function _resetReviewJobsForTest() {
 // to the agent. Path is `.gc/telemetry/<issue>-<sanitized-branch>.jsonl`,
 // repo-relative, validated via `resolveRepoRelativePath` + `assertRealpathInRepo`.
 
-export const TELEMETRY_SCHEMA_VERSION = "gc.implement.telemetry/v1";
+// v2 (issue #1181): records now carry `expected_model` (the canonical model
+// for the step's tier, derived server-side from CLAUDE_MODEL_BY_TIER) and a
+// `model_matches_expected` consistency flag. The caller-supplied `model` is
+// self-reported by the orchestrator and was demonstrably unreliable (tier/model
+// mismatches, intra-run contradictions); the flag surfaces that divergence in
+// the data instead of trusting the reported value. This is recorded, never
+// gating — telemetry stays operational measurement only (ADR-036).
+export const TELEMETRY_SCHEMA_VERSION = "gc.implement.telemetry/v2";
 export const TELEMETRY_TIERS = Object.freeze(["low", "medium", "high"]);
 export const TELEMETRY_OUTCOMES = Object.freeze(["ok", "error", "skipped"]);
 export const ROUTING_TIERS = TELEMETRY_TIERS;
@@ -15081,7 +15160,7 @@ export const ROUTING_STAGE_NAME_RE = /^[a-z][a-z0-9_-]*$/;
 export const CLAUDE_MODEL_BY_TIER = Object.freeze({
   low: "claude-haiku-4-5",
   medium: "claude-sonnet-4-6",
-  high: "claude-opus-4-7",
+  high: "claude-opus-4-8",
 });
 export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
   issue_branch_resolution: { tier: "low" },
@@ -15150,6 +15229,14 @@ export function buildTelemetryRecord(input) {
     step,
     tier,
     model,
+    // Config-derived ground truth for the step's tier (issue #1181). `tier` is
+    // validated against TELEMETRY_TIERS above, so this lookup is always defined.
+    // `model_matches_expected` is the tier/model consistency assertion: false
+    // means the reported model diverged from the tier's canonical model — the
+    // signal that routing did not land where the tier intended (or the
+    // orchestrator mis-reported). Never gates; analysis-only.
+    expected_model: CLAUDE_MODEL_BY_TIER[tier],
+    model_matches_expected: model === CLAUDE_MODEL_BY_TIER[tier],
     wall_time_ms: wallTimeMs,
     input_tokens: inputTokens,
     output_tokens: outputTokens,
@@ -15343,8 +15430,21 @@ export const GOVERNANCE_STATUS_ENUMS = {
 // the shared TO_CAMEL map in this file. Issues #878/#879/#880.
 export const GOVERNANCE_FIELDS = {
   methodology_profile: {
-    create: ["profile_key", "version", "name", "description", "family", "status", "metadata", "crosswalk_entries"],
-    update: ["version", "name", "description", "family", "status", "metadata", "crosswalk_entries"],
+    // Mirrors MethodologyProfileRequest: profileKey (required), name (required),
+    // version (required), family (required), description, inputSchema, outputSchema,
+    // status, treatmentStrategyVocabulary, crosswalkEntries.
+    // metadata is not a MethodologyProfileRequest field and was removed (#1106).
+    create: [
+      "profile_key", "name", "version", "family", "description",
+      "input_schema", "output_schema", "status",
+      "treatment_strategy_vocabulary", "crosswalk_entries",
+    ],
+    // Mirrors UpdateMethodologyProfileRequest: same minus profileKey (immutable).
+    update: [
+      "name", "version", "family", "description",
+      "input_schema", "output_schema", "status",
+      "treatment_strategy_vocabulary", "crosswalk_entries",
+    ],
   },
   risk_register_record: {
     create: [
@@ -15388,13 +15488,20 @@ export const GOVERNANCE_FIELDS = {
     ],
   },
   verification_result: {
+    // Mirrors VerificationResultRequest: targetId (optional UUID), requirementId
+    // (optional UUID), prover (@NotBlank), property (optional), result (@NotNull
+    // VerificationStatus), assuranceLevel (@NotNull), evidence (Map, opaque),
+    // verifiedAt (@NotNull Instant), expiresAt (optional Instant).
+    // uid/title/description/outcome/status/metadata were not in the DTO (#1106).
     create: [
-      "prover", "result", "assurance_level", "verified_at",
-      "target_id", "requirement_id", "property", "evidence", "expires_at",
+      "target_id", "requirement_id", "prover", "property",
+      "result", "assurance_level", "evidence", "verified_at", "expires_at",
     ],
+    // Mirrors UpdateVerificationResultRequest: identical shape to create (all
+    // optional on update, same fields — no create-only keys to drop).
     update: [
-      "prover", "result", "assurance_level", "verified_at",
-      "target_id", "requirement_id", "property", "evidence", "expires_at",
+      "target_id", "requirement_id", "prover", "property",
+      "result", "assurance_level", "evidence", "verified_at", "expires_at",
     ],
   },
 };

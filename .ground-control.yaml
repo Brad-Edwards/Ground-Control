@@ -7,8 +7,8 @@ workflow:
   lint_command: cd backend && ./gradlew spotlessCheck
   format_command: cd backend && ./gradlew spotlessApply
 sonarcloud:
-  project_key: Brad-Edwards_Ground-Control
-  organization: brad-edwards
+  project_key: autarchy-ai_Ground-Control
+  organization: autarchy-ai
 rules:
   plan_rules: .gc/plan-rules.md
 knowledge:
@@ -67,7 +67,7 @@ routing:
       model: claude-sonnet-4-6
     planning:
       tier: high
-      model: claude-opus-4-7
+      model: claude-opus-4-8
       agent: parent
       fallback: error
     implementation:
@@ -84,7 +84,7 @@ routing:
       model: claude-haiku-4-5
     review_cycle_1_consume:
       tier: high
-      model: claude-opus-4-7
+      model: claude-opus-4-8
       agent: parent
       fallback: error
     review_fix_application:

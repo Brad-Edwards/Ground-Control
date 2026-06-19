@@ -528,6 +528,8 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "132", // V132: create research_intake_audit (ADR-056, #999)
                         "133", // V133: create derivation run/fact/capture-limit tables (GC-GRC-001)
                         "134", // V134: create derivation audit tables (GC-GRC-001)
-                        "135"); // V135: create mcp_tool_event (issue #1104 / ADR-059)
+                        "135", // V135: create mcp_tool_event (issue #1104 / ADR-059)
+                        "136"); // V136: extend FAIR input schema with contact_frequency, probability_of_action,
+        // threat_capability, resistance_strength sub-factors (GC-T011)
     }
 }

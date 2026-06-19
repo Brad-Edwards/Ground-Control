@@ -2,6 +2,10 @@
 
 > **Sync note for issue #1107 (2026-06-14):** The audit-diff API reference (`docs/API.md`) and the `gc_requirement` MCP tool description were reviewed against these rules when the requirement history/timeline `expand` parameter was added. No style rule changed.
 
+> **Sync note for issue #1106 (2026-06-15):** The new MCP write-contract gate docs (`docs/DEVELOPMENT_WORKFLOW.md`, `mcp/ground-control/README.md`, and the ADR-034 amendment) were reviewed against these rules. No style rule changed.
+
+> **Sync note for issue #1180 (2026-06-18):** The `short_code` config-parser addition and tmux session-rename skill updates were reviewed against these rules. No style rule changed.
+
 > **Sync note for issue #1176 (2026-06-15):** Extended `tools/policy/checks.py::ENUM_CONTRACT_INVENTORY` with three GRC enum-contract entries (`VerificationStatus`, `AssuranceLevel`, `MethodologyFamily`). The classifier, Vale rules, `.vale.ini`, and this document's style rules are unchanged.
 
 ## Rules
@@ -125,11 +129,11 @@ amendments to ADR-054, not documentation edits.
 
 New `gc_analyze` kinds backed by a fixed REST endpoint follow the same
 convention: a new kind value in `ANALYZE_KINDS` (for example
-`nist_assessment` added for GC-T014 / #721) plus an adapter helper in
-`lib.js` is documented by the endpoint entry in `docs/API.md` and the
-`gc_analyze` tool description string in `mcp/ground-control/index.js`. No
-separate user-facing prose page per kind, no new sections in this style
-guide.
+`nist_assessment` added for GC-T014 / #721; `fair_quantitative` added for
+GC-T011 / #723) plus an adapter helper in `lib.js` is documented by the
+endpoint entry in `docs/API.md` and the `gc_analyze` tool description string
+in `mcp/ground-control/index.js`. No separate user-facing prose page per
+kind, no new sections in this style guide.
 
 Per-action required-field enumeration in an action-multiplexed tool's description string (issue #1169) is a contract-surface edit to that tool's description, not a new doc page.
 
@@ -216,3 +220,7 @@ is unchanged. The surface addition is recorded in the ADR-054 amendment and
 the changelog fragment; no new DOC_STYLE.md style rule is established.
 
 Correcting a `GOVERNANCE_FIELDS` create/update allowlist in `mcp/ground-control/lib.js` to match the backend DTO (issue #1173) is a config-parser fix recorded in an ADR-054 amendment, not a new doc page.
+
+Bumping the `CLAUDE_MODEL_BY_TIER.high` routing-default model id in `mcp/ground-control/lib.js` from `claude-opus-4-7` to `claude-opus-4-8` (issue #1181) is a constant change recorded in an ADR-054 amendment, not a new doc page or style rule.
+
+Adding `expected_model` and `model_matches_expected` to the `/implement` step-telemetry record in `mcp/ground-control/lib.js` (issue #1181, schema `gc.implement.telemetry/v2`) is a telemetry-record field addition documented in ADR-036 and recorded in an ADR-054 amendment, not a new doc page or style rule.

@@ -12,6 +12,10 @@ accepted
 
 > **Sync note for issue #1107 (2026-06-14):** The `gc_requirement` history/timeline reads gained an `expand` passthrough (MCP `lib.js`/`index.js`) so callers can fetch full, untruncated audit-diff field values; the new audit-diff API surface is documented in `docs/API.md`. The `classifyChangedSurface` surface vocabulary and `outcome_required` mapping are unchanged.
 
+> **Sync note for issue #1106 (2026-06-15):** The MCP–backend write-contract drift gate exported `TO_CAMEL` / `OPAQUE_VALUE_KEYS` from `mcp/ground-control/lib.js` and corrected the drifted `GOVERNANCE_FIELDS` allowlists (consumed by the new `mcp/ground-control/openapi-contract.test.js`), and fixed the `gc_control` / `gc_asset` / `gc_risk_governance` adapter field allowlists and Zod shapes to match the backend DTOs. No new public `gc_*` tool is registered; the `classifyChangedSurface` surface vocabulary, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged. The new gate's own documentation lives in `docs/DEVELOPMENT_WORKFLOW.md`, `mcp/ground-control/README.md`, and the ADR-034 amendment.
+
+> **Sync note for issue #1180 (2026-06-18):** Added optional `short_code` field to `.ground-control.yaml` config parsing (`parseGroundControlYaml` in `mcp/ground-control/lib.js`): validated as uppercase alphanumeric 1–8 characters, absent defaults to null, surfaced via `getRepoGroundControlContext`. The implement-workflow skills (`step-01-issue-branch-resolution.md`, `step-20-close-issue-on-merge.md`) were updated to rename the tmux session when `$TMUX` is set and `cfg.short_code` is non-null. No new public `gc_*` tool is registered; the `classifyChangedSurface` surface vocabulary and `outcome_required` mapping are unchanged.
+
 > **Sync note for issue #1176 (2026-06-15):** Extended `tools/policy/checks.py::ENUM_CONTRACT_INVENTORY` with three new enum-contract entries (`VerificationStatus`, `AssuranceLevel`, `MethodologyFamily`) so ADR-034's enum-mirror gate covers GRC verification enums. Added corresponding TypeScript union types and constant arrays to `frontend/src/types/api.ts`, mirrored the enum values at the MCP layer, and updated MethodologyProfile interface field types from string to MethodologyFamily per ADR-034. The classifier, Vale rules, `.vale.ini`, and `docs/DOC_STYLE.md` style rules are unchanged.
 
 ## Context
@@ -265,3 +269,32 @@ registered), so the doc-coverage classifier surface set, the Vale rule set, the
 `tools/install-vale.sh` installer, and `.vale.ini` are unchanged; the
 `docs/DOC_STYLE.md` MCP-shape-extensions list is extended to record the surface
 addition. No new `docs/DOC_STYLE.md` style rule is established.
+
+**2026-06-16 (issue #723 GC-T011 FAIR v3.0 quantitative risk analysis).** Added
+`analyzeFairQuantitative` adapter helper to `mcp/ground-control/lib.js` and
+registered `fair_quantitative` in the `ANALYZE_KINDS` array and `gc_analyze`
+tool description in `mcp/ground-control/index.js`. The backend surface is
+`GET /api/v1/analysis/grc/fair-quantitative` (documented in `docs/API.md`).
+This follows the `gc_analyze`-kind extension pattern already established for
+`nist_assessment` (GC-T014 / #721) and recorded in `docs/DOC_STYLE.md §
+MCP-shape-extensions`. The documentation-coverage classifier, Vale rule set,
+`tools/install-vale.sh`, and `.vale.ini` are unchanged; no new `docs/DOC_STYLE.md`
+style rule is established.
+
+**2026-06-18 (issue #1181 model-tier refresh).** The `mcp/ground-control/lib.js`
+change in this commit bumps the `CLAUDE_MODEL_BY_TIER.high` routing-default
+constant from `claude-opus-4-7` to `claude-opus-4-8` (with the matching
+high-tier `.ground-control.yaml` stages `planning` and `review_cycle_1_consume`).
+This is a one-line routing-default model-id change, not a documentation-coverage
+gate surface: the `run_documentation_coverage_check` classifier, the Vale rule
+set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new
+`docs/DOC_STYLE.md` style rule is established.
+
+**2026-06-18 (issue #1181 telemetry consistency fields).** A second
+`mcp/ground-control/lib.js` change under #1181 adds `expected_model` and
+`model_matches_expected` to the `/implement` step-telemetry record (schema
+bumped to `gc.implement.telemetry/v2`), documented in ADR-036's telemetry
+contract. This is an internal telemetry-record field addition, not a
+documentation-coverage gate surface: the `run_documentation_coverage_check`
+classifier, the Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
+unchanged, and no new `docs/DOC_STYLE.md` style rule is established.

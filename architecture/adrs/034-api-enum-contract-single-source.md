@@ -153,3 +153,57 @@ contract. The architecture rationale captured during preflight lives in
   `domain/requirements/state/` without adding it to `ENUM_CONTRACT_INVENTORY`,
   leaving it unchecked. Mitigated by documenting the inventory as the extension
   point here and in the preflight note; not mechanically prevented.
+
+## Amendment 2026-06-15: MCP Write-Tool DTO Drift Gate
+
+Issue #1106 extends this contract from selected enum mirrors to MCP write-tool
+request-body mirrors. The backend generated OpenAPI document is the mechanical
+authority for request DTO field names, required fields, and enum values at the
+REST boundary. MCP tool body allowlists and Zod enum values are mirrors of that
+contract, scoped by tool, entity discriminator, and action.
+
+The check must stay inventory-driven, following the `ENUM_CONTRACT_INVENTORY`
+shape instead of one assertion per adapter. Each inventory row names the MCP
+tool/action body-field array, the OpenAPI operation and request schema, the
+snake_case to camelCase normalization, and any narrow exclusions for path
+params, query params, server-populated fields, transition-only fields, or
+MCP control arguments.
+
+The GRC write tools are the first coverage set because issues #874-#881 showed
+that drift there is a class risk: `gc_risk_governance`, `gc_threat_model`,
+`gc_risk_scenario`, `gc_control`, `gc_evidence`, `gc_finding`, `gc_audit`,
+`gc_observation`, and `gc_asset`. The same checker is the seam for adding the
+remaining write surface. Runtime validation ownership does not change: Jackson,
+Bean Validation, service validators, `GraphTargetResolverService`, security,
+audit, and `ErrorResponse` remain authoritative. The gate only detects mirror
+drift before production use.
+
+The architecture preflight for this amendment is
+`architecture/notes/mcp-openapi-contract-preflight.md`.
+
+### Implementation note (#1106)
+
+Decisions 2 and 3 above place the *enum* contract in `bin/policy` because that
+check reads tracked source files only. The write-tool DTO gate cannot live there:
+its authority is the Springdoc OpenAPI **generated from the current backend
+build**, which requires booting the full Spring context (Testcontainers Postgres
++ AGE). The Python-only `policy` CI job runs first and has no Java, Gradle, or
+database, and a committed/stale spec is explicitly disallowed by the preflight.
+The gate is placed where the generated spec exists, preserving the "put the
+gate where CI runs it" principle from decision 3. Concretely:
+
+- `McpOpenApiContractSpecTest` (a `@Tag("integration")` test) boots the app via
+  the existing Testcontainers harness, captures `/api/openapi.json`, and writes
+  `backend/build/contract/openapi.json`. The Gradle task `generateContractOpenApi`
+  runs only that test.
+- `mcp/ground-control/openapi-contract.test.js` (`node:test`) **imports the live
+  MCP field arrays** (`GOVERNANCE_FIELDS`, `CONTROL_FIELDS`, the per-tool
+  `*_BODY_FIELDS`, `LINK_CREATE_BODY_FIELDS`), never parsing JS, and compares
+  them against that spec via the inventory described above.
+- A required CI job `mcp-contract` (and `make mcp-openapi-contract` locally) runs
+  both steps; the `mcp-contract` job gates `docker` alongside `integration`,
+  `verify`, and `sonar`.
+
+Importing the real exported arrays (rather than re-parsing the adapter source)
+keeps the MCP side immune to parser drift, the failure mode the original
+frontend enum test fell into. The gate is anchored by requirement GC-O013.

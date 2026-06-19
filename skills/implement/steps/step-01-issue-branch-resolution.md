@@ -29,6 +29,7 @@ tier: low
    - `cfg.example_paths.*` - repo source/test path examples (Step 4.5)
    - `cfg.requirements.uid_examples` - repo's requirement UID style examples
    - `cfg.cross_cutting_concerns.description` - repo's cross-cutting concern hint (Step 3)
+   - `cfg.short_code` — optional project short code (null when absent); used for tmux session rename
 
 5. **Classify `$ARGUMENTS` as either an issue reference or a requirement UID**:
    - **Issue reference**: a plain integer (`123`), a `#`-prefixed integer (`#123`), or a form like `issue:123`. In all cases, strip to the integer and treat it as the GitHub issue number.
@@ -138,6 +139,14 @@ tier: low
     3. `gh issue comment <issue-number> --body "<pickup comment>"`.
 
     This is operational visibility only: the pickup comment is **not** a phase marker, the plan comment, a review-findings record, or the final report, and it gates nothing. If the label create/apply or the comment post fails, surface the failure before continuing to Step 2 - a silent failure defeats the duplicate-work signal. The label is **not** removed on an error path or a partial pause: a run that escalates to the user before Step 18 leaves the issue flagged, because it *was* picked up and the work is paused, not finished. Only Step 18 (issue closure) clears it.
+
+13. **Best-effort tmux rename (step-01)**: When `$TMUX` is set AND `cfg.short_code` is non-null, rename the current tmux session to `<cfg.short_code>-<issue_number>` (e.g. `GC-1180`):
+
+    ```sh
+    tmux rename-session -t "${TMUX_PANE%.*}" "${cfg.short_code}-${issue_number}" 2>/dev/null || true
+    ```
+
+    Skip silently when either condition is false. Non-fatal cosmetic rename — errors suppressed, no state persisted.
 
 ## Return contract
 

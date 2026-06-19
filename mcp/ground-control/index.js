@@ -62,6 +62,8 @@ import {
   analyzeEvidenceFreshness, analyzeObservationProjection, aggregateVendorRisk,
   // ---- GC-T014 NIST SP 800-30 Rev. 1 assessment ----
   analyzeNistAssessment,
+  // ---- GC-T011 FAIR v3.0 quantitative risk analysis ----
+  analyzeFairQuantitative,
   // ---- history / exports (kept for completeness even though tools route to gc_query) ----
   getRequirementHistory, getRelationHistory, getTraceabilityLinkHistory,
   getRequirementTimeline, getRequirementDiff, getProjectTimeline,
@@ -1628,6 +1630,8 @@ const ANALYZE_KINDS = [
   // GC-T014 — NIST SP 800-30 Rev. 1 risk-assessment view (methodology-attributed
   // envelope from /api/v1/analysis/grc/nist-sp-800-30).
   "nist_assessment",
+  // GC-T011 — FAIR v3.0 quantitative risk analysis (methodology-attributed envelope from /api/v1/analysis/grc/fair-quantitative)
+  "fair_quantitative",
 ];
 
 server.tool(
@@ -1639,6 +1643,7 @@ server.tool(
     `control_state→{project?, as_of?, asset_id?, control_id?}; ` +
     `vendor_risk_aggregation→{project?, as_of?, freshness_window_days?, vendor_asset_id?}; ` +
     `nist_assessment→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
+    `fair_quantitative→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
     `Others take {project?}.`,
   {
     kind: z.enum(ANALYZE_KINDS),
@@ -1710,6 +1715,13 @@ server.tool(
           }), null, 2));
         case "nist_assessment":
           return ok(JSON.stringify(await analyzeNistAssessment({
+            project: args.project,
+            asOf: args.as_of,
+            riskAssessmentResultId: args.risk_assessment_result_id,
+            riskScenarioId: args.risk_scenario_id,
+          }), null, 2));
+        case "fair_quantitative":
+          return ok(JSON.stringify(await analyzeFairQuantitative({
             project: args.project,
             asOf: args.as_of,
             riskAssessmentResultId: args.risk_assessment_result_id,

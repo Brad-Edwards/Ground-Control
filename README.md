@@ -1,7 +1,7 @@
 # Ground Control
 
 [![CI](https://github.com/KeplerOps/Ground-Control/actions/workflows/ci.yml/badge.svg)](https://github.com/KeplerOps/Ground-Control/actions/workflows/ci.yml)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Brad-Edwards_Ground-Control&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Brad-Edwards_Ground-Control)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=autarchy-ai_Ground-Control&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=autarchy-ai_Ground-Control)
 
 An automated software factory that connects requirements, code, controls, and
 observability over a single data layer - with traceability throughout.

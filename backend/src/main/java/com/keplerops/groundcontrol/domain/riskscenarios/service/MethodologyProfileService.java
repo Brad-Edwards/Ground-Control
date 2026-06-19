@@ -128,6 +128,46 @@ public class MethodologyProfileService {
                     "fines_and_judgments": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
                     "reputation_damage": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}}
                   }
+                },
+                "contact_frequency": {
+                  "type": "object",
+                  "description": "Component of Threat Event Frequency; TEF = Contact Frequency × Probability of Action",
+                  "properties": {
+                    "low": {"type": "number", "minimum": 0},
+                    "likely": {"type": "number", "minimum": 0},
+                    "high": {"type": "number", "minimum": 0},
+                    "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
+                  }
+                },
+                "probability_of_action": {
+                  "type": "object",
+                  "description": "Component of Threat Event Frequency; TEF = Contact Frequency × Probability of Action",
+                  "properties": {
+                    "low": {"type": "number", "minimum": 0},
+                    "likely": {"type": "number", "minimum": 0},
+                    "high": {"type": "number", "minimum": 0},
+                    "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
+                  }
+                },
+                "threat_capability": {
+                  "type": "object",
+                  "description": "Component of Vulnerability; Vuln = P(Threat Capability > Resistance Strength)",
+                  "properties": {
+                    "low": {"type": "number", "minimum": 0, "maximum": 1},
+                    "likely": {"type": "number", "minimum": 0, "maximum": 1},
+                    "high": {"type": "number", "minimum": 0, "maximum": 1},
+                    "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
+                  }
+                },
+                "resistance_strength": {
+                  "type": "object",
+                  "description": "Component of Vulnerability; Vuln = P(Threat Capability > Resistance Strength)",
+                  "properties": {
+                    "low": {"type": "number", "minimum": 0, "maximum": 1},
+                    "likely": {"type": "number", "minimum": 0, "maximum": 1},
+                    "high": {"type": "number", "minimum": 0, "maximum": 1},
+                    "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
+                  }
                 }
               },
               "required": ["threat_event_frequency", "vulnerability", "primary_loss_magnitude"],
