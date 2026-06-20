@@ -24,6 +24,7 @@ import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioR
 import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel;
 import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelRepository;
 import java.time.LocalDate;
+import java.time.Month;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -332,9 +333,7 @@ class RiskControlCoverageServiceTest {
 
         @Test
         void returnsEmptyWhenNoThreatMappingsExist() {
-            when(effectivenessRepository.findByProjectIdAndAssessedAtLessThanEqualOrderByControlIdAscAssessedAtDesc(
-                            any(UUID.class), any(LocalDate.class)))
-                    .thenReturn(List.of());
+            // No threat mappings → the method short-circuits before querying effectiveness assessments.
             when(mappingRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
                     .thenReturn(List.of());
 
@@ -356,7 +355,8 @@ class RiskControlCoverageServiceTest {
                     RiskControlMapping.forControlThreat(project, ctrl, threatModel, MappingControlRole.PREVENTIVE);
             setField(mapping, "id", UUID.randomUUID());
 
-            var assessment = makeAssessment(ctrl, ControlEffectivenessRating.INEFFECTIVE, LocalDate.of(2026, 6, 1));
+            var assessment =
+                    makeAssessment(ctrl, ControlEffectivenessRating.INEFFECTIVE, LocalDate.of(2026, Month.JUNE, 1));
 
             when(effectivenessRepository.findByProjectIdAndAssessedAtLessThanEqualOrderByControlIdAscAssessedAtDesc(
                             eq(projectId), any(LocalDate.class)))
@@ -367,7 +367,7 @@ class RiskControlCoverageServiceTest {
                     .thenReturn(List.of(threatModel));
 
             var result = service.findThreatsWithInsufficientControlEffectiveness(
-                    projectId, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2026, 6, 20), 90);
+                    projectId, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2026, Month.JUNE, 20), 90);
 
             assertThat(result).containsExactly(threatModel);
         }
@@ -386,7 +386,8 @@ class RiskControlCoverageServiceTest {
                     RiskControlMapping.forControlThreat(project, ctrl, threatModel, MappingControlRole.PREVENTIVE);
             setField(mapping, "id", UUID.randomUUID());
 
-            var assessment = makeAssessment(ctrl, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2026, 6, 1));
+            var assessment =
+                    makeAssessment(ctrl, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2026, Month.JUNE, 1));
 
             when(effectivenessRepository.findByProjectIdAndAssessedAtLessThanEqualOrderByControlIdAscAssessedAtDesc(
                             eq(projectId), any(LocalDate.class)))
@@ -395,7 +396,7 @@ class RiskControlCoverageServiceTest {
                     .thenReturn(List.of(mapping));
 
             var result = service.findThreatsWithInsufficientControlEffectiveness(
-                    projectId, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2026, 6, 20), 90);
+                    projectId, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2026, Month.JUNE, 20), 90);
 
             assertThat(result).isEmpty();
         }
@@ -417,7 +418,8 @@ class RiskControlCoverageServiceTest {
             setField(mapping, "id", UUID.randomUUID());
 
             // EFFECTIVE, but assessed 2025-01-01 — well outside a 90-day window before 2026-06-20.
-            var staleAssessment = makeAssessment(ctrl, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2025, 1, 1));
+            var staleAssessment =
+                    makeAssessment(ctrl, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2025, Month.JANUARY, 1));
 
             when(effectivenessRepository.findByProjectIdAndAssessedAtLessThanEqualOrderByControlIdAscAssessedAtDesc(
                             eq(projectId), any(LocalDate.class)))
@@ -428,7 +430,7 @@ class RiskControlCoverageServiceTest {
                     .thenReturn(List.of(threatModel));
 
             var result = service.findThreatsWithInsufficientControlEffectiveness(
-                    projectId, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2026, 6, 20), 90);
+                    projectId, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2026, Month.JUNE, 20), 90);
 
             assertThat(result).containsExactly(threatModel);
         }

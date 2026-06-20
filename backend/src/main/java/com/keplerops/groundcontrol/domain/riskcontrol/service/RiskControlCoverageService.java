@@ -15,12 +15,13 @@ import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel;
 import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelRepository;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -171,62 +172,60 @@ public class RiskControlCoverageService {
      */
     public List<ThreatModel> findThreatsWithInsufficientControlEffectiveness(
             UUID projectId, ControlEffectivenessRating minEffectiveness, LocalDate asOf, Integer freshnessWindowDays) {
-        if (minEffectiveness == null) minEffectiveness = ControlEffectivenessRating.EFFECTIVE;
-        if (asOf == null) asOf = LocalDate.now(ZoneOffset.UTC);
-        if (freshnessWindowDays == null) freshnessWindowDays = 90;
+        ControlEffectivenessRating minRating =
+                minEffectiveness != null ? minEffectiveness : ControlEffectivenessRating.EFFECTIVE;
+        LocalDate ceiling = asOf != null ? asOf : LocalDate.now(ZoneOffset.UTC);
+        int windowDays = freshnessWindowDays != null ? freshnessWindowDays : 90;
 
-        var effectivenessRows =
-                effectivenessRepository.findByProjectIdAndAssessedAtLessThanEqualOrderByControlIdAscAssessedAtDesc(
-                        projectId, asOf);
-
-        // Build latest-per-control map (first putIfAbsent wins = most recent per control)
-        Map<UUID, ControlEffectivenessAssessment> latestByControl = new LinkedHashMap<>();
-        LocalDate freshnessFloor = asOf.minusDays(freshnessWindowDays);
-        for (var row : effectivenessRows) {
-            if (!row.getAssessedAt().isBefore(freshnessFloor)) {
-                latestByControl.putIfAbsent(row.getControl().getId(), row);
-            }
-        }
-
-        // Get all threat-mapped mappings for the project
-        var allMappings = mappingRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
-                .filter(m -> m.getThreatModel() != null)
-                .toList();
-
-        // Group mappings by threat model id
-        Map<UUID, List<RiskControlMapping>> byThreat = new LinkedHashMap<>();
-        for (var m : allMappings) {
-            byThreat.computeIfAbsent(m.getThreatModel().getId(), k -> new ArrayList<>())
-                    .add(m);
-        }
-
-        if (byThreat.isEmpty()) {
+        Map<UUID, List<RiskControlMapping>> mappingsByThreat =
+                mappingRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                        .filter(m -> m.getThreatModel() != null)
+                        .collect(Collectors.groupingBy(m -> m.getThreatModel().getId()));
+        if (mappingsByThreat.isEmpty()) {
             return List.of();
         }
 
-        // A threat is insufficient when NO mapped control passes the bar
-        var insufficientThreatIds = new HashSet<UUID>();
-        for (var entry : byThreat.entrySet()) {
-            var threatId = entry.getKey();
-            var mappings = entry.getValue();
-            boolean anyPasses = false;
-            for (var mapping : mappings) {
-                UUID controlId = resolveControlId(mapping);
-                if (controlId == null) continue;
-                var eff = latestByControl.get(controlId);
-                if (eff != null && meetsMinEffectiveness(eff.getOperatingEffectiveness(), minEffectiveness)) {
-                    anyPasses = true;
-                    break;
-                }
-            }
-            if (!anyPasses) {
-                insufficientThreatIds.add(threatId);
-            }
-        }
+        Map<UUID, ControlEffectivenessAssessment> latestByControl =
+                latestEffectivenessByControl(projectId, ceiling, windowDays);
+
+        // A threat is insufficient when NONE of its mapped controls passes the effectiveness bar.
+        Set<UUID> insufficientThreatIds = mappingsByThreat.entrySet().stream()
+                .filter(e -> !anyControlMeetsBar(e.getValue(), latestByControl, minRating))
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toSet());
 
         return threatModelRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
                 .filter(t -> insufficientThreatIds.contains(t.getId()))
                 .toList();
+    }
+
+    /** Latest as-of effectiveness assessment per control, keeping only those within the freshness window. */
+    private Map<UUID, ControlEffectivenessAssessment> latestEffectivenessByControl(
+            UUID projectId, LocalDate asOf, int freshnessWindowDays) {
+        LocalDate freshnessFloor = asOf.minusDays(freshnessWindowDays);
+        // Rows arrive ordered by controlId asc, assessedAt desc — putIfAbsent keeps the most recent per control.
+        Map<UUID, ControlEffectivenessAssessment> latestByControl = new LinkedHashMap<>();
+        for (var row :
+                effectivenessRepository.findByProjectIdAndAssessedAtLessThanEqualOrderByControlIdAscAssessedAtDesc(
+                        projectId, asOf)) {
+            if (!row.getAssessedAt().isBefore(freshnessFloor)) {
+                latestByControl.putIfAbsent(row.getControl().getId(), row);
+            }
+        }
+        return latestByControl;
+    }
+
+    /** True when at least one of the threat's mapped controls has a fresh assessment meeting the bar. */
+    private boolean anyControlMeetsBar(
+            List<RiskControlMapping> mappings,
+            Map<UUID, ControlEffectivenessAssessment> latestByControl,
+            ControlEffectivenessRating minEffectiveness) {
+        return mappings.stream()
+                .map(this::resolveControlId)
+                .filter(Objects::nonNull)
+                .map(latestByControl::get)
+                .filter(Objects::nonNull)
+                .anyMatch(eff -> meetsMinEffectiveness(eff.getOperatingEffectiveness(), minEffectiveness));
     }
 
     private UUID resolveControlId(RiskControlMapping mapping) {

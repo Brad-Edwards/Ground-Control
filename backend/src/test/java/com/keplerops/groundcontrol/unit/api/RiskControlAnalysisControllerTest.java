@@ -21,6 +21,7 @@ import com.keplerops.groundcontrol.domain.riskcontrol.service.RiskControlMapping
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import java.time.LocalDate;
+import java.time.Month;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -107,7 +108,12 @@ class RiskControlAnalysisControllerTest {
         var mappingId = UUID.randomUUID();
 
         var c7Input = new RiskControlMappingFeedService.ControlEffectivenessInput(
-                mappingId, controlId, assessmentId, "PARTIALLY_EFFECTIVE", "EFFECTIVE", LocalDate.of(2026, 5, 1));
+                mappingId,
+                controlId,
+                assessmentId,
+                "PARTIALLY_EFFECTIVE",
+                "EFFECTIVE",
+                LocalDate.of(2026, Month.MAY, 1));
         var feed = new RiskControlMappingFeedService.AssessmentFeedResult(List.of(c7Input), List.of(), List.of());
 
         when(feedService.feedForAssessment(PROJECT_ID, assessmentResultId)).thenReturn(feed);
