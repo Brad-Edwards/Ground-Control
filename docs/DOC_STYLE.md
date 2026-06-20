@@ -6,6 +6,8 @@
 
 > **Sync note for issue #1180 (2026-06-18):** The `short_code` config-parser addition and tmux session-rename skill updates were reviewed against these rules. No style rule changed.
 
+> **Sync note for issue #1176 (2026-06-15):** Extended `tools/policy/checks.py::ENUM_CONTRACT_INVENTORY` with three GRC enum-contract entries (`VerificationStatus`, `AssuranceLevel`, `MethodologyFamily`). The classifier, Vale rules, `.vale.ini`, and this document's style rules are unchanged.
+
 ## Rules
 
 Docs describe the system as it ships on the current commit. Write in present
