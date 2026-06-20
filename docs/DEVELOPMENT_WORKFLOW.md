@@ -1,6 +1,6 @@
 # Development Workflow
 
-This documents the automated development workflow using Claude Code with the `/implement` skill. The workflow takes a Ground Control requirement from plan through PR-ready with a single skill invocation.
+This documents the automated development workflow using the `/implement` skill from Claude Code, Codex, or Cursor CLI. The workflow takes a Ground Control requirement from plan through PR-ready with a single skill invocation.
 
 ## Prerequisites
 
@@ -480,7 +480,7 @@ Pass `--dry-run` to the `/integrate` skill to see what the queue would contain w
 
 Workflow skills live in **two** repo roots, each with its own installer. The two name sets are disjoint, so the two install paths can never resolve the same name to different definitions:
 
-- **`skills/<name>/SKILL.md`** - agent-neutral skills shared by Claude Code *and* Codex (per ADR-027). `bin/install-skills.sh` installs each into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and (legacy alias) `~/.codex/prompts/<name>.md`.
+- **`skills/<name>/SKILL.md`** - agent-neutral skills shared by Claude Code, Codex, and Cursor CLI (per ADR-027). `bin/install-skills.sh` installs each into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and (legacy alias) `~/.codex/prompts/<name>.md`. Cursor CLI discovers `/implement` from the project skill at `.cursor/skills/implement/` without a host install step.
 - **`.claude/skills/<name>/SKILL.md`** - Claude-Code-only skills. `scripts/bootstrap-claude-workflow.sh` symlinks each into `~/.claude/skills/<name>` (see **Tooling** below).
 
 In both cases this repo is the source of truth: edit the `SKILL.md`, commit, and the change takes effect for the next Claude Code (or Codex) session on a host whose install paths are symlinks into the repo. Re-run the relevant installer after a host reset.
@@ -526,6 +526,34 @@ bin/install-skills.sh                  # skills/* (agent-neutral) into ~/.claude
 `bin/install-skills.sh` symlinks each `skills/<name>/` directory (currently `/implement`; the prior `/review-tests` was removed in #884 v2 - see `architecture/notes/test-quality-review-engine.md`) into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and `~/.codex/prompts/<name>.md`. Pass `--no-codex` if Codex isn't on the host.
 
 If a pre-existing host file or directory has local changes that are NOT in the repo, the script refuses to clobber it and exits non-zero - re-run with `--force` only after you've confirmed the repo copy is the version you want. Already-correct entries are left alone.
+
+### Cursor CLI
+
+Ground-Control-aware repos ship a project skill at `.cursor/skills/implement/` (symlink to `skills/implement/`). Cursor CLI discovers it automatically when you run from the repo root; no host install step is required.
+
+**Prerequisites** (same orchestrator dependencies as Claude Code / Codex):
+
+- Reachable Ground Control instance; `GROUND_CONTROL_API_TOKEN` in the repo `.env`
+- `make ground-control-mcp-install` once on the host
+- Repo [`.mcp.json`](.mcp.json) present (Ground Control MCP server)
+- `gh` authenticated to the repo
+- Codex CLI on `PATH` (architecture preflight + pre-push review MCP tools)
+- Claude CLI OAuth session (Step 6.6 `gc_test_quality_review`)
+- GPG signing configured for non-interactive commits
+
+**Invoke** from the repo root:
+
+```bash
+cursor agent "/implement 123"
+```
+
+Re-run after merge (Phase E close):
+
+```bash
+cursor agent "/implement 123"
+```
+
+**CLI permissions** live in [`.cursor/cli.json`](.cursor/cli.json) (project override). For long autonomous runs, pass `--force` if approval prompts would block git/gh/make/MCP calls. The Cursor CLI driver runs every step on the parent session (Codex-style); see the Cursor CLI section in `skills/implement/SKILL.md`.
 
 ## Test tooling beyond unit tests (#931)
 
