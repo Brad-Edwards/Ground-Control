@@ -480,7 +480,7 @@ Pass `--dry-run` to the `/integrate` skill to see what the queue would contain w
 
 Workflow skills live in **two** repo roots, each with its own installer. The two name sets are disjoint, so the two install paths can never resolve the same name to different definitions:
 
-- **`skills/<name>/SKILL.md`** - agent-neutral skills shared by Claude Code, Codex, and Cursor CLI (per ADR-027). `bin/install-skills.sh` installs each into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and (legacy alias) `~/.codex/prompts/<name>.md`. Cursor CLI discovers `/implement` from the project skill at `.cursor/skills/implement/` without a host install step.
+- **`skills/<name>/SKILL.md`** - agent-neutral skills shared by Claude Code, Codex, and Cursor CLI (per ADR-027). `bin/install-skills.sh` installs each into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, (legacy alias) `~/.codex/prompts/<name>.md`, and (hard-copy) `~/.cursor/skills/<name>`.
 - **`.claude/skills/<name>/SKILL.md`** - Claude-Code-only skills. `scripts/bootstrap-claude-workflow.sh` symlinks each into `~/.claude/skills/<name>` (see **Tooling** below).
 
 In both cases this repo is the source of truth: edit the `SKILL.md`, commit, and the change takes effect for the next Claude Code (or Codex) session on a host whose install paths are symlinks into the repo. Re-run the relevant installer after a host reset.
@@ -503,7 +503,7 @@ Repo-local scripts live under `scripts/` (bash) and `bin/` (Python). The ones yo
 | Command | Purpose |
 |---------|---------|
 | `scripts/bootstrap-claude-workflow.sh` | Wire the Claude-Code-only surfaces from `~/.claude/`: the `.claude/skills/<name>/` skills (symlinked - edit takes effect live) and the `WORKFLOW_HOOKS` allowlist under `.claude/hooks/` (**copied** as real files so runtime does not depend on which branch this repo is checked out to). Idempotent; safe to re-run. Pass `--dry-run` to preview, `--force` to clobber non-matching host content. The hook allowlist is explicit, so generic host-local hooks (for example, `block-break-system-packages.sh`) are left alone. Re-run after editing a hook file in the repo to push the new version into `~/.claude/hooks/`. Does **not** touch the `skills/<name>/` agent-neutral skills - that's `bin/install-skills.sh`'s job. |
-| `bin/install-skills.sh` | Install the agent-neutral `skills/<name>/` skills (currently just `/implement`; the prior `/review-tests` was removed in #884 v2 in favor of the `gc_test_quality_review` MCP tool) into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and `~/.codex/prompts/<name>.md` (legacy alias). Symlinks by default (`--copy` to hard-copy, `--dry-run` to preview, `--no-codex` to skip the Codex targets, `--force` to overwrite divergent host content). Idempotent; refuses to clobber unmanaged host targets without `--force`. |
+| `bin/install-skills.sh` | Install the agent-neutral `skills/<name>/` skills into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, `~/.codex/prompts/<name>.md` (legacy alias), and `~/.cursor/skills/<name>`. Claude/Codex symlink by default; Cursor always hard-copies (`scripts/test-cursor-skill-symlink.sh`). Pass `--copy` to hard-copy every target, `--dry-run` to preview, `--no-codex` / `--no-cursor` to skip those targets, `--force` to overwrite divergent host content. Idempotent; refuses to clobber unmanaged host targets without `--force`. |
 | `scripts/pack-sync.sh` | Trigger the `pack-registry-sync` GitHub workflow against this repo. |
 | `bin/policy` | Run the repo-native policy guardrails (ADR sync, controller/MCP/docs parity, migration policy, PR-body checks). Invoked by `make policy`, pre-commit, and CI. |
 | `bin/adr-guard` | ADR-specific policy checks run standalone. |
@@ -516,20 +516,24 @@ After cloning this repo onto a new host (or after any `rm -rf ~/.claude/skills/`
 
 ```
 scripts/bootstrap-claude-workflow.sh   # .claude/skills/* skills + the WORKFLOW_HOOKS allowlist under .claude/hooks/
-bin/install-skills.sh                  # skills/* (agent-neutral) into ~/.claude/skills, ~/.codex/skills, ~/.codex/prompts
+bin/install-skills.sh                  # skills/* (agent-neutral) into ~/.claude/skills, ~/.codex/skills, ~/.codex/prompts, ~/.cursor/skills
 ```
 
 `scripts/bootstrap-claude-workflow.sh` walks:
 - `.claude/skills/*/` - every skill directory gets a matching `~/.claude/skills/<name>` **symlink**. Editing a skill in the repo takes effect immediately in the next session.
 - `.claude/hooks/` - only the hooks listed in the script's `WORKFLOW_HOOKS` allowlist (`git-merge-guard.py`, `block-defer-language.py`, `log-skill-call.sh`, `verify-implementation.sh`) are installed as **real file copies** at `~/.claude/hooks/<name>`. Editing a hook in the repo requires re-running this script to push the new version out. Repo-scoped hooks (`protect_files.sh`, `verify-extra.sh`) stay where they are because they're wired via `$CLAUDE_PROJECT_DIR` in `.claude/settings.json`, not via `~/.claude/`.
 
-`bin/install-skills.sh` symlinks each `skills/<name>/` directory (currently `/implement`; the prior `/review-tests` was removed in #884 v2 - see `architecture/notes/test-quality-review-engine.md`) into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and `~/.codex/prompts/<name>.md`. Pass `--no-codex` if Codex isn't on the host.
+`bin/install-skills.sh` symlinks each `skills/<name>/` directory into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and `~/.codex/prompts/<name>.md`, and **hard-copies** into `~/.cursor/skills/<name>`. Pass `--no-codex` if Codex isn't on the host, or `--no-cursor` if Cursor CLI isn't on the host. Re-run after pulling to refresh Cursor copies; Claude/Codex symlinks update live.
+
+Ground-Control repos also ship a project wrapper at `.cursor/skills/implement/SKILL.md` (a real file, not a symlink) so `/implement` works before the host install step. Run `scripts/test-cursor-skill-symlink.sh` to verify the symlink constraint locally.
 
 If a pre-existing host file or directory has local changes that are NOT in the repo, the script refuses to clobber it and exits non-zero - re-run with `--force` only after you've confirmed the repo copy is the version you want. Already-correct entries are left alone.
 
 ### Cursor CLI
 
-Ground-Control-aware repos ship a project skill at `.cursor/skills/implement/` (symlink to `skills/implement/`). Cursor CLI discovers it automatically when you run from the repo root; no host install step is required.
+Cursor skill discovery for `/implement` works today with the same host bootstrap as Claude Code and Codex: run `bin/install-skills.sh` once on the host. It hard-copies each `skills/<name>/` directory into `~/.cursor/skills/<name>`. **Symlinks do not work** for Cursor skill discovery: Cursor resolves symlink targets and rejects any `SKILL.md` whose real path falls outside the skills root. See `scripts/test-cursor-skill-symlink.sh`.
+
+Ground-Control repos also ship a project wrapper at `.cursor/skills/implement/SKILL.md` (a real file pointing at the canonical `skills/implement/SKILL.md`) so `/implement` is available in-repo without waiting on the host install step.
 
 **Prerequisites** (same orchestrator dependencies as Claude Code / Codex):
 
@@ -541,16 +545,18 @@ Ground-Control-aware repos ship a project skill at `.cursor/skills/implement/` (
 - Claude CLI OAuth session (Step 6.6 `gc_test_quality_review`)
 - GPG signing configured for non-interactive commits
 
-**Invoke** from the repo root:
+**Invoke** from the repo root in **Agent chat** (Cursor 2.4+):
 
-```bash
-cursor agent "/implement 123"
+```
+/implement 123
 ```
 
-Re-run after merge (Phase E close):
+No space after `/`: type `/implement`, not `/ implement`. The skill uses `disable-model-invocation: true`, so it appears in the `/` menu but is not auto-applied; you must pick it explicitly.
+
+In **Cursor CLI** (no slash menu), pass the workflow as the prompt:
 
 ```bash
-cursor agent "/implement 123"
+agent "/implement 123"
 ```
 
 **CLI permissions** live in [`.cursor/cli.json`](.cursor/cli.json) (project override). For long autonomous runs, pass `--force` if approval prompts would block git/gh/make/MCP calls. The Cursor CLI driver runs every step on the parent session (Codex-style); see the Cursor CLI section in `skills/implement/SKILL.md`.
