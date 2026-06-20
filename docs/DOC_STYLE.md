@@ -156,3 +156,11 @@ the tool description strings in `index.js` and the skill prose under
 the prose-side guardrail. The surface addition is recorded in the ADR-054
 amendment and the changelog fragment; no new DOC_STYLE.md prose is needed
 unless a new style rule is being established.
+
+New `/implement` workflow-gate configuration under `.ground-control.yaml`
+(for example, `workflow.dev_start_gate` for GC-O007 / #1194) follows the same
+contract. The config parser and MCP tool descriptions are the authoritative
+machine surface, and the required agent behavior lives in the `skills/implement/`
+step files. Record the surface addition in ADR-054 and the changelog fragment;
+do not add separate reference prose unless the change creates a new
+documentation style rule.

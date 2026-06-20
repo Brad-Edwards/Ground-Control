@@ -847,7 +847,7 @@ server.tool(
 
 server.tool(
   "gc_render_pr_body",
-  "Render a PR body that satisfies the Ground Control policy gates (template sections, requirement UIDs, ADR impact, three Ground Control Checks, IMPLEMENTS/TESTS markers, no defer language). Returns the rendered body string for the caller to pass to `gh pr create --body`. change_class shapes a few cells: doc-only marks integration tests / changelog fragment N/A; source requires changelog fragment; source+migration adds the MigrationSmokeTest reminder. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
+  "Render a PR body that satisfies the Ground Control policy gates (template sections, requirement UIDs, ADR impact, three Ground Control Checks, IMPLEMENTS/TESTS markers, no defer language). Returns the rendered body string for the caller to pass to `gh pr create --body`. change_class shapes a few cells: doc-only marks integration tests / changelog fragment N/A; source requires changelog fragment; source+migration adds the MigrationSmokeTest reminder. Pass dev_start_gate when the repo's configured PR policy requires a ## Dev-Start Gate section. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -865,12 +865,13 @@ server.tool(
     }),
     changelog_fragment: z.string().optional(),
     test_notes: z.string().optional(),
+    dev_start_gate: z.string().optional(),
     documentation_outcome: z.object({
       outcome: z.enum(["updated", "verified_unchanged", "not_updated_authorized"]),
       rationale: z.string().optional(),
     }).optional(),
   },
-  async ({ repo_path, issue_number, change_class, requirement_uids, adr_refs, summary, changes, traceability, changelog_fragment, test_notes, documentation_outcome }) => {
+  async ({ repo_path, issue_number, change_class, requirement_uids, adr_refs, summary, changes, traceability, changelog_fragment, test_notes, dev_start_gate, documentation_outcome }) => {
     try {
       return ok(JSON.stringify(await runRenderPrBody({
         repoPath: repo_path,
@@ -883,6 +884,7 @@ server.tool(
         traceability,
         changelogFragment: changelog_fragment ?? null,
         testNotes: test_notes ?? null,
+        devStartGate: dev_start_gate ?? null,
         documentation_outcome: documentation_outcome ?? null,
       }), null, 2));
     } catch (e) { return err(e); }

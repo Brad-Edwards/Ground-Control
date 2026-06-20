@@ -63,6 +63,16 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#             feat, fix, chore, docs, refactor, test, ci, build, perf, revert]",
     "#     subject_pattern: \"^[a-z].*$\"",
     "#     require_scope: false",
+    "#   # Optional dev-start plan gate. Disabled unless a repo opts in.",
+    "#   dev_start_gate:",
+    "#     enabled: false",
+    "#     required_for: source-bearing",
+    "#     plan_section: Dev-Start Gate",
+    "#     blocker_uids: []",
+    "#     required_fields:",
+    "#       - Requirement wave or gate",
+    "#       - Boundary owner",
+    "#       - Contract or seam",
     "# sonarcloud:",
     "#   project_key: <sonar-project-key>",
     "#   organization: <sonar-org>",
@@ -1828,7 +1838,126 @@ function emptyWorkflowConfig() {
     // Integration manager config (issue #989). All fields null means "use the
     // tool-layer defaults at call time".
     integration_manager: { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null },
+    // Dev-start plan gate. Disabled by default so existing repositories keep
+    // their current /implement flow until they opt in through repo config.
+    dev_start_gate: emptyDevStartGateConfig(),
   };
+}
+
+export const DEV_START_GATE_REQUIRED_FOR = Object.freeze(["source-bearing"]);
+export const DEFAULT_DEV_START_GATE_PLAN_SECTION = "Dev-Start Gate";
+export const DEFAULT_DEV_START_GATE_REQUIRED_FIELDS = Object.freeze([
+  "Requirement wave or gate",
+  "Boundary owner",
+  "Contract or seam",
+  "Tenant/principal/authz/audit/evidence/provenance context",
+  "Connectivity/offline behavior",
+  "Security relevance decision",
+  "Framework/control-family impact",
+  "Verification risk score",
+  "Verification plan",
+  "Supply chain/provenance impact",
+  "Sovereignty/FOCI impact",
+  "Quality-gate readiness",
+  "Dev-start gate satisfied",
+]);
+export const DEV_START_GATE_SECURITY_DECISIONS = Object.freeze([
+  "security-relevant",
+  "not security-relevant",
+  "no security baseline",
+]);
+
+function emptyDevStartGateConfig() {
+  return {
+    enabled: false,
+    required_for: "source-bearing",
+    plan_section: DEFAULT_DEV_START_GATE_PLAN_SECTION,
+    blocker_uids: [],
+    required_fields: [...DEFAULT_DEV_START_GATE_REQUIRED_FIELDS],
+  };
+}
+
+function validateStringList(raw, fieldName, { uid = false } = {}) {
+  const errors = [];
+  if (!Array.isArray(raw)) {
+    return { ok: false, errors: [`${fieldName} must be a list when set`] };
+  }
+  const seen = new Set();
+  const value = [];
+  raw.forEach((entry, i) => {
+    if (typeof entry !== "string" || entry.trim() === "") {
+      errors.push(`${fieldName}[${i}] must be a non-empty string`);
+      return;
+    }
+    const trimmed = entry.trim();
+    if (trimmed.includes("\n") || trimmed.includes("\r")) {
+      errors.push(`${fieldName}[${i}] must be a single-line string`);
+      return;
+    }
+    if (uid && !EXACT_REQUIREMENT_UID_RE.test(trimmed)) {
+      errors.push(`${fieldName}[${i}] must be a Ground Control UID matching ${EXACT_REQUIREMENT_UID_RE.source}`);
+      return;
+    }
+    if (seen.has(trimmed)) {
+      errors.push(`${fieldName}[${i}] duplicates '${trimmed}'`);
+      return;
+    }
+    seen.add(trimmed);
+    value.push(trimmed);
+  });
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value };
+}
+
+export function normalizeDevStartGateConfig(raw) {
+  const value = emptyDevStartGateConfig();
+  if (raw == null) {
+    return { ok: true, value };
+  }
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, errors: ["workflow.dev_start_gate must be a mapping when set"] };
+  }
+  const allowed = ["enabled", "required_for", "plan_section", "blocker_uids", "required_fields"];
+  const errors = [];
+  for (const key of Object.keys(raw)) {
+    if (!allowed.includes(key)) errors.push(`workflow.dev_start_gate has unknown key '${key}'`);
+  }
+  if (raw.enabled != null) {
+    if (typeof raw.enabled !== "boolean") {
+      errors.push("workflow.dev_start_gate.enabled must be a boolean when set");
+    } else {
+      value.enabled = raw.enabled;
+    }
+  }
+  if (raw.required_for != null) {
+    if (!DEV_START_GATE_REQUIRED_FOR.includes(raw.required_for)) {
+      errors.push(`workflow.dev_start_gate.required_for must be one of: ${DEV_START_GATE_REQUIRED_FOR.join(", ")}`);
+    } else {
+      value.required_for = raw.required_for;
+    }
+  }
+  if (raw.plan_section != null) {
+    if (typeof raw.plan_section !== "string" || raw.plan_section.trim() === "") {
+      errors.push("workflow.dev_start_gate.plan_section must be a non-empty string when set");
+    } else if (raw.plan_section.includes("\n") || raw.plan_section.includes("\r")) {
+      errors.push("workflow.dev_start_gate.plan_section must be a single-line string");
+    } else {
+      value.plan_section = raw.plan_section.trim();
+    }
+  }
+  if (raw.blocker_uids != null) {
+    const r = validateStringList(raw.blocker_uids, "workflow.dev_start_gate.blocker_uids", { uid: true });
+    if (!r.ok) errors.push(...r.errors);
+    else value.blocker_uids = r.value;
+  }
+  if (raw.required_fields != null) {
+    const r = validateStringList(raw.required_fields, "workflow.dev_start_gate.required_fields");
+    if (!r.ok) errors.push(...r.errors);
+    else if (r.value.length === 0) errors.push("workflow.dev_start_gate.required_fields must not be empty when set");
+    else value.required_fields = r.value;
+  }
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value };
 }
 
 // Normalize a workflow.pr_title block.  Allowed keys: types, subject_pattern,
@@ -2055,7 +2184,7 @@ function normalizeWorkflowConfig(raw) {
   // Scalar string-typed keys handled inline; nested-mapping keys delegated to
   // their own normalizers below.
   const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "base_branch"];
-  const allowedNested = ["codex_review", "test_quality_review", "pr_title", "integration_manager"];
+  const allowedNested = ["codex_review", "test_quality_review", "pr_title", "integration_manager", "dev_start_gate"];
   const allowed = [...allowedScalar, ...allowedNested];
   const value = emptyWorkflowConfig();
   const errors = [];
@@ -2091,6 +2220,9 @@ function normalizeWorkflowConfig(raw) {
   const integrationManagerResult = normalizeIntegrationManagerConfig(raw.integration_manager);
   if (!integrationManagerResult.ok) errors.push(...integrationManagerResult.errors);
   else value.integration_manager = integrationManagerResult.value;
+  const devStartGateResult = normalizeDevStartGateConfig(raw.dev_start_gate);
+  if (!devStartGateResult.ok) errors.push(...devStartGateResult.errors);
+  else value.dev_start_gate = devStartGateResult.value;
   if (errors.length) return { ok: false, errors };
   return { ok: true, value };
 }
@@ -3511,6 +3643,29 @@ export async function runPostImplementationPlan({ repoPath, issueNumber, planBod
     }
   }
 
+  const cfg = await getRepoGroundControlContext(repoRoot);
+  if (cfg.status !== "ok") {
+    return {
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      ok: false,
+      error: "ground_control_config_invalid",
+      message: "Cannot validate the implementation plan because .ground-control.yaml is missing or invalid.",
+      errors: cfg.errors || [],
+      next_action: "fix_ground_control_yaml_and_retry",
+    };
+  }
+  const devStartGate = validateDevStartPlanGate(planBody, cfg.workflow?.dev_start_gate);
+  if (!devStartGate.ok) {
+    return {
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      ok: false,
+      ...devStartGate,
+      next_action: "add_valid_dev_start_gate_to_plan_and_retry",
+    };
+  }
+
   // Post the plan + the `plan` phase marker as a single combined comment so
   // the marker and the human-visible plan are the same thread artifact.
   const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "plan", { commentBody: planBody });
@@ -4561,6 +4716,258 @@ export function buildPhaseMarker({ phase, issueNumber }) {
       "Posted by the MCP server to enforce ordering between workflow steps (issue #794 MVP-2). " +
       "Do not edit or delete — used by downstream tools to gate phase prerequisites.",
   ].join("\n");
+}
+
+function normalizeMarkdownHeadingText(lineText) {
+  return lineText.replace(/\s+#+\s*$/, "").trim().toLowerCase();
+}
+
+function extractMarkdownHeadingSection(body, sectionName) {
+  const target = sectionName.trim().toLowerCase();
+  const lines = body.split(/\r?\n/);
+  let start = -1;
+  let level = null;
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = lines[i].match(/^(#{1,6})\s+(.+?)\s*$/);
+    if (!m) continue;
+    if (normalizeMarkdownHeadingText(m[2]) === target) {
+      start = i;
+      level = m[1].length;
+      break;
+    }
+  }
+  if (start === -1) return null;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    const m = lines[i].match(/^(#{1,6})\s+(.+?)\s*$/);
+    if (m && m[1].length <= level) {
+      end = i;
+      break;
+    }
+  }
+  return lines.slice(start + 1, end).join("\n");
+}
+
+function normalizeDevStartFieldLabel(label) {
+  return label.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function parseDevStartGateFields(sectionBody) {
+  const fields = new Map();
+  const lines = sectionBody.split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (line === "") continue;
+    const match =
+      line.match(/^(?:[-*]\s*)?\*\*(.+?):\*\*\s*(.*)$/) ||
+      line.match(/^(?:[-*]\s*)?\*\*(.+?)\*\*\s*:\s*(.*)$/) ||
+      line.match(/^(?:[-*]\s*)?([^:]+):\s*(.*)$/);
+    if (!match) continue;
+    const label = match[1].replace(/\*\*/g, "").trim();
+    const value = match[2].trim();
+    const key = normalizeDevStartFieldLabel(label);
+    if (!fields.has(key)) fields.set(key, { label, value });
+  }
+  return fields;
+}
+
+function devStartFieldValue(fields, label) {
+  return fields.get(normalizeDevStartFieldLabel(label))?.value ?? null;
+}
+
+function isConcreteDevStartValue(value, { allowBareNotApplicable = false } = {}) {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (trimmed === "") return false;
+  const lower = trimmed.toLowerCase();
+  if (["tbd", "todo", "yes/no", "y/n", "unknown", "-", "_"].includes(lower)) return false;
+  if (!allowBareNotApplicable && /^(?:n\/a|na|none|not[- ]?applicable)$/i.test(trimmed)) return false;
+  if (/^<[^>]+>$/.test(trimmed) || /^\[[^\]]+\]$/.test(trimmed)) return false;
+  return true;
+}
+
+function parseDevStartRiskTotal(value) {
+  if (typeof value !== "string") return null;
+  const match = value.match(/\btotal\s*=\s*(\d+)\b/i);
+  if (!match) return null;
+  const total = Number.parseInt(match[1], 10);
+  if (!Number.isInteger(total)) return null;
+  return total;
+}
+
+function devStartGateFailure({ planSection, missing, invalid, sourceBearing = null }) {
+  const parts = [];
+  if (missing.length) parts.push(`missing or non-concrete field(s): ${missing.join(", ")}`);
+  if (invalid.length) parts.push(`invalid field(s): ${invalid.join(", ")}`);
+  return {
+    ok: false,
+    checked: true,
+    error: "dev_start_gate_invalid",
+    message: `Plan is missing a valid ## ${planSection} section: ${parts.join("; ")}`,
+    plan_section: planSection,
+    source_bearing: sourceBearing,
+    missing,
+    invalid,
+  };
+}
+
+function devStartGateConfigFailure(errors) {
+  return {
+    ok: false,
+    checked: false,
+    error: "dev_start_gate_config_invalid",
+    message: errors.join("; "),
+    missing: [],
+    invalid: errors,
+  };
+}
+
+function devStartGateSuccess({ sourceBearing, planSection, riskTotal = null }) {
+  const result = {
+    ok: true,
+    checked: true,
+    source_bearing: sourceBearing,
+    plan_section: planSection,
+  };
+  if (riskTotal != null) result.risk_score_total = riskTotal;
+  return result;
+}
+
+function readDevStartPlanFields(planBody, config) {
+  if (typeof planBody !== "string" || planBody.trim() === "") {
+    return devStartGateFailure({
+      planSection: config.plan_section,
+      missing: ["plan body"],
+      invalid: [],
+    });
+  }
+  const sectionBody = extractMarkdownHeadingSection(planBody, config.plan_section);
+  if (sectionBody == null) {
+    return devStartGateFailure({
+      planSection: config.plan_section,
+      missing: [`## ${config.plan_section}`],
+      invalid: [],
+    });
+  }
+  return { ok: true, fields: parseDevStartGateFields(sectionBody) };
+}
+
+function readSourceBearingDecision(fields) {
+  const missing = [];
+  const invalid = [];
+  const sourceRaw = devStartFieldValue(fields, "Source-bearing");
+  if (!isConcreteDevStartValue(sourceRaw)) missing.push("Source-bearing");
+  const source = typeof sourceRaw === "string" ? sourceRaw.trim().toLowerCase() : null;
+  if (source && !["yes", "no"].includes(source)) invalid.push("Source-bearing must be 'yes' or 'no'");
+  return {
+    ok: missing.length === 0 && invalid.length === 0,
+    sourceBearing: source === "yes",
+    missing,
+    invalid,
+  };
+}
+
+function validateNonSourceDevStartGate(fields, config) {
+  const rationale =
+    devStartFieldValue(fields, "Non-source rationale") ??
+    devStartFieldValue(fields, "Source-bearing rationale");
+  if (isConcreteDevStartValue(rationale)) {
+    return devStartGateSuccess({ sourceBearing: false, planSection: config.plan_section });
+  }
+  return devStartGateFailure({
+    planSection: config.plan_section,
+    missing: ["Non-source rationale"],
+    invalid: [],
+    sourceBearing: false,
+  });
+}
+
+function missingDevStartRequiredFields(fields, requiredFields) {
+  return requiredFields.filter((field) => !isConcreteDevStartValue(devStartFieldValue(fields, field)));
+}
+
+function invalidDevStartSecurityDecision(fields) {
+  const securityDecision = devStartFieldValue(fields, "Security relevance decision");
+  if (!isConcreteDevStartValue(securityDecision)) return null;
+  if (DEV_START_GATE_SECURITY_DECISIONS.includes(securityDecision.trim().toLowerCase())) return null;
+  return `Security relevance decision must be one of: ${DEV_START_GATE_SECURITY_DECISIONS.join(", ")}`;
+}
+
+function readDevStartRiskTotal(fields) {
+  const riskScore = devStartFieldValue(fields, "Verification risk score");
+  if (!isConcreteDevStartValue(riskScore)) return { riskTotal: null, invalid: null };
+  const riskTotal = parseDevStartRiskTotal(riskScore);
+  if (riskTotal == null || riskTotal < 0 || riskTotal > 6) {
+    return {
+      riskTotal: null,
+      invalid: "Verification risk score must include total=<0..6>",
+    };
+  }
+  return { riskTotal, invalid: null };
+}
+
+function collectDevStartBlockerFailures(fields, blockerUids) {
+  const missing = [];
+  const invalid = [];
+  for (const uid of blockerUids) {
+    const label = `${uid} applicability`;
+    const value = devStartFieldValue(fields, label);
+    if (!isConcreteDevStartValue(value, { allowBareNotApplicable: true })) {
+      missing.push(label);
+      continue;
+    }
+    if (!/^(?:applies|not[- ]applicable|not applicable)\b/i.test(value.trim())) {
+      invalid.push(`${label} must start with applies, not-applicable, or not applicable`);
+    }
+  }
+  return { missing, invalid };
+}
+
+function validateSourceDevStartGate(fields, config) {
+  const missing = missingDevStartRequiredFields(fields, config.required_fields);
+  const invalid = [];
+  const securityError = invalidDevStartSecurityDecision(fields);
+  if (securityError) invalid.push(securityError);
+  const { riskTotal, invalid: riskError } = readDevStartRiskTotal(fields);
+  if (riskError) invalid.push(riskError);
+  if (riskTotal != null && riskTotal >= 4) {
+    const highRiskEvidence = devStartFieldValue(fields, "High-risk verification evidence");
+    if (!isConcreteDevStartValue(highRiskEvidence)) missing.push("High-risk verification evidence");
+  }
+  const blockerFailures = collectDevStartBlockerFailures(fields, config.blocker_uids);
+  missing.push(...blockerFailures.missing);
+  invalid.push(...blockerFailures.invalid);
+
+  if (missing.length || invalid.length) {
+    return devStartGateFailure({
+      planSection: config.plan_section,
+      missing,
+      invalid,
+      sourceBearing: true,
+    });
+  }
+  return devStartGateSuccess({ sourceBearing: true, planSection: config.plan_section, riskTotal });
+}
+
+export function validateDevStartPlanGate(planBody, gateConfig) {
+  const normalized = normalizeDevStartGateConfig(gateConfig);
+  if (!normalized.ok) return devStartGateConfigFailure(normalized.errors);
+  const config = normalized.value;
+  if (config.enabled !== true) return { ok: true, checked: false, source_bearing: null };
+
+  const planFields = readDevStartPlanFields(planBody, config);
+  if (!planFields.ok) return planFields;
+
+  const sourceDecision = readSourceBearingDecision(planFields.fields);
+  if (!sourceDecision.ok) {
+    return devStartGateFailure({
+      planSection: config.plan_section,
+      missing: sourceDecision.missing,
+      invalid: sourceDecision.invalid,
+    });
+  }
+  if (!sourceDecision.sourceBearing) return validateNonSourceDevStartGate(planFields.fields, config);
+  return validateSourceDevStartGate(planFields.fields, config);
 }
 
 // Maximum bytes of diff text to inline into a codex review prompt. Beyond
@@ -12036,6 +12443,18 @@ export function validatePrBodyInput(input) {
   if (testNotes != null && typeof testNotes !== "string") {
     errors.push("testNotes must be a string when set");
   }
+  if (input.devStartGate != null) {
+    if (typeof input.devStartGate !== "string" || input.devStartGate.trim() === "") {
+      errors.push("devStartGate must be a non-empty Markdown string when set");
+    } else {
+      const section = extractMarkdownHeadingSection(input.devStartGate, DEFAULT_DEV_START_GATE_PLAN_SECTION);
+      if (section == null) {
+        errors.push(`devStartGate must include a ## ${DEFAULT_DEV_START_GATE_PLAN_SECTION} section`);
+      } else if (devStartFieldValue(parseDevStartGateFields(section), "Source-bearing") == null) {
+        errors.push("devStartGate must include a Source-bearing field");
+      }
+    }
+  }
   // Optional documentation_outcome field (issue #896, ADR-054).
   if (input.documentation_outcome != null) {
     const docResult = validateDocumentationOutcome(input.documentation_outcome);
@@ -12052,7 +12471,7 @@ export function buildPrBody(input) {
   if (!validation.ok) {
     throw new Error(`buildPrBody input invalid: ${validation.errors.join("; ")}`);
   }
-  const { issueNumber, changeClass, requirementUids, adrRefs, summary, changes, traceability, changelogFragment, testNotes } = input;
+  const { issueNumber, changeClass, requirementUids, adrRefs, summary, changes, traceability, changelogFragment, testNotes, devStartGate } = input;
   const lines = [];
   lines.push("## Summary");
   lines.push("");
@@ -12097,6 +12516,10 @@ export function buildPrBody(input) {
   }
   if (changeClass === "source+migration") {
     lines.push("- **Migration reminder:** update version lists in `MigrationSmokeTest.java` and `RequirementsE2EIntegrationTest.java` (per `.gc/plan-rules.md`).");
+  }
+  if (devStartGate != null && devStartGate.trim() !== "") {
+    lines.push("");
+    for (const l of devStartGate.trim().split(/\r?\n/)) lines.push(l);
   }
   lines.push("");
   lines.push("## Test Plan");

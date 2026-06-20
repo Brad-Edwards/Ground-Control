@@ -17,6 +17,7 @@ tier: low
    - `traceability`: `{ implements: [...], tests: [...] }` strings—typically `<UID> ← <file path>` shape; the tool emits the IMPLEMENTS / TESTS markers `check_pr_body` requires.
    - `changelog_fragment`: path under `changelog.d/` (required for `source` / `source+migration`; omit for `doc-only`).
    - `test_notes` (optional): extra prose under the Test Plan section.
+   - `dev_start_gate` (optional): full Markdown `## Dev-Start Gate` section when the repo's PR template or metadata policy requires it. Reuse the plan's gate fields, adjusted to describe the PR diff.
 
    - `documentation_outcome` (optional): `{ outcome, rationale? }` where `outcome` ∈ `updated`, `verified_unchanged`, `not_updated_authorized`. Required when `gc_documentation_coverage` returned `outcome_required: true` for this diff. `not_updated_authorized` requires a non-empty `rationale`.
 
