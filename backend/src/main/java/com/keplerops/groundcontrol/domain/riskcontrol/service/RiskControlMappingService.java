@@ -254,10 +254,10 @@ public class RiskControlMappingService {
             return RiskControlMapping.forControlScenario(project, control, scenario, command.controlRole());
         }
         if (command.riskRegisterRecordId() != null) {
-            var record = resolveRecord(command, project.getId());
+            var riskRecord = resolveRecord(command, project.getId());
             checkDuplicate(
                     command.controlId(), null, null, command.riskRegisterRecordId(), command.operationalAssetId());
-            return RiskControlMapping.forControlRecord(project, control, record, command.controlRole());
+            return RiskControlMapping.forControlRecord(project, control, riskRecord, command.controlRole());
         }
         var threat = resolveThreat(command, project.getId());
         checkDuplicate(command.controlId(), command.threatModelId(), null, null, command.operationalAssetId());
@@ -281,14 +281,14 @@ public class RiskControlMappingService {
             return RiskControlMapping.forScopedScenario(project, sci, scenario, command.controlRole());
         }
         if (command.riskRegisterRecordId() != null) {
-            var record = resolveRecord(command, project.getId());
+            var riskRecord = resolveRecord(command, project.getId());
             checkDuplicateScoped(
                     command.scopedImplementationId(),
                     null,
                     null,
                     command.riskRegisterRecordId(),
                     command.operationalAssetId());
-            return RiskControlMapping.forScopedRecord(project, sci, record, command.controlRole());
+            return RiskControlMapping.forScopedRecord(project, sci, riskRecord, command.controlRole());
         }
         var threat = resolveThreat(command, project.getId());
         checkDuplicateScoped(
