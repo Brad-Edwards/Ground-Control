@@ -1588,6 +1588,30 @@ export interface ControlAssuranceWorkspaceResponse {
   controlCount: number;
 }
 
+// GC-GRC: Verification and Assurance Enums. Single-sourced from backend
+// VerificationStatus, AssuranceLevel, and MethodologyFamily enums under
+// domain/verification/state/ and domain/riskscenarios/state/ (ADR-034 enum contract).
+// Mirror policy enforced by tools/policy/checks.py::ENUM_CONTRACT_INVENTORY.
+export type VerificationStatus = "PROVEN" | "REFUTED" | "TIMEOUT" | "UNKNOWN" | "ERROR";
+export const VERIFICATION_STATUSES: VerificationStatus[] = [
+  "PROVEN",
+  "REFUTED",
+  "TIMEOUT",
+  "UNKNOWN",
+  "ERROR",
+];
+
+export type AssuranceLevel = "L0" | "L1" | "L2" | "L3";
+export const ASSURANCE_LEVELS: AssuranceLevel[] = ["L0", "L1", "L2", "L3"];
+
+export type MethodologyFamily = "FAIR" | "NIST_SP800_30_R1" | "ISO_27005" | "CUSTOM";
+export const METHODOLOGY_FAMILIES: MethodologyFamily[] = [
+  "FAIR",
+  "NIST_SP800_30_R1",
+  "ISO_27005",
+  "CUSTOM",
+];
+
 // GC-T012 / GC-T004: MethodologyProfile response and request types.
 // Mirrors backend MethodologyProfileResponse / MethodologyProfileRequest /
 // UpdateMethodologyProfileRequest field-for-field.
@@ -1598,7 +1622,7 @@ export interface MethodologyProfile {
   profileKey: string;
   name: string;
   version: string;
-  family: string;
+  family: MethodologyFamily;
   description?: string | null;
   inputSchema?: Record<string, unknown> | null;
   outputSchema?: Record<string, unknown> | null;
@@ -1613,7 +1637,7 @@ export interface MethodologyProfileRequest {
   profileKey: string;
   name: string;
   version: string;
-  family: string;
+  family: MethodologyFamily;
   description?: string | null;
   inputSchema?: Record<string, unknown> | null;
   outputSchema?: Record<string, unknown> | null;
@@ -1625,7 +1649,7 @@ export interface MethodologyProfileRequest {
 export interface UpdateMethodologyProfileRequest {
   name?: string | null;
   version?: string | null;
-  family?: string | null;
+  family?: MethodologyFamily | null;
   description?: string | null;
   inputSchema?: Record<string, unknown> | null;
   outputSchema?: Record<string, unknown> | null;
