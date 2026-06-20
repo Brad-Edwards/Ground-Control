@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # Quickfix: Lower-Ceremony Workflow Lane
 
-Canonical, agent-neutral implementation of the Ground Control `/quickfix` workflow. A purpose-built fast lane for **straightforward, lower-risk fixes** that don't warrant the full `/implement` ceremony (preflight, plan post, AI-assisted reviews, final-report tool, requirement transitions). Drops the ceremony designed for requirement-driven multi-clause work; keeps every mechanical guardrail the repo enforces. Runnable from Claude Code, Codex, or Cursor CLI (see `docs/DEVELOPMENT_WORKFLOW.md § Cursor CLI`).
+Canonical, agent-neutral implementation of the Ground Control `/quickfix` workflow. A purpose-built fast lane for **straightforward, lower-risk fixes** that don't warrant the full `/implement` ceremony (preflight, plan post, AI-assisted reviews, final-report tool, requirement transitions). Drops the ceremony designed for requirement-driven multi-clause work; keeps every mechanical guardrail the repo enforces. Runnable from Claude Code, Codex, or Cursor CLI. On Cursor, run `bin/install-skills.sh` once on the host (hard-copy into `~/.cursor/skills/quickfix/`; symlinks fail discovery). See `docs/DEVELOPMENT_WORKFLOW.md § Cursor CLI`.
 
 **Sibling to `skills/implement/SKILL.md`.** This skill cross-references the canonical full workflow at every step rather than duplicating prose - the contract surfaces (branch shape, in-progress signal, changelog fragment, PR-title rules, `gc_render_pr_body`, CI/SonarCloud, no-deferral, user-owns-merge) are identical. The only differences are the dropped ceremony.
 
