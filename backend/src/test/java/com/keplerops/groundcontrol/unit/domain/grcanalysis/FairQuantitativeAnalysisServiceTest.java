@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairLossForm;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisService;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
@@ -745,6 +746,251 @@ class FairQuantitativeAnalysisServiceTest {
 
         var item = result.assessments().get(0);
         assertThat(item.outputs().riskLevel()).isEqualTo("CRITICAL");
+    }
+
+    // ---- GC-T016: FAIR materiality / loss-form decomposition + stakeholder secondary effects ----
+
+    private Map<String, Object> stakeholderEntry(
+            String stakeholder, String lossForm, double low, double likely, double high, String currency) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("stakeholder", stakeholder);
+        if (lossForm != null) {
+            m.put("loss_form", lossForm);
+        }
+        m.put("low", low);
+        m.put("likely", likely);
+        m.put("high", high);
+        if (currency != null) {
+            m.put("currency", currency);
+        }
+        return m;
+    }
+
+    @Test
+    void analyze_fairMam_decomposedByLossForm_withTotal() {
+        Map<String, Object> fairMam = new LinkedHashMap<>();
+        fairMam.put("productivity_loss", threePoint(100.0, 200.0, 400.0));
+        fairMam.put("response_cost", threePoint(50.0, 80.0, 120.0));
+        fairMam.put("replacement_cost", threePoint(10.0, 20.0, 30.0));
+        fairMam.put("competitive_advantage_loss", threePoint(5.0, 15.0, 25.0));
+        fairMam.put("fines_and_judgments", threePoint(1000.0, 2000.0, 3000.0));
+        fairMam.put("reputation_damage", threePoint(500.0, 1500.0, 4000.0));
+
+        Map<String, Object> inputs = new LinkedHashMap<>();
+        inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
+        inputs.put("fair_mam", fairMam);
+        var assessment = makeAssessment(fairProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(assessment));
+
+        FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
+
+        var materiality = result.assessments().get(0).outputs().materiality();
+        assertThat(materiality).isNotNull();
+        assertThat(materiality.currency()).isEqualTo("USD");
+        assertThat(materiality.byLossForm()).hasSize(6);
+        assertThat(materiality.byLossForm())
+                .extracting(b -> b.form())
+                .containsExactlyInAnyOrder(
+                        FairLossForm.PRODUCTIVITY,
+                        FairLossForm.RESPONSE,
+                        FairLossForm.REPLACEMENT,
+                        FairLossForm.COMPETITIVE_ADVANTAGE,
+                        FairLossForm.FINES_AND_JUDGMENTS,
+                        FairLossForm.REPUTATION);
+        // total = elementwise sum across all six forms
+        assertThat(materiality.total().low()).isEqualTo(1665.0, org.assertj.core.api.Assertions.within(1e-6));
+        assertThat(materiality.total().likely()).isEqualTo(3815.0, org.assertj.core.api.Assertions.within(1e-6));
+        assertThat(materiality.total().high()).isEqualTo(7575.0, org.assertj.core.api.Assertions.within(1e-6));
+    }
+
+    @Test
+    void analyze_fairMam_partialForms_onlyPresentDecomposed() {
+        Map<String, Object> fairMam = new LinkedHashMap<>();
+        fairMam.put("productivity_loss", threePoint(100.0, 200.0, 400.0));
+        fairMam.put("reputation_damage", threePoint(500.0, 1500.0, 4000.0));
+
+        Map<String, Object> inputs = new LinkedHashMap<>();
+        inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
+        inputs.put("fair_mam", fairMam);
+        var assessment = makeAssessment(fairProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(assessment));
+
+        FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
+
+        var materiality = result.assessments().get(0).outputs().materiality();
+        assertThat(materiality).isNotNull();
+        assertThat(materiality.byLossForm())
+                .extracting(b -> b.form())
+                .containsExactlyInAnyOrder(FairLossForm.PRODUCTIVITY, FairLossForm.REPUTATION);
+        assertThat(materiality.total().low()).isEqualTo(600.0, org.assertj.core.api.Assertions.within(1e-6));
+    }
+
+    @Test
+    void analyze_fairMam_currencyMismatchForm_excludedFromTotal_emitsLimitation() {
+        Map<String, Object> fairMam = new LinkedHashMap<>();
+        fairMam.put("productivity_loss", threePointWithCurrency(100.0, 200.0, 400.0, "USD"));
+        fairMam.put("fines_and_judgments", threePointWithCurrency(1000.0, 2000.0, 3000.0, "EUR"));
+
+        Map<String, Object> inputs = new LinkedHashMap<>();
+        inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
+        inputs.put("fair_mam", fairMam);
+        var assessment = makeAssessment(fairProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(assessment));
+
+        FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        assertThat(item.limitations())
+                .anyMatch(s -> s.toLowerCase().contains("fines_and_judgments")
+                        && s.toLowerCase().contains("currenc"));
+        var materiality = item.outputs().materiality();
+        // The EUR form is excluded from the USD total; only productivity_loss contributes.
+        assertThat(materiality.total().low()).isEqualTo(100.0, org.assertj.core.api.Assertions.within(1e-6));
+        assertThat(materiality.byLossForm()).extracting(b -> b.form()).containsExactly(FairLossForm.PRODUCTIVITY);
+    }
+
+    @Test
+    void analyze_fairMam_invalidRangeForm_excludedFromTotal_emitsLimitation() {
+        Map<String, Object> fairMam = new LinkedHashMap<>();
+        // response_cost out of order (low > high)
+        fairMam.put("response_cost", threePoint(900.0, 80.0, 10.0));
+        fairMam.put("productivity_loss", threePoint(100.0, 200.0, 400.0));
+
+        Map<String, Object> inputs = new LinkedHashMap<>();
+        inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
+        inputs.put("fair_mam", fairMam);
+        var assessment = makeAssessment(fairProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(assessment));
+
+        FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        assertThat(item.limitations()).anyMatch(s -> s.toLowerCase().contains("response_cost"));
+        var materiality = item.outputs().materiality();
+        assertThat(materiality.byLossForm()).extracting(b -> b.form()).containsExactly(FairLossForm.PRODUCTIVITY);
+        assertThat(materiality.total().low()).isEqualTo(100.0, org.assertj.core.api.Assertions.within(1e-6));
+    }
+
+    @Test
+    void analyze_secondaryLossByStakeholder_parsed_withAndWithoutLossForm() {
+        List<Object> stakeholders = new java.util.ArrayList<>();
+        stakeholders.add(stakeholderEntry("Customers", "reputation_damage", 1000.0, 3000.0, 9000.0, "USD"));
+        stakeholders.add(stakeholderEntry("Regulators", null, 500.0, 1500.0, 4000.0, "USD"));
+
+        Map<String, Object> inputs = new LinkedHashMap<>();
+        inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
+        inputs.put("secondary_loss_by_stakeholder", stakeholders);
+        var assessment = makeAssessment(fairProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(assessment));
+
+        FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
+
+        var materiality = result.assessments().get(0).outputs().materiality();
+        assertThat(materiality).isNotNull();
+        assertThat(materiality.secondaryLossByStakeholder()).hasSize(2);
+        var customers = materiality.secondaryLossByStakeholder().get(0);
+        assertThat(customers.stakeholder()).isEqualTo("Customers");
+        assertThat(customers.lossForm()).isEqualTo(FairLossForm.REPUTATION);
+        assertThat(customers.magnitude().likely()).isEqualTo(3000.0);
+        var regulators = materiality.secondaryLossByStakeholder().get(1);
+        assertThat(regulators.stakeholder()).isEqualTo("Regulators");
+        assertThat(regulators.lossForm()).isNull();
+    }
+
+    @Test
+    void analyze_stakeholderSecondaryLoss_invalidMagnitude_emitsLimitation_excluded() {
+        List<Object> stakeholders = new java.util.ArrayList<>();
+        // negative magnitude is invalid
+        stakeholders.add(stakeholderEntry("Customers", "reputation_damage", -100.0, 3000.0, 9000.0, "USD"));
+
+        Map<String, Object> inputs = new LinkedHashMap<>();
+        inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
+        inputs.put("secondary_loss_by_stakeholder", stakeholders);
+        var assessment = makeAssessment(fairProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(assessment));
+
+        FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        assertThat(item.limitations()).anyMatch(s -> s.toLowerCase().contains("customers"));
+        assertThat(item.outputs().materiality().secondaryLossByStakeholder()).isEmpty();
+    }
+
+    @Test
+    void analyze_stakeholderSecondaryLoss_currencyMismatch_excludedWithLimitation() {
+        // A EUR stakeholder loss on a USD assessment must not be surfaced under the
+        // single USD materiality currency — it is excluded with a limitation, mirroring
+        // the FAIR-MAM loss-form currency handling.
+        List<Object> stakeholders = new java.util.ArrayList<>();
+        stakeholders.add(stakeholderEntry("Customers", "reputation_damage", 1000.0, 3000.0, 9000.0, "EUR"));
+        stakeholders.add(stakeholderEntry("Regulators", null, 500.0, 1500.0, 4000.0, "USD"));
+
+        Map<String, Object> inputs = new LinkedHashMap<>();
+        inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
+        inputs.put("secondary_loss_by_stakeholder", stakeholders);
+        var assessment = makeAssessment(fairProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(assessment));
+
+        FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        assertThat(item.limitations())
+                .anyMatch(s ->
+                        s.toLowerCase().contains("customers") && s.toLowerCase().contains("currenc"));
+        var materiality = item.outputs().materiality();
+        // Only the USD Regulators entry survives; the EUR Customers entry is excluded.
+        assertThat(materiality.secondaryLossByStakeholder()).hasSize(1);
+        assertThat(materiality.secondaryLossByStakeholder().get(0).stakeholder())
+                .isEqualTo("Regulators");
+    }
+
+    @Test
+    void analyze_noMaterialityData_materialityNull() {
+        Map<String, Object> inputs = new LinkedHashMap<>();
+        inputs.put("threat_event_frequency", threePoint(1.0, 2.0, 4.0));
+        inputs.put("vulnerability", threePoint(0.1, 0.2, 0.4));
+        inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
+        var assessment = makeAssessment(fairProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(assessment));
+
+        FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
+
+        assertThat(result.assessments().get(0).outputs().materiality()).isNull();
+    }
+
+    @Test
+    void analyze_fairMam_doesNotAffectAle() {
+        // fair_mam is a descriptive materiality view — it must NOT change the canonical
+        // ALE arithmetic (ALE = LEF * LM, LM = PLM). ALE must equal the value computed
+        // without any fair_mam present.
+        Map<String, Object> fairMam = new LinkedHashMap<>();
+        fairMam.put("productivity_loss", threePoint(999999.0, 999999.0, 999999.0));
+
+        Map<String, Object> inputs = new LinkedHashMap<>();
+        inputs.put("threat_event_frequency", threePoint(1.0, 2.0, 4.0));
+        inputs.put("vulnerability", threePoint(0.1, 0.2, 0.4));
+        inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
+        inputs.put("fair_mam", fairMam);
+        var assessment = makeAssessment(fairProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(assessment));
+
+        FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        // ALE low = LEF.low(0.1) * LM.low(1000) = 100 — unchanged by the huge fair_mam figure
+        assertThat(item.outputs().annualizedLossExpectancy().low())
+                .isEqualTo(100.0, org.assertj.core.api.Assertions.within(1e-6));
+        assertThat(item.outputs().annualizedLossExpectancy().high())
+                .isEqualTo(32000.0, org.assertj.core.api.Assertions.within(1e-6));
     }
 
     @Test

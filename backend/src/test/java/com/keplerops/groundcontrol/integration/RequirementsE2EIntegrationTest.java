@@ -531,6 +531,7 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "135", // V135: create mcp_tool_event (issue #1104 / ADR-059)
                         "136", // V136: extend FAIR input schema with contact_frequency, probability_of_action,
                         // threat_capability, resistance_strength sub-factors (GC-T011)
-                        "137"); // V137: add threat_model_id to risk_control_mapping (GC-H006)
+                        "137", // V137: add threat_model_id to risk_control_mapping (GC-H006)
+                        "138"); // V138: extend FAIR schema with materiality / secondary_loss_by_stakeholder (GC-T016)
     }
 }

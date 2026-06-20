@@ -68,7 +68,31 @@ public record FairQuantitativeAnalysisResult(
             String currency,
             Map<String, Object> percentiles,
             String riskLevel,
-            String derivation) {}
+            String derivation,
+            Materiality materiality) {}
+
+    /**
+     * FAIR-MAM materiality view per GC-T016. A descriptive decomposition of the
+     * {@code fair_mam} loss-magnitude breakdown and stakeholder-specific secondary
+     * effects. {@code null} when neither {@code fair_mam} nor stakeholder data is
+     * present. This view never feeds the canonical ALE arithmetic (ALE stays
+     * {@code LEF × LM}), so it adds granular materiality reasoning without changing
+     * cross-assessment comparability or risking double-counting.
+     */
+    public record Materiality(
+            List<LossFormBreakdown> byLossForm,
+            ThreePoint total,
+            String currency,
+            List<StakeholderSecondaryLoss> secondaryLossByStakeholder) {}
+
+    /** A single FAIR-MAM loss form with its three-point monetary magnitude. */
+    public record LossFormBreakdown(FairLossForm form, ThreePoint magnitude) {}
+
+    /**
+     * A stakeholder-specific secondary loss effect. {@code lossForm} is {@code null}
+     * when the entry does not name one of the FAIR forms of loss.
+     */
+    public record StakeholderSecondaryLoss(String stakeholder, FairLossForm lossForm, ThreePoint magnitude) {}
 
     public record ThreePoint(Double low, Double likely, Double high) {}
 

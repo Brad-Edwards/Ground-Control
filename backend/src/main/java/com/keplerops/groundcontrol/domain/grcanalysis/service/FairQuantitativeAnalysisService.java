@@ -59,6 +59,11 @@ public class FairQuantitativeAnalysisService {
     private static final String KEY_FAIR_CAM = "fair_cam";
     private static final String KEY_FAIR_MAM = "fair_mam";
     private static final String KEY_CURRENCY = "currency";
+    private static final String KEY_SECONDARY_BY_STAKEHOLDER = "secondary_loss_by_stakeholder";
+
+    // secondary_loss_by_stakeholder entry keys (GC-T016)
+    private static final String KEY_STAKEHOLDER = "stakeholder";
+    private static final String KEY_LOSS_FORM = "loss_form";
 
     // Three-point map slot keys
     private static final String KEY_LOW = "low";
@@ -190,6 +195,7 @@ public class FairQuantitativeAnalysisService {
                 asMap(inputs.get(KEY_SLM)),
                 asMap(inputs.get(KEY_FAIR_CAM)),
                 asMap(inputs.get(KEY_FAIR_MAM)),
+                asList(inputs.get(KEY_SECONDARY_BY_STAKEHOLDER)),
                 row.getUncertaintyMetadata());
 
         String currency = resolveCurrency(f.plm());
@@ -222,6 +228,8 @@ public class FairQuantitativeAnalysisService {
                 f.fairCam(),
                 f.fairMam(),
                 f.uncertainty());
+        FairQuantitativeAnalysisResult.Materiality materiality = deriveMateriality(f, currency, limitations);
+
         var typedOutputs = new FairQuantitativeAnalysisResult.Outputs(
                 lefComputed.result(),
                 lmResult,
@@ -229,7 +237,8 @@ public class FairQuantitativeAnalysisService {
                 aleComputed.currency(),
                 aleComputed.percentiles(),
                 riskLevel,
-                derivation);
+                derivation,
+                materiality);
 
         return assembleItem(row, profile, typedInputs, typedOutputs, limitations);
     }
@@ -312,6 +321,7 @@ public class FairQuantitativeAnalysisService {
             Map<String, Object> slm,
             Map<String, Object> fairCam,
             Map<String, Object> fairMam,
+            List<Object> secondaryByStakeholder,
             Map<String, Object> uncertainty) {}
 
     /**
@@ -627,5 +637,129 @@ public class FairQuantitativeAnalysisService {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> asMap(Object o) {
         return o instanceof Map<?, ?> m ? Collections.unmodifiableMap((Map<String, Object>) m) : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Object> asList(Object o) {
+        return o instanceof List<?> l ? Collections.unmodifiableList((List<Object>) l) : null;
+    }
+
+    /**
+     * Builds the GC-T016 FAIR-MAM materiality view: a typed decomposition of the
+     * opaque {@code fair_mam} loss-magnitude breakdown plus any stakeholder-specific
+     * secondary effects. Returns {@code null} when neither input is present so callers
+     * can treat materiality as an optional view.
+     *
+     * <p>This view is descriptive only — it is deliberately NOT fed back into the
+     * LEF/LM/ALE arithmetic, so populating {@code fair_mam} never shifts the canonical
+     * ALE and assessments stay comparable across rows.
+     */
+    private static FairQuantitativeAnalysisResult.Materiality deriveMateriality(
+            ParsedFactors f, String currency, List<String> limitations) {
+        if (f.fairMam() == null && f.secondaryByStakeholder() == null) {
+            return null;
+        }
+        List<FairQuantitativeAnalysisResult.LossFormBreakdown> byForm =
+                decomposeFairMam(f.fairMam(), currency, limitations);
+        List<FairQuantitativeAnalysisResult.StakeholderSecondaryLoss> stakeholders =
+                parseStakeholderSecondaryLosses(f.secondaryByStakeholder(), currency, limitations);
+        FairQuantitativeAnalysisResult.ThreePoint total = sumLossForms(byForm);
+        return new FairQuantitativeAnalysisResult.Materiality(byForm, total, currency, stakeholders);
+    }
+
+    /**
+     * Decomposes the {@code fair_mam} map into one typed breakdown per present FAIR
+     * loss form. A form is excluded (with a limitation) when its currency disagrees
+     * with the assessment currency or it breaches a three-point invariant, mirroring
+     * the secondary-loss currency/invariant handling.
+     */
+    private static List<FairQuantitativeAnalysisResult.LossFormBreakdown> decomposeFairMam(
+            Map<String, Object> fairMam, String currency, List<String> limitations) {
+        List<FairQuantitativeAnalysisResult.LossFormBreakdown> out = new ArrayList<>();
+        if (fairMam == null) {
+            return out;
+        }
+        for (FairLossForm form : FairLossForm.values()) {
+            Map<String, Object> formMap = asMap(fairMam.get(form.jsonKey()));
+            if (formMap == null) {
+                continue;
+            }
+            if (formMap.containsKey(KEY_CURRENCY)) {
+                String formCurrency = String.valueOf(formMap.get(KEY_CURRENCY));
+                if (!formCurrency.equals(currency)) {
+                    limitations.add("fair_mam " + form.jsonKey() + " uses currency " + formCurrency
+                            + " but assessment currency is " + currency + " — excluded from materiality total");
+                    continue;
+                }
+            }
+            if (!validateThreePointFactor("fair_mam." + form.jsonKey(), formMap, false, limitations)) {
+                continue;
+            }
+            FairQuantitativeAnalysisResult.ThreePoint tp = parseThreePoint(formMap);
+            if (tp != null) {
+                out.add(new FairQuantitativeAnalysisResult.LossFormBreakdown(form, tp));
+            }
+        }
+        return out;
+    }
+
+    /** Elementwise sum of all decomposed loss forms; {@code null} when none are present. */
+    private static FairQuantitativeAnalysisResult.ThreePoint sumLossForms(
+            List<FairQuantitativeAnalysisResult.LossFormBreakdown> forms) {
+        if (forms.isEmpty()) {
+            return null;
+        }
+        double low = 0;
+        double likely = 0;
+        double high = 0;
+        for (FairQuantitativeAnalysisResult.LossFormBreakdown b : forms) {
+            low += b.magnitude().low();
+            likely += b.magnitude().likely();
+            high += b.magnitude().high();
+        }
+        return new FairQuantitativeAnalysisResult.ThreePoint(low, likely, high);
+    }
+
+    /**
+     * Parses the optional {@code secondary_loss_by_stakeholder} array into typed
+     * per-stakeholder secondary-loss effects. An entry whose currency disagrees
+     * with the single-currency materiality envelope, or that breaches a three-point
+     * invariant, is excluded with a limitation (mirroring the FAIR-MAM loss-form
+     * path) so a mismatched amount is never silently surfaced as the envelope
+     * currency. An unrecognized {@code loss_form} is surfaced as a {@code null}
+     * loss form rather than rejecting the entry.
+     */
+    private static List<FairQuantitativeAnalysisResult.StakeholderSecondaryLoss> parseStakeholderSecondaryLosses(
+            List<Object> entries, String currency, List<String> limitations) {
+        List<FairQuantitativeAnalysisResult.StakeholderSecondaryLoss> out = new ArrayList<>();
+        if (entries == null) {
+            return out;
+        }
+        for (Object raw : entries) {
+            Map<String, Object> entry = asMap(raw);
+            if (entry == null) {
+                continue;
+            }
+            String stakeholder = entry.get(KEY_STAKEHOLDER) == null ? null : String.valueOf(entry.get(KEY_STAKEHOLDER));
+            FairLossForm lossForm = FairLossForm.fromJsonKey(
+                    entry.get(KEY_LOSS_FORM) == null ? null : String.valueOf(entry.get(KEY_LOSS_FORM)));
+            String label = KEY_SECONDARY_BY_STAKEHOLDER + "[" + (stakeholder == null ? "?" : stakeholder) + "]";
+            if (entry.containsKey(KEY_CURRENCY)) {
+                String entryCurrency = String.valueOf(entry.get(KEY_CURRENCY));
+                if (!entryCurrency.equals(currency)) {
+                    limitations.add(label + " uses currency " + entryCurrency + " but assessment currency is "
+                            + currency + " — excluded from stakeholder materiality");
+                    continue;
+                }
+            }
+            if (!validateThreePointFactor(label, entry, false, limitations)) {
+                continue;
+            }
+            FairQuantitativeAnalysisResult.ThreePoint tp = parseThreePoint(entry);
+            if (tp != null) {
+                out.add(new FairQuantitativeAnalysisResult.StakeholderSecondaryLoss(stakeholder, lossForm, tp));
+            }
+        }
+        return out;
     }
 }

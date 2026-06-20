@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.api.grcanalysis;
 
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairLossForm;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisResult;
 import java.time.Instant;
 import java.util.List;
@@ -113,7 +114,8 @@ public record FairQuantitativeAnalysisResponse(
             String currency,
             Map<String, Object> percentiles,
             String riskLevel,
-            String derivation) {
+            String derivation,
+            Materiality materiality) {
 
         public static Outputs from(FairQuantitativeAnalysisResult.Outputs outputs) {
             return new Outputs(
@@ -125,7 +127,45 @@ public record FairQuantitativeAnalysisResponse(
                     outputs.currency(),
                     outputs.percentiles(),
                     outputs.riskLevel(),
-                    outputs.derivation());
+                    outputs.derivation(),
+                    outputs.materiality() == null ? null : Materiality.from(outputs.materiality()));
+        }
+    }
+
+    public record Materiality(
+            List<LossFormBreakdown> byLossForm,
+            ThreePoint total,
+            String currency,
+            List<StakeholderSecondaryLoss> secondaryLossByStakeholder) {
+
+        public static Materiality from(FairQuantitativeAnalysisResult.Materiality materiality) {
+            return new Materiality(
+                    materiality.byLossForm().stream()
+                            .map(LossFormBreakdown::from)
+                            .toList(),
+                    materiality.total() == null ? null : ThreePoint.from(materiality.total()),
+                    materiality.currency(),
+                    materiality.secondaryLossByStakeholder().stream()
+                            .map(StakeholderSecondaryLoss::from)
+                            .toList());
+        }
+    }
+
+    public record LossFormBreakdown(FairLossForm form, ThreePoint magnitude) {
+
+        public static LossFormBreakdown from(FairQuantitativeAnalysisResult.LossFormBreakdown breakdown) {
+            return new LossFormBreakdown(
+                    breakdown.form(), breakdown.magnitude() == null ? null : ThreePoint.from(breakdown.magnitude()));
+        }
+    }
+
+    public record StakeholderSecondaryLoss(String stakeholder, FairLossForm lossForm, ThreePoint magnitude) {
+
+        public static StakeholderSecondaryLoss from(FairQuantitativeAnalysisResult.StakeholderSecondaryLoss loss) {
+            return new StakeholderSecondaryLoss(
+                    loss.stakeholder(),
+                    loss.lossForm(),
+                    loss.magnitude() == null ? null : ThreePoint.from(loss.magnitude()));
         }
     }
 
