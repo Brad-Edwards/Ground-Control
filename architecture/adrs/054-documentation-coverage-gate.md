@@ -315,3 +315,14 @@ already covers both MCP trigger paths. Documentation lives in `docs/API.md`
 and `docs/architecture/ARCHITECTURE.md`. The doc-coverage classifier, Vale rule
 set, `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new
 `docs/DOC_STYLE.md` style rule is established.
+
+**2026-06-20 (issue #763 GC-I004 continuous compliance monitoring).** Added
+`analyzeComplianceMonitoring` adapter helper to `mcp/ground-control/lib.js` and
+registered `continuous_compliance_monitoring` in the `ANALYZE_KINDS` array and
+`gc_analyze` tool description in `mcp/ground-control/index.js`. The backend
+surface is `GET /api/v1/analysis/grc/compliance-monitoring` (documented in
+`docs/API.md`). This follows the `gc_analyze`-kind extension pattern already
+established for `fair_quantitative` (GC-T011 / #723) and recorded in
+`docs/DOC_STYLE.md § MCP-shape-extensions`. The documentation-coverage
+classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
+unchanged; no new `docs/DOC_STYLE.md` style rule is established.

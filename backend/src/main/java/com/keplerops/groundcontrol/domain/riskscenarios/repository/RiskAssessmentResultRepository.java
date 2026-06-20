@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.domain.riskscenarios.repository;
 
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskAssessmentResult;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,4 +40,13 @@ public interface RiskAssessmentResultRepository extends JpaRepository<RiskAssess
                     + " WHERE r.project.id = :projectId AND r.riskRegisterRecord.id = :riskRegisterRecordId ORDER BY r.createdAt DESC")
     List<RiskAssessmentResult> findByProjectIdAndRiskRegisterRecordIdOrderByCreatedAtDesc(
             @Param("projectId") UUID projectId, @Param("riskRegisterRecordId") UUID riskRegisterRecordId);
+
+    @Query("SELECT r FROM RiskAssessmentResult r JOIN FETCH r.riskScenario"
+            + " WHERE r.project.id = :projectId AND r.reassessmentRequiredAt IS NOT NULL"
+            + " AND r.reassessmentRequiredAt >= :lookbackStart AND r.reassessmentRequiredAt <= :effectiveAsOf"
+            + " ORDER BY r.reassessmentRequiredAt DESC")
+    List<RiskAssessmentResult> findByProjectIdWithReassessmentRequiredInWindowOrderByReassessmentRequiredAtDesc(
+            @Param("projectId") UUID projectId,
+            @Param("lookbackStart") Instant lookbackStart,
+            @Param("effectiveAsOf") Instant effectiveAsOf);
 }

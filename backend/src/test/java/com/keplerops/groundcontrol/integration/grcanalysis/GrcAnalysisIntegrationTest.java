@@ -96,4 +96,21 @@ class GrcAnalysisIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.counts.total").isNumber())
                 .andExpect(jsonPath("$.limitations").isArray());
     }
+
+    @Test
+    void complianceMonitoring_returnsStructuredResultForSeedProject() throws Exception {
+        mockMvc.perform(get("/api/v1/analysis/grc/compliance-monitoring").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisKind", is("continuous_compliance_monitoring")))
+                .andExpect(jsonPath("$.project", is("ground-control")))
+                .andExpect(jsonPath("$.derivationMethod", is("continuous-compliance-monitoring-v1")))
+                .andExpect(jsonPath("$.inputs.freshnessWindowDays", is(90)))
+                .andExpect(jsonPath("$.impactSet").isArray())
+                .andExpect(jsonPath("$.gapSet").isArray())
+                .andExpect(jsonPath("$.staleSet").isArray())
+                .andExpect(jsonPath("$.driftCauseCounts.controlModification").isNumber())
+                .andExpect(jsonPath("$.driftCauseCounts.artifactGraphChange").isNumber())
+                .andExpect(jsonPath("$.driftCauseCounts.evidenceExpiration").isNumber())
+                .andExpect(jsonPath("$.limitations").isArray());
+    }
 }
