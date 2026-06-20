@@ -1610,7 +1610,7 @@ Bidirectional many-to-many link between controls (catalog `Control` or `ScopedCo
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| POST | `/risk-control-mappings` | RiskControlMappingRequest | 201 | Create a mapping between a control/SCI and a risk scenario/register record |
+| POST | `/risk-control-mappings` | RiskControlMappingRequest | 201 | Create a mapping between a control/SCI and a risk scenario/register record/threat model |
 | GET | `/risk-control-mappings` | - | 200 | List mappings for the project |
 | GET | `/risk-control-mappings/{id}` | - | 200 | Get mapping by UUID |
 | PUT | `/risk-control-mappings/{id}` | UpdateRiskControlMappingRequest | 200 | Update mutable fields (role, objective, scope, methodology influence) |
@@ -1619,7 +1619,9 @@ Bidirectional many-to-many link between controls (catalog `Control` or `ScopedCo
 | DELETE | `/risk-control-mappings/{id}/observations/{observationId}` | - | 200 | Detach an observation |
 | POST | `/risk-control-mappings/{id}/evidence` | AddEvidenceRefRequest | 200 | Add an evidence reference (C8 provenance) |
 
-**RiskControlMappingRequest fields:** Exactly one of `controlId` / `scopedImplementationId` (control side); exactly one of `riskScenarioId` / `riskRegisterRecordId` (risk side); `controlRole` (required, `MappingControlRole`: `PREVENTIVE`, `DETECTIVE`, `CORRECTIVE`, `DETERRENT`, `COMPENSATING`, `RECOVERY`, `DIRECTIVE`); `mappingObjective` (optional TEXT); `mappingScope` (optional TEXT); `operationalAssetId` (optional UUID: C2 boundary context); `methodologyProfileId` (optional UUID: C4 profile); `methodologyInfluence` (optional JSON object - C4 validated against profile schema if profile provided). Violations of the "exactly one" rules return 422.
+**RiskControlMappingRequest fields:** Exactly one of `controlId` / `scopedImplementationId` (control side); exactly one of `riskScenarioId` / `riskRegisterRecordId` / `threatModelId` (analysis side; GC-H006 extends the invariant to three-way); `controlRole` (required, `MappingControlRole`: `PREVENTIVE`, `DETECTIVE`, `CORRECTIVE`, `DETERRENT`, `COMPENSATING`, `RECOVERY`, `DIRECTIVE`); `mappingObjective` (optional TEXT); `mappingScope` (optional TEXT); `operationalAssetId` (optional UUID: C2 boundary context); `methodologyProfileId` (optional UUID: C4 profile); `methodologyInfluence` (optional JSON object - C4 validated against profile schema if profile provided). Violations of the "exactly one" rules return 422.
+
+**RiskControlMappingResponse fields:** `id`, `projectId`, `controlId`, `scopedImplementationId`, `riskScenarioId`, `riskRegisterRecordId`, `threatModelId` (UUID or null, added by GC-H006), `operationalAssetId`, `mappingObjective`, `controlRole`, `mappingScope`, `methodologyProfileId`, `methodologyInfluence`, `createdAt`, `updatedAt`.
 
 **AddEvidenceRefRequest fields:** `evidenceRef` (required, opaque reference string), `evidenceNote` (optional TEXT), `evidenceArtifactId` (optional UUID to a formal `EvidenceArtifact`).
 
@@ -1631,8 +1633,13 @@ Bidirectional many-to-many link between controls (catalog `Control` or `ScopedCo
 | GET | `/analysis/risk-control/unmapped-records` | - | 200 | C5b - Register records with no mapped controls (add `?transitive=true` for transitive form) |
 | GET | `/analysis/risk-control/unmapped-controls` | - | 200 | C6 - Controls not mapped to any relevant scenario (transitive-through-record) |
 | GET | `/analysis/risk-control/assessment-feed/{assessmentResultId}` | - | 200 | C7/C8 - Feed of effectiveness inputs and observation/evidence provenance for a risk assessment result |
+| GET | `/analysis/risk-control/unmapped-threats` | - | 200 | GC-H006 - Threat model entries with no mapped controls |
+| GET | `/analysis/risk-control/threat-unmapped-controls` | - | 200 | GC-H006 - Controls not mapped to any threat model entry |
+| GET | `/analysis/risk-control/threats-insufficient-effectiveness` | - | 200 | GC-H006 - Threat model entries whose mapped controls have insufficient operating effectiveness |
 
 The `unmapped-records` endpoint accepts `transitive` (boolean, default `true`). In transitive mode, a record is considered covered if all its linked scenarios have at least one mapped control; records with zero scenarios always appear in the result. The `assessment-feed` endpoint requires `?project=<slug>` and the assessment-result UUID in the path.
+
+The `threats-insufficient-effectiveness` endpoint accepts optional query parameters: `minEffectiveness` (`ControlEffectivenessRating` enum: `EFFECTIVE`, `PARTIALLY_EFFECTIVE`, `INEFFECTIVE`; default `EFFECTIVE`), `asOf` (ISO 8601 date, default today UTC), `freshnessWindowDays` (positive integer, default 90). A threat is flagged when it has ≥1 mapped control and none of them has a fresh assessment meeting the effectiveness bar.
 
 ### Evidence Artifacts (GC-M016 / ADR-045)
 

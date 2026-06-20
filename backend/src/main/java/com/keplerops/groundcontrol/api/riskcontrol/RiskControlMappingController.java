@@ -42,6 +42,7 @@ public class RiskControlMappingController {
                 request.scopedImplementationId(),
                 request.riskScenarioId(),
                 request.riskRegisterRecordId(),
+                request.threatModelId(), // GC-H006
                 request.operationalAssetId(),
                 request.mappingObjective(),
                 request.controlRole(),

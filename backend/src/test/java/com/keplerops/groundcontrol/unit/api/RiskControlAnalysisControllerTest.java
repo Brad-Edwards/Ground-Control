@@ -3,6 +3,8 @@ package com.keplerops.groundcontrol.unit.api;
 import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -131,5 +133,49 @@ class RiskControlAnalysisControllerTest {
                 .andExpect(jsonPath("$.evidenceRefs", hasSize(1)))
                 .andExpect(jsonPath("$.evidenceRefs[0].evidenceRef", is("https://evidence.example.com")))
                 .andExpect(jsonPath("$.evidenceRefs[0].evidenceNote", is("Test note")));
+    }
+
+    @Test
+    void unmappedThreats_returnsThreatsWithNoMappedControls() throws Exception {
+        var threat = new com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel(
+                project, "TM-001", "SQL Injection", "Attacker", "Inject", "Data loss");
+        setField(threat, "id", UUID.randomUUID());
+
+        when(coverageService.findUnmappedThreats(PROJECT_ID)).thenReturn(List.of(threat));
+
+        mockMvc.perform(get("/api/v1/analysis/risk-control/unmapped-threats").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.threats", hasSize(1)))
+                .andExpect(jsonPath("$.threats[0].uid", is("TM-001")));
+    }
+
+    @Test
+    void threatUnmappedControls_returnsControlsNotMappedToThreats() throws Exception {
+        var control = new Control(project, "CTRL-001", "Access Control", ControlFunction.PREVENTIVE);
+        setField(control, "id", UUID.randomUUID());
+
+        when(coverageService.findControlsUnmappedToThreats(PROJECT_ID)).thenReturn(List.of(control));
+
+        mockMvc.perform(get("/api/v1/analysis/risk-control/threat-unmapped-controls")
+                        .param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.controls", hasSize(1)))
+                .andExpect(jsonPath("$.controls[0].uid", is("CTRL-001")));
+    }
+
+    @Test
+    void threatsInsufficientEffectiveness_returnsFlaggedThreats() throws Exception {
+        var threat = new com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel(
+                project, "TM-001", "SQL Injection", "Attacker", "Inject", "Data loss");
+        setField(threat, "id", UUID.randomUUID());
+
+        when(coverageService.findThreatsWithInsufficientControlEffectiveness(eq(PROJECT_ID), any(), any(), any()))
+                .thenReturn(List.of(threat));
+
+        mockMvc.perform(get("/api/v1/analysis/risk-control/threats-insufficient-effectiveness")
+                        .param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.threats", hasSize(1)))
+                .andExpect(jsonPath("$.threats[0].uid", is("TM-001")));
     }
 }

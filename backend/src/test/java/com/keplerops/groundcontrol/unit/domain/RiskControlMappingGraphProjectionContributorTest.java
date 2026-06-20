@@ -234,4 +234,23 @@ class RiskControlMappingGraphProjectionContributorTest {
         assertThat(nodes).hasSize(1);
         assertThat(nodes.get(0).properties()).doesNotContainKey("mappingObjective");
     }
+
+    @Test
+    void contributeEdges_mapsThreatModelEndpoint() {
+        var threatModel = new com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel(
+                project, "TM-001", "SQL Injection", "Attacker", "Inject SQL", "Data exfiltration");
+        var threatModelId = UUID.randomUUID();
+        setField(threatModel, "id", threatModelId);
+
+        var mapping = RiskControlMapping.forControlThreat(project, control, threatModel, MappingControlRole.PREVENTIVE);
+        setField(mapping, "id", UUID.randomUUID());
+
+        when(mappingRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(mapping));
+        when(sciRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of());
+
+        var edges = contributor.contributeEdges(projectId);
+
+        var edgeTypes = edges.stream().map(GraphEdge::edgeType).toList();
+        assertThat(edgeTypes).contains("MAPS_CONTROL", "MAPS_THREAT_MODEL");
+    }
 }

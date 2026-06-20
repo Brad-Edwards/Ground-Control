@@ -35,6 +35,7 @@ public class RiskControlMappingGraphProjectionContributor implements GraphProjec
     private static final String EDGE_MAPS_SCOPED_IMPL = "MAPS_SCOPED_IMPL";
     private static final String EDGE_MAPS_SCENARIO = "MAPS_SCENARIO";
     private static final String EDGE_MAPS_RECORD = "MAPS_RECORD";
+    private static final String EDGE_MAPS_THREAT_MODEL = "MAPS_THREAT_MODEL";
     private static final String EDGE_IN_ASSET_CONTEXT = "IN_ASSET_CONTEXT";
     private static final String EDGE_HAS_OBSERVATION = "HAS_OBSERVATION";
     private static final String EDGE_SCOPED_IMPL_OF = "SCOPED_IMPL_OF";
@@ -120,7 +121,7 @@ public class RiskControlMappingGraphProjectionContributor implements GraphProjec
                         Map.of()));
             }
 
-            // Risk-side edge
+            // Analysis-side edge
             if (mapping.getRiskScenario() != null) {
                 edges.add(new GraphEdge(
                         mapping.getId() + ":scenario",
@@ -142,6 +143,17 @@ public class RiskControlMappingGraphProjectionContributor implements GraphProjec
                                 mapping.getRiskRegisterRecord().getId()),
                         GraphEntityType.RISK_CONTROL_MAPPING,
                         GraphEntityType.RISK_REGISTER_RECORD,
+                        Map.of()));
+            } else if (mapping.getThreatModel() != null) {
+                edges.add(new GraphEdge(
+                        mapping.getId() + ":threat",
+                        EDGE_MAPS_THREAT_MODEL,
+                        mappingNodeId,
+                        GraphIds.nodeId(
+                                GraphEntityType.THREAT_MODEL,
+                                mapping.getThreatModel().getId()),
+                        GraphEntityType.RISK_CONTROL_MAPPING,
+                        GraphEntityType.THREAT_MODEL,
                         Map.of()));
             }
 

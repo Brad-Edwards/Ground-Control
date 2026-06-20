@@ -150,6 +150,7 @@ import {
   updateRiskControlMapping, deleteRiskControlMapping,
   attachMappingObservation, detachMappingObservation, addMappingEvidenceRef,
   getUnmappedScenarios, getUnmappedRecords, getUnmappedControls, getAssessmentFeed,
+  getUnmappedThreats, getThreatUnmappedControls, getThreatsInsufficientEffectiveness,
   MAPPING_CONTROL_ROLES,
   createVerificationResult, listVerificationResults, getVerificationResult,
   updateVerificationResult, deleteVerificationResult,
@@ -2908,15 +2909,18 @@ const RISK_CONTROL_MAPPING_ACTIONS = [
   "create", "update", "delete",
   // Mapping observation/evidence (C8)
   "attach-observation", "detach-observation", "add-evidence",
-  // Coverage queries
+  // Coverage queries (risk-side)
   "unmapped-scenarios", "unmapped-records", "unmapped-controls", "assessment-feed",
+  // Coverage queries (threat-side, GC-H006)
+  "unmapped-threats", "threat-unmapped-controls", "threats-insufficient-effectiveness",
 ];
 server.tool(
   "gc_risk_control_mapping",
-  `Risk-control mapping operations (GC-T003 / ADR-052). ` +
+  `Risk-control mapping operations (GC-T003 / ADR-052, GC-H006). ` +
     `Actions: ${RISK_CONTROL_MAPPING_ACTIONS.join(", ")}. ` +
     `Reads (list, get) route through gc_query. ` +
-    `control_role values: ${MAPPING_CONTROL_ROLES.join(", ")}.`,
+    `control_role values: ${MAPPING_CONTROL_ROLES.join(", ")}. ` +
+    `Analysis-side endpoint: exactly one of risk_scenario_id, risk_register_record_id, or threat_model_id (GC-H006).`,
   {
     action: z.enum(RISK_CONTROL_MAPPING_ACTIONS),
     id: z.string().uuid().optional(),
@@ -2930,6 +2934,7 @@ server.tool(
     scoped_implementation_id: z.string().uuid().optional(),
     risk_scenario_id: z.string().uuid().optional(),
     risk_register_record_id: z.string().uuid().optional(),
+    threat_model_id: z.string().uuid().optional(),  // GC-H006: threat-model analysis endpoint
     operational_asset_id: z.string().uuid().optional(),
     control_role: z.enum(MAPPING_CONTROL_ROLES).optional(),
     mapping_objective: z.string().optional(),
@@ -2944,6 +2949,10 @@ server.tool(
     // Coverage query options
     transitive: z.boolean().optional(),
     assessment_result_id: z.string().uuid().optional(),
+    // Threat-coverage query options (GC-H006)
+    min_effectiveness: z.string().optional(),
+    as_of: z.string().optional(),
+    freshness_window_days: z.number().int().positive().optional(),
   },
   async (args) => {
     try {
@@ -2972,6 +2981,7 @@ server.tool(
           result = await createRiskControlMapping({
             controlId: args.control_id, scopedImplementationId: args.scoped_implementation_id,
             riskScenarioId: args.risk_scenario_id, riskRegisterRecordId: args.risk_register_record_id,
+            threatModelId: args.threat_model_id,  // GC-H006
             operationalAssetId: args.operational_asset_id,
             controlRole: reqArg(args, "control_role"),
             mappingObjective: args.mapping_objective, mappingScope: args.mapping_scope,
@@ -3015,6 +3025,20 @@ server.tool(
           break;
         case "assessment-feed":
           result = await getAssessmentFeed(reqArg(args, "assessment_result_id"), p);
+          break;
+        // ---- Threat-side coverage queries (GC-H006) ----
+        case "unmapped-threats":
+          result = await getUnmappedThreats(p);
+          break;
+        case "threat-unmapped-controls":
+          result = await getThreatUnmappedControls(p);
+          break;
+        case "threats-insufficient-effectiveness":
+          result = await getThreatsInsufficientEffectiveness(p, {
+            minEffectiveness: args.min_effectiveness,
+            asOf: args.as_of,
+            freshnessWindowDays: args.freshness_window_days,
+          });
           break;
         default:
           throw new Error(`Unknown action: ${args.action}`);

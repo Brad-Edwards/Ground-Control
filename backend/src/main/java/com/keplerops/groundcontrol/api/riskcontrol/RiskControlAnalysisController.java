@@ -1,8 +1,10 @@
 package com.keplerops.groundcontrol.api.riskcontrol;
 
+import com.keplerops.groundcontrol.domain.controls.state.ControlEffectivenessRating;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.riskcontrol.service.RiskControlCoverageService;
 import com.keplerops.groundcontrol.domain.riskcontrol.service.RiskControlMappingFeedService;
+import java.time.LocalDate;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -67,5 +69,43 @@ public class RiskControlAnalysisController {
             @PathVariable UUID assessmentResultId, @RequestParam(required = false) String project) {
         var projectId = projectService.requireProjectId(project);
         return AssessmentFeedResponse.from(feedService.feedForAssessment(projectId, assessmentResultId));
+    }
+
+    /** GC-H006 — Threat model entries with no mapped controls. */
+    @GetMapping("/unmapped-threats")
+    public UnmappedThreatsResponse unmappedThreats(@RequestParam(required = false) String project) {
+        var projectId = projectService.resolveProjectId(project);
+        var threats = coverageService.findUnmappedThreats(projectId);
+        var summaries = threats.stream()
+                .map(UnmappedThreatsResponse.ThreatSummary::from)
+                .toList();
+        return new UnmappedThreatsResponse(summaries);
+    }
+
+    /** GC-H006 — Controls not mapped to any threat model entry. */
+    @GetMapping("/threat-unmapped-controls")
+    public UnmappedControlsResponse threatUnmappedControls(@RequestParam(required = false) String project) {
+        var projectId = projectService.resolveProjectId(project);
+        var controls = coverageService.findControlsUnmappedToThreats(projectId);
+        var summaries = controls.stream()
+                .map(UnmappedControlsResponse.ControlSummary::from)
+                .toList();
+        return new UnmappedControlsResponse(summaries);
+    }
+
+    /** GC-H006 — Threat model entries whose mapped controls have insufficient demonstrated effectiveness. */
+    @GetMapping("/threats-insufficient-effectiveness")
+    public ThreatsInsufficientEffectivenessResponse threatsInsufficientEffectiveness(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) ControlEffectivenessRating minEffectiveness,
+            @RequestParam(required = false) LocalDate asOf,
+            @RequestParam(required = false) Integer freshnessWindowDays) {
+        var projectId = projectService.resolveProjectId(project);
+        var threats = coverageService.findThreatsWithInsufficientControlEffectiveness(
+                projectId, minEffectiveness, asOf, freshnessWindowDays);
+        var summaries = threats.stream()
+                .map(ThreatsInsufficientEffectivenessResponse.ThreatSummary::from)
+                .toList();
+        return new ThreatsInsufficientEffectivenessResponse(summaries);
     }
 }

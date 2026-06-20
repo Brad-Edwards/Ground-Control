@@ -14,6 +14,7 @@ import com.keplerops.groundcontrol.domain.riskcontrol.repository.ScopedControlIm
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.MethodologyProfileRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskRegisterRecordRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
+import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelRepository;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -47,6 +48,7 @@ public class RiskControlMappingService {
     private final ObservationRepository observationRepository;
     private final MethodologyProfileRepository methodologyProfileRepository;
     private final MethodologyInfluenceValidator methodologyInfluenceValidator;
+    private final ThreatModelRepository threatModelRepository;
 
     public RiskControlMappingService(
             RiskControlMappingRepository repository,
@@ -58,7 +60,8 @@ public class RiskControlMappingService {
             OperationalAssetRepository operationalAssetRepository,
             ObservationRepository observationRepository,
             MethodologyProfileRepository methodologyProfileRepository,
-            MethodologyInfluenceValidator methodologyInfluenceValidator) {
+            MethodologyInfluenceValidator methodologyInfluenceValidator,
+            ThreatModelRepository threatModelRepository) {
         this.repository = repository;
         this.sciRepository = sciRepository;
         this.projectService = projectService;
@@ -69,11 +72,12 @@ public class RiskControlMappingService {
         this.observationRepository = observationRepository;
         this.methodologyProfileRepository = methodologyProfileRepository;
         this.methodologyInfluenceValidator = methodologyInfluenceValidator;
+        this.threatModelRepository = threatModelRepository;
     }
 
     public RiskControlMapping create(CreateRiskControlMappingCommand command) {
         validateExactlyOneControlEndpoint(command);
-        validateExactlyOneRiskEndpoint(command);
+        validateExactlyOneAnalysisEndpoint(command);
 
         var project = projectService.getById(command.projectId());
 
@@ -90,18 +94,26 @@ public class RiskControlMappingService {
                         .orElseThrow(() -> new NotFoundException(
                                 "RiskScenario not found in project: " + command.riskScenarioId()));
 
-                checkDuplicate(command.controlId(), command.riskScenarioId(), null, command.operationalAssetId());
+                checkDuplicate(command.controlId(), null, command.riskScenarioId(), null, command.operationalAssetId());
 
                 mapping = RiskControlMapping.forControlScenario(project, control, scenario, command.controlRole());
-            } else {
+            } else if (command.riskRegisterRecordId() != null) {
                 var riskRecord = riskRegisterRecordRepository
                         .findByIdAndProjectIdWithScenarios(command.riskRegisterRecordId(), project.getId())
                         .orElseThrow(() -> new NotFoundException(
                                 "RiskRegisterRecord not found in project: " + command.riskRegisterRecordId()));
 
-                checkDuplicate(command.controlId(), null, command.riskRegisterRecordId(), command.operationalAssetId());
+                checkDuplicate(
+                        command.controlId(), null, null, command.riskRegisterRecordId(), command.operationalAssetId());
 
                 mapping = RiskControlMapping.forControlRecord(project, control, riskRecord, command.controlRole());
+            } else {
+                var threatModel = threatModelRepository
+                        .findByIdAndProjectId(command.threatModelId(), project.getId())
+                        .orElseThrow(() ->
+                                new NotFoundException("ThreatModel not found in project: " + command.threatModelId()));
+                checkDuplicate(command.controlId(), command.threatModelId(), null, null, command.operationalAssetId());
+                mapping = RiskControlMapping.forControlThreat(project, control, threatModel, command.controlRole());
             }
         } else {
             var sci = sciRepository
@@ -116,10 +128,14 @@ public class RiskControlMappingService {
                                 "RiskScenario not found in project: " + command.riskScenarioId()));
 
                 checkDuplicateScoped(
-                        command.scopedImplementationId(), command.riskScenarioId(), null, command.operationalAssetId());
+                        command.scopedImplementationId(),
+                        null,
+                        command.riskScenarioId(),
+                        null,
+                        command.operationalAssetId());
 
                 mapping = RiskControlMapping.forScopedScenario(project, sci, scenario, command.controlRole());
-            } else {
+            } else if (command.riskRegisterRecordId() != null) {
                 var riskRecord = riskRegisterRecordRepository
                         .findByIdAndProjectIdWithScenarios(command.riskRegisterRecordId(), project.getId())
                         .orElseThrow(() -> new NotFoundException(
@@ -128,10 +144,23 @@ public class RiskControlMappingService {
                 checkDuplicateScoped(
                         command.scopedImplementationId(),
                         null,
+                        null,
                         command.riskRegisterRecordId(),
                         command.operationalAssetId());
 
                 mapping = RiskControlMapping.forScopedRecord(project, sci, riskRecord, command.controlRole());
+            } else {
+                var threatModel = threatModelRepository
+                        .findByIdAndProjectId(command.threatModelId(), project.getId())
+                        .orElseThrow(() ->
+                                new NotFoundException("ThreatModel not found in project: " + command.threatModelId()));
+                checkDuplicateScoped(
+                        command.scopedImplementationId(),
+                        command.threatModelId(),
+                        null,
+                        null,
+                        command.operationalAssetId());
+                mapping = RiskControlMapping.forScopedThreat(project, sci, threatModel, command.controlRole());
             }
         }
 
@@ -303,14 +332,17 @@ public class RiskControlMappingService {
         }
     }
 
-    private void validateExactlyOneRiskEndpoint(CreateRiskControlMappingCommand command) {
-        boolean hasScenario = command.riskScenarioId() != null;
-        boolean hasRecord = command.riskRegisterRecordId() != null;
-        if (hasScenario == hasRecord) {
+    private void validateExactlyOneAnalysisEndpoint(CreateRiskControlMappingCommand command) {
+        int count = (command.threatModelId() != null ? 1 : 0)
+                + (command.riskScenarioId() != null ? 1 : 0)
+                + (command.riskRegisterRecordId() != null ? 1 : 0);
+        if (count != 1) {
             throw new DomainValidationException(
-                    "Exactly one of riskScenarioId or riskRegisterRecordId must be provided",
+                    "Exactly one of threatModelId, riskScenarioId, or riskRegisterRecordId must be provided",
                     "invalid_endpoint",
                     Map.of(
+                            "threatModelId",
+                            String.valueOf(command.threatModelId()),
                             "riskScenarioId",
                             String.valueOf(command.riskScenarioId()),
                             "riskRegisterRecordId",
@@ -318,9 +350,12 @@ public class RiskControlMappingService {
         }
     }
 
-    private void checkDuplicate(UUID controlId, UUID scenarioId, UUID recordId, UUID assetId) {
+    private void checkDuplicate(UUID controlId, UUID threatModelId, UUID scenarioId, UUID recordId, UUID assetId) {
         boolean exists = false;
-        if (controlId != null && scenarioId != null) {
+        if (controlId != null && threatModelId != null) {
+            exists = repository.existsByControlIdAndThreatModelIdAndOperationalAssetId(
+                    controlId, threatModelId, assetId);
+        } else if (controlId != null && scenarioId != null) {
             exists = repository.existsByControlIdAndRiskScenarioIdAndOperationalAssetId(controlId, scenarioId, assetId);
         } else if (controlId != null && recordId != null) {
             exists = repository.existsByControlIdAndRiskRegisterRecordIdAndOperationalAssetId(
@@ -331,9 +366,12 @@ public class RiskControlMappingService {
         }
     }
 
-    private void checkDuplicateScoped(UUID scopedId, UUID scenarioId, UUID recordId, UUID assetId) {
+    private void checkDuplicateScoped(UUID scopedId, UUID threatModelId, UUID scenarioId, UUID recordId, UUID assetId) {
         boolean exists = false;
-        if (scopedId != null && scenarioId != null) {
+        if (scopedId != null && threatModelId != null) {
+            exists = repository.existsByScopedImplementationIdAndThreatModelIdAndOperationalAssetId(
+                    scopedId, threatModelId, assetId);
+        } else if (scopedId != null && scenarioId != null) {
             exists = repository.existsByScopedImplementationIdAndRiskScenarioIdAndOperationalAssetId(
                     scopedId, scenarioId, assetId);
         } else if (scopedId != null && recordId != null) {

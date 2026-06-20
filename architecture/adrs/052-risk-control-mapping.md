@@ -111,3 +111,38 @@ reflected in both mirrors in the same PR.
 - New `gc_risk_control_mapping` MCP tool.
 - Flyway migrations V119–V122 must be listed in `MigrationSmokeTest` and
   `RequirementsE2EIntegrationTest`.
+
+## Amendment 2026-06-20: GC-H006 threat-control mapping
+
+GC-H006 broadens the same mitigation-mapping problem from risk scenarios to
+"threat-model entries or risk scenarios." The existing mapping owner remains the
+right boundary: do not introduce a parallel `ThreatControlMapping`,
+threat-local control-map table, or pair of generic `ThreatModelLink` /
+`ControlLink` rows when control role, methodology influence, asset/boundary
+context, observations, evidence, or effectiveness matter.
+
+The GC-H006 extension should treat `ThreatModel` as an additional analysis-side
+endpoint on `RiskControlMapping` rather than as fields on `ThreatModel` or
+`Control`. The exactly one invariant on the mapped analysis endpoint therefore
+extends from `risk_scenario_id XOR risk_register_record_id` to
+`threat_model_id XOR risk_scenario_id XOR risk_register_record_id`, with the
+same project-scoped service validation, DB constraint, Envers audit pattern, and
+graph projection discipline used by the existing endpoints.
+
+`ThreatModelLink` remains the generic threat-owned traversal substrate from
+ADR-024. A `ThreatModelLink` with `targetType=CONTROL` and
+`linkType=MITIGATED_BY` can still express a lightweight association, but it must
+not be counted as a complete GC-H006 mapping unless the canonical
+`RiskControlMapping` row exists or a service-owned projection makes the two
+surfaces mechanically consistent. Likewise, a threat linked to a covered risk
+scenario may be shown as transitively covered only in an explicitly named
+read-time view; it must not hide direct threat-control mapping gaps by default.
+
+The "insufficient demonstrated effectiveness" checks for GC-H006 are read-time
+coverage analysis over canonical rows. They should consume the latest
+project-scoped `ControlEffectivenessAssessment.operatingEffectiveness` as of the
+query's `asOf` time, mapping-owned observations, `MappingEvidenceRef` /
+`EvidenceArtifact` references, and supporting `ControlTest` ids already carried
+by effectiveness assessments. Do not persist a second mapping status or derive
+effectiveness from `Control.status`, catalog-level `Control.effectiveness`,
+generic link presence, or raw narrative fields.
