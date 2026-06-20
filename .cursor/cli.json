@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(git)",
+      "Shell(gh)",
+      "Shell(make)",
+      "Shell(pre-commit)",
+      "Shell(cd backend && ./gradlew)",
+      "Shell(cd frontend && npm)",
+      "Shell(node)",
+      "Shell(docker)",
+      "Shell(python3)",
+      "Shell(bash)",
+      "Mcp(ground-control, **)",
+      "Mcp(sonarqube, **)"
+    ],
+    "deny": []
+  }
+}

@@ -1,13 +1,13 @@
 ---
 name: implement
-description: End-to-end issue implementation - from plan through merged PR. Agent-neutral (Claude Code, Codex). Parameterized by .ground-control.yaml. Thin orchestrator that delegates per-step work to subagents per ADR-036 + issue #934.
+description: End-to-end issue implementation - from plan through merged PR. Agent-neutral (Claude Code, Codex, Cursor CLI). Parameterized by .ground-control.yaml. Thin orchestrator that delegates per-step work to subagents per ADR-036 + issue #934.
 argument-hint: <issue-number | requirement-uid>
 disable-model-invocation: true
 ---
 
 # Implement (orchestrator): $ARGUMENTS
 
-This skill is the canonical, agent-neutral implementation of the Ground Control `/implement` workflow. It runs from either Claude Code or Codex against the same content, with repo-specific values supplied by `gc_get_repo_ground_control_context` (per ADR-027).
+This skill is the canonical, agent-neutral implementation of the Ground Control `/implement` workflow. It runs from Claude Code, Codex, or Cursor CLI against the same content, with repo-specific values supplied by `gc_get_repo_ground_control_context` (per ADR-027).
 
 The workflow handles the entire lifecycle: plan, implement, verify, commit, push, PR, CI, reviews, fix, requirement transitions, traceability reconciliation. **The user's only synchronous touchpoint is PR merge** (per ADR-029). Plans, review findings, and decisions on findings are recorded as comments on the GitHub issue thread so the durable record survives PR merge/close.
 
@@ -95,6 +95,8 @@ Routing is opt-in per repo via `routing.enabled` in `.ground-control.yaml` (defa
 **Claude tier mapping** (canonical): `low` → `claude-haiku-4-5`, `medium` → `claude-sonnet-4-6`, `high` → `claude-opus-4-8` (the parent - no subagent spawn).
 
 **Codex** (and other drivers without subagent-with-model support): ignore the tier annotation and run every step on the session model. The contract is forward-compatible - a future router consumes the same step-id + tier hints without changing this SKILL.
+
+**Cursor CLI** (issue #1189): same as Codex - the parent session runs every step inline. Do not spawn Claude-model subagents via `gc_resolve_workflow_route`; ignore tier/model delegation. Poll-loop stages (`architecture_preflight`, `review_cycle_1_consume`, `test_quality_review`) MUST stay on the parent session (issue #1168). For Steps 6.5 and 6.6, the parent executes the subagent prompt in the step file directly rather than dispatching a separate agent. Invoke from the repo root: `cursor agent "/implement <issue-number | requirement-uid>"`. Project skill discovery uses `.cursor/skills/implement/` (symlink to `skills/implement/`). CLI permissions live in `.cursor/cli.json`; use `--force` when approval prompts would block a long autonomous run.
 
 ## Telemetry (ADR-036)
 
