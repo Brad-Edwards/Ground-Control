@@ -6,13 +6,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Thin orchestrator that delegates to the five GRC analysis services
+ * Thin orchestrator that delegates to GRC analysis services
  * ({@link EvidenceFreshnessAnalysisService},
  * {@link ObservationProjectionService},
  * {@link VendorRiskAggregationService},
  * {@link NistAssessmentService},
- * {@link FairQuantitativeAnalysisService}). Keeps controllers thin and gives the
- * extension seam from the preflight a single class to point at.
+ * {@link FairQuantitativeAnalysisService},
+ * {@link ComplianceMonitoringAnalysisService}).
  */
 @Service
 @Transactional(readOnly = true)
@@ -23,18 +23,21 @@ public class GrcAnalysisService {
     private final VendorRiskAggregationService vendorRiskAggregationService;
     private final NistAssessmentService nistAssessmentService;
     private final FairQuantitativeAnalysisService fairQuantitativeAnalysisService;
+    private final ComplianceMonitoringAnalysisService complianceMonitoringAnalysisService;
 
     public GrcAnalysisService(
             EvidenceFreshnessAnalysisService evidenceFreshnessAnalysisService,
             ObservationProjectionService observationProjectionService,
             VendorRiskAggregationService vendorRiskAggregationService,
             NistAssessmentService nistAssessmentService,
-            FairQuantitativeAnalysisService fairQuantitativeAnalysisService) {
+            FairQuantitativeAnalysisService fairQuantitativeAnalysisService,
+            ComplianceMonitoringAnalysisService complianceMonitoringAnalysisService) {
         this.evidenceFreshnessAnalysisService = evidenceFreshnessAnalysisService;
         this.observationProjectionService = observationProjectionService;
         this.vendorRiskAggregationService = vendorRiskAggregationService;
         this.nistAssessmentService = nistAssessmentService;
         this.fairQuantitativeAnalysisService = fairQuantitativeAnalysisService;
+        this.complianceMonitoringAnalysisService = complianceMonitoringAnalysisService;
     }
 
     public EvidenceFreshnessResult evidenceFreshness(
@@ -66,5 +69,9 @@ public class GrcAnalysisService {
     public FairQuantitativeAnalysisResult fairQuantitative(
             UUID projectId, Instant asOf, UUID riskAssessmentResultId, UUID riskScenarioId) {
         return fairQuantitativeAnalysisService.analyze(projectId, asOf, riskAssessmentResultId, riskScenarioId);
+    }
+
+    public ComplianceMonitoringResult complianceMonitoring(UUID projectId, Instant asOf, int freshnessWindowDays) {
+        return complianceMonitoringAnalysisService.analyze(projectId, asOf, freshnessWindowDays);
     }
 }

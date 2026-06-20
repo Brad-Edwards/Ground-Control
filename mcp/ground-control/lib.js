@@ -1285,6 +1285,18 @@ export async function analyzeFairQuantitative({
   });
 }
 
+// GC-I004 — continuous compliance monitoring. Composes evidence freshness,
+// control modification timestamps, and reassessmentRequiredAt signals.
+export async function analyzeComplianceMonitoring({
+  project,
+  asOf,
+  freshnessWindowDays,
+} = {}) {
+  return request("GET", "/api/v1/analysis/grc/compliance-monitoring", {
+    params: { project, asOf, freshnessWindowDays },
+  });
+}
+
 // Strict containment predicate. Both arguments MUST already be canonical
 // realpaths — call `realpathSync` on each side before invoking this. Returns
 // true iff `canonicalPath` is strictly inside `canonicalRoot` (rejects the

@@ -64,6 +64,7 @@ import {
   analyzeNistAssessment,
   // ---- GC-T011 FAIR v3.0 quantitative risk analysis ----
   analyzeFairQuantitative,
+  analyzeComplianceMonitoring,
   // ---- history / exports (kept for completeness even though tools route to gc_query) ----
   getRequirementHistory, getRelationHistory, getTraceabilityLinkHistory,
   getRequirementTimeline, getRequirementDiff, getProjectTimeline,
@@ -1635,6 +1636,8 @@ const ANALYZE_KINDS = [
   "nist_assessment",
   // GC-T011 — FAIR v3.0 quantitative risk analysis (methodology-attributed envelope from /api/v1/analysis/grc/fair-quantitative)
   "fair_quantitative",
+  // GC-I004 — continuous compliance monitoring (ADR-058 impact/stale sets)
+  "continuous_compliance_monitoring",
 ];
 
 server.tool(
@@ -1647,6 +1650,7 @@ server.tool(
     `vendor_risk_aggregation→{project?, as_of?, freshness_window_days?, vendor_asset_id?}; ` +
     `nist_assessment→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
     `fair_quantitative→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
+    `continuous_compliance_monitoring→{project?, as_of?, freshness_window_days?}. ` +
     `Others take {project?}.`,
   {
     kind: z.enum(ANALYZE_KINDS),
@@ -1729,6 +1733,12 @@ server.tool(
             asOf: args.as_of,
             riskAssessmentResultId: args.risk_assessment_result_id,
             riskScenarioId: args.risk_scenario_id,
+          }), null, 2));
+        case "continuous_compliance_monitoring":
+          return ok(JSON.stringify(await analyzeComplianceMonitoring({
+            project: args.project,
+            asOf: args.as_of,
+            freshnessWindowDays: args.freshness_window_days,
           }), null, 2));
         default: return err(new Error(`Unknown kind: ${args.kind}`));
       }
