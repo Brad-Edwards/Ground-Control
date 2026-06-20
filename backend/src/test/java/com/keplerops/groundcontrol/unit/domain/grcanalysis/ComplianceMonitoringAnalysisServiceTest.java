@@ -26,6 +26,8 @@ import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.Month;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -182,7 +184,7 @@ class ComplianceMonitoringAnalysisServiceTest {
                 "CT-1",
                 UUID.randomUUID(),
                 "CTRL-1",
-                java.time.LocalDate.of(2026, 1, 1),
+                LocalDate.of(2026, Month.JANUARY, 1),
                 100,
                 "STALE");
         when(evidenceFreshnessAnalysisService.analyze(projectId, asOf, 90, false, null, null))
