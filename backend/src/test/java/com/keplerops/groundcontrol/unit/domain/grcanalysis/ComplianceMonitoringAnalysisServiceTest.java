@@ -2,6 +2,7 @@ package com.keplerops.groundcontrol.unit.domain.grcanalysis;
 
 import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -11,6 +12,8 @@ import static org.mockito.Mockito.when;
 import com.keplerops.groundcontrol.domain.controls.model.Control;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlRepository;
 import com.keplerops.groundcontrol.domain.controls.state.ControlFunction;
+import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
+import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ComplianceMonitoringAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ComplianceMonitoringResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessAnalysisService;
@@ -91,7 +94,7 @@ class ComplianceMonitoringAnalysisServiceTest {
                 List.of(),
                 new EvidenceFreshnessResult.EvidenceFreshnessCounts(0, 0, 1, 0, 0),
                 List.of());
-        when(evidenceFreshnessAnalysisService.analyze(eq(projectId), eq(asOf), eq(90), eq(false), eq(null), eq(null)))
+        when(evidenceFreshnessAnalysisService.analyze(projectId, asOf, 90, false, null, null))
                 .thenReturn(freshness);
 
         var recentControl = new Control(project, "CTRL-RECENT", "Recent control", ControlFunction.PREVENTIVE);
@@ -152,7 +155,7 @@ class ComplianceMonitoringAnalysisServiceTest {
     @Test
     void analyze_excludesControlUpdatesAfterAsOf() {
         when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
-        when(evidenceFreshnessAnalysisService.analyze(eq(projectId), eq(asOf), eq(90), eq(false), eq(null), eq(null)))
+        when(evidenceFreshnessAnalysisService.analyze(projectId, asOf, 90, false, null, null))
                 .thenReturn(emptyFreshness(asOf));
 
         var futureControl = new Control(project, "CTRL-FUTURE", "Future control", ControlFunction.PREVENTIVE);
@@ -167,6 +170,57 @@ class ComplianceMonitoringAnalysisServiceTest {
         ComplianceMonitoringResult result = service.analyze(projectId, asOf, 90);
 
         assertThat(result.impactSet()).isEmpty();
+    }
+
+    @Test
+    void analyze_includesStaleEvidenceArtifactsAndControlTests() {
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        var artifact = new EvidenceFreshnessResult.EvidenceArtifactFreshnessItem(
+                UUID.randomUUID(), "EVD-1", "title", asOf.minusSeconds(86400L * 10), 10, "STALE", null);
+        var controlTest = new EvidenceFreshnessResult.ControlTestFreshnessItem(
+                UUID.randomUUID(),
+                "CT-1",
+                UUID.randomUUID(),
+                "CTRL-1",
+                java.time.LocalDate.of(2026, 1, 1),
+                100,
+                "STALE");
+        when(evidenceFreshnessAnalysisService.analyze(projectId, asOf, 90, false, null, null))
+                .thenReturn(new EvidenceFreshnessResult(
+                        "evidence_freshness",
+                        "ground-control",
+                        asOf,
+                        "evidence-freshness-projection-v1",
+                        new EvidenceFreshnessResult.Inputs("ground-control", asOf, 90, false, null, null),
+                        List.of(artifact),
+                        List.of(),
+                        List.of(controlTest),
+                        new EvidenceFreshnessResult.EvidenceFreshnessCounts(0, 2, 0, 0, 0),
+                        List.of()));
+        when(controlRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of());
+        when(assessmentResultRepository
+                        .findByProjectIdWithReassessmentRequiredInWindowOrderByReassessmentRequiredAtDesc(
+                                projectId, asOf.minusSeconds(86400L * 90), asOf))
+                .thenReturn(List.of());
+
+        ComplianceMonitoringResult result = service.analyze(projectId, asOf, 90);
+
+        assertThat(result.staleSet()).hasSize(2);
+        assertThat(result.staleSet())
+                .extracting(ComplianceMonitoringResult.StaleItem::sourceKind)
+                .containsExactlyInAnyOrder("EVIDENCE_ARTIFACT", "CONTROL_TEST");
+    }
+
+    @Test
+    void analyze_rejectsNonPositiveFreshnessWindow() {
+        assertThatThrownBy(() -> service.analyze(projectId, asOf, 0)).isInstanceOf(DomainValidationException.class);
+    }
+
+    @Test
+    void analyze_unknownProject_throwsNotFound() {
+        when(projectRepository.findById(projectId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.analyze(projectId, asOf, 90)).isInstanceOf(NotFoundException.class);
     }
 
     private static EvidenceFreshnessResult emptyFreshness(Instant asOf) {
