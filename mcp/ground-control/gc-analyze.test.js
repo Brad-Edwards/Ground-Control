@@ -12,6 +12,7 @@ import {
   aggregateVendorRisk,
   analyzeNistAssessment,
   analyzeFairQuantitative,
+  analyzeComplianceMonitoring,
   toCamelCase,
   toSnakeCase,
 } from "./lib.js";
@@ -385,5 +386,23 @@ describe("analyzeFairQuantitative (GC-T011)", () => {
       Object.keys(snake.input_factors).sort((a, b) => a.localeCompare(b)),
       ["primary_loss_magnitude", "threat_event_frequency"],
     );
+  });
+});
+
+describe("analyzeComplianceMonitoring (GC-I004)", () => {
+  it("hits /api/v1/analysis/grc/compliance-monitoring with camelCase params", async () => {
+    const calls = makeFetchSpy({ body: { analysisKind: "continuous_compliance_monitoring" } });
+
+    await analyzeComplianceMonitoring({
+      project: "ground-control",
+      asOf: "2026-06-20T00:00:00Z",
+      freshnessWindowDays: 90,
+    });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/analysis/grc/compliance-monitoring");
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), "2026-06-20T00:00:00Z");
+    assert.equal(url.searchParams.get("freshnessWindowDays"), "90");
   });
 });

@@ -92,4 +92,14 @@ public class GrcAnalysisController {
         return FairQuantitativeAnalysisResponse.from(
                 grcAnalysisService.fairQuantitative(projectId, asOf, riskAssessmentResultId, riskScenarioId));
     }
+
+    @GetMapping("/compliance-monitoring")
+    public ComplianceMonitoringResponse complianceMonitoring(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false, defaultValue = "" + DEFAULT_FRESHNESS_WINDOW_DAYS) @Positive int freshnessWindowDays) {
+        UUID projectId = projectService.resolveProjectId(project);
+        return ComplianceMonitoringResponse.from(
+                grcAnalysisService.complianceMonitoring(projectId, asOf, freshnessWindowDays));
+    }
 }

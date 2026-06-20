@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.keplerops.groundcontrol.api.grcanalysis.GrcAnalysisController;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.ComplianceMonitoringResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
@@ -464,6 +465,38 @@ class GrcAnalysisControllerTest {
                             .param("project", "ground-control")
                             .param("riskAssessmentResultId", UUID.randomUUID().toString()))
                     .andExpect(status().isUnprocessableEntity());
+        }
+    }
+
+    @Nested
+    class ComplianceMonitoring {
+
+        @Test
+        void happyPath_returns200WithStructuredFields() throws Exception {
+            var inputs =
+                    new ComplianceMonitoringResult.Inputs("ground-control", Instant.parse("2026-06-20T00:00:00Z"), 90);
+            var result = new ComplianceMonitoringResult(
+                    "continuous_compliance_monitoring",
+                    "ground-control",
+                    Instant.parse("2026-06-20T00:00:00Z"),
+                    "continuous-compliance-monitoring-v1",
+                    inputs,
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    new ComplianceMonitoringResult.DriftCauseCounts(0, 0, 0),
+                    List.of("note"));
+            when(grcAnalysisService.complianceMonitoring(eq(PROJECT_ID), any(), anyInt()))
+                    .thenReturn(result);
+
+            mockMvc.perform(get("/api/v1/analysis/grc/compliance-monitoring").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("continuous_compliance_monitoring")))
+                    .andExpect(jsonPath("$.derivationMethod", is("continuous-compliance-monitoring-v1")))
+                    .andExpect(jsonPath("$.inputs.freshnessWindowDays", is(90)))
+                    .andExpect(jsonPath("$.impactSet").isArray())
+                    .andExpect(jsonPath("$.staleSet").isArray())
+                    .andExpect(jsonPath("$.driftCauseCounts.evidenceExpiration", is(0)));
         }
     }
 }
