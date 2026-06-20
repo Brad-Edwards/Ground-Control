@@ -10,21 +10,21 @@ Accepted
 
 ## Context
 
-Ground Control currently operates as a single-namespace system — all requirements, relations, traceability links, and analysis results exist in one flat pool. This works while the only managed project is Ground Control itself (dogfooding), but the system's value proposition requires managing requirements for multiple independent software projects from a single instance.
+Ground Control currently operates as a single-namespace system - all requirements, relations, traceability links, and analysis results exist in one flat pool. This works while the only managed project is Ground Control itself (dogfooding), but the system's value proposition requires managing requirements for multiple independent software projects from a single instance.
 
 Without project scoping:
 
-1. **Namespace collision** — Two projects could define `REQ-001` with different meanings. UIDs are currently globally unique, but this forces artificial prefixing conventions (e.g., `GC-A001` vs `ACME-A001`) with no system enforcement.
-2. **Polluted analysis** — Cycle detection, orphan analysis, coverage gaps, and cross-wave validation return results spanning all projects. An orphan in Project A is not relevant when reviewing Project B.
-3. **Traceability noise** — Traceability matrices mix artifacts from unrelated codebases, making audit views unusable for compliance reviews scoped to a single product.
-4. **MCP tool confusion** — AI agents working on one project's requirements see and can modify requirements from all projects. No guardrails against cross-project contamination.
+1. **Namespace collision** - Two projects could define `REQ-001` with different meanings. UIDs are currently globally unique, but this forces artificial prefixing conventions (for example, `GC-A001` vs `ACME-A001`) with no system enforcement.
+2. **Polluted analysis** - Cycle detection, orphan analysis, coverage gaps, and cross-wave validation return results spanning all projects. An orphan in Project A is not relevant when reviewing Project B.
+3. **Traceability noise** - Traceability matrices mix artifacts from unrelated codebases, making audit views unusable for compliance reviews scoped to a single product.
+4. **MCP tool confusion** - AI agents working on one project's requirements see and can modify requirements from all projects. No guardrails against cross-project contamination.
 
 The requirement GC-A013 captures the functional need. This ADR records the architectural decisions for implementing it.
 
 ### Constraints
 
 - Backward compatible: existing requirements (Ground Control's own) must migrate cleanly into a default project
-- No multi-tenancy (that's GC-P006, wave 5) — project scoping is data partitioning within a single tenant, not access control between tenants
+- No multi-tenancy (that's GC-P006, wave 5) - project scoping is data partitioning within a single tenant, not access control between tenants
 - MCP tools must support project context without breaking existing tool signatures
 
 ## Decision
@@ -87,16 +87,16 @@ Currently, `uid` has a global unique constraint. Change to a composite unique co
 ### Positive
 
 - Ground Control becomes usable for managing multiple real projects, not just itself
-- Analysis results are meaningful — scoped to the project under review
+- Analysis results are meaningful - scoped to the project under review
 - MCP agents get project context, reducing the risk of cross-project mistakes
 - Clean migration path: existing data moves to a default project with no breaking changes
-- UID schemes are project-local — no need for global prefixing conventions
+- UID schemes are project-local - no need for global prefixing conventions
 
 ### Negative
 
-- Every query path gains a project filter — more parameters to thread through the stack
+- Every query path gains a project filter - more parameters to thread through the stack
 - MCP tools need a project context mechanism (parameter or configuration), adding UX friction for agents
-- Testing surface increases — all operations need project-scoped and cross-project-rejection test cases
+- Testing surface increases - all operations need project-scoped and cross-project-rejection test cases
 
 ### Risks
 
@@ -108,9 +108,9 @@ Currently, `uid` has a global unique constraint. Change to a composite unique co
 
 ## Related ADRs
 
-- [ADR-011](011-requirements-data-model.md) — Requirements data model (project_id extends this model)
-- [ADR-013](013-java-spring-boot-rewrite.md) — Java/Spring Boot backend
-- [ADR-017](017-interactive-web-application.md) — Web UI (will consume project-scoped API)
+- [ADR-011](011-requirements-data-model.md) - Requirements data model (project_id extends this model)
+- [ADR-013](013-java-spring-boot-rewrite.md) - Java/Spring Boot backend
+- [ADR-017](017-interactive-web-application.md) - Web UI (will consume project-scoped API)
 
 ## Related Requirements
 

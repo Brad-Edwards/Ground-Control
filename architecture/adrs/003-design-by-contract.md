@@ -35,4 +35,4 @@ icontract is a production dependency, and crosshair-tool is a dev dependency for
 
 ### Risks
 
-- Over-contracting can make simple code verbose — apply contracts where invariants matter, not on trivial helpers
+- Over-contracting can make simple code verbose - apply contracts where invariants matter, not on trivial helpers

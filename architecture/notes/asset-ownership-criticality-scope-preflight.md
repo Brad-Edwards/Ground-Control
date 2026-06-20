@@ -50,7 +50,7 @@ Use the existing `domain/assets/` stack:
 - `owner`: accountable party for the asset. Existing owner fields on controls,
   findings, risk register records, and treatment plans are workflow-owner fields;
   they are not canonical asset ownership.
-- `steward`: operational custodian or steward. Do not overload `owner` to carry
+- `steward`: operational custodian. Do not overload `owner` to carry
   both accountability and custody.
 - `environment`: deployment or operational environment for the asset. Do not
   infer environment from UID, name, external IDs, or source-system strings.
@@ -83,7 +83,7 @@ Use the existing `domain/assets/` stack:
 ## Extensibility Seam
 
 The immediate seam is an asset filter surface parameterized by optional owner,
-steward, environment, criticality, and scope-designation criteria. That keeps
+`steward`, environment, criticality, and scope-designation criteria. That keeps
 risk, control, audit, graph, and reporting callers using one project-scoped
 asset query contract instead of each workflow inventing its own lookup.
 

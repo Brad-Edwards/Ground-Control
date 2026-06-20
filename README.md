@@ -1,10 +1,10 @@
 # Ground Control
 
 [![CI](https://github.com/KeplerOps/Ground-Control/actions/workflows/ci.yml/badge.svg)](https://github.com/KeplerOps/Ground-Control/actions/workflows/ci.yml)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Brad-Edwards_Ground-Control&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Brad-Edwards_Ground-Control)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=autarchy-ai_Ground-Control&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=autarchy-ai_Ground-Control)
 
 An automated software factory that connects requirements, code, controls, and
-observability over a single data layer—with traceability throughout.
+observability over a single data layer - with traceability throughout.
 
 Ground Control unifies the software lifecycle into one graph-native platform.
 Every artifact (requirement, code file, test, ADR, verification result,
@@ -19,7 +19,7 @@ MCP-driven AI workflows. The rest of the factory is coming.
 
 > ⚠ **Tailscale-only auth.** The current login surface (ADR-037) is sized for a
 > single-operator install reachable only over a private network like Tailscale.
-> It is **not** safe to expose directly to the internet—the session cookie is
+> It is **not** safe to expose directly to the internet - the session cookie is
 > `Secure`-flagged (browsers refuse it over plain HTTP, login loops forever),
 > the form post is plaintext, and there's no rate limit, MFA, SSO, or audit of
 > failed attempts. Track issue
@@ -33,19 +33,19 @@ MCP-driven AI workflows. The rest of the factory is coming.
 
 ## What's Live
 
-- **Requirements lifecycle**—DRAFT → ACTIVE → DEPRECATED → ARCHIVED, with MoSCoW priority and wave-based planning
-- **Traceability links**—Connect requirements to GitHub issues, code files, tests, ADRs, verification results, and other artifacts
-- **Graph analysis**—Cycle detection, orphan detection, coverage gaps, transitive impact analysis, cross-wave validation
-- **Pluggable verification**—Prover-agnostic architecture for design-level (TLA+, Alloy) and code-level (OpenJML, Frama-C, Verus) verification, with results stored as first-class graph nodes
-- **GitHub integration**—Sync issues into the traceability graph, or create issues from requirements with one command
-- **StrictDoc import**—Bulk-import from `.sdoc` files, idempotent
-- **ReqIF import**—Bulk-import from ReqIF 1.2 `.reqif` files (IBM DOORS, Polarion, Jama), idempotent
-- **Text embeddings**—Pluggable vector embedding of requirement text with content-hash staleness detection, batch embedding, and graceful degradation when no provider is configured
-- **Semantic similarity**—Pairwise cosine similarity analysis across requirement embeddings to detect near-duplicate requirements with configurable threshold
-- **MCP server**—30 tools for Claude Code: manage requirements, baselines, run analysis, embed text, and build traceability without leaving your editor
-- **Baseline management**—Named point-in-time snapshots of the requirement set for release management and specification evolution tracking
-- **Audit trail**—Every change to every entity is versioned via Hibernate Envers
-- **Web UI**—React 19 / TypeScript SPA served by the backend: Dashboard, Requirements Explorer, Requirement Detail with local dependency graph
+- **Requirements lifecycle** - DRAFT → ACTIVE → DEPRECATED → ARCHIVED, with MoSCoW priority and wave-based planning
+- **Traceability links** - Connect requirements to GitHub issues, code files, tests, ADRs, verification results, and other artifacts
+- **Graph analysis** - Cycle detection, orphan detection, coverage gaps, transitive impact analysis, cross-wave validation
+- **Pluggable verification** - Prover-agnostic architecture for design-level (TLA+, Alloy) and code-level (OpenJML, Frama-C, Verus) verification, with results stored as first-class graph nodes
+- **GitHub integration** - Sync issues into the traceability graph, or create issues from requirements with one command
+- **StrictDoc import** - Bulk-import from `.sdoc` files, idempotent
+- **ReqIF import** - Bulk-import from ReqIF 1.2 `.reqif` files (IBM DOORS, Polarion, Jama), idempotent
+- **Text embeddings** - Pluggable vector embedding of requirement text with content-hash staleness detection, batch embedding, and graceful degradation when no provider is configured
+- **Semantic similarity** - Pairwise cosine similarity analysis across requirement embeddings to detect near-duplicate requirements with configurable threshold
+- **MCP server** - 30 tools for Claude Code: manage requirements, baselines, run analysis, embed text, and build traceability without leaving your editor
+- **Baseline management** - Named point-in-time snapshots of the requirement set for release management and specification evolution tracking
+- **Audit trail** - Every change to every entity is versioned via Hibernate Envers
+- **Web UI** - React 19 / TypeScript SPA served by the backend: Dashboard, Requirements Explorer, Requirement Detail with local dependency graph
 
 ## Near-Term Roadmap
 
@@ -99,7 +99,7 @@ full configuration reference.
 Configured in `.mcp.json`, works automatically with Claude Code. Start the
 backend, then call MCP tools from your conversation. The surface is ~30
 named tools (down from 215 in earlier versions per ADR-035) consolidated
-by entity with an `action` discriminator—`gc_requirement`, `gc_asset`,
+by entity with an `action` discriminator - `gc_requirement`, `gc_asset`,
 `gc_analyze`, `gc_graph`, etc. Workflow primitives the `/implement` and
 `/ship` skills use (`gc_get_requirement`, `gc_create_traceability_link`,
 `gc_transition_status`, the codex tools, etc.) are unchanged. The read-only
@@ -111,7 +111,7 @@ per-action contracts, and `gc_query` semantics.
 ## Development
 
 ```bash
-make rapid        # Format + compile (~1s warm) — inner dev loop
+make rapid        # Format + compile (~1 second warm) - inner dev loop
 make test         # Unit tests
 make check        # CI-equivalent: build + tests + static analysis + coverage
 make integration  # Integration tests (Testcontainers, no external DB needed)

@@ -42,7 +42,7 @@ knowledge base exists. This file is the *operating manual*.
 
 ```
 docs/knowledge/
-├── SCHEMA.md       # this file — conventions and contracts
+├── SCHEMA.md       # this file - conventions and contracts
 ├── index.md        # flat content catalog; every page listed with a one-line summary
 ├── log.md          # append-only chronological record of what the agent did and when
 ├── topics/         # cross-cutting topic pages (created on demand)
@@ -61,7 +61,7 @@ category directories.
 the knowledge base exactly once, grouped by category, with a one-line
 summary and optionally tags. Before creating a new page, an agent MUST read
 `index.md` and check whether an existing page already covers the same
-topic — if so, update the existing page rather than creating a duplicate
+topic - if so, update the existing page rather than creating a duplicate
 (read-before-write invariant from the design note).
 
 ### Ingest consistency contract
@@ -91,13 +91,13 @@ never points at stale paths.
 `log.md` is the append-only chronological record of knowledge-base activity
 (GC-X004). Each significant event (ingest, sweep, lint pass, manual
 correction) appends a bullet with an ISO date, a short description, and the
-source citation for the change. `log.md` is never rewritten — only appended
+source citation for the change. `log.md` is never rewritten - only appended
 to. `git log` on this subtree is the authoritative deeper history.
 
 ### `inbox/`
 
 The inbox is a staging area for raw captures from the capture primitive
-(`gc_remember`). It does not exist yet — it is created by a later slice of
+(`gc_remember`). It does not exist yet - it is created by a later slice of
 the agent knowledge system rollout (issues 2–6). Until then, do not write
 to `inbox/`.
 
@@ -119,7 +119,7 @@ of the following types. Each type has a concrete purpose; do not invent new
 types ad hoc.
 
 - **Topic pages** (`topics/<kebab-case-name>.md`). Cross-cutting subjects
-  that span multiple files and entities — e.g. "how migrations interact
+  that span multiple files and entities - for example "how migrations interact
   with audit tables", "the shape of our Envers setup", "what happens during
   `/implement` step 7". Use when a gotcha applies broadly and is not tied
   to a single entity.
@@ -141,7 +141,7 @@ and optional fields:
 | --------------- | -------- | --------------------------------------------------------------------- |
 | `title`         | yes      | Human-readable title, usually matching the H1.                        |
 | `tags`          | yes      | List of tags used by `index.md` to support grep-based discovery.      |
-| `sources`       | yes      | Non-empty list of source citations — see "Source citation rule".      |
+| `sources`       | yes      | Non-empty list of source citations - see "Source citation rule".      |
 | `last_verified` | yes      | ISO date of the last time a human or agent checked this page is true. |
 
 Additional fields are permitted but should be documented here before they
@@ -153,19 +153,19 @@ Every claim on a knowledge page MUST cite at least one source. Pages with
 unsourced assertions are invalid and will be flagged by the lint pass when
 the lint slice ships. Valid source citation shapes:
 
-- `commit:<short-sha>` — the claim was learned from reading or writing a
+- `commit:<short-sha>` - the claim was learned from reading or writing a
   specific commit.
-- `pr:<number>` — the claim was learned from a pull request, review, or its
+- `pr:<number>` - the claim was learned from a pull request, review, or its
   merge.
-- `review:<comment-id>` — the claim came from a specific review comment.
-- `issue:<number>` — the claim is about an issue or was captured while
+- `review:<comment-id>` - the claim came from a specific review comment.
+- `issue:<number>` - the claim is about an issue or was captured while
   working an issue.
-- `ci:<run-id>` — the claim came from a specific CI run (typically a
+- `ci:<run-id>` - the claim came from a specific CI run (typically a
   failure mode).
-- `user-correction:<short-description>` — the claim came from an explicit
+- `user-correction:<short-description>` - the claim came from an explicit
   user correction during a session; the short description anchors the
   correction in the session context.
-- `file:<relative-path>` — the claim is verifiable by reading a specific
+- `file:<relative-path>` - the claim is verifiable by reading a specific
   file in the current repository state. Use this only when the claim is
   a direct reading of committed code and the file is stable enough to
   cite.

@@ -39,8 +39,21 @@ export const GC_CONTROL_ACTIONS = [
 // pre-filter on the test side.
 export const CONTROL_FIELDS = {
   control: {
-    create: ["uid", "title", "description", "status", "control_function", "metadata"],
-    update: ["uid", "title", "description", "status", "control_function", "metadata"],
+    // Mirrors ControlRequest: uid, title, controlFunction, description, objective,
+    // owner, implementationScope, methodologyFactors, effectiveness, category, source.
+    // status and metadata are not in ControlRequest (status changes go through the
+    // transition action; ControlRequest has no metadata bag).
+    create: [
+      "uid", "title", "control_function", "description", "objective",
+      "owner", "implementation_scope", "methodology_factors", "effectiveness",
+      "category", "source",
+    ],
+    // Mirrors UpdateControlRequest: same fields minus uid.
+    update: [
+      "title", "control_function", "description", "objective",
+      "owner", "implementation_scope", "methodology_factors", "effectiveness",
+      "category", "source",
+    ],
   },
   control_test: {
     create: [
@@ -71,12 +84,20 @@ export const gcControlZodShape = {
   id: z.string().uuid().optional(),
   uid: z.string().optional(),
   project: z.string().optional(),
-  // ---- control (existing) ----
+  // ---- control (existing + ControlRequest fields added by #1106) ----
   title: z.string().optional(),
   description: z.string().optional(),
   status: z.enum(CONTROL_STATUSES).optional(),
   control_function: z.enum(CONTROL_FUNCTIONS).optional(),
   metadata: z.record(z.any()).optional(),
+  // ControlRequest / UpdateControlRequest fields (mirrors backend DTO, #1106)
+  objective: z.string().optional(),
+  owner: z.string().optional(),
+  implementation_scope: z.string().optional(),
+  methodology_factors: z.record(z.any()).optional(),
+  effectiveness: z.record(z.any()).optional(),
+  category: z.string().optional(),
+  source: z.string().optional(),
   control_id: z.string().uuid().optional(),
   target_type: z.enum(CONTROL_LINK_TARGET_TYPES).optional(),
   link_type: z.enum(CONTROL_LINK_TYPES).optional(),
@@ -106,13 +127,17 @@ export const GC_CONTROL_DESCRIPTION =
   `Entity: ${GC_CONTROL_ENTITIES.join(", ")} (defaults to "control" for back-compat). ` +
   `Actions: ${GC_CONTROL_ACTIONS.join(", ")}. ` +
   `Sub-entity actions are limited to create/update/delete — no transition or link actions. ` +
-  `Per-entity create fields (snake_case; round-trip to backend camelCase): ` +
+  `control create fields (snake_case; round-trip to backend camelCase): ` +
+  `{uid,title,control_function,description,objective,owner,implementation_scope,methodology_factors,effectiveness,category,source}. ` +
+  `control update drops uid; all remaining fields are optional. ` +
+  `Per-sub-entity create fields: ` +
   `control_test={control_id,uid,methodology,test_steps,expected_results,actual_results,conclusion,tester_identity,test_date,notes}; ` +
   `control_effectiveness_assessment={control_id,uid,design_effectiveness,operating_effectiveness,assessed_at,assessor,rationale,notes,supporting_test_ids}. ` +
   `supporting_test_ids is a list of ControlTest UUIDs that must belong to the same control as the assessment; ` +
   `the backend emits SUPPORTED_BY graph edges from the assessment to each listed test. ` +
   `Update DTOs drop create-only foreign keys (control_id, uid); a non-null supporting_test_ids replaces the list wholesale. ` +
-  `Reads (list, get, links_list) route through gc_query.`;
+  `Reads (list, get, links_list) route through gc_query. ` +
+  `Required fields per action: control/create→{title}; */update/delete→{id}; control/transition→{id,status}; control/link_create→{control_id,target_type,link_type}; control/link_delete→{control_id,link_id}; control_test/create and control_effectiveness_assessment/create→{control_id,uid}.`;
 
 /**
  * Pure adapter handler for gc_control. Picks action-scoped body fields per

@@ -5,16 +5,23 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
+import com.keplerops.groundcontrol.domain.qualitygates.repository.QualityGateRepository;
+import com.keplerops.groundcontrol.domain.qualitygates.state.MetricType;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import com.keplerops.groundcontrol.domain.requirements.model.RequirementRelation;
+import com.keplerops.groundcontrol.domain.requirements.model.TraceabilityLink;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRelationRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementSpecifications;
+import com.keplerops.groundcontrol.domain.requirements.repository.TraceabilityLinkRepository;
+import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
 import com.keplerops.groundcontrol.domain.requirements.state.RelationType;
 import com.keplerops.groundcontrol.domain.requirements.state.Status;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -29,16 +36,22 @@ public class RequirementService {
     private final RequirementRepository requirementRepository;
     private final RequirementRelationRepository relationRepository;
     private final ProjectRepository projectRepository;
+    private final QualityGateRepository qualityGateRepository;
+    private final TraceabilityLinkRepository traceabilityLinkRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     public RequirementService(
             RequirementRepository requirementRepository,
             RequirementRelationRepository relationRepository,
             ProjectRepository projectRepository,
+            QualityGateRepository qualityGateRepository,
+            TraceabilityLinkRepository traceabilityLinkRepository,
             ApplicationEventPublisher eventPublisher) {
         this.requirementRepository = requirementRepository;
         this.relationRepository = relationRepository;
         this.projectRepository = projectRepository;
+        this.qualityGateRepository = qualityGateRepository;
+        this.traceabilityLinkRepository = traceabilityLinkRepository;
         this.eventPublisher = eventPublisher;
     }
 
@@ -69,6 +82,10 @@ public class RequirementService {
 
     @Transactional(readOnly = true)
     public Requirement getById(UUID id) {
+        return findRequired(id);
+    }
+
+    private Requirement findRequired(UUID id) {
         return requirementRepository
                 .findById(id)
                 .orElseThrow(() -> new NotFoundException("Requirement not found: " + id));
@@ -82,7 +99,7 @@ public class RequirementService {
     }
 
     public Requirement update(UUID id, UpdateRequirementCommand command) {
-        var requirement = getById(id);
+        var requirement = findRequired(id);
         boolean textChanged = false;
         if (command.title() != null && !command.title().equals(requirement.getTitle())) {
             requirement.setTitle(command.title());
@@ -118,7 +135,8 @@ public class RequirementService {
     @ signals (NotFoundException e) !requirementRepository.existsById(id);
     @ signals (DomainValidationException e) !\old(getById(id)).getStatus().canTransitionTo(newStatus); @*/
     public Requirement transitionStatus(UUID id, Status newStatus) {
-        var requirement = getById(id);
+        var requirement = findRequired(id);
+        validateDocumentationCoverageForActivation(id, requirement, newStatus);
         requirement.transitionStatus(newStatus);
         return requirementRepository.save(requirement);
     }
@@ -127,8 +145,9 @@ public class RequirementService {
         var succeeded = new ArrayList<Requirement>();
         var failed = new ArrayList<BulkFailureDetail>();
         for (UUID id : ids) {
+            Requirement requirement = null;
             try {
-                var requirement = getById(id);
+                requirement = findRequired(id);
                 if (!requirement.getStatus().canTransitionTo(newStatus)) {
                     failed.add(new BulkFailureDetail(
                             id.toString(),
@@ -136,10 +155,14 @@ public class RequirementService {
                             "Cannot transition from " + requirement.getStatus() + " to " + newStatus));
                     continue;
                 }
+                validateDocumentationCoverageForActivation(id, requirement, newStatus);
                 requirement.transitionStatus(newStatus);
                 succeeded.add(requirementRepository.save(requirement));
             } catch (NotFoundException e) {
                 failed.add(new BulkFailureDetail(id.toString(), null, e.getMessage()));
+            } catch (DomainValidationException e) {
+                failed.add(new BulkFailureDetail(
+                        id.toString(), requirement != null ? requirement.getUid() : null, e.getMessage()));
             }
         }
         return new BulkTransitionResult(succeeded, failed);
@@ -151,7 +174,7 @@ public class RequirementService {
     @ signals (NotFoundException e) !requirementRepository.existsById(id);
     @ signals (DomainValidationException e) !\old(getById(id)).getStatus().canTransitionTo(Status.ARCHIVED); @*/
     public Requirement archive(UUID id) {
-        var requirement = getById(id);
+        var requirement = findRequired(id);
         requirement.archive();
         return requirementRepository.save(requirement);
     }
@@ -170,8 +193,8 @@ public class RequirementService {
             throw new ConflictException(
                     "Relation " + relationType + " already exists between " + sourceId + " and " + targetId);
         }
-        var source = getById(sourceId);
-        var target = getById(targetId);
+        var source = findRequired(sourceId);
+        var target = findRequired(targetId);
         if (!source.getProject().getId().equals(target.getProject().getId())) {
             throw new DomainValidationException("Cannot create relation between requirements in different projects");
         }
@@ -182,7 +205,7 @@ public class RequirementService {
     @Transactional(readOnly = true)
     public List<RequirementRelation> getRelations(UUID requirementId) {
         // Verify requirement exists
-        getById(requirementId);
+        findRequired(requirementId);
         var outgoing = relationRepository.findBySourceIdWithEntities(requirementId);
         var incoming = relationRepository.findByTargetIdWithEntities(requirementId);
         var combined = new ArrayList<RequirementRelation>(outgoing);
@@ -196,8 +219,36 @@ public class RequirementService {
         return requirementRepository.findAll(spec, pageable);
     }
 
+    /**
+     * Assembles one page of the traceability matrix (GC-Q003): each requirement
+     * matching {@code filter} paired with its traceability links. The links for
+     * the whole page are fetched in a single {@code IN} query (no N+1), then
+     * grouped per requirement. When {@code linkType} is non-null only links of
+     * that type are included; requirements with no matching link still appear
+     * with an empty link list so coverage gaps remain visible.
+     */
+    @Transactional(readOnly = true)
+    public Page<RequirementWithLinks> getTraceabilityMatrix(
+            UUID projectId, Pageable pageable, RequirementFilter filter, LinkType linkType) {
+        // Inline the requirement query rather than calling list(): a self-invocation of the
+        // @Transactional list() would bypass the Spring proxy (java:S6809), and this method
+        // already runs in a read-only transaction.
+        var spec = RequirementSpecifications.fromFilter(projectId, filter);
+        Page<Requirement> page = requirementRepository.findAll(spec, pageable);
+        List<UUID> requirementIds =
+                page.getContent().stream().map(Requirement::getId).toList();
+        Map<UUID, List<TraceabilityLink>> linksByRequirement = requirementIds.isEmpty()
+                ? Map.of()
+                : traceabilityLinkRepository.findByRequirementIdIn(requirementIds).stream()
+                        .filter(link -> linkType == null || link.getLinkType() == linkType)
+                        .collect(Collectors.groupingBy(
+                                link -> link.getRequirement().getId()));
+        return page.map(requirement ->
+                new RequirementWithLinks(requirement, linksByRequirement.getOrDefault(requirement.getId(), List.of())));
+    }
+
     public Requirement clone(UUID sourceId, CloneRequirementCommand command) {
-        var source = getById(sourceId);
+        var source = findRequired(sourceId);
         var project = source.getProject();
 
         String normalizedUid = command.newUid().toUpperCase(java.util.Locale.ROOT);
@@ -237,5 +288,32 @@ public class RequirementService {
             throw new NotFoundException("Relation not found: " + relationId);
         }
         relationRepository.delete(relation);
+    }
+
+    private void validateDocumentationCoverageForActivation(UUID id, Requirement requirement, Status newStatus) {
+        if (requirement.getStatus() != Status.DRAFT || newStatus != Status.ACTIVE) {
+            return;
+        }
+        boolean documentsCoverageGateActive =
+                qualityGateRepository.existsByProjectIdAndEnabledTrueAndMetricTypeAndMetricParamAndScopeStatus(
+                        requirement.getProject().getId(),
+                        MetricType.COVERAGE,
+                        LinkType.DOCUMENTS.name(),
+                        Status.ACTIVE);
+        if (!documentsCoverageGateActive
+                || traceabilityLinkRepository.existsByRequirementIdAndLinkType(id, LinkType.DOCUMENTS)) {
+            return;
+        }
+        throw new DomainValidationException(
+                "Cannot transition requirement " + requirement.getUid()
+                        + " from DRAFT to ACTIVE while Active DOCUMENTS Coverage is enabled: missing DOCUMENTS traceability link",
+                "documentation_link_missing",
+                Map.of(
+                        "requirementId",
+                        id.toString(),
+                        "uid",
+                        requirement.getUid(),
+                        "missingLinkType",
+                        LinkType.DOCUMENTS.name()));
     }
 }

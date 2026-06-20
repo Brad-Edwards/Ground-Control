@@ -19,7 +19,7 @@ Run `git diff --name-only HEAD` to see what files have been modified. Determine 
 ## 2. CHANGELOG check
 
 If source files were changed:
-- Read `CHANGELOG.md` and verify it appears in the git diff (i.e., it was updated in this session).
+- Read `CHANGELOG.md` and verify it appears in the git diff (that is, it was updated in this session).
 - If CHANGELOG.md was NOT updated but source code was changed, this is a FAILURE.
 
 If only GC MCP operations were performed (creating requirements, relations, traceability links, etc.) with no source code changes, CHANGELOG is not required.
@@ -33,7 +33,7 @@ If a requirement was being implemented:
 - Check if the branch name references a GitHub issue.
 - Verify that traceability links (IMPLEMENTS and TESTS) should exist for the work done.
 
-This check is informational — flag it if it looks like traceability was missed, but don't hard-fail since you may not have full context.
+This check is informational - flag it if it looks like traceability was missed, but don't hard-fail since you may not have full context.
 
 ## 4. Requirement status transition check
 

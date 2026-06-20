@@ -24,7 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENV="$PKG_DIR/.venv"
 
-if [ ! -x "$VENV/bin/python" ]; then
+if [[ ! -x "$VENV/bin/python" ]]; then
   echo "[citation-mcp] bootstrapping venv at $VENV" >&2
   python3 -m venv "$VENV"
   "$VENV/bin/pip" install --quiet --upgrade pip >&2

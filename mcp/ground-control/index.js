@@ -31,7 +31,7 @@
 //   Consolidated entity tools (one per entity, action-discriminated):
 //     gc_requirement, gc_relation, gc_adr, gc_document, gc_section,
 //     gc_asset, gc_observation, gc_risk_scenario, gc_threat_model,
-//     gc_control, gc_risk_governance, gc_risk_control_mapping, gc_analyze, gc_graph, gc_baseline,
+//     gc_control, gc_derivation, gc_risk_governance, gc_risk_control_mapping, gc_analyze, gc_graph, gc_baseline,
 //     gc_quality_gate, gc_admin, gc_pack
 //
 // Pure GETs (history, timeline, exports, list-by-X) are NOT registered as
@@ -48,7 +48,7 @@ import { z } from "zod";
 import {
   // ---- project/requirement/relation/traceability ----
   listProjects, createProject, replaceResearchIntake,
-  getRequirementByUid, listRequirements, createRequirement, updateRequirement,
+  getRequirementByUid, listRequirements, getTraceabilityMatrix, createRequirement, updateRequirement,
   transitionStatus, bulkTransitionStatus, archiveRequirement, cloneRequirement,
   createRelation, getRelations, deleteRelation,
   getTraceabilityLinks, getTraceabilityByArtifact, createTraceabilityLink,
@@ -62,6 +62,8 @@ import {
   analyzeEvidenceFreshness, analyzeObservationProjection, aggregateVendorRisk,
   // ---- GC-T014 NIST SP 800-30 Rev. 1 assessment ----
   analyzeNistAssessment,
+  // ---- GC-T011 FAIR v3.0 quantitative risk analysis ----
+  analyzeFairQuantitative,
   // ---- history / exports (kept for completeness even though tools route to gc_query) ----
   getRequirementHistory, getRelationHistory, getTraceabilityLinkHistory,
   getRequirementTimeline, getRequirementDiff, getProjectTimeline,
@@ -76,13 +78,16 @@ import {
   runCodexArchitecturePreflight, runCodexReview, runCodexVerifyFinding,
   runTestQualityReview, TEST_QUALITY_REVIEW_HARD_CAP,
   runPostImplementationPlan,
-  runAssertTraceabilityReconciled, runCloseIssueAfterMerge,
+  runAssertTraceabilityReconciled, runAssertGrcReconciled, runAssertQualityGates, runCloseIssueAfterMerge,
+  runAssertCompletion,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
+  runPostGrcScreening,
   runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
   runCodexReviewCycle, runTestQualityReviewCycle,
   startReviewJob, pollReviewJob, cancelReviewJob,
   runResolveWorkflowRoute,
   DECISION_RECORD_REVIEWERS, DECISION_RECORD_DECISIONS, DECISION_RECORD_CLASSIFICATIONS,
+  GRC_SCREENING_VERDICTS,
   PR_BODY_CHANGE_CLASSES, PR_REQUIREMENT_RE, EXACT_REQUIREMENT_UID_RE,
   TELEMETRY_TIERS, TELEMETRY_OUTCOMES,
   buildCodexReviewToolDescription, buildCodexReviewOverrideCapDescription,
@@ -118,13 +123,15 @@ import {
   // ---- risk domain ----
   createObservation, listObservations, getObservation, updateObservation,
   deleteObservation, listLatestObservations,
+  getEvidenceStateWorkspace,
+  getControlAssuranceWorkspace, CONTROL_STATUSES, CONTROL_FUNCTIONS, CONTROL_WORKSPACE_QUEUE_REASONS,
   createRiskScenario, listRiskScenarios, getRiskScenario, updateRiskScenario,
   deleteRiskScenario, transitionRiskScenarioStatus, getRiskScenarioRequirements,
-  getRiskScenarioTrace, getRiskScenarioWorkspace,
+  getRiskScenarioWorkspace,
   createRiskScenarioLink, listRiskScenarioLinks, deleteRiskScenarioLink,
   createThreatModel, listThreatModels, getThreatModel, updateThreatModel,
   deleteThreatModel, transitionThreatModelStatus, getThreatModelLinkedRequirements,
-  getThreatModelTrace, getThreatModelWorkspace,
+  getThreatModelWorkspace,
   createThreatModelLink, listThreatModelLinks, deleteThreatModelLink,
   createMethodologyProfile, listMethodologyProfiles, getMethodologyProfile,
   updateMethodologyProfile, deleteMethodologyProfile,
@@ -143,6 +150,7 @@ import {
   updateRiskControlMapping, deleteRiskControlMapping,
   attachMappingObservation, detachMappingObservation, addMappingEvidenceRef,
   getUnmappedScenarios, getUnmappedRecords, getUnmappedControls, getAssessmentFeed,
+  getUnmappedThreats, getThreatUnmappedControls, getThreatsInsufficientEffectiveness,
   MAPPING_CONTROL_ROLES,
   createVerificationResult, listVerificationResults, getVerificationResult,
   updateVerificationResult, deleteVerificationResult,
@@ -211,6 +219,7 @@ import {
   GOVERNANCE_FIELDS,
   PR_BODY_SUMMARY_MAX,
   FINAL_REPORT_SUMMARY_MAX,
+  FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX,
   FINAL_REPORT_REVIEW_SUMMARY_MAX,
   KNOWLEDGE_SOURCE_TYPES,
   writeKnowledgeInbox,
@@ -240,6 +249,11 @@ import {
   gcEvidenceToolHandler,
   GC_EVIDENCE_DESCRIPTION,
 } from "./gc-evidence.js";
+import {
+  gcDerivationZodShape,
+  gcDerivationToolHandler,
+  GC_DERIVATION_DESCRIPTION,
+} from "./gc-derivation.js";
 import {
   gcAuditZodShape,
   gcAuditToolHandler,
@@ -279,6 +293,7 @@ import {
   GC_INTEGRATION_MANAGER_DESCRIPTION,
   GC_INTEGRATION_MANAGER_INPUT_SCHEMA,
 } from "./gc-integrate.js";
+import { installToolTelemetry } from "./telemetry.js";
 
 // Load .env from cwd before any auth header is composed.
 function loadDotenvFromCwd() {
@@ -319,7 +334,12 @@ function err(e) {
       text += `\nDetail: ${JSON.stringify(e.detail, null, 2)}`;
     }
   }
-  return { content: [{ type: "text", text }], isError: true };
+  const outcomeCode = (e && e.name === "RequestError" && e.code) ? e.code : "error";
+  return {
+    content: [{ type: "text", text }],
+    isError: true,
+    _meta: { "groundcontrol/outcomeCode": outcomeCode },
+  };
 }
 
 // pick / reqArg moved to lib.js so the extracted per-tool modules
@@ -336,6 +356,12 @@ const ADMIN_TOOLS_ENABLED =
   process.env.GC_MCP_ADMIN === "yes";
 
 const server = new McpServer({ name: "ground-control", version: "1.0.0" });
+
+// Install per-tool telemetry capture (ADR-059, issue #1104).
+// Must run BEFORE any server.tool / server.registerTool registration so all
+// tools are wrapped. Fail-open: a telemetry write failure never affects the
+// original tool result.
+installToolTelemetry(server);
 
 // ============================================================================
 // WORKFLOW PRIMITIVES — kept by name; /implement and /ship skills call these.
@@ -625,6 +651,53 @@ server.tool(
 );
 
 server.tool(
+  "gc_assert_grc_reconciled",
+  "Assert that GRC reconciliation has landed for the issue and post a 'grc_reconciled' phase marker. " +
+  "Reads the GRC screening record posted by gc_post_grc_screening (Step 3.5) from the issue thread. " +
+  "For 'security_relevant' verdicts: resolves each entity ref (threat_model → getThreatModelByUid, " +
+  "risk_scenario → getRiskScenarioByUid, control → getControlByUid) and verifies that each claimed " +
+  "CODE link exists on the owner entity (listThreatModelLinks / listRiskScenarioLinks / listControlLinks " +
+  "filtered to target_type=CODE). Any gap → refuses with ok:false, error:'grc_not_reconciled', missing[]. " +
+  "For 'not_security_relevant' / 'no_baseline' verdicts: passes immediately (no entity or link checks). " +
+  "There is no tool-level override: a free-text reason is not a server-verifiable authorization, so the single audited skip for the completion-gate prerequisite is gc_post_final_report's phase override, which bypasses both markers together. " +
+  "Downstream: gc_post_final_report refuses unless both traceability_reconciled AND grc_reconciled markers exist.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    project: z.string().optional(),
+  },
+  async ({ repo_path, issue_number, project }) => {
+    try {
+      return ok(JSON.stringify(await runAssertGrcReconciled({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        project: project ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_assert_quality_gates",
+  "Assert that the project's enabled quality gates pass. Calls the server-side QualityGateService.evaluate contract (POST /api/v1/quality-gates/evaluate) and refuses (ok:false) when any enabled gate fails, returning failing_gates[] — ONLY the failing gates, each as {name, metric_type, threshold, actual} (plus operator) — so the fix is obvious from the error alone. Callers must pass requirements[]; use [] only as an explicit no-in-scope-requirements declaration. When the active DOCUMENTS coverage gate exists, also verifies every in-scope requirement has a DOCUMENTS traceability link regardless of status; missing links return error='in_scope_documentation_coverage_failed'. Used by the /implement completion gate (Step 6) to block a run on failing project gates or PR-scoped documentation coverage. Enforced metric types: COVERAGE (over IMPLEMENTS / TESTS / DOCUMENTS link coverage), ORPHAN_COUNT, COMPLETENESS.",
+  {
+    project: z.string(),
+    requirements: z.array(z.object({
+      uid: z.string(),
+      status_intent: z.enum(["ACTIVE", "DRAFT", "DEPRECATED", "ARCHIVED"]).optional(),
+    })),
+  },
+  async ({ project, requirements }) => {
+    try {
+      return ok(JSON.stringify(await runAssertQualityGates({
+        project,
+        requirements: requirements.map((r) => ({ uid: r.uid, statusIntent: r.status_intent ?? "ACTIVE" })),
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
   "gc_close_issue_after_merge",
   "Canonical post-merge close path for the /implement workflow's Phase E (Step 20). Verifies the issue's linked PR is merged (merged_at non-null AND state=MERGED) before running `gh issue close`; refuses otherwise. Idempotent — re-running on an already-closed issue returns ok with already_closed=true. The PR body's `Closes #<n>` keyword remains the GitHub cross-link for sidebar / timeline purposes, but this tool is the gate-enforcing close path. pr_number is optional; when omitted the tool resolves the merged PR for the issue via the GitHub timeline.",
   {
@@ -781,8 +854,50 @@ server.tool(
 );
 
 server.tool(
+  "gc_post_grc_screening",
+  "Post the canonical Step 3.5 GRC screening record as a comment on the GitHub issue. Accepts one of three verdicts: 'security_relevant' (threat-model entries, risk scenarios, controls, and CODE links were created/updated/confirmed during this run — entities_created/updated/confirmed and code_links required), 'not_security_relevant' (change does not touch a security-relevant surface — rationale required, entity/link arrays empty), 'no_baseline' (project has no threat-model baseline — explicit declination, not a clean verdict). Renders a schema-versioned 'gc.implement.grc-screening/v1' record with machine-parseable marker family 'gc:grc-screening'; runs the sensitive-content filter and body-size cap before posting; writes the grc_screening phase marker on success. Rejects caller-controlled fields carrying reserved '<!-- gc:' marker sequences. Returns {ok, verdict, comment_url, comment_id, phase_marker_posted}.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    verdict: z.enum(GRC_SCREENING_VERDICTS),
+    rationale: z.string().min(1),
+    entities_created: z.array(z.object({
+      type: z.string().min(1).optional(),
+      uid: z.string().min(1),
+    })).optional().default([]),
+    entities_updated: z.array(z.object({
+      type: z.string().min(1).optional(),
+      uid: z.string().min(1),
+    })).optional().default([]),
+    entities_confirmed: z.array(z.object({
+      type: z.string().min(1).optional(),
+      uid: z.string().min(1),
+    })).optional().default([]),
+    code_links: z.array(z.object({
+      owner_type: z.string().min(1).optional(),
+      owner_uid: z.string().min(1).optional(),
+      target_identifier: z.string().min(1),
+    })).optional().default([]),
+  },
+  async ({ repo_path, issue_number, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links }) => {
+    try {
+      return ok(JSON.stringify(await runPostGrcScreening({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        verdict,
+        rationale,
+        entities_created: entities_created ?? [],
+        entities_updated: entities_updated ?? [],
+        entities_confirmed: entities_confirmed ?? [],
+        code_links: code_links ?? [],
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
   "gc_post_final_report",
-  "Post the canonical /implement Step 19 final report (or the /quickfix Step Q19 slim close comment) as a comment on the GitHub issue. Renders structured input (in-scope requirements, files-by-change-kind, reviews, traceability reconciliation, CI/SonarCloud status) into the standard final-report Markdown layout. Pass lane='quickfix' (issue #906) to enable the slim payload — empty reviews[] and no codex-entry requirement — for the /quickfix lane where AI-assisted reviews are opt-in; every other gate (CI green, Sonar pass-or-legit-skipped, sensitive-content / no-defer / reserved-marker scrubs) still applies. Replaces free-prose Step 19 comments. Returns the posted comment's URL and id. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
+  "Post the canonical /implement Step 19 final report (or the /quickfix Step Q19 slim close comment) as a comment on the GitHub issue. Renders structured input (plain_english_outcome, in-scope requirements, files-by-change-kind, reviews, traceability reconciliation, CI/SonarCloud status) into the standard final-report Markdown layout. `plain_english_outcome` is required for /implement and renders the short product/operator outcome section; lane='quickfix' keeps the slim payload where AI reviews and the outcome field are optional. Every gate (CI green, Sonar pass-or-legit-skipped, sensitive-content / no-defer / reserved-marker scrubs) still applies. Replaces free-prose Step 19 comments. Returns the posted comment's URL and id. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -814,6 +929,7 @@ server.tool(
     sonar_status: z.enum(["passed", "failed", "skipped"]),
     plan_comment_url: z.string().optional(),
     summary: z.string().max(FINAL_REPORT_SUMMARY_MAX).optional(),
+    plain_english_outcome: z.string().min(1).max(FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX).optional(),
     lane: z.enum(["implement", "quickfix"]).optional(),
     documentation_outcome: z.object({
       outcome: z.enum(["updated", "verified_unchanged", "not_updated_authorized"]),
@@ -822,7 +938,7 @@ server.tool(
     override_traceability_gate: z.boolean().optional(),
     override_traceability_reason: z.string().optional(),
   },
-  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, lane, documentation_outcome, override_traceability_gate, override_traceability_reason }) => {
+  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, plain_english_outcome, lane, documentation_outcome, override_traceability_gate, override_traceability_reason }) => {
     try {
       return ok(JSON.stringify(await runPostFinalReport({
         repoPath: repo_path,
@@ -837,9 +953,92 @@ server.tool(
         planCommentUrl: plan_comment_url ?? null,
         lane: lane ?? null,
         summary: summary ?? null,
+        plainEnglishOutcome: plain_english_outcome ?? null,
         documentation_outcome: documentation_outcome ?? null,
         overrideTraceabilityGate: Boolean(override_traceability_gate),
         overrideTraceabilityReason: override_traceability_reason ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_assert_completion",
+  "Run the Phase D completion assertions (traceability reconciliation + GRC reconciliation) then post the final report in one deterministic call. " +
+  "Composes gc_assert_traceability_reconciled, gc_assert_grc_reconciled, and gc_post_final_report. " +
+  "Fail-fast: validates the final-report input before any side effects. " +
+  "Returns assertions[] (one entry per assertion: {name, ok, comment_url, comment_id}) plus final_report {comment_url, comment_id}. " +
+  "Gates inherited from the composed runners: traceability reconciliation (ACTIVE requirements must have IMPLEMENTS links + TESTS links on executable surfaces), " +
+  "GRC reconciliation (security_relevant screening records must have entity refs + CODE links resolved), " +
+  "CI green, Sonar pass-or-skipped, sensitive-content/no-defer/reserved-marker scrubs, reviews present, body size. " +
+  "The in-progress label removal is optional best-effort and is NOT a gate here. " +
+  "Do NOT remove or call the individual gc_assert_traceability_reconciled / gc_assert_grc_reconciled / gc_post_final_report tools separately when using this composite tool.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    pr_number: z.number().int().positive(),
+    requirements: z.array(z.object({
+      uid: z.string().regex(EXACT_REQUIREMENT_UID_RE),
+      title: z.string().min(1),
+      status: z.enum(["ACTIVE", "DRAFT", "DEPRECATED", "ARCHIVED"]),
+      note: z.string().optional(),
+    })).default([]),
+    files: z.object({
+      added: z.array(z.string().min(1)).optional(),
+      modified: z.array(z.string().min(1)).optional(),
+      renamed: z.array(z.string().min(1)).optional(),
+      deleted: z.array(z.string().min(1)).optional(),
+    }).optional(),
+    reviews: z.array(z.object({
+      reviewer: z.string().min(1),
+      summary: z.string().min(1).max(FINAL_REPORT_REVIEW_SUMMARY_MAX),
+    })),
+    traceability: z.object({
+      added: z.array(z.string()).optional(),
+      updated: z.array(z.string()).optional(),
+      deleted: z.array(z.string()).optional(),
+      notes: z.string().optional(),
+    }).optional(),
+    ci_status: z.enum(["green", "red", "skipped"]),
+    sonar_status: z.enum(["passed", "failed", "skipped"]),
+    plan_comment_url: z.string().optional(),
+    summary: z.string().max(FINAL_REPORT_SUMMARY_MAX).optional(),
+    plain_english_outcome: z.string().min(1).max(FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX).optional(),
+    documentation_outcome: z.object({
+      outcome: z.enum(["updated", "verified_unchanged", "not_updated_authorized"]),
+      rationale: z.string().optional(),
+    }).optional(),
+    touched_files: z.array(z.string()).optional(),
+    project: z.string().optional(),
+    override: z.boolean().optional(),
+    override_reason: z.string().optional(),
+  },
+  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, plain_english_outcome, documentation_outcome, touched_files, project, override, override_reason }) => {
+    try {
+      return ok(JSON.stringify(await runAssertCompletion({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        prNumber: pr_number,
+        requirements: requirements.map((r) => ({
+          uid: r.uid,
+          title: r.title,
+          status: r.status,
+          note: r.note ?? undefined,
+          statusIntent: r.status,
+        })),
+        files: files ?? {},
+        reviews,
+        traceability: traceability ?? {},
+        ciStatus: ci_status,
+        sonarStatus: sonar_status,
+        planCommentUrl: plan_comment_url ?? null,
+        summary: summary ?? null,
+        plainEnglishOutcome: plain_english_outcome ?? null,
+        documentation_outcome: documentation_outcome ?? null,
+        touchedFiles: touched_files ?? [],
+        project: project ?? null,
+        override: Boolean(override),
+        overrideReason: override_reason ?? null,
       }), null, 2));
     } catch (e) { return err(e); }
   },
@@ -1148,7 +1347,7 @@ const REQUIREMENT_ACTIONS = ["list", "create", "update", "delete", "archive", "c
 server.tool(
   "gc_requirement",
   `Requirement operations (action-discriminated). Actions: ${REQUIREMENT_ACTIONS.join(", ")}. ` +
-    `Reads (list/get/history/diff/timeline) route through gc_query against /api/v1/requirements. ` +
+    `Reads (list/get/history/diff/timeline) route through gc_query against /api/v1/requirements; the history and timeline GETs accept an optional expand=true query param (pass it via gc_query params) to return full field values, since string change values over 200 chars are truncated by default with a truncated flag. ` +
     `Status transitions live on gc_transition_status / gc_bulk_transition_status (workflow primitives). ` +
     `Required fields per action: create→{uid,title,statement}; update→{id}; delete/archive→{id}; clone→{source_uid,new_uid}.`,
   {
@@ -1226,7 +1425,8 @@ const RELATION_ACTIONS = ["create", "get", "delete"];
 server.tool(
   "gc_relation",
   `Requirement-to-requirement relations. Actions: ${RELATION_ACTIONS.join(", ")}. ` +
-    `Reads (history) route through gc_query.`,
+    `Reads (history) route through gc_query. ` +
+    `Required fields per action: create→{source_id,target_id,relation_type}; get→{requirement_id}; delete→{requirement_id,id}.`,
   {
     action: z.enum(RELATION_ACTIONS),
     id: z.string().uuid().optional(),
@@ -1263,7 +1463,8 @@ const ADR_ACTIONS = ["create", "update", "delete", "transition", "requirements"]
 server.tool(
   "gc_adr",
   `ADR operations. Actions: ${ADR_ACTIONS.join(", ")}. ` +
-    `Reads (list, get) route through gc_query.`,
+    `Reads (list, get) route through gc_query. ` +
+    `Required fields per action: create→{uid,title}; update/delete/requirements→{id}; transition→{id,status}.`,
   {
     action: z.enum(ADR_ACTIONS),
     id: z.string().uuid().optional(),
@@ -1314,7 +1515,8 @@ const DOCUMENT_ACTIONS = ["create", "update", "delete", "grammar_set", "grammar_
 server.tool(
   "gc_document",
   `Document operations + grammar + reading-order. Actions: ${DOCUMENT_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, grammar_get) route through gc_query.`,
+    `Reads (list, get, grammar_get) route through gc_query. ` +
+    `Required fields per action: create→{title}; update/delete/grammar_delete/reading_order→{id}; grammar_set→{id,grammar}.`,
   {
     action: z.enum(DOCUMENT_ACTIONS),
     id: z.string().uuid().optional(),
@@ -1364,7 +1566,8 @@ const SECTION_ACTIONS = ["create", "update", "delete", "tree", "content_add", "c
 server.tool(
   "gc_section",
   `Section + section-content operations. Actions: ${SECTION_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, content_list) route through gc_query.`,
+    `Reads (list, get, content_list) route through gc_query. ` +
+    `Required fields per action: create→{document_id,title}; update/delete→{id}; tree→{document_id}; content_add→{id,content_type}; content_update/content_delete→{content_id}.`,
   {
     action: z.enum(SECTION_ACTIONS),
     id: z.string().uuid().optional(),
@@ -1430,6 +1633,8 @@ const ANALYZE_KINDS = [
   // GC-T014 — NIST SP 800-30 Rev. 1 risk-assessment view (methodology-attributed
   // envelope from /api/v1/analysis/grc/nist-sp-800-30).
   "nist_assessment",
+  // GC-T011 — FAIR v3.0 quantitative risk analysis (methodology-attributed envelope from /api/v1/analysis/grc/fair-quantitative)
+  "fair_quantitative",
 ];
 
 server.tool(
@@ -1441,6 +1646,7 @@ server.tool(
     `control_state→{project?, as_of?, asset_id?, control_id?}; ` +
     `vendor_risk_aggregation→{project?, as_of?, freshness_window_days?, vendor_asset_id?}; ` +
     `nist_assessment→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
+    `fair_quantitative→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
     `Others take {project?}.`,
   {
     kind: z.enum(ANALYZE_KINDS),
@@ -1512,6 +1718,13 @@ server.tool(
           }), null, 2));
         case "nist_assessment":
           return ok(JSON.stringify(await analyzeNistAssessment({
+            project: args.project,
+            asOf: args.as_of,
+            riskAssessmentResultId: args.risk_assessment_result_id,
+            riskScenarioId: args.risk_scenario_id,
+          }), null, 2));
+        case "fair_quantitative":
+          return ok(JSON.stringify(await analyzeFairQuantitative({
             project: args.project,
             asOf: args.as_of,
             riskAssessmentResultId: args.risk_assessment_result_id,
@@ -1626,7 +1839,8 @@ const QUALITY_GATE_ACTIONS = ["create", "update", "delete", "evaluate"];
 server.tool(
   "gc_quality_gate",
   `Quality gate operations. Actions: ${QUALITY_GATE_ACTIONS.join(", ")}. ` +
-    `Reads (list, get) route through gc_query.`,
+    `Reads (list, get) route through gc_query. ` +
+    `Required fields per action: create→{name,metric_type}; update/delete→{id}; evaluate→{} (no required fields; optional project scopes it).`,
   {
     action: z.enum(QUALITY_GATE_ACTIONS),
     id: z.string().uuid().optional(),
@@ -1817,6 +2031,111 @@ server.tool(
   },
 );
 
+// gc_evidence_state_workspace: GC-Q012. Read-only composition endpoint returning
+// evidence artifacts, observations, freshness, provenance, and downstream impact.
+server.tool(
+  "gc_evidence_state_workspace",
+  "Read-only Evidence and State Explorer (GC-Q012). Returns project-scoped " +
+    "evidence artifacts, observations, freshness counts, provenance source refs, " +
+    "affected assets, linked controls, downstream assessments, and linked findings. " +
+    "Responses contain bounded summaries and links, not raw evidence payloads. " +
+    "Optional filters: assetId (UUID), controlId (UUID), asOf (ISO-8601 instant), " +
+    "freshnessWindowDays (default 90), includeSuperseded (default false).",
+  {
+    project: z.string().optional(),
+    assetId: z.string().uuid().optional(),
+    controlId: z.string().uuid().optional(),
+    asOf: z.string().optional(),
+    freshnessWindowDays: z.number().int().positive().optional(),
+    includeSuperseded: z.boolean().optional(),
+  },
+  async ({ project, assetId, controlId, asOf, freshnessWindowDays, includeSuperseded }) => {
+    try {
+      const result = await getEvidenceStateWorkspace({ project, assetId, controlId, asOf, freshnessWindowDays, includeSuperseded });
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_control_assurance_workspace: GC-Q011. Read-only composition endpoint
+// returning controls with implementations, tests, evidence, findings, risk
+// mappings, assessments, and owner work-queue reasons.
+server.tool(
+  "gc_control_assurance_workspace",
+  "Read-only Control and Assurance Workspace (GC-Q011). Returns project-scoped " +
+    "control catalog entries with scoped implementations, control tests, " +
+    "effectiveness assessments, observation-backed evidence summaries, linked " +
+    "findings/exceptions, risk mappings, and owner queue reasons. Responses " +
+    "contain bounded summaries and links, not raw evidence payloads. Optional " +
+    "filters: status (ControlStatus), controlFunction (ControlFunction), owner " +
+    "substring, queue (owner queue reason), asOf (ISO-8601 instant), " +
+    "freshnessWindowDays (default 90).",
+  {
+    project: z.string().optional(),
+    status: z.enum(CONTROL_STATUSES).optional(),
+    controlFunction: z.enum(CONTROL_FUNCTIONS).optional(),
+    owner: z.string().optional(),
+    queue: z.enum(CONTROL_WORKSPACE_QUEUE_REASONS).optional(),
+    asOf: z.string().optional(),
+    freshnessWindowDays: z.number().int().positive().optional(),
+  },
+  async ({ project, status, controlFunction, owner, queue, asOf, freshnessWindowDays }) => {
+    try {
+      const result = await getControlAssuranceWorkspace({
+        project,
+        status,
+        controlFunction,
+        owner,
+        queue,
+        asOf,
+        freshnessWindowDays,
+      });
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_traceability_matrix: GC-Q003. Read-only matrix composition. Also routes
+// through gc_query against /api/v1/requirements/matrix. Returns a paged list of
+// rows pairing each requirement with its traceability links.
+server.tool(
+  "gc_traceability_matrix",
+  "Read-only Traceability Matrix view (GC-Q003). Returns a paged list of rows, " +
+    "each pairing a requirement with its traceability links, for the matrix view. " +
+    "This is a read that also routes through gc_query against " +
+    "/api/v1/requirements/matrix. When linkType is set, only links of that type " +
+    "are returned; requirements with no matching link still appear with an empty " +
+    "links array. Optional filters: project, status (Status), wave (int), " +
+    "linkType (LinkType), plus page and size pagination.",
+  {
+    project: z.string().optional(),
+    status: z.enum(STATUSES).optional(),
+    wave: z.number().int().optional(),
+    linkType: z.enum(LINK_TYPES).optional(),
+    page: z.number().int().nonnegative().optional(),
+    size: z.number().int().positive().optional(),
+  },
+  async ({ project, status, wave, linkType, page, size }) => {
+    try {
+      const result = await getTraceabilityMatrix({ project, status, wave, linkType, page, size });
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_derivation: GC-GRC-001 normalized system-model facts and capture limits.
+server.tool(
+  "gc_derivation",
+  GC_DERIVATION_DESCRIPTION,
+  gcDerivationZodShape,
+  async (args) => {
+    try {
+      const result = await gcDerivationToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
 // gc_control: control + control_test (GC-I012) + control_effectiveness_assessment
 // (GC-I013). Handler logic (Zod shape, per-entity per-action allowlist dispatch
 // via lib.js CONTROL_FIELDS) lives in gc-control.js so the adapter is testable
@@ -1852,7 +2171,8 @@ server.tool(
   "gc_test_case",
   `Test case operations (TC-001 / ADR-040 + TC-002 / ADR-041 + TC-004 / ADR-042). ` +
     `Actions: ${TEST_CASE_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, get-by-uid, step-list, step-get, gherkin-get) route through gc_query.`,
+    `Reads (list, get, get-by-uid, step-list, step-get, gherkin-get) route through gc_query. ` +
+    `Required fields per action: create→{uid,title,type,priority}; update/delete/move→{id}; transition→{id,status}; step-create→{test_case_id,step_number,step_action,expected_result}; step-update/step-delete→{test_case_id,step_id}; gherkin-create/gherkin-update→{test_case_id,gherkin_source}; gherkin-delete→{test_case_id}; folder-create→{folder_title}; folder-update/folder-delete/folder-move→{folder_id}; folder-reorder→{ordered_folder_ids}; copy→{id,new_uid}; reorder→{ordered_test_case_ids}.`,
   {
     action: z.enum(TEST_CASE_ACTIONS),
     id: z.string().uuid().optional(),
@@ -2132,7 +2452,8 @@ server.tool(
   "gc_test_plan",
   `Test plan operations (TC-006 / ADR-044). ` +
     `Actions: ${TEST_PLAN_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, get-by-uid) route through gc_query.`,
+    `Reads (list, get, get-by-uid) route through gc_query. ` +
+    `Required fields per action: create→{uid,name}; update/delete→{id}; transition→{id,status}.`,
   {
     action: z.enum(TEST_PLAN_ACTIONS),
     id: z.string().uuid().optional(),
@@ -2227,7 +2548,8 @@ server.tool(
   "gc_test_suite",
   `Test suite operations (TC-007 / ADR-047). ` +
     `Actions: ${TEST_SUITE_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, get-by-uid) route through gc_query.`,
+    `Reads (list, get, get-by-uid) route through gc_query. ` +
+    `Required fields per action: create→{uid,name,population_mode}; update/delete/resolve→{id}; add_member/remove_member→{id,test_case_id}; reorder_members→{id,ordered_test_case_ids}; add_source_requirement/remove_source_requirement→{id,requirement_id}.`,
   {
     action: z.enum(TEST_SUITE_ACTIONS),
     id: z.string().uuid().optional(),
@@ -2385,7 +2707,8 @@ server.tool(
   "gc_test_run",
   `Test run operations (TC-008 / ADR-049). ` +
     `Actions: ${TEST_RUN_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, get-by-uid, testers, results) route through gc_query.`,
+    `Reads (list, get, get-by-uid, testers, results) route through gc_query. ` +
+    `Required fields per action: create→{uid,name,test_plan_id,test_suite_id}; update/delete/update_cursor→{id}; transition→{id,status}; add_tester/remove_tester→{id,tester_name}; update_result→{id,test_case_id,result_status}; list_step_results→{id,case_result_id}; update_step_result→{id,case_result_id,step_result_id,step_status}.`,
   {
     action: z.enum(TEST_RUN_ACTIONS),
     id: z.string().uuid().optional(),
@@ -2588,15 +2911,18 @@ const RISK_CONTROL_MAPPING_ACTIONS = [
   "create", "update", "delete",
   // Mapping observation/evidence (C8)
   "attach-observation", "detach-observation", "add-evidence",
-  // Coverage queries
+  // Coverage queries (risk-side)
   "unmapped-scenarios", "unmapped-records", "unmapped-controls", "assessment-feed",
+  // Coverage queries (threat-side, GC-H006)
+  "unmapped-threats", "threat-unmapped-controls", "threats-insufficient-effectiveness",
 ];
 server.tool(
   "gc_risk_control_mapping",
-  `Risk-control mapping operations (GC-T003 / ADR-052). ` +
+  `Risk-control mapping operations (GC-T003 / ADR-052, GC-H006). ` +
     `Actions: ${RISK_CONTROL_MAPPING_ACTIONS.join(", ")}. ` +
     `Reads (list, get) route through gc_query. ` +
-    `control_role values: ${MAPPING_CONTROL_ROLES.join(", ")}.`,
+    `control_role values: ${MAPPING_CONTROL_ROLES.join(", ")}. ` +
+    `Analysis-side endpoint: exactly one of risk_scenario_id, risk_register_record_id, or threat_model_id (GC-H006).`,
   {
     action: z.enum(RISK_CONTROL_MAPPING_ACTIONS),
     id: z.string().uuid().optional(),
@@ -2610,6 +2936,7 @@ server.tool(
     scoped_implementation_id: z.string().uuid().optional(),
     risk_scenario_id: z.string().uuid().optional(),
     risk_register_record_id: z.string().uuid().optional(),
+    threat_model_id: z.string().uuid().optional(),  // GC-H006: threat-model analysis endpoint
     operational_asset_id: z.string().uuid().optional(),
     control_role: z.enum(MAPPING_CONTROL_ROLES).optional(),
     mapping_objective: z.string().optional(),
@@ -2624,6 +2951,10 @@ server.tool(
     // Coverage query options
     transitive: z.boolean().optional(),
     assessment_result_id: z.string().uuid().optional(),
+    // Threat-coverage query options (GC-H006)
+    min_effectiveness: z.string().optional(),
+    as_of: z.string().optional(),
+    freshness_window_days: z.number().int().positive().optional(),
   },
   async (args) => {
     try {
@@ -2652,6 +2983,7 @@ server.tool(
           result = await createRiskControlMapping({
             controlId: args.control_id, scopedImplementationId: args.scoped_implementation_id,
             riskScenarioId: args.risk_scenario_id, riskRegisterRecordId: args.risk_register_record_id,
+            threatModelId: args.threat_model_id,  // GC-H006
             operationalAssetId: args.operational_asset_id,
             controlRole: reqArg(args, "control_role"),
             mappingObjective: args.mapping_objective, mappingScope: args.mapping_scope,
@@ -2695,6 +3027,20 @@ server.tool(
           break;
         case "assessment-feed":
           result = await getAssessmentFeed(reqArg(args, "assessment_result_id"), p);
+          break;
+        // ---- Threat-side coverage queries (GC-H006) ----
+        case "unmapped-threats":
+          result = await getUnmappedThreats(p);
+          break;
+        case "threat-unmapped-controls":
+          result = await getThreatUnmappedControls(p);
+          break;
+        case "threats-insufficient-effectiveness":
+          result = await getThreatsInsufficientEffectiveness(p, {
+            minEffectiveness: args.min_effectiveness,
+            asOf: args.as_of,
+            freshnessWindowDays: args.freshness_window_days,
+          });
           break;
         default:
           throw new Error(`Unknown action: ${args.action}`);

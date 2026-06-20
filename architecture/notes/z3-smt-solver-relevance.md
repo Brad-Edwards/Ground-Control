@@ -2,7 +2,7 @@
 
 ## The Question
 
-As Ground Control expands from requirements management into design verification, implementation tracing, risk assessment, threat modeling, compliance mapping, and architectural governance — does a formal constraint solver like Z3 become relevant?
+As Ground Control expands from requirements management into design verification, implementation tracing, risk assessment, threat modeling, compliance mapping, and architectural governance - does a formal constraint solver like Z3 become relevant?
 
 ## What Z3 Actually Does
 
@@ -14,11 +14,11 @@ In plain terms: you express constraints formally, Z3 tells you whether they can 
 
 Ground Control is building three layers of analysis capability:
 
-1. **Structural analysis** (exists today) — graph algorithms over the requirement DAG. Detects topological problems: cycles, orphans, coverage gaps, cross-wave violations. Operates on shape, not meaning.
+1. **Structural analysis** (exists today) - graph algorithms over the requirement DAG. Detects topological problems: cycles, orphans, coverage gaps, cross-wave violations. Operates on shape, not meaning.
 
-2. **Semantic analysis** (GC-C015 through GC-C019) — embeddings and LLM classification over natural language content. Detects content-level problems: near-duplicates, contradictions, redundancy. Operates on meaning, but probabilistically.
+2. **Semantic analysis** (GC-C015 through GC-C019) - embeddings and LLM classification over natural language content. Detects content-level problems: near-duplicates, contradictions, redundancy. Operates on meaning, but probabilistically.
 
-3. **Formal analysis** (Z3 would live here) — constraint solving over formalized properties. Proves or disproves consistency, coverage, feasibility. Operates on logic, deterministically.
+3. **Formal analysis** (Z3 would live here) - constraint solving over formalized properties. Proves or disproves consistency, coverage, feasibility. Operates on logic, deterministically.
 
 These three layers are complementary, not competing. Structural analysis is cheap and catches shape problems. Semantic analysis is moderate-cost and catches meaning problems. Formal analysis is expensive (in formalization effort, not compute) and catches logical problems with mathematical certainty.
 
@@ -33,7 +33,7 @@ When requirements carry formalizable numeric or logical constraints, Z3 can prov
 - GC-R047: "Admin sessions shall persist for the duration of an active investigation, which may span multiple days"
 - GC-R089: "All sessions shall use the same timeout policy"
 
-Each requirement is individually coherent. Embedding similarity might flag R001/R047 as somewhat similar (both mention sessions), but might not — the language is quite different. An LLM might catch the contradiction in a pairwise check, but only if R001 and R047 are selected as a candidate pair. Z3, given the formalized constraints `timeout <= 15min`, `timeout >= days`, and `uniform_policy = true`, immediately produces UNSAT with the conflicting subset.
+Each requirement is individually coherent. Embedding similarity might flag R001/R047 as somewhat similar (both mention sessions), but might not - the language is quite different. An LLM might catch the contradiction in a pairwise check, but only if R001 and R047 are selected as a candidate pair. Z3, given the formalized constraints `timeout <= 15min`, `timeout >= days`, and `uniform_policy = true`, immediately produces UNSAT with the conflicting subset.
 
 **The key difference:** Z3 doesn't need the requirements to be textually similar to detect they conflict. It reasons over the *implications* of constraints, not the *words* describing them.
 
@@ -41,7 +41,7 @@ Each requirement is individually coherent. Embedding similarity might flag R001/
 
 GC-H007 (Threat Model Scope) and the control framework (GC-I002, GC-I007) create a mapping between threats and controls. The question "do our controls cover all identified threats?" is a set-cover problem that Z3 handles naturally.
 
-**More interesting:** "Given that Control-A has failed its last effectiveness test, which threats are now unmitigated?" This is a satisfiability query: assert all control effectiveness constraints, negate Control-A's, ask Z3 which threat-mitigation constraints become unsatisfiable. The answer is the set of newly exposed threats — not just the threats Control-A directly covers, but threats that were transitively covered through control dependencies.
+**More interesting:** "Given that Control-A has failed its last effectiveness test, which threats are now unmitigated?" This is a satisfiability query: assert all control effectiveness constraints, negate Control-A's, ask Z3 which threat-mitigation constraints become unsatisfiable. The answer is the set of newly exposed threats - not just the threats Control-A directly covers, but threats that were transitively covered through control dependencies.
 
 Graph analysis can trace these paths, but Z3 handles the case where coverage depends on *combinations* of controls (defense-in-depth), not just individual control-to-threat links.
 
@@ -52,13 +52,13 @@ GC-I002 (Compliance Framework Mapping) and GC-I007 (Framework Coverage Gap Analy
 Z3 can determine:
 - Whether the combined framework requirements are satisfiable with current controls
 - The minimum additional controls needed to achieve full coverage
-- Which framework requirements conflict (e.g., data retention periods that differ between HIPAA and GDPR)
+- Which framework requirements conflict (for example, data retention periods that differ between HIPAA and GDPR)
 
 ### 4. Wave Planning Feasibility
 
-GC-Q007 (DAG-Derived Work Order) already envisions dependency-aware work ordering. Today this is topological sort with heuristics. But as constraints accumulate — dependency ordering, resource limits, deadline constraints, priority requirements — the planning problem becomes a constraint satisfaction problem.
+GC-Q007 (DAG-Derived Work Order) already envisions dependency-aware work ordering. Today this is topological sort with heuristics. But as constraints accumulate - dependency ordering, resource limits, deadline constraints, priority requirements - the planning problem becomes a constraint satisfaction problem.
 
-"Given these dependency edges, these resource constraints (2 engineers), these deadlines (Wave 2 must complete by date X), and these priority rules (all MUST requirements before any SHOULD) — is this wave plan feasible? If not, what's the minimal relaxation?"
+"Given these dependency edges, these resource constraints (2 engineers), these deadlines (Wave 2 must complete by date X), and these priority rules (all MUST requirements before any SHOULD) - is this wave plan feasible? If not, what's the minimal relaxation?"
 
 Z3 handles this directly. Heuristic planners approximate it.
 
@@ -89,7 +89,7 @@ These four constraints are collectively unsatisfiable. ArchUnit catches the dire
 
 ### Natural language requirements as-is
 
-Z3 cannot process "The system shall provide a good user experience." Most requirements live at this level of formality. The formalization burden — translating natural language into SMT formulas — is the bottleneck, not the solving.
+Z3 cannot process "The system shall provide a good user experience." Most requirements live at this level of formality. The formalization burden - translating natural language into SMT formulas - is the bottleneck, not the solving.
 
 ### Small-scale constraint sets
 
@@ -105,7 +105,7 @@ The fundamental challenge: Z3 requires formal specifications. Ground Control's r
 
 ### A. Manual formalization (traditional)
 
-Humans annotate requirements with formal properties. GC-F007 (Target Assurance Level) and GC-F008 (Formal Specification Lifecycle Management) already envision this — requirements at L2/L3 assurance levels would have linked TLA+, Alloy, or JML specifications. These formal specs could feed Z3.
+Humans annotate requirements with formal properties. GC-F007 (Target Assurance Level) and GC-F008 (Formal Specification Lifecycle Management) already envision this - requirements at L2/L3 assurance levels would have linked TLA+, Alloy, or JML specifications. These formal specs could feed Z3.
 
 **Pro:** High-quality formalizations. **Con:** Expensive, only happens for high-assurance requirements.
 
@@ -113,7 +113,7 @@ Humans annotate requirements with formal properties. GC-F007 (Target Assurance L
 
 Use an LLM to extract formalizable constraints from natural language requirements. "Session timeout shall not exceed 15 minutes" → `timeout <= 900`. The LLM proposes, a human validates, Z3 consumes.
 
-**Pro:** Scalable formalization with human-in-the-loop. **Con:** LLM extraction is imperfect — missed constraints or incorrect translations produce false confidence. Requires a validation step that adds friction.
+**Pro:** Scalable formalization with human-in-the-loop. **Con:** LLM extraction is imperfect - missed constraints or incorrect translations produce false confidence. Requires a validation step that adds friction.
 
 ### C. Structured requirement fields (pragmatic)
 
@@ -121,7 +121,7 @@ Extend the requirement model with optional structured constraint fields (numeric
 
 **Pro:** No LLM involved, deterministic. **Con:** Additional authoring burden, only works for requirements with clearly formalizable properties.
 
-Approach B is the most interesting for Ground Control's positioning — it leverages the same LLM infrastructure as GC-C018 (Semantic Coherence Classification) for a different purpose. The LLM extracts constraints; Z3 proves their consistency. Semantic analysis and formal analysis become two faces of the same NLP pipeline.
+Approach B is the most interesting for Ground Control's positioning - it leverages the same LLM infrastructure as GC-C018 (Semantic Coherence Classification) for a different purpose. The LLM extracts constraints; Z3 proves their consistency. Semantic analysis and formal analysis become two faces of the same NLP pipeline.
 
 ## Relationship to the Existing Formal Methods Stack
 
@@ -142,7 +142,7 @@ Z3 relevance increases as Ground Control accumulates formalized constraints. Rig
 **Phase 4 (GRC expansion):** Controls, risks, threats, and compliance mappings introduce quantitative constraints. Z3 becomes relevant for coverage proofs and feasibility checking.
 **Phase 5 (LLM-assisted formalization):** The LLM pipeline from Phase 2 is extended to extract constraints from natural language. Z3 consumes these. The full pipeline becomes: embeddings detect similarity → LLM classifies relationships → LLM extracts constraints → Z3 proves consistency.
 
-Z3 doesn't become relevant tomorrow. It becomes relevant when the system has enough formalized constraints — from structured fields, from linked specifications, or from LLM extraction — to make satisfiability checking useful. The GRC expansion accelerates this because risk scores, control mappings, and compliance thresholds are inherently more formalizable than "the system shall provide a good user experience."
+Z3 doesn't become relevant tomorrow. It becomes relevant when the system has enough formalized constraints - from structured fields, from linked specifications, or from LLM extraction - to make satisfiability checking useful. The GRC expansion accelerates this because risk scores, control mappings, and compliance thresholds are inherently more formalizable than "the system shall provide a good user experience."
 
 ## The Grand Scheme
 
@@ -155,6 +155,6 @@ Layer 2: Structural analysis    ← Graph algorithms, detecting shape problems
 Layer 1: Data model             ← Requirements, relations, traceability, GRC entities
 ```
 
-Each layer catches problems invisible to the layers below it. Structural analysis can't catch semantic overlap. Semantic analysis can't prove logical consistency. Z3 can't detect "these say similar things" — it needs formal input. The layers are complementary.
+Each layer catches problems invisible to the layers below it. Structural analysis can't catch semantic overlap. Semantic analysis can't prove logical consistency. Z3 can't detect "these say similar things" - it needs formal input. The layers are complementary.
 
 The answer to "does Z3 become relevant?" is: yes, but not until Layers 1-3 are solid and the system has enough formalized constraints to make satisfiability checking worthwhile. The GRC expansion (Waves 4-5) is likely where the crossover happens, because quantitative risk/compliance/control properties are naturally formalizable in ways that functional requirements often aren't.

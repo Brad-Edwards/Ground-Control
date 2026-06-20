@@ -21,6 +21,21 @@ export const CONTROL_FUNCTIONS: ControlFunction[] = [
   "CORRECTIVE",
   "COMPENSATING",
 ];
+export type ControlStatus =
+  | "DRAFT"
+  | "PROPOSED"
+  | "IMPLEMENTED"
+  | "OPERATIONAL"
+  | "DEPRECATED"
+  | "RETIRED";
+export const CONTROL_STATUSES: ControlStatus[] = [
+  "DRAFT",
+  "PROPOSED",
+  "IMPLEMENTED",
+  "OPERATIONAL",
+  "DEPRECATED",
+  "RETIRED",
+];
 export type MappingControlRole =
   | "PREVENTIVE"
   | "DETECTIVE"
@@ -873,6 +888,66 @@ export interface RiskScenarioResponse {
   createdBy: string | null;
 }
 
+export interface AssetResponse {
+  id: string;
+  graphNodeId: string;
+  projectIdentifier: string;
+  uid: string;
+  name: string;
+  description: string | null;
+  assetType: AssetType;
+  owner: string | null;
+  steward: string | null;
+  environment: AssetEnvironment;
+  criticality: AssetCriticality;
+  businessContext: string | null;
+  scopeDesignation: AssetScope;
+  subtype: string | null;
+  metadata: Record<string, unknown>;
+  knowledgeState: KnowledgeState;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FindingType =
+  | "AUDIT_FINDING"
+  | "CONTROL_DEFICIENCY"
+  | "POLICY_VIOLATION"
+  | "VULNERABILITY"
+  | "EXCEPTION_ESCALATION";
+
+export type FindingSeverity =
+  | "CRITICAL"
+  | "HIGH"
+  | "MEDIUM"
+  | "LOW"
+  | "INFORMATIONAL";
+
+export type FindingStatus =
+  | "OPEN"
+  | "REMEDIATION_IN_PROGRESS"
+  | "REMEDIATION_COMPLETE"
+  | "VERIFIED_CLOSED";
+
+export interface FindingResponse {
+  id: string;
+  graphNodeId: string;
+  projectIdentifier: string;
+  uid: string;
+  title: string;
+  findingType: FindingType;
+  severity: FindingSeverity;
+  status: FindingStatus;
+  description: string;
+  rootCauseAnalysis: string | null;
+  owner: string | null;
+  dueDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string | null;
+}
+
 export interface RelationResponse {
   id: string;
   sourceId: string;
@@ -977,12 +1052,23 @@ export interface TraceabilityLinkResponse {
   updatedAt: string;
 }
 
+// GC-Q003 — Traceability Matrix. Mirrors the backend RequirementWithLinksResponse
+// row: a requirement paired with its traceability links. When the matrix endpoint
+// is queried with a `linkType` filter, `links` carries only links of that type.
+export interface RequirementWithLinksResponse {
+  requirement: RequirementResponse;
+  links: TraceabilityLinkResponse[];
+}
+
 export interface RequirementHistoryResponse {
   revisionNumber: number;
   revisionType: RevisionType;
   timestamp: string;
   actor: string;
+  reason?: string;
   snapshot: RequirementResponse;
+  changes: Record<string, FieldChangeResponse>;
+  truncated: boolean;
 }
 
 export interface RelationHistoryResponse {
@@ -1018,6 +1104,7 @@ export const CHANGE_CATEGORIES: ChangeCategory[] = [
 export interface FieldChangeResponse {
   oldValue: unknown;
   newValue: unknown;
+  truncated: boolean;
 }
 
 export interface TimelineEntryResponse {
@@ -1025,10 +1112,12 @@ export interface TimelineEntryResponse {
   revisionType: RevisionType;
   timestamp: string;
   actor: string;
+  reason?: string;
   changeCategory: ChangeCategory;
   entityId: string;
   snapshot: Record<string, unknown>;
   changes: Record<string, FieldChangeResponse>;
+  truncated: boolean;
 }
 
 export interface RequirementSummaryResponse {
@@ -1263,6 +1352,24 @@ export type FreshnessState =
   | "SUPERSEDED"
   | "NO_OBSERVATIONS";
 
+export type EvidenceType =
+  | "OBSERVATION_SUMMARY"
+  | "CONTROL_TEST_SUMMARY"
+  | "ASSURANCE_CONCLUSION"
+  | "VERIFICATION_SUMMARY"
+  | "ATTESTATION"
+  | "MIXED";
+
+export type EvidenceSourceKind =
+  | "OBSERVATION"
+  | "CONTROL_TEST"
+  | "CONTROL_EFFECTIVENESS_ASSESSMENT"
+  | "VERIFICATION_RESULT"
+  | "RISK_ASSESSMENT_RESULT"
+  | "FINDING"
+  | "ATTESTATION"
+  | "EXTERNAL";
+
 export interface WorkspaceAsset {
   id: string;
   uid: string;
@@ -1306,6 +1413,214 @@ export interface ThreatModelWorkspaceResponse {
   entryCount: number;
 }
 
+// GC-Q012 — Evidence and State Explorer types.
+export interface EvidenceFreshnessCounts {
+  fresh: number;
+  stale: number;
+  expired: number;
+  superseded: number;
+  currentlyValid: number;
+}
+
+export interface EvidenceStateProvenanceSource {
+  sourceKind: EvidenceSourceKind;
+  sourceEntityId: string | null;
+  sourceIdentifier: string | null;
+  role: string | null;
+  label: string | null;
+}
+
+export interface EvidenceStateArtifact {
+  id: string;
+  uid: string;
+  title: string;
+  summaryPreview: string;
+  evidenceType: EvidenceType;
+  derivedAt: string;
+  ageDays: number;
+  freshnessState: FreshnessState;
+  supersededByArtifactId: string | null;
+  derivedBy: string | null;
+  assuranceLevel: string | null;
+  confidence: string | null;
+  sources: EvidenceStateProvenanceSource[];
+  affectedAssets: WorkspaceLink[];
+  linkedControls: WorkspaceLink[];
+  downstreamAssessments: WorkspaceLink[];
+  linkedFindings: WorkspaceLink[];
+}
+
+export interface EvidenceStateObservation {
+  id: string;
+  assetId: string;
+  assetUid: string;
+  category: string;
+  observationKey: string;
+  valuePreview: string;
+  source: string | null;
+  evidenceRef: string | null;
+  observedAt: string;
+  expiresAt: string | null;
+  ageDays: number;
+  freshnessState: FreshnessState;
+  confidence: string | null;
+  evidenceArtifacts: WorkspaceLink[];
+  downstreamAssessments: WorkspaceLink[];
+  linkedFindings: WorkspaceLink[];
+}
+
+export interface EvidenceStateWorkspaceResponse {
+  assets: WorkspaceAsset[];
+  evidenceArtifacts: EvidenceStateArtifact[];
+  observations: EvidenceStateObservation[];
+  counts: EvidenceFreshnessCounts;
+  limitations: string[];
+  assetCount: number;
+  artifactCount: number;
+  observationCount: number;
+}
+
+// GC-Q011 - Control and Assurance Workspace types.
+export type ControlTestConclusion = "EFFECTIVE" | "INEFFECTIVE" | "NOT_TESTED";
+
+export type ControlEffectivenessRating =
+  | "EFFECTIVE"
+  | "PARTIALLY_EFFECTIVE"
+  | "INEFFECTIVE";
+
+export type ControlWorkspaceQueueReason =
+  | "OWNER_MISSING"
+  | "STATUS_DRAFT"
+  | "TEST_EVIDENCE_MISSING"
+  | "ASSESSMENT_MISSING"
+  | "OPEN_EXCEPTION"
+  | "EFFECTIVENESS_WEAK"
+  | "CURRENT";
+
+export interface ControlWorkspaceScopedImplementation {
+  id: string;
+  uid: string;
+  name: string;
+  implementationScope: string | null;
+  operationalAssetId: string | null;
+  operationalAssetUid: string | null;
+  operationalAssetName: string | null;
+}
+
+export interface ControlWorkspaceControlTest {
+  id: string;
+  uid: string;
+  methodology: string;
+  conclusion: ControlTestConclusion;
+  testerIdentity: string;
+  testDate: string;
+  notesPreview: string | null;
+}
+
+export interface ControlWorkspaceAssessment {
+  id: string;
+  uid: string;
+  designEffectiveness: ControlEffectivenessRating;
+  operatingEffectiveness: ControlEffectivenessRating;
+  assessedAt: string;
+  assessor: string;
+  supportingTestIds: string[];
+}
+
+export interface ControlWorkspaceEvidence {
+  id: string;
+  uid: string;
+  title: string;
+  summaryPreview: string;
+  evidenceType: EvidenceType;
+  derivedAt: string;
+}
+
+export interface ControlWorkspaceFinding {
+  id: string;
+  uid: string;
+  title: string;
+  findingType: string;
+  severity: string;
+  status: string;
+  owner: string | null;
+  dueDate: string | null;
+}
+
+export interface ControlWorkspaceMappingEvidenceRef {
+  evidenceRef: string;
+  evidenceNotePreview: string | null;
+  evidenceArtifactId: string | null;
+}
+
+export interface ControlWorkspaceRiskMapping {
+  id: string;
+  controlRole: string;
+  targetIdentifier: string | null;
+  targetTitle: string | null;
+  mappingObjective: string | null;
+  evidenceRefs: ControlWorkspaceMappingEvidenceRef[];
+}
+
+export interface ControlWorkspaceControl {
+  id: string;
+  uid: string;
+  title: string;
+  descriptionPreview: string | null;
+  objectivePreview: string | null;
+  controlFunction: ControlFunction;
+  status: ControlStatus;
+  owner: string | null;
+  implementationScopePreview: string | null;
+  category: string | null;
+  source: string | null;
+  scopedImplementations: ControlWorkspaceScopedImplementation[];
+  tests: ControlWorkspaceControlTest[];
+  assessments: ControlWorkspaceAssessment[];
+  evidence: ControlWorkspaceEvidence[];
+  findings: ControlWorkspaceFinding[];
+  riskMappings: ControlWorkspaceRiskMapping[];
+  queueReasons: ControlWorkspaceQueueReason[];
+}
+
+export interface ControlAssuranceWorkspaceResponse {
+  controls: ControlWorkspaceControl[];
+  controlCount: number;
+}
+
+// GC-GRC: Verification and Assurance Enums. Single-sourced from backend
+// VerificationStatus, AssuranceLevel, and MethodologyFamily enums under
+// domain/verification/state/ and domain/riskscenarios/state/ (ADR-034 enum contract).
+// Mirror policy enforced by tools/policy/checks.py::ENUM_CONTRACT_INVENTORY.
+export type VerificationStatus =
+  | "PROVEN"
+  | "REFUTED"
+  | "TIMEOUT"
+  | "UNKNOWN"
+  | "ERROR";
+export const VERIFICATION_STATUSES: VerificationStatus[] = [
+  "PROVEN",
+  "REFUTED",
+  "TIMEOUT",
+  "UNKNOWN",
+  "ERROR",
+];
+
+export type AssuranceLevel = "L0" | "L1" | "L2" | "L3";
+export const ASSURANCE_LEVELS: AssuranceLevel[] = ["L0", "L1", "L2", "L3"];
+
+export type MethodologyFamily =
+  | "FAIR"
+  | "NIST_SP800_30_R1"
+  | "ISO_27005"
+  | "CUSTOM";
+export const METHODOLOGY_FAMILIES: MethodologyFamily[] = [
+  "FAIR",
+  "NIST_SP800_30_R1",
+  "ISO_27005",
+  "CUSTOM",
+];
+
 // GC-T012 / GC-T004: MethodologyProfile response and request types.
 // Mirrors backend MethodologyProfileResponse / MethodologyProfileRequest /
 // UpdateMethodologyProfileRequest field-for-field.
@@ -1316,7 +1631,7 @@ export interface MethodologyProfile {
   profileKey: string;
   name: string;
   version: string;
-  family: string;
+  family: MethodologyFamily;
   description?: string | null;
   inputSchema?: Record<string, unknown> | null;
   outputSchema?: Record<string, unknown> | null;
@@ -1331,7 +1646,7 @@ export interface MethodologyProfileRequest {
   profileKey: string;
   name: string;
   version: string;
-  family: string;
+  family: MethodologyFamily;
   description?: string | null;
   inputSchema?: Record<string, unknown> | null;
   outputSchema?: Record<string, unknown> | null;
@@ -1343,7 +1658,7 @@ export interface MethodologyProfileRequest {
 export interface UpdateMethodologyProfileRequest {
   name?: string | null;
   version?: string | null;
-  family?: string | null;
+  family?: MethodologyFamily | null;
   description?: string | null;
   inputSchema?: Record<string, unknown> | null;
   outputSchema?: Record<string, unknown> | null;
@@ -1450,4 +1765,54 @@ export interface RiskScenarioWorkspaceResponse {
   assets: WorkspaceAsset[];
   scenarioCount: number;
   assetCount: number;
+}
+
+// ---- Risk-Control Mapping (GC-T003 / GC-H006) ----
+
+export interface RiskControlMappingRequest {
+  controlId?: string;
+  scopedImplementationId?: string;
+  riskScenarioId?: string;
+  riskRegisterRecordId?: string;
+  threatModelId?: string;
+  operationalAssetId?: string;
+  mappingObjective?: string;
+  controlRole: MappingControlRole;
+  mappingScope?: string;
+  methodologyProfileId?: string;
+  methodologyInfluence?: Record<string, unknown>;
+}
+
+export interface RiskControlMappingResponse {
+  id: string;
+  projectId: string;
+  controlId: string | null;
+  scopedImplementationId: string | null;
+  riskScenarioId: string | null;
+  riskRegisterRecordId: string | null;
+  threatModelId: string | null;
+  operationalAssetId: string | null;
+  mappingObjective: string | null;
+  controlRole: MappingControlRole;
+  mappingScope: string | null;
+  methodologyProfileId: string | null;
+  methodologyInfluence: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---- Threat Coverage Analysis (GC-H006) ----
+
+export interface ThreatSummary {
+  id: string;
+  uid: string;
+  title: string;
+}
+
+export interface UnmappedThreatsResponse {
+  threats: ThreatSummary[];
+}
+
+export interface ThreatsInsufficientEffectivenessResponse {
+  threats: ThreatSummary[];
 }

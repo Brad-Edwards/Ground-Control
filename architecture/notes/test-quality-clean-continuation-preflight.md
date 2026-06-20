@@ -65,7 +65,7 @@ guidance only. It does not implement the skill change.
 
 ## Extensibility Guardrail
 
-The seam should be "reviewer outcome as structured cycle record". Today the
+The seam should be "reviewer outcome as structured cycle record." Today the
 obvious value is a clean `test-quality` review with `findings: []`. A future
 reviewer or future richer outcome (`skipped`, `blocked`, `clean`) should extend
 the same reviewer/cycle record shape or add a parameter to that canonical

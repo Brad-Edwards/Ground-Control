@@ -11,6 +11,7 @@ import {
   analyzeObservationProjection,
   aggregateVendorRisk,
   analyzeNistAssessment,
+  analyzeFairQuantitative,
   toCamelCase,
   toSnakeCase,
 } from "./lib.js";
@@ -18,6 +19,9 @@ import {
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_BASE_URL = process.env.GC_BASE_URL;
 const ORIGINAL_API_TOKEN = process.env.GROUND_CONTROL_API_TOKEN;
+
+const OMITS_UNDEFINED_PARAMS = "omits undefined params";
+const RETURNS_JSON_BODY = "returns the JSON body";
 
 function makeFetchSpy({ status = 200, body = {} } = {}) {
   const calls = [];
@@ -69,7 +73,7 @@ describe("analyzeEvidenceFreshness (GC-L007)", () => {
     assert.equal(url.searchParams.get("controlId"), "00000000-0000-0000-0000-000000000002");
   });
 
-  it("omits undefined params", async () => {
+  it(OMITS_UNDEFINED_PARAMS, async () => {
     const calls = makeFetchSpy();
 
     await analyzeEvidenceFreshness({ project: "ground-control" });
@@ -83,7 +87,7 @@ describe("analyzeEvidenceFreshness (GC-L007)", () => {
     assert.equal(url.searchParams.get("controlId"), null);
   });
 
-  it("returns the JSON body", async () => {
+  it(RETURNS_JSON_BODY, async () => {
     makeFetchSpy({ body: { analysisKind: "evidence_freshness", counts: { fresh: 3 } } });
 
     const result = await analyzeEvidenceFreshness({ project: "ground-control" });
@@ -127,7 +131,7 @@ describe("analyzeObservationProjection (GC-L007)", () => {
     assert.equal(url.searchParams.get("controlId"), "00000000-0000-0000-0000-000000000003");
   });
 
-  it("returns the JSON body", async () => {
+  it(RETURNS_JSON_BODY, async () => {
     // Mirrors the evidence_freshness "returns the JSON body" test — locks in
     // that the helper actually parses the response, not just dispatches the
     // request. lib.js's request() applies toSnakeCase to the response, but
@@ -167,7 +171,7 @@ describe("aggregateVendorRisk (GC-L007)", () => {
     assert.equal(url.searchParams.get("vendorAssetId"), "00000000-0000-0000-0000-00000000000a");
   });
 
-  it("omits undefined params", async () => {
+  it(OMITS_UNDEFINED_PARAMS, async () => {
     const calls = makeFetchSpy();
 
     await aggregateVendorRisk({ project: "ground-control" });
@@ -179,7 +183,7 @@ describe("aggregateVendorRisk (GC-L007)", () => {
     assert.equal(url.searchParams.get("vendorAssetId"), null);
   });
 
-  it("returns the JSON body", async () => {
+  it(RETURNS_JSON_BODY, async () => {
     makeFetchSpy({
       body: { analysisKind: "vendor_risk_aggregation", vendors: [] },
     });
@@ -218,7 +222,7 @@ describe("analyzeNistAssessment (GC-T014)", () => {
     );
   });
 
-  it("omits undefined params", async () => {
+  it(OMITS_UNDEFINED_PARAMS, async () => {
     const calls = makeFetchSpy();
 
     await analyzeNistAssessment({ project: "ground-control" });
@@ -269,7 +273,7 @@ describe("analyzeNistAssessment (GC-T014)", () => {
 
     const camel = toCamelCase(payload);
     // The outer keys are renamed but the inner methodology-defined keys are NOT.
-    assert.deepEqual(Object.keys(camel.inputFactors).sort(), [
+    assert.deepEqual(Object.keys(camel.inputFactors).sort((a, b) => a.localeCompare(b)), [
       "assessment_timeframe",
       "impact_level",
       "likelihood_adverse_impact",
@@ -277,10 +281,13 @@ describe("analyzeNistAssessment (GC-T014)", () => {
       "likelihood_overall",
       "threat_source_relevance",
     ]);
-    assert.deepEqual(Object.keys(camel.computedOutputs).sort(), ["matrix_cell", "risk_level"]);
+    assert.deepEqual(
+      Object.keys(camel.computedOutputs).sort((a, b) => a.localeCompare(b)),
+      ["matrix_cell", "risk_level"],
+    );
 
     const snake = toSnakeCase(camel);
-    assert.deepEqual(Object.keys(snake.input_factors).sort(), [
+    assert.deepEqual(Object.keys(snake.input_factors).sort((a, b) => a.localeCompare(b)), [
       "assessment_timeframe",
       "impact_level",
       "likelihood_adverse_impact",
@@ -288,5 +295,95 @@ describe("analyzeNistAssessment (GC-T014)", () => {
       "likelihood_overall",
       "threat_source_relevance",
     ]);
+  });
+});
+
+describe("analyzeFairQuantitative (GC-T011)", () => {
+  it("hits /api/v1/analysis/grc/fair-quantitative with camelCase params", async () => {
+    const calls = makeFetchSpy({ body: { analysisKind: "fair_quantitative" } });
+
+    await analyzeFairQuantitative({
+      project: "ground-control",
+      asOf: "2026-05-29T00:00:00Z",
+      riskAssessmentResultId: "00000000-0000-0000-0000-000000000010",
+      riskScenarioId: "00000000-0000-0000-0000-000000000020",
+    });
+
+    assert.equal(calls.length, 1);
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/analysis/grc/fair-quantitative");
+    assert.equal(calls[0].method, "GET");
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), "2026-05-29T00:00:00Z");
+    assert.equal(
+      url.searchParams.get("riskAssessmentResultId"),
+      "00000000-0000-0000-0000-000000000010",
+    );
+    assert.equal(
+      url.searchParams.get("riskScenarioId"),
+      "00000000-0000-0000-0000-000000000020",
+    );
+  });
+
+  it(OMITS_UNDEFINED_PARAMS, async () => {
+    const calls = makeFetchSpy();
+
+    await analyzeFairQuantitative({ project: "ground-control" });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), null);
+    assert.equal(url.searchParams.get("riskAssessmentResultId"), null);
+    assert.equal(url.searchParams.get("riskScenarioId"), null);
+  });
+
+  it("returns the JSON body verbatim", async () => {
+    makeFetchSpy({
+      body: {
+        analysisKind: "fair_quantitative",
+        scale: "continuous",
+        counts: { total: 1, byRiskLevel: { HIGH: 1 } },
+      },
+    });
+
+    const result = await analyzeFairQuantitative({ project: "ground-control" });
+
+    assert.equal(result.analysisKind, "fair_quantitative");
+    assert.equal(result.scale, "continuous");
+    assert.equal(result.counts.total, 1);
+    assert.equal(result.counts.byRiskLevel.HIGH, 1);
+  });
+
+  it("preserves methodology-defined inner keys through case conversion (opaque guard)", () => {
+    // GC-T011 / preflight: methodology-defined keys inside inputFactors /
+    // computedOutputs must NOT be camel/snake-rewritten. This locks in that the
+    // opaque-value-keys guard in lib.js covers the FAIR factor map keys.
+    const payload = {
+      input_factors: {
+        threat_event_frequency: { low: 1.0, likely: 2.0, high: 4.0 },
+        primary_loss_magnitude: { low: 1000.0, likely: 5000.0, high: 20000.0, currency: "USD" },
+      },
+      computed_outputs: {
+        loss_event_frequency: { low: 0.1, likely: 0.4, high: 1.6 },
+        annualized_loss_expectancy: { low: 100.0, likely: 2000.0, high: 32000.0 },
+      },
+    };
+
+    const camel = toCamelCase(payload);
+    // Outer keys renamed; inner methodology-defined keys are NOT renamed.
+    assert.deepEqual(
+      Object.keys(camel.inputFactors).sort((a, b) => a.localeCompare(b)),
+      ["primary_loss_magnitude", "threat_event_frequency"],
+    );
+    assert.deepEqual(
+      Object.keys(camel.computedOutputs).sort((a, b) => a.localeCompare(b)),
+      ["annualized_loss_expectancy", "loss_event_frequency"],
+    );
+
+    const snake = toSnakeCase(camel);
+    assert.deepEqual(
+      Object.keys(snake.input_factors).sort((a, b) => a.localeCompare(b)),
+      ["primary_loss_magnitude", "threat_event_frequency"],
+    );
   });
 });

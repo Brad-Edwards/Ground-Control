@@ -14,11 +14,52 @@ from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ADR_POLICY_PATH = REPO_ROOT / "architecture" / "policies" / "adr-policy.json"
+BRANCH_PROTECTION_BASELINE_PATH = Path(".github/branch-protection-baseline.json")
+CI_WORKFLOW_PATH = Path(".github/workflows/ci.yml")
+PRE_COMMIT_CONFIG_PATH = Path(".pre-commit-config.yaml")
+SONAR_NEW_ISSUE_GATE_PATH = Path("tools/sonar/assert_no_new_issues.py")
 CONTROLLER_PATH_RE = re.compile(
     r"^backend/src/main/java/com/keplerops/groundcontrol/api/.+Controller\.java$"
 )
 MIGRATION_PATH_RE = re.compile(r"^backend/src/main/resources/db/migration/V\d+__.+\.sql$")
 PR_REQUIREMENT_RE = re.compile(r"\b[A-Z][A-Z0-9]+-[A-Z0-9]+(?:-\d+|\d+)\b")
+CI_STRICTNESS_BRANCHES = ("main", "dev")
+CI_STRICTNESS_REQUIRED_CONTEXTS = frozenset(
+    {
+        "GitGuardian Security Checks",
+        "SonarCloud Code Analysis",
+        "build",
+        "integration",
+        "osv-scanner",
+        "policy",
+        "sonar",
+        "test",
+        "trivy",
+        "verify",
+    }
+)
+CI_PRE_COMMIT_HOOKS = (
+    "trailing-whitespace",
+    "end-of-file-fixer",
+    "check-yaml",
+    "check-json",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "detect-private-key",
+    "gitleaks",
+)
+
+GROUND_CONTROL_YAML_PATH = Path(".ground-control.yaml")
+# /implement routing stages whose step drives a gc_codex_job async poll loop
+# (gc_codex_architecture_preflight / gc_codex_review_cycle /
+# gc_test_quality_review_cycle, all called with async=true then polled). A
+# dispatched subagent cannot drive that loop — a `Bash run_in_background sleep`
+# poll-wait notification lands in the parent's stream, not the subagent's, so
+# the subagent ends its turn and returns a degenerate envelope (issue #1168).
+# These stages MUST resolve to agent: parent.
+POLL_LOOP_ROUTING_STAGES = frozenset(
+    {"architecture_preflight", "review_cycle_1_consume", "test_quality_review"}
+)
 
 # ---------------------------------------------------------------------------
 # Deferral-disposition classifier (issue #830, ADR-029).
@@ -869,6 +910,165 @@ def run_documentation_coverage_check(
     return []
 
 
+def run_ci_strictness_contract(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert the repo carries the CI strictness baseline from issue #1155."""
+    violations: list[Violation] = []
+    workflow_path = root / CI_WORKFLOW_PATH
+    pre_commit_path = root / PRE_COMMIT_CONFIG_PATH
+    sonar_gate_path = root / SONAR_NEW_ISSUE_GATE_PATH
+    branch_protection_path = root / BRANCH_PROTECTION_BASELINE_PATH
+
+    if not workflow_path.exists():
+        violations.append(
+            Violation(
+                code="ci-strictness-workflow-missing",
+                message="CI workflow is missing, so required merge checks cannot be verified.",
+                details=[f"expected at {CI_WORKFLOW_PATH.as_posix()}"],
+            )
+        )
+        return violations
+
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    if "python3 -m pip install --user pre-commit" not in workflow_text:
+        violations.append(
+            Violation(
+                code="ci-strictness-precommit-install",
+                message="CI policy job must install pre-commit before running hygiene and secret-scan hooks.",
+                details=[f"expected install command in {CI_WORKFLOW_PATH.as_posix()}"],
+            )
+        )
+    missing_workflow_hooks = [
+        hook
+        for hook in CI_PRE_COMMIT_HOOKS
+        if hook not in workflow_text or 'pre-commit run "$hook" --all-files' not in workflow_text
+    ]
+    if missing_workflow_hooks:
+        violations.append(
+            Violation(
+                code="ci-strictness-precommit-hooks",
+                message="CI policy job must run the pre-commit file-hygiene and secret-scan hooks.",
+                details=[*(f"missing workflow hook run: {hook}" for hook in missing_workflow_hooks)],
+            )
+        )
+
+    if not pre_commit_path.exists():
+        violations.append(
+            Violation(
+                code="ci-strictness-precommit-config-missing",
+                message="pre-commit config is missing, so local hygiene and secret-scan hooks cannot be verified.",
+                details=[f"expected at {PRE_COMMIT_CONFIG_PATH.as_posix()}"],
+            )
+        )
+    else:
+        pre_commit_text = pre_commit_path.read_text(encoding="utf-8")
+        missing_config_hooks = [hook for hook in CI_PRE_COMMIT_HOOKS if f"id: {hook}" not in pre_commit_text]
+        if missing_config_hooks:
+            violations.append(
+                Violation(
+                    code="ci-strictness-precommit-config-hooks",
+                    message=".pre-commit-config.yaml must define every CI-enforced hygiene and secret-scan hook.",
+                    details=[*(f"missing configured hook: {hook}" for hook in missing_config_hooks)],
+                )
+            )
+
+    if "-Dsonar.qualitygate.wait=true" not in workflow_text:
+        violations.append(
+            Violation(
+                code="ci-strictness-sonar-qualitygate-wait",
+                message="SonarCloud CI must wait for the quality gate result.",
+                details=[f"missing -Dsonar.qualitygate.wait=true in {CI_WORKFLOW_PATH.as_posix()}"],
+            )
+        )
+    if SONAR_NEW_ISSUE_GATE_PATH.as_posix() not in workflow_text:
+        violations.append(
+            Violation(
+                code="ci-strictness-sonar-new-issue-gate",
+                message="SonarCloud CI must fail when Sonar reports any new open issue.",
+                details=[f"missing {SONAR_NEW_ISSUE_GATE_PATH.as_posix()} invocation"],
+            )
+        )
+    if not sonar_gate_path.exists():
+        violations.append(
+            Violation(
+                code="ci-strictness-sonar-gate-script-missing",
+                message="SonarCloud new-issue gate script is missing.",
+                details=[f"expected at {SONAR_NEW_ISSUE_GATE_PATH.as_posix()}"],
+            )
+        )
+
+    if not branch_protection_path.exists():
+        violations.append(
+            Violation(
+                code="ci-strictness-branch-protection-missing",
+                message="Versioned branch-protection baseline is missing.",
+                details=[f"expected at {BRANCH_PROTECTION_BASELINE_PATH.as_posix()}"],
+            )
+        )
+        return violations
+
+    try:
+        baseline = load_json(branch_protection_path)
+    except json.JSONDecodeError as exc:
+        violations.append(
+            Violation(
+                code="ci-strictness-branch-protection-invalid",
+                message="Versioned branch-protection baseline is not valid JSON.",
+                details=[str(exc)],
+            )
+        )
+        return violations
+
+    branches = baseline.get("branches", {})
+    for branch in CI_STRICTNESS_BRANCHES:
+        config = branches.get(branch)
+        if not isinstance(config, dict):
+            violations.append(
+                Violation(
+                    code="ci-strictness-branch-protection-branch",
+                    message=f"{branch} must be present in the branch-protection baseline.",
+                    details=[f"missing branches.{branch}"],
+                )
+            )
+            continue
+        if config.get("changes_land_via_pull_request") is not True:
+            violations.append(
+                Violation(
+                    code="ci-strictness-branch-protection-pr",
+                    message=f"{branch} must require changes to land via pull request.",
+                    details=[f"branches.{branch}.changes_land_via_pull_request must be true"],
+                )
+            )
+        if config.get("admin_bypass_allowed") is not True:
+            violations.append(
+                Violation(
+                    code="ci-strictness-branch-protection-admin-bypass",
+                    message=f"{branch} must retain admin bypass.",
+                    details=[f"branches.{branch}.admin_bypass_allowed must be true"],
+                )
+            )
+        required_status_checks = config.get("required_status_checks", {})
+        if required_status_checks.get("strict") is not True:
+            violations.append(
+                Violation(
+                    code="ci-strictness-branch-protection-strict",
+                    message=f"{branch} required status checks must use strict mode.",
+                    details=[f"branches.{branch}.required_status_checks.strict must be true"],
+                )
+            )
+        contexts = set(required_status_checks.get("contexts", []))
+        missing_contexts = sorted(CI_STRICTNESS_REQUIRED_CONTEXTS - contexts)
+        if missing_contexts:
+            violations.append(
+                Violation(
+                    code="ci-strictness-branch-protection-contexts",
+                    message=f"{branch} branch protection must require all PR CI contexts.",
+                    details=[*(f"missing required context: {context}" for context in missing_contexts)],
+                )
+            )
+
+    return violations
+
+
 def run_deploy_compose_credential_passthrough(root: Path = REPO_ROOT) -> list[Violation]:
     """Assert the production compose file enumerates ADR-026 credential env vars.
 
@@ -967,6 +1167,7 @@ MCP_LIB_PATH = "mcp/ground-control/lib.js"
 _ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state"
 _AUDIT_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state"
 _RISK_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state"
+_VERIFICATION_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/verification/state"
 
 # Java enum body: from the opening `{` to whichever comes first — the `;` that
 # terminates the constant list (present when the enum has methods/fields, e.g.
@@ -1072,6 +1273,33 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
         "CROSSWALK_VOCABULARY_SURFACES",
         "CROSSWALK_VOCABULARY_SURFACES",
     ),
+    # GC-GRC: Verification and Assurance Enums. VerificationStatus and
+    # AssuranceLevel are domain/verification/state enums used in evidence/control
+    # verification workflows; MethodologyFamily is a domain/riskscenarios/state
+    # enum used in methodology-profile selection. All three are mirrored at the
+    # frontend TypeScript boundary and MCP surfaces. ADR-034.
+    EnumContract(
+        "VerificationStatus",
+        f"{_VERIFICATION_ENUM_STATE_DIR}/VerificationStatus.java",
+        "VerificationStatus",
+        "VERIFICATION_STATUSES",
+        "VERIFICATION_STATUSES",
+    ),
+    EnumContract(
+        "AssuranceLevel",
+        f"{_VERIFICATION_ENUM_STATE_DIR}/AssuranceLevel.java",
+        "AssuranceLevel",
+        "ASSURANCE_LEVELS",
+        "ASSURANCE_LEVELS",
+    ),
+    EnumContract(
+        "MethodologyFamily",
+        f"{_RISK_ENUM_STATE_DIR}/MethodologyFamily.java",
+        "MethodologyFamily",
+        "METHODOLOGY_FAMILIES",
+        "METHODOLOGY_FAMILIES",
+    ),
+
 )
 
 
@@ -1726,14 +1954,17 @@ def run_test_quality_decision_record_contract(
 
 
 # ---------------------------------------------------------------------------
-# Traceability-reconciliation gate contract (issue #1058)
+# Traceability-reconciliation gate contract (issues #1058, #1103)
 #
 # Asserts the /implement workflow's traceability + post-merge close gate
-# is wired across all four prose surfaces. The MCP-tool layer enforces:
-#   - Step 17 calls gc_assert_traceability_reconciled to write the
-#     traceability_reconciled phase marker.
-#   - Step 19 (gc_post_final_report) refuses without that marker.
-#   - Step 20 (Phase E) calls gc_close_issue_after_merge after PR merge.
+# is wired across all prose surfaces. The MCP-tool layer enforces:
+#   - Step 17 calls gc_assert_completion, which sequences
+#     gc_assert_traceability_reconciled (posting traceability_reconciled),
+#     gc_assert_grc_reconciled (posting grc_reconciled), and
+#     gc_post_final_report in one deterministic call. plain_english_outcome
+#     is required for the user-facing closeout.
+#   - Step 20 (Phase E) calls gc_close_issue_after_merge after PR merge and
+#     surfaces a next_issue_recommendation envelope when one is available.
 #   - SKILL.md documents Phase E and gc_close_issue_after_merge as the
 #     canonical close path.
 #
@@ -1743,8 +1974,7 @@ def run_test_quality_decision_record_contract(
 # any reader of the skill; the check prevents that.
 # ---------------------------------------------------------------------------
 
-IMPLEMENT_STEP_17_PATH = "skills/implement/steps/step-17-verify.md"
-IMPLEMENT_STEP_19_PATH = "skills/implement/steps/step-19-final-report.md"
+IMPLEMENT_STEP_17_PATH = "skills/implement/steps/step-17-completion.md"
 IMPLEMENT_STEP_20_PATH = "skills/implement/steps/step-20-close-issue-on-merge.md"
 
 
@@ -1752,14 +1982,16 @@ def run_traceability_reconciliation_gate_contract(
     *,
     root: Path = REPO_ROOT,
 ) -> list[Violation]:
-    """Assert the issue #1058 traceability + post-merge close gate is wired.
+    """Assert the traceability + closeout gate prose surfaces are wired.
 
-    The gate has three MCP-tool surfaces and four prose anchors:
+    The gate has two MCP-tool surfaces and three prose anchors:
 
-      step-17-verify.md       must mention `gc_assert_traceability_reconciled`
-      step-19-final-report.md must mention `traceability_reconciled` (the marker name)
+      step-17-completion.md   must mention `gc_assert_completion`,
+                              `traceability_reconciled`, and `plain_english_outcome`
       step-20-close-issue-on-merge.md must exist AND mention `gc_close_issue_after_merge`
-      SKILL.md                must mention `Phase E` AND `gc_close_issue_after_merge`
+                              and `next_issue_recommendation`
+      SKILL.md                must mention `Phase E`, `gc_close_issue_after_merge`,
+                              and `next_issue_recommendation`
 
     Emits one violation per missing anchor with a stable code so CI surfaces
     the specific gap. A repo whose policy-tests file isn't yet up to date
@@ -1771,27 +2003,21 @@ def run_traceability_reconciliation_gate_contract(
     requirements = (
         (
             IMPLEMENT_STEP_17_PATH,
-            ("gc_assert_traceability_reconciled",),
+            ("gc_assert_completion", "traceability_reconciled", "plain_english_outcome"),
             "traceability-gate-step17-missing",
-            "Step 17 must call gc_assert_traceability_reconciled after verification (issue #1058).",
-        ),
-        (
-            IMPLEMENT_STEP_19_PATH,
-            ("traceability_reconciled",),
-            "traceability-gate-step19-missing",
-            "Step 19 must document the traceability_reconciled phase-marker prerequisite (issue #1058).",
+            "Step 17 must use gc_assert_completion with traceability_reconciled and plain_english_outcome (issue #1103).",
         ),
         (
             IMPLEMENT_STEP_20_PATH,
-            ("gc_close_issue_after_merge",),
+            ("gc_close_issue_after_merge", "next_issue_recommendation"),
             "traceability-gate-step20-missing",
-            "Step 20 (Phase E post-merge close) must exist and mention gc_close_issue_after_merge (issue #1058).",
+            "Step 20 (Phase E post-merge close) must exist and mention gc_close_issue_after_merge plus next_issue_recommendation (issues #1058/#1156).",
         ),
         (
             IMPLEMENT_SKILL_PATH,
-            ("Phase E", "gc_close_issue_after_merge"),
+            ("Phase E", "gc_close_issue_after_merge", "next_issue_recommendation"),
             "traceability-gate-skill-missing",
-            "SKILL.md must document Phase E and the gc_close_issue_after_merge close path (issue #1058).",
+            "SKILL.md must document Phase E, the gc_close_issue_after_merge close path, and next_issue_recommendation (issues #1058/#1156).",
         ),
     )
 
@@ -1876,6 +2102,104 @@ def render_and_exit(violations: list[Violation]) -> int:
     return 1
 
 
+def parse_routing_agents(text: str) -> dict[str, str]:
+    """Map each ``routing.stages.<stage>`` to its resolved ``agent`` value.
+
+    A stage with no explicit ``agent:`` key resolves to ``"subagent"`` — the
+    ``gc_resolve_workflow_route`` default. Indentation-based parse (no YAML
+    dependency) to match the stdlib-only policy framework; the routing block is
+    machine-maintained and regularly two-space-indented. Returns an empty dict
+    when there is no ``routing.stages`` block.
+    """
+    agents: dict[str, str] = {}
+    in_routing = False
+    in_stages = False
+    current_stage: str | None = None
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip(" "))
+        if indent == 0:
+            in_routing = stripped.startswith("routing:")
+            in_stages = False
+            current_stage = None
+            continue
+        if not in_routing:
+            continue
+        if indent == 2:
+            in_stages = stripped.startswith("stages:")
+            current_stage = None
+            continue
+        if not in_stages:
+            continue
+        if indent == 4 and stripped.endswith(":"):
+            current_stage = stripped[:-1].strip()
+            agents.setdefault(current_stage, "subagent")
+            continue
+        if indent == 6 and current_stage is not None and stripped.startswith("agent:"):
+            value = stripped.split(":", 1)[1].strip()
+            if " #" in value:  # strip any inline comment
+                value = value.split(" #", 1)[0].strip()
+            if value:
+                agents[current_stage] = value
+    return agents
+
+
+def run_workflow_routing_contract(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert async-poll /implement routing stages resolve to ``agent: parent``.
+
+    A static post-condition (independent of ``changed_files``) so any edit that
+    routes a ``gc_codex_job`` poll-loop stage back to a subagent fails
+    ``make policy`` (issue #1168). Emits:
+      ``workflow-routing-config-missing``    — ``.ground-control.yaml`` is absent.
+      ``workflow-routing-stage-missing``     — a poll-loop stage is not declared.
+      ``workflow-routing-poll-loop-subagent`` — a poll-loop stage resolves to a
+                                                subagent instead of the parent.
+    """
+    violations: list[Violation] = []
+    config_path = root / GROUND_CONTROL_YAML_PATH
+    if not config_path.exists():
+        violations.append(
+            Violation(
+                code="workflow-routing-config-missing",
+                message=".ground-control.yaml is missing — workflow routing cannot be verified.",
+                details=[f"expected at {GROUND_CONTROL_YAML_PATH.as_posix()}"],
+            )
+        )
+        return violations
+
+    agents = parse_routing_agents(config_path.read_text(encoding="utf-8"))
+    if not agents:
+        # No routing.stages block (routing not configured); nothing to enforce.
+        return violations
+
+    for stage in sorted(POLL_LOOP_ROUTING_STAGES):
+        if stage not in agents:
+            violations.append(
+                Violation(
+                    code="workflow-routing-stage-missing",
+                    message=f"Routing stage '{stage}' is missing from .ground-control.yaml routing.stages.",
+                    details=[
+                        "poll-loop stages must be declared and routed to agent: parent (issue #1168)",
+                    ],
+                )
+            )
+            continue
+        if agents[stage] != "parent":
+            violations.append(
+                Violation(
+                    code="workflow-routing-poll-loop-subagent",
+                    message=f"Routing stage '{stage}' drives a gc_codex_job poll loop and must use agent: parent.",
+                    details=[
+                        f"resolved agent: {agents[stage]}",
+                        "a dispatched subagent cannot resume on the background-sleep poll notification (issue #1168)",
+                    ],
+                )
+            )
+    return violations
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     explicit_files = args.files if args.files is not None else args.paths
@@ -1893,8 +2217,10 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_controller_contracts(changed_files))
     violations.extend(run_migration_policy(changed_files))
     violations.extend(run_changelog_fragment_check(changed_files))
+    violations.extend(run_ci_strictness_contract())
     violations.extend(run_deploy_compose_credential_passthrough())
     violations.extend(run_enum_contract_check())
+    violations.extend(run_workflow_routing_contract())
     violations.extend(run_test_quality_decision_record_contract())
     violations.extend(run_traceability_reconciliation_gate_contract())
 

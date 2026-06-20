@@ -90,7 +90,7 @@ Always include the general file checks:
 Then add language-specific linting/formatting as applicable:
 
 - **Python**: ruff (lint + format), black, isort, mypy
-- **TypeScript/JavaScript**: biome, eslint, prettier (use local hooks with project's tooling, e.g. `bunx`, `npx`)
+- **TypeScript/JavaScript**: biome, eslint, prettier (use local hooks with project's tooling, for example `bunx`, `npx`)
 - **Go**: gofmt, golangci-lint
 - **Rust**: rustfmt, clippy
 - **Terraform/OpenTofu**: terraform_fmt, terraform_validate (via `pre-commit-terraform`)
@@ -102,7 +102,7 @@ Then add language-specific linting/formatting as applicable:
 Add based on what's relevant:
 
 - **Secrets detection**: gitleaks or detect-private-key (always recommended)
-- **Dependency audit**: language-appropriate audit command (e.g. `pip audit`, `bun audit`, `npm audit`, `go vuln`)
+- **Dependency audit**: language-appropriate audit command (for example `pip audit`, `bun audit`, `npm audit`, `go vuln`)
 - **IaC security**: checkov for Terraform/Dockerfile (via `bridgecrewio/checkov`)
 - **Python security**: bandit
 - **Container security**: hadolint for Dockerfiles
@@ -114,7 +114,7 @@ Add based on what's relevant:
 
 #### Stage 4: Tests (slowest - run last)
 
-- Run the project's test suite as a local hook (e.g. `pytest`, `bun test`, `go test ./...`)
+- Run the project's test suite as a local hook (for example `pytest`, `bun test`, `go test ./...`)
 - Use `pass_filenames: false` for test runners
 - Scope with appropriate `files:` patterns
 
@@ -143,8 +143,8 @@ Set up SonarCloud integration for continuous code quality analysis. Credentials 
 3. Create a `sonar-project.properties` file in the repo root. Analyze the repo to determine:
    - `sonar.projectKey` - derive from `{org}_{repo-name}`
    - `sonar.organization` - from env or ask user
-   - `sonar.sources` - source directories (e.g. `src`, `lib`, `app`)
-   - `sonar.tests` - test directories (e.g. `tests`, `test`, `__tests__`)
+   - `sonar.sources` - source directories (for example `src`, `lib`, `app`)
+   - `sonar.tests` - test directories (for example `tests`, `test`, `__tests__`)
    - `sonar.exclusions` - common exclusions (node_modules, .venv, build artifacts, vendor, etc.)
    - Language-specific properties:
      - **Python**: `sonar.python.version`, coverage report paths
@@ -189,8 +189,8 @@ jobs:
 ## Notes
 
 - Requires `gh` CLI authenticated with repo admin permissions.
-- Use the legacy branch protection API (`/branches/{branch}/protection`), not the rulesets API — the rulesets API has schema issues with `pull_request` rule type.
+- Use the legacy branch protection API (`/branches/{branch}/protection`), not the rulesets API - the rulesets API has schema issues with `pull_request` rule type.
 - For public repos on free plans, branch protection works. For private repos, requires GitHub Pro/Team.
 - Pre-commit hook versions should be checked for latest at time of setup (check PyPI / GitHub releases).
 - SonarCloud credentials must never be committed to the repo. Always use environment variables or GitHub secrets.
-- SonarCloud is free for open source projects. The GitHub Action (`SonarSource/sonarcloud-github-action`) handles the scanner installation automatically — no need to configure `SONAR_HOST_URL`.
+- SonarCloud is free for open source projects. The GitHub Action (`SonarSource/sonarcloud-github-action`) handles the scanner installation automatically - no need to configure `SONAR_HOST_URL`.

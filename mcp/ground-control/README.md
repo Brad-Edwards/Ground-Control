@@ -41,7 +41,7 @@ root (the cwd it was launched from) at startup:
 
 ```sh
 # In each repo where you start Claude Code / Codex against Ground Control:
-cp .env.example .env       # if your repo has the template — Ground-Control does
+cp .env.example .env       # if your repo has the template - Ground-Control does
 chmod 600 .env
 # Edit .env and set GROUND_CONTROL_API_TOKEN=<32-byte-hex token>
 ```
@@ -133,6 +133,8 @@ GETs (history, timeline, exports, list-by-X) onto `gc_query`.
 | `gc_risk_scenario` | create, update, delete, transition, requirements, link_* |
 | `gc_threat_model` | create, update, delete, transition, link_* |
 | `gc_control` | create, update, delete, transition, link_* |
+| `gc_control_assurance_workspace` | read-only GC-Q011 control catalog, assurance evidence, findings, mappings, and owner queue view |
+| `gc_derivation` | run, list_runs, get_run, list_facts, list_capture_limits |
 | `gc_risk_governance` | `{entity, action}` over methodology_profile, risk_register_record, risk_assessment_result, treatment_plan, verification_result |
 | `gc_analyze` | cycles, orphans, coverage_gaps, impact, cross_wave, consistency, completeness, status_drift, similarity, work_order, evidence_freshness, observation_exposure, control_state, vendor_risk_aggregation |
 | `gc_graph` | ancestors, descendants, paths, find_paths, subgraph, visualization, traverse |
@@ -160,7 +162,8 @@ under the `workflow` catalog, so it is always available.
   `/api/v1/adrs`, `/api/v1/analysis`, `/api/v1/assets`, `/api/v1/audit`,
   `/api/v1/audits`, `/api/v1/baselines`, `/api/v1/control-effectiveness-assessments`,
   `/api/v1/control-tests`, `/api/v1/controls`, `/api/v1/dashboard`,
-  `/api/v1/documents`, `/api/v1/evidence-artifacts`, `/api/v1/findings`, `/api/v1/graph`, `/api/v1/methodology-profiles`,
+  `/api/v1/derivations`, `/api/v1/documents`, `/api/v1/evidence-artifacts`, `/api/v1/findings`, `/api/v1/graph`, `/api/v1/mcp-tool-usage`,
+  `/api/v1/methodology-profiles`,
   `/api/v1/observations`, `/api/v1/projects`, `/api/v1/quality-gates`,
   `/api/v1/relations`, `/api/v1/requirements`,
   `/api/v1/risk-assessment-results`, `/api/v1/risk-register-records`,
@@ -281,6 +284,19 @@ be related, linked, or analyzed.
 **Artifact type:** `GITHUB_ISSUE`, `CODE_FILE`, `ADR`, `CONFIG`, `POLICY`, `TEST`, `SPEC`, `PROOF`, `DOCUMENTATION`
 
 **Link type:** `IMPLEMENTS`, `TESTS`, `DOCUMENTS`, `CONSTRAINS`, `VERIFIES`
+
+## Write-contract drift gate (ADR-034, #1106)
+
+Each write tool's request-body field allowlist and enum mirror is checked against
+the backend's generated OpenAPI contract by `make mcp-openapi-contract` (CI job
+`mcp-contract`). The inventory lives in `openapi-contract.test.js`: one row per
+tool/entity/action naming the exported field array (for example
+`GC_AUDIT_CREATE_BODY_FIELDS`, `CONTROL_FIELDS.control.create`,
+`GOVERNANCE_FIELDS.<entity>.<action>`, `LINK_CREATE_BODY_FIELDS`) and the OpenAPI
+request schema it must agree with. When you add or change a write tool's fields,
+update its exported array and add or adjust the matching inventory row, and the
+gate fails the build on drift, naming the tool, field, and which side diverged.
+Requirement: GC-O013.
 
 ## Status Transitions
 

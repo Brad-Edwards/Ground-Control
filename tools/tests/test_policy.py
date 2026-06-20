@@ -9,6 +9,7 @@ from tools.policy.checks import (
     ENUM_CONTRACT_INVENTORY,
     FRONTEND_API_TYPES_PATH,
     MCP_LIB_PATH,
+    POLL_LOOP_ROUTING_STAGES,
     REPO_ROOT,
     check_pr_body,
     classify_deferral_language,
@@ -17,10 +18,12 @@ from tools.policy.checks import (
     parse_const_string_array,
     parse_fragment_filename,
     parse_java_enum_constants,
+    parse_routing_agents,
     parse_ts_union_literals,
     read_changed_files,
     run_adr_guard,
     run_changelog_fragment_check,
+    run_ci_strictness_contract,
     run_controller_contracts,
     run_deploy_compose_credential_passthrough,
     run_documentation_coverage_check,
@@ -30,6 +33,7 @@ from tools.policy.checks import (
     run_pr_body_check,
     run_test_quality_decision_record_contract,
     run_traceability_reconciliation_gate_contract,
+    run_workflow_routing_contract,
 )
 
 
@@ -225,6 +229,115 @@ class PolicyChecksTest(unittest.TestCase):
             "## Traceability\n\n- IMPLEMENTS: foo\n- TESTS: bar\n"
         )
         self.assertEqual(check_pr_body(body), [])
+
+    def test_ci_strictness_contract_passes_on_repo(self):
+        violations = run_ci_strictness_contract(root=REPO_ROOT)
+        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
+
+    def test_ci_strictness_contract_rejects_non_strict_branch_protection(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            for rel in [
+                ".github/workflows/ci.yml",
+                ".pre-commit-config.yaml",
+                "tools/sonar/assert_no_new_issues.py",
+                ".github/branch-protection-baseline.json",
+            ]:
+                src = REPO_ROOT / rel
+                dst = root / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+            baseline_path = root / ".github/branch-protection-baseline.json"
+            baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+            baseline["branches"]["dev"]["required_status_checks"]["strict"] = False
+            baseline["branches"]["dev"]["required_status_checks"]["contexts"].remove("policy")
+            baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+
+            violations = run_ci_strictness_contract(root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("ci-strictness-branch-protection-strict", codes)
+            self.assertIn("ci-strictness-branch-protection-contexts", codes)
+
+    def test_poll_loop_routing_stages_are_the_async_poll_steps(self):
+        self.assertEqual(
+            POLL_LOOP_ROUTING_STAGES,
+            frozenset(
+                {"architecture_preflight", "review_cycle_1_consume", "test_quality_review"}
+            ),
+        )
+
+    def test_parse_routing_agents_defaults_absent_agent_to_subagent(self):
+        text = (
+            "routing:\n"
+            "  enabled: true\n"
+            "  stages:\n"
+            "    architecture_preflight:\n"
+            "      tier: low\n"
+            "      model: claude-haiku-4-5\n"
+            "      agent: parent\n"
+            "    codebase_assessment:\n"
+            "      tier: medium\n"
+            "      model: claude-sonnet-4-6\n"
+        )
+        agents = parse_routing_agents(text)
+        self.assertEqual(agents["architecture_preflight"], "parent")
+        self.assertEqual(agents["codebase_assessment"], "subagent")
+
+    def test_workflow_routing_contract_passes_on_repo(self):
+        violations = run_workflow_routing_contract(root=REPO_ROOT)
+        self.assertEqual(
+            violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}"
+        )
+
+    def test_workflow_routing_contract_flags_poll_stage_routed_to_subagent(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            # test_quality_review (a poll-loop stage) has no agent: key, so it
+            # defaults to subagent — which the contract must reject.
+            (root / ".ground-control.yaml").write_text(
+                "routing:\n"
+                "  enabled: true\n"
+                "  stages:\n"
+                "    architecture_preflight:\n"
+                "      tier: low\n"
+                "      agent: parent\n"
+                "    review_cycle_1_consume:\n"
+                "      tier: high\n"
+                "      agent: parent\n"
+                "    test_quality_review:\n"
+                "      tier: medium\n"
+                "      model: claude-sonnet-4-6\n",
+                encoding="utf-8",
+            )
+            violations = run_workflow_routing_contract(root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("workflow-routing-poll-loop-subagent", codes)
+            self.assertTrue(
+                any("test_quality_review" in v.message for v in violations),
+                msg=f"expected test_quality_review flagged: {[v.render() for v in violations]}",
+            )
+
+    def test_workflow_routing_contract_flags_missing_poll_stage(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / ".ground-control.yaml").write_text(
+                "routing:\n"
+                "  enabled: true\n"
+                "  stages:\n"
+                "    codebase_assessment:\n"
+                "      tier: medium\n",
+                encoding="utf-8",
+            )
+            violations = run_workflow_routing_contract(root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("workflow-routing-stage-missing", codes)
+
+    def test_workflow_routing_contract_reports_missing_config(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            violations = run_workflow_routing_contract(root=Path(tmp_dir))
+            codes = {item.code for item in violations}
+            self.assertIn("workflow-routing-config-missing", codes)
 
     def test_deploy_compose_credential_passthrough_passes_on_committed_file(self):
         # The committed deploy/docker/docker-compose.prod.yml must enumerate the
@@ -495,6 +608,9 @@ class PolicyChecksTest(unittest.TestCase):
                 "NistImpactBand",
                 "NormalizedConcept",
                 "CrosswalkVocabularySurface",
+                "VerificationStatus",
+                "AssuranceLevel",
+                "MethodologyFamily",
             },
         )
         for contract in ENUM_CONTRACT_INVENTORY:
@@ -575,13 +691,13 @@ class PolicyChecksTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("enum-contract-source-missing", codes)
 
-    def test_enum_contract_normalized_concept_positive(self):
+    def test_enum_contract_normalized_concept_positive(self) -> None:
         # GC-T012: NORMALIZED_CONCEPTS in api.ts and lib.js must match NormalizedConcept.java
         violations = run_enum_contract_check(root=REPO_ROOT)
         labels = {v.details[0] if v.details else "" for v in violations}
         self.assertNotIn("NormalizedConcept", " ".join(labels))
 
-    def test_enum_contract_normalized_concept_drift(self):
+    def test_enum_contract_normalized_concept_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             self._copy_enum_sources(root)
@@ -598,13 +714,13 @@ class PolicyChecksTest(unittest.TestCase):
             self.assertIn("NormalizedConcept", details)
             self.assertIn("TREATMENT", details)
 
-    def test_enum_contract_crosswalk_vocabulary_surface_positive(self):
+    def test_enum_contract_crosswalk_vocabulary_surface_positive(self) -> None:
         # GC-T012: CROSSWALK_VOCABULARY_SURFACES in api.ts and lib.js must match CrosswalkVocabularySurface.java
         violations = run_enum_contract_check(root=REPO_ROOT)
         labels = {v.details[0] if v.details else "" for v in violations}
         self.assertNotIn("CrosswalkVocabularySurface", " ".join(labels))
 
-    def test_enum_contract_crosswalk_vocabulary_surface_drift(self):
+    def test_enum_contract_crosswalk_vocabulary_surface_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             self._copy_enum_sources(root)
@@ -1798,24 +1914,22 @@ class TestQualityDecisionRecordContractTest(unittest.TestCase):
 
 
 class TraceabilityReconciliationGateContractTest(unittest.TestCase):
-    """Structural gate for the issue #1058 traceability + post-merge close gate."""
+    """Structural gate for the issue #1058/#1103 traceability + post-merge close gate."""
 
     _FILES = {
         "skills/implement/SKILL.md": (
             "## Phase boundaries\n\nPhase E is the post-merge close phase.\n"
             "Phase E calls `gc_close_issue_after_merge` after the user merges.\n"
+            "The close envelope includes `next_issue_recommendation` when available.\n"
         ),
-        "skills/implement/steps/step-17-verify.md": (
-            "# Step 17: Verify Ground Control State Landed\n\n"
-            "Call `gc_assert_traceability_reconciled` to post the marker.\n"
-        ),
-        "skills/implement/steps/step-19-final-report.md": (
-            "# Step 19: Report\n\n"
-            "`gc_post_final_report` refuses without `traceability_reconciled`.\n"
+        "skills/implement/steps/step-17-completion.md": (
+            "# Step 17: Phase D Completion\n\n"
+            "Call `gc_assert_completion` to assert `traceability_reconciled` and post with `plain_english_outcome`.\n"
         ),
         "skills/implement/steps/step-20-close-issue-on-merge.md": (
             "# Step 20: Close the Issue (Phase E, Post-Merge)\n\n"
             "Calls `gc_close_issue_after_merge` to verify merged_at and close.\n"
+            "The returned `next_issue_recommendation` names a follow-up issue when available.\n"
         ),
     }
 
@@ -1826,44 +1940,46 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             if rel_path in overrides:
                 override = overrides[rel_path]
                 if override is None:
-                    continue  # file intentionally missing
+                    # file intentionally missing
+                    continue
                 body = override
             path = root / rel_path
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(body, encoding="utf-8")
 
-    def test_check_passes_when_all_four_surfaces_carry_required_tokens(self):
+    def test_check_passes_when_all_four_surfaces_carry_required_tokens(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root)
             violations = run_traceability_reconciliation_gate_contract(root=root)
             self.assertEqual(violations, [])
 
-    def test_check_flags_step17_missing_gc_assert_traceability_reconciled(self):
+    def test_check_flags_step17_completion_missing_tokens(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
-                "skills/implement/steps/step-17-verify.md":
-                    "# Step 17: Verify Ground Control State Landed\n\nNo MCP call.\n",
+                "skills/implement/steps/step-17-completion.md":
+                    "# Step 17: Phase D Completion\n\nNo MCP call.\n",
             })
             violations = run_traceability_reconciliation_gate_contract(root=root)
             self.assertTrue(violations)
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-step17-missing", codes)
 
-    def test_check_flags_step19_missing_traceability_reconciled_marker_name(self):
+    def test_check_flags_step17_missing_plain_english_outcome(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
-                "skills/implement/steps/step-19-final-report.md":
-                    "# Step 19: Report\n\nFinal report posted.\n",
+                "skills/implement/steps/step-17-completion.md":
+                    "# Step 17: Phase D Completion\n\n"
+                    "Call `gc_assert_completion` to assert `traceability_reconciled`.\n",
             })
             violations = run_traceability_reconciliation_gate_contract(root=root)
             self.assertTrue(violations)
             codes = {v.code for v in violations}
-            self.assertIn("traceability-gate-step19-missing", codes)
+            self.assertIn("traceability-gate-step17-missing", codes)
 
-    def test_check_flags_step20_missing_file(self):
+    def test_check_flags_step20_missing_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
@@ -1874,7 +1990,19 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-step20-missing", codes)
 
-    def test_check_flags_skill_missing_phase_e(self):
+    def test_check_flags_step20_missing_recommendation_anchor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._populate(root, overrides={
+                "skills/implement/steps/step-20-close-issue-on-merge.md":
+                    "# Step 20: Close the Issue\n\nCalls `gc_close_issue_after_merge` only.\n",
+            })
+            violations = run_traceability_reconciliation_gate_contract(root=root)
+            self.assertTrue(violations)
+            codes = {v.code for v in violations}
+            self.assertIn("traceability-gate-step20-missing", codes)
+
+    def test_check_flags_skill_missing_phase_e(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
@@ -1886,12 +2014,25 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-skill-missing", codes)
 
-    def test_check_flags_skill_missing_close_tool_name(self):
+    def test_check_flags_skill_missing_close_tool_name_or_recommendation(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
                 "skills/implement/SKILL.md":
                     "## Phase boundaries\n\nPhase E runs after merge; the user authorizes the close.\n",
+            })
+            violations = run_traceability_reconciliation_gate_contract(root=root)
+            self.assertTrue(violations)
+            codes = {v.code for v in violations}
+            self.assertIn("traceability-gate-skill-missing", codes)
+
+    def test_check_flags_skill_missing_recommendation_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._populate(root, overrides={
+                "skills/implement/SKILL.md":
+                    "## Phase boundaries\n\n"
+                    "Phase E runs after merge; call `gc_close_issue_after_merge`.\n",
             })
             violations = run_traceability_reconciliation_gate_contract(root=root)
             self.assertTrue(violations)

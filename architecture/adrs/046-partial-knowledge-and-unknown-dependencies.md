@@ -6,9 +6,9 @@
 
 ## Context
 
-GC-M018 requires the asset model to support incomplete asset knowledge —
+GC-M018 requires the asset model to support incomplete asset knowledge -
 manually asserted assets, unknown or tentative dependencies, unclassified
-assets, and confidence-marked topology gaps — without forcing false
+assets, and confidence-marked topology gaps - without forcing false
 precision. Risk, threat, and control workflows have to be able to
 distinguish confirmed model facts from missing or provisional coverage.
 
@@ -24,14 +24,14 @@ asks. The architecture preflight for GC-M018
 explicit about why none of the existing knobs are interchangeable with the
 new concept:
 
-- `AssetType.OTHER` means "kind unknown / not in the catalog" — it does
+- `AssetType.OTHER` means "kind unknown / not in the catalog" - it does
   NOT mean the asset itself is provisional or a placeholder.
-- `subtype = null` means "no narrower subtype declared" — not "unknown."
+- `subtype = null` means "no narrower subtype declared" - not "unknown."
 - `metadata = null` / `scopeDesignation = null` mean "not designated,"
   which is again a different question.
 - The free-text `confidence` on `AssetRelation` / `AssetExternalId` /
   `Observation` / `EvidenceArtifact` / `RiskAssessmentResult` carries
-  provenance — the source system's confidence in its own assertion — and
+  provenance - the source system's confidence in its own assertion - and
   has no shared vocabulary across these surfaces. It does NOT answer
   "have *we* (the modeling team) treated this assertion as a confirmed
   model fact?"
@@ -48,21 +48,21 @@ inventory aggregate, no CMDB importer, no scanner, no risk-scoring engine.
 Introduce a new L0 pure-value enum `KnowledgeState` in
 `backend/src/main/java/com/keplerops/groundcontrol/domain/assets/state/`:
 
-- `CONFIRMED` — the assertion is treated as fact. Default.
-- `PROVISIONAL` — the assertion was made (manual entry, partial scan,
+- `CONFIRMED` - the assertion is treated as fact. Default.
+- `PROVISIONAL` - the assertion was made (manual entry, partial scan,
   low-confidence inference) but has not been validated.
-- `UNKNOWN` — explicit placeholder. The team has admitted "we don't
+- `UNKNOWN` - explicit placeholder. The team has admitted "we don't
   know." UNKNOWN is a first-class state, not a NULL-vs-something
   ambiguity.
 
 Add the enum as a `NOT NULL` column on both `OperationalAsset` and
 `AssetRelation`. DB default `'CONFIRMED'` so legacy rows back-fill; entity
-initializer sets `CONFIRMED` for freshly-constructed objects pre-persist.
+initializer sets `CONFIRMED` for freshly constructed objects pre-persist.
 Migrations land as V092 (parent) and V093 (Envers audit-table parity),
 following the GC-M012 V069/V070 pattern.
 
 `KnowledgeState.atLeast(other)` is declared on the enum with an explicit
-numeric `strength` field (not via `Enum.ordinal()` — errorprone's
+numeric `strength` field (not via `Enum.ordinal()` - errorprone's
 `EnumOrdinal` flags ordinal-based comparison because a future reorder
 would silently flip the ordering). The comparator supports "minimum
 certainty" filters of the form "show me everything CONFIRMED or better"
@@ -73,7 +73,7 @@ without forcing every consumer to enumerate the set.
 `KnowledgeState` rides on the existing asset and relation surfaces:
 
 - `AssetRequest` / `UpdateAssetRequest` / `AssetResponse` add
-  `knowledgeState` (optional on create — defaults to `CONFIRMED`; null on
+  `knowledgeState` (optional on create - defaults to `CONFIRMED`; null on
   update = leave unchanged). No clear flag because the column is NOT NULL.
 - `AssetRelationRequest` / `UpdateAssetRelationRequest` /
   `AssetRelationResponse` add `knowledgeState` with the same semantics.
@@ -91,7 +91,7 @@ without forcing every consumer to enumerate the set.
 
 `AssetGraphProjectionContributor` emits `knowledgeState` as a property on
 asset nodes AND on `AssetRelation` edges. Risk / threat / control
-workflows that read the graph see the dimension directly — no second
+workflows that read the graph see the dimension directly - no second
 persisted aggregate, no separate query path.
 
 ### 4. Unresolved-dependency seam: the placeholder asset
@@ -101,7 +101,7 @@ an `OperationalAsset` row with `knowledgeState = UNKNOWN` (a placeholder
 asset). The relation may itself be `PROVISIONAL` or `UNKNOWN`. This:
 
 - Keeps the existing JPA shape (`AssetRelation.target` is `optional =
-  false` — both endpoints are real `OperationalAsset` rows).
+  false` - both endpoints are real `OperationalAsset` rows).
 - Preserves project scope, audit history, UID uniqueness, graph identity,
   and every other invariant the asset aggregate carries.
 - Makes the placeholder visible in every existing read surface (list,
@@ -128,7 +128,7 @@ Rejected. It would let an `AssetRelation` row exist without a real target,
 which breaks every existing query that joins through the target, the
 `@ManyToOne(optional = false)` invariant, the graph projection, and the
 audit shadow. The implementation cost is high and the gain is
-non-existent — a placeholder `OperationalAsset` with
+non-existent - a placeholder `OperationalAsset` with
 `knowledgeState=UNKNOWN` covers the same semantic with no schema risk.
 
 ### A separate `UnknownDependency` aggregate
@@ -146,7 +146,7 @@ normalization/validation path." `KnowledgeState` is that single
 vocabulary for the modeling team's confidence in the assertion itself;
 the existing free-text `confidence` fields stay where they are for
 source-system provenance, on the surfaces where they already exist.
-The two are independent — a CONFIRMED edge can carry a confidence
+The two are independent - a CONFIRMED edge can carry a confidence
 annotation, and an UNKNOWN edge can omit confidence entirely.
 
 ### Store knowledge state inside `subtype` `metadata` or in a JSON column
@@ -163,7 +163,7 @@ filterability, and audit-table parity.
   need an explicit follow-up requirement.
 - Risk, threat, and control workflows that consume `AssetResponse`,
   `AssetRelationResponse`, or the graph reads see `knowledgeState`
-  immediately — no per-workflow refactor required for the
+  immediately - no per-workflow refactor required for the
   "distinguishability" clause.
 - Legacy rows back-fill to `CONFIRMED`, which is the conservative
   default (an existing asset is treated as a real model fact). Callers
@@ -181,7 +181,7 @@ filterability, and audit-table parity.
 
 - No new CMDB importer, scanner, scheduler, or reconciliation worker.
 - No filter knob on risk / threat / control list endpoints in this
-  iteration — they read `knowledgeState` from the asset surface they
+  iteration - they read `knowledgeState` from the asset surface they
   already consume. If a future requirement needs per-workflow filtering,
   it lands behind that requirement, not GC-M018.
 - No replacement of `OperationalAsset`, `AssetRelation`, `Observation`,

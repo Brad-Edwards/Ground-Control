@@ -136,7 +136,7 @@ GC-P016 must keep discovery, policy, and application as separate concerns even w
 
 - If local overrides are too unconstrained, upgrades will become unsafe and pack lineage will blur
 - If the shared substrate is over-generalized, pack handlers may collapse into an opaque import mechanism with weak domain semantics
-- Trust policy that is too weak turns packs into a supply-chain liability; trust policy that is too rigid makes curated content difficult to adopt
+- Trust policy that is too weak turns packs into a supply chain liability; trust policy that is too rigid makes curated content difficult to adopt
 
 ## Related Requirements
 

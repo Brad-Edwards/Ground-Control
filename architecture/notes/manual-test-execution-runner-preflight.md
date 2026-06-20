@@ -71,11 +71,11 @@ into `TestCaseStep.actualResult`; ADR-041 keeps that field definition-time.
   override fields, or runner-specific role table.
 - **Browser CSRF and session handling:** mutating runner UI calls must use the
   shared API client, which reads the `XSRF-TOKEN` cookie and sends
-  `X-XSRF-TOKEN`; 401s must keep using the central login redirect path.
+  `X-XSRF-TOKEN`; 401 responses must keep using the central login redirect path.
 - **Request shape checks:** Jackson owns UUID, `Instant`, and enum parsing.
   Bean Validation owns required status fields, comments/notes length bounds,
   and list/bulk caps if a batch update endpoint is added. Services own
-  "case is part of run", "step belongs to the snapshotted case", "step result
+  "case is part of run," "step belongs to the snapshotted case," "step result
   belongs to this run", and "terminal/archived runs cannot be mutated"
   semantics.
 - **Project scope:** every run, case result, step result, authored step lookup,
