@@ -298,3 +298,20 @@ contract. This is an internal telemetry-record field addition, not a
 documentation-coverage gate surface: the `run_documentation_coverage_check`
 classifier, the Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
 unchanged, and no new `docs/DOC_STYLE.md` style rule is established.
+
+**2026-06-20 (issue #266 GC-H006 threat-control mapping).** Extended
+`gc_risk_control_mapping` in `mcp/ground-control/index.js` and
+`mcp/ground-control/lib.js` to support `ThreatModel` as a third analysis-side
+endpoint. Changes: (1) `threat_model_id` added to the Zod schema as an optional
+UUID field; (2) `"unmapped-threats"`, `"threat-unmapped-controls"`, and
+`"threats-insufficient-effectiveness"` added to `RISK_CONTROL_MAPPING_ACTIONS`;
+(3) three matching query params (`min_effectiveness`, `as_of`,
+`freshness_window_days`) added; (4) `getUnmappedThreats`,
+`getThreatUnmappedControls`, and `getThreatsInsufficientEffectiveness` helper
+functions added to `lib.js`; (5) `threat_model_id` threaded through the
+`create` action body. These are additive extensions to an existing
+`gc_risk_control_mapping` action-multiplexed tool; the underlying classifier
+already covers both MCP trigger paths. Documentation lives in `docs/API.md`
+and `docs/architecture/ARCHITECTURE.md`. The doc-coverage classifier, Vale rule
+set, `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new
+`docs/DOC_STYLE.md` style rule is established.

@@ -10108,6 +10108,22 @@ export async function getAssessmentFeed(assessmentResultId, project) {
   });
 }
 
+// --- Threat-side coverage analysis (GC-H006) ---
+
+export async function getUnmappedThreats(project) {
+  return request("GET", "/api/v1/analysis/risk-control/unmapped-threats", { params: { project } });
+}
+
+export async function getThreatUnmappedControls(project) {
+  return request("GET", "/api/v1/analysis/risk-control/threat-unmapped-controls", { params: { project } });
+}
+
+export async function getThreatsInsufficientEffectiveness(project, { minEffectiveness, asOf, freshnessWindowDays } = {}) {
+  return request("GET", "/api/v1/analysis/risk-control/threats-insufficient-effectiveness", {
+    params: { project, minEffectiveness, asOf, freshnessWindowDays },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Verification Result constants & API functions
 // ---------------------------------------------------------------------------

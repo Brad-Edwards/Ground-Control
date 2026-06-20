@@ -1592,7 +1592,12 @@ export interface ControlAssuranceWorkspaceResponse {
 // VerificationStatus, AssuranceLevel, and MethodologyFamily enums under
 // domain/verification/state/ and domain/riskscenarios/state/ (ADR-034 enum contract).
 // Mirror policy enforced by tools/policy/checks.py::ENUM_CONTRACT_INVENTORY.
-export type VerificationStatus = "PROVEN" | "REFUTED" | "TIMEOUT" | "UNKNOWN" | "ERROR";
+export type VerificationStatus =
+  | "PROVEN"
+  | "REFUTED"
+  | "TIMEOUT"
+  | "UNKNOWN"
+  | "ERROR";
 export const VERIFICATION_STATUSES: VerificationStatus[] = [
   "PROVEN",
   "REFUTED",
@@ -1604,7 +1609,11 @@ export const VERIFICATION_STATUSES: VerificationStatus[] = [
 export type AssuranceLevel = "L0" | "L1" | "L2" | "L3";
 export const ASSURANCE_LEVELS: AssuranceLevel[] = ["L0", "L1", "L2", "L3"];
 
-export type MethodologyFamily = "FAIR" | "NIST_SP800_30_R1" | "ISO_27005" | "CUSTOM";
+export type MethodologyFamily =
+  | "FAIR"
+  | "NIST_SP800_30_R1"
+  | "ISO_27005"
+  | "CUSTOM";
 export const METHODOLOGY_FAMILIES: MethodologyFamily[] = [
   "FAIR",
   "NIST_SP800_30_R1",
@@ -1756,4 +1765,54 @@ export interface RiskScenarioWorkspaceResponse {
   assets: WorkspaceAsset[];
   scenarioCount: number;
   assetCount: number;
+}
+
+// ---- Risk-Control Mapping (GC-T003 / GC-H006) ----
+
+export interface RiskControlMappingRequest {
+  controlId?: string;
+  scopedImplementationId?: string;
+  riskScenarioId?: string;
+  riskRegisterRecordId?: string;
+  threatModelId?: string;
+  operationalAssetId?: string;
+  mappingObjective?: string;
+  controlRole: MappingControlRole;
+  mappingScope?: string;
+  methodologyProfileId?: string;
+  methodologyInfluence?: Record<string, unknown>;
+}
+
+export interface RiskControlMappingResponse {
+  id: string;
+  projectId: string;
+  controlId: string | null;
+  scopedImplementationId: string | null;
+  riskScenarioId: string | null;
+  riskRegisterRecordId: string | null;
+  threatModelId: string | null;
+  operationalAssetId: string | null;
+  mappingObjective: string | null;
+  controlRole: MappingControlRole;
+  mappingScope: string | null;
+  methodologyProfileId: string | null;
+  methodologyInfluence: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---- Threat Coverage Analysis (GC-H006) ----
+
+export interface ThreatSummary {
+  id: string;
+  uid: string;
+  title: string;
+}
+
+export interface UnmappedThreatsResponse {
+  threats: ThreatSummary[];
+}
+
+export interface ThreatsInsufficientEffectivenessResponse {
+  threats: ThreatSummary[];
 }

@@ -1,5 +1,7 @@
 # Documentation style
 
+> **Sync note for issue #266 (2026-06-20 GC-H006):** The `gc_risk_control_mapping` MCP tool in `mcp/ground-control/index.js` and `mcp/ground-control/lib.js` was extended with `threat_model_id` and three new threat-coverage query actions. These are additive extensions to an existing action-multiplexed tool. Documentation lives in `docs/API.md` and `docs/architecture/ARCHITECTURE.md`. No style rule changed.
+
 > **Sync note for issue #1107 (2026-06-14):** The audit-diff API reference (`docs/API.md`) and the `gc_requirement` MCP tool description were reviewed against these rules when the requirement history/timeline `expand` parameter was added. No style rule changed.
 
 > **Sync note for issue #1106 (2026-06-15):** The new MCP write-contract gate docs (`docs/DEVELOPMENT_WORKFLOW.md`, `mcp/ground-control/README.md`, and the ADR-034 amendment) were reviewed against these rules. No style rule changed.

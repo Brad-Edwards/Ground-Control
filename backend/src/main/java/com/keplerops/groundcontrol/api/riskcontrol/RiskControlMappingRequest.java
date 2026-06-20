@@ -9,9 +9,10 @@ public record RiskControlMappingRequest(
         /** Exactly one of controlId/scopedImplementationId required. */
         UUID controlId,
         UUID scopedImplementationId,
-        /** Exactly one of riskScenarioId/riskRegisterRecordId required. */
+        /** Exactly one of riskScenarioId/riskRegisterRecordId/threatModelId required. */
         UUID riskScenarioId,
         UUID riskRegisterRecordId,
+        UUID threatModelId,
         UUID operationalAssetId,
         String mappingObjective,
         @NotNull MappingControlRole controlRole,

@@ -54,7 +54,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
-                        "136");
+                        "136", "137");
     }
 
     @Test
@@ -951,11 +951,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         + " WHERE table_name = 'risk_control_mapping'"
                         + " AND constraint_name = 'ck_rcm_control_side'")
                 .getSingleResult();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM information_schema.table_constraints"
-                        + " WHERE table_name = 'risk_control_mapping'"
-                        + " AND constraint_name = 'ck_rcm_risk_side'")
-                .getSingleResult();
+        // ck_rcm_risk_side is replaced by the 3-way ck_rcm_analysis_side in V137 (asserted below).
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT control_id, scoped_implementation_id,"
                                 + " risk_scenario_id, risk_register_record_id,"
@@ -1100,6 +1096,43 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT reason, language, surface, commit_sha, captured_at,"
                                 + " created_at, updated_at"
                                 + " FROM derivation_capture_limit_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        // V137: threat_model_id on risk_control_mapping + audit shadow (GC-H006).
+        // The 3-way analysis-side constraint replaces the old 2-way ck_rcm_risk_side.
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.table_constraints"
+                        + " WHERE table_name = 'risk_control_mapping'"
+                        + " AND constraint_name = 'ck_rcm_analysis_side'")
+                .getSingleResult();
+        // V137 also replaces the four V121 plain UNIQUE constraints and adds the two threat
+        // endpoints as PARTIAL unique indexes, each predicated on its own endpoint family so a
+        // NULL endpoint column from a different family cannot collide under NULLS NOT DISTINCT.
+        // Asserting each index is partial (has a WHERE predicate) is the regression gate for the
+        // codex review finding that drove the partial-index rewrite.
+        for (String idx : new String[] {
+            "uq_rcm_control_scenario_asset",
+            "uq_rcm_control_record_asset",
+            "uq_rcm_control_threat_asset",
+            "uq_rcm_scoped_scenario_asset",
+            "uq_rcm_scoped_record_asset",
+            "uq_rcm_scoped_threat_asset"
+        }) {
+            var indexDef = entityManager
+                    .createNativeQuery("SELECT indexdef FROM pg_indexes"
+                            + " WHERE tablename = 'risk_control_mapping' AND indexname = '" + idx + "'")
+                    .getSingleResult();
+            assertThat(indexDef.toString())
+                    .as("index %s must be a partial unique index", idx)
+                    .contains("CREATE UNIQUE INDEX")
+                    .contains("WHERE");
+        }
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT threat_model_id FROM risk_control_mapping LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT threat_model_id FROM risk_control_mapping_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }

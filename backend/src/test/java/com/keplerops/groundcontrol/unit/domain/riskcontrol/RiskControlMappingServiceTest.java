@@ -75,6 +75,13 @@ class RiskControlMappingServiceTest {
     private com.keplerops.groundcontrol.domain.riskscenarios.repository.MethodologyProfileRepository
             methodologyProfileRepository;
 
+    @Mock
+    private com.keplerops.groundcontrol.domain.riskcontrol.service.MethodologyInfluenceValidator
+            methodologyInfluenceValidator;
+
+    @Mock
+    private com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelRepository threatModelRepository;
+
     @InjectMocks
     private RiskControlMappingService service;
 
@@ -121,6 +128,7 @@ class RiskControlMappingServiceTest {
                     null, // scopedImplementationId
                     scenarioId, // riskScenarioId
                     null, // riskRegisterRecordId
+                    null, // threatModelId
                     null, // operationalAssetId
                     "Prevent credential theft", // mappingObjective
                     MappingControlRole.PREVENTIVE, // controlRole
@@ -157,6 +165,7 @@ class RiskControlMappingServiceTest {
                     null,
                     scenarioId,
                     null,
+                    null, // threatModelId
                     null,
                     null,
                     MappingControlRole.PREVENTIVE,
@@ -178,6 +187,7 @@ class RiskControlMappingServiceTest {
                     null,
                     scenarioId,
                     null,
+                    null, // threatModelId
                     null,
                     null,
                     MappingControlRole.DETECTIVE,
@@ -201,6 +211,7 @@ class RiskControlMappingServiceTest {
                     null,
                     scenarioId,
                     null,
+                    null, // threatModelId
                     null,
                     null,
                     MappingControlRole.CORRECTIVE,
@@ -234,6 +245,7 @@ class RiskControlMappingServiceTest {
                     null,
                     scenarioId,
                     null,
+                    null, // threatModelId
                     assetId,
                     null,
                     MappingControlRole.PREVENTIVE,
@@ -262,6 +274,7 @@ class RiskControlMappingServiceTest {
                     null,
                     scenarioId,
                     null,
+                    null, // threatModelId
                     assetId,
                     null,
                     MappingControlRole.PREVENTIVE,
@@ -280,6 +293,7 @@ class RiskControlMappingServiceTest {
                     null,
                     scenarioId,
                     null,
+                    null, // threatModelId
                     null,
                     null,
                     MappingControlRole.PREVENTIVE,
@@ -297,6 +311,7 @@ class RiskControlMappingServiceTest {
                     UUID.randomUUID(),
                     scenarioId,
                     null,
+                    null, // threatModelId
                     null,
                     null,
                     MappingControlRole.PREVENTIVE,
@@ -308,12 +323,14 @@ class RiskControlMappingServiceTest {
 
         @Test
         void throwsValidation_whenBothRiskEndpointsNull() {
+            // All three analysis endpoints null → count=0 → DomainValidationException
             var cmd = new CreateRiskControlMappingCommand(
                     projectId,
                     controlId,
                     null,
                     null,
                     null,
+                    null, // threatModelId
                     null,
                     null,
                     MappingControlRole.PREVENTIVE,
@@ -325,12 +342,14 @@ class RiskControlMappingServiceTest {
 
         @Test
         void throwsValidation_whenBothRiskEndpointsNonNull() {
+            // riskScenarioId + riskRegisterRecordId both set → count=2 → DomainValidationException
             var cmd = new CreateRiskControlMappingCommand(
                     projectId,
                     controlId,
                     null,
                     scenarioId,
                     UUID.randomUUID(),
+                    null, // threatModelId
                     null,
                     null,
                     MappingControlRole.PREVENTIVE,
@@ -363,6 +382,7 @@ class RiskControlMappingServiceTest {
                     sciId,
                     scenarioId,
                     null,
+                    null, // threatModelId
                     null,
                     null,
                     MappingControlRole.PREVENTIVE,
@@ -482,6 +502,7 @@ class RiskControlMappingServiceTest {
                     null,
                     null,
                     recordId,
+                    null, // threatModelId
                     null,
                     null,
                     MappingControlRole.PREVENTIVE,
@@ -523,6 +544,7 @@ class RiskControlMappingServiceTest {
                     sciId,
                     null,
                     recordId,
+                    null, // threatModelId
                     null,
                     null,
                     MappingControlRole.CORRECTIVE,
@@ -550,6 +572,7 @@ class RiskControlMappingServiceTest {
                     null,
                     null,
                     recordId,
+                    null, // threatModelId
                     null,
                     null,
                     MappingControlRole.PREVENTIVE,
@@ -586,6 +609,7 @@ class RiskControlMappingServiceTest {
                     sciId,
                     null,
                     recordId,
+                    null, // threatModelId
                     null,
                     null,
                     MappingControlRole.CORRECTIVE,
@@ -795,6 +819,181 @@ class RiskControlMappingServiceTest {
 
             assertThatThrownBy(() -> service.attachObservation(projectId, mappingId, observationId))
                     .isInstanceOf(NotFoundException.class);
+        }
+    }
+
+    @Nested
+    class CreateWithThreatModel {
+
+        @Test
+        void createsMapping_controlToThreat() {
+            var threatModel = new com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel(
+                    project, "TM-001", "SQL Injection", "Attacker", "Inject SQL", "Data exfiltration");
+            var threatModelId = UUID.randomUUID();
+            setField(threatModel, "id", threatModelId);
+
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(controlRepository.findByIdAndProjectId(controlId, projectId)).thenReturn(Optional.of(control));
+            when(threatModelRepository.findByIdAndProjectId(threatModelId, projectId))
+                    .thenReturn(Optional.of(threatModel));
+            when(repository.existsByControlIdAndThreatModelIdAndOperationalAssetId(controlId, threatModelId, null))
+                    .thenReturn(false);
+            when(repository.save(any(RiskControlMapping.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var cmd = new CreateRiskControlMappingCommand(
+                    projectId,
+                    controlId, // controlId
+                    null, // scopedImplementationId
+                    null, // riskScenarioId
+                    null, // riskRegisterRecordId
+                    threatModelId, // threatModelId
+                    null, // operationalAssetId
+                    null, // mappingObjective
+                    MappingControlRole.PREVENTIVE, // controlRole
+                    null, // mappingScope
+                    null, // methodologyProfileId
+                    null // methodologyInfluence
+                    );
+
+            var result = service.create(cmd);
+
+            assertThat(result.getControl()).isEqualTo(control);
+            assertThat(result.getThreatModel()).isEqualTo(threatModel);
+            assertThat(result.isThreatSide()).isTrue();
+            verify(repository).save(any(RiskControlMapping.class));
+        }
+
+        @Test
+        void createsMapping_scopedImplToThreat() {
+            var sciId = UUID.randomUUID();
+            var sci = new com.keplerops.groundcontrol.domain.riskcontrol.model.ScopedControlImplementation(
+                    project, "SCI-001", control, "Email Gateway");
+            setField(sci, "id", sciId);
+
+            var threatModel = new com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel(
+                    project, "TM-001", "SQL Injection", "Attacker", "Inject SQL", "Data exfiltration");
+            var threatModelId = UUID.randomUUID();
+            setField(threatModel, "id", threatModelId);
+
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(scopedControlImplementationRepository.findByIdAndProjectId(sciId, projectId))
+                    .thenReturn(Optional.of(sci));
+            when(threatModelRepository.findByIdAndProjectId(threatModelId, projectId))
+                    .thenReturn(Optional.of(threatModel));
+            when(repository.existsByScopedImplementationIdAndThreatModelIdAndOperationalAssetId(
+                            sciId, threatModelId, null))
+                    .thenReturn(false);
+            when(repository.save(any(RiskControlMapping.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var cmd = new CreateRiskControlMappingCommand(
+                    projectId,
+                    null, // controlId
+                    sciId, // scopedImplementationId
+                    null, // riskScenarioId
+                    null, // riskRegisterRecordId
+                    threatModelId, // threatModelId
+                    null,
+                    null,
+                    MappingControlRole.DETECTIVE,
+                    null,
+                    null,
+                    null);
+
+            var result = service.create(cmd);
+            assertThat(result.getScopedImplementation()).isEqualTo(sci);
+            assertThat(result.getThreatModel()).isEqualTo(threatModel);
+        }
+
+        @Test
+        void throwsNotFound_whenThreatModelNotInProject() {
+            var threatModelId = UUID.randomUUID();
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(controlRepository.findByIdAndProjectId(controlId, projectId)).thenReturn(Optional.of(control));
+            when(threatModelRepository.findByIdAndProjectId(threatModelId, projectId))
+                    .thenReturn(Optional.empty());
+
+            var cmd = new CreateRiskControlMappingCommand(
+                    projectId,
+                    controlId,
+                    null,
+                    null,
+                    null,
+                    threatModelId,
+                    null,
+                    null,
+                    MappingControlRole.PREVENTIVE,
+                    null,
+                    null,
+                    null);
+
+            assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(NotFoundException.class);
+        }
+
+        @Test
+        void throwsConflict_whenDuplicateControlThreatExists() {
+            var threatModel = new com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel(
+                    project, "TM-001", "SQL Injection", "Attacker", "Inject SQL", "Data exfiltration");
+            var threatModelId = UUID.randomUUID();
+            setField(threatModel, "id", threatModelId);
+
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(controlRepository.findByIdAndProjectId(controlId, projectId)).thenReturn(Optional.of(control));
+            when(threatModelRepository.findByIdAndProjectId(threatModelId, projectId))
+                    .thenReturn(Optional.of(threatModel));
+            when(repository.existsByControlIdAndThreatModelIdAndOperationalAssetId(controlId, threatModelId, null))
+                    .thenReturn(true);
+
+            var cmd = new CreateRiskControlMappingCommand(
+                    projectId,
+                    controlId,
+                    null,
+                    null,
+                    null,
+                    threatModelId,
+                    null,
+                    null,
+                    MappingControlRole.PREVENTIVE,
+                    null,
+                    null,
+                    null);
+
+            assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(ConflictException.class);
+        }
+
+        @Test
+        void throwsValidation_whenAllThreeAnalysisEndpointsNull() {
+            var cmd = new CreateRiskControlMappingCommand(
+                    projectId,
+                    controlId,
+                    null,
+                    null, // riskScenarioId
+                    null, // riskRegisterRecordId
+                    null, // threatModelId
+                    null,
+                    null,
+                    MappingControlRole.PREVENTIVE,
+                    null,
+                    null,
+                    null);
+            assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(DomainValidationException.class);
+        }
+
+        @Test
+        void throwsValidation_whenTwoAnalysisEndpointsProvided() {
+            var cmd = new CreateRiskControlMappingCommand(
+                    projectId,
+                    controlId,
+                    null,
+                    scenarioId, // riskScenarioId
+                    null,
+                    UUID.randomUUID(), // threatModelId — two provided!
+                    null,
+                    null,
+                    MappingControlRole.PREVENTIVE,
+                    null,
+                    null,
+                    null);
+            assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(DomainValidationException.class);
         }
     }
 }
