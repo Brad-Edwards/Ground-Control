@@ -480,7 +480,7 @@ Pass `--dry-run` to the `/integrate` skill to see what the queue would contain w
 
 Workflow skills live in **two** repo roots, each with its own installer. The two name sets are disjoint, so the two install paths can never resolve the same name to different definitions:
 
-- **`skills/<name>/SKILL.md`** - agent-neutral skills shared by Claude Code, Codex, and Cursor CLI (per ADR-027). `bin/install-skills.sh` installs each into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and (legacy alias) `~/.codex/prompts/<name>.md`. Cursor CLI discovers `/implement` from the project skill at `.cursor/skills/implement/` without a host install step.
+- **`skills/<name>/SKILL.md`** - agent-neutral skills shared by Claude Code, Codex, and Cursor CLI (per ADR-027). `bin/install-skills.sh` installs each into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, and (legacy alias) `~/.codex/prompts/<name>.md`. Cursor CLI discovers `/implement` from `.cursor/skills/implement/SKILL.md` (a real wrapper file, not a symlink) without a host install step.
 - **`.claude/skills/<name>/SKILL.md`** - Claude-Code-only skills. `scripts/bootstrap-claude-workflow.sh` symlinks each into `~/.claude/skills/<name>` (see **Tooling** below).
 
 In both cases this repo is the source of truth: edit the `SKILL.md`, commit, and the change takes effect for the next Claude Code (or Codex) session on a host whose install paths are symlinks into the repo. Re-run the relevant installer after a host reset.
@@ -529,7 +529,7 @@ If a pre-existing host file or directory has local changes that are NOT in the r
 
 ### Cursor CLI
 
-Ground-Control-aware repos ship a project skill at `.cursor/skills/implement/` (symlink to `skills/implement/`). Cursor CLI discovers it automatically when you run from the repo root; no host install step is required.
+Ground-Control-aware repos ship a project skill at `.cursor/skills/implement/SKILL.md`. That file is a **discovery wrapper** pointing at the canonical [`skills/implement/SKILL.md`](skills/implement/SKILL.md); Cursor does not register symlinked skill folders. No host install step is required when working in the repo.
 
 **Prerequisites** (same orchestrator dependencies as Claude Code / Codex):
 
@@ -541,16 +541,18 @@ Ground-Control-aware repos ship a project skill at `.cursor/skills/implement/` (
 - Claude CLI OAuth session (Step 6.6 `gc_test_quality_review`)
 - GPG signing configured for non-interactive commits
 
-**Invoke** from the repo root:
+**Invoke** from the repo root in **Agent chat** (Cursor 2.4+):
 
-```bash
-cursor agent "/implement 123"
+```
+/implement 123
 ```
 
-Re-run after merge (Phase E close):
+No space after `/`: type `/implement`, not `/ implement`. The skill uses `disable-model-invocation: true`, so it appears in the `/` menu but is not auto-applied; you must pick it explicitly.
+
+In **Cursor CLI** (no slash menu), pass the workflow as the prompt:
 
 ```bash
-cursor agent "/implement 123"
+agent "/implement 123"
 ```
 
 **CLI permissions** live in [`.cursor/cli.json`](.cursor/cli.json) (project override). For long autonomous runs, pass `--force` if approval prompts would block git/gh/make/MCP calls. The Cursor CLI driver runs every step on the parent session (Codex-style); see the Cursor CLI section in `skills/implement/SKILL.md`.
