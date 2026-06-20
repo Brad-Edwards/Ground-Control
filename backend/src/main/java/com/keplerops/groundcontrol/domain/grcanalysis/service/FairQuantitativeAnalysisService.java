@@ -680,27 +680,34 @@ public class FairQuantitativeAnalysisService {
             return out;
         }
         for (FairLossForm form : FairLossForm.values()) {
-            Map<String, Object> formMap = asMap(fairMam.get(form.jsonKey()));
-            if (formMap == null) {
-                continue;
-            }
-            if (formMap.containsKey(KEY_CURRENCY)) {
-                String formCurrency = String.valueOf(formMap.get(KEY_CURRENCY));
-                if (!formCurrency.equals(currency)) {
-                    limitations.add("fair_mam " + form.jsonKey() + " uses currency " + formCurrency
-                            + " but assessment currency is " + currency + " — excluded from materiality total");
-                    continue;
-                }
-            }
-            if (!validateThreePointFactor("fair_mam." + form.jsonKey(), formMap, false, limitations)) {
-                continue;
-            }
-            FairQuantitativeAnalysisResult.ThreePoint tp = parseThreePoint(formMap);
-            if (tp != null) {
-                out.add(new FairQuantitativeAnalysisResult.LossFormBreakdown(form, tp));
+            FairQuantitativeAnalysisResult.LossFormBreakdown breakdown =
+                    decomposeLossForm(form, asMap(fairMam.get(form.jsonKey())), currency, limitations);
+            if (breakdown != null) {
+                out.add(breakdown);
             }
         }
         return out;
+    }
+
+    /** Decomposes one {@code fair_mam} loss form, or {@code null} when absent/mismatched/invalid. */
+    private static FairQuantitativeAnalysisResult.LossFormBreakdown decomposeLossForm(
+            FairLossForm form, Map<String, Object> formMap, String currency, List<String> limitations) {
+        if (formMap == null) {
+            return null;
+        }
+        if (formMap.containsKey(KEY_CURRENCY)) {
+            String formCurrency = String.valueOf(formMap.get(KEY_CURRENCY));
+            if (!formCurrency.equals(currency)) {
+                limitations.add("fair_mam " + form.jsonKey() + " uses currency " + formCurrency
+                        + " but assessment currency is " + currency + " — excluded from materiality total");
+                return null;
+            }
+        }
+        if (!validateThreePointFactor("fair_mam." + form.jsonKey(), formMap, false, limitations)) {
+            return null;
+        }
+        FairQuantitativeAnalysisResult.ThreePoint tp = parseThreePoint(formMap);
+        return tp == null ? null : new FairQuantitativeAnalysisResult.LossFormBreakdown(form, tp);
     }
 
     /** Elementwise sum of all decomposed loss forms; {@code null} when none are present. */
@@ -736,30 +743,39 @@ public class FairQuantitativeAnalysisService {
             return out;
         }
         for (Object raw : entries) {
-            Map<String, Object> entry = asMap(raw);
-            if (entry == null) {
-                continue;
-            }
-            String stakeholder = entry.get(KEY_STAKEHOLDER) == null ? null : String.valueOf(entry.get(KEY_STAKEHOLDER));
-            FairLossForm lossForm = FairLossForm.fromJsonKey(
-                    entry.get(KEY_LOSS_FORM) == null ? null : String.valueOf(entry.get(KEY_LOSS_FORM)));
-            String label = KEY_SECONDARY_BY_STAKEHOLDER + "[" + (stakeholder == null ? "?" : stakeholder) + "]";
-            if (entry.containsKey(KEY_CURRENCY)) {
-                String entryCurrency = String.valueOf(entry.get(KEY_CURRENCY));
-                if (!entryCurrency.equals(currency)) {
-                    limitations.add(label + " uses currency " + entryCurrency + " but assessment currency is "
-                            + currency + " — excluded from stakeholder materiality");
-                    continue;
-                }
-            }
-            if (!validateThreePointFactor(label, entry, false, limitations)) {
-                continue;
-            }
-            FairQuantitativeAnalysisResult.ThreePoint tp = parseThreePoint(entry);
-            if (tp != null) {
-                out.add(new FairQuantitativeAnalysisResult.StakeholderSecondaryLoss(stakeholder, lossForm, tp));
+            FairQuantitativeAnalysisResult.StakeholderSecondaryLoss loss =
+                    parseStakeholderEntry(asMap(raw), currency, limitations);
+            if (loss != null) {
+                out.add(loss);
             }
         }
         return out;
+    }
+
+    /** Parses one stakeholder secondary-loss entry, or {@code null} when absent/mismatched/invalid. */
+    private static FairQuantitativeAnalysisResult.StakeholderSecondaryLoss parseStakeholderEntry(
+            Map<String, Object> entry, String currency, List<String> limitations) {
+        if (entry == null) {
+            return null;
+        }
+        String stakeholder = entry.get(KEY_STAKEHOLDER) == null ? null : String.valueOf(entry.get(KEY_STAKEHOLDER));
+        FairLossForm lossForm = FairLossForm.fromJsonKey(
+                entry.get(KEY_LOSS_FORM) == null ? null : String.valueOf(entry.get(KEY_LOSS_FORM)));
+        String label = KEY_SECONDARY_BY_STAKEHOLDER + "[" + (stakeholder == null ? "?" : stakeholder) + "]";
+        if (entry.containsKey(KEY_CURRENCY)) {
+            String entryCurrency = String.valueOf(entry.get(KEY_CURRENCY));
+            if (!entryCurrency.equals(currency)) {
+                limitations.add(label + " uses currency " + entryCurrency + " but assessment currency is " + currency
+                        + " — excluded from stakeholder materiality");
+                return null;
+            }
+        }
+        if (!validateThreePointFactor(label, entry, false, limitations)) {
+            return null;
+        }
+        FairQuantitativeAnalysisResult.ThreePoint tp = parseThreePoint(entry);
+        return tp == null
+                ? null
+                : new FairQuantitativeAnalysisResult.StakeholderSecondaryLoss(stakeholder, lossForm, tp);
     }
 }
