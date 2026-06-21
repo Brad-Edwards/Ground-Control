@@ -8,3 +8,4 @@
 #      collation commit resolves to the union of both edits.
 # This is a belt-and-suspenders rule, not the primary fix.
 CHANGELOG.md merge=union
+docs/reference/fair/*.pdf filter=lfs diff=lfs merge=lfs -text

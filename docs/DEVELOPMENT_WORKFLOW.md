@@ -373,7 +373,7 @@ requirement GC-O013.
 
 ### GRC Read Analysis: `gc_analyze` kinds
 
-`gc_analyze` is the MCP tool for compute-heavy analysis operations. GRC read-analysis kinds route to `GrcAnalysisController` endpoints and return methodology-attributed envelopes: `nist_assessment` (GC-T014) calls `GET /api/v1/analysis/grc/nist-sp-800-30` and returns a NIST SP 800-30 Rev. 1 risk-assessment view; `fair_quantitative` (GC-T011) calls `GET /api/v1/analysis/grc/fair-quantitative` and returns a FAIR v3.0 quantitative risk-analysis view with derived LEF, LM, and ALE values. Both kinds accept `project`, `as_of`, `risk_assessment_result_id`, and `risk_scenario_id` parameters. Full endpoint contracts are in `docs/API.md`.
+`gc_analyze` is the MCP tool for compute-heavy analysis operations. GRC read-analysis kinds route to `GrcAnalysisController` endpoints and return methodology-attributed envelopes: `nist_assessment` (GC-T014) calls `GET /api/v1/analysis/grc/nist-sp-800-30` and returns a NIST SP 800-30 Rev. 1 risk-assessment view; `fair_quantitative` (GC-T011) calls `GET /api/v1/analysis/grc/fair-quantitative` and returns an Open FAIR quantitative risk-analysis view aligned to O-RT 3.0.1 / O-RA 2.0.1 with derived TEF, LEF, LM, and ALE values. Both kinds accept `project`, `as_of`, `risk_assessment_result_id`, and `risk_scenario_id` parameters. Full endpoint contracts are in `docs/API.md`.
 
 ## /integrate: Approved PR Integration Manager
 

@@ -1,5 +1,10 @@
 # Documentation style
 
+> **Sync note for issue #721 (2026-06-21):** The NIST `gc_analyze`
+> opaque-key examples now name `threat_event_relevance` and retain legacy
+> `threat_source_relevance` as a compatibility key. The API reference carries
+> the current contract. No style rule changed.
+
 > **Sync note for issue #266 (2026-06-20 GC-H006):** The `gc_risk_control_mapping` MCP tool in `mcp/ground-control/index.js` and `mcp/ground-control/lib.js` was extended with `threat_model_id` and three new threat-coverage query actions. These are additive extensions to an existing action-multiplexed tool. Documentation lives in `docs/API.md` and `docs/architecture/ARCHITECTURE.md`. No style rule changed.
 
 > **Sync note for issue #1107 (2026-06-14):** The audit-diff API reference (`docs/API.md`) and the `gc_requirement` MCP tool description were reviewed against these rules when the requirement history/timeline `expand` parameter was added. No style rule changed.

@@ -2,17 +2,15 @@
 -- units, and output rules for each supported risk assessment methodology.
 
 -- ---------------------------------------------------------------------------
--- FAIR Model v3.0 (includes FAIR-CAM and FAIR-MAM extensions)
+-- Open FAIR profile (O-RT 3.0.1 / O-RA 2.0.1)
 -- ---------------------------------------------------------------------------
 UPDATE methodology_profile
 SET
-    description = 'Factor Analysis of Information Risk (FAIR) v3.0 quantitative model. '
-               || 'Decomposes risk into Loss Event Frequency (LEF) and Loss Magnitude (LM) '
-               || 'using probabilistic three-point estimates. Includes FAIR-CAM control '
-               || 'analytics inputs and FAIR-MAM loss magnitude extensions when configured.',
+    description = 'Open FAIR quantitative profile aligned to O-RT 3.0.1 and O-RA 2.0.1. '
+               || 'Profile key FAIR_V3_0 is retained for compatibility.',
     input_schema = '{
   "type": "object",
-  "description": "FAIR v3.0 input factors with FAIR-CAM and FAIR-MAM extensions",
+  "description": "Open FAIR input factors aligned to O-RT 3.0.1 and O-RA 2.0.1",
   "properties": {
     "threat_event_frequency": {
       "type": "object",
@@ -38,7 +36,7 @@ SET
     },
     "loss_event_frequency": {
       "type": "object",
-      "description": "Derived: TEF * Vulnerability. May be supplied directly if pre-calculated.",
+      "description": "Loss Event Frequency; may be supplied directly or derived from TEF × Vulnerability.",
       "properties": {
         "low": {"type": "number", "minimum": 0},
         "likely": {"type": "number", "minimum": 0},
@@ -48,7 +46,7 @@ SET
     },
     "primary_loss_magnitude": {
       "type": "object",
-      "description": "Direct monetary loss from a single loss event",
+      "description": "Direct economic loss from a single loss event",
       "properties": {
         "low": {"type": "number", "minimum": 0},
         "likely": {"type": "number", "minimum": 0},
@@ -70,39 +68,13 @@ SET
     },
     "secondary_loss_magnitude": {
       "type": "object",
-      "description": "Monetary loss from secondary effects (regulatory, reputational, etc.)",
+      "description": "Additional economic loss from Secondary Stakeholder reaction",
       "properties": {
         "low": {"type": "number", "minimum": 0},
         "likely": {"type": "number", "minimum": 0},
         "high": {"type": "number", "minimum": 0},
         "currency": {"type": "string", "default": "USD"},
         "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
-      }
-    },
-    "fair_cam": {
-      "type": "object",
-      "description": "FAIR Control Analytics Model (FAIR-CAM) inputs for deriving Vulnerability",
-      "properties": {
-        "control_strength": {
-          "type": "number", "minimum": 0, "maximum": 100,
-          "description": "Aggregate control effectiveness percentage (0-100)"
-        },
-        "control_coverage": {
-          "type": "number", "minimum": 0, "maximum": 1,
-          "description": "Fraction of the attack surface covered by controls (0.0-1.0)"
-        }
-      }
-    },
-    "fair_mam": {
-      "type": "object",
-      "description": "FAIR Materiality Assessment Model (FAIR-MAM) loss magnitude breakdown",
-      "properties": {
-        "productivity_loss": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "response_cost": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "replacement_cost": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "competitive_advantage_loss": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "fines_and_judgments": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "reputation_damage": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}}
       }
     }
   },
@@ -111,12 +83,12 @@ SET
     "scale": "continuous",
     "units": "monetary",
     "currency": "configurable (default USD)",
-    "estimation_method": "three-point (low/likely/high) with optional Monte Carlo simulation"
+    "estimation_method": "three-point (low/likely/high) estimates with optional persisted Monte Carlo outputs"
   }
 }',
     output_schema = '{
   "type": "object",
-  "description": "FAIR v3.0 computed risk outputs",
+  "description": "Open FAIR computed risk outputs",
   "properties": {
     "annualized_loss_expectancy": {
       "type": "object",
@@ -170,7 +142,7 @@ SET
   "semantics": {
     "scale": "continuous",
     "units": "monetary",
-    "derivation": "ALE = LEF * LM; LEF = TEF * Vuln; LM = PLM + (SLEF * SLM)"
+    "derivation": "ALE = LEF * LM; LEF = TEF * Vuln; TEF = CF * PoA when derived; expected LM = PLM + (SLEF * SLM)"
   }
 }'
 WHERE profile_key = 'FAIR_V3_0';

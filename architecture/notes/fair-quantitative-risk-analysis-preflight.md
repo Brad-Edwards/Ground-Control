@@ -6,6 +6,15 @@ Requirement: GC-T011
 This is architecture guardrail guidance for FAIR-aligned quantitative risk
 analysis. It is not an implementation plan.
 
+## Primary Sources
+
+- The Open Group Standard, Risk Taxonomy (O-RT), Version 3.0.1:
+  [C20B](../../docs/reference/fair/c20b.pdf).
+- The Open Group Standard, Risk Analysis (O-RA), Version 2.0.1:
+  [C20A](../../docs/reference/fair/c20a.pdf).
+- The Open Group Guide, The Mathematics of the Open FAIR Methodology, Version
+  1.1: [G262](../../docs/reference/fair/g262.pdf).
+
 ## Boundary
 
 GC-T011 is methodology-specific quantitative assessment execution and exposure.
@@ -31,17 +40,18 @@ Keep these concepts distinct:
   existing `/api/v1/risk-assessment-results` contract.
 
 FAIR support must preserve the quantitative decomposition at contract level.
-Loss Event Frequency, Probable Loss Magnitude, Threat Event Frequency, Contact
-Frequency, Probability of Action, Susceptibility, Threat Capability, Resistance
-Strength, Primary Loss, and Secondary Loss must remain visible as factors,
-derived factors, or explicitly labelled limitations. Collapsing them into only
-`vulnerability`, `risk_level`, or `risk_score` does not satisfy GC-T011.
+Loss Event Frequency, Loss Magnitude, Threat Event Frequency, Contact Frequency,
+Probability of Action, Vulnerability/Susceptibility, Threat Capability,
+Resistance Strength, Primary Loss Magnitude, Secondary Loss Event Frequency, and
+Secondary Loss Magnitude must remain visible as factors, derived factors, or
+explicitly labelled limitations. Collapsing them into only `vulnerability`,
+`risk_level`, or `risk_score` does not satisfy GC-T011.
 
 The existing seeded `FAIR_V3_0` profile is a useful substrate, not proof that the
 engine exists. It already describes some FAIR inputs and outputs, but GC-T011
 requires the implementation to close the gap for Contact Frequency, Probability
-of Action, Susceptibility, Threat Capability, Resistance Strength, range or
-distribution estimates, percentile outputs, and monetary reporting.
+of Action, Vulnerability/Susceptibility, Threat Capability, Resistance Strength,
+range or distribution estimates, percentile outputs, and monetary reporting.
 
 ## Incumbents To Reuse
 
@@ -168,11 +178,13 @@ secondary field with method attribution; it must not replace monetary and
 frequency outputs.
 
 `limitations` must be explicit when profile schema validation was not performed,
-factor lineage is incomplete, vulnerability/susceptibility was supplied without
-Threat Capability and Resistance Strength, Threat Event Frequency was supplied
-without Contact Frequency and Probability of Action, currencies are mixed or not
-converted, evidence is stale or missing, or distribution output is persisted
-rather than recomputed.
+factor lineage is incomplete, only one member of a lower-level factor pair is
+present, TCap/RS are present but no distribution calculation for `P(TCap > RS)`
+is performed, currencies are mixed or not converted, evidence is stale or
+missing, or distribution output is persisted rather than recomputed. Direct
+Threat Event Frequency and direct Vulnerability estimates are valid higher-level
+Open FAIR estimates and must not be flagged merely because lower-level factors
+are absent.
 
 ## Extensibility
 
