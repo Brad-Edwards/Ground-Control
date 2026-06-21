@@ -87,7 +87,8 @@ class RiskAssessmentResultServiceTest {
         scenarioId = UUID.randomUUID();
         setField(scenario, "id", scenarioId);
 
-        profile = new MethodologyProfile(project, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR);
+        profile = new MethodologyProfile(
+                project, "FAIR_V3_0", "Open FAIR", "O-RT 3.0.1 / O-RA 2.0.1", MethodologyFamily.FAIR);
         profileId = UUID.randomUUID();
         setField(profile, "id", profileId);
 

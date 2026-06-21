@@ -1524,7 +1524,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - First-class Control entity representing security and risk controls
   with definitions, objectives, control function (preventive, detective,
   corrective, compensating), ownership, implementation scope, methodology-
-  aware factor mappings (FAIR-CAM strength/coverage, NIST, ISO), and
+  aware factor mappings (Open FAIR, NIST, ISO), and
   effectiveness data (GC-I001)
 - Six-state control lifecycle: DRAFT, PROPOSED, IMPLEMENTED, OPERATIONAL,
   DEPRECATED, RETIRED with reinstatement from DEPRECATED to OPERATIONAL
@@ -1597,10 +1597,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Populated risk assessment methodology profile schemas defining the
   semantics, factors, scales, units, and output rules for each supported
   methodology (GC-T002)
-- FAIR v3.0 input/output schemas with FAIR-CAM control analytics inputs
-  (control_strength, control_coverage) and FAIR-MAM loss magnitude
-  extensions (productivity_loss, response_cost, replacement_cost,
-  competitive_advantage_loss, fines_and_judgments, reputation_damage)
+- Open FAIR input/output schemas aligned to O-RT/O-RA factor vocabulary,
+  including Loss Event Frequency, Threat Event Frequency, Contact
+  Frequency, Probability of Action, Vulnerability, Threat Capability,
+  Resistance Strength, Primary Loss Magnitude, Secondary Loss Event
+  Frequency, and Secondary Loss Magnitude
 - NIST SP 800-30 Rev. 1 input/output schemas with five-level likelihood
   and impact scales, threat source characterization, and 5x5 risk matrix
   mapping

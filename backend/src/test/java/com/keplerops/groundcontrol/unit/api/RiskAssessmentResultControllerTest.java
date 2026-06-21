@@ -60,7 +60,8 @@ class RiskAssessmentResultControllerTest {
         var scenario = new RiskScenario(project, "RS-001", "Scenario", "Source", "Event", "Object", "Consequence");
         scenario.setTimeHorizon("12 months");
         setField(scenario, "id", SCENARIO_ID);
-        var profile = new MethodologyProfile(project, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR);
+        var profile = new MethodologyProfile(
+                project, "FAIR_V3_0", "Open FAIR", "O-RT 3.0.1 / O-RA 2.0.1", MethodologyFamily.FAIR);
         setField(profile, "id", PROFILE_ID);
 
         var result = new RiskAssessmentResult(project, scenario, profile);

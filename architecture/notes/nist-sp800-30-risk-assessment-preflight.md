@@ -36,7 +36,7 @@ Keep the NIST concepts distinct:
   and approval state.
 
 NIST support must model, at contract level, threat sources, threat events,
-vulnerabilities, predisposing conditions, threat-source relevance, likelihood
+vulnerabilities, predisposing conditions, threat-event relevance, likelihood
 of initiation or occurrence, likelihood of adverse impact, overall likelihood,
 impact level, assessment timeframe, and whether the threat event is adversarial
 or non-adversarial. Storing only `likelihood` and `impact`, or a generic
@@ -113,7 +113,8 @@ or non-adversarial. Storing only `likelihood` and `impact`, or a generic
   `computedOutputs`, and `uncertaintyMetadata` must remain stable. If MCP sends
   these maps, add them to the shared opaque-value-key guard so recursive
   camel/snake conversion does not rewrite profile-defined keys such as
-  `threat_source_relevance` or `likelihood_adverse_impact`.
+  `threat_event_relevance`, legacy `threat_source_relevance`, or
+  `likelihood_adverse_impact`.
 - Config and OS/runtime exposure: GC-T014 should not require new secrets,
   subprocesses, CLI arguments, network calls, or token-in-argv handling. Any
   future configurable matrix or validation dependency must use validated
@@ -123,7 +124,7 @@ or non-adversarial. Storing only `likelihood` and `impact`, or a generic
   audit-retention review. Profile-data-only changes still need seed parity and
   tests proving the NIST profile exposes the required vocabulary.
 - Contract mirrors and policy: API-visible enums such as threat-event kind,
-  threat-source relevance, likelihood band, or impact band must follow ADR-034:
+  threat-event relevance, likelihood band, or impact band must follow ADR-034:
   backend enum as authority, MCP constants/Zod, frontend types/constants where
   mirrored, docs, and policy inventory or focused mirror tests together.
 
@@ -141,8 +142,8 @@ For NIST, `inputs` must preserve at least:
   `NON_ADVERSARIAL`);
 - vulnerabilities and predisposing conditions as distinct collections or
   clearly typed objects, not one prose blob;
-- threat-source relevance, including whether adversarial source attributes such
-  as capability/intent/targeting are applicable;
+- threat-event relevance, with adversarial source attributes such as
+  capability/intent/targeting preserved as separate threat-source context;
 - likelihood of initiation or occurrence;
 - likelihood that the threat event results in adverse impact;
 - assessment timeframe and evidence references.

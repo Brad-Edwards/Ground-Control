@@ -94,7 +94,7 @@ const composedPortfolio: GrcPortfolioData = {
         assessments: [
           {
             id: "assessment-1",
-            methodologyProfileName: "FAIR v3.0",
+            methodologyProfileName: "Open FAIR",
             approvalState: "APPROVED",
             assessmentAt: "2026-06-01T12:00:00Z",
             confidence: "HIGH",

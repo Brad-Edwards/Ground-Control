@@ -241,7 +241,7 @@ class GrcAnalysisControllerTest {
                     NistImpactBand.HIGH,
                     "HIGH",
                     "L3-I4",
-                    "derived: min(...) per NIST SP 800-30 Rev. 1 Table G-5");
+                    "derived: likelihood_initiation × likelihood_adverse_impact per NIST SP 800-30 Rev. 1 Table G-5");
             return new NistAssessmentResult.NistAssessmentItem(
                     UUID.randomUUID(),
                     UUID.randomUUID(),
@@ -292,6 +292,7 @@ class GrcAnalysisControllerTest {
                     .andExpect(jsonPath("$.assessments[0].profileKey", is("NIST_SP800_30_R1")))
                     .andExpect(jsonPath("$.assessments[0].family", is("NIST_SP800_30_R1")))
                     .andExpect(jsonPath("$.assessments[0].inputs.threatEventKind", is("ADVERSARIAL")))
+                    .andExpect(jsonPath("$.assessments[0].inputs.threatEventRelevance", is("EXPECTED")))
                     .andExpect(jsonPath("$.assessments[0].inputs.threatSourceRelevance", is("EXPECTED")))
                     .andExpect(jsonPath("$.assessments[0].inputs.likelihoodInitiation", is("HIGH")))
                     .andExpect(jsonPath("$.assessments[0].inputs.likelihoodAdverseImpact", is("MODERATE")))
@@ -360,8 +361,6 @@ class GrcAnalysisControllerTest {
                     java.util.Map.of("low", 1000.0, "likely", 5000.0, "high", 20000.0, "currency", "USD"),
                     null,
                     null,
-                    null,
-                    null,
                     null);
             var outputs = new FairQuantitativeAnalysisResult.Outputs(
                     new FairQuantitativeAnalysisResult.ThreePoint(0.1, 0.4, 1.6),
@@ -377,7 +376,7 @@ class GrcAnalysisControllerTest {
                     UUID.randomUUID(),
                     "FAIR_V3_0",
                     "FAIR",
-                    "3.0",
+                    "O-RT 3.0.1 / O-RA 2.0.1",
                     Instant.parse("2026-05-29T00:00:00Z"),
                     "12 months",
                     "analyst@example",
@@ -394,7 +393,7 @@ class GrcAnalysisControllerTest {
                     "fair_quantitative",
                     "ground-control",
                     Instant.parse("2026-05-29T00:00:00Z"),
-                    "fair-v3.0-three-point-v1",
+                    "open-fair-o-rt3.0.1-o-ra2.0.1-three-point-v1",
                     "continuous",
                     "monetary",
                     "USD",
@@ -413,7 +412,7 @@ class GrcAnalysisControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.analysisKind", is("fair_quantitative")))
                     .andExpect(jsonPath("$.project", is("ground-control")))
-                    .andExpect(jsonPath("$.derivationMethod", is("fair-v3.0-three-point-v1")))
+                    .andExpect(jsonPath("$.derivationMethod", is("open-fair-o-rt3.0.1-o-ra2.0.1-three-point-v1")))
                     .andExpect(jsonPath("$.scale", is("continuous")))
                     .andExpect(jsonPath("$.units", is("monetary")))
                     .andExpect(jsonPath("$.currency", is("USD")))

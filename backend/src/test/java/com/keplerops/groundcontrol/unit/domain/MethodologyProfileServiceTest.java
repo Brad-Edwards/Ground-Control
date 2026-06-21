@@ -62,8 +62,8 @@ class MethodologyProfileServiceTest {
         var command = new CreateMethodologyProfileCommand(
                 projectId,
                 "FAIR_V3_0",
-                "FAIR",
-                "3.0",
+                "Open FAIR",
+                "O-RT 3.0.1 / O-RA 2.0.1",
                 MethodologyFamily.FAIR,
                 "Quantitative method",
                 Map.of("type", "object"),
@@ -72,7 +72,7 @@ class MethodologyProfileServiceTest {
                 Map.of("RESIDUAL_TRANSFER", Map.of()),
                 null);
         when(projectService.getById(projectId)).thenReturn(project);
-        when(repository.existsByProjectIdAndProfileKeyAndVersion(projectId, "FAIR_V3_0", "3.0"))
+        when(repository.existsByProjectIdAndProfileKeyAndVersion(projectId, "FAIR_V3_0", "O-RT 3.0.1 / O-RA 2.0.1"))
                 .thenReturn(false);
         when(repository.save(any(MethodologyProfile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -88,14 +88,14 @@ class MethodologyProfileServiceTest {
     @Test
     void createRejectsDuplicateProfileVersion() {
         when(projectService.getById(projectId)).thenReturn(project);
-        when(repository.existsByProjectIdAndProfileKeyAndVersion(projectId, "FAIR_V3_0", "3.0"))
+        when(repository.existsByProjectIdAndProfileKeyAndVersion(projectId, "FAIR_V3_0", "O-RT 3.0.1 / O-RA 2.0.1"))
                 .thenReturn(true);
 
         assertThatThrownBy(() -> service.create(new CreateMethodologyProfileCommand(
                         projectId,
                         "FAIR_V3_0",
-                        "FAIR",
-                        "3.0",
+                        "Open FAIR",
+                        "O-RT 3.0.1 / O-RA 2.0.1",
                         MethodologyFamily.FAIR,
                         null,
                         null,
@@ -153,6 +153,7 @@ class MethodologyProfileServiceTest {
                         "threat_source",
                         "threat_event",
                         "threat_event_kind",
+                        "threat_event_relevance",
                         "threat_source_relevance",
                         "vulnerabilities",
                         "predisposing_conditions",
@@ -161,6 +162,13 @@ class MethodologyProfileServiceTest {
                         "likelihood_overall",
                         "impact_level",
                         "assessment_timeframe");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> eventRelevance = (Map<String, Object>) properties.get("threat_event_relevance");
+        assertThat(eventRelevance)
+                .containsEntry("description", "Threat event relevance per NIST SP 800-30 Rev. 1 Table E-4");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> legacySourceRelevance = (Map<String, Object>) properties.get("threat_source_relevance");
+        assertThat(legacySourceRelevance).containsEntry("deprecated", true);
         @SuppressWarnings("unchecked")
         Map<String, Object> outputProps =
                 (Map<String, Object>) nist.getOutputSchema().get("properties");
@@ -182,7 +190,8 @@ class MethodologyProfileServiceTest {
 
     @Test
     void updateMutatesAllMutableFields() {
-        var profile = new MethodologyProfile(project, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR);
+        var profile = new MethodologyProfile(
+                project, "FAIR_V3_0", "Open FAIR", "O-RT 3.0.1 / O-RA 2.0.1", MethodologyFamily.FAIR);
         var profileId = UUID.randomUUID();
         setField(profile, "id", profileId);
         when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
@@ -212,7 +221,8 @@ class MethodologyProfileServiceTest {
 
     @Test
     void deleteRemovesResolvedProfile() {
-        var profile = new MethodologyProfile(project, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR);
+        var profile = new MethodologyProfile(
+                project, "FAIR_V3_0", "Open FAIR", "O-RT 3.0.1 / O-RA 2.0.1", MethodologyFamily.FAIR);
         var profileId = UUID.randomUUID();
         setField(profile, "id", profileId);
         when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));
@@ -251,14 +261,36 @@ class MethodologyProfileServiceTest {
                         NormalizedConcept.LIKELIHOOD_OR_FREQUENCY,
                         NormalizedConcept.IMPACT_OR_LOSS_MAGNITUDE,
                         NormalizedConcept.THREAT_EVENT,
-                        NormalizedConcept.VULNERABILITY_OR_EXPOSURE,
-                        NormalizedConcept.CONTROL);
+                        NormalizedConcept.VULNERABILITY_OR_EXPOSURE);
         // All entries must have INPUT_SCHEMA or OUTPUT_SCHEMA surface
         assertThat(fair.getCrosswalkEntries()).allSatisfy(e -> assertThat(e.vocabularySurface())
                 .isIn(CrosswalkVocabularySurface.INPUT_SCHEMA, CrosswalkVocabularySurface.OUTPUT_SCHEMA));
         // All entries must have a non-blank source field path
         assertThat(fair.getCrosswalkEntries())
                 .allSatisfy(e -> assertThat(e.sourceFieldPath()).isNotBlank());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties =
+                (Map<String, Object>) fair.getInputSchema().get("properties");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> probabilityOfAction = (Map<String, Object>) properties.get("probability_of_action");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> poaProperties = (Map<String, Object>) probabilityOfAction.get("properties");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> low = (Map<String, Object>) poaProperties.get("low");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> likely = (Map<String, Object>) poaProperties.get("likely");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> high = (Map<String, Object>) poaProperties.get("high");
+        assertThat(low).containsEntry("maximum", 1);
+        assertThat(likely).containsEntry("maximum", 1);
+        assertThat(high).containsEntry("maximum", 1);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> threatCapability = (Map<String, Object>) properties.get("threat_capability");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> tcapProperties = (Map<String, Object>) threatCapability.get("properties");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> tcapHigh = (Map<String, Object>) tcapProperties.get("high");
+        assertThat(tcapHigh).containsEntry("maximum", 100);
     }
 
     @Test
@@ -342,7 +374,8 @@ class MethodologyProfileServiceTest {
     // -------------------------------------------------------------------------
 
     private MethodologyProfile makeFairProfile() {
-        var profile = new MethodologyProfile(project, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR);
+        var profile = new MethodologyProfile(
+                project, "FAIR_V3_0", "Open FAIR", "O-RT 3.0.1 / O-RA 2.0.1", MethodologyFamily.FAIR);
         var profileId = UUID.randomUUID();
         setField(profile, "id", profileId);
         return profile;
@@ -722,11 +755,11 @@ class MethodologyProfileServiceTest {
 
     @Test
     void updateAcceptsMultiSegmentNestedPropertiesPath() {
-        // FAIR-CAM-style fair_cam.control_strength: descend nested properties
+        // Generic nested object path: descend nested properties.
         var entry = new CrosswalkEntry(
                 NormalizedConcept.CONTROL,
                 CrosswalkVocabularySurface.INPUT_SCHEMA,
-                "fair_cam.control_strength",
+                "control_effects.resistance_strength",
                 null,
                 null,
                 null,
@@ -738,12 +771,12 @@ class MethodologyProfileServiceTest {
                 "object",
                 "properties",
                 Map.<String, Object>of(
-                        "fair_cam",
+                        "control_effects",
                         Map.<String, Object>of(
                                 "type",
                                 "object",
                                 "properties",
-                                Map.<String, Object>of("control_strength", Map.<String, Object>of()))));
+                                Map.<String, Object>of("resistance_strength", Map.<String, Object>of()))));
         var profile = makeProfileWithInputSchema(inputSchema);
         var profileId = profile.getId();
         when(repository.findByIdAndProjectId(profileId, projectId)).thenReturn(Optional.of(profile));

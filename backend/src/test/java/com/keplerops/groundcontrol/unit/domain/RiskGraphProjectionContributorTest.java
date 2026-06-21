@@ -84,7 +84,8 @@ class RiskGraphProjectionContributorTest {
         setField(record, "id", UUID.randomUUID());
         record.replaceRiskScenarios(List.of(scenario));
 
-        var profile = new MethodologyProfile(project, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR);
+        var profile = new MethodologyProfile(
+                project, "FAIR_V3_0", "Open FAIR", "O-RT 3.0.1 / O-RA 2.0.1", MethodologyFamily.FAIR);
         setField(profile, "id", UUID.randomUUID());
 
         var observationAsset = new OperationalAsset(project, "ASSET-1", "Gateway");

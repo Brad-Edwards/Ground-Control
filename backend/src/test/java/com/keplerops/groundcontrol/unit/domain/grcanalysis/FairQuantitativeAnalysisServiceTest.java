@@ -68,7 +68,8 @@ class FairQuantitativeAnalysisServiceTest {
         scenario = new RiskScenario(project, "RS-001", "Scenario", "threat", "method", "asset", "effect");
         setField(scenario, "id", UUID.randomUUID());
 
-        fairProfile = new MethodologyProfile(project, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR);
+        fairProfile = new MethodologyProfile(
+                project, "FAIR_V3_0", "Open FAIR", "O-RT 3.0.1 / O-RA 2.0.1", MethodologyFamily.FAIR);
         setField(fairProfile, "id", UUID.randomUUID());
 
         nistProfile = new MethodologyProfile(
@@ -112,7 +113,7 @@ class FairQuantitativeAnalysisServiceTest {
 
         assertThat(result.analysisKind()).isEqualTo("fair_quantitative");
         assertThat(result.project()).isEqualTo("ground-control");
-        assertThat(result.derivationMethod()).isEqualTo("fair-v3.0-three-point-v1");
+        assertThat(result.derivationMethod()).isEqualTo("open-fair-o-rt3.0.1-o-ra2.0.1-three-point-v1");
         assertThat(result.scale()).isEqualTo("continuous");
         assertThat(result.units()).isEqualTo("monetary");
         assertThat(result.assessments()).isEmpty();
@@ -339,6 +340,25 @@ class FairQuantitativeAnalysisServiceTest {
     }
 
     @Test
+    void analyze_probabilityOfActionOutOfBounds_emitsLimitation() {
+        // Probability of Action is a probability sub-factor, not an unbounded frequency.
+        Map<String, Object> inputs = new LinkedHashMap<>();
+        inputs.put("threat_event_frequency", threePoint(1.0, 2.0, 4.0));
+        inputs.put("contact_frequency", threePoint(1.0, 2.0, 4.0));
+        inputs.put("probability_of_action", threePoint(0.2, 0.8, 1.2));
+        inputs.put("vulnerability", threePoint(0.1, 0.2, 0.4));
+        inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
+        var assessment = makeAssessment(fairProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(assessment));
+
+        FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        assertThat(item.limitations()).anyMatch(s -> s.contains("probability_of_action") && s.contains("[0,1]"));
+    }
+
+    @Test
     void analyze_threePointOutOfOrder_plm_nonDerivable() {
         // PLM low > high violates the three-point ordering invariant.
         // LM and ALE must not be produced; limitation must be emitted.
@@ -527,12 +547,11 @@ class FairQuantitativeAnalysisServiceTest {
     }
 
     @Test
-    void analyze_tef_withoutCF_PoA_emitsLimitation() {
+    void analyze_directTefWithoutCfPoa_isValidAtHigherAbstraction() {
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("threat_event_frequency", threePoint(1.0, 2.0, 4.0));
         inputs.put("vulnerability", threePoint(0.1, 0.2, 0.4));
         inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
-        // No contact_frequency, no probability_of_action
         var assessment = makeAssessment(fairProfile, inputs);
         when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
                 .thenReturn(List.of(assessment));
@@ -541,16 +560,16 @@ class FairQuantitativeAnalysisServiceTest {
 
         var item = result.assessments().get(0);
         assertThat(item.limitations())
-                .anyMatch(s -> s.contains("contact_frequency") && s.contains("probability_of_action"));
+                .noneMatch(s -> s.contains("contact_frequency") && s.contains("probability_of_action"));
+        assertThat(item.outputs().annualizedLossExpectancy()).isNotNull();
     }
 
     @Test
-    void analyze_vuln_withoutTCapRS_emitsLimitation() {
+    void analyze_directVulnerabilityWithoutTcapRs_isValidAtHigherAbstraction() {
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("threat_event_frequency", threePoint(1.0, 2.0, 4.0));
         inputs.put("vulnerability", threePoint(0.1, 0.2, 0.4));
         inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
-        // No threat_capability, no resistance_strength
         var assessment = makeAssessment(fairProfile, inputs);
         when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
                 .thenReturn(List.of(assessment));
@@ -559,7 +578,72 @@ class FairQuantitativeAnalysisServiceTest {
 
         var item = result.assessments().get(0);
         assertThat(item.limitations())
-                .anyMatch(s -> s.contains("threat_capability") && s.contains("resistance_strength"));
+                .noneMatch(s -> s.contains("threat_capability") && s.contains("resistance_strength"));
+        assertThat(item.outputs().annualizedLossExpectancy()).isNotNull();
+    }
+
+    @Test
+    void analyze_derivesTefFromCfAndPoa_whenTefAbsent() {
+        Map<String, Object> inputs = new LinkedHashMap<>();
+        inputs.put("contact_frequency", threePoint(10.0, 20.0, 40.0));
+        inputs.put("probability_of_action", threePoint(0.1, 0.2, 0.5));
+        inputs.put("vulnerability", threePoint(0.1, 0.2, 0.4));
+        inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
+        var assessment = makeAssessment(fairProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(assessment));
+
+        FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        assertThat(item.outputs().lossEventFrequency().low())
+                .isEqualTo(0.1, org.assertj.core.api.Assertions.within(1e-9));
+        assertThat(item.outputs().lossEventFrequency().likely())
+                .isEqualTo(0.8, org.assertj.core.api.Assertions.within(1e-9));
+        assertThat(item.outputs().lossEventFrequency().high())
+                .isEqualTo(8.0, org.assertj.core.api.Assertions.within(1e-9));
+        assertThat(item.outputs().derivation())
+                .isEqualTo("derived: LEF = (Contact Frequency × Probability of Action) × Vulnerability");
+    }
+
+    @Test
+    void analyze_tcapAndRsUsePercentileScale_notProbabilityScale() {
+        Map<String, Object> inputs = new LinkedHashMap<>();
+        inputs.put("threat_event_frequency", threePoint(1.0, 2.0, 4.0));
+        inputs.put("vulnerability", threePoint(0.1, 0.2, 0.4));
+        inputs.put("threat_capability", threePoint(25.0, 50.0, 90.0));
+        inputs.put("resistance_strength", threePoint(20.0, 40.0, 80.0));
+        inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
+        var assessment = makeAssessment(fairProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(assessment));
+
+        FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        assertThat(item.limitations()).noneMatch(s -> s.contains("threat_capability") && s.contains("[0,1]"));
+        assertThat(item.limitations()).noneMatch(s -> s.contains("resistance_strength") && s.contains("[0,1]"));
+        assertThat(item.outputs().annualizedLossExpectancy()).isNotNull();
+    }
+
+    @Test
+    void analyze_tcapAndRsWithoutVulnerability_doesNotInventVulnerability() {
+        Map<String, Object> inputs = new LinkedHashMap<>();
+        inputs.put("contact_frequency", threePoint(10.0, 20.0, 40.0));
+        inputs.put("probability_of_action", threePoint(0.1, 0.2, 0.5));
+        inputs.put("threat_capability", threePoint(25.0, 50.0, 90.0));
+        inputs.put("resistance_strength", threePoint(20.0, 40.0, 80.0));
+        inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
+        var assessment = makeAssessment(fairProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(assessment));
+
+        FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        assertThat(item.limitations()).anyMatch(s -> s.contains("P(TCap > RS)"));
+        assertThat(item.outputs().lossEventFrequency()).isNull();
+        assertThat(item.outputs().annualizedLossExpectancy()).isNull();
     }
 
     @Test
@@ -569,8 +653,8 @@ class FairQuantitativeAnalysisServiceTest {
         inputs.put("contact_frequency", threePoint(2.0, 3.0, 5.0));
         inputs.put("probability_of_action", threePoint(0.5, 0.7, 0.8));
         inputs.put("vulnerability", threePoint(0.1, 0.2, 0.4));
-        inputs.put("threat_capability", threePoint(0.3, 0.5, 0.7));
-        inputs.put("resistance_strength", threePoint(0.4, 0.6, 0.8));
+        inputs.put("threat_capability", threePoint(30.0, 50.0, 70.0));
+        inputs.put("resistance_strength", threePoint(40.0, 60.0, 80.0));
         inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
         var assessment = makeAssessment(fairProfile, inputs);
         when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
@@ -585,11 +669,9 @@ class FairQuantitativeAnalysisServiceTest {
         assertThat(item.inputs().probabilityOfAction()).containsKey("low");
         assertThat(item.inputs().threatCapability()).isNotNull();
         assertThat(item.inputs().resistanceStrength()).isNotNull();
-        // With both sub-factors present, no sub-factor limitation should be emitted
+        // With both TEF sub-factors present, no partial-lineage limitation should be emitted.
         assertThat(item.limitations())
                 .noneMatch(s -> s.contains("contact_frequency") && s.contains("probability_of_action"));
-        assertThat(item.limitations())
-                .noneMatch(s -> s.contains("threat_capability") && s.contains("resistance_strength"));
     }
 
     @Test

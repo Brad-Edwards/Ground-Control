@@ -54,7 +54,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
-                        "136", "137");
+                        "136", "137", "138");
     }
 
     @Test
@@ -1014,6 +1014,41 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT crosswalk_entries FROM methodology_profile_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
+        // V138: primary-source alignment for seeded FAIR/NIST methodology profiles.
+        assertThat(entityManager
+                        .createNativeQuery("SELECT version FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
+                        .getSingleResult())
+                .isEqualTo("O-RT 3.0.1 / O-RA 2.0.1");
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>>"
+                                + " '{properties,probability_of_action,properties,high,maximum}'"
+                                + " FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
+                        .getSingleResult())
+                .isEqualTo("1");
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>>"
+                                + " '{properties,threat_capability,properties,high,maximum}'"
+                                + " FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
+                        .getSingleResult())
+                .isEqualTo("100");
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>"
+                                + " '{properties,fair_cam}'"
+                                + " FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
+                        .getSingleResult())
+                .isNull();
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>>"
+                                + " '{properties,threat_event_relevance,description}'"
+                                + " FROM methodology_profile WHERE profile_key = 'NIST_SP800_30_R1'")
+                        .getSingleResult())
+                .isEqualTo("Threat event relevance per NIST SP 800-30 Rev. 1 Table E-4");
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>>"
+                                + " '{properties,threat_source_relevance,deprecated}'"
+                                + " FROM methodology_profile WHERE profile_key = 'NIST_SP800_30_R1'")
+                        .getSingleResult())
+                .isEqualTo("true");
         // V126: reassessmentRequiredAt on risk_assessment_result and audit (GC-T004 / C8, #863).
         entityManager
                 .createNativeQuery("SELECT 1 FROM information_schema.columns"
