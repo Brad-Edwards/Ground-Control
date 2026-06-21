@@ -362,6 +362,16 @@ class GrcAnalysisControllerTest {
                     null,
                     null,
                     null);
+            var materiality = new FairQuantitativeAnalysisResult.Materiality(
+                    List.of(new FairQuantitativeAnalysisResult.FormOfLossBreakdown(
+                            com.keplerops.groundcontrol.domain.grcanalysis.service.FairFormOfLoss.REPUTATION,
+                            new FairQuantitativeAnalysisResult.ThreePoint(500.0, 1500.0, 4000.0))),
+                    new FairQuantitativeAnalysisResult.ThreePoint(500.0, 1500.0, 4000.0),
+                    "USD",
+                    List.of(new FairQuantitativeAnalysisResult.StakeholderSecondaryLoss(
+                            "Customers",
+                            com.keplerops.groundcontrol.domain.grcanalysis.service.FairFormOfLoss.REPUTATION,
+                            new FairQuantitativeAnalysisResult.ThreePoint(1000.0, 3000.0, 9000.0))));
             var outputs = new FairQuantitativeAnalysisResult.Outputs(
                     new FairQuantitativeAnalysisResult.ThreePoint(0.1, 0.4, 1.6),
                     new FairQuantitativeAnalysisResult.ThreePoint(1000.0, 5000.0, 20000.0),
@@ -369,7 +379,8 @@ class GrcAnalysisControllerTest {
                     "USD",
                     null,
                     "HIGH",
-                    "derived: LEF = TEF × Vulnerability");
+                    "derived: LEF = TEF × Vulnerability",
+                    materiality);
             return new FairQuantitativeAnalysisResult.FairAssessmentItem(
                     UUID.randomUUID(),
                     UUID.randomUUID(),
@@ -423,6 +434,25 @@ class GrcAnalysisControllerTest {
                     .andExpect(jsonPath("$.assessments[0].outputs.lossMagnitude.likely", is(5000.0)))
                     .andExpect(jsonPath("$.assessments[0].outputs.annualizedLossExpectancy.high", is(32000.0)))
                     .andExpect(jsonPath("$.assessments[0].outputs.riskLevel", is("HIGH")))
+                    .andExpect(jsonPath("$.assessments[0].outputs.materiality.formsOfLoss[0].form", is("REPUTATION")))
+                    .andExpect(jsonPath(
+                            "$.assessments[0].outputs.materiality.formsOfLoss[0].magnitude.likely", is(1500.0)))
+                    .andExpect(jsonPath("$.assessments[0].outputs.materiality.formsOfLossTotal.high", is(4000.0)))
+                    .andExpect(jsonPath(
+                            "$.assessments[0].outputs.materiality.secondaryLossByStakeholder[0].stakeholder",
+                            is("Customers")))
+                    .andExpect(jsonPath(
+                            "$.assessments[0].outputs.materiality.secondaryLossByStakeholder[0].lossForm",
+                            is("REPUTATION")))
+                    .andExpect(jsonPath(
+                            "$.assessments[0].outputs.materiality.secondaryLossByStakeholder[0].magnitude.low",
+                            is(1000.0)))
+                    .andExpect(jsonPath(
+                            "$.assessments[0].outputs.materiality.secondaryLossByStakeholder[0].magnitude.likely",
+                            is(3000.0)))
+                    .andExpect(jsonPath(
+                            "$.assessments[0].outputs.materiality.secondaryLossByStakeholder[0].magnitude.high",
+                            is(9000.0)))
                     .andExpect(jsonPath("$.counts.total", is(1)))
                     .andExpect(jsonPath("$.limitations").isArray());
         }
