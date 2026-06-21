@@ -57,12 +57,22 @@ public record NistAssessmentResult(
             ThreatEventKind threatEventKind,
             List<Map<String, Object>> vulnerabilities,
             List<Map<String, Object>> predisposingConditions,
-            ThreatSourceRelevance threatSourceRelevance,
+            ThreatSourceRelevance threatEventRelevance,
             NistLikelihoodBand likelihoodInitiation,
             NistLikelihoodBand likelihoodAdverseImpact,
             NistLikelihoodBand likelihoodOverall,
             NistImpactBand impactLevel,
-            Map<String, Object> assessmentTimeframe) {}
+            Map<String, Object> assessmentTimeframe) {
+
+        /**
+         * Backward-compatible Java accessor for the original GC-T014 name. NIST
+         * SP 800-30 Rev. 1 defines these bands as threat-event relevance in
+         * Table E-4, not threat-source relevance.
+         */
+        public ThreatSourceRelevance threatSourceRelevance() {
+            return threatEventRelevance;
+        }
+    }
 
     public record Outputs(
             NistLikelihoodBand overallLikelihood,

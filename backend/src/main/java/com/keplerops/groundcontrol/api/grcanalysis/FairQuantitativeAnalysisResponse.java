@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * API DTO for FAIR v3.0 quantitative risk analysis per GC-T011. Decouples the
+ * API DTO for Open FAIR quantitative risk analysis per GC-T011. Decouples the
  * public JSON contract from the domain service record so future domain refactors
  * do not silently change the wire shape (preflight + existing api/grcanalysis
  * pattern).
@@ -85,8 +85,6 @@ public record FairQuantitativeAnalysisResponse(
             Map<String, Object> primaryLossMagnitude,
             Map<String, Object> secondaryLossEventFrequency,
             Map<String, Object> secondaryLossMagnitude,
-            Map<String, Object> fairCam,
-            Map<String, Object> fairMam,
             Map<String, Object> uncertaintyMetadata) {
 
         public static Inputs from(FairQuantitativeAnalysisResult.Inputs inputs) {
@@ -101,8 +99,6 @@ public record FairQuantitativeAnalysisResponse(
                     inputs.primaryLossMagnitude(),
                     inputs.secondaryLossEventFrequency(),
                     inputs.secondaryLossMagnitude(),
-                    inputs.fairCam(),
-                    inputs.fairMam(),
                     inputs.uncertaintyMetadata());
         }
     }

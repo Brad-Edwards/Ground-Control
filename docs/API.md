@@ -298,7 +298,7 @@ consumption: `analysisKind`, `project`, `asOf`, `derivationMethod`,
 `inputs`/`outputs`/`limitations` sections, per
 `architecture/notes/mcp-grc-analysis-tools-preflight.md`. No generic
 `risk_score`; NIST SP 800-30 Rev. 1 ships under GC-T014 / #721 as the
-`nist-sp-800-30` endpoint and FAIR v3.0 quantitative analysis ships under
+`nist-sp-800-30` endpoint and Open FAIR quantitative analysis ships under
 GC-T011 / #723 as the `fair-quantitative` endpoint.
 
 | Method | Path | Body | Status | Purpose |
@@ -306,8 +306,8 @@ GC-T011 / #723 as the `fair-quantitative` endpoint.
 | GET | `/analysis/grc/evidence-freshness` | - | 200 | Per-evidence / per-observation / per-control-test freshness state given an `asOf` and `freshnessWindowDays`. |
 | GET | `/analysis/grc/observation-projection?mode=ASSET_EXPOSURE\|CONTROL_STATE` | - | 200 | Current-state projection from observations; ASSET_EXPOSURE flags assets with active observations; CONTROL_STATE joins through `ControlEffectivenessAssessment`. |
 | GET | `/analysis/grc/vendor-risk` | - | 200 | Aggregation over `OperationalAsset` of `AssetType.THIRD_PARTY` (findings, observations, evidence freshness, mapped controls). |
-| GET | `/analysis/grc/nist-sp-800-30` | - | 200 | NIST SP 800-30 Rev. 1 methodology-attributed view over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `NIST_SP800_30_R1`. Decodes inputs into threat source, threat event (`ADVERSARIAL` / `NON_ADVERSARIAL`), vulnerabilities, predisposing conditions, threat-source relevance, multi-dimensional likelihood, impact level, and assessment timeframe; computes overall likelihood (analyst-supplied or derived per Table G-5) and risk level (per Table I-2) as ordinal bands with explicit `scale`/`units` and a matrix cell label. |
-| GET | `/analysis/grc/fair-quantitative` | - | 200 | FAIR v3.0 quantitative risk analysis over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `FAIR`. Derives Loss Event Frequency (LEF = TEF × Vulnerability), Loss Magnitude (LM = PLM + SLEF × SLM), and Annualized Loss Expectancy (ALE = LEF × LM) via three-point estimation with optional Monte Carlo percentiles. Returns a methodology-attributed envelope with `scale: "continuous"`, `units: "monetary"`, and per-item limitations for missing sub-factors or absent percentiles. |
+| GET | `/analysis/grc/nist-sp-800-30` | - | 200 | NIST SP 800-30 Rev. 1 methodology-attributed view over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `NIST_SP800_30_R1`. Decodes inputs into threat source, threat event (`ADVERSARIAL` / `NON_ADVERSARIAL`), vulnerabilities, predisposing conditions, threat-event relevance, multi-dimensional likelihood, impact level, and assessment timeframe; computes overall likelihood (analyst-supplied or derived per Table G-5) and risk level (per Table I-2) as ordinal bands with explicit `scale`/`units` and a matrix cell label. |
+| GET | `/analysis/grc/fair-quantitative` | - | 200 | Open FAIR quantitative risk analysis over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `FAIR`, aligned to O-RT 3.0.1 and O-RA 2.0.1. Derives Threat Event Frequency when needed (TEF = CF × PoA), Loss Event Frequency (LEF = TEF × Vulnerability), expected Loss Magnitude (LM = PLM + SLEF × SLM), and Annualized Loss Expectancy (ALE = LEF × LM) via three-point estimates with optional persisted Monte Carlo percentiles. Returns a methodology-attributed envelope with `scale: "continuous"`, `units: "monetary"`, and per-item limitations for missing factors or absent percentiles. |
 | GET | `/analysis/grc/compliance-monitoring` | - | 200 | Continuous compliance monitoring (GC-I004): composes evidence expiration (`staleSet`), control modifications within the lookback window, and `reassessmentRequiredAt` posture signals (`impactSet`) using ADR-058 vocabulary. |
 
 `GET /analysis/grc/evidence-freshness` accepts:
@@ -359,9 +359,9 @@ top-level `limitations` array. Each assessment item carries
 (`NIST_SP800_30_R1`) / `family` / `version` / `assessmentAt` /
 `timeHorizon` / `analystIdentity` / `approvalState`, structured `inputs`
 (`threatSource`, `threatEvent`, `threatEventKind`, `vulnerabilities`,
-`predisposingConditions`, `threatSourceRelevance`, `likelihoodInitiation`,
-`likelihoodAdverseImpact`, `likelihoodOverall`, `impactLevel`,
-`assessmentTimeframe`), structured `outputs` (`overallLikelihood`,
+`predisposingConditions`, `threatEventRelevance`, legacy alias
+`threatSourceRelevance`, `likelihoodInitiation`, `likelihoodAdverseImpact`,
+`likelihoodOverall`, `impactLevel`, `assessmentTimeframe`), structured `outputs` (`overallLikelihood`,
 `impactLevel`, `riskLevel`, `matrixCell` (for example `L3-I4`), `derivation`),
 `evidenceRefs`, and per-row `limitations`. Adversarial-only fields
 (`threat_source_characteristics.capability` / `intent` / `targeting`) are
@@ -380,20 +380,22 @@ method label and conversion rule.
 | `riskScenarioId` | UUID | - | Narrow to assessments under one `RiskScenario` |
 
 Response shape for `GET /analysis/grc/fair-quantitative`: top-level `analysisKind: "fair_quantitative"`, `project`,
-`asOf`, `derivationMethod` (`"fair-v3.0-three-point-v1"`), `scale` (`"continuous"`), `units` (`"monetary"`),
+`asOf`, `derivationMethod` (`"open-fair-o-rt3.0.1-o-ra2.0.1-three-point-v1"`), `scale` (`"continuous"`), `units` (`"monetary"`),
 `currency` (from `primary_loss_magnitude.currency`, default `"USD"`), an `assessments` array, a
 `counts` summary (`total`, `byRiskLevel`, `withLimitations`), and a top-level `limitations` array.
 Each assessment item carries standard identity fields plus structured `inputs` (all FAIR factor maps as
 opaque pass-through: `threatEventFrequency`, `contactFrequency`, `probabilityOfAction`, `vulnerability`,
 `threatCapability`, `resistanceStrength`, `lossEventFrequency`, `primaryLossMagnitude`,
-`secondaryLossEventFrequency`, `secondaryLossMagnitude`, `fairCam`, `fairMam`, `uncertaintyMetadata`)
+`secondaryLossEventFrequency`, `secondaryLossMagnitude`, `uncertaintyMetadata`)
 and structured `outputs` (`lossEventFrequency`, `lossMagnitude`, `annualizedLossExpectancy` as three-point
 records with `low`/`likely`/`high`, plus `currency`, `percentiles` (from persisted Monte Carlo outputs),
 `riskLevel` (pass-through from `computedOutputs.risk_level`), and `derivation`). Derivation precedence:
 persisted `computedOutputs` wins over analyst-supplied `loss_event_frequency` input, which wins over
-derived `TEF × Vulnerability`. When ALE is not persisted, a `limitations` entry notes absent Monte Carlo
-percentiles. Sub-factor limitations are emitted when TEF is present without `contact_frequency`/`probability_of_action`
-or when vulnerability is present without `threat_capability`/`resistance_strength`.
+derived `TEF × Vulnerability`; TEF itself may be supplied directly or derived from `contact_frequency ×
+probability_of_action`. When ALE is not persisted, a `limitations` entry notes absent Monte Carlo
+percentiles. Direct TEF and direct Vulnerability estimates are valid higher-abstraction FAIR estimates;
+limitations are emitted for partial lower-level factor pairs or when TCap/RS are present without a
+distribution calculation for `P(TCap > RS)`.
 
 Every response carries a `limitations` array. For the vendor-risk endpoint
 that array always includes a note that vendors are modeled as

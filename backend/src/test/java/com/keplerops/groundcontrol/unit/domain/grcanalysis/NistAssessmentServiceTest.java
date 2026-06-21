@@ -70,7 +70,8 @@ class NistAssessmentServiceTest {
                 project, "NIST_SP800_30_R1", "NIST SP 800-30 Rev. 1", "1", MethodologyFamily.NIST_SP800_30_R1);
         setField(nistProfile, "id", UUID.randomUUID());
 
-        fairProfile = new MethodologyProfile(project, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR);
+        fairProfile = new MethodologyProfile(
+                project, "FAIR_V3_0", "Open FAIR", "O-RT 3.0.1 / O-RA 2.0.1", MethodologyFamily.FAIR);
         setField(fairProfile, "id", UUID.randomUUID());
     }
 
@@ -90,7 +91,7 @@ class NistAssessmentServiceTest {
         m.put("threat_event", Map.of("id", "TE-1", "description", "Phishing", "kind", "ADVERSARIAL"));
         m.put("threat_event_kind", "ADVERSARIAL");
         m.put("threat_source_characteristics", Map.of("capability", "HIGH", "intent", "HIGH", "targeting", "MODERATE"));
-        m.put("threat_source_relevance", "EXPECTED");
+        m.put("threat_event_relevance", "EXPECTED");
         m.put("vulnerabilities", List.of(Map.of("id", "V-1", "description", "Weak MFA", "severity", "MODERATE")));
         m.put(
                 "predisposing_conditions",
@@ -147,17 +148,16 @@ class NistAssessmentServiceTest {
         assertThat(item.family()).isEqualTo("NIST_SP800_30_R1");
         assertThat(item.version()).isEqualTo("1");
         assertThat(item.inputs().threatEventKind()).isEqualTo(ThreatEventKind.ADVERSARIAL);
-        assertThat(item.inputs().threatSourceRelevance()).isEqualTo(ThreatSourceRelevance.EXPECTED);
+        assertThat(item.inputs().threatEventRelevance()).isEqualTo(ThreatSourceRelevance.EXPECTED);
         assertThat(item.inputs().likelihoodInitiation()).isEqualTo(NistLikelihoodBand.HIGH);
         assertThat(item.inputs().likelihoodAdverseImpact()).isEqualTo(NistLikelihoodBand.MODERATE);
         assertThat(item.inputs().impactLevel()).isEqualTo(NistImpactBand.HIGH);
         assertThat(item.inputs().vulnerabilities()).hasSize(1);
         assertThat(item.inputs().predisposingConditions()).hasSize(1);
-        // NIST SP 800-30 Rev. 1 Table I-2:
-        //   overall = min(initiation=HIGH, adverseImpact=MODERATE) = MODERATE (ordinal 2)
-        //   impact  = HIGH (ordinal 3)
-        //   Table I-2 Moderate likelihood × High impact → Moderate risk
-        //   matrix cell label uses 1-indexed ordinals → "L3-I4"
+        // NIST SP 800-30 Rev. 1 Tables G-5 and I-2:
+        //   G-5: HIGH initiation × MODERATE adverse-impact likelihood → MODERATE overall likelihood
+        //   I-2: MODERATE overall likelihood × HIGH impact → MODERATE risk
+        //   matrix cell label uses 1-indexed ordinals -> "L3-I4"
         assertThat(item.outputs().overallLikelihood()).isEqualTo(NistLikelihoodBand.MODERATE);
         assertThat(item.outputs().impactLevel()).isEqualTo(NistImpactBand.HIGH);
         assertThat(item.outputs().matrixCell()).isEqualTo("L3-I4");
@@ -176,9 +176,9 @@ class NistAssessmentServiceTest {
         NistAssessmentResult result = service.analyze(projectId, null, null, null);
 
         var item = result.assessments().get(0);
-        // NIST SP 800-30 Rev. 1 Table G-5: overall = min(initiation, adverse_impact)
-        assertThat(item.inputs().likelihoodOverall()).isEqualTo(NistLikelihoodBand.LOW);
-        assertThat(item.outputs().overallLikelihood()).isEqualTo(NistLikelihoodBand.LOW);
+        // NIST SP 800-30 Rev. 1 Table G-5: HIGH initiation x LOW adverse-impact likelihood -> MODERATE.
+        assertThat(item.inputs().likelihoodOverall()).isEqualTo(NistLikelihoodBand.MODERATE);
+        assertThat(item.outputs().overallLikelihood()).isEqualTo(NistLikelihoodBand.MODERATE);
         assertThat(item.outputs().derivation()).contains("Table G-5");
     }
 
@@ -206,7 +206,7 @@ class NistAssessmentServiceTest {
                 "threat_event",
                 Map.of("id", "TE-2", "description", "Datacenter power loss", "kind", "NON_ADVERSARIAL"));
         inputs.put("threat_event_kind", "NON_ADVERSARIAL");
-        inputs.put("threat_source_relevance", "ANTICIPATED");
+        inputs.put("threat_event_relevance", "ANTICIPATED");
         inputs.put("likelihood_initiation", "MODERATE");
         inputs.put("likelihood_adverse_impact", "HIGH");
         inputs.put("impact_level", "HIGH");
@@ -232,7 +232,7 @@ class NistAssessmentServiceTest {
         inputs.put("threat_event_kind", "NON_ADVERSARIAL");
         // Adversarial-only fields shouldn't apply but are present
         inputs.put("threat_source_characteristics", Map.of("capability", "HIGH"));
-        inputs.put("threat_source_relevance", "POSSIBLE");
+        inputs.put("threat_event_relevance", "POSSIBLE");
         inputs.put("likelihood_initiation", "LOW");
         inputs.put("likelihood_adverse_impact", "LOW");
         inputs.put("impact_level", "LOW");
@@ -298,7 +298,7 @@ class NistAssessmentServiceTest {
     void analyze_invalidEnumValue_emitsLimitationNotCrash() {
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("threat_event_kind", "BOGUS");
-        inputs.put("threat_source_relevance", "NOT_A_VALUE");
+        inputs.put("threat_event_relevance", "NOT_A_VALUE");
         inputs.put("likelihood_initiation", "MEH");
         inputs.put("likelihood_adverse_impact", "LOW");
         inputs.put("impact_level", "HIGH");
@@ -310,6 +310,67 @@ class NistAssessmentServiceTest {
 
         var item = result.assessments().get(0);
         assertThat(item.limitations()).isNotEmpty();
+    }
+
+    @Test
+    void analyze_legacyThreatSourceRelevanceKey_stillAccepted() {
+        var inputs = adversarialInputs(NistLikelihoodBand.HIGH, NistLikelihoodBand.MODERATE, NistImpactBand.HIGH);
+        inputs.remove("threat_event_relevance");
+        inputs.put("threat_source_relevance", "EXPECTED");
+        var nistResult = makeAssessment(nistProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(nistResult));
+
+        NistAssessmentResult result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        assertThat(item.inputs().threatEventRelevance()).isEqualTo(ThreatSourceRelevance.EXPECTED);
+        assertThat(item.inputs().threatSourceRelevance()).isEqualTo(ThreatSourceRelevance.EXPECTED);
+    }
+
+    // NIST SP 800-30 Rev. 1 Table G-5 exhaustive coverage. Every cell of the
+    // overall-likelihood matrix must be exercised so a simplified min/max rule,
+    // transposed row/column, or wrong cell value fails against the published table.
+    @ParameterizedTest(name = "initiation={0} adverseImpact={1} -> overall={2}")
+    @CsvSource({
+        "VERY_LOW,VERY_LOW,VERY_LOW",
+        "VERY_LOW,LOW,VERY_LOW",
+        "VERY_LOW,MODERATE,LOW",
+        "VERY_LOW,HIGH,LOW",
+        "VERY_LOW,VERY_HIGH,LOW",
+        "LOW,VERY_LOW,VERY_LOW",
+        "LOW,LOW,LOW",
+        "LOW,MODERATE,LOW",
+        "LOW,HIGH,MODERATE",
+        "LOW,VERY_HIGH,MODERATE",
+        "MODERATE,VERY_LOW,LOW",
+        "MODERATE,LOW,LOW",
+        "MODERATE,MODERATE,MODERATE",
+        "MODERATE,HIGH,MODERATE",
+        "MODERATE,VERY_HIGH,HIGH",
+        "HIGH,VERY_LOW,LOW",
+        "HIGH,LOW,MODERATE",
+        "HIGH,MODERATE,MODERATE",
+        "HIGH,HIGH,HIGH",
+        "HIGH,VERY_HIGH,VERY_HIGH",
+        "VERY_HIGH,VERY_LOW,LOW",
+        "VERY_HIGH,LOW,MODERATE",
+        "VERY_HIGH,MODERATE,HIGH",
+        "VERY_HIGH,HIGH,VERY_HIGH",
+        "VERY_HIGH,VERY_HIGH,VERY_HIGH",
+    })
+    void analyze_table_G_5_matrixCoverage(
+            NistLikelihoodBand initiation, NistLikelihoodBand adverseImpact, NistLikelihoodBand expectedOverall) {
+        var inputs = adversarialInputs(initiation, adverseImpact, NistImpactBand.MODERATE);
+        var nistResult = makeAssessment(nistProfile, inputs);
+        when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
+                .thenReturn(List.of(nistResult));
+
+        NistAssessmentResult result = service.analyze(projectId, null, null, null);
+
+        var item = result.assessments().get(0);
+        assertThat(item.outputs().overallLikelihood()).isEqualTo(expectedOverall);
+        assertThat(item.outputs().derivation()).contains("Table G-5");
     }
 
     // NIST SP 800-30 Rev. 1 Table I-2 exhaustive coverage. Every cell of the
@@ -335,22 +396,22 @@ class NistAssessmentServiceTest {
         "MODERATE,MODERATE,MODERATE,L3-I3",
         "MODERATE,HIGH,MODERATE,L3-I4",
         "MODERATE,VERY_HIGH,HIGH,L3-I5",
-        "HIGH,VERY_LOW,LOW,L4-I1",
-        "HIGH,LOW,MODERATE,L4-I2",
+        "HIGH,VERY_LOW,VERY_LOW,L4-I1",
+        "HIGH,LOW,LOW,L4-I2",
         "HIGH,MODERATE,MODERATE,L4-I3",
         "HIGH,HIGH,HIGH,L4-I4",
         "HIGH,VERY_HIGH,VERY_HIGH,L4-I5",
-        "VERY_HIGH,VERY_LOW,LOW,L5-I1",
-        "VERY_HIGH,LOW,MODERATE,L5-I2",
-        "VERY_HIGH,MODERATE,HIGH,L5-I3",
-        "VERY_HIGH,HIGH,VERY_HIGH,L5-I4",
+        "VERY_HIGH,VERY_LOW,VERY_LOW,L5-I1",
+        "VERY_HIGH,LOW,LOW,L5-I2",
+        "VERY_HIGH,MODERATE,MODERATE,L5-I3",
+        "VERY_HIGH,HIGH,HIGH,L5-I4",
         "VERY_HIGH,VERY_HIGH,VERY_HIGH,L5-I5",
     })
     void analyze_table_I_2_matrixCoverage(
             NistLikelihoodBand overall, NistImpactBand impact, String expectedRisk, String expectedCell) {
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("threat_event_kind", "ADVERSARIAL");
-        inputs.put("threat_source_relevance", "EXPECTED");
+        inputs.put("threat_event_relevance", "EXPECTED");
         inputs.put(
                 "predisposing_conditions",
                 List.of(Map.of("id", "PC-1", "description", "X", "pervasiveness", "MODERATE")));

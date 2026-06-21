@@ -259,6 +259,7 @@ describe("analyzeNistAssessment (GC-T014)", () => {
     // opaque-value-keys guard in lib.js covers the keys the NIST assessment uses.
     const payload = {
       input_factors: {
+        threat_event_relevance: "EXPECTED",
         threat_source_relevance: "EXPECTED",
         likelihood_initiation: "HIGH",
         likelihood_adverse_impact: "MODERATE",
@@ -280,6 +281,7 @@ describe("analyzeNistAssessment (GC-T014)", () => {
       "likelihood_adverse_impact",
       "likelihood_initiation",
       "likelihood_overall",
+      "threat_event_relevance",
       "threat_source_relevance",
     ]);
     assert.deepEqual(
@@ -294,6 +296,7 @@ describe("analyzeNistAssessment (GC-T014)", () => {
       "likelihood_adverse_impact",
       "likelihood_initiation",
       "likelihood_overall",
+      "threat_event_relevance",
       "threat_source_relevance",
     ]);
   });

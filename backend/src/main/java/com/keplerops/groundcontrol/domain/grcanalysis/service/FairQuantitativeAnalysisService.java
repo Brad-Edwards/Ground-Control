@@ -20,11 +20,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * FAIR v3.0 quantitative risk analysis view per GC-T011. Reads existing
+ * Open FAIR quantitative risk analysis view per GC-T011, aligned to O-RT
+ * 3.0.1 / O-RA 2.0.1 factor vocabulary. Reads existing
  * {@link RiskAssessmentResult} rows whose {@link MethodologyProfile} family is
  * {@link MethodologyFamily#FAIR}, decodes the methodology-defined input map,
  * derives Loss Event Frequency (LEF), Loss Magnitude (LM), and Annualized Loss
- * Expectancy (ALE) via three-point estimation, and returns a
+ * Expectancy (ALE) via bounded three-point estimates, and returns a
  * methodology-attributed envelope.
  *
  * <p>Derivation precedence (persisted wins):
@@ -41,11 +42,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class FairQuantitativeAnalysisService {
 
     static final String ANALYSIS_KIND = "fair_quantitative";
-    static final String DERIVATION_METHOD = "fair-v3.0-three-point-v1";
+    static final String DERIVATION_METHOD = "open-fair-o-rt3.0.1-o-ra2.0.1-three-point-v1";
     static final String SCALE = "continuous";
     static final String UNITS = "monetary";
 
-    // Input factor map keys (FAIR v3.0 vocabulary)
+    // Input factor map keys (Open FAIR / O-RT vocabulary)
     private static final String KEY_TEF = "threat_event_frequency";
     private static final String KEY_CONTACT_FREQUENCY = "contact_frequency";
     private static final String KEY_PROB_OF_ACTION = "probability_of_action";
@@ -56,8 +57,6 @@ public class FairQuantitativeAnalysisService {
     private static final String KEY_PLM = "primary_loss_magnitude";
     private static final String KEY_SLEF = "secondary_loss_event_frequency";
     private static final String KEY_SLM = "secondary_loss_magnitude";
-    private static final String KEY_FAIR_CAM = "fair_cam";
-    private static final String KEY_FAIR_MAM = "fair_mam";
     private static final String KEY_CURRENCY = "currency";
     // GC-T016: O-RT forms-of-loss materiality breakdown and stakeholder secondary effects.
     private static final String KEY_FORMS_OF_LOSS = "forms_of_loss";
@@ -74,6 +73,9 @@ public class FairQuantitativeAnalysisService {
 
     // Not-derivable limitation messages
     private static final String LIMIT_LEF_MISSING_FACTOR = "not-derivable: required factor missing for LEF derivation";
+    private static final double PROBABILITY_MAX = 1.0;
+    private static final double PERCENTILE_MAX = 100.0;
+    private static final String PROBABILITY_BOUNDS_LABEL = "[0,1]";
 
     // Computed output map keys
     private static final String OUT_LEF = "loss_event_frequency";
@@ -195,8 +197,6 @@ public class FairQuantitativeAnalysisService {
                 asMap(inputs.get(KEY_PLM)),
                 asMap(inputs.get(KEY_SLEF)),
                 asMap(inputs.get(KEY_SLM)),
-                asMap(inputs.get(KEY_FAIR_CAM)),
-                asMap(inputs.get(KEY_FAIR_MAM)),
                 asMap(inputs.get(KEY_FORMS_OF_LOSS)),
                 asList(inputs.get(KEY_SECONDARY_BY_STAKEHOLDER)),
                 row.getUncertaintyMetadata());
@@ -205,7 +205,7 @@ public class FairQuantitativeAnalysisService {
 
         ValidationFlags flags = runInvariantValidation(f, currency, limitations);
 
-        addSubFactorCompletenessWarnings(f, limitations);
+        addFactorLineageLimitations(f, limitations);
 
         FairLefResult lefComputed = deriveLossEventFrequency(persistedOutputs, f, flags, limitations);
 
@@ -228,8 +228,6 @@ public class FairQuantitativeAnalysisService {
                 f.plm(),
                 f.slef(),
                 f.slm(),
-                f.fairCam(),
-                f.fairMam(),
                 f.uncertainty());
         FairQuantitativeAnalysisResult.Materiality materiality = deriveMateriality(f, currency, limitations);
 
@@ -258,28 +256,34 @@ public class FairQuantitativeAnalysisService {
      * Runs the single FAIR invariant validation pass — applied uniformly to every factor
      * before any LEF/LM/ALE arithmetic.
      *
-     * <p>Invariants enforced (FAIR v3.0 + FAIR-MAM schema semantics):
+     * <p>Invariants enforced (Open FAIR schema semantics):
      * three-point ordering (low &lt;= likely &lt;= high), non-negativity, probability
-     * bounds [0,1] for applicable factors, and currency consistency between PLM and SLM.
-     * Sub-factors (tcap, rs, cf, poa) are validated for invariants but are not direct
-     * derivation inputs; their validity flags are not returned.
+     * bounds [0,1] for probability factors, percentile bounds [0,100] for
+     * Threat Capability / Resistance Strength, and currency consistency between PLM and SLM.
      */
     private static ValidationFlags runInvariantValidation(ParsedFactors f, String currency, List<String> limitations) {
         // Probability-bounded [0,1] factors
-        boolean vulnValid = validateThreePointFactor(KEY_VULNERABILITY, f.vuln(), true, limitations);
-        validateThreePointFactor(KEY_THREAT_CAPABILITY, f.tcap(), true, limitations);
-        validateThreePointFactor(KEY_RESISTANCE_STRENGTH, f.rs(), true, limitations);
-        boolean slefValid = validateThreePointFactor(KEY_SLEF, f.slef(), true, limitations);
+        boolean vulnValid = validateThreePointFactor(
+                KEY_VULNERABILITY, f.vuln(), PROBABILITY_MAX, PROBABILITY_BOUNDS_LABEL, limitations);
+        boolean poaValid = validateThreePointFactor(
+                KEY_PROB_OF_ACTION, f.poa(), PROBABILITY_MAX, PROBABILITY_BOUNDS_LABEL, limitations);
+        boolean slefValid =
+                validateThreePointFactor(KEY_SLEF, f.slef(), PROBABILITY_MAX, PROBABILITY_BOUNDS_LABEL, limitations);
 
-        // Non-negative frequency factors (no upper bound); cf and poa are sub-factors only.
-        boolean tefValid = validateThreePointFactor(KEY_TEF, f.tef(), false, limitations);
-        validateThreePointFactor(KEY_CONTACT_FREQUENCY, f.cf(), false, limitations);
-        validateThreePointFactor(KEY_PROB_OF_ACTION, f.poa(), false, limitations);
-        boolean analystLefValid = validateThreePointFactor(KEY_LEF, f.analystLef(), false, limitations);
+        // Percentile-scale force factors. They are not probabilities.
+        boolean tcapValid =
+                validateThreePointFactor(KEY_THREAT_CAPABILITY, f.tcap(), PERCENTILE_MAX, "[0,100]", limitations);
+        boolean rsValid =
+                validateThreePointFactor(KEY_RESISTANCE_STRENGTH, f.rs(), PERCENTILE_MAX, "[0,100]", limitations);
+
+        // Non-negative frequency factors (no upper bound); cf is a sub-factor only.
+        boolean tefValid = validateThreePointFactor(KEY_TEF, f.tef(), null, null, limitations);
+        boolean cfValid = validateThreePointFactor(KEY_CONTACT_FREQUENCY, f.cf(), null, null, limitations);
+        boolean analystLefValid = validateThreePointFactor(KEY_LEF, f.analystLef(), null, null, limitations);
 
         // Non-negative monetary factors (no upper bound)
-        boolean plmValid = validateThreePointFactor(KEY_PLM, f.plm(), false, limitations);
-        boolean slmValid = validateThreePointFactor(KEY_SLM, f.slm(), false, limitations);
+        boolean plmValid = validateThreePointFactor(KEY_PLM, f.plm(), null, null, limitations);
+        boolean slmValid = validateThreePointFactor(KEY_SLM, f.slm(), null, null, limitations);
 
         // Currency consistency for SLM: must match PLM currency before combining
         boolean currenciesMatch = true;
@@ -294,16 +298,31 @@ public class FairQuantitativeAnalysisService {
         }
 
         return new ValidationFlags(
-                tefValid, vulnValid, analystLefValid, plmValid, slmValid, slefValid, currenciesMatch);
+                tefValid,
+                cfValid,
+                poaValid,
+                vulnValid,
+                tcapValid,
+                rsValid,
+                analystLefValid,
+                plmValid,
+                slmValid,
+                slefValid,
+                currenciesMatch);
     }
 
-    private static void addSubFactorCompletenessWarnings(ParsedFactors f, List<String> limitations) {
-        if (f.tef() != null && f.cf() == null && f.poa() == null) {
-            limitations.add(
-                    "threat_event_frequency provided without contact_frequency and probability_of_action sub-factors");
+    private static void addFactorLineageLimitations(ParsedFactors f, List<String> limitations) {
+        if (f.tef() == null && ((f.cf() == null) != (f.poa() == null))) {
+            limitations.add("threat_event_frequency not derivable: contact_frequency and probability_of_action "
+                    + "must both be present when threat_event_frequency is not supplied");
         }
-        if (f.vuln() != null && f.tcap() == null && f.rs() == null) {
-            limitations.add("vulnerability provided without threat_capability and resistance_strength sub-factors");
+        if ((f.tcap() == null) != (f.rs() == null)) {
+            limitations.add("vulnerability not derivable: threat_capability and resistance_strength must both be "
+                    + "present to evaluate P(TCap > RS)");
+        }
+        if (f.vuln() == null && f.tcap() != null && f.rs() != null) {
+            limitations.add("vulnerability not derived from threat_capability/resistance_strength: distribution "
+                    + "functions or Monte Carlo samples are required to evaluate P(TCap > RS)");
         }
     }
 
@@ -322,8 +341,6 @@ public class FairQuantitativeAnalysisService {
             Map<String, Object> plm,
             Map<String, Object> slef,
             Map<String, Object> slm,
-            Map<String, Object> fairCam,
-            Map<String, Object> fairMam,
             Map<String, Object> formsOfLoss,
             List<Object> secondaryByStakeholder,
             Map<String, Object> uncertainty) {}
@@ -334,7 +351,11 @@ public class FairQuantitativeAnalysisService {
      */
     private record ValidationFlags(
             boolean tefValid,
+            boolean cfValid,
+            boolean poaValid,
             boolean vulnValid,
+            boolean tcapValid,
+            boolean rsValid,
             boolean analystLefValid,
             boolean plmValid,
             boolean slmValid,
@@ -346,6 +367,11 @@ public class FairQuantitativeAnalysisService {
      * not derivable) and the derivation label string.
      */
     private record FairLefResult(FairQuantitativeAnalysisResult.ThreePoint result, String derivation) {}
+
+    /**
+     * Result carrier for Threat Event Frequency derivation.
+     */
+    private record FairTefResult(FairQuantitativeAnalysisResult.ThreePoint result, String derivation) {}
 
     /**
      * Derives Loss Event Frequency using precedence order: persisted outputs, then
@@ -367,8 +393,10 @@ public class FairQuantitativeAnalysisService {
             }
         }
 
-        // 3. Derive from TEF × Vulnerability (only if both factors are invariant-valid)
-        return deriveLefFromTefVuln(f.tef(), f.vuln(), flags.tefValid(), flags.vulnValid(), limitations);
+        // 3. Derive from TEF × Vulnerability. TEF may itself be supplied directly or
+        // derived from Contact Frequency × Probability of Action.
+        FairTefResult tef = resolveThreatEventFrequency(f, flags, limitations);
+        return deriveLefFromTefVuln(tef.result(), tef.derivation(), f.vuln(), flags.vulnValid(), limitations);
     }
 
     private static FairLefResult tryPersistedLef(Map<String, Object> persistedOutputs) {
@@ -380,25 +408,58 @@ public class FairQuantitativeAnalysisService {
         return tp != null ? new FairLefResult(tp, "persisted") : null;
     }
 
+    private static FairTefResult resolveThreatEventFrequency(
+            ParsedFactors f, ValidationFlags flags, List<String> limitations) {
+        if (f.tef() != null) {
+            FairQuantitativeAnalysisResult.ThreePoint supplied = parseThreePoint(f.tef());
+            if (supplied != null && flags.tefValid()) {
+                return new FairTefResult(supplied, "supplied TEF");
+            }
+            limitations.add("not-derivable: threat_event_frequency suppressed due to invariant violation");
+            return new FairTefResult(null, null);
+        }
+        if (f.cf() == null && f.poa() == null) {
+            return new FairTefResult(null, null);
+        }
+        if (f.cf() != null && f.poa() != null && flags.cfValid() && flags.poaValid()) {
+            FairQuantitativeAnalysisResult.ThreePoint cf = parseThreePoint(f.cf());
+            FairQuantitativeAnalysisResult.ThreePoint poa = parseThreePoint(f.poa());
+            if (cf != null && poa != null) {
+                var derived = new FairQuantitativeAnalysisResult.ThreePoint(
+                        cf.low() * poa.low(), cf.likely() * poa.likely(), cf.high() * poa.high());
+                return new FairTefResult(derived, "derived: TEF = Contact Frequency × Probability of Action");
+            }
+            limitations.add("not-derivable: required factor missing for TEF derivation");
+            return new FairTefResult(null, null);
+        }
+        if (!flags.cfValid() || !flags.poaValid()) {
+            limitations.add("not-derivable: threat_event_frequency suppressed due to invariant violation in "
+                    + "contact_frequency/probability_of_action");
+        }
+        return new FairTefResult(null, null);
+    }
+
     private static FairLefResult deriveLefFromTefVuln(
-            Map<String, Object> tef,
+            FairQuantitativeAnalysisResult.ThreePoint tef,
+            String tefDerivation,
             Map<String, Object> vuln,
-            boolean tefValid,
             boolean vulnValid,
             List<String> limitations) {
-        if (tef != null && vuln != null && tefValid && vulnValid) {
-            Double tLow = asDouble(tef.get(KEY_LOW));
-            Double tLikely = asDouble(tef.get(KEY_LIKELY));
-            Double tHigh = asDouble(tef.get(KEY_HIGH));
+        if (tef != null && vuln != null && vulnValid) {
             Double vLow = asDouble(vuln.get(KEY_LOW));
             Double vLikely = asDouble(vuln.get(KEY_LIKELY));
             Double vHigh = asDouble(vuln.get(KEY_HIGH));
-            if (tLow != null && tLikely != null && tHigh != null && vLow != null && vLikely != null && vHigh != null) {
-                var tp = new FairQuantitativeAnalysisResult.ThreePoint(tLow * vLow, tLikely * vLikely, tHigh * vHigh);
-                return new FairLefResult(tp, "derived: LEF = TEF × Vulnerability");
+            if (vLow != null && vLikely != null && vHigh != null) {
+                var tp = new FairQuantitativeAnalysisResult.ThreePoint(
+                        tef.low() * vLow, tef.likely() * vLikely, tef.high() * vHigh);
+                String derivation = "derived: LEF = TEF × Vulnerability";
+                if (tefDerivation != null && tefDerivation.startsWith("derived:")) {
+                    derivation = "derived: LEF = (Contact Frequency × Probability of Action) × Vulnerability";
+                }
+                return new FairLefResult(tp, derivation);
             }
             limitations.add(LIMIT_LEF_MISSING_FACTOR);
-        } else if (!tefValid || !vulnValid) {
+        } else if (!vulnValid) {
             // Invariant violation already recorded; suppress LEF derivation
             limitations.add("not-derivable: LEF suppressed due to invariant violation in input factors");
         } else {
@@ -559,20 +620,25 @@ public class FairQuantitativeAnalysisService {
      * <ol>
      *   <li>Non-negativity: every low/likely/high value must be {@code >= 0}.</li>
      *   <li>Probability bound [0,1]: when {@code isProbabilityBounded} is true,
-     *       every value must be {@code <= 1}. Per the FAIR schema, this applies to
-     *       vulnerability, threat_capability, resistance_strength, and
-     *       secondary_loss_event_frequency.</li>
+     *       every value must be within the provided upper bound. Per the Open FAIR
+     *       schema, this applies to probability factors ([0,1]) and percentile-scale
+     *       Threat Capability / Resistance Strength ([0,100]).</li>
      *   <li>Three-point ordering: {@code low <= likely <= high}.</li>
      * </ol>
      *
      * @param factorName          FAIR vocabulary key (for limitation messages)
      * @param factor              the three-point map ({@code low}, {@code likely}, {@code high})
-     * @param isProbabilityBounded whether this factor is bounded to [0,1]
+     * @param maximum             optional inclusive upper bound
+     * @param boundLabel          human-readable upper-bound label
      * @param limitations         accumulator — violations are appended here
      * @return {@code true} if all present values satisfy the invariants
      */
     private static boolean validateThreePointFactor(
-            String factorName, Map<String, Object> factor, boolean isProbabilityBounded, List<String> limitations) {
+            String factorName,
+            Map<String, Object> factor,
+            Double maximum,
+            String boundLabel,
+            List<String> limitations) {
         if (factor == null) {
             return true; // absent factors are handled by the missing-input path, not here
         }
@@ -587,7 +653,7 @@ public class FairQuantitativeAnalysisService {
         Double[] vals = {low, likely, high};
         for (int i = 0; i < slots.length; i++) {
             if (vals[i] != null) {
-                valid = checkSlotInvariant(factorName, slots[i], vals[i], isProbabilityBounded, limitations) && valid;
+                valid = checkSlotInvariant(factorName, slots[i], vals[i], maximum, boundLabel, limitations) && valid;
             }
         }
 
@@ -602,13 +668,14 @@ public class FairQuantitativeAnalysisService {
     }
 
     private static boolean checkSlotInvariant(
-            String factorName, String slot, double v, boolean isProbabilityBounded, List<String> limitations) {
+            String factorName, String slot, double v, Double maximum, String boundLabel, List<String> limitations) {
         if (v < 0) {
             limitations.add(factorName + " " + slot + " value must be >= 0 (got " + v + ") — assessment non-derivable");
             return false;
         }
-        if (isProbabilityBounded && v > 1.0) {
-            limitations.add(factorName + " " + slot + " out of [0,1] bounds: " + v + " — assessment non-derivable");
+        if (maximum != null && v > maximum) {
+            limitations.add(factorName + " " + slot + " out of " + boundLabel + " bounds: " + v
+                    + " — assessment non-derivable");
             return false;
         }
         return true;
@@ -707,7 +774,7 @@ public class FairQuantitativeAnalysisService {
                 return null;
             }
         }
-        if (!validateThreePointFactor("forms_of_loss." + form.jsonKey(), formMap, false, limitations)) {
+        if (!validateThreePointFactor("forms_of_loss." + form.jsonKey(), formMap, null, null, limitations)) {
             return null;
         }
         FairQuantitativeAnalysisResult.ThreePoint tp = parseThreePoint(formMap);
@@ -774,7 +841,7 @@ public class FairQuantitativeAnalysisService {
                 return null;
             }
         }
-        if (!validateThreePointFactor(label, entry, false, limitations)) {
+        if (!validateThreePointFactor(label, entry, null, null, limitations)) {
             return null;
         }
         FairQuantitativeAnalysisResult.ThreePoint tp = parseThreePoint(entry);

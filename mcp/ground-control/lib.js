@@ -822,8 +822,9 @@ export const OPAQUE_VALUE_KEYS = new Set([
   "schema_body",
   // GC-T014: NIST SP 800-30 Rev. 1 methodology-defined value bags. inputFactors
   // / computedOutputs / uncertaintyMetadata persist NIST profile-defined keys
-  // (threat_source_relevance, likelihood_initiation, likelihood_adverse_impact,
-  // likelihood_overall, impact_level, ...) that must reach the caller verbatim.
+  // (threat_event_relevance, legacy threat_source_relevance,
+  // likelihood_initiation, likelihood_adverse_impact, likelihood_overall,
+  // impact_level, ...) that must reach the caller verbatim.
   // inputSchema / outputSchema carry the methodology JSON Schema bodies whose
   // properties keys are likewise methodology-defined (see preflight note
   // architecture/notes/nist-sp800-30-risk-assessment-preflight.md).
@@ -1254,9 +1255,10 @@ export async function aggregateVendorRisk({
 
 // GC-T014 — NIST SP 800-30 Rev. 1 risk-assessment analysis helper. Returns
 // the methodology-attributed envelope from /api/v1/analysis/grc/nist-sp-800-30
-// verbatim; methodology-defined input/output map keys (threat_source_relevance,
-// likelihood_initiation, likelihood_adverse_impact, etc.) must NOT be
-// camel/snake-rewritten, so the relevant outer keys are guarded by
+// verbatim; methodology-defined input/output map keys (threat_event_relevance,
+// legacy threat_source_relevance, likelihood_initiation,
+// likelihood_adverse_impact, etc.) must NOT be camel/snake-rewritten, so the
+// relevant outer keys are guarded by
 // OPAQUE_VALUE_KEYS above.
 export async function analyzeNistAssessment({
   project,
@@ -1269,7 +1271,7 @@ export async function analyzeNistAssessment({
   });
 }
 
-// GC-T011 — FAIR v3.0 quantitative risk analysis helper. Returns the
+// GC-T011 — Open FAIR quantitative risk analysis helper. Returns the
 // methodology-attributed envelope from /api/v1/analysis/grc/fair-quantitative
 // verbatim; FAIR factor map keys (threat_event_frequency, primary_loss_magnitude,
 // etc.) must NOT be camel/snake-rewritten, so the relevant outer keys are guarded

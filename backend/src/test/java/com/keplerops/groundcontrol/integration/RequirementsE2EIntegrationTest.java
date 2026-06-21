@@ -532,6 +532,7 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "136", // V136: extend FAIR input schema with contact_frequency, probability_of_action,
                         // threat_capability, resistance_strength sub-factors (GC-T011)
                         "137", // V137: add threat_model_id to risk_control_mapping (GC-H006)
-                        "138"); // V138: O-RT forms-of-loss materiality + stakeholder secondary effects (GC-T016)
+                        "138", // V138: align FAIR/NIST profile source semantics
+                        "139"); // V139: O-RT forms-of-loss materiality + stakeholder secondary effects (GC-T016)
     }
 }
