@@ -83,8 +83,9 @@ class FairCamControlAnalyticsServiceTest {
     @Test
     void projectNotFound_throwsNotFoundException() {
         when(projectRepository.findById(PROJECT_ID)).thenReturn(Optional.empty());
+        FairCamControlAnalyticsQuery query = query();
 
-        assertThatThrownBy(() -> service.analyze(PROJECT_ID, query()))
+        assertThatThrownBy(() -> service.analyze(PROJECT_ID, query))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessageContaining("Project not found");
     }
