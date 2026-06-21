@@ -79,27 +79,7 @@ public class GrcAnalysisService {
         return complianceMonitoringAnalysisService.analyze(projectId, asOf, freshnessWindowDays);
     }
 
-    public FairCamControlAnalyticsResult fairCamControlAnalytics(
-            UUID projectId,
-            Instant asOf,
-            int freshnessWindowDays,
-            UUID controlId,
-            UUID scopedImplementationId,
-            UUID riskScenarioId,
-            UUID riskRegisterRecordId,
-            UUID threatModelId,
-            UUID methodologyProfileId,
-            FairCamControlDomain domain) {
-        return fairCamControlAnalyticsService.analyze(
-                projectId,
-                asOf,
-                freshnessWindowDays,
-                controlId,
-                scopedImplementationId,
-                riskScenarioId,
-                riskRegisterRecordId,
-                threatModelId,
-                methodologyProfileId,
-                domain);
+    public FairCamControlAnalyticsResult fairCamControlAnalytics(UUID projectId, FairCamControlAnalyticsQuery query) {
+        return fairCamControlAnalyticsService.analyze(projectId, query);
     }
 }

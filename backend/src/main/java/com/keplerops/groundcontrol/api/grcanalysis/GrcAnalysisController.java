@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.api.grcanalysis;
 
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsQuery;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlDomain;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionMode;
@@ -117,8 +118,7 @@ public class GrcAnalysisController {
             @RequestParam(required = false) FairCamControlDomain domain,
             @RequestParam(required = false, defaultValue = "" + DEFAULT_FRESHNESS_WINDOW_DAYS) @Positive int freshnessWindowDays) {
         UUID projectId = projectService.resolveProjectId(project);
-        return FairCamControlAnalyticsResponse.from(grcAnalysisService.fairCamControlAnalytics(
-                projectId,
+        FairCamControlAnalyticsQuery query = new FairCamControlAnalyticsQuery(
                 asOf,
                 freshnessWindowDays,
                 controlId,
@@ -127,6 +127,7 @@ public class GrcAnalysisController {
                 riskRegisterRecordId,
                 threatModelId,
                 methodologyProfileId,
-                domain));
+                domain);
+        return FairCamControlAnalyticsResponse.from(grcAnalysisService.fairCamControlAnalytics(projectId, query));
     }
 }

@@ -14,12 +14,12 @@ import org.junit.jupiter.api.Test;
 
 class FairCamControlAnalyticsResponseTest {
 
-    @Test
-    void from_mapsAllFieldsCorrectly() {
-        UUID controlId = UUID.randomUUID();
-        UUID endpointId = UUID.randomUUID();
-        Instant asOf = Instant.parse("2026-06-21T00:00:00Z");
+    private static final UUID CONTROL_ID = UUID.randomUUID();
+    private static final UUID ENDPOINT_ID = UUID.randomUUID();
+    private static final Instant AS_OF = Instant.parse("2026-06-21T00:00:00Z");
 
+    /** Builds a fully-populated single-control domain result and maps it to the API response. */
+    private FairCamControlAnalyticsResponse sampleResponse() {
         var domainAttribution = new FairCamControlAnalyticsResult.DomainAttribution(
                 FairCamControlDomain.LOSS_EVENT_CONTROL, "methodology_influence", "RISK_SCENARIO:abc");
         var capability = new FairCamControlAnalyticsResult.Measurement(
@@ -35,8 +35,8 @@ class FairCamControlAnalyticsResponseTest {
                 FairCamEffectDimension.LOSS_EVENT_FREQUENCY, 0.3, "RISK_SCENARIO:abc");
         var item = new FairCamControlAnalyticsResult.ControlAnalyticsItem(
                 "CONTROL",
-                endpointId,
-                controlId,
+                ENDPOINT_ID,
+                CONTROL_ID,
                 null,
                 "CTRL-1",
                 "Test Control",
@@ -52,33 +52,45 @@ class FairCamControlAnalyticsResponseTest {
         var domainResult = new FairCamControlAnalyticsResult(
                 "fair_cam_control_analytics",
                 "ground-control",
-                asOf,
+                AS_OF,
                 "fair-cam-control-analytics-v1",
                 List.of(item),
                 counts,
                 List.of());
 
-        FairCamControlAnalyticsResponse response = FairCamControlAnalyticsResponse.from(domainResult);
+        return FairCamControlAnalyticsResponse.from(domainResult);
+    }
+
+    @Test
+    void from_mapsTopLevelAndItemIdentityFields() {
+        FairCamControlAnalyticsResponse response = sampleResponse();
 
         assertThat(response.analysisKind()).isEqualTo("fair_cam_control_analytics");
         assertThat(response.project()).isEqualTo("ground-control");
-        assertThat(response.asOf()).isEqualTo(asOf);
+        assertThat(response.asOf()).isEqualTo(AS_OF);
         assertThat(response.derivationMethod()).isEqualTo("fair-cam-control-analytics-v1");
         assertThat(response.controls()).hasSize(1);
 
         var respItem = response.controls().get(0);
         assertThat(respItem.endpointType()).isEqualTo("CONTROL");
-        assertThat(respItem.endpointId()).isEqualTo(endpointId);
-        assertThat(respItem.controlId()).isEqualTo(controlId);
+        assertThat(respItem.endpointId()).isEqualTo(ENDPOINT_ID);
+        assertThat(respItem.controlId()).isEqualTo(CONTROL_ID);
         assertThat(respItem.controlUid()).isEqualTo("CTRL-1");
         assertThat(respItem.controlName()).isEqualTo("Test Control");
+        assertThat(respItem.capability().value()).isEqualTo("EFFECTIVE");
+        assertThat(respItem.coverage().value()).isEqualTo(2);
+        assertThat(respItem.operationalPerformance().value()).isEqualTo("PARTIALLY_EFFECTIVE");
+    }
+
+    @Test
+    void from_mapsAttributionsEffectsEvidenceAndCounts() {
+        FairCamControlAnalyticsResponse response = sampleResponse();
+
+        var respItem = response.controls().get(0);
         assertThat(respItem.domainAttributions()).hasSize(1);
         assertThat(respItem.domainAttributions().get(0).domain()).isEqualTo(FairCamControlDomain.LOSS_EVENT_CONTROL);
         assertThat(respItem.domainAttributions().get(0).source()).isEqualTo("methodology_influence");
         assertThat(respItem.domainAttributions().get(0).analysisEndpoint()).isEqualTo("RISK_SCENARIO:abc");
-        assertThat(respItem.capability().value()).isEqualTo("EFFECTIVE");
-        assertThat(respItem.coverage().value()).isEqualTo(2);
-        assertThat(respItem.operationalPerformance().value()).isEqualTo("PARTIALLY_EFFECTIVE");
         assertThat(respItem.effects()).hasSize(1);
         assertThat(respItem.effects().get(0).dimension()).isEqualTo(FairCamEffectDimension.LOSS_EVENT_FREQUENCY);
         assertThat(respItem.effects().get(0).analysisEndpoint()).isEqualTo("RISK_SCENARIO:abc");
@@ -105,7 +117,7 @@ class FairCamControlAnalyticsResponseTest {
         FairCamControlAnalyticsResponse response = FairCamControlAnalyticsResponse.from(result);
 
         assertThat(response.controls()).isEmpty();
-        assertThat(response.counts().total()).isEqualTo(0);
+        assertThat(response.counts().total()).isZero();
         assertThat(response.counts().byDomain()).isEmpty();
     }
 

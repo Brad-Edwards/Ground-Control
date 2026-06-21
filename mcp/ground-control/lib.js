@@ -1309,7 +1309,9 @@ export async function analyzeComplianceMonitoring({
 // attribution (loss_event_control / variance_management_control /
 // decision_support_control), capability, coverage, operational performance,
 // and effect-dimension entries from RiskControlMapping,
-// ControlEffectivenessAssessment, and ControlTest rows.
+// ControlEffectivenessAssessment, and ControlTest rows. Domain/effect
+// attribution is per-mapping; the scope filters (including methodologyProfileId)
+// compose as an intersection over the candidate mappings.
 export async function analyzeFairCamControlAnalytics({
   project,
   asOf,

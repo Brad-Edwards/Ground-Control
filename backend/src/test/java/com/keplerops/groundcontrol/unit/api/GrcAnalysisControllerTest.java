@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -548,8 +549,7 @@ class GrcAnalysisControllerTest {
 
         @Test
         void happyPath_returns200WithStructuredFields() throws Exception {
-            when(grcAnalysisService.fairCamControlAnalytics(
-                            eq(PROJECT_ID), any(), anyInt(), any(), any(), any(), any(), any(), any(), any()))
+            when(grcAnalysisService.fairCamControlAnalytics(eq(PROJECT_ID), any()))
                     .thenReturn(sampleResult());
 
             mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
@@ -566,16 +566,7 @@ class GrcAnalysisControllerTest {
         @Test
         void domainFilterParam_parsedCorrectly() throws Exception {
             when(grcAnalysisService.fairCamControlAnalytics(
-                            eq(PROJECT_ID),
-                            any(),
-                            anyInt(),
-                            any(),
-                            any(),
-                            any(),
-                            any(),
-                            any(),
-                            any(),
-                            eq(FairCamControlDomain.LOSS_EVENT_CONTROL)))
+                            eq(PROJECT_ID), argThat(q -> q.domain() == FairCamControlDomain.LOSS_EVENT_CONTROL)))
                     .thenReturn(sampleResult());
 
             mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")

@@ -16,6 +16,7 @@ import com.keplerops.groundcontrol.domain.controls.state.ControlFunction;
 import com.keplerops.groundcontrol.domain.controls.state.ControlTestConclusion;
 import com.keplerops.groundcontrol.domain.controls.state.ControlTestMethodology;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsQuery;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlDomain;
@@ -29,6 +30,7 @@ import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.Month;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,7 +69,7 @@ class FairCamControlAnalyticsServiceTest {
     private static final UUID CONTROL_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
     private static final UUID SCENARIO_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
     private static final Instant AS_OF = Instant.parse("2026-06-21T00:00:00Z");
-    private static final LocalDate AS_OF_DATE = LocalDate.of(2026, 6, 21);
+    private static final LocalDate AS_OF_DATE = LocalDate.of(2026, Month.JUNE, 21);
 
     private Project project;
     private Control control;
@@ -82,7 +84,7 @@ class FairCamControlAnalyticsServiceTest {
     void projectNotFound_throwsNotFoundException() {
         when(projectRepository.findById(PROJECT_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null))
+        assertThatThrownBy(() -> service.analyze(PROJECT_ID, query()))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessageContaining("Project not found");
     }
@@ -94,12 +96,11 @@ class FairCamControlAnalyticsServiceTest {
         stubNoAssessments();
         stubNoTests();
 
-        FairCamControlAnalyticsResult result =
-                service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+        FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
         assertThat(result.analysisKind()).isEqualTo("fair_cam_control_analytics");
         assertThat(result.controls()).isEmpty();
-        assertThat(result.counts().total()).isEqualTo(0);
+        assertThat(result.counts().total()).isZero();
     }
 
     @Nested
@@ -115,8 +116,7 @@ class FairCamControlAnalyticsServiceTest {
             stubNoAssessments();
             stubNoTests();
 
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
             assertThat(result.controls()).hasSize(1);
             var item = result.controls().get(0);
@@ -135,8 +135,7 @@ class FairCamControlAnalyticsServiceTest {
             stubNoAssessments();
             stubNoTests();
 
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
             var item = result.controls().get(0);
             assertThat(item.domainAttributions()).hasSize(1);
@@ -186,8 +185,7 @@ class FairCamControlAnalyticsServiceTest {
             stubNoAssessments();
             stubNoTests();
 
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
             assertThat(result.controls().get(0).domainAttributions().get(0).domain())
                     .isEqualTo(expectedDomain);
@@ -209,8 +207,7 @@ class FairCamControlAnalyticsServiceTest {
             stubAssessments(List.of(assessment));
             stubNoTests();
 
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
             var item = result.controls().get(0);
             assertThat(item.capability()).isNotNull();
@@ -227,8 +224,7 @@ class FairCamControlAnalyticsServiceTest {
             stubNoAssessments();
             stubNoTests();
 
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
             var item = result.controls().get(0);
             assertThat(item.capability().value()).isNull();
@@ -253,8 +249,7 @@ class FairCamControlAnalyticsServiceTest {
             ControlTest freshPass = makeControlTest(control, ControlTestConclusion.EFFECTIVE, AS_OF_DATE.minusDays(10));
             stubTests(List.of(freshPass));
 
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
             var item = result.controls().get(0);
             assertThat(item.operationalPerformance()).isNotNull();
@@ -270,8 +265,7 @@ class FairCamControlAnalyticsServiceTest {
             stubNoAssessments();
             stubNoTests();
 
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
             var item = result.controls().get(0);
             assertThat(item.operationalPerformance().value()).isNull();
@@ -290,8 +284,7 @@ class FairCamControlAnalyticsServiceTest {
                     makeControlTest(control, ControlTestConclusion.EFFECTIVE, AS_OF_DATE.minusDays(100));
             stubTests(List.of(staleTest));
 
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
             var item = result.controls().get(0);
             assertThat(item.limitations()).anyMatch(l -> l.contains("no fresh PASS tests"));
@@ -311,8 +304,7 @@ class FairCamControlAnalyticsServiceTest {
             stubNoAssessments();
             stubNoTests();
 
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
             // Both mappings are for the same control, so they're in one group
             // Coverage = count of distinct analysis endpoints for that control
@@ -331,8 +323,7 @@ class FairCamControlAnalyticsServiceTest {
             stubNoAssessments();
             stubNoTests();
 
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
             var item = result.controls().get(0);
             assertThat((Integer) item.coverage().value()).isEqualTo(1);
@@ -353,8 +344,7 @@ class FairCamControlAnalyticsServiceTest {
             stubNoAssessments();
             stubNoTests();
 
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
             var item = result.controls().get(0);
             assertThat(item.effects()).hasSize(2);
@@ -369,8 +359,7 @@ class FairCamControlAnalyticsServiceTest {
             stubNoAssessments();
             stubNoTests();
 
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
             var item = result.controls().get(0);
             assertThat(item.effects()).isEmpty();
@@ -392,8 +381,8 @@ class FairCamControlAnalyticsServiceTest {
             stubNoAssessments();
             stubNoTests();
 
-            FairCamControlAnalyticsResult result = service.analyze(
-                    PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, FairCamControlDomain.LOSS_EVENT_CONTROL);
+            FairCamControlAnalyticsResult result =
+                    service.analyze(PROJECT_ID, query(FairCamControlDomain.LOSS_EVENT_CONTROL));
 
             assertThat(result.controls()).hasSize(1);
             assertThat(result.controls().get(0).controlUid()).isEqualTo("CTRL-1");
@@ -419,8 +408,9 @@ class FairCamControlAnalyticsServiceTest {
 
             // Request controlId AND riskScenarioId=A: must intersect to only the A mapping,
             // not return every mapping of the control.
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, CONTROL_ID, null, scenA, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(
+                    PROJECT_ID,
+                    new FairCamControlAnalyticsQuery(AS_OF, 90, CONTROL_ID, null, scenA, null, null, null, null));
 
             assertThat(result.controls()).hasSize(1);
             assertThat((Integer) result.controls().get(0).coverage().value()).isEqualTo(1);
@@ -448,8 +438,7 @@ class FairCamControlAnalyticsServiceTest {
             stubNoAssessments();
             stubNoTests();
 
-            FairCamControlAnalyticsResult result =
-                    service.analyze(PROJECT_ID, AS_OF, 90, null, null, null, null, null, null, null);
+            FairCamControlAnalyticsResult result = service.analyze(PROJECT_ID, query());
 
             assertThat(result.controls()).hasSize(1);
             var item = result.controls().get(0);
@@ -488,17 +477,8 @@ class FairCamControlAnalyticsServiceTest {
             stubNoTests();
 
             // Filter on the SECOND mapping's domain — the control must still be kept.
-            FairCamControlAnalyticsResult result = service.analyze(
-                    PROJECT_ID,
-                    AS_OF,
-                    90,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    FairCamControlDomain.DECISION_SUPPORT_CONTROL);
+            FairCamControlAnalyticsResult result =
+                    service.analyze(PROJECT_ID, query(FairCamControlDomain.DECISION_SUPPORT_CONTROL));
 
             assertThat(result.controls()).hasSize(1);
             assertThat(result.controls().get(0).controlUid()).isEqualTo("CTRL-M2");
@@ -529,6 +509,14 @@ class FairCamControlAnalyticsServiceTest {
     }
 
     // ---- Helpers ----
+
+    private FairCamControlAnalyticsQuery query() {
+        return query(null);
+    }
+
+    private FairCamControlAnalyticsQuery query(FairCamControlDomain domain) {
+        return new FairCamControlAnalyticsQuery(AS_OF, 90, null, null, null, null, null, null, domain);
+    }
 
     private void stubProject() {
         when(projectRepository.findById(PROJECT_ID)).thenReturn(Optional.of(project));

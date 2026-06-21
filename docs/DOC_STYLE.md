@@ -142,7 +142,10 @@ GC-T011 / #723; `continuous_compliance_monitoring` added for GC-I004 / #763;
 plus an adapter helper in `lib.js` is documented by the
 endpoint entry in `docs/API.md` and the `gc_analyze` tool description string
 in `mcp/ground-control/index.js`. No separate user-facing prose page per
-kind, no new sections in this style guide.
+kind, no new sections in this style guide. Clarifying a kind's filter
+semantics in that same description string (for example, noting that the
+`fair_cam_control_analytics` scope filters compose as an intersection) is a
+contract-surface edit to the description, not a new doc page.
 
 Per-action required-field enumeration in an action-multiplexed tool's description string (issue #1169) is a contract-surface edit to that tool's description, not a new doc page.
 

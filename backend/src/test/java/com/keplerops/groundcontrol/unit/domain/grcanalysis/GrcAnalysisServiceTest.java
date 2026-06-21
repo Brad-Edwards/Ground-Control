@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ComplianceMonitoringAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsQuery;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisService;
@@ -175,13 +176,13 @@ class GrcAnalysisServiceTest {
                 List.of(),
                 new FairCamControlAnalyticsResult.Counts(0, Map.of(), 0),
                 List.of());
-        when(fairCamControlAnalyticsService.analyze(projectId, asOf, 90, null, null, null, null, null, null, null))
-                .thenReturn(expected);
+        FairCamControlAnalyticsQuery query =
+                new FairCamControlAnalyticsQuery(asOf, 90, null, null, null, null, null, null, null);
+        when(fairCamControlAnalyticsService.analyze(projectId, query)).thenReturn(expected);
 
-        FairCamControlAnalyticsResult actual =
-                service.fairCamControlAnalytics(projectId, asOf, 90, null, null, null, null, null, null, null);
+        FairCamControlAnalyticsResult actual = service.fairCamControlAnalytics(projectId, query);
 
         assertThat(actual).isSameAs(expected);
-        verify(fairCamControlAnalyticsService).analyze(projectId, asOf, 90, null, null, null, null, null, null, null);
+        verify(fairCamControlAnalyticsService).analyze(projectId, query);
     }
 }

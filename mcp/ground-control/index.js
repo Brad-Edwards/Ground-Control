@@ -1655,7 +1655,7 @@ server.tool(
     `nist_assessment→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
     `fair_quantitative→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
     `continuous_compliance_monitoring→{project?, as_of?, freshness_window_days?}. ` +
-    `fair_cam_control_analytics→{project?, as_of?, freshness_window_days?, control_id?, scoped_implementation_id?, risk_scenario_id?, risk_register_record_id?, threat_model_id?, methodology_profile_id?, domain?}. ` +
+    `fair_cam_control_analytics→{project?, as_of?, freshness_window_days?, control_id?, scoped_implementation_id?, risk_scenario_id?, risk_register_record_id?, threat_model_id?, methodology_profile_id?, domain?} (scope filters compose as an intersection). ` +
     `Others take {project?}.`,
   {
     kind: z.enum(ANALYZE_KINDS),

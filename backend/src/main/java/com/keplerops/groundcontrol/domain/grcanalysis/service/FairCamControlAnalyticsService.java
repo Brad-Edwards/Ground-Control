@@ -40,6 +40,9 @@ public class FairCamControlAnalyticsService {
     static final String DERIVATION_METHOD = "fair-cam-control-analytics-v1";
 
     private static final String KEY_FAIR_CAM_DOMAIN = "fair_cam_domain";
+    private static final String SCALE_ORDINAL = "ordinal";
+    private static final String UNITS_RATING = "ControlEffectivenessRating";
+    private static final String NOT_DERIVABLE_NO_ASSESSMENT = "not-derivable: no assessment";
 
     private final RiskControlMappingRepository mappingRepo;
     private final ControlEffectivenessAssessmentRepository assessmentRepo;
@@ -60,24 +63,13 @@ public class FairCamControlAnalyticsService {
         this.clock = clock;
     }
 
-    public FairCamControlAnalyticsResult analyze(
-            UUID projectId,
-            Instant asOf,
-            int freshnessWindowDays,
-            UUID controlId,
-            UUID scopedImplementationId,
-            UUID riskScenarioId,
-            UUID riskRegisterRecordId,
-            UUID threatModelId,
-            UUID methodologyProfileId,
-            FairCamControlDomain domain) {
+    public FairCamControlAnalyticsResult analyze(UUID projectId, FairCamControlAnalyticsQuery query) {
 
-        Instant effectiveAsOf = asOf == null ? Instant.now(clock) : asOf;
+        Instant effectiveAsOf = query.asOf() == null ? Instant.now(clock) : query.asOf();
         String projectIdentifier = resolveProjectIdentifier(projectId);
         LocalDate asOfDate = effectiveAsOf.atZone(ZoneOffset.UTC).toLocalDate();
 
-        List<RiskControlMapping> mappings = loadMappings(
-                projectId, controlId, scopedImplementationId, riskScenarioId, riskRegisterRecordId, threatModelId);
+        List<RiskControlMapping> mappings = loadMappings(projectId, query);
 
         // Load assessments and tests project-wide to avoid N+1
         List<ControlEffectivenessAssessment> allAssessments =
@@ -110,17 +102,12 @@ public class FairCamControlAnalyticsService {
             RiskControlMapping first = groupMappings.get(0);
 
             FairCamControlAnalyticsResult.ControlAnalyticsItem item = buildItem(
-                    first,
-                    groupMappings,
-                    assessmentsByControl,
-                    testsByControl,
-                    asOfDate,
-                    freshnessWindowDays,
-                    methodologyProfileId);
+                    first, groupMappings, assessmentsByControl, testsByControl, asOfDate, query.freshnessWindowDays());
 
             // Apply domain filter if requested
-            if (domain != null) {
-                boolean matchesDomain = item.domainAttributions().stream().anyMatch(da -> da.domain() == domain);
+            if (query.domain() != null) {
+                boolean matchesDomain =
+                        item.domainAttributions().stream().anyMatch(da -> da.domain() == query.domain());
                 if (!matchesDomain) {
                     continue;
                 }
@@ -151,49 +138,60 @@ public class FairCamControlAnalyticsService {
                 .orElseThrow(() -> new NotFoundException("Project not found: " + projectId));
     }
 
-    private List<RiskControlMapping> loadMappings(
-            UUID projectId,
-            UUID controlId,
-            UUID scopedImplementationId,
-            UUID riskScenarioId,
-            UUID riskRegisterRecordId,
-            UUID threatModelId) {
+    private List<RiskControlMapping> loadMappings(UUID projectId, FairCamControlAnalyticsQuery q) {
         // Pick the most selective single-column query as the candidate set, then apply every
-        // OTHER supplied filter in memory so multiple filters intersect (composable) rather than
+        // supplied filter in memory so multiple filters intersect (composable) rather than
         // precedence-select. A request with controlId AND riskScenarioId must return only the
         // mappings of that control to that scenario, not every mapping of the control.
-        List<RiskControlMapping> candidates;
-        if (controlId != null) {
-            candidates = mappingRepo.findByProjectIdAndControlId(projectId, controlId);
-        } else if (scopedImplementationId != null) {
-            candidates = mappingRepo.findByProjectIdAndScopedImplementationId(projectId, scopedImplementationId);
-        } else if (riskScenarioId != null) {
-            candidates = mappingRepo.findByProjectIdAndRiskScenarioId(projectId, riskScenarioId);
-        } else if (riskRegisterRecordId != null) {
-            candidates = mappingRepo.findByProjectIdAndRiskRegisterRecordId(projectId, riskRegisterRecordId);
-        } else if (threatModelId != null) {
-            candidates = mappingRepo.findByProjectIdAndThreatModelId(projectId, threatModelId);
-        } else {
-            candidates = mappingRepo.findByProjectIdOrderByCreatedAtDesc(projectId);
-        }
-        return candidates.stream()
-                .filter(m -> controlId == null
-                        || (m.isControlSide() && controlId.equals(m.getControl().getId())))
-                .filter(m -> scopedImplementationId == null
-                        || (m.isScopedImplementationSide()
-                                && scopedImplementationId.equals(
-                                        m.getScopedImplementation().getId())))
-                .filter(m -> riskScenarioId == null
-                        || (m.isScenarioSide()
-                                && riskScenarioId.equals(m.getRiskScenario().getId())))
-                .filter(m -> riskRegisterRecordId == null
-                        || (m.isRegisterRecordSide()
-                                && riskRegisterRecordId.equals(
-                                        m.getRiskRegisterRecord().getId())))
-                .filter(m -> threatModelId == null
-                        || (m.isThreatSide()
-                                && threatModelId.equals(m.getThreatModel().getId())))
+        return selectCandidateMappings(projectId, q).stream()
+                .filter(m -> matchesAllFilters(m, q))
                 .toList();
+    }
+
+    private List<RiskControlMapping> selectCandidateMappings(UUID projectId, FairCamControlAnalyticsQuery q) {
+        if (q.controlId() != null) {
+            return mappingRepo.findByProjectIdAndControlId(projectId, q.controlId());
+        }
+        if (q.scopedImplementationId() != null) {
+            return mappingRepo.findByProjectIdAndScopedImplementationId(projectId, q.scopedImplementationId());
+        }
+        if (q.riskScenarioId() != null) {
+            return mappingRepo.findByProjectIdAndRiskScenarioId(projectId, q.riskScenarioId());
+        }
+        if (q.riskRegisterRecordId() != null) {
+            return mappingRepo.findByProjectIdAndRiskRegisterRecordId(projectId, q.riskRegisterRecordId());
+        }
+        if (q.threatModelId() != null) {
+            return mappingRepo.findByProjectIdAndThreatModelId(projectId, q.threatModelId());
+        }
+        return mappingRepo.findByProjectIdOrderByCreatedAtDesc(projectId);
+    }
+
+    private static boolean matchesAllFilters(RiskControlMapping m, FairCamControlAnalyticsQuery q) {
+        return matchesId(q.controlId(), m.isControlSide() ? m.getControl().getId() : null)
+                && matchesId(
+                        q.scopedImplementationId(),
+                        m.isScopedImplementationSide()
+                                ? m.getScopedImplementation().getId()
+                                : null)
+                && matchesId(
+                        q.riskScenarioId(),
+                        m.isScenarioSide() ? m.getRiskScenario().getId() : null)
+                && matchesId(
+                        q.riskRegisterRecordId(),
+                        m.isRegisterRecordSide() ? m.getRiskRegisterRecord().getId() : null)
+                && matchesId(
+                        q.threatModelId(), m.isThreatSide() ? m.getThreatModel().getId() : null)
+                && matchesId(
+                        q.methodologyProfileId(),
+                        m.getMethodologyProfile() == null
+                                ? null
+                                : m.getMethodologyProfile().getId());
+    }
+
+    /** A filter matches when it is unset, or set and equal to the mapping's corresponding id. */
+    private static boolean matchesId(UUID filterId, UUID actualId) {
+        return filterId == null || filterId.equals(actualId);
     }
 
     private FairCamControlAnalyticsResult.ControlAnalyticsItem buildItem(
@@ -202,8 +200,7 @@ public class FairCamControlAnalyticsService {
             Map<UUID, List<ControlEffectivenessAssessment>> assessmentsByControl,
             Map<UUID, List<ControlTest>> testsByControl,
             LocalDate asOfDate,
-            int freshnessWindowDays,
-            UUID methodologyProfileId) {
+            int freshnessWindowDays) {
 
         // Determine control-side info
         String endpointType;
@@ -340,13 +337,13 @@ public class FairCamControlAnalyticsService {
         if (assessments.isEmpty()) {
             limitations.add("capability not derivable: no control effectiveness assessment as-of");
             return new FairCamControlAnalyticsResult.Measurement(
-                    "ordinal", "ControlEffectivenessRating", null, "not-derivable: no assessment");
+                    SCALE_ORDINAL, UNITS_RATING, null, NOT_DERIVABLE_NO_ASSESSMENT);
         }
         // assessments are ordered by assessedAt desc (from the repo query), so first is latest
         ControlEffectivenessAssessment latest = assessments.get(0);
         return new FairCamControlAnalyticsResult.Measurement(
-                "ordinal",
-                "ControlEffectivenessRating",
+                SCALE_ORDINAL,
+                UNITS_RATING,
                 latest.getDesignEffectiveness().name(),
                 "latest design_effectiveness assessment as-of");
     }
@@ -377,7 +374,7 @@ public class FairCamControlAnalyticsService {
         if (assessments.isEmpty()) {
             limitations.add("operational_performance not derivable: no control effectiveness assessment as-of");
             return new FairCamControlAnalyticsResult.Measurement(
-                    "ordinal", "ControlEffectivenessRating", null, "not-derivable: no assessment");
+                    SCALE_ORDINAL, UNITS_RATING, null, NOT_DERIVABLE_NO_ASSESSMENT);
         }
         ControlEffectivenessAssessment latest = assessments.get(0);
 
@@ -397,10 +394,7 @@ public class FairCamControlAnalyticsService {
         String basis = "latest operating_effectiveness as-of; " + freshPassCount + " fresh PASS test(s) within "
                 + freshnessWindowDays + " days";
         return new FairCamControlAnalyticsResult.Measurement(
-                "ordinal",
-                "ControlEffectivenessRating",
-                latest.getOperatingEffectiveness().name(),
-                basis);
+                SCALE_ORDINAL, UNITS_RATING, latest.getOperatingEffectiveness().name(), basis);
     }
 
     private List<FairCamControlAnalyticsResult.EffectEntry> deriveEffects(
