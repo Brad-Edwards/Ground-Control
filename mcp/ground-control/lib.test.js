@@ -19,6 +19,7 @@ import {
   validatePrBodyInput,
   checkPrBodyShape,
   runRenderPrBody,
+  runPostImplementationPlan,
   runLogStepTelemetry,
   PR_BODY_CHANGE_CLASSES,
   PR_REQUIREMENT_RE,
@@ -119,6 +120,9 @@ import {
   classifyChangedSurface,
   isSafeLabelName,
   normalizeIntegrationManagerConfig,
+  normalizeDevStartGateConfig,
+  validateDevStartPlanGate,
+  DEFAULT_DEV_START_GATE_REQUIRED_FIELDS,
   INTEGRATION_MANAGER_ORDERINGS,
   INTEGRATION_MANAGER_MERGE_STRATEGIES,
   INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN,
@@ -613,6 +617,13 @@ describe("parseGroundControlYaml", () => {
       test_quality_review: { pre_push_cap: null },
       pr_title: null,
       integration_manager: { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null },
+      dev_start_gate: {
+        enabled: false,
+        required_for: "source-bearing",
+        plan_section: "Dev-Start Gate",
+        blocker_uids: [],
+        required_fields: [...DEFAULT_DEV_START_GATE_REQUIRED_FIELDS],
+      },
     });
     assert.equal(result.value.sonarcloud, null);
     assert.equal(result.value.rules.plan_rules_path, null);
@@ -5763,6 +5774,93 @@ describe("buildPhaseMarker", () => {
   });
 });
 
+describe("runPostImplementationPlan dev_start_gate", () => {
+  function makeShimRepo({ configYaml, ghHandler }) {
+    const repoDir = mkdtempSync(join(tmpdir(), "gc-plan-gate-"));
+    execFileSync("git", ["-C", repoDir, "init", "-q"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.email", "t@example.com"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.name", "t"]);
+    writeFileSync(join(repoDir, ".ground-control.yaml"), configYaml);
+    writeFileSync(join(repoDir, "README"), "x\n");
+    execFileSync("git", ["-C", repoDir, "add", "."]);
+    execFileSync("git", ["-C", repoDir, "commit", "-q", "-m", "init"]);
+    const binDir = mkdtempSync(join(tmpdir(), "gc-plan-gate-bin-"));
+    const configPath = join(binDir, "config.json");
+    writeFileSync(configPath, JSON.stringify(ghHandler));
+    const ghShim = `#!/usr/bin/env node
+const fs = require("node:fs");
+const cfg = JSON.parse(fs.readFileSync(${JSON.stringify(configPath)}, "utf8"));
+const argv = process.argv.slice(2);
+function match(prefix) { return prefix.every((p, i) => argv[i] === p); }
+for (const route of cfg.routes) {
+  if (match(route.argv_prefix)) {
+    if (route.exit_code != null && route.exit_code !== 0) {
+      process.stderr.write(route.stderr || "");
+      process.exit(route.exit_code);
+    }
+    process.stdout.write(route.stdout || "");
+    process.exit(0);
+  }
+}
+process.stderr.write("gh shim: unhandled argv: " + JSON.stringify(argv) + "\\n");
+process.exit(2);
+`;
+    writeFileSync(join(binDir, "gh"), ghShim, { mode: 0o755 });
+    return {
+      repoDir,
+      binDir,
+      cleanup() {
+        rmSync(repoDir, { recursive: true, force: true });
+        rmSync(binDir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  async function withShimPath(binDir, fn) {
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${binDir}:${oldPath}`;
+    try { return await fn(); } finally { process.env.PATH = oldPath; }
+  }
+
+  const enabledGateYaml = [
+    "schema_version: 1",
+    "project: x",
+    "workflow:",
+    "  dev_start_gate:",
+    "    enabled: true",
+    "    blocker_uids: [GC-O007]",
+    "",
+  ].join("\n");
+
+  it("refuses before posting a plan marker when the enabled gate section is missing", async () => {
+    const shim = makeShimRepo({
+      configYaml: enabledGateYaml,
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+        ],
+      },
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const r = await runPostImplementationPlan({
+          repoPath: shim.repoDir,
+          issueNumber: 1194,
+          planBody: "## Plan\n\nImplement source work.",
+          override: true,
+          overrideReason: "test skips preflight to isolate the dev-start gate",
+        });
+        assert.equal(r.ok, false);
+        assert.equal(r.error, "dev_start_gate_invalid");
+        assert.equal(r.next_action, "add_valid_dev_start_gate_to_plan_and_retry");
+        assert.ok(r.missing.includes("## Dev-Start Gate"));
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -7091,6 +7189,20 @@ describe("runRenderPrBody (policy enforcement at the tool boundary)", () => {
     assert.equal(r.ok, true);
     assert.ok(r.body.includes("## Documentation"), "rendered body should include the ## Documentation section");
     assert.ok(r.body.includes("Updated: see diff."), "rendered body should include the outcome prose");
+  });
+  it("renders an optional ## Dev-Start Gate section when supplied", async () => {
+    const r = await runRenderPrBody(baseInput({
+      devStartGate: [
+        "## Dev-Start Gate",
+        "",
+        "- Source-bearing: yes",
+        "- Requirement wave or gate: wave 0 readiness",
+        "",
+      ].join("\n"),
+    }));
+    assert.equal(r.ok, true);
+    assert.ok(r.body.includes("## Dev-Start Gate"), "rendered body should include the dev-start gate section");
+    assert.ok(r.body.includes("- Source-bearing: yes"));
   });
   it("renders the ## Documentation section with rationale for outcome=not_updated_authorized", async () => {
     const r = await runRenderPrBody(baseInput({
@@ -12668,6 +12780,178 @@ describe("parseGroundControlYaml workflow.integration_manager", () => {
       max_queue_size: null,
       merge_strategy: null,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// workflow.dev_start_gate parser and plan validator (issue #1194)
+// ---------------------------------------------------------------------------
+
+describe("parseGroundControlYaml workflow.dev_start_gate", () => {
+  it("defaults workflow.dev_start_gate to disabled when absent", () => {
+    const result = parseGroundControlYaml("schema_version: 1\nproject: x\n");
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.deepEqual(result.value.workflow.dev_start_gate, {
+      enabled: false,
+      required_for: "source-bearing",
+      plan_section: "Dev-Start Gate",
+      blocker_uids: [],
+      required_fields: [...DEFAULT_DEV_START_GATE_REQUIRED_FIELDS],
+    });
+  });
+
+  it("accepts a fully populated workflow.dev_start_gate block", () => {
+    const yaml = [
+      "schema_version: 1",
+      "project: x",
+      "workflow:",
+      "  dev_start_gate:",
+      "    enabled: true",
+      "    required_for: source-bearing",
+      "    plan_section: Dev-Start Gate",
+      "    blocker_uids: [GC-O007, PC-NFR-0015]",
+      "    required_fields:",
+      "      - Requirement wave or gate",
+      "      - Boundary owner",
+      "",
+    ].join("\n");
+    const result = parseGroundControlYaml(yaml);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.deepEqual(result.value.workflow.dev_start_gate, {
+      enabled: true,
+      required_for: "source-bearing",
+      plan_section: "Dev-Start Gate",
+      blocker_uids: ["GC-O007", "PC-NFR-0015"],
+      required_fields: ["Requirement wave or gate", "Boundary owner"],
+    });
+  });
+
+  it("rejects unknown workflow.dev_start_gate keys", () => {
+    const result = parseGroundControlYaml([
+      "schema_version: 1",
+      "project: x",
+      "workflow:",
+      "  dev_start_gate:",
+      "    enabled: true",
+      "    surprise: yes",
+      "",
+    ].join("\n"));
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.errors.some((e) => e.includes("workflow.dev_start_gate") && e.includes("unknown key")),
+      JSON.stringify(result.errors),
+    );
+  });
+
+  it("rejects malformed blocker UIDs", () => {
+    const r = normalizeDevStartGateConfig({ enabled: true, blocker_uids: ["not-a-uid"] });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("blocker_uids[0]")), JSON.stringify(r.errors));
+  });
+});
+
+describe("validateDevStartPlanGate", () => {
+  function enabledGate(overrides = {}) {
+    return {
+      enabled: true,
+      required_for: "source-bearing",
+      plan_section: "Dev-Start Gate",
+      blocker_uids: ["GC-O007"],
+      required_fields: [
+        "Requirement wave or gate",
+        "Boundary owner",
+        "Contract or seam",
+        "Tenant/principal/authz/audit/evidence/provenance context",
+        "Connectivity/offline behavior",
+        "Security relevance decision",
+        "Framework/control-family impact",
+        "Verification risk score",
+        "Verification plan",
+        "Supply chain/provenance impact",
+        "Sovereignty/FOCI impact",
+        "Quality-gate readiness",
+        "Dev-start gate satisfied",
+      ],
+      ...overrides,
+    };
+  }
+
+  function sourcePlan(extra = []) {
+    return [
+      "## Plan",
+      "",
+      "Do the work.",
+      "",
+      "## Dev-Start Gate",
+      "",
+      "- Source-bearing: yes",
+      "- Requirement wave or gate: wave 0 readiness",
+      "- Boundary owner: contracts/",
+      "- Contract or seam: source-bearing issue intake and plan marker boundary",
+      "- Tenant/principal/authz/audit/evidence/provenance context: audit and provenance fields are explicit in the gate",
+      "- Connectivity/offline behavior: no runtime connectivity behavior changes",
+      "- Security relevance decision: security-relevant",
+      "- Framework/control-family impact: AC-1 and CM-3 mapped through policy fields",
+      "- Verification risk score: auth=1 isolation=1 orchestration=0 supply=1 total=3",
+      "- Verification plan: node tests and policy checks",
+      "- Supply chain/provenance impact: policy-only helper, no dependency change",
+      "- Sovereignty/FOCI impact: not applicable because no hosted control plane changes",
+      "- Quality-gate readiness: mcp tests and make policy",
+      "- Dev-start gate satisfied: yes",
+      "- GC-O007 applicability: applies - this implements the gated development loop",
+      ...extra,
+      "",
+    ].join("\n");
+  }
+
+  it("does nothing when the gate is disabled", () => {
+    const r = validateDevStartPlanGate("no section", { enabled: false });
+    assert.equal(r.ok, true);
+    assert.equal(r.checked, false);
+  });
+
+  it("fails when an enabled gate section is missing", () => {
+    const r = validateDevStartPlanGate("## Plan\n\nNo gate.", enabledGate());
+    assert.equal(r.ok, false);
+    assert.equal(r.error, "dev_start_gate_invalid");
+    assert.ok(r.missing.includes("## Dev-Start Gate"));
+  });
+
+  it("accepts non-source-bearing plans with a concrete rationale", () => {
+    const r = validateDevStartPlanGate([
+      "## Dev-Start Gate",
+      "",
+      "- Source-bearing: no",
+      "- Non-source rationale: docs and design only; no application source begins here",
+      "",
+    ].join("\n"), enabledGate());
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.source_bearing, false);
+  });
+
+  it("accepts source-bearing plans with configured fields and blocker applicability records", () => {
+    const r = validateDevStartPlanGate(sourcePlan(), enabledGate());
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.source_bearing, true);
+    assert.equal(r.risk_score_total, 3);
+  });
+
+  it("fails source-bearing plans that omit a configured field", () => {
+    const r = validateDevStartPlanGate(
+      sourcePlan().replace("- Boundary owner: contracts/\n", ""),
+      enabledGate(),
+    );
+    assert.equal(r.ok, false);
+    assert.ok(r.missing.includes("Boundary owner"), JSON.stringify(r));
+  });
+
+  it("requires high-risk verification evidence when total>=4", () => {
+    const r = validateDevStartPlanGate(
+      sourcePlan().replace("total=3", "total=4"),
+      enabledGate(),
+    );
+    assert.equal(r.ok, false);
+    assert.ok(r.missing.includes("High-risk verification evidence"), JSON.stringify(r));
   });
 });
 

@@ -326,3 +326,5 @@ established for `fair_quantitative` (GC-T011 / #723) and recorded in
 `docs/DOC_STYLE.md § MCP-shape-extensions`. The documentation-coverage
 classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
 unchanged; no new `docs/DOC_STYLE.md` style rule is established.
+
+**2026-06-20 (issue #1194 dev-start plan gate).** Added the optional `workflow.dev_start_gate` parser to `mcp/ground-control/lib.js`, wired `gc_post_implementation_plan` to refuse invalid enabled gate sections before posting a plan marker, and extended `gc_render_pr_body` in `mcp/ground-control/index.js` with an optional `dev_start_gate` Markdown section. The workflow contract lives in `skills/implement/steps/step-04-planning.md` and `skills/implement/steps/step-09-pr-body.md`; the tool descriptions and parser validation are the MCP surface. These are workflow, MCP-adapter, and config-parser surfaces; no change to the Vale rule set, the `tools/install-vale.sh` installer, or the `.vale.ini` configuration.
