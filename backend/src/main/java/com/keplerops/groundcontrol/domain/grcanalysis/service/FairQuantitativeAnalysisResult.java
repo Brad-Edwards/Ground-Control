@@ -72,27 +72,28 @@ public record FairQuantitativeAnalysisResult(
             Materiality materiality) {}
 
     /**
-     * FAIR-MAM materiality view per GC-T016. A descriptive decomposition of the
-     * {@code fair_mam} loss-magnitude breakdown and stakeholder-specific secondary
-     * effects. {@code null} when neither {@code fair_mam} nor stakeholder data is
-     * present. This view never feeds the canonical ALE arithmetic (ALE stays
+     * FAIR materiality view per GC-T016. A descriptive decomposition of the
+     * {@code fair_mam} loss-magnitude breakdown into FAIR-MAM cost modules, plus
+     * stakeholder-specific secondary effects classified by the O-RT forms of loss.
+     * {@code null} when neither {@code fair_mam} nor stakeholder data is present.
+     * This view never feeds the canonical ALE arithmetic (ALE stays
      * {@code LEF × LM}), so it adds granular materiality reasoning without changing
      * cross-assessment comparability or risking double-counting.
      */
     public record Materiality(
-            List<LossFormBreakdown> byLossForm,
-            ThreePoint total,
+            List<FairMamModuleBreakdown> fairMamModules,
+            ThreePoint fairMamTotal,
             String currency,
             List<StakeholderSecondaryLoss> secondaryLossByStakeholder) {}
 
-    /** A single FAIR-MAM loss form with its three-point monetary magnitude. */
-    public record LossFormBreakdown(FairLossForm form, ThreePoint magnitude) {}
+    /** A single FAIR-MAM cost module with its three-point monetary magnitude. */
+    public record FairMamModuleBreakdown(FairMamCostModule module, ThreePoint magnitude) {}
 
     /**
-     * A stakeholder-specific secondary loss effect. {@code lossForm} is {@code null}
-     * when the entry does not name one of the FAIR forms of loss.
+     * A stakeholder-specific secondary loss effect. {@code lossForm} (an O-RT FAIR
+     * form of loss) is {@code null} when the entry does not name one.
      */
-    public record StakeholderSecondaryLoss(String stakeholder, FairLossForm lossForm, ThreePoint magnitude) {}
+    public record StakeholderSecondaryLoss(String stakeholder, FairFormOfLoss lossForm, ThreePoint magnitude) {}
 
     public record ThreePoint(Double low, Double likely, Double high) {}
 

@@ -7,7 +7,8 @@ import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
-import com.keplerops.groundcontrol.domain.grcanalysis.service.FairLossForm;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairFormOfLoss;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairMamCostModule;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisService;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
@@ -767,14 +768,12 @@ class FairQuantitativeAnalysisServiceTest {
     }
 
     @Test
-    void analyze_fairMam_decomposedByLossForm_withTotal() {
+    void analyze_fairMam_decomposedByModule_withTotal() {
         Map<String, Object> fairMam = new LinkedHashMap<>();
-        fairMam.put("productivity_loss", threePoint(100.0, 200.0, 400.0));
-        fairMam.put("response_cost", threePoint(50.0, 80.0, 120.0));
-        fairMam.put("replacement_cost", threePoint(10.0, 20.0, 30.0));
-        fairMam.put("competitive_advantage_loss", threePoint(5.0, 15.0, 25.0));
-        fairMam.put("fines_and_judgments", threePoint(1000.0, 2000.0, 3000.0));
-        fairMam.put("reputation_damage", threePoint(500.0, 1500.0, 4000.0));
+        fairMam.put("information_privacy", threePoint(100.0, 200.0, 400.0));
+        fairMam.put("business_interruption", threePoint(50.0, 80.0, 120.0));
+        fairMam.put("cyber_extortion", threePoint(10.0, 20.0, 30.0));
+        fairMam.put("reputational_damage", threePoint(500.0, 1500.0, 4000.0));
 
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
@@ -788,27 +787,24 @@ class FairQuantitativeAnalysisServiceTest {
         var materiality = result.assessments().get(0).outputs().materiality();
         assertThat(materiality).isNotNull();
         assertThat(materiality.currency()).isEqualTo("USD");
-        assertThat(materiality.byLossForm()).hasSize(6);
-        assertThat(materiality.byLossForm())
-                .extracting(b -> b.form())
+        assertThat(materiality.fairMamModules())
+                .extracting(b -> b.module())
                 .containsExactlyInAnyOrder(
-                        FairLossForm.PRODUCTIVITY,
-                        FairLossForm.RESPONSE,
-                        FairLossForm.REPLACEMENT,
-                        FairLossForm.COMPETITIVE_ADVANTAGE,
-                        FairLossForm.FINES_AND_JUDGMENTS,
-                        FairLossForm.REPUTATION);
-        // total = elementwise sum across all six forms
-        assertThat(materiality.total().low()).isEqualTo(1665.0, org.assertj.core.api.Assertions.within(1e-6));
-        assertThat(materiality.total().likely()).isEqualTo(3815.0, org.assertj.core.api.Assertions.within(1e-6));
-        assertThat(materiality.total().high()).isEqualTo(7575.0, org.assertj.core.api.Assertions.within(1e-6));
+                        FairMamCostModule.INFORMATION_PRIVACY,
+                        FairMamCostModule.BUSINESS_INTERRUPTION,
+                        FairMamCostModule.CYBER_EXTORTION,
+                        FairMamCostModule.REPUTATIONAL_DAMAGE);
+        // total = elementwise sum across the present modules
+        assertThat(materiality.fairMamTotal().low()).isEqualTo(660.0, org.assertj.core.api.Assertions.within(1e-6));
+        assertThat(materiality.fairMamTotal().likely()).isEqualTo(1800.0, org.assertj.core.api.Assertions.within(1e-6));
+        assertThat(materiality.fairMamTotal().high()).isEqualTo(4550.0, org.assertj.core.api.Assertions.within(1e-6));
     }
 
     @Test
-    void analyze_fairMam_partialForms_onlyPresentDecomposed() {
+    void analyze_fairMam_partialModules_onlyPresentDecomposed() {
         Map<String, Object> fairMam = new LinkedHashMap<>();
-        fairMam.put("productivity_loss", threePoint(100.0, 200.0, 400.0));
-        fairMam.put("reputation_damage", threePoint(500.0, 1500.0, 4000.0));
+        fairMam.put("information_privacy", threePoint(100.0, 200.0, 400.0));
+        fairMam.put("reputational_damage", threePoint(500.0, 1500.0, 4000.0));
 
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
@@ -821,17 +817,18 @@ class FairQuantitativeAnalysisServiceTest {
 
         var materiality = result.assessments().get(0).outputs().materiality();
         assertThat(materiality).isNotNull();
-        assertThat(materiality.byLossForm())
-                .extracting(b -> b.form())
-                .containsExactlyInAnyOrder(FairLossForm.PRODUCTIVITY, FairLossForm.REPUTATION);
-        assertThat(materiality.total().low()).isEqualTo(600.0, org.assertj.core.api.Assertions.within(1e-6));
+        assertThat(materiality.fairMamModules())
+                .extracting(b -> b.module())
+                .containsExactlyInAnyOrder(
+                        FairMamCostModule.INFORMATION_PRIVACY, FairMamCostModule.REPUTATIONAL_DAMAGE);
+        assertThat(materiality.fairMamTotal().low()).isEqualTo(600.0, org.assertj.core.api.Assertions.within(1e-6));
     }
 
     @Test
-    void analyze_fairMam_currencyMismatchForm_excludedFromTotal_emitsLimitation() {
+    void analyze_fairMam_currencyMismatchModule_excludedFromTotal_emitsLimitation() {
         Map<String, Object> fairMam = new LinkedHashMap<>();
-        fairMam.put("productivity_loss", threePointWithCurrency(100.0, 200.0, 400.0, "USD"));
-        fairMam.put("fines_and_judgments", threePointWithCurrency(1000.0, 2000.0, 3000.0, "EUR"));
+        fairMam.put("information_privacy", threePointWithCurrency(100.0, 200.0, 400.0, "USD"));
+        fairMam.put("financial_fraud", threePointWithCurrency(1000.0, 2000.0, 3000.0, "EUR"));
 
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
@@ -844,20 +841,22 @@ class FairQuantitativeAnalysisServiceTest {
 
         var item = result.assessments().get(0);
         assertThat(item.limitations())
-                .anyMatch(s -> s.toLowerCase().contains("fines_and_judgments")
+                .anyMatch(s -> s.toLowerCase().contains("financial_fraud")
                         && s.toLowerCase().contains("currenc"));
         var materiality = item.outputs().materiality();
-        // The EUR form is excluded from the USD total; only productivity_loss contributes.
-        assertThat(materiality.total().low()).isEqualTo(100.0, org.assertj.core.api.Assertions.within(1e-6));
-        assertThat(materiality.byLossForm()).extracting(b -> b.form()).containsExactly(FairLossForm.PRODUCTIVITY);
+        // The EUR module is excluded from the USD total; only information_privacy contributes.
+        assertThat(materiality.fairMamTotal().low()).isEqualTo(100.0, org.assertj.core.api.Assertions.within(1e-6));
+        assertThat(materiality.fairMamModules())
+                .extracting(b -> b.module())
+                .containsExactly(FairMamCostModule.INFORMATION_PRIVACY);
     }
 
     @Test
-    void analyze_fairMam_invalidRangeForm_excludedFromTotal_emitsLimitation() {
+    void analyze_fairMam_invalidRangeModule_excludedFromTotal_emitsLimitation() {
         Map<String, Object> fairMam = new LinkedHashMap<>();
-        // response_cost out of order (low > high)
-        fairMam.put("response_cost", threePoint(900.0, 80.0, 10.0));
-        fairMam.put("productivity_loss", threePoint(100.0, 200.0, 400.0));
+        // cyber_extortion out of order (low > high)
+        fairMam.put("cyber_extortion", threePoint(900.0, 80.0, 10.0));
+        fairMam.put("information_privacy", threePoint(100.0, 200.0, 400.0));
 
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
@@ -869,16 +868,18 @@ class FairQuantitativeAnalysisServiceTest {
         FairQuantitativeAnalysisResult result = service.analyze(projectId, null, null, null);
 
         var item = result.assessments().get(0);
-        assertThat(item.limitations()).anyMatch(s -> s.toLowerCase().contains("response_cost"));
+        assertThat(item.limitations()).anyMatch(s -> s.toLowerCase().contains("cyber_extortion"));
         var materiality = item.outputs().materiality();
-        assertThat(materiality.byLossForm()).extracting(b -> b.form()).containsExactly(FairLossForm.PRODUCTIVITY);
-        assertThat(materiality.total().low()).isEqualTo(100.0, org.assertj.core.api.Assertions.within(1e-6));
+        assertThat(materiality.fairMamModules())
+                .extracting(b -> b.module())
+                .containsExactly(FairMamCostModule.INFORMATION_PRIVACY);
+        assertThat(materiality.fairMamTotal().low()).isEqualTo(100.0, org.assertj.core.api.Assertions.within(1e-6));
     }
 
     @Test
     void analyze_secondaryLossByStakeholder_parsed_withAndWithoutLossForm() {
         List<Object> stakeholders = new java.util.ArrayList<>();
-        stakeholders.add(stakeholderEntry("Customers", "reputation_damage", 1000.0, 3000.0, 9000.0, "USD"));
+        stakeholders.add(stakeholderEntry("Customers", "reputation", 1000.0, 3000.0, 9000.0, "USD"));
         stakeholders.add(stakeholderEntry("Regulators", null, 500.0, 1500.0, 4000.0, "USD"));
 
         Map<String, Object> inputs = new LinkedHashMap<>();
@@ -895,7 +896,7 @@ class FairQuantitativeAnalysisServiceTest {
         assertThat(materiality.secondaryLossByStakeholder()).hasSize(2);
         var customers = materiality.secondaryLossByStakeholder().get(0);
         assertThat(customers.stakeholder()).isEqualTo("Customers");
-        assertThat(customers.lossForm()).isEqualTo(FairLossForm.REPUTATION);
+        assertThat(customers.lossForm()).isEqualTo(FairFormOfLoss.REPUTATION);
         assertThat(customers.magnitude().likely()).isEqualTo(3000.0);
         var regulators = materiality.secondaryLossByStakeholder().get(1);
         assertThat(regulators.stakeholder()).isEqualTo("Regulators");
@@ -906,7 +907,7 @@ class FairQuantitativeAnalysisServiceTest {
     void analyze_stakeholderSecondaryLoss_invalidMagnitude_emitsLimitation_excluded() {
         List<Object> stakeholders = new java.util.ArrayList<>();
         // negative magnitude is invalid
-        stakeholders.add(stakeholderEntry("Customers", "reputation_damage", -100.0, 3000.0, 9000.0, "USD"));
+        stakeholders.add(stakeholderEntry("Customers", "reputation", -100.0, 3000.0, 9000.0, "USD"));
 
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("primary_loss_magnitude", threePointWithCurrency(1000.0, 5000.0, 20000.0, "USD"));
@@ -926,9 +927,9 @@ class FairQuantitativeAnalysisServiceTest {
     void analyze_stakeholderSecondaryLoss_currencyMismatch_excludedWithLimitation() {
         // A EUR stakeholder loss on a USD assessment must not be surfaced under the
         // single USD materiality currency — it is excluded with a limitation, mirroring
-        // the FAIR-MAM loss-form currency handling.
+        // the FAIR-MAM cost-module currency handling.
         List<Object> stakeholders = new java.util.ArrayList<>();
-        stakeholders.add(stakeholderEntry("Customers", "reputation_damage", 1000.0, 3000.0, 9000.0, "EUR"));
+        stakeholders.add(stakeholderEntry("Customers", "reputation", 1000.0, 3000.0, 9000.0, "EUR"));
         stakeholders.add(stakeholderEntry("Regulators", null, 500.0, 1500.0, 4000.0, "USD"));
 
         Map<String, Object> inputs = new LinkedHashMap<>();
@@ -972,7 +973,7 @@ class FairQuantitativeAnalysisServiceTest {
         // ALE arithmetic (ALE = LEF * LM, LM = PLM). ALE must equal the value computed
         // without any fair_mam present.
         Map<String, Object> fairMam = new LinkedHashMap<>();
-        fairMam.put("productivity_loss", threePoint(999999.0, 999999.0, 999999.0));
+        fairMam.put("business_interruption", threePoint(999999.0, 999999.0, 999999.0));
 
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("threat_event_frequency", threePoint(1.0, 2.0, 4.0));

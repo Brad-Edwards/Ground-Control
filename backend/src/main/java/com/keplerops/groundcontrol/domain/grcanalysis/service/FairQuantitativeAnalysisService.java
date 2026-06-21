@@ -645,10 +645,10 @@ public class FairQuantitativeAnalysisService {
     }
 
     /**
-     * Builds the GC-T016 FAIR-MAM materiality view: a typed decomposition of the
-     * opaque {@code fair_mam} loss-magnitude breakdown plus any stakeholder-specific
-     * secondary effects. Returns {@code null} when neither input is present so callers
-     * can treat materiality as an optional view.
+     * Builds the GC-T016 FAIR materiality view: a typed decomposition of the opaque
+     * {@code fair_mam} loss-magnitude breakdown into FAIR-MAM cost modules, plus any
+     * stakeholder-specific secondary effects. Returns {@code null} when neither input
+     * is present so callers can treat materiality as an optional view.
      *
      * <p>This view is descriptive only — it is deliberately NOT fed back into the
      * LEF/LM/ALE arithmetic, so populating {@code fair_mam} never shifts the canonical
@@ -659,29 +659,29 @@ public class FairQuantitativeAnalysisService {
         if (f.fairMam() == null && f.secondaryByStakeholder() == null) {
             return null;
         }
-        List<FairQuantitativeAnalysisResult.LossFormBreakdown> byForm =
+        List<FairQuantitativeAnalysisResult.FairMamModuleBreakdown> modules =
                 decomposeFairMam(f.fairMam(), currency, limitations);
         List<FairQuantitativeAnalysisResult.StakeholderSecondaryLoss> stakeholders =
                 parseStakeholderSecondaryLosses(f.secondaryByStakeholder(), currency, limitations);
-        FairQuantitativeAnalysisResult.ThreePoint total = sumLossForms(byForm);
-        return new FairQuantitativeAnalysisResult.Materiality(byForm, total, currency, stakeholders);
+        FairQuantitativeAnalysisResult.ThreePoint total = sumModules(modules);
+        return new FairQuantitativeAnalysisResult.Materiality(modules, total, currency, stakeholders);
     }
 
     /**
-     * Decomposes the {@code fair_mam} map into one typed breakdown per present FAIR
-     * loss form. A form is excluded (with a limitation) when its currency disagrees
+     * Decomposes the {@code fair_mam} map into one typed breakdown per present FAIR-MAM
+     * cost module. A module is excluded (with a limitation) when its currency disagrees
      * with the assessment currency or it breaches a three-point invariant, mirroring
      * the secondary-loss currency/invariant handling.
      */
-    private static List<FairQuantitativeAnalysisResult.LossFormBreakdown> decomposeFairMam(
+    private static List<FairQuantitativeAnalysisResult.FairMamModuleBreakdown> decomposeFairMam(
             Map<String, Object> fairMam, String currency, List<String> limitations) {
-        List<FairQuantitativeAnalysisResult.LossFormBreakdown> out = new ArrayList<>();
+        List<FairQuantitativeAnalysisResult.FairMamModuleBreakdown> out = new ArrayList<>();
         if (fairMam == null) {
             return out;
         }
-        for (FairLossForm form : FairLossForm.values()) {
-            FairQuantitativeAnalysisResult.LossFormBreakdown breakdown =
-                    decomposeLossForm(form, asMap(fairMam.get(form.jsonKey())), currency, limitations);
+        for (FairMamCostModule module : FairMamCostModule.values()) {
+            FairQuantitativeAnalysisResult.FairMamModuleBreakdown breakdown =
+                    decomposeModule(module, asMap(fairMam.get(module.jsonKey())), currency, limitations);
             if (breakdown != null) {
                 out.add(breakdown);
             }
@@ -689,37 +689,37 @@ public class FairQuantitativeAnalysisService {
         return out;
     }
 
-    /** Decomposes one {@code fair_mam} loss form, or {@code null} when absent/mismatched/invalid. */
-    private static FairQuantitativeAnalysisResult.LossFormBreakdown decomposeLossForm(
-            FairLossForm form, Map<String, Object> formMap, String currency, List<String> limitations) {
-        if (formMap == null) {
+    /** Decomposes one {@code fair_mam} cost module, or {@code null} when absent/mismatched/invalid. */
+    private static FairQuantitativeAnalysisResult.FairMamModuleBreakdown decomposeModule(
+            FairMamCostModule module, Map<String, Object> moduleMap, String currency, List<String> limitations) {
+        if (moduleMap == null) {
             return null;
         }
-        if (formMap.containsKey(KEY_CURRENCY)) {
-            String formCurrency = String.valueOf(formMap.get(KEY_CURRENCY));
-            if (!formCurrency.equals(currency)) {
-                limitations.add("fair_mam " + form.jsonKey() + " uses currency " + formCurrency
+        if (moduleMap.containsKey(KEY_CURRENCY)) {
+            String moduleCurrency = String.valueOf(moduleMap.get(KEY_CURRENCY));
+            if (!moduleCurrency.equals(currency)) {
+                limitations.add("fair_mam " + module.jsonKey() + " uses currency " + moduleCurrency
                         + " but assessment currency is " + currency + " — excluded from materiality total");
                 return null;
             }
         }
-        if (!validateThreePointFactor("fair_mam." + form.jsonKey(), formMap, false, limitations)) {
+        if (!validateThreePointFactor("fair_mam." + module.jsonKey(), moduleMap, false, limitations)) {
             return null;
         }
-        FairQuantitativeAnalysisResult.ThreePoint tp = parseThreePoint(formMap);
-        return tp == null ? null : new FairQuantitativeAnalysisResult.LossFormBreakdown(form, tp);
+        FairQuantitativeAnalysisResult.ThreePoint tp = parseThreePoint(moduleMap);
+        return tp == null ? null : new FairQuantitativeAnalysisResult.FairMamModuleBreakdown(module, tp);
     }
 
-    /** Elementwise sum of all decomposed loss forms; {@code null} when none are present. */
-    private static FairQuantitativeAnalysisResult.ThreePoint sumLossForms(
-            List<FairQuantitativeAnalysisResult.LossFormBreakdown> forms) {
-        if (forms.isEmpty()) {
+    /** Elementwise sum of all decomposed FAIR-MAM modules; {@code null} when none are present. */
+    private static FairQuantitativeAnalysisResult.ThreePoint sumModules(
+            List<FairQuantitativeAnalysisResult.FairMamModuleBreakdown> modules) {
+        if (modules.isEmpty()) {
             return null;
         }
         double low = 0;
         double likely = 0;
         double high = 0;
-        for (FairQuantitativeAnalysisResult.LossFormBreakdown b : forms) {
+        for (FairQuantitativeAnalysisResult.FairMamModuleBreakdown b : modules) {
             low += b.magnitude().low();
             likely += b.magnitude().likely();
             high += b.magnitude().high();
@@ -731,10 +731,10 @@ public class FairQuantitativeAnalysisService {
      * Parses the optional {@code secondary_loss_by_stakeholder} array into typed
      * per-stakeholder secondary-loss effects. An entry whose currency disagrees
      * with the single-currency materiality envelope, or that breaches a three-point
-     * invariant, is excluded with a limitation (mirroring the FAIR-MAM loss-form
+     * invariant, is excluded with a limitation (mirroring the FAIR-MAM cost-module
      * path) so a mismatched amount is never silently surfaced as the envelope
-     * currency. An unrecognized {@code loss_form} is surfaced as a {@code null}
-     * loss form rather than rejecting the entry.
+     * currency. An unrecognized {@code loss_form} (an O-RT FAIR form of loss) is
+     * surfaced as a {@code null} loss form rather than rejecting the entry.
      */
     private static List<FairQuantitativeAnalysisResult.StakeholderSecondaryLoss> parseStakeholderSecondaryLosses(
             List<Object> entries, String currency, List<String> limitations) {
@@ -759,7 +759,7 @@ public class FairQuantitativeAnalysisService {
             return null;
         }
         String stakeholder = entry.get(KEY_STAKEHOLDER) == null ? null : String.valueOf(entry.get(KEY_STAKEHOLDER));
-        FairLossForm lossForm = FairLossForm.fromJsonKey(
+        FairFormOfLoss lossForm = FairFormOfLoss.fromJsonKey(
                 entry.get(KEY_LOSS_FORM) == null ? null : String.valueOf(entry.get(KEY_LOSS_FORM)));
         String label = KEY_SECONDARY_BY_STAKEHOLDER + "[" + (stakeholder == null ? "?" : stakeholder) + "]";
         if (entry.containsKey(KEY_CURRENCY)) {

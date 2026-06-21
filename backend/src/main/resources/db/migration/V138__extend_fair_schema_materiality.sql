@@ -1,11 +1,12 @@
 -- GC-T016 / #745: extend the FAIR v3.0 methodology profile so the materiality /
 -- loss-taxonomy vocabulary is self-describing.
---   * input_schema: add the optional `secondary_loss_by_stakeholder` array
---     (stakeholder-specific secondary effects) and document the six `fair_mam`
---     entries as the FAIR forms-of-loss taxonomy.
+--   * input_schema: redefine `fair_mam` as the FAIR Materiality Assessment Model's
+--     ten primary cost modules (FAIR Institute), and add the optional
+--     `secondary_loss_by_stakeholder` array whose `loss_form` uses the six FAIR
+--     forms of loss from The Open Group Risk Taxonomy (O-RT).
 --   * output_schema: add the `materiality` object the read-only analysis envelope
---     now emits (per-loss-form breakdown, total, stakeholder secondary effects).
--- The new input property is NOT added to `required`, so rows created before this
+--     now emits (FAIR-MAM module breakdown, total, stakeholder secondary effects).
+-- The new input properties are NOT added to `required`, so rows created before this
 -- migration validate fine. Materiality is descriptive only; the canonical ALE
 -- derivation (ALE = LEF * LM; LM = PLM + SLEF*SLM) is unchanged.
 
@@ -81,12 +82,12 @@ SET input_schema = '{
     },
     "secondary_loss_by_stakeholder": {
       "type": "array",
-      "description": "Optional GC-T016 stakeholder-specific secondary loss effects. Each entry names the affected stakeholder, an optional FAIR form of loss, and a three-point monetary magnitude. Descriptive only — surfaced in the materiality view, not summed into the canonical ALE.",
+      "description": "Optional GC-T016 stakeholder-specific secondary loss effects. Each entry names the affected stakeholder, an optional O-RT FAIR form of loss, and a three-point monetary magnitude. Descriptive only — surfaced in the materiality view, not summed into the canonical ALE.",
       "items": {
         "type": "object",
         "properties": {
           "stakeholder": {"type": "string"},
-          "loss_form": {"type": "string", "enum": ["productivity_loss", "response_cost", "replacement_cost", "competitive_advantage_loss", "fines_and_judgments", "reputation_damage"]},
+          "loss_form": {"type": "string", "enum": ["productivity", "response", "replacement", "fines_and_judgments", "competitive_advantage", "reputation"]},
           "low": {"type": "number", "minimum": 0},
           "likely": {"type": "number", "minimum": 0},
           "high": {"type": "number", "minimum": 0},
@@ -111,14 +112,18 @@ SET input_schema = '{
     },
     "fair_mam": {
       "type": "object",
-      "description": "FAIR Materiality Assessment Model (FAIR-MAM) loss magnitude breakdown — the six FAIR forms of loss",
+      "description": "FAIR Materiality Assessment Model (FAIR-MAM, FAIR Institute) loss-magnitude breakdown by its ten primary cost modules. Each module is an optional three-point monetary estimate. Deeper FAIR-MAM subcategory layers are not modelled here.",
       "properties": {
-        "productivity_loss": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "response_cost": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "replacement_cost": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "competitive_advantage_loss": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "fines_and_judgments": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "reputation_damage": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}}
+        "information_privacy": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "proprietary_data_loss": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "business_interruption": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "cyber_extortion": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "network_security": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "financial_fraud": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "media_content": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "hardware_bricking": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "post_breach_security_improvements": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "reputational_damage": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}}
       }
     },
     "contact_frequency": {
@@ -218,29 +223,29 @@ SET input_schema = '{
     },
     "materiality": {
       "type": "object",
-      "description": "GC-T016 FAIR-MAM materiality view: a descriptive per-loss-form decomposition of fair_mam plus stakeholder-specific secondary effects. Does not alter the ALE derivation.",
+      "description": "GC-T016 FAIR materiality view: a descriptive decomposition of fair_mam into FAIR-MAM cost modules plus stakeholder-specific secondary effects. Does not alter the ALE derivation.",
       "properties": {
-        "byLossForm": {
+        "fairMamModules": {
           "type": "array",
-          "description": "Per FAIR form of loss with its three-point monetary magnitude",
+          "description": "Per FAIR-MAM cost module with its three-point monetary magnitude",
           "items": {
             "type": "object",
             "properties": {
-              "form": {"type": "string", "enum": ["PRODUCTIVITY", "RESPONSE", "REPLACEMENT", "COMPETITIVE_ADVANTAGE", "FINES_AND_JUDGMENTS", "REPUTATION"]},
+              "module": {"type": "string", "enum": ["INFORMATION_PRIVACY", "PROPRIETARY_DATA_LOSS", "BUSINESS_INTERRUPTION", "CYBER_EXTORTION", "NETWORK_SECURITY", "FINANCIAL_FRAUD", "MEDIA_CONTENT", "HARDWARE_BRICKING", "POST_BREACH_SECURITY_IMPROVEMENTS", "REPUTATIONAL_DAMAGE"]},
               "magnitude": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}}}
             }
           }
         },
-        "total": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}}},
+        "fairMamTotal": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}}},
         "currency": {"type": "string"},
         "secondaryLossByStakeholder": {
           "type": "array",
-          "description": "Stakeholder-specific secondary loss effects",
+          "description": "Stakeholder-specific secondary loss effects classified by O-RT FAIR form of loss",
           "items": {
             "type": "object",
             "properties": {
               "stakeholder": {"type": "string"},
-              "lossForm": {"type": "string", "enum": ["PRODUCTIVITY", "RESPONSE", "REPLACEMENT", "COMPETITIVE_ADVANTAGE", "FINES_AND_JUDGMENTS", "REPUTATION"]},
+              "lossForm": {"type": "string", "enum": ["PRODUCTIVITY", "RESPONSE", "REPLACEMENT", "FINES_AND_JUDGMENTS", "COMPETITIVE_ADVANTAGE", "REPUTATION"]},
               "magnitude": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}}}
             }
           }

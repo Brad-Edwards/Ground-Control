@@ -42,6 +42,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 versions.add(rs.getString("version"));
             }
         }
+        // V138: FAIR-MAM materiality schema seed update for FAIR_V3_0 (GC-T016) — schema-only, no DDL.
         assertThat(versions)
                 .containsExactly(
                         "001", "002", "003", "004", "005", "006", "007", "008", "009", "010", "011", "012", "013",
