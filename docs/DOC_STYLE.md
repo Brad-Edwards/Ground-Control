@@ -15,6 +15,8 @@
 
 > **Sync note for issue #1176 (2026-06-15):** Extended `tools/policy/checks.py::ENUM_CONTRACT_INVENTORY` with three GRC enum-contract entries (`VerificationStatus`, `AssuranceLevel`, `MethodologyFamily`). The classifier, Vale rules, `.vale.ini`, and this document's style rules are unchanged.
 
+> **Sync note for issue #1167 (2026-06-21):** Corrected `tools/policy/checks.py::run_controller_contracts` (and the parallel `ControllerPolicyTest`) to map a controller to its `@WebMvcTest` companion by fully qualified class instead of filename stem, fixing a same-named-controller collision across packages. The classifier, Vale rules, `.vale.ini`, and this document's style rules are unchanged.
+
 ## Rules
 
 Docs describe the system as it ships on the current commit. Write in present
