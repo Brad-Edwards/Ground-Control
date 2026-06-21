@@ -405,8 +405,9 @@ classification depends on which kind:
   `ReassessmentTriggerTargetType` added for GC-T004 / C8 in issue #863,
   and the NIST SP 800-30 Rev. 1 classifiers `ThreatEventKind`,
   `ThreatSourceRelevance`, `NistLikelihoodBand`, and `NistImpactBand` added
-  for GC-T014 / #721. These are L0 data; the placement under `state/`
-  follows convention only.
+  for GC-T014 / #721. `ThreatSourceRelevance` is a compatibility name for
+  the Table E-4 threat-event relevance values. These are L0 data; the
+  placement under `state/` follows convention only.
 
 When adding a new file under `state/`, classify it explicitly in the file
 header or the introducing PR's plan. The policy rule that requires this

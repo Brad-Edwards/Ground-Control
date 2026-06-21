@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Structured result of a FAIR v3.0 quantitative risk analysis per GC-T011.
+ * Structured result of an Open FAIR quantitative risk analysis per GC-T011.
  * Carries the GC-L007 preflight result-contract fields
  * ({@code analysisKind}, {@code project}, {@code asOf},
  * {@code derivationMethod}, {@code scale}, {@code units}, structured
@@ -57,8 +57,6 @@ public record FairQuantitativeAnalysisResult(
             Map<String, Object> primaryLossMagnitude,
             Map<String, Object> secondaryLossEventFrequency,
             Map<String, Object> secondaryLossMagnitude,
-            Map<String, Object> fairCam,
-            Map<String, Object> fairMam,
             Map<String, Object> uncertaintyMetadata) {}
 
     public record Outputs(

@@ -54,7 +54,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
-                        "136", "137");
+                        "136", "137", "138");
     }
 
     @Test
@@ -680,7 +680,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         + " WHERE table_name = 'test_suite_member'"
                         + " AND constraint_name = 'uq_test_suite_member_pair'")
                 .getSingleResult();
-        // Codex pre-push cycle 2 / test-quality review: the DEFERRABLE
+        // Test-quality review: the DEFERRABLE
         // (suite, position) constraint is the only thing keeping concurrent
         // member writes from duplicating positions. If V092 ever lost the
         // constraint, single-threaded integration tests would still pass —
@@ -699,7 +699,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         + " AND c.conname = 'uq_test_suite_member_position'"
                         + " AND c.condeferrable = true")
                 .getSingleResult();
-        // Audit shadow keeps the identity-defining FKs (codex pre-push
+        // Audit shadow keeps the identity-defining FKs (test-quality
         // cycle 1 F1) — without these columns a deleted member row could
         // not be traced back to its suite/test-case.
         entityManager
@@ -1014,6 +1014,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT crosswalk_entries FROM methodology_profile_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
+        // V138: primary-source alignment for seeded FAIR/NIST methodology profiles.
+        assertSeededMethodologyProfilesAligned();
         // V126: reassessmentRequiredAt on risk_assessment_result and audit (GC-T004 / C8, #863).
         entityManager
                 .createNativeQuery("SELECT 1 FROM information_schema.columns"
@@ -1109,7 +1111,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         // endpoints as PARTIAL unique indexes, each predicated on its own endpoint family so a
         // NULL endpoint column from a different family cannot collide under NULLS NOT DISTINCT.
         // Asserting each index is partial (has a WHERE predicate) is the regression gate for the
-        // codex review finding that drove the partial-index rewrite.
+        // review finding that drove the partial-index rewrite.
         for (String idx : new String[] {
             "uq_rcm_control_scenario_asset",
             "uq_rcm_control_record_asset",
@@ -1135,5 +1137,42 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT threat_model_id FROM risk_control_mapping_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
+    }
+
+    private void assertSeededMethodologyProfilesAligned() {
+        assertThat(entityManager
+                        .createNativeQuery("SELECT version FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
+                        .getSingleResult())
+                .isEqualTo("O-RT 3.0.1 / O-RA 2.0.1");
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>>"
+                                + " '{properties,probability_of_action,properties,high,maximum}'"
+                                + " FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
+                        .getSingleResult())
+                .isEqualTo("1");
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>>"
+                                + " '{properties,threat_capability,properties,high,maximum}'"
+                                + " FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
+                        .getSingleResult())
+                .isEqualTo("100");
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>"
+                                + " '{properties,fair_cam}'"
+                                + " FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
+                        .getSingleResult())
+                .isNull();
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>>"
+                                + " '{properties,threat_event_relevance,description}'"
+                                + " FROM methodology_profile WHERE profile_key = 'NIST_SP800_30_R1'")
+                        .getSingleResult())
+                .isEqualTo("Threat event relevance per NIST SP 800-30 Rev. 1 Table E-4");
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>>"
+                                + " '{properties,threat_source_relevance,deprecated}'"
+                                + " FROM methodology_profile WHERE profile_key = 'NIST_SP800_30_R1'")
+                        .getSingleResult())
+                .isEqualTo("true");
     }
 }

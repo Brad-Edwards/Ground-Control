@@ -62,7 +62,7 @@ import {
   analyzeEvidenceFreshness, analyzeObservationProjection, aggregateVendorRisk,
   // ---- GC-T014 NIST SP 800-30 Rev. 1 assessment ----
   analyzeNistAssessment,
-  // ---- GC-T011 FAIR v3.0 quantitative risk analysis ----
+  // ---- GC-T011 Open FAIR quantitative risk analysis ----
   analyzeFairQuantitative,
   analyzeComplianceMonitoring,
   // ---- history / exports (kept for completeness even though tools route to gc_query) ----
@@ -1628,13 +1628,13 @@ const ANALYZE_KINDS = [
   "cycles", "orphans", "coverage_gaps", "impact", "cross_wave",
   "consistency", "completeness", "status_drift", "similarity", "work_order",
   // GC-L007 — GRC analyses on existing substrates. Methodology-execution
-  // engines (FAIR / FAIR-CAM) and compliance-framework analyses are tracked
+  // engines (Open FAIR / control analytics) and compliance-framework analyses are tracked
   // separately and ship their own kinds when those engines land.
   "evidence_freshness", "observation_exposure", "control_state", "vendor_risk_aggregation",
   // GC-T014 — NIST SP 800-30 Rev. 1 risk-assessment view (methodology-attributed
   // envelope from /api/v1/analysis/grc/nist-sp-800-30).
   "nist_assessment",
-  // GC-T011 — FAIR v3.0 quantitative risk analysis (methodology-attributed envelope from /api/v1/analysis/grc/fair-quantitative)
+  // GC-T011 — Open FAIR quantitative risk analysis (methodology-attributed envelope from /api/v1/analysis/grc/fair-quantitative)
   "fair_quantitative",
   // GC-I004 — continuous compliance monitoring (ADR-058 impact/stale sets)
   "continuous_compliance_monitoring",
