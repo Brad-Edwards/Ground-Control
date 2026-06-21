@@ -227,3 +227,11 @@ Correcting a `GOVERNANCE_FIELDS` create/update allowlist in `mcp/ground-control/
 Bumping the `CLAUDE_MODEL_BY_TIER.high` routing-default model id in `mcp/ground-control/lib.js` from `claude-opus-4-7` to `claude-opus-4-8` (issue #1181) is a constant change recorded in an ADR-054 amendment, not a new doc page or style rule.
 
 Adding `expected_model` and `model_matches_expected` to the `/implement` step-telemetry record in `mcp/ground-control/lib.js` (issue #1181, schema `gc.implement.telemetry/v2`) is a telemetry-record field addition documented in ADR-036 and recorded in an ADR-054 amendment, not a new doc page or style rule.
+
+New `/implement` workflow-gate configuration under `.ground-control.yaml`
+(for example, `workflow.dev_start_gate` for GC-O007 / #1194) follows the same
+contract. The config parser and MCP tool descriptions are the authoritative
+machine surface, and the required agent behavior lives in the `skills/implement/`
+step files. Record the surface addition in ADR-054 and the changelog fragment;
+do not add separate reference prose unless the change creates a new
+documentation style rule.
