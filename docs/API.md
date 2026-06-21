@@ -309,6 +309,7 @@ GC-T011 / #723 as the `fair-quantitative` endpoint.
 | GET | `/analysis/grc/nist-sp-800-30` | - | 200 | NIST SP 800-30 Rev. 1 methodology-attributed view over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `NIST_SP800_30_R1`. Decodes inputs into threat source, threat event (`ADVERSARIAL` / `NON_ADVERSARIAL`), vulnerabilities, predisposing conditions, threat-event relevance, multi-dimensional likelihood, impact level, and assessment timeframe; computes overall likelihood (analyst-supplied or derived per Table G-5) and risk level (per Table I-2) as ordinal bands with explicit `scale`/`units` and a matrix cell label. |
 | GET | `/analysis/grc/fair-quantitative` | - | 200 | Open FAIR quantitative risk analysis over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `FAIR`, aligned to O-RT 3.0.1 and O-RA 2.0.1. Derives Threat Event Frequency when needed (TEF = CF × PoA), Loss Event Frequency (LEF = TEF × Vulnerability), expected Loss Magnitude (LM = PLM + SLEF × SLM), and Annualized Loss Expectancy (ALE = LEF × LM) via three-point estimates with optional persisted Monte Carlo percentiles. Returns a methodology-attributed envelope with `scale: "continuous"`, `units: "monetary"`, and per-item limitations for missing factors or absent percentiles. |
 | GET | `/analysis/grc/compliance-monitoring` | - | 200 | Continuous compliance monitoring (GC-I004): composes evidence expiration (`staleSet`), control modifications within the lookback window, and `reassessmentRequiredAt` posture signals (`impactSet`) using ADR-058 vocabulary. |
+| GET | `/analysis/grc/fair-cam-control-analytics` | - | 200 | FAIR-CAM control analytics (GC-I017): derives control-level analytics in the FAIR-CAM framework from `RiskControlMapping`, `ControlEffectivenessAssessment`, and `ControlTest` rows. Returns per-control domain attribution (`loss_event_control`, `variance_management_control`, `decision_support_control`), capability (design effectiveness), coverage (distinct analysis endpoints), operational performance (operating effectiveness + fresh test count), and effect-dimension entries. All values carry `scale`/`units`/`basis` and explicit `limitations`. |
 
 `GET /analysis/grc/evidence-freshness` accepts:
 
@@ -396,6 +397,23 @@ probability_of_action`. When ALE is not persisted, a `limitations` entry notes a
 percentiles. Direct TEF and direct Vulnerability estimates are valid higher-abstraction FAIR estimates;
 limitations are emitted for partial lower-level factor pairs or when TCap/RS are present without a
 distribution calculation for `P(TCap > RS)`.
+
+`GET /analysis/grc/fair-cam-control-analytics` accepts:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `project` | string | auto-resolved | Project identifier |
+| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp; assessments and tests after this date are excluded |
+| `freshnessWindowDays` | int (positive) | 90 | Controls how many days back from `asOf` a `PASS` test counts as fresh for operational performance. Non-positive values return `400`. |
+| `controlId` | UUID | - | Narrow to mappings for a single catalog control |
+| `scopedImplementationId` | UUID | - | Narrow to mappings for a single scoped control implementation |
+| `riskScenarioId` | UUID | - | Narrow to mappings on a single risk scenario |
+| `riskRegisterRecordId` | UUID | - | Narrow to mappings on a single risk register record |
+| `threatModelId` | UUID | - | Narrow to mappings on a single threat model |
+| `methodologyProfileId` | UUID | - | Reserved for future profile-aware filtering (currently accepted, not enforced) |
+| `domain` | enum (`LOSS_EVENT_CONTROL` \| `VARIANCE_MANAGEMENT_CONTROL` \| `DECISION_SUPPORT_CONTROL`) | - | Filter results to one FAIR-CAM domain |
+
+Response shape for `GET /analysis/grc/fair-cam-control-analytics`: top-level `analysisKind: "fair_cam_control_analytics"`, `project`, `asOf`, `derivationMethod` (`"fair-cam-control-analytics-v1"`), a `controls` array, a `counts` summary (`total`, `byDomain`, `withLimitations`), and a top-level `limitations` array. Each control item carries `endpointType` (`CONTROL` or `SCOPED_IMPLEMENTATION`), `endpointId`, `controlId` or `scopedImplementationId`, `controlUid`, `controlName`, `domainAttributions` (list of `{domain, source}` where `source` is `"methodology_influence"` or `"mapping_control_role"`), `capability` (design effectiveness as `{scale, units, value, basis}`), `coverage` (count of distinct analysis endpoints as `{scale: "count", units: "endpoints", value, basis}`), `operationalPerformance` (operating effectiveness with fresh-test count in `basis`), `effects` (list of `{dimension, value}` for FAIR-CAM dimension keys found in `methodologyInfluence`), `evidenceRefs`, and per-item `limitations`. Domain attribution precedence: `fair_cam_domain` key in `methodologyInfluence` wins; fallback derives from `MappingControlRole` (PREVENTIVE / DETECTIVE / DETERRENT → `loss_event_control`; CORRECTIVE / RECOVERY / COMPENSATING → `variance_management_control`; DIRECTIVE → `decision_support_control`). Fallback attribution emits a `limitations` entry.
 
 Every response carries a `limitations` array. For the vendor-risk endpoint
 that array always includes a note that vendors are modeled as

@@ -65,6 +65,8 @@ import {
   // ---- GC-T011 Open FAIR quantitative risk analysis ----
   analyzeFairQuantitative,
   analyzeComplianceMonitoring,
+  // ---- GC-I017 FAIR-CAM control analytics ----
+  analyzeFairCamControlAnalytics,
   // ---- history / exports (kept for completeness even though tools route to gc_query) ----
   getRequirementHistory, getRelationHistory, getTraceabilityLinkHistory,
   getRequirementTimeline, getRequirementDiff, getProjectTimeline,
@@ -1638,6 +1640,8 @@ const ANALYZE_KINDS = [
   "fair_quantitative",
   // GC-I004 — continuous compliance monitoring (ADR-058 impact/stale sets)
   "continuous_compliance_monitoring",
+  // GC-I017 — FAIR-CAM control analytics (domain attribution, capability, coverage, operational performance)
+  "fair_cam_control_analytics",
 ];
 
 server.tool(
@@ -1651,6 +1655,7 @@ server.tool(
     `nist_assessment→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
     `fair_quantitative→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
     `continuous_compliance_monitoring→{project?, as_of?, freshness_window_days?}. ` +
+    `fair_cam_control_analytics→{project?, as_of?, freshness_window_days?, control_id?, scoped_implementation_id?, risk_scenario_id?, risk_register_record_id?, threat_model_id?, methodology_profile_id?, domain?}. ` +
     `Others take {project?}.`,
   {
     kind: z.enum(ANALYZE_KINDS),
@@ -1669,6 +1674,12 @@ server.tool(
     // GC-T014 NIST assessment params
     risk_assessment_result_id: z.string().uuid().optional(),
     risk_scenario_id: z.string().uuid().optional(),
+    // GC-I017 FAIR-CAM control analytics params
+    scoped_implementation_id: z.string().uuid().optional(),
+    risk_register_record_id: z.string().uuid().optional(),
+    threat_model_id: z.string().uuid().optional(),
+    methodology_profile_id: z.string().uuid().optional(),
+    domain: z.enum(["LOSS_EVENT_CONTROL", "VARIANCE_MANAGEMENT_CONTROL", "DECISION_SUPPORT_CONTROL"]).optional(),
   },
   async (args) => {
     try {
@@ -1739,6 +1750,19 @@ server.tool(
             project: args.project,
             asOf: args.as_of,
             freshnessWindowDays: args.freshness_window_days,
+          }), null, 2));
+        case "fair_cam_control_analytics":
+          return ok(JSON.stringify(await analyzeFairCamControlAnalytics({
+            project: args.project,
+            asOf: args.as_of,
+            freshnessWindowDays: args.freshness_window_days,
+            controlId: args.control_id,
+            scopedImplementationId: args.scoped_implementation_id,
+            riskScenarioId: args.risk_scenario_id,
+            riskRegisterRecordId: args.risk_register_record_id,
+            threatModelId: args.threat_model_id,
+            methodologyProfileId: args.methodology_profile_id,
+            domain: args.domain,
           }), null, 2));
         default: return err(new Error(`Unknown kind: ${args.kind}`));
       }

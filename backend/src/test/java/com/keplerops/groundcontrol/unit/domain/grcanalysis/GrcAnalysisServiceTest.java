@@ -4,8 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.keplerops.groundcontrol.domain.grcanalysis.service.ComplianceMonitoringAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsService;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentService;
@@ -16,6 +20,7 @@ import com.keplerops.groundcontrol.domain.grcanalysis.service.VendorRiskAggregat
 import com.keplerops.groundcontrol.domain.grcanalysis.service.VendorRiskAggregationService;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,6 +47,15 @@ class GrcAnalysisServiceTest {
 
     @Mock
     private NistAssessmentService nistAssessmentService;
+
+    @Mock
+    private FairQuantitativeAnalysisService fairQuantitativeAnalysisService;
+
+    @Mock
+    private ComplianceMonitoringAnalysisService complianceMonitoringAnalysisService;
+
+    @Mock
+    private FairCamControlAnalyticsService fairCamControlAnalyticsService;
 
     @InjectMocks
     private GrcAnalysisService service;
@@ -147,5 +161,27 @@ class GrcAnalysisServiceTest {
 
         assertThat(actual).isSameAs(expected);
         verify(nistAssessmentService).analyze(projectId, asOf, assessmentId, scenarioId);
+    }
+
+    @Test
+    void fairCamControlAnalytics_delegatesToFairCamControlAnalyticsService() {
+        UUID projectId = UUID.randomUUID();
+        Instant asOf = Instant.parse("2026-06-21T00:00:00Z");
+        FairCamControlAnalyticsResult expected = new FairCamControlAnalyticsResult(
+                "fair_cam_control_analytics",
+                "ground-control",
+                asOf,
+                "fair-cam-control-analytics-v1",
+                List.of(),
+                new FairCamControlAnalyticsResult.Counts(0, Map.of(), 0),
+                List.of());
+        when(fairCamControlAnalyticsService.analyze(projectId, asOf, 90, null, null, null, null, null, null, null))
+                .thenReturn(expected);
+
+        FairCamControlAnalyticsResult actual =
+                service.fairCamControlAnalytics(projectId, asOf, 90, null, null, null, null, null, null, null);
+
+        assertThat(actual).isSameAs(expected);
+        verify(fairCamControlAnalyticsService).analyze(projectId, asOf, 90, null, null, null, null, null, null, null);
     }
 }

@@ -734,6 +734,7 @@ export const TO_CAMEL = {
   supporting_test_ids: "supportingTestIds",
   implementation_scope: "implementationScope",
   methodology_factors: "methodologyFactors",
+  methodology_influence: "methodologyInfluence",
   analyst_identity: "analystIdentity",
   input_factors: "inputFactors",
   observation_date: "observationDate",
@@ -849,6 +850,11 @@ export const OPAQUE_VALUE_KEYS = new Set([
   // #1106 — RiskRegisterRecordRequest.decisionMetadata is Map<String,Object>.
   "decisionMetadata",
   "decision_metadata",
+  // GC-I017 — RiskControlMapping.methodologyInfluence is a Map<String,Object>
+  // whose inner keys are methodology-defined (FAIR-CAM domain, effect dimensions,
+  // and any profile-defined influence factors). These must not be camel/snake-rewritten.
+  "methodologyInfluence",
+  "methodology_influence",
   // NOTE: VerificationResultRequest.evidence is also a Map<String,Object>, but
   // "evidence" is also used as a structured array field in analysis responses
   // (toSnakeCase path). OPAQUE_VALUE_KEYS is consulted by both directions, so
@@ -1296,6 +1302,39 @@ export async function analyzeComplianceMonitoring({
 } = {}) {
   return request("GET", "/api/v1/analysis/grc/compliance-monitoring", {
     params: { project, asOf, freshnessWindowDays },
+  });
+}
+
+// GC-I017 — FAIR-CAM control analytics. Derives control-level domain
+// attribution (loss_event_control / variance_management_control /
+// decision_support_control), capability, coverage, operational performance,
+// and effect-dimension entries from RiskControlMapping,
+// ControlEffectivenessAssessment, and ControlTest rows.
+export async function analyzeFairCamControlAnalytics({
+  project,
+  asOf,
+  freshnessWindowDays,
+  controlId,
+  scopedImplementationId,
+  riskScenarioId,
+  riskRegisterRecordId,
+  threatModelId,
+  methodologyProfileId,
+  domain,
+} = {}) {
+  return request("GET", "/api/v1/analysis/grc/fair-cam-control-analytics", {
+    params: {
+      project,
+      asOf,
+      freshnessWindowDays,
+      controlId,
+      scopedImplementationId,
+      riskScenarioId,
+      riskRegisterRecordId,
+      threatModelId,
+      methodologyProfileId,
+      domain,
+    },
   });
 }
 

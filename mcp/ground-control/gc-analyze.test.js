@@ -13,6 +13,7 @@ import {
   analyzeNistAssessment,
   analyzeFairQuantitative,
   analyzeComplianceMonitoring,
+  analyzeFairCamControlAnalytics,
   toCamelCase,
   toSnakeCase,
 } from "./lib.js";
@@ -407,5 +408,103 @@ describe("analyzeComplianceMonitoring (GC-I004)", () => {
     assert.equal(url.searchParams.get("project"), "ground-control");
     assert.equal(url.searchParams.get("asOf"), "2026-06-20T00:00:00Z");
     assert.equal(url.searchParams.get("freshnessWindowDays"), "90");
+  });
+});
+
+describe("analyzeFairCamControlAnalytics (GC-I017)", () => {
+  it("hits /api/v1/analysis/grc/fair-cam-control-analytics with camelCase params", async () => {
+    const calls = makeFetchSpy({ body: { analysisKind: "fair_cam_control_analytics" } });
+
+    await analyzeFairCamControlAnalytics({
+      project: "ground-control",
+      asOf: "2026-06-21T00:00:00Z",
+      freshnessWindowDays: 90,
+      controlId: "00000000-0000-0000-0000-000000000010",
+      scopedImplementationId: "00000000-0000-0000-0000-000000000011",
+      riskScenarioId: "00000000-0000-0000-0000-000000000012",
+      riskRegisterRecordId: "00000000-0000-0000-0000-000000000013",
+      threatModelId: "00000000-0000-0000-0000-000000000014",
+      methodologyProfileId: "00000000-0000-0000-0000-000000000015",
+      domain: "loss_event_control",
+    });
+
+    assert.equal(calls.length, 1);
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/analysis/grc/fair-cam-control-analytics");
+    assert.equal(calls[0].method, "GET");
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), "2026-06-21T00:00:00Z");
+    assert.equal(url.searchParams.get("freshnessWindowDays"), "90");
+    assert.equal(url.searchParams.get("controlId"), "00000000-0000-0000-0000-000000000010");
+    assert.equal(url.searchParams.get("scopedImplementationId"), "00000000-0000-0000-0000-000000000011");
+    assert.equal(url.searchParams.get("riskScenarioId"), "00000000-0000-0000-0000-000000000012");
+    assert.equal(url.searchParams.get("riskRegisterRecordId"), "00000000-0000-0000-0000-000000000013");
+    assert.equal(url.searchParams.get("threatModelId"), "00000000-0000-0000-0000-000000000014");
+    assert.equal(url.searchParams.get("methodologyProfileId"), "00000000-0000-0000-0000-000000000015");
+    assert.equal(url.searchParams.get("domain"), "loss_event_control");
+  });
+
+  it("omits undefined params", async () => {
+    const calls = makeFetchSpy();
+
+    await analyzeFairCamControlAnalytics({ project: "ground-control" });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), null);
+    assert.equal(url.searchParams.get("freshnessWindowDays"), null);
+    assert.equal(url.searchParams.get("controlId"), null);
+    assert.equal(url.searchParams.get("scopedImplementationId"), null);
+    assert.equal(url.searchParams.get("riskScenarioId"), null);
+    assert.equal(url.searchParams.get("riskRegisterRecordId"), null);
+    assert.equal(url.searchParams.get("threatModelId"), null);
+    assert.equal(url.searchParams.get("methodologyProfileId"), null);
+    assert.equal(url.searchParams.get("domain"), null);
+  });
+
+  it("returns the JSON body verbatim", async () => {
+    makeFetchSpy({
+      body: {
+        analysisKind: "fair_cam_control_analytics",
+        derivationMethod: "fair-cam-control-analytics-v1",
+        counts: { total: 2, byDomain: { loss_event_control: 1, decision_support_control: 1 } },
+      },
+    });
+
+    const result = await analyzeFairCamControlAnalytics({ project: "ground-control" });
+
+    assert.equal(result.analysisKind, "fair_cam_control_analytics");
+    assert.equal(result.counts.total, 2);
+    assert.equal(result.counts.byDomain.loss_event_control, 1);
+  });
+
+  it("preserves methodology_influence inner keys through case conversion (opaque guard)", () => {
+    // GC-I017: methodologyInfluence is a Map<String,Object> with methodology-defined
+    // inner keys (fair_cam_domain, loss_event_frequency, etc.) that must NOT be
+    // camel/snake-rewritten. This locks in the OPAQUE_VALUE_KEYS guard for both forms.
+    const payload = {
+      methodology_influence: {
+        fair_cam_domain: "loss_event_control",
+        loss_event_frequency: 0.3,
+        loss_magnitude: 0.1,
+        control_reliability: 0.9,
+        decision_alignment: 0.7,
+      },
+    };
+
+    const camel = toCamelCase(payload);
+    // Outer key renamed; inner methodology-defined keys are NOT renamed.
+    assert.ok(camel.methodologyInfluence, "methodologyInfluence key must exist after toCamelCase");
+    assert.deepEqual(
+      Object.keys(camel.methodologyInfluence).sort((a, b) => a.localeCompare(b)),
+      ["control_reliability", "decision_alignment", "fair_cam_domain", "loss_event_frequency", "loss_magnitude"],
+    );
+
+    const snake = toSnakeCase(camel);
+    assert.ok(snake.methodology_influence, "methodology_influence key must exist after toSnakeCase");
+    assert.deepEqual(
+      Object.keys(snake.methodology_influence).sort((a, b) => a.localeCompare(b)),
+      ["control_reliability", "decision_alignment", "fair_cam_domain", "loss_event_frequency", "loss_magnitude"],
+    );
   });
 });

@@ -137,7 +137,8 @@ amendments to ADR-054, not documentation edits.
 New `gc_analyze` kinds backed by a fixed REST endpoint follow the same
 convention: a new kind value in `ANALYZE_KINDS` (for example
 `nist_assessment` added for GC-T014 / #721; `fair_quantitative` added for
-GC-T011 / #723; `continuous_compliance_monitoring` added for GC-I004 / #763)
+GC-T011 / #723; `continuous_compliance_monitoring` added for GC-I004 / #763;
+`fair_cam_control_analytics` added for GC-I017 / #746)
 plus an adapter helper in `lib.js` is documented by the
 endpoint entry in `docs/API.md` and the `gc_analyze` tool description string
 in `mcp/ground-control/index.js`. No separate user-facing prose page per

@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.api.grcanalysis;
 
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlDomain;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionMode;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
@@ -101,5 +102,31 @@ public class GrcAnalysisController {
         UUID projectId = projectService.resolveProjectId(project);
         return ComplianceMonitoringResponse.from(
                 grcAnalysisService.complianceMonitoring(projectId, asOf, freshnessWindowDays));
+    }
+
+    @GetMapping("/fair-cam-control-analytics")
+    public FairCamControlAnalyticsResponse fairCamControlAnalytics(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false) UUID controlId,
+            @RequestParam(required = false) UUID scopedImplementationId,
+            @RequestParam(required = false) UUID riskScenarioId,
+            @RequestParam(required = false) UUID riskRegisterRecordId,
+            @RequestParam(required = false) UUID threatModelId,
+            @RequestParam(required = false) UUID methodologyProfileId,
+            @RequestParam(required = false) FairCamControlDomain domain,
+            @RequestParam(required = false, defaultValue = "" + DEFAULT_FRESHNESS_WINDOW_DAYS) @Positive int freshnessWindowDays) {
+        UUID projectId = projectService.resolveProjectId(project);
+        return FairCamControlAnalyticsResponse.from(grcAnalysisService.fairCamControlAnalytics(
+                projectId,
+                asOf,
+                freshnessWindowDays,
+                controlId,
+                scopedImplementationId,
+                riskScenarioId,
+                riskRegisterRecordId,
+                threatModelId,
+                methodologyProfileId,
+                domain));
     }
 }
