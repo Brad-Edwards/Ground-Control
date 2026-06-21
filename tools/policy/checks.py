@@ -382,7 +382,10 @@ def run_adr_guard(changed_files: list[str], root: Path = REPO_ROOT) -> list[Viol
 JAVA_MAIN_SOURCE_PREFIX = "backend/src/main/java/"
 JAVA_TEST_SOURCE_PREFIX = "backend/src/test/java/"
 WEBMVCTEST_ANNOTATION_RE = re.compile(r"@WebMvcTest\s*\(([^)]*)\)", re.DOTALL)
-JAVA_CLASS_LITERAL_RE = re.compile(r"([\w.]+)\.class\b")
+# Dotted identifier preceding `.class`, written as disjoint segments
+# (`[\w$]+` separated by literal dots) so the matcher is linear — a single
+# `[\w.]+\.class` overlaps the `.` and backtracks super-linearly (Sonar S8786).
+JAVA_CLASS_LITERAL_RE = re.compile(r"([\w$]+(?:\.[\w$]+)*)\.class\b")
 # Non-static single-type imports only: `import static ...;` has a space after
 # `import` that `[\w.]+` cannot span, so it never matches here.
 JAVA_IMPORT_RE = re.compile(r"^\s*import\s+([\w.]+)\s*;", re.MULTILINE)

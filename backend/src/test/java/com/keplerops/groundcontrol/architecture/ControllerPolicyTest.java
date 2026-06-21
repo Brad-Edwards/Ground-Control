@@ -19,7 +19,10 @@ class ControllerPolicyTest {
     private static final Path MAIN_ROOT = Path.of("src/main/java");
     private static final Path TEST_ROOT = Path.of("src/test/java");
     private static final Pattern WEBMVCTEST = Pattern.compile("@WebMvcTest\\s*\\(([^)]*)\\)", Pattern.DOTALL);
-    private static final Pattern CLASS_LITERAL = Pattern.compile("([\\w.]+)\\.class\\b");
+    // Dotted identifier preceding `.class`, written as disjoint segments so the
+    // matcher is linear; a single `[\w.]+\.class` overlaps the `.` and backtracks
+    // super-linearly (Sonar S8786).
+    private static final Pattern CLASS_LITERAL = Pattern.compile("([\\w$]+(?:\\.[\\w$]+)*)\\.class\\b");
     // Non-static single-type imports only; `import static ...;` has a space the
     // class-token group cannot span, so it never matches here.
     private static final Pattern IMPORT = Pattern.compile("(?m)^\\s*import\\s+([\\w.]+)\\s*;");
