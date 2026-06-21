@@ -198,6 +198,154 @@ class PolicyChecksTest(unittest.TestCase):
             codes = {item.code for item in violations}
             self.assertNotIn("controller-parity", codes)
 
+    @staticmethod
+    def _write_file(root: Path, rel: str, content: str) -> str:
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return rel
+
+    def test_controller_webmvctest_no_false_positive_on_same_name_collision(self):
+        """A controller and its real companion (resolved by FQCN) satisfy the check
+        even when another package has a same-named controller + test (issue #1167)."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            audit_controller = self._write_file(
+                root,
+                "backend/src/main/java/com/keplerops/groundcontrol/api/audit/AuditController.java",
+                "package com.keplerops.groundcontrol.api.audit;\nclass AuditController {}\n",
+            )
+            self._write_file(
+                root,
+                "backend/src/main/java/com/keplerops/groundcontrol/api/audits/AuditController.java",
+                "package com.keplerops.groundcontrol.api.audits;\nclass AuditController {}\n",
+            )
+            audit_trail_test = self._write_file(
+                root,
+                "backend/src/test/java/com/keplerops/groundcontrol/unit/api/AuditTrailControllerTest.java",
+                "package com.keplerops.groundcontrol.unit.api;\n"
+                "import com.keplerops.groundcontrol.api.audit.AuditController;\n"
+                "@WebMvcTest(AuditController.class)\nclass AuditTrailControllerTest {}\n",
+            )
+            self._write_file(
+                root,
+                "backend/src/test/java/com/keplerops/groundcontrol/unit/api/AuditControllerTest.java",
+                "package com.keplerops.groundcontrol.unit.api;\n"
+                "import com.keplerops.groundcontrol.api.audits.AuditController;\n"
+                "@WebMvcTest(AuditController.class)\nclass AuditControllerTest {}\n",
+            )
+            violations = run_controller_contracts(
+                [audit_controller, audit_trail_test],
+                root=root,
+            )
+            codes = {item.code for item in violations}
+            self.assertNotIn(
+                "controller-webmvctest-update",
+                codes,
+                "real companion AuditTrailControllerTest must satisfy api/audit/AuditController",
+            )
+
+    def test_controller_webmvctest_update_still_fires_without_companion_change(self):
+        """Changing a controller without touching its real companion still fails
+        (no regression in the real signal) despite a same-named test in another package."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_file(
+                root,
+                "backend/src/main/java/com/keplerops/groundcontrol/api/audit/AuditController.java",
+                "package com.keplerops.groundcontrol.api.audit;\nclass AuditController {}\n",
+            )
+            audits_controller = self._write_file(
+                root,
+                "backend/src/main/java/com/keplerops/groundcontrol/api/audits/AuditController.java",
+                "package com.keplerops.groundcontrol.api.audits;\nclass AuditController {}\n",
+            )
+            self._write_file(
+                root,
+                "backend/src/test/java/com/keplerops/groundcontrol/unit/api/AuditTrailControllerTest.java",
+                "package com.keplerops.groundcontrol.unit.api;\n"
+                "import com.keplerops.groundcontrol.api.audit.AuditController;\n"
+                "@WebMvcTest(AuditController.class)\nclass AuditTrailControllerTest {}\n",
+            )
+            self._write_file(
+                root,
+                "backend/src/test/java/com/keplerops/groundcontrol/unit/api/AuditControllerTest.java",
+                "package com.keplerops.groundcontrol.unit.api;\n"
+                "import com.keplerops.groundcontrol.api.audits.AuditController;\n"
+                "@WebMvcTest(AuditController.class)\nclass AuditControllerTest {}\n",
+            )
+            violations = run_controller_contracts([audits_controller], root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("controller-webmvctest-update", codes)
+
+    def test_controller_webmvctest_missing_when_no_slice_anywhere(self):
+        """A controller with no @WebMvcTest slice referencing it raises -missing."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            controller = self._write_file(
+                root,
+                "backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java",
+                "package com.keplerops.groundcontrol.api.foo;\nclass FooController {}\n",
+            )
+            violations = run_controller_contracts([controller], root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("controller-webmvctest-missing", codes)
+
+    def test_controller_webmvctest_annotation_when_stem_test_is_not_a_slice(self):
+        """A same-stem <Controller>Test.java that is not a @WebMvcTest raises -annotation."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            controller = self._write_file(
+                root,
+                "backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java",
+                "package com.keplerops.groundcontrol.api.foo;\nclass FooController {}\n",
+            )
+            self._write_file(
+                root,
+                "backend/src/test/java/com/keplerops/groundcontrol/unit/api/FooControllerTest.java",
+                "package com.keplerops.groundcontrol.unit.api;\nclass FooControllerTest {}\n",
+            )
+            violations = run_controller_contracts([controller], root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("controller-webmvctest-annotation", codes)
+
+    def test_controller_webmvctest_wrong_companion_in_diff_still_fails(self):
+        """Adversarial guard for issue #1167: a same-named companion from the WRONG
+        package, present in the diff, must NOT satisfy coverage for the other
+        package's controller. Passes under FQCN resolution; fails under
+        simple-name matching, so it detects a regression to the old heuristic."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            audit_controller = self._write_file(
+                root,
+                "backend/src/main/java/com/keplerops/groundcontrol/api/audit/AuditController.java",
+                "package com.keplerops.groundcontrol.api.audit;\nclass AuditController {}\n",
+            )
+            self._write_file(
+                root,
+                "backend/src/main/java/com/keplerops/groundcontrol/api/audits/AuditController.java",
+                "package com.keplerops.groundcontrol.api.audits;\nclass AuditController {}\n",
+            )
+            # Wrong companion: same simple name, but imports the OTHER package's controller.
+            wrong_companion = self._write_file(
+                root,
+                "backend/src/test/java/com/keplerops/groundcontrol/unit/api/AuditControllerTest.java",
+                "package com.keplerops.groundcontrol.unit.api;\n"
+                "import com.keplerops.groundcontrol.api.audits.AuditController;\n"
+                "@WebMvcTest(AuditController.class)\nclass AuditControllerTest {}\n",
+            )
+            # Correct companion exists on disk but is deliberately NOT in the diff.
+            self._write_file(
+                root,
+                "backend/src/test/java/com/keplerops/groundcontrol/unit/api/AuditTrailControllerTest.java",
+                "package com.keplerops.groundcontrol.unit.api;\n"
+                "import com.keplerops.groundcontrol.api.audit.AuditController;\n"
+                "@WebMvcTest(AuditController.class)\nclass AuditTrailControllerTest {}\n",
+            )
+            violations = run_controller_contracts([audit_controller, wrong_companion], root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("controller-webmvctest-update", codes)
+
     def test_migration_policy_requires_smoke_and_e2e_updates(self):
         violations = run_migration_policy(
             ["backend/src/main/resources/db/migration/V999__example.sql"],
