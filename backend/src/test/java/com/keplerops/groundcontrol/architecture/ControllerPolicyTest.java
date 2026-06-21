@@ -19,10 +19,12 @@ class ControllerPolicyTest {
     private static final Path MAIN_ROOT = Path.of("src/main/java");
     private static final Path TEST_ROOT = Path.of("src/test/java");
     private static final Pattern WEBMVCTEST = Pattern.compile("@WebMvcTest\\s*\\(([^)]*)\\)", Pattern.DOTALL);
-    // Dotted identifier preceding `.class`, written as disjoint segments so the
-    // matcher is linear; a single `[\w.]+\.class` overlaps the `.` and backtracks
-    // super-linearly (Sonar S8786).
-    private static final Pattern CLASS_LITERAL = Pattern.compile("([\\w$]+(?:\\.[\\w$]+)*)\\.class\\b");
+    // Dotted Java identifier (`a.b.C`). Matched WITHOUT a trailing `.class`
+    // literal: a `(?:\.[\w$]+)*\.class` form overlaps the quantified segment with
+    // the final `.class` and backtracks super-linearly (Sonar S8786). The
+    // `.class` suffix is stripped in code instead, keeping the match linear.
+    private static final Pattern DOTTED_NAME = Pattern.compile("[\\w$]+(?:\\.[\\w$]+)*");
+    private static final String CLASS_LITERAL_SUFFIX = ".class";
     // Non-static single-type imports only; `import static ...;` has a space the
     // class-token group cannot span, so it never matches here.
     private static final Pattern IMPORT = Pattern.compile("(?m)^\\s*import\\s+([\\w.]+)\\s*;");
@@ -78,9 +80,12 @@ class ControllerPolicyTest {
         Set<String> referenced = new HashSet<>();
         Matcher annotations = WEBMVCTEST.matcher(content);
         while (annotations.find()) {
-            Matcher literals = CLASS_LITERAL.matcher(annotations.group(1));
-            while (literals.find()) {
-                referenced.add(literals.group(1));
+            Matcher names = DOTTED_NAME.matcher(annotations.group(1));
+            while (names.find()) {
+                var token = names.group();
+                if (token.endsWith(CLASS_LITERAL_SUFFIX)) {
+                    referenced.add(token.substring(0, token.length() - CLASS_LITERAL_SUFFIX.length()));
+                }
             }
         }
         if (referenced.isEmpty()) {

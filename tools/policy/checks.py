@@ -382,10 +382,12 @@ def run_adr_guard(changed_files: list[str], root: Path = REPO_ROOT) -> list[Viol
 JAVA_MAIN_SOURCE_PREFIX = "backend/src/main/java/"
 JAVA_TEST_SOURCE_PREFIX = "backend/src/test/java/"
 WEBMVCTEST_ANNOTATION_RE = re.compile(r"@WebMvcTest\s*\(([^)]*)\)", re.DOTALL)
-# Dotted identifier preceding `.class`, written as disjoint segments
-# (`[\w$]+` separated by literal dots) so the matcher is linear — a single
-# `[\w.]+\.class` overlaps the `.` and backtracks super-linearly (Sonar S8786).
-JAVA_CLASS_LITERAL_RE = re.compile(r"([\w$]+(?:\.[\w$]+)*)\.class\b")
+# Dotted Java identifier (`a.b.C`). Matched WITHOUT a trailing `.class` literal:
+# a `(?:\.[\w$]+)*\.class` form overlaps the quantified segment with the final
+# `.class` and backtracks super-linearly (Sonar S8786). The `.class` suffix is
+# stripped in code instead, which keeps the match linear.
+JAVA_DOTTED_NAME_RE = re.compile(r"[\w$]+(?:\.[\w$]+)*")
+_CLASS_LITERAL_SUFFIX = ".class"
 # Non-static single-type imports only: `import static ...;` has a space after
 # `import` that `[\w.]+` cannot span, so it never matches here.
 JAVA_IMPORT_RE = re.compile(r"^\s*import\s+([\w.]+)\s*;", re.MULTILINE)
@@ -412,7 +414,9 @@ def test_covers_controller(content: str, controller_fqcn: str) -> bool:
     """
     referenced: set[str] = set()
     for args in WEBMVCTEST_ANNOTATION_RE.findall(content):
-        referenced.update(JAVA_CLASS_LITERAL_RE.findall(args))
+        for token in JAVA_DOTTED_NAME_RE.findall(args):
+            if token.endswith(_CLASS_LITERAL_SUFFIX):
+                referenced.add(token[: -len(_CLASS_LITERAL_SUFFIX)])
     if not referenced:
         return False
     if controller_fqcn in referenced:
