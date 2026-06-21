@@ -1,7 +1,6 @@
 package com.keplerops.groundcontrol.api.grcanalysis;
 
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairFormOfLoss;
-import com.keplerops.groundcontrol.domain.grcanalysis.service.FairMamCostModule;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisResult;
 import java.time.Instant;
 import java.util.List;
@@ -134,17 +133,17 @@ public record FairQuantitativeAnalysisResponse(
     }
 
     public record Materiality(
-            List<FairMamModuleBreakdown> fairMamModules,
-            ThreePoint fairMamTotal,
+            List<FormOfLossBreakdown> formsOfLoss,
+            ThreePoint formsOfLossTotal,
             String currency,
             List<StakeholderSecondaryLoss> secondaryLossByStakeholder) {
 
         public static Materiality from(FairQuantitativeAnalysisResult.Materiality materiality) {
             return new Materiality(
-                    materiality.fairMamModules().stream()
-                            .map(FairMamModuleBreakdown::from)
+                    materiality.formsOfLoss().stream()
+                            .map(FormOfLossBreakdown::from)
                             .toList(),
-                    materiality.fairMamTotal() == null ? null : ThreePoint.from(materiality.fairMamTotal()),
+                    materiality.formsOfLossTotal() == null ? null : ThreePoint.from(materiality.formsOfLossTotal()),
                     materiality.currency(),
                     materiality.secondaryLossByStakeholder().stream()
                             .map(StakeholderSecondaryLoss::from)
@@ -152,11 +151,11 @@ public record FairQuantitativeAnalysisResponse(
         }
     }
 
-    public record FairMamModuleBreakdown(FairMamCostModule module, ThreePoint magnitude) {
+    public record FormOfLossBreakdown(FairFormOfLoss form, ThreePoint magnitude) {
 
-        public static FairMamModuleBreakdown from(FairQuantitativeAnalysisResult.FairMamModuleBreakdown breakdown) {
-            return new FairMamModuleBreakdown(
-                    breakdown.module(), breakdown.magnitude() == null ? null : ThreePoint.from(breakdown.magnitude()));
+        public static FormOfLossBreakdown from(FairQuantitativeAnalysisResult.FormOfLossBreakdown breakdown) {
+            return new FormOfLossBreakdown(
+                    breakdown.form(), breakdown.magnitude() == null ? null : ThreePoint.from(breakdown.magnitude()));
         }
     }
 

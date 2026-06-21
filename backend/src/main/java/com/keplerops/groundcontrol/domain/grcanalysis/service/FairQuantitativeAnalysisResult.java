@@ -73,21 +73,22 @@ public record FairQuantitativeAnalysisResult(
 
     /**
      * FAIR materiality view per GC-T016. A descriptive decomposition of the
-     * {@code fair_mam} loss-magnitude breakdown into FAIR-MAM cost modules, plus
-     * stakeholder-specific secondary effects classified by the O-RT forms of loss.
-     * {@code null} when neither {@code fair_mam} nor stakeholder data is present.
-     * This view never feeds the canonical ALE arithmetic (ALE stays
-     * {@code LEF × LM}), so it adds granular materiality reasoning without changing
-     * cross-assessment comparability or risking double-counting.
+     * {@code forms_of_loss} loss-magnitude breakdown into the six O-RT forms of
+     * loss, plus stakeholder-specific secondary effects classified by the same
+     * forms of loss. {@code null} when neither {@code forms_of_loss} nor
+     * stakeholder data is present. This view never feeds the canonical ALE
+     * arithmetic (ALE stays {@code LEF × LM}), so it adds granular materiality
+     * reasoning without changing cross-assessment comparability or risking
+     * double-counting.
      */
     public record Materiality(
-            List<FairMamModuleBreakdown> fairMamModules,
-            ThreePoint fairMamTotal,
+            List<FormOfLossBreakdown> formsOfLoss,
+            ThreePoint formsOfLossTotal,
             String currency,
             List<StakeholderSecondaryLoss> secondaryLossByStakeholder) {}
 
-    /** A single FAIR-MAM cost module with its three-point monetary magnitude. */
-    public record FairMamModuleBreakdown(FairMamCostModule module, ThreePoint magnitude) {}
+    /** A single O-RT FAIR form of loss with its three-point monetary magnitude. */
+    public record FormOfLossBreakdown(FairFormOfLoss form, ThreePoint magnitude) {}
 
     /**
      * A stakeholder-specific secondary loss effect. {@code lossForm} (an O-RT FAIR

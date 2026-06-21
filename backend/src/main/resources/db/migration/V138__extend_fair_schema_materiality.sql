@@ -1,19 +1,22 @@
 -- GC-T016 / #745: extend the FAIR v3.0 methodology profile so the materiality /
--- loss-taxonomy vocabulary is self-describing.
---   * input_schema: redefine `fair_mam` as the FAIR Materiality Assessment Model's
---     ten primary cost modules (FAIR Institute), and add the optional
---     `secondary_loss_by_stakeholder` array whose `loss_form` uses the six FAIR
---     forms of loss from The Open Group Risk Taxonomy (O-RT).
+-- loss-taxonomy vocabulary is self-describing, grounded in The Open Group FAIR
+-- standard (Risk Taxonomy, O-RT v3.0.1).
+--   * input_schema: add the optional `forms_of_loss` object keyed by the six O-RT
+--     forms of loss, and the optional `secondary_loss_by_stakeholder` array whose
+--     `loss_form` uses the same six forms. `fair_mam` is retained as a legacy
+--     opaque passthrough for backward compatibility (GC-T011).
 --   * output_schema: add the `materiality` object the read-only analysis envelope
---     now emits (FAIR-MAM module breakdown, total, stakeholder secondary effects).
+--     now emits (forms-of-loss breakdown, total, stakeholder secondary effects).
 -- The new input properties are NOT added to `required`, so rows created before this
 -- migration validate fine. Materiality is descriptive only; the canonical ALE
 -- derivation (ALE = LEF * LM; LM = PLM + SLEF*SLM) is unchanged.
+-- FAIR-MAM (FAIR Institute) is a non-standard, separately-published extension and
+-- is intentionally out of scope here.
 
 UPDATE methodology_profile
 SET input_schema = '{
   "type": "object",
-  "description": "FAIR v3.0 input factors with FAIR-CAM and FAIR-MAM extensions",
+  "description": "FAIR v3.0 input factors with FAIR-CAM and O-RT forms-of-loss materiality extensions",
   "properties": {
     "threat_event_frequency": {
       "type": "object",
@@ -112,18 +115,18 @@ SET input_schema = '{
     },
     "fair_mam": {
       "type": "object",
-      "description": "FAIR Materiality Assessment Model (FAIR-MAM, FAIR Institute) loss-magnitude breakdown by its ten primary cost modules. Each module is an optional three-point monetary estimate. Deeper FAIR-MAM subcategory layers are not modelled here.",
+      "description": "Legacy opaque loss-magnitude passthrough retained for backward compatibility (GC-T011). New materiality input is `forms_of_loss`."
+    },
+    "forms_of_loss": {
+      "type": "object",
+      "description": "GC-T016 materiality input: the six forms of loss per The Open Group Risk Taxonomy (O-RT v3.0.1). Each form is an optional three-point monetary estimate. Descriptive only — surfaced in the materiality view, not summed into the canonical ALE.",
       "properties": {
-        "information_privacy": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "proprietary_data_loss": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "business_interruption": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "cyber_extortion": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "network_security": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "financial_fraud": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "media_content": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "hardware_bricking": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "post_breach_security_improvements": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-        "reputational_damage": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}}
+        "productivity": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "response": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "replacement": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "fines_and_judgments": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "competitive_advantage": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
+        "reputation": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}}
       }
     },
     "contact_frequency": {
@@ -223,20 +226,20 @@ SET input_schema = '{
     },
     "materiality": {
       "type": "object",
-      "description": "GC-T016 FAIR materiality view: a descriptive decomposition of fair_mam into FAIR-MAM cost modules plus stakeholder-specific secondary effects. Does not alter the ALE derivation.",
+      "description": "GC-T016 FAIR materiality view: a descriptive decomposition of forms_of_loss into the six O-RT forms of loss plus stakeholder-specific secondary effects. Does not alter the ALE derivation.",
       "properties": {
-        "fairMamModules": {
+        "formsOfLoss": {
           "type": "array",
-          "description": "Per FAIR-MAM cost module with its three-point monetary magnitude",
+          "description": "Per O-RT form of loss with its three-point monetary magnitude",
           "items": {
             "type": "object",
             "properties": {
-              "module": {"type": "string", "enum": ["INFORMATION_PRIVACY", "PROPRIETARY_DATA_LOSS", "BUSINESS_INTERRUPTION", "CYBER_EXTORTION", "NETWORK_SECURITY", "FINANCIAL_FRAUD", "MEDIA_CONTENT", "HARDWARE_BRICKING", "POST_BREACH_SECURITY_IMPROVEMENTS", "REPUTATIONAL_DAMAGE"]},
+              "form": {"type": "string", "enum": ["PRODUCTIVITY", "RESPONSE", "REPLACEMENT", "FINES_AND_JUDGMENTS", "COMPETITIVE_ADVANTAGE", "REPUTATION"]},
               "magnitude": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}}}
             }
           }
         },
-        "fairMamTotal": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}}},
+        "formsOfLossTotal": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}}},
         "currency": {"type": "string"},
         "secondaryLossByStakeholder": {
           "type": "array",

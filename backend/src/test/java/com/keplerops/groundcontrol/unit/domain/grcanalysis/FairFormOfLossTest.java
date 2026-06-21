@@ -33,7 +33,7 @@ class FairFormOfLossTest {
     @Test
     void fromJsonKey_unknownOrBlankOrNull_returnsNull() {
         assertThat(FairFormOfLoss.fromJsonKey("reputation_damage"))
-                .isNull(); // that is a FAIR-MAM key, not an O-RT form
+                .isNull(); // not an O-RT form key (the O-RT key is "reputation")
         assertThat(FairFormOfLoss.fromJsonKey("not_a_form")).isNull();
         assertThat(FairFormOfLoss.fromJsonKey("")).isNull();
         assertThat(FairFormOfLoss.fromJsonKey("  ")).isNull();
