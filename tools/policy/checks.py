@@ -379,6 +379,62 @@ def run_adr_guard(changed_files: list[str], root: Path = REPO_ROOT) -> list[Viol
     return violations
 
 
+JAVA_MAIN_SOURCE_PREFIX = "backend/src/main/java/"
+JAVA_TEST_SOURCE_PREFIX = "backend/src/test/java/"
+WEBMVCTEST_ANNOTATION_RE = re.compile(r"@WebMvcTest\s*\(([^)]*)\)", re.DOTALL)
+# Dotted Java identifier (`a.b.C`). Matched WITHOUT a trailing `.class` literal:
+# a `(?:\.[\w$]+)*\.class` form overlaps the quantified segment with the final
+# `.class` and backtracks super-linearly (Sonar S8786). The `.class` suffix is
+# stripped in code instead, which keeps the match linear.
+JAVA_DOTTED_NAME_RE = re.compile(r"[\w$]+(?:\.[\w$]+)*")
+_CLASS_LITERAL_SUFFIX = ".class"
+# Non-static single-type imports only: `import static ...;` has a space after
+# `import` that `[\w.]+` cannot span, so it never matches here.
+JAVA_IMPORT_RE = re.compile(r"^\s*import\s+([\w.]+)\s*;", re.MULTILINE)
+
+
+def controller_fully_qualified_name(controller_path: str) -> str | None:
+    """Fully-qualified class name for a controller from its repo-relative path."""
+    normalized = normalize_path(controller_path)
+    if not normalized.startswith(JAVA_MAIN_SOURCE_PREFIX) or not normalized.endswith(".java"):
+        return None
+    relative = normalized[len(JAVA_MAIN_SOURCE_PREFIX) : -len(".java")]
+    return relative.replace("/", ".")
+
+
+def test_covers_controller(content: str, controller_fqcn: str) -> bool:
+    """True when a test's @WebMvcTest annotation resolves to ``controller_fqcn``.
+
+    Resolution mirrors Java name binding: a fully-qualified literal matches
+    directly; a simple name binds through the file's single-type import for that
+    name; absent such an import the simple name binds in the file's own package.
+    The import check is what disambiguates same-simple-name controllers in
+    different packages (issue #1167) — matching on the bare filename stem, or on
+    the annotation's simple name alone, cannot.
+    """
+    referenced: set[str] = set()
+    for args in WEBMVCTEST_ANNOTATION_RE.findall(content):
+        for token in JAVA_DOTTED_NAME_RE.findall(args):
+            if token.endswith(_CLASS_LITERAL_SUFFIX):
+                referenced.add(token[: -len(_CLASS_LITERAL_SUFFIX)])
+    if not referenced:
+        return False
+    if controller_fqcn in referenced:
+        return True
+    simple_name = controller_fqcn.rsplit(".", 1)[-1]
+    if simple_name not in referenced:
+        return False
+    imports = {imported.rsplit(".", 1)[-1]: imported for imported in JAVA_IMPORT_RE.findall(content)}
+    bound = imports.get(simple_name)
+    if bound is not None:
+        return bound == controller_fqcn
+    # No single-type import of the simple name: it binds in the test's own
+    # package (or via a wildcard import that cannot be resolved statically).
+    # The conflicting-import collision this check exists to prevent has already
+    # been excluded above, so accept the simple-name match.
+    return True
+
+
 def run_controller_contracts(changed_files: list[str], root: Path = REPO_ROOT) -> list[Violation]:
     controllers = [path for path in changed_files if CONTROLLER_PATH_RE.match(path)]
     if not controllers:
@@ -415,40 +471,78 @@ def run_controller_contracts(changed_files: list[str], root: Path = REPO_ROOT) -
             )
         )
 
+    # Resolve each controller's @WebMvcTest companion by reverse-lookup on the
+    # controller's fully-qualified class, not its filename stem. The stem
+    # collides whenever two packages declare a same-named controller (issue
+    # #1167: api/audit/AuditController vs api/audits/AuditController).
+    repo_test_files = get_repo_relative_files(root, "backend/src/test/java/**/*.java")
+    changed_test_files = [
+        path
+        for path in changed_files
+        if path.startswith(JAVA_TEST_SOURCE_PREFIX) and path.endswith(".java")
+    ]
+
+    def covers(rel_path: str, fqcn: str) -> bool:
+        try:
+            content = (root / rel_path).read_text(encoding="utf-8")
+        except OSError:
+            return False
+        return test_covers_controller(content, fqcn)
+
     for controller in controllers:
-        test_name = f"{Path(controller).stem}Test.java"
-        matching_test_updates = [path for path in changed_files if path.endswith(f"/{test_name}")]
-        if not matching_test_updates:
+        fqcn = controller_fully_qualified_name(controller)
+        if fqcn is None:
+            continue
+        simple_name = fqcn.rsplit(".", 1)[-1]
+
+        if any(covers(path, fqcn) for path in changed_test_files):
+            # The controller's @WebMvcTest companion was updated in this diff.
+            continue
+
+        existing = [path for path in repo_test_files if covers(path, fqcn)]
+        if existing:
             violations.append(
                 Violation(
                     code="controller-webmvctest-update",
                     message="Controller changes require a matching @WebMvcTest update.",
-                    details=[f"missing changed test for {controller}: expected {test_name}"],
+                    details=[
+                        f"changed {controller} but did not update its @WebMvcTest "
+                        f"companion; expected one of: {', '.join(existing)}"
+                    ],
                 )
             )
             continue
 
-        test_paths = get_repo_relative_files(root, f"backend/src/test/java/**/{test_name}")
-        if not test_paths:
+        # No @WebMvcTest slice resolves to this controller. Distinguish "a
+        # same-named test exists but is not a slice" (annotation) from "no test
+        # exists at all" (missing) so the message points at the real gap.
+        stem_tests = get_repo_relative_files(
+            root, f"backend/src/test/java/**/{simple_name}Test.java"
+        )
+        non_slice_tests = [
+            path
+            for path in stem_tests
+            if "@WebMvcTest(" not in (root / path).read_text(encoding="utf-8")
+        ]
+        if non_slice_tests:
             violations.append(
                 Violation(
-                    code="controller-webmvctest-missing",
-                    message="Controller is missing a matching @WebMvcTest class.",
-                    details=[f"expected test file {test_name} for {controller}"],
+                    code="controller-webmvctest-annotation",
+                    message="Controller test exists but is not a @WebMvcTest.",
+                    details=[
+                        f"{', '.join(non_slice_tests)} must use @WebMvcTest for {controller}"
+                    ],
                 )
             )
             continue
 
-        for test_path in test_paths:
-            content = (root / test_path).read_text(encoding="utf-8")
-            if "@WebMvcTest(" not in content:
-                violations.append(
-                    Violation(
-                        code="controller-webmvctest-annotation",
-                        message="Controller test exists but is not a @WebMvcTest.",
-                        details=[f"{test_path} must use @WebMvcTest for {controller}"],
-                    )
-                )
+        violations.append(
+            Violation(
+                code="controller-webmvctest-missing",
+                message="Controller is missing a matching @WebMvcTest class.",
+                details=[f"no @WebMvcTest({simple_name}.class) slice found for {controller}"],
+            )
+        )
 
     return violations
 

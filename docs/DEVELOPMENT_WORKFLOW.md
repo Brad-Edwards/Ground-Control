@@ -579,7 +579,7 @@ in `backend/build.gradle.kts`.
 
 ## Key Lessons (from GC-J001 first run)
 
-- **Write `@WebMvcTest` controller tests**, not just integration tests. SonarCloud CI doesn't run Testcontainers.
+- **Write `@WebMvcTest` controller tests**, not just integration tests. SonarCloud CI doesn't run Testcontainers. The controller-parity gate (`run_controller_contracts` in `tools/policy/checks.py` and the `ControllerPolicyTest` ArchUnit-style test) maps a controller to its slice by the controller's **fully qualified class**, resolved from each test's `@WebMvcTest(...)` annotation and its `import`. Same-named controllers in different packages (`api/audit/AuditController` versus `api/audits/AuditController`) each match their real companion, and the companion test does not have to be named `<Controller>Test.java`.
 - **Update `MigrationSmokeTest` and `RequirementsE2EIntegrationTest`** version lists when adding migrations.
 - **Add `@NotAudited` to `@ManyToOne` references** to non-audited entities when using `@Audited`.
 - **Add `_audit` table migration** when adding `@Audited` entities.
