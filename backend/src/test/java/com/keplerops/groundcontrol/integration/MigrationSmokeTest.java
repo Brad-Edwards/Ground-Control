@@ -42,6 +42,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 versions.add(rs.getString("version"));
             }
         }
+        // V139: O-RT forms-of-loss materiality schema seed update for FAIR_V3_0 (GC-T016) — schema-only, no DDL.
         assertThat(versions)
                 .containsExactly(
                         "001", "002", "003", "004", "005", "006", "007", "008", "009", "010", "011", "012", "013",
@@ -54,7 +55,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
-                        "136", "137", "138");
+                        "136", "137", "138", "139");
     }
 
     @Test
