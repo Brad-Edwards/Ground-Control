@@ -77,6 +77,7 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "# sonarcloud:",
     "#   project_key: <sonar-project-key>",
     "#   organization: <sonar-org>",
+    "#   quality_gate: <sonar-quality-gate-name>  # optional; SonarCloud association is server-side",
     "# rules:",
     "#   plan_rules: .gc/plan-rules.md",
     "# knowledge:",
@@ -2384,7 +2385,7 @@ function normalizeSonarcloudConfig(raw) {
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["sonarcloud must be a mapping, not a list or scalar"] };
   }
-  const allowed = ["project_key", "organization"];
+  const allowed = ["project_key", "organization", "quality_gate"];
   const errors = [];
   for (const key of Object.keys(raw)) {
     if (!allowed.includes(key)) {
@@ -2393,14 +2394,24 @@ function normalizeSonarcloudConfig(raw) {
   }
   const project_key = raw.project_key;
   const organization = raw.organization;
+  const quality_gate = raw.quality_gate;
   if (typeof project_key !== "string" || project_key.trim() === "") {
     errors.push("sonarcloud.project_key must be a non-empty string when sonarcloud is set");
   }
   if (typeof organization !== "string" || organization.trim() === "") {
     errors.push("sonarcloud.organization must be a non-empty string when sonarcloud is set");
   }
+  if (quality_gate != null) {
+    if (typeof quality_gate !== "string" || quality_gate.trim() === "") {
+      errors.push("sonarcloud.quality_gate must be a non-empty string when set");
+    }
+  }
   if (errors.length) return { ok: false, errors };
-  return { ok: true, value: { project_key, organization } };
+  const value = { project_key, organization };
+  if (quality_gate != null && typeof quality_gate === "string" && quality_gate.trim() !== "") {
+    value.quality_gate = quality_gate.trim();
+  }
+  return { ok: true, value };
 }
 
 function normalizeRulesConfig(raw) {
