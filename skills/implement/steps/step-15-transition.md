@@ -6,9 +6,11 @@ tier: medium
 
 # Step 15: Transition In-Scope Requirements to ACTIVE
 
+**This step runs in Phase E, AFTER the user merges the PR (issue #963).** The orchestrator reaches it by re-running `/implement <issue>` post-merge; Step 1 detects the `ready_for_review` marker + a merged linked PR + post-merge reconciliation not yet recorded (no `gc:final-report` marker) and short-circuits here. The detection does **not** key on the issue being open: the PR body's `Closes #<n>` keyword may have auto-closed the issue at merge, before Phase E runs. That is expected — the transition (this step), reconciliation (Step 16), and final report (Step 17) all operate on the requirement graph and the issue thread regardless of the issue's open/closed state, and Step 20's close then no-ops (`already_closed: true`). Running the transition only after merge is what keeps Ground Control state from running ahead of shipped code: a reviewed-but-abandoned PR never flips its requirement to ACTIVE. (The `work_already_complete` branch from Step 4 also enters here, but with no PR - its code already shipped under an earlier merge - so it transitions immediately.)
+
 The status transition MUST happen BEFORE traceability reconciliation (Step 16). The Ground Control API enforces `IMPLEMENTS → ACTIVE`: any `gc_create_traceability_link` call with `link_type: IMPLEMENTS` against a `DRAFT` requirement returns `422 requirement_not_active`. Reconciling first therefore produces silent failures.
 
-Semantically, moving a requirement from DRAFT to ACTIVE is the point at which the team commits to its statement. Once real code exists pointing at it, the requirement is no longer a proposal - it's a contract.
+Semantically, moving a requirement from DRAFT to ACTIVE is the point at which the team commits to its statement. Once real code exists pointing at it AND that code has merged, the requirement is no longer a proposal - it's a contract.
 
 For each UID in `in_scope_requirements[]`:
 - **First, classify the requirement against the actual diff:**
