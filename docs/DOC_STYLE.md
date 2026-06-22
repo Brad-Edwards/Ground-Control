@@ -1,5 +1,7 @@
 # Documentation style
 
+> **Sync note for issue #1162 (2026-06-22):** The `gc_create_github_issue` MCP tool was fixed to render the issue title/body from the requirement (it previously produced literal `undefined`) and to auto-create the IMPLEMENTS/DOCUMENTS traceability link, via a new `createGitHubIssueFromRequirement` helper in `mcp/ground-control/lib.js` plus updated wiring and description in `index.js`. Documentation lives in the tool description string and `mcp/ground-control/README.md`. No style rule changed.
+
 > **Sync note for issue #260 (2026-06-22 GC-T005):** The `gc_analyze` tool gained the `appetite_evaluation` kind and `gc_risk_governance` gained the `risk_appetite_profile` entity in `mcp/ground-control/index.js`, `lib.js`, and `gc-risk-governance.js`. These are additive extensions to existing action-multiplexed tools backed by fixed REST endpoints. Documentation lives in `docs/API.md` (`/risk-appetite-profiles` CRUD and `/analysis/grc/appetite-evaluation`) and `docs/architecture/ARCHITECTURE.md`. No style rule changed.
 
 > **Sync note for issue #721 (2026-06-21):** The NIST `gc_analyze`
