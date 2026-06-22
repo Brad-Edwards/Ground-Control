@@ -37,6 +37,7 @@ public class DerivationService {
     private static final Pattern SCOPE_TOKEN = Pattern.compile("^[a-z0-9][a-z0-9_.+-]{0,79}$");
     private static final int MAX_SCOPE_VALUES = 50;
     private static final int MAX_PATHS = 200;
+    private static final String PATHS_FIELD = "paths";
     private static final Set<String> BLOCKED_PAYLOAD_KEYS = Set.of(
             "secret",
             "secret_value",
@@ -247,13 +248,13 @@ public class DerivationService {
     private List<String> normalizePaths(List<String> input, DerivationScopeMode mode) {
         var paths = input == null ? List.<String>of() : input;
         if (paths.size() > MAX_PATHS) {
-            throw validation("paths must contain at most " + MAX_PATHS + " entries", "paths");
+            throw validation("paths must contain at most " + MAX_PATHS + " entries", PATHS_FIELD);
         }
         if (mode == DerivationScopeMode.PATH_SET && paths.isEmpty()) {
-            throw validation("paths is required for PATH_SET scope", "paths");
+            throw validation("paths is required for PATH_SET scope", PATHS_FIELD);
         }
         if (mode == DerivationScopeMode.FULL_REPO && !paths.isEmpty()) {
-            throw validation("paths must be empty for FULL_REPO scope", "paths");
+            throw validation("paths must be empty for FULL_REPO scope", PATHS_FIELD);
         }
         var normalized = new ArrayList<String>(paths.size());
         for (String path : paths) {
@@ -264,21 +265,22 @@ public class DerivationService {
 
     private String normalizePath(String value) {
         if (value == null || value.isBlank()) {
-            throw validation("paths must not contain blank entries", "paths");
+            throw validation("paths must not contain blank entries", PATHS_FIELD);
         }
         var path = value.trim().replace('\\', '/');
         if (path.startsWith("/") || path.matches("^[A-Za-z]:.*")) {
-            throw validation("paths must be relative repository paths", "paths");
+            throw validation("paths must be relative repository paths", PATHS_FIELD);
         }
         while (path.startsWith("./")) {
             path = path.substring(2);
         }
-        for (int segmentStart = 0; segmentStart <= path.length(); ) {
+        int segmentStart = 0;
+        while (segmentStart <= path.length()) {
             var slashIndex = path.indexOf('/', segmentStart);
             var segmentEnd = slashIndex == -1 ? path.length() : slashIndex;
             var segment = path.substring(segmentStart, segmentEnd);
             if (segment.isBlank() || segment.equals("..")) {
-                throw validation("paths must not contain empty or parent-directory segments", "paths");
+                throw validation("paths must not contain empty or parent-directory segments", PATHS_FIELD);
             }
             if (slashIndex == -1) {
                 break;

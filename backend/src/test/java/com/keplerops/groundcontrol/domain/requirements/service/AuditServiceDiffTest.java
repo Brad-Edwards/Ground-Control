@@ -353,9 +353,7 @@ class AuditServiceDiffTest {
                     results, row -> Map.entry((UUID) row[3], (Map<String, Object>) row[4]), row ->
                             (RevisionType) row[2]);
 
-            assertThat(alive).hasSize(1);
-            assertThat(alive).containsKey(id2);
-            assertThat(alive).doesNotContainKey(id1);
+            assertThat(alive).hasSize(1).containsKey(id2).doesNotContainKey(id1);
         }
 
         @Test
