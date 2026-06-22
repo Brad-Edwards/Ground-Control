@@ -309,6 +309,7 @@ GC-T011 / #723 as the `fair-quantitative` endpoint.
 | GET | `/analysis/grc/nist-sp-800-30` | - | 200 | NIST SP 800-30 Rev. 1 methodology-attributed view over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `NIST_SP800_30_R1`. Decodes inputs into threat source, threat event (`ADVERSARIAL` / `NON_ADVERSARIAL`), vulnerabilities, predisposing conditions, threat-event relevance, multi-dimensional likelihood, impact level, and assessment timeframe; computes overall likelihood (analyst-supplied or derived per Table G-5) and risk level (per Table I-2) as ordinal bands with explicit `scale`/`units` and a matrix cell label. |
 | GET | `/analysis/grc/fair-quantitative` | - | 200 | Open FAIR quantitative risk analysis over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `FAIR`, aligned to O-RT 3.0.1 and O-RA 2.0.1. Derives Threat Event Frequency when needed (TEF = CF × PoA), Loss Event Frequency (LEF = TEF × Vulnerability), expected Loss Magnitude (LM = PLM + SLEF × SLM), and Annualized Loss Expectancy (ALE = LEF × LM) via three-point estimates with optional persisted Monte Carlo percentiles. Returns a methodology-attributed envelope with `scale: "continuous"`, `units: "monetary"`, and per-item limitations for missing factors or absent percentiles. |
 | GET | `/analysis/grc/compliance-monitoring` | - | 200 | Continuous compliance monitoring (GC-I004): composes evidence expiration (`staleSet`), control modifications within the lookback window, and `reassessmentRequiredAt` posture signals (`impactSet`) using ADR-058 vocabulary. |
+| GET | `/analysis/grc/appetite-evaluation` | - | 200 | Risk appetite/tolerance evaluation (GC-T005): read-only, methodology-attributed comparison of residual risk metrics from `RiskAssessmentResult.computedOutputs` against a `RiskAppetiteProfile`'s tolerance ceilings. Residuals exceeding a ceiling breach appetite and are flagged for escalation; currency/unit/scale mismatches and non-derivable metrics surface as limitations rather than silent passes. Never mutates risk assessments or register records. |
 | GET | `/analysis/grc/fair-cam-control-analytics` | - | 200 | FAIR-CAM control analytics (GC-I017): derives control-level analytics in the FAIR-CAM framework from `RiskControlMapping`, `ControlEffectivenessAssessment`, and `ControlTest` rows. Returns per-control domain attribution (`loss_event_control`, `variance_management_control`, `decision_support_control`), capability (design effectiveness), coverage (distinct analysis endpoints), operational performance (operating effectiveness + fresh test count), and effect-dimension entries. All values carry `scale`/`units`/`basis` and explicit `limitations`. |
 
 `GET /analysis/grc/evidence-freshness` accepts:
@@ -416,6 +417,19 @@ distribution calculation for `P(TCap > RS)`.
 All scope filters compose as an intersection: supplying `controlId` and `riskScenarioId` together returns only the mappings of that control to that scenario, not every mapping of the control.
 
 Response shape for `GET /analysis/grc/fair-cam-control-analytics`: top-level `analysisKind: "fair_cam_control_analytics"`, `project`, `asOf`, `derivationMethod` (`"fair-cam-control-analytics-v1"`), a `controls` array, a `counts` summary (`total`, `byDomain`, `withLimitations`), and a top-level `limitations` array. Each control item carries `endpointType` (`CONTROL` or `SCOPED_IMPLEMENTATION`), `endpointId`, `controlId` or `scopedImplementationId`, `controlUid`, `controlName`, `domainAttributions` (list of `{domain, source, analysisEndpoint}` where `source` is `"methodology_influence"` or `"mapping_control_role"` and `analysisEndpoint` identifies the mapping the attribution is contextual to, for example `RISK_SCENARIO:<uuid>`), `capability` (design effectiveness as `{scale, units, value, basis}`), `coverage` (count of distinct analysis endpoints as `{scale: "count", units: "endpoints", value, basis}`), `operationalPerformance` (operating effectiveness with fresh-test count in `basis`), `effects` (list of `{dimension, value, analysisEndpoint}` for FAIR-CAM dimension keys found in `methodologyInfluence`), `evidenceRefs`, and per-item `limitations`. Domain attribution and effects are derived per-mapping across every mapping in a control-endpoint group (not just the first), so a control mapped into multiple FAIR-CAM domains surfaces each one and `byDomain` counts every distinct domain. Domain attribution precedence: `fair_cam_domain` key in `methodologyInfluence` wins; fallback derives from `MappingControlRole` (PREVENTIVE / DETECTIVE / DETERRENT → `loss_event_control`; CORRECTIVE / RECOVERY / COMPENSATING → `variance_management_control`; DIRECTIVE → `decision_support_control`). Fallback attribution emits a `limitations` entry.
+
+`GET /analysis/grc/appetite-evaluation` accepts:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `project` | string | auto-resolved | Project identifier |
+| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp; also selects the appetite version in force when resolving by `appetiteKey` |
+| `profileId` | UUID | - | Evaluate against a specific appetite profile version; `404` if missing |
+| `appetiteKey` | string | - | Resolve the `ACTIVE` appetite profile for this key whose effective window covers `asOf`; `404` if none. One of `profileId` or `appetiteKey` is required (`422` if neither) |
+| `riskRegisterRecordId` | UUID | - | Scope evaluated assessments to one risk register record |
+| `riskScenarioId` | UUID | - | Scope evaluated assessments to one risk scenario |
+
+Response shape for `GET /analysis/grc/appetite-evaluation`: top-level `analysisKind: "appetite_evaluation"`, `project` (`projectIdentifier`), `asOf`, `derivationMethod` (`"risk-appetite-tolerance-evaluation-v1"`), a `profile` summary (`id`, `appetiteKey`, `version`, `methodologyFamily`, `status`, `effectiveFrom`, `effectiveTo`), an `evaluations` array, a `summary` (`evaluated`, `breached`, `escalations`, `notDerivable`), and a top-level `limitations` array. Only assessments whose methodology family matches the profile are evaluated; the rest are skipped with a top-level limitation. Each evaluation item carries `riskAssessmentResultId`, `riskScenarioId`, `riskScenarioUid`, `riskRegisterRecordId`, `riskCategory`, `metricPath`, `residualValue`, `thresholdValue`, `units`, `withinAppetite` (`null` when not derivable), `breached`, `escalate` (equals `breached`), and per-item `limitations` (currency/scale mismatch, missing or non-numeric metric).
 
 Every response carries a `limitations` array. For the vendor-risk endpoint
 that array always includes a note that vendors are modeled as
@@ -1374,6 +1388,26 @@ Semantic validation: duplicate `(normalizedConcept, vocabularySurface, sourceFie
 The seeded profiles (`FAIR_V3_0`, `NIST_SP800_30_R1`, `ISO_27005_V2022`) ship with starter crosswalk entries pre-populated on first project list.
 
 `(project_id, profile_key, version)` is unique. Conflict on duplicate create returns 409 `conflict`.
+
+### Risk Appetite Profiles
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/risk-appetite-profiles` | RiskAppetiteProfileRequest | 201 | Create risk appetite profile (ROLE_ADMIN) |
+| GET | `/risk-appetite-profiles` | - | 200 | List risk appetite profiles for a project |
+| GET | `/risk-appetite-profiles/{id}` | - | 200 | Get risk appetite profile by UUID |
+| PUT | `/risk-appetite-profiles/{id}` | UpdateRiskAppetiteProfileRequest | 200 | Update mutable fields (ROLE_ADMIN) |
+| DELETE | `/risk-appetite-profiles/{id}` | - | 204 | Delete risk appetite profile (ROLE_ADMIN) |
+
+All endpoints accept an optional `project` query parameter (required in multi-project deployments). Writes (POST/PUT/DELETE) require ROLE_ADMIN because appetite/tolerance governs org-wide escalation policy (GC-T005); reads are available to any authenticated caller. The authority matrix is enforced centrally in `ApiPathMatrix`.
+
+**RiskAppetiteProfileRequest fields (GC-T005):** `appetiteKey` (required, max 100; stable identity across versions), `name` (required, max 200), `version` (required, max 50), `methodologyFamily` (required, enum: FAIR, NIST_SP800_30_R1, ISO_27005, CUSTOM; the semantics the thresholds are expressed in), `appetiteStatement` (optional; qualitative narrative), `toleranceThresholds` (optional list of `ToleranceThreshold`; see below), `status` (optional, enum: DRAFT, ACTIVE, RETIRED; defaults to DRAFT), `effectiveFrom` (required, ISO-8601 instant), `effectiveTo` (optional, ISO-8601 instant; null = open-ended).
+
+`UpdateRiskAppetiteProfileRequest` carries the same field set minus `appetiteKey` (immutable); null fields are left unchanged.
+
+**ToleranceThreshold fields:** `metricPath` (required, max 200; dotted path into a `RiskAssessmentResult.computedOutputs` map, for example `annualized_loss_expectancy.likely` for FAIR, `risk_value` for ISO, `risk_level` for NIST), `riskCategory` (optional, max 100; when set, applies only to assessments whose risk register record carries this category tag), and **exactly one** of two ceiling forms. The quantitative form sets `maxQuantitativeValue` (number; breach when residual exceeds it) plus optional `units` (for example `USD`, `events/year`, `probability`) and `currency`. The ordinal form sets `maxOrdinalValue` (max 100) plus an ascending `orderedScale` (list of band names that must contain `maxOrdinalValue`). `label` is optional (max 200).
+
+Validation: a threshold setting both or neither ceiling → 422; an ordinal threshold whose `maxOrdinalValue` is absent from `orderedScale`, or a `probability`-unit value outside `[0,1]`, or a negative quantitative value → 422. `(project_id, appetite_key, version)` is unique (409 on duplicate). Two `ACTIVE` versions of the same `appetiteKey` may not have overlapping effective windows (409 `conflict`).
 
 ### Treatment Plans
 

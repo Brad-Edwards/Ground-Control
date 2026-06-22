@@ -10,6 +10,7 @@ import com.keplerops.groundcontrol.domain.evidence.model.EvidenceSourceRef;
 import com.keplerops.groundcontrol.domain.packregistry.model.PackDependency;
 import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPackEntry;
 import com.keplerops.groundcontrol.domain.packregistry.model.TrustPolicyRule;
+import com.keplerops.groundcontrol.domain.riskappetite.model.ToleranceThreshold;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.CrosswalkEntry;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
@@ -147,11 +148,13 @@ public final class JacksonTextCollectionConverters {
     @Converter
     public static class ActionItemListConverter implements AttributeConverter<List<ActionItem>, String> {
 
+        private static final String DESCRIPTION = "description";
+
         private static final List<String> LEGACY_FREE_TEXT_KEYS =
                 List.of("action", "task", "item", "what", "who", "when", "done", "note", "notes", "summary");
 
         private static final List<String> CANONICAL_KEYS =
-                List.of("owner", "dueDate", "status", "assignee", "description");
+                List.of("owner", "dueDate", "status", "assignee", DESCRIPTION);
 
         @Override
         public String convertToDatabaseColumn(List<ActionItem> attribute) {
@@ -202,7 +205,7 @@ public final class JacksonTextCollectionConverters {
                 return OBJECT_MAPPER.treeToValue(obj, ActionItem.class);
             }
             ObjectNode copy = obj.deepCopy();
-            copy.put("description", synthesised);
+            copy.put(DESCRIPTION, synthesised);
             return OBJECT_MAPPER.treeToValue(copy, ActionItem.class);
         }
 
@@ -212,7 +215,7 @@ public final class JacksonTextCollectionConverters {
          * description is already present or the row carries no recognised legacy keys).
          */
         private static String synthesiseLegacyDescription(ObjectNode obj) {
-            if (hasNonNullText(obj, "description")) {
+            if (hasNonNullText(obj, DESCRIPTION)) {
                 return null;
             }
             StringBuilder sb = new StringBuilder();
@@ -221,13 +224,13 @@ public final class JacksonTextCollectionConverters {
                     continue;
                 }
                 if (hasNonNullText(obj, key)) {
-                    if (sb.length() > 0) {
+                    if (!sb.isEmpty()) {
                         sb.append("; ");
                     }
                     sb.append(key).append(": ").append(obj.get(key).asText());
                 }
             }
-            return sb.length() == 0 ? null : sb.toString();
+            return sb.isEmpty() ? null : sb.toString();
         }
 
         private static boolean hasNonNullText(ObjectNode obj, String key) {
@@ -243,6 +246,17 @@ public final class JacksonTextCollectionConverters {
     public static class CrosswalkEntryListConverter extends AbstractJsonTextConverter<List<CrosswalkEntry>> {
 
         public CrosswalkEntryListConverter() {
+            super(new TypeReference<>() {});
+        }
+    }
+
+    /**
+     * Persistence converter for {@code RiskAppetiteProfile.toleranceThresholds} (per GC-T005).
+     */
+    @Converter
+    public static class ToleranceThresholdListConverter extends AbstractJsonTextConverter<List<ToleranceThreshold>> {
+
+        public ToleranceThresholdListConverter() {
             super(new TypeReference<>() {});
         }
     }

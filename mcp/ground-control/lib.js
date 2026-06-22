@@ -330,6 +330,7 @@ export const OBSERVATION_CATEGORIES = [
 export const RISK_SCENARIO_STATUSES = ["DRAFT", "ACTIVE", "ARCHIVED"];
 export const METHODOLOGY_FAMILIES = ["FAIR", "NIST_SP800_30_R1", "ISO_27005", "CUSTOM"];
 export const METHODOLOGY_PROFILE_STATUSES = ["ACTIVE", "DEPRECATED"];
+export const RISK_APPETITE_PROFILE_STATUSES = ["DRAFT", "ACTIVE", "RETIRED"];
 export const RISK_REGISTER_STATUSES = [
   "IDENTIFIED",
   "ANALYZING",
@@ -713,6 +714,13 @@ export const TO_CAMEL = {
   input_schema: "inputSchema",
   output_schema: "outputSchema",
   crosswalk_entries: "crosswalkEntries",
+  // risk_appetite_profile fields (GC-T005)
+  appetite_key: "appetiteKey",
+  methodology_family: "methodologyFamily",
+  appetite_statement: "appetiteStatement",
+  tolerance_thresholds: "toleranceThresholds",
+  effective_from: "effectiveFrom",
+  effective_to: "effectiveTo",
   review_cadence: "reviewCadence",
   next_review_at: "nextReviewAt",
   category_tags: "categoryTags",
@@ -1290,6 +1298,23 @@ export async function analyzeFairQuantitative({
 } = {}) {
   return request("GET", "/api/v1/analysis/grc/fair-quantitative", {
     params: { project, asOf, riskAssessmentResultId, riskScenarioId },
+  });
+}
+
+// GC-T005 — risk appetite/tolerance evaluation. Compares residual risk metrics
+// from RiskAssessmentResult.computedOutputs against an appetite profile's
+// tolerance ceilings and flags breaches for escalation. Read-only; resolves the
+// profile by profileId or by appetiteKey active as of `asOf`.
+export async function analyzeRiskAppetiteEvaluation({
+  project,
+  asOf,
+  profileId,
+  appetiteKey,
+  riskRegisterRecordId,
+  riskScenarioId,
+} = {}) {
+  return request("GET", "/api/v1/analysis/grc/appetite-evaluation", {
+    params: { project, asOf, profileId, appetiteKey, riskRegisterRecordId, riskScenarioId },
   });
 }
 
@@ -10366,6 +10391,33 @@ export async function deleteMethodologyProfile(id, project) {
 }
 
 // ---------------------------------------------------------------------------
+// Risk Appetite Profile API functions (GC-T005)
+// ---------------------------------------------------------------------------
+
+export async function createRiskAppetiteProfile(data, project) {
+  return request("POST", "/api/v1/risk-appetite-profiles", { body: data, params: { project } });
+}
+
+export async function listRiskAppetiteProfiles(project) {
+  return request("GET", "/api/v1/risk-appetite-profiles", { params: { project } });
+}
+
+export async function getRiskAppetiteProfile(id, project) {
+  return request("GET", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function updateRiskAppetiteProfile(id, data, project) {
+  return request("PUT", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function deleteRiskAppetiteProfile(id, project) {
+  await request("DELETE", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+// ---------------------------------------------------------------------------
 // Risk Register Record API functions
 // ---------------------------------------------------------------------------
 
@@ -15939,6 +15991,7 @@ export const GOVERNANCE_STATUS_ENUMS = {
   risk_register_record: RISK_REGISTER_STATUSES,
   treatment_plan: TREATMENT_PLAN_STATUSES,
   verification_result: VERIFICATION_STATUSES,
+  risk_appetite_profile: RISK_APPETITE_PROFILE_STATUSES,
 };
 
 // gc_risk_governance per-entity, per-action body allowlist. Mirrors the
@@ -16023,6 +16076,22 @@ export const GOVERNANCE_FIELDS = {
     update: [
       "target_id", "requirement_id", "prover", "property",
       "result", "assurance_level", "evidence", "verified_at", "expires_at",
+    ],
+  },
+  risk_appetite_profile: {
+    // Mirrors RiskAppetiteProfileRequest (GC-T005): appetiteKey (required),
+    // name (required), version (required), methodologyFamily (required),
+    // appetiteStatement, toleranceThresholds, status, effectiveFrom (required),
+    // effectiveTo.
+    create: [
+      "appetite_key", "name", "version", "methodology_family",
+      "appetite_statement", "tolerance_thresholds", "status",
+      "effective_from", "effective_to",
+    ],
+    // Mirrors UpdateRiskAppetiteProfileRequest: same minus appetiteKey (immutable).
+    update: [
+      "name", "version", "methodology_family", "appetite_statement",
+      "tolerance_thresholds", "status", "effective_from", "effective_to",
     ],
   },
 };

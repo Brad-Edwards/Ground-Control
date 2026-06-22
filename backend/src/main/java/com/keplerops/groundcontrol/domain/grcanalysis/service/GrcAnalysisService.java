@@ -13,7 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
  * {@link NistAssessmentService},
  * {@link FairQuantitativeAnalysisService},
  * {@link ComplianceMonitoringAnalysisService},
- * {@link FairCamControlAnalyticsService}).
+ * {@link FairCamControlAnalyticsService},
+ * {@link RiskAppetiteEvaluationService}).
  */
 @Service
 @Transactional(readOnly = true)
@@ -26,6 +27,7 @@ public class GrcAnalysisService {
     private final FairQuantitativeAnalysisService fairQuantitativeAnalysisService;
     private final ComplianceMonitoringAnalysisService complianceMonitoringAnalysisService;
     private final FairCamControlAnalyticsService fairCamControlAnalyticsService;
+    private final RiskAppetiteEvaluationService riskAppetiteEvaluationService;
 
     public GrcAnalysisService(
             EvidenceFreshnessAnalysisService evidenceFreshnessAnalysisService,
@@ -34,7 +36,8 @@ public class GrcAnalysisService {
             NistAssessmentService nistAssessmentService,
             FairQuantitativeAnalysisService fairQuantitativeAnalysisService,
             ComplianceMonitoringAnalysisService complianceMonitoringAnalysisService,
-            FairCamControlAnalyticsService fairCamControlAnalyticsService) {
+            FairCamControlAnalyticsService fairCamControlAnalyticsService,
+            RiskAppetiteEvaluationService riskAppetiteEvaluationService) {
         this.evidenceFreshnessAnalysisService = evidenceFreshnessAnalysisService;
         this.observationProjectionService = observationProjectionService;
         this.vendorRiskAggregationService = vendorRiskAggregationService;
@@ -42,6 +45,7 @@ public class GrcAnalysisService {
         this.fairQuantitativeAnalysisService = fairQuantitativeAnalysisService;
         this.complianceMonitoringAnalysisService = complianceMonitoringAnalysisService;
         this.fairCamControlAnalyticsService = fairCamControlAnalyticsService;
+        this.riskAppetiteEvaluationService = riskAppetiteEvaluationService;
     }
 
     public EvidenceFreshnessResult evidenceFreshness(
@@ -73,6 +77,17 @@ public class GrcAnalysisService {
     public FairQuantitativeAnalysisResult fairQuantitative(
             UUID projectId, Instant asOf, UUID riskAssessmentResultId, UUID riskScenarioId) {
         return fairQuantitativeAnalysisService.analyze(projectId, asOf, riskAssessmentResultId, riskScenarioId);
+    }
+
+    public RiskAppetiteEvaluationResult riskAppetiteEvaluation(
+            UUID projectId,
+            Instant asOf,
+            UUID profileId,
+            String appetiteKey,
+            UUID riskRegisterRecordId,
+            UUID riskScenarioId) {
+        return riskAppetiteEvaluationService.evaluate(
+                projectId, asOf, profileId, appetiteKey, riskRegisterRecordId, riskScenarioId);
     }
 
     public ComplianceMonitoringResult complianceMonitoring(UUID projectId, Instant asOf, int freshnessWindowDays) {

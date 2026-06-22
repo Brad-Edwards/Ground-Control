@@ -916,3 +916,121 @@ describe("methodology_profile crosswalkEntries round-trip (GC-T012)", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// risk_appetite_profile (GC-T005, #260)
+// ---------------------------------------------------------------------------
+
+describe("risk_appetite_profile entity (GC-T005)", () => {
+  const PROFILE_UUID = "55555555-5555-5555-5555-555555555555";
+
+  it("is registered as a governance entity with a create/update allowlist", () => {
+    assert.ok(GC_RISK_GOVERNANCE_ENTITIES.includes("risk_appetite_profile"));
+    assert.ok(GOVERNANCE_FIELDS.risk_appetite_profile.create.includes("appetite_key"));
+    assert.ok(GOVERNANCE_FIELDS.risk_appetite_profile.create.includes("tolerance_thresholds"));
+    // appetiteKey is immutable — absent from update.
+    assert.ok(!GOVERNANCE_FIELDS.risk_appetite_profile.update.includes("appetite_key"));
+  });
+
+  it("create dispatches POST with a camelCased body and drops stale fields", async () => {
+    const calls = makeFetchSpy();
+
+    await callHandler({
+      entity: "risk_appetite_profile",
+      action: "create",
+      project: "ground-control",
+      appetite_key: "BOARD_APPETITE",
+      name: "Board Risk Appetite",
+      version: "1.0",
+      methodology_family: "FAIR",
+      appetite_statement: "Escalate material loss exposure.",
+      effective_from: "2026-01-01T00:00:00Z",
+      status: "ACTIVE",
+      tolerance_thresholds: [
+        { metricPath: "annualized_loss_expectancy.likely", maxQuantitativeValue: 500000, units: "USD", currency: "USD" },
+      ],
+      // stale control field must be dropped by the handler's pick()
+      id: PROFILE_UUID,
+    });
+
+    assert.equal(calls.length, 1);
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/risk-appetite-profiles");
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].body.appetiteKey, "BOARD_APPETITE");
+    assert.equal(calls[0].body.methodologyFamily, "FAIR");
+    assert.equal(calls[0].body.effectiveFrom, "2026-01-01T00:00:00Z");
+    assert.equal(calls[0].body.toleranceThresholds[0].metricPath, "annualized_loss_expectancy.likely");
+    assert.equal(calls[0].body.toleranceThresholds[0].maxQuantitativeValue, 500000);
+    // 'id' is a control field, never part of the create body.
+    assert.equal(calls[0].body.id, undefined);
+  });
+
+  it("update dispatches PUT and omits the immutable appetite_key", async () => {
+    const calls = makeFetchSpy();
+
+    await callHandler({
+      entity: "risk_appetite_profile",
+      action: "update",
+      project: "ground-control",
+      id: PROFILE_UUID,
+      appetite_key: "SHOULD_BE_DROPPED",
+      status: "RETIRED",
+    });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, `/api/v1/risk-appetite-profiles/${PROFILE_UUID}`);
+    assert.equal(calls[0].method, "PUT");
+    assert.equal(calls[0].body.status, "RETIRED");
+    assert.equal(calls[0].body.appetiteKey, undefined);
+  });
+
+  it("delete dispatches DELETE and returns null", async () => {
+    const calls = makeFetchSpy();
+
+    const result = await callHandler({
+      entity: "risk_appetite_profile",
+      action: "delete",
+      project: "ground-control",
+      id: PROFILE_UUID,
+    });
+
+    assert.equal(result, null);
+    assert.equal(calls[0].method, "DELETE");
+  });
+
+  it("rejects a status outside the risk_appetite_profile vocabulary", async () => {
+    await assert.rejects(
+      () =>
+        callHandler({
+          entity: "risk_appetite_profile",
+          action: "create",
+          project: "ground-control",
+          appetite_key: "BOARD_APPETITE",
+          name: "Board Risk Appetite",
+          version: "1.0",
+          methodology_family: "FAIR",
+          effective_from: "2026-01-01T00:00:00Z",
+          status: "ACCEPTED",
+        }),
+      /not a valid status|ACCEPTED/,
+    );
+  });
+
+  it("requires appetite_key, name, version, methodology_family, effective_from on create", async () => {
+    makeFetchSpy();
+    await assert.rejects(
+      () =>
+        callHandler({
+          entity: "risk_appetite_profile",
+          action: "create",
+          project: "ground-control",
+          name: "Board Risk Appetite",
+          version: "1.0",
+          methodology_family: "FAIR",
+          effective_from: "2026-01-01T00:00:00Z",
+        }),
+      /appetite_key/,
+    );
+  });
+});

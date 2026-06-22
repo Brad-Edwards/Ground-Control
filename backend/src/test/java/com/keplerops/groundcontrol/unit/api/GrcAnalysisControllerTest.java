@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -573,6 +574,12 @@ class GrcAnalysisControllerTest {
                             .param("project", "ground-control")
                             .param("domain", "LOSS_EVENT_CONTROL"))
                     .andExpect(status().isOk());
+
+            // Verify the parsed domain reached the service explicitly, so the test detects a broken
+            // domain filter independently of whether FairCamControlAnalyticsResponse.from() null-guards.
+            verify(grcAnalysisService)
+                    .fairCamControlAnalytics(
+                            eq(PROJECT_ID), argThat(q -> q.domain() == FairCamControlDomain.LOSS_EVENT_CONTROL));
         }
 
         @Test
@@ -614,6 +621,82 @@ class GrcAnalysisControllerTest {
                             .param("project", "ground-control")
                             .param("domain", "BOGUS"))
                     .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    class AppetiteEvaluation {
+
+        @Test
+        void happyPath_returns200WithStructuredFields() throws Exception {
+            var profile =
+                    new com.keplerops.groundcontrol.domain.grcanalysis.service.RiskAppetiteEvaluationResult
+                            .ProfileSummary(
+                            UUID.fromString("00000000-0000-0000-0000-000000000500"),
+                            "BOARD_APPETITE",
+                            "1.0",
+                            com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily.FAIR,
+                            com.keplerops.groundcontrol.domain.riskappetite.state.RiskAppetiteProfileStatus.ACTIVE,
+                            Instant.parse("2026-01-01T00:00:00Z"),
+                            null);
+            var evaluation =
+                    new com.keplerops.groundcontrol.domain.grcanalysis.service.RiskAppetiteEvaluationResult.Evaluation(
+                            UUID.randomUUID(),
+                            UUID.randomUUID(),
+                            "RS-1",
+                            null,
+                            null,
+                            "annualized_loss_expectancy.likely",
+                            "600000.0",
+                            "500000.0",
+                            "USD",
+                            false,
+                            true,
+                            true,
+                            List.of());
+            var result = new com.keplerops.groundcontrol.domain.grcanalysis.service.RiskAppetiteEvaluationResult(
+                    "ground-control",
+                    "appetite_evaluation",
+                    Instant.parse("2026-06-01T00:00:00Z"),
+                    "risk-appetite-tolerance-evaluation-v1",
+                    profile,
+                    List.of(evaluation),
+                    new com.keplerops.groundcontrol.domain.grcanalysis.service.RiskAppetiteEvaluationResult.Summary(
+                            1, 1, 1, 0),
+                    List.of());
+            when(grcAnalysisService.riskAppetiteEvaluation(eq(PROJECT_ID), any(), any(), any(), any(), any()))
+                    .thenReturn(result);
+
+            mockMvc.perform(get("/api/v1/analysis/grc/appetite-evaluation")
+                            .param("project", "ground-control")
+                            .param("profileId", "00000000-0000-0000-0000-000000000500"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("appetite_evaluation")))
+                    .andExpect(jsonPath("$.profile.appetiteKey", is("BOARD_APPETITE")))
+                    .andExpect(jsonPath("$.evaluations", hasSize(1)))
+                    .andExpect(jsonPath("$.evaluations[0].breached", is(true)))
+                    .andExpect(jsonPath("$.evaluations[0].escalate", is(true)))
+                    .andExpect(jsonPath("$.summary.escalations", is(1)));
+        }
+
+        @Test
+        void missingProfileSelector_returns422() throws Exception {
+            when(grcAnalysisService.riskAppetiteEvaluation(eq(PROJECT_ID), any(), any(), any(), any(), any()))
+                    .thenThrow(new DomainValidationException("Provide either profileId or appetiteKey"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/appetite-evaluation").param("project", "ground-control"))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+
+        @Test
+        void unknownProfile_returns404() throws Exception {
+            when(grcAnalysisService.riskAppetiteEvaluation(eq(PROJECT_ID), any(), any(), any(), any(), any()))
+                    .thenThrow(new NotFoundException("Risk appetite profile not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/appetite-evaluation")
+                            .param("project", "ground-control")
+                            .param("appetiteKey", "MISSING"))
+                    .andExpect(status().isNotFound());
         }
     }
 }

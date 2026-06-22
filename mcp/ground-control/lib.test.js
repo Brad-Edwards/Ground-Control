@@ -8670,7 +8670,13 @@ describe("validateGovernanceStatus", () => {
     // status vocabulary cannot silently inherit the "no status" rejection.
     assert.deepEqual(
       Object.keys(GOVERNANCE_STATUS_ENUMS).sort(),
-      ["methodology_profile", "risk_register_record", "treatment_plan", "verification_result"],
+      [
+        "methodology_profile",
+        "risk_appetite_profile",
+        "risk_register_record",
+        "treatment_plan",
+        "verification_result",
+      ],
     );
   });
 });
