@@ -253,10 +253,11 @@ class JacksonTextCollectionConvertersTest {
             String json = converter.convertToDatabaseColumn(List.of(item));
 
             // null fields (assignee, description) must be absent due to @JsonInclude(NON_NULL)
-            assertThat(json).doesNotContain("assignee");
-            assertThat(json).doesNotContain("description");
-            assertThat(json).contains("\"owner\":\"alice\"");
-            assertThat(json).contains("\"status\":\"IN_PROGRESS\"");
+            assertThat(json)
+                    .doesNotContain("assignee")
+                    .doesNotContain("description")
+                    .contains("\"owner\":\"alice\"")
+                    .contains("\"status\":\"IN_PROGRESS\"");
         }
 
         @Test
@@ -298,6 +299,32 @@ class JacksonTextCollectionConvertersTest {
 
             assertThat(restored).hasSize(1);
             assertThat(restored.get(0).description()).isNull();
+        }
+
+        @Test
+        void legacyRow_dateOnlyDueDate_normalisedToStartOfDayUtc() {
+            // Regression for #1206: smoke-seed treatment plans persisted action_items with a
+            // bare calendar date in dueDate (alongside non-canonical id/title keys). A date-only
+            // token is not a valid Instant and previously crashed the Risk Scenario Workspace
+            // read with a 500. The reader must normalise it to start-of-day UTC.
+            String legacyJson =
+                    "[{\"id\":1,\"title\":\"Restrict /opt/gc/.env\",\"owner\":\"sec@x\",\"dueDate\":\"2026-05-26\"}]";
+            List<ActionItem> restored = converter.convertToEntityAttribute(legacyJson);
+
+            assertThat(restored).hasSize(1);
+            var item = restored.get(0);
+            assertThat(item.owner()).isEqualTo("sec@x");
+            assertThat(item.dueDate()).isEqualTo(Instant.parse("2026-05-26T00:00:00Z"));
+        }
+
+        @Test
+        void dueDateWithTimeComponent_preservedExactly() {
+            // A full ISO-8601 instant must pass through the normaliser untouched.
+            String json = "[{\"owner\":\"a\",\"dueDate\":\"2026-05-26T13:45:00Z\",\"status\":\"PLANNED\"}]";
+            List<ActionItem> restored = converter.convertToEntityAttribute(json);
+
+            assertThat(restored).hasSize(1);
+            assertThat(restored.get(0).dueDate()).isEqualTo(Instant.parse("2026-05-26T13:45:00Z"));
         }
 
         @Test
