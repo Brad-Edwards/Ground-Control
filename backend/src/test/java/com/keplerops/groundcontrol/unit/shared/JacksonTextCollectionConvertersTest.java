@@ -253,10 +253,11 @@ class JacksonTextCollectionConvertersTest {
             String json = converter.convertToDatabaseColumn(List.of(item));
 
             // null fields (assignee, description) must be absent due to @JsonInclude(NON_NULL)
-            assertThat(json).doesNotContain("assignee");
-            assertThat(json).doesNotContain("description");
-            assertThat(json).contains("\"owner\":\"alice\"");
-            assertThat(json).contains("\"status\":\"IN_PROGRESS\"");
+            assertThat(json)
+                    .doesNotContain("assignee")
+                    .doesNotContain("description")
+                    .contains("\"owner\":\"alice\"")
+                    .contains("\"status\":\"IN_PROGRESS\"");
         }
 
         @Test

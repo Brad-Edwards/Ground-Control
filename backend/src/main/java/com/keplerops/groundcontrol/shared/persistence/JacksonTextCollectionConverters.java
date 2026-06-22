@@ -163,7 +163,7 @@ public final class JacksonTextCollectionConverters {
                 List.of("action", "task", "item", "what", "who", "when", "done", "note", "notes", "summary");
 
         private static final List<String> CANONICAL_KEYS =
-                List.of("owner", "dueDate", "status", "assignee", DESCRIPTION);
+                List.of("owner", DUE_DATE, "status", "assignee", DESCRIPTION);
 
         @Override
         public String convertToDatabaseColumn(List<ActionItem> attribute) {
