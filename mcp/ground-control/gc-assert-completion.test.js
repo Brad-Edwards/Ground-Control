@@ -113,6 +113,8 @@ function mockFetchForGrc(routesByUrl) {
 function makeCompletionShimRepo({
   comments = [],
   commentIdSeq = [9500, 9501, 9502],
+  prNumber = 42,
+  prMerged = true,
 } = {}) {
   // We need to handle multiple POSTs. Use a counter in a wrapper script.
   // Build a shim that cycles through commentIdSeq for each POST call.
@@ -121,12 +123,33 @@ function makeCompletionShimRepo({
   const counterPath = join(binDir, "counter.json");
   writeFileSync(counterPath, JSON.stringify({ index: 0, ids: commentIdSeq }));
 
+  // The post_merge completion path (issue #963) resolves the linked PR via
+  // `gh api graphql` and gates on it being merged. Mock the issue→PR timeline
+  // lookup so the merge gate can be satisfied (prMerged=true) or exercised
+  // (prMerged=false → state OPEN, mergedAt null).
+  const prNode = {
+    __typename: "PullRequest",
+    number: prNumber,
+    state: prMerged ? "MERGED" : "OPEN",
+    mergedAt: prMerged ? "2026-06-22T02:00:00Z" : null,
+    url: `https://github.com/fake/repo/pull/${prNumber}`,
+  };
+  const graphqlPayload = {
+    data: { repository: { issue: { timelineItems: { nodes: [
+      { __typename: "CrossReferencedEvent", source: prNode },
+    ] } } } },
+  };
+
   const configPath = join(binDir, "config.json");
   const ghHandler = {
     routes: [
       {
         argv_prefix: ["repo", "view", "--json", GH_NAME_WITH_OWNER],
         stdout: JSON.stringify({ nameWithOwner: "fake/repo" }),
+      },
+      {
+        argv_prefix: ["api", "graphql"],
+        stdout: JSON.stringify(graphqlPayload),
       },
       {
         argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"],
@@ -461,5 +484,201 @@ describe("runPostFinalReport — no internalVerifiedPhases refuses when markers 
     } finally {
       cleanup();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 7: post_merge merge gate — unmerged PR → completion_pr_not_merged,
+// no assertions run, no final report (issue #963)
+// ---------------------------------------------------------------------------
+
+describe("runAssertCompletion — post_merge refuses when PR not merged", () => {
+  it("returns ok:false completion_pr_not_merged, empty assertions, final_report null", async () => {
+    const screeningBody = buildGrcScreeningRecord({
+      issueNumber: 963,
+      verdict: "not_security_relevant",
+      rationale: "Doc-only change.",
+      entities_created: [],
+      entities_updated: [],
+      entities_confirmed: [],
+      code_links: [],
+    });
+    // PR #42 is linked but NOT merged (state OPEN, mergedAt null).
+    const shim = makeCompletionShimRepo({ comments: [{ body: screeningBody }], prMerged: false });
+    try {
+      const r = await withShimPath(shim.binDir, () =>
+        runAssertCompletion({
+          repoPath: shim.repoDir,
+          issueNumber: 963,
+          prNumber: 42,
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+          ciStatus: "green",
+          sonarStatus: "skipped",
+          plainEnglishOutcome: "Moves Phase D reconciliation post-merge.",
+          // phase defaults to post_merge
+        }),
+      );
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "completion_pr_not_merged");
+      assert.equal(r.pr_state, "OPEN");
+      assert.equal(r.pr_merged_at, null);
+      assert.equal(r.next_action, "wait_for_user_to_merge_the_pr");
+      assert.ok(Array.isArray(r.assertions));
+      assert.equal(r.assertions.length, 0, "no assertions should run before the merge gate passes");
+      assert.equal(r.final_report, null);
+    } finally {
+      shim.cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 8: pre_merge readiness — posts ready-for-review record, no merge gate,
+// no reconciliation assertions (issue #963)
+// ---------------------------------------------------------------------------
+
+describe("runAssertCompletion — pre_merge readiness report", () => {
+  it("returns ok:true phase:pre_merge with readiness_report; asserts GRC screening but NOT traceability; no merge gate", async () => {
+    // GRC screening record present (so the pre-merge GRC assertion passes), no
+    // traceability markers, and an UNMERGED PR. pre_merge must succeed: it skips
+    // the merge gate and the traceability assertion, but DOES prove the screening
+    // record exists (issue #963 codex cycle-1 one-off finding).
+    const screeningBody = buildGrcScreeningRecord({
+      issueNumber: 963,
+      verdict: "not_security_relevant",
+      rationale: "Workflow-ordering change; no security surface.",
+      entities_created: [],
+      entities_updated: [],
+      entities_confirmed: [],
+      code_links: [],
+    });
+    const shim = makeCompletionShimRepo({ comments: [{ body: screeningBody }], prMerged: false });
+    try {
+      const r = await withShimPath(shim.binDir, () =>
+        runAssertCompletion({
+          repoPath: shim.repoDir,
+          issueNumber: 963,
+          prNumber: 42,
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+          ciStatus: "green",
+          sonarStatus: "skipped",
+          plainEnglishOutcome: "Ready for review; reconciliation runs on merge.",
+          phase: "pre_merge",
+        }),
+      );
+      assert.equal(r.ok, true, `expected ok:true; got: ${JSON.stringify(r)}`);
+      assert.equal(r.phase, "pre_merge");
+      assert.ok(Array.isArray(r.assertions));
+      // Exactly the GRC assertion runs pre-merge; traceability does not.
+      assert.equal(r.assertions.length, 1);
+      assert.equal(r.assertions[0].name, "grc_reconciled");
+      assert.equal(r.assertions[0].ok, true);
+      assert.ok(!r.assertions.some((a) => a.name === "traceability_reconciled"));
+      assert.equal(r.final_report, null);
+      assert.ok(r.readiness_report != null);
+      assert.ok(typeof r.readiness_report.comment_url === "string");
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("refuses readiness when the Step 3.5 GRC screening record is missing", async () => {
+    // No screening record on the thread → the pre-merge GRC assertion fails, so
+    // readiness must NOT be posted (issue #963 codex cycle-1 one-off finding).
+    const shim = makeCompletionShimRepo({ comments: [], prMerged: false });
+    try {
+      const r = await withShimPath(shim.binDir, () =>
+        runAssertCompletion({
+          repoPath: shim.repoDir,
+          issueNumber: 963,
+          prNumber: 42,
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+          ciStatus: "green",
+          sonarStatus: "skipped",
+          plainEnglishOutcome: "Ready for review; reconciliation runs on merge.",
+          phase: "pre_merge",
+        }),
+      );
+      assert.equal(r.ok, false);
+      assert.equal(r.final_report, null);
+      const grcEntry = r.assertions.find((a) => a.name === "grc_reconciled");
+      assert.ok(grcEntry, `expected grc_reconciled assertion; got ${JSON.stringify(r.assertions)}`);
+      assert.equal(grcEntry.ok, false);
+    } finally {
+      shim.cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 9: pre_merge still enforces the CI-green gate (gate parity, issue #963)
+// ---------------------------------------------------------------------------
+
+describe("runAssertCompletion — pre_merge enforces CI-green gate", () => {
+  it("returns ok:false final_report_ci_not_green when CI is red", async () => {
+    // Screening record present so the GRC assertion passes and CI is the failure.
+    const screeningBody = buildGrcScreeningRecord({
+      issueNumber: 963,
+      verdict: "not_security_relevant",
+      rationale: "Workflow-ordering change; no security surface.",
+      entities_created: [],
+      entities_updated: [],
+      entities_confirmed: [],
+      code_links: [],
+    });
+    const shim = makeCompletionShimRepo({ comments: [{ body: screeningBody }] });
+    try {
+      const r = await withShimPath(shim.binDir, () =>
+        runAssertCompletion({
+          repoPath: shim.repoDir,
+          issueNumber: 963,
+          prNumber: 42,
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+          ciStatus: "red",
+          sonarStatus: "skipped",
+          plainEnglishOutcome: "Ready for review; reconciliation runs on merge.",
+          phase: "pre_merge",
+        }),
+      );
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "final_report_ci_not_green");
+      assert.equal(r.final_report, null);
+    } finally {
+      shim.cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 10: buildFinalReport pre_merge emits ready_for_review marker + heading,
+// post_merge emits gc:final-report marker (issue #963)
+// ---------------------------------------------------------------------------
+
+describe("buildFinalReport — phase-aware marker and heading", () => {
+  it("pre_merge renders ready_for_review phase marker and 'Ready for review' heading; post_merge renders final-report marker", async () => {
+    const { buildFinalReport } = await import("./lib.js");
+    const base = {
+      issueNumber: 963,
+      prNumber: 42,
+      requirements: [],
+      reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+      ciStatus: "green",
+      sonarStatus: "skipped",
+      plainEnglishOutcome: "Moves Phase D reconciliation post-merge.",
+    };
+    const pre = buildFinalReport({ ...base, phase: "pre_merge" });
+    assert.ok(pre.includes(`<!-- gc:phase phase="ready_for_review" issue="963" -->`), pre);
+    assert.ok(pre.includes("## Ready for review — issue #963"), pre);
+    assert.ok(!pre.includes("<!-- gc:final-report"), "pre_merge must NOT carry the final-report marker");
+    assert.ok(pre.includes("runs on merge (Phase E)"), pre);
+
+    const post = buildFinalReport({ ...base, phase: "post_merge" });
+    assert.ok(post.includes(`<!-- gc:final-report issue="963" pr="42" -->`), post);
+    assert.ok(post.includes("## Final report — issue #963 complete"), post);
+    assert.ok(!post.includes("ready_for_review"), "post_merge must NOT carry the readiness marker");
   });
 });

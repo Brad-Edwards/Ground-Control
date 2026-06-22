@@ -145,6 +145,8 @@ If `cfg.sonarcloud` is null, skip; proceed to Step Q18.
 
 If a `/quickfix` run touches files in a way that warrants requirement transitions, that's a signal the run should have been `/implement`. Surface to the user and re-invoke `/implement <same-issue>` rather than partial-completing the requirement work in the lighter lane.
 
+**Unaffected by `/implement`'s post-merge reconciliation (issue #963).** `/implement` moved its requirement transition, traceability reconciliation, and final report to a new post-merge Phase E. `/quickfix` is **structurally exempt** from that change: it does no transition and no UID reconciliation (this section), so it has nothing to defer past the merge; its closeout posts `gc_post_final_report` with `lane: "quickfix"` directly (not the merge-gated composite `gc_assert_completion`), so the new `completion_pr_not_merged` gate does not apply; and its issue close already runs post-merge through `gc_close_issue_after_merge`. The slim quickfix close comment continues to post pre-merge as the lane's lightweight ready signal.
+
 ### Step Q18: Clear In-Progress Label (optional best-effort)
 
 The `in-progress` label removal is **optional best-effort** for `/quickfix` (as it is for `/implement` per issue #1103). After Step Q19 posts the close comment, you MAY run `gh issue edit <issue-number> --remove-label in-progress` and skip on failure. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step Q9) at PR merge. Do NOT run `gh issue close` from the agent: closing decouples the close event from the merge, and a rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open on revert).

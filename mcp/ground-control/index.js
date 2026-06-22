@@ -967,7 +967,9 @@ server.tool(
 
 server.tool(
   "gc_assert_completion",
-  "Run the Phase D completion assertions (traceability reconciliation + GRC reconciliation) then post the final report in one deterministic call. " +
+  "Run the completion assertions (traceability reconciliation + GRC reconciliation) then post the final report in one deterministic call. " +
+  "phase='post_merge' (default) is the Phase E completion: it is MERGE-GATED — it refuses with error='completion_pr_not_merged' unless the linked PR is merged (merged_at non-null AND state='MERGED'), so the ACTIVE transition, IMPLEMENTS/TESTS links, and the durable final report never land ahead of shipped code (issue #963, mirrors gc_close_issue_after_merge). " +
+  "phase='pre_merge' is the Phase D terminal readiness record: it asserts the Step 3.5 GRC screening record exists (refusing readiness if missing), skips the traceability assertion and the merge gate, posts a 'Ready for review' comment carrying a `ready_for_review` phase marker (no `gc:final-report` marker), and returns {ok, phase:'pre_merge', readiness_report, assertions:[grc_reconciled]}; all input gates (CI green, Sonar pass/skip, codex review present, scrubs) still run. " +
   "Composes gc_assert_traceability_reconciled, gc_assert_grc_reconciled, and gc_post_final_report. " +
   "Fail-fast: validates the final-report input before any side effects. " +
   "Returns assertions[] (one entry per assertion: {name, ok, comment_url, comment_id}) plus final_report {comment_url, comment_id}. " +
@@ -1015,8 +1017,9 @@ server.tool(
     project: z.string().optional(),
     override: z.boolean().optional(),
     override_reason: z.string().optional(),
+    phase: z.enum(["pre_merge", "post_merge"]).optional(),
   },
-  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, plain_english_outcome, documentation_outcome, touched_files, project, override, override_reason }) => {
+  async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, plain_english_outcome, documentation_outcome, touched_files, project, override, override_reason, phase }) => {
     try {
       return ok(JSON.stringify(await runAssertCompletion({
         repoPath: repo_path,
@@ -1042,6 +1045,7 @@ server.tool(
         project: project ?? null,
         override: Boolean(override),
         overrideReason: override_reason ?? null,
+        phase: phase ?? "post_merge",
       }), null, 2));
     } catch (e) { return err(e); }
   },
