@@ -10,6 +10,7 @@ import com.keplerops.groundcontrol.domain.evidence.model.EvidenceSourceRef;
 import com.keplerops.groundcontrol.domain.packregistry.model.PackDependency;
 import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPackEntry;
 import com.keplerops.groundcontrol.domain.packregistry.model.TrustPolicyRule;
+import com.keplerops.groundcontrol.domain.riskappetite.model.ToleranceThreshold;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.CrosswalkEntry;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
@@ -17,10 +18,14 @@ import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTrigge
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 import java.io.IOException;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 public final class JacksonTextCollectionConverters {
 
@@ -147,11 +152,18 @@ public final class JacksonTextCollectionConverters {
     @Converter
     public static class ActionItemListConverter implements AttributeConverter<List<ActionItem>, String> {
 
+        private static final String DESCRIPTION = "description";
+
+        private static final String DUE_DATE = "dueDate";
+
+        /** Bare calendar date (yyyy-MM-dd) with no time component. */
+        private static final Pattern DATE_ONLY = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
+
         private static final List<String> LEGACY_FREE_TEXT_KEYS =
                 List.of("action", "task", "item", "what", "who", "when", "done", "note", "notes", "summary");
 
         private static final List<String> CANONICAL_KEYS =
-                List.of("owner", "dueDate", "status", "assignee", "description");
+                List.of("owner", DUE_DATE, "status", "assignee", DESCRIPTION);
 
         @Override
         public String convertToDatabaseColumn(List<ActionItem> attribute) {
@@ -196,14 +208,46 @@ public final class JacksonTextCollectionConverters {
             if (!node.isObject()) {
                 return OBJECT_MAPPER.treeToValue(node, ActionItem.class);
             }
-            ObjectNode obj = (ObjectNode) node;
+            ObjectNode obj = ((ObjectNode) node).deepCopy();
+            normaliseLegacyDueDate(obj);
             String synthesised = synthesiseLegacyDescription(obj);
-            if (synthesised == null) {
-                return OBJECT_MAPPER.treeToValue(obj, ActionItem.class);
+            if (synthesised != null) {
+                obj.put(DESCRIPTION, synthesised);
             }
-            ObjectNode copy = obj.deepCopy();
-            copy.put("description", synthesised);
-            return OBJECT_MAPPER.treeToValue(copy, ActionItem.class);
+            return OBJECT_MAPPER.treeToValue(obj, ActionItem.class);
+        }
+
+        /**
+         * Legacy / non-canonical rows (e.g. the smoke-seed treatment plans) persisted
+         * {@code dueDate} as a bare calendar date ({@code yyyy-MM-dd}). {@link ActionItem#dueDate()}
+         * is an {@link java.time.Instant}, so a date-only token fails Jackson's Instant
+         * deserialisation and previously crashed the entire Risk Scenario Workspace read
+         * (issue #1206). Normalise such a value to start-of-day UTC — the same calendar-date to
+         * Instant convention used elsewhere ({@code EvidenceFreshnessAnalysisService}) — rather
+         * than failing the read. Full ISO-8601 instants (and absent/blank values) are left
+         * untouched.
+         */
+        private static void normaliseLegacyDueDate(ObjectNode obj) {
+            JsonNode dueDate = obj.get(DUE_DATE);
+            if (dueDate == null || !dueDate.isTextual()) {
+                return;
+            }
+            String raw = dueDate.asText();
+            if (!DATE_ONLY.matcher(raw).matches()) {
+                return;
+            }
+            try {
+                obj.put(
+                        DUE_DATE,
+                        LocalDate.parse(raw)
+                                .atStartOfDay(ZoneOffset.UTC)
+                                .toInstant()
+                                .toString());
+            } catch (DateTimeParseException ignored) {
+                // Matches the yyyy-MM-dd shape but is not a valid calendar date (e.g. month/day
+                // out of range); leave the original token so the downstream deserializer surfaces
+                // the real error rather than masking it.
+            }
         }
 
         /**
@@ -212,7 +256,7 @@ public final class JacksonTextCollectionConverters {
          * description is already present or the row carries no recognised legacy keys).
          */
         private static String synthesiseLegacyDescription(ObjectNode obj) {
-            if (hasNonNullText(obj, "description")) {
+            if (hasNonNullText(obj, DESCRIPTION)) {
                 return null;
             }
             StringBuilder sb = new StringBuilder();
@@ -221,13 +265,13 @@ public final class JacksonTextCollectionConverters {
                     continue;
                 }
                 if (hasNonNullText(obj, key)) {
-                    if (sb.length() > 0) {
+                    if (!sb.isEmpty()) {
                         sb.append("; ");
                     }
                     sb.append(key).append(": ").append(obj.get(key).asText());
                 }
             }
-            return sb.length() == 0 ? null : sb.toString();
+            return sb.isEmpty() ? null : sb.toString();
         }
 
         private static boolean hasNonNullText(ObjectNode obj, String key) {
@@ -243,6 +287,17 @@ public final class JacksonTextCollectionConverters {
     public static class CrosswalkEntryListConverter extends AbstractJsonTextConverter<List<CrosswalkEntry>> {
 
         public CrosswalkEntryListConverter() {
+            super(new TypeReference<>() {});
+        }
+    }
+
+    /**
+     * Persistence converter for {@code RiskAppetiteProfile.toleranceThresholds} (per GC-T005).
+     */
+    @Converter
+    public static class ToleranceThresholdListConverter extends AbstractJsonTextConverter<List<ToleranceThreshold>> {
+
+        public ToleranceThresholdListConverter() {
             super(new TypeReference<>() {});
         }
     }

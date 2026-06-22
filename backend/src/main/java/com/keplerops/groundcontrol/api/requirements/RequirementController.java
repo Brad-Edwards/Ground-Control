@@ -12,6 +12,7 @@ import com.keplerops.groundcontrol.domain.requirements.service.TraceabilityServi
 import com.keplerops.groundcontrol.domain.requirements.service.UpdateRequirementCommand;
 import com.keplerops.groundcontrol.domain.requirements.state.ArtifactType;
 import com.keplerops.groundcontrol.domain.requirements.state.ChangeCategory;
+import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
 import com.keplerops.groundcontrol.domain.requirements.state.Priority;
 import com.keplerops.groundcontrol.domain.requirements.state.RequirementType;
 import com.keplerops.groundcontrol.domain.requirements.state.Status;
@@ -84,6 +85,23 @@ public class RequirementController {
         return requirementService.list(projectId, pageable, filter).map(RequirementResponse::from);
     }
 
+    @GetMapping("/matrix")
+    public Page<RequirementWithLinksResponse> matrix(
+            Pageable pageable,
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) Status status,
+            @RequestParam(required = false) RequirementType type,
+            @RequestParam(required = false) Priority priority,
+            @RequestParam(required = false) Integer wave,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) LinkType linkType) {
+        var projectId = projectService.resolveProjectId(project);
+        var filter = new RequirementFilter(status, type, priority, wave, search);
+        return requirementService
+                .getTraceabilityMatrix(projectId, pageable, filter, linkType)
+                .map(RequirementWithLinksResponse::from);
+    }
+
     @GetMapping("/{id}")
     public RequirementResponse getById(@PathVariable UUID id) {
         return RequirementResponse.from(requirementService.getById(id));
@@ -137,9 +155,10 @@ public class RequirementController {
     }
 
     @GetMapping("/{id}/history")
-    public List<RequirementHistoryResponse> getHistory(@PathVariable UUID id) {
+    public List<RequirementHistoryResponse> getHistory(
+            @PathVariable UUID id, @RequestParam(defaultValue = "false") boolean expand) {
         return auditService.getRequirementHistory(id).stream()
-                .map(RequirementHistoryResponse::from)
+                .map(revision -> RequirementHistoryResponse.from(revision, expand))
                 .toList();
     }
 
@@ -151,9 +170,10 @@ public class RequirementController {
             @RequestParam(required = false) Instant from,
             @RequestParam(required = false) Instant to,
             @RequestParam(defaultValue = "100") int limit,
-            @RequestParam(defaultValue = "0") int offset) {
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "false") boolean expand) {
         return auditService.getRequirementTimeline(id, changeCategory, actor, from, to, limit, offset).stream()
-                .map(TimelineEntryResponse::from)
+                .map(entry -> TimelineEntryResponse.from(entry, expand))
                 .toList();
     }
 

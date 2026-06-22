@@ -111,7 +111,7 @@ the MCP layer:
 - Field conversion: ordinary request bodies pass through `toCamelCase`.
   Extend `TO_CAMEL` only for real wire-name differences. Preserve opaque maps
   such as `metadata` and `schema_body`; do not recursively rewrite
-  user-defined keys. Adapters that manually shape the body (e.g., the
+  user-defined keys. Adapters that manually shape the body (for example, the
   `toCreateBody` helper in `gc-evidence.js`) bypass this conversion path; if
   you add such a helper, leave a one-line comment naming the backend DTO
   field whose shape the manual mapping mirrors.
@@ -210,16 +210,16 @@ the Boundary section), the three undelivered terms were split into their own
 requirements rather than blocking GC-L006 on backend decisions that themselves
 have no requirement yet:
 
-- **GC-L009 — MCP Third-Party / Vendor Aggregate** (Wave 5, MUST, INTERFACE,
+- **GC-L009 - MCP Third-Party / Vendor Aggregate** (Wave 5, MUST, INTERFACE,
   DRAFT). Covers MCP exposure for a future first-class vendor / third-party
   aggregate. Today, third-party records are subsumed under
   `AssetType.THIRD_PARTY` on `gc_asset`; GC-L009 picks up when the backend
   promotes a standalone vendor aggregate.
-- **GC-L010 — MCP Questionnaires** (Wave 5, MUST, INTERFACE, DRAFT). Covers
+- **GC-L010 - MCP Questionnaires** (Wave 5, MUST, INTERFACE, DRAFT). Covers
   MCP CRUD and lifecycle operations on a future questionnaire aggregate
   (definitions, responses, scoring). No backend questionnaire entity exists
   today; GC-L010 picks up when the backend aggregate lands.
-- **GC-L011 — MCP Compliance Framework Mapping Aggregate** (Wave 5, MUST,
+- **GC-L011 - MCP Compliance Framework Mapping Aggregate** (Wave 5, MUST,
   INTERFACE, DRAFT). Covers MCP CRUD and traversal for a future first-class
   compliance-framework-mapping aggregate. Today, framework mappings exist only
   as external `FRAMEWORK` link types on `gc_audit` and as control-pack

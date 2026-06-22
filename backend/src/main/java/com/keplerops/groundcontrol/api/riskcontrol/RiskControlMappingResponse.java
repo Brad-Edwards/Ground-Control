@@ -12,9 +12,10 @@ public record RiskControlMappingResponse(
         // Control-side
         UUID controlId,
         UUID scopedImplementationId,
-        // Risk-side
+        // Analysis-side
         UUID riskScenarioId,
         UUID riskRegisterRecordId,
+        UUID threatModelId,
         // C2
         UUID operationalAssetId,
         // C3
@@ -39,6 +40,7 @@ public record RiskControlMappingResponse(
                 mapping.getRiskRegisterRecord() != null
                         ? mapping.getRiskRegisterRecord().getId()
                         : null,
+                mapping.getThreatModel() != null ? mapping.getThreatModel().getId() : null,
                 mapping.getOperationalAsset() != null
                         ? mapping.getOperationalAsset().getId()
                         : null,

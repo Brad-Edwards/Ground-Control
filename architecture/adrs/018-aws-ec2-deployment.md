@@ -16,22 +16,22 @@ Accepted (superseded 2026-05-03).
 
 Ground Control runs on the developer's local machine via Docker Compose. This creates two problems:
 
-1. **Dev box load** — running the full stack (PostgreSQL+AGE, Spring Boot, frontend dev server) taxes the development machine.
-2. **No off-machine durability** — data lives in a Docker volume on a single machine. A disk failure, machine rebuild, or accidental `docker compose down -v` destroys the source of truth.
+1. **Dev box load** - running the full stack (PostgreSQL+AGE, Spring Boot, frontend dev server) taxes the development machine.
+2. **No off-machine durability** - data lives in a Docker volume on a single machine. A disk failure, machine rebuild, or accidental `docker compose down -v` destroys the source of truth.
 
 ADR-015 (withdrawn) attempted to solve durability with AWS RDS, but RDS does not support the Apache AGE extension required by ADR-005. Self-managed PostgreSQL is the only viable cloud path.
 
 ## Decision
 
-Deploy Ground Control on a single EC2 instance (`t3a.small`, 2 vCPU / 2 GB RAM) in the `catalyst-dev` AWS account (516608939870, us-east-2), running the same Docker Compose stack. All access via Tailscale — zero public ingress.
+Deploy Ground Control on a single EC2 instance (`t3a.small`, 2 vCPU / 2 GB RAM) in the `catalyst-dev` AWS account (516608939870, us-east-2), running the same Docker Compose stack. All access via Tailscale - zero public ingress.
 
 ### Architecture
 
 - **Compute**: Single `t3a.small` instance running Docker Compose (PostgreSQL+AGE + Spring Boot backend)
 - **Access**: Tailscale mesh network only. Security group has zero ingress rules. SSH via Tailscale SSH (no SSH keys). Application at `http://gc-dev:8000`.
 - **Storage**: Root volume (8 GB gp3) for OS/Docker. Separate EBS data volume (20 GB gp3, encrypted) mounted at `/data` for PostgreSQL data and local backup staging.
-- **Backup Layer 1 — EBS Snapshots**: AWS Data Lifecycle Manager creates daily snapshots of the data volume with 7-day retention (~$1/mo).
-- **Backup Layer 2 — pg_dump to S3**: Cron at 03:00 UTC runs `pg_dump -Fc` → S3 bucket with 30-day lifecycle expiration.
+- **Backup Layer 1 - EBS Snapshots**: AWS Data Lifecycle Manager creates daily snapshots of the data volume with 7-day retention (~$1/mo).
+- **Backup Layer 2 - pg_dump to S3**: Cron at 03:00 UTC runs `pg_dump -Fc` → S3 bucket with 30-day lifecycle expiration.
 - **Monitoring**: Docker health checks (`pg_isready`, `/actuator/health`). Cron watchdog every 5 minutes restarts backend on health failure. No CloudWatch (overkill for single-user).
 - **Deployment**: Automated. Push to `main` → CI builds/tests/pushes GHCR image → SSM `SendCommand` triggers `deploy.sh` on EC2. Manual deploy also available via `ssh gc-dev /opt/gc/deploy.sh`.
 

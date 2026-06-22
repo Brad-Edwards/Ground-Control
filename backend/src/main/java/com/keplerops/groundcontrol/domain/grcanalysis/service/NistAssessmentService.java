@@ -52,7 +52,8 @@ public class NistAssessmentService {
     private static final String KEY_THREAT_EVENT = "threat_event";
     private static final String KEY_THREAT_EVENT_KIND = "threat_event_kind";
     private static final String KEY_THREAT_SOURCE_CHARACTERISTICS = "threat_source_characteristics";
-    private static final String KEY_THREAT_SOURCE_RELEVANCE = "threat_source_relevance";
+    private static final String KEY_THREAT_EVENT_RELEVANCE = "threat_event_relevance";
+    private static final String KEY_LEGACY_THREAT_SOURCE_RELEVANCE = "threat_source_relevance";
     private static final String KEY_VULNERABILITIES = "vulnerabilities";
     private static final String KEY_PREDISPOSING_CONDITIONS = "predisposing_conditions";
     private static final String KEY_LIKELIHOOD_INITIATION = "likelihood_initiation";
@@ -191,8 +192,8 @@ public class NistAssessmentService {
                         limitations),
                 parseEnum(
                         ThreatSourceRelevance.class,
-                        stringValue(inputs.get(KEY_THREAT_SOURCE_RELEVANCE)),
-                        KEY_THREAT_SOURCE_RELEVANCE,
+                        threatEventRelevanceValue(inputs),
+                        KEY_THREAT_EVENT_RELEVANCE,
                         limitations),
                 parseEnum(
                         NistLikelihoodBand.class,
@@ -245,9 +246,9 @@ public class NistAssessmentService {
             overall = overallSupplied;
             derivation = "analyst-supplied (likelihood_overall input)";
         } else if (decoded.initiation() != null && decoded.adverseImpact() != null) {
-            overall = minBand(decoded.initiation(), decoded.adverseImpact());
+            overall = overallLikelihoodFrom(decoded.initiation(), decoded.adverseImpact());
             derivation =
-                    "derived: min(likelihood_initiation, likelihood_adverse_impact) per NIST SP 800-30 Rev. 1 Table G-5";
+                    "derived: likelihood_initiation × likelihood_adverse_impact per NIST SP 800-30 Rev. 1 Table G-5";
         } else {
             overall = null;
             derivation = "not-derivable (missing likelihood inputs)";
@@ -301,7 +302,7 @@ public class NistAssessmentService {
             limitations.add("predisposing-condition coverage incomplete: no conditions enumerated");
         }
         if (decoded.relevance() == null) {
-            limitations.add("threat-source relevance not established");
+            limitations.add("threat-event relevance not established");
         }
     }
 
@@ -346,6 +347,11 @@ public class NistAssessmentService {
         return o == null ? null : o.toString();
     }
 
+    private static String threatEventRelevanceValue(Map<String, Object> inputs) {
+        String preferred = stringValue(inputs.get(KEY_THREAT_EVENT_RELEVANCE));
+        return preferred != null ? preferred : stringValue(inputs.get(KEY_LEGACY_THREAT_SOURCE_RELEVANCE));
+    }
+
     private static boolean hasNonEmptyList(Object o) {
         return o instanceof List<?> list && !list.isEmpty();
     }
@@ -369,8 +375,11 @@ public class NistAssessmentService {
         return List.copyOf(out);
     }
 
-    private static NistLikelihoodBand minBand(NistLikelihoodBand a, NistLikelihoodBand b) {
-        return a.ordinal() <= b.ordinal() ? a : b;
+    static NistLikelihoodBand overallLikelihoodFrom(NistLikelihoodBand initiation, NistLikelihoodBand adverseImpact) {
+        // NIST SP 800-30 Rev. 1 Table G-5. Rows are likelihood of threat event
+        // initiation/occurrence (VERY_LOW..VERY_HIGH); columns are likelihood
+        // the event results in adverse impacts (VERY_LOW..VERY_HIGH).
+        return OVERALL_LIKELIHOOD_MATRIX[initiation.ordinal()][adverseImpact.ordinal()];
     }
 
     static String riskLevelFrom(NistLikelihoodBand likelihood, NistImpactBand impact) {
@@ -389,12 +398,20 @@ public class NistAssessmentService {
     private static final NistLikelihoodBand H = NistLikelihoodBand.HIGH;
     private static final NistLikelihoodBand VH = NistLikelihoodBand.VERY_HIGH;
 
+    private static final NistLikelihoodBand[][] OVERALL_LIKELIHOOD_MATRIX = {
+        {VL, VL, L, L, L},
+        {VL, L, L, M, M},
+        {L, L, M, M, H},
+        {L, M, M, H, VH},
+        {L, M, H, VH, VH},
+    };
+
     private static final NistLikelihoodBand[][] RISK_MATRIX = {
         {VL, VL, VL, L, L},
         {VL, L, L, L, M},
         {VL, L, M, M, H},
-        {L, M, M, H, VH},
-        {L, M, H, VH, VH},
+        {VL, L, M, H, VH},
+        {VL, L, M, H, VH},
     };
 
     private record DecodedInputs(

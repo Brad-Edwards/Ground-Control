@@ -1,7 +1,7 @@
-# Test-Quality Review Engine — gc_test_quality_review
+# Test-Quality Review Engine - gc_test_quality_review
 
 How `/implement` Step 13 actually runs the test-quality review, end to
-end. This is the durable mechanism doc — the SKILL.md prose, ADR-029,
+end. This is the durable mechanism doc - the SKILL.md prose, ADR-029,
 and `docs/DEVELOPMENT_WORKFLOW.md` cross-reference back to this note.
 
 ## Why this exists (the Skill→MCP migration)
@@ -13,7 +13,7 @@ successful post became the structured advance-to-Step-14 signal.
 
 That fix worked for the clean case. It did NOT work for the
 findings-present case. After v1 shipped, the user observed the same
-underlying failure — the agent kept echoing the review findings back
+underlying failure - the agent kept echoing the review findings back
 to the user as a status report and stopping, instead of fixing them in
 the same agent turn. The cause was not prose-level: the SKILL.md
 explicitly said "do not echo, fix in the same turn." The cause was the
@@ -137,15 +137,15 @@ under "Failure modes" below.
 The exec wrapper strips `ANTHROPIC_API_KEY` from the subprocess env
 before launching `claude --print`. This is intentional:
 
-- The host environment may have `ANTHROPIC_API_KEY` set (e.g., from a
+- The host environment may have `ANTHROPIC_API_KEY` set (for example, from a
   shell profile, a previous integration, or a CI runner).
 - When `claude` sees that env var, it uses it preferentially over the
   OAuth session the host human signed into.
 - The env-var-anchored account may have a different billing balance
-  than the OAuth account — in practice, the env-var account is often
+  than the OAuth account - in practice, the env-var account is often
   empty (set up but never funded), while the OAuth account is the one
   the user actually uses.
-- Stripping the env var forces `claude` onto the OAuth session — the
+- Stripping the env var forces `claude` onto the OAuth session - the
   canonical user-driven auth path. The same credentials power the
   /implement parent run; the test-quality review sub-call routes
   through the same billing account.
@@ -179,7 +179,7 @@ Default model: `claude-sonnet-4-6`. Chosen by the user in #884 v2 as
 the right cost/quality balance for false-assurance-test detection.
 
 The MCP tool accepts an optional `model` parameter; pass a different
-model alias (`claude-haiku-4-5`, `claude-opus-4-7`, etc.) or full ID
+model alias (`claude-haiku-4-5`, `claude-opus-4-8`, etc.) or full ID
 to override on a per-call basis. The /implement SKILL does not set
 `model`, so it uses the default. Future per-repo configuration could
 live in `.ground-control.yaml` under a new `review.test_quality.model`
@@ -195,7 +195,7 @@ markers from the issue thread and refuses cycle 4 unless
 
 Marker family is disjoint from `gc:codex-prepush-cycle` and
 `gc:decision-record` so the three counters never cross-count. Branch
-is recorded in the marker for audit context only — a branch rename on
+is recorded in the marker for audit context only - a branch rename on
 the same issue does NOT reset the counter.
 
 Override path:
@@ -218,7 +218,7 @@ the `<!-- gc:test-quality-review-findings ... -->` marker. The record
 carries the cycle number, cap, branch, finding count, and (when
 non-empty) each finding's severity / location / problem /
 why-it-matters / fix. The record is reviewer-controlled prose, so it
-passes through `detectSensitiveBodyContent` before posting — a record
+passes through `detectSensitiveBodyContent` before posting - a record
 that matches the sensitive-content guardrail is refused with
 `error: "test_quality_review_record_rejected"` and no cycle marker is
 written, so a retry after scrubbing is free.
@@ -243,7 +243,7 @@ caller does not need to do follow-up `gh issue comment` calls.
 | `test_quality_review_branch_unresolved`   | HEAD is detached / branch name unresolvable                                                     | `checkout_named_feature_branch`                  |
 | `test_quality_review_issue_unresolved`    | No `issue_number` passed and branch lacks a numeric prefix                                      | `pass_issue_number_or_use_numeric_branch_prefix` |
 | `test_quality_review_cap_reached`         | Cycle 4 attempted without `override_cap=true`                                                   | `post_summary_and_escalate_to_user`              |
-| `test_quality_review_override_missing_reason` | `override_cap=true` with empty `override_reason`                                              | (none — fix input and retry)                     |
+| `test_quality_review_override_missing_reason` | `override_cap=true` with empty `override_reason`                                              | (none - fix input and retry)                     |
 | `test_quality_review_engine_failed`       | `claude --print` exited non-zero (transport error, OAuth not logged in, network)                | `fix_engine_issue_and_retry`                     |
 | `test_quality_review_parse_failed`        | `claude` returned non-JSON or JSON that doesn't satisfy the findings schema                     | `inspect_engine_output_and_retry`                |
 | `test_quality_review_record_rejected`     | Rendered findings record matched the sensitive-content guardrail                                | `scrub_findings_and_retry`                       |
@@ -258,7 +258,7 @@ actually succeeded.
 
 1. Run `claude login` on the host (one-time; persists in `~/.claude`).
 2. From a Ground-Control-aware repo, run `/implement <issue>` as
-   normal — Step 13 calls `gc_test_quality_review` automatically.
+   normal - Step 13 calls `gc_test_quality_review` automatically.
 3. To run the review standalone (debugging, ad-hoc):
 
    ```bash
@@ -267,7 +267,7 @@ actually succeeded.
      --issue_number 884
    ```
 
-   (Or via the MCP CLI of your choice — the tool is registered in
+   (Or via the MCP CLI of your choice - the tool is registered in
    `mcp/ground-control/index.js`.)
 
 The legacy `Skill("review-tests")` / `~/.codex/prompts/review-tests.md`

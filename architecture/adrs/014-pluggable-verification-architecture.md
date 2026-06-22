@@ -10,9 +10,9 @@ Accepted
 
 ## Context
 
-Ground Control's vision is a verification-aware software lifecycle orchestrator with graph-native artifact traceability. Two landscape analyses ([compass reports](../notes/)) confirm that no platform combines requirements management, formal specifications, threat modeling, code generation, and graph-based artifact traceability — and that the **graph-based artifact layer** is the genuinely novel element.
+Ground Control's vision is a verification-aware software lifecycle orchestrator with graph-native artifact traceability. Two landscape analyses ([compass reports](../notes/)) confirm that no platform combines requirements management, formal specifications, threat modeling, code generation, and graph-based artifact traceability - and that the **graph-based artifact layer** is the genuinely novel element.
 
-ADR-013 chose Java 21/Spring Boot and established JML/OpenJML/KeY as the formal methods chain for Ground Control's own code. This chain works for dogfooding — the platform's internal code quality. However, the industrial secure software development use case requires the platform to orchestrate verification of software written in any language, not just Java.
+ADR-013 chose Java 21/Spring Boot and established JML/OpenJML/KeY as the formal methods chain for Ground Control's own code. This chain works for dogfooding - the platform's internal code quality. However, the industrial secure software development use case requires the platform to orchestrate verification of software written in any language, not just Java.
 
 ### The polyglot verification problem
 
@@ -33,11 +33,11 @@ No single prover covers this surface. The successful industrial deployments use 
 
 - **AWS**: TLA+ for design-level verification of distributed protocols, CBMC for C code bounded model checking, Zelkova (custom SMT) for IAM policy verification, Tiros for network reachability. Engineers learn TLA+ in 2-3 weeks.
 - **Meta**: Infer (separation logic) runs on every code modification. Over 1,000 bugs caught per month. Developers don't know they're using formal methods.
-- **Certora**: AI-generated smart contract code must pass CVL formal verification before deployment. The forcing function is economic: $3.8B stolen from unverified contracts in 2022.
+- **Certora**: AI-generated smart contract code must pass CVL formal verification before deployment. The forcing function is economic: $3.8 billion stolen from unverified contracts in 2022.
 
 ### Design-level vs. code-level verification
 
-The AWS experience shows that design-level verification delivers the highest ROI. TLA+ finds "subtle bugs we are sure we would not have found by other means" — and it operates before code exists.
+The AWS experience shows that design-level verification delivers the highest ROI. TLA+ finds "subtle bugs we are sure we would not have found by other means" - and it operates before code exists.
 
 Ground Control's core complexity maps directly to design-level properties:
 
@@ -53,7 +53,7 @@ These are exactly the properties TLA+ and Alloy are designed to verify. Investin
 
 The compass reports identify a critical gap in the market:
 
-- **Spec-driven dev platforms** (AWS Kiro, GitHub Spec Kit, Tessl) enforce process without mathematical guarantees — natural language specs only.
+- **Spec-driven dev platforms** (AWS Kiro, GitHub Spec Kit, Tessl) enforce process without mathematical guarantees - natural language specs only.
 - **Formal-reasoning startups** (Harmonic, Logical Intelligence, Axiom Math) build verification engines without developer-facing platforms.
 - **ALM tools** (IBM ELM, Polarion, Jama) handle requirements without formal methods.
 - **Formal methods tools** (SCADE, SPARK, Frama-C) verify code without lifecycle awareness.
@@ -86,7 +86,7 @@ Ground Control's verification pipeline is an **orchestration abstraction**, not 
        +-------------+ +----------+  +-------------+
 ```
 
-Each verifier backend is a thin adapter. Ground Control orchestrates — it does not maintain the provers.
+Each verifier backend is a thin adapter. Ground Control orchestrates - it does not maintain the provers.
 
 ### 2. Prover-agnostic verification results
 
@@ -116,7 +116,7 @@ ADR-012's assurance levels (L0-L3) are a **methodology**, not a tool binding. Th
 | L0 | Tested | `javac` + JUnit 5 | Language-native compiler + tests |
 | L1 | Contracted | JML `requires`/`ensures` + JUnit 5 | Language-appropriate contracts: JML, ACSL, Verus annotations, type contracts, `requires` clauses |
 | L2 | Design/Property-Verified | jqwik + TLA+ design specs | TLA+/Alloy for design; jqwik, proptest, Hypothesis, QuickCheck for properties; OpenJML ESC where applicable |
-| L3 | Formally Proven | KeY (future, for own code) | Dafny, Lean 4, KeY, Frama-C/WP, Verus — matched to target language |
+| L3 | Formally Proven | KeY (future, for own code) | Dafny, Lean 4, KeY, Frama-C/WP, Verus - matched to target language |
 
 ### 4. TLA+ for design-level verification
 
@@ -132,7 +132,16 @@ TLA+ is adopted for verifying Ground Control's own design-level properties:
 
 TLA+ specs live in `specs/tla/` at the repository root, versioned with code. TLC model checking runs as part of the verification pipeline.
 
-Implementation is staged. The repository now carries versioned TLA+ specs and policy sync tooling that keeps verification-oriented ADR and quality-gate metadata aligned. The common `VerificationResult` domain entity is implemented; verifier execution/orchestration adapters remain future work.
+Implementation is staged. The repository now carries versioned TLA+ specs and
+policy sync tooling that keeps verification-oriented ADR and quality-gate
+metadata aligned. The policy-synced quality-gate set
+(`tools/ground_control/policy.json`) enforces implementation, test, and
+documentation traceability coverage plus orphan and completeness checks; it is
+evaluated in CI (`make policy-live`) and at the `/implement` completion gate
+via `gc_assert_quality_gates`. Live ADR metadata checks read the ADR title from
+the API's `folder_title` response field, matching the sync payload used when
+repo ADR titles drift. The common `VerificationResult` domain entity is
+implemented; verifier execution/orchestration adapters remain future work.
 
 ### 5. Separation of concerns
 
@@ -182,13 +191,13 @@ Adapter guardrails:
 
 ### Positive
 
-- Platform can verify software in any language — not limited to Java
+- Platform can verify software in any language - not limited to Java
 - Graph-based traceability works across verification tools: the differentiator is preserved and strengthened
 - Reverse traceability lookup (`GET /requirements/traceability/by-artifact`) enables automated enforcement that code is linked to requirements, closing the bidirectional traceability loop and supporting self-referential validation (GC-O002). Lookup errors are tracked separately from untraced files for operational debuggability.
 - Security use case is viable: threat model -> security requirement -> formal property -> language-specific proof -> graph-stored evidence
 - Design-level verification via TLA+ is immediately actionable, high-ROI, and proven at AWS scale
 - No rearchitecting needed when adding new prover backends
-- Compliance evidence generation (DO-178C, ISO 26262, IEC 62304) works regardless of which prover produced the evidence — the graph connects requirements to verification results uniformly
+- Compliance evidence generation (DO-178C, ISO 26262, IEC 62304) works regardless of which prover produced the evidence - the graph connects requirements to verification results uniformly
 - The Infer pattern (invisible formal methods in CI) is achievable: users push code, the platform runs appropriate verifiers, results appear in the graph
 
 ### Negative
@@ -205,17 +214,17 @@ Adapter guardrails:
 | Orchestration layer adds complexity without enough backends to justify it | Start with 2 backends (OpenJML for Java dogfooding, TLA+/TLC for design specs). Add backends as the platform's verification features are built out. |
 | TLA+ specs drift from implementation | Specs are versioned with code. Spec-to-implementation review is part of the SDD workflow. TLC runs in CI. |
 | Prover-agnostic result schema loses prover-specific nuance | The `evidence` JSONB field stores raw prover output. The schema captures universal properties (proven/refuted/timeout); JSONB preserves prover-specific details (counterexamples, proof terms, coverage metrics). |
-| Too many verification tools to maintain | Ground Control orchestrates — it doesn't maintain the provers themselves. Each backend is a thin adapter (~100-200 lines) calling an external tool's CLI or API. |
-| VerificationResult expiry/staleness is hard to track | `expiresAt` field combined with TraceabilityLink's `syncStatus` flag stale results when source artifacts change. Graph queries surface "verification gaps" — requirements with expired or missing results. |
+| Too many verification tools to maintain | Ground Control orchestrates - it doesn't maintain the provers themselves. Each backend is a thin adapter (~100-200 lines) calling an external tool's CLI or API. |
+| VerificationResult expiry/staleness is hard to track | `expiresAt` field combined with TraceabilityLink's `syncStatus` flag stale results when source artifacts change. Graph queries surface "verification gaps" - requirements with expired or missing results. |
 
 ## Implementation Status
 
-- **§2 VerificationResult entity** — Implemented (GC-F001). Domain: `domain/verification/`, API: `api/verification/`, Migrations: V049-V050, MCP: 5 tools. Target and requirement FKs use eager fetch.
-- **§6 infrastructure/verifiers/ adapters** — Not yet implemented. Future work per individual prover requirements.
+- **§2 VerificationResult entity** - Implemented (GC-F001). Domain: `domain/verification/`, API: `api/verification/`, Migrations: V049-V050, MCP: 5 tools. Target and requirement FKs use eager fetch.
+- **§6 infrastructure/verifiers/ adapters** - Not yet implemented. Future work per individual prover requirements.
 
 ## Related ADRs
 
-- **ADR-005** (Apache AGE) — The graph is the integration point for multi-prover verification results. Cypher queries span requirements, traceability links, and verification results.
-- **ADR-011** (Requirements Data Model) — TraceabilityLink connects requirements to verification targets. VerificationResult connects to both.
-- **ADR-012** (Formal Methods Development Process) — SDD methodology and assurance levels remain valid and are now explicitly universal. Tool bindings per level depend on target language.
-- **ADR-013** (Java/Spring Boot Backend Rewrite) — Java/JML/OpenJML remain the choice for Ground Control's own code. This ADR separates internal dogfooding from platform capabilities.
+- **ADR-005** (Apache AGE) - The graph is the integration point for multi-prover verification results. Cypher queries span requirements, traceability links, and verification results.
+- **ADR-011** (Requirements Data Model) - TraceabilityLink connects requirements to verification targets. VerificationResult connects to both.
+- **ADR-012** (Formal Methods Development Process) - SDD methodology and assurance levels remain valid and are now explicitly universal. Tool bindings per level depend on target language.
+- **ADR-013** (Java/Spring Boot Backend Rewrite) - Java/JML/OpenJML remain the choice for Ground Control's own code. This ADR separates internal dogfooding from platform capabilities.

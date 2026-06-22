@@ -5,7 +5,9 @@ import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -14,7 +16,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.keplerops.groundcontrol.api.grcanalysis.GrcAnalysisController;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.ComplianceMonitoringResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlDomain;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionMode;
@@ -239,7 +245,7 @@ class GrcAnalysisControllerTest {
                     NistImpactBand.HIGH,
                     "HIGH",
                     "L3-I4",
-                    "derived: min(...) per NIST SP 800-30 Rev. 1 Table G-5");
+                    "derived: likelihood_initiation × likelihood_adverse_impact per NIST SP 800-30 Rev. 1 Table G-5");
             return new NistAssessmentResult.NistAssessmentItem(
                     UUID.randomUUID(),
                     UUID.randomUUID(),
@@ -290,6 +296,7 @@ class GrcAnalysisControllerTest {
                     .andExpect(jsonPath("$.assessments[0].profileKey", is("NIST_SP800_30_R1")))
                     .andExpect(jsonPath("$.assessments[0].family", is("NIST_SP800_30_R1")))
                     .andExpect(jsonPath("$.assessments[0].inputs.threatEventKind", is("ADVERSARIAL")))
+                    .andExpect(jsonPath("$.assessments[0].inputs.threatEventRelevance", is("EXPECTED")))
                     .andExpect(jsonPath("$.assessments[0].inputs.threatSourceRelevance", is("EXPECTED")))
                     .andExpect(jsonPath("$.assessments[0].inputs.likelihoodInitiation", is("HIGH")))
                     .andExpect(jsonPath("$.assessments[0].inputs.likelihoodAdverseImpact", is("MODERATE")))
@@ -340,6 +347,356 @@ class GrcAnalysisControllerTest {
                             .param("project", "ground-control")
                             .param("riskAssessmentResultId", UUID.randomUUID().toString()))
                     .andExpect(status().isUnprocessableEntity());
+        }
+    }
+
+    @Nested
+    class FairQuantitativeAnalysis {
+
+        private FairQuantitativeAnalysisResult.FairAssessmentItem sampleItem() {
+            var inputs = new FairQuantitativeAnalysisResult.Inputs(
+                    java.util.Map.of("low", 1.0, "likely", 2.0, "high", 4.0),
+                    null,
+                    null,
+                    java.util.Map.of("low", 0.1, "likely", 0.2, "high", 0.4),
+                    null,
+                    null,
+                    null,
+                    java.util.Map.of("low", 1000.0, "likely", 5000.0, "high", 20000.0, "currency", "USD"),
+                    null,
+                    null,
+                    null);
+            var materiality = new FairQuantitativeAnalysisResult.Materiality(
+                    List.of(new FairQuantitativeAnalysisResult.FormOfLossBreakdown(
+                            com.keplerops.groundcontrol.domain.grcanalysis.service.FairFormOfLoss.REPUTATION,
+                            new FairQuantitativeAnalysisResult.ThreePoint(500.0, 1500.0, 4000.0))),
+                    new FairQuantitativeAnalysisResult.ThreePoint(500.0, 1500.0, 4000.0),
+                    "USD",
+                    List.of(new FairQuantitativeAnalysisResult.StakeholderSecondaryLoss(
+                            "Customers",
+                            com.keplerops.groundcontrol.domain.grcanalysis.service.FairFormOfLoss.REPUTATION,
+                            new FairQuantitativeAnalysisResult.ThreePoint(1000.0, 3000.0, 9000.0))));
+            var outputs = new FairQuantitativeAnalysisResult.Outputs(
+                    new FairQuantitativeAnalysisResult.ThreePoint(0.1, 0.4, 1.6),
+                    new FairQuantitativeAnalysisResult.ThreePoint(1000.0, 5000.0, 20000.0),
+                    new FairQuantitativeAnalysisResult.ThreePoint(100.0, 2000.0, 32000.0),
+                    "USD",
+                    null,
+                    "HIGH",
+                    "derived: LEF = TEF × Vulnerability",
+                    materiality);
+            return new FairQuantitativeAnalysisResult.FairAssessmentItem(
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    "FAIR_V3_0",
+                    "FAIR",
+                    "O-RT 3.0.1 / O-RA 2.0.1",
+                    Instant.parse("2026-05-29T00:00:00Z"),
+                    "12 months",
+                    "analyst@example",
+                    "DRAFT",
+                    inputs,
+                    outputs,
+                    List.of(),
+                    List.of("ALE percentiles absent (Monte-Carlo not recomputed)"));
+        }
+
+        private FairQuantitativeAnalysisResult sampleResult(
+                List<FairQuantitativeAnalysisResult.FairAssessmentItem> items) {
+            return new FairQuantitativeAnalysisResult(
+                    "fair_quantitative",
+                    "ground-control",
+                    Instant.parse("2026-05-29T00:00:00Z"),
+                    "open-fair-o-rt3.0.1-o-ra2.0.1-three-point-v1",
+                    "continuous",
+                    "monetary",
+                    "USD",
+                    items,
+                    new FairQuantitativeAnalysisResult.Counts(
+                            items.size(), java.util.Map.of("HIGH", items.size()), items.size()),
+                    List.of());
+        }
+
+        @Test
+        void happyPath_returns200WithMethodologyAttribution() throws Exception {
+            when(grcAnalysisService.fairQuantitative(eq(PROJECT_ID), any(), any(), any()))
+                    .thenReturn(sampleResult(List.of(sampleItem())));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-quantitative").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("fair_quantitative")))
+                    .andExpect(jsonPath("$.project", is("ground-control")))
+                    .andExpect(jsonPath("$.derivationMethod", is("open-fair-o-rt3.0.1-o-ra2.0.1-three-point-v1")))
+                    .andExpect(jsonPath("$.scale", is("continuous")))
+                    .andExpect(jsonPath("$.units", is("monetary")))
+                    .andExpect(jsonPath("$.currency", is("USD")))
+                    .andExpect(jsonPath("$.assessments", hasSize(1)))
+                    .andExpect(jsonPath("$.assessments[0].profileKey", is("FAIR_V3_0")))
+                    .andExpect(jsonPath("$.assessments[0].family", is("FAIR")))
+                    .andExpect(jsonPath("$.assessments[0].outputs.lossEventFrequency.low", is(0.1)))
+                    .andExpect(jsonPath("$.assessments[0].outputs.lossMagnitude.likely", is(5000.0)))
+                    .andExpect(jsonPath("$.assessments[0].outputs.annualizedLossExpectancy.high", is(32000.0)))
+                    .andExpect(jsonPath("$.assessments[0].outputs.riskLevel", is("HIGH")))
+                    .andExpect(jsonPath("$.assessments[0].outputs.materiality.formsOfLoss[0].form", is("REPUTATION")))
+                    .andExpect(jsonPath(
+                            "$.assessments[0].outputs.materiality.formsOfLoss[0].magnitude.likely", is(1500.0)))
+                    .andExpect(jsonPath("$.assessments[0].outputs.materiality.formsOfLossTotal.high", is(4000.0)))
+                    .andExpect(jsonPath(
+                            "$.assessments[0].outputs.materiality.secondaryLossByStakeholder[0].stakeholder",
+                            is("Customers")))
+                    .andExpect(jsonPath(
+                            "$.assessments[0].outputs.materiality.secondaryLossByStakeholder[0].lossForm",
+                            is("REPUTATION")))
+                    .andExpect(jsonPath(
+                            "$.assessments[0].outputs.materiality.secondaryLossByStakeholder[0].magnitude.low",
+                            is(1000.0)))
+                    .andExpect(jsonPath(
+                            "$.assessments[0].outputs.materiality.secondaryLossByStakeholder[0].magnitude.likely",
+                            is(3000.0)))
+                    .andExpect(jsonPath(
+                            "$.assessments[0].outputs.materiality.secondaryLossByStakeholder[0].magnitude.high",
+                            is(9000.0)))
+                    .andExpect(jsonPath("$.counts.total", is(1)))
+                    .andExpect(jsonPath("$.limitations").isArray());
+        }
+
+        @Test
+        void emptyResult_returns200WithEmptyArray() throws Exception {
+            when(grcAnalysisService.fairQuantitative(eq(PROJECT_ID), any(), any(), any()))
+                    .thenReturn(sampleResult(List.of()));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-quantitative").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.assessments", hasSize(0)))
+                    .andExpect(jsonPath("$.counts.total", is(0)));
+        }
+
+        @Test
+        void projectNotFound_returns404() throws Exception {
+            when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-quantitative").param("project", "missing"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void invalidUuid_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-quantitative")
+                            .param("project", "ground-control")
+                            .param("riskAssessmentResultId", "not-a-uuid"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void nonFairProfile_throwsValidationError_returns422() throws Exception {
+            when(grcAnalysisService.fairQuantitative(eq(PROJECT_ID), any(), any(), any()))
+                    .thenThrow(new DomainValidationException(
+                            "Risk assessment result is not bound to a FAIR methodology profile"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-quantitative")
+                            .param("project", "ground-control")
+                            .param("riskAssessmentResultId", UUID.randomUUID().toString()))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+    }
+
+    @Nested
+    class ComplianceMonitoring {
+
+        @Test
+        void happyPath_returns200WithStructuredFields() throws Exception {
+            var inputs =
+                    new ComplianceMonitoringResult.Inputs("ground-control", Instant.parse("2026-06-20T00:00:00Z"), 90);
+            var result = new ComplianceMonitoringResult(
+                    "continuous_compliance_monitoring",
+                    "ground-control",
+                    Instant.parse("2026-06-20T00:00:00Z"),
+                    "continuous-compliance-monitoring-v1",
+                    inputs,
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    new ComplianceMonitoringResult.DriftCauseCounts(0, 0, 0),
+                    List.of("note"));
+            when(grcAnalysisService.complianceMonitoring(eq(PROJECT_ID), any(), anyInt()))
+                    .thenReturn(result);
+
+            mockMvc.perform(get("/api/v1/analysis/grc/compliance-monitoring").param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("continuous_compliance_monitoring")))
+                    .andExpect(jsonPath("$.derivationMethod", is("continuous-compliance-monitoring-v1")))
+                    .andExpect(jsonPath("$.inputs.freshnessWindowDays", is(90)))
+                    .andExpect(jsonPath("$.impactSet").isArray())
+                    .andExpect(jsonPath("$.staleSet").isArray())
+                    .andExpect(jsonPath("$.driftCauseCounts.evidenceExpiration", is(0)));
+        }
+    }
+
+    @Nested
+    class FairCamControlAnalytics {
+
+        private FairCamControlAnalyticsResult sampleResult() {
+            var counts = new FairCamControlAnalyticsResult.Counts(0, java.util.Map.of(), 0);
+            return new FairCamControlAnalyticsResult(
+                    "fair_cam_control_analytics",
+                    "ground-control",
+                    Instant.parse("2026-06-21T00:00:00Z"),
+                    "fair-cam-control-analytics-v1",
+                    List.of(),
+                    counts,
+                    List.of());
+        }
+
+        @Test
+        void happyPath_returns200WithStructuredFields() throws Exception {
+            when(grcAnalysisService.fairCamControlAnalytics(eq(PROJECT_ID), any()))
+                    .thenReturn(sampleResult());
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("fair_cam_control_analytics")))
+                    .andExpect(jsonPath("$.project", is("ground-control")))
+                    .andExpect(jsonPath("$.derivationMethod", is("fair-cam-control-analytics-v1")))
+                    .andExpect(jsonPath("$.controls").isArray())
+                    .andExpect(jsonPath("$.counts.total", is(0)))
+                    .andExpect(jsonPath("$.limitations").isArray());
+        }
+
+        @Test
+        void domainFilterParam_parsedCorrectly() throws Exception {
+            when(grcAnalysisService.fairCamControlAnalytics(
+                            eq(PROJECT_ID), argThat(q -> q.domain() == FairCamControlDomain.LOSS_EVENT_CONTROL)))
+                    .thenReturn(sampleResult());
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control")
+                            .param("domain", "LOSS_EVENT_CONTROL"))
+                    .andExpect(status().isOk());
+
+            // Verify the parsed domain reached the service explicitly, so the test detects a broken
+            // domain filter independently of whether FairCamControlAnalyticsResponse.from() null-guards.
+            verify(grcAnalysisService)
+                    .fairCamControlAnalytics(
+                            eq(PROJECT_ID), argThat(q -> q.domain() == FairCamControlDomain.LOSS_EVENT_CONTROL));
+        }
+
+        @Test
+        void projectNotFound_returns404() throws Exception {
+            when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "missing"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void zeroFreshnessWindow_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control")
+                            .param("freshnessWindowDays", "0"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void negativeFreshnessWindow_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control")
+                            .param("freshnessWindowDays", "-1"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void invalidUuid_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control")
+                            .param("controlId", "not-a-uuid"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void invalidDomain_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control")
+                            .param("domain", "BOGUS"))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    class AppetiteEvaluation {
+
+        @Test
+        void happyPath_returns200WithStructuredFields() throws Exception {
+            var profile =
+                    new com.keplerops.groundcontrol.domain.grcanalysis.service.RiskAppetiteEvaluationResult
+                            .ProfileSummary(
+                            UUID.fromString("00000000-0000-0000-0000-000000000500"),
+                            "BOARD_APPETITE",
+                            "1.0",
+                            com.keplerops.groundcontrol.domain.riskscenarios.state.MethodologyFamily.FAIR,
+                            com.keplerops.groundcontrol.domain.riskappetite.state.RiskAppetiteProfileStatus.ACTIVE,
+                            Instant.parse("2026-01-01T00:00:00Z"),
+                            null);
+            var evaluation =
+                    new com.keplerops.groundcontrol.domain.grcanalysis.service.RiskAppetiteEvaluationResult.Evaluation(
+                            UUID.randomUUID(),
+                            UUID.randomUUID(),
+                            "RS-1",
+                            null,
+                            null,
+                            "annualized_loss_expectancy.likely",
+                            "600000.0",
+                            "500000.0",
+                            "USD",
+                            false,
+                            true,
+                            true,
+                            List.of());
+            var result = new com.keplerops.groundcontrol.domain.grcanalysis.service.RiskAppetiteEvaluationResult(
+                    "ground-control",
+                    "appetite_evaluation",
+                    Instant.parse("2026-06-01T00:00:00Z"),
+                    "risk-appetite-tolerance-evaluation-v1",
+                    profile,
+                    List.of(evaluation),
+                    new com.keplerops.groundcontrol.domain.grcanalysis.service.RiskAppetiteEvaluationResult.Summary(
+                            1, 1, 1, 0),
+                    List.of());
+            when(grcAnalysisService.riskAppetiteEvaluation(eq(PROJECT_ID), any(), any(), any(), any(), any()))
+                    .thenReturn(result);
+
+            mockMvc.perform(get("/api/v1/analysis/grc/appetite-evaluation")
+                            .param("project", "ground-control")
+                            .param("profileId", "00000000-0000-0000-0000-000000000500"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("appetite_evaluation")))
+                    .andExpect(jsonPath("$.profile.appetiteKey", is("BOARD_APPETITE")))
+                    .andExpect(jsonPath("$.evaluations", hasSize(1)))
+                    .andExpect(jsonPath("$.evaluations[0].breached", is(true)))
+                    .andExpect(jsonPath("$.evaluations[0].escalate", is(true)))
+                    .andExpect(jsonPath("$.summary.escalations", is(1)));
+        }
+
+        @Test
+        void missingProfileSelector_returns422() throws Exception {
+            when(grcAnalysisService.riskAppetiteEvaluation(eq(PROJECT_ID), any(), any(), any(), any(), any()))
+                    .thenThrow(new DomainValidationException("Provide either profileId or appetiteKey"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/appetite-evaluation").param("project", "ground-control"))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+
+        @Test
+        void unknownProfile_returns404() throws Exception {
+            when(grcAnalysisService.riskAppetiteEvaluation(eq(PROJECT_ID), any(), any(), any(), any(), any()))
+                    .thenThrow(new NotFoundException("Risk appetite profile not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/appetite-evaluation")
+                            .param("project", "ground-control")
+                            .param("appetiteKey", "MISSING"))
+                    .andExpect(status().isNotFound());
         }
     }
 }

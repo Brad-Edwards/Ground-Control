@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — 2026-05-17.
+Accepted - 2026-05-17.
 
 ## Date
 
@@ -62,16 +62,16 @@ query-based criteria are bounded scalar columns on the root.
 
 Three modes, each with its own population source:
 
-- **`STATIC`** — manually curated test-case membership held in
+- **`STATIC`** - manually curated test-case membership held in
   `test_suite_member` rows. Author owns position; resolve returns
   the rows ordered by `position`.
-- **`REQUIREMENTS_BASED`** — source requirements held in
+- **`REQUIREMENTS_BASED`** - source requirements held in
   `test_suite_source_requirement` rows. Resolve resolves member test
   cases via the existing `TraceabilityLink` model (`linkType = TESTS`,
   `artifactType = TEST`); the `artifact_identifier` is the test
   case's project-scoped UID. No second requirement-link table is
   introduced just for suites.
-- **`QUERY_BASED`** — structured filter criteria held as nullable
+- **`QUERY_BASED`** - structured filter criteria held as nullable
   scalar columns on `test_suite` (`criteria_status`,
   `criteria_type`, `criteria_priority`, `criteria_format`,
   `criteria_folder_id`, `criteria_text_search`). Resolve compiles
@@ -90,9 +90,9 @@ constraint is encoded:
   checks: STATIC suites reject criteria fields; REQUIREMENTS_BASED
   suites reject criteria fields; QUERY_BASED suites require at
   least one criteria field set);
-- in the service (mode-mismatch operations — `addMember` on a
+- in the service (mode-mismatch operations - `addMember` on a
   REQUIREMENTS_BASED suite, `addSourceRequirement` on a STATIC
-  suite, etc. — throw `DomainValidationException` with code
+  suite, etc. - throw `DomainValidationException` with code
   `invalid_test_suite_mode_operation`);
 - in the schema (`population_mode` is `NOT NULL` with a `CHECK`
   constraint over the three valid values; member / source rows
@@ -116,14 +116,14 @@ endpoint without disturbing the population-mode shape.
 - `population_mode` (`VARCHAR(20)`, NOT NULL, `CHECK IN
   ('STATIC','REQUIREMENTS_BASED','QUERY_BASED')`); immutable.
 - `criteria_status`, `criteria_type`, `criteria_priority`,
-  `criteria_format` (each `VARCHAR(20)`, nullable) — QUERY_BASED
+  `criteria_format` (each `VARCHAR(20)`, nullable) - QUERY_BASED
   only; FK-shape to the matching `TestCaseStatus` / `TestCaseType` /
   `TestCasePriority` / `TestCaseFormat` enums.
-- `criteria_folder_id` (UUID, nullable) — QUERY_BASED only; FK to
+- `criteria_folder_id` (UUID, nullable) - QUERY_BASED only; FK to
   `test_case_folder(id)`. Resolves to the folder *and all
   descendants* (read-time recursive walk) so suites can scope to a
   whole subtree.
-- `criteria_text_search` (`VARCHAR(200)`, nullable) — QUERY_BASED
+- `criteria_text_search` (`VARCHAR(200)`, nullable) - QUERY_BASED
   only; parameterized `ILIKE` on `test_case.title` /
   `test_case.description`. Length-bounded; no raw SQL/JPQL/JSON
   predicates.
@@ -150,7 +150,7 @@ endpoint without disturbing the population-mode shape.
 - `BaseEntity` timestamps mirrored.
 
 Audit-shadow tables omit `project_id` (member rows omit `test_suite_id`
-in the audit shadow too — the parent-child relationship is
+in the audit shadow too - the parent-child relationship is
 reconstructable via `id` + rev).
 
 ### Resolution semantics
@@ -178,7 +178,7 @@ Query-based resolution is **dynamic at read time**: matching test
 cases change automatically as cases are added, deprecated, or
 re-tagged. Results are not snapshotted; suite membership is the
 *rule*, not the cached *outcome*. If a future requirement asks for
-audited execution snapshots (e.g. "the suite that fed this test
+audited execution snapshots (for example "the suite that fed this test
 run"), the snapshot belongs on a future `TestRun` aggregate, not on
 the suite itself (preflight: "Do not persist dynamic query results
 as the canonical membership unless a future caching requirement
@@ -189,13 +189,13 @@ defines invalidation, audit semantics, and staleness rules").
 QUERY_BASED criteria compile only from typed allow-listed columns
 into Spring Data `Specification` predicates. The runtime accepts:
 
-- Enum criteria (`status`, `type`, `priority`, `format`) — Jackson
+- Enum criteria (`status`, `type`, `priority`, `format`) - Jackson
   binds to the matching backend enum; an unknown value is rejected
   at the parser.
-- UUID criteria (`criteria_folder_id`) — Jackson binds to `UUID`;
+- UUID criteria (`criteria_folder_id`) - Jackson binds to `UUID`;
   service validates the folder lives in the same project before
   binding the predicate.
-- Bounded text (`criteria_text_search`, max 200) — used in a
+- Bounded text (`criteria_text_search`, max 200) - used in a
   parameterized `cb.like(cb.lower(...), "%" + lower(value) + "%")`
   call, exactly as `RequirementSpecifications.searchTitleOrStatement`.
 
@@ -209,27 +209,27 @@ adapter-side allowlists, as the preflight requires.
 Routes live under `/api/v1/test-suites/**` so the existing auth
 allow-list, IP guard, browser session / CSRF chain (ADR-037), and
 actor-filter chain apply unchanged. The shared `ApiPathMatrix`
-`/api/v1/**` `.authenticated()` rule covers them — no path-matrix
+`/api/v1/**` `.authenticated()` rule covers them - no path-matrix
 change is required.
 
-- `POST /api/v1/test-suites` — create a suite (mode + per-mode
+- `POST /api/v1/test-suites` - create a suite (mode + per-mode
   initial state).
-- `GET /api/v1/test-suites` — list suites in the resolved project.
-- `GET /api/v1/test-suites/{id}` — get by UUID.
-- `GET /api/v1/test-suites/uid/{uid}` — get by project-scoped UID.
-- `PUT /api/v1/test-suites/{id}` — partial update of name /
+- `GET /api/v1/test-suites` - list suites in the resolved project.
+- `GET /api/v1/test-suites/{id}` - get by UUID.
+- `GET /api/v1/test-suites/uid/{uid}` - get by project-scoped UID.
+- `PUT /api/v1/test-suites/{id}` - partial update of name /
   description / per-mode criteria; mode is rejected if present.
-- `DELETE /api/v1/test-suites/{id}` — delete (cascades members /
+- `DELETE /api/v1/test-suites/{id}` - delete (cascades members /
   sources).
-- `GET /api/v1/test-suites/{id}/test-cases` — RESOLVE; mode-dispatched.
-- `POST /api/v1/test-suites/{id}/members` — STATIC: add a member.
-- `DELETE /api/v1/test-suites/{id}/members/{testCaseId}` — STATIC:
+- `GET /api/v1/test-suites/{id}/test-cases` - RESOLVE; mode-dispatched.
+- `POST /api/v1/test-suites/{id}/members` - STATIC: add a member.
+- `DELETE /api/v1/test-suites/{id}/members/{testCaseId}` - STATIC:
   remove.
-- `PUT /api/v1/test-suites/{id}/members/reorder` — STATIC: reorder.
-- `POST /api/v1/test-suites/{id}/source-requirements` —
+- `PUT /api/v1/test-suites/{id}/members/reorder` - STATIC: reorder.
+- `POST /api/v1/test-suites/{id}/source-requirements` -
   REQUIREMENTS_BASED: add a source.
 - `DELETE /api/v1/test-suites/{id}/source-requirements/{requirementId}`
-  — REQUIREMENTS_BASED: remove.
+ - REQUIREMENTS_BASED: remove.
 
 There is no `PUT /{id}/mode` endpoint and no mode-transition request
 DTO. Mode is immutable.
@@ -306,17 +306,17 @@ extended to 095.
 
 - ADR-040 (Test case domain), ADR-041 (Step format), ADR-042
   (Gherkin format), ADR-043 (Hierarchical organisation), ADR-044
-  (Test Plan entity) — sibling aggregates inside the `testcases`
+  (Test Plan entity) - sibling aggregates inside the `testcases`
   boundary.
-- ADR-032 (Graph / AGE adapter contracts) — applies if future
+- ADR-032 (Graph / AGE adapter contracts) - applies if future
   graph-aware criteria are introduced.
-- ADR-033 (Authenticated audit actor provenance) — Envers actor
+- ADR-033 (Authenticated audit actor provenance) - Envers actor
   wiring.
-- ADR-034 (API enum contract single source of truth) —
+- ADR-034 (API enum contract single source of truth) -
   `TestSuitePopulationMode` mirror discipline (manual today; the
   policy-enforced inventory currently covers only
   `domain/requirements/state/` enums, but the mirror is maintained
   for parity).
-- ADR-037 (Browser session access control) — browser chain auth.
-- `architecture/notes/test-suite-entity-preflight.md` — design
+- ADR-037 (Browser session access control) - browser chain auth.
+- `architecture/notes/test-suite-entity-preflight.md` - design
   input.

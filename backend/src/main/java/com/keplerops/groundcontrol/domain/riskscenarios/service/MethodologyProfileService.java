@@ -36,7 +36,7 @@ public class MethodologyProfileService {
             """
             {
               "type": "object",
-              "description": "FAIR v3.0 input factors with FAIR-CAM and FAIR-MAM extensions",
+              "description": "Open FAIR input factors aligned to O-RT 3.0.1 and O-RA 2.0.1",
               "properties": {
                 "threat_event_frequency": {
                   "type": "object",
@@ -62,7 +62,7 @@ public class MethodologyProfileService {
                 },
                 "loss_event_frequency": {
                   "type": "object",
-                  "description": "Derived: TEF * Vulnerability. May be supplied directly if pre-calculated.",
+                  "description": "Loss Event Frequency; may be supplied directly or derived from TEF × Vulnerability.",
                   "properties": {
                     "low": {"type": "number", "minimum": 0},
                     "likely": {"type": "number", "minimum": 0},
@@ -72,7 +72,7 @@ public class MethodologyProfileService {
                 },
                 "primary_loss_magnitude": {
                   "type": "object",
-                  "description": "Direct monetary loss from a single loss event",
+                  "description": "Direct economic loss from a single loss event",
                   "properties": {
                     "low": {"type": "number", "minimum": 0},
                     "likely": {"type": "number", "minimum": 0},
@@ -94,7 +94,7 @@ public class MethodologyProfileService {
                 },
                 "secondary_loss_magnitude": {
                   "type": "object",
-                  "description": "Monetary loss from secondary effects (regulatory, reputational, etc.)",
+                  "description": "Additional economic loss from Secondary Stakeholder reaction",
                   "properties": {
                     "low": {"type": "number", "minimum": 0},
                     "likely": {"type": "number", "minimum": 0},
@@ -103,30 +103,44 @@ public class MethodologyProfileService {
                     "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
                   }
                 },
-                "fair_cam": {
+                "contact_frequency": {
                   "type": "object",
-                  "description": "FAIR Control Analytics Model (FAIR-CAM) inputs for deriving Vulnerability",
+                  "description": "Component of Threat Event Frequency; TEF = Contact Frequency × Probability of Action",
                   "properties": {
-                    "control_strength": {
-                      "type": "number", "minimum": 0, "maximum": 100,
-                      "description": "Aggregate control effectiveness percentage (0-100)"
-                    },
-                    "control_coverage": {
-                      "type": "number", "minimum": 0, "maximum": 1,
-                      "description": "Fraction of the attack surface covered by controls (0.0-1.0)"
-                    }
+                    "low": {"type": "number", "minimum": 0},
+                    "likely": {"type": "number", "minimum": 0},
+                    "high": {"type": "number", "minimum": 0},
+                    "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
                   }
                 },
-                "fair_mam": {
+                "probability_of_action": {
                   "type": "object",
-                  "description": "FAIR Materiality Assessment Model (FAIR-MAM) loss magnitude breakdown",
+                  "description": "Component of Threat Event Frequency; TEF = Contact Frequency × Probability of Action",
                   "properties": {
-                    "productivity_loss": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-                    "response_cost": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-                    "replacement_cost": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-                    "competitive_advantage_loss": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-                    "fines_and_judgments": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}},
-                    "reputation_damage": {"type": "object", "properties": {"low": {"type": "number"}, "likely": {"type": "number"}, "high": {"type": "number"}, "currency": {"type": "string", "default": "USD"}}}
+                    "low": {"type": "number", "minimum": 0, "maximum": 1},
+                    "likely": {"type": "number", "minimum": 0, "maximum": 1},
+                    "high": {"type": "number", "minimum": 0, "maximum": 1},
+                    "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
+                  }
+                },
+                "threat_capability": {
+                  "type": "object",
+                  "description": "Threat Capability percentile estimate used with Resistance Strength to evaluate Vulnerability",
+                  "properties": {
+                    "low": {"type": "number", "minimum": 0, "maximum": 100},
+                    "likely": {"type": "number", "minimum": 0, "maximum": 100},
+                    "high": {"type": "number", "minimum": 0, "maximum": 100},
+                    "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
+                  }
+                },
+                "resistance_strength": {
+                  "type": "object",
+                  "description": "Resistance Strength percentile estimate used with Threat Capability to evaluate Vulnerability",
+                  "properties": {
+                    "low": {"type": "number", "minimum": 0, "maximum": 100},
+                    "likely": {"type": "number", "minimum": 0, "maximum": 100},
+                    "high": {"type": "number", "minimum": 0, "maximum": 100},
+                    "confidence": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]}
                   }
                 }
               },
@@ -135,7 +149,7 @@ public class MethodologyProfileService {
                 "scale": "continuous",
                 "units": "monetary",
                 "currency": "configurable (default USD)",
-                "estimation_method": "three-point (low/likely/high) with optional Monte Carlo simulation"
+                "estimation_method": "three-point (low/likely/high) estimates with optional persisted Monte Carlo outputs"
               }
             }""";
 
@@ -143,7 +157,7 @@ public class MethodologyProfileService {
             """
             {
               "type": "object",
-              "description": "FAIR v3.0 computed risk outputs",
+              "description": "Open FAIR computed risk outputs",
               "properties": {
                 "annualized_loss_expectancy": {
                   "type": "object",
@@ -197,14 +211,14 @@ public class MethodologyProfileService {
               "semantics": {
                 "scale": "continuous",
                 "units": "monetary",
-                "derivation": "ALE = LEF * LM; LEF = TEF * Vuln; LM = PLM + (SLEF * SLM)"
+                "derivation": "ALE = LEF * LM; LEF = TEF * Vuln; TEF = CF * PoA when derived; expected LM = PLM + (SLEF * SLM)"
               }
             }""";
 
     // NIST SP 800-30 Rev. 1 assessment input vocabulary. Encodes the full
     // Rev. 1 decomposition required by GC-T014: threat sources, threat events
     // (adversarial vs non-adversarial), vulnerabilities, predisposing
-    // conditions, threat-source relevance, likelihood of initiation,
+    // conditions, threat-event relevance, likelihood of initiation,
     // likelihood of adverse impact, overall likelihood (optionally derived
     // per Table G-5), impact level, and assessment timeframe.
     static final String NIST_INPUT_SCHEMA =
@@ -253,9 +267,15 @@ public class MethodologyProfileService {
                     "targeting": {"type": "string", "enum": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"]}
                   }
                 },
+                "threat_event_relevance": {
+                  "type": "string",
+                  "description": "Threat event relevance per NIST SP 800-30 Rev. 1 Table E-4",
+                  "enum": ["CONFIRMED", "EXPECTED", "ANTICIPATED", "PREDICTED", "POSSIBLE", "NOT_APPLICABLE"]
+                },
                 "threat_source_relevance": {
                   "type": "string",
-                  "description": "Threat source relevance per NIST Table D-2",
+                  "description": "Legacy field name retained for compatibility; use threat_event_relevance for NIST SP 800-30 Rev. 1 Table E-4 threat-event relevance",
+                  "deprecated": true,
                   "enum": ["CONFIRMED", "EXPECTED", "ANTICIPATED", "PREDICTED", "POSSIBLE", "NOT_APPLICABLE"]
                 },
                 "vulnerabilities": {
@@ -538,13 +558,17 @@ public class MethodologyProfileService {
 
     @Transactional(readOnly = true)
     public MethodologyProfile getById(UUID projectId, UUID id) {
+        return findByIdOrThrow(projectId, id);
+    }
+
+    private MethodologyProfile findByIdOrThrow(UUID projectId, UUID id) {
         return repository
                 .findByIdAndProjectId(id, projectId)
                 .orElseThrow(() -> new NotFoundException("Methodology profile not found: " + id));
     }
 
     public MethodologyProfile update(UUID projectId, UUID id, UpdateMethodologyProfileCommand command) {
-        var profile = getById(projectId, id);
+        var profile = findByIdOrThrow(projectId, id);
         if (command.name() != null) {
             profile.setName(command.name());
         }
@@ -566,7 +590,7 @@ public class MethodologyProfileService {
     }
 
     public void delete(UUID projectId, UUID id) {
-        repository.delete(getById(projectId, id));
+        repository.delete(findByIdOrThrow(projectId, id));
     }
 
     // GC-T012 crosswalk semantic constants (shared scale/units literals across seeds)
@@ -612,7 +636,7 @@ public class MethodologyProfileService {
                     CrosswalkVocabularySurface.INPUT_SCHEMA,
                     "loss_event_frequency",
                     "Loss Event Frequency",
-                    "Derived: TEF × Vulnerability. May be supplied directly if pre-calculated.",
+                    "Loss Event Frequency; may be supplied directly or derived from TEF × Vulnerability.",
                     SCALE_CONTINUOUS,
                     "annual events",
                     "LEF = TEF × Vulnerability",
@@ -622,7 +646,7 @@ public class MethodologyProfileService {
                     CrosswalkVocabularySurface.INPUT_SCHEMA,
                     "primary_loss_magnitude",
                     "Primary Loss Magnitude",
-                    "Direct monetary loss from a single loss event",
+                    "Direct economic loss from a single loss event",
                     SCALE_CONTINUOUS,
                     "monetary",
                     null,
@@ -632,29 +656,9 @@ public class MethodologyProfileService {
                     CrosswalkVocabularySurface.INPUT_SCHEMA,
                     "secondary_loss_magnitude",
                     "Secondary Loss Magnitude",
-                    "Monetary loss from secondary effects (regulatory, reputational, etc.)",
+                    "Additional economic loss from Secondary Stakeholder reaction",
                     SCALE_CONTINUOUS,
                     "monetary",
-                    null,
-                    null),
-            new CrosswalkEntry(
-                    NormalizedConcept.CONTROL,
-                    CrosswalkVocabularySurface.INPUT_SCHEMA,
-                    "fair_cam.control_strength",
-                    "FAIR-CAM Control Strength",
-                    "Aggregate control effectiveness percentage (0-100)",
-                    SCALE_CONTINUOUS,
-                    "percentage (0–100)",
-                    null,
-                    null),
-            new CrosswalkEntry(
-                    NormalizedConcept.CONTROL,
-                    CrosswalkVocabularySurface.INPUT_SCHEMA,
-                    "fair_cam.control_coverage",
-                    "FAIR-CAM Control Coverage",
-                    "Fraction of the attack surface covered by controls (0.0-1.0)",
-                    SCALE_CONTINUOUS,
-                    "coverage fraction (0.0–1.0)",
                     null,
                     null));
 
@@ -779,51 +783,54 @@ public class MethodologyProfileService {
         var project = projectService.getById(projectId);
         seedIfMissing(
                 project,
-                "LEGACY_QUALITATIVE_V1",
-                "Legacy Qualitative",
-                "1",
-                MethodologyFamily.CUSTOM,
-                "Compatibility profile for migrated pre-methodology qualitative assessments.",
-                parseSchema(LEGACY_INPUT_SCHEMA),
-                parseSchema(LEGACY_OUTPUT_SCHEMA),
-                null);
+                new MethodologyProfileSeed(
+                        "LEGACY_QUALITATIVE_V1",
+                        "Legacy Qualitative",
+                        "1",
+                        MethodologyFamily.CUSTOM,
+                        "Compatibility profile for migrated pre-methodology qualitative assessments.",
+                        parseSchema(LEGACY_INPUT_SCHEMA),
+                        parseSchema(LEGACY_OUTPUT_SCHEMA),
+                        null));
         seedIfMissing(
                 project,
-                "FAIR_V3_0",
-                "FAIR",
-                "3.0",
-                MethodologyFamily.FAIR,
-                "Factor Analysis of Information Risk (FAIR) v3.0 quantitative model with "
-                        + "FAIR-CAM control analytics and FAIR-MAM loss magnitude extensions.",
-                parseSchema(FAIR_INPUT_SCHEMA),
-                parseSchema(FAIR_OUTPUT_SCHEMA),
-                FAIR_CROSSWALK_ENTRIES);
+                new MethodologyProfileSeed(
+                        "FAIR_V3_0",
+                        "Open FAIR",
+                        "O-RT 3.0.1 / O-RA 2.0.1",
+                        MethodologyFamily.FAIR,
+                        "Open FAIR quantitative profile aligned to O-RT 3.0.1 and O-RA 2.0.1. "
+                                + "Profile key FAIR_V3_0 is retained for compatibility.",
+                        parseSchema(FAIR_INPUT_SCHEMA),
+                        parseSchema(FAIR_OUTPUT_SCHEMA),
+                        FAIR_CROSSWALK_ENTRIES));
         seedIfMissing(
                 project,
-                "NIST_SP800_30_R1",
-                "NIST SP 800-30 Rev. 1",
-                "1",
-                MethodologyFamily.NIST_SP800_30_R1,
-                "NIST SP 800-30 Rev. 1 qualitative risk assessment using five-level "
-                        + "likelihood and impact scales with a 5x5 risk matrix.",
-                parseSchema(NIST_INPUT_SCHEMA),
-                parseSchema(NIST_OUTPUT_SCHEMA),
-                NIST_CROSSWALK_ENTRIES);
+                new MethodologyProfileSeed(
+                        "NIST_SP800_30_R1",
+                        "NIST SP 800-30 Rev. 1",
+                        "1",
+                        MethodologyFamily.NIST_SP800_30_R1,
+                        "NIST SP 800-30 Rev. 1 qualitative risk assessment using five-level "
+                                + "likelihood and impact scales with a 5x5 risk matrix.",
+                        parseSchema(NIST_INPUT_SCHEMA),
+                        parseSchema(NIST_OUTPUT_SCHEMA),
+                        NIST_CROSSWALK_ENTRIES));
         seedIfMissing(
                 project,
-                "ISO_27005_V2022",
-                "ISO 27005",
-                "2022",
-                MethodologyFamily.ISO_27005,
-                "ISO/IEC 27005:2022-aligned risk assessment supporting ISO 27001 "
-                        + "information security management system risk criteria.",
-                parseSchema(ISO_INPUT_SCHEMA),
-                parseSchema(ISO_OUTPUT_SCHEMA),
-                ISO_CROSSWALK_ENTRIES);
+                new MethodologyProfileSeed(
+                        "ISO_27005_V2022",
+                        "ISO 27005",
+                        "2022",
+                        MethodologyFamily.ISO_27005,
+                        "ISO/IEC 27005:2022-aligned risk assessment supporting ISO 27001 "
+                                + "information security management system risk criteria.",
+                        parseSchema(ISO_INPUT_SCHEMA),
+                        parseSchema(ISO_OUTPUT_SCHEMA),
+                        ISO_CROSSWALK_ENTRIES));
     }
 
-    private void seedIfMissing(
-            Project project,
+    private record MethodologyProfileSeed(
             String key,
             String name,
             String version,
@@ -831,17 +838,19 @@ public class MethodologyProfileService {
             String description,
             Map<String, Object> inputSchema,
             Map<String, Object> outputSchema,
-            List<CrosswalkEntry> crosswalkEntries) {
-        if (repository.existsByProjectIdAndProfileKeyAndVersion(project.getId(), key, version)) {
+            List<CrosswalkEntry> crosswalkEntries) {}
+
+    private void seedIfMissing(Project project, MethodologyProfileSeed seed) {
+        if (repository.existsByProjectIdAndProfileKeyAndVersion(project.getId(), seed.key(), seed.version())) {
             return;
         }
-        var profile = new MethodologyProfile(project, key, name, version, family);
-        profile.setDescription(description);
-        profile.setInputSchema(inputSchema);
-        profile.setOutputSchema(outputSchema);
+        var profile = new MethodologyProfile(project, seed.key(), seed.name(), seed.version(), seed.family());
+        profile.setDescription(seed.description());
+        profile.setInputSchema(seed.inputSchema());
+        profile.setOutputSchema(seed.outputSchema());
         profile.setStatus(MethodologyProfileStatus.ACTIVE);
-        if (crosswalkEntries != null && !crosswalkEntries.isEmpty()) {
-            profile.setCrosswalkEntries(crosswalkEntries);
+        if (seed.crosswalkEntries() != null && !seed.crosswalkEntries().isEmpty()) {
+            profile.setCrosswalkEntries(seed.crosswalkEntries());
         }
         repository.save(profile);
     }
@@ -983,7 +992,7 @@ public class MethodologyProfileService {
      * {@link DomainValidationException} only when a {@code properties} map is
      * present and the path segment is not found in it.
      *
-     * <p>Handles FAIR-CAM dotted paths like {@code fair_cam.control_strength} by
+     * <p>Handles dotted paths like {@code parent.child} by
      * descending into nested object properties.
      */
     @SuppressWarnings("unchecked")

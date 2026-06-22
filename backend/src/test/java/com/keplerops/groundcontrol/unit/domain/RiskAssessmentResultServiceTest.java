@@ -71,7 +71,7 @@ class RiskAssessmentResultServiceTest {
     private UUID scenarioId;
     private MethodologyProfile profile;
     private UUID profileId;
-    private RiskRegisterRecord record;
+    private RiskRegisterRecord riskRecord;
     private UUID recordId;
     private Observation observation;
     private UUID observationId;
@@ -87,14 +87,15 @@ class RiskAssessmentResultServiceTest {
         scenarioId = UUID.randomUUID();
         setField(scenario, "id", scenarioId);
 
-        profile = new MethodologyProfile(project, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR);
+        profile = new MethodologyProfile(
+                project, "FAIR_V3_0", "Open FAIR", "O-RT 3.0.1 / O-RA 2.0.1", MethodologyFamily.FAIR);
         profileId = UUID.randomUUID();
         setField(profile, "id", profileId);
 
-        record = new RiskRegisterRecord(project, "RR-1", "Gateway record");
-        record.replaceRiskScenarios(List.of(scenario));
+        riskRecord = new RiskRegisterRecord(project, "RR-1", "Gateway record");
+        riskRecord.replaceRiskScenarios(List.of(scenario));
         recordId = UUID.randomUUID();
-        setField(record, "id", recordId);
+        setField(riskRecord, "id", recordId);
 
         var asset = new OperationalAsset(project, "ASSET-1", "Gateway");
         setField(asset, "id", UUID.randomUUID());
@@ -117,7 +118,7 @@ class RiskAssessmentResultServiceTest {
         when(methodologyProfileRepository.findByIdAndProjectId(profileId, projectId))
                 .thenReturn(Optional.of(profile));
         when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
-                .thenReturn(Optional.of(record));
+                .thenReturn(Optional.of(riskRecord));
         when(observationRepository.findAllByIdInAndProjectId(List.of(observationId), projectId))
                 .thenReturn(List.of(observation));
         when(repository.save(any(RiskAssessmentResult.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -142,7 +143,7 @@ class RiskAssessmentResultServiceTest {
 
         assertThat(result.getRiskScenario()).isSameAs(scenario);
         assertThat(result.getMethodologyProfile()).isSameAs(profile);
-        assertThat(result.getRiskRegisterRecord()).isSameAs(record);
+        assertThat(result.getRiskRegisterRecord()).isSameAs(riskRecord);
         assertThat(result.getObservations()).containsExactly(observation);
         assertThat(result.getEvidenceRefs()).containsExactly("EVID-1");
     }
@@ -188,12 +189,10 @@ class RiskAssessmentResultServiceTest {
         when(riskRegisterRecordRepository.findByIdAndProjectIdWithScenarios(recordId, projectId))
                 .thenReturn(Optional.of(mismatchedRecord));
 
-        assertThatThrownBy(() -> service.update(
-                        projectId,
-                        resultId,
-                        new UpdateRiskAssessmentResultCommand(
-                                recordId, null, null, null, null, null, null, null, null, null, null, null, null,
-                                null)))
+        var command = new UpdateRiskAssessmentResultCommand(
+                recordId, null, null, null, null, null, null, null, null, null, null, null, null, null);
+
+        assertThatThrownBy(() -> service.update(projectId, resultId, command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("is not linked to scenario");
     }
@@ -208,24 +207,10 @@ class RiskAssessmentResultServiceTest {
         when(observationRepository.findAllByIdInAndProjectId(List.of(observationId), projectId))
                 .thenReturn(List.of());
 
-        assertThatThrownBy(() -> service.update(
-                        projectId,
-                        resultId,
-                        new UpdateRiskAssessmentResultCommand(
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                List.of(observationId))))
+        var command = new UpdateRiskAssessmentResultCommand(
+                null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(observationId));
+
+        assertThatThrownBy(() -> service.update(projectId, resultId, command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("observations");
     }

@@ -40,4 +40,4 @@ The project needs automated code quality enforcement. The toolchain is already c
 
 ### Risks
 
-- None significant — all tools are industry standard
+- None significant - all tools are industry standard

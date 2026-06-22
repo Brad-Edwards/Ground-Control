@@ -525,6 +525,16 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "129", // V129: add methodology_profile crosswalk_entries column (GC-T012)
                         "130", // V130: add methodology_profile_aud crosswalk_entries column (GC-T012 audit parity)
                         "131", // V131: add project.type + create research_intake (ADR-056, #999)
-                        "132"); // V132: create research_intake_audit (ADR-056, #999)
+                        "132", // V132: create research_intake_audit (ADR-056, #999)
+                        "133", // V133: create derivation run/fact/capture-limit tables (GC-GRC-001)
+                        "134", // V134: create derivation audit tables (GC-GRC-001)
+                        "135", // V135: create mcp_tool_event (issue #1104 / ADR-059)
+                        "136", // V136: extend FAIR input schema with contact_frequency, probability_of_action,
+                        // threat_capability, resistance_strength sub-factors (GC-T011)
+                        "137", // V137: add threat_model_id to risk_control_mapping (GC-H006)
+                        "138", // V138: align FAIR/NIST profile source semantics
+                        "139", // V139: O-RT forms-of-loss materiality + stakeholder secondary effects (GC-T016)
+                        "140", // V140: create risk_appetite_profile (GC-T005, #260)
+                        "141"); // V141: create risk_appetite_profile_audit (GC-T005 audit parity)
     }
 }

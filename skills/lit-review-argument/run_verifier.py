@@ -20,6 +20,7 @@ import argparse
 import sys
 import traceback
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from handlers import (
     check_circular_support,
@@ -28,6 +29,9 @@ from handlers import (
     check_unreconstructed_support,
 )
 
+if TYPE_CHECKING:
+    from pyargdown import ArgdownMultiDiGraph
+
 EXIT_OK = 0
 EXIT_MAP_FAIL = 1
 EXIT_BAD_INPUT = 2
@@ -35,13 +39,24 @@ EXIT_ENVIRONMENT = 3
 
 
 def _emit(label: str, lines: list[str]) -> None:
+    """Print each line in ``lines`` prefixed with ``label``; no-op if empty."""
     if not lines:
         return
     for line in lines:
         print(f"  {label}: {line}")
 
 
-def _run_logreco(parsed) -> tuple[list[str], list[str]]:
+def _has_formalization(parsed: ArgdownMultiDiGraph) -> bool:
+    """Return True if any PCS member in the map carries ``formalization`` data."""
+    for argument in parsed.arguments:
+        for member in argument.pcs:
+            prop = parsed.get_proposition(member.proposition_label)
+            if prop and isinstance(prop.data, dict) and prop.data.get("formalization"):
+                return True
+    return False
+
+
+def _run_logreco(parsed: ArgdownMultiDiGraph) -> tuple[list[str], list[str]]:
     """Run the upstream LogReco family. Returns ``(failures, infos)``.
 
     Skips entirely when no PCS member in the map carries a ``formalization``
@@ -58,16 +73,7 @@ def _run_logreco(parsed) -> tuple[list[str], list[str]]:
         VerificationRequest,
     )
 
-    has_formalization = False
-    for argument in parsed.arguments:
-        for member in argument.pcs:
-            prop = parsed.get_proposition(member.proposition_label)
-            if prop and isinstance(prop.data, dict) and prop.data.get("formalization"):
-                has_formalization = True
-                break
-        if has_formalization:
-            break
-    if not has_formalization:
+    if not _has_formalization(parsed):
         return [], [
             "logreco skipped — no {formalization: ...} metadata on any PCS member."
         ]
@@ -94,7 +100,16 @@ def _run_logreco(parsed) -> tuple[list[str], list[str]]:
     return failures, []
 
 
-def main(argv: list[str] | None = None) -> int:
+class _VerifierExit(Exception):
+    """Internal signal carrying the process exit code for an early failure."""
+
+    def __init__(self, code: int) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the command-line argument parser for the verifier."""
     parser = argparse.ArgumentParser(
         prog="run_verifier",
         description="Verify a phase-4 argument map.",
@@ -110,19 +125,23 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="also run upstream LogReco family (Z3-backed FOL validity check)",
     )
-    args = parser.parse_args(argv)
+    return parser
 
-    map_path = Path(args.map_path)
+
+def _load_source(map_path: Path) -> str:
+    """Read the argument-map file, raising ``_VerifierExit`` on bad input."""
     if not map_path.is_file():
         print(f"FAIL [input]: argument map not found: {map_path}", file=sys.stderr)
-        return EXIT_BAD_INPUT
-
+        raise _VerifierExit(EXIT_BAD_INPUT)
     try:
-        source = map_path.read_text(encoding="utf-8")
+        return map_path.read_text(encoding="utf-8")
     except OSError as exc:
         print(f"FAIL [input]: cannot read {map_path}: {exc}", file=sys.stderr)
-        return EXIT_BAD_INPUT
+        raise _VerifierExit(EXIT_BAD_INPUT) from exc
 
+
+def _parse_map(source: str, map_path: Path) -> ArgdownMultiDiGraph:
+    """Parse the argdown source, raising ``_VerifierExit`` on failure."""
     try:
         from pyargdown import parse_argdown
     except ImportError as exc:
@@ -131,20 +150,26 @@ def main(argv: list[str] | None = None) -> int:
             f"{exc}",
             file=sys.stderr,
         )
-        return EXIT_ENVIRONMENT
+        raise _VerifierExit(EXIT_ENVIRONMENT) from exc
 
     try:
-        parsed = parse_argdown(source)
+        return parse_argdown(source)
     except Exception as exc:
         print(
             f"FAIL [syntax]: Argdown failed to parse {map_path}: {exc}",
             file=sys.stderr,
         )
-        return EXIT_MAP_FAIL
+        raise _VerifierExit(EXIT_MAP_FAIL) from exc
 
-    print(f"syntax OK — {map_path} parses.")
-    print("--- structural checks ---")
 
+def _collect_results(
+    parsed: ArgdownMultiDiGraph, run_logreco: bool
+) -> tuple[list[str], list[str]]:
+    """Run all structural checks (and optional logreco), gathering results.
+
+    Returns ``(all_failures, all_infos)``; raises ``_VerifierExit`` if any
+    check or the logreco run blows up.
+    """
     all_failures: list[str] = []
     all_infos: list[str] = []
     for check in (
@@ -161,11 +186,11 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             traceback.print_exc(file=sys.stderr)
-            return EXIT_ENVIRONMENT
+            raise _VerifierExit(EXIT_ENVIRONMENT) from exc
         all_failures.extend(failures)
         all_infos.extend(infos)
 
-    if args.logreco:
+    if run_logreco:
         print("--- logreco (opt-in formal validity) ---")
         try:
             failures, infos = _run_logreco(parsed)
@@ -175,10 +200,19 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             traceback.print_exc(file=sys.stderr)
-            return EXIT_ENVIRONMENT
+            raise _VerifierExit(EXIT_ENVIRONMENT) from exc
         all_failures.extend(failures)
         all_infos.extend(infos)
 
+    return all_failures, all_infos
+
+
+def _print_summary(
+    parsed: ArgdownMultiDiGraph,
+    all_failures: list[str],
+    all_infos: list[str],
+) -> int:
+    """Print the run summary and return the final exit code."""
     _emit("info", all_infos)
     n_arguments = len(parsed.arguments)
     n_premises = sum(
@@ -209,6 +243,23 @@ def main(argv: list[str] | None = None) -> int:
         "judgement; mechanical checks do not establish it."
     )
     return EXIT_OK
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Parse args, run the verifier pipeline, and return the process exit code."""
+    args = _build_parser().parse_args(argv)
+    map_path = Path(args.map_path)
+
+    try:
+        source = _load_source(map_path)
+        parsed = _parse_map(source, map_path)
+        print(f"syntax OK — {map_path} parses.")
+        print("--- structural checks ---")
+        all_failures, all_infos = _collect_results(parsed, args.logreco)
+    except _VerifierExit as exit_signal:
+        return exit_signal.code
+
+    return _print_summary(parsed, all_failures, all_infos)
 
 
 if __name__ == "__main__":

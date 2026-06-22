@@ -42,6 +42,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 versions.add(rs.getString("version"));
             }
         }
+        // V139: O-RT forms-of-loss materiality schema seed update for FAIR_V3_0 (GC-T016) — schema-only, no DDL.
         assertThat(versions)
                 .containsExactly(
                         "001", "002", "003", "004", "005", "006", "007", "008", "009", "010", "011", "012", "013",
@@ -53,7 +54,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "079", "080", "081", "082", "083", "084", "085", "086", "087", "088", "089", "090", "091",
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
-                        "123", "124", "125", "126", "127", "128", "129", "130", "131", "132");
+                        "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
+                        "136", "137", "138", "139", "140", "141");
     }
 
     @Test
@@ -173,6 +175,18 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         entityManager
                 .createNativeQuery("SELECT 1 FROM treatment_plan_audit LIMIT 1")
                 .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM risk_appetite_profile LIMIT 1")
+                .getResultList();
+        // Column-level probe on the Envers shadow (V141): the audit table is not covered by
+        // ddl-auto:validate, so a missing/renamed column would only surface on the first
+        // RiskAppetiteProfile mutation in production without this assertion (GC-T005).
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT appetite_key, name, version, methodology_family, appetite_statement,"
+                                + " tolerance_thresholds, status, effective_from, effective_to, created_at, updated_at"
+                                + " FROM risk_appetite_profile_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
         entityManager.createNativeQuery("SELECT 1 FROM control LIMIT 1").getResultList();
         entityManager.createNativeQuery("SELECT 1 FROM control_audit LIMIT 1").getResultList();
         entityManager.createNativeQuery("SELECT 1 FROM control_link LIMIT 1").getResultList();
@@ -679,7 +693,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         + " WHERE table_name = 'test_suite_member'"
                         + " AND constraint_name = 'uq_test_suite_member_pair'")
                 .getSingleResult();
-        // Codex pre-push cycle 2 / test-quality review: the DEFERRABLE
+        // Test-quality review: the DEFERRABLE
         // (suite, position) constraint is the only thing keeping concurrent
         // member writes from duplicating positions. If V092 ever lost the
         // constraint, single-threaded integration tests would still pass —
@@ -698,7 +712,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         + " AND c.conname = 'uq_test_suite_member_position'"
                         + " AND c.condeferrable = true")
                 .getSingleResult();
-        // Audit shadow keeps the identity-defining FKs (codex pre-push
+        // Audit shadow keeps the identity-defining FKs (test-quality
         // cycle 1 F1) — without these columns a deleted member row could
         // not be traced back to its suite/test-case.
         entityManager
@@ -950,11 +964,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         + " WHERE table_name = 'risk_control_mapping'"
                         + " AND constraint_name = 'ck_rcm_control_side'")
                 .getSingleResult();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM information_schema.table_constraints"
-                        + " WHERE table_name = 'risk_control_mapping'"
-                        + " AND constraint_name = 'ck_rcm_risk_side'")
-                .getSingleResult();
+        // ck_rcm_risk_side is replaced by the 3-way ck_rcm_analysis_side in V137 (asserted below).
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT control_id, scoped_implementation_id,"
                                 + " risk_scenario_id, risk_register_record_id,"
@@ -1017,6 +1027,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT crosswalk_entries FROM methodology_profile_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
+        // V138: primary-source alignment for seeded FAIR/NIST methodology profiles.
+        assertSeededMethodologyProfilesAligned();
         // V126: reassessmentRequiredAt on risk_assessment_result and audit (GC-T004 / C8, #863).
         entityManager
                 .createNativeQuery("SELECT 1 FROM information_schema.columns"
@@ -1060,5 +1072,120 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                                 + " FROM research_intake_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
+        // V133-V134: GC-GRC-001 derivation fact store. Pin the live tables and
+        // audit shadow columns so every normalized fact keeps reproducible
+        // provenance and every unsupported scope remains queryable as a
+        // machine-readable capture limit.
+        entityManager.createNativeQuery("SELECT 1 FROM derivation_run LIMIT 1").getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM system_model_fact LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM derivation_capture_limit LIMIT 1")
+                .getResultList();
+        // V135: mcp_tool_event (issue #1104 / ADR-059). Append-only operational
+        // telemetry; no _audit shadow (rows are never mutated).
+        entityManager.createNativeQuery("SELECT 1 FROM mcp_tool_event LIMIT 1").getResultList();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT tool, action, outcome, duration_ms, project, event_ts, created_at"
+                                + " FROM mcp_tool_event LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM derivation_run_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM system_model_fact_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM derivation_capture_limit_audit LIMIT 1")
+                .getResultList();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT fact_kind, schema_version, fact_key, adapter_id,"
+                                + " tool_name, tool_version, ruleset_name, ruleset_version,"
+                                + " commit_sha, derived_at, created_at, updated_at"
+                                + " FROM system_model_fact_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT reason, language, surface, commit_sha, captured_at,"
+                                + " created_at, updated_at"
+                                + " FROM derivation_capture_limit_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        // V137: threat_model_id on risk_control_mapping + audit shadow (GC-H006).
+        // The 3-way analysis-side constraint replaces the old 2-way ck_rcm_risk_side.
+        entityManager
+                .createNativeQuery("SELECT 1 FROM information_schema.table_constraints"
+                        + " WHERE table_name = 'risk_control_mapping'"
+                        + " AND constraint_name = 'ck_rcm_analysis_side'")
+                .getSingleResult();
+        // V137 also replaces the four V121 plain UNIQUE constraints and adds the two threat
+        // endpoints as PARTIAL unique indexes, each predicated on its own endpoint family so a
+        // NULL endpoint column from a different family cannot collide under NULLS NOT DISTINCT.
+        // Asserting each index is partial (has a WHERE predicate) is the regression gate for the
+        // review finding that drove the partial-index rewrite.
+        for (String idx : new String[] {
+            "uq_rcm_control_scenario_asset",
+            "uq_rcm_control_record_asset",
+            "uq_rcm_control_threat_asset",
+            "uq_rcm_scoped_scenario_asset",
+            "uq_rcm_scoped_record_asset",
+            "uq_rcm_scoped_threat_asset"
+        }) {
+            var indexDef = entityManager
+                    .createNativeQuery("SELECT indexdef FROM pg_indexes"
+                            + " WHERE tablename = 'risk_control_mapping' AND indexname = '" + idx + "'")
+                    .getSingleResult();
+            assertThat(indexDef.toString())
+                    .as("index %s must be a partial unique index", idx)
+                    .contains("CREATE UNIQUE INDEX")
+                    .contains("WHERE");
+        }
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT threat_model_id FROM risk_control_mapping LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT threat_model_id FROM risk_control_mapping_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+    }
+
+    private void assertSeededMethodologyProfilesAligned() {
+        assertThat(entityManager
+                        .createNativeQuery("SELECT version FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
+                        .getSingleResult())
+                .isEqualTo("O-RT 3.0.1 / O-RA 2.0.1");
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>>"
+                                + " '{properties,probability_of_action,properties,high,maximum}'"
+                                + " FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
+                        .getSingleResult())
+                .isEqualTo("1");
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>>"
+                                + " '{properties,threat_capability,properties,high,maximum}'"
+                                + " FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
+                        .getSingleResult())
+                .isEqualTo("100");
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>"
+                                + " '{properties,fair_cam}'"
+                                + " FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
+                        .getSingleResult())
+                .isNull();
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>>"
+                                + " '{properties,threat_event_relevance,description}'"
+                                + " FROM methodology_profile WHERE profile_key = 'NIST_SP800_30_R1'")
+                        .getSingleResult())
+                .isEqualTo("Threat event relevance per NIST SP 800-30 Rev. 1 Table E-4");
+        assertThat(entityManager
+                        .createNativeQuery("SELECT input_schema::jsonb #>>"
+                                + " '{properties,threat_source_relevance,deprecated}'"
+                                + " FROM methodology_profile WHERE profile_key = 'NIST_SP800_30_R1'")
+                        .getSingleResult())
+                .isEqualTo("true");
     }
 }

@@ -24,8 +24,8 @@ version = "0.20.1"
 
 sonar {
     properties {
-        property("sonar.projectKey", "Brad-Edwards_Ground-Control")
-        property("sonar.organization", "brad-edwards")
+        property("sonar.projectKey", "autarchy-ai_Ground-Control")
+        property("sonar.organization", "autarchy-ai")
         property("sonar.sources", "src/main/java")
         property("sonar.tests", "src/test/java")
         property("sonar.exclusions", "**/node_modules/**,**/.gradle/**,**/build/**,**/dist/**,**/coverage/**,**/*.min.js,bin/**,backend/bin/**,../workflow/releases/**,workflow/releases/**")
@@ -164,6 +164,20 @@ tasks.register<Test>("ageTest") {
     description = "Runs Apache AGE integration tests"
     group = "verification"
     useJUnitPlatform { includeTags("age") }
+    shouldRunAfter(tasks.test)
+    jvmArgs("-XX:+EnableDynamicAgentLoading")
+}
+
+// MCP–backend contract spec capture (issue #1106, ADR-034).
+// Runs only McpOpenApiContractSpecTest (tagged "integration") via Testcontainers,
+// writes backend/build/contract/openapi.json for the Node contract test.
+tasks.register<Test>("generateContractOpenApi") {
+    description = "Generates backend/build/contract/openapi.json for the MCP contract test"
+    group = "verification"
+    useJUnitPlatform {
+        includeTags("integration")
+        filter { includeTestsMatching("*McpOpenApiContractSpecTest") }
+    }
     shouldRunAfter(tasks.test)
     jvmArgs("-XX:+EnableDynamicAgentLoading")
 }

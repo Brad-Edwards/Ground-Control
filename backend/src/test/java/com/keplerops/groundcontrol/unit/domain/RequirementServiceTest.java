@@ -3,6 +3,7 @@ package com.keplerops.groundcontrol.unit.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.TestUtil;
@@ -11,15 +12,22 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
+import com.keplerops.groundcontrol.domain.qualitygates.repository.QualityGateRepository;
+import com.keplerops.groundcontrol.domain.qualitygates.state.MetricType;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import com.keplerops.groundcontrol.domain.requirements.model.RequirementRelation;
+import com.keplerops.groundcontrol.domain.requirements.model.TraceabilityLink;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRelationRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
+import com.keplerops.groundcontrol.domain.requirements.repository.TraceabilityLinkRepository;
 import com.keplerops.groundcontrol.domain.requirements.service.CloneRequirementCommand;
 import com.keplerops.groundcontrol.domain.requirements.service.CreateRequirementCommand;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementFilter;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementService;
+import com.keplerops.groundcontrol.domain.requirements.service.RequirementWithLinks;
 import com.keplerops.groundcontrol.domain.requirements.service.UpdateRequirementCommand;
+import com.keplerops.groundcontrol.domain.requirements.state.ArtifactType;
+import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
 import com.keplerops.groundcontrol.domain.requirements.state.Priority;
 import com.keplerops.groundcontrol.domain.requirements.state.RelationType;
 import com.keplerops.groundcontrol.domain.requirements.state.RequirementType;
@@ -61,13 +69,25 @@ class RequirementServiceTest {
     private ProjectRepository projectRepository;
 
     @Mock
+    private QualityGateRepository qualityGateRepository;
+
+    @Mock
+    private TraceabilityLinkRepository traceabilityLinkRepository;
+
+    @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     private RequirementService service;
 
     @BeforeEach
     void setUp() {
-        service = new RequirementService(requirementRepository, relationRepository, projectRepository, eventPublisher);
+        service = new RequirementService(
+                requirementRepository,
+                relationRepository,
+                projectRepository,
+                qualityGateRepository,
+                traceabilityLinkRepository,
+                eventPublisher);
     }
 
     private static Requirement makeRequirement(String uid) {
@@ -165,6 +185,7 @@ class RequirementServiceTest {
 
             var result = service.getByUid(PROJECT_ID, "REQ-001");
             assertThat(result).isNotNull();
+            assertThat(result.getUid()).isEqualTo("REQ-001");
         }
 
         @Test
@@ -285,6 +306,38 @@ class RequirementServiceTest {
 
             assertThatThrownBy(() -> service.transitionStatus(id, Status.ARCHIVED))
                     .isInstanceOf(DomainValidationException.class);
+        }
+
+        @Test
+        void rejectsDraftToActiveWhenActiveDocumentsCoverageGateIsMissingDocumentsLink() {
+            var id = UUID.randomUUID();
+            var req = makeRequirement("REQ-001");
+            when(requirementRepository.findById(id)).thenReturn(Optional.of(req));
+            when(qualityGateRepository.existsByProjectIdAndEnabledTrueAndMetricTypeAndMetricParamAndScopeStatus(
+                            PROJECT_ID, MetricType.COVERAGE, LinkType.DOCUMENTS.name(), Status.ACTIVE))
+                    .thenReturn(true);
+            when(traceabilityLinkRepository.existsByRequirementIdAndLinkType(id, LinkType.DOCUMENTS))
+                    .thenReturn(false);
+
+            assertThatThrownBy(() -> service.transitionStatus(id, Status.ACTIVE))
+                    .isInstanceOf(DomainValidationException.class)
+                    .hasMessageContaining("DOCUMENTS")
+                    .hasMessageContaining("REQ-001");
+        }
+
+        @Test
+        void allowsDraftToActiveWithoutDocumentsLinkWhenDocumentsCoverageGateIsInactive() {
+            var id = UUID.randomUUID();
+            var req = makeRequirement("REQ-001");
+            when(requirementRepository.findById(id)).thenReturn(Optional.of(req));
+            when(qualityGateRepository.existsByProjectIdAndEnabledTrueAndMetricTypeAndMetricParamAndScopeStatus(
+                            PROJECT_ID, MetricType.COVERAGE, LinkType.DOCUMENTS.name(), Status.ACTIVE))
+                    .thenReturn(false);
+            when(requirementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = service.transitionStatus(id, Status.ACTIVE);
+
+            assertThat(result.getStatus()).isEqualTo(Status.ACTIVE);
         }
     }
 
@@ -444,7 +497,7 @@ class RequirementServiceTest {
             when(relationRepository.findByTargetIdWithEntities(id)).thenReturn(List.of());
 
             var result = service.getRelations(id);
-            assertThat(result).isNotNull();
+            assertThat(result).isNotNull().isEmpty();
         }
 
         @Test
@@ -549,6 +602,32 @@ class RequirementServiceTest {
 
             assertThat(result.succeeded()).isEmpty();
             assertThat(result.failed()).hasSize(2);
+        }
+
+        @Test
+        void missingDocumentsLinkFailureDoesNotStopOtherBulkTransitions() {
+            var missingDocsId = UUID.randomUUID();
+            var validId = UUID.randomUUID();
+            var missingDocsReq = makeRequirement("REQ-MISSING-DOCS");
+            var validReq = makeRequirement("REQ-VALID");
+
+            when(requirementRepository.findById(missingDocsId)).thenReturn(Optional.of(missingDocsReq));
+            when(requirementRepository.findById(validId)).thenReturn(Optional.of(validReq));
+            when(qualityGateRepository.existsByProjectIdAndEnabledTrueAndMetricTypeAndMetricParamAndScopeStatus(
+                            PROJECT_ID, MetricType.COVERAGE, LinkType.DOCUMENTS.name(), Status.ACTIVE))
+                    .thenReturn(true);
+            when(traceabilityLinkRepository.existsByRequirementIdAndLinkType(missingDocsId, LinkType.DOCUMENTS))
+                    .thenReturn(false);
+            when(traceabilityLinkRepository.existsByRequirementIdAndLinkType(validId, LinkType.DOCUMENTS))
+                    .thenReturn(true);
+            when(requirementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = service.bulkTransitionStatus(List.of(missingDocsId, validId), Status.ACTIVE);
+
+            assertThat(result.succeeded()).extracting(Requirement::getUid).containsExactly("REQ-VALID");
+            assertThat(result.failed()).hasSize(1);
+            assertThat(result.failed().getFirst().uid()).isEqualTo("REQ-MISSING-DOCS");
+            assertThat(result.failed().getFirst().error()).contains("DOCUMENTS");
         }
     }
 
@@ -749,6 +828,89 @@ class RequirementServiceTest {
             assertThatThrownBy(() -> service.deleteRelation(reqId, relationId))
                     .isInstanceOf(NotFoundException.class)
                     .hasMessage("Relation not found: " + relationId);
+        }
+    }
+
+    @Nested
+    class TraceabilityMatrix {
+
+        private TraceabilityLink linkOf(Requirement req, LinkType linkType, String artifactId) {
+            return new TraceabilityLink(req, ArtifactType.CODE_FILE, artifactId, linkType);
+        }
+
+        @Test
+        void groupsLinksByRequirementWithoutNPlusOne() {
+            var reqA = makeRequirement("REQ-A");
+            var reqB = makeRequirement("REQ-B");
+            var idA = UUID.randomUUID();
+            var idB = UUID.randomUUID();
+            setId(reqA, idA);
+            setId(reqB, idB);
+            when(requirementRepository.findAll(any(Specification.class), any(Pageable.class)))
+                    .thenReturn(new PageImpl<>(List.of(reqA, reqB)));
+            when(traceabilityLinkRepository.findByRequirementIdIn(any()))
+                    .thenReturn(List.of(
+                            linkOf(reqA, LinkType.IMPLEMENTS, "a/Impl.java"),
+                            linkOf(reqA, LinkType.TESTS, "a/ImplTest.java"),
+                            linkOf(reqB, LinkType.DOCUMENTS, "docs/b.md")));
+
+            var page = service.getTraceabilityMatrix(
+                    PROJECT_ID, Pageable.unpaged(), new RequirementFilter(null, null, null, null, null), null);
+
+            assertThat(page.getContent()).hasSize(2);
+            var rowA = rowFor(page, idA);
+            var rowB = rowFor(page, idB);
+            assertThat(rowA.links()).hasSize(2);
+            assertThat(rowB.links()).hasSize(1);
+            assertThat(rowB.links().get(0).getLinkType()).isEqualTo(LinkType.DOCUMENTS);
+        }
+
+        @Test
+        void filtersByLinkTypeButKeepsGapRequirements() {
+            var reqA = makeRequirement("REQ-A");
+            var reqB = makeRequirement("REQ-B");
+            var idA = UUID.randomUUID();
+            var idB = UUID.randomUUID();
+            setId(reqA, idA);
+            setId(reqB, idB);
+            when(requirementRepository.findAll(any(Specification.class), any(Pageable.class)))
+                    .thenReturn(new PageImpl<>(List.of(reqA, reqB)));
+            when(traceabilityLinkRepository.findByRequirementIdIn(any()))
+                    .thenReturn(List.of(
+                            linkOf(reqA, LinkType.IMPLEMENTS, "a/Impl.java"),
+                            linkOf(reqA, LinkType.TESTS, "a/ImplTest.java"),
+                            linkOf(reqB, LinkType.DOCUMENTS, "docs/b.md")));
+
+            var page = service.getTraceabilityMatrix(
+                    PROJECT_ID,
+                    Pageable.unpaged(),
+                    new RequirementFilter(null, null, null, null, null),
+                    LinkType.IMPLEMENTS);
+
+            // Only A's IMPLEMENTS link survives the filter.
+            assertThat(rowFor(page, idA).links()).hasSize(1);
+            assertThat(rowFor(page, idA).links().get(0).getLinkType()).isEqualTo(LinkType.IMPLEMENTS);
+            // B has no IMPLEMENTS link but still appears as a gap row, not dropped.
+            assertThat(rowFor(page, idB).links()).isEmpty();
+        }
+
+        @Test
+        void emptyRequirementPageSkipsTheLinkQuery() {
+            when(requirementRepository.findAll(any(Specification.class), any(Pageable.class)))
+                    .thenReturn(new PageImpl<>(List.of()));
+
+            var page = service.getTraceabilityMatrix(
+                    PROJECT_ID, Pageable.unpaged(), new RequirementFilter(null, null, null, null, null), null);
+
+            assertThat(page.getContent()).isEmpty();
+            verifyNoInteractions(traceabilityLinkRepository);
+        }
+
+        private RequirementWithLinks rowFor(Page<RequirementWithLinks> page, UUID requirementId) {
+            return page.getContent().stream()
+                    .filter(row -> row.requirement().getId().equals(requirementId))
+                    .findFirst()
+                    .orElseThrow();
         }
     }
 }

@@ -20,25 +20,28 @@ VALIDATE="$TDIR/../validate-argument-map.sh"
 PASS=0
 FAIL=0
 check() {
-  if [ "$1" = ok ]; then
+  local status="$1"
+  local label="$2"
+  if [[ "$status" = ok ]]; then
     PASS=$((PASS + 1))
-    echo "  ok   — $2"
+    echo "  ok   — $label"
   else
     FAIL=$((FAIL + 1))
-    echo "  FAIL — $2"
+    echo "  FAIL — $label"
   fi
+  return 0
 }
 
 echo "clean-map.argdown — expect: passes, exit 0"
 OUT="$("$VALIDATE" "$TDIR/clean-map.argdown" 2>&1)"
 RC=$?
-[ "$RC" -eq 0 ] && check ok "clean map exits 0" || check no "clean map exit $RC (expected 0)"
+[[ "$RC" -eq 0 ]] && check ok "clean map exits 0" || check no "clean map exit $RC (expected 0)"
 grep -q "STRUCTURE OK" <<<"$OUT" && check ok "clean map reports STRUCTURE OK" || check no "clean map missing STRUCTURE OK"
 
 echo "dirty-map.argdown — expect: fails rules A, B, C, D, exit 1"
 OUT="$("$VALIDATE" "$TDIR/dirty-map.argdown" 2>&1)"
 RC=$?
-[ "$RC" -eq 1 ] && check ok "dirty map exits 1" || check no "dirty map exit $RC (expected 1)"
+[[ "$RC" -eq 1 ]] && check ok "dirty map exits 1" || check no "dirty map exit $RC (expected 1)"
 for c in A B C D; do
   grep -q "FAIL: $c " <<<"$OUT" && check ok "dirty map triggers check $c" || check no "dirty map did not trigger check $c"
 done
@@ -46,13 +49,13 @@ done
 echo "logreco-valid.argdown --logreco — expect: passes, exit 0"
 OUT="$("$VALIDATE" --logreco "$TDIR/logreco-valid.argdown" 2>&1)"
 RC=$?
-[ "$RC" -eq 0 ] && check ok "logreco-valid exits 0" || check no "logreco-valid exit $RC (expected 0)"
+[[ "$RC" -eq 0 ]] && check ok "logreco-valid exits 0" || check no "logreco-valid exit $RC (expected 0)"
 grep -q "STRUCTURE OK" <<<"$OUT" && check ok "logreco-valid reports STRUCTURE OK" || check no "logreco-valid missing STRUCTURE OK"
 
 echo "logreco-invalid.argdown --logreco — expect: fails on logreco, exit 1"
 OUT="$("$VALIDATE" --logreco "$TDIR/logreco-invalid.argdown" 2>&1)"
 RC=$?
-[ "$RC" -eq 1 ] && check ok "logreco-invalid exits 1" || check no "logreco-invalid exit $RC (expected 1)"
+[[ "$RC" -eq 1 ]] && check ok "logreco-invalid exits 1" || check no "logreco-invalid exit $RC (expected 1)"
 # Match the actual failure line ("  FAIL: logreco <handler>: ..."), not the
 # section header "--- logreco (opt-in formal validity) ---" which is printed
 # unconditionally whenever --logreco is passed. A bare `grep -q "logreco"`
@@ -61,4 +64,4 @@ grep -qE "FAIL:[[:space:]]*logreco " <<<"$OUT" && check ok "logreco-invalid surf
 
 echo
 echo "result: $PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+[[ "$FAIL" -eq 0 ]]

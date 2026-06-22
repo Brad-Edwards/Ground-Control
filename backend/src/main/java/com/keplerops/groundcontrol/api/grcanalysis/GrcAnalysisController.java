@@ -1,5 +1,7 @@
 package com.keplerops.groundcontrol.api.grcanalysis;
 
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsQuery;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlDomain;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ObservationProjectionMode;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
@@ -80,5 +82,65 @@ public class GrcAnalysisController {
         UUID projectId = projectService.resolveProjectId(project);
         return NistAssessmentResponse.from(
                 grcAnalysisService.nistAssessment(projectId, asOf, riskAssessmentResultId, riskScenarioId));
+    }
+
+    @GetMapping("/fair-quantitative")
+    public FairQuantitativeAnalysisResponse fairQuantitative(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false) UUID riskAssessmentResultId,
+            @RequestParam(required = false) UUID riskScenarioId) {
+        UUID projectId = projectService.resolveProjectId(project);
+        return FairQuantitativeAnalysisResponse.from(
+                grcAnalysisService.fairQuantitative(projectId, asOf, riskAssessmentResultId, riskScenarioId));
+    }
+
+    @GetMapping("/appetite-evaluation")
+    public RiskAppetiteEvaluationResponse appetiteEvaluation(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false) UUID profileId,
+            @RequestParam(required = false) String appetiteKey,
+            @RequestParam(required = false) UUID riskRegisterRecordId,
+            @RequestParam(required = false) UUID riskScenarioId) {
+        UUID projectId = projectService.resolveProjectId(project);
+        return RiskAppetiteEvaluationResponse.from(grcAnalysisService.riskAppetiteEvaluation(
+                projectId, asOf, profileId, appetiteKey, riskRegisterRecordId, riskScenarioId));
+    }
+
+    @GetMapping("/compliance-monitoring")
+    public ComplianceMonitoringResponse complianceMonitoring(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false, defaultValue = "" + DEFAULT_FRESHNESS_WINDOW_DAYS) @Positive int freshnessWindowDays) {
+        UUID projectId = projectService.resolveProjectId(project);
+        return ComplianceMonitoringResponse.from(
+                grcAnalysisService.complianceMonitoring(projectId, asOf, freshnessWindowDays));
+    }
+
+    @GetMapping("/fair-cam-control-analytics")
+    public FairCamControlAnalyticsResponse fairCamControlAnalytics(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false) UUID controlId,
+            @RequestParam(required = false) UUID scopedImplementationId,
+            @RequestParam(required = false) UUID riskScenarioId,
+            @RequestParam(required = false) UUID riskRegisterRecordId,
+            @RequestParam(required = false) UUID threatModelId,
+            @RequestParam(required = false) UUID methodologyProfileId,
+            @RequestParam(required = false) FairCamControlDomain domain,
+            @RequestParam(required = false, defaultValue = "" + DEFAULT_FRESHNESS_WINDOW_DAYS) @Positive int freshnessWindowDays) {
+        UUID projectId = projectService.resolveProjectId(project);
+        FairCamControlAnalyticsQuery query = new FairCamControlAnalyticsQuery(
+                asOf,
+                freshnessWindowDays,
+                controlId,
+                scopedImplementationId,
+                riskScenarioId,
+                riskRegisterRecordId,
+                threatModelId,
+                methodologyProfileId,
+                domain);
+        return FairCamControlAnalyticsResponse.from(grcAnalysisService.fairCamControlAnalytics(projectId, query));
     }
 }

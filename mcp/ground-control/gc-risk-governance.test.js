@@ -23,6 +23,11 @@ const ORIGINAL_API_TOKEN = process.env.GROUND_CONTROL_API_TOKEN;
 
 const SCHEMA = z.object(gcRiskGovernanceZodShape);
 
+// Reused fixed UUID fixtures. Extracted to named constants so the same literal
+// is not duplicated across unrelated test blocks (Sonar S1192).
+const UUID_ONES = "11111111-1111-1111-1111-111111111111";
+const UUID_AS = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+
 function makeFetchSpy({ status = 200, body = { id: "ent-uuid" } } = {}) {
   const calls = [];
   globalThis.fetch = async (url, opts) => {
@@ -137,7 +142,7 @@ describe("risk_assessment_result update allowlist (#878)", () => {
 });
 
 describe("risk_assessment_result wire body (#878)", () => {
-  const SCENARIO = "11111111-1111-1111-1111-111111111111";
+  const SCENARIO = UUID_ONES;
   const REGISTER = "22222222-2222-2222-2222-222222222222";
   const PROFILE = "33333333-3333-3333-3333-333333333333";
 
@@ -199,11 +204,6 @@ describe("risk_assessment_result wire body (#878)", () => {
       uid: "RAR-1",
       title: "drop me",
       description: "drop me",
-      // Number-shaped scenarios are excluded from the Zod schema's positive
-      // pattern, but a typed caller could still include `qualitative_value:
-      // "HIGH"`. Use the Zod-acceptable shape and confirm the handler drops
-      // it on its own.
-      qualitative_value: "HIGH",
       approval_state: "DRAFT",
       metadata: { stale: true },
       // 'status' is intentionally omitted: validateGovernanceStatus rejects
@@ -218,8 +218,7 @@ describe("risk_assessment_result wire body (#878)", () => {
     assert.equal(calls[0].body.methodologyProfileId, PROFILE);
     // Negative: stale fields did not reach the wire.
     for (const stale of [
-      "uid", "title", "description", "qualitativeValue",
-      "scenarioId", "approvalState", "metadata",
+      "uid", "title", "description", "approvalState", "metadata",
     ]) {
       assert.ok(!(stale in calls[0].body), `${stale} leaked onto the wire`);
     }
@@ -230,7 +229,7 @@ describe("risk_assessment_result wire body (#878)", () => {
     await callHandler({
       entity: "risk_assessment_result",
       action: "update",
-      id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      id: UUID_AS,
       project: "proj-a",
       risk_scenario_id: SCENARIO, // must NOT reach the wire
       methodology_profile_id: PROFILE,
@@ -239,7 +238,7 @@ describe("risk_assessment_result wire body (#878)", () => {
     });
     assert.equal(calls.length, 1);
     assert.equal(calls[0].method, "PUT");
-    assert.match(calls[0].url, /\/api\/v1\/risk-assessment-results\/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\b/);
+    assert.match(calls[0].url, new RegExp(`/api/v1/risk-assessment-results/${UUID_AS}\\b`));
     assert.ok(!("riskScenarioId" in calls[0].body));
     assert.equal(calls[0].body.methodologyProfileId, PROFILE);
     assert.equal(calls[0].body.analystIdentity, "agent-b");
@@ -465,7 +464,7 @@ describe("treatment_plan wire body (#880)", () => {
       reassessment_triggers: [
         { category: "ASSESSMENT_REFRESH", note: "new evidence" },
         { category: "CONTROL_STATE_CHANGED", target_type: "CONTROL",
-          target_entity_id: "11111111-1111-1111-1111-111111111111" },
+          target_entity_id: UUID_ONES },
       ],
     });
     assert.equal(calls.length, 1);
@@ -485,7 +484,7 @@ describe("treatment_plan wire body (#880)", () => {
       reassessmentTriggers: [
         { category: "ASSESSMENT_REFRESH", note: "new evidence" },
         { category: "CONTROL_STATE_CHANGED", targetType: "CONTROL",
-          targetEntityId: "11111111-1111-1111-1111-111111111111" },
+          targetEntityId: UUID_ONES },
       ],
     });
   });
@@ -548,7 +547,7 @@ describe("treatment_plan wire body (#880)", () => {
 
   it("handler sends methodologyProfileId and methodologyStrategyKey on create with strategy OTHER", async () => {
     const calls = makeFetchSpy();
-    const PROF = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const PROF = UUID_AS;
     await callHandler({
       entity: "treatment_plan",
       action: "create",
@@ -611,6 +610,199 @@ describe("treatment_plan wire body (#880)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// methodology_profile create reqArg guards (#1173)
+// ---------------------------------------------------------------------------
+
+describe("methodology_profile create reqArg guards (#1173)", () => {
+  it("rejects when profile_key is missing", async () => {
+    makeFetchSpy();
+    await assert.rejects(
+      () => callHandler({
+        entity: "methodology_profile",
+        action: "create",
+        name: "MyProfile",
+        version: "1.0",
+        family: "FAIR",
+      }),
+      (err) => {
+        assert.match(err.message, /'profile_key' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("rejects when name is missing", async () => {
+    makeFetchSpy();
+    await assert.rejects(
+      () => callHandler({
+        entity: "methodology_profile",
+        action: "create",
+        profile_key: "MY_PROFILE",
+        version: "1.0",
+        family: "FAIR",
+      }),
+      (err) => {
+        assert.match(err.message, /'name' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("rejects when version is missing", async () => {
+    makeFetchSpy();
+    await assert.rejects(
+      () => callHandler({
+        entity: "methodology_profile",
+        action: "create",
+        profile_key: "MY_PROFILE",
+        name: "MyProfile",
+        family: "FAIR",
+      }),
+      (err) => {
+        assert.match(err.message, /'version' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("rejects when family is missing", async () => {
+    makeFetchSpy();
+    await assert.rejects(
+      () => callHandler({
+        entity: "methodology_profile",
+        action: "create",
+        profile_key: "MY_PROFILE",
+        name: "MyProfile",
+        version: "1.0",
+      }),
+      (err) => {
+        assert.match(err.message, /'family' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("create with all four required fields POSTs camelCase profileKey, name, version, family to /api/v1/methodology-profiles", async () => {
+    const calls = makeFetchSpy({ body: { id: "prof-uuid" } });
+    await callHandler({
+      entity: "methodology_profile",
+      action: "create",
+      project: "proj-a",
+      profile_key: "MY_PROFILE",
+      name: "MyProfile",
+      version: "1.0",
+      family: "FAIR",
+      description: "Test profile",
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "POST");
+    assert.match(calls[0].url, /\/api\/v1\/methodology-profiles\b/);
+    assert.equal(calls[0].body.profileKey, "MY_PROFILE");
+    assert.equal(calls[0].body.name, "MyProfile");
+    assert.equal(calls[0].body.version, "1.0");
+    assert.equal(calls[0].body.family, "FAIR");
+    assert.equal(calls[0].body.description, "Test profile");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// verification_result create reqArg guards (#1173)
+// ---------------------------------------------------------------------------
+
+describe("verification_result create reqArg guards (#1173)", () => {
+  const BASE = {
+    entity: "verification_result",
+    action: "create",
+    prover: "agent-x",
+    result: "PROVEN",
+    assurance_level: "L1",
+    verified_at: "2026-06-15T00:00:00Z",
+  };
+
+  it("rejects when prover is missing", async () => {
+    makeFetchSpy();
+    const { prover: _drop, ...args } = BASE;
+    await assert.rejects(
+      () => callHandler(args),
+      (err) => {
+        assert.match(err.message, /'prover' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("rejects when result is missing", async () => {
+    makeFetchSpy();
+    const { result: _drop, ...args } = BASE;
+    await assert.rejects(
+      () => callHandler(args),
+      (err) => {
+        assert.match(err.message, /'result' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("rejects when assurance_level is missing", async () => {
+    makeFetchSpy();
+    const { assurance_level: _drop, ...args } = BASE;
+    await assert.rejects(
+      () => callHandler(args),
+      (err) => {
+        assert.match(err.message, /'assurance_level' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("rejects when verified_at is missing", async () => {
+    makeFetchSpy();
+    const { verified_at: _drop, ...args } = BASE;
+    await assert.rejects(
+      () => callHandler(args),
+      (err) => {
+        assert.match(err.message, /'verified_at' is required/);
+        return true;
+      },
+    );
+  });
+
+  it("create with all four required fields POSTs camelCase prover, result, assuranceLevel, verifiedAt to /api/v1/verification-results without stale keys", async () => {
+    const calls = makeFetchSpy({ body: { id: "vr-uuid" } });
+    await callHandler({
+      entity: "verification_result",
+      action: "create",
+      project: "proj-a",
+      prover: "agent-x",
+      result: "PROVEN",
+      assurance_level: "L1",
+      verified_at: "2026-06-15T00:00:00Z",
+      target_id: UUID_ONES,
+      requirement_id: UUID_AS,
+      property: "confidentiality",
+      evidence: "audit-log-ref",
+      expires_at: "2027-06-15T00:00:00Z",
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "POST");
+    assert.match(calls[0].url, /\/api\/v1\/verification-results\b/);
+    assert.equal(calls[0].body.prover, "agent-x");
+    assert.equal(calls[0].body.result, "PROVEN");
+    assert.equal(calls[0].body.assuranceLevel, "L1");
+    assert.equal(calls[0].body.verifiedAt, "2026-06-15T00:00:00Z");
+    assert.equal(calls[0].body.targetId, UUID_ONES);
+    assert.equal(calls[0].body.requirementId, UUID_AS);
+    assert.equal(calls[0].body.property, "confidentiality");
+    assert.equal(calls[0].body.evidence, "audit-log-ref");
+    assert.equal(calls[0].body.expiresAt, "2027-06-15T00:00:00Z");
+    // Must NOT contain the old bogus keys.
+    for (const stale of ["uid", "title", "outcome", "status"]) {
+      assert.ok(!(stale in calls[0].body), `stale key '${stale}' leaked onto the wire`);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GC-T012 methodology_profile crosswalk entries round-trip
 // ---------------------------------------------------------------------------
 
@@ -643,7 +835,9 @@ describe("methodology_profile crosswalkEntries round-trip (GC-T012)", () => {
       entity: "methodology_profile",
       action: "create",
       project: "proj-a",
+      profile_key: "NIST_SP800_30_R1",
       name: "NIST SP 800-30 Rev. 1",
+      version: "1.0",
       description: "NIST qualitative",
       family: "NIST_SP800_30_R1",
       crosswalk_entries: [entry],
@@ -673,7 +867,7 @@ describe("methodology_profile crosswalkEntries round-trip (GC-T012)", () => {
     await callHandler({
       entity: "methodology_profile",
       action: "update",
-      id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      id: UUID_AS,
       project: "proj-a",
       crosswalk_entries: [entry],
     });
@@ -719,6 +913,124 @@ describe("methodology_profile crosswalkEntries round-trip (GC-T012)", () => {
         }],
       }),
       /invalid_enum_value|ZodError|Invalid/,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// risk_appetite_profile (GC-T005, #260)
+// ---------------------------------------------------------------------------
+
+describe("risk_appetite_profile entity (GC-T005)", () => {
+  const PROFILE_UUID = "55555555-5555-5555-5555-555555555555";
+
+  it("is registered as a governance entity with a create/update allowlist", () => {
+    assert.ok(GC_RISK_GOVERNANCE_ENTITIES.includes("risk_appetite_profile"));
+    assert.ok(GOVERNANCE_FIELDS.risk_appetite_profile.create.includes("appetite_key"));
+    assert.ok(GOVERNANCE_FIELDS.risk_appetite_profile.create.includes("tolerance_thresholds"));
+    // appetiteKey is immutable — absent from update.
+    assert.ok(!GOVERNANCE_FIELDS.risk_appetite_profile.update.includes("appetite_key"));
+  });
+
+  it("create dispatches POST with a camelCased body and drops stale fields", async () => {
+    const calls = makeFetchSpy();
+
+    await callHandler({
+      entity: "risk_appetite_profile",
+      action: "create",
+      project: "ground-control",
+      appetite_key: "BOARD_APPETITE",
+      name: "Board Risk Appetite",
+      version: "1.0",
+      methodology_family: "FAIR",
+      appetite_statement: "Escalate material loss exposure.",
+      effective_from: "2026-01-01T00:00:00Z",
+      status: "ACTIVE",
+      tolerance_thresholds: [
+        { metricPath: "annualized_loss_expectancy.likely", maxQuantitativeValue: 500000, units: "USD", currency: "USD" },
+      ],
+      // stale control field must be dropped by the handler's pick()
+      id: PROFILE_UUID,
+    });
+
+    assert.equal(calls.length, 1);
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/risk-appetite-profiles");
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].body.appetiteKey, "BOARD_APPETITE");
+    assert.equal(calls[0].body.methodologyFamily, "FAIR");
+    assert.equal(calls[0].body.effectiveFrom, "2026-01-01T00:00:00Z");
+    assert.equal(calls[0].body.toleranceThresholds[0].metricPath, "annualized_loss_expectancy.likely");
+    assert.equal(calls[0].body.toleranceThresholds[0].maxQuantitativeValue, 500000);
+    // 'id' is a control field, never part of the create body.
+    assert.equal(calls[0].body.id, undefined);
+  });
+
+  it("update dispatches PUT and omits the immutable appetite_key", async () => {
+    const calls = makeFetchSpy();
+
+    await callHandler({
+      entity: "risk_appetite_profile",
+      action: "update",
+      project: "ground-control",
+      id: PROFILE_UUID,
+      appetite_key: "SHOULD_BE_DROPPED",
+      status: "RETIRED",
+    });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, `/api/v1/risk-appetite-profiles/${PROFILE_UUID}`);
+    assert.equal(calls[0].method, "PUT");
+    assert.equal(calls[0].body.status, "RETIRED");
+    assert.equal(calls[0].body.appetiteKey, undefined);
+  });
+
+  it("delete dispatches DELETE and returns null", async () => {
+    const calls = makeFetchSpy();
+
+    const result = await callHandler({
+      entity: "risk_appetite_profile",
+      action: "delete",
+      project: "ground-control",
+      id: PROFILE_UUID,
+    });
+
+    assert.equal(result, null);
+    assert.equal(calls[0].method, "DELETE");
+  });
+
+  it("rejects a status outside the risk_appetite_profile vocabulary", async () => {
+    await assert.rejects(
+      () =>
+        callHandler({
+          entity: "risk_appetite_profile",
+          action: "create",
+          project: "ground-control",
+          appetite_key: "BOARD_APPETITE",
+          name: "Board Risk Appetite",
+          version: "1.0",
+          methodology_family: "FAIR",
+          effective_from: "2026-01-01T00:00:00Z",
+          status: "ACCEPTED",
+        }),
+      /not a valid status|ACCEPTED/,
+    );
+  });
+
+  it("requires appetite_key, name, version, methodology_family, effective_from on create", async () => {
+    makeFetchSpy();
+    await assert.rejects(
+      () =>
+        callHandler({
+          entity: "risk_appetite_profile",
+          action: "create",
+          project: "ground-control",
+          name: "Board Risk Appetite",
+          version: "1.0",
+          methodology_family: "FAIR",
+          effective_from: "2026-01-01T00:00:00Z",
+        }),
+      /appetite_key/,
     );
   });
 });

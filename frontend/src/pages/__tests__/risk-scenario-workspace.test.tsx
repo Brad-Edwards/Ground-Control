@@ -34,6 +34,9 @@ import { RiskScenarioWorkspace } from "../risk-scenario-workspace";
 
 const mockUseWorkspace = vi.mocked(useRiskScenarioWorkspace);
 
+// Shared describe-title prefix, extracted to avoid duplicating the literal.
+const SUITE = "RiskScenarioWorkspace —";
+
 // ── Test fixtures ─────────────────────────────────────────────────────────────
 
 const emptyWorkspace: RiskScenarioWorkspaceResponse = {
@@ -164,6 +167,19 @@ function renderPage() {
   return render(<RiskScenarioWorkspace />);
 }
 
+/**
+ * Select both seeded scenarios via their per-card checkboxes and click the
+ * (now-enabled) Compare button — the real user path into comparison mode,
+ * shared by the comparison-view test cases.
+ */
+function selectBothAndCompare() {
+  fireEvent.click(screen.getByLabelText("Select RS-001 for comparison"));
+  fireEvent.click(screen.getByLabelText("Select RS-002 for comparison"));
+  fireEvent.click(
+    screen.getByRole("button", { name: /compare selected \(2\)/i }),
+  );
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 afterEach(() => {
@@ -171,7 +187,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("RiskScenarioWorkspace — loading state", () => {
+describe(`${SUITE} loading state`, () => {
   beforeEach(() => {
     mockUseWorkspace.mockReturnValue({
       data: undefined,
@@ -187,7 +203,7 @@ describe("RiskScenarioWorkspace — loading state", () => {
   });
 });
 
-describe("RiskScenarioWorkspace — empty state", () => {
+describe(`${SUITE} empty state`, () => {
   beforeEach(() => {
     mockUseWorkspace.mockReturnValue({
       data: emptyWorkspace,
@@ -214,7 +230,7 @@ describe("RiskScenarioWorkspace — empty state", () => {
   });
 });
 
-describe("RiskScenarioWorkspace — composed data", () => {
+describe(`${SUITE} composed data`, () => {
   beforeEach(() => {
     mockUseWorkspace.mockReturnValue({
       data: composedWorkspace,
@@ -309,7 +325,7 @@ describe("RiskScenarioWorkspace — composed data", () => {
   });
 });
 
-describe("RiskScenarioWorkspace — comparison view", () => {
+describe(`${SUITE} comparison view`, () => {
   beforeEach(() => {
     mockUseWorkspace.mockReturnValue({
       data: composedWorkspace,
@@ -358,11 +374,7 @@ describe("RiskScenarioWorkspace — comparison view", () => {
   it("exits comparison mode when Exit comparison is clicked", () => {
     renderPage();
 
-    fireEvent.click(screen.getByLabelText("Select RS-001 for comparison"));
-    fireEvent.click(screen.getByLabelText("Select RS-002 for comparison"));
-    fireEvent.click(
-      screen.getByRole("button", { name: /compare selected \(2\)/i }),
-    );
+    selectBothAndCompare();
     expect(screen.getByTestId("comparison-view")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /exit comparison/i }));
@@ -370,7 +382,7 @@ describe("RiskScenarioWorkspace — comparison view", () => {
   });
 });
 
-describe("RiskScenarioWorkspace — error state", () => {
+describe(`${SUITE} error state`, () => {
   beforeEach(() => {
     mockUseWorkspace.mockReturnValue({
       data: undefined,

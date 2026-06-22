@@ -14,7 +14,7 @@ export tool-detail logs over OTLP to `http://localhost:4317`:
 ```
 
 If nothing is listening on that port, Claude Code silently drops every
-tool call, rejection reason, and MCP event — the observability the
+tool call, rejection reason, and MCP event - the observability the
 setting was meant to give you is gone. When this was first investigated,
 the collector had been dead for 11 days without anyone noticing, because
 the failure mode is exactly "no telemetry" rather than an error.
@@ -36,7 +36,7 @@ the bind-mount translation layer:
 `otelcol-contrib` is a single static Go binary (~60 MB) with zero
 runtime dependencies, so running it as a `systemd --user` unit is
 simpler, faster to start, and avoids the entire bind-mount failure
-mode. The native setup is also lighter — a native daemon uses tens of
+mode. The native setup is also lighter - a native daemon uses tens of
 MB resident versus Docker Desktop's hundreds.
 
 ## Installing / re-installing
@@ -60,9 +60,9 @@ The script is idempotent. Re-running:
 
 Environment variables:
 
-- `OTEL_VERSION` — pin the collector version. Bump this and re-run
+- `OTEL_VERSION` - pin the collector version. Bump this and re-run
   the script to upgrade.
-- `SKIP_START=1` — install files but do not enable / start the unit.
+- `SKIP_START=1` - install files but do not enable / start the unit.
 
 ## Verifying
 

@@ -1,0 +1,42 @@
+{
+  "branches": {
+    "main": {
+      "admin_bypass_allowed": true,
+      "changes_land_via_pull_request": true,
+      "required_status_checks": {
+        "strict": true,
+        "contexts": [
+          "GitGuardian Security Checks",
+          "SonarCloud Code Analysis",
+          "build",
+          "integration",
+          "osv-scanner",
+          "policy",
+          "sonar",
+          "test",
+          "trivy",
+          "verify"
+        ]
+      }
+    },
+    "dev": {
+      "admin_bypass_allowed": true,
+      "changes_land_via_pull_request": true,
+      "required_status_checks": {
+        "strict": true,
+        "contexts": [
+          "GitGuardian Security Checks",
+          "SonarCloud Code Analysis",
+          "build",
+          "integration",
+          "osv-scanner",
+          "policy",
+          "sonar",
+          "test",
+          "trivy",
+          "verify"
+        ]
+      }
+    }
+  }
+}

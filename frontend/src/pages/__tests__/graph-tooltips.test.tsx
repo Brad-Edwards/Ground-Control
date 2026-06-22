@@ -7,6 +7,42 @@
 import { describe, expect, it } from "vitest";
 import { getTooltipTags } from "../graph";
 
+type TooltipData = Parameters<typeof getTooltipTags>[0];
+
+/**
+ * Resolve the rendered tag texts for a node's tooltip data. Mirrors the
+ * `getTooltipTags(data).map((t) => t.text)` boilerplate every per-type case
+ * repeated.
+ */
+function tooltipTexts(data: TooltipData): string[] {
+  return getTooltipTags(data).map((t) => t.text);
+}
+
+/**
+ * Assert that the tooltip for `data` contains a tag whose text exactly equals
+ * each expected value (the `texts.some((t) => t === expected)` form used by the
+ * exact-match per-type cases). `toContain` on the array is array membership,
+ * i.e. exact string equality, so it is equivalent.
+ */
+function expectExactTags(data: TooltipData, expected: string[]) {
+  const texts = tooltipTexts(data);
+  for (const value of expected) {
+    expect(texts).toContain(value);
+  }
+}
+
+/**
+ * Assert that the tooltip for `data` contains a tag whose text *includes* each
+ * expected substring (the `texts.some((t) => t.includes(value))` form used by
+ * the substring per-type cases).
+ */
+function expectTagsIncluding(data: TooltipData, substrings: string[]) {
+  const texts = tooltipTexts(data);
+  for (const value of substrings) {
+    expect(texts.some((t) => t.includes(value))).toBe(true);
+  }
+}
+
 // All 21 GraphEntityType values (mirrors backend GraphEntityType enum and
 // frontend api.ts GraphEntityType union — ADR-034 enum contract).
 const ALL_ENTITY_TYPES = [
@@ -33,6 +69,10 @@ const ALL_ENTITY_TYPES = [
   "DOCUMENT",
 ] as const;
 
+// Shared status enum value reused across multiple per-type fixtures and their
+// expected-tag assertions (S1192 — avoid duplicating this literal).
+const STATUS_ACTIVE = "ACTIVE";
+
 describe("getTooltipTags — does not throw for any GraphEntityType", () => {
   it.each(ALL_ENTITY_TYPES)(
     "does not throw for entity type %s",
@@ -50,177 +90,159 @@ describe("getTooltipTags — does not throw for any GraphEntityType", () => {
 
 describe("getTooltipTags — REQUIREMENT node", () => {
   it("returns priority, status, wave, and type tags", () => {
-    const data = {
-      entityType: "REQUIREMENT",
-      priority: "MUST",
-      status: "ACTIVE",
-      wave: 4,
-      type: "FUNCTIONAL",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts).toContain("MUST");
-    expect(texts).toContain("ACTIVE");
-    expect(texts).toContain("Wave 4");
-    expect(texts).toContain("FUNCTIONAL");
+    expectExactTags(
+      {
+        entityType: "REQUIREMENT",
+        priority: "MUST",
+        status: STATUS_ACTIVE,
+        wave: 4,
+        type: "FUNCTIONAL",
+      },
+      ["MUST", STATUS_ACTIVE, "Wave 4", "FUNCTIONAL"],
+    );
   });
 });
 
 describe("getTooltipTags — OPERATIONAL_ASSET node", () => {
   it("returns assetType, name, and knowledgeState tags", () => {
-    const data = {
-      entityType: "OPERATIONAL_ASSET",
-      assetType: "SERVICE",
-      assetName: "payments-api",
-      knowledgeState: "KNOWN",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t === "Asset Type: SERVICE")).toBe(true);
-    expect(texts.some((t) => t === "Name: payments-api")).toBe(true);
-    expect(texts.some((t) => t === "Knowledge: KNOWN")).toBe(true);
+    expectExactTags(
+      {
+        entityType: "OPERATIONAL_ASSET",
+        assetType: "SERVICE",
+        assetName: "payments-api",
+        knowledgeState: "KNOWN",
+      },
+      ["Asset Type: SERVICE", "Name: payments-api", "Knowledge: KNOWN"],
+    );
   });
 });
 
 describe("getTooltipTags — OBSERVATION node", () => {
   it("returns category, source, and confidence tags", () => {
-    const data = {
-      entityType: "OBSERVATION",
-      category: "MEASUREMENT",
-      source: "monitoring",
-      confidence: "HIGH",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t === "Category: MEASUREMENT")).toBe(true);
-    expect(texts.some((t) => t === "Source: monitoring")).toBe(true);
-    expect(texts.some((t) => t === "Confidence: HIGH")).toBe(true);
+    expectExactTags(
+      {
+        entityType: "OBSERVATION",
+        category: "MEASUREMENT",
+        source: "monitoring",
+        confidence: "HIGH",
+      },
+      ["Category: MEASUREMENT", "Source: monitoring", "Confidence: HIGH"],
+    );
   });
 });
 
 describe("getTooltipTags — RISK_SCENARIO node", () => {
   it("returns status, threat, and method tags", () => {
-    const data = {
-      entityType: "RISK_SCENARIO",
-      status: "ACTIVE",
-      threat: "external-attacker",
-      method: "credential-theft",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t === "Status: ACTIVE")).toBe(true);
-    expect(texts.some((t) => t === "Threat: external-attacker")).toBe(true);
-    expect(texts.some((t) => t === "Method: credential-theft")).toBe(true);
+    expectExactTags(
+      {
+        entityType: "RISK_SCENARIO",
+        status: STATUS_ACTIVE,
+        threat: "external-attacker",
+        method: "credential-theft",
+      },
+      [
+        "Status: ACTIVE",
+        "Threat: external-attacker",
+        "Method: credential-theft",
+      ],
+    );
   });
 });
 
 describe("getTooltipTags — RISK_REGISTER_RECORD node", () => {
   it("returns status, owner, and cadence tags", () => {
-    const data = {
-      entityType: "RISK_REGISTER_RECORD",
-      status: "OPEN",
-      owner: "risk-team",
-      reviewCadence: "QUARTERLY",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t === "Status: OPEN")).toBe(true);
-    expect(texts.some((t) => t === "Owner: risk-team")).toBe(true);
-    expect(texts.some((t) => t === "Cadence: QUARTERLY")).toBe(true);
+    expectExactTags(
+      {
+        entityType: "RISK_REGISTER_RECORD",
+        status: "OPEN",
+        owner: "risk-team",
+        reviewCadence: "QUARTERLY",
+      },
+      ["Status: OPEN", "Owner: risk-team", "Cadence: QUARTERLY"],
+    );
   });
 });
 
 describe("getTooltipTags — RISK_ASSESSMENT_RESULT node", () => {
   it("returns approval, confidence, and analyst tags", () => {
-    const data = {
-      entityType: "RISK_ASSESSMENT_RESULT",
-      approvalState: "APPROVED",
-      confidence: "HIGH",
-      analystIdentity: "alice",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t === "Approval: APPROVED")).toBe(true);
-    expect(texts.some((t) => t === "Confidence: HIGH")).toBe(true);
-    expect(texts.some((t) => t === "Analyst: alice")).toBe(true);
+    expectExactTags(
+      {
+        entityType: "RISK_ASSESSMENT_RESULT",
+        approvalState: "APPROVED",
+        confidence: "HIGH",
+        analystIdentity: "alice",
+      },
+      ["Approval: APPROVED", "Confidence: HIGH", "Analyst: alice"],
+    );
   });
 });
 
 describe("getTooltipTags — TREATMENT_PLAN node", () => {
   it("returns strategy, status, and owner tags", () => {
-    const data = {
-      entityType: "TREATMENT_PLAN",
-      strategy: "MITIGATE",
-      status: "IN_PROGRESS",
-      owner: "platform-team",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t === "Strategy: MITIGATE")).toBe(true);
-    expect(texts.some((t) => t === "Status: IN_PROGRESS")).toBe(true);
-    expect(texts.some((t) => t === "Owner: platform-team")).toBe(true);
+    expectExactTags(
+      {
+        entityType: "TREATMENT_PLAN",
+        strategy: "MITIGATE",
+        status: "IN_PROGRESS",
+        owner: "platform-team",
+      },
+      ["Strategy: MITIGATE", "Status: IN_PROGRESS", "Owner: platform-team"],
+    );
   });
 });
 
 describe("getTooltipTags — METHODOLOGY_PROFILE node", () => {
   it("returns family, version, and status tags", () => {
-    const data = {
-      entityType: "METHODOLOGY_PROFILE",
-      family: "NIST",
-      version: "1.2.3",
-      status: "ACTIVE",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t === "Family: NIST")).toBe(true);
-    expect(texts.some((t) => t === "Version: 1.2.3")).toBe(true);
-    expect(texts.some((t) => t === "Status: ACTIVE")).toBe(true);
+    expectExactTags(
+      {
+        entityType: "METHODOLOGY_PROFILE",
+        family: "NIST",
+        version: "1.2.3",
+        status: STATUS_ACTIVE,
+      },
+      ["Family: NIST", "Version: 1.2.3", "Status: ACTIVE"],
+    );
   });
 });
 
 describe("getTooltipTags — FINDING node with representative properties", () => {
   it("returns severity, findingType, and status tags", () => {
-    const data = {
-      entityType: "FINDING",
-      severity: "HIGH",
-      findingType: "GAP",
-      status: "OPEN",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t.includes("HIGH"))).toBe(true);
-    expect(texts.some((t) => t.includes("GAP"))).toBe(true);
-    expect(texts.some((t) => t.includes("OPEN"))).toBe(true);
+    expectTagsIncluding(
+      {
+        entityType: "FINDING",
+        severity: "HIGH",
+        findingType: "GAP",
+        status: "OPEN",
+      },
+      ["HIGH", "GAP", "OPEN"],
+    );
   });
 });
 
 describe("getTooltipTags — DOCUMENT node with representative properties", () => {
   it("returns version and createdBy tags", () => {
-    const data = {
-      entityType: "DOCUMENT",
-      version: "1.0.0",
-      createdBy: "alice",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t.includes("1.0.0"))).toBe(true);
-    expect(texts.some((t) => t.includes("alice"))).toBe(true);
+    expectTagsIncluding(
+      {
+        entityType: "DOCUMENT",
+        version: "1.0.0",
+        createdBy: "alice",
+      },
+      ["1.0.0", "alice"],
+    );
   });
 });
 
 describe("getTooltipTags — CONTROL node with representative properties", () => {
   it("returns status, owner, and category tags", () => {
-    const data = {
-      entityType: "CONTROL",
-      status: "ACTIVE",
-      owner: "security-team",
-      category: "TECHNICAL",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t.includes("ACTIVE"))).toBe(true);
-    expect(texts.some((t) => t.includes("security-team"))).toBe(true);
-    expect(texts.some((t) => t.includes("TECHNICAL"))).toBe(true);
+    expectTagsIncluding(
+      {
+        entityType: "CONTROL",
+        status: STATUS_ACTIVE,
+        owner: "security-team",
+        category: "TECHNICAL",
+      },
+      [STATUS_ACTIVE, "security-team", "TECHNICAL"],
+    );
   });
 });
 
@@ -234,109 +256,97 @@ describe("getTooltipTags — unknown/bogus entity type", () => {
 
 describe("getTooltipTags — CONTROL_TEST node", () => {
   it("returns methodology, conclusion, and testerIdentity tags", () => {
-    const data = {
-      entityType: "CONTROL_TEST",
-      methodology: "MANUAL",
-      conclusion: "PASSED",
-      testerIdentity: "bob",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t.includes("MANUAL"))).toBe(true);
-    expect(texts.some((t) => t.includes("PASSED"))).toBe(true);
-    expect(texts.some((t) => t.includes("bob"))).toBe(true);
+    expectTagsIncluding(
+      {
+        entityType: "CONTROL_TEST",
+        methodology: "MANUAL",
+        conclusion: "PASSED",
+        testerIdentity: "bob",
+      },
+      ["MANUAL", "PASSED", "bob"],
+    );
   });
 });
 
 describe("getTooltipTags — VERIFICATION_RESULT node", () => {
   it("returns prover, result, and assuranceLevel tags", () => {
-    const data = {
-      entityType: "VERIFICATION_RESULT",
-      prover: "openJML",
-      result: "VERIFIED",
-      assuranceLevel: "HIGH",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t.includes("openJML"))).toBe(true);
-    expect(texts.some((t) => t.includes("VERIFIED"))).toBe(true);
-    expect(texts.some((t) => t.includes("HIGH"))).toBe(true);
+    expectTagsIncluding(
+      {
+        entityType: "VERIFICATION_RESULT",
+        prover: "openJML",
+        result: "VERIFIED",
+        assuranceLevel: "HIGH",
+      },
+      ["openJML", "VERIFIED", "HIGH"],
+    );
   });
 });
 
 describe("getTooltipTags — EVIDENCE_ARTIFACT node", () => {
   it("returns evidenceType, assuranceLevel, and derivedBy tags", () => {
-    const data = {
-      entityType: "EVIDENCE_ARTIFACT",
-      evidenceType: "LOG_EXPORT",
-      assuranceLevel: "MEDIUM",
-      derivedBy: "carol",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t.includes("LOG_EXPORT"))).toBe(true);
-    expect(texts.some((t) => t.includes("MEDIUM"))).toBe(true);
-    expect(texts.some((t) => t.includes("carol"))).toBe(true);
+    expectTagsIncluding(
+      {
+        entityType: "EVIDENCE_ARTIFACT",
+        evidenceType: "LOG_EXPORT",
+        assuranceLevel: "MEDIUM",
+        derivedBy: "carol",
+      },
+      ["LOG_EXPORT", "MEDIUM", "carol"],
+    );
   });
 });
 
 describe("getTooltipTags — AUDIT node", () => {
   it("returns auditType, status, and createdBy tags", () => {
-    const data = {
-      entityType: "AUDIT",
-      auditType: "INTERNAL",
-      status: "IN_PROGRESS",
-      createdBy: "dave",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t.includes("INTERNAL"))).toBe(true);
-    expect(texts.some((t) => t.includes("IN_PROGRESS"))).toBe(true);
-    expect(texts.some((t) => t.includes("dave"))).toBe(true);
+    expectTagsIncluding(
+      {
+        entityType: "AUDIT",
+        auditType: "INTERNAL",
+        status: "IN_PROGRESS",
+        createdBy: "dave",
+      },
+      ["INTERNAL", "IN_PROGRESS", "dave"],
+    );
   });
 });
 
 describe("getTooltipTags — THREAT_MODEL node", () => {
   it("returns status, threatSource, and stride tags", () => {
-    const data = {
-      entityType: "THREAT_MODEL",
-      status: "ACTIVE",
-      threatSource: "external-attacker",
-      stride: "SPOOFING",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t.includes("ACTIVE"))).toBe(true);
-    expect(texts.some((t) => t.includes("external-attacker"))).toBe(true);
-    expect(texts.some((t) => t.includes("SPOOFING"))).toBe(true);
+    expectTagsIncluding(
+      {
+        entityType: "THREAT_MODEL",
+        status: STATUS_ACTIVE,
+        threatSource: "external-attacker",
+        stride: "SPOOFING",
+      },
+      [STATUS_ACTIVE, "external-attacker", "SPOOFING"],
+    );
   });
 });
 
 describe("getTooltipTags — RISK_CONTROL_MAPPING node", () => {
   it("returns controlRole and mappingObjective tags", () => {
-    const data = {
-      entityType: "RISK_CONTROL_MAPPING",
-      controlRole: "PREVENTIVE",
-      mappingObjective: "Reduce likelihood",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t.includes("PREVENTIVE"))).toBe(true);
-    expect(texts.some((t) => t.includes("Reduce likelihood"))).toBe(true);
+    expectTagsIncluding(
+      {
+        entityType: "RISK_CONTROL_MAPPING",
+        controlRole: "PREVENTIVE",
+        mappingObjective: "Reduce likelihood",
+      },
+      ["PREVENTIVE", "Reduce likelihood"],
+    );
   });
 });
 
 describe("getTooltipTags — SCOPED_CONTROL_IMPLEMENTATION node", () => {
   it("returns name and controlUid tags", () => {
-    const data = {
-      entityType: "SCOPED_CONTROL_IMPLEMENTATION",
-      name: "Web App Firewall",
-      controlUid: "GC-C001",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t.includes("Web App Firewall"))).toBe(true);
-    expect(texts.some((t) => t.includes("GC-C001"))).toBe(true);
+    expectTagsIncluding(
+      {
+        entityType: "SCOPED_CONTROL_IMPLEMENTATION",
+        name: "Web App Firewall",
+        controlUid: "GC-C001",
+      },
+      ["Web App Firewall", "GC-C001"],
+    );
   });
 });
 
@@ -345,18 +355,18 @@ describe("getTooltipTags — CONTROL_EFFECTIVENESS_ASSESSMENT node", () => {
     // Use non-overlapping values so each assertion is unambiguously tied to
     // its mapped field; previously both fields included the substring
     // "EFFECTIVE" so the design-effectiveness mapping could regress silently.
-    const data = {
-      entityType: "CONTROL_EFFECTIVENESS_ASSESSMENT",
-      designEffectiveness: "FULLY_EFFECTIVE",
-      operatingEffectiveness: "PARTIALLY_EFFECTIVE",
-      assessor: "eve",
-    };
-    const tags = getTooltipTags(data);
-    const texts = tags.map((t) => t.text);
-    expect(texts.some((t) => t === "Design: FULLY_EFFECTIVE")).toBe(true);
-    expect(texts.some((t) => t === "Operating: PARTIALLY_EFFECTIVE")).toBe(
-      true,
+    expectExactTags(
+      {
+        entityType: "CONTROL_EFFECTIVENESS_ASSESSMENT",
+        designEffectiveness: "FULLY_EFFECTIVE",
+        operatingEffectiveness: "PARTIALLY_EFFECTIVE",
+        assessor: "eve",
+      },
+      [
+        "Design: FULLY_EFFECTIVE",
+        "Operating: PARTIALLY_EFFECTIVE",
+        "Assessor: eve",
+      ],
     );
-    expect(texts.some((t) => t === "Assessor: eve")).toBe(true);
   });
 });

@@ -37,7 +37,7 @@ Keep these concepts separate:
 - Classification vocabulary: `domain/assets/state/AssetType`. It already covers
   the current top-level kinds exposed by the asset API and MCP surface. Do not
   add subtype-specific values to this enum merely to avoid modeling subtypes.
-- Asset metadata from GC-M012: owner, steward, environment, criticality,
+- Asset metadata from GC-M012: owner, `steward`, environment, criticality,
   business context, and scope designation already live on `OperationalAsset` and
   list filtering already uses
   `OperationalAssetRepository.findByProjectIdAndArchivedAtIsNullAndFilters`.

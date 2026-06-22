@@ -47,6 +47,7 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "",
     "# Optional fields:",
     "# github_repo: owner/repo",
+    "# short_code: GC  # Optional: short project code for tmux session renaming (1-8 uppercase alphanumeric)",
     "# workflow:",
     "#   test_command: <how to run tests>",
     "#   completion_command: <how to run the full CI gate>",
@@ -63,9 +64,20 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#             feat, fix, chore, docs, refactor, test, ci, build, perf, revert]",
     "#     subject_pattern: \"^[a-z].*$\"",
     "#     require_scope: false",
+    "#   # Optional dev-start plan gate. Disabled unless a repo opts in.",
+    "#   dev_start_gate:",
+    "#     enabled: false",
+    "#     required_for: source-bearing",
+    "#     plan_section: Dev-Start Gate",
+    "#     blocker_uids: []",
+    "#     required_fields:",
+    "#       - Requirement wave or gate",
+    "#       - Boundary owner",
+    "#       - Contract or seam",
     "# sonarcloud:",
     "#   project_key: <sonar-project-key>",
     "#   organization: <sonar-org>",
+    "#   quality_gate: <sonar-quality-gate-name>  # optional; SonarCloud association is server-side",
     "# rules:",
     "#   plan_rules: .gc/plan-rules.md",
     "# knowledge:",
@@ -319,6 +331,7 @@ export const OBSERVATION_CATEGORIES = [
 export const RISK_SCENARIO_STATUSES = ["DRAFT", "ACTIVE", "ARCHIVED"];
 export const METHODOLOGY_FAMILIES = ["FAIR", "NIST_SP800_30_R1", "ISO_27005", "CUSTOM"];
 export const METHODOLOGY_PROFILE_STATUSES = ["ACTIVE", "DEPRECATED"];
+export const RISK_APPETITE_PROFILE_STATUSES = ["DRAFT", "ACTIVE", "RETIRED"];
 export const RISK_REGISTER_STATUSES = [
   "IDENTIFIED",
   "ANALYZING",
@@ -432,7 +445,7 @@ export function reqArg(args, key, action) {
 // Field name mapping (snake_case MCP <-> camelCase API)
 // ---------------------------------------------------------------------------
 
-const TO_CAMEL = {
+export const TO_CAMEL = {
   requirement_type: "requirementType",
   artifact_type: "artifactType",
   artifact_identifier: "artifactIdentifier",
@@ -702,6 +715,13 @@ const TO_CAMEL = {
   input_schema: "inputSchema",
   output_schema: "outputSchema",
   crosswalk_entries: "crosswalkEntries",
+  // risk_appetite_profile fields (GC-T005)
+  appetite_key: "appetiteKey",
+  methodology_family: "methodologyFamily",
+  appetite_statement: "appetiteStatement",
+  tolerance_thresholds: "toleranceThresholds",
+  effective_from: "effectiveFrom",
+  effective_to: "effectiveTo",
   review_cadence: "reviewCadence",
   next_review_at: "nextReviewAt",
   category_tags: "categoryTags",
@@ -723,6 +743,7 @@ const TO_CAMEL = {
   supporting_test_ids: "supportingTestIds",
   implementation_scope: "implementationScope",
   methodology_factors: "methodologyFactors",
+  methodology_influence: "methodologyInfluence",
   analyst_identity: "analystIdentity",
   input_factors: "inputFactors",
   observation_date: "observationDate",
@@ -775,6 +796,12 @@ const TO_CAMEL = {
   draft_requirements_scanned: "draftRequirementsScanned",
   minimum_confidence: "minimumConfidence",
   strongest_signal: "strongestSignal",
+  // #1106 — methodology profile treatment strategy vocabulary. The camelCase
+  // form is already in OPAQUE_VALUE_KEYS; the snake_case form needs an explicit
+  // entry here so toCamelCase sees it and OPAQUE_VALUE_KEYS guards both forms.
+  treatment_strategy_vocabulary: "treatmentStrategyVocabulary",
+  // #1106 — verification result. evidence is a Map<String,Object> (opaque).
+  // OPAQUE_VALUE_KEYS already has no entry for it — add both forms.
   // GC-U001 / ADR-047 — Audit entity. snake_case MCP args → camelCase backend
   // DTO fields. Missing entries would cause Jackson to silently drop the fields.
   audit_id: "auditId",
@@ -799,14 +826,15 @@ const TO_SNAKE = Object.fromEntries(Object.entries(TO_CAMEL).map(([k, v]) => [v,
 // Example: `metadata: { cloud_account_id: "123" }` must be persisted with the
 // inner key `cloud_account_id`, not `cloudAccountId`. See codex pre-push
 // review on #722.
-const OPAQUE_VALUE_KEYS = new Set([
+export const OPAQUE_VALUE_KEYS = new Set([
   "metadata",
   "schemaBody",
   "schema_body",
   // GC-T014: NIST SP 800-30 Rev. 1 methodology-defined value bags. inputFactors
   // / computedOutputs / uncertaintyMetadata persist NIST profile-defined keys
-  // (threat_source_relevance, likelihood_initiation, likelihood_adverse_impact,
-  // likelihood_overall, impact_level, ...) that must reach the caller verbatim.
+  // (threat_event_relevance, legacy threat_source_relevance,
+  // likelihood_initiation, likelihood_adverse_impact, likelihood_overall,
+  // impact_level, ...) that must reach the caller verbatim.
   // inputSchema / outputSchema carry the methodology JSON Schema bodies whose
   // properties keys are likewise methodology-defined (see preflight note
   // architecture/notes/nist-sp800-30-risk-assessment-preflight.md).
@@ -822,6 +850,26 @@ const OPAQUE_VALUE_KEYS = new Set([
   "output_schema",
   "treatmentStrategyVocabulary",
   "treatment_strategy_vocabulary",
+  // #1106 — ControlRequest/UpdateControlRequest: methodologyFactors and
+  // effectiveness are Map<String,Object> bags whose inner keys are
+  // methodology-defined and must not be camel-cased.
+  "methodologyFactors",
+  "methodology_factors",
+  "effectiveness",
+  // #1106 — RiskRegisterRecordRequest.decisionMetadata is Map<String,Object>.
+  "decisionMetadata",
+  "decision_metadata",
+  // GC-I017 — RiskControlMapping.methodologyInfluence is a Map<String,Object>
+  // whose inner keys are methodology-defined (FAIR-CAM domain, effect dimensions,
+  // and any profile-defined influence factors). These must not be camel/snake-rewritten.
+  "methodologyInfluence",
+  "methodology_influence",
+  // NOTE: VerificationResultRequest.evidence is also a Map<String,Object>, but
+  // "evidence" is also used as a structured array field in analysis responses
+  // (toSnakeCase path). OPAQUE_VALUE_KEYS is consulted by both directions, so
+  // adding "evidence" here would block toSnakeCase from recursing into response
+  // evidence arrays. Instead, createVerificationResult/updateVerificationResult
+  // build the camelCase body explicitly (rawBody) to preserve evidence inner keys.
 ]);
 
 function copyShallow(value) {
@@ -923,7 +971,11 @@ function requiresAdminRole(path) {
     || path.startsWith("/api/v1/pack-install-records")
     || path.startsWith("/api/v1/admin/")
     || path.startsWith("/api/v1/embeddings")
-    || path.startsWith("/api/v1/analysis/sweep");
+    || path.startsWith("/api/v1/analysis/sweep")
+    // The MCP tool-usage aggregate read is admin-only (cross-project operational
+    // telemetry). Exact match so the capture write (/api/v1/mcp-tool-usage/events),
+    // which any authenticated session must reach, keeps the ordinary API token.
+    || path === "/api/v1/mcp-tool-usage";
 }
 
 // Forwards a bearer token on `/api/v1/**` requests so the MCP server can talk
@@ -961,7 +1013,7 @@ export function addAuthorizationHeader(path, headers) {
   }
 }
 
-async function request(method, path, { body, params, formData } = {}) {
+async function request(method, path, { body, rawBody, params, formData } = {}) {
   const url = buildUrl(path, params);
   const options = { method };
 
@@ -969,6 +1021,11 @@ async function request(method, path, { body, params, formData } = {}) {
     options.headers = { "X-Actor": "mcp-server" };
     options.body = formData;
     // Let fetch set Content-Type with boundary for multipart
+  } else if (rawBody !== undefined) {
+    // Pre-built camelCase object — skip toCamelCase() (used when the body
+    // contains opaque-map fields whose inner keys must not be transformed).
+    options.headers = { "Content-Type": "application/json", "X-Actor": "mcp-server" };
+    options.body = JSON.stringify(rawBody);
   } else if (body !== undefined) {
     options.headers = { "Content-Type": "application/json", "X-Actor": "mcp-server" };
     options.body = JSON.stringify(toCamelCase(body));
@@ -1050,6 +1107,27 @@ export async function getRequirement(id) {
 export async function listRequirements({ status, type, priority, wave, search, page, size, sort, project } = {}) {
   return request("GET", "/api/v1/requirements", {
     params: { status, type, priority, wave, search, page, size, sort, project },
+  });
+}
+
+/**
+ * GET /api/v1/requirements/matrix — read-only Traceability Matrix view per
+ * GC-Q003. Returns a paged list of rows, each pairing a requirement with its
+ * traceability links. When linkType is set the server returns only links of
+ * that type; requirements with no matching link still appear with an empty
+ * links array.
+ *
+ * @param {object} params
+ * @param {string} [params.project] - project identifier or UUID
+ * @param {string} [params.status] - filter by requirement status (Status enum)
+ * @param {number} [params.wave] - filter by wave number
+ * @param {string} [params.linkType] - return only links of this type (LinkType enum)
+ * @param {number} [params.page] - zero-based page index
+ * @param {number} [params.size] - page size
+ */
+export async function getTraceabilityMatrix({ project, status, wave, linkType, page, size } = {}) {
+  return request("GET", "/api/v1/requirements/matrix", {
+    params: { project, status, wave, linkType, page, size },
   });
 }
 
@@ -1192,9 +1270,10 @@ export async function aggregateVendorRisk({
 
 // GC-T014 — NIST SP 800-30 Rev. 1 risk-assessment analysis helper. Returns
 // the methodology-attributed envelope from /api/v1/analysis/grc/nist-sp-800-30
-// verbatim; methodology-defined input/output map keys (threat_source_relevance,
-// likelihood_initiation, likelihood_adverse_impact, etc.) must NOT be
-// camel/snake-rewritten, so the relevant outer keys are guarded by
+// verbatim; methodology-defined input/output map keys (threat_event_relevance,
+// legacy threat_source_relevance, likelihood_initiation,
+// likelihood_adverse_impact, etc.) must NOT be camel/snake-rewritten, so the
+// relevant outer keys are guarded by
 // OPAQUE_VALUE_KEYS above.
 export async function analyzeNistAssessment({
   project,
@@ -1204,6 +1283,86 @@ export async function analyzeNistAssessment({
 } = {}) {
   return request("GET", "/api/v1/analysis/grc/nist-sp-800-30", {
     params: { project, asOf, riskAssessmentResultId, riskScenarioId },
+  });
+}
+
+// GC-T011 — Open FAIR quantitative risk analysis helper. Returns the
+// methodology-attributed envelope from /api/v1/analysis/grc/fair-quantitative
+// verbatim; FAIR factor map keys (threat_event_frequency, primary_loss_magnitude,
+// etc.) must NOT be camel/snake-rewritten, so the relevant outer keys are guarded
+// by OPAQUE_VALUE_KEYS above.
+export async function analyzeFairQuantitative({
+  project,
+  asOf,
+  riskAssessmentResultId,
+  riskScenarioId,
+} = {}) {
+  return request("GET", "/api/v1/analysis/grc/fair-quantitative", {
+    params: { project, asOf, riskAssessmentResultId, riskScenarioId },
+  });
+}
+
+// GC-T005 — risk appetite/tolerance evaluation. Compares residual risk metrics
+// from RiskAssessmentResult.computedOutputs against an appetite profile's
+// tolerance ceilings and flags breaches for escalation. Read-only; resolves the
+// profile by profileId or by appetiteKey active as of `asOf`.
+export async function analyzeRiskAppetiteEvaluation({
+  project,
+  asOf,
+  profileId,
+  appetiteKey,
+  riskRegisterRecordId,
+  riskScenarioId,
+} = {}) {
+  return request("GET", "/api/v1/analysis/grc/appetite-evaluation", {
+    params: { project, asOf, profileId, appetiteKey, riskRegisterRecordId, riskScenarioId },
+  });
+}
+
+// GC-I004 — continuous compliance monitoring. Composes evidence freshness,
+// control modification timestamps, and reassessmentRequiredAt signals.
+export async function analyzeComplianceMonitoring({
+  project,
+  asOf,
+  freshnessWindowDays,
+} = {}) {
+  return request("GET", "/api/v1/analysis/grc/compliance-monitoring", {
+    params: { project, asOf, freshnessWindowDays },
+  });
+}
+
+// GC-I017 — FAIR-CAM control analytics. Derives control-level domain
+// attribution (loss_event_control / variance_management_control /
+// decision_support_control), capability, coverage, operational performance,
+// and effect-dimension entries from RiskControlMapping,
+// ControlEffectivenessAssessment, and ControlTest rows. Domain/effect
+// attribution is per-mapping; the scope filters (including methodologyProfileId)
+// compose as an intersection over the candidate mappings.
+export async function analyzeFairCamControlAnalytics({
+  project,
+  asOf,
+  freshnessWindowDays,
+  controlId,
+  scopedImplementationId,
+  riskScenarioId,
+  riskRegisterRecordId,
+  threatModelId,
+  methodologyProfileId,
+  domain,
+} = {}) {
+  return request("GET", "/api/v1/analysis/grc/fair-cam-control-analytics", {
+    params: {
+      project,
+      asOf,
+      freshnessWindowDays,
+      controlId,
+      scopedImplementationId,
+      riskScenarioId,
+      riskRegisterRecordId,
+      threatModelId,
+      methodologyProfileId,
+      domain,
+    },
   });
 }
 
@@ -1447,8 +1606,9 @@ export async function syncGithubPrs(owner, repo) {
 // History functions
 // ---------------------------------------------------------------------------
 
-export async function getRequirementHistory(id) {
-  return request("GET", `/api/v1/requirements/${encodeURIComponent(id)}/history`);
+export async function getRequirementHistory(id, expand) {
+  const qs = expand ? "?expand=true" : "";
+  return request("GET", `/api/v1/requirements/${encodeURIComponent(id)}/history${qs}`);
 }
 
 // Returns 404 if `relId` does not belong to `reqId` (i.e. the requirement is
@@ -1464,7 +1624,7 @@ export async function getTraceabilityLinkHistory(reqId, linkId) {
   return request("GET", `/api/v1/requirements/${encodeURIComponent(reqId)}/traceability/${encodeURIComponent(linkId)}/history`);
 }
 
-export async function getRequirementTimeline(id, changeCategory, actor, from, to, limit, offset) {
+export async function getRequirementTimeline(id, changeCategory, actor, from, to, limit, offset, expand) {
   const params = new URLSearchParams();
   if (changeCategory) params.set("changeCategory", changeCategory);
   if (actor) params.set("actor", actor);
@@ -1472,6 +1632,7 @@ export async function getRequirementTimeline(id, changeCategory, actor, from, to
   if (to) params.set("to", to);
   if (limit != null) params.set("limit", String(limit));
   if (offset != null) params.set("offset", String(offset));
+  if (expand) params.set("expand", "true");
   const qs = params.toString();
   return request("GET", `/api/v1/requirements/${encodeURIComponent(id)}/timeline${qs ? `?${qs}` : ""}`);
 }
@@ -1664,12 +1825,18 @@ export function formatIssueBody(req, extraBody) {
   // round-trip "create issue from requirement → /implement → reconcile"
   // works without a manual body edit.
   //
+  // The requirement title arrives as `folder_title`: request() runs every
+  // response through toSnakeCase, which renames `title` → `folder_title`
+  // globally (the mapping exists for test-case folders but is not namespaced).
+  // Fall back to `title` for direct/hand-constructed callers.
+  //
   // The title is untrusted input — it can contain newlines, leading `- `
   // sequences, or markdown that would produce extra bullets and trick the
   // parser into picking up an unrelated UID. Collapse all whitespace runs
   // to a single space so the bullet is guaranteed to be a single line.
-  const sanitizedTitle = req.title
-    ? req.title.replace(/\s+/g, " ").trim()
+  const titleValue = req.folder_title ?? req.title;
+  const sanitizedTitle = titleValue
+    ? titleValue.replace(/\s+/g, " ").trim()
     : null;
   const requirementsLine = sanitizedTitle
     ? `- ${req.uid} — ${sanitizedTitle}`
@@ -1715,6 +1882,67 @@ export async function createGitHubIssue({ title, body, labels, repo }) {
   }
   const number = parseInt(match[1], 10);
   return { url, number };
+}
+
+// Orchestrate the gc_create_github_issue MCP tool: render a GitHub issue from a
+// Ground Control requirement and auto-link it back.
+//
+// The MCP handler used to forward {uid, project, repo, labels, extra_body}
+// straight into createGitHubIssue({title, body, labels, repo}), so title/body
+// destructured to `undefined` and the tool ran `gh issue create --title
+// undefined --body undefined` with no traceability link (issue #1162). This
+// function is the missing wiring: it reuses the existing helpers rather than
+// duplicating their logic, and keeps the privileged `gh` side effect inside the
+// MCP server boundary (ADR-027/ADR-031).
+export async function createGitHubIssueFromRequirement({ uid, project, repo, labels, extraBody }) {
+  if (typeof uid !== "string" || uid.trim() === "") {
+    throw new Error("createGitHubIssueFromRequirement: 'uid' is required");
+  }
+  // getRequirementByUid throws RequestError on 404, so a missing requirement
+  // aborts before any GitHub issue is created.
+  const req = await getRequirementByUid(uid, project);
+  if (!req || !req.id) {
+    throw new Error(`createGitHubIssueFromRequirement: requirement '${uid}' not found`);
+  }
+
+  // The issue title is a single line. The requirement title arrives as
+  // `folder_title` (toSnakeCase renames `title` → `folder_title` on responses);
+  // fall back to `title` for direct callers. Reuse formatIssueBody's
+  // whitespace-collapse rule so a multiline/markdown title cannot inject
+  // structure into the title (the body's `## Requirements` bullet is sanitized
+  // the same way).
+  const titleValue = req.folder_title ?? req.title;
+  const titleText = titleValue ? titleValue.replace(/\s+/g, " ").trim() : "";
+  const title = titleText ? `${req.uid} — ${titleText}` : req.uid;
+  const body = formatIssueBody(req, extraBody);
+
+  const { url, number } = await createGitHubIssue({ title, body, labels, repo });
+
+  // Auto-link the new issue back to the requirement. ACTIVE requirements are
+  // being implemented (IMPLEMENTS); everything else is being tracked/documented
+  // (DOCUMENTS, per #841). A GitHub issue link is never a TESTS link. Keep this
+  // as one explicit decision next to the orchestration so future DRAFT policy
+  // changes don't touch title/body rendering or GitHub posting.
+  const linkType = req.status === "ACTIVE" ? "IMPLEMENTS" : "DOCUMENTS";
+  const result = { url, number, requirement_uid: req.uid, link_type: linkType };
+
+  // Issue creation and link creation are two non-atomic side effects: the issue
+  // already exists by the time the link is attempted. The original defect was a
+  // *silent* success, so a link failure must stay visible (traceability_error)
+  // rather than be swallowed — and must not discard the created issue.
+  try {
+    result.traceability_link = await createTraceabilityLink(req.id, {
+      artifact_type: "GITHUB_ISSUE",
+      artifact_identifier: String(number),
+      link_type: linkType,
+      artifact_url: url,
+      artifact_title: title,
+    });
+  } catch (e) {
+    result.traceability_error = e?.message || String(e);
+  }
+
+  return result;
 }
 
 export async function createGitHubIssueViaApi(data, project) {
@@ -1828,7 +2056,126 @@ function emptyWorkflowConfig() {
     // Integration manager config (issue #989). All fields null means "use the
     // tool-layer defaults at call time".
     integration_manager: { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null },
+    // Dev-start plan gate. Disabled by default so existing repositories keep
+    // their current /implement flow until they opt in through repo config.
+    dev_start_gate: emptyDevStartGateConfig(),
   };
+}
+
+export const DEV_START_GATE_REQUIRED_FOR = Object.freeze(["source-bearing"]);
+export const DEFAULT_DEV_START_GATE_PLAN_SECTION = "Dev-Start Gate";
+export const DEFAULT_DEV_START_GATE_REQUIRED_FIELDS = Object.freeze([
+  "Requirement wave or gate",
+  "Boundary owner",
+  "Contract or seam",
+  "Tenant/principal/authz/audit/evidence/provenance context",
+  "Connectivity/offline behavior",
+  "Security relevance decision",
+  "Framework/control-family impact",
+  "Verification risk score",
+  "Verification plan",
+  "Supply chain/provenance impact",
+  "Sovereignty/FOCI impact",
+  "Quality-gate readiness",
+  "Dev-start gate satisfied",
+]);
+export const DEV_START_GATE_SECURITY_DECISIONS = Object.freeze([
+  "security-relevant",
+  "not security-relevant",
+  "no security baseline",
+]);
+
+function emptyDevStartGateConfig() {
+  return {
+    enabled: false,
+    required_for: "source-bearing",
+    plan_section: DEFAULT_DEV_START_GATE_PLAN_SECTION,
+    blocker_uids: [],
+    required_fields: [...DEFAULT_DEV_START_GATE_REQUIRED_FIELDS],
+  };
+}
+
+function validateStringList(raw, fieldName, { uid = false } = {}) {
+  const errors = [];
+  if (!Array.isArray(raw)) {
+    return { ok: false, errors: [`${fieldName} must be a list when set`] };
+  }
+  const seen = new Set();
+  const value = [];
+  raw.forEach((entry, i) => {
+    if (typeof entry !== "string" || entry.trim() === "") {
+      errors.push(`${fieldName}[${i}] must be a non-empty string`);
+      return;
+    }
+    const trimmed = entry.trim();
+    if (trimmed.includes("\n") || trimmed.includes("\r")) {
+      errors.push(`${fieldName}[${i}] must be a single-line string`);
+      return;
+    }
+    if (uid && !EXACT_REQUIREMENT_UID_RE.test(trimmed)) {
+      errors.push(`${fieldName}[${i}] must be a Ground Control UID matching ${EXACT_REQUIREMENT_UID_RE.source}`);
+      return;
+    }
+    if (seen.has(trimmed)) {
+      errors.push(`${fieldName}[${i}] duplicates '${trimmed}'`);
+      return;
+    }
+    seen.add(trimmed);
+    value.push(trimmed);
+  });
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value };
+}
+
+export function normalizeDevStartGateConfig(raw) {
+  const value = emptyDevStartGateConfig();
+  if (raw == null) {
+    return { ok: true, value };
+  }
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, errors: ["workflow.dev_start_gate must be a mapping when set"] };
+  }
+  const allowed = ["enabled", "required_for", "plan_section", "blocker_uids", "required_fields"];
+  const errors = [];
+  for (const key of Object.keys(raw)) {
+    if (!allowed.includes(key)) errors.push(`workflow.dev_start_gate has unknown key '${key}'`);
+  }
+  if (raw.enabled != null) {
+    if (typeof raw.enabled !== "boolean") {
+      errors.push("workflow.dev_start_gate.enabled must be a boolean when set");
+    } else {
+      value.enabled = raw.enabled;
+    }
+  }
+  if (raw.required_for != null) {
+    if (!DEV_START_GATE_REQUIRED_FOR.includes(raw.required_for)) {
+      errors.push(`workflow.dev_start_gate.required_for must be one of: ${DEV_START_GATE_REQUIRED_FOR.join(", ")}`);
+    } else {
+      value.required_for = raw.required_for;
+    }
+  }
+  if (raw.plan_section != null) {
+    if (typeof raw.plan_section !== "string" || raw.plan_section.trim() === "") {
+      errors.push("workflow.dev_start_gate.plan_section must be a non-empty string when set");
+    } else if (raw.plan_section.includes("\n") || raw.plan_section.includes("\r")) {
+      errors.push("workflow.dev_start_gate.plan_section must be a single-line string");
+    } else {
+      value.plan_section = raw.plan_section.trim();
+    }
+  }
+  if (raw.blocker_uids != null) {
+    const r = validateStringList(raw.blocker_uids, "workflow.dev_start_gate.blocker_uids", { uid: true });
+    if (!r.ok) errors.push(...r.errors);
+    else value.blocker_uids = r.value;
+  }
+  if (raw.required_fields != null) {
+    const r = validateStringList(raw.required_fields, "workflow.dev_start_gate.required_fields");
+    if (!r.ok) errors.push(...r.errors);
+    else if (r.value.length === 0) errors.push("workflow.dev_start_gate.required_fields must not be empty when set");
+    else value.required_fields = r.value;
+  }
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value };
 }
 
 // Normalize a workflow.pr_title block.  Allowed keys: types, subject_pattern,
@@ -2055,7 +2402,7 @@ function normalizeWorkflowConfig(raw) {
   // Scalar string-typed keys handled inline; nested-mapping keys delegated to
   // their own normalizers below.
   const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "base_branch"];
-  const allowedNested = ["codex_review", "test_quality_review", "pr_title", "integration_manager"];
+  const allowedNested = ["codex_review", "test_quality_review", "pr_title", "integration_manager", "dev_start_gate"];
   const allowed = [...allowedScalar, ...allowedNested];
   const value = emptyWorkflowConfig();
   const errors = [];
@@ -2091,6 +2438,9 @@ function normalizeWorkflowConfig(raw) {
   const integrationManagerResult = normalizeIntegrationManagerConfig(raw.integration_manager);
   if (!integrationManagerResult.ok) errors.push(...integrationManagerResult.errors);
   else value.integration_manager = integrationManagerResult.value;
+  const devStartGateResult = normalizeDevStartGateConfig(raw.dev_start_gate);
+  if (!devStartGateResult.ok) errors.push(...devStartGateResult.errors);
+  else value.dev_start_gate = devStartGateResult.value;
   if (errors.length) return { ok: false, errors };
   return { ok: true, value };
 }
@@ -2102,7 +2452,7 @@ function normalizeSonarcloudConfig(raw) {
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["sonarcloud must be a mapping, not a list or scalar"] };
   }
-  const allowed = ["project_key", "organization"];
+  const allowed = ["project_key", "organization", "quality_gate"];
   const errors = [];
   for (const key of Object.keys(raw)) {
     if (!allowed.includes(key)) {
@@ -2111,14 +2461,24 @@ function normalizeSonarcloudConfig(raw) {
   }
   const project_key = raw.project_key;
   const organization = raw.organization;
+  const quality_gate = raw.quality_gate;
   if (typeof project_key !== "string" || project_key.trim() === "") {
     errors.push("sonarcloud.project_key must be a non-empty string when sonarcloud is set");
   }
   if (typeof organization !== "string" || organization.trim() === "") {
     errors.push("sonarcloud.organization must be a non-empty string when sonarcloud is set");
   }
+  if (quality_gate != null) {
+    if (typeof quality_gate !== "string" || quality_gate.trim() === "") {
+      errors.push("sonarcloud.quality_gate must be a non-empty string when set");
+    }
+  }
   if (errors.length) return { ok: false, errors };
-  return { ok: true, value: { project_key, organization } };
+  const value = { project_key, organization };
+  if (quality_gate != null && typeof quality_gate === "string" && quality_gate.trim() !== "") {
+    value.quality_gate = quality_gate.trim();
+  }
+  return { ok: true, value };
 }
 
 function normalizeRulesConfig(raw) {
@@ -2668,6 +3028,7 @@ export function parseGroundControlYaml(yamlText) {
     "routing",
     "telemetry",
     "architecture",
+    "short_code",
   ];
   for (const key of Object.keys(parsed)) {
     if (!allowedTop.includes(key)) {
@@ -2697,6 +3058,20 @@ export function parseGroundControlYaml(yamlText) {
       errors.push("github_repo must be a non-empty string when set");
     } else {
       githubRepo = parsed.github_repo;
+    }
+  }
+
+  let shortCode = null;
+  if (parsed.short_code != null) {
+    if (
+      typeof parsed.short_code !== "string" ||
+      !/^[A-Z][A-Z0-9]{0,7}$/.test(parsed.short_code)
+    ) {
+      errors.push(
+        'short_code must match ^[A-Z][A-Z0-9]{0,7}$ (1-8 uppercase alphanumeric characters, e.g. "GC"), if provided',
+      );
+    } else {
+      shortCode = parsed.short_code;
     }
   }
 
@@ -2740,6 +3115,7 @@ export function parseGroundControlYaml(yamlText) {
     value: {
       project,
       github_repo: githubRepo,
+      short_code: shortCode,
       workflow: workflowResult.value,
       sonarcloud: sonarResult.value,
       rules: {
@@ -2914,6 +3290,7 @@ export async function getRepoGroundControlContext(repoPath) {
     status: "ok",
     project: parseResult.value.project,
     github_repo: parseResult.value.github_repo,
+    short_code: parseResult.value.short_code,
     workflow: parseResult.value.workflow,
     sonarcloud: parseResult.value.sonarcloud,
     rules: {
@@ -3509,6 +3886,29 @@ export async function runPostImplementationPlan({ repoPath, issueNumber, planBod
         next_action: "run_gc_codex_architecture_preflight_first",
       };
     }
+  }
+
+  const cfg = await getRepoGroundControlContext(repoRoot);
+  if (cfg.status !== "ok") {
+    return {
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      ok: false,
+      error: "ground_control_config_invalid",
+      message: "Cannot validate the implementation plan because .ground-control.yaml is missing or invalid.",
+      errors: cfg.errors || [],
+      next_action: "fix_ground_control_yaml_and_retry",
+    };
+  }
+  const devStartGate = validateDevStartPlanGate(planBody, cfg.workflow?.dev_start_gate);
+  if (!devStartGate.ok) {
+    return {
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      ok: false,
+      ...devStartGate,
+      next_action: "add_valid_dev_start_gate_to_plan_and_retry",
+    };
   }
 
   // Post the plan + the `plan` phase marker as a single combined comment so
@@ -4561,6 +4961,258 @@ export function buildPhaseMarker({ phase, issueNumber }) {
       "Posted by the MCP server to enforce ordering between workflow steps (issue #794 MVP-2). " +
       "Do not edit or delete — used by downstream tools to gate phase prerequisites.",
   ].join("\n");
+}
+
+function normalizeMarkdownHeadingText(lineText) {
+  return lineText.replace(/\s+#+\s*$/, "").trim().toLowerCase();
+}
+
+function extractMarkdownHeadingSection(body, sectionName) {
+  const target = sectionName.trim().toLowerCase();
+  const lines = body.split(/\r?\n/);
+  let start = -1;
+  let level = null;
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = lines[i].match(/^(#{1,6})\s+(.+?)\s*$/);
+    if (!m) continue;
+    if (normalizeMarkdownHeadingText(m[2]) === target) {
+      start = i;
+      level = m[1].length;
+      break;
+    }
+  }
+  if (start === -1) return null;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    const m = lines[i].match(/^(#{1,6})\s+(.+?)\s*$/);
+    if (m && m[1].length <= level) {
+      end = i;
+      break;
+    }
+  }
+  return lines.slice(start + 1, end).join("\n");
+}
+
+function normalizeDevStartFieldLabel(label) {
+  return label.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function parseDevStartGateFields(sectionBody) {
+  const fields = new Map();
+  const lines = sectionBody.split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (line === "") continue;
+    const match =
+      line.match(/^(?:[-*]\s*)?\*\*(.+?):\*\*\s*(.*)$/) ||
+      line.match(/^(?:[-*]\s*)?\*\*(.+?)\*\*\s*:\s*(.*)$/) ||
+      line.match(/^(?:[-*]\s*)?([^:]+):\s*(.*)$/);
+    if (!match) continue;
+    const label = match[1].replace(/\*\*/g, "").trim();
+    const value = match[2].trim();
+    const key = normalizeDevStartFieldLabel(label);
+    if (!fields.has(key)) fields.set(key, { label, value });
+  }
+  return fields;
+}
+
+function devStartFieldValue(fields, label) {
+  return fields.get(normalizeDevStartFieldLabel(label))?.value ?? null;
+}
+
+function isConcreteDevStartValue(value, { allowBareNotApplicable = false } = {}) {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (trimmed === "") return false;
+  const lower = trimmed.toLowerCase();
+  if (["tbd", "todo", "yes/no", "y/n", "unknown", "-", "_"].includes(lower)) return false;
+  if (!allowBareNotApplicable && /^(?:n\/a|na|none|not[- ]?applicable)$/i.test(trimmed)) return false;
+  if (/^<[^>]+>$/.test(trimmed) || /^\[[^\]]+\]$/.test(trimmed)) return false;
+  return true;
+}
+
+function parseDevStartRiskTotal(value) {
+  if (typeof value !== "string") return null;
+  const match = value.match(/\btotal\s*=\s*(\d+)\b/i);
+  if (!match) return null;
+  const total = Number.parseInt(match[1], 10);
+  if (!Number.isInteger(total)) return null;
+  return total;
+}
+
+function devStartGateFailure({ planSection, missing, invalid, sourceBearing = null }) {
+  const parts = [];
+  if (missing.length) parts.push(`missing or non-concrete field(s): ${missing.join(", ")}`);
+  if (invalid.length) parts.push(`invalid field(s): ${invalid.join(", ")}`);
+  return {
+    ok: false,
+    checked: true,
+    error: "dev_start_gate_invalid",
+    message: `Plan is missing a valid ## ${planSection} section: ${parts.join("; ")}`,
+    plan_section: planSection,
+    source_bearing: sourceBearing,
+    missing,
+    invalid,
+  };
+}
+
+function devStartGateConfigFailure(errors) {
+  return {
+    ok: false,
+    checked: false,
+    error: "dev_start_gate_config_invalid",
+    message: errors.join("; "),
+    missing: [],
+    invalid: errors,
+  };
+}
+
+function devStartGateSuccess({ sourceBearing, planSection, riskTotal = null }) {
+  const result = {
+    ok: true,
+    checked: true,
+    source_bearing: sourceBearing,
+    plan_section: planSection,
+  };
+  if (riskTotal != null) result.risk_score_total = riskTotal;
+  return result;
+}
+
+function readDevStartPlanFields(planBody, config) {
+  if (typeof planBody !== "string" || planBody.trim() === "") {
+    return devStartGateFailure({
+      planSection: config.plan_section,
+      missing: ["plan body"],
+      invalid: [],
+    });
+  }
+  const sectionBody = extractMarkdownHeadingSection(planBody, config.plan_section);
+  if (sectionBody == null) {
+    return devStartGateFailure({
+      planSection: config.plan_section,
+      missing: [`## ${config.plan_section}`],
+      invalid: [],
+    });
+  }
+  return { ok: true, fields: parseDevStartGateFields(sectionBody) };
+}
+
+function readSourceBearingDecision(fields) {
+  const missing = [];
+  const invalid = [];
+  const sourceRaw = devStartFieldValue(fields, "Source-bearing");
+  if (!isConcreteDevStartValue(sourceRaw)) missing.push("Source-bearing");
+  const source = typeof sourceRaw === "string" ? sourceRaw.trim().toLowerCase() : null;
+  if (source && !["yes", "no"].includes(source)) invalid.push("Source-bearing must be 'yes' or 'no'");
+  return {
+    ok: missing.length === 0 && invalid.length === 0,
+    sourceBearing: source === "yes",
+    missing,
+    invalid,
+  };
+}
+
+function validateNonSourceDevStartGate(fields, config) {
+  const rationale =
+    devStartFieldValue(fields, "Non-source rationale") ??
+    devStartFieldValue(fields, "Source-bearing rationale");
+  if (isConcreteDevStartValue(rationale)) {
+    return devStartGateSuccess({ sourceBearing: false, planSection: config.plan_section });
+  }
+  return devStartGateFailure({
+    planSection: config.plan_section,
+    missing: ["Non-source rationale"],
+    invalid: [],
+    sourceBearing: false,
+  });
+}
+
+function missingDevStartRequiredFields(fields, requiredFields) {
+  return requiredFields.filter((field) => !isConcreteDevStartValue(devStartFieldValue(fields, field)));
+}
+
+function invalidDevStartSecurityDecision(fields) {
+  const securityDecision = devStartFieldValue(fields, "Security relevance decision");
+  if (!isConcreteDevStartValue(securityDecision)) return null;
+  if (DEV_START_GATE_SECURITY_DECISIONS.includes(securityDecision.trim().toLowerCase())) return null;
+  return `Security relevance decision must be one of: ${DEV_START_GATE_SECURITY_DECISIONS.join(", ")}`;
+}
+
+function readDevStartRiskTotal(fields) {
+  const riskScore = devStartFieldValue(fields, "Verification risk score");
+  if (!isConcreteDevStartValue(riskScore)) return { riskTotal: null, invalid: null };
+  const riskTotal = parseDevStartRiskTotal(riskScore);
+  if (riskTotal == null || riskTotal < 0 || riskTotal > 6) {
+    return {
+      riskTotal: null,
+      invalid: "Verification risk score must include total=<0..6>",
+    };
+  }
+  return { riskTotal, invalid: null };
+}
+
+function collectDevStartBlockerFailures(fields, blockerUids) {
+  const missing = [];
+  const invalid = [];
+  for (const uid of blockerUids) {
+    const label = `${uid} applicability`;
+    const value = devStartFieldValue(fields, label);
+    if (!isConcreteDevStartValue(value, { allowBareNotApplicable: true })) {
+      missing.push(label);
+      continue;
+    }
+    if (!/^(?:applies|not[- ]applicable|not applicable)\b/i.test(value.trim())) {
+      invalid.push(`${label} must start with applies, not-applicable, or not applicable`);
+    }
+  }
+  return { missing, invalid };
+}
+
+function validateSourceDevStartGate(fields, config) {
+  const missing = missingDevStartRequiredFields(fields, config.required_fields);
+  const invalid = [];
+  const securityError = invalidDevStartSecurityDecision(fields);
+  if (securityError) invalid.push(securityError);
+  const { riskTotal, invalid: riskError } = readDevStartRiskTotal(fields);
+  if (riskError) invalid.push(riskError);
+  if (riskTotal != null && riskTotal >= 4) {
+    const highRiskEvidence = devStartFieldValue(fields, "High-risk verification evidence");
+    if (!isConcreteDevStartValue(highRiskEvidence)) missing.push("High-risk verification evidence");
+  }
+  const blockerFailures = collectDevStartBlockerFailures(fields, config.blocker_uids);
+  missing.push(...blockerFailures.missing);
+  invalid.push(...blockerFailures.invalid);
+
+  if (missing.length || invalid.length) {
+    return devStartGateFailure({
+      planSection: config.plan_section,
+      missing,
+      invalid,
+      sourceBearing: true,
+    });
+  }
+  return devStartGateSuccess({ sourceBearing: true, planSection: config.plan_section, riskTotal });
+}
+
+export function validateDevStartPlanGate(planBody, gateConfig) {
+  const normalized = normalizeDevStartGateConfig(gateConfig);
+  if (!normalized.ok) return devStartGateConfigFailure(normalized.errors);
+  const config = normalized.value;
+  if (config.enabled !== true) return { ok: true, checked: false, source_bearing: null };
+
+  const planFields = readDevStartPlanFields(planBody, config);
+  if (!planFields.ok) return planFields;
+
+  const sourceDecision = readSourceBearingDecision(planFields.fields);
+  if (!sourceDecision.ok) {
+    return devStartGateFailure({
+      planSection: config.plan_section,
+      missing: sourceDecision.missing,
+      invalid: sourceDecision.invalid,
+    });
+  }
+  if (!sourceDecision.sourceBearing) return validateNonSourceDevStartGate(planFields.fields, config);
+  return validateSourceDevStartGate(planFields.fields, config);
 }
 
 // Maximum bytes of diff text to inline into a codex review prompt. Beyond
@@ -9116,6 +9768,81 @@ export async function supersedeEvidenceArtifact(id, data, project) {
   });
 }
 
+/**
+ * GET /api/v1/evidence-state/workspace — read-only workspace composition per
+ * GC-Q012. Returns scoped evidence artifacts, observations, freshness counts,
+ * provenance source refs, affected assets, controls, assessments, and findings.
+ *
+ * @param {object} params
+ * @param {string} [params.project] - project identifier or UUID
+ * @param {string} [params.assetId] - filter evidence to this asset UUID
+ * @param {string} [params.controlId] - filter evidence to this control UUID
+ * @param {string} [params.asOf] - ISO-8601 instant for freshness reference
+ * @param {number} [params.freshnessWindowDays] - freshness window in days (default 90)
+ * @param {boolean} [params.includeSuperseded] - include superseded artifacts
+ */
+export async function getEvidenceStateWorkspace({
+  project,
+  assetId,
+  controlId,
+  asOf,
+  freshnessWindowDays,
+  includeSuperseded,
+} = {}) {
+  const params = {};
+  if (project != null) params.project = project;
+  if (assetId != null) params.assetId = assetId;
+  if (controlId != null) params.controlId = controlId;
+  if (asOf != null) params.asOf = asOf;
+  if (freshnessWindowDays != null) params.freshnessWindowDays = String(freshnessWindowDays);
+  if (includeSuperseded != null) params.includeSuperseded = String(includeSuperseded);
+  return request("GET", "/api/v1/evidence-state/workspace", { params });
+}
+
+// ---------------------------------------------------------------------------
+// Derivation API functions (GC-GRC-001)
+// ---------------------------------------------------------------------------
+
+export const DERIVATION_SCOPE_MODES = ["FULL_REPO", "DIFF", "PATH_SET"];
+export const SYSTEM_MODEL_FACT_KINDS = [
+  "COMPONENT",
+  "TRUST_BOUNDARY",
+  "DATA_FLOW",
+  "ENTRY_POINT",
+  "TAINT_PATH",
+  "SECRET_USAGE",
+  "EXTERNAL_INTERACTION",
+  "DATA_CLASSIFICATION_HINT",
+];
+export const CAPTURE_LIMIT_REASONS = [
+  "UNSUPPORTED_LANGUAGE",
+  "UNSUPPORTED_SURFACE",
+  "DISABLED_ADAPTER",
+  "TOOL_UNAVAILABLE",
+  "SCOPE_UNSUPPORTED",
+  "TOOL_EXECUTION_FAILED",
+];
+
+export async function runDerivation(data, project) {
+  return request("POST", "/api/v1/derivations/runs", { body: data, params: { project } });
+}
+
+export async function listDerivationRuns({ project } = {}) {
+  return request("GET", "/api/v1/derivations/runs", { params: { project } });
+}
+
+export async function getDerivationRun(id, project) {
+  return request("GET", `/api/v1/derivations/runs/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function listDerivationFacts({ project, runId, factKind } = {}) {
+  return request("GET", "/api/v1/derivations/facts", { params: { project, runId, factKind } });
+}
+
+export async function listDerivationCaptureLimits({ project, runId, reason } = {}) {
+  return request("GET", "/api/v1/derivations/capture-limits", { params: { project, runId, reason } });
+}
+
 // ---------------------------------------------------------------------------
 // NIST SP 800-30 Rev. 1 enums (GC-T014, ADR-034 mirror policy)
 // ---------------------------------------------------------------------------
@@ -9221,6 +9948,15 @@ export async function deleteAuditLink(auditId, linkId, project) {
 
 export const CONTROL_STATUSES = ["DRAFT", "PROPOSED", "IMPLEMENTED", "OPERATIONAL", "DEPRECATED", "RETIRED"];
 export const CONTROL_FUNCTIONS = ["PREVENTIVE", "DETECTIVE", "CORRECTIVE", "COMPENSATING"];
+export const CONTROL_WORKSPACE_QUEUE_REASONS = [
+  "OWNER_MISSING",
+  "STATUS_DRAFT",
+  "TEST_EVIDENCE_MISSING",
+  "ASSESSMENT_MISSING",
+  "OPEN_EXCEPTION",
+  "EFFECTIVENESS_WEAK",
+  "CURRENT",
+];
 export const CONTROL_LINK_TARGET_TYPES = [
   "ASSET", "RISK_SCENARIO", "RISK_REGISTER_RECORD", "RISK_ASSESSMENT_RESULT",
   "TREATMENT_PLAN", "METHODOLOGY_PROFILE", "OBSERVATION", "REQUIREMENT",
@@ -9589,6 +10325,41 @@ export async function getControlByUid(uid, project) {
   return request("GET", `/api/v1/controls/uid/${encodeURIComponent(uid)}`, { params: { project } });
 }
 
+/**
+ * GET /api/v1/controls/workspace — read-only Control and Assurance Workspace
+ * per GC-Q011. Returns catalog controls with scoped implementations, tests,
+ * effectiveness assessments, observation-backed evidence summaries, findings,
+ * risk mappings, and owner queue reasons.
+ *
+ * @param {object} params
+ * @param {string} [params.project] - project identifier or UUID
+ * @param {string} [params.status] - filter by status (ControlStatus enum)
+ * @param {string} [params.controlFunction] - filter by control function enum
+ * @param {string} [params.owner] - case-insensitive owner substring
+ * @param {string} [params.queue] - filter by owner queue reason
+ * @param {string} [params.asOf] - ISO-8601 instant for as-of assurance state
+ * @param {number} [params.freshnessWindowDays] - freshness window in days (default 90)
+ */
+export async function getControlAssuranceWorkspace({
+  project,
+  status,
+  controlFunction,
+  owner,
+  queue,
+  asOf,
+  freshnessWindowDays,
+} = {}) {
+  const params = {};
+  if (project != null) params.project = project;
+  if (status != null) params.status = status;
+  if (controlFunction != null) params.controlFunction = controlFunction;
+  if (owner != null) params.owner = owner;
+  if (queue != null) params.queue = queue;
+  if (asOf != null) params.asOf = asOf;
+  if (freshnessWindowDays != null) params.freshnessWindowDays = String(freshnessWindowDays);
+  return request("GET", "/api/v1/controls/workspace", { params });
+}
+
 export async function updateControl(id, data, project) {
   return request("PUT", `/api/v1/controls/${encodeURIComponent(id)}`, { body: data, params: { project } });
 }
@@ -9695,6 +10466,33 @@ export async function updateMethodologyProfile(id, data, project) {
 
 export async function deleteMethodologyProfile(id, project) {
   await request("DELETE", `/api/v1/methodology-profiles/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+// ---------------------------------------------------------------------------
+// Risk Appetite Profile API functions (GC-T005)
+// ---------------------------------------------------------------------------
+
+export async function createRiskAppetiteProfile(data, project) {
+  return request("POST", "/api/v1/risk-appetite-profiles", { body: data, params: { project } });
+}
+
+export async function listRiskAppetiteProfiles(project) {
+  return request("GET", "/api/v1/risk-appetite-profiles", { params: { project } });
+}
+
+export async function getRiskAppetiteProfile(id, project) {
+  return request("GET", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function updateRiskAppetiteProfile(id, data, project) {
+  return request("PUT", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function deleteRiskAppetiteProfile(id, project) {
+  await request("DELETE", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, { params: { project } });
 }
 
 // ---------------------------------------------------------------------------
@@ -9902,6 +10700,22 @@ export async function getAssessmentFeed(assessmentResultId, project) {
   });
 }
 
+// --- Threat-side coverage analysis (GC-H006) ---
+
+export async function getUnmappedThreats(project) {
+  return request("GET", "/api/v1/analysis/risk-control/unmapped-threats", { params: { project } });
+}
+
+export async function getThreatUnmappedControls(project) {
+  return request("GET", "/api/v1/analysis/risk-control/threat-unmapped-controls", { params: { project } });
+}
+
+export async function getThreatsInsufficientEffectiveness(project, { minEffectiveness, asOf, freshnessWindowDays } = {}) {
+  return request("GET", "/api/v1/analysis/risk-control/threats-insufficient-effectiveness", {
+    params: { project, minEffectiveness, asOf, freshnessWindowDays },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Verification Result constants & API functions
 // ---------------------------------------------------------------------------
@@ -9910,7 +10724,14 @@ export const VERIFICATION_STATUSES = ["PROVEN", "REFUTED", "TIMEOUT", "UNKNOWN",
 export const ASSURANCE_LEVELS = ["L0", "L1", "L2", "L3"];
 
 export async function createVerificationResult(data, project) {
-  return request("POST", "/api/v1/verification-results", { body: data, params: { project } });
+  // evidence is a Map<String,Object> — inner keys are user/tool-defined and
+  // must NOT be camel-cased by toCamelCase(). Build the camelCase body
+  // explicitly and pass it as rawBody to skip the toCamelCase() pass in
+  // request(). All other fields go through the normal toCamelCase path.
+  const { evidence: evidenceMap, ...rest } = data;
+  const rawBody = { ...toCamelCase(rest) };
+  if (evidenceMap !== undefined) rawBody.evidence = evidenceMap;
+  return request("POST", "/api/v1/verification-results", { rawBody, params: { project } });
 }
 
 export async function listVerificationResults({ requirementId, prover, result, project } = {}) {
@@ -9924,8 +10745,13 @@ export async function getVerificationResult(id, project) {
 }
 
 export async function updateVerificationResult(id, data, project) {
+  // Same opaque-map treatment as createVerificationResult: evidence inner keys
+  // must not be camel-cased. Build the camelCase body explicitly.
+  const { evidence: evidenceMap, ...rest } = data;
+  const rawBody = { ...toCamelCase(rest) };
+  if (evidenceMap !== undefined) rawBody.evidence = evidenceMap;
   return request("PUT", `/api/v1/verification-results/${encodeURIComponent(id)}`, {
-    body: data,
+    rawBody,
     params: { project },
   });
 }
@@ -10177,6 +11003,7 @@ const GITHUB_ISSUE_COMMENT_BODY_MAX = 65535;
 // GITHUB_ISSUE_COMMENT_BODY_MAX.
 export const PR_BODY_SUMMARY_MAX = 1200;
 export const FINAL_REPORT_SUMMARY_MAX = 800;
+export const FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX = 600;
 export const FINAL_REPORT_REVIEW_SUMMARY_MAX = 240;
 
 // Caller-controlled text fields are rendered into GitHub issue-comment bodies
@@ -10567,6 +11394,422 @@ export async function runPostDecisionRecord({ repoPath, issueNumber, cycle, revi
 }
 
 // ---------------------------------------------------------------------------
+// GRC screening renderer (gc_post_grc_screening)
+// ---------------------------------------------------------------------------
+//
+// Step 3.5 of /implement gates the run on a threat/risk screening verdict.
+// The agent reads the existing threat/risk workspaces, classifies the planned
+// change surface, and posts one of three deterministic verdicts:
+//   - security_relevant: threat-model entries, risk scenarios, controls, and
+//     CODE links were created/updated/confirmed during the run.
+//   - not_security_relevant: one-line rationale; no silent skip.
+//   - no_baseline: explicit declination when the project has no baseline.
+//
+// The issue-thread record is the durable workflow state per ADR-029. The
+// marker family is `gc:grc-screening` — distinct from `gc:phase`,
+// `gc:decision-record`, and `gc:final-report` so downstream sweeps can
+// detect screening records without confusing them with other markers.
+
+export const GRC_SCREENING_VERDICTS = Object.freeze([
+  "security_relevant",
+  "not_security_relevant",
+  "no_baseline",
+]);
+
+// Byte cap for the rationale field. Reject-not-truncate: the tool returns a
+// structured error so the caller can tighten the prose.
+export const GRC_SCREENING_RATIONALE_MAX = 800;
+
+const GRC_SCREENING_SCHEMA_VERSION = "gc.implement.grc-screening/v1";
+
+// Canonical GRC entity types recognized by the workflow. Used to reject
+// unknown type values in security_relevant verdicts at the tool boundary.
+export const GRC_ENTITY_TYPES = Object.freeze(["threat_model", "risk_scenario", "control"]);
+
+// Normalize a caller-supplied entity type string to match GRC_ENTITY_TYPES:
+// lowercase, replace dashes and spaces with underscores.
+function normalizeEntityType(type) {
+  if (typeof type !== "string") return type;
+  return type.toLowerCase().replace(/[-\s]/g, "_");
+}
+
+// ---------------------------------------------------------------------------
+// Structured data block: serialize / parse
+// ---------------------------------------------------------------------------
+// A machine-parseable HTML comment emitted by buildGrcScreeningRecord and
+// consumed by parseGrcScreeningData. This lets runAssertGrcReconciled read
+// back the verdict + entity/link arrays without re-parsing the Markdown prose.
+// The format is: <!-- gc:grc-screening-data {compact-JSON} -->
+// "gc:grc-screening-data" is distinct from "gc:grc-screening" (the marker
+// family); the regex below does NOT match the main marker.
+
+export function serializeGrcScreeningData({ schema, verdict, entities_created, entities_updated, entities_confirmed, code_links }) {
+  const payload = { schema, verdict, entities_created, entities_updated, entities_confirmed, code_links };
+  return `<!-- gc:grc-screening-data ${JSON.stringify(payload)} -->`;
+}
+
+// Regex for the main marker (does NOT match the -data variant).
+// Uses a negative lookahead so gc:grc-screening-data bodies are ignored here.
+const GRC_SCREENING_MARKER_RE = /<!--\s*gc:grc-screening(?!-data)\s+issue="(\d+)"[^]*?-->/g;
+const GRC_SCREENING_DATA_RE = /<!--\s*gc:grc-screening-data\s+(\{[^]*?\})\s*-->/g;
+
+// Scan an array of comment bodies for GRC screening data blocks. Returns the
+// payload object from the LATEST block whose accompanying marker has
+// issue="<issueNumber>", or null if no such block is found. Tolerates
+// malformed JSON (skip, continue scanning).
+export function parseGrcScreeningData(commentBodies, issueNumber) {
+  if (!Array.isArray(commentBodies)) return null;
+  let latest = null;
+  for (const body of commentBodies) {
+    if (typeof body !== "string") continue;
+    // Check if this body contains a screening marker for the right issue
+    let hasMarkerForIssue = false;
+    GRC_SCREENING_MARKER_RE.lastIndex = 0;
+    for (const m of body.matchAll(GRC_SCREENING_MARKER_RE)) {
+      if (Number.parseInt(m[1], 10) === issueNumber) {
+        hasMarkerForIssue = true;
+        break;
+      }
+    }
+    if (!hasMarkerForIssue) continue;
+    // Extract the latest data block from this body
+    GRC_SCREENING_DATA_RE.lastIndex = 0;
+    for (const dm of body.matchAll(GRC_SCREENING_DATA_RE)) {
+      try {
+        const parsed = JSON.parse(dm[1]);
+        latest = parsed; // last match wins within a body
+      } catch {
+        // malformed JSON — skip this block
+      }
+    }
+  }
+  return latest;
+}
+
+export function buildGrcScreeningMarker({ issueNumber, verdict, schema }) {
+  const schemaAttr = schema ? ` schema="${schema}"` : "";
+  const verdictAttr = verdict ? ` verdict="${verdict}"` : "";
+  return `<!-- gc:grc-screening issue="${issueNumber}"${schemaAttr}${verdictAttr} -->`;
+}
+
+export function validateGrcScreeningInput(input) {
+  const errors = [];
+  if (input == null || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, errors: ["input must be an object"] };
+  }
+  const { issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links } = input;
+
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    errors.push("issueNumber must be a positive integer");
+  }
+
+  if (typeof verdict !== "string" || !GRC_SCREENING_VERDICTS.includes(verdict)) {
+    errors.push(`verdict must be one of: ${GRC_SCREENING_VERDICTS.join(", ")}`);
+  }
+
+  if (typeof rationale !== "string" || rationale.trim() === "") {
+    errors.push("rationale must be a non-empty string");
+  } else if (Buffer.byteLength(rationale, "utf8") > GRC_SCREENING_RATIONALE_MAX) {
+    errors.push(`rationale exceeds ${GRC_SCREENING_RATIONALE_MAX}-byte cap`);
+  }
+  // Reserved-marker injection checks are done in the runner (runPostGrcScreening),
+  // not here, so the runner can return a distinct grc_screening_reserved_marker
+  // error code instead of conflating it with input validation failures. This
+  // mirrors the runPostDecisionRecord pattern.
+
+  // Validate entity ref arrays
+  for (const [arrayName, arr] of [
+    ["entities_created", entities_created],
+    ["entities_updated", entities_updated],
+    ["entities_confirmed", entities_confirmed],
+  ]) {
+    if (!Array.isArray(arr)) {
+      errors.push(`${arrayName} must be an array`);
+    } else {
+      arr.forEach((ref, i) => {
+        if (ref == null || typeof ref !== "object") {
+          errors.push(`${arrayName}[${i}] must be an object`);
+          return;
+        }
+        if (typeof ref.uid !== "string" || ref.uid.trim() === "") {
+          errors.push(`${arrayName}[${i}].uid must be a non-empty string`);
+        }
+        // For security_relevant, reject entity types that don't normalize to
+        // a canonical GRC entity type. type is optional for other verdicts.
+        if (verdict === "security_relevant" && typeof ref.type === "string" && ref.type !== "") {
+          const normalized = normalizeEntityType(ref.type);
+          if (!GRC_ENTITY_TYPES.includes(normalized)) {
+            errors.push(`${arrayName}[${i}].type "${ref.type}" is not a canonical GRC entity type (must be one of: ${GRC_ENTITY_TYPES.join(", ")})`);
+          }
+        }
+      });
+    }
+  }
+
+  // Validate code_links array
+  if (!Array.isArray(code_links)) {
+    errors.push("code_links must be an array");
+  } else {
+    code_links.forEach((link, i) => {
+      if (link == null || typeof link !== "object") {
+        errors.push(`code_links[${i}] must be an object`);
+        return;
+      }
+      if (typeof link.target_identifier !== "string" || link.target_identifier.trim() === "") {
+        errors.push(`code_links[${i}].target_identifier must be a non-empty string`);
+      }
+      // For security_relevant, reject owner_type values that don't normalize
+      // to a canonical GRC entity type. owner_type is optional for other verdicts.
+      if (verdict === "security_relevant" && typeof link.owner_type === "string" && link.owner_type !== "") {
+        const normalized = normalizeEntityType(link.owner_type);
+        if (!GRC_ENTITY_TYPES.includes(normalized)) {
+          errors.push(`code_links[${i}].owner_type "${link.owner_type}" is not a canonical GRC entity type (must be one of: ${GRC_ENTITY_TYPES.join(", ")})`);
+        }
+      }
+    });
+  }
+
+  // security_relevant requires at least one entity and at least one code_link
+  if (errors.length === 0 && verdict === "security_relevant") {
+    const totalEntities = (entities_created?.length ?? 0) + (entities_updated?.length ?? 0) + (entities_confirmed?.length ?? 0);
+    if (totalEntities === 0) {
+      errors.push("security_relevant verdict requires at least one entity in entities_created, entities_updated, or entities_confirmed");
+    }
+    if ((code_links?.length ?? 0) === 0) {
+      errors.push("security_relevant verdict requires at least one entry in code_links");
+    }
+  }
+
+  if (errors.length) return { ok: false, errors };
+  return { ok: true };
+}
+
+export function buildGrcScreeningRecord({ issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links }) {
+  const validation = validateGrcScreeningInput({ issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links });
+  if (!validation.ok) {
+    throw new Error(`buildGrcScreeningRecord input invalid: ${validation.errors.join("; ")}`);
+  }
+  const lines = [];
+  lines.push(buildGrcScreeningMarker({ issueNumber, verdict, schema: GRC_SCREENING_SCHEMA_VERSION }));
+  // Machine-parseable data block — emitted for ALL verdicts so the companion
+  // gc_assert_grc_reconciled can recover the structured payload without
+  // re-parsing the Markdown prose. Entity arrays are empty for non-security
+  // verdicts by definition (validateGrcScreeningInput already enforced this).
+  lines.push(serializeGrcScreeningData({
+    schema: GRC_SCREENING_SCHEMA_VERSION,
+    verdict,
+    entities_created,
+    entities_updated,
+    entities_confirmed,
+    code_links,
+  }));
+  lines.push("");
+  lines.push(`## GRC screening record — issue #${issueNumber}`);
+  lines.push("");
+  lines.push(`**Schema:** \`${GRC_SCREENING_SCHEMA_VERSION}\`  `);
+  lines.push(`**Verdict:** \`${verdict}\`  `);
+  lines.push("");
+  lines.push(`**Rationale:** ${rationale}`);
+
+  if (verdict === "security_relevant") {
+    lines.push("");
+    lines.push("**Entities created:**");
+    if (entities_created.length === 0) {
+      lines.push("- _(none)_");
+    } else {
+      for (const e of entities_created) lines.push(`- \`${e.uid}\` (${e.type ?? "unknown"})`);
+    }
+    lines.push("");
+    lines.push("**Entities updated:**");
+    if (entities_updated.length === 0) {
+      lines.push("- _(none)_");
+    } else {
+      for (const e of entities_updated) lines.push(`- \`${e.uid}\` (${e.type ?? "unknown"})`);
+    }
+    lines.push("");
+    lines.push("**Entities confirmed:**");
+    if (entities_confirmed.length === 0) {
+      lines.push("- _(none)_");
+    } else {
+      for (const e of entities_confirmed) lines.push(`- \`${e.uid}\` (${e.type ?? "unknown"})`);
+    }
+    lines.push("");
+    lines.push("**Code links (targetType=CODE):**");
+    for (const link of code_links) {
+      lines.push(`- \`${link.target_identifier}\` (owner: ${link.owner_type ?? "unknown"} \`${link.owner_uid ?? ""}\`)`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+// Runner: validate → render → sensitive-content filter → body-size cap →
+// argv-based gh api post → write grc_screening phase marker via postPhaseMarker.
+// Returns a structured envelope; failures are refused before any network I/O.
+export async function runPostGrcScreening({ repoPath, issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links }) {
+  const validation = validateGrcScreeningInput({ issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links });
+  if (!validation.ok) {
+    return {
+      ok: false,
+      error: "grc_screening_input_invalid",
+      message: validation.errors.join("; "),
+      issue_number: issueNumber ?? null,
+    };
+  }
+
+  // Reject reserved marker sequences in ALL caller-controlled string fields
+  // that are rendered into the durable comment body. This covers every field
+  // that reaches buildGrcScreeningRecord — rationale, entity uid and type,
+  // and code_link target_identifier, owner_type, and owner_uid. Adding a new
+  // rendered field means adding it here too; that is the single enforcement
+  // point for the reserved-marker trust boundary (ADR-057).
+  const fieldsToCheck = [
+    ["rationale", rationale],
+  ];
+  for (const [arrayName, arr] of [
+    ["entities_created", entities_created],
+    ["entities_updated", entities_updated],
+    ["entities_confirmed", entities_confirmed],
+  ]) {
+    if (Array.isArray(arr)) {
+      arr.forEach((ref, i) => {
+        if (ref) {
+          if (typeof ref.uid === "string") {
+            fieldsToCheck.push([`${arrayName}[${i}].uid`, ref.uid]);
+          }
+          if (typeof ref.type === "string") {
+            fieldsToCheck.push([`${arrayName}[${i}].type`, ref.type]);
+          }
+        }
+      });
+    }
+  }
+  if (Array.isArray(code_links)) {
+    code_links.forEach((link, i) => {
+      if (link) {
+        if (typeof link.target_identifier === "string") {
+          fieldsToCheck.push([`code_links[${i}].target_identifier`, link.target_identifier]);
+        }
+        if (typeof link.owner_type === "string") {
+          fieldsToCheck.push([`code_links[${i}].owner_type`, link.owner_type]);
+        }
+        if (typeof link.owner_uid === "string") {
+          fieldsToCheck.push([`code_links[${i}].owner_uid`, link.owner_uid]);
+        }
+      }
+    });
+  }
+  for (const [fieldName, value] of fieldsToCheck) {
+    const err = rejectReservedMarkerSequence(value, fieldName);
+    if (err) {
+      return {
+        ok: false,
+        error: "grc_screening_reserved_marker",
+        message: err,
+        issue_number: issueNumber,
+        next_action: "remove_reserved_marker_prefix_and_retry",
+      };
+    }
+    // Also reject bare HTML comment delimiters (<!-- without gc: prefix, and -->)
+    // to prevent any comment breakout from the data block.
+    if (typeof value === "string" && (value.includes("<!--") || value.includes("-->"))) {
+      return {
+        ok: false,
+        error: "grc_screening_reserved_marker",
+        message: `${fieldName}: caller-controlled text carries an HTML comment delimiter (<!-- or -->); refused to prevent comment breakout`,
+        issue_number: issueNumber,
+        next_action: "remove_html_comment_delimiter_and_retry",
+      };
+    }
+  }
+
+  const body = buildGrcScreeningRecord({ issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links });
+
+  const sensitiveError = detectSensitiveBodyContent(body);
+  if (sensitiveError) {
+    return {
+      ok: false,
+      error: "grc_screening_body_rejected",
+      message: sensitiveError,
+      issue_number: issueNumber,
+      next_action: "scrub_secrets_from_fields_and_retry",
+    };
+  }
+
+  if (Buffer.byteLength(body, "utf8") > GITHUB_ISSUE_COMMENT_BODY_MAX) {
+    return {
+      ok: false,
+      error: "grc_screening_body_too_large",
+      message: `rendered body is ${Buffer.byteLength(body, "utf8")} bytes; GitHub's issue-comment body cap is ${GITHUB_ISSUE_COMMENT_BODY_MAX} bytes`,
+      issue_number: issueNumber,
+      next_action: "reduce_rationale_or_entity_count_and_retry",
+    };
+  }
+
+  const repoRoot = await ensureGitRepo(repoPath);
+  const { owner, name } = await getOwnerRepo(repoRoot);
+
+  let apiResponse = null;
+  try {
+    const { stdout } = await execFile(
+      "gh",
+      [
+        "api",
+        "--method",
+        "POST",
+        `/repos/${owner}/${name}/issues/${issueNumber}/comments`,
+        "-f",
+        `body=${body}`,
+      ],
+      { cwd: repoRoot },
+    );
+    try {
+      apiResponse = JSON.parse(stdout);
+    } catch {
+      apiResponse = null;
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: "grc_screening_post_failed",
+      message: extractGhErrorMessage(error),
+      issue_number: issueNumber,
+      next_action: "retry_after_resolving_gh_failure",
+    };
+  }
+
+  // Write the grc_screening phase marker so the workflow can detect the
+  // gate has run. The marker is written after the record is posted so
+  // the phase marker only lands on successful post.
+  try {
+    await postPhaseMarker(repoRoot, owner, name, issueNumber, "grc_screening");
+  } catch {
+    // Phase marker failure is non-fatal — the screening record is already
+    // posted. Return success with a note so the caller can re-run the marker
+    // if needed rather than losing the posted record.
+    return {
+      ok: true,
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      verdict,
+      comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+      comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+      phase_marker_posted: false,
+    };
+  }
+
+  return {
+    ok: true,
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    verdict,
+    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+    phase_marker_posted: true,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Final report renderer (gc_post_final_report)
 // ---------------------------------------------------------------------------
 //
@@ -10779,7 +12022,7 @@ export function validateFinalReportInput(input) {
   if (input == null || typeof input !== "object") {
     return { ok: false, errors: ["input must be an object"] };
   }
-  const { issueNumber, prNumber, requirements, files, reviews, traceability, ciStatus, sonarStatus, planCommentUrl, summary, lane } = input;
+  const { issueNumber, prNumber, requirements, files, reviews, traceability, ciStatus, sonarStatus, planCommentUrl, summary, lane, plainEnglishOutcome } = input;
   if (lane != null && lane !== "implement" && lane !== "quickfix") {
     errors.push("lane must be 'implement' or 'quickfix' when set");
   }
@@ -10870,6 +12113,18 @@ export function validateFinalReportInput(input) {
       `summary exceeds the final-report summary cap of ${FINAL_REPORT_SUMMARY_MAX} bytes (got ${Buffer.byteLength(summary, "utf8")}). A final-report summary is one tight paragraph — restated context and hedging are the usual offenders.`,
     );
   }
+  const requiresPlainEnglishOutcome = lane !== "quickfix";
+  if (plainEnglishOutcome == null) {
+    if (requiresPlainEnglishOutcome) {
+      errors.push("plainEnglishOutcome is required for /implement final reports");
+    }
+  } else if (typeof plainEnglishOutcome !== "string" || plainEnglishOutcome.trim() === "") {
+    errors.push("plainEnglishOutcome must be a non-empty string when set");
+  } else if (Buffer.byteLength(plainEnglishOutcome, "utf8") > FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX) {
+    errors.push(
+      `plainEnglishOutcome exceeds the final-report plain-English outcome cap of ${FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX} bytes (got ${Buffer.byteLength(plainEnglishOutcome, "utf8")}). Keep it to 1-3 plain-language sentences.`,
+    );
+  }
   // Optional documentation_outcome field (issue #896, ADR-054).
   if (input.documentation_outcome != null) {
     const docResult = validateDocumentationOutcome(input.documentation_outcome);
@@ -10886,7 +12141,7 @@ export function buildFinalReport(input) {
   if (!validation.ok) {
     throw new Error(`buildFinalReport input invalid: ${validation.errors.join("; ")}`);
   }
-  const { issueNumber, prNumber, requirements, files = {}, reviews, traceability = {}, ciStatus, sonarStatus, planCommentUrl, summary, lane } = input;
+  const { issueNumber, prNumber, requirements, files = {}, reviews, traceability = {}, ciStatus, sonarStatus, planCommentUrl, summary, lane, plainEnglishOutcome, phase = "post_merge" } = input;
   // Slim quickfix renderer (issue #906 codex cycle-3 F2). When lane='quickfix'
   // the close comment is structurally smaller: no "In-scope requirements",
   // no "Traceability reconciliation", no "Reviews" section when empty.
@@ -10897,13 +12152,31 @@ export function buildFinalReport(input) {
       issueNumber, prNumber, files, reviews, ciStatus, sonarStatus, planCommentUrl, summary,
     });
   }
+  // Phase D (pre_merge) renders a "ready for review" record carrying a
+  // `ready_for_review` phase marker; the requirement-status transition and
+  // traceability reconciliation have NOT run yet — they land in Phase E after
+  // the PR merges (issue #963). Phase E (post_merge, default) renders the
+  // reconciled final report carrying the `gc:final-report` marker.
+  const isPreMerge = phase === "pre_merge";
   const lines = [];
-  lines.push(buildFinalReportMarker({ issueNumber, prNumber }));
+  lines.push(
+    isPreMerge
+      ? `<!-- gc:phase phase="ready_for_review" issue="${issueNumber}" -->`
+      : buildFinalReportMarker({ issueNumber, prNumber }),
+  );
   lines.push("");
-  lines.push(`## Final report — issue #${issueNumber} complete`);
+  lines.push(
+    isPreMerge
+      ? `## Ready for review — issue #${issueNumber}`
+      : `## Final report — issue #${issueNumber} complete`,
+  );
   lines.push("");
   lines.push(`**PR:** #${prNumber}  `);
   if (planCommentUrl) lines.push(`**Plan:** ${planCommentUrl}`);
+  lines.push("");
+  lines.push("### Outcome");
+  lines.push("");
+  lines.push(plainEnglishOutcome.trim());
   if (summary) {
     lines.push("");
     lines.push(summary.trim());
@@ -10942,22 +12215,30 @@ export function buildFinalReport(input) {
   }
   lines.push(`### Traceability reconciliation`);
   lines.push("");
-  const tAdded = Array.isArray(traceability.added) ? traceability.added : [];
-  const tUpdated = Array.isArray(traceability.updated) ? traceability.updated : [];
-  const tDeleted = Array.isArray(traceability.deleted) ? traceability.deleted : [];
-  lines.push(`- IMPLEMENTS / TESTS / DOCUMENTS added: ${tAdded.length}`);
-  lines.push(`- Links updated: ${tUpdated.length}`);
-  lines.push(`- Stale links removed: ${tDeleted.length}`);
-  if (typeof traceability.notes === "string" && traceability.notes.trim() !== "") {
-    lines.push("");
-    lines.push(traceability.notes.trim());
+  if (isPreMerge) {
+    lines.push(`- Pending — requirement status transition and IMPLEMENTS/TESTS reconciliation run in Phase E once the PR merges.`);
+  } else {
+    const tAdded = Array.isArray(traceability.added) ? traceability.added : [];
+    const tUpdated = Array.isArray(traceability.updated) ? traceability.updated : [];
+    const tDeleted = Array.isArray(traceability.deleted) ? traceability.deleted : [];
+    lines.push(`- IMPLEMENTS / TESTS / DOCUMENTS added: ${tAdded.length}`);
+    lines.push(`- Links updated: ${tUpdated.length}`);
+    lines.push(`- Stale links removed: ${tDeleted.length}`);
+    if (typeof traceability.notes === "string" && traceability.notes.trim() !== "") {
+      lines.push("");
+      lines.push(traceability.notes.trim());
+    }
   }
   lines.push("");
   lines.push(`### Status`);
   lines.push("");
   lines.push(`- CI: ${renderCiStatus(ciStatus)}`);
   lines.push(`- SonarCloud: ${renderSonarStatus(sonarStatus)}`);
-  lines.push(`- PR ready for user review and merge.`);
+  lines.push(
+    isPreMerge
+      ? `- PR ready for user review and merge. Ground Control reconciliation (requirement status + traceability) runs on merge (Phase E).`
+      : `- PR ready for user review and merge.`,
+  );
   // Optional documentation outcome section (issue #896, ADR-054).
   if (input.documentation_outcome != null) {
     lines.push("");
@@ -11180,6 +12461,7 @@ export async function runPostFinalReport(input) {
   // Reject caller-controlled fields carrying reserved `<!-- gc:` marker
   // syntax (codex cycle-2 security finding; same shape as runPostDecisionRecord).
   const callerStringFields = [
+    ["plainEnglishOutcome", rest.plainEnglishOutcome],
     ["summary", rest.summary],
     ["planCommentUrl", rest.planCommentUrl],
   ];
@@ -11270,12 +12552,26 @@ export async function runPostFinalReport(input) {
   // exempt, mirroring the existing reviews-gate carve-out. The override
   // path lets the user authorize a skip with a quoted rationale (the
   // input-shape validation for that override is done earlier).
-  if (rest.lane !== "quickfix" && !phaseOverride) {
+  // The pre-merge readiness report (phase="pre_merge", issue #963) is posted
+  // BEFORE Phase E reconciliation runs, so the traceability_reconciled /
+  // grc_reconciled markers legitimately do not exist yet. Skip the prerequisite
+  // gate for it; the reconciled `gc:final-report` (phase="post_merge") still
+  // requires both markers.
+  if (rest.lane !== "quickfix" && !phaseOverride && rest.phase !== "pre_merge") {
     const completed = await readCompletedPhases(repoRoot, owner, name, rest.issueNumber);
+    // In-process-only union: used by runAssertCompletion to avoid a GitHub
+    // read-after-write race on markers it just posted. NOT in the MCP schema
+    // so external callers cannot set this; it affects ONLY the phase-marker
+    // prereq check, never CI/Sonar/review/content gates.
+    if (Array.isArray(rest.internalVerifiedPhases)) {
+      for (const p of rest.internalVerifiedPhases) {
+        completed.add(p);
+      }
+    }
     const decision = evaluatePhasePrerequisite({
       completed,
       nextPhase: "final_report",
-      requires: ["traceability_reconciled"],
+      requires: ["traceability_reconciled", "grc_reconciled"],
       issueNumber: rest.issueNumber,
     });
     if (!decision.ok) {
@@ -11287,7 +12583,7 @@ export async function runPostFinalReport(input) {
         message: decision.message,
         missing: decision.missing,
         completed: decision.completed,
-        next_action: "run_gc_assert_traceability_reconciled_first",
+        next_action: "run_gc_assert_traceability_reconciled_and_gc_assert_grc_reconciled_first",
       };
     }
   }
@@ -11386,6 +12682,132 @@ function hasTestableSurfaceTarget(linksOfTypeImplements) {
   return false;
 }
 
+// Evaluate the traceability state of a single requirement entry. Returns an
+// object with `earlyReturn` set to a terminal response when the input is
+// invalid or a lookup fails, otherwise `{ checkedEntry, failures }` describing
+// the per-requirement audit result. Extracted from
+// runAssertTraceabilityReconciled to keep that function's complexity bounded.
+async function evaluateRequirementTraceability({ item, index, project, issueNumber }) {
+  if (!item || typeof item !== "object" || typeof item.uid !== "string" || item.uid.trim() === "") {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "traceability_input_invalid",
+        message: `requirements[${index}] must be { uid: <non-empty string>, statusIntent: 'ACTIVE'|'DRAFT' }`,
+        issue_number: issueNumber,
+      },
+    };
+  }
+  const statusIntent = typeof item.statusIntent === "string" ? item.statusIntent : "ACTIVE";
+  if (!STATUSES.includes(statusIntent)) {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "traceability_input_invalid",
+        message: `requirements[${index}].statusIntent='${statusIntent}' must be one of ${STATUSES.join(", ")}`,
+        issue_number: issueNumber,
+      },
+    };
+  }
+  let requirement;
+  try {
+    requirement = await getRequirementByUid(item.uid, project);
+  } catch (error) {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "traceability_requirement_lookup_failed",
+        message: `gc_assert_traceability_reconciled could not resolve requirement ${item.uid}: ${error.message}`,
+        issue_number: issueNumber,
+        uid: item.uid,
+      },
+    };
+  }
+  const actualStatus = requirement && typeof requirement.status === "string" ? requirement.status : null;
+  if (actualStatus !== statusIntent) {
+    return {
+      checkedEntry: { uid: item.uid, status: actualStatus, implements_count: 0, tests_count: 0 },
+      failures: [{
+        uid: item.uid,
+        reason: "status_mismatch",
+        expected: statusIntent,
+        actual: actualStatus,
+      }],
+    };
+  }
+  let links = [];
+  try {
+    links = await getTraceabilityLinks(requirement.id);
+  } catch (error) {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "traceability_links_lookup_failed",
+        message: `gc_assert_traceability_reconciled could not fetch links for ${item.uid}: ${error.message}`,
+        issue_number: issueNumber,
+        uid: item.uid,
+      },
+    };
+  }
+  const linksArray = Array.isArray(links) ? links : [];
+  const implementsLinks = linksArray.filter((l) => l?.link_type === "IMPLEMENTS");
+  const testsLinks = linksArray.filter((l) => l?.link_type === "TESTS");
+  const checkedEntry = {
+    uid: item.uid,
+    status: actualStatus,
+    implements_count: implementsLinks.length,
+    tests_count: testsLinks.length,
+  };
+  const failures = [];
+  if (statusIntent === "ACTIVE" && implementsLinks.length === 0) {
+    failures.push({ uid: item.uid, reason: "implements_missing" });
+    return { checkedEntry, failures };
+  }
+  // DRAFT requirements are exempt from the TESTS check — by definition
+  // they have no executable behavior yet to test. ACTIVE requirements
+  // with an IMPLEMENTS link pointing at the testable-surface set must
+  // carry at least one TESTS link.
+  if (statusIntent === "ACTIVE"
+    && hasTestableSurfaceTarget(implementsLinks)
+    && testsLinks.length === 0) {
+    failures.push({ uid: item.uid, reason: "tests_missing" });
+  }
+  return { checkedEntry, failures };
+}
+
+// Bug/refactor/maintenance run with no formal requirements. The marker is
+// still required, but the only check is that the issue does not carry an
+// orphaned GITHUB_ISSUE-shaped traceability link — that would indicate prior
+// reconciliation drift the agent failed to clean up. Returns `{ earlyReturn }`
+// on lookup failure, otherwise `{ failures }`.
+async function checkOrphanedIssueLinks(issueNumber) {
+  try {
+    const issueLinks = await getTraceabilityByArtifact("GITHUB_ISSUE", String(issueNumber));
+    const orphaned = Array.isArray(issueLinks)
+      ? issueLinks.filter((l) => l?.link_type === "IMPLEMENTS")
+      : [];
+    // We allow orphaned IMPLEMENTS links here: if the requirement they
+    // point at no longer exists, that's a different reconciliation
+    // problem (Step 16). The check we ARE running: are there any links
+    // at all on an issue whose run had no requirements? If yes, the
+    // agent should have either claimed them in requirements[] or
+    // deleted them. We surface this as a failure so the agent loops back.
+    if (orphaned.length > 0) {
+      return { failures: [{ issue: issueNumber, reason: "orphaned_issue_link", count: orphaned.length }] };
+    }
+    return { failures: [] };
+  } catch (error) {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "traceability_issue_links_lookup_failed",
+        message: `gc_assert_traceability_reconciled could not fetch issue links: ${error.message}`,
+        issue_number: issueNumber,
+      },
+    };
+  }
+}
+
 export async function runAssertTraceabilityReconciled({
   repoPath,
   issueNumber,
@@ -11399,9 +12821,13 @@ export async function runAssertTraceabilityReconciled({
     throw new Error("gc_assert_traceability_reconciled requires a positive integer issue_number");
   }
   if (!Array.isArray(requirements)) {
-    throw new Error("gc_assert_traceability_reconciled requires requirements to be an array");
+    throw new TypeError("gc_assert_traceability_reconciled requires requirements to be an array");
   }
 
+  // Validated, trimmed override reason — non-null only when override===true
+  // passed the gate below. Capturing it here lets later code rely on a plain
+  // string and avoids re-deriving (or re-null-checking) overrideReason.
+  let overrideReasonTrimmed = null;
   if (override === true) {
     if (typeof overrideReason !== "string" || overrideReason.trim() === "") {
       return {
@@ -11413,6 +12839,7 @@ export async function runAssertTraceabilityReconciled({
         issue_number: issueNumber,
       };
     }
+    overrideReasonTrimmed = overrideReason.trim();
   }
 
   const repoRoot = await ensureGitRepo(repoPath);
@@ -11422,114 +12849,21 @@ export async function runAssertTraceabilityReconciled({
 
   if (override !== true) {
     for (let i = 0; i < requirements.length; i++) {
-      const item = requirements[i];
-      if (!item || typeof item !== "object" || typeof item.uid !== "string" || item.uid.trim() === "") {
-        return {
-          ok: false,
-          error: "traceability_input_invalid",
-          message: `requirements[${i}] must be { uid: <non-empty string>, statusIntent: 'ACTIVE'|'DRAFT' }`,
-          issue_number: issueNumber,
-        };
-      }
-      const statusIntent = typeof item.statusIntent === "string" ? item.statusIntent : "ACTIVE";
-      if (!STATUSES.includes(statusIntent)) {
-        return {
-          ok: false,
-          error: "traceability_input_invalid",
-          message: `requirements[${i}].statusIntent='${statusIntent}' must be one of ${STATUSES.join(", ")}`,
-          issue_number: issueNumber,
-        };
-      }
-      let requirement;
-      try {
-        requirement = await getRequirementByUid(item.uid, project);
-      } catch (error) {
-        return {
-          ok: false,
-          error: "traceability_requirement_lookup_failed",
-          message: `gc_assert_traceability_reconciled could not resolve requirement ${item.uid}: ${error.message}`,
-          issue_number: issueNumber,
-          uid: item.uid,
-        };
-      }
-      const actualStatus = requirement && typeof requirement.status === "string" ? requirement.status : null;
-      if (actualStatus !== statusIntent) {
-        failures.push({
-          uid: item.uid,
-          reason: "status_mismatch",
-          expected: statusIntent,
-          actual: actualStatus,
-        });
-        checked.push({ uid: item.uid, status: actualStatus, implements_count: 0, tests_count: 0 });
-        continue;
-      }
-      let links = [];
-      try {
-        links = await getTraceabilityLinks(requirement.id);
-      } catch (error) {
-        return {
-          ok: false,
-          error: "traceability_links_lookup_failed",
-          message: `gc_assert_traceability_reconciled could not fetch links for ${item.uid}: ${error.message}`,
-          issue_number: issueNumber,
-          uid: item.uid,
-        };
-      }
-      const linksArray = Array.isArray(links) ? links : [];
-      const implementsLinks = linksArray.filter((l) => l && l.link_type === "IMPLEMENTS");
-      const testsLinks = linksArray.filter((l) => l && l.link_type === "TESTS");
-      checked.push({
-        uid: item.uid,
-        status: actualStatus,
-        implements_count: implementsLinks.length,
-        tests_count: testsLinks.length,
+      const result = await evaluateRequirementTraceability({
+        item: requirements[i],
+        index: i,
+        project,
+        issueNumber,
       });
-      if (statusIntent === "ACTIVE" && implementsLinks.length === 0) {
-        failures.push({ uid: item.uid, reason: "implements_missing" });
-        continue;
-      }
-      // DRAFT requirements are exempt from the TESTS check — by definition
-      // they have no executable behavior yet to test. ACTIVE requirements
-      // with an IMPLEMENTS link pointing at the testable-surface set must
-      // carry at least one TESTS link.
-      if (statusIntent === "ACTIVE"
-        && hasTestableSurfaceTarget(implementsLinks)
-        && testsLinks.length === 0) {
-        failures.push({ uid: item.uid, reason: "tests_missing" });
-      }
+      if (result.earlyReturn) return result.earlyReturn;
+      if (result.checkedEntry) checked.push(result.checkedEntry);
+      if (result.failures) failures.push(...result.failures);
     }
 
     if (requirements.length === 0) {
-      // Bug/refactor/maintenance run with no formal requirements. The marker
-      // is still required, but the only check is that the issue does not
-      // carry an orphaned GITHUB_ISSUE-shaped traceability link — that would
-      // indicate prior reconciliation drift the agent failed to clean up.
-      try {
-        const issueLinks = await getTraceabilityByArtifact("GITHUB_ISSUE", String(issueNumber));
-        const orphaned = Array.isArray(issueLinks)
-          ? issueLinks.filter((l) => l && l.link_type === "IMPLEMENTS")
-          : [];
-        // We allow orphaned IMPLEMENTS links here: if the requirement they
-        // point at no longer exists, that's a different reconciliation
-        // problem (Step 16). The check we ARE running: are there any links
-        // at all on an issue whose run had no requirements? If yes, the
-        // agent should have either claimed them in requirements[] or
-        // deleted them. We surface this as a failure so the agent loops back.
-        if (orphaned.length > 0) {
-          failures.push({
-            issue: issueNumber,
-            reason: "orphaned_issue_link",
-            count: orphaned.length,
-          });
-        }
-      } catch (error) {
-        return {
-          ok: false,
-          error: "traceability_issue_links_lookup_failed",
-          message: `gc_assert_traceability_reconciled could not fetch issue links: ${error.message}`,
-          issue_number: issueNumber,
-        };
-      }
+      const orphanResult = await checkOrphanedIssueLinks(issueNumber);
+      if (orphanResult.earlyReturn) return orphanResult.earlyReturn;
+      failures.push(...orphanResult.failures);
     }
   }
 
@@ -11549,7 +12883,7 @@ export async function runAssertTraceabilityReconciled({
 
   const summaryLines = [];
   if (override === true) {
-    summaryLines.push(`_override=true; reason: ${overrideReason.trim()}_`);
+    summaryLines.push(`_override=true; reason: ${overrideReasonTrimmed}_`);
   } else if (requirements.length === 0) {
     summaryLines.push(`_no in-scope requirements; touched-files audit clean._`);
   } else {
@@ -11570,8 +12904,417 @@ export async function runAssertTraceabilityReconciled({
     ok: true,
     phase_marker: { phase: "traceability_reconciled", issue_number: issueNumber },
     override: override === true,
-    override_reason: override === true ? overrideReason.trim() : null,
+    override_reason: override === true ? overrideReasonTrimmed : null,
     checked,
+    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// gc_assert_quality_gates (issue #1101)
+//
+// Server-side quality-gate completion gate for /implement Step 6. Wraps the
+// existing QualityGateService.evaluate contract (POST /api/v1/quality-gates/
+// evaluate, exposed here as evaluateQualityGates) and shapes the result into a
+// mechanical pass/fail envelope. On failure it returns ONLY the failing gates,
+// each as {name, metric_type, threshold, actual} so the fix is obvious from the
+// error alone (issue #1101 scope item 2). The backend owns all gate math; this
+// boundary only renames fields and selects failures — it never re-evaluates.
+// ---------------------------------------------------------------------------
+
+// Backend gate result (snake_cased by request()) → workflow envelope shape.
+// `operator` is carried alongside the four issue-required keys so the failure
+// message can read "actual=X, expected GTE Y" without a second lookup.
+function shapeQualityGateResult(gate) {
+  return {
+    name: gate.gate_name,
+    metric_type: gate.metric_type,
+    metric_param: gate.metric_param,
+    scope_status: gate.scope_status,
+    operator: gate.operator,
+    threshold: gate.threshold,
+    actual: gate.actual_value,
+  };
+}
+
+function gateField(gate, snakeKey, camelKey = null) {
+  if (gate == null || typeof gate !== "object") return undefined;
+  if (gate[snakeKey] !== undefined) return gate[snakeKey];
+  if (camelKey != null && gate[camelKey] !== undefined) return gate[camelKey];
+  return undefined;
+}
+
+function isActiveDocumentsCoverageGate(gate) {
+  return gateField(gate, "metric_type", "metricType") === "COVERAGE"
+    && gateField(gate, "metric_param", "metricParam") === "DOCUMENTS"
+    && gateField(gate, "scope_status", "scopeStatus") === "ACTIVE";
+}
+
+async function findMissingInScopeDocumentsLinks({ evaluation, project, requirements }) {
+  const gates = Array.isArray(evaluation?.gates) ? evaluation.gates : [];
+  const documentsGateActive = gates.some(isActiveDocumentsCoverageGate);
+  if (!documentsGateActive || !Array.isArray(requirements) || requirements.length === 0) {
+    return { ok: true, checked: false, missing: [] };
+  }
+
+  const missing = [];
+  for (const item of requirements) {
+    if (!item || typeof item !== "object" || typeof item.uid !== "string" || item.uid.trim() === "") {
+      return {
+        ok: false,
+        error: "in_scope_requirement_input_invalid",
+        message: "requirements[] entries must be { uid: <non-empty string>, statusIntent?: <status> }",
+      };
+    }
+    const uid = item.uid.trim();
+    const requirement = await getRequirementByUid(uid, project);
+    const actualStatus = typeof requirement?.status === "string" ? requirement.status : null;
+    const links = await getTraceabilityLinks(requirement.id);
+    const hasDocumentsLink = Array.isArray(links) && links.some((link) => link?.link_type === "DOCUMENTS");
+    if (!hasDocumentsLink) {
+      missing.push({ uid, status: actualStatus, missing_link_type: "DOCUMENTS" });
+    }
+  }
+
+  return { ok: true, checked: true, missing };
+}
+
+// Pure transform: an evaluation result → the assertion envelope. Kept separate
+// from the REST call so the pass and fail envelopes are unit-testable with no
+// I/O (issue #1101 acceptance criterion: tests cover pass and fail envelopes).
+export function buildQualityGateAssertion(evaluation, project) {
+  const gates = Array.isArray(evaluation?.gates) ? evaluation.gates : [];
+  const failing = gates.filter((g) => g?.passed !== true).map(shapeQualityGateResult);
+  if (failing.length > 0) {
+    return {
+      ok: false,
+      error: "quality_gates_failed",
+      message:
+        `Quality gate evaluation failed for project '${project}': ` +
+        failing
+          .map((f) => `${f.name} (${f.metric_type}) actual=${f.actual}, expected ${f.operator} ${f.threshold}`)
+          .join("; "),
+      project,
+      failing_gates: failing,
+      next_action: "fix_failing_quality_gates_and_retry",
+    };
+  }
+  return {
+    ok: true,
+    project,
+    total_gates: Number.isInteger(evaluation?.total_gates) ? evaluation.total_gates : gates.length,
+    passed_count: Number.isInteger(evaluation?.passed_count) ? evaluation.passed_count : gates.length,
+    evaluated: gates.map(shapeQualityGateResult),
+  };
+}
+
+export async function runAssertQualityGates({ project, requirements }) {
+  if (typeof project !== "string" || project.trim() === "") {
+    throw new Error("gc_assert_quality_gates requires a non-empty project");
+  }
+  if (!Array.isArray(requirements)) {
+    throw new Error("gc_assert_quality_gates requires requirements[]; pass [] when there are no in-scope requirements");
+  }
+  const trimmed = project.trim();
+  const evaluation = await evaluateQualityGates(trimmed);
+  const assertion = buildQualityGateAssertion(evaluation, trimmed);
+  if (assertion.ok !== true) {
+    return assertion;
+  }
+
+  const inScopeDocuments = await findMissingInScopeDocumentsLinks({
+    evaluation,
+    project: trimmed,
+    requirements,
+  });
+  if (inScopeDocuments.ok !== true) {
+    return {
+      ok: false,
+      error: inScopeDocuments.error,
+      message: inScopeDocuments.message,
+      project: trimmed,
+      next_action: "fix_in_scope_requirement_input_and_retry",
+    };
+  }
+  if (inScopeDocuments.missing.length > 0) {
+    return {
+      ok: false,
+      error: "in_scope_documentation_coverage_failed",
+      message:
+        "Active DOCUMENTS Coverage requires every in-scope requirement to carry a DOCUMENTS traceability link, " +
+        "regardless of status: " +
+        inScopeDocuments.missing.map((m) => `${m.uid} (${m.status ?? "unknown"}) missing ${m.missing_link_type}`).join("; "),
+      project: trimmed,
+      missing_documents: inScopeDocuments.missing,
+      next_action: "add_documents_traceability_links_and_retry",
+    };
+  }
+
+  return {
+    ...assertion,
+    in_scope_documents_checked: inScopeDocuments.checked,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// gc_assert_grc_reconciled (issue #1100)
+//
+// Server-side GRC reconciliation gate. Reads the GRC screening record from
+// the issue thread (written by gc_post_grc_screening at Step 3.5) and for
+// security_relevant verdicts verifies that every claimed entity and CODE link
+// actually exists in the Ground Control REST API. On success, posts a
+// `grc_reconciled` phase marker so gc_post_final_report can enforce the gate.
+//
+// Verdict routing:
+//   not_security_relevant / no_baseline → pass immediately, echo verdict, post marker.
+//   security_relevant → resolve each entity ref; for each code_link, list links
+//     for the owner entity and verify target_identifier is present. Any gap → refuse.
+//   override=true + non-empty override_reason → skip checks, post marker with reason.
+// ---------------------------------------------------------------------------
+
+// Map entity type → REST getter function (returns entity or throws on 404/error).
+function getEntityGetter(type) {
+  const normalized = normalizeEntityType(type);
+  if (normalized === "threat_model") return (uid, project) => getThreatModelByUid(uid, project);
+  if (normalized === "risk_scenario") return (uid, project) => getRiskScenarioByUid(uid, project);
+  if (normalized === "control") return (uid, project) => getControlByUid(uid, project);
+  return null;
+}
+
+// Map entity type → function that lists CODE links for an entity id.
+// Returns an array of link objects; each has target_type, target_identifier.
+async function fetchCodeLinksForOwner(type, ownerId, project) {
+  const normalized = normalizeEntityType(type);
+  if (normalized === "threat_model") {
+    // listThreatModelLinks is positional (ownerId, project); no targetType filter —
+    // filter CODE client-side.
+    const links = await listThreatModelLinks(ownerId, project);
+    return Array.isArray(links) ? links.filter((l) => l?.target_type === "CODE") : [];
+  }
+  if (normalized === "risk_scenario") {
+    const links = await listRiskScenarioLinks(ownerId, { targetType: "CODE", project });
+    return Array.isArray(links) ? links : [];
+  }
+  if (normalized === "control") {
+    const links = await listControlLinks(ownerId, { targetType: "CODE", project });
+    return Array.isArray(links) ? links : [];
+  }
+  return null; // unknown type
+}
+
+// Composite cache key for a resolved GRC entity: normalized type + uid. Keying
+// by uid alone would conflate entities of different types that share a uid and
+// could verify a CODE link against the wrong aggregate (codex cycle-1 finding).
+function grcEntityKey(type, uid) {
+  return `${normalizeEntityType(type)}::${uid}`;
+}
+
+export async function runAssertGrcReconciled({
+  repoPath,
+  issueNumber,
+  project = null,
+}) {
+  if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error("gc_assert_grc_reconciled requires a positive integer issue_number");
+  }
+
+  // No tool-level override exists by design (codex cycle-1 security finding): a
+  // free-text "reason" is not a server-verifiable authorization, so an
+  // unconditional skip here would let any caller mint the grc_reconciled marker
+  // and bypass the security_relevant entity/link checks. The single audited skip
+  // path for the completion-gate prerequisite is gc_post_final_report's
+  // phaseOverride, which bypasses BOTH traceability_reconciled and
+  // grc_reconciled together rather than adding a second per-tool bypass.
+  const repoRoot = await ensureGitRepo(repoPath);
+  const { owner, name } = await getOwnerRepo(repoRoot);
+
+  // Read issue comment bodies and parse the screening record.
+  const bodies = await readIssueCommentBodies(repoRoot, owner, name, issueNumber);
+  const record = parseGrcScreeningData(bodies, issueNumber);
+
+  if (!record) {
+    return {
+      ok: false,
+      error: "grc_screening_record_missing",
+      issue_number: issueNumber,
+      next_action: "run_step_3.5_grc_screening_first",
+    };
+  }
+
+  const { verdict, entities_created = [], entities_updated = [], entities_confirmed = [], code_links = [] } = record;
+
+  // For non-security verdicts the gate passes immediately — echo verdict.
+  if (verdict !== "security_relevant") {
+    const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "grc_reconciled", {
+      commentBody: `_GRC verdict: \`${verdict}\` — no entity or code-link verification required._`,
+    });
+    return {
+      ok: true,
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      verdict,
+      missing: [],
+      checked: 0,
+      phase_marker: { phase: "grc_reconciled", issue_number: issueNumber },
+      comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+      comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+    };
+  }
+
+  // security_relevant: verify all entity refs and code links.
+  const missing = [];
+  let checked = 0;
+
+  // Collect all entity refs across created/updated/confirmed.
+  const allEntityRefs = [
+    ...entities_created.map((e) => ({ ...e, _source: "entities_created" })),
+    ...entities_updated.map((e) => ({ ...e, _source: "entities_updated" })),
+    ...entities_confirmed.map((e) => ({ ...e, _source: "entities_confirmed" })),
+  ];
+
+  // Resolve each entity. The maps are keyed by normalized-type + uid (NOT uid
+  // alone) so a threat_model and a risk_scenario that happen to share a UID are
+  // never conflated — keying by uid alone could resolve a CODE link against the
+  // wrong aggregate type (codex cycle-1 core finding). entityIdByKey maps the
+  // composite key → fetched entity id (used by the code_link pass);
+  // missingEntityKeys records keys that failed to resolve so the code_link pass
+  // can distinguish "owner already flagged missing" from "owner never listed as
+  // an entity" (the latter is resolved directly, not skipped).
+  const entityIdByKey = new Map();
+  const missingEntityKeys = new Set();
+
+  for (const ref of allEntityRefs) {
+    const { type, uid } = ref;
+    const key = grcEntityKey(type, uid);
+    const getter = getEntityGetter(type);
+    if (!getter) {
+      missing.push({ kind: "entity", type, uid, reason: "unknown_entity_type" });
+      missingEntityKeys.add(key);
+      checked++;
+      continue;
+    }
+    let entity;
+    try {
+      entity = await getter(uid, project);
+    } catch (error) {
+      // 404 → entity genuinely absent; add to missing[] and continue.
+      // Any other status → unexpected backend error; abort with structured error.
+      if (error && error.status === 404) {
+        missing.push({ kind: "entity", type, uid, reason: "entity_missing" });
+        missingEntityKeys.add(key);
+        checked++;
+        continue;
+      }
+      return {
+        ok: false,
+        error: "grc_entity_lookup_failed",
+        message: `Failed to look up ${type} entity ${uid}: ${error.message}`,
+        issue_number: issueNumber,
+      };
+    }
+    if (!entity || !entity.id) {
+      missing.push({ kind: "entity", type, uid, reason: "entity_missing" });
+      missingEntityKeys.add(key);
+      checked++;
+      continue;
+    }
+    entityIdByKey.set(key, entity.id);
+    checked++;
+  }
+
+  // Verify each code_link.
+  for (const link of code_links) {
+    const { owner_type, owner_uid, target_identifier } = link;
+    const ownerNormalized = normalizeEntityType(owner_type);
+    if (!GRC_ENTITY_TYPES.includes(ownerNormalized)) {
+      missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "unknown_owner_type" });
+      checked++;
+      continue;
+    }
+    const ownerKey = grcEntityKey(owner_type, owner_uid);
+    let ownerId = entityIdByKey.get(ownerKey);
+    if (ownerId === undefined) {
+      if (missingEntityKeys.has(ownerKey)) {
+        // Owner was listed as an entity (same type + uid) but failed to resolve
+        // above; the gate already fails on that entity. Nothing more to verify.
+        checked++;
+        continue;
+      }
+      // Owner is not among the listed entities. Resolve it directly so an
+      // unlisted owner cannot slip an unverified code_link past the gate.
+      const ownerGetter = getEntityGetter(owner_type); // non-null: owner_type validated above
+      try {
+        const ownerEntity = await ownerGetter(owner_uid, project);
+        if (!ownerEntity || !ownerEntity.id) {
+          missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "owner_missing" });
+          checked++;
+          continue;
+        }
+        ownerId = ownerEntity.id;
+      } catch (error) {
+        if (error && error.status === 404) {
+          missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "owner_missing" });
+          checked++;
+          continue;
+        }
+        return {
+          ok: false,
+          error: "grc_entity_lookup_failed",
+          message: `Failed to look up ${owner_type} owner ${owner_uid}: ${error.message}`,
+          issue_number: issueNumber,
+        };
+      }
+    }
+    let codeLinks;
+    try {
+      codeLinks = await fetchCodeLinksForOwner(owner_type, ownerId, project);
+    } catch (error) {
+      return {
+        ok: false,
+        error: "grc_links_lookup_failed",
+        message: `Failed to list CODE links for ${owner_type} ${owner_uid}: ${error.message}`,
+        issue_number: issueNumber,
+      };
+    }
+    if (codeLinks === null) {
+      missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "unknown_owner_type" });
+      checked++;
+      continue;
+    }
+    const found = codeLinks.some((l) => l?.target_identifier === target_identifier);
+    if (!found) {
+      missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "code_link_missing" });
+    }
+    checked++;
+  }
+
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      error: "grc_not_reconciled",
+      verdict,
+      missing,
+      checked,
+      issue_number: issueNumber,
+      next_action: "create_missing_grc_links_and_retry",
+    };
+  }
+
+  // All checks passed — post the grc_reconciled phase marker.
+  const summaryLines = [`_GRC verdict: \`${verdict}\` — ${checked} entity/link check(s) passed._`];
+  const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "grc_reconciled", {
+    commentBody: summaryLines.join("\n"),
+  });
+
+  return {
+    ok: true,
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    verdict,
+    missing: [],
+    checked,
+    phase_marker: { phase: "grc_reconciled", issue_number: issueNumber },
     comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
     comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
   };
@@ -11651,43 +13394,70 @@ async function findPrForIssue(repoRoot, owner, name, issueNumber) {
   return [...prs.values()];
 }
 
-export async function runCloseIssueAfterMerge({ repoPath, issueNumber, prNumber = null }) {
-  if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
-    throw new Error("gc_close_issue_after_merge requires a positive integer issue_number");
-  }
-  if (prNumber != null && (!Number.isInteger(prNumber) || prNumber <= 0)) {
-    throw new Error("gc_close_issue_after_merge pr_number must be a positive integer when supplied");
-  }
-
-  const repoRoot = await ensureGitRepo(repoPath);
-  const { owner, name } = await getOwnerRepo(repoRoot);
-
-  let pr = null;
-  if (prNumber != null) {
-    // Codex review cycle 1 (issue #1058): a caller-supplied pr_number must
-    // be verified as linked to the issue before being used as the close
-    // gate. Trusting the caller's pr_number for the issue→PR relationship
-    // would defeat the gate's purpose: a stale cached PR number or a
-    // malicious caller could pass any merged PR from this repo paired with
-    // an unrelated open issue and cause the wrong issue to close. Resolve
-    // the issue's actual linked PRs from the timeline and require the
-    // supplied PR number to appear in that set; only then proceed to
-    // fetch the PR's merged_at / state for the merge-status gate.
-    let linkedPrs;
+// Resolve the PR that the post-merge close gate should evaluate for an issue.
+// When no pr_number is supplied, the linked PRs are read from the issue
+// timeline and the merged one is preferred. When a pr_number IS supplied it
+// must be verified as linked to the issue first. Returns `{ earlyReturn }` on
+// lookup failure or refusal, otherwise `{ pr }`. Extracted from
+// runCloseIssueAfterMerge to keep that function's complexity bounded.
+async function resolvePrForClose({ repoRoot, owner, name, issueNumber, prNumber }) {
+  if (prNumber == null) {
+    let prs;
     try {
-      linkedPrs = await findPrForIssue(repoRoot, owner, name, issueNumber);
+      prs = await findPrForIssue(repoRoot, owner, name, issueNumber);
     } catch (error) {
       return {
+        earlyReturn: {
+          ok: false,
+          error: "close_pr_lookup_failed",
+          message: error.message,
+          issue_number: issueNumber,
+        },
+      };
+    }
+    const merged = prs.find((p) => p.state === "MERGED" && p.mergedAt);
+    if (merged) return { pr: merged };
+    if (prs.length === 0) {
+      return {
+        earlyReturn: {
+          ok: false,
+          error: "close_no_linked_pr",
+          message: `gc_close_issue_after_merge could not find any PR linked to issue #${issueNumber}; expected a merged PR with the issue cross-referenced.`,
+          issue_number: issueNumber,
+          next_action: "open_or_link_a_pr_first",
+        },
+      };
+    }
+    return { pr: prs[0] };
+  }
+
+  // Codex review cycle 1 (issue #1058): a caller-supplied pr_number must
+  // be verified as linked to the issue before being used as the close
+  // gate. Trusting the caller's pr_number for the issue→PR relationship
+  // would defeat the gate's purpose: a stale cached PR number or a
+  // malicious caller could pass any merged PR from this repo paired with
+  // an unrelated open issue and cause the wrong issue to close. Resolve
+  // the issue's actual linked PRs from the timeline and require the
+  // supplied PR number to appear in that set; only then proceed to
+  // fetch the PR's merged_at / state for the merge-status gate.
+  let linkedPrs;
+  try {
+    linkedPrs = await findPrForIssue(repoRoot, owner, name, issueNumber);
+  } catch (error) {
+    return {
+      earlyReturn: {
         ok: false,
         error: "close_pr_lookup_failed",
         message: error.message,
         issue_number: issueNumber,
         pr_number: prNumber,
-      };
-    }
-    const matched = linkedPrs.find((p) => p.number === prNumber);
-    if (!matched) {
-      return {
+      },
+    };
+  }
+  const matched = linkedPrs.find((p) => p.number === prNumber);
+  if (!matched) {
+    return {
+      earlyReturn: {
         ok: false,
         error: "close_pr_not_linked_to_issue",
         message:
@@ -11699,38 +13469,211 @@ export async function runCloseIssueAfterMerge({ repoPath, issueNumber, prNumber 
         pr_number: prNumber,
         linked_pr_numbers: linkedPrs.map((p) => p.number),
         next_action: "omit_pr_number_or_pass_a_linked_pr",
-      };
-    }
-    pr = matched;
-  } else {
-    let prs;
-    try {
-      prs = await findPrForIssue(repoRoot, owner, name, issueNumber);
-    } catch (error) {
-      return {
-        ok: false,
-        error: "close_pr_lookup_failed",
-        message: error.message,
-        issue_number: issueNumber,
-      };
-    }
-    const merged = prs.find((p) => p.state === "MERGED" && p.mergedAt);
-    if (merged) {
-      pr = merged;
-    } else if (prs.length === 0) {
-      return {
-        ok: false,
-        error: "close_no_linked_pr",
-        message: `gc_close_issue_after_merge could not find any PR linked to issue #${issueNumber}; expected a merged PR with the issue cross-referenced.`,
-        issue_number: issueNumber,
-        next_action: "open_or_link_a_pr_first",
-      };
-    } else {
-      pr = prs[0];
+      },
+    };
+  }
+  return { pr: matched };
+}
+
+const NEXT_ISSUE_RECOMMENDATION_SOURCE =
+  "GitHub open issues (/issues?state=open&sort=updated&direction=desc, first 50)";
+const NEXT_ISSUE_BLOCKED_LABELS = new Set([
+  "blocked",
+  "in-progress",
+  "needs-info",
+  "needs info",
+  "needs-user",
+  "needs user",
+  "wontfix",
+  "duplicate",
+  "invalid",
+]);
+const NEXT_ISSUE_READY_LABELS = new Set(["ready", "actionable", "help wanted", "good first issue"]);
+// Umbrella / tracking / epic issues coordinate a basket of child issues; they
+// are not a single actionable unit of work, so /implement must never hand one
+// back as the next thing to pick up. We detect them three independent ways
+// (any one is sufficient) so the signal survives whichever convention an issue
+// uses: a marker label, a marker title prefix, or a body task list that
+// enumerates child issues.
+const NEXT_ISSUE_UMBRELLA_LABELS = new Set(["epic", "umbrella", "tracking", "meta"]);
+const NEXT_ISSUE_UMBRELLA_TITLE_RE =
+  /^(?:tracking|epic|umbrella)\s*:|^\[\s*(?:tracking|epic|umbrella|meta)\s*\]/i;
+// A body task list that checks off this many or more child issues (checkbox
+// lines that reference another issue) reads as an umbrella even without a
+// marker label or title prefix. Leaf requirement issues carry only a handful of
+// acceptance-criteria checkboxes and reference zero issues, so the threshold
+// cleanly separates the two without catching an issue that merely mentions a
+// dependency or two in passing.
+const NEXT_ISSUE_UMBRELLA_TASKLIST_THRESHOLD = 5;
+
+function issueLabelNames(issue) {
+  if (!Array.isArray(issue?.labels)) return [];
+  return issue.labels
+    .map((label) => (typeof label?.name === "string" ? label.name.trim() : ""))
+    .filter((label) => label.length > 0);
+}
+
+function normalizedIssueLabels(issue) {
+  return issueLabelNames(issue).map((label) => label.toLowerCase());
+}
+
+function isBlockedNextIssueCandidate(labels) {
+  return labels.some((label) => NEXT_ISSUE_BLOCKED_LABELS.has(label));
+}
+
+function countIssueReferencingChecklistItems(body) {
+  if (typeof body !== "string" || body === "") return 0;
+  let count = 0;
+  for (const line of body.split("\n")) {
+    if (/^\s*[-*]\s+\[[ xX]\]/.test(line) && /#\d+/.test(line)) count += 1;
+  }
+  return count;
+}
+
+export function isUmbrellaNextIssueCandidate(issue) {
+  // GitHub-native sub-issue parent (works even when the body uses no task list).
+  const subIssueTotal = issue?.sub_issues_summary?.total;
+  if (typeof subIssueTotal === "number" && subIssueTotal > 0) return true;
+
+  const labels = normalizedIssueLabels(issue);
+  if (labels.some((label) => NEXT_ISSUE_UMBRELLA_LABELS.has(label))) return true;
+
+  const title = typeof issue?.title === "string" ? issue.title.trim() : "";
+  // Strip leading markdown emphasis/quote markers before matching the prefix.
+  const normalizedTitle = title.replace(/^[>*_#\s]+/, "");
+  if (NEXT_ISSUE_UMBRELLA_TITLE_RE.test(normalizedTitle)) return true;
+
+  return (
+    countIssueReferencingChecklistItems(issue?.body) >= NEXT_ISSUE_UMBRELLA_TASKLIST_THRESHOLD
+  );
+}
+
+function nextIssuePriorityScore(labels) {
+  let score = 0;
+  for (const label of labels) {
+    if (label === "priority:p0" || label === "p0" || label === "critical") score += 30;
+    else if (label === "priority:p1" || label === "p1" || label === "high-priority") score += 24;
+    else if (label === "priority:p2" || label === "p2") score += 18;
+    else if (label.startsWith("priority:")) score += 10;
+  }
+  return score;
+}
+
+function scoreNextIssueCandidate(issue, index) {
+  const labels = normalizedIssueLabels(issue);
+  let score = nextIssuePriorityScore(labels);
+  for (const label of labels) {
+    if (NEXT_ISSUE_READY_LABELS.has(label)) score += 20;
+  }
+  if (typeof issue?.milestone?.title === "string" && issue.milestone.title.trim() !== "") score += 4;
+  if (typeof issue?.updated_at === "string" && issue.updated_at.trim() !== "") score += 1;
+  return { issue, score, index };
+}
+
+function buildNextIssueReason(issue) {
+  const labels = normalizedIssueLabels(issue);
+  const namedSignals = [];
+  for (const label of labels) {
+    if (NEXT_ISSUE_READY_LABELS.has(label) || label.startsWith("priority:") || ["p0", "p1", "p2", "critical", "high-priority"].includes(label)) {
+      namedSignals.push(label);
     }
   }
+  if (namedSignals.length > 0) {
+    return `It is open, not blocked or in progress, and labeled ${namedSignals.slice(0, 3).join(", ")}.`;
+  }
+  return "It is the most recently updated open issue that is not blocked or in progress.";
+}
 
-  if (!pr || !pr.mergedAt || pr.state !== "MERGED") {
+export function selectNextIssueRecommendation(issues, issueNumber) {
+  const candidates = Array.isArray(issues)
+    ? issues
+      .filter((issue) => issue && typeof issue === "object")
+      .filter((issue) => !issue.pull_request)
+      .filter((issue) => issue.number !== issueNumber)
+      .filter((issue) => typeof issue.title === "string" && issue.title.trim() !== "")
+      .filter((issue) => !isBlockedNextIssueCandidate(normalizedIssueLabels(issue)))
+      .filter((issue) => !isUmbrellaNextIssueCandidate(issue))
+      .map(scoreNextIssueCandidate)
+    : [];
+
+  if (candidates.length === 0) {
+    return {
+      recommendation: null,
+      reason: "No credible next issue was available from the open GitHub issue list.",
+    };
+  }
+  candidates.sort((a, b) => (b.score - a.score) || (a.index - b.index));
+  const best = candidates[0].issue;
+  return {
+    recommendation: {
+      issue_number: best.number,
+      title: best.title.trim(),
+      url: typeof best.html_url === "string" ? best.html_url : null,
+      reason: buildNextIssueReason(best),
+      source: NEXT_ISSUE_RECOMMENDATION_SOURCE,
+    },
+    reason: null,
+  };
+}
+
+async function findNextIssueRecommendation({ repoRoot, owner, name, issueNumber }) {
+  const { stdout } = await execFile(
+    "gh",
+    [
+      "api", "--method", "GET",
+      `/repos/${owner}/${name}/issues`,
+      "-F", "state=open",
+      "-F", "per_page=50",
+      "-F", "sort=updated",
+      "-F", "direction=desc",
+    ],
+    { cwd: repoRoot },
+  );
+  let issues;
+  try {
+    issues = JSON.parse(stdout);
+  } catch {
+    throw new Error("GitHub issue list response was not valid JSON");
+  }
+  return selectNextIssueRecommendation(issues, issueNumber);
+}
+
+async function attachNextIssueRecommendation({ closeResult, repoRoot, owner, name, issueNumber }) {
+  try {
+    const result = await findNextIssueRecommendation({ repoRoot, owner, name, issueNumber });
+    return {
+      ...closeResult,
+      next_issue_recommendation: result.recommendation,
+      next_issue_recommendation_reason: result.reason,
+      next_issue_recommendation_source: NEXT_ISSUE_RECOMMENDATION_SOURCE,
+    };
+  } catch (error) {
+    return {
+      ...closeResult,
+      next_issue_recommendation: null,
+      next_issue_recommendation_reason: "Recommendation lookup failed after the issue close succeeded.",
+      next_issue_recommendation_error: extractGhErrorMessage(error),
+      next_issue_recommendation_source: NEXT_ISSUE_RECOMMENDATION_SOURCE,
+    };
+  }
+}
+
+export async function runCloseIssueAfterMerge({ repoPath, issueNumber, prNumber = null }) {
+  if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error("gc_close_issue_after_merge requires a positive integer issue_number");
+  }
+  if (prNumber != null && (!Number.isInteger(prNumber) || prNumber <= 0)) {
+    throw new Error("gc_close_issue_after_merge pr_number must be a positive integer when supplied");
+  }
+
+  const repoRoot = await ensureGitRepo(repoPath);
+  const { owner, name } = await getOwnerRepo(repoRoot);
+
+  const resolved = await resolvePrForClose({ repoRoot, owner, name, issueNumber, prNumber });
+  if (resolved.earlyReturn) return resolved.earlyReturn;
+  const pr = resolved.pr;
+
+  if (!pr?.mergedAt || pr.state !== "MERGED") {
     return {
       ok: false,
       error: "close_pr_not_merged",
@@ -11745,6 +13688,17 @@ export async function runCloseIssueAfterMerge({ repoPath, issueNumber, prNumber 
     };
   }
 
+  const closeResult = await closeIssueIdempotently({ repoRoot, owner, name, issueNumber, pr });
+  if (!closeResult.ok) return closeResult;
+  return attachNextIssueRecommendation({ closeResult, repoRoot, owner, name, issueNumber });
+}
+
+// Close the issue idempotently once the merge gate has passed. Reads the
+// current issue state to support re-runs (returns already_closed=true without
+// emitting a duplicate close), otherwise PATCHes it closed. Returns the
+// terminal response object. Extracted from runCloseIssueAfterMerge to keep
+// that function's complexity bounded.
+async function closeIssueIdempotently({ repoRoot, owner, name, issueNumber, pr }) {
   // Check current issue state to support idempotent re-runs.
   let issueState;
   try {
@@ -12036,6 +13990,18 @@ export function validatePrBodyInput(input) {
   if (testNotes != null && typeof testNotes !== "string") {
     errors.push("testNotes must be a string when set");
   }
+  if (input.devStartGate != null) {
+    if (typeof input.devStartGate !== "string" || input.devStartGate.trim() === "") {
+      errors.push("devStartGate must be a non-empty Markdown string when set");
+    } else {
+      const section = extractMarkdownHeadingSection(input.devStartGate, DEFAULT_DEV_START_GATE_PLAN_SECTION);
+      if (section == null) {
+        errors.push(`devStartGate must include a ## ${DEFAULT_DEV_START_GATE_PLAN_SECTION} section`);
+      } else if (devStartFieldValue(parseDevStartGateFields(section), "Source-bearing") == null) {
+        errors.push("devStartGate must include a Source-bearing field");
+      }
+    }
+  }
   // Optional documentation_outcome field (issue #896, ADR-054).
   if (input.documentation_outcome != null) {
     const docResult = validateDocumentationOutcome(input.documentation_outcome);
@@ -12052,7 +14018,7 @@ export function buildPrBody(input) {
   if (!validation.ok) {
     throw new Error(`buildPrBody input invalid: ${validation.errors.join("; ")}`);
   }
-  const { issueNumber, changeClass, requirementUids, adrRefs, summary, changes, traceability, changelogFragment, testNotes } = input;
+  const { issueNumber, changeClass, requirementUids, adrRefs, summary, changes, traceability, changelogFragment, testNotes, devStartGate } = input;
   const lines = [];
   lines.push("## Summary");
   lines.push("");
@@ -12097,6 +14063,10 @@ export function buildPrBody(input) {
   }
   if (changeClass === "source+migration") {
     lines.push("- **Migration reminder:** update version lists in `MigrationSmokeTest.java` and `RequirementsE2EIntegrationTest.java` (per `.gc/plan-rules.md`).");
+  }
+  if (devStartGate != null && devStartGate.trim() !== "") {
+    lines.push("");
+    for (const l of devStartGate.trim().split(/\r?\n/)) lines.push(l);
   }
   lines.push("");
   lines.push("## Test Plan");
@@ -13823,7 +15793,14 @@ export function _resetReviewJobsForTest() {
 // to the agent. Path is `.gc/telemetry/<issue>-<sanitized-branch>.jsonl`,
 // repo-relative, validated via `resolveRepoRelativePath` + `assertRealpathInRepo`.
 
-export const TELEMETRY_SCHEMA_VERSION = "gc.implement.telemetry/v1";
+// v2 (issue #1181): records now carry `expected_model` (the canonical model
+// for the step's tier, derived server-side from CLAUDE_MODEL_BY_TIER) and a
+// `model_matches_expected` consistency flag. The caller-supplied `model` is
+// self-reported by the orchestrator and was demonstrably unreliable (tier/model
+// mismatches, intra-run contradictions); the flag surfaces that divergence in
+// the data instead of trusting the reported value. This is recorded, never
+// gating — telemetry stays operational measurement only (ADR-036).
+export const TELEMETRY_SCHEMA_VERSION = "gc.implement.telemetry/v2";
 export const TELEMETRY_TIERS = Object.freeze(["low", "medium", "high"]);
 export const TELEMETRY_OUTCOMES = Object.freeze(["ok", "error", "skipped"]);
 export const ROUTING_TIERS = TELEMETRY_TIERS;
@@ -13834,13 +15811,14 @@ export const ROUTING_STAGE_NAME_RE = /^[a-z][a-z0-9_-]*$/;
 export const CLAUDE_MODEL_BY_TIER = Object.freeze({
   low: "claude-haiku-4-5",
   medium: "claude-sonnet-4-6",
-  high: "claude-opus-4-7",
+  high: "claude-opus-4-8",
 });
 export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
   issue_branch_resolution: { tier: "low" },
   read_issue_context: { tier: "low" },
   architecture_preflight: { tier: "low" },
   codebase_assessment: { tier: "medium" },
+  grc_screening: { tier: "medium" },
   planning: { tier: "high", agent: "parent", fallback: "error" },
   implementation: { tier: "medium" },
   clause_mapping: { tier: "medium" },
@@ -13854,7 +15832,6 @@ export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
   sonarcloud: { tier: "low" },
   test_quality_review: { tier: "medium" },
   transition_reconcile: { tier: "medium" },
-  close_issue: { tier: "low" },
   final_report: { tier: "low" },
   close_issue_after_merge: { tier: "low" },
 });
@@ -13903,6 +15880,14 @@ export function buildTelemetryRecord(input) {
     step,
     tier,
     model,
+    // Config-derived ground truth for the step's tier (issue #1181). `tier` is
+    // validated against TELEMETRY_TIERS above, so this lookup is always defined.
+    // `model_matches_expected` is the tier/model consistency assertion: false
+    // means the reported model diverged from the tier's canonical model — the
+    // signal that routing did not land where the tier intended (or the
+    // orchestrator mis-reported). Never gates; analysis-only.
+    expected_model: CLAUDE_MODEL_BY_TIER[tier],
+    model_matches_expected: model === CLAUDE_MODEL_BY_TIER[tier],
     wall_time_ms: wallTimeMs,
     input_tokens: inputTokens,
     output_tokens: outputTokens,
@@ -14084,6 +16069,7 @@ export const GOVERNANCE_STATUS_ENUMS = {
   risk_register_record: RISK_REGISTER_STATUSES,
   treatment_plan: TREATMENT_PLAN_STATUSES,
   verification_result: VERIFICATION_STATUSES,
+  risk_appetite_profile: RISK_APPETITE_PROFILE_STATUSES,
 };
 
 // gc_risk_governance per-entity, per-action body allowlist. Mirrors the
@@ -14096,8 +16082,21 @@ export const GOVERNANCE_STATUS_ENUMS = {
 // the shared TO_CAMEL map in this file. Issues #878/#879/#880.
 export const GOVERNANCE_FIELDS = {
   methodology_profile: {
-    create: ["name", "description", "family", "status", "metadata", "crosswalk_entries"],
-    update: ["name", "description", "family", "status", "metadata", "crosswalk_entries"],
+    // Mirrors MethodologyProfileRequest: profileKey (required), name (required),
+    // version (required), family (required), description, inputSchema, outputSchema,
+    // status, treatmentStrategyVocabulary, crosswalkEntries.
+    // metadata is not a MethodologyProfileRequest field and was removed (#1106).
+    create: [
+      "profile_key", "name", "version", "family", "description",
+      "input_schema", "output_schema", "status",
+      "treatment_strategy_vocabulary", "crosswalk_entries",
+    ],
+    // Mirrors UpdateMethodologyProfileRequest: same minus profileKey (immutable).
+    update: [
+      "name", "version", "family", "description",
+      "input_schema", "output_schema", "status",
+      "treatment_strategy_vocabulary", "crosswalk_entries",
+    ],
   },
   risk_register_record: {
     create: [
@@ -14141,13 +16140,36 @@ export const GOVERNANCE_FIELDS = {
     ],
   },
   verification_result: {
+    // Mirrors VerificationResultRequest: targetId (optional UUID), requirementId
+    // (optional UUID), prover (@NotBlank), property (optional), result (@NotNull
+    // VerificationStatus), assuranceLevel (@NotNull), evidence (Map, opaque),
+    // verifiedAt (@NotNull Instant), expiresAt (optional Instant).
+    // uid/title/description/outcome/status/metadata were not in the DTO (#1106).
     create: [
-      "uid", "title", "description", "outcome", "status",
-      "assurance_level", "verified_at", "metadata",
+      "target_id", "requirement_id", "prover", "property",
+      "result", "assurance_level", "evidence", "verified_at", "expires_at",
     ],
+    // Mirrors UpdateVerificationResultRequest: identical shape to create (all
+    // optional on update, same fields — no create-only keys to drop).
     update: [
-      "title", "description", "outcome", "status",
-      "assurance_level", "verified_at", "metadata",
+      "target_id", "requirement_id", "prover", "property",
+      "result", "assurance_level", "evidence", "verified_at", "expires_at",
+    ],
+  },
+  risk_appetite_profile: {
+    // Mirrors RiskAppetiteProfileRequest (GC-T005): appetiteKey (required),
+    // name (required), version (required), methodologyFamily (required),
+    // appetiteStatement, toleranceThresholds, status, effectiveFrom (required),
+    // effectiveTo.
+    create: [
+      "appetite_key", "name", "version", "methodology_family",
+      "appetite_statement", "tolerance_thresholds", "status",
+      "effective_from", "effective_to",
+    ],
+    // Mirrors UpdateRiskAppetiteProfileRequest: same minus appetiteKey (immutable).
+    update: [
+      "name", "version", "methodology_family", "appetite_statement",
+      "tolerance_thresholds", "status", "effective_from", "effective_to",
     ],
   },
 };
@@ -14639,4 +16661,270 @@ export async function acquireIntegrationLock(repoRoot, { retries = 0 } = {}) {
     retries,
     lockedMessage: `integration run is already in progress at: ${canonical}`,
   });
+}
+
+// ---------------------------------------------------------------------------
+// gc_assert_completion (issue #1103)
+//
+// Composes runAssertTraceabilityReconciled + runAssertGrcReconciled +
+// runPostFinalReport into a single deterministic call for Phase D completion.
+// Fail-fast: validates the final-report input before any side effects.
+// Returns {ok, assertions[], final_report} on success or
+// {ok:false, error, message, assertions[], final_report:null} on failure.
+// The internalVerifiedPhases union in runPostFinalReport is used here to
+// avoid a GitHub read-after-write race on markers this function just posted.
+// ---------------------------------------------------------------------------
+
+export async function runAssertCompletion(input) {
+  const {
+    repoPath,
+    issueNumber,
+    prNumber,
+    requirements = [],
+    files,
+    reviews,
+    traceability,
+    ciStatus,
+    sonarStatus,
+    planCommentUrl,
+    summary,
+    plainEnglishOutcome,
+    documentation_outcome,
+    touchedFiles = [],
+    project = null,
+    override = false,
+    overrideReason = null,
+    phase = "post_merge",
+  } = input;
+
+  const assertions = [];
+
+  // Fail-fast: validate the final-report sub-input BEFORE any side effects.
+  const subInput = {
+    issueNumber,
+    prNumber,
+    requirements: requirements.map((r) => ({
+      uid: r.uid,
+      title: r.title ?? r.uid,
+      status: r.status ?? r.statusIntent ?? "ACTIVE",
+      note: r.note ?? undefined,
+    })),
+    files: files ?? {},
+    reviews: reviews ?? [],
+    traceability: traceability ?? {},
+    ciStatus,
+    sonarStatus,
+    planCommentUrl: planCommentUrl ?? null,
+    summary: summary ?? null,
+    plainEnglishOutcome: plainEnglishOutcome ?? null,
+    documentation_outcome: documentation_outcome ?? null,
+    lane: "implement",
+  };
+  const validation = validateFinalReportInput(subInput);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      error: "completion_final_report_input_invalid",
+      message: validation.errors.join("; "),
+      issue_number: issueNumber,
+      assertions,
+      final_report: null,
+    };
+  }
+
+  // Phase D terminal (phase="pre_merge", issue #963): post the ready-for-review
+  // record only. The requirement-status transition and traceability/GRC
+  // reconciliation have NOT run yet — they are Phase E work that lands after the
+  // PR merges — so this path skips both assertions and posts no `gc:final-report`
+  // marker. Every input gate (CI green, Sonar pass/legit-skip, codex review
+  // present, sensitive/reserved/defer scrubs) still runs inside runPostFinalReport.
+  if (phase === "pre_merge") {
+    // The readiness record is the user-facing "ready to merge" signal, so it must
+    // still prove the Step 3.5 GRC screening record exists and reconciles before
+    // claiming readiness (issue #963 codex cycle-1 one-off finding). The screening
+    // entities/links are Phase A facts, independent of merge, so this assertion is
+    // legitimately pre-merge. Traceability reconciliation is deliberately NOT
+    // asserted here — it depends on the post-merge DRAFT→ACTIVE transition and is
+    // verified by the phase="post_merge" completion.
+    const grc = await runAssertGrcReconciled({ repoPath, issueNumber, project });
+    assertions.push({
+      name: "grc_reconciled",
+      ok: grc.ok,
+      verdict: grc.verdict ?? null,
+      comment_url: grc.comment_url ?? null,
+      comment_id: grc.comment_id ?? null,
+    });
+    if (!grc.ok) {
+      return {
+        ok: false,
+        error: grc.error,
+        message: grc.message,
+        issue_number: issueNumber,
+        assertions,
+        final_report: null,
+        next_action: grc.next_action ?? null,
+      };
+    }
+    const readiness = await runPostFinalReport({
+      ...subInput,
+      repoPath,
+      issueNumber,
+      prNumber,
+      phase: "pre_merge",
+    });
+    if (!readiness.ok) {
+      return {
+        ok: false,
+        error: readiness.error,
+        message: readiness.message,
+        issue_number: issueNumber,
+        assertions,
+        final_report: null,
+        next_action: readiness.next_action ?? null,
+      };
+    }
+    return {
+      ok: true,
+      repo_path: readiness.repo_path,
+      issue_number: issueNumber,
+      pr_number: prNumber,
+      phase: "pre_merge",
+      assertions,
+      readiness_report: {
+        comment_url: readiness.comment_url,
+        comment_id: readiness.comment_id,
+      },
+      final_report: null,
+    };
+  }
+
+  // Phase E (phase="post_merge", default): the reconciled completion record is
+  // merge-gated (issue #963). Refuse to run the assertions or post the final
+  // report unless the linked PR is actually merged — this is the structural
+  // guarantee that Ground Control state (ACTIVE transitions, IMPLEMENTS/TESTS
+  // links, the durable final report) never lands ahead of shipped code, mirroring
+  // gc_close_issue_after_merge. resolvePrForClose validates a supplied pr_number
+  // is linked to the issue and otherwise resolves the merged PR from the timeline;
+  // its `close_*` resolver errors are re-mapped to `completion_*` here.
+  const mergeRepoRoot = await ensureGitRepo(repoPath);
+  const { owner: mergeOwner, name: mergeName } = await getOwnerRepo(mergeRepoRoot);
+  const resolvedPr = await resolvePrForClose({
+    repoRoot: mergeRepoRoot,
+    owner: mergeOwner,
+    name: mergeName,
+    issueNumber,
+    prNumber,
+  });
+  if (resolvedPr.earlyReturn) {
+    return {
+      ok: false,
+      error: String(resolvedPr.earlyReturn.error).replace(/^close_/, "completion_"),
+      message: resolvedPr.earlyReturn.message,
+      issue_number: issueNumber,
+      assertions,
+      final_report: null,
+      next_action: resolvedPr.earlyReturn.next_action ?? null,
+    };
+  }
+  const mergedPr = resolvedPr.pr;
+  if (!mergedPr?.mergedAt || mergedPr.state !== "MERGED") {
+    return {
+      ok: false,
+      error: "completion_pr_not_merged",
+      message:
+        `gc_assert_completion refuses to post the reconciled completion record for issue #${issueNumber}: ` +
+        `linked PR #${mergedPr?.number ?? "?"} state=${mergedPr?.state ?? "unknown"}, merged_at=${mergedPr?.mergedAt ?? "null"}. ` +
+        `The Phase E completion gate requires merged_at non-null AND state='MERGED'.`,
+      issue_number: issueNumber,
+      pr_state: mergedPr?.state ?? null,
+      pr_merged_at: mergedPr?.mergedAt ?? null,
+      assertions,
+      final_report: null,
+      next_action: "wait_for_user_to_merge_the_pr",
+    };
+  }
+
+  // Step 1: traceability assertion
+  const trace = await runAssertTraceabilityReconciled({
+    repoPath,
+    issueNumber,
+    requirements: requirements.map((r) => ({
+      uid: r.uid,
+      statusIntent: r.statusIntent ?? r.status ?? "ACTIVE",
+    })),
+    project,
+    touchedFiles,
+    override,
+    overrideReason,
+  });
+  assertions.push({
+    name: "traceability_reconciled",
+    ok: trace.ok,
+    comment_url: trace.comment_url ?? null,
+    comment_id: trace.comment_id ?? null,
+  });
+  if (!trace.ok) {
+    return {
+      ok: false,
+      error: trace.error,
+      message: trace.message,
+      issue_number: issueNumber,
+      assertions,
+      final_report: null,
+      next_action: trace.next_action ?? null,
+    };
+  }
+
+  // Step 2: GRC assertion
+  const grc = await runAssertGrcReconciled({ repoPath, issueNumber, project });
+  assertions.push({
+    name: "grc_reconciled",
+    ok: grc.ok,
+    verdict: grc.verdict ?? null,
+    comment_url: grc.comment_url ?? null,
+    comment_id: grc.comment_id ?? null,
+  });
+  if (!grc.ok) {
+    return {
+      ok: false,
+      error: grc.error,
+      message: grc.message,
+      issue_number: issueNumber,
+      assertions,
+      final_report: null,
+      next_action: grc.next_action ?? null,
+    };
+  }
+
+  // Step 3: final report (use internalVerifiedPhases to avoid read-after-write race)
+  const report = await runPostFinalReport({
+    ...subInput,
+    repoPath,
+    issueNumber,
+    prNumber,
+    internalVerifiedPhases: ["traceability_reconciled", "grc_reconciled"],
+  });
+  if (!report.ok) {
+    return {
+      ok: false,
+      error: report.error,
+      message: report.message,
+      issue_number: issueNumber,
+      assertions,
+      final_report: null,
+      next_action: report.next_action ?? null,
+    };
+  }
+
+  return {
+    ok: true,
+    repo_path: report.repo_path,
+    issue_number: issueNumber,
+    pr_number: prNumber,
+    assertions,
+    final_report: {
+      comment_url: report.comment_url,
+      comment_id: report.comment_id,
+    },
+  };
 }

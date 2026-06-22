@@ -8,6 +8,8 @@ Accepted
 
 2026-05-11
 
+> **Style sync for issue #751 (2026-06-14):** Repository-wide Vale cleanup normalized punctuation in workflow prose. This ADR's routing and durable-record tool contracts stay the same.
+
 ## Context
 
 ADR-021 ("Gated Agentic Development Loop") and ADR-029 ("Issue-Thread Gate Model")
@@ -62,7 +64,7 @@ The `/implement` SKILL declares a stable **workflow step id** plus a
 |------|---------------------|---------------------|
 | `low` | Mechanical action, polling, gh wrapping, file reads | `claude-haiku-4-5` |
 | `medium` | Bounded reading + applying a designed decision; structured drafting | `claude-sonnet-4-6` |
-| `high` | Architectural reasoning, novel-fork interpretation, first-cycle review consume | `claude-opus-4-7` (the parent) |
+| `high` | Architectural reasoning, novel-fork interpretation, first-cycle review consume | `claude-opus-4-8` (the parent) |
 
 Drivers map tier to a concrete model. Claude Code drivers spawn an `Agent`
 subagent with the corresponding model for routed steps. Codex drivers have no
@@ -156,13 +158,15 @@ Each routed step writes one JSONL line via `gc_log_step_telemetry` to
 
 ```json
 {
-  "schema": "gc.implement.telemetry/v1",
+  "schema": "gc.implement.telemetry/v2",
   "ts": "2026-05-11T07:00:00Z",
   "issue": 868,
   "branch": "868-route-tools-telem",
   "step": "4.5",
   "tier": "medium",
-  "model": "sonnet",
+  "model": "claude-sonnet-4-6",
+  "expected_model": "claude-sonnet-4-6",
+  "model_matches_expected": true,
   "wall_time_ms": 12480,
   "input_tokens": 8421,
   "output_tokens": 612,
@@ -170,6 +174,19 @@ Each routed step writes one JSONL line via `gc_log_step_telemetry` to
 }
 ```
 
+- `expected_model` and `model_matches_expected` (schema v2, issue #1181) are
+  derived server-side from the step's `tier` via `CLAUDE_MODEL_BY_TIER`. The
+  `model` field itself is self-reported by the orchestrator and was found
+  unreliable in the recorded data (tier/model mismatches, intra-run
+  contradictions, model ids that postdated the config). `model_matches_expected`
+  is a recorded tier/model **consistency assertion**: `false` flags a record
+  whose reported model diverged from the tier's canonical model - routing that
+  did not land where the tier intended, or a mis-report. It is recorded, never
+  gating; telemetry stays operational measurement only. Capturing the *actual*
+  dispatched-subagent model from the harness (rather than the reported value)
+  remains future work tracked in #1181. Note that high-tier `agent: parent`
+  steps run on the parent session model, so the configured `high:` id is
+  advisory for those steps.
 - `wall_time_ms` is mandatory; the agent measures around its delegation calls.
 - `input_tokens` and `output_tokens` are optional; Claude Code's `Agent` tool
   does not surface per-call counts today, so the writer accepts `null`. When
@@ -440,7 +457,7 @@ Two coordinated changes:
 cycle wrappers and watch tools, is bridge work toward GC-O009; the
 start/poll/cancel triple is the shape a Temporal activity handle takes.
 
-**Amendment: renderer summary byte caps (#964).** Two of the three durable-record renderer tools in this ADR's surface family (`gc_render_pr_body` and `gc_post_final_report`) now enforce reject-not-truncate byte caps on their caller-controlled summary fields (`PR_BODY_SUMMARY_MAX = 1200`, `FINAL_REPORT_SUMMARY_MAX = 800`, `FINAL_REPORT_REVIEW_SUMMARY_MAX = 240` for `reviews[].summary`). `gc_post_decision_record`'s schema is unchanged; its caller-controlled prose fields already had per-field caps. The canonical succinctness rule is in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)` and is referenced from all three renderer tool descriptions. `buildFinalReport` no longer emits placeholder lines in the In-scope requirements or Reviews sections when those inputs are empty.
+**Amendment: renderer summary byte caps (#964).** Two of the three durable-record renderer tools in this ADR's surface family (`gc_render_pr_body` and `gc_post_final_report`) now enforce reject-not-truncate byte caps on their caller-controlled summary fields (`PR_BODY_SUMMARY_MAX = 1200`, `FINAL_REPORT_SUMMARY_MAX = 800`, `FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX = 600`, `FINAL_REPORT_REVIEW_SUMMARY_MAX = 240` for `reviews[].summary`). `gc_post_decision_record`'s schema is unchanged; its caller-controlled prose fields already had per-field caps. The canonical succinctness rule is in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)` and is referenced from all three renderer tool descriptions. `buildFinalReport` no longer emits placeholder lines in the In-scope requirements or Reviews sections when those inputs are empty.
 
 **Amendment: issue close mechanism (#862 typed-action-items PR).** The /implement Step 18 no longer runs `gh issue close`. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step 9) when the user merges the PR. Step 18 only removes the `in-progress` label set in Step 1. Closing from the agent decoupled the close event from the merge: an unmerged or rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open issues on revert). Step 19 (final report) is correspondingly tightened: traceability reconciliation (Steps 15 through 17) is an explicit precondition, and no earlier step surfaces a user-facing "complete" signal (prior escalations are for input, not for "done"). The /quickfix sibling lane is updated in lockstep.
 
@@ -449,3 +466,15 @@ start/poll/cancel triple is the shape a Temporal activity handle takes.
 **2026-05-26 (issue #989 merge carve-out).** The `/integrate` lane's `mode=merge` execution path runs inside the MCP server subprocess (via `gc_integration_manager` action=prepare mode=merge). This is the same tool surface boundary that the prepare path uses; no new routing stage or telemetry surface is required. The merge carve-out does not change the step-routing contract for any other lane.
 
 **2026-05-30 (issue #1058 Phase E + close stage).** A new orchestrator stage `close_issue_after_merge` is added to the routing table for the /implement Phase E (Step 20) post-merge close. The stage's tier defaults to `low` (the work is mechanical: verify `merged_at`, run `gh issue close`) and is configurable per repo via `routing.stages.close_issue_after_merge` in `.ground-control.yaml`. The two underlying tools (`gc_assert_traceability_reconciled` and `gc_close_issue_after_merge`) consume the existing `repoPath` / `issueNumber` boundary and produce telemetry records via the existing `gc_log_step_telemetry` writer; no new telemetry schema is required. The step-routing contract for every other lane and stage is unchanged.
+
+**2026-06-13 (issue #1156 outcome + recommendation).** The `final_report` renderer surface now requires `/implement` callers to pass `plain_english_outcome`; quickfix remains optional. The field is capped independently and renders as an Outcome section before structured evidence, so the durable final report gives the user a plain-language Phase D result without overloading `summary`. The `close_issue_after_merge` stage envelope now includes the advisory `next_issue_recommendation` object, or an explicit no-recommendation/failure reason, after the merge-verified close succeeds. No new routing stage or telemetry schema is required.
+
+**2026-06-10 (issue #1099 threat/risk screening gate).** A new orchestrator stage `grc_screening` is added to the routing table for the /implement Phase A (Step 3.5) GRC screening gate. The stage's tier is `medium` (reading workspaces + classifying change surface + optional GRC entity writes) and is configured via `routing.stages.grc_screening` in `.ground-control.yaml` if per-repo override is needed. The underlying tool (`gc_post_grc_screening`) consumes the existing `repoPath` / `issueNumber` boundary and produces telemetry records via the existing `gc_log_step_telemetry` writer; no new telemetry schema is required. The step-routing contract for every other lane and stage is unchanged.
+
+## Amendment (issue #1103)
+
+The Phase D completion assertions and final report are consolidated into one deterministic tool `gc_assert_completion` that composes the existing assertion runners (`runAssertTraceabilityReconciled`, `runAssertGrcReconciled`) and the final-report runner (`runPostFinalReport`) in a single sequenced call. The former Steps 17 (verify), 18 (label removal), and 19 (final report) are collapsed into a single Step 17. The markers (`traceability_reconciled`, `grc_reconciled`) and all gates are unchanged; `gc_assert_completion` uses `internalVerifiedPhases` to pass the just-posted markers to `runPostFinalReport` internally, avoiding a GitHub read-after-write race. The `in-progress` label removal is now optional best-effort, not a mandatory step gate. Phase D boundary is now Steps 9 → 17.
+
+**2026-06-19 (issue #1189 Cursor CLI driver).** Cursor CLI is a third orchestrator driver for the `/implement` skill. Like Codex, it runs every step on the parent session and ignores Claude-model subagent delegation from `gc_resolve_workflow_route`; poll-loop stages (`architecture_preflight`, `review_cycle_1_consume`, `test_quality_review`) stay parent-only. No new routing provider, telemetry schema, or MCP tool is required. Skill discovery uses `bin/install-skills.sh` (hard-copy into `~/.cursor/skills/<name>`) plus the project wrapper at `.cursor/skills/implement/SKILL.md`; CLI permissions live in `.cursor/cli.json`.
+
+**2026-06-22 (issue #963 post-merge reconciliation ordering).** No routing stage is added or renamed: the `transition_reconcile` stage (Steps 15/16) and the `final_report` stage (Step 17) keep their tier/agent mappings. What changes is *which phase* those stages execute in - they move from Phase D (pre-merge) to the new Phase E (post-merge), after the user merges, so Ground Control state never runs ahead of shipped code (see ADR-021 / ADR-029 §2026-06-22). `gc_assert_completion` gains a `phase` parameter: `phase="post_merge"` (default) is merge-gated (refuses `completion_pr_not_merged` unless the PR is merged) and runs the reconciliation assertions + final report; `phase="pre_merge"` posts the Phase D readiness record (a `ready_for_review` marker, no `gc:final-report` marker, no reconciliation assertions). The composite-tool surface, `internalVerifiedPhases` race avoidance, and telemetry contract are otherwise unchanged.

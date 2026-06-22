@@ -5,6 +5,7 @@ import { getAdrByUid } from "../../mcp/ground-control/lib.js";
 import {
   adrDecisionDate,
   adrStatus,
+  adrTitle,
   findAdrPathByUid,
   normalizeAdrStatus,
   parseRepoAdr,
@@ -23,8 +24,8 @@ for (const adrUid of config.trackedAdrs) {
   const repoAdr = parseRepoAdr(markdown);
   const liveAdr = await getAdrByUid(adrUid, project);
 
-  if (liveAdr.title !== repoAdr.title) {
-    drift.push(`${adrUid} title drifted: repo='${repoAdr.title}' gc='${liveAdr.title}'`);
+  if (adrTitle(liveAdr) !== repoAdr.title) {
+    drift.push(`${adrUid} title drifted: repo='${repoAdr.title}' gc='${adrTitle(liveAdr)}'`);
   }
   if (adrDecisionDate(liveAdr) !== repoAdr.decisionDate) {
     drift.push(`${adrUid} date drifted: repo=${repoAdr.decisionDate} gc=${adrDecisionDate(liveAdr)}`);

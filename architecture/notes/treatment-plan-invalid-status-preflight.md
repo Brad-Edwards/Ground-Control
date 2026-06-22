@@ -33,7 +33,7 @@ Do not conflate three distinct checks:
   Jackson enum binding, `@Valid`, and Bean Validation.
 - Domain validation: `TreatmentPlanService`, `TreatmentPlan.transitionStatus`,
   and `TreatmentPlanStatus` for lifecycle rules; `DomainValidationException`
-  for semantic 422s that are not parser failures.
+  for semantic 422 responses that are not parser failures.
 - MCP validation: `mcp/ground-control/gc-risk-governance.js` for the public
   Zod shape and handler, and `mcp/ground-control/lib.js`
   `GOVERNANCE_STATUS_ENUMS`, `GOVERNANCE_FIELDS`,

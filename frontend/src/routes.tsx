@@ -13,6 +13,21 @@ const Analysis = lazy(() =>
 const Dashboard = lazy(() =>
   import("@/pages/dashboard").then((m) => ({ default: m.Dashboard })),
 );
+const EvidenceStateExplorer = lazy(() =>
+  import("@/pages/evidence-state-explorer").then((m) => ({
+    default: m.EvidenceStateExplorer,
+  })),
+);
+const GrcPortfolio = lazy(() =>
+  import("@/pages/grc-portfolio").then((m) => ({
+    default: m.GrcPortfolio,
+  })),
+);
+const ControlAssuranceWorkspace = lazy(() =>
+  import("@/pages/control-assurance-workspace").then((m) => ({
+    default: m.ControlAssuranceWorkspace,
+  })),
+);
 const Graph = lazy(() =>
   import("@/pages/graph").then((m) => ({ default: m.Graph })),
 );
@@ -29,6 +44,11 @@ const Requirements = lazy(() =>
 );
 const TestRuns = lazy(() =>
   import("@/pages/test-runs").then((m) => ({ default: m.TestRuns })),
+);
+const TraceabilityMatrix = lazy(() =>
+  import("@/pages/traceability-matrix").then((m) => ({
+    default: m.TraceabilityMatrix,
+  })),
 );
 const TestRunRunner = lazy(() =>
   import("@/pages/test-run-runner").then((m) => ({ default: m.TestRunRunner })),
@@ -99,12 +119,19 @@ export function AppRoutes() {
           }
         >
           <Route index element={<Dashboard />} />
+          <Route path="portfolio" element={<GrcPortfolio />} />
           <Route path="requirements" element={<Requirements />} />
           <Route path="requirements/:id" element={<RequirementDetail />} />
+          <Route path="traceability-matrix" element={<TraceabilityMatrix />} />
           <Route path="test-runs" element={<TestRuns />} />
           <Route path="test-runs/:runId/run" element={<TestRunRunner />} />
           <Route path="graph" element={<Graph />} />
           <Route path="analysis" element={<Analysis />} />
+          <Route
+            path="control-assurance"
+            element={<ControlAssuranceWorkspace />}
+          />
+          <Route path="evidence-state" element={<EvidenceStateExplorer />} />
           <Route path="threat-modeling" element={<ThreatModelingWorkspace />} />
           <Route path="risk-scenarios" element={<RiskScenarioWorkspace />} />
           <Route path="admin" element={<Admin />} />

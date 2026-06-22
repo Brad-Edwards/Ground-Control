@@ -21,6 +21,7 @@ import com.keplerops.groundcontrol.domain.riskcontrol.model.RiskControlMapping;
 import com.keplerops.groundcontrol.domain.riskcontrol.service.RiskControlMappingService;
 import com.keplerops.groundcontrol.domain.riskcontrol.state.MappingControlRole;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
+import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -212,5 +213,45 @@ class RiskControlMappingControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id", is(MAPPING_ID.toString())));
+    }
+
+    @Test
+    void createWithThreatModelReturns201WithThreatModelId() throws Exception {
+        // GC-H006: threat model as third analysis-side endpoint
+        var project = new Project("ground-control", "Ground Control");
+        setField(project, "id", PROJECT_ID);
+
+        var control = new Control(project, "CTRL-001", "Access Control", ControlFunction.PREVENTIVE);
+        setField(control, "id", CONTROL_ID);
+
+        var threatModelId = UUID.fromString("00000000-0000-0000-0000-000000000900");
+        var threatModel = new ThreatModel(project, "TM-001", "SQL Injection", "Attacker", "Inject SQL", "Data loss");
+        setField(threatModel, "id", threatModelId);
+
+        var mapping = RiskControlMapping.forControlThreat(project, control, threatModel, MappingControlRole.PREVENTIVE);
+        setField(mapping, "id", MAPPING_ID);
+        setField(mapping, "createdAt", NOW);
+        setField(mapping, "updatedAt", NOW);
+
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(service.create(any())).thenReturn(mapping);
+
+        mockMvc.perform(
+                        post("/api/v1/risk-control-mappings")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "controlId": "00000000-0000-0000-0000-000000000500",
+                                  "threatModelId": "00000000-0000-0000-0000-000000000900",
+                                  "controlRole": "PREVENTIVE"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id", is(MAPPING_ID.toString())))
+                .andExpect(jsonPath("$.controlId", is(CONTROL_ID.toString())))
+                .andExpect(jsonPath("$.threatModelId", is(threatModelId.toString())))
+                .andExpect(jsonPath("$.riskScenarioId").doesNotExist());
     }
 }

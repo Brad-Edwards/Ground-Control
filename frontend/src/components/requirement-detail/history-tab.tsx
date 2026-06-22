@@ -57,9 +57,13 @@ function formatFieldValue(value: unknown): string {
 
 function FieldDiff({
   changes,
+  onShowFull,
 }: {
   changes: Record<string, FieldChangeResponse>;
+  onShowFull: () => void;
 }) {
+  const anyTruncated = Object.values(changes).some((c) => c.truncated);
+
   return (
     <div className="mt-2 space-y-1.5">
       {Object.entries(changes).map(([key, change]) => (
@@ -77,11 +81,26 @@ function FieldDiff({
           </div>
         </div>
       ))}
+      {anyTruncated && (
+        <button
+          type="button"
+          onClick={onShowFull}
+          className="text-xs text-primary hover:underline"
+        >
+          Show full
+        </button>
+      )}
     </div>
   );
 }
 
-function TimelineEntryCard({ entry }: { entry: TimelineEntryResponse }) {
+function TimelineEntryCard({
+  entry,
+  onShowFull,
+}: {
+  entry: TimelineEntryResponse;
+  onShowFull: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const Icon = CATEGORY_ICONS[entry.changeCategory];
   const hasChanges = entry.changes && Object.keys(entry.changes).length > 0;
@@ -149,7 +168,9 @@ function TimelineEntryCard({ entry }: { entry: TimelineEntryResponse }) {
               )}
               {Object.keys(entry.changes).length} field(s) changed
             </button>
-            {expanded && <FieldDiff changes={entry.changes} />}
+            {expanded && (
+              <FieldDiff changes={entry.changes} onShowFull={onShowFull} />
+            )}
           </>
         )}
       </div>
@@ -159,9 +180,11 @@ function TimelineEntryCard({ entry }: { entry: TimelineEntryResponse }) {
 
 export function HistoryTab({ requirementId }: { requirementId: string }) {
   const [filters, setFilters] = useState<TimelineFilters>({});
+  const [expand, setExpand] = useState(false);
   const { data: timeline = [], isLoading } = useRequirementTimeline(
     requirementId,
     filters,
+    expand,
   );
 
   const activeCategories = useMemo(() => {
@@ -261,6 +284,7 @@ export function HistoryTab({ requirementId }: { requirementId: string }) {
               <TimelineEntryCard
                 key={`${entry.changeCategory}-${entry.entityId}-${entry.revisionNumber}-${idx}`}
                 entry={entry}
+                onShowFull={() => setExpand(true)}
               />
             ))}
           </div>

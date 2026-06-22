@@ -61,7 +61,7 @@ EOF
       exit 0
       ;;
     *)
-      if [ -z "$MAP" ]; then
+      if [[ -z "$MAP" ]]; then
         MAP="$arg"
       else
         echo "FAIL [input]: unexpected extra argument: $arg" >&2
@@ -72,7 +72,7 @@ EOF
 done
 MAP="${MAP:-argument-map.argdown}"
 
-if [ ! -f "$MAP" ]; then
+if [[ ! -f "$MAP" ]]; then
   echo "FAIL [input]: argument map not found: $MAP" >&2
   exit 2
 fi
@@ -98,7 +98,7 @@ case "$PYTHON_MAJOR_MINOR" in
     ;;
 esac
 
-if [ ! -x "$VENV_DIR/bin/python" ]; then
+if [[ ! -x "$VENV_DIR/bin/python" ]]; then
   echo "[validate-argument-map] creating script-local venv (one-time)..." >&2
   if ! python3 -m venv "$VENV_DIR" >/dev/null 2>&1; then
     echo "FAIL [environment]: python3 -m venv $VENV_DIR failed." >&2
@@ -108,14 +108,14 @@ fi
 
 PYTHON_BIN="$VENV_DIR/bin/python"
 
-if [ ! -f "$LOCK_FILE" ]; then
+if [[ ! -f "$LOCK_FILE" ]]; then
   echo "FAIL [environment]: pinned dependency lockfile not found: $LOCK_FILE" >&2
   exit 3
 fi
 LOCK_SHA="$(sha256sum "$LOCK_FILE" | awk '{print $1}')"
 INSTALLED_SHA="$(cat "$LOCK_SENTINEL" 2>/dev/null || echo "")"
 
-if [ "$LOCK_SHA" != "$INSTALLED_SHA" ] || ! "$PYTHON_BIN" -c "import argdown_feedback, pyargdown" >/dev/null 2>&1; then
+if [[ "$LOCK_SHA" != "$INSTALLED_SHA" ]] || ! "$PYTHON_BIN" -c "import argdown_feedback, pyargdown" >/dev/null 2>&1; then
   echo "[validate-argument-map] installing pinned dependencies from lockfile (one-time per lock change, offline reuse after)..." >&2
   # pip refuses to install VCS URLs under --require-hashes (no way to hash
   # a git ref). It also refuses mixed requirements files where some
@@ -176,13 +176,13 @@ fi
 
 if ! "$PYTHON_BIN" -c "import nltk; nltk.data.find('tokenizers/punkt')" >/dev/null 2>&1; then
   echo "[validate-argument-map] downloading NLTK punkt corpus (one-time)..." >&2
+  # Try the env-var trick first; if that fails, retry without it — different
+  # nltk versions behave differently. Only fail if both attempts fail.
   if ! "$PYTHON_BIN" -c "import nltk, os; nltk.download('punkt', download_dir=os.path.join(os.environ['VIRTUAL_ENV'], 'nltk_data'), quiet=True)" \
-      VIRTUAL_ENV="$VENV_DIR" >/dev/null 2>&1; then
-    # Try again without the env var trick — different nltk versions behave differently.
-    if ! "$PYTHON_BIN" -c "import nltk; nltk.download('punkt', quiet=True)" >/dev/null 2>&1; then
-      echo "FAIL [environment]: NLTK punkt corpus download failed; argdown-feedback needs it." >&2
-      exit 3
-    fi
+      VIRTUAL_ENV="$VENV_DIR" >/dev/null 2>&1 \
+      && ! "$PYTHON_BIN" -c "import nltk; nltk.download('punkt', quiet=True)" >/dev/null 2>&1; then
+    echo "FAIL [environment]: NLTK punkt corpus download failed; argdown-feedback needs it." >&2
+    exit 3
   fi
 fi
 

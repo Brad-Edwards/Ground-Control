@@ -4,7 +4,7 @@
 
 Accepted
 
-## Update—Issue #846, dual-bundle correction (2026-05-24)
+## Update - Issue #846, dual-bundle correction (2026-05-24)
 
 The original Issue #846 update routed `GET /login` through
 `SpaController.forward("/index.html")`, which silently re-entered the security

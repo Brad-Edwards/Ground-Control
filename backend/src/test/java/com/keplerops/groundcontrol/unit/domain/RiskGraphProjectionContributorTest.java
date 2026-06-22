@@ -80,11 +80,12 @@ class RiskGraphProjectionContributorTest {
         archived.setTimeHorizon("6 months");
         archived.transitionStatus(RiskScenarioStatus.ARCHIVED);
 
-        var record = new RiskRegisterRecord(project, "RR-1", "Primary record");
-        setField(record, "id", UUID.randomUUID());
-        record.replaceRiskScenarios(List.of(scenario));
+        var riskRecord = new RiskRegisterRecord(project, "RR-1", "Primary record");
+        setField(riskRecord, "id", UUID.randomUUID());
+        riskRecord.replaceRiskScenarios(List.of(scenario));
 
-        var profile = new MethodologyProfile(project, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR);
+        var profile = new MethodologyProfile(
+                project, "FAIR_V3_0", "Open FAIR", "O-RT 3.0.1 / O-RA 2.0.1", MethodologyFamily.FAIR);
         setField(profile, "id", UUID.randomUUID());
 
         var observationAsset = new OperationalAsset(project, "ASSET-1", "Gateway");
@@ -105,7 +106,8 @@ class RiskGraphProjectionContributorTest {
         assessment.setConfidence("HIGH");
         assessment.replaceObservations(List.of(observation));
 
-        var treatmentPlan = new TreatmentPlan(project, "TP-1", "Mitigate gateway", record, TreatmentStrategy.MITIGATE);
+        var treatmentPlan =
+                new TreatmentPlan(project, "TP-1", "Mitigate gateway", riskRecord, TreatmentStrategy.MITIGATE);
         setField(treatmentPlan, "id", UUID.randomUUID());
 
         var internalLink = new RiskScenarioLink(
@@ -124,7 +126,7 @@ class RiskGraphProjectionContributorTest {
                 .thenReturn(List.of(scenario, archived));
         when(riskScenarioLinkRepository.findByProjectId(projectId)).thenReturn(List.of(internalLink, externalLink));
         when(riskRegisterRecordRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
-                .thenReturn(List.of(record));
+                .thenReturn(List.of(riskRecord));
         when(riskAssessmentResultRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(projectId))
                 .thenReturn(List.of(assessment));
         when(treatmentPlanRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
@@ -146,7 +148,7 @@ class RiskGraphProjectionContributorTest {
                         "METHODOLOGY_PROFILE");
         assertThat(nodes).noneMatch(node -> "RS-ARCH".equals(node.uid()));
         assertThat(edges)
-                .extracting(edge -> edge.edgeType())
+                .extracting(GraphEdge::edgeType)
                 .containsExactlyInAnyOrder(
                         "AFFECTS", "TRACKS", "ASSESSES", "USES_METHOD", "USED_OBSERVATION", "TREATS");
         assertThat(edges)

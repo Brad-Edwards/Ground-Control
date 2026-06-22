@@ -9,6 +9,7 @@ import com.keplerops.groundcontrol.domain.riskcontrol.state.MappingControlRole;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
+import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel;
 import com.keplerops.groundcontrol.shared.persistence.JacksonTextCollectionConverters;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
@@ -23,7 +24,6 @@ import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -33,13 +33,14 @@ import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 
 /**
- * Canonical mapping owner for GC-T003 Risk Scenario-Control Mapping.
+ * Canonical mapping owner for GC-T003 Risk Scenario-Control Mapping, extended by GC-H006
+ * to accept a {@link ThreatModel} as a third analysis-side endpoint.
  *
  * <p>Models a many-to-many relationship between a control endpoint (a catalog {@link Control}
- * OR a {@link ScopedControlImplementation}) and a risk endpoint ({@link RiskScenario} OR
- * {@link RiskRegisterRecord}), with optional asset/boundary context (C2), mapping-specific
- * objective/role/scope fields (C3), methodology-specific influence (C4), and mapping-owned
- * observations/evidence provenance (C8).
+ * OR a {@link ScopedControlImplementation}) and an analysis endpoint ({@link RiskScenario} OR
+ * {@link RiskRegisterRecord} OR {@link ThreatModel}), with optional asset/boundary context (C2),
+ * mapping-specific objective/role/scope fields (C3), methodology-specific influence (C4), and
+ * mapping-owned observations/evidence provenance (C8).
  *
  * <p>Exactly-one constraint on each side is enforced by DB CHECK constraints (see migration)
  * and by the service layer. The endpoint "type" is a computed property, not a persisted column.
@@ -51,22 +52,12 @@ import org.hibernate.envers.NotAudited;
  */
 @Entity
 @Audited
-@Table(
-        name = "risk_control_mapping",
-        uniqueConstraints = {
-            @UniqueConstraint(
-                    name = "uq_rcm_control_scenario_asset",
-                    columnNames = {"control_id", "risk_scenario_id", "operational_asset_id"}),
-            @UniqueConstraint(
-                    name = "uq_rcm_control_record_asset",
-                    columnNames = {"control_id", "risk_register_record_id", "operational_asset_id"}),
-            @UniqueConstraint(
-                    name = "uq_rcm_scoped_scenario_asset",
-                    columnNames = {"scoped_implementation_id", "risk_scenario_id", "operational_asset_id"}),
-            @UniqueConstraint(
-                    name = "uq_rcm_scoped_record_asset",
-                    columnNames = {"scoped_implementation_id", "risk_register_record_id", "operational_asset_id"})
-        })
+// Per-endpoint-family uniqueness (one mapping per control endpoint × analysis endpoint × asset)
+// is enforced by PARTIAL unique indexes in the Flyway migrations (V137), not by JPA
+// @UniqueConstraint: a plain unique constraint over the nullable polymorphic endpoint columns
+// would treat rows of a different endpoint family (whose columns are NULL) as colliding under
+// NULLS NOT DISTINCT. Partial uniqueness is not expressible via JPA, so the migration owns it.
+@Table(name = "risk_control_mapping")
 public class RiskControlMapping extends BaseEntity {
 
     @NotAudited
@@ -84,7 +75,11 @@ public class RiskControlMapping extends BaseEntity {
     @JoinColumn(name = "scoped_implementation_id")
     private ScopedControlImplementation scopedImplementation;
 
-    // ---- Risk-side endpoint (exactly one of riskScenario/riskRegisterRecord) ----
+    // ---- Analysis-side endpoint (exactly one of threatModel/riskScenario/riskRegisterRecord) ----
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "threat_model_id")
+    private ThreatModel threatModel;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "risk_scenario_id")
@@ -194,6 +189,31 @@ public class RiskControlMapping extends BaseEntity {
         return m;
     }
 
+    /** Creates a mapping with a catalog control and a threat model entry (GC-H006). */
+    public static RiskControlMapping forControlThreat(
+            Project project, Control control, ThreatModel threatModel, MappingControlRole controlRole) {
+        RiskControlMapping m = new RiskControlMapping();
+        m.project = project;
+        m.control = control;
+        m.threatModel = threatModel;
+        m.controlRole = controlRole;
+        return m;
+    }
+
+    /** Creates a mapping with a scoped implementation and a threat model entry (GC-H006). */
+    public static RiskControlMapping forScopedThreat(
+            Project project,
+            ScopedControlImplementation scopedImplementation,
+            ThreatModel threatModel,
+            MappingControlRole controlRole) {
+        RiskControlMapping m = new RiskControlMapping();
+        m.project = project;
+        m.scopedImplementation = scopedImplementation;
+        m.threatModel = threatModel;
+        m.controlRole = controlRole;
+        return m;
+    }
+
     // ---- Control-side endpoint type (computed) ----
 
     public boolean isControlSide() {
@@ -204,7 +224,11 @@ public class RiskControlMapping extends BaseEntity {
         return scopedImplementation != null;
     }
 
-    // ---- Risk-side endpoint type (computed) ----
+    // ---- Analysis-side endpoint type (computed) ----
+
+    public boolean isThreatSide() {
+        return threatModel != null;
+    }
 
     public boolean isScenarioSide() {
         return riskScenario != null;
@@ -226,6 +250,10 @@ public class RiskControlMapping extends BaseEntity {
 
     public ScopedControlImplementation getScopedImplementation() {
         return scopedImplementation;
+    }
+
+    public ThreatModel getThreatModel() {
+        return threatModel;
     }
 
     public RiskScenario getRiskScenario() {

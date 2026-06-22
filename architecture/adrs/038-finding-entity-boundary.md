@@ -16,10 +16,10 @@ Existing adjacent aggregates are easy to conflate with `Finding`:
 
 - `Observation` captures raw or analyst-supplied evidence about an asset, not a governed deficiency.
 - `Control` captures the expected safeguard, not a deficiency claim against it.
-- `RiskScenario`, `RiskRegisterRecord`, `RiskAssessmentResult`, and `TreatmentPlan` carry risk framing, assessment, register governance, and treatment decisions — not the finding statement itself.
+- `RiskScenario`, `RiskRegisterRecord`, `RiskAssessmentResult`, and `TreatmentPlan` carry risk framing, assessment, register governance, and treatment decisions - not the finding statement itself.
 - `ThreatModel` carries upstream threat-analysis context.
 
-Three link substrates (`AssetLinkTargetType`, `ControlLinkTargetType`, `RiskScenarioLinkTargetType`) already reserved `FINDING` as an unmodeled placeholder target type — `AssetLink`, `ControlLink`, and `RiskScenarioLink` rows referencing findings stored a string in `targetIdentifier` and bypassed project-scoped existence checks. Until `Finding` exists as a first-class entity, those reverse-lookup paths cannot be made consistent.
+Three link substrates (`AssetLinkTargetType`, `ControlLinkTargetType`, `RiskScenarioLinkTargetType`) already reserved `FINDING` as an unmodeled placeholder target type - `AssetLink`, `ControlLink`, and `RiskScenarioLink` rows referencing findings stored a string in `targetIdentifier` and bypassed project-scoped existence checks. Until `Finding` exists as a first-class entity, those reverse-lookup paths cannot be made consistent.
 
 Without an explicit architectural decision, the likely failure modes are:
 
@@ -69,7 +69,7 @@ OPEN
             → REMEDIATION_IN_PROGRESS   (verification rejected; reopen path)
 ```
 
-`VERIFIED_CLOSED` is terminal — reopening a verified-closed finding creates a new finding rather than reanimating the closed record.
+`VERIFIED_CLOSED` is terminal - reopening a verified-closed finding creates a new finding rather than reanimating the closed record.
 
 ### 3. Finding-owned outbound links use one anchored link mechanism
 
@@ -80,7 +80,7 @@ Finding outbound links live on a finding-owned `FindingLink` entity, anchored on
 - `targetEntityId` carries the UUID of an internal first-class entity, validated through `GraphTargetResolverService.validateFindingTarget`
 - `targetIdentifier` carries an external/not-yet-modeled artifact reference, validated only as non-blank
 
-Internal target types: `CONTROL`, `RISK_SCENARIO`, `ASSET`, `OBSERVATION`. External target types: `OPERATIONAL_ARTIFACT`, `EVIDENCE`, `AUDIT`, `REMEDIATION_PLAN`, `EXTERNAL`. When those external target types graduate to first-class aggregates in a later wave, the change is a one-place edit on `validateFindingTarget` + `FindingGraphProjectionContributor` — exactly the conversion this ADR applies to the inbound `FINDING` placeholders below.
+Internal target types: `CONTROL`, `RISK_SCENARIO`, `ASSET`, `OBSERVATION`. External target types: `OPERATIONAL_ARTIFACT`, `EVIDENCE`, `AUDIT`, `REMEDIATION_PLAN`, `EXTERNAL`. When those external target types graduate to first-class aggregates in a later wave, the change is a one-place edit on `validateFindingTarget` + `FindingGraphProjectionContributor` - exactly the conversion this ADR applies to the inbound `FINDING` placeholders below.
 
 Link types (`FindingLinkType`) describe the semantic role of the edge: `AFFECTS`, `CAUSED_BY`, `MITIGATED_BY`, `EVIDENCED_BY`, `OBSERVED_IN`, `REMEDIATED_BY`, `ASSOCIATED`.
 
@@ -90,19 +90,19 @@ Now that `Finding` exists, the `FINDING` constant in `AssetLinkTargetType`, `Con
 
 The conversion is dispositive: leaving `FINDING` as an external target after the entity ships would re-introduce the inconsistency between modeled and unmodeled traversal that this ADR exists to close.
 
-`Finding.delete()` rejects deletion with `ConflictException` (`finding_referenced`) while any `AssetLink`, `ControlLink`, or `RiskScenarioLink` still references the finding by `targetEntityId` — mirrors the reverse-link guard on `ThreatModel.delete()` and prevents orphan inbound edges from surviving a delete.
+`Finding.delete()` rejects deletion with `ConflictException` (`finding_referenced`) while any `AssetLink`, `ControlLink`, or `RiskScenarioLink` still references the finding by `targetEntityId` - mirrors the reverse-link guard on `ThreatModel.delete()` and prevents orphan inbound edges from surviving a delete.
 
 ### 5. Graph integration reuses the mixed-graph projection path
 
 JPA remains the source of truth. Finding nodes and outbound link edges flow into the existing mixed-graph projection via a dedicated `FindingGraphProjectionContributor`, registered through Spring's `GraphProjectionContributor` discovery. `GraphEntityType.FINDING` extends the existing enum.
 
-`contributeNodes` returns every finding regardless of status — `VERIFIED_CLOSED` findings stay in the graph as historical evidence so inbound `AssetLink` / `ControlLink` / `RiskScenarioLink` edges to them never dangle. `contributeEdges` filters outbound edges to archived `ASSET` or `ARCHIVED` `RISK_SCENARIO` targets, mirroring `ThreatModelGraphProjectionContributor`.
+`contributeNodes` returns every finding regardless of status - `VERIFIED_CLOSED` findings stay in the graph as historical evidence so inbound `AssetLink` / `ControlLink` / `RiskScenarioLink` edges to them never dangle. `contributeEdges` filters outbound edges to archived `ASSET` or `ARCHIVED` `RISK_SCENARIO` targets, mirroring `ThreatModelGraphProjectionContributor`.
 
 No bespoke finding graph endpoint, no direct AGE writes from controllers or services.
 
 ### 6. Validation, exception handling, and observability stay shared
 
-Finding API requests carry only shape validation at the DTO boundary (`@NotBlank`, `@Size`, `@NotNull`, Jackson enum parsing). Semantic validation — project scope, status transition validity, UID uniqueness, link target existence — lives in the service layer and uses the existing exception hierarchy (`DomainValidationException`, `ConflictException`, `NotFoundException`). HTTP mapping continues through `GlobalExceptionHandler` and `ErrorResponse`.
+Finding API requests carry only shape validation at the DTO boundary (`@NotBlank`, `@Size`, `@NotNull`, Jackson enum parsing). Semantic validation - project scope, status transition validity, UID uniqueness, link target existence - lives in the service layer and uses the existing exception hierarchy (`DomainValidationException`, `ConflictException`, `NotFoundException`). HTTP mapping continues through `GlobalExceptionHandler` and `ErrorResponse`.
 
 Error envelopes may reference field names and structured detail (`field`, `current_status`, `valid_targets`) but must not echo `description` or `rootCauseAnalysis` content, bearer tokens, or stack traces. Logging continues through SLF4J via `RequestLoggingFilter` and `ActorFilter`; `createdBy` is captured from `ActorHolder.get()` at construction.
 
@@ -112,10 +112,10 @@ REST routes live under `/api/v1/findings/**` and `/api/v1/findings/{id}/links/**
 
 ### Positive
 
-- Findings stay distinct from observations, controls, and the risk-management cluster — no semantic overload.
+- Findings stay distinct from observations, controls, and the risk-management cluster - no semantic overload.
 - Affected entities are project-scoped, validated references, not free text.
 - Inbound `FINDING` link targets become consistent with the rest of the modeled graph; reverse lookup and graph traversal stop straddling modeled and unmodeled paths.
-- Existing project scoping, auditing, validation, exception mapping, logging, and graph projection are reused — no parallel substrates.
+- Existing project scoping, auditing, validation, exception mapping, logging, and graph projection are reused - no parallel substrates.
 - The next first-class GRC aggregates (evidence, audit records, remediation plans) extend `validateFindingTarget` and `FindingGraphProjectionContributor` instead of inventing new linking surfaces.
 
 ### Negative
@@ -131,9 +131,9 @@ REST routes live under `/api/v1/findings/**` and `/api/v1/findings/{id}/links/**
 
 ## References
 
-- GC-V001 — Finding Entity (Wave 4, FUNCTIONAL, MUST)
-- `architecture/notes/finding-entity-preflight.md` — Codex preflight architecture note
-- ADR-024 — Threat Model Entry Boundary (parallel aggregate-boundary template)
-- ADR-020 — Asset Cross-Entity Linking (origin of the `FINDING` placeholder target type)
-- ADR-012 — Formal Methods Process (state-property L2 classification for transition logic)
-- ADR-033 — Authenticated Audit Actor Provenance (Envers actor capture via `ActorHolder`)
+- GC-V001 - Finding Entity (Wave 4, FUNCTIONAL, MUST)
+- `architecture/notes/finding-entity-preflight.md` - Codex preflight architecture note
+- ADR-024 - Threat Model Entry Boundary (parallel aggregate-boundary template)
+- ADR-020 - Asset Cross-Entity Linking (origin of the `FINDING` placeholder target type)
+- ADR-012 - Formal Methods Process (state-property L2 classification for transition logic)
+- ADR-033 - Authenticated Audit Actor Provenance (Envers actor capture via `ActorHolder`)

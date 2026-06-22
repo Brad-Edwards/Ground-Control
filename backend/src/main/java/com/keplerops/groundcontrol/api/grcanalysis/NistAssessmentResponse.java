@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.api.grcanalysis;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentResult;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.NistImpactBand;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.NistLikelihoodBand;
@@ -83,7 +84,7 @@ public record NistAssessmentResponse(
             ThreatEventKind threatEventKind,
             List<Map<String, Object>> vulnerabilities,
             List<Map<String, Object>> predisposingConditions,
-            ThreatSourceRelevance threatSourceRelevance,
+            ThreatSourceRelevance threatEventRelevance,
             NistLikelihoodBand likelihoodInitiation,
             NistLikelihoodBand likelihoodAdverseImpact,
             NistLikelihoodBand likelihoodOverall,
@@ -97,12 +98,21 @@ public record NistAssessmentResponse(
                     inputs.threatEventKind(),
                     inputs.vulnerabilities(),
                     inputs.predisposingConditions(),
-                    inputs.threatSourceRelevance(),
+                    inputs.threatEventRelevance(),
                     inputs.likelihoodInitiation(),
                     inputs.likelihoodAdverseImpact(),
                     inputs.likelihoodOverall(),
                     inputs.impactLevel(),
                     inputs.assessmentTimeframe());
+        }
+
+        /**
+         * Compatibility alias for the original wire field. The primary NIST
+         * concept is threat-event relevance per SP 800-30 Rev. 1 Table E-4.
+         */
+        @JsonProperty("threatSourceRelevance")
+        public ThreatSourceRelevance threatSourceRelevance() {
+            return threatEventRelevance;
         }
     }
 

@@ -59,8 +59,9 @@ class MethodologyProfileControllerTest {
     private MethodologyProfile makeProfile() {
         var project = new Project("ground-control", "Ground Control");
         setField(project, "id", PROJECT_ID);
-        var profile = new MethodologyProfile(project, "FAIR_V3_0", "FAIR", "3.0", MethodologyFamily.FAIR);
-        profile.setDescription("FAIR v3.0 quantitative model");
+        var profile = new MethodologyProfile(
+                project, "FAIR_V3_0", "Open FAIR", "O-RT 3.0.1 / O-RA 2.0.1", MethodologyFamily.FAIR);
+        profile.setDescription("Open FAIR quantitative profile");
         profile.setInputSchema(Map.of("type", "object"));
         profile.setOutputSchema(Map.of("type", "object"));
         profile.setStatus(MethodologyProfileStatus.ACTIVE);
@@ -83,10 +84,10 @@ class MethodologyProfileControllerTest {
                                         """
                                 {
                                   "profileKey": "FAIR_V3_0",
-                                  "name": "FAIR",
-                                  "version": "3.0",
+                                  "name": "Open FAIR",
+                                  "version": "O-RT 3.0.1 / O-RA 2.0.1",
                                   "family": "FAIR",
-                                  "description": "FAIR v3.0 quantitative model"
+                                  "description": "Open FAIR quantitative profile"
                                 }
                                 """))
                 .andExpect(status().isCreated())
@@ -117,7 +118,7 @@ class MethodologyProfileControllerTest {
         mockMvc.perform(get("/api/v1/methodology-profiles/{id}", PROFILE_ID).param("project", "ground-control"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id", is(PROFILE_ID.toString())))
-                .andExpect(jsonPath("$.version", is("3.0")));
+                .andExpect(jsonPath("$.version", is("O-RT 3.0.1 / O-RA 2.0.1")));
     }
 
     @Test
@@ -170,8 +171,8 @@ class MethodologyProfileControllerTest {
                                         """
                                 {
                                   "profileKey": "FAIR_V3_0",
-                                  "name": "FAIR",
-                                  "version": "3.0",
+                                  "name": "Open FAIR",
+                                  "version": "O-RT 3.0.1 / O-RA 2.0.1",
                                   "family": "FAIR",
                                   "treatmentStrategyVocabulary": {"RESIDUAL_TRANSFER": {"description": "transfer residual risk"}}
                                 }

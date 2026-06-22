@@ -46,10 +46,10 @@ reorder if it becomes load-bearing.
 
 ### Step fields
 
-- `action` — `TEXT NOT NULL`, max 10000 chars at the DTO. What the operator does.
-- `expectedResult` — `TEXT NOT NULL`, max 10000 chars at the DTO. What should happen.
-- `actualResult` — `TEXT NULL`, max 10000 chars at the DTO. What actually happened on
-  the latest authored pass. Nullable because a freshly-authored step has no observed
+- `action` - `TEXT NOT NULL`, max 10000 chars at the DTO. What the operator does.
+- `expectedResult` - `TEXT NOT NULL`, max 10000 chars at the DTO. What should happen.
+- `actualResult` - `TEXT NULL`, max 10000 chars at the DTO. What actually happened on
+  the latest authored pass. Nullable because a freshly authored step has no observed
   outcome yet.
 
 The 10000-character bound is a constrained-untrusted-content footprint trade-off: large
@@ -72,9 +72,9 @@ when UI work ships.
 
 ### Inline images
 
-The requirement says "Steps shall support rich text and inline images". The chosen
+The requirement says "Steps shall support rich text and inline images." The chosen
 seam is the **CommonMark image syntax** `![alt](url)` embedded in the same TEXT
-field. The backend carries these strings verbatim — it does not validate the URL,
+field. The backend carries these strings verbatim - it does not validate the URL,
 does not fetch the bytes, and does not host image binaries.
 
 This is the smallest design that satisfies the clause while staying inside every
@@ -87,7 +87,7 @@ preflight non-goal:
 - No filesystem temp paths.
 - No OCR.
 
-Image binary storage and upload — when a downstream requirement demands them — plug in
+Image binary storage and upload - when a downstream requirement demands them - plug in
 as a separate `Asset`-style aggregate that exposes `https://<host>/api/v1/assets/<id>`
 URLs the Markdown reference can target. The text representation does not change.
 
@@ -109,7 +109,7 @@ Deleting a `TestCase` must remove its steps. Two implementations were considered
 
 1. **DB-level `ON DELETE CASCADE`** on the `test_case_step.test_case_id` FK. Simple,
    self-contained at the schema layer.
-2. **Service-level cascade** — `TestCaseService.delete()` first calls
+2. **Service-level cascade** - `TestCaseService.delete()` first calls
    `TestCaseStepService.deleteAllByTestCase(...)` and only then deletes the parent.
 
 Choice: **option 2**. Envers records each `TestCaseStep` delete in the
@@ -142,7 +142,7 @@ DELETE /api/v1/test-cases/{testCaseId}/steps/{stepId}?project=…   → 204
 
 The service validates that the `testCaseId` resolves to a row inside the resolved
 project. A step request targeting a test case that is not in the resolved project
-returns HTTP 404 — the cross-project-leakage shape called out in the preflight is
+returns HTTP 404 - the cross-project-leakage shape called out in the preflight is
 covered by `crossTestCaseStepAccessRejected` in the integration test.
 
 ### MCP surface
@@ -190,22 +190,22 @@ ADR-034's enum-mirror requirement does not produce additional rows.
 
 ## Alternatives considered
 
-1. **Store steps as JSON in `TestCase.customFields`.** Rejected — preflight explicit
+1. **Store steps as JSON in `TestCase.customFields`.** Rejected - preflight explicit
    non-goal. JSON-in-text loses per-step audit, per-field validation, and the
    `(test_case_id, step_number)` uniqueness invariant.
-2. **`@OneToMany` collection on `TestCase`.** Rejected — would have required loading
+2. **`@OneToMany` collection on `TestCase`.** Rejected - would have required loading
    every step every time a test case is serialised, or carrying a lazy-init hazard
    that bidirectional collections regularly trigger in Spring serialisation.
-3. **DB-level `ON DELETE CASCADE` for parent deletion.** Rejected — bypasses Envers
+3. **DB-level `ON DELETE CASCADE` for parent deletion.** Rejected - bypasses Envers
    and silently loses per-step audit revisions.
-4. **HTML rich text with a server-side sanitiser.** Rejected — introduces an HTML
+4. **HTML rich text with a server-side sanitiser.** Rejected - introduces an HTML
    sink the codebase doesn't currently need, and the sanitiser is a non-trivial
    security surface that the preflight pushed to a future shared-renderer
    requirement. Markdown stays the smaller surface.
-5. **Inline image binaries as base64 in the step body.** Rejected — preflight
+5. **Inline image binaries as base64 in the step body.** Rejected - preflight
    non-goal. Inflates every list/detail response, makes audit diffs unreadable,
    and conflicts with the bounded-untrusted-content footprint goal.
-6. **Bulk reorder endpoint.** Rejected for TC-002 — the requirement statement does
+6. **Bulk reorder endpoint.** Rejected for TC-002 - the requirement statement does
    not mandate it, and the unique constraint plus three sequential PUTs implement
    any reorder. A future frontend-driven requirement can revisit.
 
