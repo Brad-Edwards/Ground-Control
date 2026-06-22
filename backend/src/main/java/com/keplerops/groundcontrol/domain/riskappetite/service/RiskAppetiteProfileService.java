@@ -79,7 +79,11 @@ public class RiskAppetiteProfileService {
     }
 
     public RiskAppetiteProfile update(UUID projectId, UUID id, UpdateRiskAppetiteProfileCommand command) {
-        var profile = getById(projectId, id);
+        // Resolve via the repository (not getById) to avoid the @Transactional self-invocation
+        // Sonar S6809 flags — the proxy would be bypassed. Class-level @Transactional still applies.
+        var profile = repository
+                .findByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new NotFoundException("Risk appetite profile not found: " + id));
         if (command.name() != null) {
             profile.setName(command.name());
         }

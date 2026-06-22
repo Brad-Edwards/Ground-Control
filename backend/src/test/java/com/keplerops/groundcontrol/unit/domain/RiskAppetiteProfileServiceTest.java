@@ -95,8 +95,8 @@ class RiskAppetiteProfileServiceTest {
         when(repository.existsByProjectIdAndAppetiteKeyAndVersion(PROJECT_ID, "BOARD_APPETITE", "1.0"))
                 .thenReturn(true);
 
-        assertThatThrownBy(() -> service.create(createCommand(List.of(), RiskAppetiteProfileStatus.DRAFT, FROM, TO)))
-                .isInstanceOf(ConflictException.class);
+        var cmd = createCommand(List.of(), RiskAppetiteProfileStatus.DRAFT, FROM, TO);
+        assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(ConflictException.class);
         verify(repository, never()).save(any());
     }
 
@@ -106,9 +106,9 @@ class RiskAppetiteProfileServiceTest {
         when(repository.existsByProjectIdAndAppetiteKeyAndVersion(any(), any(), any()))
                 .thenReturn(false);
         var bad = new ToleranceThreshold(null, "risk_level", 5.0, null, null, "HIGH", List.of("LOW", "HIGH"), null);
+        var cmd = createCommand(List.of(bad), RiskAppetiteProfileStatus.DRAFT, FROM, TO);
 
-        assertThatThrownBy(() -> service.create(createCommand(List.of(bad), RiskAppetiteProfileStatus.DRAFT, FROM, TO)))
-                .isInstanceOf(DomainValidationException.class);
+        assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(DomainValidationException.class);
     }
 
     @Test
@@ -117,9 +117,9 @@ class RiskAppetiteProfileServiceTest {
         when(repository.existsByProjectIdAndAppetiteKeyAndVersion(any(), any(), any()))
                 .thenReturn(false);
         var bad = new ToleranceThreshold(null, "risk_value", null, null, null, null, null, null);
+        var cmd = createCommand(List.of(bad), RiskAppetiteProfileStatus.DRAFT, FROM, TO);
 
-        assertThatThrownBy(() -> service.create(createCommand(List.of(bad), RiskAppetiteProfileStatus.DRAFT, FROM, TO)))
-                .isInstanceOf(DomainValidationException.class);
+        assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(DomainValidationException.class);
     }
 
     @Test
@@ -129,9 +129,9 @@ class RiskAppetiteProfileServiceTest {
                 .thenReturn(false);
         var bad = new ToleranceThreshold(
                 null, "risk_level", null, null, null, "CRITICAL", List.of("LOW", "MODERATE", "HIGH"), null);
+        var cmd = createCommand(List.of(bad), RiskAppetiteProfileStatus.DRAFT, FROM, TO);
 
-        assertThatThrownBy(() -> service.create(createCommand(List.of(bad), RiskAppetiteProfileStatus.DRAFT, FROM, TO)))
-                .isInstanceOf(DomainValidationException.class);
+        assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(DomainValidationException.class);
     }
 
     @Test
@@ -140,9 +140,9 @@ class RiskAppetiteProfileServiceTest {
         when(repository.existsByProjectIdAndAppetiteKeyAndVersion(any(), any(), any()))
                 .thenReturn(false);
         var bad = new ToleranceThreshold(null, "exceedance_probability", 1.5, "probability", null, null, null, null);
+        var cmd = createCommand(List.of(bad), RiskAppetiteProfileStatus.DRAFT, FROM, TO);
 
-        assertThatThrownBy(() -> service.create(createCommand(List.of(bad), RiskAppetiteProfileStatus.DRAFT, FROM, TO)))
-                .isInstanceOf(DomainValidationException.class);
+        assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(DomainValidationException.class);
     }
 
     @Test
@@ -151,8 +151,8 @@ class RiskAppetiteProfileServiceTest {
         when(repository.existsByProjectIdAndAppetiteKeyAndVersion(any(), any(), any()))
                 .thenReturn(false);
 
-        assertThatThrownBy(() -> service.create(createCommand(List.of(), RiskAppetiteProfileStatus.DRAFT, TO, FROM)))
-                .isInstanceOf(DomainValidationException.class);
+        var cmd = createCommand(List.of(), RiskAppetiteProfileStatus.DRAFT, TO, FROM);
+        assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(DomainValidationException.class);
     }
 
     @Test
@@ -167,8 +167,8 @@ class RiskAppetiteProfileServiceTest {
                         PROJECT_ID, "BOARD_APPETITE", RiskAppetiteProfileStatus.ACTIVE))
                 .thenReturn(List.of(existing));
 
-        assertThatThrownBy(() -> service.create(createCommand(List.of(), RiskAppetiteProfileStatus.ACTIVE, FROM, TO)))
-                .isInstanceOf(ConflictException.class);
+        var cmd = createCommand(List.of(), RiskAppetiteProfileStatus.ACTIVE, FROM, TO);
+        assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(ConflictException.class);
         verify(repository, never()).save(any());
     }
 

@@ -74,6 +74,33 @@ public class RiskAppetiteEvaluationService {
             limitations.add("appetite profile defines no tolerance thresholds; nothing to evaluate");
         }
 
+        Tally tally = accumulate(rows, profile, thresholds, evaluations);
+        if (tally.familyMismatch() > 0) {
+            limitations.add(tally.familyMismatch()
+                    + " assessment result(s) skipped: methodology family differs from the "
+                    + profile.getMethodologyFamily() + " appetite profile");
+        }
+
+        var summary = new RiskAppetiteEvaluationResult.Summary(
+                evaluations.size(), tally.breached(), tally.escalations(), tally.notDerivable());
+        return new RiskAppetiteEvaluationResult(
+                projectIdentifier,
+                ANALYSIS_KIND,
+                effectiveAsOf,
+                DERIVATION_METHOD,
+                toProfileSummary(profile),
+                evaluations,
+                summary,
+                limitations);
+    }
+
+    private record Tally(int familyMismatch, int breached, int escalations, int notDerivable) {}
+
+    private Tally accumulate(
+            List<RiskAssessmentResult> rows,
+            RiskAppetiteProfile profile,
+            List<ToleranceThreshold> thresholds,
+            List<RiskAppetiteEvaluationResult.Evaluation> evaluations) {
         int familyMismatch = 0;
         int breached = 0;
         int escalations = 0;
@@ -98,21 +125,7 @@ public class RiskAppetiteEvaluationService {
                 }
             }
         }
-        if (familyMismatch > 0) {
-            limitations.add(familyMismatch + " assessment result(s) skipped: methodology family differs from the "
-                    + profile.getMethodologyFamily() + " appetite profile");
-        }
-
-        var summary = new RiskAppetiteEvaluationResult.Summary(evaluations.size(), breached, escalations, notDerivable);
-        return new RiskAppetiteEvaluationResult(
-                projectIdentifier,
-                ANALYSIS_KIND,
-                effectiveAsOf,
-                DERIVATION_METHOD,
-                toProfileSummary(profile),
-                evaluations,
-                summary,
-                limitations);
+        return new Tally(familyMismatch, breached, escalations, notDerivable);
     }
 
     private RiskAppetiteEvaluationResult.Evaluation evaluateOne(
