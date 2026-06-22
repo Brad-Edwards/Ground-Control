@@ -1825,12 +1825,18 @@ export function formatIssueBody(req, extraBody) {
   // round-trip "create issue from requirement → /implement → reconcile"
   // works without a manual body edit.
   //
+  // The requirement title arrives as `folder_title`: request() runs every
+  // response through toSnakeCase, which renames `title` → `folder_title`
+  // globally (the mapping exists for test-case folders but is not namespaced).
+  // Fall back to `title` for direct/hand-constructed callers.
+  //
   // The title is untrusted input — it can contain newlines, leading `- `
   // sequences, or markdown that would produce extra bullets and trick the
   // parser into picking up an unrelated UID. Collapse all whitespace runs
   // to a single space so the bullet is guaranteed to be a single line.
-  const sanitizedTitle = req.title
-    ? req.title.replace(/\s+/g, " ").trim()
+  const titleValue = req.folder_title ?? req.title;
+  const sanitizedTitle = titleValue
+    ? titleValue.replace(/\s+/g, " ").trim()
     : null;
   const requirementsLine = sanitizedTitle
     ? `- ${req.uid} — ${sanitizedTitle}`
@@ -1876,6 +1882,67 @@ export async function createGitHubIssue({ title, body, labels, repo }) {
   }
   const number = parseInt(match[1], 10);
   return { url, number };
+}
+
+// Orchestrate the gc_create_github_issue MCP tool: render a GitHub issue from a
+// Ground Control requirement and auto-link it back.
+//
+// The MCP handler used to forward {uid, project, repo, labels, extra_body}
+// straight into createGitHubIssue({title, body, labels, repo}), so title/body
+// destructured to `undefined` and the tool ran `gh issue create --title
+// undefined --body undefined` with no traceability link (issue #1162). This
+// function is the missing wiring: it reuses the existing helpers rather than
+// duplicating their logic, and keeps the privileged `gh` side effect inside the
+// MCP server boundary (ADR-027/ADR-031).
+export async function createGitHubIssueFromRequirement({ uid, project, repo, labels, extraBody }) {
+  if (typeof uid !== "string" || uid.trim() === "") {
+    throw new Error("createGitHubIssueFromRequirement: 'uid' is required");
+  }
+  // getRequirementByUid throws RequestError on 404, so a missing requirement
+  // aborts before any GitHub issue is created.
+  const req = await getRequirementByUid(uid, project);
+  if (!req || !req.id) {
+    throw new Error(`createGitHubIssueFromRequirement: requirement '${uid}' not found`);
+  }
+
+  // The issue title is a single line. The requirement title arrives as
+  // `folder_title` (toSnakeCase renames `title` → `folder_title` on responses);
+  // fall back to `title` for direct callers. Reuse formatIssueBody's
+  // whitespace-collapse rule so a multiline/markdown title cannot inject
+  // structure into the title (the body's `## Requirements` bullet is sanitized
+  // the same way).
+  const titleValue = req.folder_title ?? req.title;
+  const titleText = titleValue ? titleValue.replace(/\s+/g, " ").trim() : "";
+  const title = titleText ? `${req.uid} — ${titleText}` : req.uid;
+  const body = formatIssueBody(req, extraBody);
+
+  const { url, number } = await createGitHubIssue({ title, body, labels, repo });
+
+  // Auto-link the new issue back to the requirement. ACTIVE requirements are
+  // being implemented (IMPLEMENTS); everything else is being tracked/documented
+  // (DOCUMENTS, per #841). A GitHub issue link is never a TESTS link. Keep this
+  // as one explicit decision next to the orchestration so future DRAFT policy
+  // changes don't touch title/body rendering or GitHub posting.
+  const linkType = req.status === "ACTIVE" ? "IMPLEMENTS" : "DOCUMENTS";
+  const result = { url, number, requirement_uid: req.uid, link_type: linkType };
+
+  // Issue creation and link creation are two non-atomic side effects: the issue
+  // already exists by the time the link is attempted. The original defect was a
+  // *silent* success, so a link failure must stay visible (traceability_error)
+  // rather than be swallowed — and must not discard the created issue.
+  try {
+    result.traceability_link = await createTraceabilityLink(req.id, {
+      artifact_type: "GITHUB_ISSUE",
+      artifact_identifier: String(number),
+      link_type: linkType,
+      artifact_url: url,
+      artifact_title: title,
+    });
+  } catch (e) {
+    result.traceability_error = e?.message || String(e);
+  }
+
+  return result;
 }
 
 export async function createGitHubIssueViaApi(data, project) {

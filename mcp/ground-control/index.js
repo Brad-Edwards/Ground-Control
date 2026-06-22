@@ -77,7 +77,7 @@ import {
   materializeGraph, getAncestors, getDescendants, findPaths,
   getGraphVisualization, extractSubgraph, traverseGraph, findGraphPaths,
   // ---- github / codex workflow ----
-  createGitHubIssue, formatIssueBody,
+  createGitHubIssueFromRequirement,
   runSweep, runSweepAll,
   getRepoGroundControlContext,
   runCodexArchitecturePreflight, runCodexReview, runCodexVerifyFinding,
@@ -516,7 +516,7 @@ server.tool(
 
 server.tool(
   "gc_create_github_issue",
-  "Create a GitHub issue from a requirement and auto-link it back. Required for /implement's UID-first path. Auto-link uses IMPLEMENTS for ACTIVE requirements; DRAFT requirements need a manual DOCUMENTS link afterwards.",
+  "Create a GitHub issue from a requirement and auto-link it back. Required for /implement's UID-first path. The title and body are rendered from the requirement (the body seeds the `## Requirements` section /implement parses); `extra_body` is appended. Auto-link uses IMPLEMENTS for ACTIVE requirements and DOCUMENTS otherwise. If the issue is created but the traceability link fails, the result still returns the issue plus a `traceability_error`.",
   {
     uid: z.string(),
     project: z.string().optional(),
@@ -525,8 +525,15 @@ server.tool(
     extra_body: z.string().optional(),
   },
   async (args) => {
-    try { return ok(JSON.stringify(await createGitHubIssue(args), null, 2)); }
-    catch (e) { return err(e); }
+    try {
+      return ok(JSON.stringify(await createGitHubIssueFromRequirement({
+        uid: args.uid,
+        project: args.project,
+        repo: args.repo,
+        labels: args.labels,
+        extraBody: args.extra_body,
+      }), null, 2));
+    } catch (e) { return err(e); }
   },
 );
 
