@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -16,6 +17,8 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.ComplianceMonitoringResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.EvidenceFreshnessResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlAnalyticsResult;
+import com.keplerops.groundcontrol.domain.grcanalysis.service.FairCamControlDomain;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.FairQuantitativeAnalysisResult;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.GrcAnalysisService;
 import com.keplerops.groundcontrol.domain.grcanalysis.service.NistAssessmentResult;
@@ -526,6 +529,91 @@ class GrcAnalysisControllerTest {
                     .andExpect(jsonPath("$.impactSet").isArray())
                     .andExpect(jsonPath("$.staleSet").isArray())
                     .andExpect(jsonPath("$.driftCauseCounts.evidenceExpiration", is(0)));
+        }
+    }
+
+    @Nested
+    class FairCamControlAnalytics {
+
+        private FairCamControlAnalyticsResult sampleResult() {
+            var counts = new FairCamControlAnalyticsResult.Counts(0, java.util.Map.of(), 0);
+            return new FairCamControlAnalyticsResult(
+                    "fair_cam_control_analytics",
+                    "ground-control",
+                    Instant.parse("2026-06-21T00:00:00Z"),
+                    "fair-cam-control-analytics-v1",
+                    List.of(),
+                    counts,
+                    List.of());
+        }
+
+        @Test
+        void happyPath_returns200WithStructuredFields() throws Exception {
+            when(grcAnalysisService.fairCamControlAnalytics(eq(PROJECT_ID), any()))
+                    .thenReturn(sampleResult());
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.analysisKind", is("fair_cam_control_analytics")))
+                    .andExpect(jsonPath("$.project", is("ground-control")))
+                    .andExpect(jsonPath("$.derivationMethod", is("fair-cam-control-analytics-v1")))
+                    .andExpect(jsonPath("$.controls").isArray())
+                    .andExpect(jsonPath("$.counts.total", is(0)))
+                    .andExpect(jsonPath("$.limitations").isArray());
+        }
+
+        @Test
+        void domainFilterParam_parsedCorrectly() throws Exception {
+            when(grcAnalysisService.fairCamControlAnalytics(
+                            eq(PROJECT_ID), argThat(q -> q.domain() == FairCamControlDomain.LOSS_EVENT_CONTROL)))
+                    .thenReturn(sampleResult());
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control")
+                            .param("domain", "LOSS_EVENT_CONTROL"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        void projectNotFound_returns404() throws Exception {
+            when(projectService.resolveProjectId(any())).thenThrow(new NotFoundException("Project not found"));
+
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "missing"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void zeroFreshnessWindow_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control")
+                            .param("freshnessWindowDays", "0"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void negativeFreshnessWindow_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control")
+                            .param("freshnessWindowDays", "-1"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void invalidUuid_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control")
+                            .param("controlId", "not-a-uuid"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void invalidDomain_returns400() throws Exception {
+            mockMvc.perform(get("/api/v1/analysis/grc/fair-cam-control-analytics")
+                            .param("project", "ground-control")
+                            .param("domain", "BOGUS"))
+                    .andExpect(status().isBadRequest());
         }
     }
 }

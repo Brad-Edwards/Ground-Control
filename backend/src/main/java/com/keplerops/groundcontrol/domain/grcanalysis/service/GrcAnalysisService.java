@@ -12,7 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
  * {@link VendorRiskAggregationService},
  * {@link NistAssessmentService},
  * {@link FairQuantitativeAnalysisService},
- * {@link ComplianceMonitoringAnalysisService}).
+ * {@link ComplianceMonitoringAnalysisService},
+ * {@link FairCamControlAnalyticsService}).
  */
 @Service
 @Transactional(readOnly = true)
@@ -24,6 +25,7 @@ public class GrcAnalysisService {
     private final NistAssessmentService nistAssessmentService;
     private final FairQuantitativeAnalysisService fairQuantitativeAnalysisService;
     private final ComplianceMonitoringAnalysisService complianceMonitoringAnalysisService;
+    private final FairCamControlAnalyticsService fairCamControlAnalyticsService;
 
     public GrcAnalysisService(
             EvidenceFreshnessAnalysisService evidenceFreshnessAnalysisService,
@@ -31,13 +33,15 @@ public class GrcAnalysisService {
             VendorRiskAggregationService vendorRiskAggregationService,
             NistAssessmentService nistAssessmentService,
             FairQuantitativeAnalysisService fairQuantitativeAnalysisService,
-            ComplianceMonitoringAnalysisService complianceMonitoringAnalysisService) {
+            ComplianceMonitoringAnalysisService complianceMonitoringAnalysisService,
+            FairCamControlAnalyticsService fairCamControlAnalyticsService) {
         this.evidenceFreshnessAnalysisService = evidenceFreshnessAnalysisService;
         this.observationProjectionService = observationProjectionService;
         this.vendorRiskAggregationService = vendorRiskAggregationService;
         this.nistAssessmentService = nistAssessmentService;
         this.fairQuantitativeAnalysisService = fairQuantitativeAnalysisService;
         this.complianceMonitoringAnalysisService = complianceMonitoringAnalysisService;
+        this.fairCamControlAnalyticsService = fairCamControlAnalyticsService;
     }
 
     public EvidenceFreshnessResult evidenceFreshness(
@@ -73,5 +77,9 @@ public class GrcAnalysisService {
 
     public ComplianceMonitoringResult complianceMonitoring(UUID projectId, Instant asOf, int freshnessWindowDays) {
         return complianceMonitoringAnalysisService.analyze(projectId, asOf, freshnessWindowDays);
+    }
+
+    public FairCamControlAnalyticsResult fairCamControlAnalytics(UUID projectId, FairCamControlAnalyticsQuery query) {
+        return fairCamControlAnalyticsService.analyze(projectId, query);
     }
 }

@@ -327,6 +327,22 @@ established for `fair_quantitative` (GC-T011 / #723) and recorded in
 classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
 unchanged; no new `docs/DOC_STYLE.md` style rule is established.
 
+**2026-06-21 (issue #746 GC-I017 FAIR-CAM control analytics).** Added
+`analyzeFairCamControlAnalytics` adapter helper to `mcp/ground-control/lib.js` and
+registered `fair_cam_control_analytics` in the `ANALYZE_KINDS` array and
+`gc_analyze` tool description in `mcp/ground-control/index.js`. The backend
+surface is `GET /api/v1/analysis/grc/fair-cam-control-analytics` (documented in
+`docs/API.md`). This follows the `gc_analyze`-kind extension pattern established
+for `fair_quantitative` (GC-T011 / #723), `continuous_compliance_monitoring`
+(GC-I004 / #763), and recorded in `docs/DOC_STYLE.md § MCP-shape-extensions`.
+The documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`,
+and `.vale.ini` are unchanged; no new `docs/DOC_STYLE.md` style rule is
+established. Pre-push review follow-up refined the same MCP surfaces only: the
+`gc_analyze` tool description and the `analyzeFairCamControlAnalytics` helper
+comment now note that the FAIR-CAM scope filters compose as an intersection and
+that `methodology_profile_id` is an applied filter. No new kind, endpoint, or
+style rule; `docs/API.md` carries the matching contract update.
+
 **2026-06-20 (issue #1194 dev-start plan gate).** Added the optional `workflow.dev_start_gate` parser to `mcp/ground-control/lib.js`, wired `gc_post_implementation_plan` to refuse invalid enabled gate sections before posting a plan marker, and extended `gc_render_pr_body` in `mcp/ground-control/index.js` with an optional `dev_start_gate` Markdown section. The workflow contract lives in `skills/implement/steps/step-04-planning.md` and `skills/implement/steps/step-09-pr-body.md`; the tool descriptions and parser validation are the MCP surface. These are workflow, MCP-adapter, and config-parser surfaces; no change to the Vale rule set, the `tools/install-vale.sh` installer, or the `.vale.ini` configuration.
 
 **2026-06-21 (issue #1167 controller @WebMvcTest mapping by FQCN).** Rewrote `run_controller_contracts` in `tools/policy/checks.py` (and the parallel `ControllerPolicyTest` ArchUnit-style test) to resolve a controller's `@WebMvcTest` companion by the controller's fully qualified class, derived from its repo path and matched against each test's `@WebMvcTest(...)` annotation resolved through that file's `import`, instead of the controller's bare filename stem. The stem heuristic collided on same-named controllers in different packages (`api/audit/AuditController` versus `api/audits/AuditController`), causing a false `controller-webmvctest-update` failure and letting the wrong test spuriously satisfy the check. The `controller-webmvctest-update`, `controller-webmvctest-missing`, and `controller-webmvctest-annotation` codes are unchanged. The parser matches dotted Java identifiers and strips the `.class` suffix in code so the regular expressions stay linear-time (no super-linear backtracking, Sonar S8786). The documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new `docs/DOC_STYLE.md` style rule is established.
