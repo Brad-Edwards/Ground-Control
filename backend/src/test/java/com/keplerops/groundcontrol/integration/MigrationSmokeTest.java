@@ -55,7 +55,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
-                        "136", "137", "138", "139");
+                        "136", "137", "138", "139", "140", "141");
     }
 
     @Test
@@ -175,6 +175,18 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         entityManager
                 .createNativeQuery("SELECT 1 FROM treatment_plan_audit LIMIT 1")
                 .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM risk_appetite_profile LIMIT 1")
+                .getResultList();
+        // Column-level probe on the Envers shadow (V141): the audit table is not covered by
+        // ddl-auto:validate, so a missing/renamed column would only surface on the first
+        // RiskAppetiteProfile mutation in production without this assertion (GC-T005).
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT appetite_key, name, version, methodology_family, appetite_statement,"
+                                + " tolerance_thresholds, status, effective_from, effective_to, created_at, updated_at"
+                                + " FROM risk_appetite_profile_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
         entityManager.createNativeQuery("SELECT 1 FROM control LIMIT 1").getResultList();
         entityManager.createNativeQuery("SELECT 1 FROM control_audit LIMIT 1").getResultList();
         entityManager.createNativeQuery("SELECT 1 FROM control_link LIMIT 1").getResultList();

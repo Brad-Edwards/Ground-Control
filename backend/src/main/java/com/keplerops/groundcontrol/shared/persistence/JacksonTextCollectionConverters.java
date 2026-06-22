@@ -10,6 +10,7 @@ import com.keplerops.groundcontrol.domain.evidence.model.EvidenceSourceRef;
 import com.keplerops.groundcontrol.domain.packregistry.model.PackDependency;
 import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPackEntry;
 import com.keplerops.groundcontrol.domain.packregistry.model.TrustPolicyRule;
+import com.keplerops.groundcontrol.domain.riskappetite.model.ToleranceThreshold;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.CrosswalkEntry;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ReassessmentTrigger;
@@ -243,6 +244,17 @@ public final class JacksonTextCollectionConverters {
     public static class CrosswalkEntryListConverter extends AbstractJsonTextConverter<List<CrosswalkEntry>> {
 
         public CrosswalkEntryListConverter() {
+            super(new TypeReference<>() {});
+        }
+    }
+
+    /**
+     * Persistence converter for {@code RiskAppetiteProfile.toleranceThresholds} (per GC-T005).
+     */
+    @Converter
+    public static class ToleranceThresholdListConverter extends AbstractJsonTextConverter<List<ToleranceThreshold>> {
+
+        public ToleranceThresholdListConverter() {
             super(new TypeReference<>() {});
         }
     }

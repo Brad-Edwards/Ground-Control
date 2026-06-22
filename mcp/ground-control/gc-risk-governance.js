@@ -27,11 +27,12 @@ import {
   createTreatmentPlan, updateTreatmentPlan, deleteTreatmentPlan,
   transitionTreatmentPlanStatus,
   createVerificationResult, updateVerificationResult, deleteVerificationResult,
+  createRiskAppetiteProfile, updateRiskAppetiteProfile, deleteRiskAppetiteProfile,
 } from "./lib.js";
 
 export const GC_RISK_GOVERNANCE_ENTITIES = [
   "methodology_profile", "risk_register_record", "risk_assessment_result",
-  "treatment_plan", "verification_result",
+  "treatment_plan", "verification_result", "risk_appetite_profile",
 ];
 export const GC_RISK_GOVERNANCE_ACTIONS = [
   "create", "update", "delete", "transition", "transition_approval",
@@ -197,6 +198,29 @@ export const gcRiskGovernanceZodShape = {
     conversionRule: z.string().optional(),
     limitations: z.string().optional(),
   })).optional(),
+  // risk_appetite_profile fields (GC-T005 — mirrors RiskAppetiteProfileRequest).
+  // appetite_key is the immutable key set at create; methodology_family is the
+  // lens (FAIR/NIST/ISO) the thresholds are expressed in; effective_from/to are
+  // ISO instants bounding the business effective window.
+  appetite_key: z.string().optional(),
+  methodology_family: z.enum(METHODOLOGY_FAMILIES).optional(),
+  appetite_statement: z.string().optional(),
+  effective_from: z.string().optional(),
+  effective_to: z.string().optional(),
+  // Forwarded verbatim after toCamelCase (tolerance_thresholds →
+  // toleranceThresholds); nested keys are already camelCase to match the
+  // ToleranceThreshold record. Exactly one of maxQuantitativeValue /
+  // maxOrdinalValue per entry — enforced server-side.
+  tolerance_thresholds: z.array(z.object({
+    riskCategory: z.string().optional(),
+    metricPath: z.string(),
+    maxQuantitativeValue: z.number().optional(),
+    units: z.string().optional(),
+    currency: z.string().optional(),
+    maxOrdinalValue: z.string().optional(),
+    orderedScale: z.array(z.string()).optional(),
+    label: z.string().optional(),
+  })).optional(),
 };
 
 export const GC_RISK_GOVERNANCE_DESCRIPTION =
@@ -208,8 +232,9 @@ export const GC_RISK_GOVERNANCE_DESCRIPTION =
   `risk_register_record={uid,title,owner,review_cadence,next_review_at,category_tags,decision_metadata,asset_scope_summary,risk_scenario_ids}; ` +
   `risk_assessment_result={risk_scenario_id,risk_register_record_id,methodology_profile_id,analyst_identity,assumptions,input_factors,observation_date,assessment_at,time_horizon,confidence,uncertainty_metadata,computed_outputs,evidence_refs,notes,observation_ids}; ` +
   `treatment_plan={uid,title,risk_scenario_id,risk_register_record_id,strategy,owner,rationale,due_date,status,action_items,reassessment_triggers[{category,target_type,target_entity_id,target_identifier,note}],methodology_profile_id,methodology_strategy_key}; ` +
-  `verification_result={target_id,requirement_id,prover,property,result,assurance_level,evidence,verified_at,expires_at}. ` +
-  `Required on create: methodology_profile→{profile_key,name,version,family}; verification_result→{prover,result,assurance_level,verified_at}. ` +
+  `verification_result={target_id,requirement_id,prover,property,result,assurance_level,evidence,verified_at,expires_at}; ` +
+  `risk_appetite_profile={appetite_key,name,version,methodology_family,appetite_statement,tolerance_thresholds[{riskCategory,metricPath,maxQuantitativeValue,units,currency,maxOrdinalValue,orderedScale,label}],status,effective_from,effective_to}. ` +
+  `Required on create: methodology_profile→{profile_key,name,version,family}; verification_result→{prover,result,assurance_level,verified_at}; risk_appetite_profile→{appetite_key,name,version,methodology_family,effective_from}. ` +
   `Update DTOs drop create-only foreign keys (uid; risk_register_record_id for treatment_plan; risk_scenario_id for risk_assessment_result; profile_key for methodology_profile) and status fields whose changes go through the transition action. ` +
   `Unknown fields are dropped — never tunneled through metadata. ` +
   `Required fields per action: risk_register_record/create→{uid,title}; risk_assessment_result/create→{risk_scenario_id,methodology_profile_id}; treatment_plan/create→{uid,title,risk_register_record_id,strategy}; */update and */delete→{id}; risk_register_record|treatment_plan/transition→{id,status}; risk_assessment_result/transition_approval→{id,approval_state}.`;
@@ -277,6 +302,14 @@ export async function gcRiskGovernanceToolHandler(args) {
         case "update": reqArg(args, "id", "update"); return updateVerificationResult(args.id, data, args.project);
         case "delete": reqArg(args, "id", "delete"); await deleteVerificationResult(args.id, args.project); return null;
         default: throw new Error(`Action '${args.action}' not valid for verification_result`);
+      }
+    }
+    case "risk_appetite_profile": {
+      switch (args.action) {
+        case "create": reqArg(args, "appetite_key", "create"); reqArg(args, "name", "create"); reqArg(args, "version", "create"); reqArg(args, "methodology_family", "create"); reqArg(args, "effective_from", "create"); return createRiskAppetiteProfile(data, args.project);
+        case "update": reqArg(args, "id", "update"); return updateRiskAppetiteProfile(args.id, data, args.project);
+        case "delete": reqArg(args, "id", "delete"); await deleteRiskAppetiteProfile(args.id, args.project); return null;
+        default: throw new Error(`Action '${args.action}' not valid for risk_appetite_profile`);
       }
     }
     default: throw new Error(`Unknown entity: ${args.entity}`);

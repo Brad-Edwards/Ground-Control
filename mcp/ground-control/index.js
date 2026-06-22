@@ -67,6 +67,8 @@ import {
   analyzeComplianceMonitoring,
   // ---- GC-I017 FAIR-CAM control analytics ----
   analyzeFairCamControlAnalytics,
+  // ---- GC-T005 risk appetite/tolerance evaluation ----
+  analyzeRiskAppetiteEvaluation,
   // ---- history / exports (kept for completeness even though tools route to gc_query) ----
   getRequirementHistory, getRelationHistory, getTraceabilityLinkHistory,
   getRequirementTimeline, getRequirementDiff, getProjectTimeline,
@@ -1642,6 +1644,8 @@ const ANALYZE_KINDS = [
   "continuous_compliance_monitoring",
   // GC-I017 — FAIR-CAM control analytics (domain attribution, capability, coverage, operational performance)
   "fair_cam_control_analytics",
+  // GC-T005 — risk appetite/tolerance evaluation (residual vs tolerance ceilings, escalation flags)
+  "appetite_evaluation",
 ];
 
 server.tool(
@@ -1656,6 +1660,7 @@ server.tool(
     `fair_quantitative→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
     `continuous_compliance_monitoring→{project?, as_of?, freshness_window_days?}. ` +
     `fair_cam_control_analytics→{project?, as_of?, freshness_window_days?, control_id?, scoped_implementation_id?, risk_scenario_id?, risk_register_record_id?, threat_model_id?, methodology_profile_id?, domain?} (scope filters compose as an intersection). ` +
+    `appetite_evaluation→{project?, as_of?, appetite_profile_id? | appetite_key?, risk_register_record_id?, risk_scenario_id?} (one of appetite_profile_id or appetite_key required). ` +
     `Others take {project?}.`,
   {
     kind: z.enum(ANALYZE_KINDS),
@@ -1680,6 +1685,9 @@ server.tool(
     threat_model_id: z.string().uuid().optional(),
     methodology_profile_id: z.string().uuid().optional(),
     domain: z.enum(["LOSS_EVENT_CONTROL", "VARIANCE_MANAGEMENT_CONTROL", "DECISION_SUPPORT_CONTROL"]).optional(),
+    // GC-T005 appetite-evaluation params
+    appetite_profile_id: z.string().uuid().optional(),
+    appetite_key: z.string().optional(),
   },
   async (args) => {
     try {
@@ -1764,13 +1772,22 @@ server.tool(
             methodologyProfileId: args.methodology_profile_id,
             domain: args.domain,
           }), null, 2));
+        case "appetite_evaluation":
+          return ok(JSON.stringify(await analyzeRiskAppetiteEvaluation({
+            project: args.project,
+            asOf: args.as_of,
+            profileId: args.appetite_profile_id,
+            appetiteKey: args.appetite_key,
+            riskRegisterRecordId: args.risk_register_record_id,
+            riskScenarioId: args.risk_scenario_id,
+          }), null, 2));
         default: return err(new Error(`Unknown kind: ${args.kind}`));
       }
     } catch (e) { return err(e); }
   },
 );
 
-const GRAPH_MODES = ["ancestors", "descendants", "paths", "subgraph", "visualization", "traverse", "find_paths"];
+const GRAPH_MODES =["ancestors", "descendants", "paths", "subgraph", "visualization", "traverse", "find_paths"];
 
 server.tool(
   "gc_graph",

@@ -533,6 +533,8 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         // threat_capability, resistance_strength sub-factors (GC-T011)
                         "137", // V137: add threat_model_id to risk_control_mapping (GC-H006)
                         "138", // V138: align FAIR/NIST profile source semantics
-                        "139"); // V139: O-RT forms-of-loss materiality + stakeholder secondary effects (GC-T016)
+                        "139", // V139: O-RT forms-of-loss materiality + stakeholder secondary effects (GC-T016)
+                        "140", // V140: create risk_appetite_profile (GC-T005, #260)
+                        "141"); // V141: create risk_appetite_profile_audit (GC-T005 audit parity)
     }
 }

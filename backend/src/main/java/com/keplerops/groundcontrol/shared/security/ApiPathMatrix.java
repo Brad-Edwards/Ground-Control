@@ -73,6 +73,15 @@ final class ApiPathMatrix {
                 // falls through to the authenticated() rule below.
                 .requestMatchers(HttpMethod.GET, "/api/v1/mcp-tool-usage", "/api/v1/mcp-tool-usage/**")
                 .hasRole(ROLE_ADMIN)
+                // GC-T005: risk appetite/tolerance governs org-wide escalation policy, so writes are
+                // admin-only (tampering would suppress escalations across every risk). Reads fall
+                // through to authenticated() so any project member can query the posture.
+                .requestMatchers(HttpMethod.POST, "/api/v1/risk-appetite-profiles", "/api/v1/risk-appetite-profiles/**")
+                .hasRole(ROLE_ADMIN)
+                .requestMatchers(HttpMethod.PUT, "/api/v1/risk-appetite-profiles/**")
+                .hasRole(ROLE_ADMIN)
+                .requestMatchers(HttpMethod.DELETE, "/api/v1/risk-appetite-profiles/**")
+                .hasRole(ROLE_ADMIN)
                 .requestMatchers("/api/v1/**")
                 .authenticated()
                 .requestMatchers("/actuator/**")

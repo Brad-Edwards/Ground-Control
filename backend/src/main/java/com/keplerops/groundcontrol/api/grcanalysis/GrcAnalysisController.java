@@ -95,6 +95,19 @@ public class GrcAnalysisController {
                 grcAnalysisService.fairQuantitative(projectId, asOf, riskAssessmentResultId, riskScenarioId));
     }
 
+    @GetMapping("/appetite-evaluation")
+    public RiskAppetiteEvaluationResponse appetiteEvaluation(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant asOf,
+            @RequestParam(required = false) UUID profileId,
+            @RequestParam(required = false) String appetiteKey,
+            @RequestParam(required = false) UUID riskRegisterRecordId,
+            @RequestParam(required = false) UUID riskScenarioId) {
+        UUID projectId = projectService.resolveProjectId(project);
+        return RiskAppetiteEvaluationResponse.from(grcAnalysisService.riskAppetiteEvaluation(
+                projectId, asOf, profileId, appetiteKey, riskRegisterRecordId, riskScenarioId));
+    }
+
     @GetMapping("/compliance-monitoring")
     public ComplianceMonitoringResponse complianceMonitoring(
             @RequestParam(required = false) String project,

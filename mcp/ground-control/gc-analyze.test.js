@@ -14,6 +14,7 @@ import {
   analyzeFairQuantitative,
   analyzeComplianceMonitoring,
   analyzeFairCamControlAnalytics,
+  analyzeRiskAppetiteEvaluation,
   toCamelCase,
   toSnakeCase,
 } from "./lib.js";
@@ -506,5 +507,57 @@ describe("analyzeFairCamControlAnalytics (GC-I017)", () => {
       Object.keys(snake.methodology_influence).sort((a, b) => a.localeCompare(b)),
       ["control_reliability", "decision_alignment", "fair_cam_domain", "loss_event_frequency", "loss_magnitude"],
     );
+  });
+});
+
+describe("analyzeRiskAppetiteEvaluation (GC-T005)", () => {
+  it("hits /api/v1/analysis/grc/appetite-evaluation with camelCase params", async () => {
+    const calls = makeFetchSpy({ body: { analysisKind: "appetite_evaluation" } });
+
+    await analyzeRiskAppetiteEvaluation({
+      project: "ground-control",
+      asOf: "2026-06-01T00:00:00Z",
+      profileId: "00000000-0000-0000-0000-000000000500",
+      appetiteKey: "BOARD_APPETITE",
+      riskRegisterRecordId: "00000000-0000-0000-0000-000000000030",
+      riskScenarioId: "00000000-0000-0000-0000-000000000020",
+    });
+
+    assert.equal(calls.length, 1);
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/v1/analysis/grc/appetite-evaluation");
+    assert.equal(calls[0].method, "GET");
+    assert.equal(url.searchParams.get("project"), "ground-control");
+    assert.equal(url.searchParams.get("asOf"), "2026-06-01T00:00:00Z");
+    assert.equal(url.searchParams.get("profileId"), "00000000-0000-0000-0000-000000000500");
+    assert.equal(url.searchParams.get("appetiteKey"), "BOARD_APPETITE");
+    assert.equal(url.searchParams.get("riskRegisterRecordId"), "00000000-0000-0000-0000-000000000030");
+    assert.equal(url.searchParams.get("riskScenarioId"), "00000000-0000-0000-0000-000000000020");
+  });
+
+  it(OMITS_UNDEFINED_PARAMS, async () => {
+    const calls = makeFetchSpy();
+
+    await analyzeRiskAppetiteEvaluation({ project: "ground-control", appetiteKey: "BOARD_APPETITE" });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("appetiteKey"), "BOARD_APPETITE");
+    assert.equal(url.searchParams.get("profileId"), null);
+    assert.equal(url.searchParams.get("asOf"), null);
+    assert.equal(url.searchParams.get("riskRegisterRecordId"), null);
+  });
+
+  it("returns the JSON body verbatim", async () => {
+    makeFetchSpy({
+      body: {
+        analysisKind: "appetite_evaluation",
+        summary: { evaluated: 2, breached: 1, escalations: 1, notDerivable: 0 },
+      },
+    });
+
+    const result = await analyzeRiskAppetiteEvaluation({ project: "ground-control", appetiteKey: "BOARD_APPETITE" });
+
+    assert.equal(result.analysisKind, "appetite_evaluation");
+    assert.equal(result.summary.escalations, 1);
   });
 });

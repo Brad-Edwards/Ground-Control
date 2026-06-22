@@ -1,5 +1,7 @@
 # Documentation style
 
+> **Sync note for issue #260 (2026-06-22 GC-T005):** The `gc_analyze` tool gained the `appetite_evaluation` kind and `gc_risk_governance` gained the `risk_appetite_profile` entity in `mcp/ground-control/index.js`, `lib.js`, and `gc-risk-governance.js`. These are additive extensions to existing action-multiplexed tools backed by fixed REST endpoints. Documentation lives in `docs/API.md` (`/risk-appetite-profiles` CRUD and `/analysis/grc/appetite-evaluation`) and `docs/architecture/ARCHITECTURE.md`. No style rule changed.
+
 > **Sync note for issue #721 (2026-06-21):** The NIST `gc_analyze`
 > opaque-key examples now name `threat_event_relevance` and retain legacy
 > `threat_source_relevance` as a compatibility key. The API reference carries

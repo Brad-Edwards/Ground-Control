@@ -29,6 +29,7 @@ import {
   CONTROL_EFFECTIVENESS_RATINGS,
   METHODOLOGY_FAMILIES,
   METHODOLOGY_PROFILE_STATUSES,
+  RISK_APPETITE_PROFILE_STATUSES,
   TREATMENT_PLAN_STATUSES,
   TREATMENT_STRATEGIES,
   VERIFICATION_STATUSES,
@@ -956,6 +957,40 @@ describe("MCP–OpenAPI write-contract", () => {
         evidence:
           "Map<String,Object> protected via rawBody path in createVerificationResult/updateVerificationResult " +
           "to avoid OPAQUE_VALUE_KEYS name collision with analysis-response evidence arrays.",
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_risk_governance — risk_appetite_profile (GC-T005)
+  // -------------------------------------------------------------------------
+
+  describe("gc_risk_governance/risk_appetite_profile create → RiskAppetiteProfileRequest", () => {
+    assertRow({
+      label: "gc_risk_governance/risk_appetite_profile/create",
+      mcpFields: GOVERNANCE_FIELDS.risk_appetite_profile.create,
+      openapiSchema: "RiskAppetiteProfileRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+      },
+      enums: {
+        methodologyFamily: METHODOLOGY_FAMILIES,
+        status: RISK_APPETITE_PROFILE_STATUSES,
+      },
+    });
+  });
+
+  describe("gc_risk_governance/risk_appetite_profile update → UpdateRiskAppetiteProfileRequest", () => {
+    assertRow({
+      label: "gc_risk_governance/risk_appetite_profile/update",
+      mcpFields: GOVERNANCE_FIELDS.risk_appetite_profile.update,
+      openapiSchema: "UpdateRiskAppetiteProfileRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+      },
+      enums: {
+        methodologyFamily: METHODOLOGY_FAMILIES,
+        status: RISK_APPETITE_PROFILE_STATUSES,
       },
     });
   });
