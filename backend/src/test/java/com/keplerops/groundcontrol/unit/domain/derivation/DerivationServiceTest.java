@@ -191,7 +191,8 @@ class DerivationServiceTest {
                                 Map.of("metadata", Map.of("raw_output", "do-not-store"))))))),
                         List.of()));
 
-        assertThatThrownBy(() -> service.run(validCommand()))
+        var command = validCommand();
+        assertThatThrownBy(() -> service.run(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("blocked raw-content field");
         verify(transactionTemplate, never()).execute(any(TransactionCallback.class));
@@ -206,7 +207,8 @@ class DerivationServiceTest {
                                 List.of(fact("component:wrong-commit", BASE_COMMIT, Map.of()))))),
                         List.of()));
 
-        assertThatThrownBy(() -> service.run(validCommand()))
+        var command = validCommand();
+        assertThatThrownBy(() -> service.run(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("provenance commitSha");
         verify(transactionTemplate, never()).execute(any(TransactionCallback.class));
@@ -227,7 +229,8 @@ class DerivationServiceTest {
                                 BASE_COMMIT,
                                 DERIVED_AT))));
 
-        assertThatThrownBy(() -> service.run(validCommand()))
+        var command = validCommand();
+        assertThatThrownBy(() -> service.run(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("Capture limit commitSha");
         verify(transactionTemplate, never()).execute(any(TransactionCallback.class));
@@ -239,7 +242,8 @@ class DerivationServiceTest {
         when(adapterRegistry.route(any(), any())).thenReturn(new DerivationRoutePlan(List.of(), List.of()));
         when(transactionTemplate.execute(any(TransactionCallback.class))).thenReturn(null);
 
-        assertThatThrownBy(() -> service.run(validCommand()))
+        var command = validCommand();
+        assertThatThrownBy(() -> service.run(command))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("transaction returned no result");
     }

@@ -76,14 +76,15 @@ class DerivationServiceIntegrationTest extends BaseIntegrationTest {
         var project = projectRepository.save(new Project(
                 "derivation-path-" + UUID.randomUUID().toString().substring(0, 8), "Derivation Path Validation"));
 
-        assertThatThrownBy(() -> derivationService.run(new CreateDerivationRunCommand(
-                        project.getId(),
-                        DerivationScopeMode.PATH_SET,
-                        COMMIT,
-                        null,
-                        List.of("backend/src/main/java/"),
-                        List.of("java"),
-                        List.of("application"))))
+        var command = new CreateDerivationRunCommand(
+                project.getId(),
+                DerivationScopeMode.PATH_SET,
+                COMMIT,
+                null,
+                List.of("backend/src/main/java/"),
+                List.of("java"),
+                List.of("application"));
+        assertThatThrownBy(() -> derivationService.run(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("empty or parent-directory segments");
     }

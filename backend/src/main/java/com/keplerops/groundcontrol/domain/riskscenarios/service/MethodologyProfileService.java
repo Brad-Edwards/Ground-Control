@@ -558,13 +558,17 @@ public class MethodologyProfileService {
 
     @Transactional(readOnly = true)
     public MethodologyProfile getById(UUID projectId, UUID id) {
+        return findByIdOrThrow(projectId, id);
+    }
+
+    private MethodologyProfile findByIdOrThrow(UUID projectId, UUID id) {
         return repository
                 .findByIdAndProjectId(id, projectId)
                 .orElseThrow(() -> new NotFoundException("Methodology profile not found: " + id));
     }
 
     public MethodologyProfile update(UUID projectId, UUID id, UpdateMethodologyProfileCommand command) {
-        var profile = getById(projectId, id);
+        var profile = findByIdOrThrow(projectId, id);
         if (command.name() != null) {
             profile.setName(command.name());
         }
@@ -586,7 +590,7 @@ public class MethodologyProfileService {
     }
 
     public void delete(UUID projectId, UUID id) {
-        repository.delete(getById(projectId, id));
+        repository.delete(findByIdOrThrow(projectId, id));
     }
 
     // GC-T012 crosswalk semantic constants (shared scale/units literals across seeds)
@@ -779,51 +783,54 @@ public class MethodologyProfileService {
         var project = projectService.getById(projectId);
         seedIfMissing(
                 project,
-                "LEGACY_QUALITATIVE_V1",
-                "Legacy Qualitative",
-                "1",
-                MethodologyFamily.CUSTOM,
-                "Compatibility profile for migrated pre-methodology qualitative assessments.",
-                parseSchema(LEGACY_INPUT_SCHEMA),
-                parseSchema(LEGACY_OUTPUT_SCHEMA),
-                null);
+                new MethodologyProfileSeed(
+                        "LEGACY_QUALITATIVE_V1",
+                        "Legacy Qualitative",
+                        "1",
+                        MethodologyFamily.CUSTOM,
+                        "Compatibility profile for migrated pre-methodology qualitative assessments.",
+                        parseSchema(LEGACY_INPUT_SCHEMA),
+                        parseSchema(LEGACY_OUTPUT_SCHEMA),
+                        null));
         seedIfMissing(
                 project,
-                "FAIR_V3_0",
-                "Open FAIR",
-                "O-RT 3.0.1 / O-RA 2.0.1",
-                MethodologyFamily.FAIR,
-                "Open FAIR quantitative profile aligned to O-RT 3.0.1 and O-RA 2.0.1. "
-                        + "Profile key FAIR_V3_0 is retained for compatibility.",
-                parseSchema(FAIR_INPUT_SCHEMA),
-                parseSchema(FAIR_OUTPUT_SCHEMA),
-                FAIR_CROSSWALK_ENTRIES);
+                new MethodologyProfileSeed(
+                        "FAIR_V3_0",
+                        "Open FAIR",
+                        "O-RT 3.0.1 / O-RA 2.0.1",
+                        MethodologyFamily.FAIR,
+                        "Open FAIR quantitative profile aligned to O-RT 3.0.1 and O-RA 2.0.1. "
+                                + "Profile key FAIR_V3_0 is retained for compatibility.",
+                        parseSchema(FAIR_INPUT_SCHEMA),
+                        parseSchema(FAIR_OUTPUT_SCHEMA),
+                        FAIR_CROSSWALK_ENTRIES));
         seedIfMissing(
                 project,
-                "NIST_SP800_30_R1",
-                "NIST SP 800-30 Rev. 1",
-                "1",
-                MethodologyFamily.NIST_SP800_30_R1,
-                "NIST SP 800-30 Rev. 1 qualitative risk assessment using five-level "
-                        + "likelihood and impact scales with a 5x5 risk matrix.",
-                parseSchema(NIST_INPUT_SCHEMA),
-                parseSchema(NIST_OUTPUT_SCHEMA),
-                NIST_CROSSWALK_ENTRIES);
+                new MethodologyProfileSeed(
+                        "NIST_SP800_30_R1",
+                        "NIST SP 800-30 Rev. 1",
+                        "1",
+                        MethodologyFamily.NIST_SP800_30_R1,
+                        "NIST SP 800-30 Rev. 1 qualitative risk assessment using five-level "
+                                + "likelihood and impact scales with a 5x5 risk matrix.",
+                        parseSchema(NIST_INPUT_SCHEMA),
+                        parseSchema(NIST_OUTPUT_SCHEMA),
+                        NIST_CROSSWALK_ENTRIES));
         seedIfMissing(
                 project,
-                "ISO_27005_V2022",
-                "ISO 27005",
-                "2022",
-                MethodologyFamily.ISO_27005,
-                "ISO/IEC 27005:2022-aligned risk assessment supporting ISO 27001 "
-                        + "information security management system risk criteria.",
-                parseSchema(ISO_INPUT_SCHEMA),
-                parseSchema(ISO_OUTPUT_SCHEMA),
-                ISO_CROSSWALK_ENTRIES);
+                new MethodologyProfileSeed(
+                        "ISO_27005_V2022",
+                        "ISO 27005",
+                        "2022",
+                        MethodologyFamily.ISO_27005,
+                        "ISO/IEC 27005:2022-aligned risk assessment supporting ISO 27001 "
+                                + "information security management system risk criteria.",
+                        parseSchema(ISO_INPUT_SCHEMA),
+                        parseSchema(ISO_OUTPUT_SCHEMA),
+                        ISO_CROSSWALK_ENTRIES));
     }
 
-    private void seedIfMissing(
-            Project project,
+    private record MethodologyProfileSeed(
             String key,
             String name,
             String version,
@@ -831,17 +838,19 @@ public class MethodologyProfileService {
             String description,
             Map<String, Object> inputSchema,
             Map<String, Object> outputSchema,
-            List<CrosswalkEntry> crosswalkEntries) {
-        if (repository.existsByProjectIdAndProfileKeyAndVersion(project.getId(), key, version)) {
+            List<CrosswalkEntry> crosswalkEntries) {}
+
+    private void seedIfMissing(Project project, MethodologyProfileSeed seed) {
+        if (repository.existsByProjectIdAndProfileKeyAndVersion(project.getId(), seed.key(), seed.version())) {
             return;
         }
-        var profile = new MethodologyProfile(project, key, name, version, family);
-        profile.setDescription(description);
-        profile.setInputSchema(inputSchema);
-        profile.setOutputSchema(outputSchema);
+        var profile = new MethodologyProfile(project, seed.key(), seed.name(), seed.version(), seed.family());
+        profile.setDescription(seed.description());
+        profile.setInputSchema(seed.inputSchema());
+        profile.setOutputSchema(seed.outputSchema());
         profile.setStatus(MethodologyProfileStatus.ACTIVE);
-        if (crosswalkEntries != null && !crosswalkEntries.isEmpty()) {
-            profile.setCrosswalkEntries(crosswalkEntries);
+        if (seed.crosswalkEntries() != null && !seed.crosswalkEntries().isEmpty()) {
+            profile.setCrosswalkEntries(seed.crosswalkEntries());
         }
         repository.save(profile);
     }

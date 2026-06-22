@@ -320,9 +320,10 @@ public class AuditService {
     /**
      * Returns a unified, chronologically-sorted audit timeline across all requirements in a project.
      *
-     * <p>TODO: This loads all revisions into memory then filters/paginates. Move to DB-level
-     * pagination (e.g. a native query joining revinfo with audit tables) before beta to avoid
-     * O(requirements * revisions) memory usage on large projects.
+     * <p>Known limitation (tracked by issue #1212): this loads all revisions into memory then
+     * filters/paginates. DB-level pagination (e.g. a native query joining revinfo with audit
+     * tables) is planned before beta to avoid O(requirements * revisions) memory usage on large
+     * projects.
      */
     public List<TimelineEntry> getProjectTimeline(
             UUID projectId,

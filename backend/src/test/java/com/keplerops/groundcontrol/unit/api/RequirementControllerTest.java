@@ -200,7 +200,7 @@ class RequirementControllerTest {
         @Test
         void returns200() throws Exception {
             var req = createRequirement("REQ-001");
-            when(requirementService.getByUid(eq(PROJECT_ID), eq("REQ-001"))).thenReturn(req);
+            when(requirementService.getByUid(PROJECT_ID, "REQ-001")).thenReturn(req);
 
             mockMvc.perform(get("/api/v1/requirements/uid/REQ-001"))
                     .andExpect(status().isOk())
