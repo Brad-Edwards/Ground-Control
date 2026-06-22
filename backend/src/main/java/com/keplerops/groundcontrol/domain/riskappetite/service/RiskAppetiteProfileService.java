@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class RiskAppetiteProfileService {
 
     private static final String PROBABILITY_UNIT = "probability";
+    private static final String NOT_FOUND = "Risk appetite profile not found: ";
 
     private final RiskAppetiteProfileRepository repository;
     private final ProjectService projectService;
@@ -73,17 +74,14 @@ public class RiskAppetiteProfileService {
 
     @Transactional(readOnly = true)
     public RiskAppetiteProfile getById(UUID projectId, UUID id) {
-        return repository
-                .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Risk appetite profile not found: " + id));
+        return repository.findByIdAndProjectId(id, projectId).orElseThrow(() -> new NotFoundException(NOT_FOUND + id));
     }
 
     public RiskAppetiteProfile update(UUID projectId, UUID id, UpdateRiskAppetiteProfileCommand command) {
         // Resolve via the repository (not getById) to avoid the @Transactional self-invocation
         // Sonar S6809 flags — the proxy would be bypassed. Class-level @Transactional still applies.
-        var profile = repository
-                .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Risk appetite profile not found: " + id));
+        var profile =
+                repository.findByIdAndProjectId(id, projectId).orElseThrow(() -> new NotFoundException(NOT_FOUND + id));
         if (command.name() != null) {
             profile.setName(command.name());
         }
@@ -117,9 +115,8 @@ public class RiskAppetiteProfileService {
     }
 
     public void delete(UUID projectId, UUID id) {
-        var profile = repository
-                .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Risk appetite profile not found: " + id));
+        var profile =
+                repository.findByIdAndProjectId(id, projectId).orElseThrow(() -> new NotFoundException(NOT_FOUND + id));
         repository.delete(profile);
     }
 
