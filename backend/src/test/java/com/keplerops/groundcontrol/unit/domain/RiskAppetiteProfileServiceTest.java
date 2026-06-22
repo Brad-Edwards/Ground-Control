@@ -212,6 +212,100 @@ class RiskAppetiteProfileServiceTest {
     }
 
     @Test
+    void updateAppliesAllOptionalFields() {
+        var existing = new RiskAppetiteProfile(
+                project, "BOARD_APPETITE", "Board Risk Appetite", "1.0", MethodologyFamily.FAIR, FROM);
+        var id = UUID.randomUUID();
+        setField(existing, "id", id);
+        when(repository.findByIdAndProjectId(id, PROJECT_ID)).thenReturn(java.util.Optional.of(existing));
+        when(repository.save(any())).then(returnsFirstArg());
+        var newFrom = Instant.parse("2027-01-01T00:00:00Z");
+        var newTo = Instant.parse("2027-12-31T00:00:00Z");
+
+        var updated = service.update(
+                PROJECT_ID,
+                id,
+                new UpdateRiskAppetiteProfileCommand(
+                        "Renamed",
+                        "2.0",
+                        MethodologyFamily.ISO_27005,
+                        "Updated appetite statement",
+                        List.of(quantitative(750000.0)),
+                        RiskAppetiteProfileStatus.DRAFT,
+                        newFrom,
+                        newTo));
+
+        assertThat(updated.getName()).isEqualTo("Renamed");
+        assertThat(updated.getVersion()).isEqualTo("2.0");
+        assertThat(updated.getMethodologyFamily()).isEqualTo(MethodologyFamily.ISO_27005);
+        assertThat(updated.getAppetiteStatement()).isEqualTo("Updated appetite statement");
+        assertThat(updated.getToleranceThresholds()).hasSize(1);
+        assertThat(updated.getEffectiveFrom()).isEqualTo(newFrom);
+        assertThat(updated.getEffectiveTo()).isEqualTo(newTo);
+    }
+
+    @Test
+    void createAcceptsValidOrdinalThreshold() {
+        when(projectService.getById(PROJECT_ID)).thenReturn(project);
+        when(repository.existsByProjectIdAndAppetiteKeyAndVersion(any(), any(), any()))
+                .thenReturn(false);
+        when(repository.save(any())).then(returnsFirstArg());
+        var ordinal = new ToleranceThreshold(
+                null, "risk_level", null, null, null, "HIGH", List.of("LOW", "MODERATE", "HIGH", "CRITICAL"), "band");
+
+        var saved = service.create(createCommand(List.of(ordinal), RiskAppetiteProfileStatus.DRAFT, FROM, TO));
+
+        assertThat(saved.getToleranceThresholds()).hasSize(1);
+    }
+
+    @Test
+    void createAcceptsValidProbabilityThreshold() {
+        when(projectService.getById(PROJECT_ID)).thenReturn(project);
+        when(repository.existsByProjectIdAndAppetiteKeyAndVersion(any(), any(), any()))
+                .thenReturn(false);
+        when(repository.save(any())).then(returnsFirstArg());
+        var probability =
+                new ToleranceThreshold(null, "exceedance_probability", 0.1, "probability", null, null, null, null);
+
+        var saved = service.create(createCommand(List.of(probability), RiskAppetiteProfileStatus.DRAFT, FROM, TO));
+
+        assertThat(saved.getToleranceThresholds()).hasSize(1);
+    }
+
+    @Test
+    void getByIdReturnsProfile() {
+        var existing = new RiskAppetiteProfile(
+                project, "BOARD_APPETITE", "Board Risk Appetite", "1.0", MethodologyFamily.FAIR, FROM);
+        var id = UUID.randomUUID();
+        setField(existing, "id", id);
+        when(repository.findByIdAndProjectId(id, PROJECT_ID)).thenReturn(java.util.Optional.of(existing));
+
+        assertThat(service.getById(PROJECT_ID, id).getAppetiteKey()).isEqualTo("BOARD_APPETITE");
+    }
+
+    @Test
+    void listByProjectDelegatesToRepository() {
+        var existing = new RiskAppetiteProfile(
+                project, "BOARD_APPETITE", "Board Risk Appetite", "1.0", MethodologyFamily.FAIR, FROM);
+        when(repository.findByProjectIdOrderByNameAscVersionDesc(PROJECT_ID)).thenReturn(List.of(existing));
+
+        assertThat(service.listByProject(PROJECT_ID)).hasSize(1);
+    }
+
+    @Test
+    void deleteRemovesExistingProfile() {
+        var existing = new RiskAppetiteProfile(
+                project, "BOARD_APPETITE", "Board Risk Appetite", "1.0", MethodologyFamily.FAIR, FROM);
+        var id = UUID.randomUUID();
+        setField(existing, "id", id);
+        when(repository.findByIdAndProjectId(id, PROJECT_ID)).thenReturn(java.util.Optional.of(existing));
+
+        service.delete(PROJECT_ID, id);
+
+        verify(repository).delete(existing);
+    }
+
+    @Test
     void getByIdThrowsWhenMissing() {
         when(repository.findByIdAndProjectId(any(), any())).thenReturn(java.util.Optional.empty());
         var id = UUID.randomUUID();

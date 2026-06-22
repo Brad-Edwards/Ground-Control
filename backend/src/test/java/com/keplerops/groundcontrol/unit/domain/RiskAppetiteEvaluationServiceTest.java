@@ -217,6 +217,84 @@ class RiskAppetiteEvaluationServiceTest {
     }
 
     @Test
+    void emptyThresholdsProducesLimitation() {
+        var p = profile(MethodologyFamily.FAIR, List.of());
+        var row = assessment(MethodologyFamily.FAIR, Map.of("annualized_loss_expectancy", Map.of("likely", 600000.0)));
+        stubDefaultLookup(p, List.of(row));
+
+        var result = service.evaluate(PROJECT_ID, null, PROFILE_ID, null, null, null);
+
+        assertThat(result.evaluations()).isEmpty();
+        assertThat(result.limitations()).anyMatch(l -> l.contains("no tolerance thresholds"));
+    }
+
+    @Test
+    void nonNumericResidualIsNotDerivable() {
+        var p = profile(MethodologyFamily.FAIR, List.of(quantitative(500000.0, "USD")));
+        var row = assessment(MethodologyFamily.FAIR, Map.of("annualized_loss_expectancy", Map.of("likely", "lots")));
+        stubDefaultLookup(p, List.of(row));
+
+        var result = service.evaluate(PROJECT_ID, null, PROFILE_ID, null, null, null);
+
+        assertThat(result.evaluations().get(0).withinAppetite()).isNull();
+        assertThat(result.summary().notDerivable()).isEqualTo(1);
+    }
+
+    @Test
+    void nonScalarMetricPathIsNotDerivable() {
+        // metricPath resolves to a nested object (not a scalar), so it cannot be compared.
+        var threshold =
+                new ToleranceThreshold(null, "annualized_loss_expectancy", 500000.0, "USD", null, null, null, null);
+        var p = profile(MethodologyFamily.FAIR, List.of(threshold));
+        var row = assessment(MethodologyFamily.FAIR, Map.of("annualized_loss_expectancy", Map.of("likely", 600000.0)));
+        stubDefaultLookup(p, List.of(row));
+
+        var result = service.evaluate(PROJECT_ID, null, PROFILE_ID, null, null, null);
+
+        assertThat(result.evaluations().get(0).withinAppetite()).isNull();
+        assertThat(result.evaluations().get(0).limitations()).isNotEmpty();
+    }
+
+    @Test
+    void matchingCurrencyAllowsComparison() {
+        var p = profile(MethodologyFamily.FAIR, List.of(quantitative(500000.0, "usd")));
+        var row = assessment(MethodologyFamily.FAIR, Map.of("annualized_loss_expectancy", Map.of("likely", 600000.0)));
+        row.setInputFactors(Map.of("primary_loss_magnitude", Map.of("currency", "USD")));
+        stubDefaultLookup(p, List.of(row));
+
+        var result = service.evaluate(PROJECT_ID, null, PROFILE_ID, null, null, null);
+
+        // Currencies match (case-insensitive), so the comparison proceeds and detects the breach.
+        assertThat(result.evaluations().get(0).breached()).isTrue();
+    }
+
+    @Test
+    void resolvesActiveProfileWithinBoundedEffectiveWindow() {
+        var p = new RiskAppetiteProfile(
+                project,
+                "BOARD_APPETITE",
+                "Board Risk Appetite",
+                "1.0",
+                MethodologyFamily.FAIR,
+                Instant.parse("2026-05-01T00:00:00Z"));
+        p.setStatus(RiskAppetiteProfileStatus.ACTIVE);
+        p.setEffectiveTo(Instant.parse("2026-07-01T00:00:00Z"));
+        p.setToleranceThresholds(List.of(quantitative(500000.0, "USD")));
+        setField(p, "id", PROFILE_ID);
+        when(projectRepository.findById(PROJECT_ID)).thenReturn(Optional.of(project));
+        when(appetiteProfileRepository.findByProjectIdAndAppetiteKeyAndStatus(
+                        PROJECT_ID, "BOARD_APPETITE", RiskAppetiteProfileStatus.ACTIVE))
+                .thenReturn(List.of(p));
+        when(assessmentRepository.findByProjectIdWithObservationsOrderByCreatedAtDesc(PROJECT_ID))
+                .thenReturn(List.of());
+
+        // NOW (2026-06-01) falls inside [2026-05-01, 2026-07-01).
+        var result = service.evaluate(PROJECT_ID, null, null, "BOARD_APPETITE", null, null);
+
+        assertThat(result.profile().version()).isEqualTo("1.0");
+    }
+
+    @Test
     void throwsWhenProfileNotFound() {
         when(projectRepository.findById(PROJECT_ID)).thenReturn(Optional.of(project));
         when(appetiteProfileRepository.findByIdAndProjectId(PROFILE_ID, PROJECT_ID))
