@@ -17,6 +17,8 @@
 
 > **Sync note for issue #1167 (2026-06-21):** Corrected `tools/policy/checks.py::run_controller_contracts` (and the parallel `ControllerPolicyTest`) to map a controller to its `@WebMvcTest` companion by fully qualified class instead of filename stem, fixing a same-named-controller collision across packages. The parser strips the `.class` suffix in code so the matching regex stays linear-time (Sonar S8786). The classifier, Vale rules, `.vale.ini`, and this document's style rules are unchanged.
 
+> **Sync note for issue #963 (2026-06-22):** Added a `phase` parameter to the `gc_assert_completion` MCP tool (`mcp/ground-control/index.js`, `mcp/ground-control/lib.js`) so the requirement transition, traceability reconciliation, and final report run post-merge (Phase E). The tool-description text and the operative agent prose in `skills/implement/steps/step-17-completion.md` were reviewed against these rules; the surface addition is recorded in ADR-054 and the `changelog.d/963.changed.md` fragment. The classifier, Vale rules, `.vale.ini`, and this document's style rules are unchanged.
+
 ## Rules
 
 Docs describe the system as it ships on the current commit. Write in present

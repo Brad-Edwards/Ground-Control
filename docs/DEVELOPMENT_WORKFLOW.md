@@ -151,11 +151,13 @@ flowchart TB
   S10[10 · Create PR to dev]
   S11[11 · CI monitor]
   S12[12 · SonarCloud sweep]
-  S15[15 · Transition in-scope requirements DRAFT → ACTIVE]
-  S16[16 · Reconcile traceability against diff]
-  S17[17 · Verify GC state landed]
-  S18[18 · Report - DO NOT MERGE]
+  S17r[17 · Pre-merge readiness record - DO NOT MERGE]
   End([User reviews PR and merges])
+  S15[15 · Phase E · Transition in-scope requirements DRAFT → ACTIVE]
+  S16[16 · Phase E · Reconcile traceability against merged diff]
+  S17d[17 · Phase E · Reconciled final report]
+  S20[20 · Phase E · Close issue - post-merge gate]
+  Done([Issue closed · GC graph reconciled])
 
   Start --> S1
   S1 --> S2
@@ -171,18 +173,20 @@ flowchart TB
   S9 --> S10
   S10 --> S11
   S11 --> S12
-  S12 --> S15
+  S12 --> S17r
+  S17r --> End
+  End --> S15
   S15 --> S16
-  S16 --> S17
-  S17 --> S18
-  S18 --> End
+  S16 --> S17d
+  S17d --> S20
+  S20 --> Done
 
   S8 -->|fail| S7
   S8b -->|findings, re-stage, re-run within cap| S6
   S8c -->|findings, re-stage, re-run within cap| S6
   S11 -->|red| S9
   S12 -->|findings| S9
-  S17 -->|drift| S16
+  S17d -->|drift| S16
 
   classDef user fill:#fff7cc,stroke:#c9a900,color:#000
   class Start,End user
@@ -191,6 +195,7 @@ flowchart TB
 **How it reads:**
 
 - **Yellow** nodes are user touchpoints. Per ADR-029, the workflow has **one** synchronous human touchpoint: PR merge (the `End` node). Plans are posted to the GitHub issue thread (S5) and the agent proceeds without waiting; review findings and decisions on findings are also recorded on the issue thread.
+- **Post-merge reconciliation (issue #963).** Phase D now ends at a **pre-merge readiness record** (Step 17 with `gc_assert_completion phase="pre_merge"`, carrying a `ready_for_review` marker) and STOPS for the user to merge. The requirement `DRAFT→ACTIVE` transition (Step 15), traceability reconciliation against the merged diff (Step 16), the reconciled final report (Step 17 `phase="post_merge"`), and the issue close (Step 20) all run in **Phase E, after the merge** - re-entered by re-running `/implement <issue>`, which Step 1 detects via the `ready_for_review` marker + a merged PR + no `gc:final-report` marker yet, and short-circuits to Step 15. Detection does not require the issue to be open: the PR body's `Closes #<n>` keyword may auto-close it at merge before Phase E runs, and the transition/reconcile/report operate regardless of issue state (Step 20's close then no-ops). `gc_assert_completion phase="post_merge"` is merge-gated (refuses with `completion_pr_not_merged` unless the PR is merged), so Ground Control state never runs ahead of shipped code - a reviewed-but-abandoned PR leaves the requirement DRAFT and unlinked. This extends the #1058 post-merge close-ordering guarantee to the rest of the GC state.
 - **Entry is always by issue.** Step 1 resolves the input to a GitHub issue (either directly or via a UID → issue shim) and parses the `## Requirements` section from the issue body into `in_scope_requirements[]`. The list may be empty (bug fix / refactor) or contain one or many UIDs (grouped implementation). Everything downstream treats the issue as the authoritative context and the list as the set of requirements to be transitioned to `ACTIVE` on completion. Step 1 also creates the feature branch with a **bounded short-slug name**: `gh issue develop` is invoked with `--name <issue-number>-<short-slug>` (≤ 50 chars, ASCII-only); skipping `--name` lets `gh` slugify the full issue title and produces unusable 100+ character branch names that break terminal display, copy-paste, CI breadcrumbs, and downstream shell quoting. The skill then **validates the actual checked-out branch against the same rule**: `gh` reuses existing branches, so a previous pickup that ran before this rule existed (or didn't follow it) would otherwise hand the agent a non-compliant branch that flows through pickup comment, push, CI, and PR. The post-check fetches the configured base and compares against `origin/<base>` (local base can be stale); renames the branch in place when it has no commits relative to the remote base and no PR exists, or applies the in-progress signal first (so a paused picked-up issue stays visibly flagged) then stops and escalates to the user when a published PR is on the line. The post-check is the dispositive enforcement (the `--name` flag only governs first-time pickups). Slug derivation rule, validation predicate, and worked examples live in `skills/implement/SKILL.md` Step 1 sub-step 11. Step 1 then flags the resolved issue **in-progress**: an `in-progress` label (created on demand if the repo lacks it) plus a pickup comment on the thread recording the driver, the checked-out branch, and a timestamp; a maintainer scanning `/issues`, or another agent, sees at a glance that work is underway. The in-progress label removal is optional best-effort after Step 17 completion; it is no longer a mandatory gate (#1103). The GitHub issue itself stays open until the user merges the PR, at which point GitHub closes it automatically via the `Closes #<issue-number>` keyword rendered into the PR body by `gc_render_pr_body` (Step 9). A run that escalates to the user without completing intentionally leaves both the label and the issue open, because the issue *was* picked up but the work is paused, not finished.
 - **Steps 1–4** gather context and run the codex architecture preflight before any code is written. Step 4 also consults the repo knowledge base via the index if one is present.
 - **Step 3.5 (GRC screening gate)** runs between codebase assessment (Step 3) and planning (Step 4). The current v1 gate records one of three verdicts via `gc_post_grc_screening`: `security_relevant` (threat-model entries, risk scenarios, controls, and `targetType=CODE` links were created, updated, or confirmed during the run), `not_security_relevant` (change does not touch a security-relevant surface; one-line rationale required), or `no_baseline` (project has no threat-model baseline; explicit declination, not a clean verdict). The record uses marker family `<!-- gc:grc-screening -->` and schema version `gc.implement.grc-screening/v1` so the companion server-side assertion (issue #1100) can parse and verify it. ADR-058 supersedes the long-term contract: screening becomes derivation-backed, computes `impact_set` / `gap_set` / `stale_set`, and a missing baseline creates scoped GRC gaps rather than a passing `no_baseline` result. The gate is enforced at the tool layer, not by prose instruction, to prevent the short-circuit failure mode documented in the June 6 redesign revert. See ADR-057 for the v1 record and ADR-058 for the continuous GRC program.

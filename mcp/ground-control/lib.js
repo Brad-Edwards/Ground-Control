@@ -12011,7 +12011,7 @@ export function buildFinalReport(input) {
   if (!validation.ok) {
     throw new Error(`buildFinalReport input invalid: ${validation.errors.join("; ")}`);
   }
-  const { issueNumber, prNumber, requirements, files = {}, reviews, traceability = {}, ciStatus, sonarStatus, planCommentUrl, summary, lane, plainEnglishOutcome } = input;
+  const { issueNumber, prNumber, requirements, files = {}, reviews, traceability = {}, ciStatus, sonarStatus, planCommentUrl, summary, lane, plainEnglishOutcome, phase = "post_merge" } = input;
   // Slim quickfix renderer (issue #906 codex cycle-3 F2). When lane='quickfix'
   // the close comment is structurally smaller: no "In-scope requirements",
   // no "Traceability reconciliation", no "Reviews" section when empty.
@@ -12022,10 +12022,24 @@ export function buildFinalReport(input) {
       issueNumber, prNumber, files, reviews, ciStatus, sonarStatus, planCommentUrl, summary,
     });
   }
+  // Phase D (pre_merge) renders a "ready for review" record carrying a
+  // `ready_for_review` phase marker; the requirement-status transition and
+  // traceability reconciliation have NOT run yet — they land in Phase E after
+  // the PR merges (issue #963). Phase E (post_merge, default) renders the
+  // reconciled final report carrying the `gc:final-report` marker.
+  const isPreMerge = phase === "pre_merge";
   const lines = [];
-  lines.push(buildFinalReportMarker({ issueNumber, prNumber }));
+  lines.push(
+    isPreMerge
+      ? `<!-- gc:phase phase="ready_for_review" issue="${issueNumber}" -->`
+      : buildFinalReportMarker({ issueNumber, prNumber }),
+  );
   lines.push("");
-  lines.push(`## Final report — issue #${issueNumber} complete`);
+  lines.push(
+    isPreMerge
+      ? `## Ready for review — issue #${issueNumber}`
+      : `## Final report — issue #${issueNumber} complete`,
+  );
   lines.push("");
   lines.push(`**PR:** #${prNumber}  `);
   if (planCommentUrl) lines.push(`**Plan:** ${planCommentUrl}`);
@@ -12071,22 +12085,30 @@ export function buildFinalReport(input) {
   }
   lines.push(`### Traceability reconciliation`);
   lines.push("");
-  const tAdded = Array.isArray(traceability.added) ? traceability.added : [];
-  const tUpdated = Array.isArray(traceability.updated) ? traceability.updated : [];
-  const tDeleted = Array.isArray(traceability.deleted) ? traceability.deleted : [];
-  lines.push(`- IMPLEMENTS / TESTS / DOCUMENTS added: ${tAdded.length}`);
-  lines.push(`- Links updated: ${tUpdated.length}`);
-  lines.push(`- Stale links removed: ${tDeleted.length}`);
-  if (typeof traceability.notes === "string" && traceability.notes.trim() !== "") {
-    lines.push("");
-    lines.push(traceability.notes.trim());
+  if (isPreMerge) {
+    lines.push(`- Pending — requirement status transition and IMPLEMENTS/TESTS reconciliation run in Phase E once the PR merges.`);
+  } else {
+    const tAdded = Array.isArray(traceability.added) ? traceability.added : [];
+    const tUpdated = Array.isArray(traceability.updated) ? traceability.updated : [];
+    const tDeleted = Array.isArray(traceability.deleted) ? traceability.deleted : [];
+    lines.push(`- IMPLEMENTS / TESTS / DOCUMENTS added: ${tAdded.length}`);
+    lines.push(`- Links updated: ${tUpdated.length}`);
+    lines.push(`- Stale links removed: ${tDeleted.length}`);
+    if (typeof traceability.notes === "string" && traceability.notes.trim() !== "") {
+      lines.push("");
+      lines.push(traceability.notes.trim());
+    }
   }
   lines.push("");
   lines.push(`### Status`);
   lines.push("");
   lines.push(`- CI: ${renderCiStatus(ciStatus)}`);
   lines.push(`- SonarCloud: ${renderSonarStatus(sonarStatus)}`);
-  lines.push(`- PR ready for user review and merge.`);
+  lines.push(
+    isPreMerge
+      ? `- PR ready for user review and merge. Ground Control reconciliation (requirement status + traceability) runs on merge (Phase E).`
+      : `- PR ready for user review and merge.`,
+  );
   // Optional documentation outcome section (issue #896, ADR-054).
   if (input.documentation_outcome != null) {
     lines.push("");
@@ -12400,7 +12422,12 @@ export async function runPostFinalReport(input) {
   // exempt, mirroring the existing reviews-gate carve-out. The override
   // path lets the user authorize a skip with a quoted rationale (the
   // input-shape validation for that override is done earlier).
-  if (rest.lane !== "quickfix" && !phaseOverride) {
+  // The pre-merge readiness report (phase="pre_merge", issue #963) is posted
+  // BEFORE Phase E reconciliation runs, so the traceability_reconciled /
+  // grc_reconciled markers legitimately do not exist yet. Skip the prerequisite
+  // gate for it; the reconciled `gc:final-report` (phase="post_merge") still
+  // requires both markers.
+  if (rest.lane !== "quickfix" && !phaseOverride && rest.phase !== "pre_merge") {
     const completed = await readCompletedPhases(repoRoot, owner, name, rest.issueNumber);
     // In-process-only union: used by runAssertCompletion to avoid a GitHub
     // read-after-write race on markers it just posted. NOT in the MCP schema
@@ -16520,6 +16547,7 @@ export async function runAssertCompletion(input) {
     project = null,
     override = false,
     overrideReason = null,
+    phase = "post_merge",
   } = input;
 
   const assertions = [];
@@ -16554,6 +16582,118 @@ export async function runAssertCompletion(input) {
       issue_number: issueNumber,
       assertions,
       final_report: null,
+    };
+  }
+
+  // Phase D terminal (phase="pre_merge", issue #963): post the ready-for-review
+  // record only. The requirement-status transition and traceability/GRC
+  // reconciliation have NOT run yet — they are Phase E work that lands after the
+  // PR merges — so this path skips both assertions and posts no `gc:final-report`
+  // marker. Every input gate (CI green, Sonar pass/legit-skip, codex review
+  // present, sensitive/reserved/defer scrubs) still runs inside runPostFinalReport.
+  if (phase === "pre_merge") {
+    // The readiness record is the user-facing "ready to merge" signal, so it must
+    // still prove the Step 3.5 GRC screening record exists and reconciles before
+    // claiming readiness (issue #963 codex cycle-1 one-off finding). The screening
+    // entities/links are Phase A facts, independent of merge, so this assertion is
+    // legitimately pre-merge. Traceability reconciliation is deliberately NOT
+    // asserted here — it depends on the post-merge DRAFT→ACTIVE transition and is
+    // verified by the phase="post_merge" completion.
+    const grc = await runAssertGrcReconciled({ repoPath, issueNumber, project });
+    assertions.push({
+      name: "grc_reconciled",
+      ok: grc.ok,
+      verdict: grc.verdict ?? null,
+      comment_url: grc.comment_url ?? null,
+      comment_id: grc.comment_id ?? null,
+    });
+    if (!grc.ok) {
+      return {
+        ok: false,
+        error: grc.error,
+        message: grc.message,
+        issue_number: issueNumber,
+        assertions,
+        final_report: null,
+        next_action: grc.next_action ?? null,
+      };
+    }
+    const readiness = await runPostFinalReport({
+      ...subInput,
+      repoPath,
+      issueNumber,
+      prNumber,
+      phase: "pre_merge",
+    });
+    if (!readiness.ok) {
+      return {
+        ok: false,
+        error: readiness.error,
+        message: readiness.message,
+        issue_number: issueNumber,
+        assertions,
+        final_report: null,
+        next_action: readiness.next_action ?? null,
+      };
+    }
+    return {
+      ok: true,
+      repo_path: readiness.repo_path,
+      issue_number: issueNumber,
+      pr_number: prNumber,
+      phase: "pre_merge",
+      assertions,
+      readiness_report: {
+        comment_url: readiness.comment_url,
+        comment_id: readiness.comment_id,
+      },
+      final_report: null,
+    };
+  }
+
+  // Phase E (phase="post_merge", default): the reconciled completion record is
+  // merge-gated (issue #963). Refuse to run the assertions or post the final
+  // report unless the linked PR is actually merged — this is the structural
+  // guarantee that Ground Control state (ACTIVE transitions, IMPLEMENTS/TESTS
+  // links, the durable final report) never lands ahead of shipped code, mirroring
+  // gc_close_issue_after_merge. resolvePrForClose validates a supplied pr_number
+  // is linked to the issue and otherwise resolves the merged PR from the timeline;
+  // its `close_*` resolver errors are re-mapped to `completion_*` here.
+  const mergeRepoRoot = await ensureGitRepo(repoPath);
+  const { owner: mergeOwner, name: mergeName } = await getOwnerRepo(mergeRepoRoot);
+  const resolvedPr = await resolvePrForClose({
+    repoRoot: mergeRepoRoot,
+    owner: mergeOwner,
+    name: mergeName,
+    issueNumber,
+    prNumber,
+  });
+  if (resolvedPr.earlyReturn) {
+    return {
+      ok: false,
+      error: String(resolvedPr.earlyReturn.error).replace(/^close_/, "completion_"),
+      message: resolvedPr.earlyReturn.message,
+      issue_number: issueNumber,
+      assertions,
+      final_report: null,
+      next_action: resolvedPr.earlyReturn.next_action ?? null,
+    };
+  }
+  const mergedPr = resolvedPr.pr;
+  if (!mergedPr?.mergedAt || mergedPr.state !== "MERGED") {
+    return {
+      ok: false,
+      error: "completion_pr_not_merged",
+      message:
+        `gc_assert_completion refuses to post the reconciled completion record for issue #${issueNumber}: ` +
+        `linked PR #${mergedPr?.number ?? "?"} state=${mergedPr?.state ?? "unknown"}, merged_at=${mergedPr?.mergedAt ?? "null"}. ` +
+        `The Phase E completion gate requires merged_at non-null AND state='MERGED'.`,
+      issue_number: issueNumber,
+      pr_state: mergedPr?.state ?? null,
+      pr_merged_at: mergedPr?.mergedAt ?? null,
+      assertions,
+      final_report: null,
+      next_action: "wait_for_user_to_merge_the_pr",
     };
   }
 
