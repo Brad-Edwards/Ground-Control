@@ -285,8 +285,12 @@ class DocumentExportServiceTest {
         when(documentRepository.findById(DOC_ID)).thenReturn(Optional.of(docA));
         when(documentRepository.findById(docBId)).thenReturn(Optional.of(docB));
 
+        // Distinct titles so the captured export payload reveals WHICH project's requirement
+        // was bound — identical content would let a cross-project swap pass silently.
         var reqInA = makeRequirement(projectA, "SHARED-001");
+        reqInA.setTitle("Title-A");
         var reqInB = makeRequirement(projectB, "SHARED-001");
+        reqInB.setTitle("Title-B");
 
         when(requirementRepository.findByProjectIdAndUidIgnoreCase(PROJECT_ID_A, "SHARED-001"))
                 .thenReturn(Optional.of(reqInA));
@@ -309,11 +313,15 @@ class DocumentExportServiceTest {
         service.exportToSdoc(DOC_ID);
         service.exportToSdoc(docBId);
 
-        var exportDataA = captorA.getValue().get("SHARED-001");
-        var exportDataB = captorB.getValue().get("SHARED-001");
+        var exportDataA = (com.keplerops.groundcontrol.domain.documents.service.RequirementExportData)
+                captorA.getValue().get("SHARED-001");
+        var exportDataB = (com.keplerops.groundcontrol.domain.documents.service.RequirementExportData)
+                captorB.getValue().get("SHARED-001");
         assertThat(exportDataA).isNotNull();
         assertThat(exportDataB).isNotNull();
-        // Both resolve to something — the key guard is that the lookup is project-scoped
+        // Each document's export payload must carry its OWN project's requirement, not the other's.
+        assertThat(exportDataA.title()).isEqualTo("Title-A");
+        assertThat(exportDataB.title()).isEqualTo("Title-B");
         verify(requirementRepository).findByProjectIdAndUidIgnoreCase(PROJECT_ID_A, "SHARED-001");
         verify(requirementRepository).findByProjectIdAndUidIgnoreCase(PROJECT_ID_B, "SHARED-001");
     }

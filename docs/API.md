@@ -136,7 +136,7 @@ of that type, and requirements with no matching link still appear with an empty
 |-----------|------|-------------|
 | `artifactType` | enum | GITHUB_ISSUE, PULL_REQUEST, CODE_FILE, ADR, CONFIG, POLICY, TEST, SPEC, PROOF, DOCUMENTATION, RISK_SCENARIO, CONTROL |
 | `artifactIdentifier` | string | Artifact identifier (for example, repo-relative path, issue number, ADR UID) |
-| `project` | string | Optional project identifier or UUID. Scopes the result to a single project. Strongly recommended for `GITHUB_ISSUE` lookups to avoid cross-project issue-number collisions (see ADR-060, issue #1052). |
+| `project` | string | Project identifier or UUID. The lookup is always scoped to a single project and never runs unscoped: a single-project instance resolves the sole project automatically, while a multi-project instance with `project` absent fails with `project_required` rather than searching every project. This is what prevents cross-project issue-number collisions (see ADR-060, issue #1052). |
 
 ### Audit History
 

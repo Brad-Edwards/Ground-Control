@@ -1,7 +1,9 @@
 package com.keplerops.groundcontrol.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
@@ -81,23 +83,11 @@ class ProjectScopedTraceabilityIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void nullProjectReturnsAllProjects() {
-        // With null project, the unscoped query returns links from both projects
-        var reqA = new Requirement(projectA, "SCRTNA-001", "Req in Project A", "Statement A");
-        requirementRepository.save(reqA);
-        var linkA = new TraceabilityLink(reqA, ArtifactType.GITHUB_ISSUE, "99", LinkType.IMPLEMENTS);
-        traceabilityLinkRepository.save(linkA);
-
-        var reqB = new Requirement(projectB, "SCRTNB-001", "Req in Project B", "Statement B");
-        requirementRepository.save(reqB);
-        var linkB = new TraceabilityLink(reqB, ArtifactType.GITHUB_ISSUE, "99", LinkType.IMPLEMENTS);
-        traceabilityLinkRepository.save(linkB);
-
-        entityManager.flush();
-        entityManager.clear();
-
-        // null projectId → unscoped → both links returned
-        var allLinks = traceabilityService.findByArtifact(ArtifactType.GITHUB_ISSUE, "99", null);
-        assertThat(allLinks).hasSize(2);
+    void nullProjectIsRejected() {
+        // The reverse lookup must never run unscoped: a null project would re-open the
+        // cross-project collision this fix closes (#1052/#1197). The controller resolves a
+        // single project (or throws project_required) before calling the service.
+        assertThatThrownBy(() -> traceabilityService.findByArtifact(ArtifactType.GITHUB_ISSUE, "99", null))
+                .isInstanceOf(DomainValidationException.class);
     }
 }

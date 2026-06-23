@@ -540,7 +540,9 @@ class RequirementControllerTest {
                                     "artifactIdentifier", "GH-123",
                                     "linkType", "IMPLEMENTS"))))
                     .andExpect(status().isCreated())
-                    .andExpect(jsonPath("$.artifactType", is("GITHUB_ISSUE")));
+                    .andExpect(jsonPath("$.artifactType", is("GITHUB_ISSUE")))
+                    .andExpect(jsonPath("$.artifactIdentifier", is("GH-123")))
+                    .andExpect(jsonPath("$.linkType", is("IMPLEMENTS")));
         }
 
         @Test
@@ -574,7 +576,7 @@ class RequirementControllerTest {
             setField(link, "id", UUID.randomUUID());
             setField(link, "createdAt", Instant.now());
             setField(link, "updatedAt", Instant.now());
-            when(traceabilityService.findByArtifact(ArtifactType.CODE_FILE, "backend/src/Main.java", null))
+            when(traceabilityService.findByArtifact(ArtifactType.CODE_FILE, "backend/src/Main.java", PROJECT_ID))
                     .thenReturn(List.of(link));
 
             mockMvc.perform(get("/api/v1/requirements/traceability/by-artifact")
@@ -588,7 +590,7 @@ class RequirementControllerTest {
 
         @Test
         void findByArtifact_returnsEmptyWhenNoMatch() throws Exception {
-            when(traceabilityService.findByArtifact(ArtifactType.CODE_FILE, "nonexistent.java", null))
+            when(traceabilityService.findByArtifact(ArtifactType.CODE_FILE, "nonexistent.java", PROJECT_ID))
                     .thenReturn(List.of());
 
             mockMvc.perform(get("/api/v1/requirements/traceability/by-artifact")

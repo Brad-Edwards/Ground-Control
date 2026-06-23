@@ -443,7 +443,7 @@ server.tool(
 
 server.tool(
   "gc_get_traceability_by_artifact",
-  "Reverse lookup: find all traceability links for an artifact (file path, issue number, etc.). Optional project scoping avoids cross-project issue-number collisions.",
+  "Reverse lookup: find all traceability links for an artifact (file path, issue number, etc.). The backend always scopes the lookup to one project: pass `project` to disambiguate. A single-project backend resolves it automatically; a multi-project backend rejects an absent project with project_required rather than returning another project's links (avoids cross-project issue-number collisions).",
   {
     artifact_type: z.enum(ARTIFACT_TYPES),
     artifact_identifier: z.string(),

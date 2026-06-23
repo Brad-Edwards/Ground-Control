@@ -186,14 +186,15 @@ class TraceabilityServiceTest {
 
         @Test
         void returnsMatchingLinks() {
+            var projectId = UUID.randomUUID();
             var req = makeRequirement("REQ-001");
             var link = new TraceabilityLink(req, ArtifactType.CODE_FILE, "backend/src/Main.java", LinkType.IMPLEMENTS);
             setField(link, "id", UUID.randomUUID());
-            when(traceabilityLinkRepository.findByArtifactTypeAndArtifactIdentifierWithRequirement(
-                            ArtifactType.CODE_FILE, "backend/src/Main.java"))
+            when(traceabilityLinkRepository.findByArtifactTypeAndArtifactIdentifierAndProjectIdWithRequirement(
+                            ArtifactType.CODE_FILE, "backend/src/Main.java", projectId))
                     .thenReturn(List.of(link));
 
-            var result = service.findByArtifact(ArtifactType.CODE_FILE, "backend/src/Main.java", null);
+            var result = service.findByArtifact(ArtifactType.CODE_FILE, "backend/src/Main.java", projectId);
             assertThat(result).hasSize(1);
             assertThat(result.get(0).getArtifactIdentifier()).isEqualTo("backend/src/Main.java");
             assertThat(result.get(0).getLinkType()).isEqualTo(LinkType.IMPLEMENTS);
@@ -201,12 +202,20 @@ class TraceabilityServiceTest {
 
         @Test
         void returnsEmptyWhenNoMatch() {
-            when(traceabilityLinkRepository.findByArtifactTypeAndArtifactIdentifierWithRequirement(
-                            ArtifactType.CODE_FILE, "nonexistent.java"))
+            var projectId = UUID.randomUUID();
+            when(traceabilityLinkRepository.findByArtifactTypeAndArtifactIdentifierAndProjectIdWithRequirement(
+                            ArtifactType.CODE_FILE, "nonexistent.java", projectId))
                     .thenReturn(List.of());
 
-            var result = service.findByArtifact(ArtifactType.CODE_FILE, "nonexistent.java", null);
+            var result = service.findByArtifact(ArtifactType.CODE_FILE, "nonexistent.java", projectId);
             assertThat(result).isEmpty();
+        }
+
+        @Test
+        void rejectsNullProject() {
+            // A null project would make the reverse lookup project-blind (#1052/#1197).
+            assertThatThrownBy(() -> service.findByArtifact(ArtifactType.CODE_FILE, "backend/src/Main.java", null))
+                    .isInstanceOf(DomainValidationException.class);
         }
     }
 

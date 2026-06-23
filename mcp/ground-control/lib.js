@@ -1713,6 +1713,9 @@ export async function deleteTraceabilityLink(reqId, linkId) {
   await request("DELETE", `/api/v1/requirements/${encodeURIComponent(reqId)}/traceability/${encodeURIComponent(linkId)}`);
 }
 
+// The backend always scopes this lookup to a single project and never runs unscoped: it resolves
+// the sole project in a single-project instance and rejects an absent `project` with
+// project_required in a multi-project one. Pass `project` whenever the backend hosts more than one.
 export async function getTraceabilityByArtifact(artifactType, artifactIdentifier, project) {
   return request("GET", "/api/v1/requirements/traceability/by-artifact", {
     params: { artifactType, artifactIdentifier, project },
