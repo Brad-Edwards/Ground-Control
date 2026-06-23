@@ -554,11 +554,74 @@ def git_diff_for_paths(paths: Iterable[str], root: Path = REPO_ROOT) -> str:
     return run_git(["diff", "--unified=0", "HEAD", "--", *path_list], root=root)
 
 
-def run_migration_policy(changed_files: list[str], root: Path = REPO_ROOT) -> list[Violation]:
+def _resolve_baseline_ref(base: str | None, root: Path = REPO_ROOT) -> str | None:
+    """Resolve the released-baseline ref to diff migration content against.
+
+    Prefers the explicit ``--base`` ref, then ``origin/main`` (the released
+    line), then ``main``. Returns ``None`` when none resolve (e.g. a shallow
+    clone without the baseline fetched) so the immutability check skips
+    gracefully rather than failing the run.
+    """
+    for ref in (base, "origin/main", "main"):
+        if not ref:
+            continue
+        try:
+            run_git(["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"], root=root)
+            return ref
+        except subprocess.CalledProcessError:
+            continue
+    return None
+
+
+def _migration_content_at_ref(ref: str, path: str, root: Path = REPO_ROOT) -> str | None:
+    """Return ``path`` content at ``ref``, or ``None`` if it does not exist there."""
+    try:
+        return run_git(["show", f"{ref}:{path}"], root=root)
+    except subprocess.CalledProcessError:
+        return None
+
+
+def run_migration_policy(
+    changed_files: list[str], root: Path = REPO_ROOT, base: str | None = None
+) -> list[Violation]:
     migrations = [path for path in changed_files if MIGRATION_PATH_RE.match(path)]
     violations: list[Violation] = []
 
     if migrations:
+        # Flyway immutability: a migration already present on the released
+        # baseline (origin/main) must never have its content changed — Flyway
+        # validates checksums on every startup, so editing an applied migration
+        # crashes every database that already ran it (the V043/V045 incident,
+        # which a fresh-DB smoke test cannot catch). New migrations are exempt
+        # (absent from the baseline); the only correct way to change applied
+        # data/schema is a new forward migration.
+        baseline = _resolve_baseline_ref(base, root)
+        if baseline:
+            for path in migrations:
+                released = _migration_content_at_ref(baseline, path, root)
+                if released is None:
+                    continue  # new migration — not on the baseline, allowed.
+                target = root / path
+                current = target.read_text(encoding="utf-8") if target.exists() else None
+                if current != released:
+                    change = "removed" if current is None else "modified"
+                    violations.append(
+                        Violation(
+                            code="migration-immutability",
+                            message=(
+                                "An applied Flyway migration was changed. Migrations on the "
+                                "released baseline are immutable — add a new forward migration "
+                                "instead of editing one."
+                            ),
+                            details=[
+                                f"{change} migration: {path}",
+                                f"baseline ref: {baseline}",
+                                "Flyway validates checksums on startup; changing an applied "
+                                "migration breaks every database that already ran it.",
+                            ],
+                        )
+                    )
+
         required = [
             "backend/src/test/java/com/keplerops/groundcontrol/integration/MigrationSmokeTest.java",
             "backend/src/test/java/com/keplerops/groundcontrol/integration/RequirementsE2EIntegrationTest.java",
@@ -2309,7 +2372,7 @@ def main(argv: list[str] | None = None) -> int:
     violations = []
     violations.extend(run_adr_guard(changed_files))
     violations.extend(run_controller_contracts(changed_files))
-    violations.extend(run_migration_policy(changed_files))
+    violations.extend(run_migration_policy(changed_files, base=args.base))
     violations.extend(run_changelog_fragment_check(changed_files))
     violations.extend(run_ci_strictness_contract())
     violations.extend(run_deploy_compose_credential_passthrough())
