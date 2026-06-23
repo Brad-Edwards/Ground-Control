@@ -43,6 +43,11 @@ class MigrationSmokeTest extends BaseIntegrationTest {
             }
         }
         // V139: O-RT forms-of-loss materiality schema seed update for FAIR_V3_0 (GC-T016) — schema-only, no DDL.
+        // Flyway immutability: once a versioned migration has been applied to a long-lived database
+        // (e.g. production) its file content is frozen — the checksum is validated on every startup.
+        // Never edit an applied V*.sql in place; append a new forward migration instead. Editing the
+        // already-applied V043/V045 (rather than relying solely on the forward V138 realignment)
+        // crashed a prod deploy on a checksum mismatch that fresh CI databases could not catch.
         assertThat(versions)
                 .containsExactly(
                         "001", "002", "003", "004", "005", "006", "007", "008", "009", "010", "011", "012", "013",
