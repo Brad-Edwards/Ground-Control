@@ -204,7 +204,6 @@ class RequirementUidAllocationIntegrationTest extends BaseIntegrationTest {
         }
 
         // All UIDs must be distinct — no two threads should have gotten the same number
-        assertThat(uids).doesNotHaveDuplicates();
-        assertThat(uids).allMatch(uid -> uid.startsWith(prefix + "-"));
+        assertThat(uids).doesNotHaveDuplicates().allMatch(uid -> uid.startsWith(prefix + "-"));
     }
 }
