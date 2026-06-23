@@ -61,7 +61,7 @@ ssh red-dragon 'curl -sf http://100.98.28.66:8000/actuator/health'
 There is no argv-driven rollback over the SSH forced-command path (it ignores client argv by design). To roll back:
 
 1. SSH into red-dragon as a sudoer (for example, `ssh red-dragon`).
-2. `sudo -u gc-deploy vi /opt/gc/.env` and pin `GC_IMAGE` to the target ref - either a tag (`ghcr.io/brad-edwards/ground-control:sha-abc123`) or a digest (`ghcr.io/brad-edwards/ground-control@sha256:...`). Available tags are listed at `https://github.com/Brad-Edwards/Ground-Control/pkgs/container/ground-control`; CI publishes `sha-<short>` tags for every `main` build.
+2. `sudo -u gc-deploy vi /opt/gc/.env` and pin `GC_IMAGE` to the target ref - either a tag (`ghcr.io/autarchy-ai/ground-control:sha-abc123`) or a digest (`ghcr.io/autarchy-ai/ground-control@sha256:...`). Available tags are listed at `https://github.com/autarchy-ai/Ground-Control/pkgs/container/ground-control`; CI publishes `sha-<short>` tags for every `main` build.
 3. Re-run `make deploy` (or `sudo -u gc-deploy /opt/gc/deploy.sh`). The pull resolves the pinned ref and the restart picks it up.
 4. **Restore the floating `:main` pin** in `/opt/gc/.env` once the rollback is no longer needed - otherwise the next CI deploy will succeed but never actually roll out.
 

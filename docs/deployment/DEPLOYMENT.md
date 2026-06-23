@@ -375,10 +375,10 @@ within seconds. Order matters; do not skip ahead.
      (immutable) to refer to the actual candidate. Resolve a stable digest
      from either with:
      ```bash
-     docker pull ghcr.io/brad-edwards/ground-control:dev
-     docker inspect ghcr.io/brad-edwards/ground-control:dev \
+     docker pull ghcr.io/autarchy-ai/ground-control:dev
+     docker inspect ghcr.io/autarchy-ai/ground-control:dev \
        --format '{{index .RepoDigests 0}}'
-     # → ghcr.io/brad-edwards/ground-control@sha256:<digest>
+     # → ghcr.io/autarchy-ai/ground-control@sha256:<digest>
      ```
      Pin the dry-run AND the production `/opt/gc/.env` to that digest so
      the image you tested is the image you deploy.
@@ -401,7 +401,7 @@ within seconds. Order matters; do not skip ahead.
      # token values that will land in /opt/gc/.env. Set GC_IMAGE to the
      # candidate digest you resolved above. Run with a separate compose
      # project name (gc-dryrun) and rebind the prod port + DB volume:
-     GC_IMAGE=ghcr.io/brad-edwards/ground-control@sha256:<digest> \
+     GC_IMAGE=ghcr.io/autarchy-ai/ground-control@sha256:<digest> \
        docker compose -p gc-dryrun --env-file "${dryrun_env}" \
        -f deploy/docker/docker-compose.prod.yml up -d
      # When done:
@@ -470,7 +470,7 @@ within seconds. Order matters; do not skip ahead.
    digest.** Use the indexed `GROUNDCONTROL_SECURITY_CREDENTIALS_*` shape
    (matches the env-var table above and `deploy/docker/.env.template`).
    The same digest you dry-ran against in step 4 belongs in `GC_IMAGE`
-   here - pinning by digest (`ghcr.io/brad-edwards/ground-control@sha256:...`)
+   here - pinning by digest (`ghcr.io/autarchy-ai/ground-control@sha256:...`)
    guarantees the cutover rolls the image you tested, not whatever has
    moved under `:dev` since. After editing, `chmod 600`.
 
@@ -552,7 +552,7 @@ The backend ships as a multi-stage Docker image (`backend/Dockerfile`):
 ```bash
 make docker-build
 # or directly:
-docker build -f backend/Dockerfile -t ghcr.io/brad-edwards/ground-control:latest .
+docker build -f backend/Dockerfile -t ghcr.io/autarchy-ai/ground-control:latest .
 ```
 
 #### Run locally
@@ -562,7 +562,7 @@ docker run --rm -p 8000:8000 \
   -e GC_DATABASE_URL=jdbc:postgresql://host:5432/ground_control \
   -e GC_DATABASE_USER=gc \
   -e GC_DATABASE_PASSWORD=gc \
-  ghcr.io/brad-edwards/ground-control:latest
+  ghcr.io/autarchy-ai/ground-control:latest
 ```
 
 Flyway migrations run automatically on startup - no separate migration step needed.
@@ -601,7 +601,7 @@ Ground Control runs on `red-dragon` (Hetzner dedicated, AMD Ryzen 7 3700X / 128 
 - **Host**: `red-dragon` (single tailnet-resident host, Ubuntu, Docker Engine 29.x, Compose v5.x).
 - **Access**: Tailscale only. sshd binds to `100.98.28.66:22` (the tailnet IP) - no public ingress. Application reachable on tailnet at `http://red-dragon:8000`.
 - **Storage**: `/data/postgres` (bind-mounted into the db container) and `/data/backups` (pg_dump artifacts). Both on red-dragon's main NVMe.
-- **Image registry**: GHCR (`ghcr.io/brad-edwards/ground-control`). Pulled by `docker compose pull` on each deploy.
+- **Image registry**: GHCR (`ghcr.io/autarchy-ai/ground-control`). Pulled by `docker compose pull` on each deploy.
 - **Backups**: 3×/day `pg_dump` cron to `/data/backups/`, 30-day local retention. Off-box copy via rsync over the tailnet to `aurora`. Policy is GC-P021 / [ADR-025](../../architecture/adrs/025-backup-policy.md).
 - **Cost**: $0 marginal (red-dragon is paid for unrelated reasons).
 
@@ -738,7 +738,7 @@ JAVA_TOOL_OPTIONS=-Xmx512m -Xms256m
 POSTGRES_DB=ground_control
 POSTGRES_USER=gc
 POSTGRES_PASSWORD=...
-GC_IMAGE=ghcr.io/brad-edwards/ground-control:main
+GC_IMAGE=ghcr.io/autarchy-ai/ground-control:main
 GC_BIND_IP=<host's tailnet IP>
 GC_EMBEDDING_PROVIDER=openai
 GC_EMBEDDING_API_KEY=...
