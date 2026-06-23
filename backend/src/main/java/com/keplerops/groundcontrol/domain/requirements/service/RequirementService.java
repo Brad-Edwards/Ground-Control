@@ -39,6 +39,7 @@ public class RequirementService {
     private final QualityGateRepository qualityGateRepository;
     private final TraceabilityLinkRepository traceabilityLinkRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final RequirementUidAllocator uidAllocator;
 
     public RequirementService(
             RequirementRepository requirementRepository,
@@ -46,13 +47,15 @@ public class RequirementService {
             ProjectRepository projectRepository,
             QualityGateRepository qualityGateRepository,
             TraceabilityLinkRepository traceabilityLinkRepository,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            RequirementUidAllocator uidAllocator) {
         this.requirementRepository = requirementRepository;
         this.relationRepository = relationRepository;
         this.projectRepository = projectRepository;
         this.qualityGateRepository = qualityGateRepository;
         this.traceabilityLinkRepository = traceabilityLinkRepository;
         this.eventPublisher = eventPublisher;
+        this.uidAllocator = uidAllocator;
     }
 
     public Requirement create(CreateRequirementCommand command) {
@@ -60,10 +63,15 @@ public class RequirementService {
                 .findById(command.projectId())
                 .orElseThrow(() -> new NotFoundException("Project not found: " + command.projectId()));
 
-        String normalizedUid = command.uid().toUpperCase(java.util.Locale.ROOT);
-        if (requirementRepository.existsByProjectIdAndUidIgnoreCase(project.getId(), normalizedUid)) {
-            throw new ConflictException(
-                    "Requirement with UID '" + command.uid() + "' already exists in project (case-insensitive)");
+        String normalizedUid;
+        if (command.uidPrefix() != null && !command.uidPrefix().isBlank()) {
+            normalizedUid = uidAllocator.allocate(project.getId(), command.uidPrefix());
+        } else {
+            normalizedUid = command.uid().toUpperCase(java.util.Locale.ROOT);
+            if (requirementRepository.existsByProjectIdAndUidIgnoreCase(project.getId(), normalizedUid)) {
+                throw new ConflictException(
+                        "Requirement with UID '" + command.uid() + "' already exists in project (case-insensitive)");
+            }
         }
 
         var requirement = new Requirement(project, normalizedUid, command.title(), command.statement());

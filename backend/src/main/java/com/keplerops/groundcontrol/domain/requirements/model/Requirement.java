@@ -24,6 +24,12 @@ import org.hibernate.envers.NotAudited;
  *
  * <p>Uses soft-delete via {@link #archive()} -- the default query should
  * filter on {@code archivedAt IS NULL}.
+ *
+ * <p>UID uniqueness is enforced per project via the case-insensitive functional index
+ * {@code uq_requirement_project_uid_ci} on {@code (project_id, LOWER(uid))}, defined in
+ * migration V014 (superseding V012). This index <em>cannot</em> be expressed as a JPA
+ * {@code @UniqueConstraint} because it is a functional/LOWER() index — Flyway is the
+ * sole authority for its definition.
  */
 @Entity
 @Audited
@@ -38,6 +44,7 @@ public class Requirement extends BaseEntity {
     @JoinColumn(name = "project_id", nullable = false)
     private Project project;
 
+    /** Human-readable identifier, unique per project (case-insensitive). Always stored in uppercase. */
     @Column(nullable = false, length = 50)
     private String uid;
 

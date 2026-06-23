@@ -455,6 +455,7 @@ export const TO_CAMEL = {
   relation_type: "relationType",
   target_id: "targetId",
   new_uid: "newUid",
+  uid_prefix: "uidPrefix",
   copy_relations: "copyRelations",
   revision_number: "revisionNumber",
   revision_type: "revisionType",
@@ -1132,6 +1133,8 @@ export async function getTraceabilityMatrix({ project, status, wave, linkType, p
 }
 
 export async function createRequirement(data, project) {
+  // The backend expects camelCase `uidPrefix`; snake_case `uid_prefix` from MCP args
+  // is converted by the toCamelCase helper inside request() when the body is serialised.
   return request("POST", "/api/v1/requirements", { body: data, params: { project } });
 }
 
@@ -1710,9 +1713,12 @@ export async function deleteTraceabilityLink(reqId, linkId) {
   await request("DELETE", `/api/v1/requirements/${encodeURIComponent(reqId)}/traceability/${encodeURIComponent(linkId)}`);
 }
 
-export async function getTraceabilityByArtifact(artifactType, artifactIdentifier) {
+// The backend always scopes this lookup to a single project and never runs unscoped: it resolves
+// the sole project in a single-project instance and rejects an absent `project` with
+// project_required in a multi-project one. Pass `project` whenever the backend hosts more than one.
+export async function getTraceabilityByArtifact(artifactType, artifactIdentifier, project) {
   return request("GET", "/api/v1/requirements/traceability/by-artifact", {
-    params: { artifactType, artifactIdentifier },
+    params: { artifactType, artifactIdentifier, project },
   });
 }
 
@@ -12780,9 +12786,9 @@ async function evaluateRequirementTraceability({ item, index, project, issueNumb
 // orphaned GITHUB_ISSUE-shaped traceability link — that would indicate prior
 // reconciliation drift the agent failed to clean up. Returns `{ earlyReturn }`
 // on lookup failure, otherwise `{ failures }`.
-async function checkOrphanedIssueLinks(issueNumber) {
+async function checkOrphanedIssueLinks(issueNumber, project) {
   try {
-    const issueLinks = await getTraceabilityByArtifact("GITHUB_ISSUE", String(issueNumber));
+    const issueLinks = await getTraceabilityByArtifact("GITHUB_ISSUE", String(issueNumber), project);
     const orphaned = Array.isArray(issueLinks)
       ? issueLinks.filter((l) => l?.link_type === "IMPLEMENTS")
       : [];
@@ -12861,7 +12867,7 @@ export async function runAssertTraceabilityReconciled({
     }
 
     if (requirements.length === 0) {
-      const orphanResult = await checkOrphanedIssueLinks(issueNumber);
+      const orphanResult = await checkOrphanedIssueLinks(issueNumber, project);
       if (orphanResult.earlyReturn) return orphanResult.earlyReturn;
       failures.push(...orphanResult.failures);
     }

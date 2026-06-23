@@ -131,6 +131,7 @@ public class ImportService {
                     var cmd = new CreateRequirementCommand(
                             projectId,
                             req.uid(),
+                            null,
                             req.title(),
                             req.statement(),
                             null,
