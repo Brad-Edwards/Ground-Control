@@ -353,6 +353,56 @@ class PolicyChecksTest(unittest.TestCase):
         )
         self.assertTrue(any(item.code == "migration-smoke-sync" for item in violations))
 
+    @staticmethod
+    def _init_migration_repo(tmp_dir, baseline_content):
+        """Create a git repo with one migration committed on a `baseline` ref."""
+        import subprocess
+
+        root = Path(tmp_dir)
+        rel = "backend/src/main/resources/db/migration/V100__baseline.sql"
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(baseline_content, encoding="utf-8")
+
+        def git(*args):
+            subprocess.run(["git", *args], cwd=str(root), check=True, capture_output=True, text=True)
+
+        git("init", "-q")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "t")
+        git("add", "-A")
+        git("commit", "-q", "-m", "baseline")
+        git("branch", "baseline")
+        return root, rel, path
+
+    def test_migration_immutability_flags_edited_applied_migration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root, rel, path = self._init_migration_repo(tmp_dir, "SELECT 1;\n")
+            path.write_text("SELECT 2;\n", encoding="utf-8")  # edit an already-applied migration
+            violations = run_migration_policy([rel], root=root, base="baseline")
+            self.assertTrue(any(item.code == "migration-immutability" for item in violations))
+
+    def test_migration_immutability_flags_removed_applied_migration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root, rel, path = self._init_migration_repo(tmp_dir, "SELECT 1;\n")
+            path.unlink()  # deleting a released migration is also a violation
+            violations = run_migration_policy([rel], root=root, base="baseline")
+            self.assertTrue(any(item.code == "migration-immutability" for item in violations))
+
+    def test_migration_immutability_allows_unchanged_baseline_migration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root, rel, _ = self._init_migration_repo(tmp_dir, "SELECT 1;\n")
+            violations = run_migration_policy([rel], root=root, base="baseline")
+            self.assertFalse(any(item.code == "migration-immutability" for item in violations))
+
+    def test_migration_immutability_allows_new_forward_migration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root, _, _ = self._init_migration_repo(tmp_dir, "SELECT 1;\n")
+            new_rel = "backend/src/main/resources/db/migration/V101__forward.sql"
+            (root / new_rel).write_text("SELECT 3;\n", encoding="utf-8")
+            violations = run_migration_policy([new_rel], root=root, base="baseline")
+            self.assertFalse(any(item.code == "migration-immutability" for item in violations))
+
     def test_pr_body_requires_new_sections(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             event_path = Path(tmp_dir) / "event.json"
