@@ -2381,7 +2381,14 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_test_quality_decision_record_contract())
     violations.extend(run_traceability_reconciliation_gate_contract())
 
-    if not args.skip_pr_body:
+    base_ref, head_ref = _resolve_pr_refs(args)
+    if args.skip_pr_body or _is_release_pr(base_ref, head_ref):
+        # The dev -> main release PR aggregates feature PRs that each already
+        # satisfied the body contract on the way into dev; re-imposing it (and
+        # the ## Documentation outcome) on the aggregate is redundant ceremony
+        # that fails every release. The changed-file checks above still run.
+        violations.extend(run_documentation_coverage_check(changed_files, pr_body=None))
+    else:
         body = _resolve_pr_body(args)
         if body is not None:
             # check_pr_body composes the no-deferral check (ADR-029) so all
@@ -2390,8 +2397,6 @@ def main(argv: list[str] | None = None) -> int:
             violations.extend(run_documentation_coverage_check(changed_files, pr_body=body))
         else:
             violations.extend(run_documentation_coverage_check(changed_files, pr_body=None))
-    else:
-        violations.extend(run_documentation_coverage_check(changed_files, pr_body=None))
 
     return render_and_exit(violations)
 
@@ -2421,6 +2426,51 @@ def _resolve_pr_body(args: argparse.Namespace) -> str | None:
         pull_request = event.get("pull_request") or {}
         return pull_request.get("body") or ""
     return None
+
+
+# The integration -> release branch pair whose PR aggregates already-merged
+# feature PRs. Such a release PR carries no single requirement/traceability of
+# its own, so the per-PR body contract does not apply to it.
+RELEASE_PR_BASE = "main"
+RELEASE_PR_HEAD = "dev"
+
+
+def _resolve_pr_refs(args: argparse.Namespace) -> tuple[str | None, str | None]:
+    """Best-effort ``(base_ref, head_ref)`` for the PR under check.
+
+    Sourced from ``--pr-number`` (``gh pr view``) or the GitHub event payload,
+    mirroring ``_resolve_pr_body``. Returns ``(None, None)`` when the refs cannot
+    be determined (e.g. the local pre-push driver), so the body contract applies
+    by default — only a positively-identified release PR is exempted.
+    """
+    if args.pr_number is not None:
+        try:
+            result = subprocess.run(
+                ["gh", "pr", "view", str(args.pr_number), "--json", "baseRefName,headRefName"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            data = json.loads(result.stdout)
+            return data.get("baseRefName"), data.get("headRefName")
+        except (subprocess.CalledProcessError, json.JSONDecodeError):
+            return None, None
+    event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
+    if event_path:
+        try:
+            event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None, None
+        pull_request = event.get("pull_request") or {}
+        base = (pull_request.get("base") or {}).get("ref")
+        head = (pull_request.get("head") or {}).get("ref")
+        return base, head
+    return None, None
+
+
+def _is_release_pr(base_ref: str | None, head_ref: str | None) -> bool:
+    """True for the ``dev`` -> ``main`` release PR (aggregate of merged feature PRs)."""
+    return base_ref == RELEASE_PR_BASE and head_ref == RELEASE_PR_HEAD
 
 
 if __name__ == "__main__":
