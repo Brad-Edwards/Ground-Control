@@ -27,7 +27,7 @@ See [ADR-014](../../architecture/adrs/014-pluggable-verification-architecture.md
 | Logging | SLF4J + Logback (JSON in prod, console in dev) |
 | API docs | Springdoc-OpenAPI |
 | Container | Docker (multi-stage, non-root, JDK 21) |
-| Registry | GHCR (`ghcr.io/brad-edwards/ground-control`) |
+| Registry | GHCR (`ghcr.io/autarchy-ai/ground-control`) |
 
 See [ADR-013](../../architecture/adrs/013-java-spring-boot-rewrite.md) for the Java migration rationale.
 
