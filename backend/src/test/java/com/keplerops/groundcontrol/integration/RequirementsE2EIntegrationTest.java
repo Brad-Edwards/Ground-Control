@@ -396,6 +396,10 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                 versions.add(rs.getString("version"));
             }
         }
+        // Flyway immutability: an applied versioned migration's content is frozen and its checksum is
+        // validated on every startup. Never edit an applied V*.sql in place; append a new forward
+        // migration instead. Editing the already-applied V043/V045 (instead of relying on the forward
+        // V138 realignment) crashed a prod deploy on a checksum mismatch that fresh CI databases miss.
         assertThat(versions)
                 .containsExactly(
                         "001",
