@@ -11,6 +11,10 @@
 
 > **Sync note for issue #266 (2026-06-20 GC-H006):** The `gc_risk_control_mapping` MCP tool in `mcp/ground-control/index.js` and `mcp/ground-control/lib.js` was extended with `threat_model_id` and three new threat-coverage query actions. These are additive extensions to an existing action-multiplexed tool. Documentation lives in `docs/API.md` and `docs/architecture/ARCHITECTURE.md`. No style rule changed.
 
+> **Sync note (2026-06-23, release PR body-contract exemption):** `tools/policy/checks.py::main` now skips the per-PR body contract (`check_pr_body` and the `## Documentation` outcome) for the `dev` -> `main` release PR, which aggregates feature PRs that already satisfied it. Detection is by PR base/head (`_is_release_pr`); all changed-file checks still run. The classifier, Vale rules, `.vale.ini`, and this document's style rules are unchanged.
+
+> **Sync note (2026-06-23, Flyway migration immutability guard):** Added a `migration-immutability` check to `tools/policy/checks.py::run_migration_policy` that fails `make policy` when a migration already present on the released baseline (`origin/main`) is modified or removed (editing an applied migration breaks Flyway checksum validation on every database that ran it). New forward migrations are exempt. The classifier, Vale rules, `.vale.ini`, and this document's style rules are unchanged.
+
 > **Sync note for issue #1107 (2026-06-14):** The audit-diff API reference (`docs/API.md`) and the `gc_requirement` MCP tool description were reviewed against these rules when the requirement history/timeline `expand` parameter was added. No style rule changed.
 
 > **Sync note for issue #1106 (2026-06-15):** The new MCP write-contract gate docs (`docs/DEVELOPMENT_WORKFLOW.md`, `mcp/ground-control/README.md`, and the ADR-034 amendment) were reviewed against these rules. No style rule changed.

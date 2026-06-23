@@ -11,9 +11,12 @@ from tools.policy.checks import (
     MCP_LIB_PATH,
     POLL_LOOP_ROUTING_STAGES,
     REPO_ROOT,
+    _is_release_pr,
+    _resolve_pr_refs,
     check_pr_body,
     classify_deferral_language,
     extract_step_section,
+    main,
     parse_args,
     parse_const_string_array,
     parse_fragment_filename,
@@ -352,6 +355,97 @@ class PolicyChecksTest(unittest.TestCase):
             root=REPO_ROOT,
         )
         self.assertTrue(any(item.code == "migration-smoke-sync" for item in violations))
+
+    @staticmethod
+    def _init_migration_repo(tmp_dir, baseline_content):
+        """Create a git repo with one migration committed on a `baseline` ref."""
+        import subprocess
+
+        root = Path(tmp_dir)
+        rel = "backend/src/main/resources/db/migration/V100__baseline.sql"
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(baseline_content, encoding="utf-8")
+
+        def git(*args):
+            subprocess.run(["git", *args], cwd=str(root), check=True, capture_output=True, text=True)
+
+        git("init", "-q")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "t")
+        git("add", "-A")
+        git("commit", "-q", "-m", "baseline")
+        git("branch", "baseline")
+        return root, rel, path
+
+    def test_migration_immutability_flags_edited_applied_migration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root, rel, path = self._init_migration_repo(tmp_dir, "SELECT 1;\n")
+            path.write_text("SELECT 2;\n", encoding="utf-8")  # edit an already-applied migration
+            violations = run_migration_policy([rel], root=root, base="baseline")
+            self.assertTrue(any(item.code == "migration-immutability" for item in violations))
+
+    def test_migration_immutability_flags_removed_applied_migration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root, rel, path = self._init_migration_repo(tmp_dir, "SELECT 1;\n")
+            path.unlink()  # deleting a released migration is also a violation
+            violations = run_migration_policy([rel], root=root, base="baseline")
+            self.assertTrue(any(item.code == "migration-immutability" for item in violations))
+
+    def test_migration_immutability_allows_unchanged_baseline_migration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root, rel, _ = self._init_migration_repo(tmp_dir, "SELECT 1;\n")
+            violations = run_migration_policy([rel], root=root, base="baseline")
+            self.assertFalse(any(item.code == "migration-immutability" for item in violations))
+
+    def test_migration_immutability_allows_new_forward_migration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root, _, _ = self._init_migration_repo(tmp_dir, "SELECT 1;\n")
+            new_rel = "backend/src/main/resources/db/migration/V101__forward.sql"
+            (root / new_rel).write_text("SELECT 3;\n", encoding="utf-8")
+            violations = run_migration_policy([new_rel], root=root, base="baseline")
+            self.assertFalse(any(item.code == "migration-immutability" for item in violations))
+
+    def test_is_release_pr(self):
+        self.assertTrue(_is_release_pr("main", "dev"))
+        self.assertFalse(_is_release_pr("dev", "feature-x"))  # feature -> dev
+        self.assertFalse(_is_release_pr("main", "hotfix"))  # direct hotfix -> main
+        self.assertFalse(_is_release_pr(None, None))  # refs unknown (local run)
+
+    def test_resolve_pr_refs_from_event_payload(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            event = Path(tmp_dir) / "event.json"
+            event.write_text(json.dumps({"pull_request": {"base": {"ref": "main"}, "head": {"ref": "dev"}}}))
+            args = parse_args(["--event-path", str(event)])
+            self.assertEqual(_resolve_pr_refs(args), ("main", "dev"))
+
+    @staticmethod
+    def _run_main_for_event(base_ref, head_ref, body):
+        import contextlib
+        import io
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            event = Path(tmp_dir) / "event.json"
+            event.write_text(
+                json.dumps(
+                    {"pull_request": {"body": body, "base": {"ref": base_ref}, "head": {"ref": head_ref}}}
+                )
+            )
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                main(["--event-path", str(event), "--files", "README.md"])
+            return buf.getvalue()
+
+    def test_release_pr_skips_body_contract(self):
+        # A dev -> main release PR with an empty/default body must not fail on the
+        # per-PR body contract (the failure that hit every "Dev" release PR).
+        output = self._run_main_for_event("main", "dev", "garbage body with no sections")
+        self.assertNotIn("pr-template-sections", output)
+        self.assertNotIn("pr-requirement-uid", output)
+
+    def test_non_release_pr_still_enforces_body_contract(self):
+        output = self._run_main_for_event("dev", "feature-x", "garbage body with no sections")
+        self.assertIn("pr-template-sections", output)
 
     def test_pr_body_requires_new_sections(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

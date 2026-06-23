@@ -554,11 +554,74 @@ def git_diff_for_paths(paths: Iterable[str], root: Path = REPO_ROOT) -> str:
     return run_git(["diff", "--unified=0", "HEAD", "--", *path_list], root=root)
 
 
-def run_migration_policy(changed_files: list[str], root: Path = REPO_ROOT) -> list[Violation]:
+def _resolve_baseline_ref(base: str | None, root: Path = REPO_ROOT) -> str | None:
+    """Resolve the released-baseline ref to diff migration content against.
+
+    Prefers the explicit ``--base`` ref, then ``origin/main`` (the released
+    line), then ``main``. Returns ``None`` when none resolve (e.g. a shallow
+    clone without the baseline fetched) so the immutability check skips
+    gracefully rather than failing the run.
+    """
+    for ref in (base, "origin/main", "main"):
+        if not ref:
+            continue
+        try:
+            run_git(["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"], root=root)
+            return ref
+        except subprocess.CalledProcessError:
+            continue
+    return None
+
+
+def _migration_content_at_ref(ref: str, path: str, root: Path = REPO_ROOT) -> str | None:
+    """Return ``path`` content at ``ref``, or ``None`` if it does not exist there."""
+    try:
+        return run_git(["show", f"{ref}:{path}"], root=root)
+    except subprocess.CalledProcessError:
+        return None
+
+
+def run_migration_policy(
+    changed_files: list[str], root: Path = REPO_ROOT, base: str | None = None
+) -> list[Violation]:
     migrations = [path for path in changed_files if MIGRATION_PATH_RE.match(path)]
     violations: list[Violation] = []
 
     if migrations:
+        # Flyway immutability: a migration already present on the released
+        # baseline (origin/main) must never have its content changed — Flyway
+        # validates checksums on every startup, so editing an applied migration
+        # crashes every database that already ran it (the V043/V045 incident,
+        # which a fresh-DB smoke test cannot catch). New migrations are exempt
+        # (absent from the baseline); the only correct way to change applied
+        # data/schema is a new forward migration.
+        baseline = _resolve_baseline_ref(base, root)
+        if baseline:
+            for path in migrations:
+                released = _migration_content_at_ref(baseline, path, root)
+                if released is None:
+                    continue  # new migration — not on the baseline, allowed.
+                target = root / path
+                current = target.read_text(encoding="utf-8") if target.exists() else None
+                if current != released:
+                    change = "removed" if current is None else "modified"
+                    violations.append(
+                        Violation(
+                            code="migration-immutability",
+                            message=(
+                                "An applied Flyway migration was changed. Migrations on the "
+                                "released baseline are immutable — add a new forward migration "
+                                "instead of editing one."
+                            ),
+                            details=[
+                                f"{change} migration: {path}",
+                                f"baseline ref: {baseline}",
+                                "Flyway validates checksums on startup; changing an applied "
+                                "migration breaks every database that already ran it.",
+                            ],
+                        )
+                    )
+
         required = [
             "backend/src/test/java/com/keplerops/groundcontrol/integration/MigrationSmokeTest.java",
             "backend/src/test/java/com/keplerops/groundcontrol/integration/RequirementsE2EIntegrationTest.java",
@@ -2309,7 +2372,7 @@ def main(argv: list[str] | None = None) -> int:
     violations = []
     violations.extend(run_adr_guard(changed_files))
     violations.extend(run_controller_contracts(changed_files))
-    violations.extend(run_migration_policy(changed_files))
+    violations.extend(run_migration_policy(changed_files, base=args.base))
     violations.extend(run_changelog_fragment_check(changed_files))
     violations.extend(run_ci_strictness_contract())
     violations.extend(run_deploy_compose_credential_passthrough())
@@ -2318,7 +2381,14 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_test_quality_decision_record_contract())
     violations.extend(run_traceability_reconciliation_gate_contract())
 
-    if not args.skip_pr_body:
+    base_ref, head_ref = _resolve_pr_refs(args)
+    if args.skip_pr_body or _is_release_pr(base_ref, head_ref):
+        # The dev -> main release PR aggregates feature PRs that each already
+        # satisfied the body contract on the way into dev; re-imposing it (and
+        # the ## Documentation outcome) on the aggregate is redundant ceremony
+        # that fails every release. The changed-file checks above still run.
+        violations.extend(run_documentation_coverage_check(changed_files, pr_body=None))
+    else:
         body = _resolve_pr_body(args)
         if body is not None:
             # check_pr_body composes the no-deferral check (ADR-029) so all
@@ -2327,8 +2397,6 @@ def main(argv: list[str] | None = None) -> int:
             violations.extend(run_documentation_coverage_check(changed_files, pr_body=body))
         else:
             violations.extend(run_documentation_coverage_check(changed_files, pr_body=None))
-    else:
-        violations.extend(run_documentation_coverage_check(changed_files, pr_body=None))
 
     return render_and_exit(violations)
 
@@ -2358,6 +2426,51 @@ def _resolve_pr_body(args: argparse.Namespace) -> str | None:
         pull_request = event.get("pull_request") or {}
         return pull_request.get("body") or ""
     return None
+
+
+# The integration -> release branch pair whose PR aggregates already-merged
+# feature PRs. Such a release PR carries no single requirement/traceability of
+# its own, so the per-PR body contract does not apply to it.
+RELEASE_PR_BASE = "main"
+RELEASE_PR_HEAD = "dev"
+
+
+def _resolve_pr_refs(args: argparse.Namespace) -> tuple[str | None, str | None]:
+    """Best-effort ``(base_ref, head_ref)`` for the PR under check.
+
+    Sourced from ``--pr-number`` (``gh pr view``) or the GitHub event payload,
+    mirroring ``_resolve_pr_body``. Returns ``(None, None)`` when the refs cannot
+    be determined (e.g. the local pre-push driver), so the body contract applies
+    by default — only a positively-identified release PR is exempted.
+    """
+    if args.pr_number is not None:
+        try:
+            result = subprocess.run(
+                ["gh", "pr", "view", str(args.pr_number), "--json", "baseRefName,headRefName"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            data = json.loads(result.stdout)
+            return data.get("baseRefName"), data.get("headRefName")
+        except (subprocess.CalledProcessError, json.JSONDecodeError):
+            return None, None
+    event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
+    if event_path:
+        try:
+            event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None, None
+        pull_request = event.get("pull_request") or {}
+        base = (pull_request.get("base") or {}).get("ref")
+        head = (pull_request.get("head") or {}).get("ref")
+        return base, head
+    return None, None
+
+
+def _is_release_pr(base_ref: str | None, head_ref: str | None) -> bool:
+    """True for the ``dev`` -> ``main`` release PR (aggregate of merged feature PRs)."""
+    return base_ref == RELEASE_PR_BASE and head_ref == RELEASE_PR_HEAD
 
 
 if __name__ == "__main__":
