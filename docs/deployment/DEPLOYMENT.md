@@ -395,7 +395,7 @@ within seconds. Order matters; do not skip ahead.
      # while it carries draft credential token values.
      dryrun_env="$(mktemp -t gc-prod-dryrun.env.XXXXXX)"
      chmod 600 "${dryrun_env}"
-     cp deploy/docker/.env.template "${dryrun_env}"
+     cp deploy/docker/.env.example "${dryrun_env}"
      # Edit ${dryrun_env} to fill GC_DATABASE_PASSWORD, POSTGRES_PASSWORD,
      # and GROUNDCONTROL_SECURITY_CREDENTIALS_<N>_* slots with the same
      # token values that will land in /opt/gc/.env. Set GC_IMAGE to the
@@ -468,11 +468,16 @@ within seconds. Order matters; do not skip ahead.
 
 6. **Update `/opt/gc/.env` with the credential block + the candidate
    digest.** Use the indexed `GROUNDCONTROL_SECURITY_CREDENTIALS_*` shape
-   (matches the env-var table above and `deploy/docker/.env.template`).
+   (matches the env-var table above and `deploy/docker/.env.example`).
    The same digest you dry-ran against in step 4 belongs in `GC_IMAGE`
    here - pinning by digest (`ghcr.io/autarchy-ai/ground-control@sha256:...`)
    guarantees the cutover rolls the image you tested, not whatever has
-   moved under `:dev` since. After editing, `chmod 600`.
+   moved under `:dev` since. Because deploy-time validation rejects a digest
+   pin by default (GC-P023, to prevent a silent steady-state freeze), add
+   `GC_ALLOW_IMAGE_PIN=1` to `/opt/gc/.env` for this deliberate cutover pin,
+   and **restore a floating tag (`:main`) and remove the override once the
+   cutover is verified**; otherwise the deploy stays frozen on that digest.
+   After editing, `chmod 600`.
 
 7. **Sync `/opt/gc/docker-compose.yml` byte-for-byte from this repo's
    `deploy/docker/docker-compose.prod.yml`.** That file is the canonical
@@ -629,7 +634,7 @@ From any tailnet host with the deploy SSH key, or from `red-dragon` itself:
 make deploy
 ```
 
-`make deploy` calls `scripts/deploy.sh`, which is host-aware:
+`make deploy` calls `scripts/deploy.sh`, the host-aware operator wrapper. It first **syncs** the canonical deploy artifacts (`deploy.sh`, `docker-compose.prod.yml`, `validate-env.sh`, `env.schema`, `MANIFEST.sha256`) from this checkout into `/opt/gc/`, eliminating the old manual scp step that was the root cause of deploy-host drift (#855). `/opt/gc/.env` is host-local and is never synced. It then routes the rollout:
 
 - **On red-dragon**: runs `sudo -u gc-deploy /opt/gc/deploy.sh`.
 - **From any other tailnet host**: SSHes `gc-deploy@red-dragon`. The `gc-deploy` user's `authorized_keys` carries a single forced-command entry:
@@ -640,7 +645,13 @@ make deploy
 
   `restrict` disables PTY, port forwarding, X11, agent forwarding, user-rc - the deploy key cannot do anything except run the deploy script. SSH exit code is the deploy script's exit code.
 
-`/opt/gc/deploy.sh` pulls the GHCR image pinned by `GC_IMAGE` in `/opt/gc/.env` (a floating tag like `:main`), brings the compose stack up, and verifies `/actuator/health` from inside the backend container. On failure it tails the last 50 lines of backend logs and exits non-zero.
+`/opt/gc/deploy.sh` (GC-P023) drift-guards the `/opt/gc` mirrors against `MANIFEST.sha256`, validates `/opt/gc/.env` against `env.schema`, pulls the GHCR image pinned by `GC_IMAGE` (a floating tag like `:main`), enforces the #953 revision-advance staleness guard, brings the stack up, and verifies `/actuator/health` from inside the backend container. If the candidate fails its health window it **automatically rolls back** to the previous image rather than leaving an unhealthy backend running. It writes `/opt/gc/deploy-state.json` (digest + commit SHA + outcome, no secrets); the wrapper publishes that to **GitHub Deployments**.
+
+Query what is currently deployed without SSHing to the box:
+
+```bash
+make deploy-status
+```
 
 The full operator runbook (rollback path, verification steps, things not to do) lives in `skills/deploy/SKILL.md` (`/deploy`).
 

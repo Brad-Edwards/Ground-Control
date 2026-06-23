@@ -2,7 +2,7 @@
        assert-backup-policy test-backup-restore-local vale-install vale-lint \
        ground-control-mcp-install sync-ground-control-policy scaffold-controller scaffold-audited-entity \
        scaffold-l2-state-machine sync-packs trigger-pack-sync dev clean up down docker-build smoke frontend-install frontend-dev \
-       frontend-build frontend-lint frontend-format frontend-test deploy deploy-infra mcp-openapi-contract
+       frontend-build frontend-lint frontend-format frontend-test deploy deploy-status deploy-manifest deploy-infra mcp-openapi-contract
 
 # --- Rapid dev loop (< 5s) ---
 
@@ -174,8 +174,21 @@ smoke: docker-build ## Build Docker image and verify Flyway + health
 
 # --- Deployment (ADR-030: on-prem red-dragon) ---
 
-deploy: ## Manual deploy to red-dragon (pulls latest main image, restarts, verifies health)
+deploy: ## Manual deploy to red-dragon (syncs artifacts, validates env, rolls out with rollback, publishes deploy state)
 	./scripts/deploy.sh
+
+deploy-status: ## Show the latest published production GitHub Deployment (GC-P023) — answers "what's deployed?" without SSH
+	@dep=$$(gh api "repos/{owner}/{repo}/deployments?environment=production&per_page=1" --jq '.[0].id' 2>/dev/null); \
+	if [ -z "$$dep" ] || [ "$$dep" = "null" ]; then \
+		echo "No production GitHub Deployments found (or gh not authenticated)."; \
+	else \
+		gh api "repos/{owner}/{repo}/deployments/$$dep" --jq '"deployment \(.id)  ref \(.sha[0:12])  created \(.created_at)  by \(.creator.login)"'; \
+		gh api "repos/{owner}/{repo}/deployments/$$dep/statuses?per_page=1" --jq '.[0] | "  state: \(.state)  \(.description // "")"'; \
+	fi
+
+deploy-manifest: ## Regenerate deploy/docker/MANIFEST.sha256 after editing any canonical deploy artifact (GC-P023)
+	cd deploy/docker && sha256sum deploy.sh docker-compose.prod.yml validate-env.sh env.schema > MANIFEST.sha256
+	@echo "Regenerated deploy/docker/MANIFEST.sha256"
 
 clean: ## Remove build artifacts
 	cd backend && ./gradlew clean

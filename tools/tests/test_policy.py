@@ -1,3 +1,4 @@
+import hashlib
 import json
 import tempfile
 import unittest
@@ -28,6 +29,7 @@ from tools.policy.checks import (
     run_changelog_fragment_check,
     run_ci_strictness_contract,
     run_controller_contracts,
+    run_deploy_artifact_consistency,
     run_deploy_compose_credential_passthrough,
     run_documentation_coverage_check,
     run_enum_contract_check,
@@ -761,6 +763,146 @@ class PolicyChecksTest(unittest.TestCase):
             self.assertEqual(
                 violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}"
             )
+
+    # ------------------------------------------------------------------
+    # Deploy artifact consistency check (issue #855, GC-P023)
+    # ------------------------------------------------------------------
+
+    def _write_valid_deploy_tree(self, root: Path) -> None:
+        """Write a minimal internally-consistent deploy artifact set.
+
+        Mirrors the invariants run_deploy_artifact_consistency enforces so a
+        test can introduce exactly one defect and assert the matching code.
+        """
+        ddir = root / "deploy/docker"
+        ddir.mkdir(parents=True, exist_ok=True)
+        (ddir / ".env.example").write_text(
+            "GC_IMAGE=ghcr.io/autarchy-ai/ground-control:main\n", encoding="utf-8"
+        )
+        (ddir / "env.schema").write_text(
+            "REQUIRED GC_IMAGE\nFLOATING_TAG GC_IMAGE\nREQUIRED GC_DATABASE_URL\n",
+            encoding="utf-8",
+        )
+        (ddir / "docker-compose.prod.yml").write_text(
+            "services:\n"
+            "  backend:\n"
+            "    image: ${GC_IMAGE}\n"
+            "    environment:\n"
+            "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n",
+            encoding="utf-8",
+        )
+        (ddir / "deploy.sh").write_text("#!/bin/bash\ndocker compose --env-file .env up -d\n", encoding="utf-8")
+        (ddir / "validate-env.sh").write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+        # Manifest must match the four canonical artifacts byte-for-byte.
+        manifest_lines = []
+        for name in ("deploy.sh", "docker-compose.prod.yml", "validate-env.sh", "env.schema"):
+            digest = hashlib.sha256((ddir / name).read_bytes()).hexdigest()
+            manifest_lines.append(f"{digest}  {name}")
+        (ddir / "MANIFEST.sha256").write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+        wrapper = root / "scripts/deploy.sh"
+        wrapper.parent.mkdir(parents=True, exist_ok=True)
+        wrapper.write_text("#!/bin/bash\nssh gc-deploy@red-dragon\n", encoding="utf-8")
+
+    def test_deploy_artifact_consistency_passes_on_committed_repo(self):
+        # The committed deploy artifacts must satisfy every GC-P023 invariant;
+        # run against the live tree as the post-condition assertion.
+        violations = run_deploy_artifact_consistency(root=REPO_ROOT)
+        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
+
+    def test_deploy_artifact_consistency_passes_on_minimal_valid_tree(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            violations = run_deploy_artifact_consistency(root=root)
+            self.assertEqual(violations, [], msg=f"unexpected: {[v.render() for v in violations]}")
+
+    def test_deploy_artifact_consistency_flags_env_template_duplicate(self):
+        # A reintroduced .env.template is the contradictory second template
+        # #855 removed; the gate must fail so it cannot drift back in.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            (root / "deploy/docker/.env.template").write_text(
+                "GC_IMAGE=ghcr.io/autarchy-ai/ground-control:latest\n", encoding="utf-8"
+            )
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertIn("deploy-env-template-duplicate", codes)
+
+    def test_deploy_artifact_consistency_flags_manifest_drift(self):
+        # Editing a canonical artifact without regenerating MANIFEST.sha256 must
+        # fail: the deploy-time drift guard verifies /opt/gc against the manifest.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            (root / "deploy/docker/deploy.sh").write_text(
+                "#!/bin/bash\ndocker compose --env-file .env up -d\necho changed\n", encoding="utf-8"
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-manifest-stale", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("deploy.sh", details)
+
+    def test_deploy_artifact_consistency_flags_schema_incomplete(self):
+        # A compose variable absent from env.schema is schema/compose drift.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                compose.read_text(encoding="utf-8") + "      - GC_NEW_KNOB=${GC_NEW_KNOB}\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-schema-incomplete", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_NEW_KNOB", details)
+
+    def test_deploy_artifact_consistency_flags_missing_floating_tag(self):
+        # Dropping FLOATING_TAG GC_IMAGE would let a digest pin (the #953 freeze)
+        # pass the deploy-time validator unchallenged.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            schema = root / "deploy/docker/env.schema"
+            schema.write_text("REQUIRED GC_IMAGE\nREQUIRED GC_DATABASE_URL\n", encoding="utf-8")
+            # Regenerate the manifest so only the floating-tag invariant trips.
+            self._rewrite_manifest(root)
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertIn("deploy-env-schema-floating-tag", codes)
+
+    def test_deploy_artifact_consistency_flags_wrapper_duplicating_logic(self):
+        # The operator wrapper must not reimplement the rollout primitives that
+        # live only in the canonical deploy.sh (single-source invariant).
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            (root / "scripts/deploy.sh").write_text(
+                "#!/bin/bash\ndocker compose --env-file .env pull\n", encoding="utf-8"
+            )
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertIn("deploy-wrapper-duplicates-logic", codes)
+
+    def test_deploy_artifact_consistency_flags_dead_wrapper_duplicate(self):
+        # The dead divergent duplicate at deploy/scripts/deploy.sh must not come
+        # back — it was the broken curl-health-check copy #855 removed.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            dead = root / "deploy/scripts/deploy.sh"
+            dead.parent.mkdir(parents=True, exist_ok=True)
+            dead.write_text("#!/bin/bash\necho stale duplicate\n", encoding="utf-8")
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertIn("deploy-wrapper-duplicate", codes)
+
+    def _rewrite_manifest(self, root: Path) -> None:
+        ddir = root / "deploy/docker"
+        lines = []
+        for name in ("deploy.sh", "docker-compose.prod.yml", "validate-env.sh", "env.schema"):
+            digest = hashlib.sha256((ddir / name).read_bytes()).hexdigest()
+            lines.append(f"{digest}  {name}")
+        (ddir / "MANIFEST.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     # ------------------------------------------------------------------
     # Enum contract check (issue #433)
