@@ -1299,6 +1299,82 @@ def run_deploy_compose_credential_passthrough(root: Path = REPO_ROOT) -> list[Vi
 
 
 # ---------------------------------------------------------------------------
+# GHCR image-namespace drift check (issue #953, GC-P022).
+#
+# red-dragon silently served a stale build for ~10 days: the CI publish
+# namespace (`ghcr.io/<owner>/ground-control`) diverged from the deploy-host
+# image pin when the repo moved orgs (KeplerOps -> Brad-Edwards -> autarchy-ai).
+# `docker compose pull` kept resolving a frozen image under the abandoned
+# namespace while the still-healthy old container kept the deploy health check
+# green, so nothing failed. This static post-condition pins every deploy/CI/doc
+# artifact that names the image to the single canonical namespace, so the next
+# diff that reintroduces a stale namespace fails `make policy`. Adding a new
+# artifact that names the image is one inventory row.
+#
+# CHANGELOG.md is intentionally excluded — it records historical namespaces
+# (towncrier-collated release notes) that must NOT be rewritten.
+CANONICAL_GHCR_NAMESPACE = "autarchy-ai"
+GHCR_IMAGE_REF_RE = re.compile(r"ghcr\.io/([A-Za-z0-9._-]+)/ground-control")
+GHCR_NAMESPACE_INVENTORY: tuple[Path, ...] = (
+    Path("Makefile"),
+    Path(".github/workflows/ci.yml"),
+    Path("deploy/docker/.env.example"),
+    Path("deploy/docker/.env.template"),
+    Path("deploy/docker/docker-compose.prod.yml"),
+    Path("deploy/docker/deploy.sh"),
+    Path("deploy/docker/README.md"),
+    Path("deploy/scripts/deploy.sh"),
+    Path("docs/deployment/DEPLOYMENT.md"),
+    Path("docs/architecture/ARCHITECTURE.md"),
+    Path("skills/deploy/SKILL.md"),
+    Path("architecture/adrs/030-on-prem-hetzner-deployment.md"),
+)
+# Test files are intentionally excluded: a drift check's own negative-case
+# fixtures must carry a non-canonical literal (e.g. tools/tests/test_policy.py),
+# which is correct, not drift.
+
+
+def run_ghcr_namespace_drift(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert every inventoried artifact names the canonical GHCR namespace.
+
+    A non-canonical `ghcr.io/<ns>/ground-control` reference in any inventoried
+    deploy/CI/doc file is the drift that froze red-dragon's deploy silently
+    (#953). Absent inventory files are skipped — the gate catches drift in the
+    files that exist, it does not assert their presence (other checks own
+    file-existence post-conditions).
+    """
+    offenders: list[str] = []
+    for rel_path in GHCR_NAMESPACE_INVENTORY:
+        file_path = root / rel_path
+        if not file_path.exists():
+            continue
+        text = file_path.read_text(encoding="utf-8")
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            for match in GHCR_IMAGE_REF_RE.finditer(line):
+                namespace = match.group(1)
+                if namespace != CANONICAL_GHCR_NAMESPACE:
+                    offenders.append(
+                        f"{rel_path.as_posix()}:{line_number} references "
+                        f"non-canonical namespace '{namespace}' "
+                        f"(expected '{CANONICAL_GHCR_NAMESPACE}')"
+                    )
+    if not offenders:
+        return []
+    return [
+        Violation(
+            code="ghcr-namespace-drift",
+            message=(
+                "Deploy/CI artifacts must reference the single canonical GHCR "
+                f"namespace 'ghcr.io/{CANONICAL_GHCR_NAMESPACE}/ground-control' "
+                "(GC-P022 / #953). A divergent namespace lets `docker compose "
+                "pull` silently resolve a frozen image."
+            ),
+            details=offenders,
+        )
+    ]
+
+
+# ---------------------------------------------------------------------------
 # API enum contract check (issue #433, ADR-034).
 #
 # The backend Java enums under domain/requirements/state/ are the single source
@@ -2376,6 +2452,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_changelog_fragment_check(changed_files))
     violations.extend(run_ci_strictness_contract())
     violations.extend(run_deploy_compose_credential_passthrough())
+    violations.extend(run_ghcr_namespace_drift())
     violations.extend(run_enum_contract_check())
     violations.extend(run_workflow_routing_contract())
     violations.extend(run_test_quality_decision_record_contract())
