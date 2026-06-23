@@ -84,7 +84,11 @@ public class TraceabilityService {
     }
 
     @Transactional(readOnly = true)
-    public List<TraceabilityLink> findByArtifact(ArtifactType artifactType, String artifactIdentifier) {
+    public List<TraceabilityLink> findByArtifact(ArtifactType artifactType, String artifactIdentifier, UUID projectId) {
+        if (projectId != null) {
+            return traceabilityLinkRepository.findByArtifactTypeAndArtifactIdentifierAndProjectIdWithRequirement(
+                    artifactType, artifactIdentifier, projectId);
+        }
         return traceabilityLinkRepository.findByArtifactTypeAndArtifactIdentifierWithRequirement(
                 artifactType, artifactIdentifier);
     }

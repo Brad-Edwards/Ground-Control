@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.unit.api;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
@@ -167,6 +168,51 @@ class RequirementControllerTest {
                                     Map.of("uid", "REQ-001", "title", "Title", "statement", "Stmt"))))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.error.code", is("conflict")));
+        }
+
+        @Test
+        void uidPrefixOnly_returns201AndServiceCalledWithPrefix() throws Exception {
+            var req = createRequirement("PLAT-001");
+            when(requirementService.create(any(CreateRequirementCommand.class))).thenReturn(req);
+
+            mockMvc.perform(post("/api/v1/requirements")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "uidPrefix", "PLAT",
+                                    "title", "Test Title",
+                                    "statement", "Test Statement"))))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.uid", is("PLAT-001")));
+
+            var captor = org.mockito.ArgumentCaptor.forClass(CreateRequirementCommand.class);
+            org.mockito.Mockito.verify(requirementService).create(captor.capture());
+            var cmd = captor.getValue();
+            assertThat(cmd.uidPrefix()).isEqualTo("PLAT");
+            assertThat(cmd.uid()).isNull();
+        }
+
+        @Test
+        void bothUidAndUidPrefix_returns422() throws Exception {
+            mockMvc.perform(post("/api/v1/requirements")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "uid", "REQ-001",
+                                    "uidPrefix", "PLAT",
+                                    "title", "Title",
+                                    "statement", "Stmt"))))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.error.code", is("validation_error")));
+        }
+
+        @Test
+        void neitherUidNorUidPrefix_returns422() throws Exception {
+            mockMvc.perform(post("/api/v1/requirements")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "title", "Title",
+                                    "statement", "Stmt"))))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.error.code", is("validation_error")));
         }
     }
 
@@ -528,7 +574,7 @@ class RequirementControllerTest {
             setField(link, "id", UUID.randomUUID());
             setField(link, "createdAt", Instant.now());
             setField(link, "updatedAt", Instant.now());
-            when(traceabilityService.findByArtifact(ArtifactType.CODE_FILE, "backend/src/Main.java"))
+            when(traceabilityService.findByArtifact(ArtifactType.CODE_FILE, "backend/src/Main.java", null))
                     .thenReturn(List.of(link));
 
             mockMvc.perform(get("/api/v1/requirements/traceability/by-artifact")
@@ -542,7 +588,7 @@ class RequirementControllerTest {
 
         @Test
         void findByArtifact_returnsEmptyWhenNoMatch() throws Exception {
-            when(traceabilityService.findByArtifact(ArtifactType.CODE_FILE, "nonexistent.java"))
+            when(traceabilityService.findByArtifact(ArtifactType.CODE_FILE, "nonexistent.java", null))
                     .thenReturn(List.of());
 
             mockMvc.perform(get("/api/v1/requirements/traceability/by-artifact")
@@ -550,6 +596,27 @@ class RequirementControllerTest {
                             .param("artifactIdentifier", "nonexistent.java"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.length()", is(0)));
+        }
+
+        @Test
+        void findByArtifact_withProjectParam_forwardsResolvedProjectId() throws Exception {
+            var req = createRequirement("REQ-001");
+            var link = new TraceabilityLink(req, ArtifactType.GITHUB_ISSUE, "42", LinkType.IMPLEMENTS);
+            setField(link, "id", UUID.randomUUID());
+            setField(link, "createdAt", Instant.now());
+            setField(link, "updatedAt", Instant.now());
+            when(traceabilityService.findByArtifact(ArtifactType.GITHUB_ISSUE, "42", PROJECT_ID))
+                    .thenReturn(List.of(link));
+
+            mockMvc.perform(get("/api/v1/requirements/traceability/by-artifact")
+                            .param("artifactType", "GITHUB_ISSUE")
+                            .param("artifactIdentifier", "42")
+                            .param("project", "my-project"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].artifactType", is("GITHUB_ISSUE")));
+
+            // verify the controller resolved the project slug and passed the UUID to the service
+            org.mockito.Mockito.verify(traceabilityService).findByArtifact(ArtifactType.GITHUB_ISSUE, "42", PROJECT_ID);
         }
     }
 

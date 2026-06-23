@@ -11,6 +11,15 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
+/**
+ * A polymorphic content block inside a document section.
+ *
+ * <p>Uniqueness: at most one {@code REQUIREMENT}-typed block may appear per section,
+ * enforced by the partial unique index {@code uq_section_content_requirement}
+ * on {@code (requirement_id) WHERE content_type = 'REQUIREMENT'} defined in V022.
+ * JPA {@code @UniqueConstraint} cannot express a conditional (partial) index;
+ * Flyway is the authority.
+ */
 @Entity
 @Table(name = "section_content")
 public class SectionContent extends BaseEntity {

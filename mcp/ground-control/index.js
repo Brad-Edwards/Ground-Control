@@ -443,13 +443,14 @@ server.tool(
 
 server.tool(
   "gc_get_traceability_by_artifact",
-  "Reverse lookup: find all traceability links for an artifact (file path, issue number, etc.).",
+  "Reverse lookup: find all traceability links for an artifact (file path, issue number, etc.). Optional project scoping avoids cross-project issue-number collisions.",
   {
     artifact_type: z.enum(ARTIFACT_TYPES),
     artifact_identifier: z.string(),
+    project: z.string().optional(),
   },
-  async ({ artifact_type, artifact_identifier }) => {
-    try { return ok(JSON.stringify(await getTraceabilityByArtifact(artifact_type, artifact_identifier), null, 2)); }
+  async ({ artifact_type, artifact_identifier, project }) => {
+    try { return ok(JSON.stringify(await getTraceabilityByArtifact(artifact_type, artifact_identifier, project), null, 2)); }
     catch (e) { return err(e); }
   },
 );
@@ -1365,12 +1366,13 @@ server.tool(
   `Requirement operations (action-discriminated). Actions: ${REQUIREMENT_ACTIONS.join(", ")}. ` +
     `Reads (list/get/history/diff/timeline) route through gc_query against /api/v1/requirements; the history and timeline GETs accept an optional expand=true query param (pass it via gc_query params) to return full field values, since string change values over 200 chars are truncated by default with a truncated flag. ` +
     `Status transitions live on gc_transition_status / gc_bulk_transition_status (workflow primitives). ` +
-    `Required fields per action: create→{uid,title,statement}; update→{id}; delete/archive→{id}; clone→{source_uid,new_uid}.`,
+    `Required fields per action: create→{uid|uid_prefix,title,statement}; update→{id}; delete/archive→{id}; clone→{source_uid,new_uid}.`,
   {
     action: z.enum(REQUIREMENT_ACTIONS),
     // identifiers
     id: z.string().uuid().optional(),
     uid: z.string().optional(),
+    uid_prefix: z.string().optional(),
     source_uid: z.string().optional(),
     new_uid: z.string().optional(),
     // create/update fields
@@ -1393,14 +1395,19 @@ server.tool(
   },
   async (args) => {
     try {
-      const ENTITY_FIELDS = ["uid", "title", "statement", "rationale", "requirement_type", "priority", "wave", "status"];
+      const ENTITY_FIELDS = ["uid", "uid_prefix", "title", "statement", "rationale", "requirement_type", "priority", "wave", "status"];
       switch (args.action) {
         case "list": {
           const filter = pick(args, ["status", "type", "priority", "wave", "search", "page", "size", "sort", "project"]);
           return ok(JSON.stringify(await listRequirements(filter), null, 2));
         }
         case "create": {
-          reqArg(args, "uid", "create"); reqArg(args, "title", "create"); reqArg(args, "statement", "create");
+          const hasUid = args.uid != null && String(args.uid).trim() !== "";
+          const hasPrefix = args.uid_prefix != null && String(args.uid_prefix).trim() !== "";
+          if (hasUid === hasPrefix) {
+            throw new Error("create: exactly one of uid or uid_prefix must be provided (non-blank)");
+          }
+          reqArg(args, "title", "create"); reqArg(args, "statement", "create");
           return ok(JSON.stringify(await createRequirement(pick(args, ENTITY_FIELDS), args.project), null, 2));
         }
         case "update": {

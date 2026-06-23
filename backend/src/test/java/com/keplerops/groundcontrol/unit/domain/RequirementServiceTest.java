@@ -24,6 +24,7 @@ import com.keplerops.groundcontrol.domain.requirements.service.CloneRequirementC
 import com.keplerops.groundcontrol.domain.requirements.service.CreateRequirementCommand;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementFilter;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementService;
+import com.keplerops.groundcontrol.domain.requirements.service.RequirementUidAllocator;
 import com.keplerops.groundcontrol.domain.requirements.service.RequirementWithLinks;
 import com.keplerops.groundcontrol.domain.requirements.service.UpdateRequirementCommand;
 import com.keplerops.groundcontrol.domain.requirements.state.ArtifactType;
@@ -77,6 +78,9 @@ class RequirementServiceTest {
     @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private RequirementUidAllocator uidAllocator;
+
     private RequirementService service;
 
     @BeforeEach
@@ -87,7 +91,8 @@ class RequirementServiceTest {
                 projectRepository,
                 qualityGateRepository,
                 traceabilityLinkRepository,
-                eventPublisher);
+                eventPublisher,
+                uidAllocator);
     }
 
     private static Requirement makeRequirement(String uid) {
@@ -106,6 +111,7 @@ class RequirementServiceTest {
             var cmd = new CreateRequirementCommand(
                     PROJECT_ID,
                     "REQ-001",
+                    null,
                     "Title",
                     "Statement",
                     "Rationale",
@@ -126,7 +132,8 @@ class RequirementServiceTest {
 
         @Test
         void createsWithNullOptionalFields() {
-            var cmd = new CreateRequirementCommand(PROJECT_ID, "REQ-002", "Title", "Statement", null, null, null, null);
+            var cmd = new CreateRequirementCommand(
+                    PROJECT_ID, "REQ-002", null, "Title", "Statement", null, null, null, null);
 
             when(projectRepository.findById(PROJECT_ID)).thenReturn(Optional.of(TEST_PROJECT));
             when(requirementRepository.existsByProjectIdAndUidIgnoreCase(PROJECT_ID, "REQ-002"))
@@ -141,13 +148,28 @@ class RequirementServiceTest {
 
         @Test
         void throwsConflictOnDuplicateUid() {
-            var cmd = new CreateRequirementCommand(PROJECT_ID, "REQ-001", "Title", "Statement", null, null, null, null);
+            var cmd = new CreateRequirementCommand(
+                    PROJECT_ID, "REQ-001", null, "Title", "Statement", null, null, null, null);
 
             when(projectRepository.findById(PROJECT_ID)).thenReturn(Optional.of(TEST_PROJECT));
             when(requirementRepository.existsByProjectIdAndUidIgnoreCase(PROJECT_ID, "REQ-001"))
                     .thenReturn(true);
 
             assertThatThrownBy(() -> service.create(cmd)).isInstanceOf(ConflictException.class);
+        }
+
+        @Test
+        void createWithUidPrefix_delegatesToAllocator() {
+            var cmd = new CreateRequirementCommand(
+                    PROJECT_ID, null, "PLAT", "Title", "Statement", null, null, null, null);
+
+            when(projectRepository.findById(PROJECT_ID)).thenReturn(Optional.of(TEST_PROJECT));
+            when(uidAllocator.allocate(PROJECT_ID, "PLAT")).thenReturn("PLAT-001");
+            when(requirementRepository.save(any(Requirement.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = service.create(cmd);
+            assertThat(result.getUid()).isEqualTo("PLAT-001");
+            org.mockito.Mockito.verify(uidAllocator).allocate(PROJECT_ID, "PLAT");
         }
     }
 

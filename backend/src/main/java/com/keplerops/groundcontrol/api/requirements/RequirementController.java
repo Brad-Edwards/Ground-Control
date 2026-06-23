@@ -62,6 +62,7 @@ public class RequirementController {
         var command = new CreateRequirementCommand(
                 projectId,
                 request.uid(),
+                request.uidPrefix(),
                 request.title(),
                 request.statement(),
                 request.rationale(),
@@ -216,8 +217,11 @@ public class RequirementController {
 
     @GetMapping("/traceability/by-artifact")
     public List<TraceabilityLinkResponse> findTraceabilityByArtifact(
-            @RequestParam ArtifactType artifactType, @RequestParam String artifactIdentifier) {
-        return traceabilityService.findByArtifact(artifactType, artifactIdentifier).stream()
+            @RequestParam ArtifactType artifactType,
+            @RequestParam String artifactIdentifier,
+            @RequestParam(required = false) String project) {
+        var projectId = project != null ? projectService.resolveProjectId(project) : null;
+        return traceabilityService.findByArtifact(artifactType, artifactIdentifier, projectId).stream()
                 .map(TraceabilityLinkResponse::from)
                 .toList();
     }

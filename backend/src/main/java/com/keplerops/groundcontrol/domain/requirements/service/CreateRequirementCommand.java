@@ -7,6 +7,7 @@ import java.util.UUID;
 public record CreateRequirementCommand(
         UUID projectId,
         String uid,
+        String uidPrefix,
         String title,
         String statement,
         String rationale,

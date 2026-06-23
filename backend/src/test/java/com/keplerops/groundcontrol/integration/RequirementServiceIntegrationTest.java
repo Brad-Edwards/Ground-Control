@@ -44,6 +44,7 @@ class RequirementServiceIntegrationTest extends BaseIntegrationTest {
         return new CreateRequirementCommand(
                 testProject.getId(),
                 uid,
+                null,
                 "Title for " + uid,
                 "Statement for " + uid,
                 "Rationale",

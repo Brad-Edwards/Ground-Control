@@ -88,6 +88,13 @@ can derive a methodology choice from the intake (ADR-055).
 | POST | `/requirements/{id}/clone` | CloneRequirementRequest | 201 | Clone requirement |
 | POST | `/requirements/{id}/archive` | - | 200 | Archive requirement |
 
+`POST /requirements` accepts either `uid` or `uidPrefix`; exactly one must be
+non-blank. Supplying `uid` sets the UID explicitly. Supplying `uidPrefix` lets the
+server allocate the next available `{PREFIX}-{N}` atomically per project (see
+ADR-060, issue #532); the allocated UID is returned in the response. Archived
+requirements are included in the high-water-mark scan, so a previously used suffix
+is never recycled.
+
 When an enabled quality gate covers `metricType=COVERAGE`,
 `metricParam=DOCUMENTS`, and `scopeStatus=ACTIVE`, DRAFT-to-ACTIVE
 requirement transitions require the requirement to already have a
@@ -129,6 +136,7 @@ of that type, and requirements with no matching link still appear with an empty
 |-----------|------|-------------|
 | `artifactType` | enum | GITHUB_ISSUE, PULL_REQUEST, CODE_FILE, ADR, CONFIG, POLICY, TEST, SPEC, PROOF, DOCUMENTATION, RISK_SCENARIO, CONTROL |
 | `artifactIdentifier` | string | Artifact identifier (for example, repo-relative path, issue number, ADR UID) |
+| `project` | string | Optional project identifier or UUID. Scopes the result to a single project. Strongly recommended for `GITHUB_ISSUE` lookups to avoid cross-project issue-number collisions (see ADR-060, issue #1052). |
 
 ### Audit History
 

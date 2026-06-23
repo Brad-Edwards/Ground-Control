@@ -4,7 +4,6 @@ import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -319,9 +318,9 @@ class DocumentExportServiceTest {
         verify(requirementRepository).findByProjectIdAndUidIgnoreCase(PROJECT_ID_B, "SHARED-001");
     }
 
-    /** Global {@code findByUid} must never be called; project-scoped lookup is always used. */
+    /** Project-scoped UID lookup must always be used; global lookup by UID is not available. */
     @Test
-    void exportToSdoc_neverCallsGlobalFindByUid() {
+    void exportToSdoc_usesProjectScopedUidLookup() {
         var doc = makeDocument(DOC_ID, TEST_PROJECT_A);
         when(documentRepository.findById(DOC_ID)).thenReturn(Optional.of(doc));
         var content = List.of(new ReadingOrderContentItem("REQUIREMENT", "REQ-001", "Title", null, 0));
@@ -334,6 +333,6 @@ class DocumentExportServiceTest {
 
         service.exportToSdoc(DOC_ID);
 
-        verify(requirementRepository, never()).findByUid("REQ-001");
+        verify(requirementRepository).findByProjectIdAndUidIgnoreCase(PROJECT_ID_A, "REQ-001");
     }
 }

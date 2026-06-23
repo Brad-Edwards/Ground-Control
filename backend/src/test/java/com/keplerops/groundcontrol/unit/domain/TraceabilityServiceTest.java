@@ -193,7 +193,7 @@ class TraceabilityServiceTest {
                             ArtifactType.CODE_FILE, "backend/src/Main.java"))
                     .thenReturn(List.of(link));
 
-            var result = service.findByArtifact(ArtifactType.CODE_FILE, "backend/src/Main.java");
+            var result = service.findByArtifact(ArtifactType.CODE_FILE, "backend/src/Main.java", null);
             assertThat(result).hasSize(1);
             assertThat(result.get(0).getArtifactIdentifier()).isEqualTo("backend/src/Main.java");
             assertThat(result.get(0).getLinkType()).isEqualTo(LinkType.IMPLEMENTS);
@@ -205,7 +205,7 @@ class TraceabilityServiceTest {
                             ArtifactType.CODE_FILE, "nonexistent.java"))
                     .thenReturn(List.of());
 
-            var result = service.findByArtifact(ArtifactType.CODE_FILE, "nonexistent.java");
+            var result = service.findByArtifact(ArtifactType.CODE_FILE, "nonexistent.java", null);
             assertThat(result).isEmpty();
         }
     }
