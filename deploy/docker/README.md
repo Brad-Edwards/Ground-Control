@@ -21,7 +21,7 @@ every merge, so `:main` continues to track current `main`.
 ## Image resolution
 
 `GC_IMAGE` in `/opt/gc/.env` MUST be a floating tag like
-`ghcr.io/brad-edwards/ground-control:main`. `deploy.sh` runs `docker compose
+`ghcr.io/autarchy-ai/ground-control:main`. `deploy.sh` runs `docker compose
 pull` which resolves the tag to the current digest on GHCR, so each deploy
 picks up whatever the CI `docker` job most recently pushed. Pinning
 `GC_IMAGE` to a digest here freezes the deploy on that image forever - CI
