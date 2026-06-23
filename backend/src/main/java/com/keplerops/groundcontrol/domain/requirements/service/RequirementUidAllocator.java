@@ -30,9 +30,11 @@ public class RequirementUidAllocator {
 
     /**
      * Valid prefix pattern: uppercase letters/digits with optional hyphen-separated segments.
-     * Callers pass a raw prefix; it is normalized to uppercase before validation.
+     * Callers pass a raw prefix; it is normalized to uppercase before validation. Possessive
+     * quantifiers ({@code *+}, {@code ++}) make the match linear-time with no backtracking, so a
+     * pathological input cannot trigger catastrophic backtracking / stack overflow (Sonar S5998).
      */
-    private static final Pattern VALID_PREFIX = Pattern.compile("^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*$");
+    private static final Pattern VALID_PREFIX = Pattern.compile("^[A-Z][A-Z0-9]*+(?:-[A-Z0-9]++)*+$");
 
     private final RequirementRepository requirementRepository;
     private final JdbcTemplate jdbcTemplate;
