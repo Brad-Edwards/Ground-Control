@@ -28,7 +28,7 @@ Run Ground Control on `red-dragon` (Hetzner dedicated, AMD Ryzen 7 3700X / 128 G
 - **Compute** - Single host (`red-dragon`), Ubuntu, Docker Engine 29.x, Docker Compose v5.x. PostgreSQL+AGE container + Spring Boot backend container managed by `/opt/gc/docker-compose.yml`.
 - **Access** - Tailscale-only. `red-dragon`'s sshd binds to the tailnet IP (`100.98.28.66:22`) only; no public SSH. Application reachable on tailnet at `http://red-dragon:8000`.
 - **Storage** - `/data/postgres` bind-mounted into the database container (Postgres data); `/data/backups` for `pg_dump` artifacts. Both on the host's main NVMe array.
-- **Image registry** - GHCR (`ghcr.io/keplerops/ground-control`). The CI workflow's previous dual-push to GHCR + ECR is replaced by GHCR-only.
+- **Image registry** - GHCR (`ghcr.io/autarchy-ai/ground-control`). The CI workflow's previous dual-push to GHCR + ECR is replaced by GHCR-only.
 - **Deploy path** - push to `main` → CI (`.github/workflows/ci.yml`) → `deploy` job runs on a fabricator-managed runner that joined the tailnet at first boot (per [`KeplerOps/fabricator` PR #14](https://github.com/KeplerOps/fabricator/pull/14)) → SSH to `gc-deploy@red-dragon` → forced command `/opt/gc/deploy.sh` does `docker compose pull && docker compose up -d` and verifies `/actuator/health`. No public ingress is required at any point.
 - **Backups** - `pg_dump -Fc` cron 3×/day to `/data/backups/`, retention 30 days local. Off-box copy via rsync over the tailnet to `aurora` (or another tailnet target - see [ADR-025](./025-backup-policy.md) amendment for current mechanism). EBS DLM snapshots and the S3 bucket from ADR-018 are removed.
 

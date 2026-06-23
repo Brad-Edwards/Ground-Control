@@ -134,7 +134,7 @@ down: ## Stop Docker Compose services
 	docker compose down
 
 docker-build: ## Build Docker image (frontend + backend)
-	docker build -f backend/Dockerfile -t ghcr.io/keplerops/ground-control:latest .
+	docker build -f backend/Dockerfile -t ghcr.io/autarchy-ai/ground-control:latest .
 
 smoke: docker-build ## Build Docker image and verify Flyway + health
 	@echo "Starting smoke test..."
@@ -157,7 +157,7 @@ smoke: docker-build ## Build Docker image and verify Flyway + health
 		-e GC_DATABASE_URL=jdbc:postgresql://localhost:5433/ground_control \
 		-e GC_DATABASE_USER=gc \
 		-e GC_DATABASE_PASSWORD=gc \
-		ghcr.io/keplerops/ground-control:latest
+		ghcr.io/autarchy-ai/ground-control:latest
 	@echo "Waiting for application startup..."
 	@PASS=false; for i in $$(seq 1 60); do \
 		HEALTH=$$(curl -sf http://localhost:8000/actuator/health 2>/dev/null) && { \

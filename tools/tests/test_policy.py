@@ -31,6 +31,7 @@ from tools.policy.checks import (
     run_deploy_compose_credential_passthrough,
     run_documentation_coverage_check,
     run_enum_contract_check,
+    run_ghcr_namespace_drift,
     run_migration_policy,
     run_no_deferral_disposition_check,
     run_pr_body_check,
@@ -601,7 +602,7 @@ class PolicyChecksTest(unittest.TestCase):
             compose_path.write_text(
                 "services:\n"
                 "  backend:\n"
-                "    image: ghcr.io/keplerops/ground-control:latest\n"
+                "    image: ghcr.io/autarchy-ai/ground-control:latest\n"
                 "    environment:\n"
                 "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n",
                 encoding="utf-8",
@@ -710,6 +711,56 @@ class PolicyChecksTest(unittest.TestCase):
             violations = run_deploy_compose_credential_passthrough(root=root)
             codes = {item.code for item in violations}
             self.assertIn("deploy-compose-missing", codes)
+
+    # ------------------------------------------------------------------
+    # GHCR namespace drift check (issue #953, GC-P022)
+    # ------------------------------------------------------------------
+
+    def test_ghcr_namespace_drift_passes_on_committed_files(self):
+        # After #953 every inventoried deploy/CI/doc artifact must name the
+        # single canonical GHCR namespace. Run the check against the live repo
+        # as the post-condition assertion — a leftover keplerops/brad-edwards
+        # ref is exactly the drift that silently froze red-dragon's deploy for
+        # ~10 days.
+        violations = run_ghcr_namespace_drift(root=REPO_ROOT)
+        self.assertEqual(
+            violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}"
+        )
+
+    def test_ghcr_namespace_drift_fires_on_noncanonical_namespace(self):
+        # A non-canonical namespace in any inventoried file must fail loudly,
+        # naming the file, line, and offending namespace so the fix is
+        # unambiguous.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            env_path = root / "deploy/docker/.env.example"
+            env_path.parent.mkdir(parents=True, exist_ok=True)
+            env_path.write_text(
+                "GC_IMAGE=ghcr.io/keplerops/ground-control:main\n",
+                encoding="utf-8",
+            )
+            violations = run_ghcr_namespace_drift(root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("ghcr-namespace-drift", codes)
+            details = " ".join(detail for v in violations for detail in v.details)
+            self.assertIn("keplerops", details)
+            self.assertIn("deploy/docker/.env.example", details)
+
+    def test_ghcr_namespace_drift_accepts_canonical_namespace(self):
+        # The canonical namespace must not trip the gate, and files outside the
+        # inventory (and absent files) are simply skipped.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            env_path = root / "deploy/docker/.env.example"
+            env_path.parent.mkdir(parents=True, exist_ok=True)
+            env_path.write_text(
+                "GC_IMAGE=ghcr.io/autarchy-ai/ground-control:main\n",
+                encoding="utf-8",
+            )
+            violations = run_ghcr_namespace_drift(root=root)
+            self.assertEqual(
+                violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}"
+            )
 
     # ------------------------------------------------------------------
     # Enum contract check (issue #433)
