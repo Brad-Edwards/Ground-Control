@@ -106,7 +106,7 @@ GETs (history, timeline, exports, list-by-X) onto `gc_query`.
 | `gc_dashboard_stats` | Aggregate project health snapshot |
 | `gc_get_requirement` | Get requirement by UID |
 | `gc_get_traceability` | Get all traceability links for a requirement |
-| `gc_get_traceability_by_artifact` | Reverse lookup: artifact → requirements |
+| `gc_get_traceability_by_artifact` | Reverse lookup: artifact → requirements; accepts optional `project` to scope by project (required for correct results with `GITHUB_ISSUE` artifacts) |
 | `gc_create_traceability_link` | Link an artifact to a requirement |
 | `gc_delete_traceability_link` | Delete a traceability link |
 | `gc_transition_status` | Transition a requirement's status |
@@ -123,7 +123,7 @@ GETs (history, timeline, exports, list-by-X) onto `gc_query`.
 
 | Tool | Actions |
 |---|---|
-| `gc_requirement` | list, create, update, delete, archive, clone |
+| `gc_requirement` | list, create (`uid` or `uid_prefix`, exactly one required), update, delete, archive, clone |
 | `gc_relation` | create, get, delete |
 | `gc_adr` | create, update, delete, transition, requirements |
 | `gc_document` | create, update, delete, grammar_set, grammar_delete, reading_order |
@@ -210,7 +210,7 @@ be related, linked, or analyzed.
 
 | Tool | Parameters | Purpose |
 |------|-----------|---------|
-| `gc_create_requirement` | `uid` (required), `title` (required), `statement` (required), `rationale`, `requirement_type`, `priority`, `wave` | Create a requirement. Status defaults to DRAFT |
+| `gc_create_requirement` | `uid` or `uid_prefix` (exactly one required), `title` (required), `statement` (required), `rationale`, `requirement_type`, `priority`, `wave` | Create a requirement. Provide `uid` for an explicit UID or `uid_prefix` to let the server allocate the next available `{PREFIX}-{N}`. Status defaults to DRAFT |
 | `gc_get_requirement` | `uid` (required) | Get requirement by UID |
 | `gc_list_requirements` | `status`, `type`, `wave`, `search`, `page`, `size`, `sort` | List requirements with optional filters. Paginated, sortable |
 | `gc_update_requirement` | `id` (required), `uid`, `title`, `statement`, `rationale`, `requirement_type`, `priority`, `wave` | Update fields on an existing requirement. Pass only changed fields |

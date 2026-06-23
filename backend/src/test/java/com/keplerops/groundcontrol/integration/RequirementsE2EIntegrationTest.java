@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.GitHubIssueSyncRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRelationRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
@@ -120,6 +121,9 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
     private RequirementRepository requirementRepository;
 
     @Autowired
+    private ProjectRepository projectRepository;
+
+    @Autowired
     private RequirementRelationRepository relationRepository;
 
     @Autowired
@@ -147,6 +151,13 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
     private UUID req001Id;
     private UUID req004Id;
     private UUID crudReqId;
+
+    private UUID defaultProjectId() {
+        return projectRepository
+                .findByIdentifier("ground-control")
+                .orElseThrow()
+                .getId();
+    }
 
     @AfterAll
     void cleanup() throws Exception {
@@ -200,19 +211,35 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.sectionContentsCreated", is(7)));
 
         // Verify requirements via repositories
-        assertThat(requirementRepository.findByUid("E2E-REQ-001")).isPresent();
-        assertThat(requirementRepository.findByUid("E2E-REQ-002")).isPresent();
-        assertThat(requirementRepository.findByUid("E2E-REQ-003")).isPresent();
-        assertThat(requirementRepository.findByUid("E2E-REQ-004")).isPresent();
-        assertThat(requirementRepository.findByUid("E2E-REQ-005")).isPresent();
+        var pid = defaultProjectId();
+        assertThat(requirementRepository.findByProjectIdAndUidIgnoreCase(pid, "E2E-REQ-001"))
+                .isPresent();
+        assertThat(requirementRepository.findByProjectIdAndUidIgnoreCase(pid, "E2E-REQ-002"))
+                .isPresent();
+        assertThat(requirementRepository.findByProjectIdAndUidIgnoreCase(pid, "E2E-REQ-003"))
+                .isPresent();
+        assertThat(requirementRepository.findByProjectIdAndUidIgnoreCase(pid, "E2E-REQ-004"))
+                .isPresent();
+        assertThat(requirementRepository.findByProjectIdAndUidIgnoreCase(pid, "E2E-REQ-005"))
+                .isPresent();
 
         // Store IDs for subsequent steps
-        req001Id = requirementRepository.findByUid("E2E-REQ-001").get().getId();
-        req004Id = requirementRepository.findByUid("E2E-REQ-004").get().getId();
+        req001Id = requirementRepository
+                .findByProjectIdAndUidIgnoreCase(pid, "E2E-REQ-001")
+                .get()
+                .getId();
+        req004Id = requirementRepository
+                .findByProjectIdAndUidIgnoreCase(pid, "E2E-REQ-004")
+                .get()
+                .getId();
 
         // Verify relations created
-        var req002 = requirementRepository.findByUid("E2E-REQ-002").get();
-        var req003 = requirementRepository.findByUid("E2E-REQ-003").get();
+        var req002 = requirementRepository
+                .findByProjectIdAndUidIgnoreCase(pid, "E2E-REQ-002")
+                .get();
+        var req003 = requirementRepository
+                .findByProjectIdAndUidIgnoreCase(pid, "E2E-REQ-003")
+                .get();
         assertThat(relationRepository.findBySourceId(req002.getId())).hasSize(1);
         assertThat(relationRepository.findBySourceId(req003.getId())).hasSize(1);
 
@@ -222,13 +249,7 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                 .hasSize(2);
 
         // Verify document structure created
-        var doc = documentRepository.findByProjectIdAndTitle(
-                requirementRepository
-                        .findByUid("E2E-REQ-001")
-                        .get()
-                        .getProject()
-                        .getId(),
-                "test-requirements");
+        var doc = documentRepository.findByProjectIdAndTitle(pid, "test-requirements");
         assertThat(doc).isPresent();
         var sections =
                 sectionRepository.findByDocumentIdOrderBySortOrder(doc.get().getId());

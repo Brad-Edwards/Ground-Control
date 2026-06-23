@@ -84,9 +84,18 @@ public class TraceabilityService {
     }
 
     @Transactional(readOnly = true)
-    public List<TraceabilityLink> findByArtifact(ArtifactType artifactType, String artifactIdentifier) {
-        return traceabilityLinkRepository.findByArtifactTypeAndArtifactIdentifierWithRequirement(
-                artifactType, artifactIdentifier);
+    public List<TraceabilityLink> findByArtifact(ArtifactType artifactType, String artifactIdentifier, UUID projectId) {
+        if (projectId == null) {
+            // The reverse lookup must never run unscoped: a bare artifact identifier (issue
+            // number, file path) collides across projects (#1052/#1197). The controller resolves
+            // exactly one project before calling this, so a null here is a programming error.
+            throw new DomainValidationException(
+                    "A project is required to resolve a traceability artifact lookup.",
+                    "project_required",
+                    Map.of("parameter", "project"));
+        }
+        return traceabilityLinkRepository.findByArtifactTypeAndArtifactIdentifierAndProjectIdWithRequirement(
+                artifactType, artifactIdentifier, projectId);
     }
 
     public void deleteLink(UUID requirementId, UUID linkId) {

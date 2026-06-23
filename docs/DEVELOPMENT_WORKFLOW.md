@@ -119,6 +119,7 @@ Config contract:
 - `knowledge.dir` is required when `knowledge` is present. `knowledge.schema` and `knowledge.inbox` are optional overrides; by default they resolve under `knowledge.dir`.
 - `docs.*` and `example_paths.*` are optional repo-relative paths. Docs paths are containment-checked so a config file cannot point an agent outside the repository.
 - `requirements.uid_examples` is optional and must be a list of non-empty strings.
+- **Server-side UID allocation (ADR-060, issue #532):** when creating a requirement via `gc_requirement create`, supply `uid_prefix` (for example, `GC-T`) instead of an explicit `uid` to let the server assign the next available `{PREFIX}-{N}` atomically. The server reads the current high-water mark from the database (archived rows included), increments it, and returns the allocated UID. Use `uid` only when you need a specific, pre-determined identifier.
 - `cross_cutting_concerns.description` is optional free text shown to agents during planning.
 - `routing.enabled` defaults to `false`. When enabled, omitted `/implement` stages use built-in defaults; `routing.stages.<stage>` overrides a specific stage/purpose route.
 - Routing stages use lowercase stage keys matching `[a-z][a-z0-9_-]*`. Route fields are `tier`, `provider`, `model`, `agent`, and `fallback`.

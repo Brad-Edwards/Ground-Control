@@ -15,6 +15,10 @@
 
 > **Sync note (2026-06-23, Flyway migration immutability guard):** Added a `migration-immutability` check to `tools/policy/checks.py::run_migration_policy` that fails `make policy` when a migration already present on the released baseline (`origin/main`) is modified or removed (editing an applied migration breaks Flyway checksum validation on every database that ran it). New forward migrations are exempt. The classifier, Vale rules, `.vale.ini`, and this document's style rules are unchanged.
 
+> **Sync note (2026-06-23, GHCR namespace drift gate - #953 / GC-P022):** Added `tools/policy/checks.py::run_ghcr_namespace_drift` so `make policy` fails when a deploy/CI artifact references a non-canonical `ghcr.io/<ns>/ground-control` namespace (canonical: `autarchy-ai`). This closes the silent stale-deploy gap left by the org move. It is a deploy-policy-surface extension; the classifier, Vale rules, `.vale.ini`, and this document's style rules are unchanged.
+
+> **Sync note for issue #1197 (2026-06-23):** `gc_requirement` create gained `uid_prefix` (mutually exclusive with `uid`); `gc_get_traceability_by_artifact` and `checkOrphanedIssueLinks` gained an optional `project` parameter. A review-fix refinement (same date) clarified the `gc_get_traceability_by_artifact` description and helper comment: the reverse lookup is always project-scoped (`project_required` in a multi-project instance), never an unscoped fallback. These MCP tool-surface changes are recorded in ADR-054 (2026-06-23 amendment). No style rule changed.
+
 > **Sync note for issue #1107 (2026-06-14):** The audit-diff API reference (`docs/API.md`) and the `gc_requirement` MCP tool description were reviewed against these rules when the requirement history/timeline `expand` parameter was added. No style rule changed.
 
 > **Sync note for issue #1106 (2026-06-15):** The new MCP write-contract gate docs (`docs/DEVELOPMENT_WORKFLOW.md`, `mcp/ground-control/README.md`, and the ADR-034 amendment) were reviewed against these rules. No style rule changed.

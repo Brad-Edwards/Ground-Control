@@ -15,6 +15,15 @@ import jakarta.persistence.UniqueConstraint;
 import java.util.UUID;
 import org.hibernate.envers.Audited;
 
+/**
+ * A directional link from a control to a target artifact (entity, identifier, or document).
+ *
+ * <p>The {@code @UniqueConstraint} entries above capture the broad uniqueness shape.
+ * An additional partial unique index {@code uq_control_link_internal} on
+ * {@code (control_id, target_type, target_entity_id, link_type) WHERE target_entity_id IS NOT NULL}
+ * is defined in V046. JPA {@code @UniqueConstraint} cannot express conditional (partial) indexes;
+ * Flyway is the authority for the precise enforcement semantics.
+ */
 @Entity
 @Audited
 @Table(

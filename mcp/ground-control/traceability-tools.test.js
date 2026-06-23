@@ -137,6 +137,25 @@ describe("getTraceabilityByArtifact (gc_get_traceability_by_artifact)", () => {
         && e.detail?.artifact === "x",
     );
   });
+
+  it("forwards project query param when provided", async () => {
+    setNextResponse({ body: [] });
+    await getTraceabilityByArtifact("GITHUB_ISSUE", "42", "my-project");
+
+    const parsed = parseUrl(fetchCalls[0]);
+    assert.equal(parsed.searchParams.get("artifactType"), "GITHUB_ISSUE");
+    assert.equal(parsed.searchParams.get("artifactIdentifier"), "42");
+    assert.equal(parsed.searchParams.get("project"), "my-project");
+  });
+
+  it("omits project param when not provided", async () => {
+    setNextResponse({ body: [] });
+    await getTraceabilityByArtifact("GITHUB_ISSUE", "42");
+
+    const parsed = parseUrl(fetchCalls[0]);
+    // undefined project should not appear as "undefined" in query string
+    assert.equal(parsed.searchParams.has("project"), false);
+  });
 });
 
 describe("createTraceabilityLink (gc_create_traceability_link)", () => {

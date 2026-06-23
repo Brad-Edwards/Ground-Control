@@ -13,10 +13,6 @@ import org.springframework.data.repository.query.Param;
 
 public interface RequirementRepository extends JpaRepository<Requirement, UUID>, JpaSpecificationExecutor<Requirement> {
 
-    Optional<Requirement> findByUid(String uid);
-
-    boolean existsByUid(String uid);
-
     Optional<Requirement> findByProjectIdAndUid(UUID projectId, String uid);
 
     boolean existsByProjectIdAndUid(UUID projectId, String uid);
@@ -31,6 +27,12 @@ public interface RequirementRepository extends JpaRepository<Requirement, UUID>,
     @Query(
             "SELECT CASE WHEN COUNT(r) > 0 THEN true ELSE false END FROM Requirement r WHERE r.project.id = :projectId AND UPPER(r.uid) = UPPER(:uid)")
     boolean existsByProjectIdAndUidIgnoreCase(@Param("projectId") UUID projectId, @Param("uid") String uid);
+
+    @Query(
+            value = "SELECT COALESCE(MAX(CAST(substring(uid from '[0-9]+$') AS bigint)), 0)"
+                    + " FROM requirement WHERE project_id = :projectId AND uid ~ :pattern",
+            nativeQuery = true)
+    long findMaxUidSuffix(@Param("projectId") UUID projectId, @Param("pattern") String pattern);
 
     List<Requirement> findByProjectId(UUID projectId);
 

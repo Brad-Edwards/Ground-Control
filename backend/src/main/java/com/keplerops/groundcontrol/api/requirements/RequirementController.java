@@ -62,6 +62,7 @@ public class RequirementController {
         var command = new CreateRequirementCommand(
                 projectId,
                 request.uid(),
+                request.uidPrefix(),
                 request.title(),
                 request.statement(),
                 request.rationale(),
@@ -216,8 +217,15 @@ public class RequirementController {
 
     @GetMapping("/traceability/by-artifact")
     public List<TraceabilityLinkResponse> findTraceabilityByArtifact(
-            @RequestParam ArtifactType artifactType, @RequestParam String artifactIdentifier) {
-        return traceabilityService.findByArtifact(artifactType, artifactIdentifier).stream()
+            @RequestParam ArtifactType artifactType,
+            @RequestParam String artifactIdentifier,
+            @RequestParam(required = false) String project) {
+        // Always resolve a single project: resolveProjectId returns the sole project in a
+        // single-project instance and throws project_required in a multi-project one. The reverse
+        // lookup must never run unscoped — a bare issue number or file path collides across
+        // projects (#1052/#1197), so silently searching every project returns the wrong links.
+        var projectId = projectService.resolveProjectId(project);
+        return traceabilityService.findByArtifact(artifactType, artifactIdentifier, projectId).stream()
                 .map(TraceabilityLinkResponse::from)
                 .toList();
     }
