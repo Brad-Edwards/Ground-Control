@@ -18,7 +18,7 @@ Reasons to invoke `/deploy`:
 
 ## Architecture (one-paragraph reminder)
 
-`gc-deploy@red-dragon` is an SSH login whose `authorized_keys` entry forces `command="/opt/gc/deploy.sh",restrict`. Any SSH session as `gc-deploy` runs that script and nothing else, so the SSH exit code reflects the deploy outcome (pass/fail). The script does `docker compose pull && up -d` against `/opt/gc/docker-compose.yml` with `/opt/gc/.env`, then polls `actuator/health` from inside the backend container (the host port-binding is restricted to the tailnet IP per #828 / ADR-026, so a host-side curl can't reach the listener). `GC_IMAGE` in `/opt/gc/.env` MUST be a floating tag like `:main` - pinning a digest there freezes the deploy on that image forever. The canonical mirrors of `/opt/gc/deploy.sh` and `/opt/gc/docker-compose.yml` live at `deploy/docker/deploy.sh` and `deploy/docker/docker-compose.prod.yml`. Drift policy: edit the repo copies, PR through dev → main, then SSH into red-dragon and copy the new files into `/opt/gc/`.
+`gc-deploy@red-dragon` is an SSH login whose `authorized_keys` entry forces `command="/opt/gc/deploy.sh",restrict`. Any SSH session as `gc-deploy` runs that script and nothing else, so the SSH exit code reflects the deploy outcome (pass/fail). The script does `docker compose pull && up -d` against `/opt/gc/docker-compose.yml` with `/opt/gc/.env`, then polls `actuator/health` from inside the backend container (the host port-binding is restricted to the tailnet IP per #828 / ADR-026, so a host-side curl can't reach the listener). `GC_IMAGE` in `/opt/gc/.env` MUST be a floating tag like `:main` - pinning a digest there freezes the deploy on that image forever. The canonical mirrors of `/opt/gc/deploy.sh` and `/opt/gc/docker-compose.yml` live at `deploy/docker/deploy.sh` and `deploy/docker/docker-compose.prod.yml`. Drift policy (GC-P023): edit the repo copies and PR through dev → main; `make deploy` then re-syncs `/opt/gc/` from the checkout automatically (no manual scp), and `/opt/gc/deploy.sh` checksum-verifies the mirrors against `MANIFEST.sha256` and refuses to roll out drifted files. `/opt/gc/.env` is host-local secrets and is never synced.
 
 ## Step 1 - sanity-check current state
 
@@ -43,7 +43,7 @@ is equivalent to `./scripts/deploy.sh`, which is host-aware:
 - **On red-dragon** (the box itself): runs `sudo -u gc-deploy /opt/gc/deploy.sh`.
 - **From any other tailnet host**: SSHes `gc-deploy@red-dragon` (the forced-command path).
 
-Expected output ends with `Deploy complete - application is UP`. The script pulls the image, restarts containers, then polls `actuator/health` inside the backend container for up to 60 seconds. Non-zero exit means the health check failed - the script tails the last 50 lines of backend logs before exiting.
+`make deploy` first syncs the canonical artifacts into `/opt/gc/` (no manual scp), then runs the on-host `deploy.sh`, which drift-guards the mirrors against `MANIFEST.sha256`, validates `/opt/gc/.env` against `env.schema`, pulls the image, enforces the #953 revision-advance guard, restarts containers, and polls `actuator/health` inside the backend container for up to 60 seconds. Expected output ends with `Deploy complete - application is UP`. If the candidate fails its health window, the deploy **automatically rolls back** to the previous image (output ends with "rolled back to previous image and service is UP") and exits non-zero — it never leaves a broken backend running. The rolled-out digest + commit SHA are written to `/opt/gc/deploy-state.json` and published to GitHub Deployments; query with `make deploy-status`.
 
 ## Step 3 - verify
 
@@ -61,7 +61,7 @@ ssh red-dragon 'curl -sf http://100.98.28.66:8000/actuator/health'
 There is no argv-driven rollback over the SSH forced-command path (it ignores client argv by design). To roll back:
 
 1. SSH into red-dragon as a sudoer (for example, `ssh red-dragon`).
-2. `sudo -u gc-deploy vi /opt/gc/.env` and pin `GC_IMAGE` to the target ref - either a tag (`ghcr.io/autarchy-ai/ground-control:sha-abc123`) or a digest (`ghcr.io/autarchy-ai/ground-control@sha256:...`). Available tags are listed at `https://github.com/autarchy-ai/Ground-Control/pkgs/container/ground-control`; CI publishes `sha-<short>` tags for every `main` build.
+2. `sudo -u gc-deploy vi /opt/gc/.env` and pin `GC_IMAGE` to the target ref - either a tag (`ghcr.io/autarchy-ai/ground-control:sha-abc123`) or a digest (`ghcr.io/autarchy-ai/ground-control@sha256:...`). Available tags are listed at `https://github.com/autarchy-ai/Ground-Control/pkgs/container/ground-control`; CI publishes `sha-<short>` tags for every `main` build. If you pin a `@sha256:` digest, also add `GC_ALLOW_IMAGE_PIN=1` to `/opt/gc/.env` - deploy-time validation rejects a digest pin otherwise (GC-P023, to prevent a silent steady-state freeze). The `:sha-<short>` tag form does not need the override.
 3. Re-run `make deploy` (or `sudo -u gc-deploy /opt/gc/deploy.sh`). The pull resolves the pinned ref and the restart picks it up.
 4. **Restore the floating `:main` pin** in `/opt/gc/.env` once the rollback is no longer needed - otherwise the next CI deploy will succeed but never actually roll out.
 
