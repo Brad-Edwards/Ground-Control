@@ -15,8 +15,13 @@ every merge, so `:main` continues to track current `main`.
 | File | What it is |
 |---|---|
 | `docker-compose.prod.yml` | Canonical production compose file. Mirror of `/opt/gc/docker-compose.yml` on red-dragon. |
-| `deploy.sh` | Canonical deploy script. Mirror of `/opt/gc/deploy.sh` on red-dragon. |
-| `.env.example` | Template for `/opt/gc/.env`. The real `.env` carries secrets and is host-local; do not commit it. |
+| `deploy.sh` | Canonical on-host deploy script (forced-command target). Mirror of `/opt/gc/deploy.sh`. Validates env, drift-guards, rolls out with rollback, writes the deploy-state record. |
+| `validate-env.sh` | Deploy-time validator: checks `/opt/gc/.env` against `env.schema` before rollout. Reports variable names only, never secret values. |
+| `env.schema` | Single env contract (GC-P023). Read by both `validate-env.sh` and the `make policy` gate (`run_deploy_artifact_consistency`); neither carries its own copy of the rules. |
+| `MANIFEST.sha256` | Canonical checksums of the four artifacts above. `deploy.sh` verifies the `/opt/gc` mirrors against it and refuses to roll out drifted files. Regenerate with `make deploy-manifest` after editing any artifact. |
+| `.env.example` | Human template for `/opt/gc/.env`. The real `.env` carries secrets and is host-local; do not commit it. |
+
+The operator wrapper that drives a deploy is `scripts/deploy.sh` at the repo root (invoked by `make deploy`); it syncs the artifacts above into `/opt/gc/` and publishes the deploy outcome to GitHub Deployments.
 
 ## Image resolution
 
@@ -37,18 +42,35 @@ base image ships `wget` but not `curl`). Inside the container the
 listener is on all interfaces of its own network namespace, so `wget
 http://localhost:8000` works regardless of the host bind.
 
+## Env validation, rollback, and deploy state (GC-P023)
+
+`deploy.sh` hardens every rollout:
+
+- **Drift guard.** It checksum-verifies the `/opt/gc` mirrors against the
+  synced `MANIFEST.sha256` and refuses to roll out drifted artifacts.
+- **Env validation.** It runs `validate-env.sh` against `/opt/gc/.env` before
+  restarting: required vars present, `GC_IMAGE` floating (a deliberate digest
+  pin needs `GC_ALLOW_IMAGE_PIN=1`), ADR-026 credential slots all-or-nothing.
+- **Rollback.** If the freshly pulled candidate fails its health window, the
+  deploy restores the previous image and never leaves an unhealthy backend as
+  the steady state.
+- **Deploy state.** It writes `/opt/gc/deploy-state.json` (digest + commit SHA
+  + outcome, no secrets) and emits a `DEPLOY_STATE_JSON` marker the wrapper
+  publishes to GitHub Deployments; query it with `make deploy-status`.
+
 ## Drift policy
 
-The two committed files (`deploy.sh`, `docker-compose.prod.yml`) and their
-red-dragon mirrors (`/opt/gc/deploy.sh`, `/opt/gc/docker-compose.yml`) are
-the same artifact. Changes go through the repo:
+The committed artifacts (`deploy.sh`, `docker-compose.prod.yml`,
+`validate-env.sh`, `env.schema`) are the single source of truth; the
+`/opt/gc/*` files are runtime mirrors. Changes go through the repo:
 
-1. Edit the repo copy on a feature branch.
-2. PR through dev → main per the normal workflow.
-3. After merge, SSH into red-dragon and copy the new file into `/opt/gc/`
-   (the deploy SSH path uses the forced-command `deploy.sh` only - there's
-   no general file-sync). Re-run with `sudo -u gc-deploy /opt/gc/deploy.sh`
-   to confirm.
-
-Improving this push step (and the deploy pipeline generally) is tracked on
-the followup issue linked from `architecture/adrs/030-*.md`.
+1. Edit the repo copy on a feature branch; run `make deploy-manifest` if you
+   touched a canonical artifact.
+2. PR through dev → main per the normal workflow (`make policy` runs
+   `run_deploy_artifact_consistency`, which fails on schema/compose drift, a
+   stale manifest, a reintroduced second template/wrapper, or a wrapper that
+   duplicates the rollout logic).
+3. After merge, run `make deploy` from any tailnet host or red-dragon itself:
+   the wrapper re-syncs `/opt/gc/` from the repo (no manual scp) and the
+   on-host `deploy.sh` re-verifies the mirrors before rolling out. `/opt/gc/.env`
+   is host-local and is never synced.
