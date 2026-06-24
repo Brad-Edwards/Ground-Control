@@ -36,7 +36,10 @@
 #     marker line (no secrets) for the wrapper to publish to GitHub Deployments.
 set -euo pipefail
 
-GC_DIR=/opt/gc
+# GC_DIR defaults to the production mount; overridable so the rollback /
+# health / deploy-state orchestration can be exercised against a throwaway
+# stack in an integration test (tools/tests/deploy-rollback-integration.sh).
+GC_DIR="${GC_DIR:-/opt/gc}"
 cd "${GC_DIR}"
 
 # Map a canonical repo artifact basename to its /opt/gc runtime path (the
@@ -156,16 +159,18 @@ fi
 # ---------------------------------------------------------------------------
 
 # Poll /actuator/health from INSIDE the backend container (host bind is
-# tailnet-restricted, #828). Returns 0 once UP, 1 after ~60s.
+# tailnet-restricted, #828). Returns 0 once UP, 1 after the window
+# (default 30 tries x 2s = ~60s; GC_HEALTH_RETRIES / GC_HEALTH_INTERVAL let an
+# integration test shrink the window).
 health_ok() {
   local i
-  for i in $(seq 1 30); do
+  for i in $(seq 1 "${GC_HEALTH_RETRIES:-30}"); do
     if docker compose --env-file .env exec -T backend \
          wget -q -O - http://localhost:8000/actuator/health 2>/dev/null \
          | grep -q '"UP"'; then
       return 0
     fi
-    sleep 2
+    sleep "${GC_HEALTH_INTERVAL:-2}"
   done
   return 1
 }
