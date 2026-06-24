@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted
+Accepted (2026-04-19); amended 2026-06-24 for the on-prem red-dragon
+deployment. See [Amendment 2026-06-24](#amendment-2026-06-24-rsync-to-aurora-on-red-dragon-978). The original
+Context/Decision below records the AWS EC2 mechanism (S3 + EBS DLM + SSM +
+Terraform cron) and is retained as history; ADR-018 and that mechanism are
+superseded by [ADR-030](030-on-prem-hetzner-deployment.md). The GC-P021
+*policy* (≥ 3×/day, off-box durability, recurring verified restore,
+cold-recovery documentation) is unchanged; only the *mechanism* changed.
 
 ## Date
 
@@ -77,6 +83,12 @@ path the wrong choice for this deployment:
    buys nothing we need.
 
 ## Decision
+
+> **Superseded by the [2026-06-24 amendment](#amendment-2026-06-24-rsync-to-aurora-on-red-dragon-978).**
+> The decision below is the AWS EC2 mechanism. On red-dragon there is no
+> S3 bucket, no EBS DLM layer, no SSM rollout, and no Terraform/cron; the
+> `restore.sh`, `test-restore.sh`, and `install-ops-scripts.sh` named here
+> were removed. Read the amendment for the current mechanism.
 
 Retain the ADR-018 two-layer backup architecture (pg_dump + EBS) and
 raise the defaults so GC-P021 is met:
@@ -177,10 +189,116 @@ raise the defaults so GC-P021 is met:
   `/var/log/gc-backup.log` + the daily restore-test failure to catch
   this.
 
+## Amendment 2026-06-24: rsync-to-aurora on red-dragon (#978)
+
+### Context
+
+[ADR-030](030-on-prem-hetzner-deployment.md) moved the production
+deployment off AWS EC2 onto the on-prem Hetzner host `red-dragon`, a
+single docker-compose stack on the operator tailnet. That deletes every
+mechanism the original Decision relied on: the S3 backup bucket, the EBS
+DLM block-level snapshot layer, the SSM `send-command` rollout, the
+Terraform-managed instance, and the cron schedule. The AWS-era operator
+scripts (`restore.sh`, `test-restore.sh`, `install-ops-scripts.sh`,
+`watchdog.sh`, `test-backup-restore-locally.sh`) were removed with that
+move. ADR-030 records the policy intent is unchanged and points here for
+the replacement mechanism. The mechanism itself shipped in #994; this
+amendment records it and closes the two gaps that #994 left: the ADR was
+never updated, and automated recurring restore verification was dropped.
+
+### Decision
+
+Keep the GC-P021 policy; replace the AWS mechanism with a tailnet-native
+one. The single logical layer (`pg_dump -Fc`) is retained; the EBS
+block-level layer has no on-prem equivalent and GC-P021 never required
+it, because `AgeGraphService.materializeGraph()` re-derives the AGE graph
+from the restored relational tables (see the original Context).
+
+1. **Local dump.** `deploy/scripts/backup.sh` runs `pg_dump -Fc` inside
+   the live `gc-db-1` container to `/data/backups/gc-<UTC-timestamp>.dump`.
+   It authenticates via the container's peer auth, so it reads no secret
+   and never touches `/opt/gc/.env`.
+2. **Off-box durability.** The same script rsyncs each dump over the
+   tailnet to `gc-backup@aurora:/var/backups/groundcontrol/`. The aurora
+   side pins the key to an `rrsync` forced command
+   (`deploy/scripts/aurora-setup-gc-backup.sh`), so the key can do nothing
+   but land payloads in that directory. rsync failure logs `WARN` and is
+   retried on the next timer fire; the local dump still succeeds. This
+   replaces the S3 upload.
+3. **Cadence.** `gc-backup.timer` fires at 03:00, 11:00, 19:00 UTC
+   (≥ 3×/day, `Persistent=true`). This replaces the `0 3,11,19 * * *`
+   cron entry.
+4. **Retention.** `GC_BACKUP_KEEP_DAYS` (default 30) drops dumps older
+   than the window. At 3×/day that keeps roughly 90 dumps, well over the
+   GC-P021 24 h floor. Retention is now days-based; the old count-based
+   `LOCAL_RETENTION_COUNT` is retired to keep one canonical definition.
+5. **Restore verification.** `deploy/scripts/test-restore.sh`, scheduled
+   daily by `gc-restore-test.timer` at 05:00 UTC, restores the most
+   recent dump into a throwaway `apache/age:release_PG16_1.6.0` container
+   (never the live `gc-db-1`) and asserts the six operational-readiness
+   sentinels: ≥ 1 public table, a non-empty `flyway_schema_history`, the
+   V010 `create_age_graph` migration, the AGE extension, the core Ground
+   Control tables, and a live `create_graph()` against the restored
+   catalog. The sentinels are the authoritative gate, so a partial or
+   truncated dump that `pg_restore` accepted with warnings still fails.
+   Any failure exits non-zero, `gc-restore-test.service` fails, and the
+   journal entry is the paging signal. Unlike the AWS copy, the script
+   reads no secret: the throwaway container is initialised with a
+   container-local random password and only the non-secret
+   `POSTGRES_USER`/`POSTGRES_DB` defaults, so the hardened `gc-backup`
+   identity keeps zero access to `/opt/gc/.env`.
+6. **Identity + hardening.** Both `gc-backup.service` and
+   `gc-restore-test.service` run as the dedicated `gc-backup` system user
+   (nologin, in the `docker` group) under `NoNewPrivileges`,
+   `PrivateTmp`, `ProtectSystem=strict`, scoped `ReadWritePaths`, and
+   finite `TimeoutStartSec`. Backup duties are deliberately NOT granted to
+   `gc-deploy`; deploy and backup are separate trust boundaries.
+7. **Rollout.** `deploy/scripts/install-gc-backup.sh` is the idempotent
+   red-dragon installer (user, key, `/opt/gc/{backup,test-restore}.sh`,
+   the four systemd units, `enable --now` on both timers). It replaces the
+   SSM-driven `install-ops-scripts.sh`. The repo copy is the source of
+   truth; the operator copies it onto the host and re-runs it on change.
+8. **Documentation.** `docs/operations/backup-restore.md` is the
+   cold-recovery runbook (restore-in-place, off-box restore, full host
+   rebuild, AGE rematerialise, post-restore verification, and the
+   automated restore-test drill), written for an operator with no prior
+   exposure to Ground Control, satisfying the "recovery without prior
+   knowledge" clause of GC-P021.
+9. **Drift protection.** `scripts/assert-backup-policy.sh` is the
+   structural gate over all eight artifacts. It runs in pre-commit and
+   `make policy` and fails if any artifact is missing, drops its GC-P021
+   anchor, falls below ≥ 3×/day backup or ≥ 1×/day restore-test cadence,
+   stops running as `gc-backup`, drops the rsync target or the aurora
+   `rrsync` forced command, or hollows out the restore-test's AGE-aware
+   verification depth.
+
+### Consequences
+
+- **Positive.** No AWS surface (no IAM, S3 lifecycle, DLM, or SSM to keep
+  in sync). One operational model: every workload is a tailnet host.
+  Automated daily restore verification is restored, keeping the GC-P021
+  "verified on a recurring basis" clause met by automation rather than
+  operator discipline. The restore test needs no secret access, a strict
+  improvement over the AWS copy.
+- **Negative.** Off-box durability now depends on aurora reachability over
+  the tailnet; an aurora outage delays (does not lose) the off-box copy,
+  and repeated rsync `WARN` lines are the only signal that aurora access
+  drifted, so paging must inspect journal content, not just unit exit
+  status. There is no managed snapshot service; rsync retention on aurora
+  is operator-verified.
+- **Risk: AGE image drift.** The restore test pins
+  `apache/age:release_PG16_1.6.0`, matching the `db` service in
+  `deploy/docker/docker-compose.prod.yml`. A production image bump must
+  bump the test image in lockstep; a mismatch can let a dump taken
+  pre-upgrade fail to restore post-upgrade. A version upgrade touches both
+  and warrants revisiting this ADR.
+
 ## Related
 
 - [ADR-005 Apache AGE](005-apache-age-graph.md)
-- [ADR-018 AWS EC2 Deployment](018-aws-ec2-deployment.md)
+- [ADR-018 AWS EC2 Deployment](018-aws-ec2-deployment.md) - superseded by ADR-030
+- [ADR-030 On-prem Hetzner Deployment](030-on-prem-hetzner-deployment.md) - the move that drove this amendment
 - GC-P009 - the enabling capability (see Ground Control requirement catalog)
-- GC-P021 - the policy this ADR records, filed as issue [#533](https://github.com/KeplerOps/Ground-Control/issues/533)
+- GC-P021 - the policy this ADR records, filed as issue [#533](https://github.com/KeplerOps/Ground-Control/issues/533); on-prem mechanism wired up in [#978](https://github.com/autarchy-ai/Ground-Control/issues/978)
 - [docs/operations/backup-restore.md](../../docs/operations/backup-restore.md) - the operator runbook
+- Canonical artifacts: `deploy/scripts/{backup,test-restore,install-gc-backup,aurora-setup-gc-backup}.sh`, `deploy/systemd/gc-backup.{service,timer}`, `deploy/systemd/gc-restore-test.{service,timer}`, `scripts/assert-backup-policy.sh`
