@@ -75,6 +75,16 @@ final class ApiPathMatrix {
                 // falls through to the authenticated() rule below.
                 .requestMatchers(HttpMethod.GET, "/api/v1/mcp-tool-usage", "/api/v1/mcp-tool-usage/**")
                 .hasRole(ROLE_ADMIN)
+                // Issue #859: the cross-project workflow-run rollup is operator telemetry spanning every
+                // project, so it is admin-only — an explicit authorization decision, not an accidental
+                // fall-through from a project-scoped read. The project-scoped workflow-run reads/writes
+                // (POST /workflow-runs, GET /workflow-runs, GET /workflow-runs/aggregate, etc.) resolve
+                // through ProjectService and fall through to the authenticated() rule below.
+                .requestMatchers(
+                        HttpMethod.GET,
+                        "/api/v1/workflow-runs/cross-project-aggregate",
+                        "/api/v1/workflow-runs/cross-project-aggregate/**")
+                .hasRole(ROLE_ADMIN)
                 // GC-T005: risk appetite/tolerance governs org-wide escalation policy, so writes are
                 // admin-only (tampering would suppress escalations across every risk). Reads fall
                 // through to authenticated() so any project member can query the posture.

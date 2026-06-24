@@ -70,6 +70,8 @@ export const GC_QUERY_PATH_ALLOWLIST = Object.freeze([
   "/api/v1/traceability",
   "/api/v1/treatment-plans",
   "/api/v1/verification-results",
+  "/api/v1/workflow-runs",
+  "/api/v1/workflow-runs/aggregate",
 ]);
 
 /**
@@ -84,6 +86,11 @@ export const GC_QUERY_PATH_DENYLIST = Object.freeze([
   "/api/v1/analysis/sweep",
   "/api/v1/embeddings",
   "/api/v1/pack-registry",
+  // The project-scoped workflow-run reads are allowlisted by prefix, but the cross-project
+  // operator rollup under that prefix is ROLE_ADMIN (issue #859). Denylist its exact path so the
+  // prefix allowlist cannot route it with the admin token through the gc_query escape hatch. The
+  // denylist is checked before the allowlist, so this exact entry wins over the prefix match.
+  "/api/v1/workflow-runs/cross-project-aggregate",
 ]);
 
 /** 1 MiB body cap for gc_query responses. */

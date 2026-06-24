@@ -118,6 +118,7 @@ export function AppLayout() {
                   Threat Modeling
                 </NavItem>
                 <NavItem to={`${base}/risk-scenarios`}>Risk Scenarios</NavItem>
+                <NavItem to={`${base}/workflow-runs`}>Workflow Runs</NavItem>
               </>
             )}
             <NavItem to="/projects">Projects</NavItem>

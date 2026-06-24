@@ -681,6 +681,18 @@ describe("validateGcQueryPath", () => {
     assert.doesNotThrow(() => validateGcQueryPath("/api/v1/analysis/coverage-gaps"));
     assert.throws(() => validateGcQueryPath("/api/v1/analysis/sweep/run"), /invalid_query_path/);
   });
+
+  it("allows project-scoped workflow-run reads but rejects the admin cross-project rollup", () => {
+    // The project-scoped reads are allowlisted by prefix...
+    assert.doesNotThrow(() => validateGcQueryPath("/api/v1/workflow-runs"));
+    assert.doesNotThrow(() => validateGcQueryPath("/api/v1/workflow-runs/aggregate"));
+    // ...but the ROLE_ADMIN cross-project rollup must not be reachable through the prefix, or the
+    // gc_query escape hatch would route it with the admin token (issue #859 security review).
+    assert.throws(
+      () => validateGcQueryPath("/api/v1/workflow-runs/cross-project-aggregate"),
+      /invalid_query_path/,
+    );
+  });
 });
 
 describe("validateGcQueryParams", () => {

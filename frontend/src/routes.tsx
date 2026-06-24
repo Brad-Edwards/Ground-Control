@@ -63,6 +63,11 @@ const RiskScenarioWorkspace = lazy(() =>
     default: m.RiskScenarioWorkspace,
   })),
 );
+const WorkflowRuns = lazy(() =>
+  import("@/pages/workflow-runs").then((m) => ({
+    default: m.WorkflowRuns,
+  })),
+);
 
 function PageSkeleton() {
   return (
@@ -134,6 +139,7 @@ export function AppRoutes() {
           <Route path="evidence-state" element={<EvidenceStateExplorer />} />
           <Route path="threat-modeling" element={<ThreatModelingWorkspace />} />
           <Route path="risk-scenarios" element={<RiskScenarioWorkspace />} />
+          <Route path="workflow-runs" element={<WorkflowRuns />} />
           <Route path="admin" element={<Admin />} />
           <Route path="*" element={<NotFound />} />
         </Route>

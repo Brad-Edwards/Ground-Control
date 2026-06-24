@@ -1144,6 +1144,59 @@ with the admin token, so only an admin-credentialed MCP session can read it. The
 POST capture path stays reachable by any authenticated session and is internal to
 the MCP adapter (not in the `gc_query` allowlist).
 
+### Workflow-Run Telemetry & Economics Reporting (issue #859 / ADR-061)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/workflow-runs` | RecordWorkflowRunRequest | 201 | Record (idempotent upsert) one workflow run |
+| POST | `/workflow-runs/{runId}/events` | RecordPhaseEventRequest | 201 | Append one phase/gate event to a run |
+| POST | `/workflow-runs/{runId}/cost` | ImportRunCostRequest | 200 | Import manual economics for a run |
+| GET | `/workflow-runs` | - | 200 | List recent runs for a project |
+| GET | `/workflow-runs/aggregate` | - | 200 | Project-scoped reporting aggregate |
+| GET | `/workflow-runs/cross-project-aggregate` | - | 200 (ROLE_ADMIN; 403 otherwise) | Cross-project operator rollup |
+
+This is a reporting read-model, not a workflow engine (ADR-028 / ADR-061). All
+endpoints except the cross-project rollup are project-scoped: pass `project`
+(required) as a query parameter, resolved and validated via `ProjectService`. The
+cross-project rollup is **ROLE_ADMIN only** (gated in `ApiPathMatrix`) because it
+spans every project. Only the closed, redacted field set is accepted; any string
+carrying the reserved `<!-- gc:` marker sequence is rejected with 422, and
+prompts/completions/tokens/keys/raw payloads are never stored.
+
+**RecordWorkflowRunRequest fields:** `workflowType` (required, max 100),
+`provenance` (required: `ISSUE_THREAD` | `TEMPORAL_VISIBILITY` | `MANUAL_IMPORT`),
+`repo`, `issueNumber`, `prNumber`, `branch`, `runtimeDriver`, `requirementUids`
+(string array), `startedAt`/`endedAt` (ISO 8601), `finalState` (`RUNNING` |
+`READY_FOR_REVIEW` | `MERGED` | `CLOSED` | `ESCALATED` | `ABANDONED` | `SUPERSEDED`),
+`outcome` (`MERGED` | `CLOSED_WITHOUT_MERGE` | `NONE`), and the optional/nullable
+economics `provider`, `model`, `modelInvocationCount`, `wallClockMinutes`,
+`costProxy`, `costCurrency`, `tokenUsage`. The idempotent upsert key is
+`(project, repo, issueNumber, branch)`.
+
+**RecordPhaseEventRequest fields:** `phase` (required, stable machine id),
+`eventType` (required: `STARTED` | `COMPLETED` | `FAILED` | `ESCALATED` |
+`SKIPPED`), `occurredAt` (required ISO 8601), `provenance` (required), `cycleIndex`,
+`durationMs`, `outcome`.
+
+**GET aggregate query parameters:** `project` (required for `/aggregate`), plus
+optional `repo`, `runtime`, `requirement`, `workflowType`, `outcome`, and
+`from`/`to` (ISO 8601). If `from`/`to` are both omitted the window is the last 30
+days; the maximum window is 366 days. Window validation failures return 422.
+
+**Aggregate response shape:** `{from, to, totalRuns, mergedRuns, closedRuns,
+activeRuns, escalatedRuns, abandonedRuns, supersededRuns, cycleTimeP50Min,
+cycleTimeP95Min, cycleTimeP99Min, totalCostProxy, mergedCostProxy, closedCostProxy,
+costProxyPerMergedRun, costProxyPerClosedRun, totalModelInvocations,
+totalWallClockMinutes, totalTokenUsage, phaseHotspots: [{phase, eventCount,
+failedCount, escalatedCount, p50Ms, p95Ms, maxCycleIndex}]}`. Cycle-time percentiles
+cover runs with both start and end timestamps; cost-per-outcome ratios are null when
+the outcome count is zero.
+
+`gc_query` lists `GET /api/v1/workflow-runs` and `/api/v1/workflow-runs/aggregate`
+in its allowlist; the cross-project rollup and all POST paths are excluded. Bridge
+ingestion (`gc_workflow_run_ingest`) seeds the read-model from canonical issue-thread
+`gc:` markers with `provenance=ISSUE_THREAD`.
+
 ### Derivations (GC-GRC-001)
 
 | Method | Path | Body | Status | Purpose |
