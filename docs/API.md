@@ -1171,7 +1171,9 @@ prompts/completions/tokens/keys/raw payloads are never stored.
 `outcome` (`MERGED` | `CLOSED_WITHOUT_MERGE` | `NONE`), and the optional/nullable
 economics `provider`, `model`, `modelInvocationCount`, `wallClockMinutes`,
 `costProxy`, `costCurrency`, `tokenUsage`. The idempotent upsert key is
-`(project, repo, issueNumber, branch)`.
+`(project, repo, issueNumber, branch)`: re-observing the same run merges the
+non-null fields onto the existing row. A concurrent duplicate insert is rejected
+by the unique key and returns `409 conflict`; retry to take the update path.
 
 **RecordPhaseEventRequest fields:** `phase` (required, stable machine id),
 `eventType` (required: `STARTED` | `COMPLETED` | `FAILED` | `ESCALATED` |

@@ -167,7 +167,7 @@ export const gcWorkflowRunZodShape = {
 export const GC_WORKFLOW_RUN_DESCRIPTION =
   `Workflow-run telemetry (issue #859). ` +
   `Actions: ${GC_WORKFLOW_RUN_ACTIONS.join(", ")}. ` +
-  `record: create a new workflow run; requires workflow_type and provenance. ` +
+  `record: create-or-update (idempotent upsert keyed by project/repo/issue/branch) a workflow run; requires workflow_type and provenance. ` +
   `record_event: append a phase event; requires run_id, project, phase, event_type, occurred_at, provenance (project scopes the run lookup). ` +
   `import_cost: attach cost/token metadata; requires run_id and project (project scopes the run lookup). ` +
   `list: list recent runs for a project; accepts project, limit. ` +

@@ -62,25 +62,34 @@ public class WorkflowPhaseEvent {
 
     protected WorkflowPhaseEvent() {}
 
+    /**
+     * Required fields. The two optional fields ({@code cycleIndex}, {@code outcome}) are set via
+     * their setters before persist — keeping the constructor at the 7-parameter limit. The row is
+     * still effectively append-only: the setters are only used to populate the event before save.
+     */
     public WorkflowPhaseEvent(
             UUID runId,
             String project,
             String phase,
             PhaseEventType eventType,
-            Integer cycleIndex,
             Instant occurredAt,
             Long durationMs,
-            String outcome,
             TelemetryProvenance provenance) {
         this.runId = runId;
         this.project = project;
         this.phase = phase;
         this.eventType = eventType;
-        this.cycleIndex = cycleIndex;
         this.occurredAt = occurredAt;
         this.durationMs = durationMs;
-        this.outcome = outcome;
         this.provenance = provenance;
+    }
+
+    public void setCycleIndex(Integer cycleIndex) {
+        this.cycleIndex = cycleIndex;
+    }
+
+    public void setOutcome(String outcome) {
+        this.outcome = outcome;
     }
 
     @PrePersist

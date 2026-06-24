@@ -255,16 +255,11 @@ class WorkflowRunControllerTest {
     }
 
     private static WorkflowPhaseEvent sampleEvent(UUID runId) {
-        return new WorkflowPhaseEvent(
-                runId,
-                "ground-control",
-                "ci",
-                PhaseEventType.COMPLETED,
-                1,
-                FROM,
-                1000L,
-                "clean",
-                TelemetryProvenance.ISSUE_THREAD);
+        var event = new WorkflowPhaseEvent(
+                runId, "ground-control", "ci", PhaseEventType.COMPLETED, FROM, 1000L, TelemetryProvenance.ISSUE_THREAD);
+        event.setCycleIndex(1);
+        event.setOutcome("clean");
+        return event;
     }
 
     private static RunAggregate sampleAggregate() {

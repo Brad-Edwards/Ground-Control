@@ -1155,9 +1155,17 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT threat_model_id FROM risk_control_mapping_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
-        // V142: workflow-run telemetry reporting tables (#859 / ADR-061). Append-only/operational
-        // reporting read-model; no _audit shadow (cf. mcp_tool_event). ddl-auto:validate does not
-        // inspect index predicates or CHECK constraints, so probe them explicitly here.
+    }
+
+    /**
+     * V142: workflow-run telemetry reporting tables (#859 / ADR-061). Append-only/operational
+     * reporting read-model; no _audit shadow (cf. mcp_tool_event). ddl-auto:validate does not inspect
+     * index predicates or CHECK constraints, so probe them explicitly here. Kept as its own test so
+     * neither this nor auditTablesExist crosses the per-method assertion budget.
+     */
+    @Test
+    @Transactional
+    void workflowTelemetryTablesExist() {
         entityManager.createNativeQuery("SELECT 1 FROM workflow_run LIMIT 1").getResultList();
         entityManager
                 .createNativeQuery("SELECT 1 FROM workflow_run_requirement_uid LIMIT 1")
@@ -1179,7 +1187,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                                 + " FROM workflow_phase_event LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
-        // The idempotency key must be a UNIQUE index with NULLS NOT DISTINCT — the property that
+        // The idempotency key must be a UNIQUE index with NULLS NOT DISTINCT: the property that
         // dedupes runs with null repo/issue_number/branch. ddl-auto:validate cannot see this, and the
         // behavioral upsert test uses only non-null keys, so a regression dropping NULLS NOT DISTINCT
         // would silently reintroduce duplicate rows. Assert the index predicate directly.

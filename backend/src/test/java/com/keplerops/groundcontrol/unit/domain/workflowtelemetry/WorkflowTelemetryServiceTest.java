@@ -86,7 +86,8 @@ class WorkflowTelemetryServiceTest {
         when(runRepository.findRunForUpsert(any(), any(), any(), any())).thenReturn(Optional.empty());
         when(runRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("duplicate key"));
 
-        assertThatThrownBy(() -> service.recordRun(runCommand().build()))
+        var command = runCommand().build();
+        assertThatThrownBy(() -> service.recordRun(command))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("retry");
     }
@@ -135,32 +136,32 @@ class WorkflowTelemetryServiceTest {
 
     @Test
     void recordRunRejectsBlankProject() {
-        assertThatThrownBy(
-                        () -> service.recordRun(runCommand().withProject("  ").build()))
+        var command = runCommand().withProject("  ").build();
+        assertThatThrownBy(() -> service.recordRun(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("project");
     }
 
     @Test
     void recordRunRejectsNullProvenance() {
-        assertThatThrownBy(() ->
-                        service.recordRun(runCommand().withProvenance(null).build()))
+        var command = runCommand().withProvenance(null).build();
+        assertThatThrownBy(() -> service.recordRun(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("provenance");
     }
 
     @Test
     void recordRunRejectsReservedMarkerInBranch() {
-        assertThatThrownBy(() -> service.recordRun(
-                        runCommand().withBranch("x<!-- gc:phase -->").build()))
+        var command = runCommand().withBranch("x<!-- gc:phase -->").build();
+        assertThatThrownBy(() -> service.recordRun(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("reserved");
     }
 
     @Test
     void recordRunRejectsNegativeCostProxy() {
-        assertThatThrownBy(() -> service.recordRun(
-                        runCommand().withCost(new BigDecimal("-1.00")).build()))
+        var command = runCommand().withCost(new BigDecimal("-1.00")).build();
+        assertThatThrownBy(() -> service.recordRun(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("costProxy");
     }
@@ -246,16 +247,16 @@ class WorkflowTelemetryServiceTest {
     void importCostThrowsNotFoundWhenRunMissingOrForeignProject() {
         var runId = UUID.randomUUID();
         when(runRepository.findByIdAndProject(runId, "gc")).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.importCost(
-                        new ImportRunCostCommand(runId, "gc", null, null, null, null, null, null, null)))
-                .isInstanceOf(NotFoundException.class);
+        var command = new ImportRunCostCommand(runId, "gc", null, null, null, null, null, null, null);
+        assertThatThrownBy(() -> service.importCost(command)).isInstanceOf(NotFoundException.class);
     }
 
     // ---- aggregate: window validation + mapping ------------------------------------------------
 
     @Test
     void aggregateRejectsFromAfterTo() {
-        assertThatThrownBy(() -> service.aggregate(new WorkflowRunFilter(TO, FROM, "p", null, null, null, null, null)))
+        var filter = new WorkflowRunFilter(TO, FROM, "p", null, null, null, null, null);
+        assertThatThrownBy(() -> service.aggregate(filter))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("before");
     }
@@ -263,8 +264,8 @@ class WorkflowTelemetryServiceTest {
     @Test
     void aggregateRejectsWindowExceedingMaxDays() {
         var longTo = FROM.plusSeconds(400L * 24 * 3600); // 400 days > 366
-        assertThatThrownBy(
-                        () -> service.aggregate(new WorkflowRunFilter(FROM, longTo, "p", null, null, null, null, null)))
+        var filter = new WorkflowRunFilter(FROM, longTo, "p", null, null, null, null, null);
+        assertThatThrownBy(() -> service.aggregate(filter))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("366");
     }

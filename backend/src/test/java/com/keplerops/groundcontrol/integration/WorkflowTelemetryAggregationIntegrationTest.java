@@ -337,7 +337,9 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
     }
 
     private static WorkflowPhaseEvent event(UUID runId, String phase, PhaseEventType type, Integer cycle, Long ms) {
-        return new WorkflowPhaseEvent(
-                runId, "gc", phase, type, cycle, START, ms, "x", TelemetryProvenance.ISSUE_THREAD);
+        var event = new WorkflowPhaseEvent(runId, "gc", phase, type, START, ms, TelemetryProvenance.ISSUE_THREAD);
+        event.setCycleIndex(cycle);
+        event.setOutcome("x");
+        return event;
     }
 }

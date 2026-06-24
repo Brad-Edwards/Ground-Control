@@ -16987,7 +16987,9 @@ export async function runAssertCompletion(input) {
 
 /**
  * POST /api/v1/workflow-runs?project=<id>
- * Record a new workflow run. `data` must include workflowType and provenance.
+ * Record (idempotent upsert) a workflow run, keyed by (project, repo, issueNumber, branch):
+ * re-observing the same run merges non-null fields onto the existing row. `data` must include
+ * workflowType and provenance.
  */
 export async function createWorkflowRun(data, project) {
   return request("POST", "/api/v1/workflow-runs", { body: data, params: { project } });

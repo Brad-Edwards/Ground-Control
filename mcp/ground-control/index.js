@@ -3457,8 +3457,9 @@ server.tool(
   GC_WORKFLOW_RUN_DESCRIPTION,
   gcWorkflowRunZodShape,
   async (args) => {
-    // The admin-only cross_project_aggregate action is gated behind GC_MCP_ADMIN so a default
-    // MCP session cannot reach cross-project operational telemetry (issue #859 security review).
+    // The record action is an idempotent upsert keyed by (project, repo, issue, branch). The
+    // admin-only cross_project_aggregate action is gated behind GC_MCP_ADMIN so a default MCP
+    // session cannot reach cross-project operational telemetry (issue #859 security review).
     try { return ok(JSON.stringify(await gcWorkflowRunToolHandler(args, { adminEnabled: ADMIN_TOOLS_ENABLED }), null, 2)); }
     catch (e) { return err(e); }
   },

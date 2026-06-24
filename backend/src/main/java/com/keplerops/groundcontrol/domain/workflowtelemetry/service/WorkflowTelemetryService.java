@@ -46,6 +46,8 @@ public class WorkflowTelemetryService {
     /** Reserved sequence that opens every {@code gc:} workflow marker; never allowed in stored fields. */
     private static final String RESERVED_MARKER = "<!-- gc:";
 
+    private static final String PROJECT_FIELD = "project";
+
     private static final int MAX_RUN_LIST_SIZE = 200;
 
     private final WorkflowRunRepository runRepository;
@@ -64,7 +66,7 @@ public class WorkflowTelemetryService {
      */
     @Transactional
     public WorkflowRun recordRun(RecordWorkflowRunCommand command) {
-        requireText(command.project(), "project");
+        requireText(command.project(), PROJECT_FIELD);
         requireText(command.workflowType(), "workflowType");
         if (command.provenance() == null) {
             throw new DomainValidationException("provenance must not be null");
@@ -124,7 +126,7 @@ public class WorkflowTelemetryService {
         if (command.runId() == null) {
             throw new DomainValidationException("runId must not be null");
         }
-        requireText(command.project(), "project");
+        requireText(command.project(), PROJECT_FIELD);
         requireText(command.phase(), "phase");
         if (command.eventType() == null) {
             throw new DomainValidationException("eventType must not be null");
@@ -150,11 +152,11 @@ public class WorkflowTelemetryService {
                 run.getProject(),
                 command.phase(),
                 command.eventType(),
-                command.cycleIndex(),
                 command.occurredAt(),
                 command.durationMs(),
-                command.outcome(),
                 command.provenance());
+        event.setCycleIndex(command.cycleIndex());
+        event.setOutcome(command.outcome());
         return phaseEventRepository.save(event);
     }
 
@@ -164,7 +166,7 @@ public class WorkflowTelemetryService {
         if (command.runId() == null) {
             throw new DomainValidationException("runId must not be null");
         }
-        requireText(command.project(), "project");
+        requireText(command.project(), PROJECT_FIELD);
         rejectReservedMarkers(command.provider(), command.model(), command.costCurrency());
         validateEconomics(
                 command.modelInvocationCount(), command.wallClockMinutes(), command.costProxy(), command.tokenUsage());
@@ -198,7 +200,7 @@ public class WorkflowTelemetryService {
     /** Recent runs for one project, newest first (bounded). */
     @Transactional(readOnly = true)
     public List<WorkflowRun> listRuns(String project, int limit) {
-        int bounded = Math.min(Math.max(limit, 1), MAX_RUN_LIST_SIZE);
+        int bounded = Math.clamp(limit, 1, MAX_RUN_LIST_SIZE);
         var runs = runRepository.findByProjectOrderByCreatedAtDesc(project, PageRequest.of(0, bounded));
         runs.forEach(WorkflowTelemetryService::loadRequirementUids);
         return runs;
@@ -273,59 +275,34 @@ public class WorkflowTelemetryService {
     }
 
     private static void applyRunCommand(WorkflowRun run, RecordWorkflowRunCommand command) {
-        if (command.repo() != null) {
-            run.setRepo(command.repo());
+        // Merge semantics: apply each non-null field of the observation onto the run. setIfPresent
+        // keeps this a flat data-driven mapping rather than a long if-chain.
+        setIfPresent(command.repo(), run::setRepo);
+        setIfPresent(command.issueNumber(), run::setIssueNumber);
+        setIfPresent(command.prNumber(), run::setPrNumber);
+        setIfPresent(command.branch(), run::setBranch);
+        setIfPresent(command.runtimeDriver(), run::setRuntimeDriver);
+        setIfPresent(command.startedAt(), run::setStartedAt);
+        setIfPresent(command.endedAt(), run::setEndedAt);
+        setIfPresent(command.finalState(), run::setFinalState);
+        setIfPresent(command.outcome(), run::setOutcome);
+        setIfPresent(command.provenance(), run::setProvenance);
+        setIfPresent(command.provider(), run::setProvider);
+        setIfPresent(command.model(), run::setModel);
+        setIfPresent(command.modelInvocationCount(), run::setModelInvocationCount);
+        setIfPresent(command.wallClockMinutes(), run::setWallClockMinutes);
+        setIfPresent(command.costProxy(), run::setCostProxy);
+        setIfPresent(command.costCurrency(), run::setCostCurrency);
+        setIfPresent(command.tokenUsage(), run::setTokenUsage);
+        var uids = command.requirementUids();
+        if (uids != null && !uids.isEmpty()) {
+            run.setRequirementUids(uids);
         }
-        if (command.issueNumber() != null) {
-            run.setIssueNumber(command.issueNumber());
-        }
-        if (command.prNumber() != null) {
-            run.setPrNumber(command.prNumber());
-        }
-        if (command.branch() != null) {
-            run.setBranch(command.branch());
-        }
-        if (command.runtimeDriver() != null) {
-            run.setRuntimeDriver(command.runtimeDriver());
-        }
-        if (command.requirementUids() != null && !command.requirementUids().isEmpty()) {
-            run.setRequirementUids(command.requirementUids());
-        }
-        if (command.startedAt() != null) {
-            run.setStartedAt(command.startedAt());
-        }
-        if (command.endedAt() != null) {
-            run.setEndedAt(command.endedAt());
-        }
-        if (command.finalState() != null) {
-            run.setFinalState(command.finalState());
-        }
-        if (command.outcome() != null) {
-            run.setOutcome(command.outcome());
-        }
-        if (command.provenance() != null) {
-            run.setProvenance(command.provenance());
-        }
-        if (command.provider() != null) {
-            run.setProvider(command.provider());
-        }
-        if (command.model() != null) {
-            run.setModel(command.model());
-        }
-        if (command.modelInvocationCount() != null) {
-            run.setModelInvocationCount(command.modelInvocationCount());
-        }
-        if (command.wallClockMinutes() != null) {
-            run.setWallClockMinutes(command.wallClockMinutes());
-        }
-        if (command.costProxy() != null) {
-            run.setCostProxy(command.costProxy());
-        }
-        if (command.costCurrency() != null) {
-            run.setCostCurrency(command.costCurrency());
-        }
-        if (command.tokenUsage() != null) {
-            run.setTokenUsage(command.tokenUsage());
+    }
+
+    private static <T> void setIfPresent(T value, java.util.function.Consumer<T> setter) {
+        if (value != null) {
+            setter.accept(value);
         }
     }
 

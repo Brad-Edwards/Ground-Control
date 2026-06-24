@@ -45,7 +45,7 @@ public class WorkflowRunController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public WorkflowRunResponse record(
+    public WorkflowRunResponse recordRun(
             @Valid @RequestBody RecordWorkflowRunRequest request, @RequestParam(required = false) String project) {
         var projectIdentifier = projectService.requireProjectIdentifier(project);
         var command = new RecordWorkflowRunCommand(
@@ -132,7 +132,12 @@ public class WorkflowRunController {
             @RequestParam(required = false) Instant from,
             @RequestParam(required = false) Instant to) {
         var projectIdentifier = projectService.requireProjectIdentifier(project);
-        return aggregateScoped(projectIdentifier, repo, runtime, requirement, workflowType, outcome, from, to);
+        if (from == null && to == null) {
+            to = Instant.now();
+            from = to.minus(WorkflowTelemetryService.DEFAULT_WINDOW_DAYS, ChronoUnit.DAYS);
+        }
+        return respond(
+                new WorkflowRunFilter(from, to, projectIdentifier, repo, workflowType, runtime, outcome, requirement));
     }
 
     /**
@@ -148,23 +153,14 @@ public class WorkflowRunController {
             @RequestParam(required = false) WorkflowRunOutcome outcome,
             @RequestParam(required = false) Instant from,
             @RequestParam(required = false) Instant to) {
-        return aggregateScoped(null, repo, runtime, requirement, workflowType, outcome, from, to);
-    }
-
-    private WorkflowRunAggregateResponse aggregateScoped(
-            String project,
-            String repo,
-            String runtime,
-            String requirement,
-            String workflowType,
-            WorkflowRunOutcome outcome,
-            Instant from,
-            Instant to) {
         if (from == null && to == null) {
             to = Instant.now();
             from = to.minus(WorkflowTelemetryService.DEFAULT_WINDOW_DAYS, ChronoUnit.DAYS);
         }
-        var filter = new WorkflowRunFilter(from, to, project, repo, workflowType, runtime, outcome, requirement);
+        return respond(new WorkflowRunFilter(from, to, null, repo, workflowType, runtime, outcome, requirement));
+    }
+
+    private WorkflowRunAggregateResponse respond(WorkflowRunFilter filter) {
         return WorkflowRunAggregateResponse.from(telemetryService.aggregate(filter));
     }
 }
