@@ -130,6 +130,12 @@ import {
   INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX,
   isUmbrellaNextIssueCandidate,
   selectNextIssueRecommendation,
+  createWorkflowRun,
+  recordWorkflowRunEvent,
+  importWorkflowRunCost,
+  listWorkflowRuns,
+  aggregateWorkflowRuns,
+  crossProjectAggregateWorkflowRuns,
 } from "./lib.js";
 
 // ---------------------------------------------------------------------------
@@ -14031,4 +14037,190 @@ describe("selectNextIssueRecommendation", () => {
     const result = selectNextIssueRecommendation([umbrella, pr, current, untitled, good], 689);
     assert.equal(result.recommendation.issue_number, 690);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Workflow-run telemetry lib helpers (issue #859)
+// ---------------------------------------------------------------------------
+
+const WORKFLOW_RUN_BASE_URL = "https://gc.test";
+const WORKFLOW_RUN_ORIGINAL_BASE_URL = process.env.GC_BASE_URL;
+const WORKFLOW_RUN_ORIGINAL_FETCH = globalThis.fetch;
+
+function withWorkflowRunEnv(fn) {
+  return async () => {
+    process.env.GC_BASE_URL = WORKFLOW_RUN_BASE_URL;
+    delete process.env.GROUND_CONTROL_API_TOKEN;
+    try {
+      await fn();
+    } finally {
+      if (WORKFLOW_RUN_ORIGINAL_BASE_URL === undefined) delete process.env.GC_BASE_URL;
+      else process.env.GC_BASE_URL = WORKFLOW_RUN_ORIGINAL_BASE_URL;
+      globalThis.fetch = WORKFLOW_RUN_ORIGINAL_FETCH;
+    }
+  };
+}
+
+function makeWorkflowRunFetchSpy({ status = 201, body = {} } = {}) {
+  const calls = [];
+  globalThis.fetch = async (url, opts) => {
+    const parsedBody = opts && opts.body ? JSON.parse(opts.body) : null;
+    calls.push({ url: url.toString(), method: opts?.method ?? "GET", body: parsedBody });
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  return calls;
+}
+
+describe("createWorkflowRun", () => {
+  it(
+    "POSTs to /api/v1/workflow-runs with project as query param",
+    withWorkflowRunEnv(async () => {
+      const calls = makeWorkflowRunFetchSpy({ status: 201, body: { id: "wrun-1" } });
+      await createWorkflowRun(
+        { workflow_type: "IMPLEMENT", provenance: "ISSUE_THREAD" },
+        "proj-a",
+      );
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].method, "POST");
+      const url = new URL(calls[0].url);
+      assert.equal(url.pathname, "/api/v1/workflow-runs");
+      assert.equal(url.searchParams.get("project"), "proj-a");
+    }),
+  );
+
+  it(
+    "sends camelCase body to the backend",
+    withWorkflowRunEnv(async () => {
+      const calls = makeWorkflowRunFetchSpy({ status: 201, body: { id: "x" } });
+      await createWorkflowRun({
+        workflow_type: "IMPLEMENT",
+        provenance: "ISSUE_THREAD",
+        issue_number: 42,
+        requirement_uids: ["GC-O007"],
+      });
+      assert.equal(calls[0].body.workflowType, "IMPLEMENT");
+      assert.equal(calls[0].body.provenance, "ISSUE_THREAD");
+      assert.equal(calls[0].body.issueNumber, 42);
+      assert.deepEqual(calls[0].body.requirementUids, ["GC-O007"]);
+    }),
+  );
+
+  it(
+    "omits the project query param when not provided",
+    withWorkflowRunEnv(async () => {
+      const calls = makeWorkflowRunFetchSpy({ status: 201, body: {} });
+      await createWorkflowRun({ workflow_type: "IMPLEMENT", provenance: "MANUAL_IMPORT" });
+      const url = new URL(calls[0].url);
+      assert.equal(url.searchParams.get("project"), null);
+    }),
+  );
+});
+
+describe("recordWorkflowRunEvent", () => {
+  it(
+    "POSTs to /api/v1/workflow-runs/{runId}/events",
+    withWorkflowRunEnv(async () => {
+      const calls = makeWorkflowRunFetchSpy({ status: 201, body: { id: "evt-1" } });
+      await recordWorkflowRunEvent(
+        "run-abc",
+        {
+          phase: "plan",
+          event_type: "COMPLETED",
+          occurred_at: "2026-01-01T12:00:00Z",
+          provenance: "ISSUE_THREAD",
+        },
+        "proj-a",
+      );
+      assert.equal(calls[0].method, "POST");
+      const url = new URL(calls[0].url);
+      assert.equal(url.pathname, "/api/v1/workflow-runs/run-abc/events");
+      // project scopes the run lookup (issue #859 security review).
+      assert.equal(url.searchParams.get("project"), "proj-a");
+      assert.equal(calls[0].body.phase, "plan");
+      assert.equal(calls[0].body.eventType, "COMPLETED");
+      assert.equal(calls[0].body.occurredAt, "2026-01-01T12:00:00Z");
+    }),
+  );
+});
+
+describe("importWorkflowRunCost", () => {
+  it(
+    "POSTs to /api/v1/workflow-runs/{runId}/cost",
+    withWorkflowRunEnv(async () => {
+      const calls = makeWorkflowRunFetchSpy({ status: 200, body: { id: "run-1", costProxy: 1.5 } });
+      await importWorkflowRunCost("run-xyz", { cost_proxy: 1.5, cost_currency: "USD" }, "proj-a");
+      assert.equal(calls[0].method, "POST");
+      const url = new URL(calls[0].url);
+      assert.equal(url.pathname, "/api/v1/workflow-runs/run-xyz/cost");
+      assert.equal(url.searchParams.get("project"), "proj-a");
+      assert.equal(calls[0].body.costProxy, 1.5);
+      assert.equal(calls[0].body.costCurrency, "USD");
+    }),
+  );
+});
+
+describe("listWorkflowRuns", () => {
+  it(
+    "GETs /api/v1/workflow-runs with project and limit params",
+    withWorkflowRunEnv(async () => {
+      const calls = makeWorkflowRunFetchSpy({ status: 200, body: [] });
+      await listWorkflowRuns({ project: "p1", limit: 20 });
+      assert.equal(calls[0].method, "GET");
+      const url = new URL(calls[0].url);
+      assert.equal(url.pathname, "/api/v1/workflow-runs");
+      assert.equal(url.searchParams.get("project"), "p1");
+      assert.equal(url.searchParams.get("limit"), "20");
+    }),
+  );
+
+  it(
+    "omits undefined params",
+    withWorkflowRunEnv(async () => {
+      const calls = makeWorkflowRunFetchSpy({ status: 200, body: [] });
+      await listWorkflowRuns({});
+      const url = new URL(calls[0].url);
+      assert.equal(url.searchParams.get("project"), null);
+      assert.equal(url.searchParams.get("limit"), null);
+    }),
+  );
+});
+
+describe("aggregateWorkflowRuns", () => {
+  it(
+    "GETs /api/v1/workflow-runs/aggregate with filter params",
+    withWorkflowRunEnv(async () => {
+      const calls = makeWorkflowRunFetchSpy({ status: 200, body: { totalRuns: 3 } });
+      await aggregateWorkflowRuns({
+        project: "p2",
+        workflowType: "IMPLEMENT",
+        from: "2026-01-01",
+        to: "2026-06-01",
+      });
+      assert.equal(calls[0].method, "GET");
+      const url = new URL(calls[0].url);
+      assert.equal(url.pathname, "/api/v1/workflow-runs/aggregate");
+      assert.equal(url.searchParams.get("project"), "p2");
+      assert.equal(url.searchParams.get("workflowType"), "IMPLEMENT");
+      assert.equal(url.searchParams.get("from"), "2026-01-01");
+      assert.equal(url.searchParams.get("to"), "2026-06-01");
+    }),
+  );
+});
+
+describe("crossProjectAggregateWorkflowRuns", () => {
+  it(
+    "GETs /api/v1/workflow-runs/cross-project-aggregate without project param",
+    withWorkflowRunEnv(async () => {
+      const calls = makeWorkflowRunFetchSpy({ status: 200, body: { totalRuns: 999 } });
+      await crossProjectAggregateWorkflowRuns({ workflowType: "QUICKFIX" });
+      assert.equal(calls[0].method, "GET");
+      const url = new URL(calls[0].url);
+      assert.equal(url.pathname, "/api/v1/workflow-runs/cross-project-aggregate");
+      assert.equal(url.searchParams.get("project"), null);
+      assert.equal(url.searchParams.get("workflowType"), "QUICKFIX");
+    }),
+  );
 });

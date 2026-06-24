@@ -60,7 +60,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
-                        "136", "137", "138", "139", "140", "141");
+                        "136", "137", "138", "139", "140", "141", "142");
     }
 
     @Test
@@ -1155,6 +1155,62 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT threat_model_id FROM risk_control_mapping_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
+    }
+
+    /**
+     * V142: workflow-run telemetry reporting tables (#859 / ADR-061). Append-only/operational
+     * reporting read-model; no _audit shadow (cf. mcp_tool_event). ddl-auto:validate does not inspect
+     * index predicates or CHECK constraints, so probe them explicitly here. Kept as its own test so
+     * neither this nor auditTablesExist crosses the per-method assertion budget.
+     */
+    @Test
+    @Transactional
+    void workflowTelemetryTablesExist() {
+        entityManager.createNativeQuery("SELECT 1 FROM workflow_run LIMIT 1").getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM workflow_run_requirement_uid LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM workflow_phase_event LIMIT 1")
+                .getResultList();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT project, repo, issue_number, pr_number, branch, workflow_type,"
+                                + " runtime_driver, started_at, ended_at, final_state, outcome, provenance,"
+                                + " provider, model, model_invocation_count, wall_clock_minutes, cost_proxy,"
+                                + " cost_currency, token_usage, created_at, updated_at"
+                                + " FROM workflow_run LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT run_id, project, phase, event_type, cycle_index, occurred_at,"
+                                + " duration_ms, outcome, provenance, created_at"
+                                + " FROM workflow_phase_event LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        // The idempotency key must be a UNIQUE index with NULLS NOT DISTINCT: the property that
+        // dedupes runs with null repo/issue_number/branch. ddl-auto:validate cannot see this, and the
+        // behavioral upsert test uses only non-null keys, so a regression dropping NULLS NOT DISTINCT
+        // would silently reintroduce duplicate rows. Assert the index predicate directly.
+        var upsertIndexDef = entityManager
+                .createNativeQuery("SELECT indexdef FROM pg_indexes"
+                        + " WHERE tablename = 'workflow_run' AND indexname = 'idx_workflow_run_upsert_key'")
+                .getSingleResult();
+        assertThat(upsertIndexDef.toString())
+                .as("idx_workflow_run_upsert_key must be a UNIQUE NULLS NOT DISTINCT index")
+                .contains("CREATE UNIQUE INDEX")
+                .contains("NULLS NOT DISTINCT");
+        // The three non-negative CHECK constraints guard the economics columns; verify each via the
+        // constraint definitions (the inline checks get auto-generated names, so match the column).
+        var workflowRunChecks = entityManager
+                .createNativeQuery("SELECT string_agg(pg_get_constraintdef(c.oid), ' ')"
+                        + " FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid"
+                        + " WHERE t.relname = 'workflow_run' AND c.contype = 'c'")
+                .getSingleResult();
+        assertThat(workflowRunChecks.toString())
+                .as("workflow_run must CHECK non-negative economics columns")
+                .contains("model_invocation_count")
+                .contains("wall_clock_minutes")
+                .contains("cost_proxy");
     }
 
     private void assertSeededMethodologyProfilesAligned() {

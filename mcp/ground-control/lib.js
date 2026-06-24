@@ -803,6 +803,48 @@ export const TO_CAMEL = {
   treatment_strategy_vocabulary: "treatmentStrategyVocabulary",
   // #1106 — verification result. evidence is a Map<String,Object> (opaque).
   // OPAQUE_VALUE_KEYS already has no entry for it — add both forms.
+  // issue #859 — Workflow-run telemetry. snake_case MCP args / response fields
+  // → camelCase backend DTO fields. Missing entries would cause Jackson to
+  // silently drop the fields on write and produce snake_case output on reads.
+  workflow_type: "workflowType",
+  runtime_driver: "runtimeDriver",
+  requirement_uids: "requirementUids",
+  issue_number: "issueNumber",
+  pr_number: "prNumber",
+  started_at: "startedAt",
+  ended_at: "endedAt",
+  final_state: "finalState",
+  cost_proxy: "costProxy",
+  cost_currency: "costCurrency",
+  token_usage: "tokenUsage",
+  model_invocation_count: "modelInvocationCount",
+  wall_clock_minutes: "wallClockMinutes",
+  event_type: "eventType",
+  cycle_index: "cycleIndex",
+  occurred_at: "occurredAt",
+  duration_ms: "durationMs",
+  total_runs: "totalRuns",
+  merged_runs: "mergedRuns",
+  closed_runs: "closedRuns",
+  active_runs: "activeRuns",
+  escalated_runs: "escalatedRuns",
+  abandoned_runs: "abandonedRuns",
+  superseded_runs: "supersededRuns",
+  cycle_time_p50_min: "cycleTimeP50Min",
+  cycle_time_p95_min: "cycleTimeP95Min",
+  cycle_time_p99_min: "cycleTimeP99Min",
+  total_cost_proxy: "totalCostProxy",
+  merged_cost_proxy: "mergedCostProxy",
+  closed_cost_proxy: "closedCostProxy",
+  cost_proxy_per_merged_run: "costProxyPerMergedRun",
+  cost_proxy_per_closed_run: "costProxyPerClosedRun",
+  total_model_invocations: "totalModelInvocations",
+  total_wall_clock_minutes: "totalWallClockMinutes",
+  total_token_usage: "totalTokenUsage",
+  phase_hotspots: "phaseHotspots",
+  event_count: "eventCount",
+  escalated_count: "escalatedCount",
+  max_cycle_index: "maxCycleIndex",
   // GC-U001 / ADR-047 — Audit entity. snake_case MCP args → camelCase backend
   // DTO fields. Missing entries would cause Jackson to silently drop the fields.
   audit_id: "auditId",
@@ -976,7 +1018,11 @@ function requiresAdminRole(path) {
     // The MCP tool-usage aggregate read is admin-only (cross-project operational
     // telemetry). Exact match so the capture write (/api/v1/mcp-tool-usage/events),
     // which any authenticated session must reach, keeps the ordinary API token.
-    || path === "/api/v1/mcp-tool-usage";
+    || path === "/api/v1/mcp-tool-usage"
+    // The workflow-run cross-project rollup is admin-only cross-project operational
+    // telemetry (issue #859). Exact match so token selection is explicit and the
+    // project-scoped reads/writes under /api/v1/workflow-runs keep the ordinary API token.
+    || path === "/api/v1/workflow-runs/cross-project-aggregate";
 }
 
 // Forwards a bearer token on `/api/v1/**` requests so the MCP server can talk
@@ -16933,4 +16979,86 @@ export async function runAssertCompletion(input) {
       comment_id: report.comment_id,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Workflow-run telemetry API functions (issue #859)
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/v1/workflow-runs?project=<id>
+ * Record (idempotent upsert) a workflow run, keyed by (project, repo, issueNumber, branch):
+ * re-observing the same run merges non-null fields onto the existing row. `data` must include
+ * workflowType and provenance.
+ */
+export async function createWorkflowRun(data, project) {
+  return request("POST", "/api/v1/workflow-runs", { body: data, params: { project } });
+}
+
+/**
+ * POST /api/v1/workflow-runs/{runId}/events?project=<id>
+ * Append a phase event to a workflow run. `project` scopes the run lookup so a caller cannot
+ * append events to another project's run (issue #859 security review).
+ */
+export async function recordWorkflowRunEvent(runId, data, project) {
+  return request("POST", `/api/v1/workflow-runs/${encodeURIComponent(runId)}/events`, {
+    body: data,
+    params: { project },
+  });
+}
+
+/**
+ * POST /api/v1/workflow-runs/{runId}/cost?project=<id>
+ * Attach or update cost/token metadata for a workflow run. `project` scopes the run lookup.
+ */
+export async function importWorkflowRunCost(runId, data, project) {
+  return request("POST", `/api/v1/workflow-runs/${encodeURIComponent(runId)}/cost`, {
+    body: data,
+    params: { project },
+  });
+}
+
+/**
+ * GET /api/v1/workflow-runs?project=<id>&limit=50
+ * List recent workflow runs for a project.
+ */
+export async function listWorkflowRuns({ project, limit } = {}) {
+  return request("GET", "/api/v1/workflow-runs", { params: { project, limit } });
+}
+
+/**
+ * GET /api/v1/workflow-runs/aggregate (project-scoped)
+ * Aggregate workflow-run statistics for a project.
+ */
+export async function aggregateWorkflowRuns({
+  project,
+  repo,
+  runtime,
+  requirement,
+  workflowType,
+  outcome,
+  from,
+  to,
+} = {}) {
+  return request("GET", "/api/v1/workflow-runs/aggregate", {
+    params: { project, repo, runtime, requirement, workflowType, outcome, from, to },
+  });
+}
+
+/**
+ * GET /api/v1/workflow-runs/cross-project-aggregate (ADMIN-only, no project param)
+ * Cross-project aggregate; requires ROLE_ADMIN bearer token.
+ */
+export async function crossProjectAggregateWorkflowRuns({
+  repo,
+  runtime,
+  requirement,
+  workflowType,
+  outcome,
+  from,
+  to,
+} = {}) {
+  return request("GET", "/api/v1/workflow-runs/cross-project-aggregate", {
+    params: { repo, runtime, requirement, workflowType, outcome, from, to },
+  });
 }
