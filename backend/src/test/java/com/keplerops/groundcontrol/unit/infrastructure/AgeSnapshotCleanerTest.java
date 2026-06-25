@@ -68,8 +68,8 @@ class AgeSnapshotCleanerTest {
 
         cleaner.cleanup();
 
-        // The failed drop does not abort the loop and its metadata row is left for a later attempt;
-        // the next snapshot is still dropped and forgotten.
+        // Best-effort behaviour: the failed drop is logged and skipped, leaving its metadata row for
+        // a later attempt, and the next snapshot is still dropped and forgotten.
         verify(snapshotRepository, never()).deleteByGraphName("requirements_v1");
         verify(jdbcTemplate).execute("SELECT drop_graph('requirements_v2', true)");
         verify(snapshotRepository).deleteByGraphName("requirements_v2");

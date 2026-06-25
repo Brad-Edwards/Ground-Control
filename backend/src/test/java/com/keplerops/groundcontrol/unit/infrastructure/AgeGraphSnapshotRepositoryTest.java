@@ -2,7 +2,6 @@ package com.keplerops.groundcontrol.unit.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -69,15 +68,15 @@ class AgeGraphSnapshotRepositoryTest {
 
         verify(jdbcTemplate)
                 .update(
-                        eq("INSERT INTO age_graph_snapshot "
+                        "INSERT INTO age_graph_snapshot "
                                 + "(version, graph_name, scope, node_count, edge_count, published_at, published_by) "
-                                + "VALUES (?, ?, ?, ?, ?, now(), ?)"),
-                        eq(3L),
-                        eq("requirements_v3"),
-                        eq("GLOBAL"),
-                        eq(12),
-                        eq(5),
-                        eq("alice"));
+                                + "VALUES (?, ?, ?, ?, ?, now(), ?)",
+                        3L,
+                        "requirements_v3",
+                        "GLOBAL",
+                        12,
+                        5,
+                        "alice");
     }
 
     @Test

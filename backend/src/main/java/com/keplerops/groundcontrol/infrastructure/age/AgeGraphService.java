@@ -297,9 +297,13 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
         String snapshotGraph = validateGraphName(baseGraph + "_v" + version);
 
         // Build the new snapshot into a fresh, inactive graph — the active snapshot readers query is
-        // never touched. snapshotGraph is allowlist-validated, so embedding it as a SQL literal is
-        // safe (ADR-032); user data still flows only through the bound agtype params of each CREATE.
-        jdbcTemplate.execute("SELECT create_graph('" + snapshotGraph + "')");
+        // never touched. The snapshot name is allowlist-validated (ADR-032) AND bound as a parameter
+        // here (cast to AGE's name type) rather than concatenated into the SQL; user data still flows
+        // only through the bound agtype params of each CREATE.
+        jdbcTemplate.query(
+                "SELECT create_graph(?::name)",
+                (PreparedStatementSetter) ps -> ps.setString(1, snapshotGraph),
+                (RowCallbackHandler) rs -> {});
 
         var projection = graphProjectionRegistryService.buildProjection();
         for (GraphNode node : projection.nodes()) {

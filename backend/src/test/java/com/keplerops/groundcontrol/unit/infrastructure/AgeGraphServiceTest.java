@@ -218,13 +218,18 @@ class AgeGraphServiceTest {
             verify(jdbcTemplate).execute("LOAD 'age'");
             verify(jdbcTemplate).execute("SET search_path = ag_catalog, \"$user\", public");
             // The publish is serialized by an advisory lock and builds into a NEW versioned graph
-            // (create_graph). Crucially, the live graph is NEVER DETACH DELETEd — that was the
-            // destructive rebuild ADR-062 removes.
+            // (create_graph, with the snapshot name bound as a parameter). Crucially, the live graph
+            // is NEVER DETACH DELETEd — that was the destructive rebuild ADR-062 removes.
             ArgumentCaptor<String> execCaptor = ArgumentCaptor.forClass(String.class);
             verify(jdbcTemplate, atLeast(1)).execute(execCaptor.capture());
             assertThat(execCaptor.getAllValues())
                     .anyMatch(sql -> sql.contains("pg_advisory_xact_lock"))
-                    .anyMatch(sql -> sql.contains("create_graph('test_graph_v1')"))
+                    .noneMatch(sql -> sql.contains("DETACH DELETE"));
+            ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+            verify(jdbcTemplate, atLeast(1))
+                    .query(queryCaptor.capture(), any(PreparedStatementSetter.class), any(RowCallbackHandler.class));
+            assertThat(queryCaptor.getAllValues())
+                    .anyMatch(sql -> sql.contains("create_graph(?"))
                     .noneMatch(sql -> sql.contains("DETACH DELETE"));
             // Publication records the new snapshot — the atomic active-version swap on commit.
             verify(snapshotRepository).insertSnapshot(eq(1L), eq("test_graph_v1"), eq("GLOBAL"), eq(0), eq(0), any());
@@ -249,19 +254,18 @@ class AgeGraphServiceTest {
 
             enabledService.materializeGraph();
 
-            // create_graph for the new snapshot goes through execute(); the node CREATE goes through
-            // query(sql, pss, callback) — AGE's cypher() always returns SETOF agtype. Capture both to
-            // confirm a CREATE was emitted into the NEW snapshot graph (not the base name) and that
-            // no DETACH DELETE was issued anywhere.
-            ArgumentCaptor<String> execCaptor = ArgumentCaptor.forClass(String.class);
-            verify(jdbcTemplate, atLeast(1)).execute(execCaptor.capture());
-            assertThat(execCaptor.getAllValues()).anyMatch(sql -> sql.contains("create_graph('test_graph_v1')"));
+            // create_graph (snapshot name bound as a parameter) and the node CREATE both go through
+            // query(sql, pss, callback). Confirm a CREATE was emitted into the NEW snapshot graph
+            // (the snapshot name reaches the cypher() graph argument via the existing ADR-032 path,
+            // while user values stay bound) and that no DETACH DELETE was issued anywhere.
             ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
-            verify(jdbcTemplate, atLeast(1))
+            verify(jdbcTemplate, atLeast(2))
                     .query(queryCaptor.capture(), any(PreparedStatementSetter.class), any(RowCallbackHandler.class));
             assertThat(queryCaptor.getAllValues())
-                    .anyMatch(sql ->
-                            sql.contains("CREATE (:") && sql.contains("REQUIREMENT") && sql.contains("'test_graph_v1'"))
+                    .anyMatch(sql -> sql.contains("create_graph(?"))
+                    .anyMatch(sql -> sql.contains("CREATE (:")
+                            && sql.contains("REQUIREMENT")
+                            && sql.contains("cypher('test_graph_v1'"))
                     .noneMatch(sql -> sql.contains("DETACH DELETE"));
             verify(snapshotRepository).insertSnapshot(eq(1L), eq("test_graph_v1"), eq("GLOBAL"), eq(1), eq(0), any());
         }
