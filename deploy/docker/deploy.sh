@@ -10,9 +10,12 @@
 # Deployments); this script is the on-host rollout itself.
 #
 # Contract (ADR-030 + GC-P022 + GC-P023):
-#   - `/opt/gc/.env` pins `GC_IMAGE` to a FLOATING tag (`...:main` for
-#     production). Each `docker compose pull` resolves that tag to whatever
-#     the CI `docker` job most recently pushed.
+#   - `/opt/gc/.env` pins `GC_IMAGE` to an immutable versioned release tag
+#     (`...:X.Y.Z`, ADR-063), not a floating branch tag. Promotion is the
+#     deliberate act of bumping that pin to a cut release; a digest pin
+#     (`@sha256:` with `GC_ALLOW_IMAGE_PIN=1`) is the rollback form. The
+#     deploy-time env validator (validate-env.sh, RELEASE_PIN) rejects a
+#     floating tag like `...:main` so prod cannot silently follow a moving tag.
 #   - `/opt/gc/docker-compose.yml` is the production compose file (canonical
 #     copy: `deploy/docker/docker-compose.prod.yml`).
 #   - Health check runs INSIDE the backend container via `docker compose exec`

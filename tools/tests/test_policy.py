@@ -780,7 +780,7 @@ class PolicyChecksTest(unittest.TestCase):
             "GC_IMAGE=ghcr.io/autarchy-ai/ground-control:main\n", encoding="utf-8"
         )
         (ddir / "env.schema").write_text(
-            "REQUIRED GC_IMAGE\nFLOATING_TAG GC_IMAGE\nREQUIRED GC_DATABASE_URL\n",
+            "REQUIRED GC_IMAGE\nRELEASE_PIN GC_IMAGE\nREQUIRED GC_DATABASE_URL\n",
             encoding="utf-8",
         )
         (ddir / "docker-compose.prod.yml").write_text(
@@ -859,18 +859,19 @@ class PolicyChecksTest(unittest.TestCase):
             details = " ".join(d for v in violations for d in v.details)
             self.assertIn("GC_NEW_KNOB", details)
 
-    def test_deploy_artifact_consistency_flags_missing_floating_tag(self):
-        # Dropping FLOATING_TAG GC_IMAGE would let a digest pin (the #953 freeze)
-        # pass the deploy-time validator unchallenged.
+    def test_deploy_artifact_consistency_flags_missing_release_pin(self):
+        # Dropping RELEASE_PIN GC_IMAGE would let a floating branch tag (:main)
+        # pass the deploy-time validator unchallenged, re-conflating release and
+        # deploy (ADR-063 / #1222).
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             self._write_valid_deploy_tree(root)
             schema = root / "deploy/docker/env.schema"
             schema.write_text("REQUIRED GC_IMAGE\nREQUIRED GC_DATABASE_URL\n", encoding="utf-8")
-            # Regenerate the manifest so only the floating-tag invariant trips.
+            # Regenerate the manifest so only the release-pin invariant trips.
             self._rewrite_manifest(root)
             codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
-            self.assertIn("deploy-env-schema-floating-tag", codes)
+            self.assertIn("deploy-env-schema-release-pin", codes)
 
     def test_deploy_artifact_consistency_flags_wrapper_duplicating_logic(self):
         # The operator wrapper must not reimplement the rollout primitives that

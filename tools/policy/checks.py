@@ -1387,7 +1387,8 @@ def run_ghcr_namespace_drift(root: Path = REPO_ROOT) -> list[Violation]:
 #     .env.template is gone.
 #   - env.schema is the single env contract: every ${VAR} the prod compose
 #     dereferences is declared there (REQUIRED when the compose ref has no
-#     default), and GC_IMAGE is marked FLOATING_TAG (#953 stale-pin guard).
+#     default), and GC_IMAGE is marked RELEASE_PIN so the deploy-time validator
+#     requires an immutable versioned release pin, not a floating tag (ADR-063).
 #   - MANIFEST.sha256 matches the canonical artifacts byte-for-byte, so the
 #     deploy-time drift guard in deploy.sh checks against a current manifest.
 #   - exactly one operator wrapper (scripts/deploy.sh); the dead divergent
@@ -1477,16 +1478,16 @@ def run_deploy_artifact_consistency(root: Path = REPO_ROOT) -> list[Violation]:
         schema: dict[str, set[str]] = {}
     else:
         schema = _parse_env_schema(schema_path.read_text(encoding="utf-8"))
-        if "FLOATING_TAG" not in schema.get("GC_IMAGE", set()):
+        if "RELEASE_PIN" not in schema.get("GC_IMAGE", set()):
             violations.append(
                 Violation(
-                    code="deploy-env-schema-floating-tag",
+                    code="deploy-env-schema-release-pin",
                     message=(
-                        "env.schema must mark GC_IMAGE FLOATING_TAG so the deploy-time "
-                        "validator rejects a digest pin that would freeze the deploy "
-                        "(#953 / GC-P022)."
+                        "env.schema must mark GC_IMAGE RELEASE_PIN so the deploy-time "
+                        "validator requires an immutable versioned release pin and "
+                        "rejects a floating branch tag like :main (ADR-063 / #1222)."
                     ),
-                    details=["add 'FLOATING_TAG GC_IMAGE' to env.schema"],
+                    details=["add 'RELEASE_PIN GC_IMAGE' to env.schema"],
                 )
             )
 

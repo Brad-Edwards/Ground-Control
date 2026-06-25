@@ -104,7 +104,7 @@ publish_deployment() {
   local revision outcome digest repo state
   revision="$(printf '%s' "${state_json}" | sed -n 's/.*"revision":"\([^"]*\)".*/\1/p')"
   outcome="$(printf '%s' "${state_json}" | sed -n 's/.*"outcome":"\([^"]*\)".*/\1/p')"
-  digest="$(printf '%s' "${state_json}" | sed -n 's/.*"resolved_digest":"\([^"]*\)".*/\1/p')"
+  digest="$(printf '%s' "${state_json}" | sed -n 's/.*"active_digest":"\([^"]*\)".*/\1/p')"
   [ -n "${revision}" ] || { echo "NOTE: deploy state carried no revision SHA; skipping publish."; return 0; }
   repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
   [ -n "${repo}" ] || { echo "NOTE: could not resolve GitHub repo; skipping publish."; return 0; }
