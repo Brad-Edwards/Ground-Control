@@ -20,29 +20,48 @@ import java.util.List;
 public enum CloudEvidenceFamily {
     SECURITY_GROUP_CONFIG(
             "cloud-security-group-config",
-            List.of("groupRef", "ruleCount", "publicIngressCount", "unrestrictedIngressCount", "evaluatedThrough")),
+            List.of(
+                    "groupRef",
+                    "ruleCount",
+                    "publicIngressCount",
+                    "unrestrictedIngressCount",
+                    Field.EVALUATED_THROUGH)),
     ENCRYPTION_AT_REST(
             "cloud-encryption-at-rest",
             List.of(
-                    "resourceRef",
+                    Field.RESOURCE_REF,
                     "resourceType",
                     "encryptedResourceCount",
                     "unencryptedResourceCount",
-                    "evaluatedThrough")),
+                    Field.EVALUATED_THROUGH)),
     LOGGING_CONFIG(
             "cloud-logging-config",
-            List.of("resourceRef", "logCategory", "enabledLogCount", "disabledLogCount", "evaluatedThrough")),
+            List.of(Field.RESOURCE_REF, "logCategory", "enabledLogCount", "disabledLogCount", Field.EVALUATED_THROUGH)),
     BACKUP_POLICY(
             "cloud-backup-policy",
             List.of(
-                    "resourceRef",
+                    Field.RESOURCE_REF,
                     "retentionDays",
                     "protectedResourceCount",
                     "unprotectedResourceCount",
-                    "evaluatedThrough")),
+                    Field.EVALUATED_THROUGH)),
     COMPLIANCE_SCAN(
             "cloud-compliance-scan",
-            List.of("scannerSource", "controlRef", "passCount", "failCount", "notApplicableCount", "evaluatedThrough"));
+            List.of(
+                    "scannerSource",
+                    "controlRef",
+                    "passCount",
+                    "failCount",
+                    "notApplicableCount",
+                    Field.EVALUATED_THROUGH));
+
+    /** Summary-field tokens shared across families; defined once so the literals are not duplicated. */
+    private static final class Field {
+        private static final String RESOURCE_REF = "resourceRef";
+        private static final String EVALUATED_THROUGH = "evaluatedThrough";
+
+        private Field() {}
+    }
 
     private final String scopeType;
 
