@@ -1,7 +1,8 @@
 package com.keplerops.groundcontrol.domain.evidence.collection.cloud;
 
+import com.keplerops.groundcontrol.domain.evidence.collection.EvidenceFamilyDescriptor;
+import com.keplerops.groundcontrol.domain.evidence.collection.EvidenceFamilySpec;
 import com.keplerops.groundcontrol.domain.evidence.state.EvidenceType;
-import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import java.util.List;
 
 /**
@@ -9,51 +10,62 @@ import java.util.List;
  * capable of collecting across AWS, Azure, and GCP.
  *
  * <p>Each family maps onto the GC-S001 collection port as data, not as a dedicated Java
- * interface: a canonical {@code scopeType} (carried in {@code EvidenceCollectionScope})
- * and a canonical {@code schemaId} (carried in {@code EvidenceCollectionOutputSchema}).
- * Every family is summarized as {@link EvidenceType#OBSERVATION_SUMMARY} — an adapter must
- * not present security-group, encryption, logging, backup, or compliance-scan status as a
- * control-effectiveness conclusion. {@link #summaryFields()} names the bounded, normalized
- * fields a collected summary carries; raw provider exports, full resource inventories,
- * policy documents, and ingress CIDRs stay out.
+ * interface: it carries an {@link EvidenceFamilySpec} with a canonical {@code scopeType}
+ * (carried in {@code EvidenceCollectionScope}) and a canonical {@code schemaId} (carried in
+ * {@code EvidenceCollectionOutputSchema}). Every family is summarized as
+ * {@link EvidenceType#OBSERVATION_SUMMARY} — an adapter must not present security-group,
+ * encryption, logging, backup, or compliance-scan status as a control-effectiveness
+ * conclusion. {@link #summaryFields()} names the bounded, normalized fields a collected
+ * summary carries; raw provider exports, full resource inventories, policy documents, and
+ * ingress CIDRs stay out.
  */
-public enum CloudEvidenceFamily {
-    SECURITY_GROUP_CONFIG(
+public enum CloudEvidenceFamily implements EvidenceFamilyDescriptor {
+    SECURITY_GROUP_CONFIG(new EvidenceFamilySpec(
             "cloud-security-group-config",
+            EvidenceType.OBSERVATION_SUMMARY,
             List.of(
                     "groupRef",
                     "ruleCount",
                     "publicIngressCount",
                     "unrestrictedIngressCount",
-                    Field.EVALUATED_THROUGH)),
-    ENCRYPTION_AT_REST(
+                    Field.EVALUATED_THROUGH))),
+    ENCRYPTION_AT_REST(new EvidenceFamilySpec(
             "cloud-encryption-at-rest",
+            EvidenceType.OBSERVATION_SUMMARY,
             List.of(
                     Field.RESOURCE_REF,
                     "resourceType",
                     "encryptedResourceCount",
                     "unencryptedResourceCount",
-                    Field.EVALUATED_THROUGH)),
-    LOGGING_CONFIG(
+                    Field.EVALUATED_THROUGH))),
+    LOGGING_CONFIG(new EvidenceFamilySpec(
             "cloud-logging-config",
-            List.of(Field.RESOURCE_REF, "logCategory", "enabledLogCount", "disabledLogCount", Field.EVALUATED_THROUGH)),
-    BACKUP_POLICY(
+            EvidenceType.OBSERVATION_SUMMARY,
+            List.of(
+                    Field.RESOURCE_REF,
+                    "logCategory",
+                    "enabledLogCount",
+                    "disabledLogCount",
+                    Field.EVALUATED_THROUGH))),
+    BACKUP_POLICY(new EvidenceFamilySpec(
             "cloud-backup-policy",
+            EvidenceType.OBSERVATION_SUMMARY,
             List.of(
                     Field.RESOURCE_REF,
                     "retentionDays",
                     "protectedResourceCount",
                     "unprotectedResourceCount",
-                    Field.EVALUATED_THROUGH)),
-    COMPLIANCE_SCAN(
+                    Field.EVALUATED_THROUGH))),
+    COMPLIANCE_SCAN(new EvidenceFamilySpec(
             "cloud-compliance-scan",
+            EvidenceType.OBSERVATION_SUMMARY,
             List.of(
                     "scannerSource",
                     "controlRef",
                     "passCount",
                     "failCount",
                     "notApplicableCount",
-                    Field.EVALUATED_THROUGH));
+                    Field.EVALUATED_THROUGH)));
 
     /** Summary-field tokens shared across families; defined once so the literals are not duplicated. */
     private static final class Field {
@@ -63,54 +75,20 @@ public enum CloudEvidenceFamily {
         private Field() {}
     }
 
-    private final String scopeType;
+    private final EvidenceFamilySpec spec;
 
-    // Holds an immutable List.copyOf result; the List interface type hides that from ErrorProne.
-    @SuppressWarnings("ImmutableEnumChecker")
-    private final List<String> summaryFields;
-
-    CloudEvidenceFamily(String scopeType, List<String> summaryFields) {
-        this.scopeType = scopeType;
-        this.summaryFields = List.copyOf(summaryFields);
+    CloudEvidenceFamily(EvidenceFamilySpec spec) {
+        this.spec = spec;
     }
 
-    public String scopeType() {
-        return scopeType;
+    @Override
+    public EvidenceFamilySpec familySpec() {
+        return spec;
     }
 
-    /** Canonical output-schema id; equal to {@link #scopeType()} for a 1:1 family-to-schema mapping. */
-    public String schemaId() {
-        return scopeType;
-    }
-
-    public EvidenceType evidenceType() {
-        return EvidenceType.OBSERVATION_SUMMARY;
-    }
-
-    public List<String> summaryFields() {
-        return List.copyOf(summaryFields);
-    }
-
-    /** Descriptor capability token advertised by an adapter that collects this family. */
-    public String capabilityToken() {
-        return "family:" + scopeType;
-    }
-
-    /**
-     * Resolves a family by its canonical scope type.
-     *
-     * @throws DomainValidationException when no family declares the scope type, so an
-     *     unsupported category is surfaced rather than silently producing an empty report.
-     */
+    /** Resolves a family by its canonical scope type, surfacing an unsupported category. */
     public static CloudEvidenceFamily fromScopeType(String scopeType) {
-        if (scopeType != null) {
-            String normalized = scopeType.trim();
-            for (CloudEvidenceFamily family : values()) {
-                if (family.scopeType.equals(normalized)) {
-                    return family;
-                }
-            }
-        }
-        throw new DomainValidationException("Unsupported cloud evidence family scope: " + scopeType);
+        return EvidenceFamilyDescriptor.resolveByScopeType(
+                values(), scopeType, "Unsupported cloud evidence family scope: ");
     }
 }
