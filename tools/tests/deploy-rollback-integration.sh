@@ -36,7 +36,7 @@ cleanup() {
     ( cd "${GCDIR}" && docker compose --env-file .env -p "${PROJECT}" down -v >/dev/null 2>&1 || true )
   fi
   docker rm -f "${REG_NAME}" >/dev/null 2>&1 || true
-  docker rmi -f "${REG}/gctest:healthy" "${REG}/gctest:broken" >/dev/null 2>&1 || true
+  docker rmi -f "${REG}/gctest:1.0.0" "${REG}/gctest:1.0.1" >/dev/null 2>&1 || true
   [ -n "${GCDIR}" ] && rm -rf "${GCDIR}"
 }
 trap cleanup EXIT
@@ -68,8 +68,12 @@ CMD ["/usr/sbin/httpd","-f","-p","8000","-h","/www"]
 EOF
   docker push "${REG}/gctest:${tag}" >/dev/null 2>&1
 }
-build_img healthy UP  revhealthyAAA
-build_img broken  DOWN revbrokenBBB
+# Tags are semver release coordinates (ADR-063): validate-env.sh now rejects a
+# floating tag, so the throwaway images use immutable version tags. The health /
+# rollback semantics are driven by image content + OCI revision label, not the
+# tag string. 1.0.0 = healthy (running), 1.0.1 = broken candidate.
+build_img 1.0.0 UP  revhealthyAAA
+build_img 1.0.1 DOWN revbrokenBBB
 
 # --- Temp GC_DIR mirroring /opt/gc -----------------------------------------
 GCDIR="$(mktemp -d "${TMPDIR:-/tmp}/gc-deploytest.XXXXXX")"
@@ -82,7 +86,7 @@ services:
     restart: "no"
 EOF
 cat > "${GCDIR}/.env" <<EOF
-GC_IMAGE=${REG}/gctest:healthy
+GC_IMAGE=${REG}/gctest:1.0.0
 GC_DATABASE_URL=jdbc:postgresql://db:5432/x
 GC_DATABASE_USER=x
 GC_DATABASE_PASSWORD=x
@@ -131,7 +135,7 @@ else
 fi
 
 echo "== Scenario 3: a broken candidate auto-rolls-back to the previous image =="
-set_image broken
+set_image 1.0.1
 if run_deploy >/tmp/gcdt.3 2>&1; then
   bad "broken deploy should exit non-zero"
 else

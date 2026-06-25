@@ -472,11 +472,11 @@ within seconds. Order matters; do not skip ahead.
    The same digest you dry-ran against in step 4 belongs in `GC_IMAGE`
    here - pinning by digest (`ghcr.io/autarchy-ai/ground-control@sha256:...`)
    guarantees the cutover rolls the image you tested, not whatever has
-   moved under `:dev` since. Because deploy-time validation rejects a digest
-   pin by default (GC-P023, to prevent a silent steady-state freeze), add
-   `GC_ALLOW_IMAGE_PIN=1` to `/opt/gc/.env` for this deliberate cutover pin,
-   and **restore a floating tag (`:main`) and remove the override once the
-   cutover is verified**; otherwise the deploy stays frozen on that digest.
+   moved under `:dev` since. Because deploy-time validation rejects a bare digest
+   pin by default (GC-P023 / ADR-063, so a digest is never pinned silently), add
+   `GC_ALLOW_IMAGE_PIN=1` to `/opt/gc/.env` for this deliberate cutover/rollback
+   pin, and **set `GC_IMAGE` back to the promoted versioned release tag
+   (`...:X.Y.Z`) and remove the override once the cutover is verified**.
    After editing, `chmod 600`.
 
 7. **Sync `/opt/gc/docker-compose.yml` byte-for-byte from this repo's
@@ -645,7 +645,7 @@ make deploy
 
   `restrict` disables PTY, port forwarding, X11, agent forwarding, user-rc - the deploy key cannot do anything except run the deploy script. SSH exit code is the deploy script's exit code.
 
-`/opt/gc/deploy.sh` (GC-P023) drift-guards the `/opt/gc` mirrors against `MANIFEST.sha256`, validates `/opt/gc/.env` against `env.schema`, pulls the GHCR image pinned by `GC_IMAGE` (a floating tag like `:main`), enforces the #953 revision-advance staleness guard, brings the stack up, and verifies `/actuator/health` from inside the backend container. If the candidate fails its health window it **automatically rolls back** to the previous image rather than leaving an unhealthy backend running. It writes `/opt/gc/deploy-state.json` (digest + commit SHA + outcome, no secrets); the wrapper publishes that to **GitHub Deployments**.
+`/opt/gc/deploy.sh` (GC-P023) drift-guards the `/opt/gc` mirrors against `MANIFEST.sha256`, validates `/opt/gc/.env` against `env.schema`, pulls the GHCR image pinned by `GC_IMAGE` (an immutable versioned release tag like `:1.0.1`, ADR-063, not a floating branch tag), enforces the #953 revision-advance staleness guard, brings the stack up, and verifies `/actuator/health` from inside the backend container. If the candidate fails its health window it **automatically rolls back** to the previous image rather than leaving an unhealthy backend running. It writes `/opt/gc/deploy-state.json` (digest + commit SHA + outcome, no secrets); the wrapper publishes that to **GitHub Deployments**.
 
 Query what is currently deployed without SSHing to the box:
 
@@ -756,7 +756,7 @@ GC_EMBEDDING_API_KEY=...
 EOF
 ```
 
-`GC_IMAGE` MUST be a floating tag like `:main` so `docker compose pull` resolves it to whatever the CI `docker` job most recently pushed. Pinning a digest here freezes the deploy on that image forever. `GC_BIND_IP` restricts the host port-binding to the tailnet interface only (per #828 / ADR-026 defense in depth); leaving it unset binds `0.0.0.0` and exposes port 8000 on the public interface.
+`GC_IMAGE` MUST be an immutable versioned release tag like `:1.0.1` (ADR-063), not a floating branch tag (`:main`, `:latest`, `:dev`): production runs a promoted release, and bumping this pin is the deliberate promotion act. A rollback pins the previous release's digest with `GC_ALLOW_IMAGE_PIN=1`; `validate-env.sh` rejects a floating tag and rejects a bare digest without that override. `GC_BIND_IP` restricts the host port-binding to the tailnet interface only (per #828 / ADR-026 defense in depth); leaving it unset binds `0.0.0.0` and exposes port 8000 on the public interface.
 
 The credential block (`GROUNDCONTROL_SECURITY_CREDENTIALS_*`) and any other ADR-026 / GC-P011 access-control envs go in this same file. See the ADR-026 cutover playbook above for the full credential shape.
 

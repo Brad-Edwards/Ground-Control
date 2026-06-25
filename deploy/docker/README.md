@@ -25,12 +25,18 @@ The operator wrapper that drives a deploy is `scripts/deploy.sh` at the repo roo
 
 ## Image resolution
 
-`GC_IMAGE` in `/opt/gc/.env` MUST be a floating tag like
-`ghcr.io/autarchy-ai/ground-control:main`. `deploy.sh` runs `docker compose
-pull` which resolves the tag to the current digest on GHCR, so each deploy
-picks up whatever the CI `docker` job most recently pushed. Pinning
-`GC_IMAGE` to a digest here freezes the deploy on that image forever - CI
-builds will succeed but never roll out.
+`GC_IMAGE` in `/opt/gc/.env` MUST be an immutable versioned release tag like
+`ghcr.io/autarchy-ai/ground-control:1.0.1` (ADR-063), never a floating branch
+tag (`:main`, `:latest`, `:dev`). Promotion to production is the deliberate act
+of bumping this pin to a cut release; a moving tag would let prod silently
+re-promote whatever the CI `docker` job last pushed. `deploy.sh` runs `docker
+compose pull` to resolve that versioned tag's digest, and the revision-advance
+staleness guard (GC-P022) still confirms the pull actually moved. For a
+rollback, pin the previous release's digest
+(`ghcr.io/autarchy-ai/ground-control@sha256:...`) and set
+`GC_ALLOW_IMAGE_PIN=1`; the deploy-time validator (`validate-env.sh`,
+`RELEASE_PIN`) rejects a floating tag and rejects a bare digest without that
+override.
 
 ## Health check
 
