@@ -216,3 +216,6 @@ Pending after this PR merges:
 - ADR-005 - Apache AGE on Postgres (preserved, same image).
 - ADR-025 - Backup Policy (mechanism amendment).
 - ADR-026 - REST API Access Control (preserved, unchanged).
+- ADR-063 - Release & Deployment Model. Extends this ADR with the release model
+  (versioning, release artifact, promotion, cut-a-release, rollback) that this
+  ADR deliberately did not cover.
