@@ -60,7 +60,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "092", "093", "094", "095", "096", "097", "098", "099", "100", "101", "102", "103", "104",
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
-                        "136", "137", "138", "139", "140", "141", "142");
+                        "136", "137", "138", "139", "140", "141", "142", "143");
     }
 
     @Test
@@ -1211,6 +1211,35 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .contains("model_invocation_count")
                 .contains("wall_clock_minutes")
                 .contains("cost_proxy");
+    }
+
+    /**
+     * V143: AGE graph projection snapshot pointer/metadata (#252 / ADR-062). Plain relational
+     * bookkeeping (no AGE dependency); the active snapshot is the greatest-version row. ddl-auto
+     * does not own this table (it is managed via JdbcTemplate), so probe the table, the version
+     * sequence, and the non-negative count CHECK constraints explicitly here.
+     */
+    @Test
+    @Transactional
+    void ageGraphSnapshotTableExists() {
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT version, graph_name, scope, node_count, edge_count,"
+                                + " published_at, published_by FROM age_graph_snapshot LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT nextval('age_graph_snapshot_version_seq')")
+                        .getSingleResult())
+                .doesNotThrowAnyException();
+        var snapshotChecks = entityManager
+                .createNativeQuery("SELECT string_agg(pg_get_constraintdef(c.oid), ' ')"
+                        + " FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid"
+                        + " WHERE t.relname = 'age_graph_snapshot' AND c.contype = 'c'")
+                .getSingleResult();
+        assertThat(snapshotChecks.toString())
+                .as("age_graph_snapshot must CHECK non-negative node/edge counts")
+                .contains("node_count")
+                .contains("edge_count");
     }
 
     private void assertSeededMethodologyProfilesAligned() {

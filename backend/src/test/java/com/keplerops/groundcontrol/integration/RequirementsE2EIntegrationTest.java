@@ -561,6 +561,7 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "139", // V139: O-RT forms-of-loss materiality + stakeholder secondary effects (GC-T016)
                         "140", // V140: create risk_appetite_profile (GC-T005, #260)
                         "141", // V141: create risk_appetite_profile_audit (GC-T005 audit parity)
-                        "142"); // V142: create workflow_run telemetry reporting tables (#859, ADR-061)
+                        "142", // V142: create workflow_run telemetry reporting tables (#859, ADR-061)
+                        "143"); // V143: create age_graph_snapshot pointer/metadata (#252, ADR-062)
     }
 }

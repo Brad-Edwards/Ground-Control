@@ -77,5 +77,8 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [057](057-per-run-grc-screening-gate.md) | Per-run GRC Screening Gate in /implement | Accepted (amended/superseded in part by ADR-058) |
 | [058](058-derivation-first-continuous-grc.md) | Derivation-First Continuous GRC | Accepted |
 | [059](059-mcp-usage-telemetry.md) | MCP Tool Usage Telemetry | Accepted |
+| [060](060-requirement-uid-identity.md) | Requirement UID identity | Accepted |
+| [061](061-workflow-run-telemetry-reporting.md) | Workflow-Run Telemetry & Economics Reporting Surface | Accepted |
+| [062](062-age-graph-projection-snapshot-publication.md) | AGE Graph Projection Snapshot Publication | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.

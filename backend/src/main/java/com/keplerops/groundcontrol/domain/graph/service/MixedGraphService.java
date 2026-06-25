@@ -20,10 +20,14 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@Transactional(readOnly = true)
+// Repeatable-read so a getVisualization call that resolves the active AGE snapshot and then issues
+// its node and edge queries observes one consistent snapshot even if a materialization commits a
+// new snapshot mid-read (ADR-062). Harmless for the AGE-disabled in-memory fallback path.
+@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 public class MixedGraphService {
 
     private final MixedGraphClient mixedGraphClient;
