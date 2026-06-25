@@ -1,9 +1,11 @@
 # Release and Deployment Model Preflight
 
-Issue #1221 asks for the release model ADR that ADR-030 deliberately does not
+Issue #1221 asked for the release model ADR that ADR-030 deliberately does not
 cover: versioning, release artifacts, promotion, cut-a-release, and rollback.
-This note records the architecture guardrails for that ADR and its companion
-mechanism issues. It does not implement the release model itself.
+Issue #1222 is the companion mechanism change that moves production off the
+floating `:main` deploy pin. This note records the architecture guardrails for
+both surfaces. It does not implement the release model or the deployment
+mechanism itself.
 
 ## Architecture Boundaries
 
@@ -24,6 +26,13 @@ mechanism issues. It does not implement the release model itself.
 - A release artifact must be a versioned GHCR image plus its resolved digest
   and source commit. The tag is the human release coordinate; the digest is the
   audit/rollback identity captured in deploy state.
+- For issue #1222, the steady-state production image reference must be either a
+  release semver image tag (`:X.Y.Z`; ADR-063 notes that CI strips the leading
+  `v` from git tag `vX.Y.Z`) or a digest (`@sha256:...`). Branch tags
+  (`:main`, `:dev`, `:latest`) and build-coordinate tags (`:sha-<short>`) must
+  not pass as the normal production pin. If a temporary non-release candidate is
+  needed later, it needs an explicit loud override path rather than weakening
+  the steady-state validator.
 
 ## Cross-Cutting Concerns to Reuse
 
@@ -41,9 +50,21 @@ mechanism issues. It does not implement the release model itself.
   `run_deploy_artifact_consistency` policy gate. Any change from branch tags to
   release tags must update the schema, validator, docs, tests, and manifest
   together.
+- **Env-image validation:** change the existing `env.schema` directive and
+  `validate-env.sh` parser deliberately; do not layer a second ad hoc
+  `GC_IMAGE` checker into the wrapper or compose file. The current
+  `FLOATING_TAG` invariant in `tools/policy/checks.py` and
+  `tools/tests/test_validate_env.py` is intentionally the thing #1222 must
+  replace or rename, with tests proving `:main` fails and `:X.Y.Z` /
+  `@sha256:...` pass under the chosen steady-state rule.
 - **Deployment ledger:** reuse `/opt/gc/deploy-state.json` and GitHub
   Deployments for "what is running?" Do not add a Ground Control domain entity
   for release status unless a later product requirement asks for a UI/API.
+- **Version discoverability:** reuse the existing actuator/build-info surface
+  (`springBoot { buildInfo() }`, `/actuator/info` is already anonymous in
+  `ApiPathMatrix`) and the pinned image/deploy-state record. Do not add a
+  release controller, release repository, or duplicate version table just to
+  answer this issue's discoverability acceptance criterion.
 - **Security controls:** preserve ADR-030's tailnet-only host, forced-command
   `gc-deploy` SSH model, `/opt/gc/.env` mode-600 secret boundary, ADR-026
   credential inherit-only compose form, and env validation that reports names
@@ -65,9 +86,17 @@ mechanism issues. It does not implement the release model itself.
 - Preserve deploy-time validation before restart. The new model must still pass
   `env.schema`, `validate-env.sh`, compose variable checks, Spring security
   binding validation, and health/rollback behavior before declaring success.
+- Keep the `.env` parser non-executing. `validate-env.sh` must keep parsing
+  lines as data rather than `source`ing the file, and failure output must keep
+  reporting variable names only. A bad image ref is configuration data, not a
+  reason to expose database passwords, bearer tokens, or registry credentials.
 - Release rollback is redeploying a previous known-good version through the
   same deploy path. Do not add an ad-hoc `docker compose` rollback script that
   bypasses validation, health checks, or deploy-state publication.
+- If the implementation updates `/opt/gc/.env` from tooling, the safe parameter
+  surface is a host-local file update with mode `0600` and no secret echoing.
+  Do not pass the target version through SSH forced-command argv, `curl`
+  headers, process argv, workflow summaries, or GitHub Release text.
 
 ## Extensibility
 
@@ -86,6 +115,14 @@ script or backend code.
 - Do not treat a digest pin as the normal release model unless the policy,
   validator, and operator docs are changed intentionally. Today's guard rejects
   long-lived digest pins because they previously caused stale deploys.
+- Do not preserve `GC_ALLOW_IMAGE_PIN=1` as a permanent "digest is exceptional"
+  flag if digest becomes the production steady state. Either retire that
+  meaning or narrow it to non-release/test overrides so operators are not taught
+  that the desired immutable pin is an incident mode.
+- Do not leave `scripts/deploy.sh` publishing an empty or mismatched digest
+  field. `deploy/docker/deploy.sh` emits `active_digest` in
+  `DEPLOY_STATE_JSON`; the wrapper and `make deploy-status` must use the same
+  field names if the release pin/deploy-state surface is touched.
 - Do not duplicate version bump rules in CI, docs, and scripts. One ADR section
   plus the towncrier/changelog convention should be the source; checks should
   enforce structure, not carry competing prose.
