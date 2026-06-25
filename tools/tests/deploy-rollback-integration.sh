@@ -36,7 +36,7 @@ cleanup() {
     ( cd "${GCDIR}" && docker compose --env-file .env -p "${PROJECT}" down -v >/dev/null 2>&1 || true )
   fi
   docker rm -f "${REG_NAME}" >/dev/null 2>&1 || true
-  docker rmi -f "${REG}/gctest:1.0.0" "${REG}/gctest:1.0.1" >/dev/null 2>&1 || true
+  docker rmi -f "${REG}/gctest:1.0.0" "${REG}/gctest:1.0.1" "${REG}/gctest:1.0.2" >/dev/null 2>&1 || true
   [ -n "${GCDIR}" ] && rm -rf "${GCDIR}"
 }
 trap cleanup EXIT
@@ -158,6 +158,58 @@ if run_deploy >/tmp/gcdt.4 2>&1; then
   bad "drift guard should have refused the tampered mirror"
 else
   grep -q "drifted from the canonical" /tmp/gcdt.4 && ok "drift guard refused rollout" || { bad "no drift message"; cat /tmp/gcdt.4; }
+fi
+
+echo "== Scenario 5: one-command rollback to a prior healthy version =="
+# Build a third healthy image at 1.0.2 (revhealthyCCC) and promote it so the
+# running container is CCC, then use scripts/rollback.sh to roll back to the
+# original healthy 1.0.0 image (revhealthyAAA) in a single command.
+build_img 1.0.2 UP  revhealthyCCC
+# Restore docker-compose.yml that was corrupted by the drift-guard scenario.
+# Restore the same minimal test compose (no host port-binding, no db service)
+# used throughout this suite — NOT the full production compose, which has host
+# port bindings and a db service that would conflict here.
+cat > "${GCDIR}/docker-compose.yml" <<'COMPOSE'
+services:
+  backend:
+    image: ${GC_IMAGE}
+    restart: "no"
+COMPOSE
+{
+  printf '%s  deploy.sh\n'               "$(sha256sum "${GCDIR}/deploy.sh"          | cut -d' ' -f1)"
+  printf '%s  docker-compose.prod.yml\n' "$(sha256sum "${GCDIR}/docker-compose.yml" | cut -d' ' -f1)"
+  printf '%s  validate-env.sh\n'         "$(sha256sum "${GCDIR}/validate-env.sh"    | cut -d' ' -f1)"
+  printf '%s  env.schema\n'              "$(sha256sum "${GCDIR}/env.schema"         | cut -d' ' -f1)"
+} > "${GCDIR}/MANIFEST.sha256"
+# Deploy 1.0.2 so the running image is revhealthyCCC.
+set_image 1.0.2
+if run_deploy >/tmp/gcdt.5a 2>&1; then
+  state | grep -q '"revision": "revhealthyCCC"' && ok "pre-rollback running revision=CCC" || { bad "pre-rollback revision is not CCC"; cat /tmp/gcdt.5a; }
+else
+  bad "deploy of 1.0.2 failed before rollback test"; cat /tmp/gcdt.5a
+fi
+# Invoke the one-command rollback: scripts/rollback.sh 1.0.0 with test seam.
+# GC_ROLLBACK_LOCAL=1 patches $GC_DIR/.env directly (no SSH/sudo) and runs
+# bash "$GC_DIR/deploy.sh" — the same canonical path the other scenarios use.
+if env GC_DIR="${GCDIR}" GC_ROLLBACK_LOCAL=1 GC_HEALTH_RETRIES=8 GC_HEALTH_INTERVAL=1 \
+    bash "${REPO_ROOT}/scripts/rollback.sh" 1.0.0 >/tmp/gcdt.5b 2>&1; then
+  grep -q '"outcome": "deployed"' "${GCDIR}/deploy-state.json" && ok "outcome=deployed after rollback" || bad "outcome is not deployed after rollback"
+  state | grep -q '"revision": "revhealthyAAA"' && ok "revision=revhealthyAAA (rolled-back image)" || bad "revision is not revhealthyAAA after rollback"
+  # Staleness guard must NOT have blocked the older-revision rollback.
+  if ! grep -q "has not advanced" /tmp/gcdt.5b; then
+    ok "staleness guard did not block the older-revision rollback"
+  else
+    bad "staleness guard incorrectly blocked the rollback"; cat /tmp/gcdt.5b
+  fi
+  # Backend must serve the healthy 1.0.0 image.
+  if docker compose --env-file "${GCDIR}/.env" -p "${PROJECT}" -f "${GCDIR}/docker-compose.yml" \
+       exec -T backend wget -q -O - http://localhost:8000/actuator/health 2>/dev/null | grep -q '"UP"'; then
+    ok "backend healthy (UP) after one-command rollback"
+  else
+    bad "backend not healthy after one-command rollback"
+  fi
+else
+  bad "scripts/rollback.sh exited non-zero"; cat /tmp/gcdt.5b
 fi
 
 echo

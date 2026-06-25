@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: Manually deploy Ground Control to red-dragon (the on-prem production host per ADR-030). Pulls the latest `:main` image from GHCR, restarts the stack via the canonical `/opt/gc/deploy.sh`, and verifies the actuator health check. Use for rollbacks, post-incident restart, or verifying an out-of-band push.
+description: Manually deploy Ground Control to red-dragon (the on-prem production host per ADR-030). Pulls the promoted image pinned by `GC_IMAGE`, restarts the stack via the canonical `/opt/gc/deploy.sh`, and verifies the actuator health check. Use for rollbacks, post-incident restart, or verifying an out-of-band push.
 argument-hint:
 disable-model-invocation: true
 ---
@@ -11,7 +11,7 @@ The deploy path is **operator-driven manual deploy**: invoke `make deploy` (or `
 
 Reasons to invoke `/deploy`:
 
-- **Roll out a fresh `:main` image.** A new build has been pushed to GHCR (the `docker` job runs on every push to `main` and is still active); this deploy pulls it.
+- **Roll out a promoted release image.** `GC_IMAGE` in `/opt/gc/.env` points at the versioned release being promoted; this deploy pulls it.
 - **Rollback** to a previously published image (pin `GC_IMAGE` in `/opt/gc/.env` and re-run).
 - **Post-incident restart** when a container died or a deploy was missed.
 - **Verifying an out-of-band push** (you just pushed a fix and want to confirm it landed without polling GHCR or `docker ps`).
@@ -30,7 +30,7 @@ ssh red-dragon 'docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"' 
 
 Or on red-dragon itself: `docker ps --filter "name=gc"`.
 
-Note the current image SHA / tag (the `IMAGE` column) and the uptime. If the running image is already what you wanted to deploy, you may not need to deploy at all - `docker compose pull` will resolve `:main` to whatever was most recently pushed, but if that's the same digest, the deploy is a no-op restart.
+Note the current image SHA / tag (the `IMAGE` column) and the uptime. If the running image is already what you wanted to deploy, you may not need to deploy at all - `docker compose pull` resolves the pinned `GC_IMAGE`, and if that is the same digest, the deploy is a no-op restart.
 
 ## Step 2 - run the deploy
 
@@ -58,14 +58,29 @@ ssh red-dragon 'curl -sf http://100.98.28.66:8000/actuator/health'
 
 ## Rollback
 
-There is no argv-driven rollback over the SSH forced-command path (it ignores client argv by design). To roll back:
+To roll back to a prior version, run a single command from any tailnet host with the repo checked out:
 
-1. SSH into red-dragon as a sudoer (for example, `ssh red-dragon`).
-2. `sudo -u gc-deploy vi /opt/gc/.env` and pin `GC_IMAGE` to the target ref - either a tag (`ghcr.io/autarchy-ai/ground-control:sha-abc123`) or a digest (`ghcr.io/autarchy-ai/ground-control@sha256:...`). Available tags are listed at `https://github.com/autarchy-ai/Ground-Control/pkgs/container/ground-control`; CI publishes `sha-<short>` tags for every `main` build. If you pin a `@sha256:` digest, also add `GC_ALLOW_IMAGE_PIN=1` to `/opt/gc/.env` - deploy-time validation rejects a digest pin otherwise (GC-P023, to prevent a silent steady-state freeze). The `:sha-<short>` tag form does not need the override.
-3. Re-run `make deploy` (or `sudo -u gc-deploy /opt/gc/deploy.sh`). The pull resolves the pinned ref and the restart picks it up.
-4. **Restore the floating `:main` pin** in `/opt/gc/.env` once the rollback is no longer needed - otherwise the next CI deploy will succeed but never actually roll out.
+```
+make rollback VERSION=1.0.1
+```
+
+or equivalently `./scripts/rollback.sh 1.0.1`. The script accepts:
+
+- **Bare semver** (`1.0.1`) — derives the registry/image prefix from the current `GC_IMAGE` in `/opt/gc/.env`.
+- **Full versioned ref** (`ghcr.io/autarchy-ai/ground-control:1.0.1`) — used as-is.
+- **Digest ref** (`ghcr.io/autarchy-ai/ground-control@sha256:...`) — used as-is; automatically sets `GC_ALLOW_IMAGE_PIN=1` (deploy-time validation requires this explicit override for digest pins, per GC-P023).
+
+Only immutable three-component release tags (`X.Y.Z`) or digests are accepted: two-component aliases (`1.0`), floating tags (`:main`, `:latest`), and untagged refs are rejected up front (ADR-063). A full or digest ref may only target the **same registry/repository** as the current pin — a rollback re-pins a version, it never repoints production at a different image source. Available versioned tags are listed at `https://github.com/autarchy-ai/Ground-Control/pkgs/container/ground-control`; `make deploy-status` and `/opt/gc/deploy-state.json` record the digest that actually served.
+
+The wrapper patches `GC_IMAGE` (and `GC_ALLOW_IMAGE_PIN` for digest pins) in `/opt/gc/.env`, then delegates to `./scripts/deploy.sh` — the same validated deploy path as `make deploy`: drift guard, env validation, staleness guard, health gate, auto-rollback on failure, deploy-state publish, and GitHub Deployment record. If the rolled-back image itself fails its health window, the deploy auto-rolls back to whatever was serving before this run. Rollback is `deploy with a different pin`, not a separate code path.
+
+Use `--dry-run` to preview what the script would pin without mutating anything:
+
+```
+./scripts/rollback.sh --dry-run 1.0.1
+```
 
 ## When NOT to use this
 
 - **Don't `docker compose up`, `restart`, or `recreate` containers ad-hoc on red-dragon.** Always go through `deploy.sh`. Ad-hoc compose commands skip the health check, leave the deploy ledger out of sync, and have caused outages before.
-- **Don't deploy a branch that hasn't been merged to `main`.** The image tag `:main` only updates from `main` builds; deploying anything else means hand-pinning a `sha-` tag in `.env`, which counts as a rollback (see above) and must be unpinned afterward.
+- **Don't deploy a branch or build-coordinate tag as the steady-state production pin.** Use a cut versioned release tag for promotion, or a deliberate digest pin for rollback/cutover.

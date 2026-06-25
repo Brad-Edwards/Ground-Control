@@ -583,6 +583,10 @@ so the very first PR doesn't fail before there is calibration data. After the
 first ~5 PRs of mutation-score evidence, tighten via `pitest { mutationThreshold = ... }`
 in `backend/build.gradle.kts`.
 
+## Rollback
+
+To roll production back to a prior version: `make rollback VERSION=<x.y.z>` (or `./scripts/rollback.sh <version-or-digest>`). The wrapper patches `GC_IMAGE` in `/opt/gc/.env` and drives the same validated deploy path as `make deploy` (health gate, auto-rollback on failure, deploy-state publish). A digest target auto-sets `GC_ALLOW_IMAGE_PIN=1`. Full runbook: `skills/deploy/SKILL.md` (`/deploy` → §Rollback).
+
 ## Key Lessons (from GC-J001 first run)
 
 - **Write `@WebMvcTest` controller tests**, not just integration tests. SonarCloud CI doesn't run Testcontainers. The controller-parity gate (`run_controller_contracts` in `tools/policy/checks.py` and the `ControllerPolicyTest` ArchUnit-style test) maps a controller to its slice by the controller's **fully qualified class**, resolved from each test's `@WebMvcTest(...)` annotation and its `import`. Same-named controllers in different packages (`api/audit/AuditController` versus `api/audits/AuditController`) each match their real companion, and the companion test does not have to be named `<Controller>Test.java`.
