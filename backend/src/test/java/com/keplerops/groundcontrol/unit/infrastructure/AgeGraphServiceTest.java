@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -25,7 +26,9 @@ import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import com.keplerops.groundcontrol.infrastructure.age.AgeGraphService;
+import com.keplerops.groundcontrol.infrastructure.age.AgeGraphSnapshotRepository;
 import com.keplerops.groundcontrol.infrastructure.age.AgeProperties;
+import com.keplerops.groundcontrol.infrastructure.age.AgeSnapshotCleaner;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.LinkedHashMap;
@@ -57,6 +60,12 @@ class AgeGraphServiceTest {
     @Mock
     private ProjectRepository projectRepository;
 
+    @Mock
+    private AgeGraphSnapshotRepository snapshotRepository;
+
+    @Mock
+    private AgeSnapshotCleaner snapshotCleaner;
+
     private AgeGraphService service;
 
     private static final UUID PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -72,7 +81,12 @@ class AgeGraphServiceTest {
     void setUp() {
         var disabledProperties = new AgeProperties(false, "requirements");
         service = new AgeGraphService(
-                jdbcTemplate, disabledProperties, graphProjectionRegistryService, projectRepository);
+                jdbcTemplate,
+                disabledProperties,
+                graphProjectionRegistryService,
+                projectRepository,
+                snapshotRepository,
+                snapshotCleaner);
     }
 
     @Nested
@@ -82,7 +96,12 @@ class AgeGraphServiceTest {
         void materializeGraph_isNoOp() {
             service.materializeGraph();
 
-            verifyNoInteractions(jdbcTemplate, graphProjectionRegistryService, projectRepository);
+            verifyNoInteractions(
+                    jdbcTemplate,
+                    graphProjectionRegistryService,
+                    projectRepository,
+                    snapshotRepository,
+                    snapshotCleaner);
         }
 
         @Test
@@ -176,32 +195,43 @@ class AgeGraphServiceTest {
         void setUp() {
             var enabledProperties = new AgeProperties(true, "test_graph");
             enabledService = new AgeGraphService(
-                    jdbcTemplate, enabledProperties, graphProjectionRegistryService, projectRepository);
+                    jdbcTemplate,
+                    enabledProperties,
+                    graphProjectionRegistryService,
+                    projectRepository,
+                    snapshotRepository,
+                    snapshotCleaner);
+            // An active snapshot exists (reads resolve it) and publication gets version 1; lenient
+            // so the subset of tests that exercise only one of read/materialize don't trip strict stubs.
+            lenient().when(snapshotRepository.findActiveGraphName()).thenReturn(Optional.of("test_graph"));
+            lenient().when(snapshotRepository.nextVersion()).thenReturn(1L);
         }
 
         @Test
-        void materializeGraph_createsNodesAndEdges() {
+        void materializeGraph_buildsNewSnapshotGraphWithoutDestroyingActive() {
             when(graphProjectionRegistryService.buildProjection())
                     .thenReturn(new GraphProjection(List.of(), List.of()));
 
             enabledService.materializeGraph();
 
-            // setupSearchPath: LOAD + SET via execute(String)
+            // setupSearchPath: LOAD + SET via execute(String).
             verify(jdbcTemplate).execute("LOAD 'age'");
             verify(jdbcTemplate).execute("SET search_path = ag_catalog, \"$user\", public");
-            // DETACH DELETE is a parameterized cypher() call — the cypher text is concatenated
-            // into the SQL literal (AGE parses it at SQL parse time), and only the agtype params
-            // payload is bound through a PreparedStatementSetter. AGE's cypher() always returns
-            // SETOF agtype even for write statements, so we route through query(), not update().
-            ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-            verify(jdbcTemplate, atLeast(1))
-                    .query(sqlCaptor.capture(), any(PreparedStatementSetter.class), any(RowCallbackHandler.class));
-            assertThat(sqlCaptor.getAllValues().stream().anyMatch(sql -> sql.contains("DETACH DELETE")))
-                    .isTrue();
+            // The publish is serialized by an advisory lock and builds into a NEW versioned graph
+            // (create_graph). Crucially, the live graph is NEVER DETACH DELETEd — that was the
+            // destructive rebuild ADR-062 removes.
+            ArgumentCaptor<String> execCaptor = ArgumentCaptor.forClass(String.class);
+            verify(jdbcTemplate, atLeast(1)).execute(execCaptor.capture());
+            assertThat(execCaptor.getAllValues())
+                    .anyMatch(sql -> sql.contains("pg_advisory_xact_lock"))
+                    .anyMatch(sql -> sql.contains("create_graph('test_graph_v1')"))
+                    .noneMatch(sql -> sql.contains("DETACH DELETE"));
+            // Publication records the new snapshot — the atomic active-version swap on commit.
+            verify(snapshotRepository).insertSnapshot(eq(1L), eq("test_graph_v1"), eq("GLOBAL"), eq(0), eq(0), any());
         }
 
         @Test
-        void materializeGraph_withRequirements_createsNodes() {
+        void materializeGraph_withRequirements_createsNodesInSnapshotGraph() {
             var req = new Requirement(TEST_PROJECT, "GC-A001", "Test Req", "Statement");
             when(graphProjectionRegistryService.buildProjection())
                     .thenReturn(new GraphProjection(
@@ -219,17 +249,51 @@ class AgeGraphServiceTest {
 
             enabledService.materializeGraph();
 
-            // setupSearchPath issues LOAD + SET via execute(String); DETACH DELETE + CREATE go
-            // through query(sql, pss, callback) — AGE's cypher() always returns SETOF agtype.
-            // Capture the SQL to confirm a CREATE was actually emitted for the REQUIREMENT
-            // node, not just that two queries ran (mock-interaction-only assertions would
-            // pass even if the CREATE loop were silently dropped).
-            verify(jdbcTemplate, times(2)).execute(anyString());
+            // create_graph for the new snapshot goes through execute(); the node CREATE goes through
+            // query(sql, pss, callback) — AGE's cypher() always returns SETOF agtype. Capture both to
+            // confirm a CREATE was emitted into the NEW snapshot graph (not the base name) and that
+            // no DETACH DELETE was issued anywhere.
+            ArgumentCaptor<String> execCaptor = ArgumentCaptor.forClass(String.class);
+            verify(jdbcTemplate, atLeast(1)).execute(execCaptor.capture());
+            assertThat(execCaptor.getAllValues()).anyMatch(sql -> sql.contains("create_graph('test_graph_v1')"));
+            ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+            verify(jdbcTemplate, atLeast(1))
+                    .query(queryCaptor.capture(), any(PreparedStatementSetter.class), any(RowCallbackHandler.class));
+            assertThat(queryCaptor.getAllValues())
+                    .anyMatch(sql ->
+                            sql.contains("CREATE (:") && sql.contains("REQUIREMENT") && sql.contains("'test_graph_v1'"))
+                    .noneMatch(sql -> sql.contains("DETACH DELETE"));
+            verify(snapshotRepository).insertSnapshot(eq(1L), eq("test_graph_v1"), eq("GLOBAL"), eq(1), eq(0), any());
+        }
+
+        @Test
+        void getVisualization_fallsBackToConfiguredBaseGraphWhenNoSnapshotPublished() {
+            // Upgrade/bootstrap path (codex F1): with no snapshot row yet, reads target the
+            // configured base graph so an already-populated AGE graph keeps serving reads after a
+            // deploy instead of going empty.
+            when(snapshotRepository.findActiveGraphName()).thenReturn(Optional.empty());
+            when(projectRepository.findById(PROJECT_ID)).thenReturn(Optional.of(TEST_PROJECT));
+
+            enabledService.getVisualization(PROJECT_ID, java.util.Set.of());
+
             ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-            verify(jdbcTemplate, atLeast(2))
+            verify(jdbcTemplate, times(2))
                     .query(sqlCaptor.capture(), any(PreparedStatementSetter.class), any(RowCallbackHandler.class));
-            assertThat(sqlCaptor.getAllValues())
-                    .anyMatch(sql -> sql.contains("CREATE (:") && sql.contains("REQUIREMENT"));
+            assertThat(sqlCaptor.getAllValues()).allMatch(sql -> sql.contains("cypher('test_graph'"));
+        }
+
+        @Test
+        void getAncestors_fallsBackToConfiguredBaseGraphWhenNoSnapshotPublished() {
+            when(snapshotRepository.findActiveGraphName()).thenReturn(Optional.empty());
+            when(projectRepository.findById(PROJECT_ID)).thenReturn(Optional.of(TEST_PROJECT));
+
+            enabledService.getAncestors(PROJECT_ID, "REQ-001", 5);
+
+            ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+            verify(jdbcTemplate)
+                    .query(sqlCaptor.capture(), any(PreparedStatementSetter.class), any(RowCallbackHandler.class));
+            // The fallback issues a real query against the base graph rather than returning empty.
+            assertThat(sqlCaptor.getValue()).contains("cypher('test_graph'");
         }
 
         @Test
@@ -343,7 +407,16 @@ class AgeGraphServiceTest {
         void setUp() {
             var enabledProperties = new AgeProperties(true, "test_graph");
             enabledService = new AgeGraphService(
-                    jdbcTemplate, enabledProperties, graphProjectionRegistryService, projectRepository);
+                    jdbcTemplate,
+                    enabledProperties,
+                    graphProjectionRegistryService,
+                    projectRepository,
+                    snapshotRepository,
+                    snapshotCleaner);
+            // An active snapshot exists (reads resolve it) and publication gets version 1; lenient
+            // so the subset of tests that exercise only one of read/materialize don't trip strict stubs.
+            lenient().when(snapshotRepository.findActiveGraphName()).thenReturn(Optional.of("test_graph"));
+            lenient().when(snapshotRepository.nextVersion()).thenReturn(1L);
         }
 
         @SuppressWarnings("unchecked")
@@ -663,7 +736,12 @@ class AgeGraphServiceTest {
         void validateGraphName_rejectsPayloadsContainingDollarSigns() {
             var dangerousProps = new AgeProperties(true, "graph$gc$");
             var dangerousService = new AgeGraphService(
-                    jdbcTemplate, dangerousProps, graphProjectionRegistryService, projectRepository);
+                    jdbcTemplate,
+                    dangerousProps,
+                    graphProjectionRegistryService,
+                    projectRepository,
+                    snapshotRepository,
+                    snapshotCleaner);
             // No buildProjection stub: validateGraphName fails before the projection is read.
 
             assertThatThrownBy(dangerousService::materializeGraph).isInstanceOf(DomainValidationException.class);
@@ -747,7 +825,16 @@ class AgeGraphServiceTest {
         void setUp() {
             var enabledProperties = new AgeProperties(true, "test_graph");
             enabledService = new AgeGraphService(
-                    jdbcTemplate, enabledProperties, graphProjectionRegistryService, projectRepository);
+                    jdbcTemplate,
+                    enabledProperties,
+                    graphProjectionRegistryService,
+                    projectRepository,
+                    snapshotRepository,
+                    snapshotCleaner);
+            // An active snapshot exists (reads resolve it) and publication gets version 1; lenient
+            // so the subset of tests that exercise only one of read/materialize don't trip strict stubs.
+            lenient().when(snapshotRepository.findActiveGraphName()).thenReturn(Optional.of("test_graph"));
+            lenient().when(snapshotRepository.nextVersion()).thenReturn(1L);
         }
 
         @Test

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.keplerops.groundcontrol.domain.audit.ActorHolder;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.graph.GraphTraversalLimits;
@@ -31,7 +32,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementSetter;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * AGE adapter. Owns Cypher/SQL construction for the {@code ag_catalog.cypher(...)} surface.
@@ -47,21 +51,29 @@ import org.springframework.transaction.annotation.Transactional;
  * </ul>
  *
  * <p>String concatenation of user-supplied data into the SQL or Cypher text is not allowed. The
- * {@link #SAFE_IDENTIFIER} allowlist and {@link #SAFE_PARAM_NAME} allowlist are defense in depth;
- * the primary mitigation is parameter binding.
+ * {@link AgeIdentifiers} graph-identifier allowlist and {@link #SAFE_PARAM_NAME} allowlist are
+ * defense in depth; the primary mitigation is parameter binding.
  *
  * <p>Class-level {@link Transactional} pins every public AGE call to a single connection. AGE's
  * {@code LOAD 'age'} and {@code SET search_path} commands are connection-local, so without a
  * transaction those settings could land on one pooled connection and the subsequent
  * {@code ag_catalog.cypher(...)} call could land on another — failing with "function
  * ag_catalog.cypher does not exist" or returning empty results.
+ *
+ * <p>The transaction also runs at {@link Isolation#REPEATABLE_READ} (ADR-062). A read resolves the
+ * active snapshot name and then issues its graph query/queries; under the default read-committed
+ * isolation a snapshot publication committing between those statements could let a reader observe
+ * one statement against the old snapshot and the next against the new. A repeatable-read snapshot
+ * pins every statement of a read — and the multi-query projection capture during publication — to a
+ * single consistent moment. Because publication is INSERT-only (it never updates a prior snapshot
+ * row), repeatable-read raises no write-serialization conflict for concurrent publishers, which are
+ * additionally serialized by an advisory lock.
  */
 @Component
-@Transactional
+@Transactional(isolation = Isolation.REPEATABLE_READ)
 public class AgeGraphService implements GraphClient, MixedGraphClient {
 
     private static final Logger log = LoggerFactory.getLogger(AgeGraphService.class);
-    private static final java.util.regex.Pattern SAFE_IDENTIFIER = java.util.regex.Pattern.compile("^[a-zA-Z0-9_-]+$");
     private static final java.util.regex.Pattern SAFE_PARAM_NAME = java.util.regex.Pattern.compile("^[a-zA-Z_]\\w*$");
 
     // Implicit AGE property keys this adapter writes / reads. Centralized so
@@ -233,20 +245,37 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
     // (graph name, entity-type labels, edge-type labels, property keys — all validated by
     // validateGraphName) and Cypher template syntax. No user value ever reaches the SQL string.
 
+    /** Scope recorded on every snapshot today: one global all-project graph (ADR-062 seam). */
+    private static final String SNAPSHOT_SCOPE_GLOBAL = "GLOBAL";
+
+    /**
+     * Advisory-lock key serializing concurrent graph publications so two refreshes cannot
+     * interleave their snapshot writes or race the active-snapshot version. Arbitrary stable
+     * constant; held for the duration of the publishing transaction via {@code
+     * pg_advisory_xact_lock}.
+     */
+    private static final long GRAPH_PUBLICATION_ADVISORY_LOCK_KEY = 0x6763_6772_6170_68L; // "gcgraph"
+
     private final JdbcTemplate jdbcTemplate;
     private final AgeProperties ageProperties;
     private final GraphProjectionRegistryService graphProjectionRegistryService;
     private final ProjectRepository projectRepository;
+    private final AgeGraphSnapshotRepository snapshotRepository;
+    private final AgeSnapshotCleaner snapshotCleaner;
 
     public AgeGraphService(
             JdbcTemplate jdbcTemplate,
             AgeProperties ageProperties,
             GraphProjectionRegistryService graphProjectionRegistryService,
-            ProjectRepository projectRepository) {
+            ProjectRepository projectRepository,
+            AgeGraphSnapshotRepository snapshotRepository,
+            AgeSnapshotCleaner snapshotCleaner) {
         this.jdbcTemplate = jdbcTemplate;
         this.ageProperties = ageProperties;
         this.graphProjectionRegistryService = graphProjectionRegistryService;
         this.projectRepository = projectRepository;
+        this.snapshotRepository = snapshotRepository;
+        this.snapshotCleaner = snapshotCleaner;
     }
 
     @Override
@@ -256,23 +285,77 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
             return;
         }
 
-        String graph = validateGraphName(ageProperties.graphName());
+        // Fail fast on a misconfigured base graph name before acquiring any lock or sequence value.
+        String baseGraph = validateGraphName(ageProperties.graphName());
         setupSearchPath();
-        executeCypher(graph, "MATCH (n) DETACH DELETE n", "{}");
+
+        // Serialize concurrent publishers: only one materialization at a time builds a snapshot and
+        // advances the active version. Held until this transaction ends (ADR-062).
+        jdbcTemplate.execute("SELECT pg_advisory_xact_lock(" + GRAPH_PUBLICATION_ADVISORY_LOCK_KEY + ")");
+
+        long version = snapshotRepository.nextVersion();
+        String snapshotGraph = validateGraphName(baseGraph + "_v" + version);
+
+        // Build the new snapshot into a fresh, inactive graph — the active snapshot readers query is
+        // never touched. snapshotGraph is allowlist-validated, so embedding it as a SQL literal is
+        // safe (ADR-032); user data still flows only through the bound agtype params of each CREATE.
+        jdbcTemplate.execute("SELECT create_graph('" + snapshotGraph + "')");
 
         var projection = graphProjectionRegistryService.buildProjection();
         for (GraphNode node : projection.nodes()) {
-            executeCreateNode(graph, node);
+            executeCreateNode(snapshotGraph, node);
         }
         for (GraphEdge edge : projection.edges()) {
-            executeCreateEdge(graph, edge);
+            executeCreateEdge(snapshotGraph, edge);
         }
 
-        log.info(
-                "graph_materialized: nodes={} edges={} graph={}",
+        // Publish: record the new snapshot. Because the active snapshot is the greatest-version row,
+        // this INSERT — visible only at commit — is the atomic pointer swap. A failed refresh rolls
+        // back the new graph and this row together, leaving the previous snapshot active.
+        snapshotRepository.insertSnapshot(
+                version,
+                snapshotGraph,
+                SNAPSHOT_SCOPE_GLOBAL,
                 projection.nodes().size(),
                 projection.edges().size(),
-                graph);
+                ActorHolder.get());
+
+        log.info(
+                "graph_snapshot_published: graph={} nodes={} edges={} version={}",
+                snapshotGraph,
+                projection.nodes().size(),
+                projection.edges().size(),
+                version);
+
+        // Drop snapshots beyond retention only AFTER this swap commits — never before, so a reader
+        // mid-resolution cannot lose its snapshot. Skipped when no transaction synchronization is
+        // active (e.g. a unit test invoking the method without a surrounding transaction).
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    snapshotCleaner.cleanup();
+                }
+            });
+        }
+    }
+
+    /**
+     * Resolve the graph name a read should query: the active snapshot when one has been published,
+     * otherwise the configured base graph.
+     *
+     * <p>The base-graph fallback is the upgrade/bootstrap compatibility path. {@code
+     * age_graph_snapshot} starts empty, but an existing deployment can already have the configured
+     * base graph populated by the pre-ADR-062 in-place materializer; without this fallback every
+     * graph read would return empty after deploy until an operator re-materialized, violating the
+     * "readers keep seeing the previous complete graph" guarantee. It is bounded: the fallback
+     * applies ONLY while no snapshot row exists. Once the first snapshot is published the pointer
+     * always wins, and the base graph is never read again. On a truly fresh database the base graph
+     * is the empty graph created by V010, so the fallback reads empty — exactly the pre-snapshot
+     * behavior. The name is allowlist-validated before any caller embeds it as a SQL literal.
+     */
+    private String resolveActiveGraph() {
+        return validateGraphName(snapshotRepository.findActiveGraphName().orElseGet(ageProperties::graphName));
     }
 
     @Override
@@ -282,8 +365,8 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
         }
         validateUid(uid);
         validateDepth(depth);
+        String graph = resolveActiveGraph();
         String projectIdentifier = getProjectIdentifier(projectId);
-        String graph = validateGraphName(ageProperties.graphName());
         setupSearchPath();
 
         // PARENT edges are materialized source→target and the domain convention is
@@ -306,8 +389,8 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
         }
         validateUid(uid);
         validateDepth(depth);
+        String graph = resolveActiveGraph();
         String projectIdentifier = getProjectIdentifier(projectId);
-        String graph = validateGraphName(ageProperties.graphName());
         setupSearchPath();
 
         // Inverse of getAncestors: descendants of n are reachable by following INCOMING PARENT
@@ -327,8 +410,8 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
         }
         validateUid(sourceUid);
         validateUid(targetUid);
+        String graph = resolveActiveGraph();
         String projectIdentifier = getProjectIdentifier(projectId);
-        String graph = validateGraphName(ageProperties.graphName());
         setupSearchPath();
 
         // findPaths has no depth in its API contract, so we hard-cap variable-length traversal
@@ -369,7 +452,7 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
             GraphProjection filtered = filter.isEmpty() ? full : filterByEntityType(full, filter);
             return enforceProjectionSizeCap(filtered);
         }
-        String graph = validateGraphName(ageProperties.graphName());
+        String graph = resolveActiveGraph();
         String projectIdentifier = getProjectIdentifier(projectId);
         setupSearchPath();
 
@@ -752,15 +835,13 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
 
     /**
      * Validate a token that will be embedded in the SQL/Cypher text as an identifier (graph
-     * name, node label, edge type). Allows alphanumerics plus `_` and `-` because some entity
-     * type names use hyphens. Identifiers reach AGE as part of a SQL literal — they cannot be
-     * parameter-bound — so the allowlist is a hard requirement, not defense in depth.
+     * name, node label, edge type, snapshot graph name). Delegates to the canonical
+     * {@link AgeIdentifiers} allowlist so this adapter and {@link AgeSnapshotCleaner} share one
+     * policy. Identifiers reach AGE as part of a SQL literal — they cannot be parameter-bound —
+     * so the allowlist is a hard requirement, not defense in depth.
      */
     private static String validateGraphName(String name) {
-        if (name == null || !SAFE_IDENTIFIER.matcher(name).matches()) {
-            throw new DomainValidationException("Invalid graph identifier: " + name);
-        }
-        return name;
+        return AgeIdentifiers.validateGraphName(name);
     }
 
     /**
@@ -786,8 +867,8 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
      * enforces the operational bounds the rest of the domain enforces (length matches the
      * {@code requirement.uid} column width; no control characters that would corrupt logs or
      * confuse downstream tooling). It deliberately does NOT enforce the
-     * {@link #SAFE_IDENTIFIER} grammar because importers (StrictDoc, ReqIF) accept richer UID
-     * shapes and persisted requirements with such UIDs must remain queryable.
+     * {@link AgeIdentifiers} graph-identifier grammar because importers (StrictDoc, ReqIF) accept
+     * richer UID shapes and persisted requirements with such UIDs must remain queryable.
      */
     private static void validateUid(String uid) {
         if (uid == null || uid.isBlank()) {
