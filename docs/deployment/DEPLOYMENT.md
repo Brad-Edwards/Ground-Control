@@ -618,7 +618,7 @@ The compose stack on red-dragon lives at `/opt/gc/`:
 |------|-------|---------|
 | `/opt/gc/docker-compose.yml` | `atomik` | Compose stack (db + backend). Mirrors `deploy/docker/docker-compose.prod.yml` in this repo. |
 | `/opt/gc/.env` | `atomik` (mode 600) | Environment file consumed by compose. Carries DB credentials, GHCR image reference, embedding API keys. Not in git. |
-| `/opt/gc/deploy.sh` | `root` (mode 755) | Forced-command target invoked over SSH by the `gc-deploy` user. Pulls the latest image, brings the stack up, verifies `/actuator/health`. |
+| `/opt/gc/deploy.sh` | `root` (mode 755) | Forced-command target invoked over SSH by the `gc-deploy` user. Pulls the image pinned by `GC_IMAGE`, brings the stack up, verifies `/actuator/health`. |
 | `/data/postgres/` | `999:999` | Postgres data directory (bind-mount). |
 | `/data/backups/` | `atomik` | pg_dump artifacts. |
 
@@ -653,7 +653,7 @@ Query what is currently deployed without SSHing to the box:
 make deploy-status
 ```
 
-The full operator runbook (rollback path, verification steps, things not to do) lives in `skills/deploy/SKILL.md` (`/deploy`).
+To roll back to a prior version: `make rollback VERSION=1.0.1` (or `./scripts/rollback.sh 1.0.1`). The full operator runbook (rollback path, verification steps, things not to do) lives in `skills/deploy/SKILL.md` (`/deploy`).
 
 #### Other operator-side compose ops
 
@@ -749,7 +749,7 @@ JAVA_TOOL_OPTIONS=-Xmx512m -Xms256m
 POSTGRES_DB=ground_control
 POSTGRES_USER=gc
 POSTGRES_PASSWORD=...
-GC_IMAGE=ghcr.io/autarchy-ai/ground-control:main
+GC_IMAGE=ghcr.io/autarchy-ai/ground-control:<X.Y.Z>
 GC_BIND_IP=<host's tailnet IP>
 GC_EMBEDDING_PROVIDER=openai
 GC_EMBEDDING_API_KEY=...
@@ -757,6 +757,8 @@ EOF
 ```
 
 `GC_IMAGE` MUST be an immutable versioned release tag like `:1.0.1` (ADR-063), not a floating branch tag (`:main`, `:latest`, `:dev`): production runs a promoted release, and bumping this pin is the deliberate promotion act. A rollback pins the previous release's digest with `GC_ALLOW_IMAGE_PIN=1`; `validate-env.sh` rejects a floating tag and rejects a bare digest without that override. `GC_BIND_IP` restricts the host port-binding to the tailnet interface only (per #828 / ADR-026 defense in depth); leaving it unset binds `0.0.0.0` and exposes port 8000 on the public interface.
+
+To roll back to a prior version, use `make rollback VERSION=<version-or-digest>` (or `./scripts/rollback.sh <version-or-digest>`). The wrapper patches `GC_IMAGE` in `/opt/gc/.env` and delegates to the canonical deploy path, so the health gate and auto-rollback apply. See `skills/deploy/SKILL.md` (§Rollback) for the full runbook.
 
 The credential block (`GROUNDCONTROL_SECURITY_CREDENTIALS_*`) and any other ADR-026 / GC-P011 access-control envs go in this same file. See the ADR-026 cutover playbook above for the full credential shape.
 
@@ -800,7 +802,7 @@ gh auth token | docker login ghcr.io -u <github-user> --password-stdin
 cd /opt/gc && docker compose --env-file .env up -d
 ```
 
-GHCR login is only needed if the image is in a private package; the `:main` image is public, but the docker daemon's auth cache still benefits from a one-time login. Subsequent deploys go through `/opt/gc/deploy.sh` (and `make deploy` from any tailnet host).
+GHCR login is only needed if the selected release image is in a private package; the docker daemon's auth cache still benefits from a one-time login. Subsequent deploys go through `/opt/gc/deploy.sh` (and `make deploy` from any tailnet host).
 
 #### 6. `gc-backup` user and timer (required)
 
