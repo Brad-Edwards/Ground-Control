@@ -45,7 +45,9 @@ class DockerComposeNormalizer {
         try {
             root = yamlMapper.readTree(content);
         } catch (IOException exception) {
-            return List.of();
+            // Propagate parse failures so the adapter can emit a sanitized capture limit.
+            // Do not embed raw file content in the message to avoid leaking secrets.
+            throw new IllegalStateException("Failed to parse docker-compose YAML", exception);
         }
         if (root == null || root.isMissingNode() || root.isNull()) {
             return List.of();
@@ -80,12 +82,7 @@ class DockerComposeNormalizer {
         compPayload.put("serviceName", serviceName);
         compPayload.put("sourcePath", relativePath);
         var compKey = buildFactKey(
-                surface,
-                SystemModelFactKind.COMPONENT,
-                provenance.adapterId(),
-                relativePath,
-                provenance.commitSha(),
-                "service:" + serviceName);
+                surface, SystemModelFactKind.COMPONENT, provenance.adapterId(), relativePath, "service:" + serviceName);
         facts.add(new DerivedSystemModelFact(
                 SystemModelFactKind.COMPONENT,
                 compKey,
@@ -111,7 +108,6 @@ class DockerComposeNormalizer {
                         SystemModelFactKind.EXTERNAL_INTERACTION,
                         provenance.adapterId(),
                         relativePath,
-                        provenance.commitSha(),
                         "image-registry:" + serviceName + ":" + registryHostname);
                 facts.add(new DerivedSystemModelFact(
                         SystemModelFactKind.EXTERNAL_INTERACTION,
@@ -138,7 +134,6 @@ class DockerComposeNormalizer {
                     SystemModelFactKind.TRUST_BOUNDARY,
                     provenance.adapterId(),
                     relativePath,
-                    provenance.commitSha(),
                     "privileged:" + serviceName);
             facts.add(new DerivedSystemModelFact(
                     SystemModelFactKind.TRUST_BOUNDARY,
@@ -168,7 +163,6 @@ class DockerComposeNormalizer {
                     SystemModelFactKind.TRUST_BOUNDARY,
                     provenance.adapterId(),
                     relativePath,
-                    provenance.commitSha(),
                     "cap-add:" + serviceName);
             facts.add(new DerivedSystemModelFact(
                     SystemModelFactKind.TRUST_BOUNDARY,
@@ -193,7 +187,6 @@ class DockerComposeNormalizer {
                     SystemModelFactKind.TRUST_BOUNDARY,
                     provenance.adapterId(),
                     relativePath,
-                    provenance.commitSha(),
                     "host-network:" + serviceName);
             facts.add(new DerivedSystemModelFact(
                     SystemModelFactKind.TRUST_BOUNDARY,
@@ -218,7 +211,6 @@ class DockerComposeNormalizer {
                     SystemModelFactKind.TRUST_BOUNDARY,
                     provenance.adapterId(),
                     relativePath,
-                    provenance.commitSha(),
                     "host-pid:" + serviceName);
             facts.add(new DerivedSystemModelFact(
                     SystemModelFactKind.TRUST_BOUNDARY,
@@ -243,7 +235,6 @@ class DockerComposeNormalizer {
                     SystemModelFactKind.TRUST_BOUNDARY,
                     provenance.adapterId(),
                     relativePath,
-                    provenance.commitSha(),
                     "host-ipc:" + serviceName);
             facts.add(new DerivedSystemModelFact(
                     SystemModelFactKind.TRUST_BOUNDARY,
@@ -270,7 +261,6 @@ class DockerComposeNormalizer {
                         SystemModelFactKind.TRUST_BOUNDARY,
                         provenance.adapterId(),
                         relativePath,
-                        provenance.commitSha(),
                         "root-user:" + serviceName);
                 facts.add(new DerivedSystemModelFact(
                         SystemModelFactKind.TRUST_BOUNDARY,
@@ -313,7 +303,6 @@ class DockerComposeNormalizer {
                             SystemModelFactKind.TRUST_BOUNDARY,
                             provenance.adapterId(),
                             relativePath,
-                            provenance.commitSha(),
                             "docker-sock:" + serviceName);
                     facts.add(new DerivedSystemModelFact(
                             SystemModelFactKind.TRUST_BOUNDARY,
@@ -340,7 +329,6 @@ class DockerComposeNormalizer {
                                     SystemModelFactKind.TRUST_BOUNDARY,
                                     provenance.adapterId(),
                                     relativePath,
-                                    provenance.commitSha(),
                                     "sensitive-mount:" + serviceName + ":" + key);
                             facts.add(new DerivedSystemModelFact(
                                     SystemModelFactKind.TRUST_BOUNDARY,
@@ -384,7 +372,6 @@ class DockerComposeNormalizer {
                             SystemModelFactKind.SECRET_USAGE,
                             provenance.adapterId(),
                             relativePath,
-                            provenance.commitSha(),
                             "compose-secret:" + serviceName + ":" + secretName);
                     facts.add(new DerivedSystemModelFact(
                             SystemModelFactKind.SECRET_USAGE,
@@ -417,7 +404,6 @@ class DockerComposeNormalizer {
                         SystemModelFactKind.SECRET_USAGE,
                         provenance.adapterId(),
                         relativePath,
-                        provenance.commitSha(),
                         "env-file:" + serviceName);
                 facts.add(new DerivedSystemModelFact(
                         SystemModelFactKind.SECRET_USAGE,
@@ -448,7 +434,6 @@ class DockerComposeNormalizer {
                             SystemModelFactKind.SECRET_USAGE,
                             provenance.adapterId(),
                             relativePath,
-                            provenance.commitSha(),
                             "env-secret:" + serviceName + ":" + key);
                     facts.add(new DerivedSystemModelFact(
                             SystemModelFactKind.SECRET_USAGE,
@@ -478,7 +463,6 @@ class DockerComposeNormalizer {
                                 SystemModelFactKind.SECRET_USAGE,
                                 provenance.adapterId(),
                                 relativePath,
-                                provenance.commitSha(),
                                 "env-secret:" + serviceName + ":" + key);
                         facts.add(new DerivedSystemModelFact(
                                 SystemModelFactKind.SECRET_USAGE,
@@ -510,7 +494,6 @@ class DockerComposeNormalizer {
                     SystemModelFactKind.EXTERNAL_INTERACTION,
                     provenance.adapterId(),
                     relativePath,
-                    provenance.commitSha(),
                     "ports:" + serviceName);
             facts.add(new DerivedSystemModelFact(
                     SystemModelFactKind.EXTERNAL_INTERACTION,
@@ -525,18 +508,18 @@ class DockerComposeNormalizer {
         return facts;
     }
 
+    /**
+     * Builds a stable fact key using semantic identity only: surface, factKind, adapterId,
+     * sourcePath, and uniqueKey. commitSha is intentionally excluded so that the same
+     * topology across different commits produces identical keys (ADR-058).
+     */
     private static String buildFactKey(
-            String surface,
-            SystemModelFactKind factKind,
-            String adapterId,
-            String relativePath,
-            String commitSha,
-            String uniqueKey) {
+            String surface, SystemModelFactKind factKind, String adapterId, String relativePath, String uniqueKey) {
         return "iac:%s:%s:%s"
                 .formatted(
                         surface,
                         factKind.name().toLowerCase(Locale.ROOT),
-                        sha256(adapterId, surface, relativePath, commitSha, factKind.name(), uniqueKey));
+                        sha256(adapterId, surface, relativePath, factKind.name(), uniqueKey));
     }
 
     private static String sha256(String... values) {

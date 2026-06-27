@@ -228,4 +228,30 @@ class GitHubActionsNormalizerTest {
             assertThat(f.payload()).containsEntry("artifactKind", "deploy-step");
         });
     }
+
+    // ── Finding 1: fact-key stability across commits ──────────────────────────
+
+    @Test
+    void factKeyIsStableAcrossDifferentCommitShas() {
+        var yaml =
+                """
+                on: push
+                jobs:
+                  build:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: some-third-party/action@v1
+                        with:
+                          token: ${{ secrets.MY_TOKEN }}
+                """;
+        var factsA = new GitHubActionsNormalizer()
+                .normalize(SURFACE, PATH, yaml, ADAPTER_ID, "sha-aaaa", RULESET_VERSION, NOW);
+        var factsB = new GitHubActionsNormalizer()
+                .normalize(SURFACE, PATH, yaml, ADAPTER_ID, "sha-bbbb", RULESET_VERSION, NOW);
+
+        assertThat(factsA).hasSameSizeAs(factsB);
+        var keysA = factsA.stream().map(DerivedSystemModelFact::factKey).toList();
+        var keysB = factsB.stream().map(DerivedSystemModelFact::factKey).toList();
+        assertThat(keysA).containsExactlyInAnyOrderElementsOf(keysB);
+    }
 }

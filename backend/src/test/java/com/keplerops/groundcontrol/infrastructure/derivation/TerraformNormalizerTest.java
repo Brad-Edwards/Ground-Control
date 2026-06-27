@@ -167,4 +167,58 @@ class TerraformNormalizerTest {
         // Should not emit anything for comment lines
         assertThat(facts).hasSize(1);
     }
+
+    // ── Finding 1: fact-key stability across commits ──────────────────────────
+
+    @Test
+    void factKeyIsStableAcrossDifferentCommitShas() {
+        var content =
+                """
+                resource "aws_s3_bucket" "my_bucket" {
+                  bucket = "my-tf-test-bucket"
+                }
+                module "vpc" {
+                  source = "git::https://example.com/vpc.git"
+                }
+                """;
+        var factsA = new TerraformNormalizer()
+                .normalize(SURFACE, PATH, content, ADAPTER_ID, "sha-aaaa", RULESET_VERSION, NOW);
+        var factsB = new TerraformNormalizer()
+                .normalize(SURFACE, PATH, content, ADAPTER_ID, "sha-bbbb", RULESET_VERSION, NOW);
+
+        assertThat(factsA).hasSameSizeAs(factsB);
+        var keysA = factsA.stream().map(DerivedSystemModelFact::factKey).toList();
+        var keysB = factsB.stream().map(DerivedSystemModelFact::factKey).toList();
+        assertThat(keysA).containsExactlyInAnyOrderElementsOf(keysB);
+    }
+
+    // ── Finding 3: URL credential sanitization ────────────────────────────────
+
+    @Test
+    void moduleSourceWithCredentialUrlStripsUserinfoAndQueryFromPayloadLabelSummary() {
+        var content =
+                """
+                module "my_module" {
+                  source = "git::https://user:secret@host.example.com/module.git?token=abc#v1"
+                }
+                """;
+        var facts = normalize(content);
+
+        var moduleFact = facts.stream()
+                .filter(f -> f.factKind() == SystemModelFactKind.EXTERNAL_INTERACTION)
+                .filter(f -> "remote-module".equals(f.payload().get("artifactKind")))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected a remote-module EXTERNAL_INTERACTION fact"));
+
+        // userinfo, query, and fragment must not appear anywhere
+        assertThat(moduleFact.payload().toString()).doesNotContain("secret");
+        assertThat(moduleFact.payload().toString()).doesNotContain("token=abc");
+        assertThat(moduleFact.label()).doesNotContain("secret");
+        assertThat(moduleFact.label()).doesNotContain("token=abc");
+        assertThat(moduleFact.summary()).doesNotContain("secret");
+        assertThat(moduleFact.summary()).doesNotContain("token=abc");
+        // scheme + host + path must be retained
+        assertThat(moduleFact.payload().get("registryTarget").toString()).contains("host.example.com");
+        assertThat(moduleFact.payload().get("registryTarget").toString()).startsWith("git::");
+    }
 }

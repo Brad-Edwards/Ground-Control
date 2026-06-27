@@ -113,4 +113,46 @@ class DockerfileNormalizerTest {
             assertThat(f.payload()).containsEntry("registryTarget", "https://example.com/script.sh");
         });
     }
+
+    // ── Finding 1: fact-key stability across commits ──────────────────────────
+
+    @Test
+    void factKeyIsStableAcrossDifferentCommitShas() {
+        var content = "FROM ubuntu:22.04\nARG MY_PASSWORD\nADD https://example.com/file.tar /tmp/\n";
+        var factsA = new DockerfileNormalizer()
+                .normalize(SURFACE, PATH, content, ADAPTER_ID, "sha-aaaa", RULESET_VERSION, NOW);
+        var factsB = new DockerfileNormalizer()
+                .normalize(SURFACE, PATH, content, ADAPTER_ID, "sha-bbbb", RULESET_VERSION, NOW);
+
+        assertThat(factsA).hasSameSizeAs(factsB);
+        var keysA = factsA.stream().map(DerivedSystemModelFact::factKey).toList();
+        var keysB = factsB.stream().map(DerivedSystemModelFact::factKey).toList();
+        assertThat(keysA).containsExactlyInAnyOrderElementsOf(keysB);
+    }
+
+    // ── Finding 3: URL credential sanitization ────────────────────────────────
+
+    @Test
+    void addWithCredentialUrlStripsUserinfoAndQueryFromPayloadLabelSummary() {
+        var content = "FROM ubuntu:22.04\nADD https://user:secret@host.example.com/path?token=abc#frag /tmp/\n";
+        var facts = normalize(content);
+
+        var addFact = facts.stream()
+                .filter(f -> f.factKind() == SystemModelFactKind.EXTERNAL_INTERACTION)
+                .filter(f -> "remote-fetch".equals(f.payload().get("artifactKind")))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected a remote-fetch EXTERNAL_INTERACTION fact"));
+
+        // userinfo, query, and fragment must not appear anywhere in the stored fact
+        assertThat(addFact.payload().toString()).doesNotContain("secret");
+        assertThat(addFact.payload().toString()).doesNotContain("token=abc");
+        assertThat(addFact.payload().toString()).doesNotContain("user:secret");
+        assertThat(addFact.label()).doesNotContain("secret");
+        assertThat(addFact.label()).doesNotContain("token=abc");
+        assertThat(addFact.summary()).doesNotContain("secret");
+        assertThat(addFact.summary()).doesNotContain("token=abc");
+        // scheme + host + path must be retained
+        assertThat(addFact.payload().get("registryTarget").toString()).contains("host.example.com");
+        assertThat(addFact.payload().get("registryTarget").toString()).startsWith("https://");
+    }
 }

@@ -96,7 +96,6 @@ class TerraformNormalizer {
                                 SystemModelFactKind.COMPONENT,
                                 provenance.adapterId(),
                                 relativePath,
-                                provenance.commitSha(),
                                 "provisioner:" + provType + ":" + depth);
                         facts.add(new DerivedSystemModelFact(
                                 SystemModelFactKind.COMPONENT,
@@ -124,7 +123,6 @@ class TerraformNormalizer {
                                 SystemModelFactKind.TRUST_BOUNDARY,
                                 provenance.adapterId(),
                                 relativePath,
-                                provenance.commitSha(),
                                 "backend:" + backendType);
                         facts.add(new DerivedSystemModelFact(
                                 SystemModelFactKind.TRUST_BOUNDARY,
@@ -154,23 +152,24 @@ class TerraformNormalizer {
                     if (sourceMatcher.find()) {
                         var sourceValue = sourceMatcher.group(1);
                         if (sourceValue.contains("://") || sourceValue.contains("/")) {
+                            // Sanitize: strip userinfo, query string, and fragment before persisting
+                            var sanitizedSource = RemoteRefSanitizer.sanitize(sourceValue);
                             var payload = new LinkedHashMap<String, Object>();
                             payload.put("surface", surface);
                             payload.put("artifactKind", "remote-module");
-                            payload.put("registryTarget", sourceValue);
+                            payload.put("registryTarget", sanitizedSource);
                             payload.put("sourcePath", relativePath);
                             var factKey = buildFactKey(
                                     surface,
                                     SystemModelFactKind.EXTERNAL_INTERACTION,
                                     provenance.adapterId(),
                                     relativePath,
-                                    provenance.commitSha(),
                                     "module-source:" + currentLabel);
                             facts.add(new DerivedSystemModelFact(
                                     SystemModelFactKind.EXTERNAL_INTERACTION,
                                     factKey,
-                                    "Remote module source: " + sourceValue,
-                                    "Terraform module " + currentLabel + " uses remote source " + sourceValue,
+                                    "Remote module source: " + sanitizedSource,
+                                    "Terraform module " + currentLabel + " uses remote source " + sanitizedSource,
                                     relativePath,
                                     payload,
                                     provenance));
@@ -191,7 +190,6 @@ class TerraformNormalizer {
                                 SystemModelFactKind.DATA_CLASSIFICATION_HINT,
                                 provenance.adapterId(),
                                 relativePath,
-                                provenance.commitSha(),
                                 "sensitive-var:" + currentLabel);
                         facts.add(new DerivedSystemModelFact(
                                 SystemModelFactKind.DATA_CLASSIFICATION_HINT,
@@ -211,7 +209,6 @@ class TerraformNormalizer {
                                 SystemModelFactKind.DATA_CLASSIFICATION_HINT,
                                 provenance.adapterId(),
                                 relativePath,
-                                provenance.commitSha(),
                                 "sensitive-output:" + currentLabel);
                         facts.add(new DerivedSystemModelFact(
                                 SystemModelFactKind.DATA_CLASSIFICATION_HINT,
@@ -252,7 +249,6 @@ class TerraformNormalizer {
                             SystemModelFactKind.COMPONENT,
                             provenance.adapterId(),
                             relativePath,
-                            provenance.commitSha(),
                             "resource:" + resourceType + ":" + resourceName);
                     facts.add(new DerivedSystemModelFact(
                             SystemModelFactKind.COMPONENT,
@@ -275,7 +271,6 @@ class TerraformNormalizer {
                         SystemModelFactKind.COMPONENT,
                         provenance.adapterId(),
                         relativePath,
-                        provenance.commitSha(),
                         "module:" + moduleName);
                 facts.add(new DerivedSystemModelFact(
                         SystemModelFactKind.COMPONENT,
@@ -298,7 +293,6 @@ class TerraformNormalizer {
                         SystemModelFactKind.COMPONENT,
                         provenance.adapterId(),
                         relativePath,
-                        provenance.commitSha(),
                         "provider:" + providerName);
                 facts.add(new DerivedSystemModelFact(
                         SystemModelFactKind.COMPONENT,
@@ -318,7 +312,6 @@ class TerraformNormalizer {
                         SystemModelFactKind.EXTERNAL_INTERACTION,
                         provenance.adapterId(),
                         relativePath,
-                        provenance.commitSha(),
                         "provider-registry:" + providerName);
                 facts.add(new DerivedSystemModelFact(
                         SystemModelFactKind.EXTERNAL_INTERACTION,
@@ -342,7 +335,6 @@ class TerraformNormalizer {
                             SystemModelFactKind.SECRET_USAGE,
                             provenance.adapterId(),
                             relativePath,
-                            provenance.commitSha(),
                             "var-secret:" + varName);
                     facts.add(new DerivedSystemModelFact(
                             SystemModelFactKind.SECRET_USAGE,
@@ -363,18 +355,18 @@ class TerraformNormalizer {
         return facts;
     }
 
+    /**
+     * Builds a stable fact key using semantic identity only: surface, factKind, adapterId,
+     * sourcePath, and uniqueKey. commitSha is intentionally excluded so that the same
+     * topology across different commits produces identical keys (ADR-058).
+     */
     private static String buildFactKey(
-            String surface,
-            SystemModelFactKind factKind,
-            String adapterId,
-            String relativePath,
-            String commitSha,
-            String uniqueKey) {
+            String surface, SystemModelFactKind factKind, String adapterId, String relativePath, String uniqueKey) {
         return "iac:%s:%s:%s"
                 .formatted(
                         surface,
                         factKind.name().toLowerCase(Locale.ROOT),
-                        sha256(adapterId, surface, relativePath, commitSha, factKind.name(), uniqueKey));
+                        sha256(adapterId, surface, relativePath, factKind.name(), uniqueKey));
     }
 
     private static String sha256(String... values) {

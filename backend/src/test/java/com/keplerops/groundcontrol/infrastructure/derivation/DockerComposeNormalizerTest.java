@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.infrastructure.derivation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.keplerops.groundcontrol.domain.derivation.service.DerivedSystemModelFact;
 import com.keplerops.groundcontrol.domain.derivation.state.SystemModelFactKind;
@@ -174,5 +175,40 @@ class DockerComposeNormalizerTest {
             assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
             assertThat(f.payload()).containsEntry("privilegedOperation", "host-network");
         });
+    }
+
+    // ── Finding 1: fact-key stability across commits ──────────────────────────
+
+    @Test
+    void factKeyIsStableAcrossDifferentCommitShas() {
+        var content =
+                """
+                services:
+                  app:
+                    image: nginx:latest
+                    privileged: true
+                """;
+        var factsA = new DockerComposeNormalizer()
+                .normalize(SURFACE, PATH, content, ADAPTER_ID, "sha-aaaa", RULESET_VERSION, NOW);
+        var factsB = new DockerComposeNormalizer()
+                .normalize(SURFACE, PATH, content, ADAPTER_ID, "sha-bbbb", RULESET_VERSION, NOW);
+
+        assertThat(factsA).hasSameSizeAs(factsB);
+        var keysA = factsA.stream().map(DerivedSystemModelFact::factKey).toList();
+        var keysB = factsB.stream().map(DerivedSystemModelFact::factKey).toList();
+        assertThat(keysA).containsExactlyInAnyOrderElementsOf(keysB);
+    }
+
+    // ── Finding 2b: parse failures propagate as exceptions (not silent empty) ─
+
+    @Test
+    void malformedYamlThrowsIllegalStateException() {
+        var content = "{ this is: [not: valid: yaml\n";
+        var normalizer = new DockerComposeNormalizer();
+
+        assertThatThrownBy(() -> normalizer.normalize(SURFACE, PATH, content, ADAPTER_ID, COMMIT, RULESET_VERSION, NOW))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("docker-compose YAML")
+                .hasMessageNotContaining(content.trim());
     }
 }

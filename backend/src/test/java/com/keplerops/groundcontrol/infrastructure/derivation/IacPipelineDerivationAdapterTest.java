@@ -253,6 +253,55 @@ class IacPipelineDerivationAdapterTest {
         }
     }
 
+    // ── Finding 2a: maxFiles cap emits capture limit ──────────────────────────
+
+    @Test
+    void maxFilesCapEmitsCaptureLimitWhenMoreFilesRemain() throws Exception {
+        var workflowDir = repoRoot.resolve(".github/workflows");
+        Files.createDirectories(workflowDir);
+        for (int i = 0; i < 5; i++) {
+            Files.writeString(
+                    workflowDir.resolve("ci" + i + ".yml"),
+                    """
+                    on: push
+                    jobs:
+                      build:
+                        runs-on: ubuntu-latest
+                        steps:
+                          - uses: actions/checkout@v4
+                    """);
+        }
+
+        var props = props();
+        props.setMaxFiles(2); // cap at 2, but 5 files exist
+        var adapter = adapter(props);
+        var result = adapter.derive(request(DerivationScopeMode.FULL_REPO, List.of(), Set.of("github-actions")));
+
+        assertThat(result.captureLimits()).anySatisfy(l -> {
+            assertThat(l.reason()).isEqualTo(CaptureLimitReason.TOOL_EXECUTION_FAILED);
+            assertThat(l.surface()).isNull();
+            assertThat(l.detail()).contains("maxFiles=2");
+        });
+    }
+
+    // ── Finding 2b: malformed Compose YAML emits capture limit ───────────────
+
+    @Test
+    void malformedComposeFileEmitsCaptureLimitNotSilentEmpty() throws Exception {
+        Files.writeString(repoRoot.resolve("docker-compose.yml"), "{ this is: [not: valid: yaml\n");
+
+        var adapter = adapter(props());
+        var result = adapter.derive(request(DerivationScopeMode.FULL_REPO, List.of(), Set.of("docker-compose")));
+
+        assertThat(result.facts()).isEmpty();
+        assertThat(result.captureLimits()).anySatisfy(l -> {
+            assertThat(l.reason()).isEqualTo(CaptureLimitReason.TOOL_EXECUTION_FAILED);
+            // Raw YAML content must not leak into the limit detail
+            assertThat(l.detail()).doesNotContain("this is:");
+            assertThat(l.detail()).doesNotContain("not: valid");
+        });
+    }
+
     private IacPipelineDerivationAdapter adapter(IacPipelineDerivationProperties props) {
         props.setRepositoryRoot(repoRoot);
         return new IacPipelineDerivationAdapter(props);

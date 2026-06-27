@@ -119,6 +119,7 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
 
         var repoRoot = properties.getRepositoryRoot().toAbsolutePath().normalize();
         int[] fileCount = {0};
+        boolean hitFileCap = false;
 
         try (Stream<Path> walker = Files.walk(repoRoot)) {
             var fileIterator = walker.iterator();
@@ -180,8 +181,10 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
                     }
                 }
 
-                // Enforce maxFiles cap
+                // Enforce maxFiles cap — this file passed all filters and would be dispatched,
+                // so hitting the cap here means in-scope files are being dropped.
                 if (fileCount[0] >= properties.getMaxFiles()) {
+                    hitFileCap = true;
                     break;
                 }
                 fileCount[0]++;
@@ -250,6 +253,21 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
                     null,
                     null,
                     "Failed to walk repository root",
+                    scope.commitSha(),
+                    derivedAt));
+        }
+
+        // Emit a capture limit when the maxFiles cap truncated the walk and in-scope files remain.
+        // The current file (which passed all surface/scope filters) was the one that triggered
+        // the cap, so at least one qualifying file was not derived.
+        if (hitFileCap) {
+            captureLimits.add(new DerivationCaptureLimitDraft(
+                    ADAPTER_ID,
+                    CaptureLimitReason.TOOL_EXECUTION_FAILED,
+                    null,
+                    null,
+                    "IaC/pipeline scan truncated at maxFiles=" + properties.getMaxFiles()
+                            + "; some files were not derived",
                     scope.commitSha(),
                     derivedAt));
         }

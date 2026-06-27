@@ -116,7 +116,6 @@ class DockerfileNormalizer {
                 SystemModelFactKind.COMPONENT,
                 provenance.adapterId(),
                 relativePath,
-                provenance.commitSha(),
                 "from:" + imageName + ":" + stageName);
         facts.add(new DerivedSystemModelFact(
                 SystemModelFactKind.COMPONENT,
@@ -140,7 +139,6 @@ class DockerfileNormalizer {
                     SystemModelFactKind.EXTERNAL_INTERACTION,
                     provenance.adapterId(),
                     relativePath,
-                    provenance.commitSha(),
                     "registry:" + registryHostname);
             facts.add(new DerivedSystemModelFact(
                     SystemModelFactKind.EXTERNAL_INTERACTION,
@@ -169,12 +167,7 @@ class DockerfileNormalizer {
         payload.put("secretScope", "build-arg");
         payload.put("sourcePath", relativePath);
         var factKey = buildFactKey(
-                surface,
-                SystemModelFactKind.SECRET_USAGE,
-                provenance.adapterId(),
-                relativePath,
-                provenance.commitSha(),
-                "arg:" + name);
+                surface, SystemModelFactKind.SECRET_USAGE, provenance.adapterId(), relativePath, "arg:" + name);
         return new DerivedSystemModelFact(
                 SystemModelFactKind.SECRET_USAGE,
                 factKey,
@@ -207,12 +200,7 @@ class DockerfileNormalizer {
         payload.put("secretScope", "build-env");
         payload.put("sourcePath", relativePath);
         var factKey = buildFactKey(
-                surface,
-                SystemModelFactKind.SECRET_USAGE,
-                provenance.adapterId(),
-                relativePath,
-                provenance.commitSha(),
-                "env:" + name);
+                surface, SystemModelFactKind.SECRET_USAGE, provenance.adapterId(), relativePath, "env:" + name);
         return new DerivedSystemModelFact(
                 SystemModelFactKind.SECRET_USAGE,
                 factKey,
@@ -240,12 +228,7 @@ class DockerfileNormalizer {
         payload.put("secretScope", "build-secret");
         payload.put("sourcePath", relativePath);
         var factKey = buildFactKey(
-                surface,
-                SystemModelFactKind.SECRET_USAGE,
-                provenance.adapterId(),
-                relativePath,
-                provenance.commitSha(),
-                "run-secret:" + id);
+                surface, SystemModelFactKind.SECRET_USAGE, provenance.adapterId(), relativePath, "run-secret:" + id);
         return new DerivedSystemModelFact(
                 SystemModelFactKind.SECRET_USAGE,
                 factKey,
@@ -267,13 +250,8 @@ class DockerfileNormalizer {
         payload.put("artifactKind", "dockerfile-stage");
         payload.put("privilegedOperation", "user-root");
         payload.put("sourcePath", relativePath);
-        var factKey = buildFactKey(
-                surface,
-                SystemModelFactKind.COMPONENT,
-                provenance.adapterId(),
-                relativePath,
-                provenance.commitSha(),
-                "user-root");
+        var factKey =
+                buildFactKey(surface, SystemModelFactKind.COMPONENT, provenance.adapterId(), relativePath, "user-root");
         return new DerivedSystemModelFact(
                 SystemModelFactKind.COMPONENT,
                 factKey,
@@ -293,23 +271,24 @@ class DockerfileNormalizer {
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             return null;
         }
+        // Sanitize: strip userinfo, query string, and fragment before persisting
+        var sanitizedUrl = RemoteRefSanitizer.sanitize(url);
         var payload = new LinkedHashMap<String, Object>();
         payload.put("surface", surface);
         payload.put("artifactKind", "remote-fetch");
-        payload.put("registryTarget", url);
+        payload.put("registryTarget", sanitizedUrl);
         payload.put("sourcePath", relativePath);
         var factKey = buildFactKey(
                 surface,
                 SystemModelFactKind.EXTERNAL_INTERACTION,
                 provenance.adapterId(),
                 relativePath,
-                provenance.commitSha(),
-                "add-remote:" + url);
+                "add-remote:" + sanitizedUrl);
         return new DerivedSystemModelFact(
                 SystemModelFactKind.EXTERNAL_INTERACTION,
                 factKey,
-                "Remote fetch: " + url,
-                "Dockerfile ADD fetches from remote URL " + url,
+                "Remote fetch: " + sanitizedUrl,
+                "Dockerfile ADD fetches from remote URL " + sanitizedUrl,
                 relativePath,
                 payload,
                 provenance);
@@ -348,18 +327,18 @@ class DockerfileNormalizer {
         return null;
     }
 
+    /**
+     * Builds a stable fact key using semantic identity only: surface, factKind, adapterId,
+     * sourcePath, and uniqueKey. commitSha is intentionally excluded so that the same
+     * topology across different commits produces identical keys (ADR-058).
+     */
     private static String buildFactKey(
-            String surface,
-            SystemModelFactKind factKind,
-            String adapterId,
-            String relativePath,
-            String commitSha,
-            String uniqueKey) {
+            String surface, SystemModelFactKind factKind, String adapterId, String relativePath, String uniqueKey) {
         return "iac:%s:%s:%s"
                 .formatted(
                         surface,
                         factKind.name().toLowerCase(Locale.ROOT),
-                        sha256(adapterId, surface, relativePath, commitSha, factKind.name(), uniqueKey));
+                        sha256(adapterId, surface, relativePath, factKind.name(), uniqueKey));
     }
 
     private static String sha256(String... values) {

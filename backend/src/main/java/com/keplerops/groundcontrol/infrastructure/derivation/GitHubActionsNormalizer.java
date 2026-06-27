@@ -125,12 +125,7 @@ class GitHubActionsNormalizer {
             payload.put("sourcePath", relativePath);
             var uniqueKey = "trigger:" + triggerKind;
             var factKey = buildFactKey(
-                    surface,
-                    SystemModelFactKind.ENTRY_POINT,
-                    provenance.adapterId(),
-                    relativePath,
-                    provenance.commitSha(),
-                    uniqueKey);
+                    surface, SystemModelFactKind.ENTRY_POINT, provenance.adapterId(), relativePath, uniqueKey);
             facts.add(new DerivedSystemModelFact(
                     SystemModelFactKind.ENTRY_POINT,
                     factKey,
@@ -173,12 +168,7 @@ class GitHubActionsNormalizer {
         compPayload.put("runnerTrustLevel", runnerTrustLevel);
         compPayload.put("sourcePath", relativePath);
         var compKey = buildFactKey(
-                surface,
-                SystemModelFactKind.COMPONENT,
-                provenance.adapterId(),
-                relativePath,
-                provenance.commitSha(),
-                "job:" + jobId);
+                surface, SystemModelFactKind.COMPONENT, provenance.adapterId(), relativePath, "job:" + jobId);
         facts.add(new DerivedSystemModelFact(
                 SystemModelFactKind.COMPONENT,
                 compKey,
@@ -200,7 +190,6 @@ class GitHubActionsNormalizer {
                     SystemModelFactKind.TRUST_BOUNDARY,
                     provenance.adapterId(),
                     relativePath,
-                    provenance.commitSha(),
                     "runner-boundary:" + jobId);
             facts.add(new DerivedSystemModelFact(
                     SystemModelFactKind.TRUST_BOUNDARY,
@@ -233,7 +222,6 @@ class GitHubActionsNormalizer {
                     SystemModelFactKind.SECRET_USAGE,
                     provenance.adapterId(),
                     relativePath,
-                    provenance.commitSha(),
                     "secrets-inherit:" + jobId);
             facts.add(new DerivedSystemModelFact(
                     SystemModelFactKind.SECRET_USAGE,
@@ -280,12 +268,7 @@ class GitHubActionsNormalizer {
             payload.put("sourcePath", relativePath);
             var uniqueKey = "oidc-permission:" + scope;
             var factKey = buildFactKey(
-                    surface,
-                    SystemModelFactKind.SECRET_USAGE,
-                    provenance.adapterId(),
-                    relativePath,
-                    provenance.commitSha(),
-                    uniqueKey);
+                    surface, SystemModelFactKind.SECRET_USAGE, provenance.adapterId(), relativePath, uniqueKey);
             return new DerivedSystemModelFact(
                     SystemModelFactKind.SECRET_USAGE,
                     factKey,
@@ -326,12 +309,7 @@ class GitHubActionsNormalizer {
                 payload.put("sourcePath", relativePath);
                 var uniqueKey = "deploy-step:" + stepIndex + ":" + stepName;
                 var factKey = buildFactKey(
-                        surface,
-                        SystemModelFactKind.DATA_FLOW,
-                        provenance.adapterId(),
-                        relativePath,
-                        provenance.commitSha(),
-                        uniqueKey);
+                        surface, SystemModelFactKind.DATA_FLOW, provenance.adapterId(), relativePath, uniqueKey);
                 facts.add(new DerivedSystemModelFact(
                         SystemModelFactKind.DATA_FLOW,
                         factKey,
@@ -368,12 +346,7 @@ class GitHubActionsNormalizer {
             payload.put("sourcePath", relativePath);
             var uniqueKey = "third-party-action:" + uses;
             var factKey = buildFactKey(
-                    surface,
-                    SystemModelFactKind.EXTERNAL_INTERACTION,
-                    provenance.adapterId(),
-                    relativePath,
-                    provenance.commitSha(),
-                    uniqueKey);
+                    surface, SystemModelFactKind.EXTERNAL_INTERACTION, provenance.adapterId(), relativePath, uniqueKey);
             facts.add(new DerivedSystemModelFact(
                     SystemModelFactKind.EXTERNAL_INTERACTION,
                     factKey,
@@ -393,12 +366,7 @@ class GitHubActionsNormalizer {
             payload.put("sourcePath", relativePath);
             var uniqueKey = "deploy-action:" + uses;
             var factKey = buildFactKey(
-                    surface,
-                    SystemModelFactKind.DATA_FLOW,
-                    provenance.adapterId(),
-                    relativePath,
-                    provenance.commitSha(),
-                    uniqueKey);
+                    surface, SystemModelFactKind.DATA_FLOW, provenance.adapterId(), relativePath, uniqueKey);
             facts.add(new DerivedSystemModelFact(
                     SystemModelFactKind.DATA_FLOW,
                     factKey,
@@ -438,12 +406,7 @@ class GitHubActionsNormalizer {
                 payload.put("sourcePath", relativePath);
                 var uniqueKey = "secret-ref:" + secretName + ":" + exposurePath + ":" + stepIndex;
                 var factKey = buildFactKey(
-                        surface,
-                        SystemModelFactKind.SECRET_USAGE,
-                        provenance.adapterId(),
-                        relativePath,
-                        provenance.commitSha(),
-                        uniqueKey);
+                        surface, SystemModelFactKind.SECRET_USAGE, provenance.adapterId(), relativePath, uniqueKey);
                 facts.add(new DerivedSystemModelFact(
                         SystemModelFactKind.SECRET_USAGE,
                         factKey,
@@ -457,18 +420,18 @@ class GitHubActionsNormalizer {
         return facts;
     }
 
+    /**
+     * Builds a stable fact key using semantic identity only: surface, factKind, adapterId,
+     * sourcePath, and uniqueKey. commitSha is intentionally excluded so that the same
+     * topology across different commits produces identical keys (ADR-058).
+     */
     private static String buildFactKey(
-            String surface,
-            SystemModelFactKind factKind,
-            String adapterId,
-            String relativePath,
-            String commitSha,
-            String uniqueKey) {
+            String surface, SystemModelFactKind factKind, String adapterId, String relativePath, String uniqueKey) {
         return "iac:%s:%s:%s"
                 .formatted(
                         surface,
                         factKind.name().toLowerCase(Locale.ROOT),
-                        sha256(adapterId, surface, relativePath, commitSha, factKind.name(), uniqueKey));
+                        sha256(adapterId, surface, relativePath, factKind.name(), uniqueKey));
     }
 
     private static String sha256(String... values) {
