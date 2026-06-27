@@ -16,7 +16,7 @@ import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 
 /**
- * GC-RSCH-F003 / GC-RSCH-F036 / ADR-063 §6–8 — durable lifecycle manifest /
+ * GC-RSCH-F003 / GC-RSCH-F036 / ADR-064 §6–8 — durable lifecycle manifest /
  * checkpoint record. Each record proves a stage produced its output artifact and
  * is the gate authority for the next stage; it is bounded metadata only, never
  * the artifact content. Exactly one {@code ACTIVE} record of a given type exists

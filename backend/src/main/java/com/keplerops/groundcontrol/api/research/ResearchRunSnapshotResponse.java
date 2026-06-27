@@ -10,7 +10,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/** GC-RSCH-N011 — read view of the bounded observability snapshot (ADR-064). */
+/** GC-RSCH-N011 — read view of the bounded observability snapshot (ADR-065). */
 public record ResearchRunSnapshotResponse(
         UUID runId,
         String projectIdentifier,

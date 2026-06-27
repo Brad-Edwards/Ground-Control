@@ -42,6 +42,11 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+/**
+ * Controller slice for {@link ResearchRunController} (GC-RSCH-R001/R003, ADR-064 / ADR-065).
+ * Verifies status codes, DTO validation, error envelopes, and that each request DTO's
+ * {@code toCommand(...)} is forwarded to the service with the request-derived fields intact.
+ */
 @AutoConfigureMockMvc(addFilters = false)
 @WebMvcTest(ResearchRunController.class)
 class ResearchRunControllerTest {

@@ -2240,7 +2240,7 @@ Standard Spring Page parameters:
 Response wraps results in a Spring Page object with `content`, `totalElements`,
 `totalPages`, `number`, `size`.
 
-### Research Runs (ADR-063 / ADR-064)
+### Research Runs (ADR-064 / ADR-065)
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
@@ -2248,7 +2248,7 @@ Response wraps results in a Spring Page object with `content`, `totalElements`,
 | GET | `/research-runs` | - | 200 | List research runs in a project (ordered by `createdAt DESC`) |
 | GET | `/research-runs/{id}` | - | 200 | Get a research run by UUID |
 | GET | `/research-runs/uid/{uid}` | - | 200 | Get a research run by project-scoped UID |
-| GET | `/research-runs/{id}/snapshot` | - | 200 | Observability snapshot: current stage, pending gates, artifact readiness, source counts, cost, last error (ADR-064) |
+| GET | `/research-runs/{id}/snapshot` | - | 200 | Observability snapshot: current stage, pending gates, artifact readiness, source counts, cost, last error (ADR-065) |
 | GET | `/research-runs/{id}/artifacts` | - | 200 | List the run's artifact manifest rows |
 | GET | `/research-runs/{id}/gates` | - | 200 | List the run's gate-policy / decision rows |
 | POST | `/research-runs/{id}/artifacts` | RecordArtifactRequest | 201 | Record (or rework) the current stage's output artifact; idempotent on `idempotencyKey` |
@@ -2279,7 +2279,7 @@ it (a database partial unique index enforces a single `ACTIVE` record per stage 
 write is taken from the authenticated server context (`ActorHolder`/`ActorFilter`, ADR-026),
 never from the request body, so durable lifecycle provenance cannot be forged. Cross-project
 run access is concealed as HTTP 404. Reads are mirrored to MCP through the `gc_query` allowlist
-(`/api/v1/research-runs`). See ADR-063 and ADR-064.
+(`/api/v1/research-runs`). See ADR-064 and ADR-065.
 
 ### Pack Registry
 

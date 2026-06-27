@@ -1,7 +1,7 @@
 package com.keplerops.groundcontrol.domain.research.model;
 
 /**
- * GC-RSCH-F003 / ADR-063 — closed set of research-run lifecycle artifact types,
+ * GC-RSCH-F003 / ADR-064 — closed set of research-run lifecycle artifact types,
  * one per {@link ResearchRunStage}. An artifact record is the durable manifest
  * entry that proves a stage produced its output and unblocks the next stage; it
  * is lifecycle metadata, never the artifact content itself.

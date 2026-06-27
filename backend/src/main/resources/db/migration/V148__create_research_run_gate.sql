@@ -1,4 +1,4 @@
--- GC-RSCH-R003 — ADR-063 §4–5. Run-scoped human-gate policy snapshot combined
+-- GC-RSCH-R003 — ADR-064 §4–5. Run-scoped human-gate policy snapshot combined
 -- with its durable decision record. One row per gate point per run, created at
 -- start with the behavior resolved from autonomy + overrides. The decision is
 -- recorded here, never in workspace decisions.md. rationale_summary is a bounded

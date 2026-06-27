@@ -3,7 +3,7 @@ package com.keplerops.groundcontrol.domain.research.model;
 import java.util.Set;
 
 /**
- * GC-RSCH-F003 / GC-RSCH-N007 / ADR-063 — run-level lifecycle status, kept
+ * GC-RSCH-F003 / GC-RSCH-N007 / ADR-064 — run-level lifecycle status, kept
  * separate from {@link ResearchRunStage} (stage answers "where in the
  * lifecycle"; status answers "what is happening to the run").
  *

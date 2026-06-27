@@ -8,7 +8,7 @@ import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactType;
  * when supplied, makes the write retry-safe (GC-RSCH-F036): a repeat with the
  * same key returns the existing record instead of creating a duplicate. The
  * optional bounded source counts update the run's observability summary
- * (ADR-064 §5); a null count leaves the corresponding summary unchanged. The
+ * (ADR-065 §5); a null count leaves the corresponding summary unchanged. The
  * recording actor is taken from the authenticated server context (ADR-026), not
  * this command, so lifecycle provenance cannot be forged by the caller.
  */

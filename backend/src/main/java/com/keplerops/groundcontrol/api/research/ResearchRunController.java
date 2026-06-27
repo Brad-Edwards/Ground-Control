@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * GC-RSCH-R001/R003/F003/F036/N007/N011 — REST surface for the {@link
  * com.keplerops.groundcontrol.domain.research.model.ResearchRun} aggregate
- * (ADR-063 / ADR-064). Routes live under {@code /api/v1/research-runs/**} so the
+ * (ADR-064 / ADR-065). Routes live under {@code /api/v1/research-runs/**} so the
  * shared auth + actor-filter chains apply via the {@code /api/v1/**}
  * {@code .authenticated()} rule in {@code ApiPathMatrix}. The controller only
  * resolves the project and forwards a request DTO's {@code toCommand()} to the

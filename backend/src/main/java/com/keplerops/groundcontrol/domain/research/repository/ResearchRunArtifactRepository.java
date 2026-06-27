@@ -8,7 +8,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-/** Artifact manifest rows for a research run (ADR-063 §6). */
+/** Artifact manifest rows for a research run (ADR-064 §6). */
 public interface ResearchRunArtifactRepository extends JpaRepository<ResearchRunArtifact, UUID> {
 
     List<ResearchRunArtifact> findByResearchRunIdOrderByCreatedAtAsc(UUID researchRunId);

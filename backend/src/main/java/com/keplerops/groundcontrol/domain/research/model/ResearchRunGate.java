@@ -15,7 +15,7 @@ import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 
 /**
- * GC-RSCH-R003 / ADR-063 §4–5 — run-scoped human-gate policy snapshot combined
+ * GC-RSCH-R003 / ADR-064 §4–5 — run-scoped human-gate policy snapshot combined
  * with its durable decision record. One row per {@link ResearchGatePoint} is
  * created at run start with the {@link ResearchGateBehavior} resolved from the
  * run's autonomy level and explicit overrides. Resolving the gate records the

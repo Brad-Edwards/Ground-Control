@@ -154,13 +154,34 @@ The hardened contract above shipped as:
 - `/opt/gc/deploy-state.json` + a GitHub Deployment carrying the rolled-out
   digest and source commit SHA (no secrets), queryable via `make deploy-status`.
 - The two contradictory `deploy/docker/.env.*` templates were consolidated to a
-  single canonical `.env.example` (floating-tag policy); `.env.template` was
-  removed. A deliberate digest pin for a controlled cutover/rollback requires
-  `GC_ALLOW_IMAGE_PIN=1`, mirroring the `GC_ALLOW_SAME_REVISION` override.
+  single canonical `.env.example`; `.env.template` was removed. A deliberate
+  digest pin for a controlled cutover/rollback requires `GC_ALLOW_IMAGE_PIN=1`,
+  mirroring the `GC_ALLOW_SAME_REVISION` override. (Image-pin policy superseded
+  by the 2026-06-25 ADR-063 amendment below: `GC_IMAGE` is an immutable
+  versioned release tag, not a floating tag.)
 
 Anchored on requirement GC-P023, sibling to GC-P022. GC-GRC-003 (deterministic
 IaC/pipeline screening) is the future automated-classification home and is out
 of scope here.
+
+### Amendment 2026-06-25: immutable versioned release pin (ADR-063 / issue #1222)
+
+The original deploy path pinned `GC_IMAGE` to a floating branch tag (`...:main`)
+so each `docker compose pull` rolled out whatever CI last pushed, and the
+deploy-time validator *required* a floating tag and *rejected* digest pins.
+[ADR-063](./063-release-deployment-model.md) separates release from deploy:
+production must run an immutable, promoted release, not a moving tag. This
+amendment reverses the floating-tag assumption above. `deploy/docker/env.schema`
+now marks `GC_IMAGE` `RELEASE_PIN` (replacing `FLOATING_TAG`), and
+`validate-env.sh` requires an immutable versioned release tag (`...:X.Y.Z` /
+`...:X.Y`, as `docker/metadata-action` emits from a `vX.Y.Z` git tag) and
+rejects a floating branch tag (`:main`, `:latest`, `:dev`) or an untagged ref. A
+digest pin (`@sha256:`) remains the deliberate rollback/cutover form, allowed
+only with `GC_ALLOW_IMAGE_PIN=1`. The `run_deploy_artifact_consistency` policy
+gate enforces the `RELEASE_PIN` directive (code `deploy-env-schema-release-pin`).
+The GC-P022 revision-advance staleness guard is unchanged and composes with the
+pin: bumping the version advances the revision; a same-version restart still uses
+`GC_ALLOW_SAME_REVISION=1`. GC-P023 clause (b) is amended to match.
 
 ## Consequences
 
@@ -216,3 +237,6 @@ Pending after this PR merges:
 - ADR-005 - Apache AGE on Postgres (preserved, same image).
 - ADR-025 - Backup Policy (mechanism amendment).
 - ADR-026 - REST API Access Control (preserved, unchanged).
+- ADR-063 - Release & Deployment Model. Extends this ADR with the release model
+  (versioning, release artifact, promotion, cut-a-release, rollback) that this
+  ADR deliberately did not cover.

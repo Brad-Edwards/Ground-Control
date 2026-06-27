@@ -46,7 +46,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [027](027-agent-neutral-implement-workflow-packaging.md) | Agent-Neutral Implement Workflow Packaging | Accepted (amended 2026-05-26, GC-O011/#989) |
 | [028](028-temporal-workflow-orchestration-boundary.md) | Temporal Workflow Orchestration Boundary | Accepted |
 | [029](029-issue-thread-gate-model.md) | Issue-Thread Gate Model | Accepted (amended 2026-05-26, GC-O011/#989) |
-| [030](030-on-prem-hetzner-deployment.md) | On-prem Hetzner Deployment | Accepted |
+| [030](030-on-prem-hetzner-deployment.md) | On-prem Hetzner Deployment | Accepted (extended by ADR-063) |
 | [031](031-codex-review-stopping-model.md) | Severity Rubric and Stopping Model for Pre-Push Codex Review | Proposed |
 | [032](032-age-query-construction-boundary.md) | AGE Query Construction Boundary | Accepted |
 | [033](033-authenticated-audit-actor-provenance.md) | Authenticated Audit Actor Provenance | Accepted |
@@ -80,7 +80,8 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [060](060-requirement-uid-identity.md) | Requirement UID identity | Accepted |
 | [061](061-workflow-run-telemetry-reporting.md) | Workflow-Run Telemetry & Economics Reporting Surface | Accepted |
 | [062](062-age-graph-projection-snapshot-publication.md) | AGE Graph Projection Snapshot Publication | Accepted |
-| [063](063-research-run-lifecycle-and-stage-gating.md) | Research Run Lifecycle and Stage Gating | Accepted |
-| [064](064-research-run-observability-snapshot.md) | Research Run Observability Snapshot | Accepted |
+| [063](063-release-deployment-model.md) | Release & Deployment Model | Accepted |
+| [064](064-research-run-lifecycle-and-stage-gating.md) | Research Run Lifecycle and Stage Gating | Accepted |
+| [065](065-research-run-observability-snapshot.md) | Research Run Observability Snapshot | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.

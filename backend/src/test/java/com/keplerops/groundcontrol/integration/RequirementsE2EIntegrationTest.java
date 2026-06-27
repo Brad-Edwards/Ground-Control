@@ -563,11 +563,11 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "141", // V141: create risk_appetite_profile_audit (GC-T005 audit parity)
                         "142", // V142: create workflow_run telemetry reporting tables (#859, ADR-061)
                         "143", // V143: create age_graph_snapshot pointer/metadata (#252, ADR-062)
-                        "144", // V144: create research_run lifecycle aggregate (#1000, ADR-063)
+                        "144", // V144: create research_run lifecycle aggregate (#1000, ADR-064)
                         "145", // V145: create research_run_audit (#1000 audit parity)
-                        "146", // V146: create research_run_artifact manifest (#1000, ADR-063)
+                        "146", // V146: create research_run_artifact manifest (#1000, ADR-064)
                         "147", // V147: create research_run_artifact_audit (#1000 audit parity)
-                        "148", // V148: create research_run_gate policy/decision (#1000, ADR-063)
+                        "148", // V148: create research_run_gate policy/decision (#1000, ADR-064)
                         "149"); // V149: create research_run_gate_audit (#1000 audit parity)
     }
 }

@@ -18,17 +18,17 @@ import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 
 /**
- * GC-RSCH-R001/R003/F003/F036/N007/N011 — ADR-063 / ADR-064.
+ * GC-RSCH-R001/R003/F003/F036/N007/N011 — ADR-064 / ADR-065.
  *
  * <p>Project-scoped execution aggregate for one pass through the research
  * lifecycle. Sibling of {@link ResearchIntake} (which holds project-level
  * defaults): a run snapshots the run-driving values at start so later intake
  * edits never rewrite an active or completed run.
  *
- * <p>{@code currentStage} and {@code status} are separate axes (ADR-063 §3).
+ * <p>{@code currentStage} and {@code status} are separate axes (ADR-064 §3).
  * Stage transitions, gate policy, and the prerequisite matrix are owned by the
  * service; this entity guards only the status-transition graph and exposes
- * bounded summary fields for observability (ADR-064). The {@code project}
+ * bounded summary fields for observability (ADR-065). The {@code project}
  * reference is {@code @NotAudited}; its FK is intentionally absent from the
  * audit shadow.
  */
@@ -74,14 +74,14 @@ public class ResearchRun extends BaseEntity {
     @Column(name = "budget_cost_usd_micros")
     private Long budgetCostUsdMicros;
 
-    // Observed usage — separate from caps (ADR-064 §7). Accumulated via recordUsage.
+    // Observed usage — separate from caps (ADR-065 §7). Accumulated via recordUsage.
     @Column(name = "observed_tokens", nullable = false)
     private long observedTokens = 0L;
 
     @Column(name = "observed_cost_usd_micros", nullable = false)
     private long observedCostUsdMicros = 0L;
 
-    // Bounded source-disposition summary counts (ADR-064 §5). Accepted with
+    // Bounded source-disposition summary counts (ADR-065 §5). Accepted with
     // search/screening/charting artifacts; never derived from workspace files.
     @Column(name = "candidate_sources", nullable = false)
     private int candidateSources = 0;
@@ -98,7 +98,7 @@ public class ResearchRun extends BaseEntity {
     @Column(name = "access_gaps", nullable = false)
     private int accessGaps = 0;
 
-    // Bounded last-error observation (ADR-064 §6). No stack traces / raw content.
+    // Bounded last-error observation (ADR-065 §6). No stack traces / raw content.
     @Column(name = "last_error_code", length = 100)
     private String lastErrorCode;
 
@@ -136,7 +136,7 @@ public class ResearchRun extends BaseEntity {
         this.autonomyLevel = autonomyLevel;
     }
 
-    /** Guarded run-status transition; rejects illegal arcs (ADR-063 §3). */
+    /** Guarded run-status transition; rejects illegal arcs (ADR-064 §3). */
     public void transitionStatus(ResearchRunStatus newStatus) {
         if (newStatus == null || !status.canTransitionTo(newStatus)) {
             throw new DomainValidationException(

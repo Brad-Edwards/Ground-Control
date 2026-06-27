@@ -1,4 +1,4 @@
--- GC-RSCH-R001/R003/F003/F036/N007/N011 — ADR-063 / ADR-064.
+-- GC-RSCH-R001/R003/F003/F036/N007/N011 — ADR-064 / ADR-065.
 --
 -- Research run lifecycle aggregate (root). Project-scoped (project_id, uid)
 -- unique. current_stage and status are separate axes; the CHECK constraints

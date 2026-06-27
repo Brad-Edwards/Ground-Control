@@ -1,4 +1,4 @@
-# ADR-064: Research Run Observability Snapshot
+# ADR-065: Research Run Observability Snapshot
 
 ## Status
 
@@ -11,7 +11,7 @@ Accepted
 ## Context
 
 `GC-RSCH-N011` requires users to see a research run's current phase, pending
-gates, source counts, errors, access gaps, cost, and artifact readiness. ADR-063
+gates, source counts, errors, access gaps, cost, and artifact readiness. ADR-064
 defines the durable research lifecycle, gate policy, decision records,
 checkpoint/manifest state, and the rule that lifecycle legality never comes
 from workspace file existence or workflow telemetry.
@@ -28,7 +28,7 @@ Adjacent decisions must stay separate:
 - ADR-056 owns project-level research intake and budget caps.
 - ADR-061 owns `/implement` workflow telemetry and economics reporting. It is a
   reporting projection, not research execution state.
-- ADR-063 owns research-run lifecycle, gates, decisions, artifacts, checkpoints,
+- ADR-064 owns research-run lifecycle, gates, decisions, artifacts, checkpoints,
   retry boundaries, and run-stage legality.
 
 ## Decision
@@ -42,7 +42,7 @@ surface that can advance a run.
 
 The snapshot may be materialized by a service method, DTO, REST read, MCP read,
 and frontend page, but the semantic source remains the same durable state used
-by ADR-063:
+by ADR-064:
 
 - `ResearchRun` current stage/status and run-start snapshots;
 - pending and completed gate records;
@@ -57,7 +57,7 @@ transcripts, replay Envers, or infer stage legality from `workflow_run` /
 
 ### 2. Use `stage` in contracts; UI may label it as phase
 
-ADR-063's `ResearchRunStage` enum is the API/domain contract. User-facing copy
+ADR-064's `ResearchRunStage` enum is the API/domain contract. User-facing copy
 may say "phase" when that is clearer, but DTOs, MCP payloads, frontend types, and
 domain services should use `stage` / `currentStage` so the product lifecycle
 does not drift back to skill phase numbers or telemetry phase strings.
@@ -184,7 +184,7 @@ research lifecycle write actions.
 
 - Users get one consistent run status surface instead of a UI that stitches
   together local files, telemetry, and lifecycle state.
-- N011 observability reuses ADR-063 lifecycle state without weakening the stage
+- N011 observability reuses ADR-064 lifecycle state without weakening the stage
   and gate invariants.
 - Sensitive research content stays out of logs, errors, telemetry, MCP payloads,
   and broad list responses by default.
@@ -214,7 +214,7 @@ research lifecycle write actions.
 
 - No implementation of controllers, DTOs, migrations, MCP tools, frontend views,
   source ledgers, or cost importers in this ADR.
-- No replacement of ADR-063's lifecycle model, gate policy, artifact manifest,
+- No replacement of ADR-064's lifecycle model, gate policy, artifact manifest,
   or checkpoint rules.
 - No generic observability platform, OpenTelemetry/Prometheus decision, or
   workflow execution engine.
@@ -239,4 +239,4 @@ research lifecycle write actions.
 - ADR-055 - Research Workflow Skills and Citation MCP.
 - ADR-056 - Research Project Type and Intake Metadata.
 - ADR-061 - Workflow-Run Telemetry and Economics Reporting Surface.
-- ADR-063 - Research Run Lifecycle and Stage Gating.
+- ADR-064 - Research Run Lifecycle and Stage Gating.

@@ -2,7 +2,7 @@
        assert-backup-policy test-backup-restore-local vale-install vale-lint \
        ground-control-mcp-install sync-ground-control-policy scaffold-controller scaffold-audited-entity \
        scaffold-l2-state-machine sync-packs trigger-pack-sync dev clean up down docker-build smoke frontend-install frontend-dev \
-       frontend-build frontend-lint frontend-format frontend-test deploy deploy-status deploy-manifest deploy-infra mcp-openapi-contract
+       frontend-build frontend-lint frontend-format frontend-test deploy deploy-status deploy-manifest deploy-infra mcp-openapi-contract rollback
 
 # --- Rapid dev loop (< 5s) ---
 
@@ -189,6 +189,10 @@ deploy-status: ## Show the latest published production GitHub Deployment (GC-P02
 deploy-manifest: ## Regenerate deploy/docker/MANIFEST.sha256 after editing any canonical deploy artifact (GC-P023)
 	cd deploy/docker && sha256sum deploy.sh docker-compose.prod.yml validate-env.sh env.schema > MANIFEST.sha256
 	@echo "Regenerated deploy/docker/MANIFEST.sha256"
+
+rollback: ## Roll production back to a prior version (make rollback VERSION=<x.y.z|digest>)
+	@[ -n "$$VERSION" ] || { echo "ERROR: VERSION is required, e.g. make rollback VERSION=1.0.1"; exit 1; }
+	./scripts/rollback.sh "$$VERSION"
 
 clean: ## Remove build artifacts
 	cd backend && ./gradlew clean

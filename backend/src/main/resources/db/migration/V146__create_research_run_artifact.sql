@@ -1,4 +1,4 @@
--- GC-RSCH-F003/F036 — ADR-063 §6–8. Research-run artifact manifest / checkpoint
+-- GC-RSCH-F003/F036 — ADR-064 §6–8. Research-run artifact manifest / checkpoint
 -- record. Each row is bounded lifecycle metadata proving a stage produced its
 -- output; it is the gate authority for the next stage, never the content. At
 -- most one ACTIVE record of a given type per run; rework supersedes the prior

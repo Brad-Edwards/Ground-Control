@@ -1,4 +1,4 @@
-# ADR-063: Research Run Lifecycle and Stage Gating
+# ADR-064: Research Run Lifecycle and Stage Gating
 
 ## Status
 

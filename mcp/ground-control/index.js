@@ -200,7 +200,7 @@ import {
   updateTestRunCaseResult,
   listTestRunStepResults, updateTestRunStepResult, updateTestRunCursor,
   TEST_RUN_STATUSES, TEST_RUN_CASE_RESULT_STATUSES,
-  // ---- research runs (GC-RSCH-R001/R003, ADR-063 / ADR-064) ----
+  // ---- research runs (GC-RSCH-R001/R003, ADR-064 / ADR-065) ----
   startResearchRun, listResearchRuns, getResearchRun, getResearchRunByUid,
   getResearchRunSnapshot, listResearchRunArtifacts, listResearchRunGates,
   recordResearchRunArtifact, advanceResearchRun, decideResearchRunGate,
@@ -2973,7 +2973,7 @@ server.tool(
 );
 
 // gc_research_run: GC-RSCH-R001/R003/F003/F036/N007/N011 — ResearchRun lifecycle
-// (ADR-063 / ADR-064). A project-scoped research effort advancing through a
+// (ADR-064 / ADR-065). A project-scoped research effort advancing through a
 // closed eight-stage lifecycle gated by run-scoped human gates; stage outputs
 // are recorded as superseding artifact manifest rows that double as resume
 // checkpoints, and a bounded snapshot summarises observability state. Lifecycle
@@ -3000,7 +3000,7 @@ const RESEARCH_RUN_ACTIONS = [
 
 server.tool(
   "gc_research_run",
-  `Research run lifecycle operations (GC-RSCH-R001/R003, ADR-063 / ADR-064). ` +
+  `Research run lifecycle operations (GC-RSCH-R001/R003, ADR-064 / ADR-065). ` +
     `Actions: ${RESEARCH_RUN_ACTIONS.join(", ")}. ` +
     `Reads (list, get, get_by_uid, snapshot, list_artifacts, list_gates) also route through gc_query. ` +
     `Required fields per action: start→{uid}; get/snapshot/list_artifacts/list_gates/stop/resume/complete→{id}; get_by_uid→{uid}; record_artifact→{id,artifact_type}; advance→{id,target_stage}; gate_decision→{id,gate_point,outcome}; fail→{id}; record_usage→{id,tokens,cost_usd_micros}. ` +

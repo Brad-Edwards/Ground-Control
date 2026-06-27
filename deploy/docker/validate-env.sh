@@ -86,21 +86,42 @@ while IFS= read -r sline || [ -n "${sline}" ]; do
         errors+=("OPTIONAL variable present but blank: ${var}")
       fi
       ;;
-    FLOATING_TAG)
+    RELEASE_PIN)
       if is_set_nonblank "${var}"; then
         v="${ENV_VALUES["${var}"]}"
         case "${v}" in
           *@sha256:*|*@sha512:*)
-            # A deliberate digest pin (controlled cutover / rollback) is allowed
-            # only with an explicit, loud override in the env file — never a
-            # silent steady-state freeze (#953/GC-P022). Mirrors the
-            # GC_ALLOW_SAME_REVISION override in deploy.sh.
+            # A digest pin is the deliberate rollback/cutover form (ADR-063 §5):
+            # it promotes a specific prior release by its immutable digest. It is
+            # allowed only with an explicit, loud override in the env file so a
+            # digest is never pinned silently. Mirrors GC_ALLOW_SAME_REVISION in
+            # deploy.sh.
             if [ "${ENV_VALUES[GC_ALLOW_IMAGE_PIN]:-}" = "1" ]; then
               echo "WARNING: ${var} is digest-pinned and GC_ALLOW_IMAGE_PIN=1 is set;" \
-                   "proceeding with a deliberate pin. Restore a floating tag (e.g. :main)" \
-                   "after the rollback/cutover or the deploy stays frozen." >&2
+                   "proceeding with a deliberate rollback/cutover pin." >&2
             else
-              errors+=("${var} is digest-pinned (contains @sha256:); a long-lived digest pin freezes the deploy (#953/GC-P022). Use a floating tag such as :main, or set GC_ALLOW_IMAGE_PIN=1 for a deliberate temporary pin")
+              errors+=("${var} is digest-pinned (contains @sha256:); a digest pin is only for a deliberate rollback/cutover. Pin a versioned release tag (e.g. ...:1.4.0), or set GC_ALLOW_IMAGE_PIN=1 to confirm the digest is intentional")
+            fi
+            ;;
+          *)
+            # Production must run an immutable versioned release (ADR-063): the
+            # semver image tag docker/metadata-action emits from a vX.Y.Z git tag
+            # (X.Y.Z or X.Y, leading v stripped). A floating branch tag (:main,
+            # :latest, :dev), any non-version tag, or no tag (implicit :latest)
+            # re-conflates release and deploy and silently re-promotes on the
+            # next pull (#1222). Take the tag after the last '/' then last ':' so
+            # a registry port (host:5000/img:1.2.3) is not mistaken for the tag.
+            name_tag="${v##*/}"
+            case "${name_tag}" in
+              *:*) tag="${name_tag##*:}" ;;
+              *) tag="" ;;
+            esac
+            if [ -z "${tag}" ]; then
+              errors+=("${var} has no image tag (resolves to the mutable :latest); pin an immutable versioned release tag, e.g. ...:1.4.0 (ADR-063)")
+            elif [[ "${tag}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?([-+][0-9A-Za-z.-]+)?$ ]]; then
+              : # immutable versioned release pin — accepted
+            else
+              errors+=("${var} is pinned to a floating/non-version tag ':${tag}'; production must run an immutable versioned release (e.g. ...:1.4.0), not a moving branch tag like :main (ADR-063 / #1222)")
             fi
             ;;
         esac

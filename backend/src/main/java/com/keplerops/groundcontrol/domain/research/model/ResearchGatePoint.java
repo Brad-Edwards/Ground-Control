@@ -3,7 +3,7 @@ package com.keplerops.groundcontrol.domain.research.model;
 import java.util.Optional;
 
 /**
- * GC-RSCH-R003 / ADR-063 — the five configurable human-gate decision points.
+ * GC-RSCH-R003 / ADR-064 — the five configurable human-gate decision points.
  * Each gate guards the exit of exactly one lifecycle stage; a run advancing out
  * of that stage must satisfy the gate's resolved policy first.
  */

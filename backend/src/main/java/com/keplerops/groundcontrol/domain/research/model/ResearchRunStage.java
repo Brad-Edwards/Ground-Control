@@ -3,7 +3,7 @@ package com.keplerops.groundcontrol.domain.research.model;
 import java.util.Optional;
 
 /**
- * GC-RSCH-R001 / ADR-063 — the eight distinct lifecycle stages of a research run.
+ * GC-RSCH-R001 / ADR-064 — the eight distinct lifecycle stages of a research run.
  *
  * <p>The vocabulary is closed and explicit; it intentionally does not reuse
  * {@code workflow_phase_event.phase} strings or the lit-review skills' phase

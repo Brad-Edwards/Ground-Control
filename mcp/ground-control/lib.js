@@ -10362,7 +10362,7 @@ export async function updateTestRunCursor(id, data, project) {
 }
 
 // GC-RSCH-R001/R003/F003/F036/N007/N011 — ResearchRun lifecycle aggregate
-// (ADR-063 / ADR-064). A project-scoped research effort moving through a closed
+// (ADR-064 / ADR-065). A project-scoped research effort moving through a closed
 // eight-stage lifecycle gated by run-scoped human gates; stage outputs are
 // recorded as superseding artifact manifest rows that double as resume
 // checkpoints. Reads (list, get, get-by-uid, snapshot, artifacts, gates) also

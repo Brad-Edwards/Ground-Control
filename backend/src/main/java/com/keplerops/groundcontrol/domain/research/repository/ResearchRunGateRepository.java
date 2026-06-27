@@ -7,7 +7,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-/** Run-scoped gate-policy/decision rows for a research run (ADR-063 §4). */
+/** Run-scoped gate-policy/decision rows for a research run (ADR-064 §4). */
 public interface ResearchRunGateRepository extends JpaRepository<ResearchRunGate, UUID> {
 
     List<ResearchRunGate> findByResearchRunIdOrderByGatePointAsc(UUID researchRunId);

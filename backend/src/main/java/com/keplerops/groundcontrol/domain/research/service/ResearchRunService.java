@@ -34,7 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * GC-RSCH-R001/R003/F003/F036/N007/N011 — application service for the {@link
- * ResearchRun} aggregate (ADR-063 / ADR-064).
+ * ResearchRun} aggregate (ADR-064 / ADR-065).
  *
  * <p>Sole authority for the stage-transition graph, the prerequisite-artifact
  * matrix, gate-policy resolution, and idempotent checkpoint/resume. Controllers
@@ -372,7 +372,7 @@ public class ResearchRunService {
         // supersedes that artifact and reopens the gate (recordArtifact ->
         // reopenGuardingGateIfResolved). Without this guard a caller could REJECT a
         // gate and immediately re-submit APPROVED for the same artifact, advancing
-        // past a rejection with no rework — breaking the ADR-063 gate contract.
+        // past a rejection with no rework — breaking the ADR-064 gate contract.
         if (gate.getStatus() == ResearchGateStatus.RESOLVED) {
             throw new ConflictException(
                     "Gate " + command.gatePoint()
