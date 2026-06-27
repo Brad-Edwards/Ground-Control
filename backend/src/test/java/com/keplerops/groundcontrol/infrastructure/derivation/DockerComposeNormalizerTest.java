@@ -204,4 +204,344 @@ class DockerComposeNormalizerTest {
                 .hasMessageContaining("docker-compose YAML")
                 .hasMessageNotContaining(content.trim());
     }
+
+    // ── Privileged operation branches ─────────────────────────────────────────
+
+    @Test
+    void capAddEmitsTrustBoundaryWithCapabilities() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    cap_add:
+                      - NET_ADMIN
+                      - SYS_PTRACE
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
+            assertThat(f.payload()).containsEntry("privilegedOperation", "capability-add");
+            assertThat(f.payload()).containsKey("securitySignals");
+        });
+    }
+
+    @Test
+    void hostPidNamespaceEmitsTrustBoundary() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    pid: host
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
+            assertThat(f.payload()).containsEntry("privilegedOperation", "host-pid");
+        });
+    }
+
+    @Test
+    void hostIpcNamespaceEmitsTrustBoundary() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    ipc: host
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
+            assertThat(f.payload()).containsEntry("privilegedOperation", "host-ipc");
+        });
+    }
+
+    @Test
+    void userRootEmitsTrustBoundary() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    user: root
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
+            assertThat(f.payload()).containsEntry("privilegedOperation", "root-user");
+        });
+    }
+
+    @Test
+    void userZeroEmitsTrustBoundary() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    user: "0"
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
+            assertThat(f.payload()).containsEntry("privilegedOperation", "root-user");
+        });
+    }
+
+    // ── Volume / bind-mount branches ──────────────────────────────────────────
+
+    @Test
+    void sensitiveBindMountEtcEmitsTrustBoundary() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    volumes:
+                      - /etc/ssl:/etc/ssl:ro
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
+            assertThat(f.payload()).containsEntry("privilegedOperation", "sensitive-bind-mount");
+        });
+    }
+
+    @Test
+    void sensitiveBindMountProcSubpathEmitsTrustBoundary() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    volumes:
+                      - /proc/sys:/proc/sys:ro
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
+            assertThat(f.payload()).containsEntry("privilegedOperation", "sensitive-bind-mount");
+        });
+    }
+
+    @Test
+    void volumeObjectFormatWithDockerSockEmitsTrustBoundary() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    volumes:
+                      - type: bind
+                        source: /var/run/docker.sock
+                        target: /var/run/docker.sock
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
+            assertThat(f.payload()).containsEntry("privilegedOperation", "docker-socket-mount");
+        });
+    }
+
+    @Test
+    void volumeStringWithoutColonProducesNoVolumeFact() {
+        // A named volume (no host path / colon) should produce no TRUST_BOUNDARY from volumes
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    volumes:
+                      - mydata
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts)
+                .noneSatisfy(f -> assertThat(f.payload()).containsEntry("artifactKind", "container-daemon-boundary"));
+    }
+
+    // ── env_file branches ─────────────────────────────────────────────────────
+
+    @Test
+    void envFileStringEmitsSecretUsageFact() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    env_file: .env
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretScope", "env-file");
+        });
+    }
+
+    @Test
+    void envFileArrayEmitsSecretUsageFact() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    env_file:
+                      - .env
+                      - .env.prod
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretScope", "env-file");
+        });
+    }
+
+    // ── environment array branches ────────────────────────────────────────────
+
+    @Test
+    void environmentArrayWithSecretLikeKeyEmitsSecretUsage() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    environment:
+                      - DB_PASSWORD=supersecret
+                      - APP_NAME=myapp
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts)
+                .anySatisfy(f -> {
+                    assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+                    assertThat(f.payload()).containsEntry("secretRef", "DB_PASSWORD");
+                    assertThat(f.payload().toString()).doesNotContain("supersecret");
+                })
+                .noneSatisfy(f -> {
+                    assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+                    assertThat(f.payload()).containsEntry("secretRef", "APP_NAME");
+                });
+    }
+
+    @Test
+    void environmentArrayEntryWithoutEqualsSignUsesWholeName() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    environment:
+                      - MY_TOKEN
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretRef", "MY_TOKEN");
+        });
+    }
+
+    // ── secret object-form branches ───────────────────────────────────────────
+
+    @Test
+    void secretObjectWithSourceFieldEmitsSecretUsage() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    secrets:
+                      - source: db_creds
+                secrets:
+                  db_creds:
+                    external: true
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretRef", "db_creds");
+            assertThat(f.payload()).containsEntry("secretScope", "compose-secret");
+        });
+    }
+
+    @Test
+    void secretObjectWithoutSourceUsesFirstFieldAsName() {
+        var content =
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                    secrets:
+                      - my_secret: {}
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretRef", "my_secret");
+        });
+    }
+
+    // ── image without external registry ──────────────────────────────────────
+
+    @Test
+    void libraryImageDoesNotEmitExternalInteractionFact() {
+        // "nginx:latest" has no slash → no registry hostname → no EXTERNAL_INTERACTION for registry
+        var content =
+                """
+                services:
+                  app:
+                    image: nginx:latest
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).noneSatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.EXTERNAL_INTERACTION);
+            assertThat(f.payload()).containsEntry("artifactKind", "image-registry");
+        });
+    }
+
+    // ── empty / missing structures ────────────────────────────────────────────
+
+    @Test
+    void missingServicesKeyReturnsEmptyList() {
+        var content =
+                """
+                version: "3.8"
+                networks:
+                  default:
+                    driver: bridge
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).isEmpty();
+    }
+
+    @Test
+    void nullYamlContentReturnsEmptyList() {
+        // "~" is YAML null
+        var facts = normalize("~");
+
+        assertThat(facts).isEmpty();
+    }
+
+    @Test
+    void emptyYamlContentReturnsEmptyList() {
+        var facts = normalize("");
+
+        assertThat(facts).isEmpty();
+    }
 }

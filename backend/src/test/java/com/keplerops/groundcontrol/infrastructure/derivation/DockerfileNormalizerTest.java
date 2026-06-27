@@ -130,6 +130,200 @@ class DockerfileNormalizerTest {
         assertThat(keysA).containsExactlyInAnyOrderElementsOf(keysB);
     }
 
+    // ── Multi-stage builds ────────────────────────────────────────────────────
+
+    @Test
+    void fromWithMultiStageAliasIncludesBuildStageInPayload() {
+        var content = "FROM ubuntu:22.04 AS builder\n";
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
+            assertThat(f.payload()).containsEntry("artifactKind", "docker-image");
+            assertThat(f.payload()).containsKey("buildStage");
+            assertThat(f.payload().get("buildStage")).isEqualTo("builder");
+        });
+    }
+
+    @Test
+    void fromWithPlatformFlagStillEmitsComponentFact() {
+        var content = "FROM --platform=linux/amd64 ubuntu:22.04\n";
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
+            assertThat(f.payload()).containsEntry("artifactKind", "docker-image");
+            // platform flag must not appear as the image name
+            assertThat(f.label()).doesNotContain("--platform");
+        });
+    }
+
+    @Test
+    void fromWithExternalRegistryAndStageEmitsBothComponentAndRegistryFacts() {
+        var content = "FROM ghcr.io/org/app:latest AS final\n";
+        var facts = normalize(content);
+
+        assertThat(facts)
+                .anySatisfy(f -> {
+                    assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
+                    assertThat(f.payload()).containsEntry("buildStage", "final");
+                })
+                .anySatisfy(f -> {
+                    assertThat(f.factKind()).isEqualTo(SystemModelFactKind.EXTERNAL_INTERACTION);
+                    assertThat(f.payload()).containsEntry("registryTarget", "ghcr.io");
+                });
+    }
+
+    // ── ENV space-separator format ────────────────────────────────────────────
+
+    @Test
+    void envWithSpaceSeparatorEmitsSecretUsage() {
+        // "ENV NAME VALUE" format (space, not =)
+        var content = "FROM ubuntu:22.04\nENV DB_PASSWORD secret_value\n";
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretRef", "DB_PASSWORD");
+            assertThat(f.payload()).containsEntry("secretScope", "build-env");
+            assertThat(f.payload().toString()).doesNotContain("secret_value");
+        });
+    }
+
+    // ── USER 0 variant ────────────────────────────────────────────────────────
+
+    @Test
+    void userZeroEmitsRootComponent() {
+        var content = "FROM ubuntu:22.04\nUSER 0\n";
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
+            assertThat(f.payload()).containsEntry("privilegedOperation", "user-root");
+        });
+    }
+
+    // ── ADD with local file → no fact ────────────────────────────────────────
+
+    @Test
+    void addWithLocalFileDoesNotEmitExternalInteraction() {
+        var content = "FROM ubuntu:22.04\nADD localfile.tar.gz /tmp/\n";
+        var facts = normalize(content);
+
+        assertThat(facts).noneSatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.EXTERNAL_INTERACTION);
+            assertThat(f.payload()).containsEntry("artifactKind", "remote-fetch");
+        });
+    }
+
+    // ── RUN --mount=type=secret without id= → no fact ────────────────────────
+
+    @Test
+    void runWithSecretMountButNoIdDoesNotEmitFact() {
+        // --mount=type=secret is present but no id= attribute
+        var content = "FROM ubuntu:22.04\nRUN --mount=type=secret cat /run/secrets/myfile\n";
+        var facts = normalize(content);
+
+        assertThat(facts).noneSatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretScope", "build-secret");
+        });
+    }
+
+    // ── FROM registry-hostname extraction edge cases ──────────────────────────
+
+    @Test
+    void fromImageWithNoSlashDoesNotEmitRegistryFact() {
+        // "alpine" has no slash → extractRegistryHostname returns null → no EXTERNAL_INTERACTION
+        var content = "FROM alpine\n";
+        var facts = normalize(content);
+
+        assertThat(facts).noneSatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.EXTERNAL_INTERACTION);
+            assertThat(f.payload()).containsEntry("artifactKind", "image-registry");
+        });
+    }
+
+    @Test
+    void fromImageWithOrgPrefixButNoDotOrColonDoesNotEmitRegistryFact() {
+        // "library/nginx" — prefix "library" has no dot or colon → not an external registry
+        var content = "FROM library/nginx:latest\n";
+        var facts = normalize(content);
+
+        assertThat(facts).noneSatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.EXTERNAL_INTERACTION);
+            assertThat(f.payload()).containsEntry("artifactKind", "image-registry");
+        });
+    }
+
+    // ── Line continuation ─────────────────────────────────────────────────────
+
+    @Test
+    void lineContinuationJoinsRunInstruction() {
+        var content = "FROM ubuntu:22.04\n"
+                + "RUN --mount=type=secret,id=my_secret \\\n"
+                + "    cat /run/secrets/my_secret\n";
+        var facts = normalize(content);
+
+        // The joined logical line should still match the secret mount pattern
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretRef", "my_secret");
+            assertThat(f.payload()).containsEntry("secretScope", "build-secret");
+        });
+    }
+
+    // ── ENV with no value (name only) ────────────────────────────────────────
+
+    @Test
+    void envWithNameOnlyAndNonSecretDoesNotEmitFact() {
+        // "ENV PLAIN" — no = and no space after name — uses the else branch (name=rest.trim())
+        // PLAIN doesn't match SECRET_LIKE → no fact
+        var content = "FROM ubuntu:22.04\nENV PLAIN\n";
+        var facts = normalize(content);
+
+        assertThat(facts).noneSatisfy(f -> assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE));
+    }
+
+    @Test
+    void envWithSecretNameAndNoValueEmitsFact() {
+        // "ENV MY_TOKEN" — no = and no space — name matches SECRET_LIKE → fact emitted
+        var content = "FROM ubuntu:22.04\nENV MY_TOKEN\n";
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretRef", "MY_TOKEN");
+        });
+    }
+
+    // ── Non-root USER does not emit COMPONENT ─────────────────────────────────
+
+    @Test
+    void nonRootUserDoesNotEmitRootComponent() {
+        var content = "FROM ubuntu:22.04\nUSER appuser\n";
+        var facts = normalize(content);
+
+        assertThat(facts).noneSatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
+            assertThat(f.payload()).containsEntry("privilegedOperation", "user-root");
+        });
+    }
+
+    // ── CRLF line endings handled ─────────────────────────────────────────────
+
+    @Test
+    void windowsCrlfLineEndingsAreParsedCorrectly() {
+        // Lines ending with \r\n should be handled — the \r is stripped before parsing
+        var content = "FROM ubuntu:22.04\r\nARG MY_SECRET=x\r\n";
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretRef", "MY_SECRET");
+        });
+    }
+
     // ── Finding 3: URL credential sanitization ────────────────────────────────
 
     @Test

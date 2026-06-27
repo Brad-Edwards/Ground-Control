@@ -403,6 +403,240 @@ class IacPipelineDerivationAdapterTest {
         assertThat(result.facts()).noneMatch(f -> f.sourcePath().endsWith("Dockerfile"));
     }
 
+    // ── DIFF scope mode ───────────────────────────────────────────────────────
+
+    @Test
+    void diffModeWithMatchingPathsEmitsFacts() throws Exception {
+        var workflowDir = repoRoot.resolve(".github/workflows");
+        Files.createDirectories(workflowDir);
+        Files.writeString(
+                workflowDir.resolve("ci.yml"),
+                """
+                on: push
+                jobs:
+                  build:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: actions/checkout@v4
+                """);
+
+        var adapter = adapter(props());
+        var result = adapter.derive(
+                request(DerivationScopeMode.DIFF, List.of(".github/workflows/ci.yml"), Set.of("github-actions")));
+
+        assertThat(result.facts()).isNotEmpty();
+        assertThat(result.facts()).allSatisfy(f -> assertThat(f.sourcePath()).isEqualTo(".github/workflows/ci.yml"));
+    }
+
+    @Test
+    void diffModeWithEmptyPathsSkipsAllFiles() throws Exception {
+        var workflowDir = repoRoot.resolve(".github/workflows");
+        Files.createDirectories(workflowDir);
+        Files.writeString(
+                workflowDir.resolve("ci.yml"),
+                """
+                on: push
+                jobs:
+                  build:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: actions/checkout@v4
+                """);
+
+        var adapter = adapter(props());
+        var result = adapter.derive(request(DerivationScopeMode.DIFF, List.of(), Set.of("github-actions")));
+
+        assertThat(result.facts()).isEmpty();
+    }
+
+    // ── normalizeScopePath edge cases ─────────────────────────────────────────
+
+    @Test
+    void nullEntryInRequestedPathsIsSkipped() throws Exception {
+        var workflowDir = repoRoot.resolve(".github/workflows");
+        Files.createDirectories(workflowDir);
+        Files.writeString(
+                workflowDir.resolve("ci.yml"),
+                """
+                on: push
+                jobs:
+                  build:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: actions/checkout@v4
+                """);
+
+        var adapter = adapter(props());
+        // null path entry must be rejected (fail-closed) without throwing
+        List<String> pathsWithNull = new java.util.ArrayList<>();
+        pathsWithNull.add(null);
+        pathsWithNull.add(".github/workflows/ci.yml");
+        var result = adapter.derive(new DerivationAdapterRequest(
+                UUID.randomUUID(),
+                "test-project",
+                new DerivationScope(
+                        DerivationScopeMode.PATH_SET,
+                        COMMIT,
+                        null,
+                        pathsWithNull,
+                        Set.of("yaml"),
+                        Set.of("github-actions"))));
+
+        // null entry is skipped; valid entry still works
+        assertThat(result.facts()).isNotEmpty();
+    }
+
+    @Test
+    void absolutePathInRequestedPathsIsRejected() throws Exception {
+        var tfDir = repoRoot.resolve("terraform");
+        Files.createDirectories(tfDir);
+        Files.writeString(tfDir.resolve("main.tf"), "resource \"aws_s3_bucket\" \"b\" {\n  bucket = \"x\"\n}\n");
+
+        var adapter = adapter(props());
+        // An absolute path must be rejected fail-closed (treated as no match)
+        var result = adapter.derive(
+                request(DerivationScopeMode.PATH_SET, List.of("/absolute/path/terraform"), Set.of("terraform")));
+
+        assertThat(result.facts()).isEmpty();
+    }
+
+    @Test
+    void emptyStringAfterDotSlashStrippingIsRejected() throws Exception {
+        // "./" stripped becomes "" → normalizeScopePath returns empty → no files matched
+        var workflowDir = repoRoot.resolve(".github/workflows");
+        Files.createDirectories(workflowDir);
+        Files.writeString(
+                workflowDir.resolve("ci.yml"),
+                """
+                on: push
+                jobs:
+                  build:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: actions/checkout@v4
+                """);
+
+        var adapter = adapter(props());
+        var result = adapter.derive(request(DerivationScopeMode.PATH_SET, List.of("./"), Set.of("github-actions")));
+
+        assertThat(result.facts()).isEmpty();
+    }
+
+    @Test
+    void dotSlashPrefixInRequestedPathIsNormalized() throws Exception {
+        var tfDir = repoRoot.resolve("terraform");
+        Files.createDirectories(tfDir);
+        Files.writeString(tfDir.resolve("main.tf"), "resource \"aws_s3_bucket\" \"b\" {\n  bucket = \"x\"\n}\n");
+
+        var adapter = adapter(props());
+        // "./terraform" must be normalized to "terraform" and match terraform/main.tf
+        var result = adapter.derive(request(DerivationScopeMode.PATH_SET, List.of("./terraform"), Set.of("terraform")));
+
+        assertThat(result.facts()).isNotEmpty();
+        assertThat(result.facts()).allSatisfy(f -> assertThat(f.sourcePath()).startsWith("terraform/"));
+    }
+
+    // ── classifySurface edge cases ────────────────────────────────────────────
+
+    @Test
+    void gitHubActionsWorkflowWithYamlExtensionIsDiscovered() throws Exception {
+        var workflowDir = repoRoot.resolve(".github/workflows");
+        Files.createDirectories(workflowDir);
+        Files.writeString(
+                workflowDir.resolve("ci.yaml"), // .yaml not .yml
+                """
+                on: push
+                jobs:
+                  build:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: actions/checkout@v4
+                """);
+
+        var adapter = adapter(props());
+        var result = adapter.derive(request(DerivationScopeMode.FULL_REPO, List.of(), Set.of("github-actions")));
+
+        assertThat(result.facts()).anySatisfy(f -> assertThat(f.factKind()).isEqualTo(SystemModelFactKind.ENTRY_POINT));
+    }
+
+    @Test
+    void dockerfileWithDotSuffixIsDiscovered() throws Exception {
+        // "Dockerfile.prod" matches filenameLower.startsWith("dockerfile.")
+        Files.writeString(repoRoot.resolve("Dockerfile.prod"), "FROM alpine:3\n");
+
+        var adapter = adapter(props());
+        var result = adapter.derive(request(DerivationScopeMode.FULL_REPO, List.of(), Set.of("dockerfile")));
+
+        assertThat(result.facts()).isNotEmpty();
+        assertThat(result.facts()).allSatisfy(f -> assertThat(f.sourcePath()).contains("Dockerfile.prod"));
+    }
+
+    @Test
+    void dockerfileWithDotPrefixIsDiscovered() throws Exception {
+        // "prod.dockerfile" matches filenameLower.endsWith(".dockerfile")
+        Files.writeString(repoRoot.resolve("prod.dockerfile"), "FROM alpine:3\n");
+
+        var adapter = adapter(props());
+        var result = adapter.derive(request(DerivationScopeMode.FULL_REPO, List.of(), Set.of("dockerfile")));
+
+        assertThat(result.facts()).isNotEmpty();
+        assertThat(result.facts()).allSatisfy(f -> assertThat(f.sourcePath()).contains("prod.dockerfile"));
+    }
+
+    @Test
+    void composeFileWithYamlExtensionIsDiscovered() throws Exception {
+        // "compose.yaml" matches docker-compose surface
+        Files.writeString(
+                repoRoot.resolve("compose.yaml"),
+                """
+                services:
+                  app:
+                    image: myapp:latest
+                """);
+
+        var adapter = adapter(props());
+        var result = adapter.derive(request(DerivationScopeMode.FULL_REPO, List.of(), Set.of("docker-compose")));
+
+        assertThat(result.facts()).anySatisfy(f -> assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT));
+    }
+
+    // ── IacPipelineDerivationProperties null-setter coverage ─────────────────
+
+    @Test
+    void setExcludedPathsWithNullResultsInEmptyList() {
+        var props = new IacPipelineDerivationProperties();
+        props.setExcludedPaths(null);
+        assertThat(props.getExcludedPaths()).isEmpty();
+    }
+
+    @Test
+    void setExcludedPathsWithListPreservesEntries() {
+        var props = new IacPipelineDerivationProperties();
+        props.setExcludedPaths(List.of("vendor", "dist"));
+        assertThat(props.getExcludedPaths()).containsExactly("vendor", "dist");
+    }
+
+    @Test
+    void setEnabledSurfacesWithNullResultsInEmptyList() {
+        var props = new IacPipelineDerivationProperties();
+        props.setEnabledSurfaces(null);
+        assertThat(props.getEnabledSurfaces()).isEmpty();
+    }
+
+    @Test
+    void setEnabledSurfacesWithListPreservesEntries() {
+        var props = new IacPipelineDerivationProperties();
+        props.setEnabledSurfaces(List.of("dockerfile", "terraform"));
+        assertThat(props.getEnabledSurfaces()).containsExactly("dockerfile", "terraform");
+    }
+
+    @Test
+    void setRulesetVersionIsReflectedByGetter() {
+        var props = new IacPipelineDerivationProperties();
+        props.setRulesetVersion("2.0.0");
+        assertThat(props.getRulesetVersion()).isEqualTo("2.0.0");
+    }
+
     private IacPipelineDerivationAdapter adapter(IacPipelineDerivationProperties props) {
         props.setRepositoryRoot(repoRoot);
         return new IacPipelineDerivationAdapter(props);

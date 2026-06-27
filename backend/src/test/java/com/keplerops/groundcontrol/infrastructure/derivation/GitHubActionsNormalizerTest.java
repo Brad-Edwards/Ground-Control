@@ -232,6 +232,235 @@ class GitHubActionsNormalizerTest {
         });
     }
 
+    // ── Additional trigger formats ────────────────────────────────────────────
+
+    @Test
+    void scheduleTriggerEmitsUntrustedEntryPoint() {
+        var yaml =
+                """
+                on: schedule
+                jobs:
+                  run:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: actions/checkout@v4
+                """;
+        var facts = normalize(yaml);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.ENTRY_POINT);
+            assertThat(f.payload()).containsEntry("triggerKind", "schedule");
+            assertThat(f.payload()).containsEntry("triggerTrust", "untrusted");
+        });
+    }
+
+    @Test
+    void workflowDispatchTriggerEmitsUntrustedEntryPoint() {
+        var yaml =
+                """
+                on: workflow_dispatch
+                jobs:
+                  run:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: actions/checkout@v4
+                """;
+        var facts = normalize(yaml);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.ENTRY_POINT);
+            assertThat(f.payload()).containsEntry("triggerKind", "workflow_dispatch");
+            assertThat(f.payload()).containsEntry("triggerTrust", "untrusted");
+        });
+    }
+
+    @Test
+    void pullRequestTriggerEmitsTrustedEntryPoint() {
+        var yaml =
+                """
+                on: pull_request
+                jobs:
+                  build:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: actions/checkout@v4
+                """;
+        var facts = normalize(yaml);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.ENTRY_POINT);
+            assertThat(f.payload()).containsEntry("triggerKind", "pull_request");
+            assertThat(f.payload()).containsEntry("triggerTrust", "trusted");
+        });
+    }
+
+    @Test
+    void triggerAsArrayEmitsEntryPointForEachTrigger() {
+        // on: [push, pull_request_target] — array format
+        var yaml =
+                """
+                on: [push, pull_request_target]
+                jobs:
+                  build:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: actions/checkout@v4
+                """;
+        var facts = normalize(yaml);
+
+        var entryPoints = facts.stream()
+                .filter(f -> f.factKind() == SystemModelFactKind.ENTRY_POINT)
+                .toList();
+        assertThat(entryPoints).hasSize(2);
+        assertThat(entryPoints)
+                .anySatisfy(f -> assertThat(f.payload()).containsEntry("triggerTrust", "trusted"))
+                .anySatisfy(f -> assertThat(f.payload()).containsEntry("triggerTrust", "untrusted"));
+    }
+
+    // ── Self-hosted runner as array ───────────────────────────────────────────
+
+    @Test
+    void selfHostedRunnerAsArrayEmitsTrustBoundary() {
+        var yaml =
+                """
+                on: push
+                jobs:
+                  build:
+                    runs-on: [self-hosted, linux, x64]
+                    steps:
+                      - uses: actions/checkout@v4
+                """;
+        var facts = normalize(yaml);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
+            assertThat(f.payload()).containsEntry("runnerTrustLevel", "untrusted");
+        });
+    }
+
+    // ── Job-level OIDC and secrets:inherit ────────────────────────────────────
+
+    @Test
+    void jobLevelOidcIdTokenWriteEmitsSecretUsage() {
+        var yaml =
+                """
+                on: push
+                jobs:
+                  deploy:
+                    runs-on: ubuntu-latest
+                    permissions:
+                      id-token: write
+                      contents: read
+                    steps:
+                      - uses: actions/checkout@v4
+                """;
+        var facts = normalize(yaml);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretScope", "oidc");
+            assertThat(f.payload()).containsEntry("secretRef", "id-token");
+        });
+    }
+
+    @Test
+    void secretsInheritInJobEmitsSecretUsage() {
+        var yaml =
+                """
+                on: workflow_call
+                jobs:
+                  build:
+                    runs-on: ubuntu-latest
+                    secrets: inherit
+                    steps:
+                      - uses: actions/checkout@v4
+                """;
+        var facts = normalize(yaml);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretScope", "inherit");
+        });
+    }
+
+    // ── Deploy keyword in uses field ──────────────────────────────────────────
+
+    @Test
+    void deployActionInUsesFieldEmitsDataFlow() {
+        var yaml =
+                """
+                on: push
+                jobs:
+                  release:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: docker/login-action@v3
+                """;
+        var facts = normalize(yaml);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.DATA_FLOW);
+            assertThat(f.payload()).containsEntry("artifactKind", "deploy-step");
+        });
+    }
+
+    // ── Secret reference in step 'with' field ─────────────────────────────────
+
+    @Test
+    void secretRefInWithFieldEmitsSecretUsage() {
+        var yaml =
+                """
+                on: push
+                jobs:
+                  build:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: some-org/some-action@v1
+                        with:
+                          token: ${{ secrets.GITHUB_TOKEN }}
+                """;
+        var facts = normalize(yaml);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretRef", "GITHUB_TOKEN");
+            assertThat(f.payload()).containsEntry("exposurePath", "step.with");
+        });
+    }
+
+    // ── Permissions without id-token:write produces no OIDC fact ─────────────
+
+    @Test
+    void topLevelPermissionsWithoutIdTokenWriteDoesNotEmitOidcFact() {
+        var yaml =
+                """
+                on: push
+                permissions:
+                  contents: read
+                  packages: write
+                jobs:
+                  build:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: actions/checkout@v4
+                """;
+        var facts = normalize(yaml);
+
+        assertThat(facts).noneSatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+            assertThat(f.payload()).containsEntry("secretScope", "oidc");
+        });
+    }
+
+    // ── Empty workflow ────────────────────────────────────────────────────────
+
+    @Test
+    void emptyWorkflowYamlReturnsEmptyList() {
+        var facts = normalize("");
+
+        assertThat(facts).isEmpty();
+    }
+
     // ── Finding 1: fact-key stability across commits ──────────────────────────
 
     @Test

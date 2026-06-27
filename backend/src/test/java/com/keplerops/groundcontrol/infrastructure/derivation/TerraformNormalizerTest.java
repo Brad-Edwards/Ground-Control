@@ -168,6 +168,163 @@ class TerraformNormalizerTest {
         });
     }
 
+    // ── Provisioner block ─────────────────────────────────────────────────────
+
+    @Test
+    void provisionerInsideResourceEmitsComponent() {
+        var content =
+                """
+                resource "null_resource" "setup" {
+                  provisioner "remote-exec" {
+                    inline = ["echo hello"]
+                  }
+                }
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
+            assertThat(f.payload()).containsEntry("artifactKind", "terraform-provisioner");
+            assertThat(f.payload()).containsEntry("privilegedOperation", "remote-exec");
+        });
+    }
+
+    @Test
+    void provisionerLabelIsExtractedFromBlockHeader() {
+        var content =
+                """
+                resource "null_resource" "infra" {
+                  provisioner "local-exec" {
+                    command = "echo done"
+                  }
+                }
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.label()).contains("local-exec");
+        });
+    }
+
+    // ── Module source without path/URL → no external interaction ─────────────
+
+    @Test
+    void moduleWithLocalOnlySourceDoesNotEmitExternalInteraction() {
+        // source = "." has no "/" and no "://" → not treated as remote
+        var content =
+                """
+                module "local_mod" {
+                  source = "."
+                }
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).noneSatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.EXTERNAL_INTERACTION);
+            assertThat(f.payload()).containsEntry("artifactKind", "remote-module");
+        });
+    }
+
+    // ── sensitive = true in resource body is a no-op ─────────────────────────
+
+    @Test
+    void sensitiveMarkerInResourceBodyIsIgnored() {
+        var content =
+                """
+                resource "aws_secretsmanager_secret" "db" {
+                  sensitive = true
+                }
+                """;
+        var facts = normalize(content);
+
+        // sensitive = true inside a resource block must not emit DATA_CLASSIFICATION_HINT
+        assertThat(facts)
+                .noneSatisfy(f -> assertThat(f.factKind()).isEqualTo(SystemModelFactKind.DATA_CLASSIFICATION_HINT));
+        // But the resource itself should still be emitted
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
+            assertThat(f.payload()).containsEntry("artifactKind", "terraform-resource");
+        });
+    }
+
+    // ── Variable with non-secret name → no SECRET_USAGE ─────────────────────
+
+    @Test
+    void variableWithNonSecretLikeNameDoesNotEmitSecretUsage() {
+        var content =
+                """
+                variable "region" {
+                  type    = string
+                  default = "us-east-1"
+                }
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).noneSatisfy(f -> assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE));
+    }
+
+    // ── Backend with no label falls back to "unknown" ────────────────────────
+
+    @Test
+    void backendWithEmptyLabelUsesUnknownFallback() {
+        // Unusual but syntactically valid: backend block with no label
+        // The block header is "backend {" — labels list will be empty
+        var content =
+                """
+                terraform {
+                  backend {
+                    bucket = "state"
+                  }
+                }
+                """;
+        var facts = normalize(content);
+
+        // A TRUST_BOUNDARY should still be emitted even without a backend type label
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
+            assertThat(f.payload()).containsEntry("artifactKind", "remote-state-boundary");
+        });
+    }
+
+    // ── Double-slash comment is ignored ──────────────────────────────────────
+
+    @Test
+    void doubleSlashCommentLinesAreIgnored() {
+        var content =
+                """
+                // This is a double-slash comment
+                resource "aws_s3_bucket" "main" {
+                  bucket = "my-bucket"
+                }
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).hasSize(1);
+        assertThat(facts).anySatisfy(f -> {
+            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
+            assertThat(f.payload()).containsEntry("artifactKind", "terraform-resource");
+        });
+    }
+
+    // ── Unrecognised top-level block type → no facts ─────────────────────────
+
+    @Test
+    void unrecognisedTopLevelBlockEmitsNoFacts() {
+        // "data" blocks are not handled by the switch → default returns empty
+        var content =
+                """
+                data "aws_ami" "ubuntu" {
+                  filter {
+                    name   = "name"
+                    values = ["ubuntu*"]
+                  }
+                }
+                """;
+        var facts = normalize(content);
+
+        assertThat(facts).isEmpty();
+    }
+
     // ── Finding 1: fact-key stability across commits ──────────────────────────
 
     @Test
