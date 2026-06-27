@@ -15,6 +15,7 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 class DockerComposeNormalizer {
@@ -25,6 +26,12 @@ class DockerComposeNormalizer {
     private static final Pattern SECRET_LIKE =
             Pattern.compile("(?i)(secret|password|passwd|pass|token|key|credential|cert|private|api_key|apikey|auth)");
     private static final List<String> SENSITIVE_BIND_PREFIXES = List.of("/etc", "/proc", "/sys", "/root");
+
+    /**
+     * Bundles the three parameters common to every fact-building helper (surface, relativePath,
+     * provenance) so that helper signatures stay within the S107 7-parameter limit.
+     */
+    private record FactContext(String surface, String relativePath, DerivationFactProvenance provenance) {}
 
     private final YAMLMapper yamlMapper;
 
@@ -148,15 +155,13 @@ class DockerComposeNormalizer {
             String serviceName,
             JsonNode serviceNode,
             DerivationFactProvenance provenance) {
+        var ctx = new FactContext(surface, relativePath, provenance);
         var facts = new ArrayList<DerivedSystemModelFact>();
 
         var privilegedNode = serviceNode.path("privileged");
         if (privilegedNode.isBoolean() && privilegedNode.asBoolean()) {
             facts.add(buildTrustBoundaryFact(
-                    surface,
-                    relativePath,
-                    serviceName,
-                    provenance,
+                    ctx,
                     "container-privilege-boundary",
                     "privileged-container",
                     "Privileged container: " + serviceName,
@@ -164,41 +169,12 @@ class DockerComposeNormalizer {
                     "privileged:" + serviceName));
         }
 
-        var capAddNode = serviceNode.path("cap_add");
-        if (capAddNode.isArray() && capAddNode.size() > 0) {
-            var caps = new ArrayList<String>();
-            for (JsonNode cap : capAddNode) {
-                caps.add(cap.asText());
-            }
-            var payload = new LinkedHashMap<String, Object>();
-            payload.put(IacFactKeys.SURFACE, surface);
-            payload.put(IacFactKeys.ARTIFACT_KIND, "container-privilege-boundary");
-            payload.put(IacFactKeys.PRIVILEGED_OPERATION, "capability-add");
-            payload.put("securitySignals", caps);
-            payload.put(IacFactKeys.SOURCE_PATH, relativePath);
-            var key = buildFactKey(
-                    surface,
-                    SystemModelFactKind.TRUST_BOUNDARY,
-                    provenance.adapterId(),
-                    relativePath,
-                    "cap-add:" + serviceName);
-            facts.add(new DerivedSystemModelFact(
-                    SystemModelFactKind.TRUST_BOUNDARY,
-                    key,
-                    "Capability add: " + serviceName,
-                    SVC + serviceName + " adds Linux capabilities",
-                    relativePath,
-                    payload,
-                    provenance));
-        }
+        emitCapAddFact(ctx, serviceName, serviceNode.path("cap_add")).ifPresent(facts::add);
 
         var networkModeNode = serviceNode.path("network_mode");
         if (networkModeNode.isTextual() && "host".equals(networkModeNode.asText())) {
             facts.add(buildTrustBoundaryFact(
-                    surface,
-                    relativePath,
-                    serviceName,
-                    provenance,
+                    ctx,
                     "network-boundary",
                     "host-network",
                     "Host network: " + serviceName,
@@ -209,10 +185,7 @@ class DockerComposeNormalizer {
         var pidNode = serviceNode.path("pid");
         if (pidNode.isTextual() && "host".equals(pidNode.asText())) {
             facts.add(buildTrustBoundaryFact(
-                    surface,
-                    relativePath,
-                    serviceName,
-                    provenance,
+                    ctx,
                     "process-boundary",
                     "host-pid",
                     "Host PID namespace: " + serviceName,
@@ -223,10 +196,7 @@ class DockerComposeNormalizer {
         var ipcNode = serviceNode.path("ipc");
         if (ipcNode.isTextual() && "host".equals(ipcNode.asText())) {
             facts.add(buildTrustBoundaryFact(
-                    surface,
-                    relativePath,
-                    serviceName,
-                    provenance,
+                    ctx,
                     "ipc-boundary",
                     "host-ipc",
                     "Host IPC: " + serviceName,
@@ -239,10 +209,7 @@ class DockerComposeNormalizer {
             var user = userNode.asText();
             if ("root".equalsIgnoreCase(user) || "0".equals(user)) {
                 facts.add(buildTrustBoundaryFact(
-                        surface,
-                        relativePath,
-                        serviceName,
-                        provenance,
+                        ctx,
                         "user-boundary",
                         "root-user",
                         "Root user container: " + serviceName,
@@ -254,25 +221,39 @@ class DockerComposeNormalizer {
         return facts;
     }
 
-    private DerivedSystemModelFact buildTrustBoundaryFact(
-            String surface,
-            String relativePath,
-            String serviceName,
-            DerivationFactProvenance provenance,
-            String artifactKind,
-            String privilegedOperation,
-            String label,
-            String summary,
-            String uniqueKeySuffix) {
+    /**
+     * Emits a TRUST_BOUNDARY fact for Linux capability additions, or empty if the node is absent or
+     * not an array. Extracted from emitPrivilegedFacts to keep that method's cognitive complexity
+     * below the S3776 threshold.
+     */
+    private Optional<DerivedSystemModelFact> emitCapAddFact(FactContext ctx, String serviceName, JsonNode capAddNode) {
+        if (!capAddNode.isArray() || capAddNode.size() == 0) {
+            return Optional.empty();
+        }
+        var caps = new ArrayList<String>();
+        for (JsonNode cap : capAddNode) {
+            caps.add(cap.asText());
+        }
         var payload = new LinkedHashMap<String, Object>();
-        payload.put(IacFactKeys.SURFACE, surface);
-        payload.put(IacFactKeys.ARTIFACT_KIND, artifactKind);
-        payload.put(IacFactKeys.PRIVILEGED_OPERATION, privilegedOperation);
-        payload.put(IacFactKeys.SOURCE_PATH, relativePath);
+        payload.put(IacFactKeys.SURFACE, ctx.surface());
+        payload.put(IacFactKeys.ARTIFACT_KIND, "container-privilege-boundary");
+        payload.put(IacFactKeys.PRIVILEGED_OPERATION, "capability-add");
+        payload.put("securitySignals", caps);
+        payload.put(IacFactKeys.SOURCE_PATH, ctx.relativePath());
         var key = buildFactKey(
-                surface, SystemModelFactKind.TRUST_BOUNDARY, provenance.adapterId(), relativePath, uniqueKeySuffix);
-        return new DerivedSystemModelFact(
-                SystemModelFactKind.TRUST_BOUNDARY, key, label, summary, relativePath, payload, provenance);
+                ctx.surface(),
+                SystemModelFactKind.TRUST_BOUNDARY,
+                ctx.provenance().adapterId(),
+                ctx.relativePath(),
+                "cap-add:" + serviceName);
+        return Optional.of(new DerivedSystemModelFact(
+                SystemModelFactKind.TRUST_BOUNDARY,
+                key,
+                "Capability add: " + serviceName,
+                SVC + serviceName + " adds Linux capabilities",
+                ctx.relativePath(),
+                payload,
+                ctx.provenance()));
     }
 
     private List<DerivedSystemModelFact> emitVolumeFacts(
@@ -314,13 +295,11 @@ class DockerComposeNormalizer {
         if (hostPath == null) {
             return List.of();
         }
+        var ctx = new FactContext(surface, relativePath, provenance);
         var facts = new ArrayList<DerivedSystemModelFact>();
         if (hostPath.contains("/var/run/docker.sock")) {
             facts.add(buildTrustBoundaryFact(
-                    surface,
-                    relativePath,
-                    serviceName,
-                    provenance,
+                    ctx,
                     "container-daemon-boundary",
                     "docker-socket-mount",
                     "Docker socket mount: " + serviceName,
@@ -331,10 +310,7 @@ class DockerComposeNormalizer {
             if (hostPath.equals(sensitivePrefix) || hostPath.startsWith(sensitivePrefix + "/")) {
                 var key = volStr != null ? volStr : hostPath;
                 facts.add(buildTrustBoundaryFact(
-                        surface,
-                        relativePath,
-                        serviceName,
-                        provenance,
+                        ctx,
                         "sensitive-mount-boundary",
                         "sensitive-bind-mount",
                         "Sensitive bind mount: " + serviceName,
@@ -356,14 +332,13 @@ class DockerComposeNormalizer {
         if (!secretsNode.isArray()) {
             return List.of();
         }
+        var ctx = new FactContext(surface, relativePath, provenance);
         var facts = new ArrayList<DerivedSystemModelFact>();
         for (JsonNode secretEntry : secretsNode) {
             var secretName = resolveSecretName(secretEntry);
             if (secretName != null) {
                 facts.add(buildSecretUsageFact(
-                        surface,
-                        relativePath,
-                        provenance,
+                        ctx,
                         secretName,
                         "compose-secret",
                         "Compose secret: " + secretName,
@@ -432,7 +407,9 @@ class DockerComposeNormalizer {
             String serviceName,
             JsonNode serviceNode,
             DerivationFactProvenance provenance) {
-        var envNode = serviceNode.path("environment");
+        // SCOPE_ENV == "environment" — use the constant for the YAML path key to avoid
+        // duplicating the literal (fixes S1192).
+        var envNode = serviceNode.path(SCOPE_ENV);
         if (envNode.isObject()) {
             return collectEnvObjectSecrets(envNode, surface, relativePath, serviceName, provenance);
         }
@@ -448,6 +425,7 @@ class DockerComposeNormalizer {
             String relativePath,
             String serviceName,
             DerivationFactProvenance provenance) {
+        var ctx = new FactContext(surface, relativePath, provenance);
         var facts = new ArrayList<DerivedSystemModelFact>();
         var envFields = envNode.fields();
         while (envFields.hasNext()) {
@@ -455,9 +433,7 @@ class DockerComposeNormalizer {
             var key = envEntry.getKey();
             if (SECRET_LIKE.matcher(key).find()) {
                 facts.add(buildSecretUsageFact(
-                        surface,
-                        relativePath,
-                        provenance,
+                        ctx,
                         key,
                         SCOPE_ENV,
                         "Environment secret: " + key,
@@ -474,6 +450,7 @@ class DockerComposeNormalizer {
             String relativePath,
             String serviceName,
             DerivationFactProvenance provenance) {
+        var ctx = new FactContext(surface, relativePath, provenance);
         var facts = new ArrayList<DerivedSystemModelFact>();
         for (JsonNode item : envNode) {
             if (!item.isTextual()) {
@@ -484,9 +461,7 @@ class DockerComposeNormalizer {
             var key = eqIdx >= 0 ? text.substring(0, eqIdx) : text;
             if (SECRET_LIKE.matcher(key).find()) {
                 facts.add(buildSecretUsageFact(
-                        surface,
-                        relativePath,
-                        provenance,
+                        ctx,
                         key,
                         SCOPE_ENV,
                         "Environment secret: " + key,
@@ -532,24 +507,59 @@ class DockerComposeNormalizer {
                 provenance));
     }
 
-    private DerivedSystemModelFact buildSecretUsageFact(
-            String surface,
-            String relativePath,
-            DerivationFactProvenance provenance,
-            String secretRef,
-            String secretScope,
+    /**
+     * Builds a TRUST_BOUNDARY fact from a {@link FactContext} plus the fact-specific fields.
+     * Replaces the old 9-parameter signature (which also carried an unused serviceName) with 6
+     * parameters — callers embed the service name in the label and uniqueKeySuffix strings they
+     * supply (fixes S107 and S1172).
+     */
+    private DerivedSystemModelFact buildTrustBoundaryFact(
+            FactContext ctx,
+            String artifactKind,
+            String privilegedOperation,
             String label,
             String summary,
-            String uniqueKey) {
+            String uniqueKeySuffix) {
         var payload = new LinkedHashMap<String, Object>();
-        payload.put(IacFactKeys.SURFACE, surface);
+        payload.put(IacFactKeys.SURFACE, ctx.surface());
+        payload.put(IacFactKeys.ARTIFACT_KIND, artifactKind);
+        payload.put(IacFactKeys.PRIVILEGED_OPERATION, privilegedOperation);
+        payload.put(IacFactKeys.SOURCE_PATH, ctx.relativePath());
+        var key = buildFactKey(
+                ctx.surface(),
+                SystemModelFactKind.TRUST_BOUNDARY,
+                ctx.provenance().adapterId(),
+                ctx.relativePath(),
+                uniqueKeySuffix);
+        return new DerivedSystemModelFact(
+                SystemModelFactKind.TRUST_BOUNDARY, key, label, summary, ctx.relativePath(), payload, ctx.provenance());
+    }
+
+    /**
+     * Builds a SECRET_USAGE fact from a {@link FactContext} plus the fact-specific fields.
+     * Replaces the old 8-parameter signature with 6 parameters (fixes S107).
+     */
+    private DerivedSystemModelFact buildSecretUsageFact(
+            FactContext ctx, String secretRef, String secretScope, String label, String summary, String uniqueKey) {
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put(IacFactKeys.SURFACE, ctx.surface());
         payload.put(IacFactKeys.SECRET_REF, secretRef);
         payload.put(IacFactKeys.SECRET_SCOPE, secretScope);
-        payload.put(IacFactKeys.SOURCE_PATH, relativePath);
+        payload.put(IacFactKeys.SOURCE_PATH, ctx.relativePath());
         var factKey = buildFactKey(
-                surface, SystemModelFactKind.SECRET_USAGE, provenance.adapterId(), relativePath, uniqueKey);
+                ctx.surface(),
+                SystemModelFactKind.SECRET_USAGE,
+                ctx.provenance().adapterId(),
+                ctx.relativePath(),
+                uniqueKey);
         return new DerivedSystemModelFact(
-                SystemModelFactKind.SECRET_USAGE, factKey, label, summary, relativePath, payload, provenance);
+                SystemModelFactKind.SECRET_USAGE,
+                factKey,
+                label,
+                summary,
+                ctx.relativePath(),
+                payload,
+                ctx.provenance());
     }
 
     /**

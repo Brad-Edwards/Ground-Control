@@ -108,8 +108,7 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
         captureLimits.addAll(buildUnsupportedSurfaceLimits(scope, derivedAt));
 
         var repoRoot = properties.getRepositoryRoot().toAbsolutePath().normalize();
-        int[] fileCount = {0};
-        boolean[] hitFileCap = {false};
+        var walkState = new WalkState(facts, captureLimits);
 
         try {
             Files.walkFileTree(repoRoot, new SimpleFileVisitor<>() {
@@ -120,8 +119,7 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
 
                 @Override
                 public FileVisitResult visitFile(Path absolutePath, BasicFileAttributes attrs) {
-                    return handleFile(
-                            absolutePath, repoRoot, scope, facts, captureLimits, fileCount, hitFileCap, derivedAt);
+                    return handleFile(absolutePath, repoRoot, scope, walkState, derivedAt);
                 }
 
                 @Override
@@ -140,7 +138,7 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
                     derivedAt));
         }
 
-        if (hitFileCap[0]) {
+        if (walkState.hitFileCap) {
             captureLimits.add(new DerivationCaptureLimitDraft(
                     ADAPTER_ID,
                     CaptureLimitReason.TOOL_EXECUTION_FAILED,
@@ -190,14 +188,7 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
     }
 
     private FileVisitResult handleFile(
-            Path absolutePath,
-            Path repoRoot,
-            DerivationScope scope,
-            List<DerivedSystemModelFact> facts,
-            List<DerivationCaptureLimitDraft> captureLimits,
-            int[] fileCount,
-            boolean[] hitFileCap,
-            Instant derivedAt) {
+            Path absolutePath, Path repoRoot, DerivationScope scope, WalkState walkState, Instant derivedAt) {
         var relativePath = repoRoot.relativize(absolutePath).toString().replace('\\', '/');
 
         if (!isSymlinkSafe(absolutePath, repoRoot)) {
@@ -211,12 +202,13 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
         if (!shouldProcess(surface, relativePath, scope)) {
             return FileVisitResult.CONTINUE;
         }
-        if (fileCount[0] >= properties.getMaxFiles()) {
-            hitFileCap[0] = true;
+        if (walkState.fileCount >= properties.getMaxFiles()) {
+            walkState.hitFileCap = true;
             return FileVisitResult.TERMINATE;
         }
-        fileCount[0]++;
-        return readAndDispatchFile(absolutePath, relativePath, surface, scope, facts, captureLimits, derivedAt);
+        walkState.fileCount++;
+        return readAndDispatchFile(
+                absolutePath, relativePath, surface, scope, walkState.facts, walkState.captureLimits, derivedAt);
     }
 
     private static boolean isSymlinkSafe(Path absolutePath, Path repoRoot) {
@@ -448,5 +440,22 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
             }
         }
         return Optional.of(p);
+    }
+
+    /**
+     * Mutable accumulator for the file-tree walk. Bundles the two output lists and two primitive
+     * counters that handleFile needs to mutate, reducing handleFile's parameter count to ≤7
+     * (fixes S107).
+     */
+    private static final class WalkState {
+        final List<DerivedSystemModelFact> facts;
+        final List<DerivationCaptureLimitDraft> captureLimits;
+        int fileCount;
+        boolean hitFileCap;
+
+        WalkState(List<DerivedSystemModelFact> facts, List<DerivationCaptureLimitDraft> captureLimits) {
+            this.facts = facts;
+            this.captureLimits = captureLimits;
+        }
     }
 }
