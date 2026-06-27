@@ -90,8 +90,11 @@ groundcontrol:
       # IaC and CI/CD pipeline derivation adapter (GC-GRC-003).
       # enabled: toggle the adapter on/off without removing configuration.
       enabled: true
-      # repository-root: absolute or relative path to the repository being analysed.
-      repository-root: "."
+      # repository-root defaults to the working directory (Path.of(".")) via the
+      # @ConfigurationProperties field default; it is intentionally NOT set here because Spring's
+      # web-aware PathEditor cannot convert a bare "." to a Path in a ServletContext. Override with
+      # a file:-prefixed path via GROUNDCONTROL_DERIVATION_IAC_REPOSITORY_ROOT if a non-default root
+      # is required.
       # max-file-bytes: per-file byte limit; files exceeding this emit a TOOL_EXECUTION_FAILED
       # capture limit instead of being parsed (default 512 KB).
       max-file-bytes: 524288
