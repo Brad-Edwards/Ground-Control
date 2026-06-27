@@ -47,42 +47,56 @@ class RemoteRefSanitizerTest {
     void urlWithUserinfoStripsUserinfoButPreservesHostAndPath() {
         var result = RemoteRefSanitizer.sanitize("https://user:pass@host.example.com/path");
 
-        assertThat(result).doesNotContain("user").doesNotContain("pass");
-        assertThat(result).contains("host.example.com").contains("/path");
-        assertThat(result).startsWith("https://");
+        assertThat(result)
+                .doesNotContain("user")
+                .doesNotContain("pass")
+                .contains("host.example.com")
+                .contains("/path")
+                .startsWith("https://");
     }
 
     @Test
     void urlWithQueryStringStripsQuery() {
         var result = RemoteRefSanitizer.sanitize("https://host.example.com/path?token=abc123");
 
-        assertThat(result).doesNotContain("token").doesNotContain("abc123");
-        assertThat(result).contains("host.example.com").contains("/path");
+        assertThat(result)
+                .doesNotContain("token")
+                .doesNotContain("abc123")
+                .contains("host.example.com")
+                .contains("/path");
     }
 
     @Test
     void urlWithFragmentStripsFragment() {
         var result = RemoteRefSanitizer.sanitize("https://host.example.com/path#v1.2");
 
-        assertThat(result).doesNotContain("#").doesNotContain("v1.2");
-        assertThat(result).contains("host.example.com").contains("/path");
+        assertThat(result)
+                .doesNotContain("#")
+                .doesNotContain("v1.2")
+                .contains("host.example.com")
+                .contains("/path");
     }
 
     @Test
     void urlWithPortPreservesPort() {
         var result = RemoteRefSanitizer.sanitize("https://host.example.com:8080/path");
 
-        assertThat(result).contains(":8080");
-        assertThat(result).contains("host.example.com").contains("/path");
+        assertThat(result).contains(":8080").contains("host.example.com").contains("/path");
     }
 
     @Test
     void urlWithAllSensitivePartsStripped() {
         var result = RemoteRefSanitizer.sanitize("https://user:secret@host.example.com:443/path?q=v&tok=x#frag");
 
-        assertThat(result).doesNotContain("user").doesNotContain("secret");
-        assertThat(result).doesNotContain("q=v").doesNotContain("tok=x").doesNotContain("frag");
-        assertThat(result).contains("host.example.com").contains(":443").contains("/path");
+        assertThat(result)
+                .doesNotContain("user")
+                .doesNotContain("secret")
+                .doesNotContain("q=v")
+                .doesNotContain("tok=x")
+                .doesNotContain("frag")
+                .contains("host.example.com")
+                .contains(":443")
+                .contains("/path");
     }
 
     // ── Terraform VCS prefix preservation ────────────────────────────────────
@@ -91,19 +105,25 @@ class RemoteRefSanitizerTest {
     void gitPrefixWithCredentialUrlStripsCredentialsAndPreservesPrefix() {
         var result = RemoteRefSanitizer.sanitize("git::https://user:secret@host.example.com/repo.git?token=abc#v1");
 
-        assertThat(result).startsWith("git::");
-        assertThat(result).doesNotContain("user").doesNotContain("secret");
-        assertThat(result).doesNotContain("token=abc").doesNotContain("#v1");
-        assertThat(result).contains("host.example.com").contains("/repo.git");
+        assertThat(result)
+                .startsWith("git::")
+                .doesNotContain("user")
+                .doesNotContain("secret")
+                .doesNotContain("token=abc")
+                .doesNotContain("#v1")
+                .contains("host.example.com")
+                .contains("/repo.git");
     }
 
     @Test
     void sshPrefixWithUrlSanitized() {
         var result = RemoteRefSanitizer.sanitize("ssh::https://user:pass@git.example.com/repo");
 
-        assertThat(result).startsWith("ssh::");
-        assertThat(result).doesNotContain("user").doesNotContain("pass");
-        assertThat(result).contains("git.example.com");
+        assertThat(result)
+                .startsWith("ssh::")
+                .doesNotContain("user")
+                .doesNotContain("pass")
+                .contains("git.example.com");
     }
 
     // ── Best-effort fallback for malformed URIs ───────────────────────────────
@@ -113,9 +133,12 @@ class RemoteRefSanitizerTest {
         // Space in host makes URI(str) throw URISyntaxException → falls back to stripBestEffort
         var result = RemoteRefSanitizer.sanitize("http://user:pass@ho st.example.com/path");
 
-        assertThat(result).doesNotContain("user").doesNotContain("pass");
-        assertThat(result).contains("ho st.example.com").contains("/path");
-        assertThat(result).startsWith("http://");
+        assertThat(result)
+                .doesNotContain("user")
+                .doesNotContain("pass")
+                .contains("ho st.example.com")
+                .contains("/path")
+                .startsWith("http://");
     }
 
     @Test
@@ -123,8 +146,11 @@ class RemoteRefSanitizerTest {
         // URISyntaxException triggers stripBestEffort; query must be stripped
         var result = RemoteRefSanitizer.sanitize("http://ho st.example.com/path?token=secret");
 
-        assertThat(result).doesNotContain("token").doesNotContain("secret");
-        assertThat(result).contains("ho st.example.com").contains("/path");
+        assertThat(result)
+                .doesNotContain("token")
+                .doesNotContain("secret")
+                .contains("ho st.example.com")
+                .contains("/path");
     }
 
     @Test
@@ -132,8 +158,7 @@ class RemoteRefSanitizerTest {
         // Fragment present (no query) — covers the fragIdx < cutIdx branch in stripBestEffort
         var result = RemoteRefSanitizer.sanitize("http://ho st.example.com/path#commit-abc");
 
-        assertThat(result).doesNotContain("#").doesNotContain("commit-abc");
-        assertThat(result).contains("/path");
+        assertThat(result).doesNotContain("#").doesNotContain("commit-abc").contains("/path");
     }
 
     @Test
@@ -142,8 +167,7 @@ class RemoteRefSanitizerTest {
         // Ensure the minimum cutIdx is chosen
         var result = RemoteRefSanitizer.sanitize("http://ho st.example.com/path#frag?q=v");
 
-        assertThat(result).doesNotContain("#frag").doesNotContain("q=v");
-        assertThat(result).contains("/path");
+        assertThat(result).doesNotContain("#frag").doesNotContain("q=v").contains("/path");
     }
 
     @Test

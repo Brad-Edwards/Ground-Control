@@ -311,8 +311,8 @@ class GitHubActionsNormalizerTest {
         var entryPoints = facts.stream()
                 .filter(f -> f.factKind() == SystemModelFactKind.ENTRY_POINT)
                 .toList();
-        assertThat(entryPoints).hasSize(2);
         assertThat(entryPoints)
+                .hasSize(2)
                 .anySatisfy(f -> assertThat(f.payload()).containsEntry("triggerTrust", "trusted"))
                 .anySatisfy(f -> assertThat(f.payload()).containsEntry("triggerTrust", "untrusted"));
     }

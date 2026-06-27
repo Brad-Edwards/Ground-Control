@@ -98,7 +98,68 @@ class DockerComposeNormalizerTest {
                             image: myapp:latest
                             network_mode: host
                         """,
-                        "host-network"));
+                        "host-network"),
+                Arguments.of(
+                        """
+                        services:
+                          app:
+                            image: myapp:latest
+                            pid: host
+                        """,
+                        "host-pid"),
+                Arguments.of(
+                        """
+                        services:
+                          app:
+                            image: myapp:latest
+                            ipc: host
+                        """,
+                        "host-ipc"),
+                Arguments.of(
+                        """
+                        services:
+                          app:
+                            image: myapp:latest
+                            user: root
+                        """,
+                        "root-user"),
+                Arguments.of(
+                        """
+                        services:
+                          app:
+                            image: myapp:latest
+                            user: "0"
+                        """,
+                        "root-user"),
+                Arguments.of(
+                        """
+                        services:
+                          app:
+                            image: myapp:latest
+                            volumes:
+                              - /etc/ssl:/etc/ssl:ro
+                        """,
+                        "sensitive-bind-mount"),
+                Arguments.of(
+                        """
+                        services:
+                          app:
+                            image: myapp:latest
+                            volumes:
+                              - /proc/sys:/proc/sys:ro
+                        """,
+                        "sensitive-bind-mount"),
+                Arguments.of(
+                        """
+                        services:
+                          app:
+                            image: myapp:latest
+                            volumes:
+                              - type: bind
+                                source: /var/run/docker.sock
+                                target: /var/run/docker.sock
+                        """,
+                        "docker-socket-mount"));
     }
 
     @Test
@@ -227,131 +288,7 @@ class DockerComposeNormalizerTest {
         });
     }
 
-    @Test
-    void hostPidNamespaceEmitsTrustBoundary() {
-        var content =
-                """
-                services:
-                  app:
-                    image: myapp:latest
-                    pid: host
-                """;
-        var facts = normalize(content);
-
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
-            assertThat(f.payload()).containsEntry("privilegedOperation", "host-pid");
-        });
-    }
-
-    @Test
-    void hostIpcNamespaceEmitsTrustBoundary() {
-        var content =
-                """
-                services:
-                  app:
-                    image: myapp:latest
-                    ipc: host
-                """;
-        var facts = normalize(content);
-
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
-            assertThat(f.payload()).containsEntry("privilegedOperation", "host-ipc");
-        });
-    }
-
-    @Test
-    void userRootEmitsTrustBoundary() {
-        var content =
-                """
-                services:
-                  app:
-                    image: myapp:latest
-                    user: root
-                """;
-        var facts = normalize(content);
-
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
-            assertThat(f.payload()).containsEntry("privilegedOperation", "root-user");
-        });
-    }
-
-    @Test
-    void userZeroEmitsTrustBoundary() {
-        var content =
-                """
-                services:
-                  app:
-                    image: myapp:latest
-                    user: "0"
-                """;
-        var facts = normalize(content);
-
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
-            assertThat(f.payload()).containsEntry("privilegedOperation", "root-user");
-        });
-    }
-
     // ── Volume / bind-mount branches ──────────────────────────────────────────
-
-    @Test
-    void sensitiveBindMountEtcEmitsTrustBoundary() {
-        var content =
-                """
-                services:
-                  app:
-                    image: myapp:latest
-                    volumes:
-                      - /etc/ssl:/etc/ssl:ro
-                """;
-        var facts = normalize(content);
-
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
-            assertThat(f.payload()).containsEntry("privilegedOperation", "sensitive-bind-mount");
-        });
-    }
-
-    @Test
-    void sensitiveBindMountProcSubpathEmitsTrustBoundary() {
-        var content =
-                """
-                services:
-                  app:
-                    image: myapp:latest
-                    volumes:
-                      - /proc/sys:/proc/sys:ro
-                """;
-        var facts = normalize(content);
-
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
-            assertThat(f.payload()).containsEntry("privilegedOperation", "sensitive-bind-mount");
-        });
-    }
-
-    @Test
-    void volumeObjectFormatWithDockerSockEmitsTrustBoundary() {
-        var content =
-                """
-                services:
-                  app:
-                    image: myapp:latest
-                    volumes:
-                      - type: bind
-                        source: /var/run/docker.sock
-                        target: /var/run/docker.sock
-                """;
-        var facts = normalize(content);
-
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
-            assertThat(f.payload()).containsEntry("privilegedOperation", "docker-socket-mount");
-        });
-    }
 
     @Test
     void volumeStringWithoutColonProducesNoVolumeFact() {

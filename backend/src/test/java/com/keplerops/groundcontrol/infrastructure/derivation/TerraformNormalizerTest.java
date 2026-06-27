@@ -237,14 +237,14 @@ class TerraformNormalizerTest {
                 """;
         var facts = normalize(content);
 
-        // sensitive = true inside a resource block must not emit DATA_CLASSIFICATION_HINT
+        // sensitive = true inside a resource block must not emit DATA_CLASSIFICATION_HINT,
+        // but the resource itself should still be emitted
         assertThat(facts)
-                .noneSatisfy(f -> assertThat(f.factKind()).isEqualTo(SystemModelFactKind.DATA_CLASSIFICATION_HINT));
-        // But the resource itself should still be emitted
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
-            assertThat(f.payload()).containsEntry("artifactKind", "terraform-resource");
-        });
+                .noneSatisfy(f -> assertThat(f.factKind()).isEqualTo(SystemModelFactKind.DATA_CLASSIFICATION_HINT))
+                .anySatisfy(f -> {
+                    assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
+                    assertThat(f.payload()).containsEntry("artifactKind", "terraform-resource");
+                });
     }
 
     // ── Variable with non-secret name → no SECRET_USAGE ─────────────────────
@@ -299,8 +299,7 @@ class TerraformNormalizerTest {
                 """;
         var facts = normalize(content);
 
-        assertThat(facts).hasSize(1);
-        assertThat(facts).anySatisfy(f -> {
+        assertThat(facts).hasSize(1).anySatisfy(f -> {
             assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
             assertThat(f.payload()).containsEntry("artifactKind", "terraform-resource");
         });

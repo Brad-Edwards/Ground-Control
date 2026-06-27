@@ -6,7 +6,11 @@ import com.keplerops.groundcontrol.domain.derivation.service.DerivedSystemModelF
 import com.keplerops.groundcontrol.domain.derivation.state.SystemModelFactKind;
 import java.time.Instant;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class DockerfileNormalizerTest {
 
@@ -140,8 +144,7 @@ class DockerfileNormalizerTest {
         assertThat(facts).anySatisfy(f -> {
             assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
             assertThat(f.payload()).containsEntry("artifactKind", "docker-image");
-            assertThat(f.payload()).containsKey("buildStage");
-            assertThat(f.payload().get("buildStage")).isEqualTo("builder");
+            assertThat(f.payload()).containsEntry("buildStage", "builder");
         });
     }
 
@@ -203,19 +206,6 @@ class DockerfileNormalizerTest {
         });
     }
 
-    // ── ADD with local file → no fact ────────────────────────────────────────
-
-    @Test
-    void addWithLocalFileDoesNotEmitExternalInteraction() {
-        var content = "FROM ubuntu:22.04\nADD localfile.tar.gz /tmp/\n";
-        var facts = normalize(content);
-
-        assertThat(facts).noneSatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.EXTERNAL_INTERACTION);
-            assertThat(f.payload()).containsEntry("artifactKind", "remote-fetch");
-        });
-    }
-
     // ── RUN --mount=type=secret without id= → no fact ────────────────────────
 
     @Test
@@ -230,39 +220,39 @@ class DockerfileNormalizerTest {
         });
     }
 
-    // ── FROM registry-hostname extraction edge cases ──────────────────────────
+    // ── Non-external FROM and ADD sources do not emit EXTERNAL_INTERACTION ────
 
-    @Test
-    void fromImageWithNoSlashDoesNotEmitRegistryFact() {
-        // "alpine" has no slash → extractRegistryHostname returns null → no EXTERNAL_INTERACTION
-        var content = "FROM alpine\n";
+    @ParameterizedTest
+    @MethodSource("noExternalInteractionCases")
+    void noExternalInteractionEmitted(String content, String expectedArtifactKind) {
         var facts = normalize(content);
 
         assertThat(facts).noneSatisfy(f -> {
             assertThat(f.factKind()).isEqualTo(SystemModelFactKind.EXTERNAL_INTERACTION);
-            assertThat(f.payload()).containsEntry("artifactKind", "image-registry");
+            assertThat(f.payload()).containsEntry("artifactKind", expectedArtifactKind);
         });
     }
 
-    @Test
-    void fromImageWithOrgPrefixButNoDotOrColonDoesNotEmitRegistryFact() {
-        // "library/nginx" — prefix "library" has no dot or colon → not an external registry
-        var content = "FROM library/nginx:latest\n";
-        var facts = normalize(content);
-
-        assertThat(facts).noneSatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.EXTERNAL_INTERACTION);
-            assertThat(f.payload()).containsEntry("artifactKind", "image-registry");
-        });
+    static Stream<Arguments> noExternalInteractionCases() {
+        return Stream.of(
+                // ADD with local file — no remote-fetch fact expected
+                Arguments.of("FROM ubuntu:22.04\nADD localfile.tar.gz /tmp/\n", "remote-fetch"),
+                // FROM with no slash → extractRegistryHostname returns null
+                Arguments.of("FROM alpine\n", "image-registry"),
+                // FROM with org prefix but no dot or colon → not an external registry
+                Arguments.of("FROM library/nginx:latest\n", "image-registry"));
     }
 
     // ── Line continuation ─────────────────────────────────────────────────────
 
     @Test
     void lineContinuationJoinsRunInstruction() {
-        var content = "FROM ubuntu:22.04\n"
-                + "RUN --mount=type=secret,id=my_secret \\\n"
-                + "    cat /run/secrets/my_secret\n";
+        var content =
+                """
+                FROM ubuntu:22.04
+                RUN --mount=type=secret,id=my_secret \\
+                    cat /run/secrets/my_secret
+                """;
         var facts = normalize(content);
 
         // The joined logical line should still match the secret mount pattern
