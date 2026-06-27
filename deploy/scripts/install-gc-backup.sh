@@ -15,9 +15,11 @@
 #   3. Generates a fresh ed25519 SSH key under
 #      /var/lib/gc-backup/.ssh/id_ed25519 if missing, and prints the
 #      pubkey for aurora-side install via deploy/scripts/aurora-setup-gc-backup.sh.
-#   4. Installs /opt/gc/backup.sh + the systemd units from
-#      deploy/systemd/.
-#   5. systemctl daemon-reload + enable --now gc-backup.timer.
+#   4. Installs /opt/gc/backup.sh + /opt/gc/test-restore.sh + the systemd
+#      units from deploy/systemd/.
+#   5. systemctl daemon-reload + enable --now gc-backup.timer and
+#      gc-restore-test.timer (GC-P021: backups ≥ 3×/day, restore verified
+#      ≥ 1×/day).
 #
 # After this runs, hand the printed pubkey to aurora-side setup. Until
 # aurora-side is wired up the local dump still works; rsync logs WARN.
@@ -38,8 +40,11 @@ require_root() {
 require_repo_layout() {
   for f in \
     "${REPO_ROOT}/deploy/scripts/backup.sh" \
+    "${REPO_ROOT}/deploy/scripts/test-restore.sh" \
     "${REPO_ROOT}/deploy/systemd/gc-backup.service" \
-    "${REPO_ROOT}/deploy/systemd/gc-backup.timer"; do
+    "${REPO_ROOT}/deploy/systemd/gc-backup.timer" \
+    "${REPO_ROOT}/deploy/systemd/gc-restore-test.service" \
+    "${REPO_ROOT}/deploy/systemd/gc-restore-test.timer"; do
     [ -r "$f" ] || { echo "ERROR: missing ${f}" >&2; exit 1; }
   done
 }
@@ -79,15 +84,22 @@ ensure_ssh_key() {
 install_files() {
   install -o root -g root -m 755 \
     "${REPO_ROOT}/deploy/scripts/backup.sh" /opt/gc/backup.sh
+  install -o root -g root -m 755 \
+    "${REPO_ROOT}/deploy/scripts/test-restore.sh" /opt/gc/test-restore.sh
   install -o root -g root -m 644 \
     "${REPO_ROOT}/deploy/systemd/gc-backup.service" /etc/systemd/system/gc-backup.service
   install -o root -g root -m 644 \
     "${REPO_ROOT}/deploy/systemd/gc-backup.timer" /etc/systemd/system/gc-backup.timer
+  install -o root -g root -m 644 \
+    "${REPO_ROOT}/deploy/systemd/gc-restore-test.service" /etc/systemd/system/gc-restore-test.service
+  install -o root -g root -m 644 \
+    "${REPO_ROOT}/deploy/systemd/gc-restore-test.timer" /etc/systemd/system/gc-restore-test.timer
 }
 
 enable_timer() {
   systemctl daemon-reload
   systemctl enable --now gc-backup.timer
+  systemctl enable --now gc-restore-test.timer
 }
 
 print_pubkey() {

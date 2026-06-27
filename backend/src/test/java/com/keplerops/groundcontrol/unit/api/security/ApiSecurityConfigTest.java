@@ -86,6 +86,20 @@ class ApiSecurityConfigTest {
             return "mcp-capture-ok";
         }
 
+        // Workflow-run reporting (issue #859): the cross-project operator rollup is admin-only, while
+        // project-scoped reads/writes fall through to authenticated(). Fake "/echo" paths (matched by
+        // the admin matcher's "/**" variant) so the stub does not collide with the real
+        // WorkflowRunController mappings when the full context loads.
+        @GetMapping("/api/v1/workflow-runs/cross-project-aggregate/echo")
+        String workflowCrossProjectAggregate() {
+            return "workflow-xproj-ok";
+        }
+
+        @GetMapping("/api/v1/workflow-runs/echo")
+        String workflowProjectRead() {
+            return "workflow-read-ok";
+        }
+
         @GetMapping("/")
         String spaShell() {
             return "spa-shell";
@@ -147,11 +161,28 @@ class ApiSecurityConfigTest {
                     "/api/v1/pack-registry/echo",
                     "/api/v1/trust-policies/echo",
                     "/api/v1/pack-install-records/echo",
-                    "/api/v1/mcp-tool-usage/echo"
+                    "/api/v1/mcp-tool-usage/echo",
+                    "/api/v1/workflow-runs/cross-project-aggregate/echo"
                 })
         void userTokenOnAdminPath_returns403(String adminPath) throws Exception {
             mockMvc.perform(get(adminPath).header("Authorization", "Bearer user-token-aaa"))
                     .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void adminTokenOnWorkflowCrossProjectAggregate_returns200() throws Exception {
+            mockMvc.perform(get("/api/v1/workflow-runs/cross-project-aggregate/echo")
+                            .header("Authorization", "Bearer admin-token-bbb"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("workflow-xproj-ok"));
+        }
+
+        @Test
+        void userTokenOnWorkflowProjectRead_returns200() throws Exception {
+            // Project-scoped workflow-run reads are not admin-gated; only the cross-project rollup is.
+            mockMvc.perform(get("/api/v1/workflow-runs/echo").header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("workflow-read-ok"));
         }
 
         @Test

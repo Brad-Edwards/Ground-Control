@@ -3,8 +3,12 @@ Description=Ground Control DB backup (GC-P021)
 Documentation=https://github.com/Brad-Edwards/Ground-Control/blob/main/docs/operations/backup-restore.md
 After=docker.service network-online.target
 Wants=network-online.target
-ConditionPathExists=/opt/gc/backup.sh
-ConditionPathExists=/opt/gc/.env
+# AssertPathExists (not ConditionPathExists): a failed Condition* skips the
+# unit with synthetic success, which would let a missing backup.sh or secrets
+# file report green and silently stop producing backups. Assert* fails the
+# unit so the gap pages instead of hiding behind a clean GC-P021 record.
+AssertPathExists=/opt/gc/backup.sh
+AssertPathExists=/opt/gc/.env
 
 [Service]
 Type=oneshot

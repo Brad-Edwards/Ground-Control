@@ -1816,3 +1816,81 @@ export interface UnmappedThreatsResponse {
 export interface ThreatsInsufficientEffectivenessResponse {
   threats: ThreatSummary[];
 }
+
+// ---- Workflow Run Telemetry & Economics (#859) ----
+
+export type WorkflowRunFinalState =
+  | "RUNNING"
+  | "READY_FOR_REVIEW"
+  | "MERGED"
+  | "CLOSED"
+  | "ESCALATED"
+  | "ABANDONED"
+  | "SUPERSEDED";
+
+export type WorkflowRunOutcome = "MERGED" | "CLOSED_WITHOUT_MERGE" | "NONE";
+
+export type WorkflowRunProvenance =
+  | "ISSUE_THREAD"
+  | "TEMPORAL_VISIBILITY"
+  | "MANUAL_IMPORT";
+
+export interface WorkflowRunResponse {
+  id: string;
+  project: string;
+  repo: string | null;
+  issueNumber: number | null;
+  prNumber: number | null;
+  branch: string | null;
+  workflowType: string;
+  runtimeDriver: string | null;
+  requirementUids: string[];
+  startedAt: string | null;
+  endedAt: string | null;
+  finalState: WorkflowRunFinalState;
+  outcome: WorkflowRunOutcome;
+  provenance: WorkflowRunProvenance;
+  provider: string | null;
+  model: string | null;
+  modelInvocationCount: number | null;
+  wallClockMinutes: number | null;
+  costProxy: number | null;
+  costCurrency: string | null;
+  tokenUsage: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowRunPhaseHotspot {
+  phase: string;
+  eventCount: number;
+  failedCount: number;
+  escalatedCount: number;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  maxCycleIndex: number | null;
+}
+
+export interface WorkflowRunAggregateResponse {
+  from: string;
+  to: string;
+  totalRuns: number;
+  mergedRuns: number;
+  closedRuns: number;
+  activeRuns: number;
+  escalatedRuns: number;
+  abandonedRuns: number;
+  supersededRuns: number;
+  cycleTimeP50Min: number | null;
+  cycleTimeP95Min: number | null;
+  cycleTimeP99Min: number | null;
+  totalCostProxy: number;
+  mergedCostProxy: number;
+  closedCostProxy: number;
+  costProxyPerMergedRun: number | null;
+  costProxyPerClosedRun: number | null;
+  totalModelInvocations: number;
+  totalWallClockMinutes: number;
+  totalTokenUsage: number;
+  phaseHotspots: WorkflowRunPhaseHotspot[];
+}

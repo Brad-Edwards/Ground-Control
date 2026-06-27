@@ -298,6 +298,16 @@ import {
   GC_INTEGRATION_MANAGER_DESCRIPTION,
   GC_INTEGRATION_MANAGER_INPUT_SCHEMA,
 } from "./gc-integrate.js";
+import {
+  gcWorkflowRunZodShape,
+  gcWorkflowRunToolHandler,
+  GC_WORKFLOW_RUN_DESCRIPTION,
+} from "./gc-workflow-run.js";
+import {
+  gcWorkflowRunIngestZodShape,
+  gcWorkflowRunIngestHandler,
+  GC_WORKFLOW_RUN_INGEST_DESCRIPTION,
+} from "./gc-workflow-run-ingest.js";
 import { installToolTelemetry } from "./telemetry.js";
 
 // Load .env from cwd before any auth header is composed.
@@ -3435,6 +3445,33 @@ server.tool(
     try {
       return ok(JSON.stringify(await runIntegrationManager(args), null, 2));
     } catch (e) { return err(e); }
+  },
+);
+
+// ============================================================================
+// GC_WORKFLOW_RUN — workflow-run telemetry (issue #859)
+// ============================================================================
+
+server.tool(
+  "gc_workflow_run",
+  GC_WORKFLOW_RUN_DESCRIPTION,
+  gcWorkflowRunZodShape,
+  async (args) => {
+    // The record action is an idempotent upsert keyed by (project, repo, issue, branch). The
+    // admin-only cross_project_aggregate action is gated behind GC_MCP_ADMIN so a default MCP
+    // session cannot reach cross-project operational telemetry (issue #859 security review).
+    try { return ok(JSON.stringify(await gcWorkflowRunToolHandler(args, { adminEnabled: ADMIN_TOOLS_ENABLED }), null, 2)); }
+    catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_workflow_run_ingest",
+  GC_WORKFLOW_RUN_INGEST_DESCRIPTION,
+  gcWorkflowRunIngestZodShape,
+  async (args) => {
+    try { return ok(JSON.stringify(await gcWorkflowRunIngestHandler(args), null, 2)); }
+    catch (e) { return err(e); }
   },
 );
 

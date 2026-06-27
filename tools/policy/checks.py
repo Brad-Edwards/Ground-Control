@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -1319,11 +1320,10 @@ GHCR_NAMESPACE_INVENTORY: tuple[Path, ...] = (
     Path("Makefile"),
     Path(".github/workflows/ci.yml"),
     Path("deploy/docker/.env.example"),
-    Path("deploy/docker/.env.template"),
     Path("deploy/docker/docker-compose.prod.yml"),
     Path("deploy/docker/deploy.sh"),
     Path("deploy/docker/README.md"),
-    Path("deploy/scripts/deploy.sh"),
+    Path("scripts/deploy.sh"),
     Path("docs/deployment/DEPLOYMENT.md"),
     Path("docs/architecture/ARCHITECTURE.md"),
     Path("skills/deploy/SKILL.md"),
@@ -1372,6 +1372,269 @@ def run_ghcr_namespace_drift(root: Path = REPO_ROOT) -> list[Violation]:
             details=offenders,
         )
     ]
+
+
+# ---------------------------------------------------------------------------
+# Deploy artifact consistency check (issue #855, GC-P023).
+#
+# The red-dragon deploy has broken silently many times because the deploy
+# artifacts had no single source of truth: two divergent deploy scripts, two
+# contradictory env templates, and a /opt/gc mirror hand-copied out of band.
+# This static post-condition pins the repo-side invariants the operator-driven
+# ADR-030 path depends on, so the next diff that reintroduces the drift fails
+# `make policy` before it can ship:
+#   - exactly one canonical prod env template (.env.example); the contradictory
+#     .env.template is gone.
+#   - env.schema is the single env contract: every ${VAR} the prod compose
+#     dereferences is declared there (REQUIRED when the compose ref has no
+#     default), and GC_IMAGE is marked RELEASE_PIN so the deploy-time validator
+#     requires an immutable versioned release pin, not a floating tag (ADR-063).
+#   - MANIFEST.sha256 matches the canonical artifacts byte-for-byte, so the
+#     deploy-time drift guard in deploy.sh checks against a current manifest.
+#   - exactly one operator wrapper (scripts/deploy.sh); the dead divergent
+#     duplicate at deploy/scripts/deploy.sh stays removed.
+#   - the operator wrapper (scripts/deploy.sh) does not duplicate the rollout
+#     primitives (`docker compose pull`/`up`); those live only in the canonical
+#     deploy/docker/deploy.sh.
+# Regenerate the manifest after editing any canonical artifact with
+# `make deploy-manifest`.
+# ---------------------------------------------------------------------------
+
+DEPLOY_DOCKER_DIR = Path("deploy/docker")
+DEPLOY_WRAPPER_PATH = Path("scripts/deploy.sh")
+DEPLOY_DEAD_WRAPPER_PATH = Path("deploy/scripts/deploy.sh")
+DEPLOY_CANONICAL_ARTIFACTS: tuple[str, ...] = (
+    "deploy.sh",
+    "docker-compose.prod.yml",
+    "validate-env.sh",
+    "env.schema",
+)
+COMPOSE_VAR_REF_RE = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)(:-[^}]*)?\}")
+
+
+def _parse_env_schema(text: str) -> dict[str, set[str]]:
+    """Parse env.schema into a mapping of variable -> set of directives.
+
+    Same line format the bash validator (validate-env.sh) consumes:
+    ``<DIRECTIVE> <VAR>`` per line, ``#`` comments and blanks ignored. Keeping
+    the parse this simple is deliberate — the schema is the single source both
+    this gate and the shell validator read, so neither carries its own copy of
+    the rules.
+    """
+    directives: dict[str, set[str]] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parts = stripped.split()
+        if len(parts) < 2:
+            continue
+        directives.setdefault(parts[1], set()).add(parts[0])
+    return directives
+
+
+def run_deploy_artifact_consistency(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert the operator-driven deploy artifacts have a single source of truth."""
+    violations: list[Violation] = []
+    ddir = root / DEPLOY_DOCKER_DIR
+    schema_path = ddir / "env.schema"
+    manifest_path = ddir / "MANIFEST.sha256"
+    compose_path = root / DEPLOY_COMPOSE_PROD_PATH
+    wrapper_path = root / DEPLOY_WRAPPER_PATH
+    env_example = ddir / ".env.example"
+    env_template = ddir / ".env.template"
+
+    # 1. Single canonical production env template.
+    if not env_example.exists():
+        violations.append(
+            Violation(
+                code="deploy-env-template-missing",
+                message="Canonical production env template is missing (GC-P023).",
+                details=[f"expected {(DEPLOY_DOCKER_DIR / '.env.example').as_posix()}"],
+            )
+        )
+    if env_template.exists():
+        violations.append(
+            Violation(
+                code="deploy-env-template-duplicate",
+                message=(
+                    "Two production env templates exist; .env.template contradicted "
+                    ".env.example and must stay removed in favor of the single "
+                    "canonical .env.example (GC-P023 / #855)."
+                ),
+                details=[f"remove {(DEPLOY_DOCKER_DIR / '.env.template').as_posix()}"],
+            )
+        )
+
+    # 2. env.schema is the single env contract.
+    if not schema_path.exists():
+        violations.append(
+            Violation(
+                code="deploy-env-schema-missing",
+                message="deploy/docker/env.schema (single env contract) is missing (GC-P023).",
+                details=[f"expected {(DEPLOY_DOCKER_DIR / 'env.schema').as_posix()}"],
+            )
+        )
+        schema: dict[str, set[str]] = {}
+    else:
+        schema = _parse_env_schema(schema_path.read_text(encoding="utf-8"))
+        if "RELEASE_PIN" not in schema.get("GC_IMAGE", set()):
+            violations.append(
+                Violation(
+                    code="deploy-env-schema-release-pin",
+                    message=(
+                        "env.schema must mark GC_IMAGE RELEASE_PIN so the deploy-time "
+                        "validator requires an immutable versioned release pin and "
+                        "rejects a floating branch tag like :main (ADR-063 / #1222)."
+                    ),
+                    details=["add 'RELEASE_PIN GC_IMAGE' to env.schema"],
+                )
+            )
+
+    # 3. Schema completeness vs the production compose contract.
+    if schema and compose_path.exists():
+        # Scan only non-comment lines: the compose file documents the
+        # inherit-only form with a literal `${VAR:-}` inside a comment, which
+        # is not a real variable reference.
+        compose_text = "\n".join(
+            line
+            for line in compose_path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        absent: list[str] = []
+        not_required: list[str] = []
+        seen: set[str] = set()
+        for match in COMPOSE_VAR_REF_RE.finditer(compose_text):
+            var, default = match.group(1), match.group(2)
+            if var in seen:
+                continue
+            seen.add(var)
+            present = schema.get(var, set())
+            if not present:
+                absent.append(var)
+            elif default is None and "REQUIRED" not in present:
+                not_required.append(var)
+        if absent:
+            violations.append(
+                Violation(
+                    code="deploy-env-schema-incomplete",
+                    message=(
+                        "deploy/docker/docker-compose.prod.yml dereferences variables "
+                        "not declared in env.schema (schema/compose drift, GC-P023)."
+                    ),
+                    details=sorted(absent),
+                )
+            )
+        if not_required:
+            violations.append(
+                Violation(
+                    code="deploy-env-schema-required-mismatch",
+                    message=(
+                        "These variables are dereferenced with no compose default but "
+                        "env.schema does not mark them REQUIRED (GC-P023)."
+                    ),
+                    details=sorted(not_required),
+                )
+            )
+
+    # 4. MANIFEST.sha256 matches the canonical artifacts byte-for-byte.
+    if not manifest_path.exists():
+        violations.append(
+            Violation(
+                code="deploy-manifest-missing",
+                message=(
+                    "deploy/docker/MANIFEST.sha256 is missing; the deploy-time drift "
+                    "guard has nothing to verify against (GC-P023). Generate it with "
+                    "'make deploy-manifest'."
+                ),
+                details=[f"expected {(DEPLOY_DOCKER_DIR / 'MANIFEST.sha256').as_posix()}"],
+            )
+        )
+    else:
+        manifest: dict[str, str] = {}
+        for line in manifest_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            parts = stripped.split(None, 1)
+            if len(parts) != 2:
+                continue
+            manifest[parts[1].strip()] = parts[0]
+        if set(manifest) != set(DEPLOY_CANONICAL_ARTIFACTS):
+            violations.append(
+                Violation(
+                    code="deploy-manifest-coverage",
+                    message=(
+                        "MANIFEST.sha256 must list exactly the canonical deploy "
+                        "artifacts (GC-P023). Regenerate with 'make deploy-manifest'."
+                    ),
+                    details=[
+                        f"expected: {', '.join(DEPLOY_CANONICAL_ARTIFACTS)}",
+                        f"found: {', '.join(sorted(manifest)) or '<none>'}",
+                    ],
+                )
+            )
+        for name, expected_sha in manifest.items():
+            artifact = ddir / name
+            if not artifact.exists():
+                violations.append(
+                    Violation(
+                        code="deploy-manifest-stale",
+                        message="MANIFEST.sha256 lists a file that does not exist (GC-P023).",
+                        details=[name],
+                    )
+                )
+                continue
+            actual_sha = hashlib.sha256(artifact.read_bytes()).hexdigest()
+            if actual_sha != expected_sha:
+                violations.append(
+                    Violation(
+                        code="deploy-manifest-stale",
+                        message=(
+                            f"{name} content does not match MANIFEST.sha256; the "
+                            "deploy-time drift guard would reject a current /opt/gc "
+                            "mirror. Regenerate with 'make deploy-manifest' (GC-P023)."
+                        ),
+                        details=[name],
+                    )
+                )
+
+    # 5. Single operator wrapper: the dead divergent duplicate stays removed.
+    if (root / DEPLOY_DEAD_WRAPPER_PATH).exists():
+        violations.append(
+            Violation(
+                code="deploy-wrapper-duplicate",
+                message=(
+                    "deploy/scripts/deploy.sh was a dead divergent duplicate of the "
+                    "operator wrapper (broken host-side health check) and must stay "
+                    "removed; scripts/deploy.sh is the single wrapper (GC-P023 / #855)."
+                ),
+                details=[f"remove {DEPLOY_DEAD_WRAPPER_PATH.as_posix()}"],
+            )
+        )
+
+    # 6. Single-source rollout logic: the wrapper orchestrates, it does not
+    #    reimplement the docker compose pull/up rollout primitives.
+    if wrapper_path.exists():
+        wrapper_code = "\n".join(
+            line
+            for line in wrapper_path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        if re.search(r"docker\s+compose\b[^\n]*\b(pull|up)\b", wrapper_code):
+            violations.append(
+                Violation(
+                    code="deploy-wrapper-duplicates-logic",
+                    message=(
+                        "deploy/scripts/deploy.sh (operator wrapper) must not run "
+                        "'docker compose pull/up'; the rollout lives only in the "
+                        "canonical deploy/docker/deploy.sh (GC-P023 single-source)."
+                    ),
+                    details=[],
+                )
+            )
+
+    return violations
 
 
 # ---------------------------------------------------------------------------
@@ -2453,6 +2716,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_ci_strictness_contract())
     violations.extend(run_deploy_compose_credential_passthrough())
     violations.extend(run_ghcr_namespace_drift())
+    violations.extend(run_deploy_artifact_consistency())
     violations.extend(run_enum_contract_check())
     violations.extend(run_workflow_routing_contract())
     violations.extend(run_test_quality_decision_record_contract())
