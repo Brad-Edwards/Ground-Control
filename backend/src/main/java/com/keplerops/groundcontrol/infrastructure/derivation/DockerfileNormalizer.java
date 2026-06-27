@@ -32,52 +32,44 @@ class DockerfileNormalizer {
         var provenance = new DerivationFactProvenance(
                 adapterId, "iac-pipeline", rulesetVersion, "iac-pipeline-rules", rulesetVersion, commitSha, derivedAt);
 
-        // Parse lines with continuation handling
-        var lines = parseLines(content);
-
-        for (String line : lines) {
-            var trimmed = line.trim();
-            if (trimmed.isEmpty() || trimmed.startsWith("#")) {
-                continue;
-            }
-
-            // Split into instruction and rest
-            var spaceIdx = trimmed.indexOf(' ');
-            if (spaceIdx < 0) {
-                continue;
-            }
-            var instruction = trimmed.substring(0, spaceIdx).toUpperCase(Locale.ROOT);
-            var rest = trimmed.substring(spaceIdx + 1).trim();
-
-            switch (instruction) {
-                case "FROM" -> facts.addAll(normalizeFrom(surface, relativePath, rest, provenance));
-                case "ARG" -> {
-                    var argFact = normalizeArg(surface, relativePath, rest, provenance);
-                    if (argFact != null) facts.add(argFact);
-                }
-                case "ENV" -> {
-                    var envFact = normalizeEnv(surface, relativePath, rest, provenance);
-                    if (envFact != null) facts.add(envFact);
-                }
-                case "RUN" -> {
-                    var runFact = normalizeRun(surface, relativePath, trimmed, provenance);
-                    if (runFact != null) facts.add(runFact);
-                }
-                case "USER" -> {
-                    var userFact = normalizeUser(surface, relativePath, rest, provenance);
-                    if (userFact != null) facts.add(userFact);
-                }
-                case "ADD" -> {
-                    var addFact = normalizeAdd(surface, relativePath, rest, provenance);
-                    if (addFact != null) facts.add(addFact);
-                }
-                default -> {
-                    // Not a tracked instruction
-                }
-            }
+        for (String line : parseLines(content)) {
+            facts.addAll(processDockerfileLine(surface, relativePath, line, provenance));
         }
 
         return List.copyOf(facts);
+    }
+
+    private List<DerivedSystemModelFact> processDockerfileLine(
+            String surface, String relativePath, String line, DerivationFactProvenance provenance) {
+        var trimmed = line.trim();
+        if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+            return List.of();
+        }
+        var spaceIdx = trimmed.indexOf(' ');
+        if (spaceIdx < 0) {
+            return List.of();
+        }
+        var instruction = trimmed.substring(0, spaceIdx).toUpperCase(Locale.ROOT);
+        var rest = trimmed.substring(spaceIdx + 1).trim();
+        var facts = new ArrayList<DerivedSystemModelFact>();
+        switch (instruction) {
+            case "FROM" -> facts.addAll(normalizeFrom(surface, relativePath, rest, provenance));
+            case "ARG" -> addIfNonNull(facts, normalizeArg(surface, relativePath, rest, provenance));
+            case "ENV" -> addIfNonNull(facts, normalizeEnv(surface, relativePath, rest, provenance));
+            case "RUN" -> addIfNonNull(facts, normalizeRun(surface, relativePath, trimmed, provenance));
+            case "USER" -> addIfNonNull(facts, normalizeUser(surface, relativePath, rest, provenance));
+            case "ADD" -> addIfNonNull(facts, normalizeAdd(surface, relativePath, rest, provenance));
+            default -> {
+                /* Not a tracked instruction */
+            }
+        }
+        return facts;
+    }
+
+    private static void addIfNonNull(List<DerivedSystemModelFact> facts, DerivedSystemModelFact fact) {
+        if (fact != null) {
+            facts.add(fact);
+        }
     }
 
     private List<DerivedSystemModelFact> normalizeFrom(
@@ -105,9 +97,9 @@ class DockerfileNormalizer {
 
         // Emit COMPONENT for the image
         var compPayload = new LinkedHashMap<String, Object>();
-        compPayload.put("surface", surface);
-        compPayload.put("artifactKind", "docker-image");
-        compPayload.put("sourcePath", relativePath);
+        compPayload.put(IacFactKeys.SURFACE, surface);
+        compPayload.put(IacFactKeys.ARTIFACT_KIND, "docker-image");
+        compPayload.put(IacFactKeys.SOURCE_PATH, relativePath);
         if (stageName != null) {
             compPayload.put("buildStage", stageName);
         }
@@ -130,10 +122,10 @@ class DockerfileNormalizer {
         var registryHostname = extractRegistryHostname(imageName);
         if (registryHostname != null) {
             var regPayload = new LinkedHashMap<String, Object>();
-            regPayload.put("surface", surface);
-            regPayload.put("artifactKind", "image-registry");
+            regPayload.put(IacFactKeys.SURFACE, surface);
+            regPayload.put(IacFactKeys.ARTIFACT_KIND, "image-registry");
             regPayload.put("registryTarget", registryHostname);
-            regPayload.put("sourcePath", relativePath);
+            regPayload.put(IacFactKeys.SOURCE_PATH, relativePath);
             var regKey = buildFactKey(
                     surface,
                     SystemModelFactKind.EXTERNAL_INTERACTION,
@@ -162,10 +154,10 @@ class DockerfileNormalizer {
             return null;
         }
         var payload = new LinkedHashMap<String, Object>();
-        payload.put("surface", surface);
-        payload.put("secretRef", name);
-        payload.put("secretScope", "build-arg");
-        payload.put("sourcePath", relativePath);
+        payload.put(IacFactKeys.SURFACE, surface);
+        payload.put(IacFactKeys.SECRET_REF, name);
+        payload.put(IacFactKeys.SECRET_SCOPE, "build-arg");
+        payload.put(IacFactKeys.SOURCE_PATH, relativePath);
         var factKey = buildFactKey(
                 surface, SystemModelFactKind.SECRET_USAGE, provenance.adapterId(), relativePath, "arg:" + name);
         return new DerivedSystemModelFact(
@@ -195,10 +187,10 @@ class DockerfileNormalizer {
             return null;
         }
         var payload = new LinkedHashMap<String, Object>();
-        payload.put("surface", surface);
-        payload.put("secretRef", name);
-        payload.put("secretScope", "build-env");
-        payload.put("sourcePath", relativePath);
+        payload.put(IacFactKeys.SURFACE, surface);
+        payload.put(IacFactKeys.SECRET_REF, name);
+        payload.put(IacFactKeys.SECRET_SCOPE, "build-env");
+        payload.put(IacFactKeys.SOURCE_PATH, relativePath);
         var factKey = buildFactKey(
                 surface, SystemModelFactKind.SECRET_USAGE, provenance.adapterId(), relativePath, "env:" + name);
         return new DerivedSystemModelFact(
@@ -223,10 +215,10 @@ class DockerfileNormalizer {
         }
         var id = matcher.group(1);
         var payload = new LinkedHashMap<String, Object>();
-        payload.put("surface", surface);
-        payload.put("secretRef", id);
-        payload.put("secretScope", "build-secret");
-        payload.put("sourcePath", relativePath);
+        payload.put(IacFactKeys.SURFACE, surface);
+        payload.put(IacFactKeys.SECRET_REF, id);
+        payload.put(IacFactKeys.SECRET_SCOPE, "build-secret");
+        payload.put(IacFactKeys.SOURCE_PATH, relativePath);
         var factKey = buildFactKey(
                 surface, SystemModelFactKind.SECRET_USAGE, provenance.adapterId(), relativePath, "run-secret:" + id);
         return new DerivedSystemModelFact(
@@ -246,10 +238,10 @@ class DockerfileNormalizer {
             return null;
         }
         var payload = new LinkedHashMap<String, Object>();
-        payload.put("surface", surface);
-        payload.put("artifactKind", "dockerfile-stage");
-        payload.put("privilegedOperation", "user-root");
-        payload.put("sourcePath", relativePath);
+        payload.put(IacFactKeys.SURFACE, surface);
+        payload.put(IacFactKeys.ARTIFACT_KIND, "dockerfile-stage");
+        payload.put(IacFactKeys.PRIVILEGED_OPERATION, "user-root");
+        payload.put(IacFactKeys.SOURCE_PATH, relativePath);
         var factKey =
                 buildFactKey(surface, SystemModelFactKind.COMPONENT, provenance.adapterId(), relativePath, "user-root");
         return new DerivedSystemModelFact(
@@ -274,10 +266,10 @@ class DockerfileNormalizer {
         // Sanitize: strip userinfo, query string, and fragment before persisting
         var sanitizedUrl = RemoteRefSanitizer.sanitize(url);
         var payload = new LinkedHashMap<String, Object>();
-        payload.put("surface", surface);
-        payload.put("artifactKind", "remote-fetch");
+        payload.put(IacFactKeys.SURFACE, surface);
+        payload.put(IacFactKeys.ARTIFACT_KIND, "remote-fetch");
         payload.put("registryTarget", sanitizedUrl);
-        payload.put("sourcePath", relativePath);
+        payload.put(IacFactKeys.SOURCE_PATH, relativePath);
         var factKey = buildFactKey(
                 surface,
                 SystemModelFactKind.EXTERNAL_INTERACTION,
@@ -329,8 +321,8 @@ class DockerfileNormalizer {
 
     /**
      * Builds a stable fact key using semantic identity only: surface, factKind, adapterId,
-     * sourcePath, and uniqueKey. commitSha is intentionally excluded so that the same
-     * topology across different commits produces identical keys (ADR-058).
+     * sourcePath, and uniqueKey. commitSha is intentionally excluded so that the same topology
+     * across different commits produces identical keys (ADR-058).
      */
     private static String buildFactKey(
             String surface, SystemModelFactKind factKind, String adapterId, String relativePath, String uniqueKey) {

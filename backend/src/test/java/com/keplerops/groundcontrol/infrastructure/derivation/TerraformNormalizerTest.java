@@ -48,14 +48,15 @@ class TerraformNormalizerTest {
                 """;
         var facts = normalize(content);
 
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
-            assertThat(f.payload()).containsEntry("artifactKind", "terraform-provider");
-        });
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.EXTERNAL_INTERACTION);
-            assertThat(f.payload()).containsEntry("artifactKind", "provider-registry");
-        });
+        assertThat(facts)
+                .anySatisfy(f -> {
+                    assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
+                    assertThat(f.payload()).containsEntry("artifactKind", "terraform-provider");
+                })
+                .anySatisfy(f -> {
+                    assertThat(f.factKind()).isEqualTo(SystemModelFactKind.EXTERNAL_INTERACTION);
+                    assertThat(f.payload()).containsEntry("artifactKind", "provider-registry");
+                });
     }
 
     @Test
@@ -160,13 +161,11 @@ class TerraformNormalizerTest {
                 """;
         var facts = normalize(content);
 
-        // Should still parse the resource block
-        assertThat(facts).anySatisfy(f -> {
+        // Should still parse the resource block and emit exactly one fact
+        assertThat(facts).hasSize(1).anySatisfy(f -> {
             assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
             assertThat(f.payload()).containsEntry("artifactKind", "terraform-resource");
         });
-        // Should not emit anything for comment lines
-        assertThat(facts).hasSize(1);
     }
 
     // ── Finding 1: fact-key stability across commits ──────────────────────────

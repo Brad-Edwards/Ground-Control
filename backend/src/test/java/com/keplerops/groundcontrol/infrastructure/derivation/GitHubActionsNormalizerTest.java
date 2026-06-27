@@ -116,12 +116,13 @@ class GitHubActionsNormalizerTest {
                 """;
         var facts = normalize(yaml);
 
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
-            assertThat(f.payload()).containsEntry("runnerKind", "github-hosted");
-        });
-        // No trust boundary for github-hosted runners
-        assertThat(facts).noneSatisfy(f -> assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY));
+        assertThat(facts)
+                .anySatisfy(f -> {
+                    assertThat(f.factKind()).isEqualTo(SystemModelFactKind.COMPONENT);
+                    assertThat(f.payload()).containsEntry("runnerKind", "github-hosted");
+                })
+                // No trust boundary for github-hosted runners
+                .noneSatisfy(f -> assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY));
     }
 
     @Test

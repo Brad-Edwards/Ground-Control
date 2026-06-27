@@ -7,7 +7,11 @@ import com.keplerops.groundcontrol.domain.derivation.service.DerivedSystemModelF
 import com.keplerops.groundcontrol.domain.derivation.state.SystemModelFactKind;
 import java.time.Instant;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class DockerComposeNormalizerTest {
 
@@ -57,39 +61,44 @@ class DockerComposeNormalizerTest {
         });
     }
 
-    @Test
-    void privilegedContainerEmitsTrustBoundary() {
-        var content =
-                """
-                services:
-                  app:
-                    image: myapp:latest
-                    privileged: true
-                """;
-        var facts = normalize(content);
+    @ParameterizedTest
+    @MethodSource("trustBoundaryServiceConfigs")
+    void serviceConfigEmitsTrustBoundary(String yaml, String expectedPrivilegedOperation) {
+        var facts = normalize(yaml);
 
         assertThat(facts).anySatisfy(f -> {
             assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
-            assertThat(f.payload()).containsEntry("privilegedOperation", "privileged-container");
+            assertThat(f.payload()).containsEntry("privilegedOperation", expectedPrivilegedOperation);
         });
     }
 
-    @Test
-    void dockerSocketMountEmitsTrustBoundary() {
-        var content =
-                """
-                services:
-                  app:
-                    image: myapp:latest
-                    volumes:
-                      - /var/run/docker.sock:/var/run/docker.sock
-                """;
-        var facts = normalize(content);
-
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
-            assertThat(f.payload()).containsEntry("privilegedOperation", "docker-socket-mount");
-        });
+    static Stream<Arguments> trustBoundaryServiceConfigs() {
+        return Stream.of(
+                Arguments.of(
+                        """
+                        services:
+                          app:
+                            image: myapp:latest
+                            privileged: true
+                        """,
+                        "privileged-container"),
+                Arguments.of(
+                        """
+                        services:
+                          app:
+                            image: myapp:latest
+                            volumes:
+                              - /var/run/docker.sock:/var/run/docker.sock
+                        """,
+                        "docker-socket-mount"),
+                Arguments.of(
+                        """
+                        services:
+                          app:
+                            image: myapp:latest
+                            network_mode: host
+                        """,
+                        "host-network"));
     }
 
     @Test
@@ -127,18 +136,19 @@ class DockerComposeNormalizerTest {
                 """;
         var facts = normalize(content);
 
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
-            assertThat(f.payload()).containsEntry("secretRef", "DB_PASSWORD");
-            assertThat(f.payload()).containsEntry("secretScope", "environment");
-            // Value must not appear
-            assertThat(f.payload().toString()).doesNotContain("actual-secret-value");
-        });
-        // Non-secret env var must not appear as a SECRET_USAGE fact
-        assertThat(facts).noneSatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
-            assertThat(f.payload()).containsEntry("secretRef", "APP_NAME");
-        });
+        assertThat(facts)
+                .anySatisfy(f -> {
+                    assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+                    assertThat(f.payload()).containsEntry("secretRef", "DB_PASSWORD");
+                    assertThat(f.payload()).containsEntry("secretScope", "environment");
+                    // Value must not appear
+                    assertThat(f.payload().toString()).doesNotContain("actual-secret-value");
+                })
+                // Non-secret env var must not appear as a SECRET_USAGE fact
+                .noneSatisfy(f -> {
+                    assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
+                    assertThat(f.payload()).containsEntry("secretRef", "APP_NAME");
+                });
     }
 
     @Test
@@ -157,23 +167,6 @@ class DockerComposeNormalizerTest {
         assertThat(facts).anySatisfy(f -> {
             assertThat(f.factKind()).isEqualTo(SystemModelFactKind.EXTERNAL_INTERACTION);
             assertThat(f.payload()).containsEntry("artifactKind", "published-port");
-        });
-    }
-
-    @Test
-    void hostNetworkModeEmitsTrustBoundary() {
-        var content =
-                """
-                services:
-                  app:
-                    image: myapp:latest
-                    network_mode: host
-                """;
-        var facts = normalize(content);
-
-        assertThat(facts).anySatisfy(f -> {
-            assertThat(f.factKind()).isEqualTo(SystemModelFactKind.TRUST_BOUNDARY);
-            assertThat(f.payload()).containsEntry("privilegedOperation", "host-network");
         });
     }
 

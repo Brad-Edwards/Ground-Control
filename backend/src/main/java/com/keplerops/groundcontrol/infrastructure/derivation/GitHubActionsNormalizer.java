@@ -22,6 +22,9 @@ import java.util.regex.Pattern;
 
 class GitHubActionsNormalizer {
 
+    private static final String RUNNER_SELF_HOSTED = "self-hosted";
+    private static final String TRUST_UNTRUSTED = "untrusted";
+
     private static final Set<String> UNTRUSTED_TRIGGERS =
             Set.of("pull_request_target", "workflow_run", "schedule", "workflow_dispatch");
     private static final Set<String> TRUSTED_ORGS = Set.of(
@@ -33,9 +36,11 @@ class GitHubActionsNormalizer {
             "azure",
             "hashicorp",
             "slsa-framework");
-    private static final Pattern SECRET_REF_PATTERN =
-            Pattern.compile("\\$\\{\\{\\s*secrets\\.([A-Za-z0-9_]+)\\s*\\}\\}");
+    // \w matches [A-Za-z0-9_]; equivalent and preferred per S4248.
+    private static final Pattern SECRET_REF_PATTERN = Pattern.compile("\\$\\{\\{\\s*secrets\\.(\\w+)\\s*\\}\\}");
     private static final Pattern DEPLOY_KEYWORD = Pattern.compile("(?i)(login|push|publish|deploy|release|registry)");
+
+    private record RunnerInfo(String kind, String trustLevel) {}
 
     private final YAMLMapper yamlMapper;
 
@@ -117,12 +122,12 @@ class GitHubActionsNormalizer {
         }
 
         for (String triggerKind : triggers) {
-            var trust = UNTRUSTED_TRIGGERS.contains(triggerKind) ? "untrusted" : "trusted";
+            var trust = UNTRUSTED_TRIGGERS.contains(triggerKind) ? TRUST_UNTRUSTED : "trusted";
             var payload = new LinkedHashMap<String, Object>();
-            payload.put("surface", surface);
+            payload.put(IacFactKeys.SURFACE, surface);
             payload.put("triggerKind", triggerKind);
             payload.put("triggerTrust", trust);
-            payload.put("sourcePath", relativePath);
+            payload.put(IacFactKeys.SOURCE_PATH, relativePath);
             var uniqueKey = "trigger:" + triggerKind;
             var factKey = buildFactKey(
                     surface, SystemModelFactKind.ENTRY_POINT, provenance.adapterId(), relativePath, uniqueKey);
@@ -141,67 +146,14 @@ class GitHubActionsNormalizer {
     private List<DerivedSystemModelFact> normalizeJob(
             String surface, String relativePath, String jobId, JsonNode jobNode, DerivationFactProvenance provenance) {
         var facts = new ArrayList<DerivedSystemModelFact>();
+        var runner = determineRunnerKind(jobNode);
 
-        // Determine runner kind
-        var runsOnNode = jobNode.path("runs-on");
-        var runnerKind = "github-hosted";
-        var runnerTrustLevel = "trusted";
-        if (runsOnNode.isTextual() && "self-hosted".equals(runsOnNode.asText())) {
-            runnerKind = "self-hosted";
-            runnerTrustLevel = "untrusted";
-        } else if (runsOnNode.isArray()) {
-            for (JsonNode item : runsOnNode) {
-                if ("self-hosted".equals(item.asText())) {
-                    runnerKind = "self-hosted";
-                    runnerTrustLevel = "untrusted";
-                    break;
-                }
-            }
+        facts.add(emitJobComponent(surface, relativePath, jobId, runner, provenance));
+
+        if (RUNNER_SELF_HOSTED.equals(runner.kind())) {
+            facts.add(emitSelfHostedBoundary(surface, relativePath, jobId, provenance));
         }
 
-        // Emit COMPONENT for the job
-        var compPayload = new LinkedHashMap<String, Object>();
-        compPayload.put("surface", surface);
-        compPayload.put("artifactKind", "workflow-job");
-        compPayload.put("jobId", jobId);
-        compPayload.put("runnerKind", runnerKind);
-        compPayload.put("runnerTrustLevel", runnerTrustLevel);
-        compPayload.put("sourcePath", relativePath);
-        var compKey = buildFactKey(
-                surface, SystemModelFactKind.COMPONENT, provenance.adapterId(), relativePath, "job:" + jobId);
-        facts.add(new DerivedSystemModelFact(
-                SystemModelFactKind.COMPONENT,
-                compKey,
-                "Workflow job: " + jobId,
-                "CI/CD workflow job " + jobId + " running on " + runnerKind,
-                relativePath,
-                compPayload,
-                provenance));
-
-        // Self-hosted runner → trust boundary
-        if ("self-hosted".equals(runnerKind)) {
-            var tbPayload = new LinkedHashMap<String, Object>();
-            tbPayload.put("surface", surface);
-            tbPayload.put("artifactKind", "runner-boundary");
-            tbPayload.put("runnerTrustLevel", "untrusted");
-            tbPayload.put("sourcePath", relativePath);
-            var tbKey = buildFactKey(
-                    surface,
-                    SystemModelFactKind.TRUST_BOUNDARY,
-                    provenance.adapterId(),
-                    relativePath,
-                    "runner-boundary:" + jobId);
-            facts.add(new DerivedSystemModelFact(
-                    SystemModelFactKind.TRUST_BOUNDARY,
-                    tbKey,
-                    "Self-hosted runner boundary: " + jobId,
-                    "Job " + jobId + " runs on an untrusted self-hosted runner",
-                    relativePath,
-                    tbPayload,
-                    provenance));
-        }
-
-        // Per-job permissions
         var jobPermissions = jobNode.path("permissions");
         if (jobPermissions.isObject()) {
             var secretFact = processOidcPermission(surface, relativePath, jobPermissions, jobId, provenance);
@@ -210,40 +162,102 @@ class GitHubActionsNormalizer {
             }
         }
 
-        // secrets: inherit at job level
         var jobSecrets = jobNode.path("secrets");
         if (jobSecrets.isTextual() && "inherit".equals(jobSecrets.asText())) {
-            var inheritPayload = new LinkedHashMap<String, Object>();
-            inheritPayload.put("surface", surface);
-            inheritPayload.put("secretScope", "inherit");
-            inheritPayload.put("sourcePath", relativePath);
-            var inheritKey = buildFactKey(
-                    surface,
-                    SystemModelFactKind.SECRET_USAGE,
-                    provenance.adapterId(),
-                    relativePath,
-                    "secrets-inherit:" + jobId);
-            facts.add(new DerivedSystemModelFact(
-                    SystemModelFactKind.SECRET_USAGE,
-                    inheritKey,
-                    "Inherited secrets in job: " + jobId,
-                    "Job " + jobId + " inherits all caller secrets",
-                    relativePath,
-                    inheritPayload,
-                    provenance));
+            facts.add(emitSecretsInherit(surface, relativePath, jobId, provenance));
         }
 
-        // Steps
         var stepsNode = jobNode.path("steps");
         if (stepsNode.isArray()) {
-            int stepIndex = 0;
+            int stepIdx = 0;
             for (JsonNode step : stepsNode) {
-                facts.addAll(normalizeStep(surface, relativePath, jobId, step, stepIndex, provenance));
-                stepIndex++;
+                facts.addAll(normalizeStep(surface, relativePath, step, stepIdx, provenance));
+                stepIdx++;
             }
         }
 
         return facts;
+    }
+
+    private RunnerInfo determineRunnerKind(JsonNode jobNode) {
+        var runsOnNode = jobNode.path("runs-on");
+        if (runsOnNode.isTextual() && RUNNER_SELF_HOSTED.equals(runsOnNode.asText())) {
+            return new RunnerInfo(RUNNER_SELF_HOSTED, TRUST_UNTRUSTED);
+        }
+        if (runsOnNode.isArray()) {
+            for (JsonNode item : runsOnNode) {
+                if (RUNNER_SELF_HOSTED.equals(item.asText())) {
+                    return new RunnerInfo(RUNNER_SELF_HOSTED, TRUST_UNTRUSTED);
+                }
+            }
+        }
+        return new RunnerInfo("github-hosted", "trusted");
+    }
+
+    private DerivedSystemModelFact emitJobComponent(
+            String surface, String relativePath, String jobId, RunnerInfo runner, DerivationFactProvenance provenance) {
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put(IacFactKeys.SURFACE, surface);
+        payload.put(IacFactKeys.ARTIFACT_KIND, "workflow-job");
+        payload.put("jobId", jobId);
+        payload.put("runnerKind", runner.kind());
+        payload.put("runnerTrustLevel", runner.trustLevel());
+        payload.put(IacFactKeys.SOURCE_PATH, relativePath);
+        var key = buildFactKey(
+                surface, SystemModelFactKind.COMPONENT, provenance.adapterId(), relativePath, "job:" + jobId);
+        return new DerivedSystemModelFact(
+                SystemModelFactKind.COMPONENT,
+                key,
+                "Workflow job: " + jobId,
+                "CI/CD workflow job " + jobId + " running on " + runner.kind(),
+                relativePath,
+                payload,
+                provenance);
+    }
+
+    private DerivedSystemModelFact emitSelfHostedBoundary(
+            String surface, String relativePath, String jobId, DerivationFactProvenance provenance) {
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put(IacFactKeys.SURFACE, surface);
+        payload.put(IacFactKeys.ARTIFACT_KIND, "runner-boundary");
+        payload.put("runnerTrustLevel", TRUST_UNTRUSTED);
+        payload.put(IacFactKeys.SOURCE_PATH, relativePath);
+        var key = buildFactKey(
+                surface,
+                SystemModelFactKind.TRUST_BOUNDARY,
+                provenance.adapterId(),
+                relativePath,
+                "runner-boundary:" + jobId);
+        return new DerivedSystemModelFact(
+                SystemModelFactKind.TRUST_BOUNDARY,
+                key,
+                "Self-hosted runner boundary: " + jobId,
+                "Job " + jobId + " runs on an untrusted self-hosted runner",
+                relativePath,
+                payload,
+                provenance);
+    }
+
+    private DerivedSystemModelFact emitSecretsInherit(
+            String surface, String relativePath, String jobId, DerivationFactProvenance provenance) {
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put(IacFactKeys.SURFACE, surface);
+        payload.put(IacFactKeys.SECRET_SCOPE, "inherit");
+        payload.put(IacFactKeys.SOURCE_PATH, relativePath);
+        var key = buildFactKey(
+                surface,
+                SystemModelFactKind.SECRET_USAGE,
+                provenance.adapterId(),
+                relativePath,
+                "secrets-inherit:" + jobId);
+        return new DerivedSystemModelFact(
+                SystemModelFactKind.SECRET_USAGE,
+                key,
+                "Inherited secrets in job: " + jobId,
+                "Job " + jobId + " inherits all caller secrets",
+                relativePath,
+                payload,
+                provenance);
     }
 
     private DerivedSystemModelFact processOidcPermission(
@@ -261,11 +275,11 @@ class GitHubActionsNormalizer {
                 permsMap.put(entry.getKey(), entry.getValue().asText());
             }
             var payload = new LinkedHashMap<String, Object>();
-            payload.put("surface", surface);
-            payload.put("secretScope", "oidc");
-            payload.put("secretRef", "id-token");
+            payload.put(IacFactKeys.SURFACE, surface);
+            payload.put(IacFactKeys.SECRET_SCOPE, "oidc");
+            payload.put(IacFactKeys.SECRET_REF, "id-token");
             payload.put("permissionSet", permsMap);
-            payload.put("sourcePath", relativePath);
+            payload.put(IacFactKeys.SOURCE_PATH, relativePath);
             var uniqueKey = "oidc-permission:" + scope;
             var factKey = buildFactKey(
                     surface, SystemModelFactKind.SECRET_USAGE, provenance.adapterId(), relativePath, uniqueKey);
@@ -282,19 +296,13 @@ class GitHubActionsNormalizer {
     }
 
     private List<DerivedSystemModelFact> normalizeStep(
-            String surface,
-            String relativePath,
-            String jobId,
-            JsonNode step,
-            int stepIndex,
-            DerivationFactProvenance provenance) {
+            String surface, String relativePath, JsonNode step, int stepIndex, DerivationFactProvenance provenance) {
         var facts = new ArrayList<DerivedSystemModelFact>();
 
         // "uses" field
         var usesNode = step.path("uses");
         if (usesNode.isTextual()) {
-            var uses = usesNode.asText();
-            facts.addAll(normalizeUsesStep(surface, relativePath, uses, stepIndex, provenance));
+            facts.addAll(normalizeUsesStep(surface, relativePath, usesNode.asText(), provenance));
         }
 
         // "name" field — deploy keyword check
@@ -303,10 +311,10 @@ class GitHubActionsNormalizer {
             var stepName = nameNode.asText();
             if (DEPLOY_KEYWORD.matcher(stepName).find()) {
                 var payload = new LinkedHashMap<String, Object>();
-                payload.put("surface", surface);
-                payload.put("artifactKind", "deploy-step");
-                payload.put("exposurePath", stepName);
-                payload.put("sourcePath", relativePath);
+                payload.put(IacFactKeys.SURFACE, surface);
+                payload.put(IacFactKeys.ARTIFACT_KIND, "deploy-step");
+                payload.put(IacFactKeys.EXPOSURE_PATH, stepName);
+                payload.put(IacFactKeys.SOURCE_PATH, relativePath);
                 var uniqueKey = "deploy-step:" + stepIndex + ":" + stepName;
                 var factKey = buildFactKey(
                         surface, SystemModelFactKind.DATA_FLOW, provenance.adapterId(), relativePath, uniqueKey);
@@ -329,7 +337,7 @@ class GitHubActionsNormalizer {
     }
 
     private List<DerivedSystemModelFact> normalizeUsesStep(
-            String surface, String relativePath, String uses, int stepIndex, DerivationFactProvenance provenance) {
+            String surface, String relativePath, String uses, DerivationFactProvenance provenance) {
         var facts = new ArrayList<DerivedSystemModelFact>();
 
         // Parse "owner/action@ref"
@@ -340,10 +348,10 @@ class GitHubActionsNormalizer {
 
         if (!TRUSTED_ORGS.contains(owner.toLowerCase(Locale.ROOT))) {
             var payload = new LinkedHashMap<String, Object>();
-            payload.put("surface", surface);
-            payload.put("artifactKind", "third-party-action");
+            payload.put(IacFactKeys.SURFACE, surface);
+            payload.put(IacFactKeys.ARTIFACT_KIND, "third-party-action");
             payload.put("registryTarget", actionPart);
-            payload.put("sourcePath", relativePath);
+            payload.put(IacFactKeys.SOURCE_PATH, relativePath);
             var uniqueKey = "third-party-action:" + uses;
             var factKey = buildFactKey(
                     surface, SystemModelFactKind.EXTERNAL_INTERACTION, provenance.adapterId(), relativePath, uniqueKey);
@@ -360,10 +368,10 @@ class GitHubActionsNormalizer {
         // Check if uses name contains deploy keywords
         if (DEPLOY_KEYWORD.matcher(uses).find()) {
             var payload = new LinkedHashMap<String, Object>();
-            payload.put("surface", surface);
-            payload.put("artifactKind", "deploy-step");
-            payload.put("exposurePath", uses);
-            payload.put("sourcePath", relativePath);
+            payload.put(IacFactKeys.SURFACE, surface);
+            payload.put(IacFactKeys.ARTIFACT_KIND, "deploy-step");
+            payload.put(IacFactKeys.EXPOSURE_PATH, uses);
+            payload.put(IacFactKeys.SOURCE_PATH, relativePath);
             var uniqueKey = "deploy-action:" + uses;
             var factKey = buildFactKey(
                     surface, SystemModelFactKind.DATA_FLOW, provenance.adapterId(), relativePath, uniqueKey);
@@ -399,11 +407,11 @@ class GitHubActionsNormalizer {
             while (matcher.find()) {
                 var secretName = matcher.group(1);
                 var payload = new LinkedHashMap<String, Object>();
-                payload.put("surface", surface);
-                payload.put("secretRef", secretName);
-                payload.put("secretScope", "repository");
-                payload.put("exposurePath", exposurePath);
-                payload.put("sourcePath", relativePath);
+                payload.put(IacFactKeys.SURFACE, surface);
+                payload.put(IacFactKeys.SECRET_REF, secretName);
+                payload.put(IacFactKeys.SECRET_SCOPE, "repository");
+                payload.put(IacFactKeys.EXPOSURE_PATH, exposurePath);
+                payload.put(IacFactKeys.SOURCE_PATH, relativePath);
                 var uniqueKey = "secret-ref:" + secretName + ":" + exposurePath + ":" + stepIndex;
                 var factKey = buildFactKey(
                         surface, SystemModelFactKind.SECRET_USAGE, provenance.adapterId(), relativePath, uniqueKey);
@@ -422,8 +430,8 @@ class GitHubActionsNormalizer {
 
     /**
      * Builds a stable fact key using semantic identity only: surface, factKind, adapterId,
-     * sourcePath, and uniqueKey. commitSha is intentionally excluded so that the same
-     * topology across different commits produces identical keys (ADR-058).
+     * sourcePath, and uniqueKey. commitSha is intentionally excluded so that the same topology
+     * across different commits produces identical keys (ADR-058).
      */
     private static String buildFactKey(
             String surface, SystemModelFactKind factKind, String adapterId, String relativePath, String uniqueKey) {

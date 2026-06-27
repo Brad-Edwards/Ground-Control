@@ -5,6 +5,7 @@ import com.keplerops.groundcontrol.domain.derivation.service.DerivationAdapterDe
 import com.keplerops.groundcontrol.domain.derivation.service.DerivationAdapterRequest;
 import com.keplerops.groundcontrol.domain.derivation.service.DerivationAdapterResult;
 import com.keplerops.groundcontrol.domain.derivation.service.DerivationCaptureLimitDraft;
+import com.keplerops.groundcontrol.domain.derivation.service.DerivationScope;
 import com.keplerops.groundcontrol.domain.derivation.service.DerivedSystemModelFact;
 import com.keplerops.groundcontrol.domain.derivation.state.CaptureLimitReason;
 import com.keplerops.groundcontrol.domain.derivation.state.DerivationScopeMode;
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
@@ -31,9 +33,12 @@ import org.springframework.stereotype.Component;
 public class IacPipelineDerivationAdapter implements DerivationAdapter {
 
     private static final String ADAPTER_ID = "iac-pipeline-derivation";
-    private static final Set<String> SUPPORTED_LANGUAGES = Set.of("yaml", "dockerfile", "hcl");
-    private static final Set<String> SUPPORTED_SURFACES =
-            Set.of("github-actions", "dockerfile", "docker-compose", "terraform");
+    private static final Set<String> SUPPORTED_LANGUAGES = Set.of("yaml", IacFactKeys.SURFACE_DOCKERFILE, "hcl");
+    private static final Set<String> SUPPORTED_SURFACES = Set.of(
+            IacFactKeys.SURFACE_GITHUB_ACTIONS,
+            IacFactKeys.SURFACE_DOCKERFILE,
+            IacFactKeys.SURFACE_DOCKER_COMPOSE,
+            IacFactKeys.SURFACE_TERRAFORM);
     private static final Set<DerivationScopeMode> SUPPORTED_SCOPE_MODES =
             Set.of(DerivationScopeMode.FULL_REPO, DerivationScopeMode.DIFF, DerivationScopeMode.PATH_SET);
     private static final Set<SystemModelFactKind> FACT_KINDS = Set.of(
@@ -100,24 +105,7 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
         var facts = new ArrayList<DerivedSystemModelFact>();
         var captureLimits = new ArrayList<DerivationCaptureLimitDraft>();
 
-        // Emit UNSUPPORTED_SURFACE for any surface requested by the caller that we don't support
-        var requestedSurfaces = scope.surfaces();
-        if (requestedSurfaces != null && !requestedSurfaces.isEmpty()) {
-            var enabledSurfaces = properties.getEnabledSurfaces();
-            var emittedUnsupported = new LinkedHashSet<String>();
-            for (String surface : requestedSurfaces) {
-                if (!enabledSurfaces.contains(surface) && emittedUnsupported.add(surface)) {
-                    captureLimits.add(new DerivationCaptureLimitDraft(
-                            ADAPTER_ID,
-                            CaptureLimitReason.UNSUPPORTED_SURFACE,
-                            null,
-                            surface,
-                            "Surface '" + surface + "' is not supported by the IaC/pipeline adapter",
-                            scope.commitSha(),
-                            derivedAt));
-                }
-            }
-        }
+        captureLimits.addAll(buildUnsupportedSurfaceLimits(scope, derivedAt));
 
         var repoRoot = properties.getRepositoryRoot().toAbsolutePath().normalize();
         int[] fileCount = {0};
@@ -125,151 +113,19 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
 
         try {
             Files.walkFileTree(repoRoot, new SimpleFileVisitor<>() {
-
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                    if (dir.equals(repoRoot)) {
-                        return FileVisitResult.CONTINUE;
-                    }
-                    var relativePath = repoRoot.relativize(dir).toString().replace('\\', '/');
-                    if (isExcluded(relativePath, properties.getExcludedPaths())) {
-                        // Prune the entire subtree — never descend into excluded directories
-                        return FileVisitResult.SKIP_SUBTREE;
-                    }
-                    return FileVisitResult.CONTINUE;
+                    return handleDirectory(dir, repoRoot);
                 }
 
                 @Override
                 public FileVisitResult visitFile(Path absolutePath, BasicFileAttributes attrs) {
-                    // Relative path string
-                    var relativePath =
-                            repoRoot.relativize(absolutePath).toString().replace('\\', '/');
-
-                    // Symlink escape guard
-                    try {
-                        var realPath = absolutePath.toRealPath();
-                        if (!realPath.startsWith(repoRoot)) {
-                            return FileVisitResult.CONTINUE;
-                        }
-                    } catch (IOException ignored) {
-                        return FileVisitResult.CONTINUE;
-                    }
-
-                    // Classify surface
-                    var fileName = absolutePath.getFileName();
-                    if (fileName == null) {
-                        return FileVisitResult.CONTINUE;
-                    }
-                    var surface = classifySurface(fileName.toString(), relativePath);
-                    if (surface == null) {
-                        return FileVisitResult.CONTINUE;
-                    }
-
-                    // Surface filter: if scope specifies surfaces, only process matching ones
-                    if (requestedSurfaces != null
-                            && !requestedSurfaces.isEmpty()
-                            && !requestedSurfaces.contains(surface)) {
-                        return FileVisitResult.CONTINUE;
-                    }
-
-                    // Surface must be enabled
-                    if (!properties.getEnabledSurfaces().contains(surface)) {
-                        return FileVisitResult.CONTINUE;
-                    }
-
-                    // Language filter: when the scope declares languages, only process surfaces
-                    // whose grammar is in scope. Honors the DerivationScope language dimension so a
-                    // request scoped to e.g. "hcl" cannot persist GitHub Actions/Dockerfile facts.
-                    var requestedLanguages = scope.languages();
-                    if (requestedLanguages != null
-                            && !requestedLanguages.isEmpty()
-                            && !requestedLanguages.contains(surfaceLanguage(surface))) {
-                        return FileVisitResult.CONTINUE;
-                    }
-
-                    // DIFF/PATH_SET: only process files that are in scope
-                    if (scope.mode() == DerivationScopeMode.DIFF || scope.mode() == DerivationScopeMode.PATH_SET) {
-                        var paths = scope.paths();
-                        if (paths == null || paths.isEmpty()) {
-                            return FileVisitResult.CONTINUE;
-                        }
-                        if (!isInScope(relativePath, paths)) {
-                            return FileVisitResult.CONTINUE;
-                        }
-                    }
-
-                    // Enforce maxFiles cap — this file passed all filters and would be dispatched,
-                    // so hitting the cap here means in-scope files are being dropped.
-                    if (fileCount[0] >= properties.getMaxFiles()) {
-                        hitFileCap[0] = true;
-                        return FileVisitResult.TERMINATE;
-                    }
-                    fileCount[0]++;
-
-                    // File size check
-                    long fileSize;
-                    try {
-                        fileSize = Files.size(absolutePath);
-                    } catch (IOException ignored) {
-                        return FileVisitResult.CONTINUE;
-                    }
-                    if (fileSize > properties.getMaxFileBytes()) {
-                        captureLimits.add(new DerivationCaptureLimitDraft(
-                                ADAPTER_ID,
-                                CaptureLimitReason.TOOL_EXECUTION_FAILED,
-                                null,
-                                surface,
-                                "File '" + relativePath + "' exceeds the maximum allowed size of "
-                                        + properties.getMaxFileBytes() + " bytes",
-                                scope.commitSha(),
-                                derivedAt));
-                        return FileVisitResult.CONTINUE;
-                    }
-
-                    // Read content
-                    String content;
-                    try {
-                        content = Files.readString(absolutePath, StandardCharsets.UTF_8);
-                    } catch (IOException exception) {
-                        captureLimits.add(new DerivationCaptureLimitDraft(
-                                ADAPTER_ID,
-                                CaptureLimitReason.TOOL_EXECUTION_FAILED,
-                                null,
-                                surface,
-                                "Failed to read file '" + relativePath + "'",
-                                scope.commitSha(),
-                                derivedAt));
-                        return FileVisitResult.CONTINUE;
-                    }
-
-                    // Dispatch to normalizer
-                    try {
-                        var normalized = dispatch(
-                                surface,
-                                relativePath,
-                                content,
-                                scope.commitSha(),
-                                properties.getRulesetVersion(),
-                                derivedAt);
-                        facts.addAll(normalized);
-                    } catch (Exception exception) {
-                        captureLimits.add(new DerivationCaptureLimitDraft(
-                                ADAPTER_ID,
-                                CaptureLimitReason.TOOL_EXECUTION_FAILED,
-                                null,
-                                surface,
-                                "Parser failure on '" + relativePath + "'",
-                                scope.commitSha(),
-                                derivedAt));
-                    }
-
-                    return FileVisitResult.CONTINUE;
+                    return handleFile(
+                            absolutePath, repoRoot, scope, facts, captureLimits, fileCount, hitFileCap, derivedAt);
                 }
 
                 @Override
                 public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                    // Skip files that cannot be accessed; individual read failures are
-                    // already handled inside visitFile.
                     return FileVisitResult.CONTINUE;
                 }
             });
@@ -284,9 +140,6 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
                     derivedAt));
         }
 
-        // Emit a capture limit when the maxFiles cap truncated the walk and in-scope files remain.
-        // The current file (which passed all surface/scope filters) was the one that triggered
-        // the cap, so at least one qualifying file was not derived.
         if (hitFileCap[0]) {
             captureLimits.add(new DerivationCaptureLimitDraft(
                     ADAPTER_ID,
@@ -302,6 +155,168 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
         return new DerivationAdapterResult(facts, captureLimits);
     }
 
+    private List<DerivationCaptureLimitDraft> buildUnsupportedSurfaceLimits(DerivationScope scope, Instant derivedAt) {
+        var limits = new ArrayList<DerivationCaptureLimitDraft>();
+        var requestedSurfaces = scope.surfaces();
+        if (requestedSurfaces == null || requestedSurfaces.isEmpty()) {
+            return limits;
+        }
+        var enabledSurfaces = properties.getEnabledSurfaces();
+        var emitted = new LinkedHashSet<String>();
+        for (String surface : requestedSurfaces) {
+            if (!enabledSurfaces.contains(surface) && emitted.add(surface)) {
+                limits.add(new DerivationCaptureLimitDraft(
+                        ADAPTER_ID,
+                        CaptureLimitReason.UNSUPPORTED_SURFACE,
+                        null,
+                        surface,
+                        "Surface '" + surface + "' is not supported by the IaC/pipeline adapter",
+                        scope.commitSha(),
+                        derivedAt));
+            }
+        }
+        return limits;
+    }
+
+    private FileVisitResult handleDirectory(Path dir, Path repoRoot) {
+        if (dir.equals(repoRoot)) {
+            return FileVisitResult.CONTINUE;
+        }
+        var relativePath = repoRoot.relativize(dir).toString().replace('\\', '/');
+        if (isExcluded(relativePath, properties.getExcludedPaths())) {
+            return FileVisitResult.SKIP_SUBTREE;
+        }
+        return FileVisitResult.CONTINUE;
+    }
+
+    private FileVisitResult handleFile(
+            Path absolutePath,
+            Path repoRoot,
+            DerivationScope scope,
+            List<DerivedSystemModelFact> facts,
+            List<DerivationCaptureLimitDraft> captureLimits,
+            int[] fileCount,
+            boolean[] hitFileCap,
+            Instant derivedAt) {
+        var relativePath = repoRoot.relativize(absolutePath).toString().replace('\\', '/');
+
+        if (!isSymlinkSafe(absolutePath, repoRoot)) {
+            return FileVisitResult.CONTINUE;
+        }
+        var fileName = absolutePath.getFileName();
+        if (fileName == null) {
+            return FileVisitResult.CONTINUE;
+        }
+        var surface = classifySurface(fileName.toString(), relativePath);
+        if (!shouldProcess(surface, relativePath, scope)) {
+            return FileVisitResult.CONTINUE;
+        }
+        if (fileCount[0] >= properties.getMaxFiles()) {
+            hitFileCap[0] = true;
+            return FileVisitResult.TERMINATE;
+        }
+        fileCount[0]++;
+        return readAndDispatchFile(absolutePath, relativePath, surface, scope, facts, captureLimits, derivedAt);
+    }
+
+    private static boolean isSymlinkSafe(Path absolutePath, Path repoRoot) {
+        try {
+            var realPath = absolutePath.toRealPath();
+            return realPath.startsWith(repoRoot);
+        } catch (IOException ignored) {
+            return false;
+        }
+    }
+
+    private boolean shouldProcess(String surface, String relativePath, DerivationScope scope) {
+        if (surface == null) {
+            return false;
+        }
+        var requestedSurfaces = scope.surfaces();
+        if (requestedSurfaces != null && !requestedSurfaces.isEmpty() && !requestedSurfaces.contains(surface)) {
+            return false;
+        }
+        if (!properties.getEnabledSurfaces().contains(surface)) {
+            return false;
+        }
+        var requestedLanguages = scope.languages();
+        if (requestedLanguages != null
+                && !requestedLanguages.isEmpty()
+                && !requestedLanguages.contains(surfaceLanguage(surface))) {
+            return false;
+        }
+        if (scope.mode() == DerivationScopeMode.DIFF || scope.mode() == DerivationScopeMode.PATH_SET) {
+            var paths = scope.paths();
+            if (paths == null || paths.isEmpty()) {
+                return false;
+            }
+            if (!isInScope(relativePath, paths)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private FileVisitResult readAndDispatchFile(
+            Path absolutePath,
+            String relativePath,
+            String surface,
+            DerivationScope scope,
+            List<DerivedSystemModelFact> facts,
+            List<DerivationCaptureLimitDraft> captureLimits,
+            Instant derivedAt) {
+        long fileSize;
+        try {
+            fileSize = Files.size(absolutePath);
+        } catch (IOException ignored) {
+            return FileVisitResult.CONTINUE;
+        }
+        if (fileSize > properties.getMaxFileBytes()) {
+            captureLimits.add(new DerivationCaptureLimitDraft(
+                    ADAPTER_ID,
+                    CaptureLimitReason.TOOL_EXECUTION_FAILED,
+                    null,
+                    surface,
+                    "File '" + relativePath + "' exceeds the maximum allowed size of " + properties.getMaxFileBytes()
+                            + " bytes",
+                    scope.commitSha(),
+                    derivedAt));
+            return FileVisitResult.CONTINUE;
+        }
+
+        String content;
+        try {
+            content = Files.readString(absolutePath, StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            captureLimits.add(new DerivationCaptureLimitDraft(
+                    ADAPTER_ID,
+                    CaptureLimitReason.TOOL_EXECUTION_FAILED,
+                    null,
+                    surface,
+                    "Failed to read file '" + relativePath + "'",
+                    scope.commitSha(),
+                    derivedAt));
+            return FileVisitResult.CONTINUE;
+        }
+
+        try {
+            var normalized = dispatch(
+                    surface, relativePath, content, scope.commitSha(), properties.getRulesetVersion(), derivedAt);
+            facts.addAll(normalized);
+        } catch (Exception exception) {
+            captureLimits.add(new DerivationCaptureLimitDraft(
+                    ADAPTER_ID,
+                    CaptureLimitReason.TOOL_EXECUTION_FAILED,
+                    null,
+                    surface,
+                    "Parser failure on '" + relativePath + "'",
+                    scope.commitSha(),
+                    derivedAt));
+        }
+
+        return FileVisitResult.CONTINUE;
+    }
+
     private List<DerivedSystemModelFact> dispatch(
             String surface,
             String relativePath,
@@ -310,13 +325,13 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
             String rulesetVersion,
             Instant derivedAt) {
         return switch (surface) {
-            case "github-actions" -> ghActionsNormalizer.normalize(
+            case IacFactKeys.SURFACE_GITHUB_ACTIONS -> ghActionsNormalizer.normalize(
                     surface, relativePath, content, ADAPTER_ID, commitSha, rulesetVersion, derivedAt);
-            case "dockerfile" -> dockerfileNormalizer.normalize(
+            case IacFactKeys.SURFACE_DOCKERFILE -> dockerfileNormalizer.normalize(
                     surface, relativePath, content, ADAPTER_ID, commitSha, rulesetVersion, derivedAt);
-            case "docker-compose" -> dockerComposeNormalizer.normalize(
+            case IacFactKeys.SURFACE_DOCKER_COMPOSE -> dockerComposeNormalizer.normalize(
                     surface, relativePath, content, ADAPTER_ID, commitSha, rulesetVersion, derivedAt);
-            case "terraform" -> terraformNormalizer.normalize(
+            case IacFactKeys.SURFACE_TERRAFORM -> terraformNormalizer.normalize(
                     surface, relativePath, content, ADAPTER_ID, commitSha, rulesetVersion, derivedAt);
             default -> List.of();
         };
@@ -330,43 +345,39 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
     private static String classifySurface(String filename, String relativePath) {
         var filenameLower = filename.toLowerCase(Locale.ROOT);
 
-        // github-actions: must be under .github/workflows/ and end with .yml or .yaml
         if (relativePath.contains(".github/workflows/")
                 && (relativePath.endsWith(".yml") || relativePath.endsWith(".yaml"))) {
-            return "github-actions";
+            return IacFactKeys.SURFACE_GITHUB_ACTIONS;
         }
 
-        // docker-compose: filename starts with docker-compose or compose, ends with .yml or .yaml
         if ((filenameLower.startsWith("docker-compose") || filenameLower.startsWith("compose"))
                 && (filenameLower.endsWith(".yml") || filenameLower.endsWith(".yaml"))) {
-            return "docker-compose";
+            return IacFactKeys.SURFACE_DOCKER_COMPOSE;
         }
 
-        // dockerfile: equals "dockerfile", starts with "dockerfile.", or ends with ".dockerfile"
-        if ("dockerfile".equals(filenameLower)
-                || filenameLower.startsWith("dockerfile.")
-                || filenameLower.endsWith(".dockerfile")) {
-            return "dockerfile";
+        if (IacFactKeys.SURFACE_DOCKERFILE.equals(filenameLower)
+                || filenameLower.startsWith(IacFactKeys.SURFACE_DOCKERFILE + ".")
+                || filenameLower.endsWith("." + IacFactKeys.SURFACE_DOCKERFILE)) {
+            return IacFactKeys.SURFACE_DOCKERFILE;
         }
 
-        // terraform: ends with .tf or .tfvars
         if (filenameLower.endsWith(".tf") || filenameLower.endsWith(".tfvars")) {
-            return "terraform";
+            return IacFactKeys.SURFACE_TERRAFORM;
         }
 
         return null;
     }
 
     /**
-     * Map a supported surface to the grammar/language token it is derived from. Used to honor the
-     * {@link com.keplerops.groundcontrol.domain.derivation.service.DerivationScope} language
-     * dimension so a language-scoped run does not persist facts from other grammars.
+     * Map a supported surface to the grammar/language token it is derived from. Used to honour the
+     * {@link DerivationScope} language dimension so a language-scoped run does not persist facts
+     * from other grammars.
      */
     private static String surfaceLanguage(String surface) {
         return switch (surface) {
-            case "github-actions", "docker-compose" -> "yaml";
-            case "dockerfile" -> "dockerfile";
-            case "terraform" -> "hcl";
+            case IacFactKeys.SURFACE_GITHUB_ACTIONS, IacFactKeys.SURFACE_DOCKER_COMPOSE -> "yaml";
+            case IacFactKeys.SURFACE_DOCKERFILE -> IacFactKeys.SURFACE_DOCKERFILE;
+            case IacFactKeys.SURFACE_TERRAFORM -> "hcl";
             default -> "";
         };
     }
@@ -389,51 +400,53 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
     /**
      * Check whether a file's relative path is in scope for a set of requested paths.
      *
-     * <p>Each requested path is normalized (trimmed, leading {@code ./} stripped) and validated.
-     * Paths that are absolute or contain {@code ..} elements are silently rejected (fail closed).
-     * Matching uses {@link Path#startsWith(Path)} element-wise semantics, so {@code "terraform"}
-     * matches {@code "terraform/main.tf"} but never {@code "terraform-modules/x.tf"}.
+     * <p>Each requested path is normalised via {@link #normalizeScopePath} (trim, strip leading
+     * {@code ./}, validate). Matching uses {@link Path#startsWith(Path)} element-wise semantics,
+     * so {@code "terraform"} matches {@code "terraform/main.tf"} but never
+     * {@code "terraform-modules/x.tf"}.
      */
     private static boolean isInScope(String relativePath, List<String> requestedPaths) {
         var filePath = Path.of(relativePath);
         for (String rawPath : requestedPaths) {
-            if (rawPath == null) {
-                continue;
-            }
-            // Normalize: trim whitespace, strip one or more leading "./" segments
-            var normalized = rawPath.trim();
-            while (normalized.startsWith("./")) {
-                normalized = normalized.substring(2);
-            }
-            if (normalized.isEmpty()) {
-                continue;
-            }
-            Path requestedPath;
-            try {
-                requestedPath = Path.of(normalized);
-            } catch (Exception e) {
-                continue;
-            }
-            // Reject absolute paths (fail closed — mirrors DerivationService.normalizePath)
-            if (requestedPath.isAbsolute()) {
-                continue;
-            }
-            // Reject any path whose elements contain ".." (fail closed)
-            var hasDotDot = false;
-            for (Path element : requestedPath) {
-                if ("..".equals(element.toString())) {
-                    hasDotDot = true;
-                    break;
-                }
-            }
-            if (hasDotDot) {
-                continue;
-            }
-            // Element-wise match: file equals or is nested under the requested path
-            if (filePath.startsWith(requestedPath)) {
+            var scopePath = normalizeScopePath(rawPath);
+            if (scopePath.isPresent() && filePath.startsWith(scopePath.get())) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Normalise a raw requested path: trim whitespace, strip leading {@code ./} segments, reject
+     * null, empty, absolute, and path-traversal ({@code ..}) inputs.
+     *
+     * @return the normalised {@link Path}, or empty if the input should be rejected (fail closed)
+     */
+    private static Optional<Path> normalizeScopePath(String rawPath) {
+        if (rawPath == null) {
+            return Optional.empty();
+        }
+        var normalized = rawPath.trim();
+        while (normalized.startsWith("./")) {
+            normalized = normalized.substring(2);
+        }
+        if (normalized.isEmpty()) {
+            return Optional.empty();
+        }
+        Path p;
+        try {
+            p = Path.of(normalized);
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+        if (p.isAbsolute()) {
+            return Optional.empty();
+        }
+        for (Path element : p) {
+            if ("..".equals(element.toString())) {
+                return Optional.empty();
+            }
+        }
+        return Optional.of(p);
     }
 }
