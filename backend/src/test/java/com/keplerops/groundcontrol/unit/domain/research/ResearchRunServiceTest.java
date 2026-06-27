@@ -461,6 +461,84 @@ class ResearchRunServiceTest {
         assertThatThrownBy(() -> service.getById(PROJECT_ID, RUN_ID)).isInstanceOf(NotFoundException.class);
     }
 
+    // ---------------------------------------------------------- stop / complete
+
+    @Test
+    void stop_transitionsToStoppedAndStampsStoppedAt() {
+        runAt(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
+        var stopped = service.stop(PROJECT_ID, RUN_ID);
+        assertThat(stopped.getStatus()).isEqualTo(ResearchRunStatus.STOPPED);
+        assertThat(stopped.getStoppedAt()).isNotNull();
+    }
+
+    @Test
+    void complete_atFinalStageWithActiveManuscript_transitionsToCompleted() {
+        var run = runAt(ResearchRunStage.PROSE_DRAFTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
+        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
+                        RUN_ID, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE))
+                .thenReturn(Optional.of(artifact(run, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE)));
+        var completed = service.complete(PROJECT_ID, RUN_ID);
+        assertThat(completed.getStatus()).isEqualTo(ResearchRunStatus.COMPLETED);
+    }
+
+    @Test
+    void complete_beforeFinalStage_throwsValidation() {
+        runAt(ResearchRunStage.SYNTHESIS, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
+        assertThatThrownBy(() -> service.complete(PROJECT_ID, RUN_ID))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("final stage");
+    }
+
+    @Test
+    void complete_finalStageMissingArtifact_throwsValidation() {
+        runAt(ResearchRunStage.PROSE_DRAFTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
+        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
+                        RUN_ID, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.complete(PROJECT_ID, RUN_ID))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("without an active");
+    }
+
+    // ----------------------------------------------------------------- reads
+
+    @Test
+    void getByUid_returnsRun() {
+        var run = new ResearchRun(project, "RUN-1", AutonomyLevel.COPILOT);
+        TestUtil.setField(run, "id", RUN_ID);
+        when(runRepository.findByProjectIdAndUid(PROJECT_ID, "RUN-1")).thenReturn(Optional.of(run));
+        assertThat(service.getByUid(PROJECT_ID, "RUN-1")).isSameAs(run);
+    }
+
+    @Test
+    void getByUid_missing_throwsNotFound() {
+        when(runRepository.findByProjectIdAndUid(PROJECT_ID, "NOPE")).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.getByUid(PROJECT_ID, "NOPE")).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void listByProject_returnsProjectRuns() {
+        var run = runAt(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
+        when(runRepository.findByProjectIdOrderByCreatedAtDesc(PROJECT_ID)).thenReturn(List.of(run));
+        assertThat(service.listByProject(PROJECT_ID)).containsExactly(run);
+    }
+
+    @Test
+    void listArtifacts_returnsRunArtifacts() {
+        var run = runAt(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
+        var a = artifact(run, ResearchArtifactType.SEARCH_LOG, ResearchArtifactStatus.ACTIVE);
+        when(artifactRepository.findByResearchRunIdOrderByCreatedAtAsc(RUN_ID)).thenReturn(List.of(a));
+        assertThat(service.listArtifacts(PROJECT_ID, RUN_ID)).containsExactly(a);
+    }
+
+    @Test
+    void listGates_returnsRunGates() {
+        var run = runAt(ResearchRunStage.METHODOLOGY_SELECTION, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.COPILOT);
+        var g = gate(run, ResearchGatePoint.METHOD_DECISION, ResearchGateBehavior.REQUIRE_HUMAN);
+        when(gateRepository.findByResearchRunIdOrderByGatePointAsc(RUN_ID)).thenReturn(List.of(g));
+        assertThat(service.listGates(PROJECT_ID, RUN_ID)).containsExactly(g);
+    }
+
     /** Small builder so the start tests read clearly. */
     private record StartCmd(String uid, AutonomyLevel autonomy, IntendedOutput intendedOutput) {
         com.keplerops.groundcontrol.domain.research.service.StartResearchRunCommand toCommand() {

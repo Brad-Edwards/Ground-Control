@@ -250,4 +250,96 @@ class ResearchRunControllerTest {
                         .content("{\"gatePoint\":\"METHOD_DECISION\",\"outcome\":\"NOPE\"}"))
                 .andExpect(status().isUnprocessableEntity());
     }
+
+    @Test
+    void list_returnsRuns() throws Exception {
+        when(projectService.resolveProjectId(any())).thenReturn(PROJECT_ID);
+        when(researchRunService.listByProject(PROJECT_ID))
+                .thenReturn(List.of(makeRun(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.IN_PROGRESS)));
+
+        mockMvc.perform(get("/api/v1/research-runs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].uid").value("RUN-1"))
+                .andExpect(jsonPath("$[0].currentStage").value("SOURCE_SEARCH"));
+    }
+
+    @Test
+    void getByUid_returnsRun() throws Exception {
+        when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
+        when(researchRunService.getByUid(PROJECT_ID, "RUN-1"))
+                .thenReturn(makeRun(ResearchRunStage.SCREENING, ResearchRunStatus.IN_PROGRESS));
+
+        mockMvc.perform(get("/api/v1/research-runs/uid/{uid}", "RUN-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStage").value("SCREENING"));
+    }
+
+    @Test
+    void listArtifacts_returnsArtifacts() throws Exception {
+        when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
+        var run = makeRun(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.IN_PROGRESS);
+        var artifact = new ResearchRunArtifact(run, ResearchArtifactType.SEARCH_LOG, 1);
+        setField(artifact, "id", UUID.randomUUID());
+        setField(artifact, "createdAt", NOW);
+        setField(artifact, "updatedAt", NOW);
+        when(researchRunService.listArtifacts(PROJECT_ID, RUN_ID)).thenReturn(List.of(artifact));
+
+        mockMvc.perform(get("/api/v1/research-runs/{id}/artifacts", RUN_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].artifactType").value("SEARCH_LOG"));
+    }
+
+    @Test
+    void listGates_returnsGates() throws Exception {
+        when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
+        var run = makeRun(ResearchRunStage.METHODOLOGY_SELECTION, ResearchRunStatus.IN_PROGRESS);
+        var gate = new com.keplerops.groundcontrol.domain.research.model.ResearchRunGate(
+                run,
+                ResearchGatePoint.METHOD_DECISION,
+                com.keplerops.groundcontrol.domain.research.model.ResearchGateBehavior.REQUIRE_HUMAN,
+                "test");
+        setField(gate, "id", UUID.randomUUID());
+        setField(gate, "createdAt", NOW);
+        setField(gate, "updatedAt", NOW);
+        when(researchRunService.listGates(PROJECT_ID, RUN_ID)).thenReturn(List.of(gate));
+
+        mockMvc.perform(get("/api/v1/research-runs/{id}/gates", RUN_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].gatePoint").value("METHOD_DECISION"));
+    }
+
+    @Test
+    void stop_returnsStoppedRun() throws Exception {
+        when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
+        when(researchRunService.stop(PROJECT_ID, RUN_ID))
+                .thenReturn(makeRun(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.STOPPED));
+
+        mockMvc.perform(post("/api/v1/research-runs/{id}/stop", RUN_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("STOPPED"));
+    }
+
+    @Test
+    void complete_returnsCompletedRun() throws Exception {
+        when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
+        when(researchRunService.complete(PROJECT_ID, RUN_ID))
+                .thenReturn(makeRun(ResearchRunStage.PROSE_DRAFTING, ResearchRunStatus.COMPLETED));
+
+        mockMvc.perform(post("/api/v1/research-runs/{id}/complete", RUN_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+    }
+
+    @Test
+    void recordUsage_forwardsTokensAndCost() throws Exception {
+        when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
+        when(researchRunService.recordUsage(PROJECT_ID, RUN_ID, 100L, 250L))
+                .thenReturn(makeRun(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.IN_PROGRESS));
+
+        mockMvc.perform(post("/api/v1/research-runs/{id}/usage", RUN_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tokens\":100,\"costUsdMicros\":250}"))
+                .andExpect(status().isOk());
+        verify(researchRunService).recordUsage(PROJECT_ID, RUN_ID, 100L, 250L);
+    }
 }
