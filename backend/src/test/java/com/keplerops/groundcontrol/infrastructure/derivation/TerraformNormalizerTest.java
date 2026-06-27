@@ -143,6 +143,7 @@ class TerraformNormalizerTest {
 
         assertThat(facts).anySatisfy(f -> {
             assertThat(f.factKind()).isEqualTo(SystemModelFactKind.DATA_CLASSIFICATION_HINT);
+            assertThat(f.payload()).containsEntry("artifactKind", "sensitive-output");
         });
     }
 

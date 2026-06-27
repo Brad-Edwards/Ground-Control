@@ -142,7 +142,9 @@ class GitHubActionsNormalizerTest {
         assertThat(facts).anySatisfy(f -> {
             assertThat(f.factKind()).isEqualTo(SystemModelFactKind.SECRET_USAGE);
             assertThat(f.payload()).containsEntry("secretRef", "MY_API_KEY");
-            assertThat(f.payload().toString()).doesNotContain("MY_VALUE");
+            // The raw GitHub Actions secret expression must never be materialized in the payload.
+            assertThat(f.payload().toString()).doesNotContain("${{ secrets.MY_API_KEY }}");
+            assertThat(f.payload().toString()).doesNotContain("secrets.");
         });
     }
 
