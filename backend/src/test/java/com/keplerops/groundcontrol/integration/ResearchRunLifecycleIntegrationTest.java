@@ -121,8 +121,8 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
         assertThat(researchRunService.listGates(projectId, runId)).hasSize(5);
 
         // AC2: starting a downstream phase without the required artifact is a validation error.
-        assertThatThrownBy(() -> researchRunService.advanceStage(
-                        projectId, runId, new AdvanceStageCommand(ResearchRunStage.PROTOCOL_PLANNING)))
+        var blockedAdvance = new AdvanceStageCommand(ResearchRunStage.PROTOCOL_PLANNING);
+        assertThatThrownBy(() -> researchRunService.advanceStage(projectId, runId, blockedAdvance))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("required artifact");
 
@@ -205,8 +205,8 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
                 .create(new CreateProjectCommand(PROJECT + "-sw", "SW", "x"))
                 .getId();
         try {
-            assertThatThrownBy(() ->
-                            researchRunService.start(new StartResearchRunCommand(swId, "RUN-SW", null, null, Map.of())))
+            var swCommand = new StartResearchRunCommand(swId, "RUN-SW", null, null, Map.of());
+            assertThatThrownBy(() -> researchRunService.start(swCommand))
                     .isInstanceOf(DomainValidationException.class)
                     .hasMessageContaining("RESEARCH projects");
         } finally {

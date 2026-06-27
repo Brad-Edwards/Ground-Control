@@ -64,6 +64,8 @@ public class ResearchRunService {
 
     private static final String INVALID_CODE = "research_run_invalid";
     private static final String FIELD = "field";
+    private static final String CURRENT_STAGE = "current_stage";
+    private static final String GATE_POINT = "gate_point";
 
     private final ResearchRunRepository runRepository;
     private final ResearchRunArtifactRepository artifactRepository;
@@ -179,7 +181,7 @@ public class ResearchRunService {
                     "Artifact type " + command.artifactType() + " does not match current stage "
                             + run.getCurrentStage(),
                     "research_run_artifact_stage_mismatch",
-                    Map.of("current_stage", run.getCurrentStage().name(), "expected", expected.name()));
+                    Map.of(CURRENT_STAGE, run.getCurrentStage().name(), "expected", expected.name()));
         }
 
         var key = emptyToNull(command.idempotencyKey());
@@ -295,7 +297,7 @@ public class ResearchRunService {
             throw new DomainValidationException(
                     "targetStage " + targetStage + " is not the next stage after " + run.getCurrentStage(),
                     "research_run_stage_not_sequential",
-                    Map.of("current_stage", run.getCurrentStage().name(), "next_stage", next.name()));
+                    Map.of(CURRENT_STAGE, run.getCurrentStage().name(), "next_stage", next.name()));
         }
 
         var requiredArtifact = run.getCurrentStage().outputArtifactType();
@@ -306,7 +308,7 @@ public class ResearchRunService {
                     "Cannot start " + next + ": required artifact " + requiredArtifact + " for stage "
                             + run.getCurrentStage() + " is missing",
                     "research_run_stage_blocked",
-                    Map.of("current_stage", run.getCurrentStage().name(), "missing_artifact", requiredArtifact.name()));
+                    Map.of(CURRENT_STAGE, run.getCurrentStage().name(), "missing_artifact", requiredArtifact.name()));
         }
 
         ResearchGatePoint.forStageExit(run.getCurrentStage()).ifPresent(point -> {
@@ -327,7 +329,7 @@ public class ResearchRunService {
                         "Gate " + point + " must be resolved before advancing past " + run.getCurrentStage(),
                         "research_run_gate_pending",
                         Map.of(
-                                "gate_point",
+                                GATE_POINT,
                                 point.name(),
                                 "gate_status",
                                 gate.getStatus().name()));
@@ -365,7 +367,7 @@ public class ResearchRunService {
             throw new DomainValidationException(
                     "Gate " + command.gatePoint() + " is disabled for this run",
                     "research_gate_disabled",
-                    Map.of("gate_point", command.gatePoint().name()));
+                    Map.of(GATE_POINT, command.gatePoint().name()));
         }
         // A resolved gate (approved, rejected, or auto-accepted) is immutable: the
         // only way to re-decide it is to rework the guarded stage artifact, which
@@ -379,7 +381,7 @@ public class ResearchRunService {
                             + " is already resolved; rework the guarded stage artifact to reopen it",
                     "research_gate_already_resolved",
                     Map.of(
-                            "gate_point",
+                            GATE_POINT,
                             command.gatePoint().name(),
                             "outcome",
                             gate.getDecisionOutcome() == null
@@ -489,7 +491,7 @@ public class ResearchRunService {
             throw new DomainValidationException(
                     "Run cannot complete before reaching the final stage",
                     "research_run_not_final_stage",
-                    Map.of("current_stage", stage.name()));
+                    Map.of(CURRENT_STAGE, stage.name()));
         }
         var finalArtifact = artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
                 runId, stage.outputArtifactType(), ResearchArtifactStatus.ACTIVE);

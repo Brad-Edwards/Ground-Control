@@ -166,15 +166,16 @@ class ResearchRunServiceTest {
     void start_duplicateUid_throwsConflict() {
         when(intakeRepository.findByProjectId(PROJECT_ID)).thenReturn(Optional.empty());
         when(runRepository.existsByProjectIdAndUid(PROJECT_ID, "RUN-1")).thenReturn(true);
-        assertThatThrownBy(() -> service.start(new StartCmd("RUN-1", AutonomyLevel.COPILOT, null).toCommand()))
-                .isInstanceOf(ConflictException.class);
+        var command = new StartCmd("RUN-1", AutonomyLevel.COPILOT, null).toCommand();
+        assertThatThrownBy(() -> service.start(command)).isInstanceOf(ConflictException.class);
     }
 
     @Test
     void start_noAutonomyAndNoIntake_throwsValidation() {
         when(intakeRepository.findByProjectId(PROJECT_ID)).thenReturn(Optional.empty());
         when(runRepository.existsByProjectIdAndUid(PROJECT_ID, "RUN-1")).thenReturn(false);
-        assertThatThrownBy(() -> service.start(new StartCmd("RUN-1", null, null).toCommand()))
+        var command = new StartCmd("RUN-1", null, null).toCommand();
+        assertThatThrownBy(() -> service.start(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("autonomyLevel is required");
     }
@@ -245,8 +246,8 @@ class ResearchRunServiceTest {
         when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
                         RUN_ID, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE))
                 .thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.advanceStage(
-                        PROJECT_ID, RUN_ID, new AdvanceStageCommand(ResearchRunStage.PROTOCOL_PLANNING)))
+        var command = new AdvanceStageCommand(ResearchRunStage.PROTOCOL_PLANNING);
+        assertThatThrownBy(() -> service.advanceStage(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("required artifact");
     }
@@ -261,8 +262,8 @@ class ResearchRunServiceTest {
         when(gateRepository.findByResearchRunIdAndGatePoint(RUN_ID, ResearchGatePoint.METHOD_DECISION))
                 .thenReturn(
                         Optional.of(gate(run, ResearchGatePoint.METHOD_DECISION, ResearchGateBehavior.REQUIRE_HUMAN)));
-        assertThatThrownBy(() -> service.advanceStage(
-                        PROJECT_ID, RUN_ID, new AdvanceStageCommand(ResearchRunStage.PROTOCOL_PLANNING)))
+        var command = new AdvanceStageCommand(ResearchRunStage.PROTOCOL_PLANNING);
+        assertThatThrownBy(() -> service.advanceStage(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("must be resolved");
     }
@@ -290,8 +291,8 @@ class ResearchRunServiceTest {
     @Test
     void advanceStage_nonSequentialTarget_throwsValidation() {
         runAt(ResearchRunStage.METHODOLOGY_SELECTION, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.COPILOT);
-        assertThatThrownBy(() ->
-                        service.advanceStage(PROJECT_ID, RUN_ID, new AdvanceStageCommand(ResearchRunStage.SCREENING)))
+        var command = new AdvanceStageCommand(ResearchRunStage.SCREENING);
+        assertThatThrownBy(() -> service.advanceStage(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("not the next stage");
     }
@@ -325,14 +326,9 @@ class ResearchRunServiceTest {
         // A resolved gate cannot be re-decided in place: overriding a rejection
         // without artifact rework would defeat the gate. The caller must rework
         // the guarded artifact (which reopens the gate) to decide again.
-        assertThatThrownBy(() -> service.resolveGate(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new com.keplerops.groundcontrol.domain.research.service.GateDecisionCommand(
-                                ResearchGatePoint.METHOD_DECISION,
-                                ResearchGateDecisionOutcome.APPROVED,
-                                "opt-1",
-                                "ok")))
+        var command = new com.keplerops.groundcontrol.domain.research.service.GateDecisionCommand(
+                ResearchGatePoint.METHOD_DECISION, ResearchGateDecisionOutcome.APPROVED, "opt-1", "ok");
+        assertThatThrownBy(() -> service.resolveGate(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("already resolved");
         assertThat(run.getStatus()).isEqualTo(ResearchRunStatus.BLOCKED);
@@ -375,11 +371,9 @@ class ResearchRunServiceTest {
                 runAt(ResearchRunStage.METHODOLOGY_SELECTION, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
         when(gateRepository.findByResearchRunIdAndGatePoint(RUN_ID, ResearchGatePoint.METHOD_DECISION))
                 .thenReturn(Optional.of(gate(run, ResearchGatePoint.METHOD_DECISION, ResearchGateBehavior.DISABLED)));
-        assertThatThrownBy(() -> service.resolveGate(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new com.keplerops.groundcontrol.domain.research.service.GateDecisionCommand(
-                                ResearchGatePoint.METHOD_DECISION, ResearchGateDecisionOutcome.APPROVED, null, null)))
+        var command = new com.keplerops.groundcontrol.domain.research.service.GateDecisionCommand(
+                ResearchGatePoint.METHOD_DECISION, ResearchGateDecisionOutcome.APPROVED, null, null);
+        assertThatThrownBy(() -> service.resolveGate(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("disabled");
     }
