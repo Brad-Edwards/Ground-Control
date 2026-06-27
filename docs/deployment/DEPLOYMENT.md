@@ -582,11 +582,19 @@ Builds the Docker image, starts a fresh PostgreSQL 16 container, runs the app ag
 
 #### CI/CD
 
-The `docker.yml` GitHub Actions workflow automatically builds and pushes to GHCR on:
+The `ci.yml` GitHub Actions workflow automatically builds and pushes the image to GHCR on:
 - Push to `main` or `dev`
 - Semver tags (`v*`)
 
 CI (build, test, integration, verify) must pass before the image is built.
+
+On a `vX.Y.Z` tag push, after the image is built the `release` job publishes a
+**GitHub Release** for that tag (ADR-063 §4 step 7): the notes are the collated
+`CHANGELOG.md` section for `X.Y.Z`, extracted by
+`tools/release/extract_changelog_section.py` (no hand-copying), and the release
+names the exact artifact built for that version
+(`ghcr.io/autarchy-ai/ground-control:X.Y.Z` plus the resolved `@sha256:` digest
+and source commit). The operator no longer hand-creates the release.
 
 ### Resetting
 

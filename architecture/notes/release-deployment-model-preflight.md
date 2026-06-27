@@ -3,9 +3,11 @@
 Issue #1221 asked for the release model ADR that ADR-030 deliberately does not
 cover: versioning, release artifacts, promotion, cut-a-release, and rollback.
 Issue #1222 is the companion mechanism change that moves production off the
-floating `:main` deploy pin. This note records the architecture guardrails for
-both surfaces. It does not implement the release model or the deployment
-mechanism itself.
+floating `:main` deploy pin. Issue #1224 adds the publication surface: a GitHub
+Release for each `vX.Y.Z` tag, with notes derived from the collated changelog and
+the exact GHCR artifact named in the release. This note records the architecture
+guardrails for those surfaces. It does not implement the release model, the
+deployment mechanism, or the release-publication workflow itself.
 
 ## Architecture Boundaries
 
@@ -43,6 +45,12 @@ mechanism itself.
   `docker` job, pinned Docker actions, OCI revision labels, and GHCR namespace
   guard. Verify the actual tag emitted by `docker/metadata-action`; the current
   `type=semver,pattern={{version}}` path may not emit a literal `v` prefix.
+- **GitHub Release publication:** build on the same tag-triggered CI workflow
+  and the same `vX.Y.Z` -> image tag `X.Y.Z` mapping from ADR-063. The release
+  body must be extracted from the already-collated `CHANGELOG.md` section for
+  `X.Y.Z`; do not hand-copy notes, re-run towncrier in the tag workflow, or
+  invent a parallel release-notes schema. The job must fail loudly if the
+  changelog section is missing or ambiguous.
 - **Deploy artifact contract:** reuse `deploy/docker/deploy.sh`,
   `deploy/docker/docker-compose.prod.yml`, `deploy/docker/env.schema`,
   `deploy/docker/validate-env.sh`, `deploy/docker/MANIFEST.sha256`,
@@ -83,6 +91,9 @@ mechanism itself.
   posting should use the existing GitHub Actions `GITHUB_TOKEN` or established
   operator/MCP surfaces, with job-scoped permissions instead of broad workflow
   permissions.
+- The release-publishing job needs `contents: write` only for the GitHub
+  Release write. Keep that permission scoped to the release job instead of
+  widening the whole workflow, and do not introduce a long-lived PAT.
 - Preserve deploy-time validation before restart. The new model must still pass
   `env.schema`, `validate-env.sh`, compose variable checks, Spring security
   binding validation, and health/rollback behavior before declaring success.
@@ -106,6 +117,12 @@ package, release version/tag, and status publisher. A future staging host or
 additional package should be one configuration row, not a fork of the deploy
 script or backend code.
 
+For GitHub Releases, the seam is the release artifact descriptor: repository
+package name, git tag, semver image tag, digest, source commit, changelog section,
+and publisher. A future second image/package or SBOM/provenance attachment should
+add another artifact descriptor to the release record, not a second changelog
+parser or a second tag workflow.
+
 ## Gotchas and Anti-Patterns
 
 - Do not say "immutable `vX.Y.Z` image" unless CI actually publishes that exact
@@ -126,6 +143,13 @@ script or backend code.
 - Do not duplicate version bump rules in CI, docs, and scripts. One ADR section
   plus the towncrier/changelog convention should be the source; checks should
   enforce structure, not carry competing prose.
+- Do not let the release job recompute an image tag independently from the
+  Docker metadata output when that output is available. Tag pushes already cross
+  the `docker` job; the release surface should name the artifact that job
+  produced, including the resolved digest when available.
+- Do not create duplicate releases on rerun. A rerun for the same tag should be
+  deterministic: update the existing GitHub Release body/assets if needed or
+  leave it unchanged when identical.
 - Do not broaden backend error handling, audit, persistence, or API schemas for
   a workflow-only release model.
 
@@ -136,5 +160,7 @@ script or backend code.
 - No Kubernetes, Watchtower, Argo/Flux, or managed platform migration.
 - No new release dashboard, database-backed release entity, or Ground Control
   requirement baseline automation in this issue.
+- No release-note authoring surface outside `changelog.d/`, `towncrier.toml`,
+  and `CHANGELOG.md`.
 - No replacement for the existing backup/restore, Flyway migration, or policy
   gates.
