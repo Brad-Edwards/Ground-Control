@@ -11,15 +11,17 @@ import com.keplerops.groundcontrol.domain.derivation.state.DerivationScopeMode;
 import com.keplerops.groundcontrol.domain.derivation.state.SystemModelFactKind;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -119,133 +121,148 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
 
         var repoRoot = properties.getRepositoryRoot().toAbsolutePath().normalize();
         int[] fileCount = {0};
-        boolean hitFileCap = false;
+        boolean[] hitFileCap = {false};
 
-        try (Stream<Path> walker = Files.walk(repoRoot)) {
-            var fileIterator = walker.iterator();
-            while (fileIterator.hasNext()) {
-                var absolutePath = fileIterator.next();
+        try {
+            Files.walkFileTree(repoRoot, new SimpleFileVisitor<>() {
 
-                if (!Files.isRegularFile(absolutePath)) {
-                    continue;
-                }
-
-                // Relative path string
-                var relativePath = repoRoot.relativize(absolutePath).toString().replace('\\', '/');
-
-                // Excluded paths check
-                if (isExcluded(relativePath, properties.getExcludedPaths())) {
-                    continue;
-                }
-
-                // Symlink escape guard
-                try {
-                    var realPath = absolutePath.toRealPath();
-                    if (!realPath.startsWith(repoRoot)) {
-                        continue;
+                @Override
+                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                    if (dir.equals(repoRoot)) {
+                        return FileVisitResult.CONTINUE;
                     }
-                } catch (IOException ignored) {
-                    continue;
-                }
-
-                // Classify surface
-                var fileName = absolutePath.getFileName();
-                if (fileName == null) {
-                    continue;
-                }
-                var surface = classifySurface(fileName.toString(), relativePath);
-                if (surface == null) {
-                    continue;
-                }
-
-                // Surface filter: if scope specifies surfaces, only process matching ones
-                if (requestedSurfaces != null && !requestedSurfaces.isEmpty() && !requestedSurfaces.contains(surface)) {
-                    continue;
-                }
-
-                // Surface must be enabled
-                if (!properties.getEnabledSurfaces().contains(surface)) {
-                    continue;
-                }
-
-                // DIFF/PATH_SET: only process files in scope.paths()
-                if (scope.mode() == DerivationScopeMode.DIFF || scope.mode() == DerivationScopeMode.PATH_SET) {
-                    var paths = scope.paths();
-                    if (paths == null || paths.isEmpty()) {
-                        continue;
+                    var relativePath = repoRoot.relativize(dir).toString().replace('\\', '/');
+                    if (isExcluded(relativePath, properties.getExcludedPaths())) {
+                        // Prune the entire subtree — never descend into excluded directories
+                        return FileVisitResult.SKIP_SUBTREE;
                     }
-                    var finalRelativePath = relativePath;
-                    if (paths.stream()
-                            .noneMatch(p -> finalRelativePath.equals(p) || finalRelativePath.startsWith(p + "/"))) {
-                        continue;
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFile(Path absolutePath, BasicFileAttributes attrs) {
+                    // Relative path string
+                    var relativePath =
+                            repoRoot.relativize(absolutePath).toString().replace('\\', '/');
+
+                    // Symlink escape guard
+                    try {
+                        var realPath = absolutePath.toRealPath();
+                        if (!realPath.startsWith(repoRoot)) {
+                            return FileVisitResult.CONTINUE;
+                        }
+                    } catch (IOException ignored) {
+                        return FileVisitResult.CONTINUE;
                     }
+
+                    // Classify surface
+                    var fileName = absolutePath.getFileName();
+                    if (fileName == null) {
+                        return FileVisitResult.CONTINUE;
+                    }
+                    var surface = classifySurface(fileName.toString(), relativePath);
+                    if (surface == null) {
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    // Surface filter: if scope specifies surfaces, only process matching ones
+                    if (requestedSurfaces != null
+                            && !requestedSurfaces.isEmpty()
+                            && !requestedSurfaces.contains(surface)) {
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    // Surface must be enabled
+                    if (!properties.getEnabledSurfaces().contains(surface)) {
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    // DIFF/PATH_SET: only process files that are in scope
+                    if (scope.mode() == DerivationScopeMode.DIFF || scope.mode() == DerivationScopeMode.PATH_SET) {
+                        var paths = scope.paths();
+                        if (paths == null || paths.isEmpty()) {
+                            return FileVisitResult.CONTINUE;
+                        }
+                        if (!isInScope(relativePath, paths)) {
+                            return FileVisitResult.CONTINUE;
+                        }
+                    }
+
+                    // Enforce maxFiles cap — this file passed all filters and would be dispatched,
+                    // so hitting the cap here means in-scope files are being dropped.
+                    if (fileCount[0] >= properties.getMaxFiles()) {
+                        hitFileCap[0] = true;
+                        return FileVisitResult.TERMINATE;
+                    }
+                    fileCount[0]++;
+
+                    // File size check
+                    long fileSize;
+                    try {
+                        fileSize = Files.size(absolutePath);
+                    } catch (IOException ignored) {
+                        return FileVisitResult.CONTINUE;
+                    }
+                    if (fileSize > properties.getMaxFileBytes()) {
+                        captureLimits.add(new DerivationCaptureLimitDraft(
+                                ADAPTER_ID,
+                                CaptureLimitReason.TOOL_EXECUTION_FAILED,
+                                null,
+                                surface,
+                                "File '" + relativePath + "' exceeds the maximum allowed size of "
+                                        + properties.getMaxFileBytes() + " bytes",
+                                scope.commitSha(),
+                                derivedAt));
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    // Read content
+                    String content;
+                    try {
+                        content = Files.readString(absolutePath, StandardCharsets.UTF_8);
+                    } catch (IOException exception) {
+                        captureLimits.add(new DerivationCaptureLimitDraft(
+                                ADAPTER_ID,
+                                CaptureLimitReason.TOOL_EXECUTION_FAILED,
+                                null,
+                                surface,
+                                "Failed to read file '" + relativePath + "'",
+                                scope.commitSha(),
+                                derivedAt));
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    // Dispatch to normalizer
+                    try {
+                        var normalized = dispatch(
+                                surface,
+                                relativePath,
+                                content,
+                                scope.commitSha(),
+                                properties.getRulesetVersion(),
+                                derivedAt);
+                        facts.addAll(normalized);
+                    } catch (Exception exception) {
+                        captureLimits.add(new DerivationCaptureLimitDraft(
+                                ADAPTER_ID,
+                                CaptureLimitReason.TOOL_EXECUTION_FAILED,
+                                null,
+                                surface,
+                                "Parser failure on '" + relativePath + "'",
+                                scope.commitSha(),
+                                derivedAt));
+                    }
+
+                    return FileVisitResult.CONTINUE;
                 }
 
-                // Enforce maxFiles cap — this file passed all filters and would be dispatched,
-                // so hitting the cap here means in-scope files are being dropped.
-                if (fileCount[0] >= properties.getMaxFiles()) {
-                    hitFileCap = true;
-                    break;
+                @Override
+                public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                    // Skip files that cannot be accessed; individual read failures are
+                    // already handled inside visitFile.
+                    return FileVisitResult.CONTINUE;
                 }
-                fileCount[0]++;
-
-                // File size check
-                long fileSize;
-                try {
-                    fileSize = Files.size(absolutePath);
-                } catch (IOException ignored) {
-                    continue;
-                }
-                if (fileSize > properties.getMaxFileBytes()) {
-                    captureLimits.add(new DerivationCaptureLimitDraft(
-                            ADAPTER_ID,
-                            CaptureLimitReason.TOOL_EXECUTION_FAILED,
-                            null,
-                            surface,
-                            "File '" + relativePath + "' exceeds the maximum allowed size of "
-                                    + properties.getMaxFileBytes() + " bytes",
-                            scope.commitSha(),
-                            derivedAt));
-                    continue;
-                }
-
-                // Read content
-                String content;
-                try {
-                    content = Files.readString(absolutePath, StandardCharsets.UTF_8);
-                } catch (IOException exception) {
-                    captureLimits.add(new DerivationCaptureLimitDraft(
-                            ADAPTER_ID,
-                            CaptureLimitReason.TOOL_EXECUTION_FAILED,
-                            null,
-                            surface,
-                            "Failed to read file '" + relativePath + "'",
-                            scope.commitSha(),
-                            derivedAt));
-                    continue;
-                }
-
-                // Dispatch to normalizer
-                try {
-                    var normalized = dispatch(
-                            surface,
-                            relativePath,
-                            content,
-                            scope.commitSha(),
-                            properties.getRulesetVersion(),
-                            derivedAt);
-                    facts.addAll(normalized);
-                } catch (Exception exception) {
-                    captureLimits.add(new DerivationCaptureLimitDraft(
-                            ADAPTER_ID,
-                            CaptureLimitReason.TOOL_EXECUTION_FAILED,
-                            null,
-                            surface,
-                            "Parser failure on '" + relativePath + "'",
-                            scope.commitSha(),
-                            derivedAt));
-                }
-            }
+            });
         } catch (IOException exception) {
             captureLimits.add(new DerivationCaptureLimitDraft(
                     ADAPTER_ID,
@@ -260,7 +277,7 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
         // Emit a capture limit when the maxFiles cap truncated the walk and in-scope files remain.
         // The current file (which passed all surface/scope filters) was the one that triggered
         // the cap, so at least one qualifying file was not derived.
-        if (hitFileCap) {
+        if (hitFileCap[0]) {
             captureLimits.add(new DerivationCaptureLimitDraft(
                     ADAPTER_ID,
                     CaptureLimitReason.TOOL_EXECUTION_FAILED,
@@ -339,6 +356,57 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
                     || relativePath.startsWith(excluded + "/")
                     || relativePath.contains("/" + excluded + "/")
                     || relativePath.endsWith("/" + excluded)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check whether a file's relative path is in scope for a set of requested paths.
+     *
+     * <p>Each requested path is normalized (trimmed, leading {@code ./} stripped) and validated.
+     * Paths that are absolute or contain {@code ..} elements are silently rejected (fail closed).
+     * Matching uses {@link Path#startsWith(Path)} element-wise semantics, so {@code "terraform"}
+     * matches {@code "terraform/main.tf"} but never {@code "terraform-modules/x.tf"}.
+     */
+    private static boolean isInScope(String relativePath, List<String> requestedPaths) {
+        var filePath = Path.of(relativePath);
+        for (String rawPath : requestedPaths) {
+            if (rawPath == null) {
+                continue;
+            }
+            // Normalize: trim whitespace, strip one or more leading "./" segments
+            var normalized = rawPath.trim();
+            while (normalized.startsWith("./")) {
+                normalized = normalized.substring(2);
+            }
+            if (normalized.isEmpty()) {
+                continue;
+            }
+            Path requestedPath;
+            try {
+                requestedPath = Path.of(normalized);
+            } catch (Exception e) {
+                continue;
+            }
+            // Reject absolute paths (fail closed — mirrors DerivationService.normalizePath)
+            if (requestedPath.isAbsolute()) {
+                continue;
+            }
+            // Reject any path whose elements contain ".." (fail closed)
+            var hasDotDot = false;
+            for (Path element : requestedPath) {
+                if ("..".equals(element.toString())) {
+                    hasDotDot = true;
+                    break;
+                }
+            }
+            if (hasDotDot) {
+                continue;
+            }
+            // Element-wise match: file equals or is nested under the requested path
+            if (filePath.startsWith(requestedPath)) {
                 return true;
             }
         }

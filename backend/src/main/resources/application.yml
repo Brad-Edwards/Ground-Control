@@ -89,14 +89,14 @@ groundcontrol:
     iac:
       # IaC and CI/CD pipeline derivation adapter (GC-GRC-003).
       # enabled: toggle the adapter on/off without removing configuration.
-      enabled: ${GC_IAC_DERIVATION_ENABLED:true}
+      enabled: true
       # repository-root: absolute or relative path to the repository being analysed.
-      repository-root: ${GC_IAC_DERIVATION_REPO_ROOT:.}
+      repository-root: "."
       # max-file-bytes: per-file byte limit; files exceeding this emit a TOOL_EXECUTION_FAILED
       # capture limit instead of being parsed (default 512 KB).
-      max-file-bytes: ${GC_IAC_DERIVATION_MAX_FILE_BYTES:524288}
+      max-file-bytes: 524288
       # max-files: total file scan cap per derivation run (default 1000).
-      max-files: ${GC_IAC_DERIVATION_MAX_FILES:1000}
+      max-files: 1000
       # excluded-paths: directory names whose subtrees are never scanned.
       excluded-paths:
         - .git
@@ -113,7 +113,7 @@ groundcontrol:
         - docker-compose
         - terraform
       # ruleset-version: version label embedded in fact provenance for traceability.
-      ruleset-version: ${GC_IAC_DERIVATION_RULESET_VERSION:1.0.0}
+      ruleset-version: "1.0.0"
 
 springdoc:
   api-docs:

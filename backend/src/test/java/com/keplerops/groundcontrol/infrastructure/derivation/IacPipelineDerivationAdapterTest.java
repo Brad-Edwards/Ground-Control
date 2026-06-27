@@ -302,6 +302,83 @@ class IacPipelineDerivationAdapterTest {
         });
     }
 
+    // ── Finding 2 (cycle 2): excluded directory pruning ──────────────────────
+
+    @Test
+    void excludedDirectoryIsPrunedNotJustFiltered() throws Exception {
+        // A Dockerfile nested inside an excluded directory (node_modules/sub)
+        var excludedSubDir = repoRoot.resolve("node_modules/sub");
+        Files.createDirectories(excludedSubDir);
+        Files.writeString(excludedSubDir.resolve("Dockerfile"), "FROM ubuntu:22.04\n");
+
+        // A legitimate Dockerfile at the repo root
+        Files.writeString(repoRoot.resolve("Dockerfile"), "FROM alpine:3\n");
+
+        // With maxFiles=1, the excluded subtree must not consume the cap.
+        // If node_modules were entered and its Dockerfile counted before exclusion,
+        // the root-level Dockerfile would be dropped.  With directory pruning the
+        // excluded subtree is never entered, so the root Dockerfile is processed.
+        var props = props();
+        props.setMaxFiles(1);
+        var adapter = adapter(props);
+        var result = adapter.derive(request(DerivationScopeMode.FULL_REPO, List.of(), Set.of("dockerfile")));
+
+        // The excluded Dockerfile must produce no facts
+        assertThat(result.facts()).noneMatch(f -> f.sourcePath().contains("node_modules"));
+        // The root Dockerfile must still be derived (maxFiles cap not exhausted by exclusion)
+        assertThat(result.facts()).isNotEmpty();
+        // No maxFiles capture limit should be emitted (the cap was not actually hit)
+        assertThat(result.captureLimits())
+                .noneMatch(l -> l.detail() != null && l.detail().contains("maxFiles=1"));
+    }
+
+    // ── Finding 3 (cycle 2): PATH_SET/DIFF scope path hardening ─────────────
+
+    @Test
+    void pathSetModeDotDotInRequestedPathMatchesNothing() throws Exception {
+        // A Terraform file that would match if ".." were not rejected
+        var tfDir = repoRoot.resolve("terraform");
+        Files.createDirectories(tfDir);
+        Files.writeString(tfDir.resolve("main.tf"), "resource \"aws_s3_bucket\" \"b\" {}\n");
+
+        var adapter = adapter(props());
+        // Requesting ".." or a path with ".." components must match nothing (fail closed)
+        var result = adapter.derive(request(DerivationScopeMode.PATH_SET, List.of(".."), Set.of("terraform")));
+
+        assertThat(result.facts()).isEmpty();
+    }
+
+    @Test
+    void pathSetModeSiblingDirNotMatchedByPrefixPath() throws Exception {
+        // terraform-modules/ is a sibling of terraform/ — a prefix request for "terraform"
+        // must not pull in files from terraform-modules/
+        var tfModulesDir = repoRoot.resolve("terraform-modules");
+        Files.createDirectories(tfModulesDir);
+        Files.writeString(tfModulesDir.resolve("x.tf"), "resource \"aws_s3_bucket\" \"b\" {}\n");
+
+        var adapter = adapter(props());
+        var result = adapter.derive(request(DerivationScopeMode.PATH_SET, List.of("terraform"), Set.of("terraform")));
+
+        assertThat(result.facts()).noneMatch(f -> f.sourcePath().startsWith("terraform-modules"));
+        assertThat(result.facts()).isEmpty();
+    }
+
+    @Test
+    void pathSetModePrefixPathMatchesNestedFile() throws Exception {
+        // Requesting "terraform" as a scope path must include terraform/main.tf
+        var tfDir = repoRoot.resolve("terraform");
+        Files.createDirectories(tfDir);
+        // Multi-line block so the line-by-line HCL parser sees a block header on its own line
+        Files.writeString(
+                tfDir.resolve("main.tf"), "resource \"aws_s3_bucket\" \"b\" {\n  bucket = \"my-bucket\"\n}\n");
+
+        var adapter = adapter(props());
+        var result = adapter.derive(request(DerivationScopeMode.PATH_SET, List.of("terraform"), Set.of("terraform")));
+
+        assertThat(result.facts()).isNotEmpty();
+        assertThat(result.facts()).allSatisfy(f -> assertThat(f.sourcePath()).startsWith("terraform/"));
+    }
+
     private IacPipelineDerivationAdapter adapter(IacPipelineDerivationProperties props) {
         props.setRepositoryRoot(repoRoot);
         return new IacPipelineDerivationAdapter(props);
