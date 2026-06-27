@@ -81,5 +81,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [061](061-workflow-run-telemetry-reporting.md) | Workflow-Run Telemetry & Economics Reporting Surface | Accepted |
 | [062](062-age-graph-projection-snapshot-publication.md) | AGE Graph Projection Snapshot Publication | Accepted |
 | [063](063-release-deployment-model.md) | Release & Deployment Model | Accepted |
+| [064](064-research-run-lifecycle-and-stage-gating.md) | Research Run Lifecycle and Stage Gating | Accepted |
+| [065](065-research-run-observability-snapshot.md) | Research Run Observability Snapshot | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.

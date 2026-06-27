@@ -266,3 +266,14 @@ machine surface, and the required agent behavior lives in the `skills/implement/
 step files. Record the surface addition in ADR-054 and the changelog fragment;
 do not add separate reference prose unless the change creates a new
 documentation style rule.
+
+The research-run lifecycle surface (GC-RSCH-R001/R003 / ADR-064 / ADR-065 /
+#1000) follows the same pattern as the other backend-mirroring MCP additions.
+The `gc_research_run` action-multiplexed tool plus its `startResearchRun` /
+`advanceResearchRun` / `recordResearchRunArtifact` / `getResearchRunSnapshot`
+(and sibling) client functions in `mcp/ground-control/lib.js` and
+`mcp/ground-control/index.js` mirror the `/api/v1/research-runs` controller
+endpoints documented in `docs/API.md`; the tool description string is the
+contract surface and enumerates the per-action required fields. The surface
+addition is recorded in the ADR-054 amendment and the changelog fragment; no new
+DOC_STYLE.md style rule is established.
