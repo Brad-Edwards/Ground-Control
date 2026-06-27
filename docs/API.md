@@ -2240,6 +2240,47 @@ Standard Spring Page parameters:
 Response wraps results in a Spring Page object with `content`, `totalElements`,
 `totalPages`, `number`, `size`.
 
+### Research Runs (ADR-064 / ADR-065)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/research-runs` | ResearchRunRequest | 201 | Start a project-scoped research run on a RESEARCH project; snapshots intake (autonomy, intended output, budget caps) and resolves the five-gate policy |
+| GET | `/research-runs` | - | 200 | List research runs in a project (ordered by `createdAt DESC`) |
+| GET | `/research-runs/{id}` | - | 200 | Get a research run by UUID |
+| GET | `/research-runs/uid/{uid}` | - | 200 | Get a research run by project-scoped UID |
+| GET | `/research-runs/{id}/snapshot` | - | 200 | Observability snapshot: current stage, pending gates, artifact readiness, source counts, cost, last error (ADR-065) |
+| GET | `/research-runs/{id}/artifacts` | - | 200 | List the run's artifact manifest rows |
+| GET | `/research-runs/{id}/gates` | - | 200 | List the run's gate-policy / decision rows |
+| POST | `/research-runs/{id}/artifacts` | RecordArtifactRequest | 201 | Record (or rework) the current stage's output artifact; idempotent on `idempotencyKey` |
+| POST | `/research-runs/{id}/advance` | AdvanceStageRequest | 200 | Advance to the next stage (blocked 422 without the required artifact; 409 on a pending required gate) |
+| POST | `/research-runs/{id}/gates/decision` | GateDecisionRequest | 200 | Record a durable decision for a run gate |
+| POST | `/research-runs/{id}/stop` | - | 200 | Stop an active run (resumable) |
+| POST | `/research-runs/{id}/fail` | FailRunRequest | 200 | Fail a run with a bounded failure observation |
+| POST | `/research-runs/{id}/resume` | - | 200 | Resume a stopped/failed run from its last completed stage without duplicating work |
+| POST | `/research-runs/{id}/complete` | - | 200 | Mark a run COMPLETED once the final-stage artifact is active |
+| POST | `/research-runs/{id}/usage` | RecordUsageRequest | 200 | Record observed token/cost usage (separate from budget caps) |
+
+A `ResearchRun` is a project-scoped execution aggregate (sibling of `ResearchIntake`)
+for one pass through the eight-stage research lifecycle (`ResearchRunStage`:
+`METHODOLOGY_SELECTION`, `PROTOCOL_PLANNING`, `SOURCE_SEARCH`, `SCREENING`, `CHARTING`,
+`SYNTHESIS`, `ARGUMENT_CONSTRUCTION`, `PROSE_DRAFTING`). Stage identity and run status
+(`ResearchRunStatus`: `IN_PROGRESS`, `BLOCKED`, `STOPPED`, `FAILED`, `COMPLETED`) are
+separate axes. A downstream stage starts only when the predecessor stage's output
+artifact is present and `ACTIVE` (else HTTP 422 `research_run_stage_blocked`) and the
+guarding gate permits the exit (else HTTP 409 `research_run_gate_pending`). Gate behavior
+(`REQUIRE_HUMAN`, `AUTONOMOUS_DEFAULT`, `DISABLED`) is resolved per run from the autonomy
+level plus overrides; decisions are durable `research_run_gate` rows. A resolved gate is
+immutable (HTTP 409 `research_gate_already_resolved`): the only way to re-decide it is to
+rework the guarded stage's artifact, which supersedes that artifact and reopens the gate, so
+a rejection cannot be overridden without rework. Artifact records are the gate/checkpoint
+authority and the resume frontier: rework supersedes the prior record rather than mutating
+it (a database partial unique index enforces a single `ACTIVE` record per stage type), and an
+`idempotencyKey` makes a record write retry-safe. The recording/deciding/owning actor on every
+write is taken from the authenticated server context (`ActorHolder`/`ActorFilter`, ADR-026),
+never from the request body, so durable lifecycle provenance cannot be forged. Cross-project
+run access is concealed as HTTP 404. Reads are mirrored to MCP through the `gc_query` allowlist
+(`/api/v1/research-runs`). See ADR-064 and ADR-065.
+
 ### Pack Registry
 
 All pack registry, trust policy, and pack install record routes require an

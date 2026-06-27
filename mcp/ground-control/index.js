@@ -200,6 +200,15 @@ import {
   updateTestRunCaseResult,
   listTestRunStepResults, updateTestRunStepResult, updateTestRunCursor,
   TEST_RUN_STATUSES, TEST_RUN_CASE_RESULT_STATUSES,
+  // ---- research runs (GC-RSCH-R001/R003, ADR-064 / ADR-065) ----
+  startResearchRun, listResearchRuns, getResearchRun, getResearchRunByUid,
+  getResearchRunSnapshot, listResearchRunArtifacts, listResearchRunGates,
+  recordResearchRunArtifact, advanceResearchRun, decideResearchRunGate,
+  stopResearchRun, failResearchRun, resumeResearchRun, completeResearchRun,
+  recordResearchRunUsage,
+  RESEARCH_RUN_AUTONOMY_LEVELS, RESEARCH_RUN_INTENDED_OUTPUTS,
+  RESEARCH_RUN_STAGES, RESEARCH_ARTIFACT_TYPES, RESEARCH_GATE_POINTS,
+  RESEARCH_GATE_BEHAVIORS, RESEARCH_GATE_DECISION_OUTCOMES,
   // ---- enums ----
   STATUSES, REQUIREMENT_TYPES, PRIORITIES, RELATION_TYPES,
   ARTIFACT_TYPES, LINK_TYPES, CHANGE_CATEGORIES, CONFIDENCE_LEVELS,
@@ -2953,6 +2962,186 @@ server.tool(
           if (args.clear_cursor !== undefined) payload.clearCursor = args.clear_cursor;
           return ok(JSON.stringify(
             await updateTestRunCursor(args.id, payload, args.project),
+            null,
+            2,
+          ));
+        }
+        default: return err(new Error(`Unknown action: ${args.action}`));
+      }
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_research_run: GC-RSCH-R001/R003/F003/F036/N007/N011 — ResearchRun lifecycle
+// (ADR-064 / ADR-065). A project-scoped research effort advancing through a
+// closed eight-stage lifecycle gated by run-scoped human gates; stage outputs
+// are recorded as superseding artifact manifest rows that double as resume
+// checkpoints, and a bounded snapshot summarises observability state. Lifecycle
+// legality (prerequisite matrix, gate behaviour, idempotent resume) is enforced
+// server-side; this tool is a thin REST passthrough. Reads also route through
+// gc_query under the /api/v1/research-runs allow-list.
+const RESEARCH_RUN_ACTIONS = [
+  "start",
+  "list",
+  "get",
+  "get_by_uid",
+  "snapshot",
+  "list_artifacts",
+  "list_gates",
+  "record_artifact",
+  "advance",
+  "gate_decision",
+  "stop",
+  "fail",
+  "resume",
+  "complete",
+  "record_usage",
+];
+
+server.tool(
+  "gc_research_run",
+  `Research run lifecycle operations (GC-RSCH-R001/R003, ADR-064 / ADR-065). ` +
+    `Actions: ${RESEARCH_RUN_ACTIONS.join(", ")}. ` +
+    `Reads (list, get, get_by_uid, snapshot, list_artifacts, list_gates) also route through gc_query. ` +
+    `Required fields per action: start→{uid}; get/snapshot/list_artifacts/list_gates/stop/resume/complete→{id}; get_by_uid→{uid}; record_artifact→{id,artifact_type}; advance→{id,target_stage}; gate_decision→{id,gate_point,outcome}; fail→{id}; record_usage→{id,tokens,cost_usd_micros}. ` +
+    `Bounded metadata only — never pass prompts, manuscript bodies, secrets, or absolute paths.`,
+  {
+    action: z.enum(RESEARCH_RUN_ACTIONS),
+    id: z.string().uuid().optional(),
+    project: z.string().optional(),
+    uid: z.string().optional(),
+    // start
+    autonomy_level: z.enum(RESEARCH_RUN_AUTONOMY_LEVELS).optional(),
+    intended_output: z.enum(RESEARCH_RUN_INTENDED_OUTPUTS).optional(),
+    gate_overrides: z.record(z.enum(RESEARCH_GATE_BEHAVIORS)).optional(),
+    // record_artifact
+    artifact_type: z.enum(RESEARCH_ARTIFACT_TYPES).optional(),
+    locator: z.string().optional(),
+    content_hash: z.string().optional(),
+    idempotency_key: z.string().optional(),
+    candidate_sources: z.number().int().nonnegative().optional(),
+    screened_included: z.number().int().nonnegative().optional(),
+    screened_excluded: z.number().int().nonnegative().optional(),
+    charted_full_text: z.number().int().nonnegative().optional(),
+    access_gaps: z.number().int().nonnegative().optional(),
+    // advance
+    target_stage: z.enum(RESEARCH_RUN_STAGES).optional(),
+    // gate_decision
+    gate_point: z.enum(RESEARCH_GATE_POINTS).optional(),
+    outcome: z.enum(RESEARCH_GATE_DECISION_OUTCOMES).optional(),
+    selected_option_id: z.string().optional(),
+    rationale_summary: z.string().optional(),
+    // NOTE: actor/owner provenance is taken from the authenticated server
+    // context (ActorHolder/ActorFilter, ADR-026); there is deliberately no
+    // client-supplied actor field on any research-run write.
+    // fail
+    error_code: z.string().optional(),
+    error_class: z.string().optional(),
+    error_summary: z.string().optional(),
+    // record_usage
+    tokens: z.number().int().nonnegative().optional(),
+    cost_usd_micros: z.number().int().nonnegative().optional(),
+  },
+  async (args) => {
+    try {
+      const ARTIFACT_FIELDS = [
+        "artifact_type", "locator", "content_hash", "idempotency_key",
+        "candidate_sources", "screened_included", "screened_excluded",
+        "charted_full_text", "access_gaps",
+      ];
+      const GATE_FIELDS = ["gate_point", "outcome", "selected_option_id", "rationale_summary"];
+      const FAIL_FIELDS = ["error_code", "error_class", "error_summary"];
+      switch (args.action) {
+        case "start": {
+          reqArg(args, "uid", "start");
+          const body = { uid: args.uid };
+          if (args.autonomy_level !== undefined) body.autonomyLevel = args.autonomy_level;
+          if (args.intended_output !== undefined) body.intendedOutput = args.intended_output;
+          // gateOverrides keys are gate-point enum constants — pass through as a
+          // pre-built camelCase body so toCamelCase never rewrites the map keys.
+          if (args.gate_overrides !== undefined) body.gateOverrides = args.gate_overrides;
+          return ok(JSON.stringify(await startResearchRun(body, args.project), null, 2));
+        }
+        case "list":
+          return ok(JSON.stringify(await listResearchRuns(args.project), null, 2));
+        case "get": {
+          reqArg(args, "id", "get");
+          return ok(JSON.stringify(await getResearchRun(args.id, args.project), null, 2));
+        }
+        case "get_by_uid": {
+          reqArg(args, "uid", "get_by_uid");
+          return ok(JSON.stringify(await getResearchRunByUid(args.uid, args.project), null, 2));
+        }
+        case "snapshot": {
+          reqArg(args, "id", "snapshot");
+          return ok(JSON.stringify(await getResearchRunSnapshot(args.id, args.project), null, 2));
+        }
+        case "list_artifacts": {
+          reqArg(args, "id", "list_artifacts");
+          return ok(JSON.stringify(await listResearchRunArtifacts(args.id, args.project), null, 2));
+        }
+        case "list_gates": {
+          reqArg(args, "id", "list_gates");
+          return ok(JSON.stringify(await listResearchRunGates(args.id, args.project), null, 2));
+        }
+        case "record_artifact": {
+          reqArg(args, "id", "record_artifact");
+          reqArg(args, "artifact_type", "record_artifact");
+          return ok(JSON.stringify(
+            await recordResearchRunArtifact(args.id, pick(args, ARTIFACT_FIELDS), args.project),
+            null,
+            2,
+          ));
+        }
+        case "advance": {
+          reqArg(args, "id", "advance");
+          reqArg(args, "target_stage", "advance");
+          return ok(JSON.stringify(
+            await advanceResearchRun(args.id, { targetStage: args.target_stage }, args.project),
+            null,
+            2,
+          ));
+        }
+        case "gate_decision": {
+          reqArg(args, "id", "gate_decision");
+          reqArg(args, "gate_point", "gate_decision");
+          reqArg(args, "outcome", "gate_decision");
+          return ok(JSON.stringify(
+            await decideResearchRunGate(args.id, pick(args, GATE_FIELDS), args.project),
+            null,
+            2,
+          ));
+        }
+        case "stop": {
+          reqArg(args, "id", "stop");
+          return ok(JSON.stringify(await stopResearchRun(args.id, args.project), null, 2));
+        }
+        case "fail": {
+          reqArg(args, "id", "fail");
+          return ok(JSON.stringify(
+            await failResearchRun(args.id, pick(args, FAIL_FIELDS), args.project),
+            null,
+            2,
+          ));
+        }
+        case "resume": {
+          reqArg(args, "id", "resume");
+          return ok(JSON.stringify(await resumeResearchRun(args.id, args.project), null, 2));
+        }
+        case "complete": {
+          reqArg(args, "id", "complete");
+          return ok(JSON.stringify(await completeResearchRun(args.id, args.project), null, 2));
+        }
+        case "record_usage": {
+          reqArg(args, "id", "record_usage");
+          reqArg(args, "tokens", "record_usage");
+          reqArg(args, "cost_usd_micros", "record_usage");
+          return ok(JSON.stringify(
+            await recordResearchRunUsage(
+              args.id,
+              { tokens: args.tokens, costUsdMicros: args.cost_usd_micros },
+              args.project,
+            ),
             null,
             2,
           ));

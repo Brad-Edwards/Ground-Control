@@ -4,7 +4,10 @@ Ground Control's research project type ships a five-phase literature-review pipe
 
 > What are the formal requirements a literature-review plan must meet to satisfy the appropriate methodology, and how do we execute that plan, build the paper's argument, and draft it without fabricating citations or asserting findings the evidence base does not carry?
 
-See ADR-055 for the architectural decision and asset disposition.
+See ADR-055 for the skill/citation architecture and asset disposition. Durable
+run lifecycle state, checkpoint artifacts, and human-gate policy are governed by
+ADR-064. The user-facing run status/observability snapshot is governed by
+ADR-065.
 
 ## Phases
 
