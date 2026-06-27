@@ -415,6 +415,11 @@ jobs:
     if: |
       github.event_name == 'push'
       && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/v'))
+    # Expose the pushed manifest digest so the tag-triggered `release` job can
+    # name the exact immutable artifact (digest is the audit/rollback identity
+    # per ADR-063 §2) without re-querying GHCR.
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -438,7 +443,8 @@ jobs:
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: backend/Dockerfile
@@ -496,6 +502,86 @@ jobs:
           echo "Smoke test failed after 120s"
           docker logs gc-smoke
           exit 1
+
+  # ---------------------------------------------------------------------------
+  # Release — on a `vX.Y.Z` tag push, publish a GitHub Release whose notes are
+  # the collated CHANGELOG.md section for that version and which names the exact
+  # GHCR artifact the `docker` job built (ADR-063 §4 step 7, issue #1224).
+  #
+  # Runs after `docker` so the image (and its digest) exist before the release
+  # references them. The tag-ref guard keeps branch pushes (main/dev), which
+  # also run `docker`, from cutting releases. `contents: write` is scoped to
+  # this job only — the workflow default stays `contents: read` — and uses the
+  # built-in GITHUB_TOKEN (no PAT). Release notes carry no secrets: the body is
+  # derived solely from the committed changelog plus the public image
+  # coordinates.
+  # ---------------------------------------------------------------------------
+  release:
+    runs-on: ubuntu-latest
+    needs: [docker]
+    if: |
+      needs.docker.result == 'success'
+      && github.event_name == 'push'
+      && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Build release notes from CHANGELOG and image artifact
+        env:
+          # docker/metadata-action's `type=semver,pattern={{version}}` strips
+          # the leading `v`, so git tag `vX.Y.Z` publishes image tag `X.Y.Z`
+          # (ADR-063 §2). The changelog heading is `## [X.Y.Z]`, so the bare
+          # semver drives both the extractor and the image tag.
+          IMAGE_DIGEST: ${{ needs.docker.outputs.image-digest }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Fail closed: the release MUST name the immutable artifact identity.
+          # ADR-063 §2 makes the manifest digest the audit/rollback identity, and
+          # acceptance criterion 2 requires the release to name the exact GHCR
+          # artifact the docker job built. A missing digest means the docker job
+          # did not publish (or its output regressed), so refuse to publish a
+          # release that cannot name what it ships rather than degrading silently.
+          if [ -z "${IMAGE_DIGEST:-}" ]; then
+            echo "::error::docker job produced no image digest; refusing to publish a release without the immutable artifact identity (ADR-063 §2)." >&2
+            exit 1
+          fi
+          {
+            # Fails loudly (non-zero) if CHANGELOG.md has no section for this
+            # version — CI never publishes an empty or hand-copied release.
+            python3 tools/release/extract_changelog_section.py \
+              --version "$VERSION" --changelog CHANGELOG.md
+            echo ""
+            echo "---"
+            echo ""
+            echo "**Release artifact**"
+            echo ""
+            echo "- Image: \`ghcr.io/autarchy-ai/ground-control:${VERSION}\`"
+            echo "- Digest: \`ghcr.io/autarchy-ai/ground-control@${IMAGE_DIGEST}\`"
+            echo "- Source commit: \`${GITHUB_SHA}\`"
+          } > release-notes.md
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          PRERELEASE=()
+          # Semver pre-release builds (e.g. v2.0.0-rc.1) are marked accordingly.
+          case "$VERSION" in
+            *-*) PRERELEASE=(--prerelease) ;;
+          esac
+          # Idempotent: a re-run of the tag workflow updates the existing
+          # release rather than failing on a duplicate.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG" --notes-file release-notes.md "${PRERELEASE[@]}"
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file release-notes.md "${PRERELEASE[@]}"
+          fi
 
   # ---------------------------------------------------------------------------
   # Deploy — temporarily removed. The push-to-main → ssh `gc-deploy@red-dragon`

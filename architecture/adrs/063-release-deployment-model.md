@@ -140,8 +140,13 @@ The exact operator/CI steps to produce a release:
    key is configured) and push it.
 6. CI's `docker` job (already gated on `refs/tags/v*`) builds and pushes the
    `X.Y.Z` / `X.Y` images to GHCR. Record the published digest.
-7. Create a GitHub Release for `vX.Y.Z` using the collated changelog section as
-   the release notes. Release notes carry no secrets.
+7. The CI `release` job (gated on `refs/tags/v*`, after the `docker` job)
+   automatically creates the GitHub Release for `vX.Y.Z`: it extracts the
+   collated `CHANGELOG.md` section for that version as the release notes and
+   names the artifact built in step 6 (image tag `X.Y.Z` plus the resolved
+   digest and source commit). It is idempotent on re-run and uses the built-in
+   `GITHUB_TOKEN` with `contents: write` scoped to that job. Release notes carry
+   no secrets. The operator no longer hand-creates the release (issue #1224).
 8. Promote to production via the canonical deploy path (`make deploy` /
    `scripts/deploy.sh`), which records the rolled-out digest and source commit
    in `/opt/gc/deploy-state.json` and a GitHub Deployment (queryable via
