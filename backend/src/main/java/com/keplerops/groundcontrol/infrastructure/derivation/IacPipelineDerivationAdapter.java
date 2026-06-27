@@ -177,6 +177,16 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
                         return FileVisitResult.CONTINUE;
                     }
 
+                    // Language filter: when the scope declares languages, only process surfaces
+                    // whose grammar is in scope. Honors the DerivationScope language dimension so a
+                    // request scoped to e.g. "hcl" cannot persist GitHub Actions/Dockerfile facts.
+                    var requestedLanguages = scope.languages();
+                    if (requestedLanguages != null
+                            && !requestedLanguages.isEmpty()
+                            && !requestedLanguages.contains(surfaceLanguage(surface))) {
+                        return FileVisitResult.CONTINUE;
+                    }
+
                     // DIFF/PATH_SET: only process files that are in scope
                     if (scope.mode() == DerivationScopeMode.DIFF || scope.mode() == DerivationScopeMode.PATH_SET) {
                         var paths = scope.paths();
@@ -345,6 +355,20 @@ public class IacPipelineDerivationAdapter implements DerivationAdapter {
         }
 
         return null;
+    }
+
+    /**
+     * Map a supported surface to the grammar/language token it is derived from. Used to honor the
+     * {@link com.keplerops.groundcontrol.domain.derivation.service.DerivationScope} language
+     * dimension so a language-scoped run does not persist facts from other grammars.
+     */
+    private static String surfaceLanguage(String surface) {
+        return switch (surface) {
+            case "github-actions", "docker-compose" -> "yaml";
+            case "dockerfile" -> "dockerfile";
+            case "terraform" -> "hcl";
+            default -> "";
+        };
     }
 
     /**

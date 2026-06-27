@@ -379,6 +379,30 @@ class IacPipelineDerivationAdapterTest {
         assertThat(result.facts()).allSatisfy(f -> assertThat(f.sourcePath()).startsWith("terraform/"));
     }
 
+    // ── Finding (cycle 3): adapter honors requested language scope ───────────
+
+    @Test
+    void languageScopedRunDoesNotDeriveOtherGrammars() throws Exception {
+        // A Terraform file (hcl) and a Dockerfile (dockerfile) both present.
+        var tfDir = repoRoot.resolve("terraform");
+        Files.createDirectories(tfDir);
+        Files.writeString(
+                tfDir.resolve("main.tf"), "resource \"aws_s3_bucket\" \"b\" {\n  bucket = \"my-bucket\"\n}\n");
+        Files.writeString(repoRoot.resolve("Dockerfile"), "FROM alpine:3\n");
+
+        var adapter = adapter(props());
+        // Scope declares only "hcl" with no explicit surfaces — the Dockerfile must be excluded.
+        var request = new DerivationAdapterRequest(
+                UUID.randomUUID(),
+                "test-project",
+                new DerivationScope(DerivationScopeMode.FULL_REPO, COMMIT, null, List.of(), Set.of("hcl"), Set.of()));
+        var result = adapter.derive(request);
+
+        assertThat(result.facts()).isNotEmpty();
+        assertThat(result.facts()).allSatisfy(f -> assertThat(f.sourcePath()).startsWith("terraform/"));
+        assertThat(result.facts()).noneMatch(f -> f.sourcePath().endsWith("Dockerfile"));
+    }
+
     private IacPipelineDerivationAdapter adapter(IacPipelineDerivationProperties props) {
         props.setRepositoryRoot(repoRoot);
         return new IacPipelineDerivationAdapter(props);
