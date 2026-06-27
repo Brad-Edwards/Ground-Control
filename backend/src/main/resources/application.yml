@@ -85,6 +85,35 @@ groundcontrol:
     dimensions: ${GC_EMBEDDING_DIMENSIONS:1536}
     batch-size: ${GC_EMBEDDING_BATCH_SIZE:100}
     similarity-threshold: ${GC_EMBEDDING_SIMILARITY_THRESHOLD:0.85}
+  derivation:
+    iac:
+      # IaC and CI/CD pipeline derivation adapter (GC-GRC-003).
+      # enabled: toggle the adapter on/off without removing configuration.
+      enabled: ${GC_IAC_DERIVATION_ENABLED:true}
+      # repository-root: absolute or relative path to the repository being analysed.
+      repository-root: ${GC_IAC_DERIVATION_REPO_ROOT:.}
+      # max-file-bytes: per-file byte limit; files exceeding this emit a TOOL_EXECUTION_FAILED
+      # capture limit instead of being parsed (default 512 KB).
+      max-file-bytes: ${GC_IAC_DERIVATION_MAX_FILE_BYTES:524288}
+      # max-files: total file scan cap per derivation run (default 1000).
+      max-files: ${GC_IAC_DERIVATION_MAX_FILES:1000}
+      # excluded-paths: directory names whose subtrees are never scanned.
+      excluded-paths:
+        - .git
+        - .gc
+        - .claude/worktrees
+        - node_modules
+        - dist
+        - target
+        - build
+      # enabled-surfaces: subset of supported surfaces to activate.
+      enabled-surfaces:
+        - github-actions
+        - dockerfile
+        - docker-compose
+        - terraform
+      # ruleset-version: version label embedded in fact provenance for traceability.
+      ruleset-version: ${GC_IAC_DERIVATION_RULESET_VERSION:1.0.0}
 
 springdoc:
   api-docs:

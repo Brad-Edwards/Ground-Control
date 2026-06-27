@@ -100,6 +100,11 @@ class ApiSecurityConfigTest {
             return "workflow-read-ok";
         }
 
+        @GetMapping("/api/v1/derivations/echo")
+        String derivationsEcho() {
+            return "derivations-ok";
+        }
+
         @GetMapping("/")
         String spaShell() {
             return "spa-shell";
@@ -199,6 +204,22 @@ class ApiSecurityConfigTest {
             mockMvc.perform(post("/api/v1/mcp-tool-usage/echo").header("Authorization", "Bearer user-token-aaa"))
                     .andExpect(status().isOk())
                     .andExpect(content().string("mcp-capture-ok"));
+        }
+
+        @Test
+        void userTokenOnDerivationPath_returns200() throws Exception {
+            // Derivation endpoints are authenticated-tier, not admin-gated (explicit decision,
+            // ADR-058/GC-GRC-003): the run trigger and fact reads are project-scoped and require
+            // an authenticated caller, but do not require ADMIN because DerivationService already
+            // enforces project membership scoping and facts are already stored per-project.
+            mockMvc.perform(get("/api/v1/derivations/echo").header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("derivations-ok"));
+        }
+
+        @Test
+        void anonymousOnDerivationPath_returns401() throws Exception {
+            mockMvc.perform(get("/api/v1/derivations/echo")).andExpect(status().isUnauthorized());
         }
 
         @Test
