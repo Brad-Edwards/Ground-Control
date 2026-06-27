@@ -10361,6 +10361,135 @@ export async function updateTestRunCursor(id, data, project) {
   });
 }
 
+// GC-RSCH-R001/R003/F003/F036/N007/N011 — ResearchRun lifecycle aggregate
+// (ADR-063 / ADR-064). A project-scoped research effort moving through a closed
+// eight-stage lifecycle gated by run-scoped human gates; stage outputs are
+// recorded as superseding artifact manifest rows that double as resume
+// checkpoints. Reads (list, get, get-by-uid, snapshot, artifacts, gates) also
+// route through gc_query under the /api/v1/research-runs allow-list; the
+// gc_research_run tool exposes them as discoverable actions alongside writes.
+export async function startResearchRun(data, project) {
+  return request("POST", "/api/v1/research-runs", { body: data, params: { project } });
+}
+
+export async function listResearchRuns(project) {
+  return request("GET", "/api/v1/research-runs", { params: { project } });
+}
+
+export async function getResearchRun(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function getResearchRunByUid(uid, project) {
+  return request("GET", `/api/v1/research-runs/uid/${encodeURIComponent(uid)}`, { params: { project } });
+}
+
+export async function getResearchRunSnapshot(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/snapshot`, { params: { project } });
+}
+
+export async function listResearchRunArtifacts(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/artifacts`, { params: { project } });
+}
+
+export async function listResearchRunGates(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/gates`, { params: { project } });
+}
+
+export async function recordResearchRunArtifact(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/artifacts`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function advanceResearchRun(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/advance`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function decideResearchRunGate(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/gates/decision`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function stopResearchRun(id, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/stop`, { params: { project } });
+}
+
+export async function failResearchRun(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/fail`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function resumeResearchRun(id, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/resume`, { params: { project } });
+}
+
+export async function completeResearchRun(id, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/complete`, { params: { project } });
+}
+
+export async function recordResearchRunUsage(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/usage`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export const RESEARCH_RUN_AUTONOMY_LEVELS = ["COPILOT", "AUTONOMOUS"];
+
+export const RESEARCH_RUN_INTENDED_OUTPUTS = [
+  "SCOPING_REVIEW",
+  "SYSTEMATIC_REVIEW",
+  "SYSTEMATIC_MAP",
+  "CRITICAL_REVIEW",
+  "NARRATIVE_REVIEW",
+  "TARGETED_RELATED_WORK",
+  "TAXONOMY_PAPER",
+  "OTHER",
+];
+
+export const RESEARCH_RUN_STAGES = [
+  "METHODOLOGY_SELECTION",
+  "PROTOCOL_PLANNING",
+  "SOURCE_SEARCH",
+  "SCREENING",
+  "CHARTING",
+  "SYNTHESIS",
+  "ARGUMENT_CONSTRUCTION",
+  "PROSE_DRAFTING",
+];
+
+export const RESEARCH_ARTIFACT_TYPES = [
+  "METHODOLOGY_REQUIREMENTS",
+  "PROTOCOL_PLAN",
+  "SEARCH_LOG",
+  "SCREENING_RESULT",
+  "CHARTING_DATA",
+  "SYNTHESIS",
+  "ARGUMENT_MAP",
+  "MANUSCRIPT",
+];
+
+export const RESEARCH_GATE_POINTS = [
+  "METHOD_DECISION",
+  "PROTOCOL_DECISION",
+  "SEARCH_DECISION",
+  "SYNTHESIS_DECISION",
+  "WRITING_DECISION",
+];
+
+export const RESEARCH_GATE_BEHAVIORS = ["REQUIRE_HUMAN", "AUTONOMOUS_DEFAULT", "DISABLED"];
+
+export const RESEARCH_GATE_DECISION_OUTCOMES = ["APPROVED", "REJECTED", "AUTO_ACCEPTED"];
+
 export async function createControl(data, project) {
   return request("POST", "/api/v1/controls", { body: data, params: { project } });
 }
