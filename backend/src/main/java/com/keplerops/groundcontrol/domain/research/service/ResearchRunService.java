@@ -90,6 +90,10 @@ public class ResearchRunService {
     private static final String FIELD = "field";
     private static final String CURRENT_STAGE = "current_stage";
     private static final String GATE_POINT = "gate_point";
+    private static final String TARGET_STAGE = "targetStage";
+    private static final String RATIONALE_SUMMARY = "rationaleSummary";
+    private static final String TARGET_ARTIFACT_ID = "targetArtifactId";
+    private static final String TARGET_DECISION_LOG_ID = "targetDecisionLogId";
 
     private final ResearchRunRepository runRepository;
     private final ResearchRunArtifactRepository artifactRepository;
@@ -325,7 +329,7 @@ public class ResearchRunService {
         var targetStage = command == null ? null : command.targetStage();
         if (targetStage == null) {
             throw new DomainValidationException(
-                    "targetStage must not be null", INVALID_CODE, Map.of(FIELD, "targetStage"));
+                    "targetStage must not be null", INVALID_CODE, Map.of(FIELD, TARGET_STAGE));
         }
         if (run.getCurrentStage().isAtOrAfter(targetStage)) {
             return run; // already at or past the target — idempotent no-op
@@ -432,7 +436,7 @@ public class ResearchRunService {
                                     : gate.getDecisionOutcome().name()));
         }
         requireUnder(command.selectedOptionId(), OPTION_ID_MAX, "selectedOptionId");
-        requireUnder(command.rationaleSummary(), RATIONALE_MAX, "rationaleSummary");
+        requireUnder(command.rationaleSummary(), RATIONALE_MAX, RATIONALE_SUMMARY);
         requireUnder(command.recommendationOptionId(), OPTION_ID_MAX, "recommendationOptionId");
         requireUnder(command.recommendationSummary(), RECOMMENDATION_SUMMARY_MAX, "recommendationSummary");
         requireUnder(command.questionKey(), QUESTION_KEY_MAX, "questionKey");
@@ -485,12 +489,12 @@ public class ResearchRunService {
         requireUnder(command.body(), BODY_MAX, "body");
         validateReviewTargetConsistency(command);
         requireSameRunReference(
-                command.targetArtifactId(), runId, artifactRepository::existsByIdAndResearchRunId, "targetArtifactId");
+                command.targetArtifactId(), runId, artifactRepository::existsByIdAndResearchRunId, TARGET_ARTIFACT_ID);
         requireSameRunReference(
                 command.targetDecisionLogId(),
                 runId,
                 decisionLogRepository::existsByIdAndResearchRunId,
-                "targetDecisionLogId");
+                TARGET_DECISION_LOG_ID);
 
         var comment = new ResearchRunReviewComment(
                 run, command.targetType(), command.body().trim(), command.provenance(), currentActor());
@@ -550,10 +554,10 @@ public class ResearchRunService {
         }
         if (command.rationaleSummary() == null || command.rationaleSummary().isBlank()) {
             throw new DomainValidationException(
-                    "rationaleSummary must not be blank", INVALID_CODE, Map.of(FIELD, "rationaleSummary"));
+                    "rationaleSummary must not be blank", INVALID_CODE, Map.of(FIELD, RATIONALE_SUMMARY));
         }
         requireUnder(command.subjectKey(), SUBJECT_KEY_MAX, "subjectKey");
-        requireUnder(command.rationaleSummary(), SUMMARY_MAX, "rationaleSummary");
+        requireUnder(command.rationaleSummary(), SUMMARY_MAX, RATIONALE_SUMMARY);
         requireUnder(command.evidenceLocator(), LOCATOR_MAX, "evidenceLocator");
         requireUnder(command.confidenceSummary(), CONFIDENCE_MAX, "confidenceSummary");
         validateRationaleLifecycleConsistency(runId, command);
@@ -749,9 +753,9 @@ public class ResearchRunService {
     private void validateReviewTargetConsistency(AddReviewCommentCommand command) {
         switch (command.targetType()) {
             case GATE_POINT -> requirePresent(command.targetGatePoint(), "targetGatePoint");
-            case STAGE -> requirePresent(command.targetStage(), "targetStage");
-            case ARTIFACT -> requirePresent(command.targetArtifactId(), "targetArtifactId");
-            case DECISION_LOG -> requirePresent(command.targetDecisionLogId(), "targetDecisionLogId");
+            case STAGE -> requirePresent(command.targetStage(), TARGET_STAGE);
+            case ARTIFACT -> requirePresent(command.targetArtifactId(), TARGET_ARTIFACT_ID);
+            case DECISION_LOG -> requirePresent(command.targetDecisionLogId(), TARGET_DECISION_LOG_ID);
             case RUN -> {
                 // RUN targets carry no discriminator.
             }
@@ -761,13 +765,13 @@ public class ResearchRunService {
             throw inconsistentTarget("targetGatePoint", command.targetType());
         }
         if (command.targetType() != ReviewCommentTarget.STAGE && command.targetStage() != null) {
-            throw inconsistentTarget("targetStage", command.targetType());
+            throw inconsistentTarget(TARGET_STAGE, command.targetType());
         }
         if (command.targetType() != ReviewCommentTarget.ARTIFACT && command.targetArtifactId() != null) {
-            throw inconsistentTarget("targetArtifactId", command.targetType());
+            throw inconsistentTarget(TARGET_ARTIFACT_ID, command.targetType());
         }
         if (command.targetType() != ReviewCommentTarget.DECISION_LOG && command.targetDecisionLogId() != null) {
-            throw inconsistentTarget("targetDecisionLogId", command.targetType());
+            throw inconsistentTarget(TARGET_DECISION_LOG_ID, command.targetType());
         }
     }
 

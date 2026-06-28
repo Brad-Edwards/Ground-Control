@@ -334,8 +334,8 @@ class ResearchRunDecisionSurfacesServiceTest {
         comment.resolve("first", "actor");
         when(reviewCommentRepository.findById(commentId)).thenReturn(Optional.of(comment));
 
-        assertThatThrownBy(() -> service.resolveReviewComment(
-                        PROJECT_ID, RUN_ID, commentId, new ResolveReviewCommentCommand("again")))
+        var cmd = new ResolveReviewCommentCommand("again");
+        assertThatThrownBy(() -> service.resolveReviewComment(PROJECT_ID, RUN_ID, commentId, cmd))
                 .isInstanceOf(ConflictException.class);
     }
 
@@ -343,30 +343,20 @@ class ResearchRunDecisionSurfacesServiceTest {
     void addReviewComment_targetDiscriminatorMismatch_throwsValidation() {
         runAt(ResearchRunStage.SYNTHESIS, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.COPILOT);
         // GATE_POINT target but no gate point supplied.
-        assertThatThrownBy(() -> service.addReviewComment(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new AddReviewCommentCommand(
-                                ReviewCommentTarget.GATE_POINT,
-                                null,
-                                null,
-                                null,
-                                null,
-                                "body",
-                                ReviewCommentProvenance.HUMAN_REVIEW)))
+        var cmd1 = new AddReviewCommentCommand(
+                ReviewCommentTarget.GATE_POINT, null, null, null, null, "body", ReviewCommentProvenance.HUMAN_REVIEW);
+        assertThatThrownBy(() -> service.addReviewComment(PROJECT_ID, RUN_ID, cmd1))
                 .isInstanceOf(DomainValidationException.class);
         // RUN target but a stage discriminator is set.
-        assertThatThrownBy(() -> service.addReviewComment(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new AddReviewCommentCommand(
-                                ReviewCommentTarget.RUN,
-                                null,
-                                ResearchRunStage.SYNTHESIS,
-                                null,
-                                null,
-                                "body",
-                                ReviewCommentProvenance.HUMAN_REVIEW)))
+        var cmd2 = new AddReviewCommentCommand(
+                ReviewCommentTarget.RUN,
+                null,
+                ResearchRunStage.SYNTHESIS,
+                null,
+                null,
+                "body",
+                ReviewCommentProvenance.HUMAN_REVIEW);
+        assertThatThrownBy(() -> service.addReviewComment(PROJECT_ID, RUN_ID, cmd2))
                 .isInstanceOf(DomainValidationException.class);
     }
 
@@ -381,8 +371,8 @@ class ResearchRunDecisionSurfacesServiceTest {
         TestUtil.setField(comment, "id", commentId);
         when(reviewCommentRepository.findById(commentId)).thenReturn(Optional.of(comment));
 
-        assertThatThrownBy(() -> service.resolveReviewComment(
-                        PROJECT_ID, RUN_ID, commentId, new ResolveReviewCommentCommand("x")))
+        var cmd = new ResolveReviewCommentCommand("x");
+        assertThatThrownBy(() -> service.resolveReviewComment(PROJECT_ID, RUN_ID, commentId, cmd))
                 .isInstanceOf(NotFoundException.class);
     }
 
@@ -417,22 +407,20 @@ class ResearchRunDecisionSurfacesServiceTest {
     void addRationaleEntry_oversizedSubjectKey_throwsValidation() {
         runAt(ResearchRunStage.CHARTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
         var tooLong = "k".repeat(201);
-        assertThatThrownBy(() -> service.addRationaleEntry(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new AddRationaleEntryCommand(
-                                ResearchRunStage.CHARTING,
-                                null,
-                                null,
-                                null,
-                                null,
-                                RationaleEntryKind.CHARTED_VALUE,
-                                RationaleEvidenceBasis.CHARTED_CELL,
-                                RationaleProvenance.AGENT_RECOMMENDATION,
-                                tooLong,
-                                "summary",
-                                null,
-                                null)))
+        var cmd = new AddRationaleEntryCommand(
+                ResearchRunStage.CHARTING,
+                null,
+                null,
+                null,
+                null,
+                RationaleEntryKind.CHARTED_VALUE,
+                RationaleEvidenceBasis.CHARTED_CELL,
+                RationaleProvenance.AGENT_RECOMMENDATION,
+                tooLong,
+                "summary",
+                null,
+                null);
+        assertThatThrownBy(() -> service.addRationaleEntry(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(DomainValidationException.class);
     }
 
@@ -444,8 +432,8 @@ class ResearchRunDecisionSurfacesServiceTest {
         when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
                         RUN_ID, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE))
                 .thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.createDisclosure(
-                        PROJECT_ID, RUN_ID, new CreateDisclosureCommand(null, null, false, false, false)))
+        var cmd = new CreateDisclosureCommand(null, null, false, false, false);
+        assertThatThrownBy(() -> service.createDisclosure(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("MANUSCRIPT");
     }
@@ -455,20 +443,17 @@ class ResearchRunDecisionSurfacesServiceTest {
         var run = runAt(ResearchRunStage.PROSE_DRAFTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
         var stale = disclosure(run, UUID.randomUUID(), false, false, DisclosureStatus.STALE);
         when(disclosureRepository.findById(stale.getId())).thenReturn(Optional.of(stale));
-        assertThatThrownBy(() -> service.addDisclosureEntry(
-                        PROJECT_ID,
-                        RUN_ID,
-                        stale.getId(),
-                        new AddDisclosureEntryCommand(
-                                DisclosureEntryFamily.AI_GENERATED_PART,
-                                null,
-                                null,
-                                null,
-                                "claude",
-                                "section 3 drafted by model",
-                                null,
-                                null,
-                                null)))
+        var cmd = new AddDisclosureEntryCommand(
+                DisclosureEntryFamily.AI_GENERATED_PART,
+                null,
+                null,
+                null,
+                "claude",
+                "section 3 drafted by model",
+                null,
+                null,
+                null);
+        assertThatThrownBy(() -> service.addDisclosureEntry(PROJECT_ID, RUN_ID, stale.getId(), cmd))
                 .isInstanceOf(ConflictException.class);
     }
 
@@ -479,37 +464,31 @@ class ResearchRunDecisionSurfacesServiceTest {
         when(disclosureRepository.findById(current.getId())).thenReturn(Optional.of(current));
 
         // UNRESOLVED_UNCERTAINTY without a category is rejected.
-        assertThatThrownBy(() -> service.addDisclosureEntry(
-                        PROJECT_ID,
-                        RUN_ID,
-                        current.getId(),
-                        new AddDisclosureEntryCommand(
-                                DisclosureEntryFamily.UNRESOLVED_UNCERTAINTY,
-                                null,
-                                null,
-                                null,
-                                null,
-                                "an access gap remains",
-                                null,
-                                null,
-                                null)))
+        var cmd1 = new AddDisclosureEntryCommand(
+                DisclosureEntryFamily.UNRESOLVED_UNCERTAINTY,
+                null,
+                null,
+                null,
+                null,
+                "an access gap remains",
+                null,
+                null,
+                null);
+        assertThatThrownBy(() -> service.addDisclosureEntry(PROJECT_ID, RUN_ID, current.getId(), cmd1))
                 .isInstanceOf(DomainValidationException.class);
 
         // AI_GENERATED_PART with a category set is rejected.
-        assertThatThrownBy(() -> service.addDisclosureEntry(
-                        PROJECT_ID,
-                        RUN_ID,
-                        current.getId(),
-                        new AddDisclosureEntryCommand(
-                                DisclosureEntryFamily.AI_GENERATED_PART,
-                                DisclosureUncertaintyCategory.SCIENTIFIC,
-                                null,
-                                null,
-                                null,
-                                "model drafted section",
-                                null,
-                                null,
-                                null)))
+        var cmd2 = new AddDisclosureEntryCommand(
+                DisclosureEntryFamily.AI_GENERATED_PART,
+                DisclosureUncertaintyCategory.SCIENTIFIC,
+                null,
+                null,
+                null,
+                "model drafted section",
+                null,
+                null,
+                null);
+        assertThatThrownBy(() -> service.addDisclosureEntry(PROJECT_ID, RUN_ID, current.getId(), cmd2))
                 .isInstanceOf(DomainValidationException.class);
 
         // Valid UNRESOLVED_UNCERTAINTY with a category succeeds.
@@ -653,6 +632,10 @@ class ResearchRunDecisionSurfacesServiceTest {
         when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
                         RUN_ID, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE))
                 .thenReturn(Optional.of(artifact(run, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE)));
+        // The run has auto-accepted gate decisions (autonomous default) but no disclosure.
+        when(decisionLogRepository.existsByResearchRunIdAndDecisionOutcome(
+                        RUN_ID, ResearchGateDecisionOutcome.AUTO_ACCEPTED))
+                .thenReturn(true);
         when(disclosureRepository.findFirstByResearchRunIdAndStatus(RUN_ID, DisclosureStatus.CURRENT))
                 .thenReturn(Optional.empty());
         when(disclosureRepository.findFirstByResearchRunIdAndStatus(RUN_ID, DisclosureStatus.STALE))
@@ -670,17 +653,15 @@ class ResearchRunDecisionSurfacesServiceTest {
         var foreignArtifactId = UUID.randomUUID();
         when(artifactRepository.existsByIdAndResearchRunId(foreignArtifactId, RUN_ID))
                 .thenReturn(false);
-        assertThatThrownBy(() -> service.addReviewComment(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new AddReviewCommentCommand(
-                                ReviewCommentTarget.ARTIFACT,
-                                null,
-                                null,
-                                foreignArtifactId,
-                                null,
-                                "comment on another run's artifact",
-                                ReviewCommentProvenance.HUMAN_REVIEW)))
+        var cmd = new AddReviewCommentCommand(
+                ReviewCommentTarget.ARTIFACT,
+                null,
+                null,
+                foreignArtifactId,
+                null,
+                "comment on another run's artifact",
+                ReviewCommentProvenance.HUMAN_REVIEW);
+        assertThatThrownBy(() -> service.addReviewComment(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(NotFoundException.class);
         verify(reviewCommentRepository, never()).save(any());
     }
@@ -710,22 +691,20 @@ class ResearchRunDecisionSurfacesServiceTest {
         var foreignArtifactId = UUID.randomUUID();
         when(artifactRepository.existsByIdAndResearchRunId(foreignArtifactId, RUN_ID))
                 .thenReturn(false);
-        assertThatThrownBy(() -> service.addRationaleEntry(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new AddRationaleEntryCommand(
-                                ResearchRunStage.CHARTING,
-                                ResearchArtifactType.CHARTING_DATA,
-                                foreignArtifactId,
-                                1,
-                                null,
-                                RationaleEntryKind.CHARTED_VALUE,
-                                RationaleEvidenceBasis.CHARTED_CELL,
-                                RationaleProvenance.AGENT_RECOMMENDATION,
-                                "subject",
-                                "summary",
-                                null,
-                                null)))
+        var cmd = new AddRationaleEntryCommand(
+                ResearchRunStage.CHARTING,
+                ResearchArtifactType.CHARTING_DATA,
+                foreignArtifactId,
+                1,
+                null,
+                RationaleEntryKind.CHARTED_VALUE,
+                RationaleEvidenceBasis.CHARTED_CELL,
+                RationaleProvenance.AGENT_RECOMMENDATION,
+                "subject",
+                "summary",
+                null,
+                null);
+        assertThatThrownBy(() -> service.addRationaleEntry(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(NotFoundException.class);
         verify(rationaleRepository, never()).save(any());
     }
@@ -737,22 +716,20 @@ class ResearchRunDecisionSurfacesServiceTest {
         when(artifactRepository.findByIdAndResearchRunId(chartingArtifact.getId(), RUN_ID))
                 .thenReturn(Optional.of(chartingArtifact));
         // Declares MANUSCRIPT but the referenced artifact is CHARTING_DATA.
-        assertThatThrownBy(() -> service.addRationaleEntry(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new AddRationaleEntryCommand(
-                                ResearchRunStage.SYNTHESIS,
-                                ResearchArtifactType.MANUSCRIPT,
-                                chartingArtifact.getId(),
-                                null,
-                                null,
-                                RationaleEntryKind.SYNTHESIS_CLAIM,
-                                RationaleEvidenceBasis.CHARTED_CELL,
-                                RationaleProvenance.AGENT_RECOMMENDATION,
-                                "subject",
-                                "summary",
-                                null,
-                                null)))
+        var cmd = new AddRationaleEntryCommand(
+                ResearchRunStage.SYNTHESIS,
+                ResearchArtifactType.MANUSCRIPT,
+                chartingArtifact.getId(),
+                null,
+                null,
+                RationaleEntryKind.SYNTHESIS_CLAIM,
+                RationaleEvidenceBasis.CHARTED_CELL,
+                RationaleProvenance.AGENT_RECOMMENDATION,
+                "subject",
+                "summary",
+                null,
+                null);
+        assertThatThrownBy(() -> service.addRationaleEntry(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(DomainValidationException.class);
         verify(rationaleRepository, never()).save(any());
     }
@@ -761,22 +738,20 @@ class ResearchRunDecisionSurfacesServiceTest {
     void addRationaleEntry_gatePointNotGuardingStage_throwsValidation() {
         runAt(ResearchRunStage.CHARTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
         // METHOD_DECISION guards METHODOLOGY_SELECTION, not CHARTING.
-        assertThatThrownBy(() -> service.addRationaleEntry(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new AddRationaleEntryCommand(
-                                ResearchRunStage.CHARTING,
-                                null,
-                                null,
-                                null,
-                                ResearchGatePoint.METHOD_DECISION,
-                                RationaleEntryKind.CHARTED_VALUE,
-                                RationaleEvidenceBasis.CHARTED_CELL,
-                                RationaleProvenance.AGENT_RECOMMENDATION,
-                                "subject",
-                                "summary",
-                                null,
-                                null)))
+        var cmd = new AddRationaleEntryCommand(
+                ResearchRunStage.CHARTING,
+                null,
+                null,
+                null,
+                ResearchGatePoint.METHOD_DECISION,
+                RationaleEntryKind.CHARTED_VALUE,
+                RationaleEvidenceBasis.CHARTED_CELL,
+                RationaleProvenance.AGENT_RECOMMENDATION,
+                "subject",
+                "summary",
+                null,
+                null);
+        assertThatThrownBy(() -> service.addRationaleEntry(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(DomainValidationException.class);
         verify(rationaleRepository, never()).save(any());
     }
@@ -821,20 +796,17 @@ class ResearchRunDecisionSurfacesServiceTest {
         var foreignRationaleId = UUID.randomUUID();
         when(rationaleRepository.existsByIdAndResearchRunId(foreignRationaleId, RUN_ID))
                 .thenReturn(false);
-        assertThatThrownBy(() -> service.addDisclosureEntry(
-                        PROJECT_ID,
-                        RUN_ID,
-                        current.getId(),
-                        new AddDisclosureEntryCommand(
-                                DisclosureEntryFamily.AI_GENERATED_PART,
-                                null,
-                                null,
-                                null,
-                                "claude",
-                                "section drafted by model",
-                                foreignRationaleId,
-                                null,
-                                null)))
+        var cmd = new AddDisclosureEntryCommand(
+                DisclosureEntryFamily.AI_GENERATED_PART,
+                null,
+                null,
+                null,
+                "claude",
+                "section drafted by model",
+                foreignRationaleId,
+                null,
+                null);
+        assertThatThrownBy(() -> service.addDisclosureEntry(PROJECT_ID, RUN_ID, current.getId(), cmd))
                 .isInstanceOf(NotFoundException.class);
         verify(disclosureEntryRepository, never()).save(any());
     }
@@ -848,8 +820,8 @@ class ResearchRunDecisionSurfacesServiceTest {
         when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
                         RUN_ID, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE))
                 .thenReturn(Optional.of(manuscript));
-        assertThatThrownBy(() -> service.createDisclosure(
-                        PROJECT_ID, RUN_ID, new CreateDisclosureCommand(UUID.randomUUID(), 1, false, false, false)))
+        var cmd = new CreateDisclosureCommand(UUID.randomUUID(), 1, false, false, false);
+        assertThatThrownBy(() -> service.createDisclosure(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("finalArtifactId");
         verify(disclosureRepository, never()).save(any());
@@ -884,8 +856,8 @@ class ResearchRunDecisionSurfacesServiceTest {
         when(disclosureRepository.findFirstByResearchRunIdAndStatus(RUN_ID, DisclosureStatus.CURRENT))
                 .thenReturn(Optional.of(staleCurrentForOldManuscript));
 
-        assertThatThrownBy(() -> service.createDisclosure(
-                        PROJECT_ID, RUN_ID, new CreateDisclosureCommand(manuscript.getId(), 1, false, false, false)))
+        var cmd = new CreateDisclosureCommand(manuscript.getId(), 1, false, false, false);
+        assertThatThrownBy(() -> service.createDisclosure(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(ConflictException.class);
         verify(disclosureRepository, never()).save(any());
     }
