@@ -1206,6 +1206,7 @@ ingestion (`gc_workflow_run_ingest`) seeds the read-model from canonical issue-t
 | POST | `/derivations/runs` | DerivationRunRequest | 201 | Run server-side derivation for a repository scope |
 | GET | `/derivations/runs` | - | 200 | List derivation runs |
 | GET | `/derivations/runs/{id}` | - | 200 | Get one derivation run |
+| GET | `/derivations/runs/{id}/boundary-model` | - | 200 | Get the canonical boundary-model snapshot for one derivation run |
 | GET | `/derivations/facts` | - | 200 | List normalized system-model facts |
 | GET | `/derivations/capture-limits` | - | 200 | List capture-limit records |
 
@@ -1226,7 +1227,10 @@ payloads.
 `PATH_SET`, or `DIFF`), `commitSha` (required, 7 to 64 lowercase hex
 characters), `baseCommitSha` (required for `DIFF` only), `paths` (required
 for `PATH_SET`, forbidden for `FULL_REPO`), `languages` (required string
-set), and `surfaces` (required string set).
+set), `surfaces` (required string set), and optional `declaredBoundaries`.
+Each declared boundary carries `key`, `name`, optional `description`,
+`pathSelectors`, and `surfaces`; declarations complement derived
+`TRUST_BOUNDARY` facts and are merged into the canonical boundary snapshot.
 
 **SystemModelFact fields:** `id`, `derivationRunId`, `projectIdentifier`,
 `factKind`, `schemaVersion`, `factKey`, `label`, `summary`, `sourcePath`,
@@ -1240,11 +1244,24 @@ rejected.
 `adapterId`, `reason`, `language`, `surface`, `detail`, `commitSha`,
 `capturedAt`, `createdAt`, and `updatedAt`.
 
+**BoundaryModelSnapshot fields:** `id`, `derivationRunId`,
+`projectIdentifier`, `schemaVersion`, `boundarySetVersion`,
+`architectureModelVersion`, `commitSha`, `declarationDigest`, counts for
+boundaries, assignments, and gaps, plus `boundaries`, `assignments`, `gaps`,
+`createdAt`, and `updatedAt`. Boundaries include `boundaryKey`, `displayName`,
+`description`, `source` (`DERIVED`, `DECLARED`, or `MERGED`), `pathSelectors`,
+`surfaces`, and contributing `inputFactKeys`. Assignments map assignable facts
+to exactly one boundary. Gaps are modeling gaps such as missing source paths,
+unassigned facts, or ambiguous boundary matches; they are separate from
+capture-limit records.
+
 MCP surface: `gc_derivation` with actions `run`, `list_runs`, `get_run`,
-`list_facts`, and `list_capture_limits`. `run` requires `scope_mode`,
-`commit_sha`, `languages`, and `surfaces`; `base_commit_sha` is required when
-`scope_mode=DIFF`; `paths` is required when `scope_mode=PATH_SET`. Readback
-actions map `run_id`, `fact_kind`, and `reason` to the REST filters above.
+`get_boundary_model`, `list_facts`, and `list_capture_limits`. `run` requires
+`scope_mode`, `commit_sha`, `languages`, and `surfaces`; `base_commit_sha` is
+required when `scope_mode=DIFF`; `paths` is required when
+`scope_mode=PATH_SET`. It accepts `declared_boundaries` directly or `repo_path`
+to read `grc.boundaries` from `.ground-control.yaml`. Readback actions map
+`run_id`, `fact_kind`, and `reason` to the REST filters above.
 
 ### Plugins
 

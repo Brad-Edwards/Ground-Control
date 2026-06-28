@@ -9,8 +9,9 @@ import java.util.List;
  * collection port: its scope type, evidence type, and the bounded summary fields a collected
  * summary may carry.
  *
- * <p>Shared by the per-domain family enums (IAM GC-S002, cloud infrastructure GC-S003, and
- * future evidence-adapter specifications) so the mechanical schema-id and capability-token
+ * <p>Shared by the per-domain family enums (IAM GC-S002, cloud infrastructure GC-S003,
+ * CMDB/asset GC-S004, and future evidence-adapter specifications) so the mechanical
+ * schema-id and capability-token
  * derivations are defined once rather than re-implemented per enum. The family-specific
  * values stay as data in each enum constant; this record only carries them.
  */

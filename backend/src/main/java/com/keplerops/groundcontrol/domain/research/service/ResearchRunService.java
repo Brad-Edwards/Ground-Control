@@ -653,7 +653,7 @@ public class ResearchRunService {
                     "research_run_disclosure_artifact_mismatch",
                     Map.of(FIELD, "finalAttemptNo"));
         }
-        // Single-current invariant (backed by the partial unique index in V156): a
+        // Single-current invariant (backed by the partial unique index in V158): a
         // double-submit for the same active manuscript returns the existing record
         // idempotently; a stray CURRENT row for a different manuscript is a conflict.
         var existingCurrent = disclosureRepository.findFirstByResearchRunIdAndStatus(runId, DisclosureStatus.CURRENT);

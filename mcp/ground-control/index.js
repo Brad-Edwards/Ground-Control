@@ -2219,7 +2219,8 @@ server.tool(
   },
 );
 
-// gc_derivation: GC-GRC-001 normalized system-model facts and capture limits.
+// gc_derivation: GC-GRC-001 normalized system-model facts and capture limits,
+// plus GC-GRC-004 boundary-model snapshot readback.
 server.tool(
   "gc_derivation",
   GC_DERIVATION_DESCRIPTION,

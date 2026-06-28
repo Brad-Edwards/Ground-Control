@@ -16,6 +16,8 @@ accepted
 
 > **Sync note for issue #1180 (2026-06-18):** Added optional `short_code` field to `.ground-control.yaml` config parsing (`parseGroundControlYaml` in `mcp/ground-control/lib.js`): validated as uppercase alphanumeric 1–8 characters, absent defaults to null, surfaced via `getRepoGroundControlContext`. The implement-workflow skills (`step-01-issue-branch-resolution.md`, `step-20-close-issue-on-merge.md`) were updated to rename the tmux session when `$TMUX` is set and `cfg.short_code` is non-null. No new public `gc_*` tool is registered; the `classifyChangedSurface` surface vocabulary and `outcome_required` mapping are unchanged.
 
+> **Sync note for issue #1117 (2026-06-28):** Added `grc.boundaries` parsing to `.ground-control.yaml` context in `mcp/ground-control/lib.js`, extended `gc_derivation` with declared-boundary forwarding and `get_boundary_model`, and documented the REST/MCP boundary-model readback in `docs/API.md`, `docs/DEVELOPMENT_WORKFLOW.md`, `docs/architecture/ARCHITECTURE.md`, and `mcp/ground-control/README.md`. No new documentation coverage surface class, Vale rule, `.vale.ini` setting, or style rule changed.
+
 > **Sync note for issue #1176 (2026-06-15):** Extended `tools/policy/checks.py::ENUM_CONTRACT_INVENTORY` with three new enum-contract entries (`VerificationStatus`, `AssuranceLevel`, `MethodologyFamily`) so ADR-034's enum-mirror gate covers GRC verification enums. Added corresponding TypeScript union types and constant arrays to `frontend/src/types/api.ts`, mirrored the enum values at the MCP layer, and updated MethodologyProfile interface field types from string to MethodologyFamily per ADR-034. The classifier, Vale rules, `.vale.ini`, and `docs/DOC_STYLE.md` style rules are unchanged.
 
 ## Context
