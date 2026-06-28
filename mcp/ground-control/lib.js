@@ -10770,6 +10770,66 @@ export async function advanceResearchRun(id, data, project) {
   });
 }
 
+// GC-RSCH-R004 / GC-RSCH-N002 / GC-RSCH-N004 — research provenance ledger
+// (ADR-069). A run-scoped, append-only directed derivation graph of provenance
+// nodes and edges. Reads also route through gc_query under the
+// /api/v1/research-runs allow-list; the gc_research_provenance tool exposes the
+// curated writes (which gc_query cannot perform) plus discoverable reads.
+export const PROVENANCE_NODE_KINDS = [
+  "USER_GOAL",
+  "METHODOLOGY_SOURCE",
+  "QUERY",
+  "CANDIDATE_SOURCE",
+  "FULL_TEXT_ACCESS",
+  "CHARTING_CELL",
+  "EVIDENCE_MATRIX_CELL",
+  "SYNTHESIS_CLAIM",
+  "ARGUMENT_MOVE",
+  "FINAL_PROSE",
+];
+
+export const PROVENANCE_EDGE_RELATIONS = [
+  "DERIVED_FROM",
+  "SUPPORTS",
+  "SELECTED",
+  "CITED",
+  "CONTRIBUTED_TO",
+];
+
+export async function recordResearchProvenanceNode(runId, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(runId)}/provenance/nodes`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function recordResearchProvenanceEdge(runId, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(runId)}/provenance/edges`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function listResearchProvenanceNodes(runId, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(runId)}/provenance/nodes`, {
+    params: { project },
+  });
+}
+
+export async function listResearchProvenanceEdges(runId, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(runId)}/provenance/edges`, {
+    params: { project },
+  });
+}
+
+export async function getResearchProvenanceChain(runId, nodeId, depth, project) {
+  return request(
+    "GET",
+    `/api/v1/research-runs/${encodeURIComponent(runId)}/provenance/nodes/${encodeURIComponent(nodeId)}/chain`,
+    { params: { project, depth } },
+  );
+}
+
 export async function decideResearchRunGate(id, data, project) {
   return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/gates/decision`, {
     body: data,

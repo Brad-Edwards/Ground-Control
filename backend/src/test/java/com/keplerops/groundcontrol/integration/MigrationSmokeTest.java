@@ -48,7 +48,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         // V150–V151: canonical boundary model snapshot + audit shadows (GC-GRC-004).
         // V152–V161: #1001 research decision-log / review-comments / rationale-ledger / disclosure
         // (+ disclosure entries) + their audit shadows (ADR-066 / ADR-067 / ADR-068).
-        // V162–V164: architecture model aggregate + audit shadows + legacy link compatibility (GC-GRC-005).
+        // V162–V165: #1002 research provenance ledger node + edge + their audit shadows (ADR-069).
+        // V166–V168: architecture model aggregate + audit shadows + legacy link compatibility (GC-GRC-005).
         // Flyway immutability: once a versioned migration has been applied to a long-lived database
         // (e.g. production) its file content is frozen — the checksum is validated on every startup.
         // Never edit an applied V*.sql in place; append a new forward migration instead. Editing the
@@ -68,7 +69,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
                         "136", "137", "138", "139", "140", "141", "142", "143", "144", "145", "146", "147", "148",
                         "149", "150", "151", "152", "153", "154", "155", "156", "157", "158", "159", "160", "161",
-                        "162", "163", "164");
+                        "162", "163", "164", "165", "166", "167", "168");
     }
 
     @Test
@@ -1163,6 +1164,32 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT threat_model_id FROM risk_control_mapping_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
+        // V163 / V165 (#1002, ADR-069): research provenance ledger audit shadows.
+        assertResearchProvenanceAuditColumns();
+    }
+
+    /**
+     * V163 / V165 (#1002, ADR-069) — column-level probes for the research
+     * provenance audit shadows. ddl-auto:validate does not inspect audit tables,
+     * so probe every payload column explicitly; a copy-paste regression that
+     * dropped or renamed a shadow column would otherwise only surface at the first
+     * Envers flush in production. Extracted from {@link #auditTablesExist()} to
+     * keep that probe roster's assertion count bounded.
+     */
+    private void assertResearchProvenanceAuditColumns() {
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT kind, subject_key, stage, artifact_type, artifact_id, attempt_no,"
+                                + " locator, content_hash, external_identifier, summary, tool_name, tool_version,"
+                                + " source_action_id, status, actor, idempotency_key, created_at, updated_at"
+                                + " FROM research_provenance_node_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT from_node_id, to_node_id, relation, role, summary, status, actor,"
+                                + " idempotency_key, created_at, updated_at"
+                                + " FROM research_provenance_edge_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
     }
 
     @Test
@@ -1201,7 +1228,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
     @Test
     @Transactional
     void architectureModelAuditTablesMatchEntities() {
-        // V162-V163: architecture model stable elements, versioned snapshots,
+        // V166-V167: architecture model stable elements, versioned snapshots,
         // snapshot-local DFD semantics, and Envers audit shadows (GC-GRC-005).
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT stable_key, element_kind, created_at, updated_at"

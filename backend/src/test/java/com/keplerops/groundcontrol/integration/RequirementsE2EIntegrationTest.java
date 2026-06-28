@@ -581,8 +581,12 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "159", // V159: create research_run_disclosure_audit (#1001 audit parity)
                         "160", // V160: create research_run_disclosure_entry (#1001, ADR-068)
                         "161", // V161: create research_run_disclosure_entry_audit (#1001 audit parity)
-                        "162", // V162: create architecture model aggregate (GC-GRC-005)
-                        "163", // V163: create architecture model audit tables (GC-GRC-005)
-                        "164"); // V164: migrate legacy architecture-model threat links (GC-GRC-005)
+                        "162", // V162: create research_provenance_node (#1002, ADR-069)
+                        "163", // V163: create research_provenance_node_audit (#1002 audit parity)
+                        "164", // V164: create research_provenance_edge (#1002, ADR-069)
+                        "165", // V165: create research_provenance_edge_audit (#1002 audit parity)
+                        "166", // V166: create architecture model aggregate (GC-GRC-005)
+                        "167", // V167: create architecture model audit tables (GC-GRC-005)
+                        "168"); // V168: migrate legacy architecture-model threat links (GC-GRC-005)
     }
 }

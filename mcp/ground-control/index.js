@@ -273,6 +273,11 @@ import {
   GC_EVIDENCE_DESCRIPTION,
 } from "./gc-evidence.js";
 import {
+  gcResearchProvenanceZodShape,
+  gcResearchProvenanceToolHandler,
+  GC_RESEARCH_PROVENANCE_DESCRIPTION,
+} from "./gc-research-provenance.js";
+import {
   gcDerivationZodShape,
   gcDerivationToolHandler,
   GC_DERIVATION_DESCRIPTION,
@@ -3420,6 +3425,22 @@ server.tool(
         }
         default: return err(new Error(`Unknown action: ${args.action}`));
       }
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_research_provenance: GC-RSCH-R004 / GC-RSCH-N002 / GC-RSCH-N004, ADR-069.
+// Run-scoped append-only provenance ledger (nodes + edges). Curated writes mirror
+// REST (gc_query is read-only); reads also route through gc_query under the
+// /api/v1/research-runs allow-list. Handler lives in gc-research-provenance.js.
+server.tool(
+  "gc_research_provenance",
+  GC_RESEARCH_PROVENANCE_DESCRIPTION,
+  gcResearchProvenanceZodShape,
+  async (args) => {
+    try {
+      const result = await gcResearchProvenanceToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },
 );
