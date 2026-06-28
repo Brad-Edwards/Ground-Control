@@ -127,7 +127,7 @@ public class BoundaryDerivationAdapter implements DerivationAdapter {
                         List.of("mcp/ground-control/**", "mcp/citation/**"),
                         List.of("mcp", SURFACE_ARCHITECTURE)),
                 new BoundarySeed(
-                        "frontend",
+                        SURFACE_FRONTEND,
                         "Frontend SPA",
                         "React application and browser-side UI code.",
                         List.of("frontend/src/**"),
