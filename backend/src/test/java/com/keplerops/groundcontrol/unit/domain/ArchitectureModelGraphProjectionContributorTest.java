@@ -13,6 +13,7 @@ import com.keplerops.groundcontrol.domain.architecturemodel.service.Architecture
 import com.keplerops.groundcontrol.domain.architecturemodel.service.ArchitectureModelElementStateCommand;
 import com.keplerops.groundcontrol.domain.architecturemodel.service.ArchitectureModelGraphProjectionContributor;
 import com.keplerops.groundcontrol.domain.architecturemodel.service.ArchitectureModelProvenanceSource;
+import com.keplerops.groundcontrol.domain.graph.model.GraphEdge;
 import com.keplerops.groundcontrol.domain.graph.model.GraphEntityType;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import java.util.List;
@@ -54,18 +55,17 @@ class ArchitectureModelGraphProjectionContributorTest {
         var nodes = contributor.contributeNodes(PROJECT_ID);
         var edges = contributor.contributeEdges(PROJECT_ID);
 
-        assertThat(nodes).hasSize(3);
-        assertThat(nodes).allSatisfy(node -> assertThat(node.entityType())
-                .isEqualTo(GraphEntityType.ARCHITECTURE_MODEL_ELEMENT));
         assertThat(nodes)
+                .hasSize(3)
+                .allSatisfy(node -> assertThat(node.entityType()).isEqualTo(GraphEntityType.ARCHITECTURE_MODEL_ELEMENT))
                 .extracting(node -> node.properties().get("elementKind"))
                 .contains("COMPONENT", "DATA_STORE", "DATA_FLOW");
-        assertThat(edges).singleElement().satisfies(edge -> {
-            assertThat(edge.edgeType()).isEqualTo("DATA_FLOW");
-            assertThat(edge.sourceEntityType()).isEqualTo(GraphEntityType.ARCHITECTURE_MODEL_ELEMENT);
-            assertThat(edge.targetEntityType()).isEqualTo(GraphEntityType.ARCHITECTURE_MODEL_ELEMENT);
-            assertThat(edge.properties()).containsEntry("flowDirection", "UNIDIRECTIONAL");
-        });
+        assertThat(edges)
+                .singleElement()
+                .returns("DATA_FLOW", GraphEdge::edgeType)
+                .returns(GraphEntityType.ARCHITECTURE_MODEL_ELEMENT, GraphEdge::sourceEntityType)
+                .returns(GraphEntityType.ARCHITECTURE_MODEL_ELEMENT, GraphEdge::targetEntityType)
+                .matches(edge -> "UNIDIRECTIONAL".equals(edge.properties().get("flowDirection")));
     }
 
     private static ArchitectureModelElementState state(

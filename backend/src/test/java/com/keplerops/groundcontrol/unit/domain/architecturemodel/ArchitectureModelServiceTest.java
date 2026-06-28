@@ -217,50 +217,53 @@ class ArchitectureModelServiceTest {
     void createSnapshotRejectsElementValidationFailures() {
         when(projectService.getById(PROJECT_ID)).thenReturn(project);
 
-        assertThatThrownBy(() -> service.createSnapshot(new CreateArchitectureModelSnapshotCommand(
-                        PROJECT_ID,
-                        "architecture-model/v1",
-                        COMMIT,
-                        "manual source",
-                        List.of(state("component:api", ArchitectureModelElementKind.COMPONENT)))))
+        var badSourceCommand = new CreateArchitectureModelSnapshotCommand(
+                PROJECT_ID,
+                "architecture-model/v1",
+                COMMIT,
+                "manual source",
+                List.of(state("component:api", ArchitectureModelElementKind.COMPONENT)));
+        assertThatThrownBy(() -> service.createSnapshot(badSourceCommand))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("uppercase token");
 
-        assertThatThrownBy(() -> service.createSnapshot(new CreateArchitectureModelSnapshotCommand(
-                        PROJECT_ID,
-                        "architecture-model/v1",
-                        COMMIT,
-                        "MANUAL",
-                        List.of(command(
-                                "component:api",
-                                ArchitectureModelElementKind.COMPONENT,
-                                "API",
-                                null,
-                                null,
-                                "component:source",
-                                null,
-                                null,
-                                null,
-                                "adapter-a")))))
+        var nonFlowCommand = new CreateArchitectureModelSnapshotCommand(
+                PROJECT_ID,
+                "architecture-model/v1",
+                COMMIT,
+                "MANUAL",
+                List.of(command(
+                        "component:api",
+                        ArchitectureModelElementKind.COMPONENT,
+                        "API",
+                        null,
+                        null,
+                        "component:source",
+                        null,
+                        null,
+                        null,
+                        "adapter-a")));
+        assertThatThrownBy(() -> service.createSnapshot(nonFlowCommand))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("only allowed on DATA_FLOW");
 
-        assertThatThrownBy(() -> service.createSnapshot(new CreateArchitectureModelSnapshotCommand(
-                        PROJECT_ID,
-                        "architecture-model/v1",
-                        COMMIT,
-                        "MANUAL",
-                        List.of(command(
-                                "component:api",
-                                ArchitectureModelElementKind.COMPONENT,
-                                "API",
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                Map.of("nested", Map.of("raw_secret", "value")),
-                                "adapter-a")))))
+        var sensitiveMetadataCommand = new CreateArchitectureModelSnapshotCommand(
+                PROJECT_ID,
+                "architecture-model/v1",
+                COMMIT,
+                "MANUAL",
+                List.of(command(
+                        "component:api",
+                        ArchitectureModelElementKind.COMPONENT,
+                        "API",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        Map.of("nested", Map.of("raw_secret", "value")),
+                        "adapter-a")));
+        assertThatThrownBy(() -> service.createSnapshot(sensitiveMetadataCommand))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("blocked raw-content");
     }

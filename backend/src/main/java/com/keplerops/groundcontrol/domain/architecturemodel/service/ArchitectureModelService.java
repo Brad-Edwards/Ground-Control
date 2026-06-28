@@ -38,6 +38,9 @@ public class ArchitectureModelService {
     private static final Pattern STABLE_KEY = Pattern.compile("^[a-z0-9][a-z0-9:_.-]{0,199}$");
     private static final Pattern SOURCE_TOKEN = Pattern.compile("^[A-Z][A-Z0-9_]{0,39}$");
     private static final int MAX_ELEMENTS_PER_SNAPSHOT = 10_000;
+    private static final String ELEMENTS_FIELD = "elements";
+    private static final String ELEMENTS_FLOW_FIELD = "elements.flow";
+    private static final String SOURCE_FIELD = "source";
     private static final Set<String> BLOCKED_METADATA_KEYS = Set.of(
             "secret",
             "secret_value",
@@ -184,7 +187,8 @@ public class ArchitectureModelService {
                 .findByProjectIdAndStableKey(project.getId(), command.stableKey())
                 .map(existing -> {
                     if (existing.getElementKind() != command.elementKind()) {
-                        throw validation("architecture model element kind cannot change for a stable key", "elements");
+                        throw validation(
+                                "architecture model element kind cannot change for a stable key", ELEMENTS_FIELD);
                     }
                     return existing;
                 })
@@ -203,10 +207,10 @@ public class ArchitectureModelService {
         var source = normalizeSource(command.source());
         var elements = command.elements();
         if (elements.isEmpty()) {
-            throw validation("architecture model snapshots require at least one element", "elements");
+            throw validation("architecture model snapshots require at least one element", ELEMENTS_FIELD);
         }
         if (elements.size() > MAX_ELEMENTS_PER_SNAPSHOT) {
-            throw validation("architecture model snapshot contains too many elements", "elements");
+            throw validation("architecture model snapshot contains too many elements", ELEMENTS_FIELD);
         }
         var normalized = new ArrayList<ArchitectureModelElementStateCommand>(elements.size());
         for (var element : elements) {
@@ -226,7 +230,7 @@ public class ArchitectureModelService {
     private ArchitectureModelElementStateCommand normalizeElement(
             ArchitectureModelElementStateCommand command, String snapshotCommitSha, DerivationRun derivationRun) {
         if (command == null) {
-            throw validation("architecture model element is required", "elements");
+            throw validation("architecture model element is required", ELEMENTS_FIELD);
         }
         var stableKey = normalizeStableKey(command.stableKey(), "elements.stableKey");
         var kind = command.elementKind();
@@ -243,17 +247,8 @@ public class ArchitectureModelService {
                 normalizeOptionalStableKey(command.flowSourceStableKey(), "elements.flowSourceStableKey");
         var flowTargetStableKey =
                 normalizeOptionalStableKey(command.flowTargetStableKey(), "elements.flowTargetStableKey");
-        var flowDirection = command.flowDirection();
-        if (kind == ArchitectureModelElementKind.DATA_FLOW) {
-            if (flowSourceStableKey == null || flowTargetStableKey == null) {
-                throw validation("DATA_FLOW elements require flow source and target stable keys", "elements.flow");
-            }
-            if (flowDirection == null) {
-                flowDirection = ArchitectureFlowDirection.UNIDIRECTIONAL;
-            }
-        } else if (flowSourceStableKey != null || flowTargetStableKey != null || flowDirection != null) {
-            throw validation("flow fields are only allowed on DATA_FLOW elements", "elements.flow");
-        }
+        var flowDirection =
+                normalizeFlowFields(kind, flowSourceStableKey, flowTargetStableKey, command.flowDirection());
         if (command.provenanceSource() == null) {
             throw validation("provenanceSource is required", "elements.provenanceSource");
         }
@@ -288,6 +283,23 @@ public class ArchitectureModelService {
                 metadata);
     }
 
+    private ArchitectureFlowDirection normalizeFlowFields(
+            ArchitectureModelElementKind kind,
+            String flowSourceStableKey,
+            String flowTargetStableKey,
+            ArchitectureFlowDirection flowDirection) {
+        if (kind == ArchitectureModelElementKind.DATA_FLOW) {
+            if (flowSourceStableKey == null || flowTargetStableKey == null) {
+                throw validation("DATA_FLOW elements require flow source and target stable keys", ELEMENTS_FLOW_FIELD);
+            }
+            return flowDirection == null ? ArchitectureFlowDirection.UNIDIRECTIONAL : flowDirection;
+        }
+        if (flowSourceStableKey != null || flowTargetStableKey != null || flowDirection != null) {
+            throw validation("flow fields are only allowed on DATA_FLOW elements", ELEMENTS_FLOW_FIELD);
+        }
+        return null;
+    }
+
     private void validateSnapshotElements(List<ArchitectureModelElementStateCommand> elements) {
         var stableKeys = new LinkedHashSet<String>();
         for (var element : elements) {
@@ -299,7 +311,7 @@ public class ArchitectureModelService {
             if (element.elementKind() == ArchitectureModelElementKind.DATA_FLOW
                     && (!stableKeys.contains(element.flowSourceStableKey())
                             || !stableKeys.contains(element.flowTargetStableKey()))) {
-                throw validation("DATA_FLOW endpoints must exist in the same snapshot", "elements.flow");
+                throw validation("DATA_FLOW endpoints must exist in the same snapshot", ELEMENTS_FLOW_FIELD);
             }
         }
     }
@@ -387,7 +399,8 @@ public class ArchitectureModelService {
         }
         var stableKey = normalizeStableKeyForDerivation(fact.getFactKey());
         var sourceKey = kind == ArchitectureModelElementKind.DATA_FLOW
-                ? normalizeNullableStableKeyForDerivation(stringAt(payload, "sourceStableKey", "sourceKey", "source"))
+                ? normalizeNullableStableKeyForDerivation(
+                        stringAt(payload, "sourceStableKey", "sourceKey", SOURCE_FIELD))
                 : null;
         var targetKey = kind == ArchitectureModelElementKind.DATA_FLOW
                 ? normalizeNullableStableKeyForDerivation(stringAt(payload, "targetStableKey", "targetKey", "target"))
@@ -498,9 +511,9 @@ public class ArchitectureModelService {
     }
 
     private String normalizeSource(String value) {
-        var source = requireLength(value, "source", 40).toUpperCase(Locale.ROOT);
+        var source = requireLength(value, SOURCE_FIELD, 40).toUpperCase(Locale.ROOT);
         if (!SOURCE_TOKEN.matcher(source).matches()) {
-            throw validation("source must be an uppercase token", "source");
+            throw validation("source must be an uppercase token", SOURCE_FIELD);
         }
         return source;
     }
