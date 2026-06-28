@@ -10229,6 +10229,8 @@ export async function createArchitectureModelSnapshot(data, project) {
   return request("POST", "/api/v1/architecture-models/snapshots", { body: data, params: { project } });
 }
 
+// Returns snapshot summaries (metadata + element/flow counts) without the element
+// payload; use getArchitectureModelSnapshot for a single snapshot's full element state.
 export async function listArchitectureModelSnapshots({ project } = {}) {
   return request("GET", "/api/v1/architecture-models/snapshots", { params: { project } });
 }
