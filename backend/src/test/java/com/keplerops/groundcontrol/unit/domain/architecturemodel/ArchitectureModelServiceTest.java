@@ -284,8 +284,7 @@ class ArchitectureModelServiceTest {
         when(stateRepository.findLatestStateByElementIdAndProjectId(elementId, PROJECT_ID))
                 .thenReturn(Optional.of(state));
 
-        assertThat(service.listSnapshots(PROJECT_ID)).singleElement().satisfies(view -> assertThat(view.states())
-                .containsExactly(state));
+        assertThat(service.listSnapshots(PROJECT_ID)).containsExactly(snapshot);
         assertThat(service.getSnapshot(PROJECT_ID, SNAPSHOT_A_ID).snapshot()).isSameAs(snapshot);
         assertThat(service.listElements(PROJECT_ID)).singleElement().satisfies(view -> assertThat(view.currentState())
                 .isSameAs(state));

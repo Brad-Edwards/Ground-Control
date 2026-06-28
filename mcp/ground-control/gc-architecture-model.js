@@ -96,6 +96,8 @@ export const GC_ARCHITECTURE_MODEL_DESCRIPTION =
   `Architecture model aggregate (GC-GRC-005). Actions: ${GC_ARCHITECTURE_MODEL_ACTIONS.join(", ")}. ` +
   `create_snapshot persists a project-scoped versioned DFD snapshot with stable graph-native elements; ` +
   `DATA_FLOW elements require source/target stable keys that are present in the same snapshot. ` +
+  `list_snapshots returns snapshot summaries (metadata and element/flow counts, no element payloads); ` +
+  `get_snapshot returns one snapshot with its full element state. ` +
   `diff_snapshots compares two snapshots and returns added/removed/changed/provenance-only entries.`;
 
 export async function gcArchitectureModelToolHandler(args) {

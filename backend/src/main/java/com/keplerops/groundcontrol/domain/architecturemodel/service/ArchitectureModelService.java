@@ -84,12 +84,14 @@ public class ArchitectureModelService {
         return persistSnapshot(project, derivationRun, normalizeCommand(command, derivationRun));
     }
 
+    /**
+     * Returns snapshot metadata only. Element states are intentionally not loaded here: the list endpoint
+     * exposes summaries (counts), and the full per-element payload is served by {@link #getSnapshot} for a
+     * single snapshot. This keeps the list response bounded regardless of snapshot history or element count.
+     */
     @Transactional(readOnly = true)
-    public List<ArchitectureModelSnapshotView> listSnapshots(UUID projectId) {
-        return snapshotRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
-                .map(snapshot -> new ArchitectureModelSnapshotView(
-                        snapshot, stateRepository.findBySnapshotIdOrderByStableKey(snapshot.getId())))
-                .toList();
+    public List<ArchitectureModelSnapshot> listSnapshots(UUID projectId) {
+        return snapshotRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
     }
 
     @Transactional(readOnly = true)

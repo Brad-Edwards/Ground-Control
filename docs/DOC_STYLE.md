@@ -99,8 +99,9 @@ Changes to any doc-coverage gate surface - `mcp/ground-control/index.js`,
 `.vale.ini`, or this file - trigger the `doc-coverage-gate-sync` rule per
 ADR-054, which requires this file and ADR-054 to stay current with the gate
 surface they describe.
-Adding a new MCP tool or `gc_admin` action does not require new style rules
-here unless the action introduces a new doc-shape (a new request/response
+Adding a new MCP tool or `gc_admin` action - or changing an existing
+endpoint's request/response shape - does not require new style rules here
+unless it introduces a new doc-shape (a new or changed request/response
 schema, for example) - in that case document the schema under the relevant
 service section in `docs/API.md`, which Vale lints on touch.
 
