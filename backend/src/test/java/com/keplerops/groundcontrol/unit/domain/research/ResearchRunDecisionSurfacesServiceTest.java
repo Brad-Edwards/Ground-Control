@@ -862,6 +862,113 @@ class ResearchRunDecisionSurfacesServiceTest {
         verify(disclosureRepository, never()).save(any());
     }
 
+    // ------------------------------------------------- happy paths + reads
+
+    @Test
+    void createDisclosure_noExistingCurrent_createsCurrentDisclosure() {
+        var run = runAt(ResearchRunStage.PROSE_DRAFTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
+        var manuscript = artifact(run, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE);
+        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
+                        RUN_ID, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE))
+                .thenReturn(Optional.of(manuscript));
+        when(disclosureRepository.findFirstByResearchRunIdAndStatus(RUN_ID, DisclosureStatus.CURRENT))
+                .thenReturn(Optional.empty());
+
+        var created = service.createDisclosure(
+                PROJECT_ID, RUN_ID, new CreateDisclosureCommand(manuscript.getId(), 1, true, false, true));
+
+        assertThat(created.getFinalArtifactId()).isEqualTo(manuscript.getId());
+        assertThat(created.getStatus()).isEqualTo(DisclosureStatus.CURRENT);
+        assertThat(created.isAiPartsDeclaredNone()).isTrue();
+        assertThat(created.isHumanApprovalsDeclaredNone()).isTrue();
+        verify(disclosureRepository).save(any());
+    }
+
+    @Test
+    void addRationaleEntry_withResolvedConsistentArtifact_persists() {
+        var run = runAt(ResearchRunStage.CHARTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
+        var chartingArtifact = artifact(run, ResearchArtifactType.CHARTING_DATA, ResearchArtifactStatus.ACTIVE);
+        when(artifactRepository.findByIdAndResearchRunId(chartingArtifact.getId(), RUN_ID))
+                .thenReturn(Optional.of(chartingArtifact));
+
+        var saved = service.addRationaleEntry(
+                PROJECT_ID,
+                RUN_ID,
+                new AddRationaleEntryCommand(
+                        ResearchRunStage.CHARTING,
+                        ResearchArtifactType.CHARTING_DATA,
+                        chartingArtifact.getId(),
+                        1,
+                        null,
+                        RationaleEntryKind.CHARTED_VALUE,
+                        RationaleEvidenceBasis.CHARTED_CELL,
+                        RationaleProvenance.AGENT_RECOMMENDATION,
+                        "row-3",
+                        "charted from table 2",
+                        null,
+                        null));
+
+        assertThat(saved.getArtifactId()).isEqualTo(chartingArtifact.getId());
+        assertThat(saved.getKind()).isEqualTo(RationaleEntryKind.CHARTED_VALUE);
+    }
+
+    @Test
+    void addReviewComment_runTarget_persistsOpenComment() {
+        runAt(ResearchRunStage.SYNTHESIS, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.COPILOT);
+        var added = service.addReviewComment(
+                PROJECT_ID,
+                RUN_ID,
+                new AddReviewCommentCommand(
+                        ReviewCommentTarget.RUN,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "overall looks sound",
+                        ReviewCommentProvenance.HUMAN_REVIEW));
+        assertThat(added.getStatus()).isEqualTo(ReviewCommentStatus.OPEN);
+        assertThat(added.getTargetType()).isEqualTo(ReviewCommentTarget.RUN);
+    }
+
+    @Test
+    void readSurfaces_areProjectScopedAndReturnRepositoryRows() {
+        runAt(ResearchRunStage.SYNTHESIS, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.COPILOT);
+        when(decisionLogRepository.findByResearchRunIdOrderByDecidedAtAsc(RUN_ID))
+                .thenReturn(List.of());
+        when(reviewCommentRepository.findByResearchRunIdOrderByCreatedAtAsc(RUN_ID))
+                .thenReturn(List.of());
+        when(rationaleRepository.findByResearchRunIdOrderByRecordedAtAsc(RUN_ID))
+                .thenReturn(List.of());
+
+        assertThat(service.listGateDecisionLog(PROJECT_ID, RUN_ID)).isEmpty();
+        assertThat(service.listReviewComments(PROJECT_ID, RUN_ID)).isEmpty();
+        assertThat(service.listRationale(PROJECT_ID, RUN_ID)).isEmpty();
+    }
+
+    @Test
+    void getDisclosure_returnsCurrentAndListsEntries() {
+        var run = runAt(ResearchRunStage.PROSE_DRAFTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.COPILOT);
+        var current = disclosure(run, UUID.randomUUID(), false, false, DisclosureStatus.CURRENT);
+        when(disclosureRepository.findFirstByResearchRunIdAndStatus(RUN_ID, DisclosureStatus.CURRENT))
+                .thenReturn(Optional.of(current));
+        when(disclosureRepository.findById(current.getId())).thenReturn(Optional.of(current));
+        var entry = new ResearchRunDisclosureEntry(
+                current, DisclosureEntryFamily.AI_GENERATED_PART, "intro drafted by model", "actor");
+        when(disclosureEntryRepository.findByDisclosureId(current.getId())).thenReturn(List.of(entry));
+
+        assertThat(service.getDisclosure(PROJECT_ID, RUN_ID)).isSameAs(current);
+        assertThat(service.listDisclosureEntries(PROJECT_ID, RUN_ID, current.getId()))
+                .containsExactly(entry);
+    }
+
+    @Test
+    void getDisclosure_whenNoCurrent_throwsNotFound() {
+        runAt(ResearchRunStage.PROSE_DRAFTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.COPILOT);
+        when(disclosureRepository.findFirstByResearchRunIdAndStatus(RUN_ID, DisclosureStatus.CURRENT))
+                .thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.getDisclosure(PROJECT_ID, RUN_ID)).isInstanceOf(NotFoundException.class);
+    }
+
     // ----------------------------------------------- recordArtifact -> stale
 
     @Test
