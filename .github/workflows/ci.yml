@@ -66,6 +66,11 @@ jobs:
       - name: Repo policy checks (push)
         if: github.event_name != 'pull_request'
         run: python3 bin/policy --skip-pr-body
+      # Source-gate operating-controls durable-record guard (penumbra-cell#34 /
+      # Ground-Control#1198). Standalone of bin/policy so it does not trip the
+      # doc-coverage-gate-sync ADR rule keyed on tools/policy/checks.py.
+      - name: Operating-controls record check
+        run: python3 tools/policy/check_operating_controls.py
       # Vale prose linting (ADR-054). Lints only docs touched in this PR's diff
       # — untouched docs migrate organically per #896. Skipped on push events
       # because there's no base ref to diff against; the on-PR pass is the

@@ -41,10 +41,11 @@ public class ArchitectureModelController {
     }
 
     @GetMapping("/snapshots")
-    public List<ArchitectureModelSnapshotResponse> listSnapshots(@RequestParam(required = false) String project) {
+    public List<ArchitectureModelSnapshotSummaryResponse> listSnapshots(
+            @RequestParam(required = false) String project) {
         var projectId = projectService.resolveProjectId(project);
         return architectureModelService.listSnapshots(projectId).stream()
-                .map(ArchitectureModelSnapshotResponse::from)
+                .map(ArchitectureModelSnapshotSummaryResponse::from)
                 .toList();
     }
 
