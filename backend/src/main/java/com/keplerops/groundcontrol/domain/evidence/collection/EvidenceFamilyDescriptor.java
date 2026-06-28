@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * Common read contract for the per-domain evidence-family enums (IAM GC-S002, cloud
- * infrastructure GC-S003, and future evidence-adapter specifications).
+ * infrastructure GC-S003, CMDB/asset GC-S004, and future evidence-adapter specifications).
  *
  * <p>Each family is backed by an {@link EvidenceFamilySpec}; the accessors default to that
  * spec so the trivial mechanics are not re-implemented per enum. Implementers add only the
