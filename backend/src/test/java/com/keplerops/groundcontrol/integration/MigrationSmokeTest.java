@@ -45,6 +45,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         // V139: O-RT forms-of-loss materiality schema seed update for FAIR_V3_0 (GC-T016) — schema-only, no DDL.
         // V144–V149: research-run lifecycle aggregate, artifact manifest, gate rows + their audit shadows
         // (#1000, ADR-064 / ADR-065).
+        // V150–V159: #1001 research decision-log / review-comments / rationale-ledger / disclosure
+        // (+ disclosure entries) + their audit shadows (ADR-066 / ADR-067 / ADR-068).
         // Flyway immutability: once a versioned migration has been applied to a long-lived database
         // (e.g. production) its file content is frozen — the checksum is validated on every startup.
         // Never edit an applied V*.sql in place; append a new forward migration instead. Editing the
@@ -63,7 +65,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
                         "136", "137", "138", "139", "140", "141", "142", "143", "144", "145", "146", "147", "148",
-                        "149");
+                        "149", "150", "151", "152", "153", "154", "155", "156", "157", "158", "159");
     }
 
     @Test

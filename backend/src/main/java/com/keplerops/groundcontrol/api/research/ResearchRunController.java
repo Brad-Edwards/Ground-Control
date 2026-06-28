@@ -16,14 +16,15 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * GC-RSCH-R001/R003/F003/F036/N007/N011 — REST surface for the {@link
- * com.keplerops.groundcontrol.domain.research.model.ResearchRun} aggregate
- * (ADR-064 / ADR-065). Routes live under {@code /api/v1/research-runs/**} so the
- * shared auth + actor-filter chains apply via the {@code /api/v1/**}
- * {@code .authenticated()} rule in {@code ApiPathMatrix}. The controller only
- * resolves the project and forwards a request DTO's {@code toCommand()} to the
- * service; all lifecycle legality is owned by {@link ResearchRunService}, and the
- * DTOs (not the controller) name the domain enums (ArchUnit boundary).
+ * GC-RSCH-R001/R003/F003/F034/F036/N007/N011/N012/N013 — REST surface for the
+ * {@link com.keplerops.groundcontrol.domain.research.model.ResearchRun} aggregate
+ * (ADR-064 / ADR-065 / ADR-066 / ADR-067 / ADR-068). Routes live under
+ * {@code /api/v1/research-runs/**} so the shared auth + actor-filter chains apply
+ * via the {@code /api/v1/**} {@code .authenticated()} rule in {@code ApiPathMatrix}.
+ * The controller only resolves the project and forwards a request DTO's
+ * {@code toCommand()} to the service; all lifecycle legality is owned by
+ * {@link ResearchRunService}, and the DTOs (not the controller) name the domain
+ * enums (ArchUnit boundary).
  */
 @RestController
 @RequestMapping("/api/v1/research-runs")
@@ -115,6 +116,100 @@ public class ResearchRunController {
             @RequestParam(required = false) String project) {
         var projectId = projectService.requireProjectId(project);
         return ResearchRunGateResponse.from(researchRunService.resolveGate(projectId, id, request.toCommand()));
+    }
+
+    // GC-RSCH-F004 / ADR-066 — gate decision audit log
+    @GetMapping("/{id}/gates/decision-log")
+    public List<ResearchRunGateDecisionLogResponse> listGateDecisionLog(
+            @PathVariable UUID id, @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return researchRunService.listGateDecisionLog(projectId, id).stream()
+                .map(ResearchRunGateDecisionLogResponse::from)
+                .toList();
+    }
+
+    // GC-RSCH-F034 / ADR-067 — run-scoped review comments
+    @PostMapping("/{id}/review-comments")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ResearchRunReviewCommentResponse addReviewComment(
+            @PathVariable UUID id,
+            @Valid @RequestBody AddReviewCommentRequest request,
+            @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return ResearchRunReviewCommentResponse.from(
+                researchRunService.addReviewComment(projectId, id, request.toCommand()));
+    }
+
+    @GetMapping("/{id}/review-comments")
+    public List<ResearchRunReviewCommentResponse> listReviewComments(
+            @PathVariable UUID id, @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return researchRunService.listReviewComments(projectId, id).stream()
+                .map(ResearchRunReviewCommentResponse::from)
+                .toList();
+    }
+
+    @PostMapping("/{id}/review-comments/{commentId}/resolve")
+    public ResearchRunReviewCommentResponse resolveReviewComment(
+            @PathVariable UUID id,
+            @PathVariable UUID commentId,
+            @Valid @RequestBody ResolveReviewCommentRequest request,
+            @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return ResearchRunReviewCommentResponse.from(
+                researchRunService.resolveReviewComment(projectId, id, commentId, request.toCommand()));
+    }
+
+    // GC-RSCH-N012 / ADR-068 — explainability / rationale ledger
+    @PostMapping("/{id}/rationale")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ResearchRunRationaleEntryResponse addRationaleEntry(
+            @PathVariable UUID id,
+            @Valid @RequestBody AddRationaleEntryRequest request,
+            @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return ResearchRunRationaleEntryResponse.from(
+                researchRunService.addRationaleEntry(projectId, id, request.toCommand()));
+    }
+
+    @GetMapping("/{id}/rationale")
+    public List<ResearchRunRationaleEntryResponse> listRationale(
+            @PathVariable UUID id, @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return researchRunService.listRationale(projectId, id).stream()
+                .map(ResearchRunRationaleEntryResponse::from)
+                .toList();
+    }
+
+    // GC-RSCH-N013 / ADR-068 §4 — accountability disclosure
+    @PostMapping("/{id}/disclosure")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ResearchRunDisclosureResponse createDisclosure(
+            @PathVariable UUID id,
+            @Valid @RequestBody CreateDisclosureRequest request,
+            @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return ResearchRunDisclosureResponse.from(
+                researchRunService.createDisclosure(projectId, id, request.toCommand()));
+    }
+
+    @GetMapping("/{id}/disclosure")
+    public ResearchRunDisclosureResponse getDisclosure(
+            @PathVariable UUID id, @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return ResearchRunDisclosureResponse.from(researchRunService.getDisclosure(projectId, id));
+    }
+
+    @PostMapping("/{id}/disclosure/{disclosureId}/entries")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ResearchRunDisclosureEntryResponse addDisclosureEntry(
+            @PathVariable UUID id,
+            @PathVariable UUID disclosureId,
+            @Valid @RequestBody AddDisclosureEntryRequest request,
+            @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return ResearchRunDisclosureEntryResponse.from(
+                researchRunService.addDisclosureEntry(projectId, id, disclosureId, request.toCommand()));
     }
 
     @PostMapping("/{id}/stop")

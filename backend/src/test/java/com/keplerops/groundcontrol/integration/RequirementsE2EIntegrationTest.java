@@ -568,6 +568,16 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "146", // V146: create research_run_artifact manifest (#1000, ADR-064)
                         "147", // V147: create research_run_artifact_audit (#1000 audit parity)
                         "148", // V148: create research_run_gate policy/decision (#1000, ADR-064)
-                        "149"); // V149: create research_run_gate_audit (#1000 audit parity)
+                        "149", // V149: create research_run_gate_audit (#1000 audit parity)
+                        "150", // V150: create research_run_gate_decision_log (#1001, ADR-066)
+                        "151", // V151: create research_run_gate_decision_log_audit (#1001 audit parity)
+                        "152", // V152: create research_run_review_comment (#1001, ADR-067)
+                        "153", // V153: create research_run_review_comment_audit (#1001 audit parity)
+                        "154", // V154: create research_run_rationale_entry (#1001, ADR-068)
+                        "155", // V155: create research_run_rationale_entry_audit (#1001 audit parity)
+                        "156", // V156: create research_run_disclosure (#1001, ADR-068)
+                        "157", // V157: create research_run_disclosure_audit (#1001 audit parity)
+                        "158", // V158: create research_run_disclosure_entry (#1001, ADR-068)
+                        "159"); // V159: create research_run_disclosure_entry_audit (#1001 audit parity)
     }
 }
