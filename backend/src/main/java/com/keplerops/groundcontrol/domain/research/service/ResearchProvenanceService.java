@@ -4,11 +4,14 @@ import com.keplerops.groundcontrol.domain.audit.ActorHolder;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
+import com.keplerops.groundcontrol.domain.research.model.ProvenanceNodeKind;
 import com.keplerops.groundcontrol.domain.research.model.ProvenanceRecordStatus;
+import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactType;
 import com.keplerops.groundcontrol.domain.research.model.ResearchProvenanceEdge;
 import com.keplerops.groundcontrol.domain.research.model.ResearchProvenanceNode;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRun;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunArtifact;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunStage;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchProvenanceEdgeRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchProvenanceNodeRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunArtifactRepository;
@@ -21,8 +24,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -74,6 +80,8 @@ public class ResearchProvenanceService {
     private static final String INVALID_NODE = "invalid_provenance_node";
     private static final String INVALID_EDGE = "invalid_provenance_edge";
     private static final String FIELD = "field";
+    private static final String IDEMPOTENCY_FIELD = "idempotencyKey";
+    private static final String IDEMPOTENCY_CONFLICT = "provenance_idempotency_conflict";
 
     private final ResearchRunRepository runRepository;
     private final ResearchProvenanceNodeRepository nodeRepository;
@@ -102,6 +110,36 @@ public class ResearchProvenanceService {
      */
     public ResearchProvenanceNode recordNode(UUID projectId, UUID runId, RecordProvenanceNodeCommand command) {
         var run = requireRun(projectId, runId);
+        var candidate = buildNodeCandidate(run, runId, command);
+        var replay = replayIfPresent(
+                candidate.getIdempotencyKey(),
+                k -> nodeRepository.findByResearchRunIdAndIdempotencyKey(runId, k),
+                existing -> nodesEquivalent(existing, candidate));
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+        var prior = findActiveNode(runId, candidate.getKind(), candidate.getSubjectKey());
+        supersedeNode(prior);
+        var saved = nodeRepository.save(candidate);
+        relinkNode(prior, saved.getId());
+        log.info(
+                "research_provenance_node_recorded: project={} run={} kind={} rework={}",
+                run.getProject().getIdentifier(),
+                runId,
+                candidate.getKind(),
+                prior != null);
+        return saved;
+    }
+
+    /**
+     * Validate, resolve the artifact reference, and assemble an unsaved candidate
+     * node. The node's stage / artifactType / attemptNo describe the referenced
+     * artifact attempt, so they are backfilled from the manifest row and any
+     * caller-supplied value must agree with it (ADR-069 §2/§5). The recording
+     * actor comes from the authenticated server context, never the command.
+     */
+    private ResearchProvenanceNode buildNodeCandidate(
+            ResearchRun run, UUID runId, RecordProvenanceNodeCommand command) {
         if (command == null || command.kind() == null) {
             throw new DomainValidationException("kind must not be null", INVALID_NODE, Map.of(FIELD, "kind"));
         }
@@ -110,6 +148,26 @@ public class ResearchProvenanceService {
             throw new DomainValidationException(
                     "subjectKey must not be blank", INVALID_NODE, Map.of(FIELD, "subjectKey"));
         }
+        validateNodeLengths(command, subjectKey);
+        var artifact = resolveArtifactReference(runId, command);
+        var node = new ResearchProvenanceNode(run, command.kind(), subjectKey);
+        node.setStage(command.stage() != null ? command.stage() : stageOf(artifact));
+        node.setArtifactType(command.artifactType() != null ? command.artifactType() : artifactTypeOf(artifact));
+        node.setAttemptNo(command.attemptNo() != null ? command.attemptNo() : attemptNoOf(artifact));
+        node.setArtifactId(command.artifactId());
+        node.setLocator(emptyToNull(command.locator()));
+        node.setContentHash(emptyToNull(command.contentHash()));
+        node.setExternalIdentifier(emptyToNull(command.externalIdentifier()));
+        node.setSummary(emptyToNull(command.summary()));
+        node.setToolName(emptyToNull(command.toolName()));
+        node.setToolVersion(emptyToNull(command.toolVersion()));
+        node.setSourceActionId(emptyToNull(command.sourceActionId()));
+        node.setIdempotencyKey(emptyToNull(command.idempotencyKey()));
+        node.setActor(currentActor());
+        return node;
+    }
+
+    private void validateNodeLengths(RecordProvenanceNodeCommand command, String subjectKey) {
         requireUnder(subjectKey, SUBJECT_KEY_MAX, "subjectKey");
         requireUnder(command.locator(), LOCATOR_MAX, "locator");
         requireUnder(command.contentHash(), HASH_MAX, "contentHash");
@@ -118,84 +176,44 @@ public class ResearchProvenanceService {
         requireUnder(command.toolName(), TOOL_NAME_MAX, "toolName");
         requireUnder(command.toolVersion(), TOOL_VERSION_MAX, "toolVersion");
         requireUnder(command.sourceActionId(), ACTION_ID_MAX, "sourceActionId");
+        requireUnder(command.idempotencyKey(), IDEMPOTENCY_KEY_MAX, IDEMPOTENCY_FIELD);
+    }
 
-        // Resolve and validate the artifact reference against the same run. A
-        // node's stage / artifactType / attemptNo describe the referenced
-        // artifact attempt, so they are backfilled from the manifest row and any
-        // caller-supplied value must agree with it (ADR-069 §2/§5). A node may
-        // not durably point at a nonexistent or cross-run artifact.
-        var artifact = resolveArtifactReference(runId, command);
-        var stage = command.stage() != null ? command.stage() : (artifact != null ? artifact.getStage() : null);
-        var artifactType = command.artifactType() != null
-                ? command.artifactType()
-                : (artifact != null ? artifact.getArtifactType() : null);
-        var attemptNo =
-                command.attemptNo() != null ? command.attemptNo() : (artifact != null ? artifact.getAttemptNo() : null);
+    private ResearchRunStage stageOf(ResearchRunArtifact artifact) {
+        return artifact != null ? artifact.getStage() : null;
+    }
 
-        var key = emptyToNull(command.idempotencyKey());
-        if (key != null) {
-            requireUnder(key, IDEMPOTENCY_KEY_MAX, "idempotencyKey");
-        }
+    private ResearchArtifactType artifactTypeOf(ResearchRunArtifact artifact) {
+        return artifact != null ? artifact.getArtifactType() : null;
+    }
 
-        var candidate = new ResearchProvenanceNode(run, command.kind(), subjectKey);
-        candidate.setStage(stage);
-        candidate.setArtifactType(artifactType);
-        candidate.setArtifactId(command.artifactId());
-        candidate.setAttemptNo(attemptNo);
-        candidate.setLocator(emptyToNull(command.locator()));
-        candidate.setContentHash(emptyToNull(command.contentHash()));
-        candidate.setExternalIdentifier(emptyToNull(command.externalIdentifier()));
-        candidate.setSummary(emptyToNull(command.summary()));
-        candidate.setToolName(emptyToNull(command.toolName()));
-        candidate.setToolVersion(emptyToNull(command.toolVersion()));
-        candidate.setSourceActionId(emptyToNull(command.sourceActionId()));
-        candidate.setIdempotencyKey(key);
-        candidate.setActor(currentActor());
+    private Integer attemptNoOf(ResearchRunArtifact artifact) {
+        return artifact != null ? artifact.getAttemptNo() : null;
+    }
 
-        if (key != null) {
-            var existing = nodeRepository.findByResearchRunIdAndIdempotencyKey(runId, key);
-            if (existing.isPresent()) {
-                // Replay only when the payload matches; a reused key carrying a
-                // different payload is a real conflict, never a silent no-op that
-                // could suppress or poison the durable provenance chain.
-                if (nodesEquivalent(existing.get(), candidate)) {
-                    return existing.get();
-                }
-                throw new ConflictException(
-                        "Idempotency key reused with a different payload",
-                        "provenance_idempotency_conflict",
-                        Map.of(FIELD, "idempotencyKey"));
-            }
-        }
+    private ResearchProvenanceNode findActiveNode(UUID runId, ProvenanceNodeKind kind, String subjectKey) {
+        return nodeRepository
+                .findByResearchRunIdAndStatusOrderByCreatedAtAsc(runId, ProvenanceRecordStatus.ACTIVE)
+                .stream()
+                .filter(n -> n.getKind() == kind && n.getSubjectKey().equals(subjectKey))
+                .findFirst()
+                .orElse(null);
+    }
 
-        var prior =
-                nodeRepository
-                        .findByResearchRunIdAndStatusOrderByCreatedAtAsc(runId, ProvenanceRecordStatus.ACTIVE)
-                        .stream()
-                        .filter(n -> n.getKind() == command.kind()
-                                && n.getSubjectKey().equals(subjectKey))
-                        .findFirst()
-                        .orElse(null);
+    private void supersedeNode(ResearchProvenanceNode prior) {
         if (prior != null) {
             // Flush the SUPERSEDED status before inserting the replacement so the
             // single-active partial unique index is never transiently violated.
             prior.markSuperseded();
             nodeRepository.saveAndFlush(prior);
         }
+    }
 
-        var saved = nodeRepository.save(candidate);
+    private void relinkNode(ResearchProvenanceNode prior, UUID replacementId) {
         if (prior != null) {
-            prior.linkSuperseder(saved.getId());
+            prior.linkSuperseder(replacementId);
             nodeRepository.save(prior);
         }
-
-        log.info(
-                "research_provenance_node_recorded: project={} run={} kind={} rework={}",
-                run.getProject().getIdentifier(),
-                runId,
-                command.kind(),
-                prior != null);
-        return saved;
     }
 
     /**
@@ -206,6 +224,30 @@ public class ResearchProvenanceService {
      */
     public ResearchProvenanceEdge recordEdge(UUID projectId, UUID runId, RecordProvenanceEdgeCommand command) {
         var run = requireRun(projectId, runId);
+        validateEdgeCommand(runId, command);
+        var candidate = buildEdgeCandidate(run, command);
+        var replay = replayIfPresent(
+                candidate.getIdempotencyKey(),
+                k -> edgeRepository.findByResearchRunIdAndIdempotencyKey(runId, k),
+                existing -> edgesEquivalent(existing, candidate));
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+        requireNoCycle(runId, command);
+        var prior = findActiveEdge(runId, command);
+        supersedeEdge(prior);
+        var saved = edgeRepository.save(candidate);
+        relinkEdge(prior, saved.getId());
+        log.info(
+                "research_provenance_edge_recorded: project={} run={} relation={} rework={}",
+                run.getProject().getIdentifier(),
+                runId,
+                command.relation(),
+                prior != null);
+        return saved;
+    }
+
+    private void validateEdgeCommand(UUID runId, RecordProvenanceEdgeCommand command) {
         if (command == null
                 || command.fromNodeId() == null
                 || command.toNodeId() == null
@@ -219,43 +261,28 @@ public class ResearchProvenanceService {
         }
         requireUnder(command.role(), ROLE_MAX, "role");
         requireUnder(command.summary(), SUMMARY_MAX, "summary");
-
+        requireUnder(command.idempotencyKey(), IDEMPOTENCY_KEY_MAX, IDEMPOTENCY_FIELD);
         // Conceal cross-run / cross-project endpoints as not-found.
-        if (!nodeRepository.existsByIdAndResearchRunId(command.fromNodeId(), runId)) {
-            throw new NotFoundException("Provenance node not found: " + command.fromNodeId());
-        }
-        if (!nodeRepository.existsByIdAndResearchRunId(command.toNodeId(), runId)) {
-            throw new NotFoundException("Provenance node not found: " + command.toNodeId());
-        }
+        requireNodeInRun(runId, command.fromNodeId());
+        requireNodeInRun(runId, command.toNodeId());
+    }
 
-        var key = emptyToNull(command.idempotencyKey());
-        if (key != null) {
-            requireUnder(key, IDEMPOTENCY_KEY_MAX, "idempotencyKey");
+    private void requireNodeInRun(UUID runId, UUID nodeId) {
+        if (!nodeRepository.existsByIdAndResearchRunId(nodeId, runId)) {
+            throw new NotFoundException("Provenance node not found: " + nodeId);
         }
+    }
 
-        var candidate = new ResearchProvenanceEdge(run, command.fromNodeId(), command.toNodeId(), command.relation());
-        candidate.setRole(emptyToNull(command.role()));
-        candidate.setSummary(emptyToNull(command.summary()));
-        candidate.setIdempotencyKey(key);
-        candidate.setActor(currentActor());
+    private ResearchProvenanceEdge buildEdgeCandidate(ResearchRun run, RecordProvenanceEdgeCommand command) {
+        var edge = new ResearchProvenanceEdge(run, command.fromNodeId(), command.toNodeId(), command.relation());
+        edge.setRole(emptyToNull(command.role()));
+        edge.setSummary(emptyToNull(command.summary()));
+        edge.setIdempotencyKey(emptyToNull(command.idempotencyKey()));
+        edge.setActor(currentActor());
+        return edge;
+    }
 
-        if (key != null) {
-            var existing = edgeRepository.findByResearchRunIdAndIdempotencyKey(runId, key);
-            if (existing.isPresent()) {
-                // Replay only when the payload matches; a reused key carrying a
-                // different payload is a real conflict, never a silent no-op.
-                if (edgesEquivalent(existing.get(), candidate)) {
-                    return existing.get();
-                }
-                throw new ConflictException(
-                        "Idempotency key reused with a different payload",
-                        "provenance_idempotency_conflict",
-                        Map.of(FIELD, "idempotencyKey"));
-            }
-        }
-
-        // Reject cycles: adding from -> to is illegal if `to` can already reach
-        // `from` along ACTIVE edges (which would close a directed cycle).
+    private void requireNoCycle(UUID runId, RecordProvenanceEdgeCommand command) {
         if (reaches(runId, command.toNodeId(), command.fromNodeId())) {
             throw new ConflictException(
                     "Edge would introduce a provenance cycle",
@@ -266,35 +293,55 @@ public class ResearchProvenanceService {
                             "to",
                             command.toNodeId().toString()));
         }
+    }
 
-        var prior =
-                edgeRepository
-                        .findByResearchRunIdAndStatusOrderByCreatedAtAsc(runId, ProvenanceRecordStatus.ACTIVE)
-                        .stream()
-                        .filter(e -> e.getFromNodeId().equals(command.fromNodeId())
-                                && e.getToNodeId().equals(command.toNodeId())
-                                && e.getRelation() == command.relation())
-                        .findFirst()
-                        .orElse(null);
+    private ResearchProvenanceEdge findActiveEdge(UUID runId, RecordProvenanceEdgeCommand command) {
+        return edgeRepository
+                .findByResearchRunIdAndStatusOrderByCreatedAtAsc(runId, ProvenanceRecordStatus.ACTIVE)
+                .stream()
+                .filter(e -> e.getFromNodeId().equals(command.fromNodeId())
+                        && e.getToNodeId().equals(command.toNodeId())
+                        && e.getRelation() == command.relation())
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void supersedeEdge(ResearchProvenanceEdge prior) {
         if (prior != null) {
             prior.markSuperseded();
             edgeRepository.saveAndFlush(prior);
         }
+    }
 
-        var saved = edgeRepository.save(candidate);
-
+    private void relinkEdge(ResearchProvenanceEdge prior, UUID replacementId) {
         if (prior != null) {
-            prior.linkSuperseder(saved.getId());
+            prior.linkSuperseder(replacementId);
             edgeRepository.save(prior);
         }
+    }
 
-        log.info(
-                "research_provenance_edge_recorded: project={} run={} relation={} rework={}",
-                run.getProject().getIdentifier(),
-                runId,
-                command.relation(),
-                prior != null);
-        return saved;
+    /**
+     * Shared idempotent-replay gate. Returns the existing record when the key
+     * matches a compatible payload; throws {@link ConflictException} when the key
+     * was reused with a different payload (never a silent no-op that could
+     * suppress or poison the durable provenance chain); returns empty when no key
+     * or no existing record (the caller then inserts a new record).
+     */
+    private <T> Optional<T> replayIfPresent(String key, Function<String, Optional<T>> lookup, Predicate<T> compatible) {
+        if (key == null) {
+            return Optional.empty();
+        }
+        var existing = lookup.apply(key);
+        if (existing.isEmpty()) {
+            return Optional.empty();
+        }
+        if (!compatible.test(existing.get())) {
+            throw new ConflictException(
+                    "Idempotency key reused with a different payload",
+                    IDEMPOTENCY_CONFLICT,
+                    Map.of(FIELD, IDEMPOTENCY_FIELD));
+        }
+        return existing;
     }
 
     // ------------------------------------------------------------------
@@ -368,15 +415,16 @@ public class ResearchProvenanceService {
                 edges.add(edge);
             }
             var upstreamId = edge.getFromNodeId();
-            if (nodesById.containsKey(upstreamId)) {
-                continue;
+            if (!nodesById.containsKey(upstreamId)) {
+                if (nodesById.size() >= CHAIN_NODE_CAP) {
+                    hitCap = true;
+                } else {
+                    nodeRepository
+                            .findByIdAndResearchRunId(upstreamId, runId)
+                            .ifPresent(n -> nodesById.put(n.getId(), n));
+                    next.add(upstreamId);
+                }
             }
-            if (nodesById.size() >= CHAIN_NODE_CAP) {
-                hitCap = true;
-                continue;
-            }
-            nodeRepository.findByIdAndResearchRunId(upstreamId, runId).ifPresent(n -> nodesById.put(n.getId(), n));
-            next.add(upstreamId);
         }
         return hitCap;
     }
