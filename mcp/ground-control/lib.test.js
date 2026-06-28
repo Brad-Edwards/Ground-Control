@@ -894,6 +894,7 @@ describe("parseGroundControlYaml", () => {
     assert.equal(result.value.sonarcloud, null);
     assert.equal(result.value.rules.plan_rules_path, null);
     assert.equal(result.value.knowledge, null);
+    assert.deepEqual(result.value.grc, { boundaries: [] });
   });
 
   it("parses a fully populated yaml", () => {
@@ -915,6 +916,15 @@ describe("parseGroundControlYaml", () => {
       "  dir: docs/knowledge",
       "  schema: docs/knowledge/SCHEMA.md",
       "  inbox: docs/knowledge/inbox",
+      "grc:",
+      "  boundaries:",
+      "    - key: policy-workflow",
+      "      name: Policy and workflow",
+      "      description: Repo policy and workflow guardrails",
+      "      paths:",
+      "        - tools/policy/**",
+      "        - .ground-control.yaml",
+      "      surfaces: [policy, architecture]",
       "",
     ]);
     assert.equal(result.ok, true);
@@ -929,6 +939,15 @@ describe("parseGroundControlYaml", () => {
       schema: "docs/knowledge/SCHEMA.md",
       inbox: "docs/knowledge/inbox",
     });
+    assert.deepEqual(result.value.grc.boundaries, [
+      {
+        key: "policy-workflow",
+        name: "Policy and workflow",
+        description: "Repo policy and workflow guardrails",
+        path_selectors: ["tools/policy/**", ".ground-control.yaml"],
+        surfaces: ["policy", "architecture"],
+      },
+    ]);
   });
 
   it("rejects invalid yaml text", () => {
@@ -1588,6 +1607,77 @@ describe("parseGroundControlYaml", () => {
     ], "boundary_contract.description must be a non-empty string");
   });
 
+  // ---------------------------------------------------------------------
+  // grc.boundaries (GC-GRC-004)
+  // ---------------------------------------------------------------------
+
+  it("parses declared GRC boundaries", () => {
+    const result = parseYamlLines([
+      "schema_version: 1",
+      "project: x",
+      "grc:",
+      "  boundaries:",
+      "    - key: policy-workflow",
+      "      name: Policy and workflow",
+      "      description: Repo policy and workflow guardrails",
+      "      paths:",
+      "        - tools/policy/**",
+      "        - .ground-control.yaml",
+      "      surfaces:",
+      "        - policy",
+      "        - architecture",
+      "",
+    ]);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.deepEqual(result.value.grc.boundaries, [
+      {
+        key: "policy-workflow",
+        name: "Policy and workflow",
+        description: "Repo policy and workflow guardrails",
+        path_selectors: ["tools/policy/**", ".ground-control.yaml"],
+        surfaces: ["policy", "architecture"],
+      },
+    ]);
+  });
+
+  it("rejects invalid declared GRC boundary shapes", () => {
+    expectYamlError([
+      "schema_version: 1",
+      "project: x",
+      "grc:",
+      "  boundaries:",
+      "    - key: Policy",
+      "      name: Policy",
+      "      paths:",
+      "        - tools/policy/**",
+      "",
+    ], "grc.boundaries[0].key");
+    expectYamlError([
+      "schema_version: 1",
+      "project: x",
+      "grc:",
+      "  boundaries:",
+      "    - key: policy",
+      "      name: Policy",
+      "      paths:",
+      "        - tools/*/policy",
+      "",
+    ], "only supports exact paths or trailing /** selectors");
+    expectYamlError([
+      "schema_version: 1",
+      "project: x",
+      "grc:",
+      "  boundaries:",
+      "    - key: policy",
+      "      name: Policy",
+      "      paths: [tools/policy/**]",
+      "    - key: policy",
+      "      name: Duplicate policy",
+      "      paths: [.ground-control.yaml]",
+      "",
+    ], "duplicates an earlier boundary key");
+  });
+
   describe("short_code", () => {
     it("parses short_code: GC", () => {
       const result = parseYamlLines([
@@ -1751,6 +1841,7 @@ describe("getRepoGroundControlContext", () => {
       assert.deepEqual(result.example_paths, { source: null, test: null });
       assert.deepEqual(result.requirements, { uid_examples: [] });
       assert.deepEqual(result.cross_cutting_concerns, { description: null });
+      assert.deepEqual(result.grc, { boundaries: [] });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1781,6 +1872,61 @@ describe("getRepoGroundControlContext", () => {
       assert.equal(result.example_paths.source, "src/");
       assert.deepEqual(result.requirements.uid_examples, ["X-001", "Y-002"]);
       assert.equal(result.cross_cutting_concerns.description, "Logger via pino");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns declared GRC boundaries from repo context", async () => {
+    const dir = makeTempRepo();
+    try {
+      writeYamlConfig(dir, [
+          "schema_version: 1",
+          "project: test-project",
+          "grc:",
+          "  boundaries:",
+          "    - key: policy-workflow",
+          "      name: Policy and workflow",
+          "      paths:",
+          "        - tools/policy/**",
+          "        - .ground-control.yaml",
+          "      surfaces: [policy]",
+          "",
+        ]);
+      const result = await getRepoGroundControlContext(dir);
+      assert.equal(result.status, "ok");
+      assert.deepEqual(result.grc.boundaries, [
+        {
+          key: "policy-workflow",
+          name: "Policy and workflow",
+          description: null,
+          path_selectors: ["tools/policy/**", ".ground-control.yaml"],
+          surfaces: ["policy"],
+        },
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects declared GRC boundary paths that escape the repo root", async () => {
+    const dir = makeTempRepo();
+    try {
+      writeYamlConfig(dir, [
+          "schema_version: 1",
+          "project: test-project",
+          "grc:",
+          "  boundaries:",
+          "    - key: escape",
+          "      name: Escape",
+          "      paths:",
+          "        - ../outside/**",
+          "",
+        ]);
+      const result = await getRepoGroundControlContext(dir);
+      assert.equal(result.status, "invalid_ground_control_yaml");
+      assert.ok(result.errors.some((e) => e.includes("grc.boundaries[0].paths[0]")));
+      assert.ok(result.errors.some((e) => e.includes("inside the repository root")));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

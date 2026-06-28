@@ -147,6 +147,18 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#     anti_recommendations:",
     "#       - Do not introduce new abstractions below 3 call-sites",
     "",
+    "# Canonical boundary model declarations (GC-GRC-004). Optional.",
+    "# Use these for repository boundaries that cannot be derived from code alone.",
+    "# grc:",
+    "#   boundaries:",
+    "#     - key: policy-workflow",
+    "#       name: Policy and workflow",
+    "#       description: Repo policy, workflow rules, and agent guardrails",
+    "#       paths:",
+    "#         - tools/policy/" + "**",
+    "#         - .ground-control.yaml",
+    "#       surfaces: [policy, architecture]",
+    "",
   ].join("\n");
 }
 
@@ -2968,6 +2980,109 @@ function normalizeKnowledgeConfig(raw) {
 }
 
 // ---------------------------------------------------------------------------
+// grc.boundaries (GC-GRC-004)
+//
+// Declared boundary inputs for the canonical boundary model. These complement
+// derived TRUST_BOUNDARY facts; they are not themselves the canonical output.
+// Path containment is finalized in getRepoGroundControlContext where the repo
+// root is known.
+// ---------------------------------------------------------------------------
+
+const GRC_TOP_KEYS = ["boundaries"];
+const GRC_BOUNDARY_KEYS = ["key", "name", "description", "paths", "surfaces"];
+const GRC_BOUNDARY_KEY_RE = /^[a-z0-9][a-z0-9_.-]{0,119}$/;
+
+function emptyGrcConfig() {
+  return { boundaries: [] };
+}
+
+function normalizeGrcConfig(raw) {
+  if (raw == null) return { ok: true, value: emptyGrcConfig() };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, errors: ["grc must be a mapping, not a list or scalar"] };
+  }
+  const errors = [];
+  for (const key of Object.keys(raw)) {
+    if (!GRC_TOP_KEYS.includes(key)) {
+      errors.push(`grc has unknown key '${key}'`);
+    }
+  }
+  const value = emptyGrcConfig();
+  if (raw.boundaries != null) {
+    if (!Array.isArray(raw.boundaries)) {
+      errors.push("grc.boundaries must be a list when set");
+    } else {
+      const seenKeys = new Set();
+      raw.boundaries.forEach((entry, i) => {
+        const prefix = `grc.boundaries[${i}]`;
+        const before = errors.length;
+        if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+          errors.push(`${prefix} must be a mapping`);
+          return;
+        }
+        for (const key of Object.keys(entry)) {
+          if (!GRC_BOUNDARY_KEYS.includes(key)) {
+            errors.push(`${prefix} has unknown key '${key}'`);
+          }
+        }
+        if (typeof entry.key !== "string" || !GRC_BOUNDARY_KEY_RE.test(entry.key)) {
+          errors.push(`${prefix}.key must match ${GRC_BOUNDARY_KEY_RE.source}`);
+        } else if (seenKeys.has(entry.key)) {
+          errors.push(`${prefix}.key duplicates an earlier boundary key '${entry.key}'`);
+        }
+        if (typeof entry.name !== "string" || entry.name.trim() === "") {
+          errors.push(`${prefix}.name must be a non-empty string`);
+        }
+        if (entry.description != null && (typeof entry.description !== "string" || entry.description.trim() === "")) {
+          errors.push(`${prefix}.description must be a non-empty string when set`);
+        }
+        if (!Array.isArray(entry.paths) || entry.paths.length === 0) {
+          errors.push(`${prefix}.paths must be a non-empty list of repo-relative selectors`);
+        } else {
+          entry.paths.forEach((path, pathIndex) => {
+            const field = `${prefix}.paths[${pathIndex}]`;
+            if (typeof path !== "string" || path.trim() === "") {
+              errors.push(`${field} must be a non-empty string`);
+              return;
+            }
+            const trimmed = path.trim();
+            const selectorPrefix = trimmed.endsWith("/**") ? trimmed.slice(0, -3) : trimmed;
+            if (selectorPrefix.includes("*") || (trimmed.includes("*") && !trimmed.endsWith("/**"))) {
+              errors.push(`${field} only supports exact paths or trailing /** selectors`);
+            } else if (trimmed.endsWith("/**") && trimmed.length <= 3) {
+              errors.push(`${field} must include a path prefix before /**`);
+            }
+          });
+        }
+        if (entry.surfaces != null) {
+          if (!Array.isArray(entry.surfaces)) {
+            errors.push(`${prefix}.surfaces must be a list when set`);
+          } else {
+            entry.surfaces.forEach((surface, surfaceIndex) => {
+              if (typeof surface !== "string" || surface.trim() === "") {
+                errors.push(`${prefix}.surfaces[${surfaceIndex}] must be a non-empty string`);
+              }
+            });
+          }
+        }
+        if (errors.length === before) {
+          seenKeys.add(entry.key);
+          value.boundaries.push({
+            key: entry.key,
+            name: entry.name,
+            description: entry.description ?? null,
+            path_selectors: entry.paths.map((path) => path.trim()),
+            surfaces: entry.surfaces == null ? [] : entry.surfaces.map((surface) => surface.trim()),
+          });
+        }
+      });
+    }
+  }
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value };
+}
+
+// ---------------------------------------------------------------------------
 // architecture.vocabulary (#931)
 //
 // Optional per-repo block declaring the design vocabulary the codex preflight
@@ -3193,6 +3308,7 @@ export function parseGroundControlYaml(yamlText) {
     "routing",
     "telemetry",
     "architecture",
+    "grc",
     "short_code",
   ];
   for (const key of Object.keys(parsed)) {
@@ -3273,6 +3389,9 @@ export function parseGroundControlYaml(yamlText) {
   const architectureResult = normalizeArchitectureConfig(parsed.architecture);
   if (!architectureResult.ok) errors.push(...architectureResult.errors);
 
+  const grcResult = normalizeGrcConfig(parsed.grc);
+  if (!grcResult.ok) errors.push(...grcResult.errors);
+
   if (errors.length) return { ok: false, errors };
 
   return {
@@ -3294,6 +3413,7 @@ export function parseGroundControlYaml(yamlText) {
       routing: routingResult.value,
       telemetry: telemetryResult.value,
       architecture: architectureResult.value,
+      grc: grcResult.value,
     },
   };
 }
@@ -3438,6 +3558,15 @@ export async function getRepoGroundControlContext(repoPath) {
       if (!real.ok) docsPathErrors.push(real.error);
     });
   }
+  const grc = parseResult.value.grc;
+  (grc.boundaries || []).forEach((boundary, i) => {
+    (boundary.path_selectors || []).forEach((selector, pathIndex) => {
+      const field = `grc.boundaries[${i}].paths[${pathIndex}]`;
+      const path = selector.endsWith("/**") ? selector.slice(0, -3) : selector;
+      const r = resolveRepoRelativePath(repoRoot, path, field);
+      if (!r.ok) docsPathErrors.push(r.error);
+    });
+  });
   if (docsPathErrors.length) {
     return {
       repo_path: repoRoot,
@@ -3470,6 +3599,7 @@ export async function getRepoGroundControlContext(repoPath) {
     routing: parseResult.value.routing,
     telemetry: parseResult.value.telemetry,
     architecture: parseResult.value.architecture,
+    grc: parseResult.value.grc,
     errors: [],
   };
 }
@@ -10046,6 +10176,10 @@ export async function getDerivationRun(id, project) {
   return request("GET", `/api/v1/derivations/runs/${encodeURIComponent(id)}`, { params: { project } });
 }
 
+export async function getDerivationBoundaryModel(id, project) {
+  return request("GET", `/api/v1/derivations/runs/${encodeURIComponent(id)}/boundary-model`, { params: { project } });
+}
+
 export async function listDerivationFacts({ project, runId, factKind } = {}) {
   return request("GET", "/api/v1/derivations/facts", { params: { project, runId, factKind } });
 }
@@ -10648,6 +10782,118 @@ export const RESEARCH_GATE_POINTS = [
 export const RESEARCH_GATE_BEHAVIORS = ["REQUIRE_HUMAN", "AUTONOMOUS_DEFAULT", "DISABLED"];
 
 export const RESEARCH_GATE_DECISION_OUTCOMES = ["APPROVED", "REJECTED", "AUTO_ACCEPTED"];
+
+// GC-RSCH-F004 / ADR-066 — gate recommendation provenance (mirrors Java enum)
+export const GATE_RECOMMENDATION_PROVENANCES = ["AGENT", "SYSTEM_POLICY", "HUMAN_REVIEWER"];
+
+// GC-RSCH-F034 / ADR-067 — review comment enums (mirror Java enums)
+export const REVIEW_COMMENT_TARGETS = ["RUN", "GATE_POINT", "STAGE", "ARTIFACT", "DECISION_LOG"];
+export const REVIEW_COMMENT_PROVENANCES = ["HUMAN_REVIEW", "AGENT_RECOMMENDATION", "SYSTEM_CHECK"];
+export const REVIEW_COMMENT_STATUSES = ["OPEN", "RESOLVED"];
+
+// GC-RSCH-N012 / ADR-068 — rationale entry enums (mirror Java enums)
+export const RATIONALE_ENTRY_KINDS = [
+  "METHODOLOGY_CHOICE",
+  "SEARCH_DECISION",
+  "EXCLUSION",
+  "CHARTED_VALUE",
+  "SYNTHESIS_CLAIM",
+  "WRITING_CLAIM",
+];
+export const RATIONALE_EVIDENCE_BASES = [
+  "METHODOLOGY_SOURCE",
+  "USER_DECISION",
+  "CITED_SOURCE",
+  "FULL_TEXT_SPAN",
+  "CHARTED_CELL",
+  "EVIDENCE_MATRIX_CELL",
+  "ARGUMENT_MAP_PREMISE",
+  "MANUSCRIPT_CITATION",
+  "POLICY_DEFAULT",
+  "EXPLICIT_LIMITATION",
+];
+export const RATIONALE_PROVENANCES = [
+  "HUMAN",
+  "AGENT_RECOMMENDATION",
+  "AUTONOMOUS_DEFAULT",
+  "IMPORTED_ARTIFACT",
+  "ADAPTER",
+];
+
+// GC-RSCH-N013 / ADR-068 §4 — disclosure enums (mirror Java enums)
+export const DISCLOSURE_STATUSES = ["CURRENT", "STALE"];
+export const DISCLOSURE_ENTRY_FAMILIES = ["AI_GENERATED_PART", "UNRESOLVED_UNCERTAINTY"];
+export const DISCLOSURE_UNCERTAINTY_CATEGORIES = [
+  "SCIENTIFIC",
+  "ACCESS_GAP",
+  "WORKFLOW_ERROR",
+  "UNRESOLVED_REVIEW",
+];
+
+// GC-RSCH-F004 / ADR-066 — gate decision audit log
+export async function listResearchRunGateDecisionLog(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/gates/decision-log`, {
+    params: { project },
+  });
+}
+
+// GC-RSCH-F034 / ADR-067 — run-scoped review comments
+export async function addResearchRunReviewComment(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/review-comments`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function listResearchRunReviewComments(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/review-comments`, {
+    params: { project },
+  });
+}
+
+export async function resolveResearchRunReviewComment(id, commentId, data, project) {
+  return request(
+    "POST",
+    `/api/v1/research-runs/${encodeURIComponent(id)}/review-comments/${encodeURIComponent(commentId)}/resolve`,
+    { body: data, params: { project } },
+  );
+}
+
+// GC-RSCH-N012 / ADR-068 — explainability / rationale ledger
+export async function addResearchRunRationaleEntry(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/rationale`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function listResearchRunRationale(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/rationale`, {
+    params: { project },
+  });
+}
+
+// GC-RSCH-N013 / ADR-068 §4 — accountability disclosure
+export async function createResearchRunDisclosure(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/disclosure`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function getResearchRunDisclosure(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/disclosure`, {
+    params: { project },
+  });
+}
+
+export async function addResearchRunDisclosureEntry(id, disclosureId, data, project) {
+  return request(
+    "POST",
+    `/api/v1/research-runs/${encodeURIComponent(id)}/disclosure/${encodeURIComponent(disclosureId)}/entries`,
+    { body: data, params: { project } },
+  );
+}
 
 export async function createControl(data, project) {
   return request("POST", "/api/v1/controls", { body: data, params: { project } });

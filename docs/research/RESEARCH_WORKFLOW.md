@@ -7,7 +7,9 @@ Ground Control's research project type ships a five-phase literature-review pipe
 See ADR-055 for the skill/citation architecture and asset disposition. Durable
 run lifecycle state, checkpoint artifacts, and human-gate policy are governed by
 ADR-064. The user-facing run status/observability snapshot is governed by
-ADR-065.
+ADR-065. Gate decision logs and review comments are governed by ADR-066;
+explainability is governed by ADR-067; final-output accountability is governed
+by ADR-068.
 
 ## Phases
 
@@ -52,7 +54,7 @@ workspace/
   manuscript.tex             # phase 5
   references.bib             # phase 5 (generated from Zotero)
   manuscript.md              # phase 5 (markdown rendering)
-  decisions.md               # extended across all phases
+  decisions.md               # local mirror/export; persisted gate state is authoritative
   self-review.md             # extended across all phases
 ```
 

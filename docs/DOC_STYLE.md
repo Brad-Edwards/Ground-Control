@@ -1,5 +1,7 @@
 # Documentation style
 
+> **Sync note for issue #1117 (2026-06-28):** The `gc_derivation` MCP surface now forwards declared boundary inputs from `grc.boundaries` and exposes `get_boundary_model` for derivation-run boundary snapshots. The current contract is documented in `docs/API.md`, `docs/DEVELOPMENT_WORKFLOW.md`, `docs/architecture/ARCHITECTURE.md`, and `mcp/ground-control/README.md`. No style rule changed.
+
 > **Sync note for issue #859 (2026-06-24):** Two new MCP tools were registered in `mcp/ground-control/index.js` and `mcp/ground-control/lib.js`: `gc_workflow_run` (action-multiplexed workflow-run telemetry: record / record_event / import_cost / list / aggregate / cross_project_aggregate) and `gc_workflow_run_ingest` (bridge ingestion from canonical issue-thread `gc:` markers), backed by the new `/api/v1/workflow-runs**` REST surface, with the two project-scoped read paths added to the `gc_query` allowlist (`gc-query.js`, `mcp/ground-control/README.md`, ADR-035). Documentation lives in `docs/API.md`, the `index.js` tool descriptions, and ADR-061; the surface addition is recorded in the ADR-054 amendment below. A follow-up review-fix commit clarified the record action's idempotent-upsert semantics in the tool description and `docs/API.md`. No style rule changed.
 
 > **Sync note for issue #1162 (2026-06-22):** The `gc_create_github_issue` MCP tool was fixed to render the issue title/body from the requirement (it previously produced literal `undefined`) and to auto-create the IMPLEMENTS/DOCUMENTS traceability link, via a new `createGitHubIssueFromRequirement` helper in `mcp/ground-control/lib.js` plus updated wiring and description in `index.js`. Documentation lives in the tool description string and `mcp/ground-control/README.md`. No style rule changed.
@@ -279,3 +281,14 @@ endpoints documented in `docs/API.md`; the tool description string is the
 contract surface and enumerates the per-action required fields. The surface
 addition is recorded in the ADR-054 amendment and the changelog fragment; no new
 DOC_STYLE.md style rule is established.
+
+The research decision-gate surfaces (GC-RSCH-F004/F034/N012/N013 / ADR-066 /
+ADR-067 / ADR-068 / #1001) extend the same `gc_research_run` tool with nine
+additional actions (`list_gate_decision_log`, `add_review_comment`,
+`list_review_comments`, `resolve_review_comment`, `add_rationale`,
+`list_rationale`, `create_disclosure`, `add_disclosure_entry`, `get_disclosure`)
+and ten new Zod enum mirrors in `mcp/ground-control/lib.js`, mirroring the new
+`/api/v1/research-runs/{id}/{gates/decision-log,review-comments,rationale,disclosure}`
+endpoints documented in `docs/API.md`. The surface addition is recorded in the
+ADR-054 amendment and the changelog fragment; no new DOC_STYLE.md style rule is
+established.

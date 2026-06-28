@@ -88,6 +88,46 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
             stmt.executeUpdate(
                     "DELETE FROM research_run_artifact WHERE research_run_id IN (SELECT r.id FROM research_run r "
                             + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            // #1001 decision surfaces: the new run-scoped child rows (and their audit
+            // shadows) must go before the run, or their foreign keys block the
+            // research_run delete.
+            stmt.executeUpdate("DELETE FROM research_run_disclosure_entry_audit WHERE id IN "
+                    + "(SELECT e.id FROM research_run_disclosure_entry e "
+                    + "JOIN research_run_disclosure d ON e.disclosure_id = d.id "
+                    + "JOIN research_run r ON d.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_disclosure_entry WHERE disclosure_id IN "
+                    + "(SELECT d.id FROM research_run_disclosure d "
+                    + "JOIN research_run r ON d.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_disclosure_audit WHERE id IN "
+                    + "(SELECT d.id FROM research_run_disclosure d "
+                    + "JOIN research_run r ON d.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_disclosure WHERE research_run_id IN "
+                    + "(SELECT r.id FROM research_run r "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_gate_decision_log_audit WHERE id IN "
+                    + "(SELECT l.id FROM research_run_gate_decision_log l "
+                    + "JOIN research_run r ON l.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_gate_decision_log WHERE research_run_id IN "
+                    + "(SELECT r.id FROM research_run r "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_review_comment_audit WHERE id IN "
+                    + "(SELECT c.id FROM research_run_review_comment c "
+                    + "JOIN research_run r ON c.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_review_comment WHERE research_run_id IN "
+                    + "(SELECT r.id FROM research_run r "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_rationale_entry_audit WHERE id IN "
+                    + "(SELECT e.id FROM research_run_rationale_entry e "
+                    + "JOIN research_run r ON e.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_rationale_entry WHERE research_run_id IN "
+                    + "(SELECT r.id FROM research_run r "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
             stmt.executeUpdate("DELETE FROM research_run WHERE project_id IN "
                     + "(SELECT id FROM project WHERE identifier = '" + PROJECT + "')");
             stmt.executeUpdate("DELETE FROM research_intake_audit WHERE id IN (SELECT id FROM research_intake "

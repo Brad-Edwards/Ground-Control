@@ -68,6 +68,25 @@ class ResearchRunServiceTest {
     private ResearchRunGateRepository gateRepository;
 
     @Mock
+    private com.keplerops.groundcontrol.domain.research.repository.ResearchRunGateDecisionLogRepository
+            decisionLogRepository;
+
+    @Mock
+    private com.keplerops.groundcontrol.domain.research.repository.ResearchRunReviewCommentRepository
+            reviewCommentRepository;
+
+    @Mock
+    private com.keplerops.groundcontrol.domain.research.repository.ResearchRunRationaleEntryRepository
+            rationaleRepository;
+
+    @Mock
+    private com.keplerops.groundcontrol.domain.research.repository.ResearchRunDisclosureRepository disclosureRepository;
+
+    @Mock
+    private com.keplerops.groundcontrol.domain.research.repository.ResearchRunDisclosureEntryRepository
+            disclosureEntryRepository;
+
+    @Mock
     private ResearchIntakeRepository intakeRepository;
 
     @Mock
@@ -79,7 +98,16 @@ class ResearchRunServiceTest {
     @BeforeEach
     void setUp() {
         service = new ResearchRunService(
-                runRepository, artifactRepository, gateRepository, intakeRepository, projectService);
+                runRepository,
+                artifactRepository,
+                gateRepository,
+                decisionLogRepository,
+                reviewCommentRepository,
+                rationaleRepository,
+                disclosureRepository,
+                disclosureEntryRepository,
+                intakeRepository,
+                projectService);
         project = new Project("research-p", "Research Project", ProjectType.RESEARCH);
         TestUtil.setField(project, "id", PROJECT_ID);
         when(projectService.getById(PROJECT_ID)).thenReturn(project);
@@ -319,7 +347,15 @@ class ResearchRunServiceTest {
                 PROJECT_ID,
                 RUN_ID,
                 new com.keplerops.groundcontrol.domain.research.service.GateDecisionCommand(
-                        ResearchGatePoint.METHOD_DECISION, ResearchGateDecisionOutcome.REJECTED, null, "needs work"));
+                        ResearchGatePoint.METHOD_DECISION,
+                        ResearchGateDecisionOutcome.REJECTED,
+                        null,
+                        "needs work",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null));
         assertThat(run.getStatus()).isEqualTo(ResearchRunStatus.BLOCKED);
         assertThat(g.getDecisionOutcome()).isEqualTo(ResearchGateDecisionOutcome.REJECTED);
 
@@ -327,7 +363,15 @@ class ResearchRunServiceTest {
         // without artifact rework would defeat the gate. The caller must rework
         // the guarded artifact (which reopens the gate) to decide again.
         var command = new com.keplerops.groundcontrol.domain.research.service.GateDecisionCommand(
-                ResearchGatePoint.METHOD_DECISION, ResearchGateDecisionOutcome.APPROVED, "opt-1", "ok");
+                ResearchGatePoint.METHOD_DECISION,
+                ResearchGateDecisionOutcome.APPROVED,
+                "opt-1",
+                "ok",
+                null,
+                null,
+                null,
+                null,
+                null);
         assertThatThrownBy(() -> service.resolveGate(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("already resolved");
@@ -372,7 +416,15 @@ class ResearchRunServiceTest {
         when(gateRepository.findByResearchRunIdAndGatePoint(RUN_ID, ResearchGatePoint.METHOD_DECISION))
                 .thenReturn(Optional.of(gate(run, ResearchGatePoint.METHOD_DECISION, ResearchGateBehavior.DISABLED)));
         var command = new com.keplerops.groundcontrol.domain.research.service.GateDecisionCommand(
-                ResearchGatePoint.METHOD_DECISION, ResearchGateDecisionOutcome.APPROVED, null, null);
+                ResearchGatePoint.METHOD_DECISION,
+                ResearchGateDecisionOutcome.APPROVED,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
         assertThatThrownBy(() -> service.resolveGate(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("disabled");
@@ -474,9 +526,16 @@ class ResearchRunServiceTest {
     @Test
     void complete_atFinalStageWithActiveManuscript_transitionsToCompleted() {
         var run = runAt(ResearchRunStage.PROSE_DRAFTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
+        var manuscript = artifact(run, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE);
         when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
                         RUN_ID, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.of(artifact(run, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE)));
+                .thenReturn(Optional.of(manuscript));
+        var disclosure = new com.keplerops.groundcontrol.domain.research.model.ResearchRunDisclosure(
+                run, manuscript.getId(), 1, true, true, true, "server-actor");
+        when(disclosureRepository.findFirstByResearchRunIdAndStatus(
+                        RUN_ID, com.keplerops.groundcontrol.domain.research.model.DisclosureStatus.CURRENT))
+                .thenReturn(Optional.of(disclosure));
+        when(disclosureEntryRepository.findByDisclosureId(disclosure.getId())).thenReturn(List.of());
         var completed = service.complete(PROJECT_ID, RUN_ID);
         assertThat(completed.getStatus()).isEqualTo(ResearchRunStatus.COMPLETED);
     }

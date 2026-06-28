@@ -92,6 +92,18 @@ cross_cutting_concerns:
     Errors: <error envelope / handler>
     Tests: <fixture and test-slice patterns>
 
+grc:
+  boundaries:
+    - key: policy-workflow
+      name: Policy and workflow
+      description: Repo policy, workflow rules, and agent guardrails
+      paths:
+        - tools/policy/**
+        - .ground-control.yaml
+      surfaces:
+        - policy
+        - architecture
+
 routing:
   enabled: false
   default_provider: claude
@@ -112,7 +124,7 @@ Config contract:
 
 - `schema_version` is required and currently must be `1`.
 - `project` is required and must be a lowercase identifier using letters, numbers, and hyphens.
-- Unknown top-level keys are rejected. Current top-level keys are `schema_version`, `project`, `github_repo`, `workflow`, `sonarcloud`, `rules`, `knowledge`, `docs`, `example_paths`, `requirements`, `cross_cutting_concerns`, `routing`, and `telemetry`.
+- Unknown top-level keys are rejected. Current top-level keys are `schema_version`, `project`, `github_repo`, `workflow`, `sonarcloud`, `rules`, `knowledge`, `docs`, `example_paths`, `requirements`, `cross_cutting_concerns`, `routing`, `telemetry`, `architecture`, `grc`, and `short_code`.
 - `workflow.*` values are optional non-empty strings. `workflow.base_branch` must be a safe Git ref name using `[A-Za-z0-9._/-]`.
 - `sonarcloud` is optional, but when present it must include non-empty `project_key` and `organization`.
 - `rules.plan_rules` is optional and points to the repo-relative plan-rules file whose content is inlined into `gc_get_repo_ground_control_context`.
@@ -121,6 +133,7 @@ Config contract:
 - `requirements.uid_examples` is optional and must be a list of non-empty strings.
 - **Server-side UID allocation (ADR-060, issue #532):** when creating a requirement via `gc_requirement create`, supply `uid_prefix` (for example, `GC-T`) instead of an explicit `uid` to let the server assign the next available `{PREFIX}-{N}` atomically. The server reads the current high-water mark from the database (archived rows included), increments it, and returns the allocated UID. Use `uid` only when you need a specific, pre-determined identifier.
 - `cross_cutting_concerns.description` is optional free text shown to agents during planning.
+- `grc.boundaries` is optional and declares canonical boundary inputs that code-derived adapters cannot infer. Each boundary requires `key`, `name`, and non-empty `paths`; `description` and `surfaces` are optional. Paths are repo-relative exact paths or trailing `/**` selectors and are containment-checked.
 - `routing.enabled` defaults to `false`. When enabled, omitted `/implement` stages use built-in defaults; `routing.stages.<stage>` overrides a specific stage/purpose route.
 - Routing stages use lowercase stage keys matching `[a-z][a-z0-9_-]*`. Route fields are `tier`, `provider`, `model`, `agent`, and `fallback`.
 - Routing `tier` is one of `low`, `medium`, or `high`; `provider` currently supports `claude`; `agent` is one of `parent`, `subagent`, or `cli`; `fallback` is one of `parent`, `error`, or `skip`.
