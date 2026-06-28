@@ -10624,6 +10624,118 @@ export const RESEARCH_GATE_BEHAVIORS = ["REQUIRE_HUMAN", "AUTONOMOUS_DEFAULT", "
 
 export const RESEARCH_GATE_DECISION_OUTCOMES = ["APPROVED", "REJECTED", "AUTO_ACCEPTED"];
 
+// GC-RSCH-F004 / ADR-066 — gate recommendation provenance (mirrors Java enum)
+export const GATE_RECOMMENDATION_PROVENANCES = ["AGENT", "SYSTEM_POLICY", "HUMAN_REVIEWER"];
+
+// GC-RSCH-F034 / ADR-067 — review comment enums (mirror Java enums)
+export const REVIEW_COMMENT_TARGETS = ["RUN", "GATE_POINT", "STAGE", "ARTIFACT", "DECISION_LOG"];
+export const REVIEW_COMMENT_PROVENANCES = ["HUMAN_REVIEW", "AGENT_RECOMMENDATION", "SYSTEM_CHECK"];
+export const REVIEW_COMMENT_STATUSES = ["OPEN", "RESOLVED"];
+
+// GC-RSCH-N012 / ADR-068 — rationale entry enums (mirror Java enums)
+export const RATIONALE_ENTRY_KINDS = [
+  "METHODOLOGY_CHOICE",
+  "SEARCH_DECISION",
+  "EXCLUSION",
+  "CHARTED_VALUE",
+  "SYNTHESIS_CLAIM",
+  "WRITING_CLAIM",
+];
+export const RATIONALE_EVIDENCE_BASES = [
+  "METHODOLOGY_SOURCE",
+  "USER_DECISION",
+  "CITED_SOURCE",
+  "FULL_TEXT_SPAN",
+  "CHARTED_CELL",
+  "EVIDENCE_MATRIX_CELL",
+  "ARGUMENT_MAP_PREMISE",
+  "MANUSCRIPT_CITATION",
+  "POLICY_DEFAULT",
+  "EXPLICIT_LIMITATION",
+];
+export const RATIONALE_PROVENANCES = [
+  "HUMAN",
+  "AGENT_RECOMMENDATION",
+  "AUTONOMOUS_DEFAULT",
+  "IMPORTED_ARTIFACT",
+  "ADAPTER",
+];
+
+// GC-RSCH-N013 / ADR-068 §4 — disclosure enums (mirror Java enums)
+export const DISCLOSURE_STATUSES = ["CURRENT", "STALE"];
+export const DISCLOSURE_ENTRY_FAMILIES = ["AI_GENERATED_PART", "UNRESOLVED_UNCERTAINTY"];
+export const DISCLOSURE_UNCERTAINTY_CATEGORIES = [
+  "SCIENTIFIC",
+  "ACCESS_GAP",
+  "WORKFLOW_ERROR",
+  "UNRESOLVED_REVIEW",
+];
+
+// GC-RSCH-F004 / ADR-066 — gate decision audit log
+export async function listResearchRunGateDecisionLog(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/gates/decision-log`, {
+    params: { project },
+  });
+}
+
+// GC-RSCH-F034 / ADR-067 — run-scoped review comments
+export async function addResearchRunReviewComment(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/review-comments`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function listResearchRunReviewComments(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/review-comments`, {
+    params: { project },
+  });
+}
+
+export async function resolveResearchRunReviewComment(id, commentId, data, project) {
+  return request(
+    "POST",
+    `/api/v1/research-runs/${encodeURIComponent(id)}/review-comments/${encodeURIComponent(commentId)}/resolve`,
+    { body: data, params: { project } },
+  );
+}
+
+// GC-RSCH-N012 / ADR-068 — explainability / rationale ledger
+export async function addResearchRunRationaleEntry(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/rationale`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function listResearchRunRationale(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/rationale`, {
+    params: { project },
+  });
+}
+
+// GC-RSCH-N013 / ADR-068 §4 — accountability disclosure
+export async function createResearchRunDisclosure(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/disclosure`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function getResearchRunDisclosure(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/disclosure`, {
+    params: { project },
+  });
+}
+
+export async function addResearchRunDisclosureEntry(id, disclosureId, data, project) {
+  return request(
+    "POST",
+    `/api/v1/research-runs/${encodeURIComponent(id)}/disclosure/${encodeURIComponent(disclosureId)}/entries`,
+    { body: data, params: { project } },
+  );
+}
+
 export async function createControl(data, project) {
   return request("POST", "/api/v1/controls", { body: data, params: { project } });
 }

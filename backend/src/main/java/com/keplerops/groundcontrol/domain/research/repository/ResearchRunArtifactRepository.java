@@ -20,4 +20,8 @@ public interface ResearchRunArtifactRepository extends JpaRepository<ResearchRun
 
     int countByResearchRunIdAndArtifactTypeAndStatus(
             UUID researchRunId, ResearchArtifactType artifactType, ResearchArtifactStatus status);
+
+    boolean existsByIdAndResearchRunId(UUID id, UUID researchRunId);
+
+    Optional<ResearchRunArtifact> findByIdAndResearchRunId(UUID id, UUID researchRunId);
 }

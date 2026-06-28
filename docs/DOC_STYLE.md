@@ -279,3 +279,14 @@ endpoints documented in `docs/API.md`; the tool description string is the
 contract surface and enumerates the per-action required fields. The surface
 addition is recorded in the ADR-054 amendment and the changelog fragment; no new
 DOC_STYLE.md style rule is established.
+
+The research decision-gate surfaces (GC-RSCH-F004/F034/N012/N013 / ADR-066 /
+ADR-067 / ADR-068 / #1001) extend the same `gc_research_run` tool with nine
+additional actions (`list_gate_decision_log`, `add_review_comment`,
+`list_review_comments`, `resolve_review_comment`, `add_rationale`,
+`list_rationale`, `create_disclosure`, `add_disclosure_entry`, `get_disclosure`)
+and ten new Zod enum mirrors in `mcp/ground-control/lib.js`, mirroring the new
+`/api/v1/research-runs/{id}/{gates/decision-log,review-comments,rationale,disclosure}`
+endpoints documented in `docs/API.md`. The surface addition is recorded in the
+ADR-054 amendment and the changelog fragment; no new DOC_STYLE.md style rule is
+established.

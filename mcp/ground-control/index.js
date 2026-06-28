@@ -200,15 +200,23 @@ import {
   updateTestRunCaseResult,
   listTestRunStepResults, updateTestRunStepResult, updateTestRunCursor,
   TEST_RUN_STATUSES, TEST_RUN_CASE_RESULT_STATUSES,
-  // ---- research runs (GC-RSCH-R001/R003, ADR-064 / ADR-065) ----
+  // ---- research runs (GC-RSCH-R001/R003/F003/F034/F036/N007/N011/N012/N013, ADR-064 / ADR-065 / ADR-066 / ADR-067 / ADR-068) ----
   startResearchRun, listResearchRuns, getResearchRun, getResearchRunByUid,
   getResearchRunSnapshot, listResearchRunArtifacts, listResearchRunGates,
   recordResearchRunArtifact, advanceResearchRun, decideResearchRunGate,
   stopResearchRun, failResearchRun, resumeResearchRun, completeResearchRun,
   recordResearchRunUsage,
+  listResearchRunGateDecisionLog,
+  addResearchRunReviewComment, listResearchRunReviewComments, resolveResearchRunReviewComment,
+  addResearchRunRationaleEntry, listResearchRunRationale,
+  createResearchRunDisclosure, getResearchRunDisclosure, addResearchRunDisclosureEntry,
   RESEARCH_RUN_AUTONOMY_LEVELS, RESEARCH_RUN_INTENDED_OUTPUTS,
   RESEARCH_RUN_STAGES, RESEARCH_ARTIFACT_TYPES, RESEARCH_GATE_POINTS,
   RESEARCH_GATE_BEHAVIORS, RESEARCH_GATE_DECISION_OUTCOMES,
+  GATE_RECOMMENDATION_PROVENANCES,
+  REVIEW_COMMENT_TARGETS, REVIEW_COMMENT_PROVENANCES, REVIEW_COMMENT_STATUSES,
+  RATIONALE_ENTRY_KINDS, RATIONALE_EVIDENCE_BASES, RATIONALE_PROVENANCES,
+  DISCLOSURE_STATUSES, DISCLOSURE_ENTRY_FAMILIES, DISCLOSURE_UNCERTAINTY_CATEGORIES,
   // ---- enums ----
   STATUSES, REQUIREMENT_TYPES, PRIORITIES, RELATION_TYPES,
   ARTIFACT_TYPES, LINK_TYPES, CHANGE_CATEGORIES, CONFIDENCE_LEVELS,
@@ -2992,6 +3000,15 @@ const RESEARCH_RUN_ACTIONS = [
   "record_artifact",
   "advance",
   "gate_decision",
+  "list_gate_decision_log",
+  "add_review_comment",
+  "list_review_comments",
+  "resolve_review_comment",
+  "add_rationale",
+  "list_rationale",
+  "create_disclosure",
+  "get_disclosure",
+  "add_disclosure_entry",
   "stop",
   "fail",
   "resume",
@@ -3001,11 +3018,11 @@ const RESEARCH_RUN_ACTIONS = [
 
 server.tool(
   "gc_research_run",
-  `Research run lifecycle operations (GC-RSCH-R001/R003, ADR-064 / ADR-065). ` +
+  `Research run lifecycle operations (GC-RSCH-R001/R003/F003/F034/F036/N007/N011/N012/N013, ADR-064 / ADR-065 / ADR-066 / ADR-067 / ADR-068). ` +
     `Actions: ${RESEARCH_RUN_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, get_by_uid, snapshot, list_artifacts, list_gates) also route through gc_query. ` +
-    `Required fields per action: start→{uid}; get/snapshot/list_artifacts/list_gates/stop/resume/complete→{id}; get_by_uid→{uid}; record_artifact→{id,artifact_type}; advance→{id,target_stage}; gate_decision→{id,gate_point,outcome}; fail→{id}; record_usage→{id,tokens,cost_usd_micros}. ` +
-    `Bounded metadata only — never pass prompts, manuscript bodies, secrets, or absolute paths.`,
+    `Reads (list, get, get_by_uid, snapshot, list_artifacts, list_gates, list_gate_decision_log, list_review_comments, list_rationale, get_disclosure) also route through gc_query. ` +
+    `Required fields per action: start→{uid}; get/snapshot/list_artifacts/list_gates/stop/resume/complete→{id}; get_by_uid→{uid}; record_artifact→{id,artifact_type}; advance→{id,target_stage}; gate_decision→{id,gate_point,outcome}; list_gate_decision_log→{id}; add_review_comment→{id,target_type,body,provenance}; list_review_comments→{id}; resolve_review_comment→{id,comment_id}; add_rationale→{id,stage,kind,evidence_basis,provenance,subject_key,rationale_summary}; list_rationale→{id}; create_disclosure→{id,final_artifact_id,final_attempt_no}; get_disclosure→{id}; add_disclosure_entry→{id,disclosure_id,family,summary}; fail→{id}; record_usage→{id,tokens,cost_usd_micros}. ` +
+    `Bounded metadata only — never pass prompts, manuscript bodies, secrets, or absolute paths. Actor is always from server context (ADR-026).`,
   {
     action: z.enum(RESEARCH_RUN_ACTIONS),
     id: z.string().uuid().optional(),
@@ -3027,14 +3044,53 @@ server.tool(
     access_gaps: z.number().int().nonnegative().optional(),
     // advance
     target_stage: z.enum(RESEARCH_RUN_STAGES).optional(),
-    // gate_decision
+    // gate_decision (incl. ADR-066 recommendation fields)
     gate_point: z.enum(RESEARCH_GATE_POINTS).optional(),
     outcome: z.enum(RESEARCH_GATE_DECISION_OUTCOMES).optional(),
     selected_option_id: z.string().optional(),
     rationale_summary: z.string().optional(),
+    recommendation_option_id: z.string().optional(),
+    recommendation_summary: z.string().optional(),
+    recommendation_provenance: z.enum(GATE_RECOMMENDATION_PROVENANCES).optional(),
+    question_key: z.string().optional(),
+    source_action_id: z.string().optional(),
     // NOTE: actor/owner provenance is taken from the authenticated server
     // context (ActorHolder/ActorFilter, ADR-026); there is deliberately no
     // client-supplied actor field on any research-run write.
+    // review comments (ADR-067)
+    comment_id: z.string().uuid().optional(),
+    target_type: z.enum(REVIEW_COMMENT_TARGETS).optional(),
+    target_gate_point: z.enum(RESEARCH_GATE_POINTS).optional(),
+    target_stage: z.enum(RESEARCH_RUN_STAGES).optional(),
+    target_artifact_id: z.string().uuid().optional(),
+    target_decision_log_id: z.string().uuid().optional(),
+    body: z.string().optional(),
+    provenance: z.enum(REVIEW_COMMENT_PROVENANCES).optional(),
+    resolution_summary: z.string().optional(),
+    // rationale entry (ADR-068)
+    stage: z.enum(RESEARCH_RUN_STAGES).optional(),
+    kind: z.enum(RATIONALE_ENTRY_KINDS).optional(),
+    evidence_basis: z.enum(RATIONALE_EVIDENCE_BASES).optional(),
+    rationale_provenance: z.enum(RATIONALE_PROVENANCES).optional(),
+    subject_key: z.string().optional(),
+    evidence_locator: z.string().optional(),
+    confidence_summary: z.string().optional(),
+    attempt_no: z.number().int().nonnegative().optional(),
+    // disclosure (ADR-068 §4)
+    disclosure_id: z.string().uuid().optional(),
+    final_artifact_id: z.string().uuid().optional(),
+    final_attempt_no: z.number().int().positive().optional(),
+    ai_parts_declared_none: z.boolean().optional(),
+    uncertainty_declared_none: z.boolean().optional(),
+    human_approvals_declared_none: z.boolean().optional(),
+    family: z.enum(DISCLOSURE_ENTRY_FAMILIES).optional(),
+    uncertainty_category: z.enum(DISCLOSURE_UNCERTAINTY_CATEGORIES).optional(),
+    section_key: z.string().optional(),
+    model_label: z.string().optional(),
+    summary: z.string().optional(),
+    rationale_entry_id: z.string().uuid().optional(),
+    decision_log_id: z.string().uuid().optional(),
+    review_comment_id: z.string().uuid().optional(),
     // fail
     error_code: z.string().optional(),
     error_class: z.string().optional(),
@@ -3050,7 +3106,11 @@ server.tool(
         "candidate_sources", "screened_included", "screened_excluded",
         "charted_full_text", "access_gaps",
       ];
-      const GATE_FIELDS = ["gate_point", "outcome", "selected_option_id", "rationale_summary"];
+      const GATE_FIELDS = [
+        "gate_point", "outcome", "selected_option_id", "rationale_summary",
+        "recommendation_option_id", "recommendation_summary",
+        "recommendation_provenance", "question_key", "source_action_id",
+      ];
       const FAIL_FIELDS = ["error_code", "error_class", "error_summary"];
       switch (args.action) {
         case "start": {
@@ -3109,6 +3169,133 @@ server.tool(
           reqArg(args, "outcome", "gate_decision");
           return ok(JSON.stringify(
             await decideResearchRunGate(args.id, pick(args, GATE_FIELDS), args.project),
+            null,
+            2,
+          ));
+        }
+        // GC-RSCH-F004 / ADR-066 — gate decision audit log
+        case "list_gate_decision_log": {
+          reqArg(args, "id", "list_gate_decision_log");
+          return ok(JSON.stringify(
+            await listResearchRunGateDecisionLog(args.id, args.project),
+            null,
+            2,
+          ));
+        }
+        // GC-RSCH-F034 / ADR-067 — run-scoped review comments
+        case "add_review_comment": {
+          reqArg(args, "id", "add_review_comment");
+          reqArg(args, "target_type", "add_review_comment");
+          reqArg(args, "body", "add_review_comment");
+          reqArg(args, "provenance", "add_review_comment");
+          const rcBody = { targetType: args.target_type, body: args.body, provenance: args.provenance };
+          if (args.target_gate_point !== undefined) rcBody.targetGatePoint = args.target_gate_point;
+          if (args.target_stage !== undefined) rcBody.targetStage = args.target_stage;
+          if (args.target_artifact_id !== undefined) rcBody.targetArtifactId = args.target_artifact_id;
+          if (args.target_decision_log_id !== undefined) rcBody.targetDecisionLogId = args.target_decision_log_id;
+          return ok(JSON.stringify(
+            await addResearchRunReviewComment(args.id, rcBody, args.project),
+            null,
+            2,
+          ));
+        }
+        case "list_review_comments": {
+          reqArg(args, "id", "list_review_comments");
+          return ok(JSON.stringify(
+            await listResearchRunReviewComments(args.id, args.project),
+            null,
+            2,
+          ));
+        }
+        case "resolve_review_comment": {
+          reqArg(args, "id", "resolve_review_comment");
+          reqArg(args, "comment_id", "resolve_review_comment");
+          const resolveBody = {};
+          if (args.resolution_summary !== undefined) resolveBody.resolutionSummary = args.resolution_summary;
+          return ok(JSON.stringify(
+            await resolveResearchRunReviewComment(args.id, args.comment_id, resolveBody, args.project),
+            null,
+            2,
+          ));
+        }
+        // GC-RSCH-N012 / ADR-068 — explainability / rationale ledger
+        case "add_rationale": {
+          reqArg(args, "id", "add_rationale");
+          reqArg(args, "stage", "add_rationale");
+          reqArg(args, "kind", "add_rationale");
+          reqArg(args, "evidence_basis", "add_rationale");
+          reqArg(args, "rationale_provenance", "add_rationale");
+          reqArg(args, "subject_key", "add_rationale");
+          reqArg(args, "rationale_summary", "add_rationale");
+          const rBody = {
+            stage: args.stage,
+            kind: args.kind,
+            evidenceBasis: args.evidence_basis,
+            provenance: args.rationale_provenance,
+            subjectKey: args.subject_key,
+            rationaleSummary: args.rationale_summary,
+          };
+          if (args.artifact_type !== undefined) rBody.artifactType = args.artifact_type;
+          if (args.target_artifact_id !== undefined) rBody.artifactId = args.target_artifact_id;
+          if (args.attempt_no !== undefined) rBody.attemptNo = args.attempt_no;
+          if (args.evidence_locator !== undefined) rBody.evidenceLocator = args.evidence_locator;
+          if (args.confidence_summary !== undefined) rBody.confidenceSummary = args.confidence_summary;
+          if (args.gate_point !== undefined) rBody.gatePoint = args.gate_point;
+          return ok(JSON.stringify(
+            await addResearchRunRationaleEntry(args.id, rBody, args.project),
+            null,
+            2,
+          ));
+        }
+        case "list_rationale": {
+          reqArg(args, "id", "list_rationale");
+          return ok(JSON.stringify(
+            await listResearchRunRationale(args.id, args.project),
+            null,
+            2,
+          ));
+        }
+        // GC-RSCH-N013 / ADR-068 §4 — accountability disclosure
+        case "create_disclosure": {
+          reqArg(args, "id", "create_disclosure");
+          reqArg(args, "final_artifact_id", "create_disclosure");
+          reqArg(args, "final_attempt_no", "create_disclosure");
+          const dBody = {
+            finalArtifactId: args.final_artifact_id,
+            finalAttemptNo: args.final_attempt_no,
+            aiPartsDeclaredNone: args.ai_parts_declared_none ?? false,
+            uncertaintyDeclaredNone: args.uncertainty_declared_none ?? false,
+            humanApprovalsDeclaredNone: args.human_approvals_declared_none ?? false,
+          };
+          return ok(JSON.stringify(
+            await createResearchRunDisclosure(args.id, dBody, args.project),
+            null,
+            2,
+          ));
+        }
+        case "get_disclosure": {
+          reqArg(args, "id", "get_disclosure");
+          return ok(JSON.stringify(
+            await getResearchRunDisclosure(args.id, args.project),
+            null,
+            2,
+          ));
+        }
+        case "add_disclosure_entry": {
+          reqArg(args, "id", "add_disclosure_entry");
+          reqArg(args, "disclosure_id", "add_disclosure_entry");
+          reqArg(args, "family", "add_disclosure_entry");
+          reqArg(args, "summary", "add_disclosure_entry");
+          const deBody = { family: args.family, summary: args.summary };
+          if (args.uncertainty_category !== undefined) deBody.uncertaintyCategory = args.uncertainty_category;
+          if (args.section_key !== undefined) deBody.sectionKey = args.section_key;
+          if (args.locator !== undefined) deBody.locator = args.locator;
+          if (args.model_label !== undefined) deBody.modelLabel = args.model_label;
+          if (args.rationale_entry_id !== undefined) deBody.rationaleEntryId = args.rationale_entry_id;
+          if (args.decision_log_id !== undefined) deBody.decisionLogId = args.decision_log_id;
+          if (args.review_comment_id !== undefined) deBody.reviewCommentId = args.review_comment_id;
+          return ok(JSON.stringify(
+            await addResearchRunDisclosureEntry(args.id, args.disclosure_id, deBody, args.project),
             null,
             2,
           ));
