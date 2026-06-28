@@ -86,6 +86,14 @@ groundcontrol:
     batch-size: ${GC_EMBEDDING_BATCH_SIZE:100}
     similarity-threshold: ${GC_EMBEDDING_SIMILARITY_THRESHOLD:0.85}
   derivation:
+    boundary:
+      # Canonical boundary-model derivation input adapter (GC-GRC-004).
+      # Emits derived architectural boundary inputs from repo-local paths; declared boundaries
+      # are supplied through the validated .ground-control.yaml MCP context.
+      enabled: true
+      # repository-root defaults to Path.of(".") like the other derivation adapters.
+      # Override with GROUNDCONTROL_DERIVATION_BOUNDARY_REPOSITORY_ROOT when needed.
+      ruleset-version: "1.0.0"
     iac:
       # IaC and CI/CD pipeline derivation adapter (GC-GRC-003).
       # enabled: toggle the adapter on/off without removing configuration.

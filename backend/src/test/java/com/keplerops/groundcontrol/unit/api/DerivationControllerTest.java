@@ -11,9 +11,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.keplerops.groundcontrol.api.derivation.DerivationController;
+import com.keplerops.groundcontrol.domain.derivation.model.BoundaryModelAssignment;
+import com.keplerops.groundcontrol.domain.derivation.model.BoundaryModelBoundary;
+import com.keplerops.groundcontrol.domain.derivation.model.BoundaryModelGap;
+import com.keplerops.groundcontrol.domain.derivation.model.BoundaryModelSnapshot;
 import com.keplerops.groundcontrol.domain.derivation.model.DerivationCaptureLimit;
 import com.keplerops.groundcontrol.domain.derivation.model.DerivationRun;
 import com.keplerops.groundcontrol.domain.derivation.model.SystemModelFact;
+import com.keplerops.groundcontrol.domain.derivation.service.BoundaryModelBuildResult;
 import com.keplerops.groundcontrol.domain.derivation.service.DerivationCaptureLimitDraft;
 import com.keplerops.groundcontrol.domain.derivation.service.DerivationFactProvenance;
 import com.keplerops.groundcontrol.domain.derivation.service.DerivationRunResult;
@@ -44,6 +49,10 @@ class DerivationControllerTest {
     private static final UUID RUN_ID = UUID.fromString("00000000-0000-0000-0000-000000001114");
     private static final UUID FACT_ID = UUID.fromString("00000000-0000-0000-0000-000000002114");
     private static final UUID LIMIT_ID = UUID.fromString("00000000-0000-0000-0000-000000003114");
+    private static final UUID BOUNDARY_MODEL_ID = UUID.fromString("00000000-0000-0000-0000-000000004114");
+    private static final UUID BOUNDARY_ID = UUID.fromString("00000000-0000-0000-0000-000000005114");
+    private static final UUID ASSIGNMENT_ID = UUID.fromString("00000000-0000-0000-0000-000000006114");
+    private static final UUID GAP_ID = UUID.fromString("00000000-0000-0000-0000-000000007114");
     private static final String COMMIT = "25c991231cf2a1464792846b083d1bd885299b3c";
     private static final Instant NOW = Instant.parse("2026-06-13T10:00:00Z");
 
@@ -111,6 +120,29 @@ class DerivationControllerTest {
                 .andExpect(jsonPath("$.id", is(RUN_ID.toString())))
                 .andExpect(jsonPath("$.projectIdentifier", is("ground-control")))
                 .andExpect(jsonPath("$.scopeMode", is("PATH_SET")));
+    }
+
+    @Test
+    void getBoundaryModelReturnsCanonicalSnapshot() throws Exception {
+        var result = makeResult();
+        var boundaryModel = makeBoundaryModel(result.run());
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(derivationService.getBoundaryModel(PROJECT_ID, RUN_ID)).thenReturn(boundaryModel);
+
+        mockMvc.perform(get("/api/v1/derivations/runs/{id}/boundary-model", RUN_ID)
+                        .param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id", is(BOUNDARY_MODEL_ID.toString())))
+                .andExpect(jsonPath("$.boundarySetVersion", is("boundary-set/abc123")))
+                .andExpect(jsonPath("$.architectureModelVersion", is("architecture-model/25c991231cf2/abc123")))
+                .andExpect(jsonPath("$.boundaryCount", is(1)))
+                .andExpect(jsonPath("$.assignmentCount", is(1)))
+                .andExpect(jsonPath("$.gapCount", is(1)))
+                .andExpect(jsonPath("$.boundaries[0].boundaryKey", is("backend-api")))
+                .andExpect(jsonPath("$.boundaries[0].source", is("MERGED")))
+                .andExpect(jsonPath("$.assignments[0].boundaryKey", is("backend-api")))
+                .andExpect(jsonPath("$.assignments[0].sourceFactKey", is("component:backend")))
+                .andExpect(jsonPath("$.gaps[0].reason", is("UNASSIGNED_BOUNDARY")));
     }
 
     @Test
@@ -196,5 +228,58 @@ class DerivationControllerTest {
         setField(limit, "createdAt", NOW);
         setField(limit, "updatedAt", NOW);
         return new DerivationRunResult(run, List.of(fact), List.of(limit));
+    }
+
+    private BoundaryModelBuildResult makeBoundaryModel(DerivationRun run) {
+        var snapshot = new BoundaryModelSnapshot(
+                run.getProject(),
+                run,
+                "boundary-set/abc123",
+                "architecture-model/25c991231cf2/abc123",
+                "declared-digest");
+        setField(snapshot, "id", BOUNDARY_MODEL_ID);
+        setField(snapshot, "createdAt", NOW);
+        setField(snapshot, "updatedAt", NOW);
+        snapshot.setCounts(1, 1, 1);
+
+        var boundary = new BoundaryModelBoundary(
+                run.getProject(),
+                snapshot,
+                "backend-api",
+                "Backend API",
+                "Controllers and DTOs",
+                "MERGED",
+                List.of("backend/src/main/java/com/keplerops/groundcontrol/api/**"),
+                List.of("application"),
+                List.of("boundary:backend-api"));
+        setField(boundary, "id", BOUNDARY_ID);
+        setField(boundary, "createdAt", NOW);
+        setField(boundary, "updatedAt", NOW);
+
+        var assignment = new BoundaryModelAssignment(
+                run.getProject(),
+                snapshot,
+                boundary,
+                "component:backend",
+                "COMPONENT",
+                "backend/src/main/java/com/keplerops/groundcontrol/api/AppController.java",
+                "PATH_SELECTOR");
+        setField(assignment, "id", ASSIGNMENT_ID);
+        setField(assignment, "createdAt", NOW);
+        setField(assignment, "updatedAt", NOW);
+
+        var gap = new BoundaryModelGap(
+                run.getProject(),
+                snapshot,
+                "flow:frontend",
+                "DATA_FLOW",
+                "frontend/src/App.tsx",
+                "UNASSIGNED_BOUNDARY",
+                "No canonical boundary selector matched source path");
+        setField(gap, "id", GAP_ID);
+        setField(gap, "createdAt", NOW);
+        setField(gap, "updatedAt", NOW);
+
+        return new BoundaryModelBuildResult(snapshot, List.of(boundary), List.of(assignment), List.of(gap));
     }
 }

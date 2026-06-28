@@ -58,6 +58,7 @@ public class DerivationService {
     private final ProjectService projectService;
     private final DerivationAdapterRegistry adapterRegistry;
     private final TransactionTemplate transactionTemplate;
+    private final BoundaryModelService boundaryModelService;
 
     public DerivationService(
             DerivationRunRepository runRepository,
@@ -65,13 +66,15 @@ public class DerivationService {
             DerivationCaptureLimitRepository captureLimitRepository,
             ProjectService projectService,
             DerivationAdapterRegistry adapterRegistry,
-            TransactionTemplate transactionTemplate) {
+            TransactionTemplate transactionTemplate,
+            BoundaryModelService boundaryModelService) {
         this.runRepository = runRepository;
         this.factRepository = factRepository;
         this.captureLimitRepository = captureLimitRepository;
         this.projectService = projectService;
         this.adapterRegistry = adapterRegistry;
         this.transactionTemplate = transactionTemplate;
+        this.boundaryModelService = boundaryModelService;
     }
 
     public DerivationRunResult run(CreateDerivationRunCommand command) {
@@ -118,7 +121,8 @@ public class DerivationService {
                 routePlan.adapters().size(),
                 validatedFacts,
                 validatedCaptureLimits,
-                actor));
+                actor,
+                command.declaredBoundaries()));
         if (result == null) {
             throw new IllegalStateException("Derivation run transaction returned no result");
         }
@@ -132,7 +136,8 @@ public class DerivationService {
             int adapterCount,
             List<DerivedSystemModelFact> validatedFacts,
             List<DerivationCaptureLimitDraft> validatedCaptureLimits,
-            String actor) {
+            String actor,
+            List<BoundaryDeclaration> declaredBoundaries) {
         var project = projectService.getById(projectId);
         var savedRun = runRepository.save(new DerivationRun(
                 project,
@@ -155,6 +160,7 @@ public class DerivationService {
                 .toList();
         factRows = factRepository.saveAll(factRows);
         captureLimitRows = captureLimitRepository.saveAll(captureLimitRows);
+        var boundaryModel = boundaryModelService.build(project, savedRun, factRows, declaredBoundaries);
         savedRun.setResultCounts(factRows.size(), captureLimitRows.size());
         savedRun = runRepository.save(savedRun);
 
@@ -165,7 +171,13 @@ public class DerivationService {
                 savedRun.getAdapterCount(),
                 factRows.size(),
                 captureLimitRows.size());
-        return new DerivationRunResult(savedRun, factRows, captureLimitRows);
+        return new DerivationRunResult(savedRun, factRows, captureLimitRows, boundaryModel);
+    }
+
+    @Transactional(readOnly = true)
+    public BoundaryModelBuildResult getBoundaryModel(UUID projectId, UUID runId) {
+        findRunOrThrow(projectId, runId);
+        return boundaryModelService.get(projectId, runId);
     }
 
     @Transactional(readOnly = true)
