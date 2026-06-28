@@ -3,7 +3,6 @@ package com.keplerops.groundcontrol.unit.domain.research;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -203,72 +202,37 @@ class ResearchProvenanceServiceTest {
 
     @Test
     void recordNode_rejectsBlankSubjectKey() {
-        assertThatThrownBy(() -> service.recordNode(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new RecordProvenanceNodeCommand(
-                                ProvenanceNodeKind.USER_GOAL,
-                                "  ",
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null)))
+        var command = nodeCommand(ProvenanceNodeKind.USER_GOAL, "  ");
+        assertThatThrownBy(() -> service.recordNode(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void recordNode_rejectsOversizeSummaryAsContentLeakGuard() {
-        var oversize = "x".repeat(2001);
-        assertThatThrownBy(() -> service.recordNode(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new RecordProvenanceNodeCommand(
-                                ProvenanceNodeKind.FINAL_PROSE,
-                                "para-1",
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                oversize,
-                                null,
-                                null,
-                                null,
-                                null)))
+        var command = new RecordProvenanceNodeCommand(
+                ProvenanceNodeKind.FINAL_PROSE,
+                "para-1",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "x".repeat(2001),
+                null,
+                null,
+                null,
+                null);
+        assertThatThrownBy(() -> service.recordNode(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(DomainValidationException.class);
         verify(nodeRepository, never()).save(any());
     }
 
     @Test
     void recordNode_concealsCrossProjectRunAsNotFound() {
-        assertThatThrownBy(() -> service.recordNode(
-                        OTHER_PROJECT_ID,
-                        RUN_ID,
-                        new RecordProvenanceNodeCommand(
-                                ProvenanceNodeKind.USER_GOAL,
-                                "goal",
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null)))
+        var command = nodeCommand(ProvenanceNodeKind.USER_GOAL, "goal");
+        assertThatThrownBy(() -> service.recordNode(OTHER_PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(NotFoundException.class);
     }
 
@@ -279,24 +243,22 @@ class ResearchProvenanceServiceTest {
                 .thenReturn(Optional.of(existing));
 
         // Same key, different subjectKey → a real conflict, not a silent replay.
-        assertThatThrownBy(() -> service.recordNode(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new RecordProvenanceNodeCommand(
-                                ProvenanceNodeKind.QUERY,
-                                "q-2",
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                "idem-1")))
+        var command = new RecordProvenanceNodeCommand(
+                ProvenanceNodeKind.QUERY,
+                "q-2",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "idem-1");
+        assertThatThrownBy(() -> service.recordNode(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(ConflictException.class);
         verify(nodeRepository, never()).save(any());
     }
@@ -308,24 +270,22 @@ class ResearchProvenanceServiceTest {
                 .thenReturn(List.of());
         when(artifactRepository.findByIdAndResearchRunId(artifactId, RUN_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.recordNode(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new RecordProvenanceNodeCommand(
-                                ProvenanceNodeKind.CHARTING_CELL,
-                                "cell-1",
-                                null,
-                                null,
-                                artifactId,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null)))
+        var command = new RecordProvenanceNodeCommand(
+                ProvenanceNodeKind.CHARTING_CELL,
+                "cell-1",
+                null,
+                null,
+                artifactId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+        assertThatThrownBy(() -> service.recordNode(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(NotFoundException.class);
         verify(nodeRepository, never()).save(any());
     }
@@ -339,24 +299,22 @@ class ResearchProvenanceServiceTest {
 
         // Caller pins a charting cell to a CHARTING_DATA artifact but declares the
         // wrong artifactType → rejected as an inconsistent reference.
-        assertThatThrownBy(() -> service.recordNode(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new RecordProvenanceNodeCommand(
-                                ProvenanceNodeKind.CHARTING_CELL,
-                                "cell-1",
-                                null,
-                                ResearchArtifactType.SYNTHESIS,
-                                artifactId,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null)))
+        var command = new RecordProvenanceNodeCommand(
+                ProvenanceNodeKind.CHARTING_CELL,
+                "cell-1",
+                null,
+                ResearchArtifactType.SYNTHESIS,
+                artifactId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+        assertThatThrownBy(() -> service.recordNode(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(DomainValidationException.class);
         verify(nodeRepository, never()).save(any());
     }
@@ -421,10 +379,8 @@ class ResearchProvenanceServiceTest {
     @Test
     void recordEdge_rejectsSelfEdge() {
         var n = UUID.randomUUID();
-        assertThatThrownBy(() -> service.recordEdge(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new RecordProvenanceEdgeCommand(n, n, ProvenanceEdgeRelation.DERIVED_FROM, null, null, null)))
+        var command = new RecordProvenanceEdgeCommand(n, n, ProvenanceEdgeRelation.DERIVED_FROM, null, null, null);
+        assertThatThrownBy(() -> service.recordEdge(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(DomainValidationException.class);
         verify(edgeRepository, never()).save(any());
     }
@@ -436,11 +392,8 @@ class ResearchProvenanceServiceTest {
         when(nodeRepository.existsByIdAndResearchRunId(from, RUN_ID)).thenReturn(true);
         when(nodeRepository.existsByIdAndResearchRunId(to, RUN_ID)).thenReturn(false);
 
-        assertThatThrownBy(() -> service.recordEdge(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new RecordProvenanceEdgeCommand(
-                                from, to, ProvenanceEdgeRelation.DERIVED_FROM, null, null, null)))
+        var command = new RecordProvenanceEdgeCommand(from, to, ProvenanceEdgeRelation.DERIVED_FROM, null, null, null);
+        assertThatThrownBy(() -> service.recordEdge(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(NotFoundException.class);
     }
 
@@ -457,10 +410,8 @@ class ResearchProvenanceServiceTest {
         when(edgeRepository.findByResearchRunIdAndFromNodeIdAndStatus(RUN_ID, a, ProvenanceRecordStatus.ACTIVE))
                 .thenReturn(List.of());
 
-        assertThatThrownBy(() -> service.recordEdge(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new RecordProvenanceEdgeCommand(a, b, ProvenanceEdgeRelation.SUPPORTS, null, null, null)))
+        var command = new RecordProvenanceEdgeCommand(a, b, ProvenanceEdgeRelation.SUPPORTS, null, null, null);
+        assertThatThrownBy(() -> service.recordEdge(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(ConflictException.class);
         verify(edgeRepository, never()).save(any());
     }
@@ -499,11 +450,8 @@ class ResearchProvenanceServiceTest {
                 .thenReturn(Optional.of(existing));
 
         // Same key, different relation → conflict, not a silent replay.
-        assertThatThrownBy(() -> service.recordEdge(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new RecordProvenanceEdgeCommand(
-                                from, to, ProvenanceEdgeRelation.SUPPORTS, null, null, "e-idem")))
+        var command = new RecordProvenanceEdgeCommand(from, to, ProvenanceEdgeRelation.SUPPORTS, null, null, "e-idem");
+        assertThatThrownBy(() -> service.recordEdge(PROJECT_ID, RUN_ID, command))
                 .isInstanceOf(ConflictException.class);
         verify(edgeRepository, never()).save(any());
     }
@@ -572,7 +520,7 @@ class ResearchProvenanceServiceTest {
     @Test
     void getProvenanceChain_rejectsUnknownRootNode() {
         var missing = UUID.randomUUID();
-        when(nodeRepository.findByIdAndResearchRunId(eq(missing), eq(RUN_ID))).thenReturn(Optional.empty());
+        when(nodeRepository.findByIdAndResearchRunId(missing, RUN_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.getProvenanceChain(PROJECT_ID, RUN_ID, missing, null))
                 .isInstanceOf(NotFoundException.class);
@@ -584,5 +532,11 @@ class ResearchProvenanceServiceTest {
         TestUtil.setField(n, "id", id);
         TestUtil.setField(n, "status", status);
         return n;
+    }
+
+    /** A node command carrying only kind + subjectKey, all optional fields null. */
+    private RecordProvenanceNodeCommand nodeCommand(ProvenanceNodeKind kind, String subjectKey) {
+        return new RecordProvenanceNodeCommand(
+                kind, subjectKey, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 }

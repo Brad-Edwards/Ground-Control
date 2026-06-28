@@ -1164,10 +1164,18 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .getResultList())
                 .doesNotThrowAnyException();
         // V163 / V165 (#1002, ADR-069): research provenance ledger audit shadows.
-        // ddl-auto:validate does not inspect audit tables, so probe every payload
-        // column explicitly — a copy-paste regression that dropped or renamed a
-        // shadow column would otherwise only surface at the first Envers flush in
-        // production.
+        assertResearchProvenanceAuditColumns();
+    }
+
+    /**
+     * V163 / V165 (#1002, ADR-069) — column-level probes for the research
+     * provenance audit shadows. ddl-auto:validate does not inspect audit tables,
+     * so probe every payload column explicitly; a copy-paste regression that
+     * dropped or renamed a shadow column would otherwise only surface at the first
+     * Envers flush in production. Extracted from {@link #auditTablesExist()} to
+     * keep that probe roster's assertion count bounded.
+     */
+    private void assertResearchProvenanceAuditColumns() {
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT kind, subject_key, stage, artifact_type, artifact_id, attempt_no,"
                                 + " locator, content_hash, external_identifier, summary, tool_name, tool_version,"

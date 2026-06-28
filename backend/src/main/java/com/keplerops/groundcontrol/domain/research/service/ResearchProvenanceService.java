@@ -336,23 +336,8 @@ public class ResearchProvenanceService {
         for (int depth = 0; depth < maxDepth && !frontier.isEmpty(); depth++) {
             var next = new ArrayDeque<UUID>();
             while (!frontier.isEmpty()) {
-                var current = frontier.poll();
-                for (var edge : edgeRepository.findByResearchRunIdAndToNodeIdAndStatus(
-                        runId, current, ProvenanceRecordStatus.ACTIVE)) {
-                    if (seenEdges.add(edge.getId())) {
-                        edges.add(edge);
-                    }
-                    var upstreamId = edge.getFromNodeId();
-                    if (!nodesById.containsKey(upstreamId)) {
-                        if (nodesById.size() >= CHAIN_NODE_CAP) {
-                            truncated = true;
-                            continue;
-                        }
-                        nodeRepository
-                                .findByIdAndResearchRunId(upstreamId, runId)
-                                .ifPresent(n -> nodesById.put(n.getId(), n));
-                        next.add(upstreamId);
-                    }
+                if (expandIncoming(runId, frontier.poll(), nodesById, edges, seenEdges, next)) {
+                    truncated = true;
                 }
             }
             if (depth == maxDepth - 1 && !next.isEmpty()) {
@@ -362,6 +347,38 @@ public class ResearchProvenanceService {
         }
 
         return new ProvenanceChain(root.getId(), maxDepth, truncated, new ArrayList<>(nodesById.values()), edges);
+    }
+
+    /**
+     * Walk the ACTIVE incoming edges of {@code current}: record each edge, and for
+     * each newly seen upstream node load it (within the cap) and queue it onto
+     * {@code next}. Returns true when the node cap was hit (a partial chain).
+     */
+    private boolean expandIncoming(
+            UUID runId,
+            UUID current,
+            Map<UUID, ResearchProvenanceNode> nodesById,
+            List<ResearchProvenanceEdge> edges,
+            Set<UUID> seenEdges,
+            Deque<UUID> next) {
+        boolean hitCap = false;
+        for (var edge :
+                edgeRepository.findByResearchRunIdAndToNodeIdAndStatus(runId, current, ProvenanceRecordStatus.ACTIVE)) {
+            if (seenEdges.add(edge.getId())) {
+                edges.add(edge);
+            }
+            var upstreamId = edge.getFromNodeId();
+            if (nodesById.containsKey(upstreamId)) {
+                continue;
+            }
+            if (nodesById.size() >= CHAIN_NODE_CAP) {
+                hitCap = true;
+                continue;
+            }
+            nodeRepository.findByIdAndResearchRunId(upstreamId, runId).ifPresent(n -> nodesById.put(n.getId(), n));
+            next.add(upstreamId);
+        }
+        return hitCap;
     }
 
     // ------------------------------------------------------------------
