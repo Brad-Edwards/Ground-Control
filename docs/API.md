@@ -1268,8 +1268,8 @@ to read `grc.boundaries` from `.ground-control.yaml`. Readback actions map
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
 | POST | `/architecture-models/snapshots` | ArchitectureModelSnapshotRequest | 201 | Persist a versioned architecture-model snapshot |
-| GET | `/architecture-models/snapshots` | - | 200 | List snapshots for a project |
-| GET | `/architecture-models/snapshots/{id}` | - | 200 | Get one snapshot with element states |
+| GET | `/architecture-models/snapshots` | - | 200 | List snapshot summaries (metadata + counts, no element payloads) for a project |
+| GET | `/architecture-models/snapshots/{id}` | - | 200 | Get one snapshot with full element states |
 | GET | `/architecture-models/elements` | - | 200 | List latest architecture-model elements |
 | GET | `/architecture-models/elements/{id}` | - | 200 | Get one stable architecture-model element |
 | GET | `/architecture-models/diff?fromSnapshotId=&toSnapshotId=` | - | 200 | Compare two snapshots |
@@ -1288,11 +1288,20 @@ optional `derivationRunId`), `commitSha`, and opaque `metadata`. `DATA_FLOW`
 elements must include `flowSourceStableKey` and `flowTargetStableKey`, and both
 endpoints must exist in the same snapshot.
 
-**ArchitectureModelSnapshotResponse fields:** `id`, `derivationRunId`,
-`projectIdentifier`, `schemaVersion`, `modelVersion`, `commitSha`, `source`,
-`createdBy`, `elementCount`, `flowCount`, `elements`, `createdAt`, and
-`updatedAt`. Each element response includes `id`, `graphNodeId`, `stableKey`,
-current snapshot state, DFD semantics, provenance, metadata, and timestamps.
+**ArchitectureModelSnapshotResponse fields** (POST and GET `/snapshots/{id}`):
+`id`, `derivationRunId`, `projectIdentifier`, `schemaVersion`, `modelVersion`,
+`commitSha`, `source`, `createdBy`, `elementCount`, `flowCount`, `elements`,
+`createdAt`, and `updatedAt`. Each element response includes `id`, `graphNodeId`,
+`stableKey`, current snapshot state, DFD semantics, provenance, metadata, and
+timestamps.
+
+**ArchitectureModelSnapshotSummaryResponse fields** (list `GET /snapshots`):
+the same snapshot metadata (`id`, `derivationRunId`, `projectIdentifier`,
+`schemaVersion`, `modelVersion`, `commitSha`, `source`, `createdBy`,
+`elementCount`, `flowCount`, `createdAt`, `updatedAt`) but **without** the
+`elements` payload. A snapshot can hold up to 10,000 elements and history is
+unbounded, so the list endpoint returns summaries; fetch a single snapshot via
+`GET /snapshots/{id}` for full element state.
 
 **Diff response:** `fromSnapshotId`, `toSnapshotId`, and `entries` with
 `stableKey`, `status` (`ADDED`, `REMOVED`, `CHANGED`, `UNCHANGED`, or

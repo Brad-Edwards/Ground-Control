@@ -2310,6 +2310,8 @@ server.tool(
 );
 
 // gc_architecture_model: GC-GRC-005 canonical architecture-model snapshots.
+// list_snapshots returns summaries (counts, no element payloads); get_snapshot
+// returns one snapshot with its full element state.
 server.tool(
   "gc_architecture_model",
   GC_ARCHITECTURE_MODEL_DESCRIPTION,

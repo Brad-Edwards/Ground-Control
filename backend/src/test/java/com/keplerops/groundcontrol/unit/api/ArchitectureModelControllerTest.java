@@ -92,6 +92,20 @@ class ArchitectureModelControllerTest {
     }
 
     @Test
+    void listSnapshotsReturnsSummariesWithoutElementPayloads() throws Exception {
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(architectureModelService.listSnapshots(PROJECT_ID)).thenReturn(List.of(snapshot()));
+
+        mockMvc.perform(get("/api/v1/architecture-models/snapshots").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].id", is(SNAPSHOT_ID.toString())))
+                .andExpect(jsonPath("$[0].elementCount", is(1)))
+                .andExpect(jsonPath("$[0].flowCount", is(0)))
+                .andExpect(jsonPath("$[0].elements").doesNotExist());
+    }
+
+    @Test
     void diffSnapshotsReturnsStatusEntries() throws Exception {
         when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
         when(architectureModelService.diff(PROJECT_ID, SNAPSHOT_ID, SNAPSHOT_B_ID))
@@ -110,7 +124,7 @@ class ArchitectureModelControllerTest {
                 .andExpect(jsonPath("$.entries[0].status", is("CHANGED")));
     }
 
-    private static ArchitectureModelSnapshotView snapshotView() {
+    private static ArchitectureModelSnapshot snapshot() {
         var project = new Project("ground-control", "Ground Control");
         setField(project, "id", PROJECT_ID);
         var snapshot = new ArchitectureModelSnapshot(project, null, "architecture-model/v1", COMMIT, "MANUAL", "codex");
@@ -118,6 +132,12 @@ class ArchitectureModelControllerTest {
         setField(snapshot, "createdAt", Instant.parse("2026-06-28T10:00:00Z"));
         setField(snapshot, "updatedAt", Instant.parse("2026-06-28T10:00:00Z"));
         snapshot.setCounts(1, 0);
+        return snapshot;
+    }
+
+    private static ArchitectureModelSnapshotView snapshotView() {
+        var snapshot = snapshot();
+        var project = snapshot.getProject();
         var element = new ArchitectureModelElement(project, "component:api", ArchitectureModelElementKind.COMPONENT);
         setField(element, "id", ELEMENT_ID);
         var state = new ArchitectureModelElementState(
