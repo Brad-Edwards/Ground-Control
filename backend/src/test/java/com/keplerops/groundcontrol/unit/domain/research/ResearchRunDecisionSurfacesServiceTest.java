@@ -442,7 +442,8 @@ class ResearchRunDecisionSurfacesServiceTest {
     void addDisclosureEntry_onStaleDisclosure_throwsConflict() {
         var run = runAt(ResearchRunStage.PROSE_DRAFTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
         var stale = disclosure(run, UUID.randomUUID(), false, false, DisclosureStatus.STALE);
-        when(disclosureRepository.findById(stale.getId())).thenReturn(Optional.of(stale));
+        var staleId = stale.getId();
+        when(disclosureRepository.findById(staleId)).thenReturn(Optional.of(stale));
         var cmd = new AddDisclosureEntryCommand(
                 DisclosureEntryFamily.AI_GENERATED_PART,
                 null,
@@ -453,7 +454,7 @@ class ResearchRunDecisionSurfacesServiceTest {
                 null,
                 null,
                 null);
-        assertThatThrownBy(() -> service.addDisclosureEntry(PROJECT_ID, RUN_ID, stale.getId(), cmd))
+        assertThatThrownBy(() -> service.addDisclosureEntry(PROJECT_ID, RUN_ID, staleId, cmd))
                 .isInstanceOf(ConflictException.class);
     }
 
@@ -461,7 +462,8 @@ class ResearchRunDecisionSurfacesServiceTest {
     void addDisclosureEntry_uncertaintyCategoryRequiredIffUnresolvedUncertainty() {
         var run = runAt(ResearchRunStage.PROSE_DRAFTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
         var current = disclosure(run, UUID.randomUUID(), false, false, DisclosureStatus.CURRENT);
-        when(disclosureRepository.findById(current.getId())).thenReturn(Optional.of(current));
+        var currentId = current.getId();
+        when(disclosureRepository.findById(currentId)).thenReturn(Optional.of(current));
 
         // UNRESOLVED_UNCERTAINTY without a category is rejected.
         var cmd1 = new AddDisclosureEntryCommand(
@@ -474,7 +476,7 @@ class ResearchRunDecisionSurfacesServiceTest {
                 null,
                 null,
                 null);
-        assertThatThrownBy(() -> service.addDisclosureEntry(PROJECT_ID, RUN_ID, current.getId(), cmd1))
+        assertThatThrownBy(() -> service.addDisclosureEntry(PROJECT_ID, RUN_ID, currentId, cmd1))
                 .isInstanceOf(DomainValidationException.class);
 
         // AI_GENERATED_PART with a category set is rejected.
@@ -488,14 +490,14 @@ class ResearchRunDecisionSurfacesServiceTest {
                 null,
                 null,
                 null);
-        assertThatThrownBy(() -> service.addDisclosureEntry(PROJECT_ID, RUN_ID, current.getId(), cmd2))
+        assertThatThrownBy(() -> service.addDisclosureEntry(PROJECT_ID, RUN_ID, currentId, cmd2))
                 .isInstanceOf(DomainValidationException.class);
 
         // Valid UNRESOLVED_UNCERTAINTY with a category succeeds.
         var saved = service.addDisclosureEntry(
                 PROJECT_ID,
                 RUN_ID,
-                current.getId(),
+                currentId,
                 new AddDisclosureEntryCommand(
                         DisclosureEntryFamily.UNRESOLVED_UNCERTAINTY,
                         DisclosureUncertaintyCategory.ACCESS_GAP,
@@ -792,7 +794,8 @@ class ResearchRunDecisionSurfacesServiceTest {
     void addDisclosureEntry_crossRunRationaleRef_throwsNotFound() {
         var run = runAt(ResearchRunStage.PROSE_DRAFTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
         var current = disclosure(run, UUID.randomUUID(), false, false, DisclosureStatus.CURRENT);
-        when(disclosureRepository.findById(current.getId())).thenReturn(Optional.of(current));
+        var currentId = current.getId();
+        when(disclosureRepository.findById(currentId)).thenReturn(Optional.of(current));
         var foreignRationaleId = UUID.randomUUID();
         when(rationaleRepository.existsByIdAndResearchRunId(foreignRationaleId, RUN_ID))
                 .thenReturn(false);
@@ -806,7 +809,7 @@ class ResearchRunDecisionSurfacesServiceTest {
                 foreignRationaleId,
                 null,
                 null);
-        assertThatThrownBy(() -> service.addDisclosureEntry(PROJECT_ID, RUN_ID, current.getId(), cmd))
+        assertThatThrownBy(() -> service.addDisclosureEntry(PROJECT_ID, RUN_ID, currentId, cmd))
                 .isInstanceOf(NotFoundException.class);
         verify(disclosureEntryRepository, never()).save(any());
     }
