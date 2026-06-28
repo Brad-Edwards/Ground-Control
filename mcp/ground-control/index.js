@@ -89,6 +89,7 @@ import {
   runPostGrcScreening,
   runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
   runCodexReviewCycle, runTestQualityReviewCycle,
+  runReviewCapDisposition,
   startReviewJob, pollReviewJob, cancelReviewJob,
   runResolveWorkflowRoute,
   DECISION_RECORD_REVIEWERS, DECISION_RECORD_DECISIONS, DECISION_RECORD_CLASSIFICATIONS,
@@ -1232,9 +1233,10 @@ server.tool(
     uncommitted: z.boolean().optional(),
     override_cap: z.boolean().optional(),
     override_reason: z.string().nullable().optional(),
+    auto_grant: z.boolean().optional(),
     async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, issue_number, base_branch, uncommitted, override_cap, override_reason, async: asyncMode }) => {
+  async ({ repo_path, issue_number, base_branch, uncommitted, override_cap, override_reason, auto_grant, async: asyncMode }) => {
     try {
       const params = {
         repoPath: repo_path,
@@ -1243,6 +1245,7 @@ server.tool(
         uncommitted: uncommitted ?? true,
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
+        autoGrant: Boolean(auto_grant),
       };
       if (asyncMode) {
         return ok(JSON.stringify(startReviewJob(
@@ -1264,10 +1267,11 @@ server.tool(
     base_branch: z.string().nullable().optional(),
     override_cap: z.boolean().optional(),
     override_reason: z.string().nullable().optional(),
+    auto_grant: z.boolean().optional(),
     model: z.string().optional(),
     async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
   },
-  async ({ repo_path, issue_number, base_branch, override_cap, override_reason, model, async: asyncMode }) => {
+  async ({ repo_path, issue_number, base_branch, override_cap, override_reason, auto_grant, model, async: asyncMode }) => {
     try {
       const params = {
         repoPath: repo_path,
@@ -1275,6 +1279,7 @@ server.tool(
         baseBranch: base_branch ?? null,
         overrideCap: Boolean(override_cap),
         overrideReason: override_reason ?? null,
+        autoGrant: Boolean(auto_grant),
         model,
       };
       if (asyncMode) {
@@ -1284,6 +1289,67 @@ server.tool(
         ), null, 2));
       }
       return ok(JSON.stringify(await runTestQualityReviewCycle(params), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_review_cap_disposition",
+  "Optional, config-gated auto-disposition of the pre-push review cap (workflow.review_disposition; disabled by default — when disabled this returns {ok:true,skipped:true,disposition:null} and does nothing else). Scores the change with a deterministic risk model (diff size, changed-surface class, GRC verdict, finding shape, prior auto-overrides) and returns one of disposition='proceed' | 'one_more_cycle' | 'escalate_to_human' with a next_action directive. Cap/cycle authority is derived SERVER-SIDE (the effective reviewer cap from config, the over-cap count from durable cycle markers); the passed cycle/cap are advisory display only, and the call is refused (disposition_before_cap_boundary) before the cap boundary is reached. In mode='shadow' (default) the returned next_action is clamped to escalation — the disposition is recorded for agreement data but never drives control flow. A one_more_cycle disposition records a durable over-cap auto-grant (carrying its issuance mode + server-derived cap boundary) that gc_codex_review_cycle / gc_test_quality_review_cycle verify (via auto_grant=true) before running an over-cap cycle — honored only when posted by the trusted MCP identity, issued under authoritative mode, bound to the current cap, and not already spent. The hard ceiling (max_auto_overrides) is enforced in the scorer and re-clamped after any judge so the auto path can never grant a 2nd over-cap cycle. Returns {ok, disposition, next_action, mode, effective_cap, rationale, decided_by, risk_score, signals_snapshot, over_cap_grant_number, decision_record_url}.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    reviewer: z.enum(["codex", "test-quality"]),
+    cycle: z.number().int().positive(),
+    cap: z.number().int().positive(),
+    base_branch: z.string().nullable().optional(),
+    uncommitted: z.boolean().optional(),
+    findings_summary: z
+      .object({
+        one_off_count: z.number().int().nonnegative().optional(),
+        class_count: z.number().int().nonnegative().optional(),
+        has_security_finding: z.boolean().optional(),
+        top_categories: z
+          .array(
+            z
+              .object({
+                shape: z.string(),
+                instance_count: z.number().int().nonnegative().optional(),
+              })
+              .passthrough(),
+          )
+          .max(50)
+          .optional(),
+      })
+      .passthrough()
+      .nullable()
+      .optional()
+      .describe(
+        "The last-in-cap cycle's server-produced findings summary (from the gc_codex_review_cycle / " +
+          "gc_test_quality_review_cycle envelope). Feeds the risk scorer's finding-shape signal. When omitted, " +
+          "the scorer treats finding shape as unknown and refuses the proceed fast-path (fail-safe).",
+      ),
+    async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
+  },
+  async ({ repo_path, issue_number, reviewer, cycle, cap, base_branch, uncommitted, findings_summary, async: asyncMode }) => {
+    try {
+      const params = {
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        reviewer,
+        cycle,
+        cap,
+        baseBranch: base_branch ?? null,
+        uncommitted: uncommitted ?? true,
+        findingsSummary: findings_summary ?? null,
+      };
+      if (asyncMode) {
+        return ok(JSON.stringify(startReviewJob(
+          "review_cap_disposition",
+          (signal) => runReviewCapDisposition({ ...params, signal }),
+        ), null, 2));
+      }
+      return ok(JSON.stringify(await runReviewCapDisposition(params), null, 2));
     } catch (e) { return err(e); }
   },
 );

@@ -46,7 +46,7 @@ The orchestrator spawns the subagent with this prompt (substituting `{issue_numb
 
 When the subagent returns:
 - `status: "clean"` → advance to Step 6.6.
-- `status: "escalated"` → summarize to the user and wait. Do NOT push commits while waiting.
+- `status: "escalated"` → if `workflow.review_disposition.enabled` is true, run the automated cap disposition (`gc_review_cap_disposition`) per [_review-loop-rules.md](_review-loop-rules.md) § "Automated cap disposition" before escalating: `proceed` advances to Step 6.6, `one_more_cycle` re-invokes this step with `override_cap=true` + `auto_grant=true`, `escalate_to_human` (or `shadow` mode) summarizes to the user and waits. With the knob off, summarize to the user and wait. Do NOT push commits while waiting.
 - `status: "capped"` → summarize to the user. They may authorize an over-cap cycle (rerun this step with `override_cap=true` + `override_reason`); otherwise treat as terminal.
 
 ## Return contract (from this step file's perspective)
