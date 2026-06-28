@@ -995,4 +995,33 @@ class AgeGraphServiceTest {
             assertThat(AgeGraphService.APPROVED_PROPERTY_KEYS).contains("updatedAt");
         }
     }
+
+    // ADR-070 / #1003 regression: every property key emitted by
+    // ResearchGraphProjectionContributor must appear in APPROVED_PROPERTY_KEYS,
+    // or AGE materialization throws DomainValidationException at write time. This
+    // pins the bounded-property contract so a future contributor edit cannot
+    // silently widen the AGE schema (e.g. by emitting summary or locator).
+    @Nested
+    class ResearchContributorPropertyKeyRegression {
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.ValueSource(
+                strings = {
+                    "currentStage",
+                    "autonomyLevel",
+                    "startedAt",
+                    "stoppedAt",
+                    "artifactType",
+                    "stage",
+                    "attemptNo",
+                    "contentHash",
+                    "kind",
+                    "externalIdentifier",
+                    "status"
+                })
+        void researchProjectionKeyIsApproved(String key) {
+            var approvedKeys = AgeGraphService.APPROVED_PROPERTY_KEYS;
+            assertThat(approvedKeys).contains(key);
+        }
+    }
 }

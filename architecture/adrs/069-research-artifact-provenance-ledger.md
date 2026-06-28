@@ -242,6 +242,51 @@ The ledger must be able to point at future first-class records by UUID without
 rewriting historical provenance rows, while still supporting external identifiers
 for sources that are intentionally outside Ground Control.
 
+### Amendment 2026-06-28: Mixed-graph projection for issue #1003
+
+Issue #1003 projects the existing research provenance ledger into the mixed
+Ground Control graph. The relational ledger from this ADR remains the source of
+truth; Apache AGE and `/api/v1/graph/**` receive a projection only. The projection
+must use the existing `GraphProjectionContributor` model and must not introduce a
+second provenance graph, direct AGE writes, workspace-file parsing, or
+provenance-specific graph endpoints.
+
+The graph identity should follow the repository's aggregate-oriented graph
+vocabulary:
+
+- `ResearchProvenanceNode` projects as a first-class mixed-graph node with one
+  aggregate-level `GraphEntityType`, not one `GraphEntityType` per
+  `ProvenanceNodeKind`.
+- The node's PROV-like role is represented by bounded properties such as
+  `provenanceKind`, `provCategory`, `stage`, `artifactType`, `attemptNo`,
+  `status`, `contentHash`, `externalIdentifier`, `toolName`, `toolVersion`,
+  `sourceActionId`, `actor`, and creation/update timestamps where useful.
+- `ResearchProvenanceEdge` projects from upstream input to downstream output
+  using `ProvenanceEdgeRelation.name()` as the graph edge type, preserving the
+  ledger direction already defined in this ADR. Edge properties may carry only
+  bounded metadata such as `role`, `status`, `actor`, and timestamps.
+- Agent identity remains audit/provenance metadata until the backend owns a
+  first-class user/agent aggregate. Do not create synthetic graph nodes for
+  actors, tools, providers, or citation systems in this slice.
+
+The mixed graph's default current-state view should project `ACTIVE` provenance
+records. Superseded rows remain available through the run-scoped provenance API
+and Envers audit history; projecting historical and current chains together into
+the default graph would create ambiguous traversal answers. If a later feature
+needs historical graph traversal, add an explicit bounded query/filter contract
+instead of changing the default projection semantics.
+
+The implementation must update the graph participant inventory as one bounded
+slice: `GraphEntityType`, graph projection contributor, project-scoped repository
+queries, `AgeGraphService.APPROVED_PROPERTY_KEYS`, frontend/API enum mirrors if
+the entity type is user-visible there, and focused contributor / AGE-registry /
+`@WebMvcTest` coverage. Do not model provenance nodes as `EvidenceArtifact`,
+`Document`, `TraceabilityLink`, `ResearchRunArtifact`, or requirement relations
+for graph convenience. Those surfaces keep their ADR-defined jobs.
+
+The architecture preflight for issue #1003 is recorded in
+`architecture/notes/research-provenance-graph-projection-preflight.md`.
+
 ## Consequences
 
 ### Positive

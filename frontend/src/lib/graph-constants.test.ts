@@ -87,11 +87,16 @@ describe("ENTITY_TYPE_COLORS", () => {
     "VERIFICATION_RESULT",
     "THREAT_MODEL",
     "FINDING",
+    "ARCHITECTURE_MODEL_ELEMENT",
     "AUDIT",
     "AUDIT_LINK",
     "RISK_CONTROL_MAPPING",
     "SCOPED_CONTROL_IMPLEMENTATION",
+    "RISK_APPETITE_PROFILE",
     "DOCUMENT",
+    "RESEARCH_RUN",
+    "RESEARCH_ARTIFACT",
+    "RESEARCH_PROVENANCE_NODE",
   ] as const;
 
   it.each(backendEntityTypes)("has a color entry for %s", (entityType) => {
