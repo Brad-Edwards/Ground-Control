@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
+import com.keplerops.groundcontrol.domain.architecturemodel.repository.ArchitectureModelElementRepository;
 import com.keplerops.groundcontrol.domain.assets.repository.ObservationRepository;
 import com.keplerops.groundcontrol.domain.assets.repository.OperationalAssetRepository;
 import com.keplerops.groundcontrol.domain.assets.state.AssetLinkTargetType;
@@ -83,6 +84,9 @@ class GraphTargetResolverServiceTest {
 
     @Mock
     private DocumentRepository documentRepository;
+
+    @Mock
+    private ArchitectureModelElementRepository architectureModelElementRepository;
 
     @InjectMocks
     private GraphTargetResolverService graphTargetResolverService;
@@ -177,6 +181,7 @@ class GraphTargetResolverServiceTest {
                 "RISK_ASSESSMENT_RESULT",
                 "VERIFICATION_RESULT",
                 "FINDING",
+                "ARCHITECTURE_MODEL",
                 "EVIDENCE"
             })
     void validateThreatModelTargetAcceptsInternalTargets(ThreatModelLinkTargetType targetType) {
@@ -191,7 +196,7 @@ class GraphTargetResolverServiceTest {
     @ParameterizedTest
     @EnumSource(
             value = ThreatModelLinkTargetType.class,
-            names = {"ARCHITECTURE_MODEL", "CODE", "ISSUE", "EXTERNAL"})
+            names = {"CODE", "ISSUE", "EXTERNAL"})
     void validateThreatModelTargetAcceptsExternalTargets(ThreatModelLinkTargetType targetType) {
         var validated =
                 graphTargetResolverService.validateThreatModelTarget(projectId, targetType, null, "backend/Auth.java");
@@ -641,14 +646,16 @@ class GraphTargetResolverServiceTest {
                     .thenReturn(exists);
             case FINDING -> when(findingRepository.existsByIdAndProjectId(targetId, projectId))
                     .thenReturn(exists);
+            case ARCHITECTURE_MODEL -> when(architectureModelElementRepository.existsByIdAndProjectId(
+                            targetId, projectId))
+                    .thenReturn(exists);
             case EVIDENCE -> when(evidenceArtifactRepository.findByIdAndProjectId(targetId, projectId))
                     .thenReturn(
                             exists
                                     ? java.util.Optional.of(org.mockito.Mockito.mock(
                                             com.keplerops.groundcontrol.domain.evidence.model.EvidenceArtifact.class))
                                     : java.util.Optional.empty());
-            case ARCHITECTURE_MODEL, CODE, ISSUE, EXTERNAL -> throw new IllegalArgumentException(
-                    "Not an internal target type");
+            case CODE, ISSUE, EXTERNAL -> throw new IllegalArgumentException("Not an internal target type");
         }
     }
 

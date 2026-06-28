@@ -44,6 +44,9 @@ import {
   ASSET_CRITICALITIES,
   ASSET_SCOPES,
   KNOWLEDGE_STATES,
+  ARCHITECTURE_FLOW_DIRECTIONS,
+  ARCHITECTURE_MODEL_ELEMENT_KINDS,
+  ARCHITECTURE_MODEL_PROVENANCE_SOURCES,
   // Research run decision surfaces (GC-RSCH-F004/F034/N012/N013, ADR-066/067/068)
   RESEARCH_GATE_POINTS,
   RESEARCH_GATE_DECISION_OUTCOMES,
@@ -96,6 +99,11 @@ import {
 } from "./gc-asset.js";
 
 import { LINK_CREATE_BODY_FIELDS } from "./link-create.js";
+
+import {
+  GC_ARCHITECTURE_MODEL_CREATE_SNAPSHOT_FIELDS,
+  GC_ARCHITECTURE_MODEL_ELEMENT_FIELDS,
+} from "./gc-architecture-model.js";
 
 // GOVERNANCE_FIELDS lives in lib.js and is now exported.
 // Import it directly to stay consistent with the contract test's reliance on
@@ -789,6 +797,34 @@ describe("MCP–OpenAPI write-contract", () => {
         criticality: ASSET_CRITICALITIES,
         scopeDesignation: ASSET_SCOPES,
         knowledgeState: KNOWLEDGE_STATES,
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_architecture_model — snapshot aggregate with nested element requests
+  // -------------------------------------------------------------------------
+
+  describe("gc_architecture_model create_snapshot → ArchitectureModelSnapshotRequest", () => {
+    assertRow({
+      label: "gc_architecture_model/create_snapshot",
+      mcpFields: GC_ARCHITECTURE_MODEL_CREATE_SNAPSHOT_FIELDS,
+      openapiSchema: "ArchitectureModelSnapshotRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+      },
+    });
+  });
+
+  describe("gc_architecture_model create_snapshot elements → ArchitectureModelElementRequest", () => {
+    assertRow({
+      label: "gc_architecture_model/create_snapshot/elements",
+      mcpFields: GC_ARCHITECTURE_MODEL_ELEMENT_FIELDS,
+      openapiSchema: "ArchitectureModelElementRequest",
+      enums: {
+        elementKind: ARCHITECTURE_MODEL_ELEMENT_KINDS,
+        flowDirection: ARCHITECTURE_FLOW_DIRECTIONS,
+        provenanceSource: ARCHITECTURE_MODEL_PROVENANCE_SOURCES,
       },
     });
   });

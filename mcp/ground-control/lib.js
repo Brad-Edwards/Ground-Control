@@ -882,6 +882,27 @@ export const TO_CAMEL = {
   clear_objectives: "clearObjectives",
   clear_phases: "clearPhases",
   clear_team_members: "clearTeamMembers",
+  // GC-GRC-005 — architecture-model aggregate.
+  model_version: "modelVersion",
+  commit_sha: "commitSha",
+  stable_key: "stableKey",
+  element_kind: "elementKind",
+  source_path: "sourcePath",
+  trust_boundary_key: "trustBoundaryKey",
+  data_classification_key: "dataClassificationKey",
+  flow_source_stable_key: "flowSourceStableKey",
+  flow_target_stable_key: "flowTargetStableKey",
+  flow_direction: "flowDirection",
+  provenance_source: "provenanceSource",
+  provenance_key: "provenanceKey",
+  adapter_id: "adapterId",
+  tool_name: "toolName",
+  tool_version: "toolVersion",
+  ruleset_name: "rulesetName",
+  ruleset_version: "rulesetVersion",
+  derivation_run_id: "derivationRunId",
+  from_snapshot_id: "fromSnapshotId",
+  to_snapshot_id: "toSnapshotId",
 };
 
 const TO_SNAKE = Object.fromEntries(Object.entries(TO_CAMEL).map(([k, v]) => [v, k]));
@@ -10186,6 +10207,52 @@ export async function listDerivationFacts({ project, runId, factKind } = {}) {
 
 export async function listDerivationCaptureLimits({ project, runId, reason } = {}) {
   return request("GET", "/api/v1/derivations/capture-limits", { params: { project, runId, reason } });
+}
+
+// ---------------------------------------------------------------------------
+// Architecture Model API functions (GC-GRC-005)
+// ---------------------------------------------------------------------------
+
+export const ARCHITECTURE_MODEL_ELEMENT_KINDS = [
+  "COMPONENT",
+  "PROCESS",
+  "DATA_STORE",
+  "EXTERNAL_ENTITY",
+  "DATA_FLOW",
+  "TRUST_BOUNDARY",
+  "DATA_CLASSIFICATION",
+];
+export const ARCHITECTURE_MODEL_PROVENANCE_SOURCES = ["ADAPTER", "DECLARATION"];
+export const ARCHITECTURE_FLOW_DIRECTIONS = ["UNIDIRECTIONAL", "BIDIRECTIONAL"];
+
+export async function createArchitectureModelSnapshot(data, project) {
+  return request("POST", "/api/v1/architecture-models/snapshots", { body: data, params: { project } });
+}
+
+export async function listArchitectureModelSnapshots({ project } = {}) {
+  return request("GET", "/api/v1/architecture-models/snapshots", { params: { project } });
+}
+
+export async function getArchitectureModelSnapshot(id, project) {
+  return request("GET", `/api/v1/architecture-models/snapshots/${encodeURIComponent(id)}`, {
+    params: { project },
+  });
+}
+
+export async function listArchitectureModelElements({ project } = {}) {
+  return request("GET", "/api/v1/architecture-models/elements", { params: { project } });
+}
+
+export async function getArchitectureModelElement(id, project) {
+  return request("GET", `/api/v1/architecture-models/elements/${encodeURIComponent(id)}`, {
+    params: { project },
+  });
+}
+
+export async function diffArchitectureModelSnapshots({ project, fromSnapshotId, toSnapshotId } = {}) {
+  return request("GET", "/api/v1/architecture-models/diff", {
+    params: { project, fromSnapshotId, toSnapshotId },
+  });
 }
 
 // ---------------------------------------------------------------------------

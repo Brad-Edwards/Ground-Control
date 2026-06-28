@@ -283,6 +283,11 @@ import {
   GC_DERIVATION_DESCRIPTION,
 } from "./gc-derivation.js";
 import {
+  gcArchitectureModelZodShape,
+  gcArchitectureModelToolHandler,
+  GC_ARCHITECTURE_MODEL_DESCRIPTION,
+} from "./gc-architecture-model.js";
+import {
   gcAuditZodShape,
   gcAuditToolHandler,
   GC_AUDIT_DESCRIPTION,
@@ -2299,6 +2304,19 @@ server.tool(
   async (args) => {
     try {
       const result = await gcDerivationToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_architecture_model: GC-GRC-005 canonical architecture-model snapshots.
+server.tool(
+  "gc_architecture_model",
+  GC_ARCHITECTURE_MODEL_DESCRIPTION,
+  gcArchitectureModelZodShape,
+  async (args) => {
+    try {
+      const result = await gcArchitectureModelToolHandler(args);
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },
