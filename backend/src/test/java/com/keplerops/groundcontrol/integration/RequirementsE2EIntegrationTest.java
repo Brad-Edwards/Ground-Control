@@ -568,6 +568,8 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "146", // V146: create research_run_artifact manifest (#1000, ADR-064)
                         "147", // V147: create research_run_artifact_audit (#1000 audit parity)
                         "148", // V148: create research_run_gate policy/decision (#1000, ADR-064)
-                        "149"); // V149: create research_run_gate_audit (#1000 audit parity)
+                        "149", // V149: create research_run_gate_audit (#1000 audit parity)
+                        "150", // V150: create canonical boundary model snapshot (GC-GRC-004)
+                        "151"); // V151: create canonical boundary model audit tables (GC-GRC-004)
     }
 }

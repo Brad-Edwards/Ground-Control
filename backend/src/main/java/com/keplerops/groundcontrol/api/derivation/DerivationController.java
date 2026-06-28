@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.api.derivation;
 
+import com.keplerops.groundcontrol.domain.derivation.service.BoundaryDeclaration;
 import com.keplerops.groundcontrol.domain.derivation.service.CreateDerivationRunCommand;
 import com.keplerops.groundcontrol.domain.derivation.service.DerivationService;
 import com.keplerops.groundcontrol.domain.derivation.state.CaptureLimitReason;
@@ -52,6 +53,13 @@ public class DerivationController {
         return DerivationRunResponse.from(derivationService.getRun(projectId, id));
     }
 
+    @GetMapping("/runs/{id}/boundary-model")
+    public BoundaryModelSnapshotResponse getBoundaryModel(
+            @PathVariable UUID id, @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return BoundaryModelSnapshotResponse.from(derivationService.getBoundaryModel(projectId, id));
+    }
+
     @GetMapping("/facts")
     public List<SystemModelFactResponse> listFacts(
             @RequestParam(required = false) UUID runId,
@@ -82,6 +90,16 @@ public class DerivationController {
                 request.baseCommitSha(),
                 request.paths(),
                 request.languages(),
-                request.surfaces());
+                request.surfaces(),
+                request.declaredBoundaries() == null
+                        ? List.of()
+                        : request.declaredBoundaries().stream()
+                                .map(boundary -> new BoundaryDeclaration(
+                                        boundary.key(),
+                                        boundary.name(),
+                                        boundary.description(),
+                                        boundary.pathSelectors(),
+                                        boundary.surfaces()))
+                                .toList());
     }
 }
