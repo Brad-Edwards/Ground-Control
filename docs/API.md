@@ -1263,6 +1263,48 @@ required when `scope_mode=DIFF`; `paths` is required when
 to read `grc.boundaries` from `.ground-control.yaml`. Readback actions map
 `run_id`, `fact_kind`, and `reason` to the REST filters above.
 
+### Architecture Models (GC-GRC-005)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/architecture-models/snapshots` | ArchitectureModelSnapshotRequest | 201 | Persist a versioned architecture-model snapshot |
+| GET | `/architecture-models/snapshots` | - | 200 | List snapshots for a project |
+| GET | `/architecture-models/snapshots/{id}` | - | 200 | Get one snapshot with element states |
+| GET | `/architecture-models/elements` | - | 200 | List latest architecture-model elements |
+| GET | `/architecture-models/elements/{id}` | - | 200 | Get one stable architecture-model element |
+| GET | `/architecture-models/diff?fromSnapshotId=&toSnapshotId=` | - | 200 | Compare two snapshots |
+
+All endpoints accept an optional `project` query parameter. Multi-project
+deployments must pass it; single-project deployments can resolve it
+automatically.
+
+**ArchitectureModelSnapshotRequest fields:** `modelVersion`, `commitSha`,
+`source`, optional `createdBy`, and non-empty `elements`. Each element carries
+`stableKey`, `elementKind` (`COMPONENT`, `PROCESS`, `DATA_STORE`,
+`EXTERNAL_ENTITY`, `DATA_FLOW`, `TRUST_BOUNDARY`, `DATA_CLASSIFICATION`),
+`label`, optional summary/source/classification/boundary fields, provenance
+fields (`provenanceSource`, `provenanceKey`, adapter/tool/ruleset fields,
+optional `derivationRunId`), `commitSha`, and opaque `metadata`. `DATA_FLOW`
+elements must include `flowSourceStableKey` and `flowTargetStableKey`, and both
+endpoints must exist in the same snapshot.
+
+**ArchitectureModelSnapshotResponse fields:** `id`, `derivationRunId`,
+`projectIdentifier`, `schemaVersion`, `modelVersion`, `commitSha`, `source`,
+`createdBy`, `elementCount`, `flowCount`, `elements`, `createdAt`, and
+`updatedAt`. Each element response includes `id`, `graphNodeId`, `stableKey`,
+current snapshot state, DFD semantics, provenance, metadata, and timestamps.
+
+**Diff response:** `fromSnapshotId`, `toSnapshotId`, and `entries` with
+`stableKey`, `status` (`ADDED`, `REMOVED`, `CHANGED`, `UNCHANGED`, or
+`PROVENANCE_ONLY_CHANGED`), and `summary`.
+
+MCP surface: `gc_architecture_model` with actions `create_snapshot`,
+`list_snapshots`, `get_snapshot`, `list_elements`, `get_element`, and
+`diff_snapshots`. `create_snapshot` accepts snake_case equivalents of the REST
+request fields; `diff_snapshots` requires `from_snapshot_id` and
+`to_snapshot_id`. `gc_query` allowlists read-only `/api/v1/architecture-models`
+paths.
+
 ### Plugins
 
 | Method | Path | Body | Status | Purpose |
@@ -1370,15 +1412,15 @@ max 255).
 
 **Internal target types (require `targetEntityId`, resolved project-scoped):** ASSET
 (includes boundaries via `AssetType.BOUNDARY`), REQUIREMENT, CONTROL, RISK_SCENARIO,
-OBSERVATION, RISK_ASSESSMENT_RESULT, VERIFICATION_RESULT, FINDING (per GC-H009: governed vulnerability/scan/pentest finding records), EVIDENCE (per GC-L006 / ADR-045
+OBSERVATION, RISK_ASSESSMENT_RESULT, VERIFICATION_RESULT, FINDING (per GC-H009: governed vulnerability/scan/pentest finding records), ARCHITECTURE_MODEL (must reference an `ArchitectureModelElement` UUID), EVIDENCE (per GC-L006 / ADR-045
 projection alignment - `targetEntityId` must reference an `EvidenceArtifact` UUID
 returned by `POST /api/v1/evidence-artifacts`).
 
-**External target types (require `targetIdentifier`):** ARCHITECTURE_MODEL (for example, C4
-source or Structurizr DSL, per ADR-011), CODE (repo-relative path), ISSUE (GitHub
-issue or PR number), EXTERNAL (catch-all that also covers CVE identifiers, scanner
-finding IDs, and pentest report IDs that have not been ingested as first-class
-`Finding` records).
+**External target types (require `targetIdentifier`):** CODE (repo-relative path),
+ISSUE (GitHub issue or PR number), EXTERNAL (catch-all that also covers C4 or
+Structurizr references not yet ingested into the architecture model, CVE
+identifiers, scanner finding IDs, and pentest report IDs that have not been
+ingested as first-class `Finding` records).
 
 **Link types:** AFFECTS (threat affects an asset or boundary), EXPLOITS (threat
 exploits a requirement or condition), MITIGATED_BY (threat is mitigated by a control),

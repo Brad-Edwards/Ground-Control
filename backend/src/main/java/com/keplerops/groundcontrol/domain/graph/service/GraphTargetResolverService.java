@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.domain.graph.service;
 
+import com.keplerops.groundcontrol.domain.architecturemodel.repository.ArchitectureModelElementRepository;
 import com.keplerops.groundcontrol.domain.assets.repository.ObservationRepository;
 import com.keplerops.groundcontrol.domain.assets.repository.OperationalAssetRepository;
 import com.keplerops.groundcontrol.domain.assets.state.AssetLinkTargetType;
@@ -50,6 +51,7 @@ public class GraphTargetResolverService {
     private static final String LABEL_AUDIT = "Audit";
     private static final String LABEL_EVIDENCE = "Evidence";
     private static final String LABEL_DOCUMENT = "Document";
+    private static final String LABEL_ARCHITECTURE_MODEL_ELEMENT = "Architecture model element";
 
     private final RequirementRepository requirementRepository;
     private final OperationalAssetRepository assetRepository;
@@ -66,6 +68,7 @@ public class GraphTargetResolverService {
     private final AuditRepository auditRepository;
     private final EvidenceArtifactRepository evidenceArtifactRepository;
     private final DocumentRepository documentRepository;
+    private final ArchitectureModelElementRepository architectureModelElementRepository;
 
     public GraphTargetResolverService(
             RequirementRepository requirementRepository,
@@ -82,7 +85,8 @@ public class GraphTargetResolverService {
             FindingRepository findingRepository,
             AuditRepository auditRepository,
             EvidenceArtifactRepository evidenceArtifactRepository,
-            DocumentRepository documentRepository) {
+            DocumentRepository documentRepository,
+            ArchitectureModelElementRepository architectureModelElementRepository) {
         this.requirementRepository = requirementRepository;
         this.assetRepository = assetRepository;
         this.observationRepository = observationRepository;
@@ -98,6 +102,7 @@ public class GraphTargetResolverService {
         this.auditRepository = auditRepository;
         this.evidenceArtifactRepository = evidenceArtifactRepository;
         this.documentRepository = documentRepository;
+        this.architectureModelElementRepository = architectureModelElementRepository;
     }
 
     public ValidatedTarget validateAssetTarget(
@@ -308,7 +313,11 @@ public class GraphTargetResolverService {
                             .findByIdAndProjectId(targetEntityId, projectId)
                             .isPresent(),
                     LABEL_EVIDENCE);
-            case ARCHITECTURE_MODEL, CODE, ISSUE, EXTERNAL -> externalTarget(targetIdentifier);
+            case ARCHITECTURE_MODEL -> internalTarget(
+                    targetEntityId,
+                    architectureModelElementRepository.existsByIdAndProjectId(targetEntityId, projectId),
+                    LABEL_ARCHITECTURE_MODEL_ELEMENT);
+            case CODE, ISSUE, EXTERNAL -> externalTarget(targetIdentifier);
         };
     }
 

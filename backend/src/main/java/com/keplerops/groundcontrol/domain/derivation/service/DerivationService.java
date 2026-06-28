@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.domain.derivation.service;
 
+import com.keplerops.groundcontrol.domain.architecturemodel.service.ArchitectureModelService;
 import com.keplerops.groundcontrol.domain.audit.ActorHolder;
 import com.keplerops.groundcontrol.domain.derivation.model.DerivationCaptureLimit;
 import com.keplerops.groundcontrol.domain.derivation.model.DerivationRun;
@@ -59,6 +60,7 @@ public class DerivationService {
     private final DerivationAdapterRegistry adapterRegistry;
     private final TransactionTemplate transactionTemplate;
     private final BoundaryModelService boundaryModelService;
+    private final ArchitectureModelService architectureModelService;
 
     public DerivationService(
             DerivationRunRepository runRepository,
@@ -67,7 +69,8 @@ public class DerivationService {
             ProjectService projectService,
             DerivationAdapterRegistry adapterRegistry,
             TransactionTemplate transactionTemplate,
-            BoundaryModelService boundaryModelService) {
+            BoundaryModelService boundaryModelService,
+            ArchitectureModelService architectureModelService) {
         this.runRepository = runRepository;
         this.factRepository = factRepository;
         this.captureLimitRepository = captureLimitRepository;
@@ -75,6 +78,7 @@ public class DerivationService {
         this.adapterRegistry = adapterRegistry;
         this.transactionTemplate = transactionTemplate;
         this.boundaryModelService = boundaryModelService;
+        this.architectureModelService = architectureModelService;
     }
 
     public DerivationRunResult run(CreateDerivationRunCommand command) {
@@ -148,6 +152,7 @@ public class DerivationService {
                 .toList();
         factRows = factRepository.saveAll(factRows);
         captureLimitRows = captureLimitRepository.saveAll(captureLimitRows);
+        var architectureModel = architectureModelService.buildFromDerivation(project, savedRun, factRows);
         var boundaryModel = boundaryModelService.build(
                 project, savedRun, factRows, context.derivationData().declaredBoundaries());
         savedRun.setResultCounts(factRows.size(), captureLimitRows.size());
@@ -160,7 +165,7 @@ public class DerivationService {
                 savedRun.getAdapterCount(),
                 factRows.size(),
                 captureLimitRows.size());
-        return new DerivationRunResult(savedRun, factRows, captureLimitRows, boundaryModel);
+        return new DerivationRunResult(savedRun, factRows, captureLimitRows, architectureModel, boundaryModel);
     }
 
     private record PersistRunContext(

@@ -46,6 +46,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         // V144–V149: research-run lifecycle aggregate, artifact manifest, gate rows + their audit shadows
         // (#1000, ADR-064 / ADR-065).
         // V150–V151: canonical boundary model snapshot + audit shadows (GC-GRC-004).
+        // V152–V154: architecture model aggregate + audit shadows + legacy link compatibility (GC-GRC-005).
         // Flyway immutability: once a versioned migration has been applied to a long-lived database
         // (e.g. production) its file content is frozen — the checksum is validated on every startup.
         // Never edit an applied V*.sql in place; append a new forward migration instead. Editing the
@@ -64,7 +65,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
                         "136", "137", "138", "139", "140", "141", "142", "143", "144", "145", "146", "147", "148",
-                        "149", "150", "151");
+                        "149", "150", "151", "152", "153", "154");
     }
 
     @Test
@@ -1190,6 +1191,49 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT snapshot_id, source_fact_key, source_fact_kind,"
                                 + " source_path, reason, detail, created_at, updated_at"
                                 + " FROM boundary_model_gap_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @Transactional
+    void architectureModelAuditTablesMatchEntities() {
+        // V152-V153: architecture model stable elements, versioned snapshots,
+        // snapshot-local DFD semantics, and Envers audit shadows (GC-GRC-005).
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT stable_key, element_kind, created_at, updated_at"
+                                + " FROM architecture_model_element LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT derivation_run_id, schema_version, model_version,"
+                                + " commit_sha, source, created_by, element_count, flow_count, created_at, updated_at"
+                                + " FROM architecture_model_snapshot LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT snapshot_id, element_id, stable_key, element_kind, label,"
+                                + " source_path, flow_source_stable_key, flow_target_stable_key, flow_direction,"
+                                + " provenance_source, provenance_key, commit_sha, metadata, created_at, updated_at"
+                                + " FROM architecture_model_element_state LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT stable_key, element_kind, created_at, updated_at"
+                                + " FROM architecture_model_element_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT derivation_run_id, schema_version, model_version,"
+                                + " commit_sha, source, created_by, element_count, flow_count, created_at, updated_at"
+                                + " FROM architecture_model_snapshot_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT snapshot_id, element_id, stable_key, element_kind, label,"
+                                + " source_path, flow_source_stable_key, flow_target_stable_key, flow_direction,"
+                                + " provenance_source, provenance_key, commit_sha, metadata, created_at, updated_at"
+                                + " FROM architecture_model_element_state_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }

@@ -570,6 +570,9 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "148", // V148: create research_run_gate policy/decision (#1000, ADR-064)
                         "149", // V149: create research_run_gate_audit (#1000 audit parity)
                         "150", // V150: create canonical boundary model snapshot (GC-GRC-004)
-                        "151"); // V151: create canonical boundary model audit tables (GC-GRC-004)
+                        "151", // V151: create canonical boundary model audit tables (GC-GRC-004)
+                        "152", // V152: create architecture model aggregate (GC-GRC-005)
+                        "153", // V153: create architecture model audit tables (GC-GRC-005)
+                        "154"); // V154: migrate legacy architecture-model threat links (GC-GRC-005)
     }
 }
