@@ -2307,6 +2307,33 @@ never from the request body, so durable lifecycle provenance cannot be forged. C
 run access is concealed as HTTP 404. Reads are mirrored to MCP through the `gc_query` allowlist
 (`/api/v1/research-runs`). See ADR-064 and ADR-065.
 
+#### Research Provenance Ledger (ADR-069)
+
+| Method | Path | Body | Status | Description |
+|--------|------|------|--------|-------------|
+| POST | `/research-runs/{runId}/provenance/nodes` | ProvenanceNodeRequest | 201 | Record (or rework) a provenance node, a bounded research referent of a given `ProvenanceNodeKind` keyed by `subjectKey`; re-recording the same `(kind, subjectKey)` supersedes the prior ACTIVE node (GC-RSCH-R004, ADR-069) |
+| GET | `/research-runs/{runId}/provenance/nodes` | - | 200 | List the run's provenance nodes (ordered by `createdAt ASC`) |
+| POST | `/research-runs/{runId}/provenance/edges` | ProvenanceEdgeRequest | 201 | Record (or rework) a derivation edge from an upstream input node to a downstream output node; 422 on a self-edge, 404 on an endpoint outside the run, 409 on a cycle (GC-RSCH-R004, ADR-069) |
+| GET | `/research-runs/{runId}/provenance/edges` | - | 200 | List the run's provenance edges |
+| GET | `/research-runs/{runId}/provenance/nodes/{nodeId}/chain` | - | 200 | Bounded backward-provenance chain for a node: the root plus every upstream node and edge that supports it (optional `depth`, clamped to 50). Answers "which sources and charted cells support this synthesis or draft claim?" (GC-RSCH-R004) |
+
+The research provenance ledger is a run-scoped, append-only directed derivation graph
+(a sibling of `ResearchRunArtifact`, not a field on it). A `ResearchProvenanceNode` identifies
+a bounded referent (user goal, methodology source, query, candidate source, full-text access
+state, charting cell, evidence-matrix cell, synthesis claim, argument move, or final prose),
+keyed by a `subjectKey` stable within the run/artifact attempt, with optional stable references
+(artifact id + attempt, locator, content hash, external identifier) and bounded reproducibility
+metadata (tool name/version, source action id). A `ResearchProvenanceEdge` runs from an upstream
+input node to a downstream output node (`DERIVED_FROM`, `SUPPORTS`, `SELECTED`, `CITED`,
+`CONTRIBUTED_TO`), so a downstream node is traversed backward to its supporting sources. The
+ledger stores references and short summaries only, never raw queries, full text, charting rows,
+manuscript prose, prompts, provider payloads, or secrets, and the recording actor is taken from
+the authenticated server context (`ActorHolder`/`ActorFilter`), never the request body. Writes are
+idempotent on a run-scoped `idempotencyKey` and rework-aware (supersession, never in-place
+mutation); self-edges and directed cycles are rejected. Cross-project or cross-run access is
+concealed as HTTP 404. Curated writes are exposed via the `gc_research_provenance` MCP tool; reads
+are also mirrored through the `gc_query` allowlist (`/api/v1/research-runs`). See ADR-069.
+
 ### Pack Registry
 
 All pack registry, trust policy, and pack install record routes require an

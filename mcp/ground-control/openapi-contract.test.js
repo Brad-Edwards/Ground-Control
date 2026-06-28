@@ -57,6 +57,8 @@ import {
   RESEARCH_ARTIFACT_TYPES,
   DISCLOSURE_ENTRY_FAMILIES,
   DISCLOSURE_UNCERTAINTY_CATEGORIES,
+  PROVENANCE_NODE_KINDS,
+  PROVENANCE_EDGE_RELATIONS,
 } from "./lib.js";
 
 import {
@@ -1190,6 +1192,50 @@ describe("MCP–OpenAPI write-contract", () => {
       enums: {
         family: DISCLOSURE_ENTRY_FAMILIES,
         uncertaintyCategory: DISCLOSURE_UNCERTAINTY_CATEGORIES,
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_provenance — record_node (ADR-069 §2)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_provenance/record_node → ProvenanceNodeRequest", () => {
+    assertRow({
+      label: "gc_research_provenance/record_node",
+      mcpFields: [
+        "kind", "subject_key", "stage", "artifact_type", "artifact_id", "attempt_no",
+        "locator", "content_hash", "external_identifier", "summary",
+        "tool_name", "tool_version", "source_action_id", "idempotency_key",
+      ],
+      openapiSchema: "ProvenanceNodeRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+        runId: "path param /research-runs/{runId} — not a body field",
+      },
+      enums: {
+        kind: PROVENANCE_NODE_KINDS,
+        stage: RESEARCH_RUN_STAGES,
+        artifactType: RESEARCH_ARTIFACT_TYPES,
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_provenance — record_edge (ADR-069 §2)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_provenance/record_edge → ProvenanceEdgeRequest", () => {
+    assertRow({
+      label: "gc_research_provenance/record_edge",
+      mcpFields: ["from_node_id", "to_node_id", "relation", "role", "summary", "idempotency_key"],
+      openapiSchema: "ProvenanceEdgeRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+        runId: "path param /research-runs/{runId} — not a body field",
+      },
+      enums: {
+        relation: PROVENANCE_EDGE_RELATIONS,
       },
     });
   });
