@@ -134,7 +134,7 @@ GETs (history, timeline, exports, list-by-X) onto `gc_query`.
 | `gc_threat_model` | create, update, delete, transition, link_* |
 | `gc_control` | create, update, delete, transition, link_* |
 | `gc_control_assurance_workspace` | read-only GC-Q011 control catalog, assurance evidence, findings, mappings, and owner queue view |
-| `gc_derivation` | run, list_runs, get_run, list_facts, list_capture_limits |
+| `gc_derivation` | run, list_runs, get_run, get_boundary_model, list_facts, list_capture_limits |
 | `gc_risk_governance` | `{entity, action}` over methodology_profile, risk_register_record, risk_assessment_result, treatment_plan, verification_result |
 | `gc_analyze` | cycles, orphans, coverage_gaps, impact, cross_wave, consistency, completeness, status_drift, similarity, work_order, evidence_freshness, observation_exposure, control_state, vendor_risk_aggregation |
 | `gc_graph` | ancestors, descendants, paths, find_paths, subgraph, visualization, traverse |
@@ -165,7 +165,7 @@ under the `workflow` catalog, so it is always available.
   `/api/v1/derivations`, `/api/v1/documents`, `/api/v1/evidence-artifacts`, `/api/v1/findings`, `/api/v1/graph`, `/api/v1/mcp-tool-usage`,
   `/api/v1/methodology-profiles`,
   `/api/v1/observations`, `/api/v1/projects`, `/api/v1/quality-gates`,
-  `/api/v1/relations`, `/api/v1/requirements`,
+  `/api/v1/relations`, `/api/v1/requirements`, `/api/v1/research-runs`,
   `/api/v1/risk-assessment-results`, `/api/v1/risk-register-records`,
   `/api/v1/risk-scenarios`, `/api/v1/sections`, `/api/v1/test-cases`,
   `/api/v1/test-plans`, `/api/v1/test-runs`, `/api/v1/test-suites`, `/api/v1/threat-models`, `/api/v1/timeline`,
@@ -238,7 +238,7 @@ be related, linked, or analyzed.
 | `gc_import_reqif` | `file_path` (required), `project` (optional) | Import requirements from a .reqif file. Idempotent |
 | `gc_sync_github` | `owner` (required), `repo` (required) | Sync GitHub issues as traceability links |
 | `gc_create_github_issue` | `uid` (required), `repo`, `labels`, `extra_body` | Create GitHub issue from requirement and auto-link |
-| `gc_get_repo_ground_control_context` | `repo_path` (required) | Read and validate the repo's `.ground-control.yaml` context (project, workflow, sonarcloud, rules, knowledge). Returns inlined plan_rules content and resolved knowledge paths when those sections are configured |
+| `gc_get_repo_ground_control_context` | `repo_path` (required) | Read and validate the repo's `.ground-control.yaml` context (project, workflow, sonarcloud, rules, knowledge, GRC boundaries). Returns inlined plan_rules content, resolved knowledge paths, and declared boundary inputs when those sections are configured |
 | `gc_resolve_workflow_route` | `repo_path` (required), `stage` (required), `tier` (optional) | Resolve a workflow stage/purpose to configured provider, agent, canonical model id, tier, and fallback policy |
 | `gc_codex_architecture_preflight` | `requirement_uid` (required), `repo_path` (required), `project`, `issue_number`, `repo` | Run Codex architecture preflight, update ADR/design guidance when needed, and return guardrails plus changed files |
 | `gc_codex_review` | `repo_path` (required), `base_branch`, `uncommitted` | Run Codex review with an exhaustive no-triage production-quality prompt |
@@ -332,7 +332,7 @@ Common codes: `NOT_FOUND` (404), `CONFLICT` (409), `VALIDATION_ERROR` (422).
 for example, `REQ-001`). All other tools use `id` (UUID, returned in create/list
 responses).
 
-For cross-repo workflow automation, define repo-local Ground Control context in a `.ground-control.yaml` file at the repo root. At minimum it must declare `schema_version: 1` and a `project` identifier; optional sections include `workflow`, `sonarcloud`, `rules`, `knowledge`, `routing`, `telemetry`, plus the workflow-packaging fields added in ADR-027: `docs.{adr_dir, architecture_overview, coding_standards, workflow_reference, knowledge_base}`, `example_paths.{source, test}`, `requirements.uid_examples`, and `cross_cutting_concerns.description`. The canonical `skills/implement/SKILL.md` renders prose against these fields via `{cfg.X|default Y}` placeholders so one source of truth serves every Ground-Control-aware repo. The `gc_get_repo_ground_control_context` MCP tool reads and validates this file and returns inlined `plan_rules` content plus resolved `knowledge` paths and the workflow-packaging blocks when those sections are configured. `gc_resolve_workflow_route` reads the same config and resolves `routing.stages.<stage>` entries to executable provider/model/fallback decisions. See `docs/DEVELOPMENT_WORKFLOW.md` for the full accepted config shape, defaults, allowed routing values, and validation constraints. `buildSuggestedGroundControlYaml()` in `lib.js` is only the starter template.
+For cross-repo workflow automation, define repo-local Ground Control context in a `.ground-control.yaml` file at the repo root. At minimum it must declare `schema_version: 1` and a `project` identifier; optional sections include `workflow`, `sonarcloud`, `rules`, `knowledge`, `routing`, `telemetry`, `grc.boundaries`, plus the workflow-packaging fields added in ADR-027: `docs.{adr_dir, architecture_overview, coding_standards, workflow_reference, knowledge_base}`, `example_paths.{source, test}`, `requirements.uid_examples`, and `cross_cutting_concerns.description`. The canonical `skills/implement/SKILL.md` renders prose against these fields via `{cfg.X|default Y}` placeholders so one source of truth serves every Ground-Control-aware repo. The `gc_get_repo_ground_control_context` MCP tool reads and validates this file and returns inlined `plan_rules` content plus resolved `knowledge` paths, declared boundary inputs, and the workflow-packaging blocks when those sections are configured. `gc_resolve_workflow_route` reads the same config and resolves `routing.stages.<stage>` entries to executable provider/model/fallback decisions. See `docs/DEVELOPMENT_WORKFLOW.md` for the full accepted config shape, defaults, allowed routing values, and validation constraints. `buildSuggestedGroundControlYaml()` in `lib.js` is only the starter template.
 
 ## gc_integration_manager: Approved PR Integration Manager
 

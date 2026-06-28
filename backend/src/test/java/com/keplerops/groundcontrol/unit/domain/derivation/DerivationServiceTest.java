@@ -10,11 +10,14 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.audit.ActorHolder;
+import com.keplerops.groundcontrol.domain.derivation.model.BoundaryModelSnapshot;
 import com.keplerops.groundcontrol.domain.derivation.model.DerivationCaptureLimit;
 import com.keplerops.groundcontrol.domain.derivation.model.DerivationRun;
 import com.keplerops.groundcontrol.domain.derivation.repository.DerivationCaptureLimitRepository;
 import com.keplerops.groundcontrol.domain.derivation.repository.DerivationRunRepository;
 import com.keplerops.groundcontrol.domain.derivation.repository.SystemModelFactRepository;
+import com.keplerops.groundcontrol.domain.derivation.service.BoundaryModelBuildResult;
+import com.keplerops.groundcontrol.domain.derivation.service.BoundaryModelService;
 import com.keplerops.groundcontrol.domain.derivation.service.CreateDerivationRunCommand;
 import com.keplerops.groundcontrol.domain.derivation.service.DerivationAdapter;
 import com.keplerops.groundcontrol.domain.derivation.service.DerivationAdapterDescriptor;
@@ -82,6 +85,9 @@ class DerivationServiceTest {
     @Mock
     private TransactionTemplate transactionTemplate;
 
+    @Mock
+    private BoundaryModelService boundaryModelService;
+
     private DerivationService service;
     private Project project;
 
@@ -93,7 +99,8 @@ class DerivationServiceTest {
                 captureLimitRepository,
                 projectService,
                 adapterRegistry,
-                transactionTemplate);
+                transactionTemplate,
+                boundaryModelService);
         project = new Project("gc-test", "Ground Control Test");
     }
 
@@ -315,6 +322,32 @@ class DerivationServiceTest {
         assertThatThrownBy(() -> service.getRun(PROJECT_ID, RUN_ID))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessageContaining("Derivation run not found");
+    }
+
+    @Test
+    void getBoundaryModelRejectsWrongProjectBeforeDelegating() {
+        when(runRepository.findByIdAndProjectId(RUN_ID, PROJECT_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getBoundaryModel(PROJECT_ID, RUN_ID))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining("Derivation run not found");
+        verifyNoInteractions(boundaryModelService);
+    }
+
+    @Test
+    void getBoundaryModelDelegatesAfterProjectScopedRunGuard() {
+        var run = runEntity();
+        var expected = new BoundaryModelBuildResult(
+                new BoundaryModelSnapshot(
+                        project, run, "boundary-set/test", "architecture-model/test", "sha256:declared-boundaries"),
+                List.of(),
+                List.of(),
+                List.of());
+        when(runRepository.findByIdAndProjectId(RUN_ID, PROJECT_ID)).thenReturn(Optional.of(run));
+        when(boundaryModelService.get(PROJECT_ID, RUN_ID)).thenReturn(expected);
+
+        assertThat(service.getBoundaryModel(PROJECT_ID, RUN_ID)).isSameAs(expected);
+        verify(boundaryModelService).get(PROJECT_ID, RUN_ID);
     }
 
     private static Stream<CreateDerivationRunCommand> invalidCommands() {

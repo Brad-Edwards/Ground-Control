@@ -1,0 +1,1215 @@
+package com.keplerops.groundcontrol.domain.research.service;
+
+import com.keplerops.groundcontrol.domain.audit.ActorHolder;
+import com.keplerops.groundcontrol.domain.exception.ConflictException;
+import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
+import com.keplerops.groundcontrol.domain.exception.NotFoundException;
+import com.keplerops.groundcontrol.domain.projects.model.ProjectType;
+import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.research.model.AutonomyLevel;
+import com.keplerops.groundcontrol.domain.research.model.DisclosureEntryFamily;
+import com.keplerops.groundcontrol.domain.research.model.DisclosureStatus;
+import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactReadiness;
+import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactStatus;
+import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactType;
+import com.keplerops.groundcontrol.domain.research.model.ResearchGateBehavior;
+import com.keplerops.groundcontrol.domain.research.model.ResearchGateDecisionOutcome;
+import com.keplerops.groundcontrol.domain.research.model.ResearchGatePoint;
+import com.keplerops.groundcontrol.domain.research.model.ResearchGateStatus;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRun;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunArtifact;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunDisclosure;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunDisclosureEntry;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunGate;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunGateDecisionLog;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunRationaleEntry;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunReviewComment;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunStatus;
+import com.keplerops.groundcontrol.domain.research.model.ReviewCommentTarget;
+import com.keplerops.groundcontrol.domain.research.repository.ResearchIntakeRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ResearchRunArtifactRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ResearchRunDisclosureEntryRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ResearchRunDisclosureRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ResearchRunGateDecisionLogRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ResearchRunGateRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ResearchRunRationaleEntryRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ResearchRunRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ResearchRunReviewCommentRepository;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * GC-RSCH-R001/R003/F003/F036/N007/N011 — application service for the {@link
+ * ResearchRun} aggregate (ADR-064 / ADR-065).
+ *
+ * <p>Sole authority for the stage-transition graph, the prerequisite-artifact
+ * matrix, gate-policy resolution, and idempotent checkpoint/resume. Controllers
+ * and MCP handlers never re-implement this logic. Every lookup is project-scoped
+ * and a cross-project reference is concealed as {@link NotFoundException} so a
+ * probing caller cannot learn another project's runs exist (GC-RS-009).
+ *
+ * <p>Persisted records carry bounded, low-cardinality metadata only; the service
+ * validates lengths and logs only IDs/enums — never prompts, manuscripts, search
+ * results, secrets, or absolute workspace paths.
+ */
+@Service
+@Transactional
+public class ResearchRunService {
+
+    private static final Logger log = LoggerFactory.getLogger(ResearchRunService.class);
+
+    private static final int UID_MAX = 50;
+    private static final int LOCATOR_MAX = 500;
+    private static final int HASH_MAX = 128;
+    private static final int IDEMPOTENCY_KEY_MAX = 200;
+    private static final int OPTION_ID_MAX = 200;
+    private static final int RATIONALE_MAX = 1000;
+    private static final int ERROR_CODE_MAX = 100;
+    private static final int ERROR_CLASS_MAX = 40;
+    private static final int ERROR_SUMMARY_MAX = 500;
+    private static final int SUBJECT_KEY_MAX = 200;
+    private static final int SUMMARY_MAX = 2000;
+    private static final int BODY_MAX = 2000;
+    private static final int CONFIDENCE_MAX = 500;
+    private static final int SECTION_KEY_MAX = 200;
+    private static final int MODEL_LABEL_MAX = 200;
+    private static final int QUESTION_KEY_MAX = 200;
+    private static final int ACTION_ID_MAX = 200;
+    private static final int RECOMMENDATION_SUMMARY_MAX = 1000;
+
+    private static final String AUTONOMOUS_DEFAULT_BASIS = "AUTONOMOUS_DEFAULT";
+
+    private static final String INVALID_CODE = "research_run_invalid";
+    private static final String FIELD = "field";
+    private static final String CURRENT_STAGE = "current_stage";
+    private static final String GATE_POINT = "gate_point";
+    private static final String TARGET_STAGE = "targetStage";
+    private static final String RATIONALE_SUMMARY = "rationaleSummary";
+    private static final String TARGET_ARTIFACT_ID = "targetArtifactId";
+    private static final String TARGET_DECISION_LOG_ID = "targetDecisionLogId";
+
+    private final ResearchRunRepository runRepository;
+    private final ResearchRunArtifactRepository artifactRepository;
+    private final ResearchRunGateRepository gateRepository;
+    private final ResearchRunGateDecisionLogRepository decisionLogRepository;
+    private final ResearchRunReviewCommentRepository reviewCommentRepository;
+    private final ResearchRunRationaleEntryRepository rationaleRepository;
+    private final ResearchRunDisclosureRepository disclosureRepository;
+    private final ResearchRunDisclosureEntryRepository disclosureEntryRepository;
+    private final ResearchIntakeRepository intakeRepository;
+    private final ProjectService projectService;
+
+    public ResearchRunService(
+            ResearchRunRepository runRepository,
+            ResearchRunArtifactRepository artifactRepository,
+            ResearchRunGateRepository gateRepository,
+            ResearchRunGateDecisionLogRepository decisionLogRepository,
+            ResearchRunReviewCommentRepository reviewCommentRepository,
+            ResearchRunRationaleEntryRepository rationaleRepository,
+            ResearchRunDisclosureRepository disclosureRepository,
+            ResearchRunDisclosureEntryRepository disclosureEntryRepository,
+            ResearchIntakeRepository intakeRepository,
+            ProjectService projectService) {
+        this.runRepository = runRepository;
+        this.artifactRepository = artifactRepository;
+        this.gateRepository = gateRepository;
+        this.decisionLogRepository = decisionLogRepository;
+        this.reviewCommentRepository = reviewCommentRepository;
+        this.rationaleRepository = rationaleRepository;
+        this.disclosureRepository = disclosureRepository;
+        this.disclosureEntryRepository = disclosureEntryRepository;
+        this.intakeRepository = intakeRepository;
+        this.projectService = projectService;
+    }
+
+    // ------------------------------------------------------------------
+    // Lifecycle: start
+    // ------------------------------------------------------------------
+
+    /** GC-RSCH-R001/R003 — start a run, snapshot intake, resolve the gate policy. */
+    public ResearchRun start(StartResearchRunCommand command) {
+        if (command == null) {
+            throw new DomainValidationException("Start command must not be null", "research_run_required", Map.of());
+        }
+        var project = projectService.getById(command.projectId());
+        if (project.getType() != ProjectType.RESEARCH) {
+            throw new DomainValidationException(
+                    "Research runs can only be started for RESEARCH projects",
+                    "research_run_project_type_mismatch",
+                    Map.of("project_type", project.getType().name()));
+        }
+        var uid = requireUid(command.uid());
+        if (runRepository.existsByProjectIdAndUid(project.getId(), uid)) {
+            throw new ConflictException("Research run with UID " + uid + " already exists in this project");
+        }
+        var intake = intakeRepository.findByProjectId(project.getId());
+        var autonomy = command.autonomyLevel() != null
+                ? command.autonomyLevel()
+                : intake.map(i -> i.getAutonomyLevel()).orElse(null);
+        if (autonomy == null) {
+            throw new DomainValidationException(
+                    "autonomyLevel is required when the project has no research intake to snapshot",
+                    INVALID_CODE,
+                    Map.of(FIELD, "autonomyLevel"));
+        }
+
+        var run = new ResearchRun(project, uid, autonomy);
+        run.setIntendedOutput(
+                command.intendedOutput() != null
+                        ? command.intendedOutput()
+                        : intake.map(i -> i.getIntendedOutput()).orElse(null));
+        run.setOwnerActor(currentActor());
+        intake.ifPresent(i -> {
+            run.setBudgetTokens(i.getBudgetTokens());
+            run.setBudgetWallClockMinutes(i.getBudgetWallClockMinutes());
+            run.setBudgetCostUsdMicros(i.getBudgetCostUsdMicros());
+        });
+        var saved = runRepository.save(run);
+
+        var overrides = command.gateOverrides() != null
+                ? command.gateOverrides()
+                : Map.<ResearchGatePoint, ResearchGateBehavior>of();
+        for (var gatePoint : ResearchGatePoint.values()) {
+            var override = overrides.get(gatePoint);
+            var behavior = resolveGateBehavior(autonomy, override);
+            var basis = override != null ? "OVERRIDE" : "AUTONOMY:" + autonomy.name();
+            gateRepository.save(new ResearchRunGate(saved, gatePoint, behavior, basis));
+        }
+
+        log.info(
+                "research_run_started: project={} run={} uid={} autonomy={} stage={}",
+                project.getIdentifier(),
+                saved.getId(),
+                uid,
+                autonomy,
+                saved.getCurrentStage());
+        return saved;
+    }
+
+    private ResearchGateBehavior resolveGateBehavior(AutonomyLevel autonomy, ResearchGateBehavior override) {
+        if (override != null) {
+            return override;
+        }
+        return autonomy == AutonomyLevel.AUTONOMOUS
+                ? ResearchGateBehavior.AUTONOMOUS_DEFAULT
+                : ResearchGateBehavior.REQUIRE_HUMAN;
+    }
+
+    // ------------------------------------------------------------------
+    // Lifecycle: artifacts (checkpoint authority)
+    // ------------------------------------------------------------------
+
+    /**
+     * GC-RSCH-F003/F036 — record (or rework) the current stage's output artifact.
+     * Idempotent on {@code idempotencyKey}; a rework supersedes the prior ACTIVE
+     * record and re-opens the stage's guarding gate.
+     */
+    public ResearchRunArtifact recordArtifact(UUID projectId, UUID runId, RecordArtifactCommand command) {
+        var run = requireRun(projectId, runId);
+        requireActive(run);
+        if (command == null || command.artifactType() == null) {
+            throw new DomainValidationException(
+                    "artifactType must not be null", INVALID_CODE, Map.of(FIELD, "artifactType"));
+        }
+        var expected = run.getCurrentStage().outputArtifactType();
+        if (command.artifactType() != expected) {
+            throw new DomainValidationException(
+                    "Artifact type " + command.artifactType() + " does not match current stage "
+                            + run.getCurrentStage(),
+                    "research_run_artifact_stage_mismatch",
+                    Map.of(CURRENT_STAGE, run.getCurrentStage().name(), "expected", expected.name()));
+        }
+
+        var key = emptyToNull(command.idempotencyKey());
+        if (key != null) {
+            requireUnder(key, IDEMPOTENCY_KEY_MAX, "idempotencyKey");
+            var existing = artifactRepository.findByResearchRunIdAndIdempotencyKey(runId, key);
+            if (existing.isPresent()) {
+                return existing.get(); // idempotent replay — no duplicate, no rework
+            }
+        }
+        requireUnder(command.locator(), LOCATOR_MAX, "locator");
+        requireUnder(command.contentHash(), HASH_MAX, "contentHash");
+
+        var activeExisting = artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
+                runId, expected, ResearchArtifactStatus.ACTIVE);
+        var attemptNo = activeExisting.map(a -> a.getAttemptNo() + 1).orElse(1);
+
+        // Supersede the prior ACTIVE record and FLUSH that status change before
+        // inserting the replacement, so the single-active-artifact partial unique
+        // index is never transiently violated. Hibernate otherwise orders the
+        // INSERT before this UPDATE within the flush, leaving two ACTIVE rows.
+        var prior = activeExisting.orElse(null);
+        if (prior != null) {
+            prior.markSuperseded();
+            artifactRepository.saveAndFlush(prior);
+        }
+
+        var artifact = new ResearchRunArtifact(run, expected, attemptNo);
+        artifact.setLocator(emptyToNull(command.locator()));
+        artifact.setContentHash(emptyToNull(command.contentHash()));
+        artifact.setIdempotencyKey(key);
+        artifact.setActor(currentActor());
+        var saved = artifactRepository.save(artifact);
+
+        if (prior != null) {
+            prior.linkSuperseder(saved.getId());
+            artifactRepository.save(prior);
+            reopenGuardingGateIfResolved(run);
+            if (expected == ResearchArtifactType.MANUSCRIPT) {
+                staleCurrentDisclosure(run);
+            }
+            if (run.getStatus() == ResearchRunStatus.BLOCKED) {
+                run.transitionStatus(ResearchRunStatus.IN_PROGRESS);
+            }
+        }
+        applyCounts(run, command);
+        runRepository.save(run);
+
+        log.info(
+                "research_run_artifact_recorded: project={} run={} stage={} type={} attempt={} rework={}",
+                run.getProject().getIdentifier(),
+                runId,
+                run.getCurrentStage(),
+                expected,
+                attemptNo,
+                activeExisting.isPresent());
+        return saved;
+    }
+
+    private void reopenGuardingGateIfResolved(ResearchRun run) {
+        ResearchGatePoint.forStageExit(run.getCurrentStage()).ifPresent(point -> gateRepository
+                .findByResearchRunIdAndGatePoint(run.getId(), point)
+                .filter(g -> g.getBehavior() != ResearchGateBehavior.DISABLED)
+                .filter(g -> g.getStatus() == ResearchGateStatus.RESOLVED)
+                .ifPresent(g -> {
+                    g.reopen();
+                    gateRepository.save(g);
+                }));
+    }
+
+    private void applyCounts(ResearchRun run, RecordArtifactCommand command) {
+        if (command.candidateSources() != null) {
+            run.setCandidateSources(command.candidateSources());
+        }
+        if (command.screenedIncluded() != null) {
+            run.setScreenedIncluded(command.screenedIncluded());
+        }
+        if (command.screenedExcluded() != null) {
+            run.setScreenedExcluded(command.screenedExcluded());
+        }
+        if (command.chartedFullText() != null) {
+            run.setChartedFullText(command.chartedFullText());
+        }
+        if (command.accessGaps() != null) {
+            run.setAccessGaps(command.accessGaps());
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Lifecycle: stage advance (prerequisite + gate enforcement)
+    // ------------------------------------------------------------------
+
+    /**
+     * GC-RSCH-F003 — advance the run into {@code targetStage}, which must be the
+     * immediate next stage. The current stage's output artifact must be present
+     * and ACTIVE (else a validation error, AC2), and the guarding gate must
+     * permit the exit (else a conflict). Idempotent: advancing to a stage already
+     * reached is a no-op.
+     */
+    public ResearchRun advanceStage(UUID projectId, UUID runId, AdvanceStageCommand command) {
+        var run = requireRun(projectId, runId);
+        var targetStage = command == null ? null : command.targetStage();
+        if (targetStage == null) {
+            throw new DomainValidationException(
+                    "targetStage must not be null", INVALID_CODE, Map.of(FIELD, TARGET_STAGE));
+        }
+        if (run.getCurrentStage().isAtOrAfter(targetStage)) {
+            return run; // already at or past the target — idempotent no-op
+        }
+        requireActive(run);
+        var next = run.getCurrentStage()
+                .next()
+                .orElseThrow(() -> new DomainValidationException(
+                        "Run is already at the final stage", "research_run_no_next_stage", Map.of()));
+        if (targetStage != next) {
+            throw new DomainValidationException(
+                    "targetStage " + targetStage + " is not the next stage after " + run.getCurrentStage(),
+                    "research_run_stage_not_sequential",
+                    Map.of(CURRENT_STAGE, run.getCurrentStage().name(), "next_stage", next.name()));
+        }
+
+        var requiredArtifact = run.getCurrentStage().outputArtifactType();
+        var active = artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
+                runId, requiredArtifact, ResearchArtifactStatus.ACTIVE);
+        if (active.isEmpty()) {
+            throw new DomainValidationException(
+                    "Cannot start " + next + ": required artifact " + requiredArtifact + " for stage "
+                            + run.getCurrentStage() + " is missing",
+                    "research_run_stage_blocked",
+                    Map.of(CURRENT_STAGE, run.getCurrentStage().name(), "missing_artifact", requiredArtifact.name()));
+        }
+
+        ResearchGatePoint.forStageExit(run.getCurrentStage()).ifPresent(point -> {
+            var gate = gateRepository
+                    .findByResearchRunIdAndGatePoint(runId, point)
+                    .orElseThrow(() -> new NotFoundException("Gate " + point + " not found for run " + runId));
+            if (gate.getBehavior() == ResearchGateBehavior.AUTONOMOUS_DEFAULT
+                    && gate.getStatus() == ResearchGateStatus.PENDING) {
+                gate.resolve(
+                        ResearchGateDecisionOutcome.AUTO_ACCEPTED,
+                        null,
+                        "autonomous default accepted at stage advance",
+                        run.getOwnerActor());
+                gateRepository.save(gate);
+                appendAutonomousDefaultDecisionLog(run, point);
+            }
+            if (!gate.permitsAdvance()) {
+                throw new ConflictException(
+                        "Gate " + point + " must be resolved before advancing past " + run.getCurrentStage(),
+                        "research_run_gate_pending",
+                        Map.of(
+                                GATE_POINT,
+                                point.name(),
+                                "gate_status",
+                                gate.getStatus().name()));
+            }
+        });
+
+        run.advanceToStage(next);
+        runRepository.save(run);
+        log.info(
+                "research_run_stage_advanced: project={} run={} to_stage={}",
+                run.getProject().getIdentifier(),
+                runId,
+                next);
+        return run;
+    }
+
+    // ------------------------------------------------------------------
+    // Lifecycle: gates
+    // ------------------------------------------------------------------
+
+    /** GC-RSCH-R003 — record a durable decision for a run gate. */
+    public ResearchRunGate resolveGate(UUID projectId, UUID runId, GateDecisionCommand command) {
+        var run = requireRun(projectId, runId);
+        if (command == null || command.gatePoint() == null) {
+            throw new DomainValidationException("gatePoint must not be null", INVALID_CODE, Map.of(FIELD, "gatePoint"));
+        }
+        if (command.outcome() == null) {
+            throw new DomainValidationException("outcome must not be null", INVALID_CODE, Map.of(FIELD, "outcome"));
+        }
+        var gate = gateRepository
+                .findByResearchRunIdAndGatePoint(runId, command.gatePoint())
+                .orElseThrow(
+                        () -> new NotFoundException("Gate " + command.gatePoint() + " not found for run " + runId));
+        if (gate.getBehavior() == ResearchGateBehavior.DISABLED) {
+            throw new DomainValidationException(
+                    "Gate " + command.gatePoint() + " is disabled for this run",
+                    "research_gate_disabled",
+                    Map.of(GATE_POINT, command.gatePoint().name()));
+        }
+        // A resolved gate (approved, rejected, or auto-accepted) is immutable: the
+        // only way to re-decide it is to rework the guarded stage artifact, which
+        // supersedes that artifact and reopens the gate (recordArtifact ->
+        // reopenGuardingGateIfResolved). Without this guard a caller could REJECT a
+        // gate and immediately re-submit APPROVED for the same artifact, advancing
+        // past a rejection with no rework — breaking the ADR-064 gate contract.
+        if (gate.getStatus() == ResearchGateStatus.RESOLVED) {
+            throw new ConflictException(
+                    "Gate " + command.gatePoint()
+                            + " is already resolved; rework the guarded stage artifact to reopen it",
+                    "research_gate_already_resolved",
+                    Map.of(
+                            GATE_POINT,
+                            command.gatePoint().name(),
+                            "outcome",
+                            gate.getDecisionOutcome() == null
+                                    ? ""
+                                    : gate.getDecisionOutcome().name()));
+        }
+        requireUnder(command.selectedOptionId(), OPTION_ID_MAX, "selectedOptionId");
+        requireUnder(command.rationaleSummary(), RATIONALE_MAX, RATIONALE_SUMMARY);
+        requireUnder(command.recommendationOptionId(), OPTION_ID_MAX, "recommendationOptionId");
+        requireUnder(command.recommendationSummary(), RECOMMENDATION_SUMMARY_MAX, "recommendationSummary");
+        requireUnder(command.questionKey(), QUESTION_KEY_MAX, "questionKey");
+        requireUnder(command.sourceActionId(), ACTION_ID_MAX, "sourceActionId");
+        var actor = currentActor();
+        gate.resolve(
+                command.outcome(),
+                emptyToNull(command.selectedOptionId()),
+                emptyToNull(command.rationaleSummary()),
+                actor);
+        var savedGate = gateRepository.save(gate);
+        appendDecisionLog(run, command, actor);
+
+        if (command.outcome() == ResearchGateDecisionOutcome.REJECTED) {
+            if (run.getStatus() == ResearchRunStatus.IN_PROGRESS) {
+                run.transitionStatus(ResearchRunStatus.BLOCKED);
+                runRepository.save(run);
+            }
+        } else if (run.getStatus() == ResearchRunStatus.BLOCKED) {
+            run.transitionStatus(ResearchRunStatus.IN_PROGRESS);
+            runRepository.save(run);
+        }
+        log.info(
+                "research_run_gate_resolved: project={} run={} gate={} outcome={}",
+                run.getProject().getIdentifier(),
+                runId,
+                command.gatePoint(),
+                command.outcome());
+        return savedGate;
+    }
+
+    // ------------------------------------------------------------------
+    // Decision surfaces: review comments / rationale / disclosure
+    // ------------------------------------------------------------------
+
+    /** GC-RSCH-F034 / ADR-067 — attach a bounded review comment to a run surface. */
+    public ResearchRunReviewComment addReviewComment(UUID projectId, UUID runId, AddReviewCommentCommand command) {
+        var run = requireRun(projectId, runId);
+        if (command == null || command.targetType() == null) {
+            throw new DomainValidationException(
+                    "targetType must not be null", INVALID_CODE, Map.of(FIELD, "targetType"));
+        }
+        if (command.provenance() == null) {
+            throw new DomainValidationException(
+                    "provenance must not be null", INVALID_CODE, Map.of(FIELD, "provenance"));
+        }
+        if (command.body() == null || command.body().isBlank()) {
+            throw new DomainValidationException("body must not be blank", INVALID_CODE, Map.of(FIELD, "body"));
+        }
+        requireUnder(command.body(), BODY_MAX, "body");
+        validateReviewTargetConsistency(command);
+        requireSameRunReference(
+                command.targetArtifactId(), runId, artifactRepository::existsByIdAndResearchRunId, TARGET_ARTIFACT_ID);
+        requireSameRunReference(
+                command.targetDecisionLogId(),
+                runId,
+                decisionLogRepository::existsByIdAndResearchRunId,
+                TARGET_DECISION_LOG_ID);
+
+        var comment = new ResearchRunReviewComment(
+                run, command.targetType(), command.body().trim(), command.provenance(), currentActor());
+        comment.setTargetGatePoint(command.targetGatePoint());
+        comment.setTargetStage(command.targetStage());
+        comment.setTargetArtifactId(command.targetArtifactId());
+        comment.setTargetDecisionLogId(command.targetDecisionLogId());
+        var saved = reviewCommentRepository.save(comment);
+        log.info(
+                "research_run_review_comment_added: project={} run={} target={} provenance={}",
+                run.getProject().getIdentifier(),
+                runId,
+                command.targetType(),
+                command.provenance());
+        return saved;
+    }
+
+    /** GC-RSCH-F034 / ADR-067 — resolve an open review comment; never touches gate/stage state. */
+    public ResearchRunReviewComment resolveReviewComment(
+            UUID projectId, UUID runId, UUID commentId, ResolveReviewCommentCommand command) {
+        requireRun(projectId, runId);
+        var comment = reviewCommentRepository
+                .findById(commentId)
+                .filter(c -> c.getResearchRun().getId().equals(runId))
+                .orElseThrow(() -> new NotFoundException("Review comment not found: " + commentId));
+        var summary = command == null ? null : command.resolutionSummary();
+        requireUnder(summary, RATIONALE_MAX, "resolutionSummary");
+        comment.resolve(emptyToNull(summary), currentActor());
+        var saved = reviewCommentRepository.save(comment);
+        log.info("research_run_review_comment_resolved: run={} comment={}", runId, commentId);
+        return saved;
+    }
+
+    /** GC-RSCH-N012 / ADR-068 — append an immutable rationale-ledger entry. */
+    public ResearchRunRationaleEntry addRationaleEntry(UUID projectId, UUID runId, AddRationaleEntryCommand command) {
+        var run = requireRun(projectId, runId);
+        if (command == null) {
+            throw new DomainValidationException("command must not be null", INVALID_CODE, Map.of());
+        }
+        if (command.stage() == null) {
+            throw new DomainValidationException("stage must not be null", INVALID_CODE, Map.of(FIELD, "stage"));
+        }
+        if (command.kind() == null) {
+            throw new DomainValidationException("kind must not be null", INVALID_CODE, Map.of(FIELD, "kind"));
+        }
+        if (command.evidenceBasis() == null) {
+            throw new DomainValidationException(
+                    "evidenceBasis must not be null", INVALID_CODE, Map.of(FIELD, "evidenceBasis"));
+        }
+        if (command.provenance() == null) {
+            throw new DomainValidationException(
+                    "provenance must not be null", INVALID_CODE, Map.of(FIELD, "provenance"));
+        }
+        if (command.subjectKey() == null || command.subjectKey().isBlank()) {
+            throw new DomainValidationException(
+                    "subjectKey must not be blank", INVALID_CODE, Map.of(FIELD, "subjectKey"));
+        }
+        if (command.rationaleSummary() == null || command.rationaleSummary().isBlank()) {
+            throw new DomainValidationException(
+                    "rationaleSummary must not be blank", INVALID_CODE, Map.of(FIELD, RATIONALE_SUMMARY));
+        }
+        requireUnder(command.subjectKey(), SUBJECT_KEY_MAX, "subjectKey");
+        requireUnder(command.rationaleSummary(), SUMMARY_MAX, RATIONALE_SUMMARY);
+        requireUnder(command.evidenceLocator(), LOCATOR_MAX, "evidenceLocator");
+        requireUnder(command.confidenceSummary(), CONFIDENCE_MAX, "confidenceSummary");
+        validateRationaleLifecycleConsistency(runId, command);
+
+        var entry = new ResearchRunRationaleEntry(
+                run,
+                command.stage(),
+                command.kind(),
+                command.evidenceBasis(),
+                command.provenance(),
+                command.subjectKey().trim(),
+                command.rationaleSummary().trim(),
+                currentActor(),
+                Instant.now());
+        entry.setArtifactType(command.artifactType());
+        entry.setArtifactId(command.artifactId());
+        entry.setAttemptNo(command.attemptNo());
+        entry.setGatePoint(command.gatePoint());
+        entry.setEvidenceLocator(emptyToNull(command.evidenceLocator()));
+        entry.setConfidenceSummary(emptyToNull(command.confidenceSummary()));
+        var saved = rationaleRepository.save(entry);
+        log.info(
+                "research_run_rationale_added: project={} run={} stage={} kind={} provenance={}",
+                run.getProject().getIdentifier(),
+                runId,
+                command.stage(),
+                command.kind(),
+                command.provenance());
+        return saved;
+    }
+
+    /**
+     * Validate a rationale entry's lifecycle references before persisting (ADR-067
+     * assigns stage/artifact/gate consistency to the service). A supplied artifact
+     * reference is resolved within the run and its actual type/attempt must match
+     * the declared {@code artifactType}/{@code attemptNo}; a supplied gate point
+     * must guard the entry's stage. This stops a caller from recording, say, a
+     * CHARTING rationale against a MANUSCRIPT artifact or a gate that does not
+     * guard the stage, which later reads would treat as authoritative.
+     */
+    private void validateRationaleLifecycleConsistency(UUID runId, AddRationaleEntryCommand command) {
+        if (command.artifactId() != null) {
+            var artifact = artifactRepository
+                    .findByIdAndResearchRunId(command.artifactId(), runId)
+                    .orElseThrow(() -> new NotFoundException(
+                            "artifactId " + command.artifactId() + " was not found for run " + runId));
+            if (command.artifactType() != null && artifact.getArtifactType() != command.artifactType()) {
+                throw new DomainValidationException(
+                        "artifactType does not match the referenced artifact",
+                        "research_rationale_reference_invalid",
+                        Map.of(FIELD, "artifactType"));
+            }
+            if (command.attemptNo() != null && !command.attemptNo().equals(artifact.getAttemptNo())) {
+                throw new DomainValidationException(
+                        "attemptNo does not match the referenced artifact",
+                        "research_rationale_reference_invalid",
+                        Map.of(FIELD, "attemptNo"));
+            }
+        }
+        if (command.gatePoint() != null && command.gatePoint().guardedStageExit() != command.stage()) {
+            throw new DomainValidationException(
+                    "gatePoint does not guard the rationale stage",
+                    "research_rationale_reference_invalid",
+                    Map.of(FIELD, "gatePoint", "stage", command.stage().name()));
+        }
+    }
+
+    /** GC-RSCH-N013 / ADR-068 §4 — create the disclosure tied to the active manuscript. */
+    public ResearchRunDisclosure createDisclosure(UUID projectId, UUID runId, CreateDisclosureCommand command) {
+        var run = requireRun(projectId, runId);
+        if (command == null) {
+            throw new DomainValidationException("command must not be null", INVALID_CODE, Map.of());
+        }
+        var manuscript = artifactRepository
+                .findByResearchRunIdAndArtifactTypeAndStatus(
+                        runId, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE)
+                .orElseThrow(() -> new DomainValidationException(
+                        "Cannot create a disclosure without an active MANUSCRIPT artifact",
+                        "research_run_disclosure_no_manuscript",
+                        Map.of()));
+        // The command pins the manuscript the disclosure covers; reject a stale or
+        // mismatched pin so a disclosure can never be attached to a superseded
+        // manuscript attempt (ADR-068 §4).
+        if (command.finalArtifactId() != null && !command.finalArtifactId().equals(manuscript.getId())) {
+            throw new DomainValidationException(
+                    "finalArtifactId does not match the active MANUSCRIPT artifact",
+                    "research_run_disclosure_artifact_mismatch",
+                    Map.of(FIELD, "finalArtifactId"));
+        }
+        if (command.finalAttemptNo() != null && !command.finalAttemptNo().equals(manuscript.getAttemptNo())) {
+            throw new DomainValidationException(
+                    "finalAttemptNo does not match the active MANUSCRIPT artifact",
+                    "research_run_disclosure_artifact_mismatch",
+                    Map.of(FIELD, "finalAttemptNo"));
+        }
+        // Single-current invariant (backed by the partial unique index in V158): a
+        // double-submit for the same active manuscript returns the existing record
+        // idempotently; a stray CURRENT row for a different manuscript is a conflict.
+        var existingCurrent = disclosureRepository.findFirstByResearchRunIdAndStatus(runId, DisclosureStatus.CURRENT);
+        if (existingCurrent.isPresent()) {
+            var current = existingCurrent.get();
+            if (current.getFinalArtifactId().equals(manuscript.getId())) {
+                return current;
+            }
+            throw new ConflictException(
+                    "A current disclosure already exists for this run",
+                    "research_run_disclosure_exists",
+                    Map.of("disclosure_id", current.getId().toString()));
+        }
+        var disclosure = new ResearchRunDisclosure(
+                run,
+                manuscript.getId(),
+                manuscript.getAttemptNo(),
+                command.aiPartsDeclaredNone(),
+                command.uncertaintyDeclaredNone(),
+                command.humanApprovalsDeclaredNone(),
+                currentActor());
+        var saved = disclosureRepository.save(disclosure);
+        log.info(
+                "research_run_disclosure_created: project={} run={} disclosure={} manuscript_attempt={}",
+                run.getProject().getIdentifier(),
+                runId,
+                saved.getId(),
+                manuscript.getAttemptNo());
+        return saved;
+    }
+
+    /** GC-RSCH-N013 / ADR-068 §4 — add one entry to a current disclosure. */
+    public ResearchRunDisclosureEntry addDisclosureEntry(
+            UUID projectId, UUID runId, UUID disclosureId, AddDisclosureEntryCommand command) {
+        requireRun(projectId, runId);
+        if (command == null || command.family() == null) {
+            throw new DomainValidationException("family must not be null", INVALID_CODE, Map.of(FIELD, "family"));
+        }
+        var disclosure = disclosureRepository
+                .findById(disclosureId)
+                .filter(d -> d.getResearchRun().getId().equals(runId))
+                .orElseThrow(() -> new NotFoundException("Disclosure not found: " + disclosureId));
+        if (disclosure.getStatus() == DisclosureStatus.STALE) {
+            throw new ConflictException(
+                    "Cannot add entries to a stale disclosure",
+                    "research_run_disclosure_stale",
+                    Map.of("disclosure_id", disclosureId.toString()));
+        }
+        boolean isUncertainty = command.family() == DisclosureEntryFamily.UNRESOLVED_UNCERTAINTY;
+        if (isUncertainty && command.uncertaintyCategory() == null) {
+            throw new DomainValidationException(
+                    "uncertaintyCategory is required for an UNRESOLVED_UNCERTAINTY entry",
+                    INVALID_CODE,
+                    Map.of(FIELD, "uncertaintyCategory"));
+        }
+        if (!isUncertainty && command.uncertaintyCategory() != null) {
+            throw new DomainValidationException(
+                    "uncertaintyCategory is only valid for an UNRESOLVED_UNCERTAINTY entry",
+                    INVALID_CODE,
+                    Map.of(FIELD, "uncertaintyCategory"));
+        }
+        if (command.summary() == null || command.summary().isBlank()) {
+            throw new DomainValidationException("summary must not be blank", INVALID_CODE, Map.of(FIELD, "summary"));
+        }
+        requireUnder(command.summary(), SUMMARY_MAX, "summary");
+        requireUnder(command.sectionKey(), SECTION_KEY_MAX, "sectionKey");
+        requireUnder(command.locator(), LOCATOR_MAX, "locator");
+        requireUnder(command.modelLabel(), MODEL_LABEL_MAX, "modelLabel");
+        requireSameRunReference(
+                command.rationaleEntryId(), runId, rationaleRepository::existsByIdAndResearchRunId, "rationaleEntryId");
+        requireSameRunReference(
+                command.decisionLogId(), runId, decisionLogRepository::existsByIdAndResearchRunId, "decisionLogId");
+        requireSameRunReference(
+                command.reviewCommentId(),
+                runId,
+                reviewCommentRepository::existsByIdAndResearchRunId,
+                "reviewCommentId");
+
+        var entry = new ResearchRunDisclosureEntry(
+                disclosure, command.family(), command.summary().trim(), currentActor());
+        entry.setUncertaintyCategory(command.uncertaintyCategory());
+        entry.setSectionKey(emptyToNull(command.sectionKey()));
+        entry.setLocator(emptyToNull(command.locator()));
+        entry.setModelLabel(emptyToNull(command.modelLabel()));
+        entry.setRationaleEntryId(command.rationaleEntryId());
+        entry.setDecisionLogId(command.decisionLogId());
+        entry.setReviewCommentId(command.reviewCommentId());
+        var saved = disclosureEntryRepository.save(entry);
+        log.info(
+                "research_run_disclosure_entry_added: run={} disclosure={} family={}",
+                runId,
+                disclosureId,
+                command.family());
+        return saved;
+    }
+
+    private void validateReviewTargetConsistency(AddReviewCommentCommand command) {
+        switch (command.targetType()) {
+            case GATE_POINT -> requirePresent(command.targetGatePoint(), "targetGatePoint");
+            case STAGE -> requirePresent(command.targetStage(), TARGET_STAGE);
+            case ARTIFACT -> requirePresent(command.targetArtifactId(), TARGET_ARTIFACT_ID);
+            case DECISION_LOG -> requirePresent(command.targetDecisionLogId(), TARGET_DECISION_LOG_ID);
+            case RUN -> {
+                // RUN targets carry no discriminator.
+            }
+            default -> throw new IllegalStateException("Unhandled review-comment target: " + command.targetType());
+        }
+        if (command.targetType() != ReviewCommentTarget.GATE_POINT && command.targetGatePoint() != null) {
+            throw inconsistentTarget("targetGatePoint", command.targetType());
+        }
+        if (command.targetType() != ReviewCommentTarget.STAGE && command.targetStage() != null) {
+            throw inconsistentTarget(TARGET_STAGE, command.targetType());
+        }
+        if (command.targetType() != ReviewCommentTarget.ARTIFACT && command.targetArtifactId() != null) {
+            throw inconsistentTarget(TARGET_ARTIFACT_ID, command.targetType());
+        }
+        if (command.targetType() != ReviewCommentTarget.DECISION_LOG && command.targetDecisionLogId() != null) {
+            throw inconsistentTarget(TARGET_DECISION_LOG_ID, command.targetType());
+        }
+    }
+
+    private void requirePresent(Object value, String field) {
+        if (value == null) {
+            throw new DomainValidationException(
+                    field + " is required for this target type",
+                    "research_review_comment_target_invalid",
+                    Map.of(FIELD, field));
+        }
+    }
+
+    /**
+     * Reject a request-supplied cross-record reference UUID that does not resolve
+     * to a row owned by the same run. Without this guard a comment, rationale, or
+     * disclosure entry on one run could point at another run's artifact, decision
+     * log, rationale, or comment, and later reads would treat it as authoritative
+     * metadata for the owning run (ADR-066/067/068 run-scoped product graph). A
+     * null reference is optional and skipped; the cross-run miss is concealed as
+     * {@link NotFoundException} like every other run-scoped lookup (GC-RS-009).
+     */
+    private void requireSameRunReference(
+            UUID referenceId, UUID runId, java.util.function.BiPredicate<UUID, UUID> existsInRun, String field) {
+        if (referenceId != null && !existsInRun.test(referenceId, runId)) {
+            throw new NotFoundException(field + " " + referenceId + " was not found for run " + runId);
+        }
+    }
+
+    private DomainValidationException inconsistentTarget(String field, ReviewCommentTarget target) {
+        return new DomainValidationException(
+                field + " must not be set for target type " + target,
+                "research_review_comment_target_invalid",
+                Map.of(FIELD, field, "target_type", target.name()));
+    }
+
+    /**
+     * The attempt number of the active artifact produced by the stage this gate
+     * guards, or null when none is recorded yet. Tying each decision-log row to a
+     * concrete artifact attempt lets two decisions on the same run/gate after a
+     * rework be reconciled to the superseded versus current attempt (ADR-066),
+     * instead of relying on chronology alone.
+     */
+    private Integer activeAttemptForGate(ResearchRun run, ResearchGatePoint gatePoint) {
+        var guardedStage = gatePoint.guardedStageExit();
+        return artifactRepository
+                .findByResearchRunIdAndArtifactTypeAndStatus(
+                        run.getId(), guardedStage.outputArtifactType(), ResearchArtifactStatus.ACTIVE)
+                .map(ResearchRunArtifact::getAttemptNo)
+                .orElse(null);
+    }
+
+    private void appendDecisionLog(ResearchRun run, GateDecisionCommand command, String actor) {
+        var gatePoint = command.gatePoint();
+        var entry = new ResearchRunGateDecisionLog(
+                run, gatePoint, gatePoint.guardedStageExit(), command.outcome(), actor, Instant.now());
+        entry.setArtifactAttemptNo(activeAttemptForGate(run, gatePoint));
+        entry.setQuestionKey(emptyToNull(command.questionKey()));
+        entry.setRecommendationOptionId(emptyToNull(command.recommendationOptionId()));
+        entry.setRecommendationSummary(emptyToNull(command.recommendationSummary()));
+        entry.setRecommendationProvenance(command.recommendationProvenance());
+        entry.setSelectedOptionId(emptyToNull(command.selectedOptionId()));
+        entry.setRationaleSummary(emptyToNull(command.rationaleSummary()));
+        entry.setSourceActionId(emptyToNull(command.sourceActionId()));
+        decisionLogRepository.save(entry);
+        log.info("research_run_decision_logged: run={} gate={} outcome={}", run.getId(), gatePoint, command.outcome());
+    }
+
+    private void appendAutonomousDefaultDecisionLog(ResearchRun run, ResearchGatePoint gatePoint) {
+        var entry = new ResearchRunGateDecisionLog(
+                run,
+                gatePoint,
+                gatePoint.guardedStageExit(),
+                ResearchGateDecisionOutcome.AUTO_ACCEPTED,
+                run.getOwnerActor(),
+                Instant.now());
+        entry.setArtifactAttemptNo(activeAttemptForGate(run, gatePoint));
+        entry.setPolicyBasis(AUTONOMOUS_DEFAULT_BASIS);
+        decisionLogRepository.save(entry);
+        log.info(
+                "research_run_decision_logged: run={} gate={} outcome={} basis={}",
+                run.getId(),
+                gatePoint,
+                ResearchGateDecisionOutcome.AUTO_ACCEPTED,
+                AUTONOMOUS_DEFAULT_BASIS);
+    }
+
+    private void staleCurrentDisclosure(ResearchRun run) {
+        disclosureRepository
+                .findFirstByResearchRunIdAndStatus(run.getId(), DisclosureStatus.CURRENT)
+                .ifPresent(disclosure -> {
+                    disclosure.markStale();
+                    disclosureRepository.save(disclosure);
+                    log.info("research_run_disclosure_staled: run={} disclosure={}", run.getId(), disclosure.getId());
+                });
+    }
+
+    // ------------------------------------------------------------------
+    // Lifecycle: stop / fail / resume / usage
+    // ------------------------------------------------------------------
+
+    /** GC-RSCH-F036 — stop an active run; resumable later. */
+    public ResearchRun stop(UUID projectId, UUID runId) {
+        var run = requireRun(projectId, runId);
+        run.transitionStatus(ResearchRunStatus.STOPPED);
+        run.setStoppedAt(Instant.now());
+        var saved = runRepository.save(run);
+        log.info("research_run_stopped: project={} run={}", run.getProject().getIdentifier(), runId);
+        return saved;
+    }
+
+    /** GC-RSCH-N007 — fail an active run with a bounded failure observation. */
+    public ResearchRun fail(UUID projectId, UUID runId, FailRunCommand command) {
+        var run = requireRun(projectId, runId);
+        requireUnder(command.errorCode(), ERROR_CODE_MAX, "errorCode");
+        requireUnder(command.errorClass(), ERROR_CLASS_MAX, "errorClass");
+        requireUnder(command.errorSummary(), ERROR_SUMMARY_MAX, "errorSummary");
+        run.transitionStatus(ResearchRunStatus.FAILED);
+        run.recordError(
+                emptyToNull(command.errorCode()),
+                emptyToNull(command.errorClass()),
+                emptyToNull(command.errorSummary()),
+                Instant.now());
+        run.setStoppedAt(Instant.now());
+        var saved = runRepository.save(run);
+        log.info(
+                "research_run_failed: project={} run={} error_code={} error_class={}",
+                run.getProject().getIdentifier(),
+                runId,
+                command.errorCode(),
+                command.errorClass());
+        return saved;
+    }
+
+    /**
+     * GC-RSCH-F036 / AC3 — resume a stopped or failed run from its last completed
+     * stage. Idempotent: no artifacts, gates, or stage state are recreated, so
+     * completed work is never duplicated.
+     */
+    public ResearchRun resume(UUID projectId, UUID runId) {
+        var run = requireRun(projectId, runId);
+        if (!run.getStatus().isResumable()) {
+            throw new DomainValidationException(
+                    "Run in status " + run.getStatus() + " is not resumable",
+                    "research_run_not_resumable",
+                    Map.of("status", run.getStatus().name()));
+        }
+        run.transitionStatus(ResearchRunStatus.IN_PROGRESS);
+        run.setStoppedAt(null);
+        var saved = runRepository.save(run);
+        log.info(
+                "research_run_resumed: project={} run={} stage={}",
+                run.getProject().getIdentifier(),
+                runId,
+                run.getCurrentStage());
+        return saved;
+    }
+
+    /** GC-RSCH-N011 — record observed usage/cost, separate from budget caps. */
+    public ResearchRun recordUsage(UUID projectId, UUID runId, long tokens, long costUsdMicros) {
+        var run = requireRun(projectId, runId);
+        run.addUsage(tokens, costUsdMicros);
+        return runRepository.save(run);
+    }
+
+    /**
+     * Mark the run COMPLETED once its final-stage artifact is present and ACTIVE
+     * and the manuscript's disclosure is complete (ADR-068 §4). A CURRENT
+     * disclosure tied to the active manuscript must exist, and both disclosure
+     * families (AI-generated parts, unresolved uncertainty) must be covered —
+     * either by at least one entry of that family or by the matching
+     * declared-none flag. AUTO_ACCEPTED gate decisions never count as human
+     * approval, so disclosure is required regardless of how gates were resolved.
+     */
+    public ResearchRun complete(UUID projectId, UUID runId) {
+        var run = requireRun(projectId, runId);
+        var stage = run.getCurrentStage();
+        if (!stage.isFinal()) {
+            throw new DomainValidationException(
+                    "Run cannot complete before reaching the final stage",
+                    "research_run_not_final_stage",
+                    Map.of(CURRENT_STAGE, stage.name()));
+        }
+        var finalArtifact = artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
+                runId, stage.outputArtifactType(), ResearchArtifactStatus.ACTIVE);
+        if (finalArtifact.isEmpty()) {
+            throw new DomainValidationException(
+                    "Run cannot complete without an active " + stage.outputArtifactType() + " artifact",
+                    "research_run_final_artifact_missing",
+                    Map.of("missing_artifact", stage.outputArtifactType().name()));
+        }
+        requireCompleteDisclosure(runId, finalArtifact.get().getId());
+        run.transitionStatus(ResearchRunStatus.COMPLETED);
+        var saved = runRepository.save(run);
+        log.info("research_run_completed: project={} run={}", run.getProject().getIdentifier(), runId);
+        return saved;
+    }
+
+    private void requireCompleteDisclosure(UUID runId, UUID activeManuscriptId) {
+        var current = disclosureRepository.findFirstByResearchRunIdAndStatus(runId, DisclosureStatus.CURRENT);
+        var staleExists = disclosureRepository
+                .findFirstByResearchRunIdAndStatus(runId, DisclosureStatus.STALE)
+                .isPresent();
+        if (current.isEmpty()) {
+            if (staleExists) {
+                throw new DomainValidationException(
+                        "Run cannot complete: the manuscript disclosure is stale and must be re-created",
+                        "research_run_disclosure_stale",
+                        Map.of());
+            }
+            throw new DomainValidationException(
+                    "Run cannot complete without a current manuscript disclosure",
+                    "research_run_disclosure_missing",
+                    Map.of());
+        }
+        var disclosure = current.get();
+        if (!activeManuscriptId.equals(disclosure.getFinalArtifactId())) {
+            throw new DomainValidationException(
+                    "Run cannot complete: the current disclosure does not cover the active manuscript",
+                    "research_run_disclosure_stale",
+                    Map.of());
+        }
+        var entries = disclosureEntryRepository.findByDisclosureId(disclosure.getId());
+        var aiCovered = disclosure.isAiPartsDeclaredNone()
+                || entries.stream().anyMatch(e -> e.getFamily() == DisclosureEntryFamily.AI_GENERATED_PART);
+        var uncertaintyCovered = disclosure.isUncertaintyDeclaredNone()
+                || entries.stream().anyMatch(e -> e.getFamily() == DisclosureEntryFamily.UNRESOLVED_UNCERTAINTY);
+        // ADR-068 §4 requires all three accountability families. Human approvals are
+        // derived from the gate decision log (a human APPROVED outcome); AUTO_ACCEPTED
+        // is autonomous and never counts, so a fully autonomous run must explicitly
+        // declare no human approvals rather than silently omitting the family.
+        var humanApprovalsCovered = disclosure.isHumanApprovalsDeclaredNone()
+                || decisionLogRepository.existsByResearchRunIdAndDecisionOutcome(
+                        runId, ResearchGateDecisionOutcome.APPROVED);
+        if (!aiCovered || !uncertaintyCovered || !humanApprovalsCovered) {
+            throw new DomainValidationException(
+                    "Run cannot complete: the manuscript disclosure is incomplete",
+                    "research_run_disclosure_incomplete",
+                    Map.of(
+                            "ai_parts_covered", String.valueOf(aiCovered),
+                            "uncertainty_covered", String.valueOf(uncertaintyCovered),
+                            "human_approvals_covered", String.valueOf(humanApprovalsCovered)));
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Reads
+    // ------------------------------------------------------------------
+
+    @Transactional(readOnly = true)
+    public ResearchRun getById(UUID projectId, UUID runId) {
+        return requireRun(projectId, runId);
+    }
+
+    @Transactional(readOnly = true)
+    public ResearchRun getByUid(UUID projectId, String uid) {
+        return runRepository
+                .findByProjectIdAndUid(projectId, uid)
+                .orElseThrow(() -> new NotFoundException("Research run not found: " + uid));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ResearchRun> listByProject(UUID projectId) {
+        return runRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ResearchRunArtifact> listArtifacts(UUID projectId, UUID runId) {
+        requireRun(projectId, runId);
+        return artifactRepository.findByResearchRunIdOrderByCreatedAtAsc(runId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ResearchRunGate> listGates(UUID projectId, UUID runId) {
+        requireRun(projectId, runId);
+        return gateRepository.findByResearchRunIdOrderByGatePointAsc(runId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ResearchRunGateDecisionLog> listGateDecisionLog(UUID projectId, UUID runId) {
+        requireRun(projectId, runId);
+        return decisionLogRepository.findByResearchRunIdOrderByDecidedAtAsc(runId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ResearchRunReviewComment> listReviewComments(UUID projectId, UUID runId) {
+        requireRun(projectId, runId);
+        return reviewCommentRepository.findByResearchRunIdOrderByCreatedAtAsc(runId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ResearchRunRationaleEntry> listRationale(UUID projectId, UUID runId) {
+        requireRun(projectId, runId);
+        return rationaleRepository.findByResearchRunIdOrderByRecordedAtAsc(runId);
+    }
+
+    @Transactional(readOnly = true)
+    public ResearchRunDisclosure getDisclosure(UUID projectId, UUID runId) {
+        requireRun(projectId, runId);
+        return disclosureRepository
+                .findFirstByResearchRunIdAndStatus(runId, DisclosureStatus.CURRENT)
+                .orElseThrow(() -> new NotFoundException("No current disclosure for run " + runId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ResearchRunDisclosureEntry> listDisclosureEntries(UUID projectId, UUID runId, UUID disclosureId) {
+        requireRun(projectId, runId);
+        var disclosure = disclosureRepository
+                .findById(disclosureId)
+                .filter(d -> d.getResearchRun().getId().equals(runId))
+                .orElseThrow(() -> new NotFoundException("Disclosure not found: " + disclosureId));
+        return disclosureEntryRepository.findByDisclosureId(disclosure.getId());
+    }
+
+    /** GC-RSCH-N011 — assemble the bounded observability snapshot from state. */
+    @Transactional(readOnly = true)
+    public ResearchRunSnapshot getSnapshot(UUID projectId, UUID runId) {
+        var run = requireRun(projectId, runId);
+        var artifacts = artifactRepository.findByResearchRunIdOrderByCreatedAtAsc(runId);
+        var gates = gateRepository.findByResearchRunIdOrderByGatePointAsc(runId);
+
+        var readiness = new ArrayList<ResearchRunSnapshot.ArtifactReadiness>();
+        for (var type : ResearchArtifactType.values()) {
+            readiness.add(new ResearchRunSnapshot.ArtifactReadiness(
+                    type.producingStage(), type, computeReadiness(artifacts, type)));
+        }
+
+        var pendingGates = gates.stream()
+                .filter(g -> g.getStatus() == ResearchGateStatus.PENDING)
+                .filter(g -> g.getBehavior() == ResearchGateBehavior.REQUIRE_HUMAN)
+                .map(g -> new ResearchRunSnapshot.PendingGate(
+                        g.getGatePoint(), g.getGatePoint().guardedStageExit()))
+                .toList();
+
+        var counts = new ResearchRunSnapshot.SourceCounts(
+                run.getCandidateSources(),
+                run.getScreenedIncluded(),
+                run.getScreenedExcluded(),
+                run.getChartedFullText(),
+                run.getAccessGaps());
+        var cost = new ResearchRunSnapshot.Cost(
+                run.getBudgetTokens(),
+                run.getBudgetWallClockMinutes(),
+                run.getBudgetCostUsdMicros(),
+                run.getObservedTokens(),
+                run.getObservedCostUsdMicros());
+        var lastError = run.getLastErrorCode() == null && run.getLastErrorAt() == null
+                ? null
+                : new ResearchRunSnapshot.LastError(
+                        run.getLastErrorCode(),
+                        run.getLastErrorClass(),
+                        run.getLastErrorSummary(),
+                        run.getLastErrorAt());
+
+        return new ResearchRunSnapshot(
+                run.getId(),
+                run.getProject().getIdentifier(),
+                run.getUid(),
+                run.getCurrentStage(),
+                run.getStatus(),
+                readiness,
+                pendingGates,
+                counts,
+                cost,
+                lastError);
+    }
+
+    private ResearchArtifactReadiness computeReadiness(List<ResearchRunArtifact> artifacts, ResearchArtifactType type) {
+        ResearchArtifactReadiness fallback = ResearchArtifactReadiness.MISSING;
+        for (var a : artifacts) {
+            if (a.getArtifactType() != type) {
+                continue;
+            }
+            if (a.getStatus() == ResearchArtifactStatus.ACTIVE) {
+                return ResearchArtifactReadiness.READY;
+            }
+            if (a.getStatus() == ResearchArtifactStatus.FAILED) {
+                fallback = ResearchArtifactReadiness.FAILED;
+            } else if (a.getStatus() == ResearchArtifactStatus.SUPERSEDED
+                    && fallback != ResearchArtifactReadiness.FAILED) {
+                fallback = ResearchArtifactReadiness.SUPERSEDED;
+            }
+        }
+        return fallback;
+    }
+
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
+
+    private ResearchRun requireRun(UUID projectId, UUID runId) {
+        return runRepository
+                .findByIdAndProjectId(runId, projectId)
+                .orElseThrow(() -> new NotFoundException("Research run not found: " + runId));
+    }
+
+    private void requireActive(ResearchRun run) {
+        if (run.getStatus() != ResearchRunStatus.IN_PROGRESS && run.getStatus() != ResearchRunStatus.BLOCKED) {
+            throw new ConflictException(
+                    "Run is not active (status " + run.getStatus() + ")",
+                    "research_run_not_active",
+                    Map.of("status", run.getStatus().name()));
+        }
+    }
+
+    private String requireUid(String uid) {
+        if (uid == null || uid.isBlank()) {
+            throw new DomainValidationException("uid must not be blank", INVALID_CODE, Map.of(FIELD, "uid"));
+        }
+        var trimmed = uid.trim();
+        if (trimmed.length() > UID_MAX) {
+            throw new DomainValidationException(
+                    "uid exceeds max length", INVALID_CODE, Map.of(FIELD, "uid", "max", UID_MAX));
+        }
+        return trimmed;
+    }
+
+    private void requireUnder(String value, int max, String field) {
+        if (value != null && value.length() > max) {
+            throw new DomainValidationException(
+                    "Field " + field + " exceeds max length", INVALID_CODE, Map.of(FIELD, field, "max", max));
+        }
+    }
+
+    private String emptyToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        var trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /**
+     * The authenticated actor for durable lifecycle provenance. Always the
+     * server-side {@link ActorHolder} context populated by {@code ActorFilter};
+     * clients never supply the audit actor on the write boundary (ADR-026), so
+     * artifact/gate/owner provenance cannot be forged via the request payload.
+     */
+    private String currentActor() {
+        return emptyToNull(ActorHolder.get());
+    }
+}

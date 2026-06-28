@@ -6,7 +6,8 @@ import java.util.List;
 public record DerivationRunResultResponse(
         DerivationRunResponse run,
         List<SystemModelFactResponse> facts,
-        List<DerivationCaptureLimitResponse> captureLimits) {
+        List<DerivationCaptureLimitResponse> captureLimits,
+        BoundaryModelSnapshotResponse boundaryModel) {
 
     public static DerivationRunResultResponse from(DerivationRunResult result) {
         return new DerivationRunResultResponse(
@@ -14,6 +15,7 @@ public record DerivationRunResultResponse(
                 result.facts().stream().map(SystemModelFactResponse::from).toList(),
                 result.captureLimits().stream()
                         .map(DerivationCaptureLimitResponse::from)
-                        .toList());
+                        .toList(),
+                BoundaryModelSnapshotResponse.from(result.boundaryModel()));
     }
 }

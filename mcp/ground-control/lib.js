@@ -74,6 +74,16 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#       - Requirement wave or gate",
     "#       - Boundary owner",
     "#       - Contract or seam",
+    "#   # Optional review-cap auto-disposition (gc_review_cap_disposition).",
+    "#   # Disabled unless a repo opts in; with enabled:false every existing",
+    "#   # review-cap behavior is unchanged.",
+    "#   review_disposition:",
+    "#     enabled: false",
+    "#     mode: shadow            # shadow | authoritative",
+    "#     max_auto_overrides: 1",
+    "#     judge:",
+    "#       enabled: false",
+    "#       model: null",
     "# sonarcloud:",
     "#   project_key: <sonar-project-key>",
     "#   organization: <sonar-org>",
@@ -136,6 +146,18 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#         one_liner: .ground-control.yaml is the agent-neutral context contract",
     "#     anti_recommendations:",
     "#       - Do not introduce new abstractions below 3 call-sites",
+    "",
+    "# Canonical boundary model declarations (GC-GRC-004). Optional.",
+    "# Use these for repository boundaries that cannot be derived from code alone.",
+    "# grc:",
+    "#   boundaries:",
+    "#     - key: policy-workflow",
+    "#       name: Policy and workflow",
+    "#       description: Repo policy, workflow rules, and agent guardrails",
+    "#       paths:",
+    "#         - tools/policy/" + "**",
+    "#         - .ground-control.yaml",
+    "#       surfaces: [policy, architecture]",
     "",
   ].join("\n");
 }
@@ -2111,6 +2133,13 @@ function emptyWorkflowConfig() {
     // Dev-start plan gate. Disabled by default so existing repositories keep
     // their current /implement flow until they opt in through repo config.
     dev_start_gate: emptyDevStartGateConfig(),
+    // Review-cap auto-disposition (gc_review_cap_disposition). Disabled by
+    // default so existing repos keep the human-only override_cap path until
+    // they opt in. `mode: shadow` records a disposition without authorizing an
+    // over-cap cycle; `authoritative` lets a recorded one_more_cycle grant
+    // unblock an auto_grant cycle. `max_auto_overrides` caps how many over-cap
+    // cycles the auto path can ever grant per (issue, reviewer).
+    review_disposition: { enabled: false, mode: "shadow", max_auto_overrides: 1, judge: { enabled: false, model: null } },
   };
 }
 
@@ -2444,6 +2473,99 @@ function isSafeGitRefName(s) {
   return true;
 }
 
+// Allowed values for workflow.review_disposition.mode. `shadow` records a
+// disposition for audit but never authorizes an over-cap cycle; `authoritative`
+// lets a recorded one_more_cycle grant unblock an auto_grant cycle.
+export const REVIEW_DISPOSITION_MODES = ["shadow", "authoritative"];
+
+// Bounds for max_auto_overrides. 0 means "auto path never grants an over-cap
+// cycle" (record-only). 5 is a hard safety net against runaway auto-loops.
+export const REVIEW_DISPOSITION_MAX_AUTO_OVERRIDES_MIN = 0;
+export const REVIEW_DISPOSITION_MAX_AUTO_OVERRIDES_MAX = 5;
+
+function emptyReviewDispositionConfig() {
+  return { enabled: false, mode: "shadow", max_auto_overrides: 1, judge: { enabled: false, model: null } };
+}
+
+// Normalize a workflow.review_disposition block. Follows the strict pattern of
+// normalizeReviewerConfig: null/absent → all-default value, unknown keys →
+// errors, each field validated individually, every error accumulated. A
+// MALFORMED present block returns {ok:false,...} — it never silently falls back
+// to defaults, so a mistyped knob cannot quietly disable an auto-grant guard.
+export function normalizeReviewDispositionConfig(rawBlock) {
+  if (rawBlock == null) {
+    return { ok: true, value: emptyReviewDispositionConfig() };
+  }
+  if (typeof rawBlock !== "object" || Array.isArray(rawBlock)) {
+    return { ok: false, errors: ["workflow.review_disposition must be a mapping when set"] };
+  }
+  const allowed = ["enabled", "mode", "max_auto_overrides", "judge"];
+  const errors = [];
+  for (const key of Object.keys(rawBlock)) {
+    if (!allowed.includes(key)) {
+      errors.push(`workflow.review_disposition has unknown key '${key}'`);
+    }
+  }
+  const value = emptyReviewDispositionConfig();
+  if (rawBlock.enabled != null) {
+    if (typeof rawBlock.enabled !== "boolean") {
+      errors.push("workflow.review_disposition.enabled must be a boolean when set");
+    } else {
+      value.enabled = rawBlock.enabled;
+    }
+  }
+  if (rawBlock.mode != null) {
+    if (!REVIEW_DISPOSITION_MODES.includes(rawBlock.mode)) {
+      errors.push(`workflow.review_disposition.mode must be one of: ${REVIEW_DISPOSITION_MODES.join(", ")}`);
+    } else {
+      value.mode = rawBlock.mode;
+    }
+  }
+  if (rawBlock.max_auto_overrides != null) {
+    const v = rawBlock.max_auto_overrides;
+    if (typeof v !== "number" || !Number.isInteger(v)) {
+      errors.push("workflow.review_disposition.max_auto_overrides must be an integer");
+    } else if (
+      v < REVIEW_DISPOSITION_MAX_AUTO_OVERRIDES_MIN ||
+      v > REVIEW_DISPOSITION_MAX_AUTO_OVERRIDES_MAX
+    ) {
+      errors.push(
+        `workflow.review_disposition.max_auto_overrides must be between ${REVIEW_DISPOSITION_MAX_AUTO_OVERRIDES_MIN} and ${REVIEW_DISPOSITION_MAX_AUTO_OVERRIDES_MAX} inclusive`,
+      );
+    } else {
+      value.max_auto_overrides = v;
+    }
+  }
+  if (rawBlock.judge != null) {
+    if (typeof rawBlock.judge !== "object" || Array.isArray(rawBlock.judge)) {
+      errors.push("workflow.review_disposition.judge must be a mapping when set");
+    } else {
+      const judgeAllowed = ["enabled", "model"];
+      for (const key of Object.keys(rawBlock.judge)) {
+        if (!judgeAllowed.includes(key)) {
+          errors.push(`workflow.review_disposition.judge has unknown key '${key}'`);
+        }
+      }
+      if (rawBlock.judge.enabled != null) {
+        if (typeof rawBlock.judge.enabled !== "boolean") {
+          errors.push("workflow.review_disposition.judge.enabled must be a boolean when set");
+        } else {
+          value.judge.enabled = rawBlock.judge.enabled;
+        }
+      }
+      if (rawBlock.judge.model != null) {
+        if (typeof rawBlock.judge.model !== "string" || rawBlock.judge.model.trim() === "") {
+          errors.push("workflow.review_disposition.judge.model must be a non-empty string when set");
+        } else {
+          value.judge.model = rawBlock.judge.model.trim();
+        }
+      }
+    }
+  }
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value };
+}
+
 function normalizeWorkflowConfig(raw) {
   if (raw == null || typeof raw !== "object") {
     return { ok: true, value: emptyWorkflowConfig() };
@@ -2454,7 +2576,7 @@ function normalizeWorkflowConfig(raw) {
   // Scalar string-typed keys handled inline; nested-mapping keys delegated to
   // their own normalizers below.
   const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "base_branch"];
-  const allowedNested = ["codex_review", "test_quality_review", "pr_title", "integration_manager", "dev_start_gate"];
+  const allowedNested = ["codex_review", "test_quality_review", "pr_title", "integration_manager", "dev_start_gate", "review_disposition"];
   const allowed = [...allowedScalar, ...allowedNested];
   const value = emptyWorkflowConfig();
   const errors = [];
@@ -2493,6 +2615,9 @@ function normalizeWorkflowConfig(raw) {
   const devStartGateResult = normalizeDevStartGateConfig(raw.dev_start_gate);
   if (!devStartGateResult.ok) errors.push(...devStartGateResult.errors);
   else value.dev_start_gate = devStartGateResult.value;
+  const reviewDispositionResult = normalizeReviewDispositionConfig(raw.review_disposition);
+  if (!reviewDispositionResult.ok) errors.push(...reviewDispositionResult.errors);
+  else value.review_disposition = reviewDispositionResult.value;
   if (errors.length) return { ok: false, errors };
   return { ok: true, value };
 }
@@ -2855,6 +2980,109 @@ function normalizeKnowledgeConfig(raw) {
 }
 
 // ---------------------------------------------------------------------------
+// grc.boundaries (GC-GRC-004)
+//
+// Declared boundary inputs for the canonical boundary model. These complement
+// derived TRUST_BOUNDARY facts; they are not themselves the canonical output.
+// Path containment is finalized in getRepoGroundControlContext where the repo
+// root is known.
+// ---------------------------------------------------------------------------
+
+const GRC_TOP_KEYS = ["boundaries"];
+const GRC_BOUNDARY_KEYS = ["key", "name", "description", "paths", "surfaces"];
+const GRC_BOUNDARY_KEY_RE = /^[a-z0-9][a-z0-9_.-]{0,119}$/;
+
+function emptyGrcConfig() {
+  return { boundaries: [] };
+}
+
+function normalizeGrcConfig(raw) {
+  if (raw == null) return { ok: true, value: emptyGrcConfig() };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, errors: ["grc must be a mapping, not a list or scalar"] };
+  }
+  const errors = [];
+  for (const key of Object.keys(raw)) {
+    if (!GRC_TOP_KEYS.includes(key)) {
+      errors.push(`grc has unknown key '${key}'`);
+    }
+  }
+  const value = emptyGrcConfig();
+  if (raw.boundaries != null) {
+    if (!Array.isArray(raw.boundaries)) {
+      errors.push("grc.boundaries must be a list when set");
+    } else {
+      const seenKeys = new Set();
+      raw.boundaries.forEach((entry, i) => {
+        const prefix = `grc.boundaries[${i}]`;
+        const before = errors.length;
+        if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+          errors.push(`${prefix} must be a mapping`);
+          return;
+        }
+        for (const key of Object.keys(entry)) {
+          if (!GRC_BOUNDARY_KEYS.includes(key)) {
+            errors.push(`${prefix} has unknown key '${key}'`);
+          }
+        }
+        if (typeof entry.key !== "string" || !GRC_BOUNDARY_KEY_RE.test(entry.key)) {
+          errors.push(`${prefix}.key must match ${GRC_BOUNDARY_KEY_RE.source}`);
+        } else if (seenKeys.has(entry.key)) {
+          errors.push(`${prefix}.key duplicates an earlier boundary key '${entry.key}'`);
+        }
+        if (typeof entry.name !== "string" || entry.name.trim() === "") {
+          errors.push(`${prefix}.name must be a non-empty string`);
+        }
+        if (entry.description != null && (typeof entry.description !== "string" || entry.description.trim() === "")) {
+          errors.push(`${prefix}.description must be a non-empty string when set`);
+        }
+        if (!Array.isArray(entry.paths) || entry.paths.length === 0) {
+          errors.push(`${prefix}.paths must be a non-empty list of repo-relative selectors`);
+        } else {
+          entry.paths.forEach((path, pathIndex) => {
+            const field = `${prefix}.paths[${pathIndex}]`;
+            if (typeof path !== "string" || path.trim() === "") {
+              errors.push(`${field} must be a non-empty string`);
+              return;
+            }
+            const trimmed = path.trim();
+            const selectorPrefix = trimmed.endsWith("/**") ? trimmed.slice(0, -3) : trimmed;
+            if (selectorPrefix.includes("*") || (trimmed.includes("*") && !trimmed.endsWith("/**"))) {
+              errors.push(`${field} only supports exact paths or trailing /** selectors`);
+            } else if (trimmed.endsWith("/**") && trimmed.length <= 3) {
+              errors.push(`${field} must include a path prefix before /**`);
+            }
+          });
+        }
+        if (entry.surfaces != null) {
+          if (!Array.isArray(entry.surfaces)) {
+            errors.push(`${prefix}.surfaces must be a list when set`);
+          } else {
+            entry.surfaces.forEach((surface, surfaceIndex) => {
+              if (typeof surface !== "string" || surface.trim() === "") {
+                errors.push(`${prefix}.surfaces[${surfaceIndex}] must be a non-empty string`);
+              }
+            });
+          }
+        }
+        if (errors.length === before) {
+          seenKeys.add(entry.key);
+          value.boundaries.push({
+            key: entry.key,
+            name: entry.name,
+            description: entry.description ?? null,
+            path_selectors: entry.paths.map((path) => path.trim()),
+            surfaces: entry.surfaces == null ? [] : entry.surfaces.map((surface) => surface.trim()),
+          });
+        }
+      });
+    }
+  }
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value };
+}
+
+// ---------------------------------------------------------------------------
 // architecture.vocabulary (#931)
 //
 // Optional per-repo block declaring the design vocabulary the codex preflight
@@ -3080,6 +3308,7 @@ export function parseGroundControlYaml(yamlText) {
     "routing",
     "telemetry",
     "architecture",
+    "grc",
     "short_code",
   ];
   for (const key of Object.keys(parsed)) {
@@ -3160,6 +3389,9 @@ export function parseGroundControlYaml(yamlText) {
   const architectureResult = normalizeArchitectureConfig(parsed.architecture);
   if (!architectureResult.ok) errors.push(...architectureResult.errors);
 
+  const grcResult = normalizeGrcConfig(parsed.grc);
+  if (!grcResult.ok) errors.push(...grcResult.errors);
+
   if (errors.length) return { ok: false, errors };
 
   return {
@@ -3181,6 +3413,7 @@ export function parseGroundControlYaml(yamlText) {
       routing: routingResult.value,
       telemetry: telemetryResult.value,
       architecture: architectureResult.value,
+      grc: grcResult.value,
     },
   };
 }
@@ -3325,6 +3558,15 @@ export async function getRepoGroundControlContext(repoPath) {
       if (!real.ok) docsPathErrors.push(real.error);
     });
   }
+  const grc = parseResult.value.grc;
+  (grc.boundaries || []).forEach((boundary, i) => {
+    (boundary.path_selectors || []).forEach((selector, pathIndex) => {
+      const field = `grc.boundaries[${i}].paths[${pathIndex}]`;
+      const path = selector.endsWith("/**") ? selector.slice(0, -3) : selector;
+      const r = resolveRepoRelativePath(repoRoot, path, field);
+      if (!r.ok) docsPathErrors.push(r.error);
+    });
+  });
   if (docsPathErrors.length) {
     return {
       repo_path: repoRoot,
@@ -3357,6 +3599,7 @@ export async function getRepoGroundControlContext(repoPath) {
     routing: parseResult.value.routing,
     telemetry: parseResult.value.telemetry,
     architecture: parseResult.value.architecture,
+    grc: parseResult.value.grc,
     errors: [],
   };
 }
@@ -6212,6 +6455,52 @@ async function readIssueCommentBodies(repoRoot, owner, name, issueNumber) {
   return comments
     .map((c) => (c && typeof c.body === "string" ? c.body : null))
     .filter((b) => b != null);
+}
+
+// Like readIssueCommentBodies but also returns each comment's author login, so
+// callers that need provenance (the auto-disposition grant verifier) can
+// restrict to markers posted by the trusted MCP identity rather than by any
+// commenter. A forged or stale grant marker authored by a different identity is
+// therefore not counted as an authorization. Returns [{ body, authorLogin }].
+async function readIssueCommentsWithAuthors(repoRoot, owner, name, issueNumber) {
+  const { stdout } = await execFile(
+    "gh",
+    [
+      "api",
+      "--method",
+      "GET",
+      "--paginate",
+      "--slurp",
+      `/repos/${owner}/${name}/issues/${issueNumber}/comments`,
+      "-F",
+      "per_page=100",
+    ],
+    { cwd: repoRoot },
+  );
+  const pages = JSON.parse(stdout);
+  if (!Array.isArray(pages)) return [];
+  const comments = pages.length > 0 && Array.isArray(pages[0]) ? pages.flat() : pages;
+  return comments
+    .filter((c) => c && typeof c.body === "string")
+    .map((c) => ({
+      body: c.body,
+      authorLogin: c.user && typeof c.user.login === "string" ? c.user.login : null,
+    }));
+}
+
+// Resolve the GitHub login the MCP server's gh CLI authenticates as. Every
+// durable workflow record is posted under this identity, so it is the trusted
+// poster for provenance checks. Returns null when it cannot be resolved (the
+// caller then treats provenance as unverifiable and refuses authorization
+// rather than trusting raw marker text).
+async function getAuthenticatedGitHubLogin(repoRoot) {
+  try {
+    const { stdout } = await execFile("gh", ["api", "user", "--jq", ".login"], { cwd: repoRoot });
+    const login = typeof stdout === "string" ? stdout.trim() : "";
+    return login !== "" ? login : null;
+  } catch {
+    return null;
+  }
 }
 
 // Post a phase marker as an issue-comment so downstream tools can detect the
@@ -9887,6 +10176,10 @@ export async function getDerivationRun(id, project) {
   return request("GET", `/api/v1/derivations/runs/${encodeURIComponent(id)}`, { params: { project } });
 }
 
+export async function getDerivationBoundaryModel(id, project) {
+  return request("GET", `/api/v1/derivations/runs/${encodeURIComponent(id)}/boundary-model`, { params: { project } });
+}
+
 export async function listDerivationFacts({ project, runId, factKind } = {}) {
   return request("GET", "/api/v1/derivations/facts", { params: { project, runId, factKind } });
 }
@@ -10359,6 +10652,247 @@ export async function updateTestRunCursor(id, data, project) {
     body: data,
     params: { project },
   });
+}
+
+// GC-RSCH-R001/R003/F003/F036/N007/N011 — ResearchRun lifecycle aggregate
+// (ADR-064 / ADR-065). A project-scoped research effort moving through a closed
+// eight-stage lifecycle gated by run-scoped human gates; stage outputs are
+// recorded as superseding artifact manifest rows that double as resume
+// checkpoints. Reads (list, get, get-by-uid, snapshot, artifacts, gates) also
+// route through gc_query under the /api/v1/research-runs allow-list; the
+// gc_research_run tool exposes them as discoverable actions alongside writes.
+export async function startResearchRun(data, project) {
+  return request("POST", "/api/v1/research-runs", { body: data, params: { project } });
+}
+
+export async function listResearchRuns(project) {
+  return request("GET", "/api/v1/research-runs", { params: { project } });
+}
+
+export async function getResearchRun(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function getResearchRunByUid(uid, project) {
+  return request("GET", `/api/v1/research-runs/uid/${encodeURIComponent(uid)}`, { params: { project } });
+}
+
+export async function getResearchRunSnapshot(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/snapshot`, { params: { project } });
+}
+
+export async function listResearchRunArtifacts(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/artifacts`, { params: { project } });
+}
+
+export async function listResearchRunGates(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/gates`, { params: { project } });
+}
+
+export async function recordResearchRunArtifact(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/artifacts`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function advanceResearchRun(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/advance`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function decideResearchRunGate(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/gates/decision`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function stopResearchRun(id, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/stop`, { params: { project } });
+}
+
+export async function failResearchRun(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/fail`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function resumeResearchRun(id, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/resume`, { params: { project } });
+}
+
+export async function completeResearchRun(id, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/complete`, { params: { project } });
+}
+
+export async function recordResearchRunUsage(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/usage`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export const RESEARCH_RUN_AUTONOMY_LEVELS = ["COPILOT", "AUTONOMOUS"];
+
+export const RESEARCH_RUN_INTENDED_OUTPUTS = [
+  "SCOPING_REVIEW",
+  "SYSTEMATIC_REVIEW",
+  "SYSTEMATIC_MAP",
+  "CRITICAL_REVIEW",
+  "NARRATIVE_REVIEW",
+  "TARGETED_RELATED_WORK",
+  "TAXONOMY_PAPER",
+  "OTHER",
+];
+
+export const RESEARCH_RUN_STAGES = [
+  "METHODOLOGY_SELECTION",
+  "PROTOCOL_PLANNING",
+  "SOURCE_SEARCH",
+  "SCREENING",
+  "CHARTING",
+  "SYNTHESIS",
+  "ARGUMENT_CONSTRUCTION",
+  "PROSE_DRAFTING",
+];
+
+export const RESEARCH_ARTIFACT_TYPES = [
+  "METHODOLOGY_REQUIREMENTS",
+  "PROTOCOL_PLAN",
+  "SEARCH_LOG",
+  "SCREENING_RESULT",
+  "CHARTING_DATA",
+  "SYNTHESIS",
+  "ARGUMENT_MAP",
+  "MANUSCRIPT",
+];
+
+export const RESEARCH_GATE_POINTS = [
+  "METHOD_DECISION",
+  "PROTOCOL_DECISION",
+  "SEARCH_DECISION",
+  "SYNTHESIS_DECISION",
+  "WRITING_DECISION",
+];
+
+export const RESEARCH_GATE_BEHAVIORS = ["REQUIRE_HUMAN", "AUTONOMOUS_DEFAULT", "DISABLED"];
+
+export const RESEARCH_GATE_DECISION_OUTCOMES = ["APPROVED", "REJECTED", "AUTO_ACCEPTED"];
+
+// GC-RSCH-F004 / ADR-066 — gate recommendation provenance (mirrors Java enum)
+export const GATE_RECOMMENDATION_PROVENANCES = ["AGENT", "SYSTEM_POLICY", "HUMAN_REVIEWER"];
+
+// GC-RSCH-F034 / ADR-067 — review comment enums (mirror Java enums)
+export const REVIEW_COMMENT_TARGETS = ["RUN", "GATE_POINT", "STAGE", "ARTIFACT", "DECISION_LOG"];
+export const REVIEW_COMMENT_PROVENANCES = ["HUMAN_REVIEW", "AGENT_RECOMMENDATION", "SYSTEM_CHECK"];
+export const REVIEW_COMMENT_STATUSES = ["OPEN", "RESOLVED"];
+
+// GC-RSCH-N012 / ADR-068 — rationale entry enums (mirror Java enums)
+export const RATIONALE_ENTRY_KINDS = [
+  "METHODOLOGY_CHOICE",
+  "SEARCH_DECISION",
+  "EXCLUSION",
+  "CHARTED_VALUE",
+  "SYNTHESIS_CLAIM",
+  "WRITING_CLAIM",
+];
+export const RATIONALE_EVIDENCE_BASES = [
+  "METHODOLOGY_SOURCE",
+  "USER_DECISION",
+  "CITED_SOURCE",
+  "FULL_TEXT_SPAN",
+  "CHARTED_CELL",
+  "EVIDENCE_MATRIX_CELL",
+  "ARGUMENT_MAP_PREMISE",
+  "MANUSCRIPT_CITATION",
+  "POLICY_DEFAULT",
+  "EXPLICIT_LIMITATION",
+];
+export const RATIONALE_PROVENANCES = [
+  "HUMAN",
+  "AGENT_RECOMMENDATION",
+  "AUTONOMOUS_DEFAULT",
+  "IMPORTED_ARTIFACT",
+  "ADAPTER",
+];
+
+// GC-RSCH-N013 / ADR-068 §4 — disclosure enums (mirror Java enums)
+export const DISCLOSURE_STATUSES = ["CURRENT", "STALE"];
+export const DISCLOSURE_ENTRY_FAMILIES = ["AI_GENERATED_PART", "UNRESOLVED_UNCERTAINTY"];
+export const DISCLOSURE_UNCERTAINTY_CATEGORIES = [
+  "SCIENTIFIC",
+  "ACCESS_GAP",
+  "WORKFLOW_ERROR",
+  "UNRESOLVED_REVIEW",
+];
+
+// GC-RSCH-F004 / ADR-066 — gate decision audit log
+export async function listResearchRunGateDecisionLog(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/gates/decision-log`, {
+    params: { project },
+  });
+}
+
+// GC-RSCH-F034 / ADR-067 — run-scoped review comments
+export async function addResearchRunReviewComment(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/review-comments`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function listResearchRunReviewComments(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/review-comments`, {
+    params: { project },
+  });
+}
+
+export async function resolveResearchRunReviewComment(id, commentId, data, project) {
+  return request(
+    "POST",
+    `/api/v1/research-runs/${encodeURIComponent(id)}/review-comments/${encodeURIComponent(commentId)}/resolve`,
+    { body: data, params: { project } },
+  );
+}
+
+// GC-RSCH-N012 / ADR-068 — explainability / rationale ledger
+export async function addResearchRunRationaleEntry(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/rationale`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function listResearchRunRationale(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/rationale`, {
+    params: { project },
+  });
+}
+
+// GC-RSCH-N013 / ADR-068 §4 — accountability disclosure
+export async function createResearchRunDisclosure(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/disclosure`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function getResearchRunDisclosure(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/disclosure`, {
+    params: { project },
+  });
+}
+
+export async function addResearchRunDisclosureEntry(id, disclosureId, data, project) {
+  return request(
+    "POST",
+    `/api/v1/research-runs/${encodeURIComponent(id)}/disclosure/${encodeURIComponent(disclosureId)}/entries`,
+    { body: data, params: { project } },
+  );
 }
 
 export async function createControl(data, project) {
@@ -15583,6 +16117,7 @@ export async function runCodexReviewCycle({
   uncommitted = true,
   overrideCap = false,
   overrideReason = null,
+  autoGrant = false,
   signal = undefined,
 }) {
   if (typeof repoPath !== "string" || repoPath.length === 0) {
@@ -15613,13 +16148,38 @@ export async function runCodexReviewCycle({
     };
   }
 
+  // Auto-grant path (gc_review_cap_disposition). Only active when the caller
+  // explicitly opts in. The existing human override_cap path is untouched.
+  let effectiveOverrideCap = overrideCap;
+  let effectiveOverrideReason = overrideReason;
+  if (autoGrant === true) {
+    const grant = await verifyAutoDispositionGrant({
+      repoPath,
+      issueNumber,
+      reviewer: "codex",
+    });
+    if (!grant || grant.authorized !== true) {
+      return {
+        ok: false,
+        reviewer: "codex",
+        error: "auto_grant_unauthorized",
+        message: grant?.reason
+          ? `auto_grant requested but not authorized: ${grant.reason}`
+          : "auto_grant requested but no valid auto-disposition grant exists",
+        next_action: "post_summary_and_escalate_to_user",
+      };
+    }
+    effectiveOverrideCap = true;
+    effectiveOverrideReason = `auto-disposition grant #${grant.grant_number} (gc_review_cap_disposition one_more_cycle for codex)`;
+  }
+
   const reviewResult = await runCodexReview({
     repoPath,
     baseBranch: baseBranch ?? "dev",
     uncommitted: true,
     issueNumber,
-    overrideCap,
-    overrideReason,
+    overrideCap: effectiveOverrideCap,
+    overrideReason: effectiveOverrideReason,
     signal,
   });
 
@@ -15637,6 +16197,7 @@ export async function runTestQualityReviewCycle({
   baseBranch = null,
   overrideCap = false,
   overrideReason = null,
+  autoGrant = false,
   model = undefined,
   signal = undefined,
 }) {
@@ -15659,12 +16220,37 @@ export async function runTestQualityReviewCycle({
     };
   }
 
+  // Auto-grant path (gc_review_cap_disposition). Only active when the caller
+  // explicitly opts in. The existing human override_cap path is untouched.
+  let effectiveOverrideCap = overrideCap;
+  let effectiveOverrideReason = overrideReason;
+  if (autoGrant === true) {
+    const grant = await verifyAutoDispositionGrant({
+      repoPath,
+      issueNumber,
+      reviewer: "test-quality",
+    });
+    if (!grant || grant.authorized !== true) {
+      return {
+        ok: false,
+        reviewer: "test-quality",
+        error: "auto_grant_unauthorized",
+        message: grant?.reason
+          ? `auto_grant requested but not authorized: ${grant.reason}`
+          : "auto_grant requested but no valid auto-disposition grant exists",
+        next_action: "post_summary_and_escalate_to_user",
+      };
+    }
+    effectiveOverrideCap = true;
+    effectiveOverrideReason = `auto-disposition grant #${grant.grant_number} (gc_review_cap_disposition one_more_cycle for test-quality)`;
+  }
+
   const reviewParams = {
     repoPath,
     baseBranch,
     issueNumber,
-    overrideCap,
-    overrideReason,
+    overrideCap: effectiveOverrideCap,
+    overrideReason: effectiveOverrideReason,
     signal,
   };
   if (model !== undefined) reviewParams.model = model;
@@ -15676,6 +16262,846 @@ export async function runTestQualityReviewCycle({
     repoPath,
     issueNumber,
   });
+}
+
+// ---------------------------------------------------------------------------
+// gc_review_cap_disposition — auto-disposition of the pre-push review cap
+// ---------------------------------------------------------------------------
+//
+// When a review-cap is hit, the human override_cap path stays the only way to
+// run an over-cap cycle. This surface adds an OPTIONAL, config-gated automatic
+// disposition: a deterministic risk score (scoreDisposition) decides whether to
+// proceed, run one more cycle (an auto-granted over-cap override), or escalate
+// to a human. Every auto-grant is recorded durably on the issue thread with a
+// machine-parseable marker so the cycle wrappers can verify it before running
+// an over-cap cycle (verifyAutoDispositionGrant). The hard ceiling
+// (max_auto_overrides) is enforced both inside scoreDisposition and re-clamped
+// after any judge so the auto path can never grant a 2nd over-cap cycle.
+
+export const REVIEW_DISPOSITIONS = Object.freeze([
+  "proceed",
+  "one_more_cycle",
+  "escalate_to_human",
+]);
+
+// next_action map: each disposition resolves to a directive the parent agent
+// dispatches on (mirrors the reviewer next_action contract).
+export const REVIEW_DISPOSITION_NEXT_ACTION = Object.freeze({
+  proceed: "proceed_to_phase_c",
+  one_more_cycle: "reinvoke_cycle_with_auto_override",
+  escalate_to_human: "post_summary_and_escalate_to_user",
+});
+
+// Surface classes that make a change high-risk for cap purposes. The classifier
+// (classifyChangedSurface) emits mcp_tool/config_parser/public_api directly;
+// migration/controller are included so the set matches the conceptual
+// high-risk surface list even on repos whose classifier grows those classes.
+export const REVIEW_DISPOSITION_HIGH_RISK_SURFACES = Object.freeze([
+  "migration",
+  "controller",
+  "mcp_tool",
+  "config_parser",
+  "public_api",
+]);
+
+const REVIEW_AUTO_DISPOSITION_SCHEMA = "gc.implement.review-auto-disposition/v1";
+const REVIEW_AUTO_DISPOSITION_MARKER_PREFIX = "<!-- gc:review-auto-disposition";
+// Marker regex: negative lookahead so the `-data` sibling block is NOT matched
+// here. Attributes are captured as a single blob and parsed by attribute name.
+const REVIEW_AUTO_DISPOSITION_MARKER_RE =
+  /<!--\s*gc:review-auto-disposition(?!-data)\s+([^]*?)-->/g;
+// Data block: lazy `{...}` bounded by the trailing `-->` so nested JSON objects
+// parse correctly (same shape as gc:grc-screening-data).
+const REVIEW_AUTO_DISPOSITION_DATA_RE =
+  /<!--\s*gc:review-auto-disposition-data\s+(\{[^]*?\})\s*-->/g;
+
+function _parseMarkerAttrs(attrText) {
+  const attrs = {};
+  if (typeof attrText !== "string") return attrs;
+  for (const m of attrText.matchAll(/(\w+)="((?:[^"\\]|\\.)*)"/g)) {
+    attrs[m[1]] = m[2];
+  }
+  return attrs;
+}
+
+// Parse a numstat manifest (the shape computeReviewDiff returns) into diff
+// totals. Lines are `added\tdeleted\tpath`; `-` for binary files means 0.
+// Comment lines (`# staged`), `(none)`, and `(no files changed)` are skipped.
+// files_changed is deduped across the staged/unstaged sections by path.
+function parseNumstatManifest(manifest) {
+  const result = { files_changed: 0, lines_added: 0, lines_deleted: 0 };
+  if (typeof manifest !== "string") return result;
+  const seen = new Set();
+  for (const rawLine of manifest.split("\n")) {
+    const line = rawLine.trim();
+    if (line === "" || line.startsWith("#") || line === "(none)" || line === "(no files changed)") continue;
+    const parts = line.split("\t");
+    if (parts.length < 3) continue;
+    const added = parts[0] === "-" ? 0 : Number.parseInt(parts[0], 10);
+    const deleted = parts[1] === "-" ? 0 : Number.parseInt(parts[1], 10);
+    if (!Number.isInteger(added) || !Number.isInteger(deleted)) continue;
+    const path = parts.slice(2).join("\t");
+    result.lines_added += added;
+    result.lines_deleted += deleted;
+    if (path && !seen.has(path)) {
+      seen.add(path);
+      result.files_changed += 1;
+    }
+  }
+  return result;
+}
+
+// Extract the deduped changed-path list from a numstat manifest.
+function parseChangedPathsFromManifest(manifest) {
+  const paths = [];
+  const seen = new Set();
+  if (typeof manifest !== "string") return paths;
+  for (const rawLine of manifest.split("\n")) {
+    const line = rawLine.trim();
+    if (line === "" || line.startsWith("#") || line === "(none)" || line === "(no files changed)") continue;
+    const parts = line.split("\t");
+    if (parts.length < 3) continue;
+    const path = parts.slice(2).join("\t");
+    if (path && !seen.has(path)) {
+      seen.add(path);
+      paths.push(path);
+    }
+  }
+  return paths;
+}
+
+const REVIEW_DISPOSITION_SECURITY_SHAPE_RE = /\bsecurity\b|\bvuln|injection|secret|\bauthn?\b|\bauthz\b|authoriz|cwe|xss|ssrf|\bcsrf\b/i;
+
+// Reduce a findings summary into the compact findings shape scoreDisposition
+// consumes. Accepts the summarizeReviewFindings output shape (one_off_count /
+// class_count / top_categories) or a `categories` array; derives
+// has_security_finding from category shapes when a security shape is present.
+function summarizeFindingsForDisposition(findingsSummary) {
+  // `known` records whether the caller actually supplied a findings summary. A
+  // null/absent summary must NOT be silently treated as "zero findings": the
+  // disposition fires at the cap boundary precisely because findings were
+  // present, so a missing signal is unknown-risk, not low-risk. scoreDisposition
+  // refuses the proceed fast-path when findings are unknown (fail-safe).
+  const known = findingsSummary != null && typeof findingsSummary === "object";
+  const fs = known ? findingsSummary : {};
+  const oneOff = Number.isInteger(fs.one_off_count) ? fs.one_off_count : 0;
+  const classCount = Number.isInteger(fs.class_count) ? fs.class_count : 0;
+  const cats = Array.isArray(fs.top_categories)
+    ? fs.top_categories
+    : Array.isArray(fs.categories)
+      ? fs.categories
+      : [];
+  const hasSecurity =
+    fs.has_security_finding === true ||
+    cats.some((c) => {
+      const shape = typeof c === "string" ? c : typeof c?.shape === "string" ? c.shape : "";
+      return REVIEW_DISPOSITION_SECURITY_SHAPE_RE.test(shape);
+    });
+  return { one_off_count: oneOff, class_count: classCount, has_security_finding: hasSecurity, known };
+}
+
+function _isHighRiskSnapshot(snapshot) {
+  const s = snapshot && typeof snapshot === "object" ? snapshot : {};
+  const findings = s.findings && typeof s.findings === "object" ? s.findings : {};
+  const surfaces = Array.isArray(s.surfaces) ? s.surfaces : [];
+  return (
+    s.grc_verdict === "security_relevant" ||
+    findings.has_security_finding === true ||
+    surfaces.some((c) => REVIEW_DISPOSITION_HIGH_RISK_SURFACES.includes(c))
+  );
+}
+
+// PURE. Score a disposition from a signals snapshot. No I/O. Returns
+// { disposition, next_action, rationale, decided_by, risk_score }.
+//
+// Logic order (see ADR for rationale):
+//   1. Hard ceiling — prior_auto_overrides >= max_auto_overrides never yields
+//      one_more_cycle; proceed when low/unknown risk, escalate when high-risk.
+//   2. Fast-paths — codex+high-risk => one_more_cycle; tiny low-risk diff with
+//      no class findings => proceed.
+//   3. Otherwise judge_needed — caller decides (judge or safe default); the
+//      provisional safe value returned here is escalate_to_human.
+export function scoreDisposition(signalsSnapshot, config) {
+  const s = signalsSnapshot && typeof signalsSnapshot === "object" ? signalsSnapshot : {};
+  const cfg = config && typeof config === "object" ? config : {};
+  const maxAuto = Number.isInteger(cfg.max_auto_overrides) ? cfg.max_auto_overrides : 1;
+  const priorAutoOverrides = Number.isInteger(s.prior_auto_overrides) ? s.prior_auto_overrides : 0;
+  const diff = s.diff && typeof s.diff === "object" ? s.diff : {};
+  const filesChanged = Number.isInteger(diff.files_changed) ? diff.files_changed : 0;
+  const linesAdded = Number.isInteger(diff.lines_added) ? diff.lines_added : 0;
+  const linesDeleted = Number.isInteger(diff.lines_deleted) ? diff.lines_deleted : 0;
+  const surfaces = Array.isArray(s.surfaces) ? s.surfaces : [];
+  const findings = s.findings && typeof s.findings === "object" ? s.findings : {};
+  const oneOff = Number.isInteger(findings.one_off_count) ? findings.one_off_count : 0;
+  const classCount = Number.isInteger(findings.class_count) ? findings.class_count : 0;
+  const hasSecurityFinding = findings.has_security_finding === true;
+  // Findings shape is "known" unless explicitly flagged absent. A missing
+  // findings signal (the MCP path with no findings_summary) is treated as
+  // unknown-risk, which forecloses the proceed fast-path below.
+  const findingsKnown = findings.known !== false;
+  const grcVerdict = typeof s.grc_verdict === "string" ? s.grc_verdict : "unknown";
+  const reviewer = s.reviewer;
+
+  const hasHighRiskSurface = surfaces.some((c) => REVIEW_DISPOSITION_HIGH_RISK_SURFACES.includes(c));
+  const highRisk = grcVerdict === "security_relevant" || hasSecurityFinding || hasHighRiskSurface;
+
+  let riskScore = 0;
+  if (grcVerdict === "security_relevant") riskScore += 0.5;
+  if (hasSecurityFinding) riskScore += 0.3;
+  if (hasHighRiskSurface) riskScore += 0.2;
+  riskScore += Math.min(0.2, (linesAdded + linesDeleted) / 1000);
+  riskScore += Math.min(0.2, classCount * 0.1);
+  riskScore = Math.min(1, Math.round(riskScore * 1000) / 1000);
+
+  const mk = (disposition, decidedBy, rationale) => ({
+    disposition,
+    next_action: REVIEW_DISPOSITION_NEXT_ACTION[disposition],
+    rationale,
+    decided_by: decidedBy,
+    risk_score: riskScore,
+  });
+
+  // 1. Hard ceiling.
+  if (priorAutoOverrides >= maxAuto) {
+    if (highRisk) {
+      return mk("escalate_to_human", "ceiling", "auto-override ceiling reached and change is high-risk; escalating to a human");
+    }
+    return mk("proceed", "ceiling", "auto-override ceiling reached; residual risk low, proceeding");
+  }
+
+  // 2. Fast-paths.
+  if (reviewer === "codex" && highRisk) {
+    return mk("one_more_cycle", "fast_path", "codex review on a high-risk surface warrants one more cycle");
+  }
+  const tinyDiff = linesAdded + linesDeleted <= 40 && filesChanged <= 3;
+  if (tinyDiff && !highRisk && findingsKnown && classCount === 0 && oneOff <= 2) {
+    return mk("proceed", "fast_path", "small low-risk diff with no class findings; proceeding");
+  }
+
+  // 3. Gray zone — caller resolves via judge or safe default. A change whose
+  // findings shape is unknown also lands here rather than fast-pathing to
+  // proceed, so a dropped findings signal can never launder a class finding
+  // into an automatic proceed.
+  if (!findingsKnown) {
+    return mk("escalate_to_human", "judge_needed", "findings shape unknown; cannot auto-proceed — judge or human decision required");
+  }
+  return mk("escalate_to_human", "judge_needed", "gray-zone change; judge or human decision required");
+}
+
+// Assemble a signals snapshot from raw review/diff/GRC inputs. Pure aside from
+// the classifyChangedSurface call (lexical path classification, no I/O).
+export function collectDispositionSignals({
+  reviewer,
+  findingsSummary,
+  diffManifest,
+  changedPaths,
+  grcVerdict,
+  priorAutoOverrides,
+  repoRoot,
+}) {
+  const diff = parseNumstatManifest(diffManifest);
+  let surfaces = [];
+  if (Array.isArray(changedPaths) && changedPaths.length > 0) {
+    const { classifications } = classifyChangedSurface(changedPaths, repoRoot);
+    surfaces = [...new Set(classifications.map((c) => c.surface_class))];
+  }
+  const verdict = typeof grcVerdict === "string" && grcVerdict.trim() !== "" ? grcVerdict : "unknown";
+  return {
+    reviewer: reviewer ?? null,
+    prior_auto_overrides: Number.isInteger(priorAutoOverrides) ? priorAutoOverrides : 0,
+    diff,
+    surfaces,
+    grc_verdict: verdict,
+    findings: summarizeFindingsForDisposition(findingsSummary),
+  };
+}
+
+// Parse review-auto-disposition markers scoped to (issue, reviewer). Returns
+// { markers, auto_override_grants } where auto_override_grants counts markers
+// whose disposition is one_more_cycle for that issue+reviewer. Tolerant of
+// malformed JSON data blocks and schema-version drift.
+export function parseReviewAutoDispositionMarkers(commentBodies, issueNumber, reviewer) {
+  const markers = [];
+  let auto_override_grants = 0;
+  if (!Array.isArray(commentBodies)) return { markers, auto_override_grants };
+  for (const body of commentBodies) {
+    if (typeof body !== "string") continue;
+    const dataBlocks = [];
+    REVIEW_AUTO_DISPOSITION_DATA_RE.lastIndex = 0;
+    for (const dm of body.matchAll(REVIEW_AUTO_DISPOSITION_DATA_RE)) {
+      try {
+        dataBlocks.push(JSON.parse(dm[1]));
+      } catch {
+        dataBlocks.push(null);
+      }
+    }
+    let idx = 0;
+    REVIEW_AUTO_DISPOSITION_MARKER_RE.lastIndex = 0;
+    for (const m of body.matchAll(REVIEW_AUTO_DISPOSITION_MARKER_RE)) {
+      const attrs = _parseMarkerAttrs(m[1]);
+      const markerIssue = Number.parseInt(attrs.issue, 10);
+      const data = dataBlocks[idx] ?? null;
+      idx += 1;
+      if (markerIssue !== issueNumber) continue;
+      if (typeof reviewer === "string" && attrs.reviewer !== reviewer) continue;
+      const disposition =
+        attrs.disposition ?? (data && typeof data.disposition === "string" ? data.disposition : null);
+      const grant = attrs.grant != null ? Number.parseInt(attrs.grant, 10) : null;
+      markers.push({
+        issue: markerIssue,
+        reviewer: attrs.reviewer ?? null,
+        disposition,
+        grant: Number.isInteger(grant) ? grant : null,
+        data,
+      });
+      if (disposition === "one_more_cycle") auto_override_grants += 1;
+    }
+  }
+  return { markers, auto_override_grants };
+}
+
+// Render the durable auto-disposition comment with the marker + data block.
+// The marker prefixes are produced HERE (not from caller text); only the
+// free-text rationale and snapshot are caller/model-derived and are guarded by
+// the runner via rejectReservedMarkerSequence before this is called.
+export function buildReviewAutoDispositionRecord({
+  issueNumber,
+  reviewer,
+  cycle,
+  cap,
+  mode,
+  disposition,
+  rationale,
+  signalsSnapshot,
+  grantNumber,
+}) {
+  const schema = REVIEW_AUTO_DISPOSITION_SCHEMA;
+  const grantAttr = disposition === "one_more_cycle" ? "true" : "false";
+  const safeRationale = typeof rationale === "string" ? rationale : "";
+  // The issuance mode is persisted in the durable record so a grant minted in
+  // shadow mode can never be promoted to authorizing by later flipping the repo
+  // to authoritative — the verifier checks the marker's own recorded mode, not
+  // just the current config. `cap` is the server-derived effective reviewer cap
+  // (not a caller-supplied value), so the grant is bound to the real boundary.
+  const issuedMode = mode === "authoritative" ? "authoritative" : "shadow";
+  const data = {
+    schema,
+    disposition,
+    reviewer,
+    cycle,
+    cap,
+    mode: issuedMode,
+    grant: Number.isInteger(grantNumber) ? grantNumber : null,
+    signals_snapshot: signalsSnapshot ?? null,
+  };
+  const marker =
+    `${REVIEW_AUTO_DISPOSITION_MARKER_PREFIX} issue="${issueNumber}" reviewer="${reviewer}" ` +
+    `schema="${schema}" disposition="${disposition}" mode="${issuedMode}" grant="${grantAttr}" -->`;
+  const dataBlock = `<!-- gc:review-auto-disposition-data ${JSON.stringify(data)} -->`;
+  return [
+    marker,
+    "",
+    `## gc_review_cap_disposition — issue #${issueNumber} (${reviewer}, cycle ${cycle} of ${cap})`,
+    "",
+    `**Disposition:** ${disposition}  `,
+    `**Auto-override grant #:** ${Number.isInteger(grantNumber) ? grantNumber : "n/a"}  `,
+    `**Rationale:** ${safeRationale}`,
+    "",
+    "Posted by the MCP server to record the review-cap auto-disposition. Do not edit or delete — " +
+      "the cycle wrappers read this marker to verify an over-cap auto-grant before running a cycle.",
+    "",
+    dataBlock,
+  ].join("\n");
+}
+
+// Build the disposition-judge prompt. The judge only runs in the gray zone
+// when workflow.review_disposition.judge.enabled is true and no verdict was
+// injected for tests.
+function buildDispositionJudgePrompt({ signalsSnapshot, reviewer, issueNumber, cycle, cap }) {
+  return [
+    "You are an automated review-cap disposition judge for a pre-push code review loop.",
+    `Reviewer: ${reviewer}. Issue: #${issueNumber}. Cycle ${cycle} of ${cap}.`,
+    "",
+    "A deterministic scorer could not decide whether to proceed, run one more review cycle, or",
+    "escalate to a human. Decide using the signals snapshot below. Prefer escalate_to_human when",
+    "in doubt — an automatic over-cap cycle is a privilege, not a default.",
+    "",
+    "Signals snapshot (JSON):",
+    JSON.stringify(signalsSnapshot ?? {}, null, 2),
+    "",
+    "Return JSON matching the provided schema: { disposition: one of",
+    `${REVIEW_DISPOSITIONS.join(" | ")}, rationale: a one-line justification }.`,
+  ].join("\n");
+}
+
+const REVIEW_AUTO_DISPOSITION_JUDGE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["disposition", "rationale"],
+  properties: {
+    disposition: { type: "string", enum: [...REVIEW_DISPOSITIONS] },
+    rationale: { type: "string", minLength: 1, maxLength: 400 },
+  },
+};
+
+function parseDispositionJudgeOutput(stdout) {
+  let outer;
+  try {
+    outer = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+  let payload = outer;
+  if (outer && typeof outer.result === "string") {
+    try {
+      payload = JSON.parse(outer.result);
+    } catch {
+      return null;
+    }
+  }
+  if (!payload || typeof payload.disposition !== "string" || !REVIEW_DISPOSITIONS.includes(payload.disposition)) {
+    return null;
+  }
+  return {
+    disposition: payload.disposition,
+    rationale: typeof payload.rationale === "string" ? payload.rationale : null,
+  };
+}
+
+// Thin judge runner — mirrors runSingleClaudeTestQualityReview. Tests inject
+// judgeVerdict and never reach this, so the claude child is never spawned in CI.
+async function runDispositionJudge({ repoRoot, signalsSnapshot, config, reviewer, issueNumber, cycle, cap, signal }) {
+  const model =
+    config?.judge && typeof config.judge.model === "string" && config.judge.model.trim() !== ""
+      ? config.judge.model
+      : TEST_QUALITY_REVIEW_DEFAULT_MODEL;
+  const prompt = buildDispositionJudgePrompt({ signalsSnapshot, reviewer, issueNumber, cycle, cap });
+  const args = [
+    "--print",
+    "--model",
+    model,
+    "--output-format",
+    "json",
+    "--json-schema",
+    JSON.stringify(REVIEW_AUTO_DISPOSITION_JUDGE_SCHEMA),
+    "--add-dir",
+    repoRoot,
+    "--permission-mode",
+    "bypassPermissions",
+    "--allowedTools",
+    "Read Glob Grep",
+  ];
+  const childEnv = { ...process.env };
+  delete childEnv.ANTHROPIC_API_KEY;
+  const { stdout } = await execFileWithInput("claude", args, {
+    input: prompt,
+    cwd: repoRoot,
+    env: childEnv,
+    maxBuffer: 10 * 1024 * 1024,
+    timeoutMs: TEST_QUALITY_REVIEW_TIMEOUT_MS,
+    signal,
+  });
+  return parseDispositionJudgeOutput(stdout);
+}
+
+function _emptyReviewDispositionConfigForRunner() {
+  return { enabled: false, mode: "shadow", max_auto_overrides: 1, judge: { enabled: false, model: null } };
+}
+
+// PURE. Resolve the effective pre-push review cap for a reviewer from the
+// normalized workflow config, falling back to the module default. This is the
+// authoritative cap boundary — the disposition tool and grant verifier derive
+// it server-side rather than trusting a caller-supplied `cap`, which closes the
+// "mint a grant against a bogus cap" vector codex flagged in cycle 2.
+export function effectiveReviewerCap(workflow, reviewer) {
+  const block =
+    reviewer === "codex"
+      ? workflow?.codex_review
+      : reviewer === "test-quality"
+        ? workflow?.test_quality_review
+        : null;
+  const configured = block && Number.isInteger(block.pre_push_cap) ? block.pre_push_cap : null;
+  const fallback = reviewer === "codex" ? CODEX_REVIEW_PREPUSH_HARD_CAP : TEST_QUALITY_REVIEW_HARD_CAP;
+  return configured != null ? configured : fallback;
+}
+
+// Orchestrate one auto-disposition decision. When review_disposition is
+// disabled this returns { ok:true, skipped:true, disposition:null } and does
+// nothing else (no diff, no GRC read, no post). Otherwise it scores, optionally
+// consults the judge, re-clamps the ceiling, and posts the durable record.
+// Authority is derived from durable thread state and normalized config, NOT from
+// caller-supplied cycle/cap: the effective cap comes from config, the prior
+// over-cap count comes from durable cycle markers, the call is rejected before
+// the cap boundary, and in shadow mode the returned next_action is clamped to
+// escalation (record-only) so a consumer can never advance on a shadow run.
+export async function runReviewCapDisposition({
+  repoPath,
+  issueNumber,
+  reviewer,
+  cycle,
+  cap,
+  findingsSummary = null,
+  baseBranch = null,
+  uncommitted = true,
+  judgeVerdict = null,
+  signal = undefined,
+}) {
+  if (typeof repoPath !== "string" || repoPath.length === 0) {
+    return { ok: false, error: "review_cap_disposition_input_invalid", message: "repo_path is required" };
+  }
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    return { ok: false, error: "review_cap_disposition_input_invalid", message: "issue_number must be a positive integer" };
+  }
+  if (reviewer !== "codex" && reviewer !== "test-quality") {
+    return { ok: false, error: "review_cap_disposition_input_invalid", message: "reviewer must be 'codex' or 'test-quality'" };
+  }
+  if (!Number.isInteger(cycle) || cycle <= 0) {
+    return { ok: false, error: "review_cap_disposition_input_invalid", message: "cycle must be a positive integer" };
+  }
+  if (!Number.isInteger(cap) || cap <= 0) {
+    return { ok: false, error: "review_cap_disposition_input_invalid", message: "cap must be a positive integer" };
+  }
+
+  const repoRoot = await ensureGitRepo(repoPath);
+
+  let config = null;
+  let workflow = null;
+  try {
+    const ctx = await getRepoGroundControlContext(repoRoot);
+    workflow = ctx?.workflow ?? null;
+    config = workflow?.review_disposition ?? null;
+  } catch {
+    config = null;
+  }
+  if (!config || typeof config !== "object") config = _emptyReviewDispositionConfigForRunner();
+  if (config.enabled !== true) {
+    return { ok: true, skipped: true, disposition: null };
+  }
+  const maxAuto = Number.isInteger(config.max_auto_overrides) ? config.max_auto_overrides : 1;
+  const mode = config.mode === "authoritative" ? "authoritative" : "shadow";
+  // Authoritative cap boundary comes from config, not the caller's `cap`.
+  const effectiveCap = effectiveReviewerCap(workflow, reviewer);
+
+  const { owner, name } = await getOwnerRepo(repoRoot);
+  const commentBodies = await readIssueCommentBodies(repoRoot, owner, name, issueNumber);
+  // Prior over-cap count is derived from DURABLE cycle markers (how many review
+  // cycles actually ran beyond the cap), not from the grant-marker count or the
+  // caller's `cycle` — so a caller cannot under-report prior overrides.
+  const cyclesRun =
+    reviewer === "codex"
+      ? parseCodexReviewPrePushCycleMarkers(commentBodies, issueNumber)
+      : parseTestQualityReviewCycleMarkers(commentBodies, issueNumber);
+  // Reject out-of-sequence calls: the disposition is only meaningful once the
+  // last in-cap review cycle has actually run. A call before the boundary cannot
+  // be allowed to mint an auto-grant.
+  if (cyclesRun < effectiveCap) {
+    return {
+      ok: false,
+      error: "disposition_before_cap_boundary",
+      message: `review-cap disposition requires the cap boundary to be reached: ${cyclesRun} ${reviewer} cycle(s) have run but the effective cap is ${effectiveCap}`,
+      next_action: "run_remaining_in_cap_cycles_first",
+      effective_cap: effectiveCap,
+      cycles_run: cyclesRun,
+    };
+  }
+  const priorAutoOverrides = Math.max(0, cyclesRun - effectiveCap);
+
+  const diff = await computeReviewDiff(repoRoot, baseBranch ?? "dev", uncommitted);
+  const changedPaths = parseChangedPathsFromManifest(diff.manifest);
+  const grcData = parseGrcScreeningData(commentBodies, issueNumber);
+  const grcVerdict = grcData && typeof grcData.verdict === "string" ? grcData.verdict : "unknown";
+
+  const signalsSnapshot = collectDispositionSignals({
+    reviewer,
+    findingsSummary,
+    diffManifest: diff.manifest,
+    changedPaths,
+    grcVerdict,
+    priorAutoOverrides,
+    repoRoot,
+  });
+
+  let scored = scoreDisposition(signalsSnapshot, config);
+
+  // Judge resolution for the gray zone.
+  if (scored.decided_by === "judge_needed") {
+    if (config.judge?.enabled === true) {
+      let verdict = judgeVerdict;
+      if (verdict == null) {
+        try {
+          verdict = await runDispositionJudge({ repoRoot, signalsSnapshot, config, reviewer, issueNumber, cycle, cap, signal });
+        } catch {
+          verdict = null;
+        }
+      }
+      if (verdict && typeof verdict.disposition === "string" && REVIEW_DISPOSITIONS.includes(verdict.disposition)) {
+        scored = {
+          disposition: verdict.disposition,
+          next_action: REVIEW_DISPOSITION_NEXT_ACTION[verdict.disposition],
+          rationale:
+            typeof verdict.rationale === "string" && verdict.rationale.trim() !== ""
+              ? verdict.rationale
+              : scored.rationale,
+          decided_by: "judge",
+          risk_score: scored.risk_score,
+        };
+      } else {
+        scored = {
+          disposition: "escalate_to_human",
+          next_action: REVIEW_DISPOSITION_NEXT_ACTION.escalate_to_human,
+          rationale: "judge produced no usable verdict; safe default is escalate",
+          decided_by: "judge",
+          risk_score: scored.risk_score,
+        };
+      }
+    } else {
+      scored = {
+        ...scored,
+        disposition: "escalate_to_human",
+        next_action: REVIEW_DISPOSITION_NEXT_ACTION.escalate_to_human,
+        decided_by: "judge_needed",
+      };
+    }
+  }
+
+  // Re-clamp the ceiling: a judge can never produce a 2nd over-cap grant.
+  let overCapGrantNumber = null;
+  if (scored.disposition === "one_more_cycle") {
+    if (priorAutoOverrides >= maxAuto) {
+      scored = _isHighRiskSnapshot(signalsSnapshot)
+        ? {
+            disposition: "escalate_to_human",
+            next_action: REVIEW_DISPOSITION_NEXT_ACTION.escalate_to_human,
+            rationale: "auto-override ceiling reached; escalating to a human",
+            decided_by: "ceiling",
+            risk_score: scored.risk_score,
+          }
+        : {
+            disposition: "proceed",
+            next_action: REVIEW_DISPOSITION_NEXT_ACTION.proceed,
+            rationale: "auto-override ceiling reached; residual risk low, proceeding",
+            decided_by: "ceiling",
+            risk_score: scored.risk_score,
+          };
+    } else {
+      overCapGrantNumber = priorAutoOverrides + 1;
+    }
+  }
+
+  // Shadow clamp: in shadow mode the disposition is recorded for agreement data
+  // but it must NOT drive control flow — a consumer following the envelope's
+  // next_action could otherwise advance past the cap stop. Force the returned
+  // next_action to escalation. The scored disposition is still recorded in the
+  // durable marker (under mode="shadow", which the verifier treats as
+  // non-authorizing), so shadow markers can never become consumable grants.
+  const returnedNextAction =
+    mode === "authoritative" ? scored.next_action : REVIEW_DISPOSITION_NEXT_ACTION.escalate_to_human;
+
+  // Guard caller/model-derived free text before embedding.
+  const rmErr = rejectReservedMarkerSequence(scored.rationale, "rationale");
+  if (rmErr) {
+    return {
+      ok: false,
+      error: "disposition_record_reserved_marker",
+      message: rmErr,
+      disposition: scored.disposition,
+      next_action: "remove_reserved_marker_prefix_and_retry",
+    };
+  }
+
+  const body = buildReviewAutoDispositionRecord({
+    issueNumber,
+    reviewer,
+    cycle: cyclesRun,
+    cap: effectiveCap,
+    mode,
+    disposition: scored.disposition,
+    rationale: scored.rationale,
+    signalsSnapshot,
+    grantNumber: overCapGrantNumber,
+  });
+
+  const sensitiveError = detectSensitiveBodyContent(body);
+  if (sensitiveError) {
+    return {
+      ok: false,
+      error: "disposition_record_body_rejected",
+      message: sensitiveError,
+      disposition: scored.disposition,
+      next_action: "scrub_secrets_and_retry",
+    };
+  }
+  if (Buffer.byteLength(body, "utf8") > GITHUB_ISSUE_COMMENT_BODY_MAX) {
+    return {
+      ok: false,
+      error: "disposition_record_body_too_large",
+      message: `rendered body is ${Buffer.byteLength(body, "utf8")} bytes; GitHub's issue-comment body cap is ${GITHUB_ISSUE_COMMENT_BODY_MAX} bytes`,
+      disposition: scored.disposition,
+      next_action: "reduce_record_size_and_retry",
+    };
+  }
+
+  let apiResponse = null;
+  try {
+    const { stdout } = await execFile(
+      "gh",
+      ["api", "--method", "POST", `/repos/${owner}/${name}/issues/${issueNumber}/comments`, "-f", `body=${body}`],
+      { cwd: repoRoot },
+    );
+    try {
+      apiResponse = JSON.parse(stdout);
+    } catch {
+      apiResponse = null;
+    }
+  } catch (error) {
+    // A failed post authorizes nothing: the durable grant record never landed.
+    return {
+      ok: false,
+      error: "disposition_record_post_failed",
+      message: extractGhErrorMessage(error),
+      disposition: scored.disposition,
+      next_action: returnedNextAction,
+      mode,
+      effective_cap: effectiveCap,
+      signals_snapshot: signalsSnapshot,
+      over_cap_grant_number: null,
+      decision_record_url: null,
+    };
+  }
+
+  return {
+    ok: true,
+    disposition: scored.disposition,
+    next_action: returnedNextAction,
+    mode,
+    effective_cap: effectiveCap,
+    rationale: scored.rationale,
+    decided_by: scored.decided_by,
+    risk_score: scored.risk_score,
+    signals_snapshot: signalsSnapshot,
+    over_cap_grant_number: overCapGrantNumber,
+    decision_record_url:
+      apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+  };
+}
+
+// Verify that an over-cap auto-grant exists and is within the ceiling. Used by
+// the cycle wrappers BEFORE running an over-cap cycle. Returns
+// { ok:true, authorized:true, grant_number } only when the latest disposition
+// for (issue, reviewer) is one_more_cycle AND auto_override_grants <=
+// max_auto_overrides; otherwise { ok:true, authorized:false, reason }.
+// PURE. Decide whether an over-cap auto-grant is authorized, given thread state
+// already read by verifyAutoDispositionGrant. No I/O — the security logic lives
+// here so it is unit-testable without a live repo. The grant is authorized only
+// when ALL of these hold (any failure returns a structured reason):
+//   - review_disposition is enabled AND mode is "authoritative" (a shadow-mode
+//     marker is record-only and never authorizes an over-cap cycle);
+//   - the trusted poster login is resolvable, and the grant marker was posted
+//     by it (provenance — a forged marker from any other commenter is ignored);
+//   - the latest grant for (issue, reviewer) is one_more_cycle within the
+//     max_auto_overrides ceiling;
+//   - the grant marker was ITSELF issued under authoritative mode (recorded in
+//     the marker), so a shadow-issued grant cannot be promoted by flipping the
+//     repo to authoritative later;
+//   - the grant's recorded cap boundary equals the server-derived effective cap
+//     (a grant minted against a bogus cap cannot authorize a different boundary);
+//   - the grant is within the max_auto_overrides ceiling, and fewer over-cap
+//     cycles have actually run than grants exist (single-use: once the granted
+//     over-cap cycle's durable marker is on the thread, the grant is spent).
+export function evaluateAutoDispositionGrant({ config, trustedLogin, authored, issueNumber, reviewer, cyclesRun, effectiveCap }) {
+  if (config?.enabled !== true) {
+    return { authorized: false, reason: "review_disposition_disabled" };
+  }
+  if (config.mode !== "authoritative") {
+    return { authorized: false, reason: "review_disposition_mode_not_authoritative" };
+  }
+  if (typeof trustedLogin !== "string" || trustedLogin.trim() === "") {
+    return { authorized: false, reason: "trusted_poster_unresolved" };
+  }
+  if (!Number.isInteger(effectiveCap) || effectiveCap <= 0) {
+    return { authorized: false, reason: "effective_cap_unresolved" };
+  }
+  const maxAuto = Number.isInteger(config.max_auto_overrides) ? config.max_auto_overrides : 1;
+  const list = Array.isArray(authored) ? authored : [];
+  const trustedBodies = list
+    .filter((c) => c && c.authorLogin === trustedLogin && typeof c.body === "string")
+    .map((c) => c.body);
+  const { markers, auto_override_grants } = parseReviewAutoDispositionMarkers(trustedBodies, issueNumber, reviewer);
+  const relevant = markers.filter((m) => m.reviewer === reviewer && m.issue === issueNumber);
+  const latest = relevant.length > 0 ? relevant[relevant.length - 1] : null;
+  if (!latest || latest.disposition !== "one_more_cycle") {
+    return { authorized: false, reason: latest ? "latest_disposition_not_one_more_cycle" : "no_auto_disposition_grant" };
+  }
+  // The grant's OWN recorded issuance mode must be authoritative — not just the
+  // current config — so a marker minted in shadow mode is never consumable.
+  if (!latest.data || latest.data.mode !== "authoritative") {
+    return { authorized: false, reason: "grant_not_authoritative_mode" };
+  }
+  if (auto_override_grants > maxAuto) {
+    return { authorized: false, reason: "auto_override_ceiling_exceeded" };
+  }
+  const capBoundary = latest.data && Number.isInteger(latest.data.cap) ? latest.data.cap : null;
+  if (!Number.isInteger(capBoundary) || capBoundary <= 0) {
+    return { authorized: false, reason: "grant_missing_cap_boundary" };
+  }
+  // The grant must bind to the SAME boundary the server enforces now.
+  if (capBoundary !== effectiveCap) {
+    return { authorized: false, reason: "grant_cap_boundary_mismatch" };
+  }
+  const runs = Number.isInteger(cyclesRun) ? cyclesRun : 0;
+  const overCapCyclesRun = Math.max(0, runs - capBoundary);
+  if (overCapCyclesRun >= auto_override_grants) {
+    return { authorized: false, reason: "auto_grant_already_consumed" };
+  }
+  return { authorized: true, grant_number: auto_override_grants };
+}
+
+export async function verifyAutoDispositionGrant({ repoPath, issueNumber, reviewer }) {
+  if (typeof repoPath !== "string" || repoPath.length === 0) {
+    return { ok: false, error: "verify_auto_disposition_input_invalid", message: "repo_path is required" };
+  }
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    return { ok: false, error: "verify_auto_disposition_input_invalid", message: "issue_number must be a positive integer" };
+  }
+  if (reviewer !== "codex" && reviewer !== "test-quality") {
+    return { ok: false, error: "verify_auto_disposition_input_invalid", message: "reviewer must be 'codex' or 'test-quality'" };
+  }
+
+  const repoRoot = await ensureGitRepo(repoPath);
+  let config = null;
+  let workflow = null;
+  try {
+    const ctx = await getRepoGroundControlContext(repoRoot);
+    workflow = ctx?.workflow ?? null;
+    config = workflow?.review_disposition ?? null;
+  } catch {
+    config = null;
+  }
+  // Cheap exits before any GitHub I/O.
+  if (config?.enabled !== true) {
+    return { ok: true, authorized: false, reason: "review_disposition_disabled" };
+  }
+  if (config.mode !== "authoritative") {
+    return { ok: true, authorized: false, reason: "review_disposition_mode_not_authoritative" };
+  }
+  // The effective cap boundary is derived from config server-side, never from a
+  // caller — the grant must bind to it.
+  const effectiveCap = effectiveReviewerCap(workflow, reviewer);
+
+  const { owner, name } = await getOwnerRepo(repoRoot);
+  const trustedLogin = await getAuthenticatedGitHubLogin(repoRoot);
+  const authored = await readIssueCommentsWithAuthors(repoRoot, owner, name, issueNumber);
+  // Count cycle-run markers from ALL comment bodies (not just trusted): a forged
+  // cycle marker can only make the grant look MORE consumed, which fails safe
+  // toward denial.
+  const allBodies = authored.map((c) => c.body);
+  const cyclesRun =
+    reviewer === "codex"
+      ? parseCodexReviewPrePushCycleMarkers(allBodies, issueNumber)
+      : parseTestQualityReviewCycleMarkers(allBodies, issueNumber);
+
+  const decision = evaluateAutoDispositionGrant({ config, trustedLogin, authored, issueNumber, reviewer, cyclesRun, effectiveCap });
+  return { ok: true, ...decision };
 }
 
 // ---------------------------------------------------------------------------

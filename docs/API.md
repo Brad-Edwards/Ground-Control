@@ -1206,6 +1206,7 @@ ingestion (`gc_workflow_run_ingest`) seeds the read-model from canonical issue-t
 | POST | `/derivations/runs` | DerivationRunRequest | 201 | Run server-side derivation for a repository scope |
 | GET | `/derivations/runs` | - | 200 | List derivation runs |
 | GET | `/derivations/runs/{id}` | - | 200 | Get one derivation run |
+| GET | `/derivations/runs/{id}/boundary-model` | - | 200 | Get the canonical boundary-model snapshot for one derivation run |
 | GET | `/derivations/facts` | - | 200 | List normalized system-model facts |
 | GET | `/derivations/capture-limits` | - | 200 | List capture-limit records |
 
@@ -1226,7 +1227,10 @@ payloads.
 `PATH_SET`, or `DIFF`), `commitSha` (required, 7 to 64 lowercase hex
 characters), `baseCommitSha` (required for `DIFF` only), `paths` (required
 for `PATH_SET`, forbidden for `FULL_REPO`), `languages` (required string
-set), and `surfaces` (required string set).
+set), `surfaces` (required string set), and optional `declaredBoundaries`.
+Each declared boundary carries `key`, `name`, optional `description`,
+`pathSelectors`, and `surfaces`; declarations complement derived
+`TRUST_BOUNDARY` facts and are merged into the canonical boundary snapshot.
 
 **SystemModelFact fields:** `id`, `derivationRunId`, `projectIdentifier`,
 `factKind`, `schemaVersion`, `factKey`, `label`, `summary`, `sourcePath`,
@@ -1240,11 +1244,24 @@ rejected.
 `adapterId`, `reason`, `language`, `surface`, `detail`, `commitSha`,
 `capturedAt`, `createdAt`, and `updatedAt`.
 
+**BoundaryModelSnapshot fields:** `id`, `derivationRunId`,
+`projectIdentifier`, `schemaVersion`, `boundarySetVersion`,
+`architectureModelVersion`, `commitSha`, `declarationDigest`, counts for
+boundaries, assignments, and gaps, plus `boundaries`, `assignments`, `gaps`,
+`createdAt`, and `updatedAt`. Boundaries include `boundaryKey`, `displayName`,
+`description`, `source` (`DERIVED`, `DECLARED`, or `MERGED`), `pathSelectors`,
+`surfaces`, and contributing `inputFactKeys`. Assignments map assignable facts
+to exactly one boundary. Gaps are modeling gaps such as missing source paths,
+unassigned facts, or ambiguous boundary matches; they are separate from
+capture-limit records.
+
 MCP surface: `gc_derivation` with actions `run`, `list_runs`, `get_run`,
-`list_facts`, and `list_capture_limits`. `run` requires `scope_mode`,
-`commit_sha`, `languages`, and `surfaces`; `base_commit_sha` is required when
-`scope_mode=DIFF`; `paths` is required when `scope_mode=PATH_SET`. Readback
-actions map `run_id`, `fact_kind`, and `reason` to the REST filters above.
+`get_boundary_model`, `list_facts`, and `list_capture_limits`. `run` requires
+`scope_mode`, `commit_sha`, `languages`, and `surfaces`; `base_commit_sha` is
+required when `scope_mode=DIFF`; `paths` is required when
+`scope_mode=PATH_SET`. It accepts `declared_boundaries` directly or `repo_path`
+to read `grc.boundaries` from `.ground-control.yaml`. Readback actions map
+`run_id`, `fact_kind`, and `reason` to the REST filters above.
 
 ### Plugins
 
@@ -2239,6 +2256,56 @@ Standard Spring Page parameters:
 
 Response wraps results in a Spring Page object with `content`, `totalElements`,
 `totalPages`, `number`, `size`.
+
+### Research Runs (ADR-064 / ADR-065)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/research-runs` | ResearchRunRequest | 201 | Start a project-scoped research run on a RESEARCH project; snapshots intake (autonomy, intended output, budget caps) and resolves the five-gate policy |
+| GET | `/research-runs` | - | 200 | List research runs in a project (ordered by `createdAt DESC`) |
+| GET | `/research-runs/{id}` | - | 200 | Get a research run by UUID |
+| GET | `/research-runs/uid/{uid}` | - | 200 | Get a research run by project-scoped UID |
+| GET | `/research-runs/{id}/snapshot` | - | 200 | Observability snapshot: current stage, pending gates, artifact readiness, source counts, cost, last error (ADR-065) |
+| GET | `/research-runs/{id}/artifacts` | - | 200 | List the run's artifact manifest rows |
+| GET | `/research-runs/{id}/gates` | - | 200 | List the run's gate-policy / decision rows |
+| POST | `/research-runs/{id}/artifacts` | RecordArtifactRequest | 201 | Record (or rework) the current stage's output artifact; idempotent on `idempotencyKey` |
+| POST | `/research-runs/{id}/advance` | AdvanceStageRequest | 200 | Advance to the next stage (blocked 422 without the required artifact; 409 on a pending required gate) |
+| POST | `/research-runs/{id}/gates/decision` | GateDecisionRequest | 200 | Record a durable decision for a run gate (now includes recommendation fields: recommendationOptionId, recommendationSummary, recommendationProvenance, questionKey, sourceActionId, per ADR-066) |
+| GET | `/research-runs/{id}/gates/decision-log` | - | 200 | List the append-only gate decision audit log for a run (GC-RSCH-F004, ADR-066) |
+| POST | `/research-runs/{id}/review-comments` | AddReviewCommentRequest | 201 | Add a run-scoped review comment attached to a gate point, stage, artifact, decision log, or the run itself (GC-RSCH-F034, ADR-067) |
+| GET | `/research-runs/{id}/review-comments` | - | 200 | List the run's review comments (GC-RSCH-F034, ADR-067) |
+| POST | `/research-runs/{id}/review-comments/{commentId}/resolve` | ResolveReviewCommentRequest | 200 | Resolve an open review comment; 409 if already resolved (GC-RSCH-F034, ADR-067) |
+| POST | `/research-runs/{id}/rationale` | AddRationaleEntryRequest | 201 | Append an immutable rationale-ledger entry (GC-RSCH-N012, ADR-068) |
+| GET | `/research-runs/{id}/rationale` | - | 200 | List the run's rationale ledger entries (GC-RSCH-N012, ADR-068) |
+| POST | `/research-runs/{id}/disclosure` | CreateDisclosureRequest | 201 | Create the final-manuscript AI-use and uncertainty disclosure for a run (GC-RSCH-N013, ADR-068 §4) |
+| GET | `/research-runs/{id}/disclosure` | - | 200 | Get the current disclosure for a run (GC-RSCH-N013, ADR-068 §4) |
+| POST | `/research-runs/{id}/disclosure/{disclosureId}/entries` | AddDisclosureEntryRequest | 201 | Add one disclosed item (AI-generated portion or unresolved uncertainty) to a disclosure (GC-RSCH-N013, ADR-068 §4) |
+| POST | `/research-runs/{id}/stop` | - | 200 | Stop an active run (resumable) |
+| POST | `/research-runs/{id}/fail` | FailRunRequest | 200 | Fail a run with a bounded failure observation |
+| POST | `/research-runs/{id}/resume` | - | 200 | Resume a stopped/failed run from its last completed stage without duplicating work |
+| POST | `/research-runs/{id}/complete` | - | 200 | Mark a run COMPLETED once the final-stage artifact is active |
+| POST | `/research-runs/{id}/usage` | RecordUsageRequest | 200 | Record observed token/cost usage (separate from budget caps) |
+
+A `ResearchRun` is a project-scoped execution aggregate (sibling of `ResearchIntake`)
+for one pass through the eight-stage research lifecycle (`ResearchRunStage`:
+`METHODOLOGY_SELECTION`, `PROTOCOL_PLANNING`, `SOURCE_SEARCH`, `SCREENING`, `CHARTING`,
+`SYNTHESIS`, `ARGUMENT_CONSTRUCTION`, `PROSE_DRAFTING`). Stage identity and run status
+(`ResearchRunStatus`: `IN_PROGRESS`, `BLOCKED`, `STOPPED`, `FAILED`, `COMPLETED`) are
+separate axes. A downstream stage starts only when the predecessor stage's output
+artifact is present and `ACTIVE` (else HTTP 422 `research_run_stage_blocked`) and the
+guarding gate permits the exit (else HTTP 409 `research_run_gate_pending`). Gate behavior
+(`REQUIRE_HUMAN`, `AUTONOMOUS_DEFAULT`, `DISABLED`) is resolved per run from the autonomy
+level plus overrides; decisions are durable `research_run_gate` rows. A resolved gate is
+immutable (HTTP 409 `research_gate_already_resolved`): the only way to re-decide it is to
+rework the guarded stage's artifact, which supersedes that artifact and reopens the gate, so
+a rejection cannot be overridden without rework. Artifact records are the gate/checkpoint
+authority and the resume frontier: rework supersedes the prior record rather than mutating
+it (a database partial unique index enforces a single `ACTIVE` record per stage type), and an
+`idempotencyKey` makes a record write retry-safe. The recording/deciding/owning actor on every
+write is taken from the authenticated server context (`ActorHolder`/`ActorFilter`, ADR-026),
+never from the request body, so durable lifecycle provenance cannot be forged. Cross-project
+run access is concealed as HTTP 404. Reads are mirrored to MCP through the `gc_query` allowlist
+(`/api/v1/research-runs`). See ADR-064 and ADR-065.
 
 ### Pack Registry
 

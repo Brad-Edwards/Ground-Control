@@ -34,6 +34,18 @@ Both AI-assisted reviews run **pre-push**: codex review at Step 6.5, test-qualit
 
    On `next_action: "post_summary_and_escalate_to_user"` (`status: "capped"`), the cycle tool did NOT run a review (the cap was already reached). No fix work to do; summarize the cap state to the user and let them decide whether to authorize an over-cap cycle.
 
+## Automated cap disposition (optional, default off)
+
+When `workflow.review_disposition.enabled` is true in `.ground-control.yaml`, the cap boundary is dispositioned automatically instead of always stopping for the user (issue #1245, GC-O007 amendment; enforced in the MCP layer, not prose). With the knob absent or false, everything above is unchanged - `fix_findings_then_summarize_and_escalate` still hands control back to the user, and the human `override_cap` escape is the only over-cap path.
+
+When enabled, on `next_action: "fix_findings_then_summarize_and_escalate"` (last-in-cap): fix and self-verify the findings and **re-stage** (`git add -A`) exactly as today, then - in place of escalating - call `gc_review_cap_disposition` with `repo_path`, `issue_number`, `reviewer` (`"codex"` | `"test-quality"`), `cycle`, `cap`, and `findings_summary` (pass the cycle envelope's `findings_summary` verbatim - the scorer treats a missing summary as unknown-risk and will not fast-path to `proceed`). It runs the same poll/`async` pattern as the cycle tools (poll `gc_codex_job`). It scores the **post-fix** diff server-side and returns one disposition; dispatch on it:
+
+- `proceed` → advance to the next step (Phase C for codex / 6.6 for test-quality). No over-cap cycle.
+- `one_more_cycle` → the tool has posted a `gc:review-auto-disposition` grant marker; re-invoke the **same** cycle tool with `override_cap=true` **and** `auto_grant=true`. The cycle wrapper independently verifies the marker before honoring the grant - agent-supplied `override_reason` text is **not** authority. The wrapper authorizes only when the grant marker was posted by the trusted MCP identity (provenance), `mode: authoritative` is set, and the grant has not already been spent on an over-cap cycle (single-use, bound to the cap boundary). The ceiling (`max_auto_overrides`, default 1) is enforced server-side; the auto path can never produce a second over-cap cycle, so after one auto cycle the gate returns `proceed` or `escalate_to_human`.
+- `escalate_to_human` → summarize to the user and wait, exactly as without the gate.
+
+`mode: shadow` (the default when enabled) posts the disposition but the run still escalates to the user - it builds agreement data before the gate acts authoritatively; only `mode: authoritative` lets `proceed`/`one_more_cycle` drive control flow, and only in authoritative mode will the cycle wrappers honor `auto_grant=true`. Never pass `auto_grant=true` without first obtaining a `one_more_cycle` disposition for the same issue+reviewer; the wrapper refuses an unbacked, forged, shadow-mode, or already-spent grant with `auto_grant_unauthorized`.
+
 ## Update succinctness (canonical)
 
 A GitHub update gives exactly what's needed - not more, not less. No restating context the reader already has, no padding sections, no hedging prose.
