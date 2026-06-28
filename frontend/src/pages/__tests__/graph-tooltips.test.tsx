@@ -43,7 +43,7 @@ function expectTagsIncluding(data: TooltipData, substrings: string[]) {
   }
 }
 
-// All 21 GraphEntityType values (mirrors backend GraphEntityType enum and
+// All 26 GraphEntityType values (mirrors backend GraphEntityType enum and
 // frontend api.ts GraphEntityType union — ADR-034 enum contract).
 const ALL_ENTITY_TYPES = [
   "REQUIREMENT",
@@ -62,11 +62,16 @@ const ALL_ENTITY_TYPES = [
   "VERIFICATION_RESULT",
   "THREAT_MODEL",
   "FINDING",
+  "ARCHITECTURE_MODEL_ELEMENT",
   "AUDIT",
   "AUDIT_LINK",
   "RISK_CONTROL_MAPPING",
   "SCOPED_CONTROL_IMPLEMENTATION",
+  "RISK_APPETITE_PROFILE",
   "DOCUMENT",
+  "RESEARCH_RUN",
+  "RESEARCH_ARTIFACT",
+  "RESEARCH_PROVENANCE_NODE",
 ] as const;
 
 // Shared status enum value reused across multiple per-type fixtures and their
@@ -367,6 +372,44 @@ describe("getTooltipTags — CONTROL_EFFECTIVENESS_ASSESSMENT node", () => {
         "Operating: PARTIALLY_EFFECTIVE",
         "Assessor: eve",
       ],
+    );
+  });
+});
+
+describe("getTooltipTags — research projection nodes (ADR-070)", () => {
+  it("returns status, stage, and autonomy tags for a RESEARCH_RUN node", () => {
+    expectTagsIncluding(
+      {
+        entityType: "RESEARCH_RUN",
+        status: "IN_PROGRESS",
+        currentStage: "CHARTING",
+        autonomyLevel: "AUTONOMOUS",
+      },
+      ["IN_PROGRESS", "CHARTING", "AUTONOMOUS"],
+    );
+  });
+
+  it("returns type, stage, and status tags for a RESEARCH_ARTIFACT node", () => {
+    expectTagsIncluding(
+      {
+        entityType: "RESEARCH_ARTIFACT",
+        artifactType: "PROTOCOL_PLAN",
+        stage: "METHODOLOGY_SELECTION",
+        status: "ACTIVE",
+      },
+      ["PROTOCOL_PLAN", "METHODOLOGY_SELECTION", "ACTIVE"],
+    );
+  });
+
+  it("returns kind, status, and external id tags for a RESEARCH_PROVENANCE_NODE node", () => {
+    expectTagsIncluding(
+      {
+        entityType: "RESEARCH_PROVENANCE_NODE",
+        kind: "CANDIDATE_SOURCE",
+        status: "ACTIVE",
+        externalIdentifier: "doi:10.1/x",
+      },
+      ["CANDIDATE_SOURCE", "ACTIVE", "doi:10.1/x"],
     );
   });
 });

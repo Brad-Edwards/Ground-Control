@@ -241,6 +241,21 @@ const TOOLTIP_FIELDS_BY_ENTITY_TYPE: Record<
     { label: "Created by", key: "createdBy" },
     { label: "Updated", key: "updatedAt" },
   ],
+  RESEARCH_RUN: [
+    { label: "Status", key: "status" },
+    { label: "Stage", key: "currentStage" },
+    { label: "Autonomy", key: "autonomyLevel" },
+  ],
+  RESEARCH_ARTIFACT: [
+    { label: "Type", key: "artifactType" },
+    { label: "Stage", key: "stage" },
+    { label: "Status", key: "status" },
+  ],
+  RESEARCH_PROVENANCE_NODE: [
+    { label: "Kind", key: "kind" },
+    { label: "Status", key: "status" },
+    { label: "External ID", key: "externalIdentifier" },
+  ],
 };
 
 export function getTooltipTags(
