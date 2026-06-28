@@ -48,6 +48,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         // V150–V151: canonical boundary model snapshot + audit shadows (GC-GRC-004).
         // V152–V161: #1001 research decision-log / review-comments / rationale-ledger / disclosure
         // (+ disclosure entries) + their audit shadows (ADR-066 / ADR-067 / ADR-068).
+        // V162–V165: #1002 research provenance ledger node + edge + their audit shadows (ADR-069).
         // Flyway immutability: once a versioned migration has been applied to a long-lived database
         // (e.g. production) its file content is frozen — the checksum is validated on every startup.
         // Never edit an applied V*.sql in place; append a new forward migration instead. Editing the
@@ -66,7 +67,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "110", "111", "112", "113", "114", "115", "116", "117", "118", "119", "120", "121", "122",
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
                         "136", "137", "138", "139", "140", "141", "142", "143", "144", "145", "146", "147", "148",
-                        "149", "150", "151", "152", "153", "154", "155", "156", "157", "158", "159", "160", "161");
+                        "149", "150", "151", "152", "153", "154", "155", "156", "157", "158", "159", "160", "161",
+                        "162", "163", "164", "165");
     }
 
     @Test
@@ -1159,6 +1161,24 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .doesNotThrowAnyException();
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT threat_model_id FROM risk_control_mapping_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        // V163 / V165 (#1002, ADR-069): research provenance ledger audit shadows.
+        // ddl-auto:validate does not inspect audit tables, so probe every payload
+        // column explicitly — a copy-paste regression that dropped or renamed a
+        // shadow column would otherwise only surface at the first Envers flush in
+        // production.
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT kind, subject_key, stage, artifact_type, artifact_id, attempt_no,"
+                                + " locator, content_hash, external_identifier, summary, tool_name, tool_version,"
+                                + " source_action_id, status, actor, idempotency_key, created_at, updated_at"
+                                + " FROM research_provenance_node_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT from_node_id, to_node_id, relation, role, summary, status, actor,"
+                                + " idempotency_key, created_at, updated_at"
+                                + " FROM research_provenance_edge_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }
