@@ -1122,34 +1122,6 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                                 + " FROM derivation_capture_limit_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
-        // V150-V151: canonical boundary model snapshots, boundaries,
-        // assignments, and modeling gaps. Envers shadow tables are not covered
-        // by ddl-auto:validate, so pin the columns that carry the model.
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT derivation_run_id, schema_version, boundary_set_version,"
-                                + " architecture_model_version, commit_sha, declaration_digest,"
-                                + " boundary_count, assignment_count, gap_count, created_at, updated_at"
-                                + " FROM boundary_model_snapshot_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT snapshot_id, boundary_key, display_name, description,"
-                                + " source, path_selectors, surfaces, input_fact_keys, created_at, updated_at"
-                                + " FROM boundary_model_boundary_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT snapshot_id, boundary_id, source_fact_key, source_fact_kind,"
-                                + " source_path, strategy, created_at, updated_at"
-                                + " FROM boundary_model_assignment_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT snapshot_id, source_fact_key, source_fact_kind,"
-                                + " source_path, reason, detail, created_at, updated_at"
-                                + " FROM boundary_model_gap_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
         // V137: threat_model_id on risk_control_mapping + audit shadow (GC-H006).
         // The 3-way analysis-side constraint replaces the old 2-way ck_rcm_risk_side.
         entityManager
@@ -1185,6 +1157,39 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .doesNotThrowAnyException();
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT threat_model_id FROM risk_control_mapping_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @Transactional
+    void boundaryModelAuditTablesMatchEntities() {
+        // V150-V151: canonical boundary model snapshots, boundaries,
+        // assignments, and modeling gaps. Envers shadow tables are not covered
+        // by ddl-auto:validate, so pin the columns that carry the model.
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT derivation_run_id, schema_version, boundary_set_version,"
+                                + " architecture_model_version, commit_sha, declaration_digest,"
+                                + " boundary_count, assignment_count, gap_count, created_at, updated_at"
+                                + " FROM boundary_model_snapshot_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT snapshot_id, boundary_key, display_name, description,"
+                                + " source, path_selectors, surfaces, input_fact_keys, created_at, updated_at"
+                                + " FROM boundary_model_boundary_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT snapshot_id, boundary_id, source_fact_key, source_fact_kind,"
+                                + " source_path, strategy, created_at, updated_at"
+                                + " FROM boundary_model_assignment_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT snapshot_id, source_fact_key, source_fact_kind,"
+                                + " source_path, reason, detail, created_at, updated_at"
+                                + " FROM boundary_model_gap_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }

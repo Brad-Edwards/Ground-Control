@@ -114,53 +114,42 @@ public class DerivationService {
                 .map(limit -> validateCaptureLimit(limit, scope))
                 .toList();
         var actor = ActorHolder.get();
-        var result = transactionTemplate.execute(status -> persistRunResult(
-                command.projectId(),
-                scope,
-                requestedAt,
-                routePlan.adapters().size(),
-                validatedFacts,
-                validatedCaptureLimits,
-                actor,
-                command.declaredBoundaries()));
+        var derivationData =
+                new PersistedDerivationData(validatedFacts, validatedCaptureLimits, command.declaredBoundaries());
+        var context = new PersistRunContext(
+                command.projectId(), scope, requestedAt, routePlan.adapters().size(), actor, derivationData);
+        var result = transactionTemplate.execute(status -> persistRunResult(context));
         if (result == null) {
             throw new IllegalStateException("Derivation run transaction returned no result");
         }
         return result;
     }
 
-    private DerivationRunResult persistRunResult(
-            UUID projectId,
-            DerivationScope scope,
-            Instant requestedAt,
-            int adapterCount,
-            List<DerivedSystemModelFact> validatedFacts,
-            List<DerivationCaptureLimitDraft> validatedCaptureLimits,
-            String actor,
-            List<BoundaryDeclaration> declaredBoundaries) {
-        var project = projectService.getById(projectId);
+    private DerivationRunResult persistRunResult(PersistRunContext context) {
+        var project = projectService.getById(context.projectId());
         var savedRun = runRepository.save(new DerivationRun(
                 project,
-                scope.mode(),
-                scope.commitSha(),
-                scope.baseCommitSha(),
-                scope.paths(),
-                List.copyOf(scope.languages()),
-                List.copyOf(scope.surfaces()),
-                actor,
-                requestedAt,
-                adapterCount));
+                context.scope().mode(),
+                context.scope().commitSha(),
+                context.scope().baseCommitSha(),
+                context.scope().paths(),
+                List.copyOf(context.scope().languages()),
+                List.copyOf(context.scope().surfaces()),
+                context.actor(),
+                context.requestedAt(),
+                context.adapterCount()));
 
         var persistedRun = savedRun;
-        var factRows = validatedFacts.stream()
+        var factRows = context.derivationData().validatedFacts().stream()
                 .map(fact -> new SystemModelFact(project, persistedRun, fact))
                 .toList();
-        var captureLimitRows = validatedCaptureLimits.stream()
+        var captureLimitRows = context.derivationData().validatedCaptureLimits().stream()
                 .map(limit -> new DerivationCaptureLimit(project, persistedRun, limit))
                 .toList();
         factRows = factRepository.saveAll(factRows);
         captureLimitRows = captureLimitRepository.saveAll(captureLimitRows);
-        var boundaryModel = boundaryModelService.build(project, savedRun, factRows, declaredBoundaries);
+        var boundaryModel = boundaryModelService.build(
+                project, savedRun, factRows, context.derivationData().declaredBoundaries());
         savedRun.setResultCounts(factRows.size(), captureLimitRows.size());
         savedRun = runRepository.save(savedRun);
 
@@ -173,6 +162,19 @@ public class DerivationService {
                 captureLimitRows.size());
         return new DerivationRunResult(savedRun, factRows, captureLimitRows, boundaryModel);
     }
+
+    private record PersistRunContext(
+            UUID projectId,
+            DerivationScope scope,
+            Instant requestedAt,
+            int adapterCount,
+            String actor,
+            PersistedDerivationData derivationData) {}
+
+    private record PersistedDerivationData(
+            List<DerivedSystemModelFact> validatedFacts,
+            List<DerivationCaptureLimitDraft> validatedCaptureLimits,
+            List<BoundaryDeclaration> declaredBoundaries) {}
 
     @Transactional(readOnly = true)
     public BoundaryModelBuildResult getBoundaryModel(UUID projectId, UUID runId) {

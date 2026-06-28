@@ -24,13 +24,16 @@ import org.springframework.stereotype.Component;
 public class BoundaryDerivationAdapter implements DerivationAdapter {
 
     private static final String ADAPTER_ID = "boundary-model-derivation";
+    private static final String SURFACE_APPLICATION = "application";
+    private static final String SURFACE_ARCHITECTURE = "architecture";
+    private static final String SURFACE_FRONTEND = "frontend";
     private static final Set<String> LANGUAGES =
             Set.of("java", "javascript", "typescript", "python", "yaml", "dockerfile", "hcl", "metadata");
     private static final Set<String> SURFACES = Set.of(
-            "application",
-            "frontend",
+            SURFACE_APPLICATION,
+            SURFACE_FRONTEND,
             "mcp",
-            "architecture",
+            SURFACE_ARCHITECTURE,
             IacFactKeys.SURFACE_GITHUB_ACTIONS,
             IacFactKeys.SURFACE_DOCKERFILE,
             IacFactKeys.SURFACE_DOCKER_COMPOSE,
@@ -104,31 +107,31 @@ public class BoundaryDerivationAdapter implements DerivationAdapter {
                         "Backend API",
                         "Spring MVC controllers and API DTOs.",
                         List.of("backend/src/main/java/com/keplerops/groundcontrol/api/**"),
-                        List.of("application")),
+                        List.of(SURFACE_APPLICATION)),
                 new BoundarySeed(
                         "backend-domain",
                         "Backend Domain",
                         "Service and aggregate domain model.",
                         List.of("backend/src/main/java/com/keplerops/groundcontrol/domain/**"),
-                        List.of("application")),
+                        List.of(SURFACE_APPLICATION)),
                 new BoundarySeed(
                         "backend-infrastructure",
                         "Backend Infrastructure",
                         "External adapter implementations and infrastructure integrations.",
                         List.of("backend/src/main/java/com/keplerops/groundcontrol/infrastructure/**"),
-                        List.of("application")),
+                        List.of(SURFACE_APPLICATION)),
                 new BoundarySeed(
                         "mcp",
                         "MCP Tools",
                         "Node and Python MCP server/tool implementations.",
                         List.of("mcp/ground-control/**", "mcp/citation/**"),
-                        List.of("mcp", "architecture")),
+                        List.of("mcp", SURFACE_ARCHITECTURE)),
                 new BoundarySeed(
                         "frontend",
                         "Frontend SPA",
                         "React application and browser-side UI code.",
                         List.of("frontend/src/**"),
-                        List.of("frontend")),
+                        List.of(SURFACE_FRONTEND)),
                 new BoundarySeed(
                         "pipelines",
                         "Build and Deployment Pipelines",
@@ -144,7 +147,7 @@ public class BoundaryDerivationAdapter implements DerivationAdapter {
                                 IacFactKeys.SURFACE_DOCKERFILE,
                                 IacFactKeys.SURFACE_DOCKER_COMPOSE,
                                 IacFactKeys.SURFACE_TERRAFORM,
-                                "architecture")));
+                                SURFACE_ARCHITECTURE)));
     }
 
     private record BoundarySeed(

@@ -34,6 +34,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class BoundaryModelService {
 
     private static final Pattern BOUNDARY_KEY = Pattern.compile("^[a-z0-9][a-z0-9_.-]{0,119}$");
+    private static final String SOURCE_DECLARED = "DECLARED";
+    private static final String SOURCE_DERIVED = "DERIVED";
+    private static final String SOURCE_MERGED = "MERGED";
+    private static final String STRATEGY_PATH_SELECTOR = "PATH_SELECTOR";
     private static final Set<SystemModelFactKind> ASSIGNABLE_FACT_KINDS = Set.of(
             SystemModelFactKind.COMPONENT,
             SystemModelFactKind.DATA_FLOW,
@@ -147,7 +151,7 @@ public class BoundaryModelService {
                 key,
                 stringValue(payload.get("boundaryName"), key),
                 stringValue(payload.get("description"), fact.getSummary()),
-                "DERIVED",
+                SOURCE_DERIVED,
                 selectors,
                 stringList(payload.get("surfaces")),
                 List.of(fact.getFactKey())));
@@ -170,7 +174,7 @@ public class BoundaryModelService {
                 key,
                 name,
                 trim(declaration.description()),
-                "DECLARED",
+                SOURCE_DECLARED,
                 declaration.pathSelectors(),
                 declaration.surfaces(),
                 List.of());
@@ -238,7 +242,7 @@ public class BoundaryModelService {
                 fact.getFactKey(),
                 fact.getFactKind().name(),
                 sourcePath,
-                "PATH_SELECTOR"));
+                STRATEGY_PATH_SELECTOR));
     }
 
     private BoundaryModelGap gap(
@@ -367,7 +371,7 @@ public class BoundaryModelService {
         }
 
         void merge(BoundaryInput input) {
-            if ("DECLARED".equals(input.source())) {
+            if (SOURCE_DECLARED.equals(input.source())) {
                 this.name = input.name();
                 this.description = input.description();
             } else {
@@ -385,8 +389,9 @@ public class BoundaryModelService {
         }
 
         BoundaryInput build() {
-            var source =
-                    sources.size() > 1 ? "MERGED" : sources.stream().findFirst().orElse("DECLARED");
+            var source = sources.size() > 1
+                    ? SOURCE_MERGED
+                    : sources.stream().findFirst().orElse(SOURCE_DECLARED);
             return new BoundaryInput(
                     key,
                     name == null ? key : name,
