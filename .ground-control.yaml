@@ -6,6 +6,12 @@ workflow:
   completion_command: make check
   lint_command: cd backend && ./gradlew spotlessCheck
   format_command: cd backend && ./gradlew spotlessApply
+  review_disposition:
+    enabled: true
+    mode: shadow
+    max_auto_overrides: 1
+    judge:
+      enabled: true
 sonarcloud:
   project_key: autarchy-ai_Ground-Control
   organization: autarchy-ai
