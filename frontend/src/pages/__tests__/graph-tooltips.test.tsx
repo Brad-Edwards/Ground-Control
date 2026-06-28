@@ -395,9 +395,9 @@ describe("getTooltipTags — research projection nodes (ADR-070)", () => {
         entityType: "RESEARCH_ARTIFACT",
         artifactType: "PROTOCOL_PLAN",
         stage: "METHODOLOGY_SELECTION",
-        status: "ACTIVE",
+        status: STATUS_ACTIVE,
       },
-      ["PROTOCOL_PLAN", "METHODOLOGY_SELECTION", "ACTIVE"],
+      ["PROTOCOL_PLAN", "METHODOLOGY_SELECTION", STATUS_ACTIVE],
     );
   });
 
@@ -406,10 +406,10 @@ describe("getTooltipTags — research projection nodes (ADR-070)", () => {
       {
         entityType: "RESEARCH_PROVENANCE_NODE",
         kind: "CANDIDATE_SOURCE",
-        status: "ACTIVE",
+        status: STATUS_ACTIVE,
         externalIdentifier: "doi:10.1/x",
       },
-      ["CANDIDATE_SOURCE", "ACTIVE", "doi:10.1/x"],
+      ["CANDIDATE_SOURCE", STATUS_ACTIVE, "doi:10.1/x"],
     );
   });
 });

@@ -1020,7 +1020,8 @@ class AgeGraphServiceTest {
                     "status"
                 })
         void researchProjectionKeyIsApproved(String key) {
-            assertThat(AgeGraphService.APPROVED_PROPERTY_KEYS).contains(key);
+            var approvedKeys = AgeGraphService.APPROVED_PROPERTY_KEYS;
+            assertThat(approvedKeys).contains(key);
         }
     }
 }

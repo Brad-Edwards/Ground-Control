@@ -76,14 +76,14 @@ class ResearchGraphProjectionContributorTest {
 
         var nodes = contributor.contributeNodes(projectId);
 
-        assertThat(nodes).hasSize(3);
         assertThat(nodes)
+                .hasSize(3)
+                .allMatch(n -> n.projectIdentifier().equals("ground-control"))
                 .extracting(n -> n.entityType())
                 .containsExactlyInAnyOrder(
                         GraphEntityType.RESEARCH_RUN,
                         GraphEntityType.RESEARCH_ARTIFACT,
                         GraphEntityType.RESEARCH_PROVENANCE_NODE);
-        assertThat(nodes).allMatch(n -> n.projectIdentifier().equals("ground-control"));
 
         var runNode = nodeOfType(nodes, GraphEntityType.RESEARCH_RUN);
         assertThat(runNode.properties())
@@ -128,8 +128,8 @@ class ResearchGraphProjectionContributorTest {
 
         // Only the live run's run/artifact/provenance nodes survive; the FAILED
         // run and everything hanging off it stays out of the default projection.
-        assertThat(nodes).hasSize(3);
         assertThat(nodes)
+                .hasSize(3)
                 .noneMatch(n -> n.id().equals(GraphIds.nodeId(GraphEntityType.RESEARCH_RUN, failedRun.getId())))
                 .noneMatch(
                         n -> n.id().equals(GraphIds.nodeId(GraphEntityType.RESEARCH_ARTIFACT, failedArtifact.getId())))

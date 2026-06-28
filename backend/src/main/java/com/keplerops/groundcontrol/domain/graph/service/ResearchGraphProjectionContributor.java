@@ -49,6 +49,7 @@ public class ResearchGraphProjectionContributor implements GraphProjectionContri
 
     private static final String EDGE_HAS_RESEARCH_ARTIFACT = "HAS_RESEARCH_ARTIFACT";
     private static final String EDGE_ARTIFACT_HAS_PROVENANCE = "ARTIFACT_HAS_PROVENANCE";
+    private static final String KEY_STATUS = "status";
 
     private final ResearchRunRepository runRepository;
     private final ResearchRunArtifactRepository artifactRepository;
@@ -136,7 +137,7 @@ public class ResearchGraphProjectionContributor implements GraphProjectionContri
 
     private static GraphNode toRunNode(ResearchRun run) {
         Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("status", run.getStatus().name());
+        properties.put(KEY_STATUS, run.getStatus().name());
         properties.put("currentStage", run.getCurrentStage().name());
         properties.put("autonomyLevel", run.getAutonomyLevel().name());
         properties.put("startedAt", run.getStartedAt().toString());
@@ -157,7 +158,7 @@ public class ResearchGraphProjectionContributor implements GraphProjectionContri
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("artifactType", artifact.getArtifactType().name());
         properties.put("stage", artifact.getStage().name());
-        properties.put("status", artifact.getStatus().name());
+        properties.put(KEY_STATUS, artifact.getStatus().name());
         properties.put("attemptNo", artifact.getAttemptNo());
         if (artifact.getContentHash() != null) {
             properties.put("contentHash", artifact.getContentHash());
@@ -175,7 +176,7 @@ public class ResearchGraphProjectionContributor implements GraphProjectionContri
     private static GraphNode toProvenanceNode(ResearchProvenanceNode node) {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("kind", node.getKind().name());
-        properties.put("status", node.getStatus().name());
+        properties.put(KEY_STATUS, node.getStatus().name());
         if (node.getStage() != null) {
             properties.put("stage", node.getStage().name());
         }
