@@ -47,6 +47,19 @@ import {
   ARCHITECTURE_FLOW_DIRECTIONS,
   ARCHITECTURE_MODEL_ELEMENT_KINDS,
   ARCHITECTURE_MODEL_PROVENANCE_SOURCES,
+  // Research run decision surfaces (GC-RSCH-F004/F034/N012/N013, ADR-066/067/068)
+  RESEARCH_GATE_POINTS,
+  RESEARCH_GATE_DECISION_OUTCOMES,
+  GATE_RECOMMENDATION_PROVENANCES,
+  REVIEW_COMMENT_TARGETS,
+  REVIEW_COMMENT_PROVENANCES,
+  RATIONALE_ENTRY_KINDS,
+  RATIONALE_EVIDENCE_BASES,
+  RATIONALE_PROVENANCES,
+  RESEARCH_RUN_STAGES,
+  RESEARCH_ARTIFACT_TYPES,
+  DISCLOSURE_ENTRY_FAMILIES,
+  DISCLOSURE_UNCERTAINTY_CATEGORIES,
 } from "./lib.js";
 
 import {
@@ -1066,6 +1079,153 @@ describe("MCP–OpenAPI write-contract", () => {
         linkType:
           "Per-entity subset — link type vocabulary differs across entity schemas; " +
           "enforced per-tool by Zod validation rather than at this shared row level.",
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_run — gate decision (extended with recommendation fields, ADR-066)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_run/gate_decision → GateDecisionRequest", () => {
+    assertRow({
+      label: "gc_research_run/gate_decision",
+      mcpFields: [
+        "gate_point", "outcome", "selected_option_id", "rationale_summary",
+        "recommendation_option_id", "recommendation_summary",
+        "recommendation_provenance", "question_key", "source_action_id",
+      ],
+      openapiSchema: "GateDecisionRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+      },
+      enums: {
+        gatePoint: RESEARCH_GATE_POINTS,
+        outcome: RESEARCH_GATE_DECISION_OUTCOMES,
+        recommendationProvenance: GATE_RECOMMENDATION_PROVENANCES,
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_run — add_review_comment (ADR-067)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_run/add_review_comment → AddReviewCommentRequest", () => {
+    assertRow({
+      label: "gc_research_run/add_review_comment",
+      mcpFields: [
+        "target_type", "target_gate_point", "target_stage",
+        "target_artifact_id", "target_decision_log_id", "body", "provenance",
+      ],
+      openapiSchema: "AddReviewCommentRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+      },
+      enums: {
+        targetType: REVIEW_COMMENT_TARGETS,
+        targetGatePoint: RESEARCH_GATE_POINTS,
+        targetStage: RESEARCH_RUN_STAGES,
+        provenance: REVIEW_COMMENT_PROVENANCES,
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_run — resolve_review_comment (ADR-067)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_run/resolve_review_comment → ResolveReviewCommentRequest", () => {
+    assertRow({
+      label: "gc_research_run/resolve_review_comment",
+      mcpFields: ["resolution_summary"],
+      openapiSchema: "ResolveReviewCommentRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+        commentId: "path param /review-comments/{commentId} — not a body field",
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_run — add_rationale (ADR-068)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_run/add_rationale → AddRationaleEntryRequest", () => {
+    assertRow({
+      label: "gc_research_run/add_rationale",
+      mcpFields: [
+        "stage", "artifact_type", "target_artifact_id", "attempt_no",
+        "gate_point", "kind", "evidence_basis", "rationale_provenance",
+        "subject_key", "rationale_summary", "evidence_locator", "confidence_summary",
+      ],
+      openapiSchema: "AddRationaleEntryRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+      },
+      // target_artifact_id → artifactId and rationale_provenance → provenance
+      // don't follow standard snake→camel conversion
+      manualFieldMap: {
+        target_artifact_id: "artifactId",
+        rationale_provenance: "provenance",
+        evidence_basis: "evidenceBasis",
+        evidence_locator: "evidenceLocator",
+        confidence_summary: "confidenceSummary",
+        subject_key: "subjectKey",
+        rationale_summary: "rationaleSummary",
+        artifact_type: "artifactType",
+        gate_point: "gatePoint",
+        attempt_no: "attemptNo",
+      },
+      enums: {
+        stage: RESEARCH_RUN_STAGES,
+        artifactType: RESEARCH_ARTIFACT_TYPES,
+        gatePoint: RESEARCH_GATE_POINTS,
+        kind: RATIONALE_ENTRY_KINDS,
+        evidenceBasis: RATIONALE_EVIDENCE_BASES,
+        provenance: RATIONALE_PROVENANCES,
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_run — create_disclosure (ADR-068 §4)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_run/create_disclosure → CreateDisclosureRequest", () => {
+    assertRow({
+      label: "gc_research_run/create_disclosure",
+      mcpFields: [
+        "final_artifact_id", "final_attempt_no",
+        "ai_parts_declared_none", "uncertainty_declared_none",
+        "human_approvals_declared_none",
+      ],
+      openapiSchema: "CreateDisclosureRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_run — add_disclosure_entry (ADR-068 §4)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_run/add_disclosure_entry → AddDisclosureEntryRequest", () => {
+    assertRow({
+      label: "gc_research_run/add_disclosure_entry",
+      mcpFields: [
+        "family", "uncertainty_category", "section_key", "locator",
+        "model_label", "summary", "rationale_entry_id", "decision_log_id", "review_comment_id",
+      ],
+      openapiSchema: "AddDisclosureEntryRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+        disclosureId: "path param /disclosure/{disclosureId} — not a body field",
+      },
+      enums: {
+        family: DISCLOSURE_ENTRY_FAMILIES,
+        uncertaintyCategory: DISCLOSURE_UNCERTAINTY_CATEGORIES,
       },
     });
   });

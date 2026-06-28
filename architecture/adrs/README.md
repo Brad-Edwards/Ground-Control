@@ -83,5 +83,8 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [063](063-release-deployment-model.md) | Release & Deployment Model | Accepted |
 | [064](064-research-run-lifecycle-and-stage-gating.md) | Research Run Lifecycle and Stage Gating | Accepted |
 | [065](065-research-run-observability-snapshot.md) | Research Run Observability Snapshot | Accepted |
+| [066](066-research-review-comments-and-resolution-tracking.md) | Research Gate Decision Log and Review Comments | Accepted |
+| [067](067-research-explainability-rationale-ledger.md) | Research Explainability Rationale Ledger | Accepted |
+| [068](068-research-final-output-accountability-disclosure.md) | Research Final-Output Accountability Disclosure | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.

@@ -2312,7 +2312,16 @@ Response wraps results in a Spring Page object with `content`, `totalElements`,
 | GET | `/research-runs/{id}/gates` | - | 200 | List the run's gate-policy / decision rows |
 | POST | `/research-runs/{id}/artifacts` | RecordArtifactRequest | 201 | Record (or rework) the current stage's output artifact; idempotent on `idempotencyKey` |
 | POST | `/research-runs/{id}/advance` | AdvanceStageRequest | 200 | Advance to the next stage (blocked 422 without the required artifact; 409 on a pending required gate) |
-| POST | `/research-runs/{id}/gates/decision` | GateDecisionRequest | 200 | Record a durable decision for a run gate |
+| POST | `/research-runs/{id}/gates/decision` | GateDecisionRequest | 200 | Record a durable decision for a run gate (now includes recommendation fields: recommendationOptionId, recommendationSummary, recommendationProvenance, questionKey, sourceActionId, per ADR-066) |
+| GET | `/research-runs/{id}/gates/decision-log` | - | 200 | List the append-only gate decision audit log for a run (GC-RSCH-F004, ADR-066) |
+| POST | `/research-runs/{id}/review-comments` | AddReviewCommentRequest | 201 | Add a run-scoped review comment attached to a gate point, stage, artifact, decision log, or the run itself (GC-RSCH-F034, ADR-067) |
+| GET | `/research-runs/{id}/review-comments` | - | 200 | List the run's review comments (GC-RSCH-F034, ADR-067) |
+| POST | `/research-runs/{id}/review-comments/{commentId}/resolve` | ResolveReviewCommentRequest | 200 | Resolve an open review comment; 409 if already resolved (GC-RSCH-F034, ADR-067) |
+| POST | `/research-runs/{id}/rationale` | AddRationaleEntryRequest | 201 | Append an immutable rationale-ledger entry (GC-RSCH-N012, ADR-068) |
+| GET | `/research-runs/{id}/rationale` | - | 200 | List the run's rationale ledger entries (GC-RSCH-N012, ADR-068) |
+| POST | `/research-runs/{id}/disclosure` | CreateDisclosureRequest | 201 | Create the final-manuscript AI-use and uncertainty disclosure for a run (GC-RSCH-N013, ADR-068 §4) |
+| GET | `/research-runs/{id}/disclosure` | - | 200 | Get the current disclosure for a run (GC-RSCH-N013, ADR-068 §4) |
+| POST | `/research-runs/{id}/disclosure/{disclosureId}/entries` | AddDisclosureEntryRequest | 201 | Add one disclosed item (AI-generated portion or unresolved uncertainty) to a disclosure (GC-RSCH-N013, ADR-068 §4) |
 | POST | `/research-runs/{id}/stop` | - | 200 | Stop an active run (resumable) |
 | POST | `/research-runs/{id}/fail` | FailRunRequest | 200 | Fail a run with a bounded failure observation |
 | POST | `/research-runs/{id}/resume` | - | 200 | Resume a stopped/failed run from its last completed stage without duplicating work |

@@ -219,8 +219,10 @@ the tool description strings in `index.js` and the skill prose under
 `skills/implement/`. Examples include `gc_assert_traceability_reconciled` and
 `gc_close_issue_after_merge` for GC-O007 / #1058, `gc_post_grc_screening` for
 GC-O012 / #1099, `gc_assert_grc_reconciled` for #1100,
-`gc_assert_quality_gates` for #1101, and `plain_english_outcome` /
-`next_issue_recommendation` for #1156. The matching policy check in
+`gc_assert_quality_gates` for #1101, `plain_english_outcome` /
+`next_issue_recommendation` for #1156, and `gc_review_cap_disposition` (plus
+the `auto_grant` field on `gc_codex_review_cycle` / `gc_test_quality_review_cycle`)
+for the automated review-cap disposition gate in #1245. The matching policy check in
 `tools/policy/checks.py` is the prose-side guardrail. The surface addition is
 recorded in the ADR-054 amendment and the changelog fragment; no new
 DOC_STYLE.md prose is needed unless a new style rule is being established.
@@ -281,3 +283,14 @@ endpoints documented in `docs/API.md`; the tool description string is the
 contract surface and enumerates the per-action required fields. The surface
 addition is recorded in the ADR-054 amendment and the changelog fragment; no new
 DOC_STYLE.md style rule is established.
+
+The research decision-gate surfaces (GC-RSCH-F004/F034/N012/N013 / ADR-066 /
+ADR-067 / ADR-068 / #1001) extend the same `gc_research_run` tool with nine
+additional actions (`list_gate_decision_log`, `add_review_comment`,
+`list_review_comments`, `resolve_review_comment`, `add_rationale`,
+`list_rationale`, `create_disclosure`, `add_disclosure_entry`, `get_disclosure`)
+and ten new Zod enum mirrors in `mcp/ground-control/lib.js`, mirroring the new
+`/api/v1/research-runs/{id}/{gates/decision-log,review-comments,rationale,disclosure}`
+endpoints documented in `docs/API.md`. The surface addition is recorded in the
+ADR-054 amendment and the changelog fragment; no new DOC_STYLE.md style rule is
+established.

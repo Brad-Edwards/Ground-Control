@@ -119,6 +119,16 @@ import {
   FINAL_REPORT_REVIEW_SUMMARY_MAX,
   validateDocumentationOutcome,
   classifyChangedSurface,
+  runCodexReviewCycle,
+  runTestQualityReviewCycle,
+  scoreDisposition,
+  collectDispositionSignals,
+  parseReviewAutoDispositionMarkers,
+  buildReviewAutoDispositionRecord,
+  verifyAutoDispositionGrant,
+  evaluateAutoDispositionGrant,
+  effectiveReviewerCap,
+  normalizeReviewDispositionConfig,
   isSafeLabelName,
   normalizeIntegrationManagerConfig,
   normalizeDevStartGateConfig,
@@ -879,6 +889,7 @@ describe("parseGroundControlYaml", () => {
         blocker_uids: [],
         required_fields: [...DEFAULT_DEV_START_GATE_REQUIRED_FIELDS],
       },
+      review_disposition: { enabled: false, mode: "shadow", max_auto_overrides: 1, judge: { enabled: false, model: null } },
     });
     assert.equal(result.value.sonarcloud, null);
     assert.equal(result.value.rules.plan_rules_path, null);
@@ -14369,4 +14380,670 @@ describe("crossProjectAggregateWorkflowRuns", () => {
       assert.equal(url.searchParams.get("workflowType"), "QUICKFIX");
     }),
   );
+});
+
+// ---------------------------------------------------------------------------
+// gc_review_cap_disposition (issue #1245)
+// ---------------------------------------------------------------------------
+
+describe("scoreDisposition", () => {
+  const cfg = { enabled: true, mode: "authoritative", max_auto_overrides: 1, judge: { enabled: false, model: null } };
+
+  it("hard ceiling never yields a 2nd one_more_cycle (low risk → proceed)", () => {
+    const r = scoreDisposition(
+      {
+        reviewer: "codex",
+        prior_auto_overrides: 1,
+        diff: { files_changed: 2, lines_added: 10, lines_deleted: 5 },
+        surfaces: [],
+        grc_verdict: "not_security_relevant",
+        findings: { one_off_count: 0, class_count: 0, has_security_finding: false },
+      },
+      cfg,
+    );
+    assert.notEqual(r.disposition, "one_more_cycle");
+    assert.equal(r.disposition, "proceed");
+    assert.equal(r.decided_by, "ceiling");
+    assert.equal(r.next_action, "proceed_to_phase_c");
+  });
+
+  it("hard ceiling on a high-risk change escalates, never one_more_cycle", () => {
+    const r = scoreDisposition(
+      {
+        reviewer: "codex",
+        prior_auto_overrides: 1,
+        diff: { files_changed: 5, lines_added: 200, lines_deleted: 30 },
+        surfaces: ["mcp_tool"],
+        grc_verdict: "security_relevant",
+        findings: { one_off_count: 3, class_count: 1, has_security_finding: true },
+      },
+      cfg,
+    );
+    assert.notEqual(r.disposition, "one_more_cycle");
+    assert.equal(r.disposition, "escalate_to_human");
+    assert.equal(r.decided_by, "ceiling");
+  });
+
+  it("codex + security_relevant fast-paths to one_more_cycle", () => {
+    const r = scoreDisposition(
+      {
+        reviewer: "codex",
+        prior_auto_overrides: 0,
+        diff: { files_changed: 4, lines_added: 120, lines_deleted: 10 },
+        surfaces: ["config_parser"],
+        grc_verdict: "security_relevant",
+        findings: { one_off_count: 2, class_count: 0, has_security_finding: false },
+      },
+      cfg,
+    );
+    assert.equal(r.disposition, "one_more_cycle");
+    assert.equal(r.decided_by, "fast_path");
+    assert.equal(r.next_action, "reinvoke_cycle_with_auto_override");
+  });
+
+  it("tiny test-quality nit fast-paths to proceed", () => {
+    const r = scoreDisposition(
+      {
+        reviewer: "test-quality",
+        prior_auto_overrides: 0,
+        diff: { files_changed: 1, lines_added: 8, lines_deleted: 2 },
+        surfaces: ["doc"],
+        grc_verdict: "not_security_relevant",
+        findings: { one_off_count: 1, class_count: 0, has_security_finding: false },
+      },
+      cfg,
+    );
+    assert.equal(r.disposition, "proceed");
+    assert.equal(r.decided_by, "fast_path");
+  });
+
+  it("gray zone (medium diff, non-security) is judge_needed (provisional escalate)", () => {
+    const r = scoreDisposition(
+      {
+        reviewer: "test-quality",
+        prior_auto_overrides: 0,
+        diff: { files_changed: 6, lines_added: 140, lines_deleted: 60 },
+        surfaces: ["user_visible"],
+        grc_verdict: "not_security_relevant",
+        findings: { one_off_count: 4, class_count: 1, has_security_finding: false },
+      },
+      cfg,
+    );
+    assert.equal(r.decided_by, "judge_needed");
+    assert.equal(r.disposition, "escalate_to_human");
+  });
+
+  it("a tiny low-risk diff with UNKNOWN findings shape never fast-paths to proceed", () => {
+    // Same shape as the "tiny test-quality nit → proceed" case, but findings
+    // are flagged unknown (the MCP path with no findings_summary). The proceed
+    // fast-path must be foreclosed so a dropped signal can't launder a class
+    // finding into an automatic proceed.
+    const r = scoreDisposition(
+      {
+        reviewer: "test-quality",
+        prior_auto_overrides: 0,
+        diff: { files_changed: 1, lines_added: 8, lines_deleted: 2 },
+        surfaces: ["doc"],
+        grc_verdict: "not_security_relevant",
+        findings: { one_off_count: 0, class_count: 0, has_security_finding: false, known: false },
+      },
+      cfg,
+    );
+    assert.notEqual(r.disposition, "proceed");
+    assert.equal(r.decided_by, "judge_needed");
+  });
+});
+
+describe("collectDispositionSignals", () => {
+  const REPO = "/fake/repo";
+
+  it("parses numstat including binary '-' rows", () => {
+    const manifest = [
+      "# staged",
+      "10\t4\tsrc/a.js",
+      "-\t-\tassets/logo.png",
+      "",
+      "# unstaged",
+      "3\t1\tsrc/b.js",
+    ].join("\n");
+    const s = collectDispositionSignals({
+      reviewer: "codex",
+      findingsSummary: { one_off_count: 0, class_count: 0, top_categories: [] },
+      diffManifest: manifest,
+      changedPaths: [],
+      grcVerdict: "not_security_relevant",
+      priorAutoOverrides: 0,
+      repoRoot: REPO,
+    });
+    assert.equal(s.diff.lines_added, 13);
+    assert.equal(s.diff.lines_deleted, 5);
+    assert.equal(s.diff.files_changed, 3);
+  });
+
+  it("classifies mcp paths as a high-risk surface", () => {
+    const s = collectDispositionSignals({
+      reviewer: "codex",
+      findingsSummary: {},
+      diffManifest: "1\t0\tmcp/ground-control/lib.js",
+      changedPaths: ["mcp/ground-control/lib.js", "mcp/ground-control/index.js"],
+      grcVerdict: "unknown",
+      priorAutoOverrides: 0,
+      repoRoot: REPO,
+    });
+    assert.ok(s.surfaces.includes("config_parser"), JSON.stringify(s.surfaces));
+    assert.ok(s.surfaces.includes("mcp_tool"), JSON.stringify(s.surfaces));
+  });
+
+  it("defaults grc verdict to 'unknown' when null", () => {
+    const s = collectDispositionSignals({
+      reviewer: "codex",
+      findingsSummary: {},
+      diffManifest: "",
+      changedPaths: [],
+      grcVerdict: null,
+      priorAutoOverrides: 0,
+      repoRoot: REPO,
+    });
+    assert.equal(s.grc_verdict, "unknown");
+  });
+
+  it("derives has_security_finding from a security-shaped category", () => {
+    const s = collectDispositionSignals({
+      reviewer: "codex",
+      findingsSummary: { one_off_count: 0, class_count: 1, top_categories: [{ shape: "missing authz check" }] },
+      diffManifest: "",
+      changedPaths: [],
+      grcVerdict: "unknown",
+      priorAutoOverrides: 0,
+      repoRoot: REPO,
+    });
+    assert.equal(s.findings.has_security_finding, true);
+  });
+
+  it("flags findings as unknown when no summary is supplied, known when one is", () => {
+    const missing = collectDispositionSignals({
+      reviewer: "codex",
+      findingsSummary: null,
+      diffManifest: "1\t0\tsrc/a.js",
+      changedPaths: [],
+      grcVerdict: "not_security_relevant",
+      priorAutoOverrides: 0,
+      repoRoot: REPO,
+    });
+    assert.equal(missing.findings.known, false);
+    const present = collectDispositionSignals({
+      reviewer: "codex",
+      findingsSummary: { one_off_count: 0, class_count: 0, top_categories: [] },
+      diffManifest: "1\t0\tsrc/a.js",
+      changedPaths: [],
+      grcVerdict: "not_security_relevant",
+      priorAutoOverrides: 0,
+      repoRoot: REPO,
+    });
+    assert.equal(present.findings.known, true);
+  });
+});
+
+describe("parseReviewAutoDispositionMarkers", () => {
+  function record(opts) {
+    return buildReviewAutoDispositionRecord({
+      issueNumber: opts.issue,
+      reviewer: opts.reviewer,
+      cycle: opts.cycle ?? 1,
+      cap: opts.cap ?? 1,
+      disposition: opts.disposition,
+      rationale: opts.rationale ?? "ok",
+      signalsSnapshot: opts.snapshot ?? { diff: {} },
+      grantNumber: opts.grant ?? null,
+    });
+  }
+
+  it("counts one_more_cycle grants for the matching issue + reviewer", () => {
+    const bodies = [
+      record({ issue: 42, reviewer: "codex", disposition: "one_more_cycle", grant: 1 }),
+      record({ issue: 42, reviewer: "codex", disposition: "proceed" }),
+    ];
+    const r = parseReviewAutoDispositionMarkers(bodies, 42, "codex");
+    assert.equal(r.auto_override_grants, 1);
+    assert.equal(r.markers.length, 2);
+  });
+
+  it("ignores other issues and other reviewers", () => {
+    const bodies = [
+      record({ issue: 42, reviewer: "codex", disposition: "one_more_cycle", grant: 1 }),
+      record({ issue: 99, reviewer: "codex", disposition: "one_more_cycle", grant: 1 }),
+      record({ issue: 42, reviewer: "test-quality", disposition: "one_more_cycle", grant: 1 }),
+    ];
+    const r = parseReviewAutoDispositionMarkers(bodies, 42, "codex");
+    assert.equal(r.auto_override_grants, 1);
+    assert.equal(r.markers.length, 1);
+  });
+
+  it("tolerates a malformed data block (uses attrs, no throw)", () => {
+    const broken =
+      '<!-- gc:review-auto-disposition issue="42" reviewer="codex" schema="gc.implement.review-auto-disposition/v1" disposition="one_more_cycle" grant="true" -->\n' +
+      "\nbody\n\n<!-- gc:review-auto-disposition-data {not valid json -->";
+    const r = parseReviewAutoDispositionMarkers([broken], 42, "codex");
+    assert.equal(r.auto_override_grants, 1);
+    assert.equal(r.markers[0].disposition, "one_more_cycle");
+  });
+});
+
+describe("normalizeReviewDispositionConfig", () => {
+  it("defaults to disabled when absent", () => {
+    const r = normalizeReviewDispositionConfig(null);
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.value, { enabled: false, mode: "shadow", max_auto_overrides: 1, judge: { enabled: false, model: null } });
+  });
+
+  it("rejects an unknown key", () => {
+    const r = normalizeReviewDispositionConfig({ bogus: true });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("unknown key")), JSON.stringify(r.errors));
+  });
+
+  it("rejects out-of-range max_auto_overrides", () => {
+    const r = normalizeReviewDispositionConfig({ max_auto_overrides: 99 });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("max_auto_overrides")), JSON.stringify(r.errors));
+  });
+
+  it("a malformed present config returns ok:false (not silent defaults)", () => {
+    const r = normalizeReviewDispositionConfig({ enabled: "yes", mode: "bogus" });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.length >= 2, JSON.stringify(r.errors));
+  });
+
+  it("accepts a fully-specified valid block", () => {
+    const r = normalizeReviewDispositionConfig({
+      enabled: true,
+      mode: "authoritative",
+      max_auto_overrides: 2,
+      judge: { enabled: true, model: "claude-sonnet-4-6" },
+    });
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.value, {
+      enabled: true,
+      mode: "authoritative",
+      max_auto_overrides: 2,
+      judge: { enabled: true, model: "claude-sonnet-4-6" },
+    });
+  });
+
+  it("flows through parseGroundControlYaml into workflow.review_disposition", () => {
+    const yaml = [
+      "schema_version: 1",
+      "project: x",
+      "workflow:",
+      "  review_disposition:",
+      "    enabled: true",
+      "    mode: authoritative",
+      "    max_auto_overrides: 2",
+      "",
+    ].join("\n");
+    const result = parseGroundControlYaml(yaml);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.equal(result.value.workflow.review_disposition.enabled, true);
+    assert.equal(result.value.workflow.review_disposition.mode, "authoritative");
+    assert.equal(result.value.workflow.review_disposition.max_auto_overrides, 2);
+  });
+
+  it("absent review_disposition still returns the disabled default in workflow", () => {
+    const result = parseGroundControlYaml("schema_version: 1\nproject: x\n");
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.value.workflow.review_disposition, {
+      enabled: false,
+      mode: "shadow",
+      max_auto_overrides: 1,
+      judge: { enabled: false, model: null },
+    });
+  });
+});
+
+// Pure helpers shared by the evaluator and verifier tests.
+const TRUSTED_LOGIN = "gc-bot";
+function grantComment(issue, reviewer, grant, { cap = 1, author = TRUSTED_LOGIN, mode = "authoritative" } = {}) {
+  return {
+    body: buildReviewAutoDispositionRecord({
+      issueNumber: issue,
+      reviewer,
+      cycle: cap,
+      cap,
+      mode,
+      disposition: "one_more_cycle",
+      rationale: "codex high-risk",
+      signalsSnapshot: { diff: {} },
+      grantNumber: grant,
+    }),
+    authorLogin: author,
+  };
+}
+function codexCycleComment(issue, cycle, { author = TRUSTED_LOGIN } = {}) {
+  // Mirrors the gc:codex-prepush-cycle marker shape parseCodexReviewPrePushCycleMarkers reads.
+  const branch = JSON.stringify(`${issue}-x`);
+  return {
+    body: `<!-- gc:codex-prepush-cycle issue="${issue}" branch="${branch.slice(1, -1)}" cycle="${cycle}" -->`,
+    authorLogin: author,
+  };
+}
+
+describe("effectiveReviewerCap", () => {
+  it("falls back to the module default (1) when no cap is configured", () => {
+    assert.equal(effectiveReviewerCap({ codex_review: { pre_push_cap: null } }, "codex"), 1);
+    assert.equal(effectiveReviewerCap({ test_quality_review: { pre_push_cap: null } }, "test-quality"), 1);
+    assert.equal(effectiveReviewerCap(null, "codex"), 1);
+  });
+
+  it("uses the configured per-reviewer cap when set", () => {
+    assert.equal(effectiveReviewerCap({ codex_review: { pre_push_cap: 3 } }, "codex"), 3);
+    assert.equal(effectiveReviewerCap({ test_quality_review: { pre_push_cap: 2 } }, "test-quality"), 2);
+  });
+});
+
+describe("evaluateAutoDispositionGrant (pure authorization logic)", () => {
+  const authoritative = { enabled: true, mode: "authoritative", max_auto_overrides: 1 };
+
+  it("authorizes a trusted, authoritative, same-boundary, unspent grant", () => {
+    const r = evaluateAutoDispositionGrant({
+      config: authoritative,
+      trustedLogin: TRUSTED_LOGIN,
+      authored: [grantComment(7, "codex", 1)],
+      issueNumber: 7,
+      reviewer: "codex",
+      cyclesRun: 1, // only the in-cap cycle has run; the over-cap grant is unspent
+      effectiveCap: 1,
+    });
+    assert.deepEqual(r, { authorized: true, grant_number: 1 });
+  });
+
+  it("refuses when current config is shadow mode (record-only)", () => {
+    const r = evaluateAutoDispositionGrant({
+      config: { enabled: true, mode: "shadow", max_auto_overrides: 1 },
+      trustedLogin: TRUSTED_LOGIN,
+      authored: [grantComment(7, "codex", 1)],
+      issueNumber: 7,
+      reviewer: "codex",
+      cyclesRun: 1,
+      effectiveCap: 1,
+    });
+    assert.equal(r.authorized, false);
+    assert.equal(r.reason, "review_disposition_mode_not_authoritative");
+  });
+
+  it("refuses a grant MINTED in shadow mode even after the repo flips to authoritative", () => {
+    const r = evaluateAutoDispositionGrant({
+      config: authoritative, // current config is authoritative...
+      trustedLogin: TRUSTED_LOGIN,
+      // ...but the marker itself was issued under shadow mode.
+      authored: [grantComment(7, "codex", 1, { mode: "shadow" })],
+      issueNumber: 7,
+      reviewer: "codex",
+      cyclesRun: 1,
+      effectiveCap: 1,
+    });
+    assert.equal(r.authorized, false);
+    assert.equal(r.reason, "grant_not_authoritative_mode");
+  });
+
+  it("refuses when the grant's cap boundary does not match the effective cap", () => {
+    const r = evaluateAutoDispositionGrant({
+      config: authoritative,
+      trustedLogin: TRUSTED_LOGIN,
+      authored: [grantComment(7, "codex", 1, { cap: 2 })], // grant minted against cap 2
+      issueNumber: 7,
+      reviewer: "codex",
+      cyclesRun: 1,
+      effectiveCap: 1, // server enforces cap 1 now
+    });
+    assert.equal(r.authorized, false);
+    assert.equal(r.reason, "grant_cap_boundary_mismatch");
+  });
+
+  it("refuses when the effective cap cannot be resolved", () => {
+    const r = evaluateAutoDispositionGrant({
+      config: authoritative,
+      trustedLogin: TRUSTED_LOGIN,
+      authored: [grantComment(7, "codex", 1)],
+      issueNumber: 7,
+      reviewer: "codex",
+      cyclesRun: 1,
+      effectiveCap: null,
+    });
+    assert.equal(r.authorized, false);
+    assert.equal(r.reason, "effective_cap_unresolved");
+  });
+
+  it("refuses a grant marker forged by a non-trusted commenter (provenance)", () => {
+    const r = evaluateAutoDispositionGrant({
+      config: authoritative,
+      trustedLogin: TRUSTED_LOGIN,
+      authored: [grantComment(7, "codex", 1, { author: "attacker" })],
+      issueNumber: 7,
+      reviewer: "codex",
+      cyclesRun: 1,
+      effectiveCap: 1,
+    });
+    assert.equal(r.authorized, false);
+    assert.equal(r.reason, "no_auto_disposition_grant");
+  });
+
+  it("refuses when the trusted poster cannot be resolved", () => {
+    const r = evaluateAutoDispositionGrant({
+      config: authoritative,
+      trustedLogin: null,
+      authored: [grantComment(7, "codex", 1)],
+      issueNumber: 7,
+      reviewer: "codex",
+      cyclesRun: 1,
+      effectiveCap: 1,
+    });
+    assert.equal(r.authorized, false);
+    assert.equal(r.reason, "trusted_poster_unresolved");
+  });
+
+  it("refuses once the granted over-cap cycle has already run (single-use)", () => {
+    const r = evaluateAutoDispositionGrant({
+      config: authoritative,
+      trustedLogin: TRUSTED_LOGIN,
+      authored: [grantComment(7, "codex", 1)],
+      issueNumber: 7,
+      reviewer: "codex",
+      cyclesRun: 2, // cap=1 boundary + 1 over-cap cycle already ran → grant spent
+      effectiveCap: 1,
+    });
+    assert.equal(r.authorized, false);
+    assert.equal(r.reason, "auto_grant_already_consumed");
+  });
+
+  it("refuses when grants exceed the ceiling", () => {
+    const r = evaluateAutoDispositionGrant({
+      config: authoritative,
+      trustedLogin: TRUSTED_LOGIN,
+      authored: [grantComment(7, "codex", 1), grantComment(7, "codex", 2)],
+      issueNumber: 7,
+      reviewer: "codex",
+      cyclesRun: 1,
+      effectiveCap: 1,
+    });
+    assert.equal(r.authorized, false);
+    assert.equal(r.reason, "auto_override_ceiling_exceeded");
+  });
+
+  it("refuses when the grant marker carries no cap boundary", () => {
+    // Hand-build an authoritative-mode grant marker whose data block omits cap.
+    const body =
+      '<!-- gc:review-auto-disposition issue="7" reviewer="codex" ' +
+      'schema="gc.implement.review-auto-disposition/v1" disposition="one_more_cycle" mode="authoritative" grant="true" -->\n' +
+      '<!-- gc:review-auto-disposition-data {"schema":"gc.implement.review-auto-disposition/v1","disposition":"one_more_cycle","reviewer":"codex","cycle":1,"mode":"authoritative","grant":1} -->';
+    const r = evaluateAutoDispositionGrant({
+      config: authoritative,
+      trustedLogin: TRUSTED_LOGIN,
+      authored: [{ body, authorLogin: TRUSTED_LOGIN }],
+      issueNumber: 7,
+      reviewer: "codex",
+      cyclesRun: 1,
+      effectiveCap: 1,
+    });
+    assert.equal(r.authorized, false);
+    assert.equal(r.reason, "grant_missing_cap_boundary");
+  });
+
+  it("refuses when disabled", () => {
+    const r = evaluateAutoDispositionGrant({
+      config: { enabled: false, mode: "authoritative", max_auto_overrides: 1 },
+      trustedLogin: TRUSTED_LOGIN,
+      authored: [grantComment(7, "codex", 1)],
+      issueNumber: 7,
+      reviewer: "codex",
+      cyclesRun: 1,
+      effectiveCap: 1,
+    });
+    assert.equal(r.authorized, false);
+    assert.equal(r.reason, "review_disposition_disabled");
+  });
+});
+
+describe("verifyAutoDispositionGrant", () => {
+  // Hermetic git repo + PATH-shimmed gh so the comment + identity reads are
+  // deterministic. The shim answers `gh api user --jq .login` with the trusted
+  // login and serves the configured comments (each with a user.login author).
+  function makeRepo({ enabled = true, mode = "authoritative", maxAuto = 1, comments = [], login = TRUSTED_LOGIN }) {
+    const repoDir = mkdtempSync(join(tmpdir(), "gc-disp-repo-"));
+    execFileSync("git", ["-C", repoDir, "init", "-q", "--initial-branch", "dev"]);
+    execFileSync("git", ["-C", repoDir, "remote", "add", "origin", "https://github.com/fake/repo.git"]);
+    const yaml = [
+      "schema_version: 1",
+      "project: fake",
+      "workflow:",
+      "  review_disposition:",
+      `    enabled: ${enabled ? "true" : "false"}`,
+      `    mode: ${mode}`,
+      `    max_auto_overrides: ${maxAuto}`,
+      "",
+    ].join("\n");
+    writeFileSync(join(repoDir, ".ground-control.yaml"), yaml);
+    const binDir = mkdtempSync(join(tmpdir(), "gc-disp-bin-"));
+    // comments: array of { body, authorLogin } → comment objects with user.login.
+    const page = JSON.stringify([
+      comments.map((c) => ({ body: c.body, user: { login: c.authorLogin } })),
+    ]);
+    const loginOut = login == null ? "" : String(login);
+    const ghShim = `#!/usr/bin/env node
+const argv = process.argv.slice(2);
+if (argv[0] === "api" && argv[1] === "user") {
+  ${login == null ? 'process.stderr.write("no login\\n"); process.exit(1);' : `process.stdout.write(${JSON.stringify(loginOut)} + "\\n"); process.exit(0);`}
+}
+if (argv[0] === "api" && argv.includes("--slurp")) {
+  process.stdout.write(${JSON.stringify(page)});
+  process.exit(0);
+}
+process.stderr.write("gh shim: unhandled argv: " + JSON.stringify(argv) + "\\n");
+process.exit(2);
+`;
+    writeFileSync(join(binDir, "gh"), ghShim, { mode: 0o755 });
+    return {
+      repoDir,
+      binDir,
+      cleanup() {
+        rmSync(repoDir, { recursive: true, force: true });
+        rmSync(binDir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  async function withShimPath(binDir, fn) {
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${binDir}:${oldPath}`;
+    try {
+      return await fn();
+    } finally {
+      process.env.PATH = oldPath;
+    }
+  }
+
+  it("authorizes a trusted, authoritative, unspent grant end-to-end", async () => {
+    const repo = makeRepo({
+      enabled: true,
+      maxAuto: 1,
+      comments: [grantComment(7, "codex", 1)],
+    });
+    try {
+      await withShimPath(repo.binDir, async () => {
+        const r = await verifyAutoDispositionGrant({ repoPath: repo.repoDir, issueNumber: 7, reviewer: "codex" });
+        assert.equal(r.ok, true);
+        assert.equal(r.authorized, true);
+        assert.equal(r.grant_number, 1);
+      });
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it("refuses end-to-end once the over-cap cycle marker is on the thread (single-use)", async () => {
+    const repo = makeRepo({
+      enabled: true,
+      maxAuto: 1,
+      // cap=1 in-cap cycle (1) ran, the grant posted, then the over-cap cycle
+      // (2) ran and posted its marker → two cycle markers → grant is spent.
+      comments: [codexCycleComment(7, 1), grantComment(7, "codex", 1), codexCycleComment(7, 2)],
+    });
+    try {
+      await withShimPath(repo.binDir, async () => {
+        const r = await verifyAutoDispositionGrant({ repoPath: repo.repoDir, issueNumber: 7, reviewer: "codex" });
+        assert.equal(r.ok, true);
+        assert.equal(r.authorized, false);
+        assert.equal(r.reason, "auto_grant_already_consumed");
+      });
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it("refuses in shadow mode before any GitHub read", async () => {
+    const repo = makeRepo({ enabled: true, mode: "shadow", comments: [grantComment(7, "codex", 1)] });
+    try {
+      await withShimPath(repo.binDir, async () => {
+        const r = await verifyAutoDispositionGrant({ repoPath: repo.repoDir, issueNumber: 7, reviewer: "codex" });
+        assert.equal(r.ok, true);
+        assert.equal(r.authorized, false);
+        assert.equal(r.reason, "review_disposition_mode_not_authoritative");
+      });
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it("does not authorize when review_disposition is disabled", async () => {
+    const repo = makeRepo({ enabled: false, comments: [grantComment(7, "codex", 1)] });
+    try {
+      await withShimPath(repo.binDir, async () => {
+        const r = await verifyAutoDispositionGrant({ repoPath: repo.repoDir, issueNumber: 7, reviewer: "codex" });
+        assert.equal(r.ok, true);
+        assert.equal(r.authorized, false);
+        assert.equal(r.reason, "review_disposition_disabled");
+      });
+    } finally {
+      repo.cleanup();
+    }
+  });
+});
+
+describe("review cycle wrappers — auto_grant knob off (input validation unchanged)", () => {
+  it("runCodexReviewCycle with autoGrant absent still rejects invalid input without I/O", async () => {
+    const r = await runCodexReviewCycle({ repoPath: "", issueNumber: 1, uncommitted: true });
+    assert.equal(r.ok, false);
+    assert.equal(r.error, "codex_review_cycle_input_invalid");
+    const r2 = await runCodexReviewCycle({ repoPath: "/tmp", issueNumber: 0, uncommitted: true });
+    assert.equal(r2.ok, false);
+    assert.equal(r2.error, "codex_review_cycle_input_invalid");
+  });
+
+  it("runTestQualityReviewCycle with autoGrant absent still rejects invalid input without I/O", async () => {
+    const r = await runTestQualityReviewCycle({ repoPath: "", issueNumber: 1 });
+    assert.equal(r.ok, false);
+    assert.equal(r.error, "test_quality_review_cycle_input_invalid");
+    const r2 = await runTestQualityReviewCycle({ repoPath: "/tmp", issueNumber: -3 });
+    assert.equal(r2.ok, false);
+    assert.equal(r2.error, "test_quality_review_cycle_input_invalid");
+  });
 });
