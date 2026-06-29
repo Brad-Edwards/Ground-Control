@@ -89,5 +89,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [069](069-research-artifact-provenance-ledger.md) | Research Artifact Provenance Ledger | Accepted |
 | [070](070-research-artifact-graph-projection.md) | Research Artifact Graph Projection | Accepted |
 | [071](071-research-interoperability-source-identity.md) | Research Interoperability and Source Identity Boundary | Accepted |
+| [072](072-research-rest-and-mcp-tool-surface.md) | Research REST and MCP Tool Surface | Accepted |
+| [073](073-research-extensibility-and-adapter-boundary.md) | Research Extensibility and Adapter Boundary | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.
