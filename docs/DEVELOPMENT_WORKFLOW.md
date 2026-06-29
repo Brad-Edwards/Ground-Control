@@ -362,14 +362,6 @@ PreToolUse hook on `Bash`. The user owns every actual merge. Blocked uncondition
   fails on new issues, and `.github/branch-protection-baseline.json` requires
   strict status checks for `main` and `dev` while retaining admin bypass
 - `make policy` is the common path for Claude, Codex, pre-commit, and CI
-- `python3 tools/policy/check_operating_controls.py` (run by `make policy` and
-  the CI `policy` job) is the durable-record guard for the source-gate operating
-  control `compliance-requirement-traceability`, whose durable home is Ground
-  Control (penumbra-cell#34 routes to it). It fails when
-  `docs/architecture/operating-controls/{README,source}.md` go missing or drift
-  away from the control objective, the `before-source` gate, or the four named
-  sources of truth. It is standalone (not a `run_*` in `tools/policy/checks.py`)
-  so it does not trip the `doc-coverage-gate-sync` ADR rule keyed on `checks.py`.
 - `make sync-ground-control-policy` and `make policy-live` keep Ground Control quality gates and ADR metadata aligned when a live GC instance is available
 
 ### MCP–Backend Write-Contract Gate (ADR-034, #1106)
