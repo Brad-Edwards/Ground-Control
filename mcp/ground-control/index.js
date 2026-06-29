@@ -273,10 +273,20 @@ import {
   GC_EVIDENCE_DESCRIPTION,
 } from "./gc-evidence.js";
 import {
+  gcResearchProvenanceZodShape,
+  gcResearchProvenanceToolHandler,
+  GC_RESEARCH_PROVENANCE_DESCRIPTION,
+} from "./gc-research-provenance.js";
+import {
   gcDerivationZodShape,
   gcDerivationToolHandler,
   GC_DERIVATION_DESCRIPTION,
 } from "./gc-derivation.js";
+import {
+  gcArchitectureModelZodShape,
+  gcArchitectureModelToolHandler,
+  GC_ARCHITECTURE_MODEL_DESCRIPTION,
+} from "./gc-architecture-model.js";
 import {
   gcAuditZodShape,
   gcAuditToolHandler,
@@ -2299,6 +2309,21 @@ server.tool(
   },
 );
 
+// gc_architecture_model: GC-GRC-005 canonical architecture-model snapshots.
+// list_snapshots returns summaries (counts, no element payloads); get_snapshot
+// returns one snapshot with its full element state.
+server.tool(
+  "gc_architecture_model",
+  GC_ARCHITECTURE_MODEL_DESCRIPTION,
+  gcArchitectureModelZodShape,
+  async (args) => {
+    try {
+      const result = await gcArchitectureModelToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
 // gc_control: control + control_test (GC-I012) + control_effectiveness_assessment
 // (GC-I013). Handler logic (Zod shape, per-entity per-action allowlist dispatch
 // via lib.js CONTROL_FIELDS) lives in gc-control.js so the adapter is testable
@@ -3402,6 +3427,22 @@ server.tool(
         }
         default: return err(new Error(`Unknown action: ${args.action}`));
       }
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_research_provenance: GC-RSCH-R004 / GC-RSCH-N002 / GC-RSCH-N004, ADR-069.
+// Run-scoped append-only provenance ledger (nodes + edges). Curated writes mirror
+// REST (gc_query is read-only); reads also route through gc_query under the
+// /api/v1/research-runs allow-list. Handler lives in gc-research-provenance.js.
+server.tool(
+  "gc_research_provenance",
+  GC_RESEARCH_PROVENANCE_DESCRIPTION,
+  gcResearchProvenanceZodShape,
+  async (args) => {
+    try {
+      const result = await gcResearchProvenanceToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },
 );

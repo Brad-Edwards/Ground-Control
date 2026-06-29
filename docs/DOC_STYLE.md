@@ -1,5 +1,9 @@
 # Documentation style
 
+> **Sync note for issue #1118 (2026-06-28):** Registered the `gc_architecture_model` MCP tool and architecture-model client helpers for the canonical server-side aggregate. The REST and MCP contract is documented in `docs/API.md`, `docs/architecture/ARCHITECTURE.md`, `mcp/ground-control/README.md`, and the tool description; ADR-035 carries the `gc_query` read allowlist update. No style rule changed.
+
+> **Sync note for issue #1002 (2026-06-28):** A new MCP tool `gc_research_provenance` (actions: record_node / record_edge / list_nodes / list_edges / chain) was registered in `mcp/ground-control/index.js` and `mcp/ground-control/lib.js` (handler in `gc-research-provenance.js`), backed by the new `/api/v1/research-runs/{runId}/provenance/**` REST surface for the research provenance ledger (ADR-069). It is an additive curated-write tool whose run-scoped reads also route through the existing `gc_query` `/api/v1/research-runs` allow-list. Documentation lives in `docs/API.md`, the `index.js` tool description, and ADR-069; the two write surfaces are covered by the `openapi-contract.test.js` drift gate. The surface addition is recorded in the ADR-054 amendment below. No style rule changed.
+
 > **Sync note for issue #1117 (2026-06-28):** The `gc_derivation` MCP surface now forwards declared boundary inputs from `grc.boundaries` and exposes `get_boundary_model` for derivation-run boundary snapshots. The current contract is documented in `docs/API.md`, `docs/DEVELOPMENT_WORKFLOW.md`, `docs/architecture/ARCHITECTURE.md`, and `mcp/ground-control/README.md`. No style rule changed.
 
 > **Sync note for issue #859 (2026-06-24):** Two new MCP tools were registered in `mcp/ground-control/index.js` and `mcp/ground-control/lib.js`: `gc_workflow_run` (action-multiplexed workflow-run telemetry: record / record_event / import_cost / list / aggregate / cross_project_aggregate) and `gc_workflow_run_ingest` (bridge ingestion from canonical issue-thread `gc:` markers), backed by the new `/api/v1/workflow-runs**` REST surface, with the two project-scoped read paths added to the `gc_query` allowlist (`gc-query.js`, `mcp/ground-control/README.md`, ADR-035). Documentation lives in `docs/API.md`, the `index.js` tool descriptions, and ADR-061; the surface addition is recorded in the ADR-054 amendment below. A follow-up review-fix commit clarified the record action's idempotent-upsert semantics in the tool description and `docs/API.md`. No style rule changed.
@@ -95,8 +99,9 @@ Changes to any doc-coverage gate surface - `mcp/ground-control/index.js`,
 `.vale.ini`, or this file - trigger the `doc-coverage-gate-sync` rule per
 ADR-054, which requires this file and ADR-054 to stay current with the gate
 surface they describe.
-Adding a new MCP tool or `gc_admin` action does not require new style rules
-here unless the action introduces a new doc-shape (a new request/response
+Adding a new MCP tool or `gc_admin` action - or changing an existing
+endpoint's request/response shape - does not require new style rules here
+unless it introduces a new doc-shape (a new or changed request/response
 schema, for example) - in that case document the schema under the relevant
 service section in `docs/API.md`, which Vale lints on touch.
 

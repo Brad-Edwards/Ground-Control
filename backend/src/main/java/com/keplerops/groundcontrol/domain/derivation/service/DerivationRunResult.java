@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.domain.derivation.service;
 
+import com.keplerops.groundcontrol.domain.architecturemodel.service.ArchitectureModelSnapshotView;
 import com.keplerops.groundcontrol.domain.derivation.model.DerivationCaptureLimit;
 import com.keplerops.groundcontrol.domain.derivation.model.DerivationRun;
 import com.keplerops.groundcontrol.domain.derivation.model.SystemModelFact;
@@ -9,6 +10,7 @@ public record DerivationRunResult(
         DerivationRun run,
         List<SystemModelFact> facts,
         List<DerivationCaptureLimit> captureLimits,
+        ArchitectureModelSnapshotView architectureModel,
         BoundaryModelBuildResult boundaryModel) {
 
     public DerivationRunResult {
@@ -18,6 +20,14 @@ public record DerivationRunResult(
 
     public DerivationRunResult(
             DerivationRun run, List<SystemModelFact> facts, List<DerivationCaptureLimit> captureLimits) {
-        this(run, facts, captureLimits, null);
+        this(run, facts, captureLimits, null, null);
+    }
+
+    public DerivationRunResult(
+            DerivationRun run,
+            List<SystemModelFact> facts,
+            List<DerivationCaptureLimit> captureLimits,
+            BoundaryModelBuildResult boundaryModel) {
+        this(run, facts, captureLimits, null, boundaryModel);
     }
 }

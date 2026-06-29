@@ -86,5 +86,8 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [066](066-research-review-comments-and-resolution-tracking.md) | Research Gate Decision Log and Review Comments | Accepted |
 | [067](067-research-explainability-rationale-ledger.md) | Research Explainability Rationale Ledger | Accepted |
 | [068](068-research-final-output-accountability-disclosure.md) | Research Final-Output Accountability Disclosure | Accepted |
+| [069](069-research-artifact-provenance-ledger.md) | Research Artifact Provenance Ledger | Accepted |
+| [070](070-research-artifact-graph-projection.md) | Research Artifact Graph Projection | Accepted |
+| [071](071-research-interoperability-source-identity.md) | Research Interoperability and Source Identity Boundary | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.

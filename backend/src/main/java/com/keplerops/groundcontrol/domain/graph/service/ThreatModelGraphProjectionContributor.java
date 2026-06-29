@@ -136,7 +136,8 @@ public class ThreatModelGraphProjectionContributor implements GraphProjectionCon
                         // evidence artifact (current and superseded) so this edge
                         // never dangles.
                     case EVIDENCE -> GraphEntityType.EVIDENCE_ARTIFACT;
-                    case ARCHITECTURE_MODEL, CODE, ISSUE, EXTERNAL -> null;
+                    case ARCHITECTURE_MODEL -> GraphEntityType.ARCHITECTURE_MODEL_ELEMENT;
+                    case CODE, ISSUE, EXTERNAL -> null;
                 };
         if (targetEntityType == null) {
             return null;

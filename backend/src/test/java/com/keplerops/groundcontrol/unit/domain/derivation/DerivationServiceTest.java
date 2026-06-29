@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.keplerops.groundcontrol.domain.architecturemodel.service.ArchitectureModelService;
 import com.keplerops.groundcontrol.domain.audit.ActorHolder;
 import com.keplerops.groundcontrol.domain.derivation.model.BoundaryModelSnapshot;
 import com.keplerops.groundcontrol.domain.derivation.model.DerivationCaptureLimit;
@@ -88,6 +89,9 @@ class DerivationServiceTest {
     @Mock
     private BoundaryModelService boundaryModelService;
 
+    @Mock
+    private ArchitectureModelService architectureModelService;
+
     private DerivationService service;
     private Project project;
 
@@ -100,7 +104,8 @@ class DerivationServiceTest {
                 projectService,
                 adapterRegistry,
                 transactionTemplate,
-                boundaryModelService);
+                boundaryModelService,
+                architectureModelService);
         project = new Project("gc-test", "Ground Control Test");
     }
 

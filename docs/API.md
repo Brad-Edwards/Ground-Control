@@ -1263,6 +1263,57 @@ required when `scope_mode=DIFF`; `paths` is required when
 to read `grc.boundaries` from `.ground-control.yaml`. Readback actions map
 `run_id`, `fact_kind`, and `reason` to the REST filters above.
 
+### Architecture Models (GC-GRC-005)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/architecture-models/snapshots` | ArchitectureModelSnapshotRequest | 201 | Persist a versioned architecture-model snapshot |
+| GET | `/architecture-models/snapshots` | - | 200 | List snapshot summaries (metadata + counts, no element payloads) for a project |
+| GET | `/architecture-models/snapshots/{id}` | - | 200 | Get one snapshot with full element states |
+| GET | `/architecture-models/elements` | - | 200 | List latest architecture-model elements |
+| GET | `/architecture-models/elements/{id}` | - | 200 | Get one stable architecture-model element |
+| GET | `/architecture-models/diff?fromSnapshotId=&toSnapshotId=` | - | 200 | Compare two snapshots |
+
+All endpoints accept an optional `project` query parameter. Multi-project
+deployments must pass it; single-project deployments can resolve it
+automatically.
+
+**ArchitectureModelSnapshotRequest fields:** `modelVersion`, `commitSha`,
+`source`, optional `createdBy`, and non-empty `elements`. Each element carries
+`stableKey`, `elementKind` (`COMPONENT`, `PROCESS`, `DATA_STORE`,
+`EXTERNAL_ENTITY`, `DATA_FLOW`, `TRUST_BOUNDARY`, `DATA_CLASSIFICATION`),
+`label`, optional summary/source/classification/boundary fields, provenance
+fields (`provenanceSource`, `provenanceKey`, adapter/tool/ruleset fields,
+optional `derivationRunId`), `commitSha`, and opaque `metadata`. `DATA_FLOW`
+elements must include `flowSourceStableKey` and `flowTargetStableKey`, and both
+endpoints must exist in the same snapshot.
+
+**ArchitectureModelSnapshotResponse fields** (POST and GET `/snapshots/{id}`):
+`id`, `derivationRunId`, `projectIdentifier`, `schemaVersion`, `modelVersion`,
+`commitSha`, `source`, `createdBy`, `elementCount`, `flowCount`, `elements`,
+`createdAt`, and `updatedAt`. Each element response includes `id`, `graphNodeId`,
+`stableKey`, current snapshot state, DFD semantics, provenance, metadata, and
+timestamps.
+
+**ArchitectureModelSnapshotSummaryResponse fields** (list `GET /snapshots`):
+the same snapshot metadata (`id`, `derivationRunId`, `projectIdentifier`,
+`schemaVersion`, `modelVersion`, `commitSha`, `source`, `createdBy`,
+`elementCount`, `flowCount`, `createdAt`, `updatedAt`) but **without** the
+`elements` payload. A snapshot can hold up to 10,000 elements and history is
+unbounded, so the list endpoint returns summaries; fetch a single snapshot via
+`GET /snapshots/{id}` for full element state.
+
+**Diff response:** `fromSnapshotId`, `toSnapshotId`, and `entries` with
+`stableKey`, `status` (`ADDED`, `REMOVED`, `CHANGED`, `UNCHANGED`, or
+`PROVENANCE_ONLY_CHANGED`), and `summary`.
+
+MCP surface: `gc_architecture_model` with actions `create_snapshot`,
+`list_snapshots`, `get_snapshot`, `list_elements`, `get_element`, and
+`diff_snapshots`. `create_snapshot` accepts snake_case equivalents of the REST
+request fields; `diff_snapshots` requires `from_snapshot_id` and
+`to_snapshot_id`. `gc_query` allowlists read-only `/api/v1/architecture-models`
+paths.
+
 ### Plugins
 
 | Method | Path | Body | Status | Purpose |
@@ -1370,15 +1421,15 @@ max 255).
 
 **Internal target types (require `targetEntityId`, resolved project-scoped):** ASSET
 (includes boundaries via `AssetType.BOUNDARY`), REQUIREMENT, CONTROL, RISK_SCENARIO,
-OBSERVATION, RISK_ASSESSMENT_RESULT, VERIFICATION_RESULT, FINDING (per GC-H009: governed vulnerability/scan/pentest finding records), EVIDENCE (per GC-L006 / ADR-045
+OBSERVATION, RISK_ASSESSMENT_RESULT, VERIFICATION_RESULT, FINDING (per GC-H009: governed vulnerability/scan/pentest finding records), ARCHITECTURE_MODEL (must reference an `ArchitectureModelElement` UUID), EVIDENCE (per GC-L006 / ADR-045
 projection alignment - `targetEntityId` must reference an `EvidenceArtifact` UUID
 returned by `POST /api/v1/evidence-artifacts`).
 
-**External target types (require `targetIdentifier`):** ARCHITECTURE_MODEL (for example, C4
-source or Structurizr DSL, per ADR-011), CODE (repo-relative path), ISSUE (GitHub
-issue or PR number), EXTERNAL (catch-all that also covers CVE identifiers, scanner
-finding IDs, and pentest report IDs that have not been ingested as first-class
-`Finding` records).
+**External target types (require `targetIdentifier`):** CODE (repo-relative path),
+ISSUE (GitHub issue or PR number), EXTERNAL (catch-all that also covers C4 or
+Structurizr references not yet ingested into the architecture model, CVE
+identifiers, scanner finding IDs, and pentest report IDs that have not been
+ingested as first-class `Finding` records).
 
 **Link types:** AFFECTS (threat affects an asset or boundary), EXPLOITS (threat
 exploits a requirement or condition), MITIGATED_BY (threat is mitigated by a control),
@@ -2306,6 +2357,33 @@ write is taken from the authenticated server context (`ActorHolder`/`ActorFilter
 never from the request body, so durable lifecycle provenance cannot be forged. Cross-project
 run access is concealed as HTTP 404. Reads are mirrored to MCP through the `gc_query` allowlist
 (`/api/v1/research-runs`). See ADR-064 and ADR-065.
+
+#### Research Provenance Ledger (ADR-069)
+
+| Method | Path | Body | Status | Description |
+|--------|------|------|--------|-------------|
+| POST | `/research-runs/{runId}/provenance/nodes` | ProvenanceNodeRequest | 201 | Record (or rework) a provenance node, a bounded research referent of a given `ProvenanceNodeKind` keyed by `subjectKey`; re-recording the same `(kind, subjectKey)` supersedes the prior ACTIVE node (GC-RSCH-R004, ADR-069) |
+| GET | `/research-runs/{runId}/provenance/nodes` | - | 200 | List the run's provenance nodes (ordered by `createdAt ASC`) |
+| POST | `/research-runs/{runId}/provenance/edges` | ProvenanceEdgeRequest | 201 | Record (or rework) a derivation edge from an upstream input node to a downstream output node; 422 on a self-edge, 404 on an endpoint outside the run, 409 on a cycle (GC-RSCH-R004, ADR-069) |
+| GET | `/research-runs/{runId}/provenance/edges` | - | 200 | List the run's provenance edges |
+| GET | `/research-runs/{runId}/provenance/nodes/{nodeId}/chain` | - | 200 | Bounded backward-provenance chain for a node: the root plus every upstream node and edge that supports it (optional `depth`, clamped to 50). Answers "which sources and charted cells support this synthesis or draft claim?" (GC-RSCH-R004) |
+
+The research provenance ledger is a run-scoped, append-only directed derivation graph
+(a sibling of `ResearchRunArtifact`, not a field on it). A `ResearchProvenanceNode` identifies
+a bounded referent (user goal, methodology source, query, candidate source, full-text access
+state, charting cell, evidence-matrix cell, synthesis claim, argument move, or final prose),
+keyed by a `subjectKey` stable within the run/artifact attempt, with optional stable references
+(artifact id + attempt, locator, content hash, external identifier) and bounded reproducibility
+metadata (tool name/version, source action id). A `ResearchProvenanceEdge` runs from an upstream
+input node to a downstream output node (`DERIVED_FROM`, `SUPPORTS`, `SELECTED`, `CITED`,
+`CONTRIBUTED_TO`), so a downstream node is traversed backward to its supporting sources. The
+ledger stores references and short summaries only, never raw queries, full text, charting rows,
+manuscript prose, prompts, provider payloads, or secrets, and the recording actor is taken from
+the authenticated server context (`ActorHolder`/`ActorFilter`), never the request body. Writes are
+idempotent on a run-scoped `idempotencyKey` and rework-aware (supersession, never in-place
+mutation); self-edges and directed cycles are rejected. Cross-project or cross-run access is
+concealed as HTTP 404. Curated writes are exposed via the `gc_research_provenance` MCP tool; reads
+are also mirrored through the `gc_query` allowlist (`/api/v1/research-runs`). See ADR-069.
 
 ### Pack Registry
 

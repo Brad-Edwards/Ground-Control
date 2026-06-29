@@ -37,6 +37,7 @@ import {
 export const GC_QUERY_PATH_ALLOWLIST = Object.freeze([
   "/api/v1/adrs",
   "/api/v1/analysis",
+  "/api/v1/architecture-models",
   "/api/v1/assets",
   "/api/v1/audit",
   "/api/v1/audits",

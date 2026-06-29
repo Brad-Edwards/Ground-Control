@@ -188,6 +188,18 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
             "narrative",
             "observationDate",
             "observationKey",
+            // Architecture model projection.
+            "elementKind",
+            "modelVersion",
+            "schemaVersion",
+            "summary",
+            "sourcePath",
+            "trustBoundaryKey",
+            "dataClassificationKey",
+            "flowDirection",
+            "flowStableKey",
+            "provenanceSource",
+            "commitSha",
             "observationValue",
             "evidenceRef",
             "analystIdentity",
@@ -233,7 +245,21 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
             // Document projection (GC-G007). updatedAt is also referenced here for
             // the first time; all other Document keys (title, version, description,
             // createdBy, createdAt) were already present from earlier contributors.
-            "updatedAt");
+            "updatedAt",
+            // Research graph projection (ADR-070, #1003). Bounded identifiers, enum
+            // names, attempt counts, hashes, and timestamps only — never summary,
+            // locator, subjectKey, or other raw research content (ADR-070 §5).
+            // status is reused from the requirement projection above.
+            "currentStage",
+            "autonomyLevel",
+            "startedAt",
+            "stoppedAt",
+            "artifactType",
+            "stage",
+            "attemptNo",
+            "contentHash",
+            "kind",
+            "externalIdentifier");
     // AGE's ag_catalog.cypher() function takes cstring/cstring/agtype. Its first two arguments
     // are parsed at SQL parse time by AGE's parser hook, so they cannot be JDBC bind parameters
     // — they must be SQL literals. The third argument (params agtype) is the user-data carrier
