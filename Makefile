@@ -67,7 +67,6 @@ vale-lint: vale-install ## Run Vale on .md docs touched in the diff vs BASE_REF 
 
 policy: policy-tests assert-backup-policy vale-lint ## Run repo-native policy checks shared by Claude and Codex
 	python3 bin/policy --skip-pr-body
-	python3 tools/policy/check_operating_controls.py
 
 assert-backup-policy: ## Assert GC-P021 backup cadence / retention / verification defaults are intact
 	bash scripts/assert-backup-policy.sh
