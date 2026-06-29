@@ -120,26 +120,9 @@ public class DataClassificationEvaluationService {
         List<DataClassificationFinding> limitations = new ArrayList<>();
         int evaluatedFlows = 0;
         for (var flow : views) {
-            if (flow.elementKind() != ArchitectureModelElementKind.DATA_FLOW) {
-                continue;
-            }
-            evaluatedFlows++;
-            var source = byKey.get(flow.flowSourceStableKey());
-            var target = byKey.get(flow.flowTargetStableKey());
-            if (source == null || target == null) {
-                limitations.add(new DataClassificationFinding(
-                        flow.stableKey(),
-                        flow.flowSourceStableKey(),
-                        flow.flowTargetStableKey(),
-                        null,
-                        null,
-                        DataClassificationFindingReason.DANGLING_FLOW_ENDPOINT,
-                        "Flow endpoint not present in the evaluated snapshot"));
-                continue;
-            }
-            checkDirected(definition, labels, flow, source, target, violations, limitations);
-            if (flow.flowDirection() == ArchitectureFlowDirection.BIDIRECTIONAL) {
-                checkDirected(definition, labels, flow, target, source, violations, limitations);
+            if (flow.elementKind() == ArchitectureModelElementKind.DATA_FLOW) {
+                evaluatedFlows++;
+                evaluateFlow(definition, labels, byKey, flow, violations, limitations);
             }
         }
         return new DataClassificationEvaluationResult(
@@ -151,6 +134,33 @@ public class DataClassificationEvaluationService {
                 evaluatedFlows,
                 violations,
                 limitations);
+    }
+
+    /** Resolve a single flow's endpoints and check the permitted-flow relation in each carried direction. */
+    private static void evaluateFlow(
+            DataClassificationLatticeDefinition definition,
+            Set<String> labels,
+            Map<String, DataClassificationElementView> byKey,
+            DataClassificationElementView flow,
+            List<DataClassificationFinding> violations,
+            List<DataClassificationFinding> limitations) {
+        var source = byKey.get(flow.flowSourceStableKey());
+        var target = byKey.get(flow.flowTargetStableKey());
+        if (source == null || target == null) {
+            limitations.add(new DataClassificationFinding(
+                    flow.stableKey(),
+                    flow.flowSourceStableKey(),
+                    flow.flowTargetStableKey(),
+                    null,
+                    null,
+                    DataClassificationFindingReason.DANGLING_FLOW_ENDPOINT,
+                    "Flow endpoint not present in the evaluated snapshot"));
+            return;
+        }
+        checkDirected(definition, labels, flow, source, target, violations, limitations);
+        if (flow.flowDirection() == ArchitectureFlowDirection.BIDIRECTIONAL) {
+            checkDirected(definition, labels, flow, target, source, violations, limitations);
+        }
     }
 
     private static void checkDirected(

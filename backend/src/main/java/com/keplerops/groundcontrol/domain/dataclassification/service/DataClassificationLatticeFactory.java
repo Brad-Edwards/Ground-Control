@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.domain.dataclassification.service;
 
 import com.keplerops.groundcontrol.domain.dataclassification.service.DataClassificationLatticeCommand.FlowInput;
+import com.keplerops.groundcontrol.domain.dataclassification.service.DataClassificationLatticeCommand.LabelInput;
 import com.keplerops.groundcontrol.domain.dataclassification.service.DataClassificationLatticeDefinition.Edge;
 import com.keplerops.groundcontrol.domain.dataclassification.service.DataClassificationLatticeDefinition.Label;
 import com.keplerops.groundcontrol.domain.dataclassification.state.DataClassificationSource;
@@ -40,11 +41,23 @@ public final class DataClassificationLatticeFactory {
      */
     public static DataClassificationLatticeDefinition build(
             DataClassificationSource source, DataClassificationLatticeCommand command) {
-        if (command.labels().isEmpty()) {
+        var labelByKey = parseLabels(command.labels());
+        var keys = List.copyOf(labelByKey.keySet());
+        var reachable = seedReachable(keys, command.permittedFlows(), labelByKey);
+        closeTransitively(keys, reachable);
+        assertAntisymmetric(keys, reachable);
+        var closure = collectClosure(keys, reachable);
+        var labels = keys.stream().map(labelByKey::get).toList();
+        return new DataClassificationLatticeDefinition(source, policyVersion(labels, closure), labels, closure);
+    }
+
+    /** Parse and validate the label taxonomy: non-empty, unique keys, valid key syntax, and a display name. */
+    private static Map<String, Label> parseLabels(List<LabelInput> inputs) {
+        if (inputs.isEmpty()) {
             throw validation("Lattice must define at least one label", "labels");
         }
-        var labelByKey = new LinkedHashMap<String, Label>();
-        for (var input : command.labels()) {
+        Map<String, Label> labelByKey = new LinkedHashMap<>();
+        for (var input : inputs) {
             var key = trim(input.key());
             if (key == null || !LABEL_KEY.matcher(key).matches()) {
                 throw validation("Label key must match " + LABEL_KEY.pattern(), "labels.key");
@@ -58,15 +71,19 @@ public final class DataClassificationLatticeFactory {
             }
             labelByKey.put(key, new Label(key, displayName, trim(input.description()), input.rank()));
         }
+        return labelByKey;
+    }
 
-        var keys = List.copyOf(labelByKey.keySet());
-        var reachable = new LinkedHashMap<String, LinkedHashSet<String>>();
+    /** Seed the reflexive relation and fold in the authored permitted flows, rejecting dangling edges. */
+    private static Map<String, Set<String>> seedReachable(
+            List<String> keys, List<FlowInput> flows, Map<String, Label> labelByKey) {
+        Map<String, Set<String>> reachable = new LinkedHashMap<>();
         for (var key : keys) {
-            var targets = new LinkedHashSet<String>();
+            Set<String> targets = new LinkedHashSet<>();
             targets.add(key); // reflexive: data always flows to a same-labeled sink
             reachable.put(key, targets);
         }
-        for (FlowInput flow : command.permittedFlows()) {
+        for (FlowInput flow : flows) {
             var from = trim(flow.from());
             var to = trim(flow.to());
             if (from == null || !labelByKey.containsKey(from)) {
@@ -77,8 +94,11 @@ public final class DataClassificationLatticeFactory {
             }
             reachable.get(from).add(to);
         }
+        return reachable;
+    }
 
-        // Warshall transitive closure over the label set.
+    /** Warshall transitive closure over the label set, mutating {@code reachable} in place. */
+    private static void closeTransitively(List<String> keys, Map<String, Set<String>> reachable) {
         for (var k : keys) {
             for (var i : keys) {
                 if (reachable.get(i).contains(k)) {
@@ -86,9 +106,13 @@ public final class DataClassificationLatticeFactory {
                 }
             }
         }
+    }
 
-        // Antisymmetry: a permitted flow both ways between distinct labels means they are the same
-        // security level — an ambiguous, self-contradictory lattice. Reject it.
+    /**
+     * Antisymmetry: a permitted flow both ways between distinct labels means they are the same
+     * security level — an ambiguous, self-contradictory lattice. Reject it.
+     */
+    private static void assertAntisymmetric(List<String> keys, Map<String, Set<String>> reachable) {
         for (var a : keys) {
             for (var b : keys) {
                 if (!a.equals(b)
@@ -101,15 +125,17 @@ public final class DataClassificationLatticeFactory {
                 }
             }
         }
+    }
 
-        var closure = new LinkedHashSet<Edge>();
+    /** Flatten the closed reachability map into a deterministic edge set. */
+    private static Set<Edge> collectClosure(List<String> keys, Map<String, Set<String>> reachable) {
+        Set<Edge> closure = new LinkedHashSet<>();
         for (var from : keys) {
             for (var to : reachable.get(from)) {
                 closure.add(new Edge(from, to));
             }
         }
-        var labels = keys.stream().map(labelByKey::get).toList();
-        return new DataClassificationLatticeDefinition(source, policyVersion(labels, closure), labels, closure);
+        return closure;
     }
 
     /** Deterministic content digest over the labels and the closed permitted-flow relation. */

@@ -58,42 +58,39 @@ class DataClassificationLatticeFactoryTest {
 
     @Test
     void emptyLabelSetIsRejected() {
-        assertThatThrownBy(() -> DataClassificationLatticeFactory.build(
-                        DataClassificationSource.CUSTOM, command(List.of(), List.of())))
+        var command = command(List.of(), List.of());
+        assertThatThrownBy(() -> DataClassificationLatticeFactory.build(DataClassificationSource.CUSTOM, command))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void duplicateLabelKeyIsRejected() {
-        assertThatThrownBy(() -> DataClassificationLatticeFactory.build(
-                        DataClassificationSource.CUSTOM, command(List.of(label("A"), label("A")), List.of())))
+        var command = command(List.of(label("A"), label("A")), List.of());
+        assertThatThrownBy(() -> DataClassificationLatticeFactory.build(DataClassificationSource.CUSTOM, command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("Duplicate");
     }
 
     @Test
     void invalidLabelKeySyntaxIsRejected() {
-        assertThatThrownBy(() -> DataClassificationLatticeFactory.build(
-                        DataClassificationSource.CUSTOM, command(List.of(label("bad key!")), List.of())))
+        var command = command(List.of(label("bad key!")), List.of());
+        assertThatThrownBy(() -> DataClassificationLatticeFactory.build(DataClassificationSource.CUSTOM, command))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void danglingFlowEdgeIsRejected() {
-        assertThatThrownBy(() -> DataClassificationLatticeFactory.build(
-                        DataClassificationSource.CUSTOM,
-                        command(List.of(label("A")), List.of(new FlowInput("A", "GHOST")))))
+        var command = command(List.of(label("A")), List.of(new FlowInput("A", "GHOST")));
+        assertThatThrownBy(() -> DataClassificationLatticeFactory.build(DataClassificationSource.CUSTOM, command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("unknown");
     }
 
     @Test
     void cycleBetweenDistinctLabelsBreaksAntisymmetryAndIsRejected() {
-        assertThatThrownBy(() -> DataClassificationLatticeFactory.build(
-                        DataClassificationSource.CUSTOM,
-                        command(
-                                List.of(label("A"), label("B")),
-                                List.of(new FlowInput("A", "B"), new FlowInput("B", "A")))))
+        var command =
+                command(List.of(label("A"), label("B")), List.of(new FlowInput("A", "B"), new FlowInput("B", "A")));
+        assertThatThrownBy(() -> DataClassificationLatticeFactory.build(DataClassificationSource.CUSTOM, command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("antisymmetric");
     }

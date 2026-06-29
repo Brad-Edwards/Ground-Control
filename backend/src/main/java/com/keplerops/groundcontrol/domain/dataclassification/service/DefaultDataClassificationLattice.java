@@ -18,22 +18,30 @@ import java.util.List;
  */
 public final class DefaultDataClassificationLattice {
 
+    private static final String PUBLIC = "PUBLIC";
+    private static final String INTERNAL = "INTERNAL";
+    private static final String CONFIDENTIAL = "CONFIDENTIAL";
+    private static final String PII = "PII";
+    private static final String CREDENTIALS = "CREDENTIALS";
+    private static final String SECRETS = "SECRETS";
+    private static final String REGULATED = "REGULATED";
+
     private static final DataClassificationLatticeCommand COMMAND = new DataClassificationLatticeCommand(
             List.of(
-                    new LabelInput("PUBLIC", "Public", "Non-sensitive, freely shareable data.", 0),
-                    new LabelInput("INTERNAL", "Internal", "Internal-only business data.", 1),
-                    new LabelInput("CONFIDENTIAL", "Confidential", "Confidential business data.", 2),
-                    new LabelInput("PII", "Personally Identifiable Information", "Personal data about individuals.", 3),
-                    new LabelInput("CREDENTIALS", "Credentials", "Authentication credentials.", 3),
-                    new LabelInput("SECRETS", "Secrets", "Cryptographic keys and secret material.", 3),
-                    new LabelInput("REGULATED", "Regulated", "Data under regulatory controls.", 3)),
+                    new LabelInput(PUBLIC, "Public", "Non-sensitive, freely shareable data.", 0),
+                    new LabelInput(INTERNAL, "Internal", "Internal-only business data.", 1),
+                    new LabelInput(CONFIDENTIAL, "Confidential", "Confidential business data.", 2),
+                    new LabelInput(PII, "Personally Identifiable Information", "Personal data about individuals.", 3),
+                    new LabelInput(CREDENTIALS, "Credentials", "Authentication credentials.", 3),
+                    new LabelInput(SECRETS, "Secrets", "Cryptographic keys and secret material.", 3),
+                    new LabelInput(REGULATED, "Regulated", "Data under regulatory controls.", 3)),
             List.of(
-                    new FlowInput("PUBLIC", "INTERNAL"),
-                    new FlowInput("INTERNAL", "CONFIDENTIAL"),
-                    new FlowInput("CONFIDENTIAL", "PII"),
-                    new FlowInput("CONFIDENTIAL", "CREDENTIALS"),
-                    new FlowInput("CONFIDENTIAL", "SECRETS"),
-                    new FlowInput("CONFIDENTIAL", "REGULATED")));
+                    new FlowInput(PUBLIC, INTERNAL),
+                    new FlowInput(INTERNAL, CONFIDENTIAL),
+                    new FlowInput(CONFIDENTIAL, PII),
+                    new FlowInput(CONFIDENTIAL, CREDENTIALS),
+                    new FlowInput(CONFIDENTIAL, SECRETS),
+                    new FlowInput(CONFIDENTIAL, REGULATED)));
 
     private static final DataClassificationLatticeDefinition DEFINITION =
             DataClassificationLatticeFactory.build(DataClassificationSource.DEFAULT, COMMAND);
