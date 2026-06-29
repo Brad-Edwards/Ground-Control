@@ -1678,6 +1678,72 @@ describe("parseGroundControlYaml", () => {
     ], "duplicates an earlier boundary key");
   });
 
+  // ---------------------------------------------------------------------
+  // grc.data_classification (GC-GRC-006)
+  // ---------------------------------------------------------------------
+
+  it("parses a declared GRC data classification lattice", () => {
+    const result = parseYamlLines([
+      "schema_version: 1",
+      "project: x",
+      "grc:",
+      "  data_classification:",
+      "    labels:",
+      "      - key: PUBLIC",
+      "        display_name: Public",
+      "        rank: 0",
+      "      - key: SECRET",
+      "        display_name: Secret",
+      "        description: Secret material",
+      "        rank: 1",
+      "    permitted_flows:",
+      "      - from: PUBLIC",
+      "        to: SECRET",
+      "",
+    ]);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.deepEqual(result.value.grc.data_classification, {
+      labels: [
+        { key: "PUBLIC", display_name: "Public", description: null, rank: 0 },
+        { key: "SECRET", display_name: "Secret", description: "Secret material", rank: 1 },
+      ],
+      permitted_flows: [{ from: "PUBLIC", to: "SECRET" }],
+    });
+  });
+
+  it("rejects invalid GRC data classification shapes", () => {
+    expectYamlError([
+      "schema_version: 1",
+      "project: x",
+      "grc:",
+      "  data_classification:",
+      "    labels:",
+      "      - key: bad key!",
+      "        display_name: Bad",
+      "",
+    ], "grc.data_classification.labels[0].key");
+    expectYamlError([
+      "schema_version: 1",
+      "project: x",
+      "grc:",
+      "  data_classification:",
+      "    labels:",
+      "      - key: PUBLIC",
+      "        display_name: Public",
+      "      - key: PUBLIC",
+      "        display_name: Duplicate",
+      "",
+    ], "duplicates an earlier label key");
+    expectYamlError([
+      "schema_version: 1",
+      "project: x",
+      "grc:",
+      "  data_classification:",
+      "    labels: []",
+      "",
+    ], "grc.data_classification.labels must be a non-empty list");
+  });
+
   describe("short_code", () => {
     it("parses short_code: GC", () => {
       const result = parseYamlLines([

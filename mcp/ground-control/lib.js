@@ -3009,9 +3009,14 @@ function normalizeKnowledgeConfig(raw) {
 // root is known.
 // ---------------------------------------------------------------------------
 
-const GRC_TOP_KEYS = ["boundaries"];
+const GRC_TOP_KEYS = ["boundaries", "data_classification"];
 const GRC_BOUNDARY_KEYS = ["key", "name", "description", "paths", "surfaces"];
 const GRC_BOUNDARY_KEY_RE = /^[a-z0-9][a-z0-9_.-]{0,119}$/;
+// GC-GRC-006: data classification lattice config surface (GC-GRC-023). Validated
+// here and forwarded to the backend, which remains the semantic authority.
+const GRC_LABEL_KEYS = ["key", "display_name", "description", "rank"];
+const GRC_FLOW_KEYS = ["from", "to"];
+const GRC_LABEL_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/;
 
 function emptyGrcConfig() {
   return { boundaries: [] };
@@ -3097,6 +3102,82 @@ function normalizeGrcConfig(raw) {
           });
         }
       });
+    }
+  }
+  if (raw.data_classification != null) {
+    const dc = raw.data_classification;
+    const prefix = "grc.data_classification";
+    if (typeof dc !== "object" || Array.isArray(dc)) {
+      errors.push(`${prefix} must be a mapping`);
+    } else {
+      for (const key of Object.keys(dc)) {
+        if (key !== "labels" && key !== "permitted_flows") {
+          errors.push(`${prefix} has unknown key '${key}'`);
+        }
+      }
+      const labels = [];
+      const seenLabels = new Set();
+      if (!Array.isArray(dc.labels) || dc.labels.length === 0) {
+        errors.push(`${prefix}.labels must be a non-empty list`);
+      } else {
+        dc.labels.forEach((entry, i) => {
+          const lp = `${prefix}.labels[${i}]`;
+          if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+            errors.push(`${lp} must be a mapping`);
+            return;
+          }
+          for (const key of Object.keys(entry)) {
+            if (!GRC_LABEL_KEYS.includes(key)) errors.push(`${lp} has unknown key '${key}'`);
+          }
+          if (typeof entry.key !== "string" || !GRC_LABEL_KEY_RE.test(entry.key)) {
+            errors.push(`${lp}.key must match ${GRC_LABEL_KEY_RE.source}`);
+          } else if (seenLabels.has(entry.key)) {
+            errors.push(`${lp}.key duplicates an earlier label key '${entry.key}'`);
+          } else {
+            seenLabels.add(entry.key);
+          }
+          if (typeof entry.display_name !== "string" || entry.display_name.trim() === "") {
+            errors.push(`${lp}.display_name must be a non-empty string`);
+          }
+          if (entry.description != null && (typeof entry.description !== "string" || entry.description.trim() === "")) {
+            errors.push(`${lp}.description must be a non-empty string when set`);
+          }
+          if (entry.rank != null && !Number.isInteger(entry.rank)) {
+            errors.push(`${lp}.rank must be an integer when set`);
+          }
+          labels.push({
+            key: entry.key,
+            display_name: entry.display_name,
+            description: entry.description ?? null,
+            rank: entry.rank ?? null,
+          });
+        });
+      }
+      const flows = [];
+      if (dc.permitted_flows != null) {
+        if (!Array.isArray(dc.permitted_flows)) {
+          errors.push(`${prefix}.permitted_flows must be a list when set`);
+        } else {
+          dc.permitted_flows.forEach((entry, i) => {
+            const fp = `${prefix}.permitted_flows[${i}]`;
+            if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+              errors.push(`${fp} must be a mapping`);
+              return;
+            }
+            for (const key of Object.keys(entry)) {
+              if (!GRC_FLOW_KEYS.includes(key)) errors.push(`${fp} has unknown key '${key}'`);
+            }
+            if (typeof entry.from !== "string" || entry.from.trim() === "") {
+              errors.push(`${fp}.from must be a non-empty string`);
+            }
+            if (typeof entry.to !== "string" || entry.to.trim() === "") {
+              errors.push(`${fp}.to must be a non-empty string`);
+            }
+            flows.push({ from: entry.from, to: entry.to });
+          });
+        }
+      }
+      value.data_classification = { labels, permitted_flows: flows };
     }
   }
   if (errors.length) return { ok: false, errors };
@@ -10255,6 +10336,27 @@ export async function diffArchitectureModelSnapshots({ project, fromSnapshotId, 
   return request("GET", "/api/v1/architecture-models/diff", {
     params: { project, fromSnapshotId, toSnapshotId },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Data classification lattice (GC-GRC-006). Lattice writes are admin-only on the
+// backend; reads + evaluation are project-scoped.
+// ---------------------------------------------------------------------------
+
+export async function getDataClassificationLattice({ project } = {}) {
+  return request("GET", "/api/v1/data-classification/lattice", { params: { project } });
+}
+
+export async function putDataClassificationLattice(data, project) {
+  return request("PUT", "/api/v1/data-classification/lattice", { body: data, params: { project } });
+}
+
+export async function resetDataClassificationLattice({ project } = {}) {
+  return request("DELETE", "/api/v1/data-classification/lattice", { params: { project } });
+}
+
+export async function evaluateDataClassification({ project, snapshotId } = {}) {
+  return request("GET", "/api/v1/data-classification/evaluation", { params: { project, snapshotId } });
 }
 
 // ---------------------------------------------------------------------------

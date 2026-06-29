@@ -21,6 +21,7 @@ final class ApiPathMatrix {
     private static final String ROLE_ADMIN = "ADMIN";
     private static final String RISK_APPETITE_PROFILES = "/api/v1/risk-appetite-profiles";
     private static final String RISK_APPETITE_PROFILES_WILDCARD = "/api/v1/risk-appetite-profiles/**";
+    private static final String DATA_CLASSIFICATION_LATTICE = "/api/v1/data-classification/lattice";
 
     private ApiPathMatrix() {
         // utility
@@ -93,6 +94,15 @@ final class ApiPathMatrix {
                 .requestMatchers(HttpMethod.PUT, RISK_APPETITE_PROFILES_WILDCARD)
                 .hasRole(ROLE_ADMIN)
                 .requestMatchers(HttpMethod.DELETE, RISK_APPETITE_PROFILES_WILDCARD)
+                .hasRole(ROLE_ADMIN)
+                // GC-GRC-006: the data classification lattice is the information-flow policy that the
+                // deterministic leak detector evaluates against. Tampering with the taxonomy or
+                // permitted-flow relation would silently suppress real PII/secret-leak findings
+                // (GC-TM-010), so writes are admin-only. The lattice read and the read-only evaluation
+                // resolve through ProjectService and fall through to the authenticated() rule below.
+                .requestMatchers(HttpMethod.PUT, DATA_CLASSIFICATION_LATTICE)
+                .hasRole(ROLE_ADMIN)
+                .requestMatchers(HttpMethod.DELETE, DATA_CLASSIFICATION_LATTICE)
                 .hasRole(ROLE_ADMIN)
                 .requestMatchers("/api/v1/**")
                 .authenticated()
