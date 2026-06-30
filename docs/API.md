@@ -1371,6 +1371,50 @@ link, and is aged out per `retentionDays`. The scheduler is opt-in via
 `gc_evidence_campaign` with write actions `create`, `update`, `pause`,
 `resume`, `trigger`; reads (list, get, runs) route through `gc_query`.
 
+### Data Classification Lattice (GC-GRC-006)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/data-classification/lattice` | - | 200 | Get the project's active lattice (custom policy, or the shipped default) |
+| PUT | `/data-classification/lattice` | DataClassificationLatticeRequest | 200 | Replace the project's lattice (ROLE_ADMIN) |
+| DELETE | `/data-classification/lattice` | - | 200 | Revert the project to the default lattice (ROLE_ADMIN) |
+| GET | `/data-classification/evaluation?snapshotId=` | - | 200 | Evaluate a snapshot's flows against the active lattice (latest snapshot when `snapshotId` omitted) |
+
+All endpoints accept an optional `project` query parameter. Writes (`PUT`,
+`DELETE`) are restricted to ROLE_ADMIN in `ApiPathMatrix`: tampering with the
+taxonomy or permitted-flow relation would silently defeat the deterministic
+leak detector (GC-TM-010). Reads and evaluation are available to any
+authenticated project caller.
+
+**DataClassificationLatticeRequest fields:** non-empty `labels` (each with
+`key` matching `^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$`, `displayName`, optional
+`description`/`rank`) and optional `permittedFlows` (each `{from, to}`). A
+permitted-flow edge means data labeled `from` may flow to a sink labeled `to`;
+the service validates lattice soundness (no dangling edges, no
+antisymmetry-breaking cycles between distinct labels) and stores the
+reflexive-transitive closure so the allow decision is total. `rank` is a
+display hint only, never the authoritative ordering.
+
+**DataClassificationLatticeResponse fields:** `projectIdentifier`,
+`schemaVersion`, `source` (`DEFAULT` | `CUSTOM`), `policyVersion` (content
+digest), `labelCount`, `edgeCount`, `labels`, and `permittedFlows`.
+
+**DataClassificationEvaluationResponse fields:** `projectIdentifier`,
+`schemaVersion`, `policyVersion`, `source`, `modelVersion`, `snapshotId`,
+`evaluatedFlowCount`, `violationCount`, `limitationCount`, `violations`, and
+`limitations`. Each finding carries `flowStableKey`, `sourceStableKey`,
+`sinkStableKey`, `sourceLabelKey`, `sinkLabelKey`, `reason`, and `detail`.
+Violations use reason `LABEL_FLOW_NOT_PERMITTED`; limitations use
+`MISSING_SOURCE_LABEL`, `MISSING_SINK_LABEL`, `UNKNOWN_SOURCE_LABEL`,
+`UNKNOWN_SINK_LABEL`, or `DANGLING_FLOW_ENDPOINT`. Label assignments are read
+from `data_classification_key` on the architecture-model element states, so they
+version with the snapshot.
+
+MCP surface: `gc_data_classification` with actions `get_lattice`, `set_lattice`,
+`reset_lattice`, and `evaluate`. `set_lattice` accepts snake_case
+`labels[].{key,display_name,description,rank}` and `permitted_flows[].{from,to}`.
+`gc_query` allowlists read-only `/api/v1/data-classification` paths.
+
 ### Plugins
 
 | Method | Path | Body | Status | Purpose |

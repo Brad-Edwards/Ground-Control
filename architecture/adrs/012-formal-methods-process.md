@@ -209,8 +209,11 @@ SDD extends TDD by adding contracts as a specification layer:
   threat-event relevance values for compatibility;
   `NormalizedConcept` and `CrosswalkVocabularySurface` added for GC-T012 /
   #719 to classify cross-methodology crosswalk entries on
-  `MethodologyProfile`) are L0 data classifiers, not L1+ contract surfaces;
-  placement under `state/` follows the existing repo convention for
+  `MethodologyProfile`; `DataClassificationSource` and
+  `DataClassificationFindingReason` added for GC-GRC-006 / #1119 to tag the
+  provenance of a data classification lattice and the reason codes its
+  deterministic evaluation emits) are L0 data classifiers, not L1+ contract
+  surfaces; placement under `state/` follows the existing repo convention for
   domain-enum location, not an assertion that JML contracts apply.
 
 ## Related ADRs

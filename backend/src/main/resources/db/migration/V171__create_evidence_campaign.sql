@@ -1,4 +1,4 @@
--- V169: evidence_campaign (GC-S005).
+-- V171: evidence_campaign (GC-S005).
 --
 -- Scheduled, project-scoped evidence-collection campaign. next_run_at is the
 -- scheduling cursor; the sweep claims a due campaign by conditionally advancing
