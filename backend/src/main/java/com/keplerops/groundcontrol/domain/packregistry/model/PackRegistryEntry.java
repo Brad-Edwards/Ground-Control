@@ -75,6 +75,10 @@ public class PackRegistryEntry extends BaseEntity {
     @Column(name = "control_pack_entries", columnDefinition = "TEXT")
     private List<RegisteredControlPackEntry> controlPackEntries;
 
+    @Convert(converter = JacksonTextCollectionConverters.RegisteredThreatRuleListConverter.class)
+    @Column(name = "threat_rule_entries", columnDefinition = "TEXT")
+    private List<RegisteredThreatRule> threatRuleEntries;
+
     @Convert(converter = JacksonTextCollectionConverters.StringObjectMapConverter.class)
     @Column(columnDefinition = "TEXT")
     private Map<String, Object> provenance;
@@ -189,6 +193,14 @@ public class PackRegistryEntry extends BaseEntity {
 
     public void setControlPackEntries(List<RegisteredControlPackEntry> controlPackEntries) {
         this.controlPackEntries = controlPackEntries;
+    }
+
+    public List<RegisteredThreatRule> getThreatRuleEntries() {
+        return threatRuleEntries;
+    }
+
+    public void setThreatRuleEntries(List<RegisteredThreatRule> threatRuleEntries) {
+        this.threatRuleEntries = threatRuleEntries;
     }
 
     public Map<String, Object> getProvenance() {

@@ -212,6 +212,62 @@ The four public operations on the mixed-entity graph (GC-G008) are:
 
 **Legacy compatibility:** `/api/v1/requirements/graph/**` routes remain available as requirement-only compatibility endpoints. They must not be extended for mixed-entity traversal; all new cross-entity graph operations go through `/api/v1/graph/**`.
 
+## Deterministic Threat Enumeration Boundary (GC-GRC-007)
+
+GC-GRC-007 belongs to the derivation-backed GRC engine, not to free-form LLM
+generation. The enumeration step is a pure, deterministic domain evaluation
+over an `ArchitectureModelSnapshotView` and a resolved, project-pinned rule
+pack. Given the same snapshot, same rule-pack pin, and same engine version, it
+must produce byte-stable candidate ordering and candidate identities.
+
+### Engine Design
+
+The enumeration engine lives in `domain/threatenumeration/service/`. `ThreatEnumerationService`
+mirrors the `DataClassificationEvaluationService` sibling pattern:
+
+- **Pure static method**: `enumerate(ThreatRulePackDefinition, String snapshotId, String
+  modelVersion, List<ThreatCandidateElementView>)` is side-effect free and directly unit-tested.
+  The same definition and views always produce an identical candidate list sorted by
+  `(elementStableKey, ruleId, strideCategory)`.
+- **Read-only service wrappers**: `enumerateLatest` and `enumerateSnapshot` resolve the pack
+  definition via `resolvePackDefinition`, load the architecture-model snapshot, project element
+  states to `ThreatCandidateElementView`s, and delegate to `enumerate`.
+
+The predicate model (`ThreatRuleMatchPredicate`) is closed: `ALWAYS`, `CROSSES_TRUST_BOUNDARY`,
+`SOURCE_IS_EXTERNAL`, `TARGET_IS_EXTERNAL`, `HAS_DATA_CLASSIFICATION`, `HAS_TRUST_BOUNDARY`,
+`HAS_METADATA_TAG`. No predicate makes external calls; all are total functions over stored state.
+
+### Rule-Pack Registry Integration
+
+Rule-pack storage and resolution reuse the pack-registry boundary: `PackRegistryService`,
+`PackResolver`, and `PackIntegrityVerifier` own version resolution, compatibility,
+checksum/signature verification, withdrawal state, and dependencies. A new `THREAT_RULE_PACK`
+pack type and `ThreatRulePackTypeHandler` store rules in the `threat_rule_entries` TEXT column
+on `pack_registry_entry` (V171). The integrity verifier's canonical payload covers
+`threatRuleEntries` deterministically so the checksum/signature protects rule content. There is
+no second registry and no repo-local file loader at enumeration time.
+
+Pack writes remain behind the `ROLE_ADMIN` pack-registry gate. Enumeration reads are available
+to any authenticated project caller, consistent with the data-classification evaluation posture.
+
+### Candidate Provenance
+
+Candidate threats are not accepted `ThreatModel` records. They are an explainable intermediate:
+each `ThreatCandidate` carries the producing rule id, STRIDE category, element stable key,
+element kind, and a bounded `matchedFacts` map—references only to persisted architecture-model
+state keys (for example, `elementKind`, `predicate`, `trustBoundaryKey`), never raw adapter payloads.
+The existing derivation and architecture-model raw-content key filters remain the leakage
+boundary for secrets and source text.
+
+### Curation Contract
+
+Downstream curation is a separate step. Curation may create or update DRAFT `ThreatModel`
+entries and link affected elements through `ThreatModelLinkTargetType.ARCHITECTURE_MODEL`,
+which already resolves to `ARCHITECTURE_MODEL_ELEMENT` graph nodes. The LLM may confirm,
+discard with rationale, or augment deterministic candidates; it must not originate first-pass
+enumeration candidates. Likelihood, impact, treatment, and control coverage remain on the
+risk-scenario, risk-control, and GRC-analysis lanes.
+
 ## Status Drift Analysis
 
 Status drift analysis is a read-only requirements-domain analysis. It flags requirements that are still `DRAFT` while independent artifacts suggest implementation or design completion has already landed. It does not create traceability links, transition requirements, or relax the `IMPLEMENTS`-only on `ACTIVE` rule.

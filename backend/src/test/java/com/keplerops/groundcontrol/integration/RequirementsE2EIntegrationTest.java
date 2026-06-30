@@ -589,6 +589,7 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "167", // V167: create architecture model audit tables (GC-GRC-005)
                         "168", // V168: migrate legacy architecture-model threat links (GC-GRC-005)
                         "169", // V169: create data classification lattice aggregate (GC-GRC-006)
-                        "170"); // V170: create data classification lattice audit tables (GC-GRC-006)
+                        "170", // V170: create data classification lattice audit tables (GC-GRC-006)
+                        "171"); // V171: add threat_rule_entries column to pack_registry_entry (GC-GRC-007)
     }
 }

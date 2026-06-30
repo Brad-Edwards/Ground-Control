@@ -51,6 +51,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         // V162–V165: #1002 research provenance ledger node + edge + their audit shadows (ADR-069).
         // V166–V168: architecture model aggregate + audit shadows + legacy link compatibility (GC-GRC-005).
         // V169–V170: data classification lattice aggregate + audit shadows (GC-GRC-006).
+        // V171: add threat_rule_entries column to pack_registry_entry (GC-GRC-007).
         // Flyway immutability: once a versioned migration has been applied to a long-lived database
         // (e.g. production) its file content is frozen — the checksum is validated on every startup.
         // Never edit an applied V*.sql in place; append a new forward migration instead. Editing the
@@ -70,7 +71,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
                         "136", "137", "138", "139", "140", "141", "142", "143", "144", "145", "146", "147", "148",
                         "149", "150", "151", "152", "153", "154", "155", "156", "157", "158", "159", "160", "161",
-                        "162", "163", "164", "165", "166", "167", "168", "169", "170");
+                        "162", "163", "164", "165", "166", "167", "168", "169", "170", "171");
     }
 
     @Test
