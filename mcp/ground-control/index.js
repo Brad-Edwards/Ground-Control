@@ -288,6 +288,11 @@ import {
   GC_ARCHITECTURE_MODEL_DESCRIPTION,
 } from "./gc-architecture-model.js";
 import {
+  gcDataClassificationZodShape,
+  gcDataClassificationToolHandler,
+  GC_DATA_CLASSIFICATION_DESCRIPTION,
+} from "./gc-data-classification.js";
+import {
   gcAuditZodShape,
   gcAuditToolHandler,
   GC_AUDIT_DESCRIPTION,
@@ -2319,6 +2324,23 @@ server.tool(
   async (args) => {
     try {
       const result = await gcArchitectureModelToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_data_classification: GC-GRC-006 project-scoped data classification lattice.
+// Lattice writes (set_lattice / reset_lattice) are ROLE_ADMIN on the backend;
+// get_lattice and evaluate are project-scoped reads. evaluate is deterministic
+// (no LLM): it reports flows whose source/sink labels violate the permitted-flow
+// relation. Reads also route through gc_query.
+server.tool(
+  "gc_data_classification",
+  GC_DATA_CLASSIFICATION_DESCRIPTION,
+  gcDataClassificationZodShape,
+  async (args) => {
+    try {
+      const result = await gcDataClassificationToolHandler(args);
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },
