@@ -21,6 +21,8 @@ final class ApiPathMatrix {
     private static final String ROLE_ADMIN = "ADMIN";
     private static final String RISK_APPETITE_PROFILES = "/api/v1/risk-appetite-profiles";
     private static final String RISK_APPETITE_PROFILES_WILDCARD = "/api/v1/risk-appetite-profiles/**";
+    private static final String EVIDENCE_CAMPAIGNS = "/api/v1/evidence-campaigns";
+    private static final String EVIDENCE_CAMPAIGNS_WILDCARD = "/api/v1/evidence-campaigns/**";
 
     private ApiPathMatrix() {
         // utility
@@ -93,6 +95,20 @@ final class ApiPathMatrix {
                 .requestMatchers(HttpMethod.PUT, RISK_APPETITE_PROFILES_WILDCARD)
                 .hasRole(ROLE_ADMIN)
                 .requestMatchers(HttpMethod.DELETE, RISK_APPETITE_PROFILES_WILDCARD)
+                .hasRole(ROLE_ADMIN)
+                // GC-S005: a campaign is a stored directive to reach out to an external system with the
+                // campaign's credential reference and ingest the result as evidence. Every write that
+                // configures or enables that outbound collection is therefore admin-only: create (an
+                // ACTIVE campaign defaults firstRunAt to now), update (can change connectionEndpoint or
+                // credentialRef), pause/resume (gates whether the sweep executes), and the on-demand
+                // trigger (forces an immediate collection). Admin-gating only the trigger left the other
+                // writes at the generic authenticated() rule, so a non-admin could create or re-point an
+                // ACTIVE campaign and let the scheduled sweep perform the credentialed call. Gate POST
+                // (create + the /{id}/{action} routes) and PUT across the whole surface; the GET reads
+                // (list, get, runs) fall through to authenticated() so any project member can query.
+                .requestMatchers(HttpMethod.POST, EVIDENCE_CAMPAIGNS, EVIDENCE_CAMPAIGNS_WILDCARD)
+                .hasRole(ROLE_ADMIN)
+                .requestMatchers(HttpMethod.PUT, EVIDENCE_CAMPAIGNS_WILDCARD)
                 .hasRole(ROLE_ADMIN)
                 .requestMatchers("/api/v1/**")
                 .authenticated()

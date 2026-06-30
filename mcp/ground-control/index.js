@@ -273,6 +273,11 @@ import {
   GC_EVIDENCE_DESCRIPTION,
 } from "./gc-evidence.js";
 import {
+  gcEvidenceCampaignZodShape,
+  gcEvidenceCampaignToolHandler,
+  GC_EVIDENCE_CAMPAIGN_DESCRIPTION,
+} from "./gc-evidence-campaign.js";
+import {
   gcResearchProvenanceZodShape,
   gcResearchProvenanceToolHandler,
   GC_RESEARCH_PROVENANCE_DESCRIPTION,
@@ -2198,6 +2203,21 @@ server.tool(
   async (args) => {
     try {
       const result = await gcEvidenceToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_evidence_campaign: GC-S005. Scheduled evidence-collection campaigns.
+// Writes only (create / update / pause / resume / trigger); reads (list, get,
+// runs) route through gc_query at /api/v1/evidence-campaigns.
+server.tool(
+  "gc_evidence_campaign",
+  GC_EVIDENCE_CAMPAIGN_DESCRIPTION,
+  gcEvidenceCampaignZodShape,
+  async (args) => {
+    try {
+      const result = await gcEvidenceCampaignToolHandler(args);
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },

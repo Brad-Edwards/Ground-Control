@@ -10258,6 +10258,35 @@ export async function diffArchitectureModelSnapshots({ project, fromSnapshotId, 
 }
 
 // ---------------------------------------------------------------------------
+// GC-S005: scheduled evidence-collection campaigns.
+// ---------------------------------------------------------------------------
+
+export const EVIDENCE_CAMPAIGN_FREQUENCIES = ["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY"];
+
+export async function createEvidenceCampaign(data, project) {
+  return request("POST", "/api/v1/evidence-campaigns", { body: data, params: { project } });
+}
+
+export async function updateEvidenceCampaign(id, data, project) {
+  return request("PUT", `/api/v1/evidence-campaigns/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function pauseEvidenceCampaign(id, project) {
+  return request("POST", `/api/v1/evidence-campaigns/${encodeURIComponent(id)}/pause`, { params: { project } });
+}
+
+export async function resumeEvidenceCampaign(id, project) {
+  return request("POST", `/api/v1/evidence-campaigns/${encodeURIComponent(id)}/resume`, { params: { project } });
+}
+
+export async function triggerEvidenceCampaign(id, project) {
+  return request("POST", `/api/v1/evidence-campaigns/${encodeURIComponent(id)}/trigger`, { params: { project } });
+}
+
+// ---------------------------------------------------------------------------
 // NIST SP 800-30 Rev. 1 enums (GC-T014, ADR-034 mirror policy)
 // ---------------------------------------------------------------------------
 

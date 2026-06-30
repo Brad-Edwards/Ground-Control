@@ -124,6 +124,14 @@ public final class JacksonTextCollectionConverters {
     }
 
     @Converter
+    public static class UuidListConverter extends AbstractJsonTextConverter<List<java.util.UUID>> {
+
+        public UuidListConverter() {
+            super(new TypeReference<>() {});
+        }
+    }
+
+    @Converter
     public static class EvidenceSourceRefListConverter extends AbstractJsonTextConverter<List<EvidenceSourceRef>> {
 
         public EvidenceSourceRefListConverter() {

@@ -587,6 +587,9 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "165", // V165: create research_provenance_edge_audit (#1002 audit parity)
                         "166", // V166: create architecture model aggregate (GC-GRC-005)
                         "167", // V167: create architecture model audit tables (GC-GRC-005)
-                        "168"); // V168: migrate legacy architecture-model threat links (GC-GRC-005)
+                        "168", // V168: migrate legacy architecture-model threat links (GC-GRC-005)
+                        "169", // V169: create evidence_campaign aggregate (GC-S005)
+                        "170", // V170: create evidence_campaign_audit shadow (GC-S005 audit parity)
+                        "171"); // V171: create evidence_campaign_run telemetry (GC-S005)
     }
 }
