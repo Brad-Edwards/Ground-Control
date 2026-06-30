@@ -1,5 +1,13 @@
 # Documentation style
 
+> **Sync note for issue #1120 (2026-06-30):** Registered the `gc_threat_enumeration` MCP tool
+> (handler `mcp/ground-control/gc-threat-enumeration.js`) and the `threatEnumeration` API-client
+> helper in `mcp/ground-control/lib.js`, backed by the new `GET /api/v1/threat-enumeration` REST
+> surface for GC-GRC-007 deterministic threat enumeration. Documentation lives in `docs/API.md`
+> (`### Threat Enumeration (GC-GRC-007)`), the `index.js` tool description, and the ADR-054
+> amendment. The tool is a dedicated read-only adapter that does not touch the `gc_query` allowlist;
+> the surface addition is recorded in the ADR-054 amendment. No style rule changed.
+
 > **Sync note for issue #1119 (2026-06-29):** Registered the `gc_data_classification` MCP tool (handler `mcp/ground-control/gc-data-classification.js`; actions `get_lattice` / `set_lattice` / `reset_lattice` / `evaluate`) and its API-client helpers plus the `grc.data_classification` config normalizer in `mcp/ground-control/lib.js`, backed by the new `/api/v1/data-classification` REST surface for the GC-GRC-006 data classification lattice. The `/api/v1/data-classification` read prefix was added to the `gc_query` allowlist (`gc-query.js`, `mcp/ground-control/README.md`, ADR-035). Documentation lives in `docs/API.md`, the `index.js` tool description, and ADR-072; the surface addition is recorded in the ADR-054 amendment. No style rule changed.
 
 > **Sync note for issue #1118 (2026-06-28):** Registered the `gc_architecture_model` MCP tool and architecture-model client helpers for the canonical server-side aggregate. The REST and MCP contract is documented in `docs/API.md`, `docs/architecture/ARCHITECTURE.md`, `mcp/ground-control/README.md`, and the tool description; ADR-035 carries the `gc_query` read allowlist update. No style rule changed.

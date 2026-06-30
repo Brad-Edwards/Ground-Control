@@ -1,0 +1,334 @@
+{
+  "packId": "stride-baseline",
+  "packType": "THREAT_RULE_PACK",
+  "version": "1.0.0",
+  "publisher": "Ground Control GRC",
+  "description": "STRIDE-per-element baseline threat enumeration rules for architecture model snapshots (GC-GRC-007). Covers STRIDE baseline (one rule per element-kind × stride-category), trust-boundary crossing threats, external-entity data flows, secrets/crypto/pipeline metadata tags, and data-egress flows.",
+  "threatRuleEntries": [
+    {
+      "ruleId": "stride.external-entity.spoofing",
+      "title": "External Entity: Spoofing",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "SPOOFING",
+      "targetElementKinds": ["EXTERNAL_ENTITY"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "External entity {{element}} may be spoofed. An attacker can impersonate the external actor, causing the system to accept malicious input or forge its identity in downstream operations.",
+      "rationale": "External entities are outside the trust boundary and their identity cannot be verified by the system directly."
+    },
+    {
+      "ruleId": "stride.external-entity.repudiation",
+      "title": "External Entity: Repudiation",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "REPUDIATION",
+      "targetElementKinds": ["EXTERNAL_ENTITY"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "External entity {{element}} may repudiate its actions. Without non-repudiation controls, the external actor can deny sending requests or performing actions.",
+      "rationale": "External entities are not under organisational control; actions taken must be logged and attributable."
+    },
+    {
+      "ruleId": "stride.process.spoofing",
+      "title": "Process: Spoofing",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "SPOOFING",
+      "targetElementKinds": ["PROCESS"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Process {{element}} may be spoofed. An attacker can impersonate this process to receive or inject data intended for a legitimate component.",
+      "rationale": "Processes communicate over channels that may be intercepted; their identity must be authenticated."
+    },
+    {
+      "ruleId": "stride.process.tampering",
+      "title": "Process: Tampering",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "TAMPERING",
+      "targetElementKinds": ["PROCESS"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Process {{element}} may be tampered with. An attacker with local access or code-injection capability can modify process state or logic.",
+      "rationale": "Processes are subject to code injection, memory corruption, and configuration tampering."
+    },
+    {
+      "ruleId": "stride.process.repudiation",
+      "title": "Process: Repudiation",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "REPUDIATION",
+      "targetElementKinds": ["PROCESS"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Process {{element}} may perform operations that are later denied. Without adequate audit logging, repudiation of high-value operations is possible.",
+      "rationale": "Processes must log security-relevant operations with sufficient attribution to support non-repudiation."
+    },
+    {
+      "ruleId": "stride.process.information-disclosure",
+      "title": "Process: Information Disclosure",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "INFORMATION_DISCLOSURE",
+      "targetElementKinds": ["PROCESS"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Process {{element}} may disclose sensitive information. Errors, logs, or inter-process communication can leak data to unauthorised parties.",
+      "rationale": "Processes may expose sensitive data through verbose error messages, debug output, or insecure IPC."
+    },
+    {
+      "ruleId": "stride.process.denial-of-service",
+      "title": "Process: Denial of Service",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "DENIAL_OF_SERVICE",
+      "targetElementKinds": ["PROCESS"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Process {{element}} may be disrupted by a denial-of-service attack. Resource exhaustion or crash-inducing inputs can render the process unavailable.",
+      "rationale": "Processes are subject to resource exhaustion, crash loops, and algorithmic complexity attacks."
+    },
+    {
+      "ruleId": "stride.process.elevation-of-privilege",
+      "title": "Process: Elevation of Privilege",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "ELEVATION_OF_PRIVILEGE",
+      "targetElementKinds": ["PROCESS"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Process {{element}} may be exploited to elevate privileges. A vulnerability in this process could allow an attacker to gain higher privileges than intended.",
+      "rationale": "Processes running with elevated privileges are high-value targets for privilege-escalation attacks."
+    },
+    {
+      "ruleId": "stride.component.spoofing",
+      "title": "Component: Spoofing",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "SPOOFING",
+      "targetElementKinds": ["COMPONENT"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Component {{element}} may be spoofed. An attacker can present a counterfeit component to intercept or forge communications.",
+      "rationale": "Components expose APIs or interfaces that must authenticate callers and verify their own identity."
+    },
+    {
+      "ruleId": "stride.component.tampering",
+      "title": "Component: Tampering",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "TAMPERING",
+      "targetElementKinds": ["COMPONENT"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Component {{element}} may be tampered with. Supply-chain attacks or runtime injection can modify component behaviour.",
+      "rationale": "Components (libraries, services, microservices) are subject to supply-chain and runtime tampering."
+    },
+    {
+      "ruleId": "stride.component.repudiation",
+      "title": "Component: Repudiation",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "REPUDIATION",
+      "targetElementKinds": ["COMPONENT"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Component {{element}} may perform actions that are later denied. Insufficient logging prevents attribution of security-relevant operations.",
+      "rationale": "Components must emit structured audit events for security-relevant operations."
+    },
+    {
+      "ruleId": "stride.component.information-disclosure",
+      "title": "Component: Information Disclosure",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "INFORMATION_DISCLOSURE",
+      "targetElementKinds": ["COMPONENT"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Component {{element}} may disclose sensitive information through its interfaces, error responses, or telemetry.",
+      "rationale": "Components expose APIs and emit telemetry; both are potential information-disclosure vectors."
+    },
+    {
+      "ruleId": "stride.component.denial-of-service",
+      "title": "Component: Denial of Service",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "DENIAL_OF_SERVICE",
+      "targetElementKinds": ["COMPONENT"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Component {{element}} may be made unavailable by resource exhaustion or malformed input.",
+      "rationale": "Components are subject to request floods, large-payload attacks, and algorithmic complexity exploits."
+    },
+    {
+      "ruleId": "stride.component.elevation-of-privilege",
+      "title": "Component: Elevation of Privilege",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "ELEVATION_OF_PRIVILEGE",
+      "targetElementKinds": ["COMPONENT"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Component {{element}} may be exploited to execute operations beyond its intended privilege level.",
+      "rationale": "Components with broad permissions are high-value targets for privilege escalation via injection or misconfiguration."
+    },
+    {
+      "ruleId": "stride.data-store.tampering",
+      "title": "Data Store: Tampering",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "TAMPERING",
+      "targetElementKinds": ["DATA_STORE"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Data store {{element}} may be tampered with. An attacker with write access can modify stored records, corrupting data integrity.",
+      "rationale": "Data stores are the persistence target for tampering attacks; integrity controls are required."
+    },
+    {
+      "ruleId": "stride.data-store.repudiation",
+      "title": "Data Store: Repudiation",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "REPUDIATION",
+      "targetElementKinds": ["DATA_STORE"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Data store {{element}} may be modified without an audit trail, enabling repudiation of data changes.",
+      "rationale": "Data stores must maintain tamper-evident audit logs for compliance and forensic analysis."
+    },
+    {
+      "ruleId": "stride.data-store.information-disclosure",
+      "title": "Data Store: Information Disclosure",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "INFORMATION_DISCLOSURE",
+      "targetElementKinds": ["DATA_STORE"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Data store {{element}} may expose sensitive data to unauthorised parties through direct access, backups, or queries.",
+      "rationale": "Data stores often hold the most sensitive data in a system and are a primary target for exfiltration."
+    },
+    {
+      "ruleId": "stride.data-store.denial-of-service",
+      "title": "Data Store: Denial of Service",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "DENIAL_OF_SERVICE",
+      "targetElementKinds": ["DATA_STORE"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Data store {{element}} may be made unavailable through resource exhaustion, locking, or destructive queries.",
+      "rationale": "Data stores are subject to table-lock attacks, quota exhaustion, and destructive DELETE/DROP operations."
+    },
+    {
+      "ruleId": "stride.data-flow.tampering",
+      "title": "Data Flow: Tampering",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "TAMPERING",
+      "targetElementKinds": ["DATA_FLOW"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Data flow {{element}} may be tampered with in transit. A man-in-the-middle attacker can modify data passing through this channel.",
+      "rationale": "Data flows are subject to interception and modification without transport-layer integrity protection."
+    },
+    {
+      "ruleId": "stride.data-flow.information-disclosure",
+      "title": "Data Flow: Information Disclosure",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "INFORMATION_DISCLOSURE",
+      "targetElementKinds": ["DATA_FLOW"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Data flow {{element}} may disclose sensitive data to eavesdroppers without encryption.",
+      "rationale": "Unencrypted data flows expose all data in transit to network-level interception."
+    },
+    {
+      "ruleId": "stride.data-flow.denial-of-service",
+      "title": "Data Flow: Denial of Service",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "DENIAL_OF_SERVICE",
+      "targetElementKinds": ["DATA_FLOW"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Data flow {{element}} may be disrupted, preventing legitimate communication between components.",
+      "rationale": "Data flows can be blocked or flooded, preventing system components from communicating."
+    },
+    {
+      "ruleId": "stride.trust-boundary.elevation-of-privilege",
+      "title": "Trust Boundary: Elevation of Privilege",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "ELEVATION_OF_PRIVILEGE",
+      "targetElementKinds": ["TRUST_BOUNDARY"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Trust boundary {{element}} may be bypassed to obtain elevated privileges. An attacker who crosses this boundary gains access to a higher-trust zone.",
+      "rationale": "Trust boundaries define the attack surface between security domains; boundary enforcement must be verified."
+    },
+    {
+      "ruleId": "stride.trust-boundary.spoofing",
+      "title": "Trust Boundary: Spoofing",
+      "category": "STRIDE_BASELINE",
+      "strideCategory": "SPOOFING",
+      "targetElementKinds": ["TRUST_BOUNDARY"],
+      "predicate": "ALWAYS",
+      "narrativeSkeleton": "Trust boundary {{element}} may be spoofed. A component in a lower-trust zone could present itself as originating from a higher-trust zone.",
+      "rationale": "Trust boundaries require mutual authentication to prevent identity spoofing across security domains."
+    },
+    {
+      "ruleId": "authn-authz.external-flow.spoofing",
+      "title": "External Source Flow: Authentication Bypass",
+      "category": "AUTHN_AUTHZ",
+      "strideCategory": "SPOOFING",
+      "targetElementKinds": ["DATA_FLOW"],
+      "predicate": "SOURCE_IS_EXTERNAL",
+      "narrativeSkeleton": "Data flow {{element}} originates from an external entity and may lack adequate authentication. An unauthenticated external actor could spoof an authenticated identity.",
+      "rationale": "Flows from external entities require authentication controls to prevent identity spoofing."
+    },
+    {
+      "ruleId": "authn-authz.external-flow.elevation-of-privilege",
+      "title": "External Source Flow: Privilege Escalation via Missing Authorization",
+      "category": "AUTHN_AUTHZ",
+      "strideCategory": "ELEVATION_OF_PRIVILEGE",
+      "targetElementKinds": ["DATA_FLOW"],
+      "predicate": "SOURCE_IS_EXTERNAL",
+      "narrativeSkeleton": "Data flow {{element}} carries requests from an external entity. Insufficient authorisation checks may allow the external caller to access privileged operations.",
+      "rationale": "External actors must have their permissions explicitly verified before accessing protected resources."
+    },
+    {
+      "ruleId": "untrusted-input.boundary-flow.tampering",
+      "title": "Trust-Boundary-Crossing Flow: Untrusted Input",
+      "category": "UNTRUSTED_INPUT",
+      "strideCategory": "TAMPERING",
+      "targetElementKinds": ["DATA_FLOW"],
+      "predicate": "CROSSES_TRUST_BOUNDARY",
+      "narrativeSkeleton": "Data flow {{element}} crosses a trust boundary. Input traversing this boundary must be validated; unvalidated data can corrupt downstream state.",
+      "rationale": "Data crossing trust boundaries is untrusted by definition and must be validated before processing."
+    },
+    {
+      "ruleId": "data-egress.external-target.information-disclosure",
+      "title": "External Target Flow: Data Egress Risk",
+      "category": "DATA_EGRESS",
+      "strideCategory": "INFORMATION_DISCLOSURE",
+      "targetElementKinds": ["DATA_FLOW"],
+      "predicate": "TARGET_IS_EXTERNAL",
+      "narrativeSkeleton": "Data flow {{element}} sends data to an external entity. Uncontrolled egress to an external party risks information disclosure if the recipient is compromised or malicious.",
+      "rationale": "Outbound flows to external entities are a primary exfiltration vector and require data-loss-prevention controls."
+    },
+    {
+      "ruleId": "secret-handling.process.information-disclosure",
+      "title": "Secret-Tagged Process: Secret Leakage",
+      "category": "SECRET_HANDLING",
+      "strideCategory": "INFORMATION_DISCLOSURE",
+      "targetElementKinds": ["PROCESS", "DATA_STORE", "DATA_FLOW"],
+      "predicate": "HAS_METADATA_TAG",
+      "metadataTagKey": "secret",
+      "narrativeSkeleton": "Element {{element}} ({{elementKind}}) handles secrets. Improper secret management — in memory, logs, or transit — can expose credentials or keys.",
+      "rationale": "Elements tagged as handling secrets require hardened secret-management controls to prevent credential exposure."
+    },
+    {
+      "ruleId": "crypto.component.tampering",
+      "title": "Crypto-Tagged Element: Cryptographic Weakness",
+      "category": "CRYPTO",
+      "strideCategory": "TAMPERING",
+      "targetElementKinds": ["PROCESS", "COMPONENT", "DATA_FLOW"],
+      "predicate": "HAS_METADATA_TAG",
+      "metadataTagKey": "crypto",
+      "narrativeSkeleton": "Element {{element}} ({{elementKind}}) performs cryptographic operations. Weak algorithms, improper key management, or implementation flaws can allow tampering with cryptographic outputs.",
+      "rationale": "Cryptographic components require algorithm agility, proper key rotation, and validated implementations."
+    },
+    {
+      "ruleId": "crypto.component.information-disclosure",
+      "title": "Crypto-Tagged Element: Key/Algorithm Disclosure",
+      "category": "CRYPTO",
+      "strideCategory": "INFORMATION_DISCLOSURE",
+      "targetElementKinds": ["PROCESS", "COMPONENT", "DATA_FLOW"],
+      "predicate": "HAS_METADATA_TAG",
+      "metadataTagKey": "crypto",
+      "narrativeSkeleton": "Element {{element}} ({{elementKind}}) performs cryptographic operations. Hardcoded keys, weak randomness, or side-channel leakage can expose cryptographic material.",
+      "rationale": "Cryptographic material exposed through side-channels or logging represents a critical information-disclosure risk."
+    },
+    {
+      "ruleId": "deployment-pipeline.component.tampering",
+      "title": "Pipeline-Tagged Element: Supply-Chain Tampering",
+      "category": "DEPLOYMENT_PIPELINE",
+      "strideCategory": "TAMPERING",
+      "targetElementKinds": ["PROCESS", "COMPONENT", "DATA_FLOW"],
+      "predicate": "HAS_METADATA_TAG",
+      "metadataTagKey": "pipeline",
+      "narrativeSkeleton": "Element {{element}} ({{elementKind}}) is part of the deployment pipeline. A compromised pipeline component can inject malicious code or configuration into all downstream deployments.",
+      "rationale": "Pipeline components have write access to the build and deploy artefacts; tampering here has cascading downstream impact."
+    },
+    {
+      "ruleId": "deployment-pipeline.component.elevation-of-privilege",
+      "title": "Pipeline-Tagged Element: Elevated Pipeline Privileges",
+      "category": "DEPLOYMENT_PIPELINE",
+      "strideCategory": "ELEVATION_OF_PRIVILEGE",
+      "targetElementKinds": ["PROCESS", "COMPONENT", "DATA_FLOW"],
+      "predicate": "HAS_METADATA_TAG",
+      "metadataTagKey": "pipeline",
+      "narrativeSkeleton": "Element {{element}} ({{elementKind}}) is part of the deployment pipeline. Pipeline components often run with elevated credentials; a compromised pipeline element can leverage these privileges.",
+      "rationale": "Deployment pipelines require elevated access by design; that privilege must be strictly scoped and audited."
+    }
+  ]
+}

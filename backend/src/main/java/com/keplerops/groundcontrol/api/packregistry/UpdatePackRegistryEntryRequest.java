@@ -15,5 +15,6 @@ public record UpdatePackRegistryEntryRequest(
         Map<String, Object> compatibility,
         @Valid List<PackDependencyRequest> dependencies,
         @Valid List<ControlPackEntryDefinitionRequest> controlPackEntries,
+        @Valid List<ThreatRuleEntryDefinitionRequest> threatRuleEntries,
         Map<String, Object> provenance,
         Map<String, Object> registryMetadata) {}

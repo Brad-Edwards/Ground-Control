@@ -10360,6 +10360,16 @@ export async function evaluateDataClassification({ project, snapshotId } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Threat enumeration (GC-GRC-007). Read-only deterministic enumeration of
+// candidate threats from an architecture-model snapshot against a registered
+// threat rule pack.
+// ---------------------------------------------------------------------------
+
+export async function threatEnumeration({ project, packId, version, snapshotId } = {}) {
+  return request("GET", "/api/v1/threat-enumeration", { params: { project, packId, version, snapshotId } });
+}
+
+// ---------------------------------------------------------------------------
 // NIST SP 800-30 Rev. 1 enums (GC-T014, ADR-034 mirror policy)
 // ---------------------------------------------------------------------------
 
