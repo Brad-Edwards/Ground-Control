@@ -164,7 +164,7 @@ public class PackIntegrityVerifier {
 
     private List<Map<String, Object>> canonicalizeThreatRuleEntries(List<RegisteredThreatRule> entries) {
         if (entries == null || entries.isEmpty()) {
-            return null;
+            return List.of();
         }
         return entries.stream().map(this::canonicalizeThreatRuleEntry).toList();
     }

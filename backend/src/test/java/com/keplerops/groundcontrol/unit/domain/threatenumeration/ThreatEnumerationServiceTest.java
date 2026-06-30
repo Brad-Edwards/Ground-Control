@@ -170,9 +170,8 @@ class ThreatEnumerationServiceTest {
         assertThat(result.candidates()).hasSize(1);
         var candidate = result.candidates().getFirst();
         assertThat(candidate.producingRuleId()).isEqualTo("boundary.tamper");
-        assertThat(candidate.matchedFacts()).containsKey("predicate");
-        assertThat(candidate.matchedFacts().get("predicate"))
-                .isEqualTo(ThreatRuleMatchPredicate.CROSSES_TRUST_BOUNDARY.name());
+        assertThat(candidate.matchedFacts())
+                .containsEntry("predicate", ThreatRuleMatchPredicate.CROSSES_TRUST_BOUNDARY.name());
         assertThat(candidate.matchedFacts()).containsEntry("sourceTrustBoundaryKey", "internal-zone");
         assertThat(candidate.matchedFacts()).containsEntry("targetTrustBoundaryKey", "dmz-zone");
     }

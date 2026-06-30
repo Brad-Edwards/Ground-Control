@@ -129,7 +129,7 @@ class ThreatEnumerationControllerTest {
 
     @Test
     void enumerateWithVersionParamPassesVersionToService() throws Exception {
-        when(enumerationService.enumerateLatest(eq(PROJECT_ID), eq("stride-baseline"), eq("1.0.0")))
+        when(enumerationService.enumerateLatest(PROJECT_ID, "stride-baseline", "1.0.0"))
                 .thenReturn(emptyResult());
 
         mockMvc.perform(get("/api/v1/threat-enumeration")

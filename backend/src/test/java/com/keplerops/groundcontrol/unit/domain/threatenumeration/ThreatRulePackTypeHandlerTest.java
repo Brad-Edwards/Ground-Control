@@ -101,8 +101,8 @@ class ThreatRulePackTypeHandlerTest {
     @Test
     void applyRegistrationContentRejectsRuleViolatingInvariants() {
         var entry = mock(PackRegistryEntry.class);
-        // HAS_METADATA_TAG predicate without a metadataTagKey violates a ThreatRule invariant;
-        // it must be rejected at the registration write boundary, not deferred to read-time.
+        // A metadata-tag rule with no tag key breaks a rule invariant and must be rejected at the
+        // registration write boundary rather than allowed to fail later during read-time enumeration.
         var invalid = new ThreatRuleEntryDefinition(
                 "rule.invalid",
                 "Invalid rule",
