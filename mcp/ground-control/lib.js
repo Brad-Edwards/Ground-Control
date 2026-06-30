@@ -11024,6 +11024,51 @@ export async function addResearchRunDisclosureEntry(id, disclosureId, data, proj
   );
 }
 
+// GC-RSCH-F006 — methodology source state enum (mirrors Java MethodologySourceState)
+export const METHODOLOGY_SOURCE_STATES = ["ATTEMPTED", "OBTAINED", "READ", "BLOCKED"];
+
+export async function selectMethodology(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/methodology/selection`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function getMethodologySelection(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/methodology/selection`, {
+    params: { project },
+  });
+}
+
+export async function recordMethodologySource(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/methodology/sources`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function updateMethodologySourceState(id, sourceId, data, project) {
+  return request(
+    "PATCH",
+    `/api/v1/research-runs/${encodeURIComponent(id)}/methodology/sources/${encodeURIComponent(sourceId)}`,
+    { body: data, params: { project } },
+  );
+}
+
+export async function listMethodologySources(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/methodology/sources`, {
+    params: { project },
+  });
+}
+
+// GC-RSCH-F006 / ADR-077 — backend-owned methodology catalog. Global reference
+// data (no run id, no project scope): all method profiles with their required
+// primary sources. Read also routes through gc_query under the
+// /api/v1/research-runs allow-list.
+export async function listMethodologyCatalog() {
+  return request("GET", "/api/v1/research-runs/methodology/catalog", {});
+}
+
 export async function createControl(data, project) {
   return request("POST", "/api/v1/controls", { body: data, params: { project } });
 }

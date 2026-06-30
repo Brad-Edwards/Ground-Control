@@ -1638,6 +1638,121 @@ def run_deploy_artifact_consistency(root: Path = REPO_ROOT) -> list[Violation]:
 
 
 # ---------------------------------------------------------------------------
+# Methodology catalog drift check (issue #1005, ADR-077).
+#
+# The backend-owned methodology catalog
+# (backend/src/main/resources/research/methodology-catalog.yaml) is the single
+# source of truth the research methodology gate derives required-source coverage
+# from; the skill-side lookup (skills/lit-review/methodology/catalog.yaml) is a
+# mirror the phase-1 lit-review skill reads. If the two disagree on method keys
+# or source identifiers, the skill can steer an agent to read sources the backend
+# gate does not require (or vice versa) — a silent scientific-behavior drift.
+# This static check fails `make policy` when they diverge.
+#
+# Parsing is a deliberate stdlib-only line walk over the two controlled catalog
+# shapes (see _extract_compose_backend_env_entries for why tools/policy/ avoids a
+# PyYAML dependency): a `- key: <k>` line opens a method; `- zotero_key: <id>`
+# (skill) / `- ref: <id>` (backend) lines name that method's source identifiers.
+# ---------------------------------------------------------------------------
+
+SKILL_METHODOLOGY_CATALOG_PATH = Path("skills/lit-review/methodology/catalog.yaml")
+BACKEND_METHODOLOGY_CATALOG_PATH = Path(
+    "backend/src/main/resources/research/methodology-catalog.yaml"
+)
+_METHODOLOGY_METHOD_KEY_RE = re.compile(r"^\s*-\s+key:\s*(\S+)\s*$")
+_METHODOLOGY_SKILL_SOURCE_RE = re.compile(r"^\s*-\s+zotero_key:\s*(\S+)\s*$")
+_METHODOLOGY_BACKEND_SOURCE_RE = re.compile(r"^\s*-\s+ref:\s*(\S+)\s*$")
+
+
+def _parse_methodology_catalog(text: str, source_re: re.Pattern[str]) -> dict[str, set[str]]:
+    """Map each method key to its set of source identifiers from a catalog file."""
+    methods: dict[str, set[str]] = {}
+    current: str | None = None
+    for line in text.splitlines():
+        key_match = _METHODOLOGY_METHOD_KEY_RE.match(line)
+        if key_match:
+            current = key_match.group(1)
+            methods.setdefault(current, set())
+            continue
+        source_match = source_re.match(line)
+        if source_match and current is not None:
+            methods[current].add(source_match.group(1))
+    return methods
+
+
+def run_methodology_catalog_drift(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert the skill and backend methodology catalogs agree (ADR-077)."""
+    skill_path = root / SKILL_METHODOLOGY_CATALOG_PATH
+    backend_path = root / BACKEND_METHODOLOGY_CATALOG_PATH
+    missing = [
+        p.as_posix()
+        for p in (SKILL_METHODOLOGY_CATALOG_PATH, BACKEND_METHODOLOGY_CATALOG_PATH)
+        if not (root / p).exists()
+    ]
+    if missing:
+        return [
+            Violation(
+                code="methodology-catalog-drift",
+                message=(
+                    "Both methodology catalogs must exist so the skill mirror and "
+                    "backend source-of-truth can be drift-checked (ADR-077)."
+                ),
+                details=[f"missing catalog file: {p}" for p in missing],
+            )
+        ]
+
+    skill = _parse_methodology_catalog(
+        skill_path.read_text(encoding="utf-8"), _METHODOLOGY_SKILL_SOURCE_RE
+    )
+    backend = _parse_methodology_catalog(
+        backend_path.read_text(encoding="utf-8"), _METHODOLOGY_BACKEND_SOURCE_RE
+    )
+
+    details: list[str] = []
+    skill_keys = set(skill)
+    backend_keys = set(backend)
+    only_skill = sorted(skill_keys - backend_keys)
+    only_backend = sorted(backend_keys - skill_keys)
+    if only_skill:
+        details.append(f"methods only in skill catalog: {only_skill}")
+    if only_backend:
+        details.append(f"methods only in backend catalog: {only_backend}")
+
+    for key in sorted(skill_keys & backend_keys):
+        if skill[key] != backend[key]:
+            skill_only = sorted(skill[key] - backend[key])
+            backend_only = sorted(backend[key] - skill[key])
+            details.append(
+                f"method '{key}' source drift: "
+                f"skill-only={skill_only} backend-only={backend_only}"
+            )
+
+    for key in sorted(skill_keys):
+        if not skill[key]:
+            details.append(f"method '{key}' has zero sources in the skill catalog")
+    for key in sorted(backend_keys):
+        if not backend[key]:
+            details.append(f"method '{key}' has zero required sources in the backend catalog")
+
+    if not details:
+        return []
+    return [
+        Violation(
+            code="methodology-catalog-drift",
+            message=(
+                "The skill methodology catalog "
+                f"({SKILL_METHODOLOGY_CATALOG_PATH.as_posix()}) and the backend "
+                f"source-of-truth ({BACKEND_METHODOLOGY_CATALOG_PATH.as_posix()}) "
+                "must declare the same method keys and the same source identifiers "
+                "per method (skill zotero_key == backend required_sources[].ref, "
+                "ADR-077). Reconcile the two catalogs."
+            ),
+            details=details,
+        )
+    ]
+
+
+# ---------------------------------------------------------------------------
 # API enum contract check (issue #433, ADR-034).
 #
 # The backend Java enums under domain/requirements/state/ are the single source
@@ -2717,6 +2832,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_deploy_compose_credential_passthrough())
     violations.extend(run_ghcr_namespace_drift())
     violations.extend(run_deploy_artifact_consistency())
+    violations.extend(run_methodology_catalog_drift())
     violations.extend(run_enum_contract_check())
     violations.extend(run_workflow_routing_contract())
     violations.extend(run_test_quality_decision_record_contract())

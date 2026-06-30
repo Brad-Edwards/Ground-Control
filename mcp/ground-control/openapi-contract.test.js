@@ -62,6 +62,8 @@ import {
   DISCLOSURE_UNCERTAINTY_CATEGORIES,
   PROVENANCE_NODE_KINDS,
   PROVENANCE_EDGE_RELATIONS,
+  // Methodology source coverage gate (GC-RSCH-F006)
+  METHODOLOGY_SOURCE_STATES,
 } from "./lib.js";
 
 import {
@@ -1272,6 +1274,82 @@ describe("MCP–OpenAPI write-contract", () => {
       },
       enums: {
         relation: PROVENANCE_EDGE_RELATIONS,
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_run — select_methodology (GC-RSCH-F006)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_run/select_methodology → SelectMethodologyRequest", () => {
+    assertRow({
+      label: "gc_research_run/select_methodology",
+      // ADR-077: select_methodology now takes only method_key; the label,
+      // profile/catalog version, and required-source set are derived server-side
+      // from the backend methodology catalog.
+      mcpFields: ["method_key"],
+      openapiSchema: "SelectMethodologyRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+      },
+      manualFieldMap: {
+        method_key: "methodKey",
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_run — list_methodology_catalog (GC-RSCH-F006 / ADR-077)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_run/list_methodology_catalog", () => {
+    it("is a body-less read of GET /research-runs/methodology/catalog", () => {
+      const path = spec.paths?.["/api/v1/research-runs/methodology/catalog"];
+      assert.ok(path, "GET /api/v1/research-runs/methodology/catalog must exist in the OpenAPI spec");
+      assert.ok(path.get, "methodology/catalog must expose a GET operation");
+      // No request body: the action is global reference data, no fields to mirror.
+      assert.ok(!path.get.requestBody, "list_methodology_catalog GET must not declare a request body");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_run — record_methodology_source (GC-RSCH-F006)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_run/record_methodology_source → RecordMethodologySourceRequest", () => {
+    assertRow({
+      label: "gc_research_run/record_methodology_source",
+      mcpFields: ["source_ref", "source_label"],
+      openapiSchema: "RecordMethodologySourceRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+      },
+      manualFieldMap: {
+        source_ref: "sourceRef",
+        source_label: "sourceLabel",
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_run — update_methodology_source_state (GC-RSCH-F006)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_run/update_methodology_source_state → UpdateMethodologySourceStateRequest", () => {
+    assertRow({
+      label: "gc_research_run/update_methodology_source_state",
+      mcpFields: ["source_state"],
+      openapiSchema: "UpdateMethodologySourceStateRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+        sourceId: "path param /sources/{sourceId} — not a body field",
+      },
+      manualFieldMap: {
+        source_state: "state",
+      },
+      enums: {
+        state: METHODOLOGY_SOURCE_STATES,
       },
     });
   });

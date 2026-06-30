@@ -9,7 +9,11 @@ run lifecycle state, checkpoint artifacts, and human-gate policy are governed by
 ADR-064. The user-facing run status/observability snapshot is governed by
 ADR-065. Gate decision logs and review comments are governed by ADR-066;
 explainability is governed by ADR-067; final-output accountability is governed
-by ADR-068.
+by ADR-068. Research factuality and claim grounding are governed by ADR-074.
+Scientific humility exposure for negative results, failed searches, access gaps,
+missing evidence, method limits, and non-claims is governed by ADR-075.
+Versioning and regression expectations for prompts, method profiles, schemas,
+and workflow policies are governed by ADR-076.
 
 ## Phases
 
@@ -73,11 +77,15 @@ workspace/
 
 ## Methodology catalog
 
-The catalog at `skills/lit-review/methodology/catalog.yaml` is a lookup, not a paraphrase: method key → primary methodology source Zotero keys + titles + PDF availability. The phase-1 skill reads the actual source PDFs to ground its method choice; the catalog only tells it *which* sources to read.
+The catalog at `skills/lit-review/methodology/catalog.yaml` is a lookup, not a paraphrase: method key → primary methodology source Zotero keys + titles + PDF availability. The phase-1 skill reads the actual source PDFs to ground its method choice; the catalog only tells it *which* sources to read. ADR-076 makes the product gate explicit: every required source for the selected method profile must have accepted obtained-and-read coverage before the methodology-requirements artifact can complete.
 
 Methods shipped: `scoping`, `systematic`, `mapping`, `critical`, `narrative_conceptual`, `targeted_related_work`, `taxonomy_development`.
 
 Adding a method: append a new entry with the primary methodology source Zotero keys. Do not add prose summaries - the phase-1 skill reads the sources directly.
+
+## F006 backend contract: methodology source coverage gate
+
+The backend enforces the source-coverage invariant via `ResearchRunService`. Selecting a methodology (`POST /api/v1/research-runs/{id}/methodology/selection`) takes only a `methodKey`: the required-source set is **derived from the backend-owned methodology catalog** (`backend/src/main/resources/research/methodology-catalog.yaml`, the source of truth that the skill catalog mirrors under a `make policy` drift check - ADR-077), not supplied by the caller. The resolved method profile's required primary sources are snapshotted as immutable `required: true` rows at selection; an unknown `methodKey` is rejected with `research_run_methodology_unknown_method`. Before a `METHODOLOGY_REQUIREMENTS` artifact can be recorded, the run must have an active methodology selection and every source marked `required: true` must be in `READ` state (tracked via `POST /api/v1/research-runs/{id}/methodology/sources` and `PATCH /api/v1/research-runs/{id}/methodology/sources/{sourceId}`). A required source in `BLOCKED` state raises a `409 Conflict` with error code `research_run_methodology_source_blocked`; any required source not yet `READ` raises `422 Unprocessable Entity` with code `research_run_methodology_sources_incomplete`. Optional sources never block the gate. Once a `METHODOLOGY_REQUIREMENTS` artifact has been recorded, the methodology is locked: reselecting a different method (which would re-snapshot a fresh, unread required set and silently invalidate the accepted artifact's coverage) is rejected with `409 Conflict` code `research_run_methodology_locked_after_requirements`. The full catalog is readable at `GET /api/v1/research-runs/methodology/catalog`. The MCP surface exposes these operations through the `gc_research_run` tool actions `list_methodology_catalog`, `select_methodology`, `get_methodology_selection`, `record_methodology_source`, `update_methodology_source_state`, and `list_methodology_sources`.
 
 ## Citation MCP
 

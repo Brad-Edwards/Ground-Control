@@ -8,6 +8,7 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.projects.model.ProjectType;
 import com.keplerops.groundcontrol.domain.projects.service.CreateProjectCommand;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.research.model.MethodologySourceState;
 import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactReadiness;
 import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactType;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRun;
@@ -17,7 +18,9 @@ import com.keplerops.groundcontrol.domain.research.service.AdvanceStageCommand;
 import com.keplerops.groundcontrol.domain.research.service.RecordArtifactCommand;
 import com.keplerops.groundcontrol.domain.research.service.ResearchIntakeCommand;
 import com.keplerops.groundcontrol.domain.research.service.ResearchRunService;
+import com.keplerops.groundcontrol.domain.research.service.SelectMethodologyCommand;
 import com.keplerops.groundcontrol.domain.research.service.StartResearchRunCommand;
+import com.keplerops.groundcontrol.domain.research.service.UpdateMethodologySourceStateCommand;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -165,6 +168,22 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
         assertThatThrownBy(() -> researchRunService.advanceStage(projectId, runId, blockedAdvance))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("required artifact");
+
+        // GC-RSCH-F006 / ADR-077 — select a real catalog method and read its derived
+        // required sources so the METHODOLOGY_REQUIREMENTS coverage gate opens.
+        researchRunService.selectMethodology(projectId, runId, new SelectMethodologyCommand("systematic"));
+        for (var source : researchRunService.listMethodologySources(projectId, runId)) {
+            researchRunService.updateMethodologySourceState(
+                    projectId,
+                    runId,
+                    source.getId(),
+                    new UpdateMethodologySourceStateCommand(MethodologySourceState.OBTAINED));
+            researchRunService.updateMethodologySourceState(
+                    projectId,
+                    runId,
+                    source.getId(),
+                    new UpdateMethodologySourceStateCommand(MethodologySourceState.READ));
+        }
 
         // Record the methodology artifact, then advance (autonomous gate auto-accepts).
         researchRunService.recordArtifact(

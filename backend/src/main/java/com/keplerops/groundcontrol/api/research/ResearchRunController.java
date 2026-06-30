@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -16,7 +17,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * GC-RSCH-R001/R003/F003/F034/F036/N007/N011/N012/N013 — REST surface for the
+ * GC-RSCH-R001/R003/F003/F006/F034/F036/N007/N011/N012/N013 — REST surface for the
  * {@link com.keplerops.groundcontrol.domain.research.model.ResearchRun} aggregate
  * (ADR-064 / ADR-065 / ADR-066 / ADR-067 / ADR-068). Routes live under
  * {@code /api/v1/research-runs/**} so the shared auth + actor-filter chains apply
@@ -210,6 +211,64 @@ public class ResearchRunController {
         var projectId = projectService.requireProjectId(project);
         return ResearchRunDisclosureEntryResponse.from(
                 researchRunService.addDisclosureEntry(projectId, id, disclosureId, request.toCommand()));
+    }
+
+    // GC-RSCH-F006 / ADR-077 — backend-owned methodology catalog (global reference
+    // data, no project/run scope). Declared before the {id}-scoped methodology
+    // routes so the literal "methodology" path segment is not captured as a run id.
+    @GetMapping("/methodology/catalog")
+    public MethodologyCatalogResponse methodologyCatalog() {
+        return MethodologyCatalogResponse.from(researchRunService.listMethodologyCatalog());
+    }
+
+    // GC-RSCH-F006 — methodology selection + source coverage gate
+    @PostMapping("/{id}/methodology/selection")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ResearchRunMethodologySelectionResponse selectMethodology(
+            @PathVariable UUID id,
+            @Valid @RequestBody SelectMethodologyRequest request,
+            @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return ResearchRunMethodologySelectionResponse.from(
+                researchRunService.selectMethodology(projectId, id, request.toCommand()));
+    }
+
+    @GetMapping("/{id}/methodology/selection")
+    public ResearchRunMethodologySelectionResponse getMethodologySelection(
+            @PathVariable UUID id, @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return ResearchRunMethodologySelectionResponse.from(researchRunService.getMethodologySelection(projectId, id));
+    }
+
+    @PostMapping("/{id}/methodology/sources")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ResearchRunMethodologySourceResponse recordMethodologySource(
+            @PathVariable UUID id,
+            @Valid @RequestBody RecordMethodologySourceRequest request,
+            @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return ResearchRunMethodologySourceResponse.from(
+                researchRunService.recordMethodologySource(projectId, id, request.toCommand()));
+    }
+
+    @PatchMapping("/{id}/methodology/sources/{sourceId}")
+    public ResearchRunMethodologySourceResponse updateMethodologySourceState(
+            @PathVariable UUID id,
+            @PathVariable UUID sourceId,
+            @Valid @RequestBody UpdateMethodologySourceStateRequest request,
+            @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return ResearchRunMethodologySourceResponse.from(
+                researchRunService.updateMethodologySourceState(projectId, id, sourceId, request.toCommand()));
+    }
+
+    @GetMapping("/{id}/methodology/sources")
+    public List<ResearchRunMethodologySourceResponse> listMethodologySources(
+            @PathVariable UUID id, @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return researchRunService.listMethodologySources(projectId, id).stream()
+                .map(ResearchRunMethodologySourceResponse::from)
+                .toList();
     }
 
     @PostMapping("/{id}/stop")

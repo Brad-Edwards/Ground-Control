@@ -69,7 +69,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
                         "136", "137", "138", "139", "140", "141", "142", "143", "144", "145", "146", "147", "148",
                         "149", "150", "151", "152", "153", "154", "155", "156", "157", "158", "159", "160", "161",
-                        "162", "163", "164", "165", "166", "167", "168");
+                        "162", "163", "164", "165", "166", "167", "168", "169", "170", "171", "172");
     }
 
     @Test
@@ -1166,6 +1166,36 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .doesNotThrowAnyException();
         // V163 / V165 (#1002, ADR-069): research provenance ledger audit shadows.
         assertResearchProvenanceAuditColumns();
+        // V169-V172 (#1005, GC-RSCH-F006): methodology selection + source tables.
+        entityManager
+                .createNativeQuery("SELECT 1 FROM research_run_methodology_selection LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM research_run_methodology_source LIMIT 1")
+                .getResultList();
+        assertResearchMethodologyAuditColumns();
+    }
+
+    /**
+     * V170 / V172 (#1005, GC-RSCH-F006) — column-level probes for the methodology
+     * selection + source Envers audit shadows. ddl-auto:validate does not inspect
+     * audit tables, so probe every payload column explicitly; a copy-paste
+     * regression dropping e.g. {@code superseded_at} or {@code state} would
+     * otherwise only surface at the first Envers flush in production.
+     */
+    private void assertResearchMethodologyAuditColumns() {
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT method_key, method_label, profile_version, catalog_version, actor,"
+                                + " superseded_at, created_at, updated_at"
+                                + " FROM research_run_methodology_selection_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT source_ref, source_label, required, state, actor,"
+                                + " created_at, updated_at"
+                                + " FROM research_run_methodology_source_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
     }
 
     /**
