@@ -186,9 +186,9 @@ class EvidenceCampaignServiceTest {
     void createRejectsDuplicateUid() {
         when(projectService.getById(PROJECT_ID)).thenReturn(project);
         when(repository.existsByProjectIdAndUid(PROJECT_ID, "CAMP-0001")).thenReturn(true);
+        var command = createCommand("https://iam.example.com");
 
-        assertThatThrownBy(() -> service.create(createCommand("https://iam.example.com")))
-                .isInstanceOf(ConflictException.class);
+        assertThatThrownBy(() -> service.create(command)).isInstanceOf(ConflictException.class);
     }
 
     @Test
@@ -198,9 +198,9 @@ class EvidenceCampaignServiceTest {
         doThrow(new DomainValidationException("connectionEndpoint must be a valid URI"))
                 .when(endpointPolicy)
                 .validate("ht tp://bad endpoint");
+        var command = createCommand("ht tp://bad endpoint");
 
-        assertThatThrownBy(() -> service.create(createCommand("ht tp://bad endpoint")))
-                .isInstanceOf(DomainValidationException.class);
+        assertThatThrownBy(() -> service.create(command)).isInstanceOf(DomainValidationException.class);
         verify(repository, never()).save(any());
     }
 

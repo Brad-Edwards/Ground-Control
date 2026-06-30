@@ -229,7 +229,7 @@ class EvidenceCampaignControllerTest {
     @Test
     void triggerReturnsRun() throws Exception {
         when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
-        when(service.trigger(eq(PROJECT_ID), eq(CAMPAIGN_ID))).thenReturn(makeRun());
+        when(service.trigger(PROJECT_ID, CAMPAIGN_ID)).thenReturn(makeRun());
 
         mockMvc.perform(post("/api/v1/evidence-campaigns/{id}/trigger", CAMPAIGN_ID)
                         .param("project", "ground-control"))

@@ -8,6 +8,7 @@ import java.net.UnknownHostException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -49,6 +50,7 @@ public class EvidenceEndpointPolicy {
 
     private final HostResolver resolver;
 
+    @Autowired
     public EvidenceEndpointPolicy() {
         this(InetAddress::getAllByName);
     }
@@ -73,33 +75,7 @@ public class EvidenceEndpointPolicy {
      * {@link com.keplerops.groundcontrol.domain.evidence.collection.EvidenceConnectionConfig}).
      */
     public List<InetAddress> validateAndResolve(String endpoint) {
-        if (endpoint == null || endpoint.isBlank()) {
-            throw reject("connectionEndpoint must not be blank");
-        }
-        URI uri;
-        try {
-            uri = URI.create(endpoint);
-        } catch (IllegalArgumentException ex) {
-            throw reject("connectionEndpoint must be a valid URI");
-        }
-
-        String scheme = uri.getScheme();
-        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
-            throw reject("connectionEndpoint scheme must be http or https");
-        }
-
-        String host = uri.getHost();
-        if (host == null || host.isBlank()) {
-            throw reject("connectionEndpoint must include a host");
-        }
-        if (host.startsWith("[") && host.endsWith("]")) {
-            host = host.substring(1, host.length() - 1);
-        }
-        String lower = host.toLowerCase(Locale.ROOT);
-        if (lower.equals("localhost") || lower.endsWith(".localhost")) {
-            throw reject("connectionEndpoint must not target localhost");
-        }
-
+        String host = extractAllowedHost(endpoint);
         InetAddress[] addresses;
         try {
             addresses = resolver.resolve(host);
@@ -116,6 +92,35 @@ public class EvidenceEndpointPolicy {
             }
         }
         return List.of(addresses);
+    }
+
+    /** Parse and structurally validate the endpoint, returning the bare (de-bracketed) host. */
+    private static String extractAllowedHost(String endpoint) {
+        if (endpoint == null || endpoint.isBlank()) {
+            throw reject("connectionEndpoint must not be blank");
+        }
+        URI uri;
+        try {
+            uri = URI.create(endpoint);
+        } catch (IllegalArgumentException ex) {
+            throw reject("connectionEndpoint must be a valid URI");
+        }
+        String scheme = uri.getScheme();
+        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+            throw reject("connectionEndpoint scheme must be http or https");
+        }
+        String host = uri.getHost();
+        if (host == null || host.isBlank()) {
+            throw reject("connectionEndpoint must include a host");
+        }
+        if (host.startsWith("[") && host.endsWith("]")) {
+            host = host.substring(1, host.length() - 1);
+        }
+        String lower = host.toLowerCase(Locale.ROOT);
+        if (lower.equals("localhost") || lower.endsWith(".localhost")) {
+            throw reject("connectionEndpoint must not target localhost");
+        }
+        return host;
     }
 
     private static boolean isForbidden(InetAddress address) {

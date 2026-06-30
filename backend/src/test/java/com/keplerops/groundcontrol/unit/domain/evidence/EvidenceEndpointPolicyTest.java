@@ -17,6 +17,9 @@ class EvidenceEndpointPolicyTest {
     /** A public, non-special IPv4 literal used as the "allowed" resolution target. */
     private static final String PUBLIC_IP = "93.184.216.34";
 
+    /** Policy with an empty resolution table: IP literals resolve locally, hostnames via real DNS. */
+    private final EvidenceEndpointPolicy literalPolicy = policyResolving(Map.of());
+
     /**
      * Policy backed by a table-driven resolver: mapped hosts resolve to the configured
      * addresses; unmapped hosts (IP literals) resolve locally via {@link InetAddress#getByName}
@@ -58,65 +61,69 @@ class EvidenceEndpointPolicyTest {
 
     @Test
     void rejectsNonHttpScheme() {
-        assertThatThrownBy(() -> policyMapping("files.example.com", PUBLIC_IP).validate("ftp://files.example.com/x"))
+        var policy = policyMapping("files.example.com", PUBLIC_IP);
+        assertThatThrownBy(() -> policy.validate("ftp://files.example.com/x"))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void rejectsMissingScheme() {
-        assertThatThrownBy(() -> policyResolving(Map.of()).validate("iam.example.com/v1"))
+        assertThatThrownBy(() -> literalPolicy.validate("iam.example.com/v1"))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void rejectsMissingHost() {
-        assertThatThrownBy(() -> policyResolving(Map.of()).validate("https:///v1"))
-                .isInstanceOf(DomainValidationException.class);
+        assertThatThrownBy(() -> literalPolicy.validate("https:///v1")).isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void rejectsMalformedUri() {
-        assertThatThrownBy(() -> policyResolving(Map.of()).validate("ht tp://bad endpoint"))
+        assertThatThrownBy(() -> literalPolicy.validate("ht tp://bad endpoint"))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void rejectsLocalhost() {
-        assertThatThrownBy(() -> policyResolving(Map.of()).validate("https://localhost:9000/collect"))
+        assertThatThrownBy(() -> literalPolicy.validate("https://localhost:9000/collect"))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void rejectsLoopbackLiteral() {
-        assertThatThrownBy(() -> policyResolving(Map.of()).validate("https://127.0.0.1/collect"))
+        assertThatThrownBy(() -> literalPolicy.validate("https://127.0.0.1/collect"))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void rejectsCloudMetadataLinkLocalAddress() {
         // The classic SSRF target: 169.254.169.254 is link-local (cloud metadata).
-        assertThatThrownBy(() -> policyResolving(Map.of()).validate("https://169.254.169.254/latest/meta-data"))
+        assertThatThrownBy(() -> literalPolicy.validate("https://169.254.169.254/latest/meta-data"))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
-    void rejectsPrivateSiteLocalAddress() {
-        assertThatThrownBy(() -> policyResolving(Map.of()).validate("https://10.0.0.5/collect"))
+    void rejectsPrivateSiteLocalAddressIpv4Ten() {
+        assertThatThrownBy(() -> literalPolicy.validate("https://10.0.0.5/collect"))
                 .isInstanceOf(DomainValidationException.class);
-        assertThatThrownBy(() -> policyResolving(Map.of()).validate("https://192.168.1.10/collect"))
+    }
+
+    @Test
+    void rejectsPrivateSiteLocalAddressIpv4OneNineTwo() {
+        assertThatThrownBy(() -> literalPolicy.validate("https://192.168.1.10/collect"))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void rejectsIpv6LoopbackLiteral() {
-        assertThatThrownBy(() -> policyResolving(Map.of()).validate("https://[::1]/collect"))
+        assertThatThrownBy(() -> literalPolicy.validate("https://[::1]/collect"))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void rejectsIpv6UniqueLocalLiteral() {
         // fc00::/7 ULA is private but NOT reported by isSiteLocalAddress(); the explicit check catches it.
-        assertThatThrownBy(() -> policyResolving(Map.of()).validate("https://[fd00::1]/collect"))
+        assertThatThrownBy(() -> literalPolicy.validate("https://[fd00::1]/collect"))
                 .isInstanceOf(DomainValidationException.class);
     }
 

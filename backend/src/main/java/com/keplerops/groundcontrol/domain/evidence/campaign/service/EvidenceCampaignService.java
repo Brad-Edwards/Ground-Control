@@ -18,6 +18,7 @@ import com.keplerops.groundcontrol.domain.evidence.collection.EvidenceCollection
 import com.keplerops.groundcontrol.domain.evidence.collection.EvidenceCollectionScope;
 import com.keplerops.groundcontrol.domain.evidence.collection.EvidenceCollectionStatus;
 import com.keplerops.groundcontrol.domain.evidence.collection.EvidenceConnectionConfig;
+import com.keplerops.groundcontrol.domain.evidence.service.CreateEvidenceArtifactCommand;
 import com.keplerops.groundcontrol.domain.evidence.service.EvidenceArtifactService;
 import com.keplerops.groundcontrol.domain.evidence.service.EvidenceCollectionAdapterRegistry;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
@@ -288,29 +289,12 @@ public class EvidenceCampaignService {
             EvidenceCollectionAdapter adapter = adapterRegistry.getAdapter(campaign.getAdapterName());
             EvidenceCollectionResult result = adapter.collect(buildRequest(campaign, windowStart, windowEnd));
 
-            var producedIds = new ArrayList<UUID>(result.artifacts().size());
-            int persistErrors = 0;
-            for (var artifactCommand : result.artifacts()) {
-                // A single artifact failing to persist (e.g. a re-collected UID
-                // already present, ADR-045 append-only) must not abort the whole
-                // collection — record it as an error and keep the rest.
-                try {
-                    var artifact = evidenceArtifactService.create(artifactCommand);
-                    producedIds.add(artifact.getId());
-                    linkToControls(campaign, artifact.getId());
-                } catch (RuntimeException ex) {
-                    persistErrors++;
-                    log.warn(
-                            "evidence_campaign_artifact_persist_failed: uid={} error={}",
-                            campaign.getUid(),
-                            ex.getClass().getSimpleName());
-                }
-            }
-            int totalErrors = result.errors().size() + persistErrors;
-            run.setProducedArtifactIds(producedIds);
-            run.setArtifactCount(producedIds.size());
+            var persisted = persistCollectedArtifacts(campaign, result.artifacts());
+            int totalErrors = result.errors().size() + persisted.persistErrors();
+            run.setProducedArtifactIds(persisted.producedIds());
+            run.setArtifactCount(persisted.producedIds().size());
             run.setErrorCount(totalErrors);
-            run.setSanitizedError(errorSummary(result.errors(), persistErrors));
+            run.setSanitizedError(errorSummary(result.errors(), persisted.persistErrors()));
             run.setStatus(mapStatus(result.status(), totalErrors));
         } catch (RuntimeException ex) {
             run.setArtifactCount(
@@ -340,6 +324,33 @@ public class EvidenceCampaignService {
                 saved.getErrorCount());
         return saved;
     }
+
+    /**
+     * Persist each collected artifact and link it to the campaign's target controls. A single
+     * artifact failing to persist (e.g. a re-collected UID already present, ADR-045 append-only)
+     * must not abort the whole collection - it is recorded as a persist error and the rest proceed.
+     */
+    private PersistOutcome persistCollectedArtifacts(
+            EvidenceCampaign campaign, List<CreateEvidenceArtifactCommand> commands) {
+        var producedIds = new ArrayList<UUID>(commands.size());
+        int persistErrors = 0;
+        for (var artifactCommand : commands) {
+            try {
+                var artifact = evidenceArtifactService.create(artifactCommand);
+                producedIds.add(artifact.getId());
+                linkToControls(campaign, artifact.getId());
+            } catch (RuntimeException ex) {
+                persistErrors++;
+                log.warn(
+                        "evidence_campaign_artifact_persist_failed: uid={} error={}",
+                        campaign.getUid(),
+                        ex.getClass().getSimpleName());
+            }
+        }
+        return new PersistOutcome(producedIds, persistErrors);
+    }
+
+    private record PersistOutcome(List<UUID> producedIds, int persistErrors) {}
 
     /**
      * Delete finished runs older than each campaign's retention horizon.
