@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -221,32 +222,30 @@ public class ThreatEnumerationService {
             if (!rule.targetElementKinds().contains(view.elementKind())) {
                 continue;
             }
-            var match = evaluatePredicate(rule, view, byKey, limitations);
-            if (match != null) {
-                candidates.add(new ThreatCandidate(
-                        rule.ruleId(),
-                        rule.category(),
-                        rule.strideCategory(),
-                        view.stableKey(),
-                        view.elementKind(),
-                        match,
-                        buildNarrative(rule, view)));
-            }
+            evaluatePredicate(rule, view, byKey, limitations)
+                    .ifPresent(facts -> candidates.add(new ThreatCandidate(
+                            rule.ruleId(),
+                            rule.category(),
+                            rule.strideCategory(),
+                            view.stableKey(),
+                            view.elementKind(),
+                            facts,
+                            buildNarrative(rule, view))));
         }
     }
 
     /**
-     * Evaluate the rule's predicate against the view. Returns a bounded matchedFacts map when the
-     * predicate matches, null when it does not. DATA_FLOW predicates record a DANGLING_FLOW_ENDPOINT
-     * limitation when a referenced endpoint is absent from the (valid-key) index.
+     * Evaluate the rule's predicate against the view. Returns the bounded matchedFacts map when the
+     * predicate matches, or empty when it does not. DATA_FLOW predicates record a
+     * DANGLING_FLOW_ENDPOINT limitation when a referenced endpoint is absent from the (valid-key) index.
      */
-    private static Map<String, String> evaluatePredicate(
+    private static Optional<Map<String, String>> evaluatePredicate(
             ThreatRule rule,
             ThreatCandidateElementView view,
             Map<String, ThreatCandidateElementView> byKey,
             List<ThreatEnumerationLimitation> limitations) {
         return switch (rule.predicate()) {
-            case ALWAYS -> baseFacts(view, ThreatRuleMatchPredicate.ALWAYS);
+            case ALWAYS -> Optional.of(baseFacts(view, ThreatRuleMatchPredicate.ALWAYS));
             case CROSSES_TRUST_BOUNDARY -> matchCrossesTrustBoundary(view, byKey, limitations);
             case SOURCE_IS_EXTERNAL -> matchFlowEndpointIsExternal(view, byKey, limitations, true);
             case TARGET_IS_EXTERNAL -> matchFlowEndpointIsExternal(view, byKey, limitations, false);
@@ -273,18 +272,18 @@ public class ThreatEnumerationService {
                 view.stableKey());
     }
 
-    private static Map<String, String> matchCrossesTrustBoundary(
+    private static Optional<Map<String, String>> matchCrossesTrustBoundary(
             ThreatCandidateElementView view,
             Map<String, ThreatCandidateElementView> byKey,
             List<ThreatEnumerationLimitation> limitations) {
         if (view.elementKind() != ArchitectureModelElementKind.DATA_FLOW) {
-            return null;
+            return Optional.empty();
         }
         var source = byKey.get(view.flowSourceStableKey());
         var target = byKey.get(view.flowTargetStableKey());
         if (source == null || target == null) {
             limitations.add(danglingEndpoint(view, ThreatRuleMatchPredicate.CROSSES_TRUST_BOUNDARY));
-            return null;
+            return Optional.empty();
         }
         var sourceTb = trimToNull(source.trustBoundaryKey());
         var targetTb = trimToNull(target.trustBoundaryKey());
@@ -292,7 +291,7 @@ public class ThreatEnumerationService {
         boolean crossesBoundary =
                 (sourceTb != null && targetTb != null && !sourceTb.equals(targetTb)) || flowTb != null;
         if (!crossesBoundary) {
-            return null;
+            return Optional.empty();
         }
         var facts = baseFacts(view, ThreatRuleMatchPredicate.CROSSES_TRUST_BOUNDARY);
         if (sourceTb != null) {
@@ -304,16 +303,16 @@ public class ThreatEnumerationService {
         if (flowTb != null) {
             facts.put("trustBoundaryKey", flowTb);
         }
-        return facts;
+        return Optional.of(facts);
     }
 
-    private static Map<String, String> matchFlowEndpointIsExternal(
+    private static Optional<Map<String, String>> matchFlowEndpointIsExternal(
             ThreatCandidateElementView view,
             Map<String, ThreatCandidateElementView> byKey,
             List<ThreatEnumerationLimitation> limitations,
             boolean source) {
         if (view.elementKind() != ArchitectureModelElementKind.DATA_FLOW) {
-            return null;
+            return Optional.empty();
         }
         var predicate =
                 source ? ThreatRuleMatchPredicate.SOURCE_IS_EXTERNAL : ThreatRuleMatchPredicate.TARGET_IS_EXTERNAL;
@@ -321,47 +320,47 @@ public class ThreatEnumerationService {
         var endpoint = byKey.get(endpointKey);
         if (endpoint == null) {
             limitations.add(danglingEndpoint(view, predicate));
-            return null;
+            return Optional.empty();
         }
         if (endpoint.elementKind() != ArchitectureModelElementKind.EXTERNAL_ENTITY) {
-            return null;
+            return Optional.empty();
         }
         var facts = baseFacts(view, predicate);
         facts.put(source ? "sourceStableKey" : "targetStableKey", endpoint.stableKey());
         facts.put(
                 source ? "sourceElementKind" : "targetElementKind",
                 endpoint.elementKind().name());
-        return facts;
+        return Optional.of(facts);
     }
 
-    private static Map<String, String> matchHasDataClassification(ThreatCandidateElementView view) {
+    private static Optional<Map<String, String>> matchHasDataClassification(ThreatCandidateElementView view) {
         var dcKey = trimToNull(view.dataClassificationKey());
         if (dcKey == null) {
-            return null;
+            return Optional.empty();
         }
         var facts = baseFacts(view, ThreatRuleMatchPredicate.HAS_DATA_CLASSIFICATION);
         facts.put("dataClassificationKey", dcKey);
-        return facts;
+        return Optional.of(facts);
     }
 
-    private static Map<String, String> matchHasTrustBoundary(ThreatCandidateElementView view) {
+    private static Optional<Map<String, String>> matchHasTrustBoundary(ThreatCandidateElementView view) {
         var tbKey = trimToNull(view.trustBoundaryKey());
         if (tbKey == null) {
-            return null;
+            return Optional.empty();
         }
         var facts = baseFacts(view, ThreatRuleMatchPredicate.HAS_TRUST_BOUNDARY);
         facts.put("trustBoundaryKey", tbKey);
-        return facts;
+        return Optional.of(facts);
     }
 
-    private static Map<String, String> matchHasMetadataTag(ThreatRule rule, ThreatCandidateElementView view) {
+    private static Optional<Map<String, String>> matchHasMetadataTag(ThreatRule rule, ThreatCandidateElementView view) {
         var tagKey = rule.metadataTagKey();
         if (!view.metadata().containsKey(tagKey)) {
-            return null;
+            return Optional.empty();
         }
         var facts = baseFacts(view, ThreatRuleMatchPredicate.HAS_METADATA_TAG);
         facts.put("metadataTagKey", tagKey);
-        return facts;
+        return Optional.of(facts);
     }
 
     private static String buildNarrative(ThreatRule rule, ThreatCandidateElementView view) {
