@@ -16,6 +16,7 @@ import com.keplerops.groundcontrol.domain.controls.service.ControlLinkService;
 import com.keplerops.groundcontrol.domain.controls.service.ControlService;
 import com.keplerops.groundcontrol.domain.controls.service.CreateControlLinkCommand;
 import com.keplerops.groundcontrol.domain.evidence.campaign.model.EvidenceCampaign;
+import com.keplerops.groundcontrol.domain.evidence.campaign.model.EvidenceCampaignRun;
 import com.keplerops.groundcontrol.domain.evidence.campaign.repository.EvidenceCampaignRepository;
 import com.keplerops.groundcontrol.domain.evidence.campaign.repository.EvidenceCampaignRunRepository;
 import com.keplerops.groundcontrol.domain.evidence.campaign.service.CreateEvidenceCampaignCommand;
@@ -375,6 +376,76 @@ class EvidenceCampaignServiceTest {
         // Raw exception detail (which can carry the endpoint URI with userinfo) is kept out entirely.
         assertThat(run.getSanitizedError()).isEqualTo("run_error: RuntimeException");
         assertThat(run.getSanitizedError()).doesNotContain("s3cr3t").doesNotContain("10.0.0.1");
+    }
+
+    @Test
+    void getByIdReturnsCampaign() {
+        var campaign = campaign();
+        when(repository.findByIdAndProjectId(CAMPAIGN_ID, PROJECT_ID)).thenReturn(java.util.Optional.of(campaign));
+
+        assertThat(service.getById(PROJECT_ID, CAMPAIGN_ID)).isSameAs(campaign);
+    }
+
+    @Test
+    void listByProjectReturnsCampaigns() {
+        var campaign = campaign();
+        when(repository.findByProjectIdOrderByCreatedAtDesc(PROJECT_ID)).thenReturn(List.of(campaign));
+
+        assertThat(service.listByProject(PROJECT_ID)).containsExactly(campaign);
+    }
+
+    @Test
+    void listRunsReturnsRunsForCampaign() {
+        var campaign = campaign();
+        when(repository.findByIdAndProjectId(CAMPAIGN_ID, PROJECT_ID)).thenReturn(java.util.Optional.of(campaign));
+        var run = org.mockito.Mockito.mock(EvidenceCampaignRun.class);
+        when(runRepository.findByCampaignIdAndProjectIdOrderByWindowStartDesc(CAMPAIGN_ID, PROJECT_ID))
+                .thenReturn(List.of(run));
+
+        assertThat(service.listRuns(PROJECT_ID, CAMPAIGN_ID)).containsExactly(run);
+    }
+
+    @Test
+    void updateAppliesProvidedFields() {
+        var campaign = campaign();
+        when(repository.findByIdAndProjectId(CAMPAIGN_ID, PROJECT_ID)).thenReturn(java.util.Optional.of(campaign));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        var command = new UpdateEvidenceCampaignCommand(
+                "Renamed",
+                EvidenceCampaignFrequency.WEEKLY,
+                "iam.roles",
+                "schema-1",
+                "iam-stage",
+                "https://stage.example.com",
+                "vault://iam/stage",
+                Map.of("region", "eu"),
+                List.of(),
+                60);
+
+        var updated = service.update(PROJECT_ID, CAMPAIGN_ID, command);
+
+        assertThat(updated.getName()).isEqualTo("Renamed");
+        assertThat(updated.getFrequency()).isEqualTo(EvidenceCampaignFrequency.WEEKLY);
+        assertThat(updated.getScopeType()).isEqualTo("iam.roles");
+        assertThat(updated.getConnectionEndpoint()).isEqualTo("https://stage.example.com");
+        assertThat(updated.getRetentionDays()).isEqualTo(60);
+        verify(endpointPolicy).validate("https://stage.example.com");
+    }
+
+    @Test
+    void triggerExecutesImmediatelyAndReturnsRun() {
+        var campaign = campaign();
+        when(repository.findByIdAndProjectId(CAMPAIGN_ID, PROJECT_ID)).thenReturn(java.util.Optional.of(campaign));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        var adapter = org.mockito.Mockito.mock(EvidenceCollectionAdapter.class);
+        when(adapterRegistry.getAdapter("iam-collector")).thenReturn(adapter);
+        when(adapter.collect(any())).thenReturn(result(EvidenceCollectionStatus.SUCCEEDED, List.of(), List.of()));
+        when(runRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var run = service.trigger(PROJECT_ID, CAMPAIGN_ID);
+
+        assertThat(run.getStatus()).isEqualTo(EvidenceCampaignRunStatus.COMPLETED);
+        assertThat(campaign.getLastRunAt()).isNotNull();
     }
 
     @Test

@@ -26,7 +26,7 @@ public final class EvidenceRunErrorRedactor {
     private static final Pattern BEARER = Pattern.compile("(?i)\\bbearer\\s+\\S+");
     // sensitive key = value (quoted or bare) -> key=[redacted]
     private static final Pattern SECRET_KV =
-            Pattern.compile("(?i)\\b(authorization|auth|token|secret|password|passwd|pwd|api[_-]?key|apikey"
+            Pattern.compile("(?i)\\b(authorization|auth|token|secret|password|passwd|pwd|api[_-]?key"
                     + "|access[_-]?key|client[_-]?secret|credential|cred)\\b\\s*[=:]\\s*(\"[^\"]*\"|'[^']*'|\\S+)");
     // long opaque token-shaped run (base64/hex/JWT-ish), 32+ chars -> [redacted]
     private static final Pattern LONG_TOKEN = Pattern.compile("[A-Za-z0-9+/_\\-]{32,}={0,2}");
