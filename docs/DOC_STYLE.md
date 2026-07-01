@@ -1,5 +1,7 @@
 # Documentation style
 
+> **Sync note for issue #214 (2026-06-30 GC-S005):** Registered the project-scoped `gc_evidence_campaign` MCP tool (actions: create / list / get / update / pause / resume / trigger / runs_list) in `mcp/ground-control/index.js`, `mcp/ground-control/lib.js`, and `mcp/ground-control/gc-evidence-campaign.js`, backed by the new `/api/v1/evidence-campaigns**` REST surface for scheduled evidence collection. Documentation lives in `docs/API.md`, `docs/architecture/ARCHITECTURE.md`, and `architecture/adrs/074-scheduled-evidence-collection.md`; the surface addition is recorded in the ADR-054 amendment below. New request/response schemas are documented under the relevant `docs/API.md` service section per the "Adding a new MCP tool" rule. No style rule changed.
+
 > **Sync note for issue #1120 (2026-06-30):** Registered the `gc_threat_enumeration` MCP tool
 > (handler `mcp/ground-control/gc-threat-enumeration.js`) and the `threatEnumeration` API-client
 > helper in `mcp/ground-control/lib.js`, backed by the new `GET /api/v1/threat-enumeration` REST

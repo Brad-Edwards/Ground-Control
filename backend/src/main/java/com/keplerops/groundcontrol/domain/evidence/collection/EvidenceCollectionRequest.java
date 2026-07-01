@@ -11,6 +11,14 @@ public record EvidenceCollectionRequest(
         EvidenceCollectionRateLimit rateLimitOverride,
         Map<String, Object> options) {
 
+    /**
+     * {@code options} key carrying the requested output {@code schemaId} so an adapter can honor a
+     * caller's configured evidence schema. The port has no typed schema-selection field; {@code options}
+     * is its extension bag, and this is its canonical key (mirrors the per-family {@code schemaId}
+     * carried on {@link EvidenceCollectionOutputSchema}).
+     */
+    public static final String SCHEMA_OPTION = "schemaId";
+
     public EvidenceCollectionRequest {
         if (projectId == null) {
             throw new DomainValidationException("Evidence collection projectId must not be null");
