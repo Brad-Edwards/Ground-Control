@@ -268,6 +268,57 @@ discard with rationale, or augment deterministic candidates; it must not origina
 enumeration candidates. Likelihood, impact, treatment, and control coverage remain on the
 risk-scenario, risk-control, and GRC-analysis lanes.
 
+## Deterministic Control Identification Boundary (GC-GRC-008)
+
+GC-GRC-008 is the deterministic step that follows threat enumeration in the
+derivation-backed GRC pipeline (ADR-058 §3): `threat category → control objective →
+candidate controls`. Like enumeration, it is a pure domain evaluation (no LLM in the
+identification path), so the same enumerated threats and installed controls always
+produce the same ordered candidates and gaps.
+
+### Engine Design
+
+The engine lives in `domain/controlidentification/service/` and mirrors the
+`ThreatEnumerationService` shape:
+
+- **Pure static method**: `ControlIdentificationService.identify(ControlMappingRuleSet,
+  List<MappableThreat>, List<AvailableControl>)` is side-effect free and directly unit-tested.
+  Candidates sort by `(threatRef, producingRuleId, controlUid)`; gaps by
+  `(threatRef, producingRuleId, objectiveKey)`.
+- **Read-only service wrappers**: `identifyForLatestSnapshot` / `identifyForSnapshot` run
+  `ThreatEnumerationService`, assemble `AvailableControl`s from catalog `Control`s and their
+  installed `ControlPackEntry`s, and delegate.
+
+The mapping rules are a built-in, data-driven `DefaultControlMappingRuleSet` (rule-set
+id/version carried as candidate provenance) rather than a new pack type; the
+category-to-objective mapping is small and framework-agnostic. Candidate *controls* are still
+drawn from installed control packs (OSCAL catalogs, for example NIST SP 800-53/800-218) and the
+project's existing controls; selection matches a rule's framework-family/id selectors against
+each control's framework identifiers with no unbounded narrative search.
+
+### Candidate Provenance and Gaps
+
+Candidate controls are suggestions, not confirmed mitigation. Each `ControlCandidate` carries
+implementation guidance (from the control pack entry, falling back to the rule default) and rule
+provenance: producing rule id, rule-set id/version, resolved objective, candidate source
+(`CONTROL_PACK` / `PROJECT_CONTROL`) with pack id/version/checksum, and the matched framework
+selectors/identifiers. Where a rule fires but no control matches, a `ControlIdentificationGap`
+(`NO_MATCHING_CONTROL` / `NO_CONTROLS_AVAILABLE`) is surfaced as explicit control-design work,
+never silently dropped.
+
+### Confirmation Contract
+
+Confirmation is a separate write step (`ControlMappingConfirmationService`) that records a
+threat→control relationship through **both** canonical mapping aggregates (the
+`RiskControlMapping` coverage edge and the `ThreatModelLink MITIGATED_BY` to `CONTROL` traversal
+edge), so coverage is graph-queryable two ways. It is idempotent. Confirmation is guarded by
+server-side candidacy re-derivation: only a control the engine selects for the threat's STRIDE
+category may be confirmed, so a forged or LLM-invented mitigation cannot be recorded through this
+route (GC-RS-012); non-derived mappings use the generic risk-control-mapping surface. The confirmation and
+coverage-read routes are authenticated under `/api/v1/**` at the same authorization level as the
+existing risk-control-mapping and threat-model-link write surfaces; no new trust boundary is
+introduced.
+
 ## Status Drift Analysis
 
 Status drift analysis is a read-only requirements-domain analysis. It flags requirements that are still `DRAFT` while independent artifacts suggest implementation or design completion has already landed. It does not create traceability links, transition requirements, or relax the `IMPLEMENTS`-only on `ACTIVE` rule.

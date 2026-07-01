@@ -306,6 +306,11 @@ import {
   GC_THREAT_ENUMERATION_DESCRIPTION,
 } from "./gc-threat-enumeration.js";
 import {
+  gcControlIdentificationZodShape,
+  gcControlIdentificationToolHandler,
+  GC_CONTROL_IDENTIFICATION_DESCRIPTION,
+} from "./gc-control-identification.js";
+import {
   gcAuditZodShape,
   gcAuditToolHandler,
   GC_AUDIT_DESCRIPTION,
@@ -2384,6 +2389,21 @@ server.tool(
   async (args) => {
     try {
       const result = await gcThreatEnumerationToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_control_identification: GC-GRC-008 deterministic control identification.
+// Read-only: maps enumerated threats to candidate controls (action=identify) or
+// returns the controls covering a threat (action=coverage). No LLM judgment.
+server.tool(
+  "gc_control_identification",
+  GC_CONTROL_IDENTIFICATION_DESCRIPTION,
+  gcControlIdentificationZodShape,
+  async (args) => {
+    try {
+      const result = await gcControlIdentificationToolHandler(args);
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },
