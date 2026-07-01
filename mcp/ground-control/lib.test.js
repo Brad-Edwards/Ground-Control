@@ -8526,6 +8526,24 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
     assert.ok(r.errors.some((e) => /canonical Claude model id/.test(e)));
   });
 
+  it("accepts single-segment canonical model ids like claude-sonnet-5", () => {
+    const r = parseGroundControlYaml([
+      "schema_version: 1",
+      "project: gc",
+      "routing:",
+      "  enabled: true",
+      "  stages:",
+      "    implementation:",
+      "      tier: medium",
+      "      model: claude-sonnet-5",
+      "      agent: cli",
+      "      fallback: parent",
+      "",
+    ].join("\n"));
+    assert.equal(r.ok, true);
+    assert.equal(r.value.routing.stages.implementation.model, "claude-sonnet-5");
+  });
+
   it("rejects malformed stage names and route fields", () => {
     const r = parseGroundControlYaml([
       "schema_version: 1",
@@ -8607,7 +8625,7 @@ describe("resolveWorkflowRouteFromConfig", () => {
     const r = resolveWorkflowRouteFromConfig({ routing, stage: "one_off_review", tier: "medium" });
     assert.equal(r.ok, true);
     assert.equal(r.source, "tier");
-    assert.equal(r.model, "claude-sonnet-4-6");
+    assert.equal(r.model, "claude-sonnet-5");
   });
 });
 

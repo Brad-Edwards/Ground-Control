@@ -822,7 +822,7 @@ server.tool(
   `Run the canonical /implement Step 6.6 pre-push test-quality review against the staged + unstaged + ` +
     `untracked diff vs the base branch. (Issue #906 moved this from the former post-PR Step 13 to ` +
     `pre-push Step 6.6 so the PR opens with both AI-assisted reviewers clean.) Shells out to the ` +
-    `\`claude\` CLI (Sonnet 4.6 by default) with the review-tests rubric and the ` +
+    `\`claude\` CLI (Sonnet 5 by default) with the review-tests rubric and the ` +
     `changed test-file paths, parses the structured JSON output (validated by --json-schema), posts ` +
     `the durable findings record + cycle marker to the issue thread, and returns a structured ` +
     `envelope: \`{ ok, finding_count, findings, cycle, cap, next_action, findings_comment_url, ... }\`. ` +

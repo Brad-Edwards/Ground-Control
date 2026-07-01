@@ -63,7 +63,7 @@ The `/implement` SKILL declares a stable **workflow step id** plus a
 | Tier | Intended capability | Claude Code mapping |
 |------|---------------------|---------------------|
 | `low` | Mechanical action, polling, gh wrapping, file reads | `claude-haiku-4-5` |
-| `medium` | Bounded reading + applying a designed decision; structured drafting | `claude-sonnet-4-6` |
+| `medium` | Bounded reading + applying a designed decision; structured drafting | `claude-sonnet-5` |
 | `high` | Architectural reasoning, novel-fork interpretation, first-cycle review consume | `claude-opus-4-8` (the parent) |
 
 Drivers map tier to a concrete model. Claude Code drivers spawn an `Agent`
@@ -164,8 +164,8 @@ Each routed step writes one JSONL line via `gc_log_step_telemetry` to
   "branch": "868-route-tools-telem",
   "step": "4.5",
   "tier": "medium",
-  "model": "claude-sonnet-4-6",
-  "expected_model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5",
+  "expected_model": "claude-sonnet-5",
   "model_matches_expected": true,
   "wall_time_ms": 12480,
   "input_tokens": 8421,
