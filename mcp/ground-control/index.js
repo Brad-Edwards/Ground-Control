@@ -276,6 +276,11 @@ import {
   GC_EVIDENCE_DESCRIPTION,
 } from "./gc-evidence.js";
 import {
+  gcEvidenceCampaignZodShape,
+  gcEvidenceCampaignToolHandler,
+  GC_EVIDENCE_CAMPAIGN_DESCRIPTION,
+} from "./gc-evidence-campaign.js";
+import {
   gcResearchProvenanceZodShape,
   gcResearchProvenanceToolHandler,
   GC_RESEARCH_PROVENANCE_DESCRIPTION,
@@ -2216,6 +2221,21 @@ server.tool(
   },
 );
 
+// gc_evidence_campaign: GC-S005. Scheduled evidence-collection campaigns.
+// Writes only (create / update / pause / resume / trigger); reads (list, get,
+// runs) route through gc_query at /api/v1/evidence-campaigns.
+server.tool(
+  "gc_evidence_campaign",
+  GC_EVIDENCE_CAMPAIGN_DESCRIPTION,
+  gcEvidenceCampaignZodShape,
+  async (args) => {
+    try {
+      const result = await gcEvidenceCampaignToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
 // gc_evidence_state_workspace: GC-Q012. Read-only composition endpoint returning
 // evidence artifacts, observations, freshness, provenance, and downstream impact.
 server.tool(
@@ -3240,7 +3260,7 @@ server.tool(
     // record_usage
     tokens: z.number().int().nonnegative().optional(),
     cost_usd_micros: z.number().int().nonnegative().optional(),
-    // methodology selection (GC-RSCH-F006 / ADR-077). Only method_key is accepted;
+    // methodology selection (GC-RSCH-F006 / ADR-078). Only method_key is accepted;
     // the label, profile/catalog version, and required-source set are derived
     // server-side from the backend methodology catalog.
     method_key: z.string().optional(),
@@ -3485,7 +3505,7 @@ server.tool(
             2,
           ));
         }
-        // GC-RSCH-F006 / ADR-077 — methodology catalog (global reference data)
+        // GC-RSCH-F006 / ADR-078 — methodology catalog (global reference data)
         case "list_methodology_catalog": {
           return ok(JSON.stringify(await listMethodologyCatalog(), null, 2));
         }
@@ -3494,7 +3514,7 @@ server.tool(
           reqArg(args, "id", "select_methodology");
           reqArg(args, "method_key", "select_methodology");
           // method label, profile/catalog version, and the required-source set are
-          // derived server-side from the backend methodology catalog (ADR-077).
+          // derived server-side from the backend methodology catalog (ADR-078).
           const smBody = { methodKey: args.method_key };
           return ok(JSON.stringify(await selectMethodology(args.id, smBody, args.project), null, 2));
         }

@@ -1285,7 +1285,7 @@ describe("MCP–OpenAPI write-contract", () => {
   describe("gc_research_run/select_methodology → SelectMethodologyRequest", () => {
     assertRow({
       label: "gc_research_run/select_methodology",
-      // ADR-077: select_methodology now takes only method_key; the label,
+      // ADR-078: select_methodology now takes only method_key; the label,
       // profile/catalog version, and required-source set are derived server-side
       // from the backend methodology catalog.
       mcpFields: ["method_key"],
@@ -1300,7 +1300,7 @@ describe("MCP–OpenAPI write-contract", () => {
   });
 
   // -------------------------------------------------------------------------
-  // gc_research_run — list_methodology_catalog (GC-RSCH-F006 / ADR-077)
+  // gc_research_run — list_methodology_catalog (GC-RSCH-F006 / ADR-078)
   // -------------------------------------------------------------------------
 
   describe("gc_research_run/list_methodology_catalog", () => {

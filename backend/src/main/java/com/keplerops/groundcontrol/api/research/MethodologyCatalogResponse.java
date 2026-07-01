@@ -4,7 +4,7 @@ import com.keplerops.groundcontrol.domain.research.model.MethodProfile;
 import java.util.List;
 
 /**
- * GC-RSCH-F006 / ADR-077 — read view of the backend-owned methodology catalog:
+ * GC-RSCH-F006 / ADR-078 — read view of the backend-owned methodology catalog:
  * the catalog version plus every method profile with its required primary
  * sources. Returned by {@code GET /api/v1/research-runs/methodology/catalog}.
  */

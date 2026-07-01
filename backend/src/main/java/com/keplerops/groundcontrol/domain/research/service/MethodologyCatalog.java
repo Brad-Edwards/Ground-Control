@@ -19,7 +19,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
 /**
- * GC-RSCH-F006 / ADR-077 — backend-owned methodology catalog. Loads the versioned
+ * GC-RSCH-F006 / ADR-078 — backend-owned methodology catalog. Loads the versioned
  * method profiles from {@code classpath:research/methodology-catalog.yaml} once at
  * startup, validates them fail-closed, and exposes them as immutable reference
  * data. This is the single source of truth the methodology selection gate derives

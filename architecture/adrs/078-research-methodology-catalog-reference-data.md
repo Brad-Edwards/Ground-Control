@@ -1,4 +1,4 @@
-# ADR-077: Research Methodology Catalog as Backend Reference Data
+# ADR-078: Research Methodology Catalog as Backend Reference Data
 
 ## Status
 
@@ -25,7 +25,7 @@ authoritative definition: the skill-side lookup
 (`skills/lit-review/methodology/catalog.yaml`) names one set of sources per
 method while every run could name another, and nothing keeps the two aligned.
 
-ADR-076 deliberately scoped issue #1005 to run-scoped versioning and named "no
+ADR-077 deliberately scoped issue #1005 to run-scoped versioning and named "no
 backend catalog loader, prompt store, or policy runner" as a non-goal, and the
 issue-#1005 preflight note repeated "No backend catalog loader" as a non-goal for
 that first slice. Those non-goals were correct for the first slice - they kept it
@@ -51,7 +51,7 @@ duplicate method key, on a method with a blank key/label or zero required
 sources, or on a source with a blank `ref`. A blank or zero-source catalog is a
 build error, never a vacuous coverage gate at runtime.
 
-This is reference data, not the generic behavior engine ADR-076 rejected: it
+This is reference data, not the generic behavior engine ADR-077 rejected: it
 parses one bounded schema and exposes typed lookups. It is not a
 `ResearchBehaviorArtifact.execute(Map)`, a prompt store, or a plugin loader.
 
@@ -65,7 +65,7 @@ are set from the profile, and each of the profile's required sources is
 snapshotted as an immutable `required=true` source row in `ATTEMPTED` state. The
 caller can no longer declare its own required sources, label, or versions.
 
-The run-scoped snapshot keeps ADR-076's replayability property: a later catalog
+The run-scoped snapshot keeps ADR-077's replayability property: a later catalog
 edit does not rewrite an active or completed run's required-source set. Selecting
 the same method again is idempotent while the snapshot still matches the catalog;
 selecting a different method (or a profile whose required-source set has since
@@ -117,8 +117,8 @@ its required sources (global reference data; no project/run scope). The MCP
 
 ## Amends
 
-- **ADR-076** - supersedes the "no backend catalog loader" clause of its
-  Non-Goals for the methodology catalog specifically. The other ADR-076 non-goals
+- **ADR-077** - supersedes the "no backend catalog loader" clause of its
+  Non-Goals for the methodology catalog specifically. The other ADR-077 non-goals
   (no generic workflow/behavior engine, no prompt marketplace, no raw-content
   storage) stand; this ADR adds a bounded, validated reference-data loader only.
 - **architecture/notes/research-methodology-requirements-preflight.md** -
@@ -141,5 +141,5 @@ its required sources (global reference data; no project/run scope). The MCP
 - ADR-064 - Research Run Lifecycle and Stage Gating.
 - ADR-072 - Research REST and MCP Tool Surface.
 - ADR-073 - Research Extensibility and Adapter Boundary.
-- ADR-076 - Research Behavior Versioning and Regression Tests (amended by this
+- ADR-077 - Research Behavior Versioning and Regression Tests (amended by this
   ADR).

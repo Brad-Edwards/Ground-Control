@@ -9,7 +9,7 @@ import com.keplerops.groundcontrol.domain.research.service.MethodologyCatalog;
 import org.junit.jupiter.api.Test;
 
 /**
- * GC-RSCH-F006 / ADR-077 — the backend-owned methodology catalog loads, validates,
+ * GC-RSCH-F006 / ADR-078 — the backend-owned methodology catalog loads, validates,
  * and exposes the shipped method profiles as immutable reference data.
  */
 class MethodologyCatalogTest {

@@ -213,7 +213,7 @@ public class ResearchRunController {
                 researchRunService.addDisclosureEntry(projectId, id, disclosureId, request.toCommand()));
     }
 
-    // GC-RSCH-F006 / ADR-077 — backend-owned methodology catalog (global reference
+    // GC-RSCH-F006 / ADR-078 — backend-owned methodology catalog (global reference
     // data, no project/run scope). Declared before the {id}-scoped methodology
     // routes so the literal "methodology" path segment is not captured as a run id.
     @GetMapping("/methodology/catalog")

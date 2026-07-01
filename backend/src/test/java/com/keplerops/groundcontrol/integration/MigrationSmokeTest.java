@@ -52,6 +52,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         // V166–V168: architecture model aggregate + audit shadows + legacy link compatibility (GC-GRC-005).
         // V169–V170: data classification lattice aggregate + audit shadows (GC-GRC-006).
         // V171: add threat_rule_entries column to pack_registry_entry (GC-GRC-007).
+        // V172–V174: scheduled evidence-collection campaign + audit shadow + campaign-run telemetry (GC-S005).
         // Flyway immutability: once a versioned migration has been applied to a long-lived database
         // (e.g. production) its file content is frozen — the checksum is validated on every startup.
         // Never edit an applied V*.sql in place; append a new forward migration instead. Editing the
@@ -72,7 +73,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "136", "137", "138", "139", "140", "141", "142", "143", "144", "145", "146", "147", "148",
                         "149", "150", "151", "152", "153", "154", "155", "156", "157", "158", "159", "160", "161",
                         "162", "163", "164", "165", "166", "167", "168", "169", "170", "171", "172", "173", "174",
-                        "175");
+                        "175", "176", "177", "178");
     }
 
     @Test
@@ -1151,12 +1152,12 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .doesNotThrowAnyException();
         // V163 / V165 (#1002, ADR-069): research provenance ledger audit shadows.
         assertResearchProvenanceAuditColumns();
-        // V172-V175 (#1005, GC-RSCH-F006): methodology selection + source tables.
+        // V175-V178 (#1005, GC-RSCH-F006): methodology selection + source tables.
         assertResearchMethodologyAuditColumns();
     }
 
     /**
-     * V173 / V175 (#1005, GC-RSCH-F006) — column-level probes for the methodology
+     * V176 / V178 (#1005, GC-RSCH-F006) — column-level probes for the methodology
      * selection + source Envers audit shadows. ddl-auto:validate does not inspect
      * audit tables, so probe every payload column explicitly; a copy-paste
      * regression dropping e.g. {@code superseded_at} or {@code state} would

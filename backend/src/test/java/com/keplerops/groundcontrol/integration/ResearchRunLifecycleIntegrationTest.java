@@ -185,7 +185,7 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("required artifact");
 
-        // GC-RSCH-F006 / ADR-077 — select a real catalog method and read its derived
+        // GC-RSCH-F006 / ADR-078 — select a real catalog method and read its derived
         // required sources so the METHODOLOGY_REQUIREMENTS coverage gate opens.
         researchRunService.selectMethodology(projectId, runId, new SelectMethodologyCommand("systematic"));
         for (var source : researchRunService.listMethodologySources(projectId, runId)) {

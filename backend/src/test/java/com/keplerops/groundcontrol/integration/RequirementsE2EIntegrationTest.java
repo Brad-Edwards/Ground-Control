@@ -591,9 +591,12 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "169", // V169: create data classification lattice aggregate (GC-GRC-006)
                         "170", // V170: create data classification lattice audit tables (GC-GRC-006)
                         "171", // V171: add threat_rule_entries column to pack_registry_entry (GC-GRC-007)
-                        "172", // V172: create research_run_methodology_selection (#1005, GC-RSCH-F006)
-                        "173", // V173: create research_run_methodology_selection_audit (#1005 audit parity)
-                        "174", // V174: create research_run_methodology_source (#1005, GC-RSCH-F006)
-                        "175"); // V175: create research_run_methodology_source_audit (#1005 audit parity)
+                        "172", // V172: create evidence_campaign aggregate (GC-S005)
+                        "173", // V173: create evidence_campaign_audit shadow (GC-S005 audit parity)
+                        "174", // V174: create evidence_campaign_run telemetry (GC-S005)
+                        "175", // V175: create research_run_methodology_selection (#1005, GC-RSCH-F006)
+                        "176", // V176: create research_run_methodology_selection_audit (#1005 audit parity)
+                        "177", // V177: create research_run_methodology_source (#1005, GC-RSCH-F006)
+                        "178"); // V178: create research_run_methodology_source_audit (#1005 audit parity)
     }
 }

@@ -1,5 +1,7 @@
 # Documentation style
 
+> **Sync note for issue #214 (2026-06-30 GC-S005):** Registered the project-scoped `gc_evidence_campaign` MCP tool (actions: create / list / get / update / pause / resume / trigger / runs_list) in `mcp/ground-control/index.js`, `mcp/ground-control/lib.js`, and `mcp/ground-control/gc-evidence-campaign.js`, backed by the new `/api/v1/evidence-campaigns**` REST surface for scheduled evidence collection. Documentation lives in `docs/API.md`, `docs/architecture/ARCHITECTURE.md`, and `architecture/adrs/074-scheduled-evidence-collection.md`; the surface addition is recorded in the ADR-054 amendment below. New request/response schemas are documented under the relevant `docs/API.md` service section per the "Adding a new MCP tool" rule. No style rule changed.
+
 > **Sync note for issue #1120 (2026-06-30):** Registered the `gc_threat_enumeration` MCP tool
 > (handler `mcp/ground-control/gc-threat-enumeration.js`) and the `threatEnumeration` API-client
 > helper in `mcp/ground-control/lib.js`, backed by the new `GET /api/v1/threat-enumeration` REST
@@ -55,7 +57,7 @@
 
 > **Sync note for issue #1005 (2026-06-29):** The `gc_research_run` MCP tool's `record_methodology_source` action lost `source_required` (boolean) and `select_methodology` gained `required_source_refs` (optional string array, max 500 chars per element) in `mcp/ground-control/index.js`. Required sources are now snapshotted immutably at selection time; callers cannot inject a required flag via the record-source endpoint. The surface change is recorded in the ADR-054 amendment; no style rule changed.
 
-> **Sync note for issue #1005 / ADR-077 (2026-06-30):** The methodology catalog became backend-owned, validated-on-load reference data, and the required-source set is now derived from it rather than supplied by the caller. The `gc_research_run` MCP tool's `select_methodology` action was reduced to `{id, method_key}` (dropping `method_label`, `profile_version`, `catalog_version`, `required_source_refs`), and a new global read action `list_methodology_catalog` (`GET /api/v1/research-runs/methodology/catalog`) was added in `mcp/ground-control/index.js` + `lib.js`. The surface change is recorded in the ADR-054 amendment and `docs/API.md`; no style rule changed.
+> **Sync note for issue #1005 / ADR-078 (2026-06-30):** The methodology catalog became backend-owned, validated-on-load reference data, and the required-source set is now derived from it rather than supplied by the caller. The `gc_research_run` MCP tool's `select_methodology` action was reduced to `{id, method_key}` (dropping `method_label`, `profile_version`, `catalog_version`, `required_source_refs`), and a new global read action `list_methodology_catalog` (`GET /api/v1/research-runs/methodology/catalog`) was added in `mcp/ground-control/index.js` + `lib.js`. The surface change is recorded in the ADR-054 amendment and `docs/API.md`; no style rule changed.
 
 ## Rules
 

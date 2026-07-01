@@ -1,4 +1,4 @@
-# GC-RSCH-F006 / ADR-077 — backend-owned methodology catalog (reference data).
+# GC-RSCH-F006 / ADR-078 — backend-owned methodology catalog (reference data).
 #
 # This is the single source of truth for the literature-review method profiles
 # the research run methodology gate derives required-source coverage from. The

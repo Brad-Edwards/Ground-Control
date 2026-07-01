@@ -23,11 +23,11 @@ bounded extension of the existing research run surfaces:
   files as adapters or references.
 - ADR-073 owns research extension boundaries and says methods are versioned
   catalog/profile data, not executable plugin code.
-- ADR-074 owns factuality and claim grounding, including the rule that provider
+- ADR-075 owns factuality and claim grounding, including the rule that provider
   metadata alone is not scientific support.
-- ADR-075 owns scientific humility exposure for failed searches, access gaps,
+- ADR-076 owns scientific humility exposure for failed searches, access gaps,
   missing evidence, method limits, and non-claims.
-- ADR-076 owns method profile/source-completeness versioning and regression-test
+- ADR-077 owns method profile/source-completeness versioning and regression-test
   expectations for issue #1005.
 
 ## Guardrails
@@ -119,7 +119,7 @@ store, extraction validator, approval engine, dynamic plugin execution, error
 envelope, auth model, logging stack, or policy runner.
 
 The "No backend catalog loader" non-goal stated for this first slice is
-superseded by ADR-077: the methodology catalog became backend-owned,
+superseded by ADR-078: the methodology catalog became backend-owned,
 validated-on-load reference data (the single source of truth the selection gate
 derives the required-source set from), with the skill file kept in sync by a
 policy drift check. This is bounded reference data, not the generic methodology

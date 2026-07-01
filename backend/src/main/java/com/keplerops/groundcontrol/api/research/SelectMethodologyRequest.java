@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
- * GC-RSCH-F006 / ADR-077 — select (or re-select) the active methodology for a run.
+ * GC-RSCH-F006 / ADR-078 — select (or re-select) the active methodology for a run.
  * The request carries only {@code methodKey}; the method label, profile/catalog
  * version, and required-source set are derived server-side from the backend-owned
  * methodology catalog and snapshotted as immutable {@code required=true} source

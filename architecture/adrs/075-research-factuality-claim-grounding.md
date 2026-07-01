@@ -1,4 +1,4 @@
-# ADR-074: Research Factuality and Claim Grounding Boundary
+# ADR-075: Research Factuality and Claim Grounding Boundary
 
 ## Status
 

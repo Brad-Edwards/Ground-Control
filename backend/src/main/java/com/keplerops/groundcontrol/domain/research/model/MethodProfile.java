@@ -3,7 +3,7 @@ package com.keplerops.groundcontrol.domain.research.model;
 import java.util.List;
 
 /**
- * GC-RSCH-F006 / ADR-077 — a versioned literature-review method profile from the
+ * GC-RSCH-F006 / ADR-078 — a versioned literature-review method profile from the
  * backend-owned methodology catalog. The profile names the required primary
  * methodology sources whose obtained-and-read coverage gates the
  * {@code METHODOLOGY_REQUIREMENTS} artifact for a run that selected this method.

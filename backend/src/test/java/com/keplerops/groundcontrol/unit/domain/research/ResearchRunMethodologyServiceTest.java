@@ -227,7 +227,7 @@ class ResearchRunMethodologyServiceTest {
 
     @Test
     void selectMethodology_unknownMethod_throwsValidation() {
-        // An unknown method key is rejected against the backend catalog (ADR-077).
+        // An unknown method key is rejected against the backend catalog (ADR-078).
         activeRun();
         when(selectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(RUN_ID))
                 .thenReturn(Optional.empty());

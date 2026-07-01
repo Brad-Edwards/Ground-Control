@@ -1638,7 +1638,7 @@ def run_deploy_artifact_consistency(root: Path = REPO_ROOT) -> list[Violation]:
 
 
 # ---------------------------------------------------------------------------
-# Methodology catalog drift check (issue #1005, ADR-077).
+# Methodology catalog drift check (issue #1005, ADR-078).
 #
 # The backend-owned methodology catalog
 # (backend/src/main/resources/research/methodology-catalog.yaml) is the single
@@ -1681,7 +1681,7 @@ def _parse_methodology_catalog(text: str, source_re: re.Pattern[str]) -> dict[st
 
 
 def run_methodology_catalog_drift(root: Path = REPO_ROOT) -> list[Violation]:
-    """Assert the skill and backend methodology catalogs agree (ADR-077)."""
+    """Assert the skill and backend methodology catalogs agree (ADR-078)."""
     skill_path = root / SKILL_METHODOLOGY_CATALOG_PATH
     backend_path = root / BACKEND_METHODOLOGY_CATALOG_PATH
     missing = [
@@ -1695,7 +1695,7 @@ def run_methodology_catalog_drift(root: Path = REPO_ROOT) -> list[Violation]:
                 code="methodology-catalog-drift",
                 message=(
                     "Both methodology catalogs must exist so the skill mirror and "
-                    "backend source-of-truth can be drift-checked (ADR-077)."
+                    "backend source-of-truth can be drift-checked (ADR-078)."
                 ),
                 details=[f"missing catalog file: {p}" for p in missing],
             )
@@ -1745,7 +1745,7 @@ def run_methodology_catalog_drift(root: Path = REPO_ROOT) -> list[Violation]:
                 f"source-of-truth ({BACKEND_METHODOLOGY_CATALOG_PATH.as_posix()}) "
                 "must declare the same method keys and the same source identifiers "
                 "per method (skill zotero_key == backend required_sources[].ref, "
-                "ADR-077). Reconcile the two catalogs."
+                "ADR-078). Reconcile the two catalogs."
             ),
             details=details,
         )

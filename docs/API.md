@@ -1314,6 +1314,63 @@ request fields; `diff_snapshots` requires `from_snapshot_id` and
 `to_snapshot_id`. `gc_query` allowlists read-only `/api/v1/architecture-models`
 paths.
 
+### Evidence Campaigns (GC-S005)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/evidence-campaigns` | EvidenceCampaignRequest | 201 | Schedule a recurring evidence-collection campaign (ROLE_ADMIN) |
+| GET | `/evidence-campaigns` | - | 200 | List campaigns for a project (newest first) |
+| GET | `/evidence-campaigns/{id}` | - | 200 | Get one campaign |
+| PUT | `/evidence-campaigns/{id}` | EvidenceCampaignUpdateRequest | 200 | Partially update a campaign (ROLE_ADMIN) |
+| POST | `/evidence-campaigns/{id}/pause` | - | 200 | Pause scheduling (skipped by the sweep) (ROLE_ADMIN) |
+| POST | `/evidence-campaigns/{id}/resume` | - | 200 | Resume scheduling (ROLE_ADMIN) |
+| POST | `/evidence-campaigns/{id}/trigger` | - | 201 | Run now; returns the resulting run (ROLE_ADMIN) |
+| GET | `/evidence-campaigns/{id}/runs` | - | 200 | List prior runs (newest window first) |
+
+All endpoints accept an optional `project` query parameter. Multi-project
+deployments must pass it; single-project deployments can resolve it
+automatically.
+
+Writes (POST/PUT, including pause/resume/trigger) require **ROLE_ADMIN**,
+enforced centrally in `ApiPathMatrix`: a campaign is a stored directive to make a
+credentialed outbound call and ingest the result as evidence, so configuring or
+enabling one is an administrative act. Reads (list, get, runs) are available to
+any authenticated project member. `connectionEndpoint` is additionally validated
+against an SSRF policy at create/update **and re-validated at execution time**:
+the scheme must be http/https, and the host is resolved and rejected if any
+resolved address is loopback, link-local (including the `169.254.169.254`
+cloud-metadata address), private/RFC1918, IPv6 unique-local, wildcard, or
+multicast. The execution-time check pins the validated address so a rebinding
+hostname cannot redirect the credentialed call. `sanitizedError` on a run is a
+redacted, length-bounded category/summary - never raw provider or exception text.
+
+**EvidenceCampaignRequest fields:** required `uid`, `name`, `frequency`
+(`DAILY`, `WEEKLY`, `MONTHLY`, `QUARTERLY`), `adapterName`, `scopeType`,
+`connectionProfileId`, `connectionEndpoint`, `credentialRef`; optional
+`schemaId`, `scopeCriteria` (JSON map), `targetControlIds` (UUID list),
+`retentionDays` (positive), and `firstRunAt` (defaults to now). `credentialRef`
+is an indirection key only - never a raw secret. `EvidenceCampaignUpdateRequest`
+accepts the same fields except `uid`/`adapterName` (identity-bearing) and only
+applies the non-null ones.
+
+**EvidenceCampaignResponse fields:** `id`, `projectIdentifier`, `uid`, `name`,
+`frequency`, `status` (`ACTIVE`/`PAUSED`), `adapterName`, `scopeType`,
+`schemaId`, `connectionProfileId`, `connectionEndpoint`, `credentialRef`,
+`scopeCriteria`, `targetControlIds`, `retentionDays`, `nextRunAt`, `lastRunAt`,
+`createdAt`, `updatedAt`.
+
+**EvidenceCampaignRunResponse fields:** `id`, `campaignId`, `projectIdentifier`,
+`status` (`PENDING`/`RUNNING`/`COMPLETED`/`PARTIAL`/`FAILED`), `windowStart`,
+`windowEnd`, `startedAt`, `finishedAt`, `artifactCount`, `errorCount`,
+`sanitizedError`, `producedArtifactIds`, `createdAt`, `updatedAt`.
+
+Each run invokes the campaign's collection adapter, stores results as evidence
+artifacts (ADR-045) linked to the target controls with an `EVIDENCED_BY` control
+link, and is aged out per `retentionDays`. The scheduler is opt-in via
+`groundcontrol.evidence.campaign.enabled=true`. MCP surface:
+`gc_evidence_campaign` with write actions `create`, `update`, `pause`,
+`resume`, `trigger`; reads (list, get, runs) route through `gc_query`.
+
 ### Data Classification Lattice (GC-GRC-006)
 
 | Method | Path | Body | Status | Purpose |
@@ -2417,8 +2474,8 @@ Response wraps results in a Spring Page object with `content`, `totalElements`,
 | POST | `/research-runs/{id}/disclosure` | CreateDisclosureRequest | 201 | Create the final-manuscript AI-use and uncertainty disclosure for a run (GC-RSCH-N013, ADR-068 §4) |
 | GET | `/research-runs/{id}/disclosure` | - | 200 | Get the current disclosure for a run (GC-RSCH-N013, ADR-068 §4) |
 | POST | `/research-runs/{id}/disclosure/{disclosureId}/entries` | AddDisclosureEntryRequest | 201 | Add one disclosed item (AI-generated portion or unresolved uncertainty) to a disclosure (GC-RSCH-N013, ADR-068 §4) |
-| GET    | `/research-runs/methodology/catalog`                | -                              | 200 | List the backend-owned methodology catalog: every method profile with its required primary sources (GC-RSCH-F006 / ADR-077). Global reference data - no project/run scope. `MethodologyCatalogResponse`: `catalogVersion`, `methods[]` (`methodKey`, `label`, `profileVersion`, `catalogVersion`, `requiredSources[]` with `ref` + `title`). |
-| POST   | `/research-runs/{id}/methodology/selection`         | SelectMethodologyRequest       | 201 | Select (or re-select) the active methodology for a run (GC-RSCH-F006 / ADR-077). `SelectMethodologyRequest` fields: `methodKey` (required, max 200). The method label, profile/catalog version, and the required-source set are derived server-side from the backend methodology catalog - an unknown `methodKey` is rejected (`research_run_methodology_unknown_method`), and the resolved profile's required primary sources are snapshotted as immutable `required=true` rows at selection time. Idempotent when the same method is re-selected and the snapshot still matches the catalog; selecting a different method supersedes the prior active selection and re-snapshots. |
+| GET    | `/research-runs/methodology/catalog`                | -                              | 200 | List the backend-owned methodology catalog: every method profile with its required primary sources (GC-RSCH-F006 / ADR-078). Global reference data - no project/run scope. `MethodologyCatalogResponse`: `catalogVersion`, `methods[]` (`methodKey`, `label`, `profileVersion`, `catalogVersion`, `requiredSources[]` with `ref` + `title`). |
+| POST   | `/research-runs/{id}/methodology/selection`         | SelectMethodologyRequest       | 201 | Select (or re-select) the active methodology for a run (GC-RSCH-F006 / ADR-078). `SelectMethodologyRequest` fields: `methodKey` (required, max 200). The method label, profile/catalog version, and the required-source set are derived server-side from the backend methodology catalog - an unknown `methodKey` is rejected (`research_run_methodology_unknown_method`), and the resolved profile's required primary sources are snapshotted as immutable `required=true` rows at selection time. Idempotent when the same method is re-selected and the snapshot still matches the catalog; selecting a different method supersedes the prior active selection and re-snapshots. |
 | GET    | `/research-runs/{id}/methodology/selection`         | -                              | 200 | Get the active methodology selection for a run |
 | POST   | `/research-runs/{id}/methodology/sources`           | RecordMethodologySourceRequest | 201 | Record an additional (optional) methodology source on the active selection (GC-RSCH-F006). Required sources are derived from the selected method's catalog profile at selection; sources recorded here are always optional. `RecordMethodologySourceRequest` fields: `sourceRef` (required, max 500), `sourceLabel` (optional, max 500). |
 | PATCH  | `/research-runs/{id}/methodology/sources/{sid}`     | UpdateMethodologySourceStateRequest | 200 | Update the state of a methodology source (GC-RSCH-F006) |

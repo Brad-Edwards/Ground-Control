@@ -120,7 +120,7 @@ class ResearchRunMethodologyControllerTest {
     @Test
     void selectMethodology_unknownMethod_returns422() throws Exception {
         // An unknown method key is rejected by the service against the backend
-        // catalog (ADR-077), surfacing as a 422 validation error.
+        // catalog (ADR-078), surfacing as a 422 validation error.
         when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
         when(researchRunService.selectMethodology(eq(PROJECT_ID), eq(RUN_ID), any()))
                 .thenThrow(new DomainValidationException(

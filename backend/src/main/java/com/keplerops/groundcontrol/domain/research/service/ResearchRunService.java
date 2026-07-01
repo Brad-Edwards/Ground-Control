@@ -1046,7 +1046,7 @@ public class ResearchRunService {
     // ------------------------------------------------------------------
 
     /**
-     * GC-RSCH-F006 / ADR-077 — select (or re-select) the active methodology for a
+     * GC-RSCH-F006 / ADR-078 — select (or re-select) the active methodology for a
      * run. The selected {@code methodKey} is resolved against the backend-owned
      * methodology catalog; the label, profile/catalog version, and required
      * primary-source set are all DERIVED from the catalog profile (never supplied
@@ -1182,7 +1182,7 @@ public class ResearchRunService {
         var actor = currentActor();
         // Sources recorded via this method are always optional (required=false).
         // Required sources are derived from the selected method's catalog profile
-        // and snapshotted at selection (ADR-077), not recorded here.
+        // and snapshotted at selection (ADR-078), not recorded here.
         var source = new ResearchRunMethodologySource(selection, sourceRef, false, actor);
         source.setSourceLabel(emptyToNull(cmd.sourceLabel()));
         var saved = methodologySourceRepository.save(source);
@@ -1238,7 +1238,7 @@ public class ResearchRunService {
     }
 
     /**
-     * GC-RSCH-F006 / ADR-077 — the backend-owned methodology catalog: all method
+     * GC-RSCH-F006 / ADR-078 — the backend-owned methodology catalog: all method
      * profiles with their required primary sources. Global reference data, not
      * project- or run-scoped.
      */

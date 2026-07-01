@@ -56,7 +56,7 @@ def _write_catalogs(root: Path, skill: str, backend: str) -> None:
 
 class MethodologyCatalogDriftTest(unittest.TestCase):
     def test_real_repo_catalogs_are_in_sync(self):
-        """The shipped skill + backend catalogs must already agree (ADR-077)."""
+        """The shipped skill + backend catalogs must already agree (ADR-078)."""
         self.assertEqual(run_methodology_catalog_drift(REPO_ROOT), [])
 
     def test_in_sync_fixture_passes(self):

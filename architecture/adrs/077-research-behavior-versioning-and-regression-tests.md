@@ -1,4 +1,4 @@
-# ADR-076: Research Behavior Versioning and Regression Tests
+# ADR-077: Research Behavior Versioning and Regression Tests
 
 ## Status
 
@@ -220,7 +220,7 @@ decision.
 - No implementation of entities, migrations, controllers, DTOs, MCP tools,
   frontend views, parsers, source records, catalog loaders, prompt stores,
   policy runners, or tests in this ADR. (The "catalog loaders" clause is
-  superseded by ADR-077, which makes the methodology catalog backend-owned,
+  superseded by ADR-078, which makes the methodology catalog backend-owned,
   validated-on-load reference data; the remaining non-goals stand.)
 - No generic workflow engine, behavior-execution engine, plugin marketplace,
   dynamic code loading, or backend-owned prompt marketplace.
