@@ -131,6 +131,22 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
             stmt.executeUpdate("DELETE FROM research_run_rationale_entry WHERE research_run_id IN "
                     + "(SELECT r.id FROM research_run r "
                     + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_methodology_source_audit WHERE id IN "
+                    + "(SELECT s.id FROM research_run_methodology_source s "
+                    + "JOIN research_run_methodology_selection sel ON s.selection_id = sel.id "
+                    + "JOIN research_run r ON sel.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_methodology_source WHERE selection_id IN "
+                    + "(SELECT sel.id FROM research_run_methodology_selection sel "
+                    + "JOIN research_run r ON sel.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_methodology_selection_audit WHERE id IN "
+                    + "(SELECT sel.id FROM research_run_methodology_selection sel "
+                    + "JOIN research_run r ON sel.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_methodology_selection WHERE research_run_id IN "
+                    + "(SELECT r.id FROM research_run r "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
             stmt.executeUpdate("DELETE FROM research_run WHERE project_id IN "
                     + "(SELECT id FROM project WHERE identifier = '" + PROJECT + "')");
             stmt.executeUpdate("DELETE FROM research_intake_audit WHERE id IN (SELECT id FROM research_intake "

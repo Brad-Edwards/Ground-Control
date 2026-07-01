@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
@@ -43,6 +44,7 @@ public final class MethodologyCatalog {
     private final String catalogVersion;
     private final Map<String, MethodProfile> profilesByKey;
 
+    @Autowired
     public MethodologyCatalog() {
         this(DEFAULT_RESOURCE);
     }

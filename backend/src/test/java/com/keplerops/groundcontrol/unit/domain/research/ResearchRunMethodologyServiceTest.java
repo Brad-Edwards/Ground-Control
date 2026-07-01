@@ -232,8 +232,8 @@ class ResearchRunMethodologyServiceTest {
         when(selectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(RUN_ID))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() ->
-                        service.selectMethodology(PROJECT_ID, RUN_ID, new SelectMethodologyCommand("not-a-method")))
+        var cmd = new SelectMethodologyCommand("not-a-method");
+        assertThatThrownBy(() -> service.selectMethodology(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(DomainValidationException.class)
                 .extracting(e -> ((DomainValidationException) e).getErrorCode())
                 .isEqualTo("research_run_methodology_unknown_method");
@@ -300,7 +300,8 @@ class ResearchRunMethodologyServiceTest {
                 .thenReturn(
                         Optional.of(new ResearchRunArtifact(run, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, 1)));
 
-        assertThatThrownBy(() -> service.selectMethodology(PROJECT_ID, RUN_ID, new SelectMethodologyCommand("scoping")))
+        var cmd = new SelectMethodologyCommand("scoping");
+        assertThatThrownBy(() -> service.selectMethodology(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(ConflictException.class)
                 .extracting(e -> ((ConflictException) e).getErrorCode())
                 .isEqualTo("research_run_methodology_locked_after_requirements");
@@ -377,11 +378,8 @@ class ResearchRunMethodologyServiceTest {
                 .thenReturn(Optional.of(sel));
         when(sourceRepository.findBySelectionId(SELECTION_ID)).thenReturn(List.of(src));
 
-        assertThatThrownBy(() -> service.updateMethodologySourceState(
-                        PROJECT_ID,
-                        RUN_ID,
-                        SOURCE_ID,
-                        new UpdateMethodologySourceStateCommand(MethodologySourceState.READ)))
+        var cmd = new UpdateMethodologySourceStateCommand(MethodologySourceState.READ);
+        assertThatThrownBy(() -> service.updateMethodologySourceState(PROJECT_ID, RUN_ID, SOURCE_ID, cmd))
                 .isInstanceOf(ConflictException.class)
                 .extracting(e -> ((ConflictException) e).getErrorCode())
                 .isEqualTo("research_run_methodology_source_invalid_transition");
@@ -397,11 +395,8 @@ class ResearchRunMethodologyServiceTest {
                 .thenReturn(Optional.of(sel));
         when(sourceRepository.findBySelectionId(SELECTION_ID)).thenReturn(List.of(src));
 
-        assertThatThrownBy(() -> service.updateMethodologySourceState(
-                        PROJECT_ID,
-                        RUN_ID,
-                        SOURCE_ID,
-                        new UpdateMethodologySourceStateCommand(MethodologySourceState.READ)))
+        var cmd = new UpdateMethodologySourceStateCommand(MethodologySourceState.READ);
+        assertThatThrownBy(() -> service.updateMethodologySourceState(PROJECT_ID, RUN_ID, SOURCE_ID, cmd))
                 .isInstanceOf(ConflictException.class)
                 .extracting(e -> ((ConflictException) e).getErrorCode())
                 .isEqualTo("research_run_methodology_source_invalid_transition");
@@ -412,11 +407,8 @@ class ResearchRunMethodologyServiceTest {
         // Mutation of source state requires an active run.
         stoppedRun();
 
-        assertThatThrownBy(() -> service.updateMethodologySourceState(
-                        PROJECT_ID,
-                        RUN_ID,
-                        SOURCE_ID,
-                        new UpdateMethodologySourceStateCommand(MethodologySourceState.OBTAINED)))
+        var cmd = new UpdateMethodologySourceStateCommand(MethodologySourceState.OBTAINED);
+        assertThatThrownBy(() -> service.updateMethodologySourceState(PROJECT_ID, RUN_ID, SOURCE_ID, cmd))
                 .isInstanceOf(ConflictException.class)
                 .extracting(e -> ((ConflictException) e).getErrorCode())
                 .isEqualTo("research_run_not_active");
@@ -433,19 +425,9 @@ class ResearchRunMethodologyServiceTest {
         when(selectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(RUN_ID))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.recordArtifact(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new RecordArtifactCommand(
-                                ResearchArtifactType.METHODOLOGY_REQUIREMENTS,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null)))
+        var cmd = new RecordArtifactCommand(
+                ResearchArtifactType.METHODOLOGY_REQUIREMENTS, null, null, null, null, null, null, null, null);
+        assertThatThrownBy(() -> service.recordArtifact(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("methodology selection")
                 .extracting(e -> ((DomainValidationException) e).getErrorCode())
@@ -461,19 +443,9 @@ class ResearchRunMethodologyServiceTest {
                 .thenReturn(Optional.of(sel));
         when(sourceRepository.findBySelectionId(SELECTION_ID)).thenReturn(List.of(src));
 
-        assertThatThrownBy(() -> service.recordArtifact(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new RecordArtifactCommand(
-                                ResearchArtifactType.METHODOLOGY_REQUIREMENTS,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null)))
+        var cmd = new RecordArtifactCommand(
+                ResearchArtifactType.METHODOLOGY_REQUIREMENTS, null, null, null, null, null, null, null, null);
+        assertThatThrownBy(() -> service.recordArtifact(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(DomainValidationException.class)
                 .extracting(e -> ((DomainValidationException) e).getErrorCode())
                 .isEqualTo("research_run_methodology_sources_incomplete");
@@ -490,19 +462,9 @@ class ResearchRunMethodologyServiceTest {
                 .thenReturn(Optional.of(sel));
         when(sourceRepository.findBySelectionId(SELECTION_ID)).thenReturn(List.of(src));
 
-        assertThatThrownBy(() -> service.recordArtifact(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new RecordArtifactCommand(
-                                ResearchArtifactType.METHODOLOGY_REQUIREMENTS,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null)))
+        var cmd = new RecordArtifactCommand(
+                ResearchArtifactType.METHODOLOGY_REQUIREMENTS, null, null, null, null, null, null, null, null);
+        assertThatThrownBy(() -> service.recordArtifact(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(DomainValidationException.class)
                 .extracting(e -> ((DomainValidationException) e).getErrorCode())
                 .isEqualTo("research_run_methodology_sources_incomplete");
@@ -547,19 +509,9 @@ class ResearchRunMethodologyServiceTest {
                 .thenReturn(Optional.of(sel));
         when(sourceRepository.findBySelectionId(SELECTION_ID)).thenReturn(List.of(src));
 
-        assertThatThrownBy(() -> service.recordArtifact(
-                        PROJECT_ID,
-                        RUN_ID,
-                        new RecordArtifactCommand(
-                                ResearchArtifactType.METHODOLOGY_REQUIREMENTS,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null,
-                                null)))
+        var cmd = new RecordArtifactCommand(
+                ResearchArtifactType.METHODOLOGY_REQUIREMENTS, null, null, null, null, null, null, null, null);
+        assertThatThrownBy(() -> service.recordArtifact(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(ConflictException.class)
                 .extracting(e -> ((ConflictException) e).getErrorCode())
                 .isEqualTo("research_run_methodology_source_blocked");
@@ -596,8 +548,8 @@ class ResearchRunMethodologyServiceTest {
         var otherProjectId = UUID.fromString("00000000-0000-0000-0000-000000000099");
         when(runRepository.findByIdAndProjectId(RUN_ID, otherProjectId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() ->
-                        service.selectMethodology(otherProjectId, RUN_ID, new SelectMethodologyCommand("systematic")))
+        var cmd = new SelectMethodologyCommand("systematic");
+        assertThatThrownBy(() -> service.selectMethodology(otherProjectId, RUN_ID, cmd))
                 .isInstanceOf(NotFoundException.class);
     }
 }

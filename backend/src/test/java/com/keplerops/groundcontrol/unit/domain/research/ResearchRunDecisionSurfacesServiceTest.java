@@ -994,7 +994,7 @@ class ResearchRunDecisionSurfacesServiceTest {
         assertThat(service.listReviewComments(PROJECT_ID, RUN_ID)).isEmpty();
         assertThat(service.listRationale(PROJECT_ID, RUN_ID)).isEmpty();
         // Each read must resolve the run through the project-scoped ownership guard;
-        // a refactor dropping requireRun(projectId, runId) would leak cross-project data.
+        // dropping that guard would allow cross-project data to leak.
         verify(runRepository, times(3)).findByIdAndProjectId(RUN_ID, PROJECT_ID);
     }
 

@@ -97,6 +97,7 @@ public class ResearchRunService {
 
     private static final String INVALID_CODE = "research_run_invalid";
     private static final String FIELD = "field";
+    private static final String NO_ACTIVE_METHODOLOGY_SELECTION = "No active methodology selection for run ";
     private static final String CURRENT_STAGE = "current_stage";
     private static final String GATE_POINT = "gate_point";
     private static final String TARGET_STAGE = "targetStage";
@@ -1170,7 +1171,7 @@ public class ResearchRunService {
 
         var selection = methodologySelectionRepository
                 .findFirstByResearchRunIdAndSupersededAtIsNull(runId)
-                .orElseThrow(() -> new NotFoundException("No active methodology selection for run " + runId));
+                .orElseThrow(() -> new NotFoundException(NO_ACTIVE_METHODOLOGY_SELECTION + runId));
 
         // Idempotent: same sourceRef in this selection → return existing.
         var existing = methodologySourceRepository.findBySelectionIdAndSourceRef(selection.getId(), sourceRef);
@@ -1206,7 +1207,7 @@ public class ResearchRunService {
         }
         var selection = methodologySelectionRepository
                 .findFirstByResearchRunIdAndSupersededAtIsNull(runId)
-                .orElseThrow(() -> new NotFoundException("No active methodology selection for run " + runId));
+                .orElseThrow(() -> new NotFoundException(NO_ACTIVE_METHODOLOGY_SELECTION + runId));
 
         var sources = methodologySourceRepository.findBySelectionId(selection.getId());
         var source = sources.stream()
@@ -1252,7 +1253,7 @@ public class ResearchRunService {
         requireRun(projectId, runId);
         return methodologySelectionRepository
                 .findFirstByResearchRunIdAndSupersededAtIsNull(runId)
-                .orElseThrow(() -> new NotFoundException("No active methodology selection for run " + runId));
+                .orElseThrow(() -> new NotFoundException(NO_ACTIVE_METHODOLOGY_SELECTION + runId));
     }
 
     /** GC-RSCH-F006 — list all sources for the active methodology selection (empty if none). */

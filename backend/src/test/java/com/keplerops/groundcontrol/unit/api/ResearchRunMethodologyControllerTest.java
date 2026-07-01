@@ -171,8 +171,7 @@ class ResearchRunMethodologyControllerTest {
     void getMethodologySelection_happyPath_returns200() throws Exception {
         var sel = makeSelection();
         when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
-        when(researchRunService.getMethodologySelection(eq(PROJECT_ID), eq(RUN_ID)))
-                .thenReturn(sel);
+        when(researchRunService.getMethodologySelection(PROJECT_ID, RUN_ID)).thenReturn(sel);
 
         mockMvc.perform(get("/api/v1/research-runs/{id}/methodology/selection", RUN_ID)
                         .param("project", "research-p"))
@@ -215,10 +214,6 @@ class ResearchRunMethodologyControllerTest {
                 .andExpect(status().isUnprocessableEntity());
     }
 
-    // -----------------------------------------------------------------------
-    // PATCH /{id}/methodology/sources/{sourceId}
-    // -----------------------------------------------------------------------
-
     @Test
     void updateMethodologySourceState_happyPath_returns200() throws Exception {
         var sel = makeSelection();
@@ -256,8 +251,7 @@ class ResearchRunMethodologyControllerTest {
         var sel = makeSelection();
         var src = makeSource(sel);
         when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
-        when(researchRunService.listMethodologySources(eq(PROJECT_ID), eq(RUN_ID)))
-                .thenReturn(List.of(src));
+        when(researchRunService.listMethodologySources(PROJECT_ID, RUN_ID)).thenReturn(List.of(src));
 
         mockMvc.perform(get("/api/v1/research-runs/{id}/methodology/sources", RUN_ID)
                         .param("project", "research-p"))

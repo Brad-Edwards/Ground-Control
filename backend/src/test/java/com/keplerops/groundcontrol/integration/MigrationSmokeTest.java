@@ -1170,12 +1170,6 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         // V163 / V165 (#1002, ADR-069): research provenance ledger audit shadows.
         assertResearchProvenanceAuditColumns();
         // V172-V175 (#1005, GC-RSCH-F006): methodology selection + source tables.
-        entityManager
-                .createNativeQuery("SELECT 1 FROM research_run_methodology_selection LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM research_run_methodology_source LIMIT 1")
-                .getResultList();
         assertResearchMethodologyAuditColumns();
     }
 
@@ -1187,6 +1181,14 @@ class MigrationSmokeTest extends BaseIntegrationTest {
      * otherwise only surface at the first Envers flush in production.
      */
     private void assertResearchMethodologyAuditColumns() {
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT 1 FROM research_run_methodology_selection LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT 1 FROM research_run_methodology_source LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT method_key, method_label, profile_version, catalog_version, actor,"
                                 + " superseded_at, created_at, updated_at"
