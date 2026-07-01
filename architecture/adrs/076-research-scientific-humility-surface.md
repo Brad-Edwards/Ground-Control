@@ -31,6 +31,9 @@ research ADRs already define the neighboring product surfaces:
 - ADR-071 owns provider-neutral source identity and source disposition.
 - ADR-072 owns the REST/MCP research surface and rejects adapter-side business
   logic.
+- ADR-078 owns the backend methodology catalog and the rule that
+  `METHODOLOGY_REQUIREMENTS` completion derives required-source coverage from
+  backend-owned reference data, not caller-declared source lists.
 
 Without a focused decision, likely failure modes are:
 
@@ -103,6 +106,27 @@ Implementations must preserve these distinctions:
   workflow error;
 - access-gap counts in the observability snapshot are summary facts, not the
   complete source-level explanation.
+
+For issue #1006, the `METHODOLOGY_REQUIREMENTS` artifact is the first durable
+humility checkpoint. It remains a `ResearchRunArtifact` lifecycle manifest whose
+completion is gated by ADR-078 source coverage, not a Ground Control
+`Requirement` set and not a free-form markdown parser. The artifact contract may
+expose selected method, rejected alternatives, extracted methodology
+requirements, open gates, explicit deferrals, method limits, and non-claims only
+as phase-1 methodology obligations grounded in primary methodology sources.
+Paper/domain answers such as databases, query strings, domain definitions,
+inclusion/exclusion details, charting fields, synthesis dimensions, and
+source-set caps remain protocol-planning concerns.
+
+Method limits and non-claims for the methodology-requirements artifact must be
+artifact-attempt-scoped bounded metadata or rationale/disclosure references that
+reuse the existing `ResearchRunRationaleEntry`, gate, disclosure, source, and
+provenance surfaces. If implementation needs a machine-readable artifact body,
+it must add one typed run-scoped artifact contract with closed category/source
+reference validation in the research service. It must not mint product
+requirements, create a parallel methodology-requirements ledger, or hide
+validation in controllers, MCP handlers, frontend code, local workspace files,
+or skill prose.
 
 ### 4. Outputs expose current-attempt humility state
 
@@ -232,6 +256,7 @@ bounded data rather than relying on prose-only disclosure.
 ## Related Issues
 
 - #1005 - Research methodology catalog and primary-source tracking.
+- #1006 - Research methodology requirements artifact.
 - #1014 - Research full-text acquisition and access-gap enforcement.
 - #1016 - Research charting schema, pilot coding, and evidence spans.
 - #1019 - Research thematic synthesis and conflict preservation.
@@ -254,3 +279,4 @@ bounded data rather than relying on prose-only disclosure.
 - ADR-071 - Research Interoperability and Source Identity Boundary.
 - ADR-072 - Research REST and MCP Tool Surface.
 - ADR-073 - Research Extensibility and Adapter Boundary.
+- ADR-078 - Research Methodology Catalog as Backend Reference Data.

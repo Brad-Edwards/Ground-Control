@@ -73,7 +73,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "136", "137", "138", "139", "140", "141", "142", "143", "144", "145", "146", "147", "148",
                         "149", "150", "151", "152", "153", "154", "155", "156", "157", "158", "159", "160", "161",
                         "162", "163", "164", "165", "166", "167", "168", "169", "170", "171", "172", "173", "174",
-                        "175", "176", "177", "178");
+                        "175", "176", "177", "178", "179", "180", "181", "182", "183");
     }
 
     @Test
@@ -1154,6 +1154,45 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         assertResearchProvenanceAuditColumns();
         // V175-V178 (#1005, GC-RSCH-F006): methodology selection + source tables.
         assertResearchMethodologyAuditColumns();
+        // V179-V183 (#1006, ADR-079): methodology requirements contract tables.
+        assertMethodologyContractColumns();
+    }
+
+    /**
+     * V179-V183 (#1006, ADR-079) — column-level probes for the methodology
+     * requirements contract, its entries, source links, rejected alternatives, and
+     * the contract Envers audit shadow. ddl-auto:validate does not inspect audit
+     * tables, so probe the audited payload columns explicitly.
+     */
+    private void assertMethodologyContractColumns() {
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT research_run_id, selection_id, artifact_id, attempt_no,"
+                                + " schema_version, actor, created_at, updated_at"
+                                + " FROM methodology_requirements_contract LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT artifact_id, attempt_no, schema_version, actor,"
+                                + " created_at, updated_at"
+                                + " FROM methodology_requirements_contract_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT contract_id, kind, entry_key, statement, references_entry_key, actor"
+                                + " FROM methodology_requirements_contract_entry LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT entry_id, source_id, locator"
+                                + " FROM methodology_requirements_contract_entry_source_link LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery(
+                                "SELECT contract_id, rationale_entry_id, method_key, profile_version, external"
+                                        + " FROM methodology_requirements_contract_rejected_alternative LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
     }
 
     /**

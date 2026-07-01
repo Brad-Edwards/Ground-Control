@@ -213,7 +213,8 @@ import {
   createResearchRunDisclosure, getResearchRunDisclosure, addResearchRunDisclosureEntry,
   selectMethodology, getMethodologySelection, recordMethodologySource,
   updateMethodologySourceState, listMethodologySources, listMethodologyCatalog,
-  METHODOLOGY_SOURCE_STATES,
+  recordMethodologyRequirementsContract, getMethodologyRequirementsContract,
+  METHODOLOGY_SOURCE_STATES, CONTRACT_ENTRY_KINDS,
   RESEARCH_RUN_AUTONOMY_LEVELS, RESEARCH_RUN_INTENDED_OUTPUTS,
   RESEARCH_RUN_STAGES, RESEARCH_ARTIFACT_TYPES, RESEARCH_GATE_POINTS,
   RESEARCH_GATE_BEHAVIORS, RESEARCH_GATE_DECISION_OUTCOMES,
@@ -3171,6 +3172,8 @@ const RESEARCH_RUN_ACTIONS = [
   "record_methodology_source",
   "update_methodology_source_state",
   "list_methodology_sources",
+  "record_methodology_requirements_contract",
+  "get_methodology_requirements_contract",
   "stop",
   "fail",
   "resume",
@@ -3182,8 +3185,8 @@ server.tool(
   "gc_research_run",
   `Research run lifecycle operations (GC-RSCH-R001/R003/F003/F006/F034/F036/N007/N011/N012/N013, ADR-064 / ADR-065 / ADR-066 / ADR-067 / ADR-068). ` +
     `Actions: ${RESEARCH_RUN_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, get_by_uid, snapshot, list_artifacts, list_gates, list_gate_decision_log, list_review_comments, list_rationale, get_disclosure, list_methodology_catalog, get_methodology_selection, list_methodology_sources) also route through gc_query. ` +
-    `Required fields per action: start→{uid}; get/snapshot/list_artifacts/list_gates/stop/resume/complete→{id}; get_by_uid→{uid}; record_artifact→{id,artifact_type}; advance→{id,target_stage}; gate_decision→{id,gate_point,outcome}; list_gate_decision_log→{id}; add_review_comment→{id,target_type,body,provenance}; list_review_comments→{id}; resolve_review_comment→{id,comment_id}; add_rationale→{id,stage,kind,evidence_basis,provenance,subject_key,rationale_summary}; list_rationale→{id}; create_disclosure→{id,final_artifact_id,final_attempt_no}; get_disclosure→{id}; add_disclosure_entry→{id,disclosure_id,family,summary}; list_methodology_catalog→{} (global; no run id — lists every catalog method profile with its required primary sources); select_methodology→{id,method_key} (method label, profile/catalog version, and the required-source set are derived server-side from the backend methodology catalog and snapshotted as required=true rows); get_methodology_selection→{id}; record_methodology_source→{id,source_ref} (always optional/additional); update_methodology_source_state→{id,source_id,source_state}; list_methodology_sources→{id}; fail→{id}; record_usage→{id,tokens,cost_usd_micros}. ` +
+    `Reads (list, get, get_by_uid, snapshot, list_artifacts, list_gates, list_gate_decision_log, list_review_comments, list_rationale, get_disclosure, list_methodology_catalog, get_methodology_selection, list_methodology_sources, get_methodology_requirements_contract) also route through gc_query. ` +
+    `Required fields per action: start→{uid}; get/snapshot/list_artifacts/list_gates/stop/resume/complete→{id}; get_by_uid→{uid}; record_artifact→{id,artifact_type}; advance→{id,target_stage}; gate_decision→{id,gate_point,outcome}; list_gate_decision_log→{id}; add_review_comment→{id,target_type,body,provenance}; list_review_comments→{id}; resolve_review_comment→{id,comment_id}; add_rationale→{id,stage,kind,evidence_basis,provenance,subject_key,rationale_summary}; list_rationale→{id}; create_disclosure→{id,final_artifact_id,final_attempt_no}; get_disclosure→{id}; add_disclosure_entry→{id,disclosure_id,family,summary}; list_methodology_catalog→{} (global; no run id — lists every catalog method profile with its required primary sources); select_methodology→{id,method_key} (method label, profile/catalog version, and the required-source set are derived server-side from the backend methodology catalog and snapshotted as required=true rows); get_methodology_selection→{id}; record_methodology_source→{id,source_ref} (always optional/additional); update_methodology_source_state→{id,source_id,source_state}; list_methodology_sources→{id}; record_methodology_requirements_contract→{id,entries} (each entry {kind,entry_key,statement,source_links?,references_entry_key?}; REQUIREMENT/METHOD_LIMIT/NON_CLAIM need ≥1 READ source_link); get_methodology_requirements_contract→{id}; fail→{id}; record_usage→{id,tokens,cost_usd_micros}. ` +
     `Bounded metadata only — never pass prompts, manuscript bodies, secrets, or absolute paths. Actor is always from server context (ADR-026).`,
   {
     action: z.enum(RESEARCH_RUN_ACTIONS),
@@ -3269,6 +3272,31 @@ server.tool(
     source_label: z.string().optional(),
     source_state: z.enum(METHODOLOGY_SOURCE_STATES).optional(),
     source_id: z.string().uuid().optional(),
+    // methodology requirements contract (GC-RSCH-F007 / ADR-079). No domain-answer
+    // fields; chosen method, artifact id, and attempt are resolved server-side.
+    entries: z
+      .array(
+        z.object({
+          kind: z.enum(CONTRACT_ENTRY_KINDS),
+          entry_key: z.string(),
+          statement: z.string(),
+          source_links: z
+            .array(z.object({ source_id: z.string().uuid(), locator: z.string().optional() }))
+            .optional(),
+          references_entry_key: z.string().optional(),
+        }),
+      )
+      .optional(),
+    rejected_alternatives: z
+      .array(
+        z.object({
+          method_key: z.string(),
+          profile_version: z.string().optional(),
+          rationale_entry_id: z.string().uuid().optional(),
+          external: z.boolean().optional(),
+        }),
+      )
+      .optional(),
   },
   async (args) => {
     try {
@@ -3544,6 +3572,41 @@ server.tool(
         case "list_methodology_sources": {
           reqArg(args, "id", "list_methodology_sources");
           return ok(JSON.stringify(await listMethodologySources(args.id, args.project), null, 2));
+        }
+        case "record_methodology_requirements_contract": {
+          reqArg(args, "id", "record_methodology_requirements_contract");
+          reqArg(args, "entries", "record_methodology_requirements_contract");
+          const contractBody = {
+            entries: (args.entries || []).map((e) => ({
+              kind: e.kind,
+              entryKey: e.entry_key,
+              statement: e.statement,
+              sourceLinks: (e.source_links || []).map((s) => ({
+                sourceId: s.source_id,
+                locator: s.locator,
+              })),
+              referencesEntryKey: e.references_entry_key,
+            })),
+            rejectedAlternatives: (args.rejected_alternatives || []).map((r) => ({
+              methodKey: r.method_key,
+              profileVersion: r.profile_version,
+              rationaleEntryId: r.rationale_entry_id,
+              external: r.external ?? false,
+            })),
+          };
+          return ok(JSON.stringify(
+            await recordMethodologyRequirementsContract(args.id, contractBody, args.project),
+            null,
+            2,
+          ));
+        }
+        case "get_methodology_requirements_contract": {
+          reqArg(args, "id", "get_methodology_requirements_contract");
+          return ok(JSON.stringify(
+            await getMethodologyRequirementsContract(args.id, args.project),
+            null,
+            2,
+          ));
         }
         default: return err(new Error(`Unknown action: ${args.action}`));
       }

@@ -76,6 +76,30 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
     void cleanup() throws Exception {
         try (var conn = dataSource.getConnection();
                 var stmt = conn.createStatement()) {
+            // #1006 ADR-079: methodology requirements contract child rows reference
+            // artifact / methodology-source / rationale / selection / run, so they
+            // must be deleted before those parents below.
+            stmt.executeUpdate("DELETE FROM methodology_requirements_contract_entry_source_link WHERE entry_id IN "
+                    + "(SELECT e.id FROM methodology_requirements_contract_entry e "
+                    + "JOIN methodology_requirements_contract c ON e.contract_id = c.id "
+                    + "JOIN research_run r ON c.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate(
+                    "DELETE FROM methodology_requirements_contract_rejected_alternative WHERE contract_id IN "
+                            + "(SELECT c.id FROM methodology_requirements_contract c "
+                            + "JOIN research_run r ON c.research_run_id = r.id "
+                            + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM methodology_requirements_contract_entry WHERE contract_id IN "
+                    + "(SELECT c.id FROM methodology_requirements_contract c "
+                    + "JOIN research_run r ON c.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM methodology_requirements_contract_audit WHERE id IN "
+                    + "(SELECT c.id FROM methodology_requirements_contract c "
+                    + "JOIN research_run r ON c.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM methodology_requirements_contract WHERE research_run_id IN "
+                    + "(SELECT r.id FROM research_run r "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
             stmt.executeUpdate("DELETE FROM research_run_gate_audit WHERE id IN (SELECT g.id FROM research_run_gate g "
                     + "JOIN research_run r ON g.research_run_id = r.id "
                     + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
