@@ -91,6 +91,9 @@ When in doubt, use L0 during pre-alpha. The bar rises at beta.
 | `domain/evidence/state/EvidenceSourceKind.java` | L0 | Pure value enum; internal-vs-external source-reference discriminator (GC-M016 / ADR-044), with an `isInternal()` predicate but no state transitions |
 | `domain/derivation/state/` | L0 | Pure derivation vocabulary enums for scope mode, fact kind, and capture-limit reason (GC-GRC-001); no transitions or invariants |
 | `domain/plugins/state/PluginType.java` | L0 | Pure plugin capability enum; `EVIDENCE_COLLECTOR` identifies GC-S001 evidence adapter registrations, with no transitions or invariants |
+| `domain/threatenumeration/state/ThreatRuleCategory.java` | L0 | Pure value enum; 7-value semantic grouping of threat rules for GC-GRC-007 deterministic enumeration (`STRIDE_BASELINE`, `DEPLOYMENT_PIPELINE`, `AUTHN_AUTHZ`, `SECRET_HANDLING`, `UNTRUSTED_INPUT`, `DATA_EGRESS`, `CRYPTO`); no transitions or invariants |
+| `domain/threatenumeration/state/ThreatRuleMatchPredicate.java` | L0 | Pure value enum; closed predicate vocabulary the GC-GRC-007 engine evaluates over element views (`ALWAYS`, `CROSSES_TRUST_BOUNDARY`, `SOURCE_IS_EXTERNAL`, `TARGET_IS_EXTERNAL`, `HAS_DATA_CLASSIFICATION`, `HAS_TRUST_BOUNDARY`, `HAS_METADATA_TAG`); predicates are total functions with no transitions or invariants |
+| `domain/threatenumeration/state/ThreatEnumerationLimitationReason.java` | L0 | Pure value enum; non-fatal advisory codes surfaced in GC-GRC-007 enumeration results (`NO_RULE_PACK_RESOLVED`, `NO_SNAPSHOT`, `UNKNOWN_ELEMENT_KIND`, `MISSING_STABLE_KEY`, `DANGLING_FLOW_ENDPOINT`); no transitions or invariants |
 | `domain/requirements/service/StatusDriftService.java` | L0 | Read-only derived analysis (ADR-011 §9); a service, not a state machine or security boundary - one-test-per-behavior is sufficient |
 | `domain/exception/` | L0 | Data carriers only |
 | `api/GlobalExceptionHandler` | L0 | Mapping layer, no domain logic |
@@ -208,8 +211,14 @@ SDD extends TDD by adding contracts as a specification layer:
   threat-event relevance values for compatibility;
   `NormalizedConcept` and `CrosswalkVocabularySurface` added for GC-T012 /
   #719 to classify cross-methodology crosswalk entries on
-  `MethodologyProfile`) are L0 data classifiers, not L1+ contract surfaces;
-  placement under `state/` follows the existing repo convention for
+  `MethodologyProfile`; `DataClassificationSource` and
+  `DataClassificationFindingReason` added for GC-GRC-006 / #1119 to tag the
+  provenance of a data classification lattice and the reason codes its
+  deterministic evaluation emits; `ThreatRuleCategory`, `ThreatRuleMatchPredicate`,
+  and `ThreatEnumerationLimitationReason` added for GC-GRC-007 / #1120 to
+  classify threat rules and carry limitation reason codes for the deterministic
+  threat enumeration engine) are L0 data classifiers, not L1+ contract
+  surfaces; placement under `state/` follows the existing repo convention for
   domain-enum location, not an assertion that JML contracts apply.
 
 ## Related ADRs

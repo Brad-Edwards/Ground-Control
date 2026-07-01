@@ -50,6 +50,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         // (+ disclosure entries) + their audit shadows (ADR-066 / ADR-067 / ADR-068).
         // V162–V165: #1002 research provenance ledger node + edge + their audit shadows (ADR-069).
         // V166–V168: architecture model aggregate + audit shadows + legacy link compatibility (GC-GRC-005).
+        // V169–V170: data classification lattice aggregate + audit shadows (GC-GRC-006).
+        // V171: add threat_rule_entries column to pack_registry_entry (GC-GRC-007).
         // Flyway immutability: once a versioned migration has been applied to a long-lived database
         // (e.g. production) its file content is frozen — the checksum is validated on every startup.
         // Never edit an applied V*.sql in place; append a new forward migration instead. Editing the
@@ -69,7 +71,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "123", "124", "125", "126", "127", "128", "129", "130", "131", "132", "133", "134", "135",
                         "136", "137", "138", "139", "140", "141", "142", "143", "144", "145", "146", "147", "148",
                         "149", "150", "151", "152", "153", "154", "155", "156", "157", "158", "159", "160", "161",
-                        "162", "163", "164", "165", "166", "167", "168", "169", "170", "171", "172");
+                        "162", "163", "164", "165", "166", "167", "168", "169", "170", "171", "172", "173", "174",
+                        "175");
     }
 
     @Test
@@ -1166,7 +1169,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .doesNotThrowAnyException();
         // V163 / V165 (#1002, ADR-069): research provenance ledger audit shadows.
         assertResearchProvenanceAuditColumns();
-        // V169-V172 (#1005, GC-RSCH-F006): methodology selection + source tables.
+        // V172-V175 (#1005, GC-RSCH-F006): methodology selection + source tables.
         entityManager
                 .createNativeQuery("SELECT 1 FROM research_run_methodology_selection LIMIT 1")
                 .getResultList();
@@ -1177,7 +1180,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
     }
 
     /**
-     * V170 / V172 (#1005, GC-RSCH-F006) — column-level probes for the methodology
+     * V173 / V175 (#1005, GC-RSCH-F006) — column-level probes for the methodology
      * selection + source Envers audit shadows. ddl-auto:validate does not inspect
      * audit tables, so probe every payload column explicitly; a copy-paste
      * regression dropping e.g. {@code superseded_at} or {@code state} would
@@ -1294,6 +1297,44 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                                 + " source_path, flow_source_stable_key, flow_target_stable_key, flow_direction,"
                                 + " provenance_source, provenance_key, commit_sha, metadata, created_at, updated_at"
                                 + " FROM architecture_model_element_state_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @Transactional
+    void dataClassificationLatticeAuditTablesMatchEntities() {
+        // V169-V170: data classification lattice root, labels, permitted-flow rules, and their
+        // Envers audit shadows (GC-GRC-006). The column-by-column probe catches a migration that
+        // silently omits a column where a table-only `SELECT 1` would not.
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT schema_version, policy_version, source, label_count, edge_count,"
+                                + " created_at, updated_at FROM data_classification_lattice LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT lattice_id, label_key, display_name, description, rank,"
+                                + " created_at, updated_at FROM data_classification_label LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT lattice_id, from_label_key, to_label_key, created_at, updated_at"
+                                + " FROM data_classification_flow_rule LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT schema_version, policy_version, source, label_count, edge_count,"
+                                + " created_at, updated_at FROM data_classification_lattice_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT lattice_id, label_key, display_name, description, rank,"
+                                + " created_at, updated_at FROM data_classification_label_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT lattice_id, from_label_key, to_label_key, created_at, updated_at"
+                                + " FROM data_classification_flow_rule_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }
