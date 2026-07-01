@@ -284,6 +284,8 @@ Bumping the `CLAUDE_MODEL_BY_TIER.high` routing-default model id in `mcp/ground-
 
 Adding `expected_model` and `model_matches_expected` to the `/implement` step-telemetry record in `mcp/ground-control/lib.js` (issue #1181, schema `gc.implement.telemetry/v2`) is a telemetry-record field addition documented in ADR-036 and recorded in an ADR-054 amendment, not a new doc page or style rule.
 
+Bumping the `CLAUDE_MODEL_BY_TIER.medium` routing-default model id and the `TEST_QUALITY_REVIEW_DEFAULT_MODEL` engine default in `mcp/ground-control/lib.js` from `claude-sonnet-4-6` to `claude-sonnet-5`, and loosening the routing model-id validator to accept single-segment canonical ids (issue #1264), is a constant change plus a validator relaxation recorded in an ADR-054 amendment, not a new doc page or style rule.
+
 New `/implement` workflow-gate configuration under `.ground-control.yaml`
 (for example, `workflow.dev_start_gate` for GC-O007 / #1194) follows the same
 contract. The config parser and MCP tool descriptions are the authoritative
