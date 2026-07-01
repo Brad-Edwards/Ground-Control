@@ -57,6 +57,10 @@
 
 > **Sync note for issue #963 (2026-06-22):** Added a `phase` parameter to the `gc_assert_completion` MCP tool (`mcp/ground-control/index.js`, `mcp/ground-control/lib.js`) so the requirement transition, traceability reconciliation, and final report run post-merge (Phase E). The tool-description text and the operative agent prose in `skills/implement/steps/step-17-completion.md` were reviewed against these rules; the surface addition is recorded in ADR-054 and the `changelog.d/963.changed.md` fragment. The classifier, Vale rules, `.vale.ini`, and this document's style rules are unchanged.
 
+> **Sync note for issue #1005 (2026-06-29):** The `gc_research_run` MCP tool's `record_methodology_source` action lost `source_required` (boolean) and `select_methodology` gained `required_source_refs` (optional string array, max 500 chars per element) in `mcp/ground-control/index.js`. Required sources are now snapshotted immutably at selection time; callers cannot inject a required flag via the record-source endpoint. The surface change is recorded in the ADR-054 amendment; no style rule changed.
+
+> **Sync note for issue #1005 / ADR-078 (2026-06-30):** The methodology catalog became backend-owned, validated-on-load reference data, and the required-source set is now derived from it rather than supplied by the caller. The `gc_research_run` MCP tool's `select_methodology` action was reduced to `{id, method_key}` (dropping `method_label`, `profile_version`, `catalog_version`, `required_source_refs`), and a new global read action `list_methodology_catalog` (`GET /api/v1/research-runs/methodology/catalog`) was added in `mcp/ground-control/index.js` + `lib.js`. The surface change is recorded in the ADR-054 amendment and `docs/API.md`; no style rule changed.
+
 ## Rules
 
 Docs describe the system as it ships on the current commit. Write in present
@@ -281,6 +285,8 @@ Correcting a `GOVERNANCE_FIELDS` create/update allowlist in `mcp/ground-control/
 Bumping the `CLAUDE_MODEL_BY_TIER.high` routing-default model id in `mcp/ground-control/lib.js` from `claude-opus-4-7` to `claude-opus-4-8` (issue #1181) is a constant change recorded in an ADR-054 amendment, not a new doc page or style rule.
 
 Adding `expected_model` and `model_matches_expected` to the `/implement` step-telemetry record in `mcp/ground-control/lib.js` (issue #1181, schema `gc.implement.telemetry/v2`) is a telemetry-record field addition documented in ADR-036 and recorded in an ADR-054 amendment, not a new doc page or style rule.
+
+Bumping the `CLAUDE_MODEL_BY_TIER.medium` routing-default model id and the `TEST_QUALITY_REVIEW_DEFAULT_MODEL` engine default in `mcp/ground-control/lib.js` from `claude-sonnet-4-6` to `claude-sonnet-5`, and loosening the routing model-id validator to accept single-segment canonical ids (issue #1264), is a constant change plus a validator relaxation recorded in an ADR-054 amendment, not a new doc page or style rule.
 
 New `/implement` workflow-gate configuration under `.ground-control.yaml`
 (for example, `workflow.dev_start_gate` for GC-O007 / #1194) follows the same

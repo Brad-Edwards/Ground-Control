@@ -1,0 +1,6 @@
+catalog_version: "1"
+methods:
+  - key: scoping
+    label: Scoping review
+    version: "1"
+    required_sources: []

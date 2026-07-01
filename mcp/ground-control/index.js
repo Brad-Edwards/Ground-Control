@@ -211,6 +211,9 @@ import {
   addResearchRunReviewComment, listResearchRunReviewComments, resolveResearchRunReviewComment,
   addResearchRunRationaleEntry, listResearchRunRationale,
   createResearchRunDisclosure, getResearchRunDisclosure, addResearchRunDisclosureEntry,
+  selectMethodology, getMethodologySelection, recordMethodologySource,
+  updateMethodologySourceState, listMethodologySources, listMethodologyCatalog,
+  METHODOLOGY_SOURCE_STATES,
   RESEARCH_RUN_AUTONOMY_LEVELS, RESEARCH_RUN_INTENDED_OUTPUTS,
   RESEARCH_RUN_STAGES, RESEARCH_ARTIFACT_TYPES, RESEARCH_GATE_POINTS,
   RESEARCH_GATE_BEHAVIORS, RESEARCH_GATE_DECISION_OUTCOMES,
@@ -832,7 +835,7 @@ server.tool(
   `Run the canonical /implement Step 6.6 pre-push test-quality review against the staged + unstaged + ` +
     `untracked diff vs the base branch. (Issue #906 moved this from the former post-PR Step 13 to ` +
     `pre-push Step 6.6 so the PR opens with both AI-assisted reviewers clean.) Shells out to the ` +
-    `\`claude\` CLI (Sonnet 4.6 by default) with the review-tests rubric and the ` +
+    `\`claude\` CLI (Sonnet 5 by default) with the review-tests rubric and the ` +
     `changed test-file paths, parses the structured JSON output (validated by --json-schema), posts ` +
     `the durable findings record + cycle marker to the issue thread, and returns a structured ` +
     `envelope: \`{ ok, finding_count, findings, cycle, cap, next_action, findings_comment_url, ... }\`. ` +
@@ -3182,6 +3185,12 @@ const RESEARCH_RUN_ACTIONS = [
   "create_disclosure",
   "get_disclosure",
   "add_disclosure_entry",
+  "list_methodology_catalog",
+  "select_methodology",
+  "get_methodology_selection",
+  "record_methodology_source",
+  "update_methodology_source_state",
+  "list_methodology_sources",
   "stop",
   "fail",
   "resume",
@@ -3191,10 +3200,10 @@ const RESEARCH_RUN_ACTIONS = [
 
 server.tool(
   "gc_research_run",
-  `Research run lifecycle operations (GC-RSCH-R001/R003/F003/F034/F036/N007/N011/N012/N013, ADR-064 / ADR-065 / ADR-066 / ADR-067 / ADR-068). ` +
+  `Research run lifecycle operations (GC-RSCH-R001/R003/F003/F006/F034/F036/N007/N011/N012/N013, ADR-064 / ADR-065 / ADR-066 / ADR-067 / ADR-068). ` +
     `Actions: ${RESEARCH_RUN_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, get_by_uid, snapshot, list_artifacts, list_gates, list_gate_decision_log, list_review_comments, list_rationale, get_disclosure) also route through gc_query. ` +
-    `Required fields per action: start→{uid}; get/snapshot/list_artifacts/list_gates/stop/resume/complete→{id}; get_by_uid→{uid}; record_artifact→{id,artifact_type}; advance→{id,target_stage}; gate_decision→{id,gate_point,outcome}; list_gate_decision_log→{id}; add_review_comment→{id,target_type,body,provenance}; list_review_comments→{id}; resolve_review_comment→{id,comment_id}; add_rationale→{id,stage,kind,evidence_basis,provenance,subject_key,rationale_summary}; list_rationale→{id}; create_disclosure→{id,final_artifact_id,final_attempt_no}; get_disclosure→{id}; add_disclosure_entry→{id,disclosure_id,family,summary}; fail→{id}; record_usage→{id,tokens,cost_usd_micros}. ` +
+    `Reads (list, get, get_by_uid, snapshot, list_artifacts, list_gates, list_gate_decision_log, list_review_comments, list_rationale, get_disclosure, list_methodology_catalog, get_methodology_selection, list_methodology_sources) also route through gc_query. ` +
+    `Required fields per action: start→{uid}; get/snapshot/list_artifacts/list_gates/stop/resume/complete→{id}; get_by_uid→{uid}; record_artifact→{id,artifact_type}; advance→{id,target_stage}; gate_decision→{id,gate_point,outcome}; list_gate_decision_log→{id}; add_review_comment→{id,target_type,body,provenance}; list_review_comments→{id}; resolve_review_comment→{id,comment_id}; add_rationale→{id,stage,kind,evidence_basis,provenance,subject_key,rationale_summary}; list_rationale→{id}; create_disclosure→{id,final_artifact_id,final_attempt_no}; get_disclosure→{id}; add_disclosure_entry→{id,disclosure_id,family,summary}; list_methodology_catalog→{} (global; no run id — lists every catalog method profile with its required primary sources); select_methodology→{id,method_key} (method label, profile/catalog version, and the required-source set are derived server-side from the backend methodology catalog and snapshotted as required=true rows); get_methodology_selection→{id}; record_methodology_source→{id,source_ref} (always optional/additional); update_methodology_source_state→{id,source_id,source_state}; list_methodology_sources→{id}; fail→{id}; record_usage→{id,tokens,cost_usd_micros}. ` +
     `Bounded metadata only — never pass prompts, manuscript bodies, secrets, or absolute paths. Actor is always from server context (ADR-026).`,
   {
     action: z.enum(RESEARCH_RUN_ACTIONS),
@@ -3271,6 +3280,15 @@ server.tool(
     // record_usage
     tokens: z.number().int().nonnegative().optional(),
     cost_usd_micros: z.number().int().nonnegative().optional(),
+    // methodology selection (GC-RSCH-F006 / ADR-078). Only method_key is accepted;
+    // the label, profile/catalog version, and required-source set are derived
+    // server-side from the backend methodology catalog.
+    method_key: z.string().optional(),
+    // methodology sources (GC-RSCH-F006)
+    source_ref: z.string().optional(),
+    source_label: z.string().optional(),
+    source_state: z.enum(METHODOLOGY_SOURCE_STATES).optional(),
+    source_id: z.string().uuid().optional(),
   },
   async (args) => {
     try {
@@ -3506,6 +3524,46 @@ server.tool(
             null,
             2,
           ));
+        }
+        // GC-RSCH-F006 / ADR-078 — methodology catalog (global reference data)
+        case "list_methodology_catalog": {
+          return ok(JSON.stringify(await listMethodologyCatalog(), null, 2));
+        }
+        // GC-RSCH-F006 — methodology selection + source coverage gate
+        case "select_methodology": {
+          reqArg(args, "id", "select_methodology");
+          reqArg(args, "method_key", "select_methodology");
+          // method label, profile/catalog version, and the required-source set are
+          // derived server-side from the backend methodology catalog (ADR-078).
+          const smBody = { methodKey: args.method_key };
+          return ok(JSON.stringify(await selectMethodology(args.id, smBody, args.project), null, 2));
+        }
+        case "get_methodology_selection": {
+          reqArg(args, "id", "get_methodology_selection");
+          return ok(JSON.stringify(await getMethodologySelection(args.id, args.project), null, 2));
+        }
+        case "record_methodology_source": {
+          reqArg(args, "id", "record_methodology_source");
+          reqArg(args, "source_ref", "record_methodology_source");
+          const rmsBody = { sourceRef: args.source_ref };
+          if (args.source_label !== undefined) rmsBody.sourceLabel = args.source_label;
+          return ok(JSON.stringify(await recordMethodologySource(args.id, rmsBody, args.project), null, 2));
+        }
+        case "update_methodology_source_state": {
+          reqArg(args, "id", "update_methodology_source_state");
+          reqArg(args, "source_id", "update_methodology_source_state");
+          reqArg(args, "source_state", "update_methodology_source_state");
+          return ok(JSON.stringify(
+            await updateMethodologySourceState(
+              args.id, args.source_id, { state: args.source_state }, args.project,
+            ),
+            null,
+            2,
+          ));
+        }
+        case "list_methodology_sources": {
+          reqArg(args, "id", "list_methodology_sources");
+          return ok(JSON.stringify(await listMethodologySources(args.id, args.project), null, 2));
         }
         default: return err(new Error(`Unknown action: ${args.action}`));
       }

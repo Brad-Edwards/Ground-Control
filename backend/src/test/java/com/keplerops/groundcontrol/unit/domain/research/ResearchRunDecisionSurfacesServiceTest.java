@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -19,6 +20,7 @@ import com.keplerops.groundcontrol.domain.research.model.DisclosureEntryFamily;
 import com.keplerops.groundcontrol.domain.research.model.DisclosureStatus;
 import com.keplerops.groundcontrol.domain.research.model.DisclosureUncertaintyCategory;
 import com.keplerops.groundcontrol.domain.research.model.GateRecommendationProvenance;
+import com.keplerops.groundcontrol.domain.research.model.MethodologySourceState;
 import com.keplerops.groundcontrol.domain.research.model.RationaleEntryKind;
 import com.keplerops.groundcontrol.domain.research.model.RationaleEvidenceBasis;
 import com.keplerops.groundcontrol.domain.research.model.RationaleProvenance;
@@ -33,6 +35,8 @@ import com.keplerops.groundcontrol.domain.research.model.ResearchRunDisclosure;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunDisclosureEntry;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunGate;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunGateDecisionLog;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunMethodologySelection;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunMethodologySource;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunReviewComment;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunStage;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunStatus;
@@ -45,6 +49,8 @@ import com.keplerops.groundcontrol.domain.research.repository.ResearchRunDisclos
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunDisclosureRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunGateDecisionLogRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunGateRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ResearchRunMethodologySelectionRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ResearchRunMethodologySourceRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunRationaleEntryRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunReviewCommentRepository;
@@ -54,6 +60,7 @@ import com.keplerops.groundcontrol.domain.research.service.AddReviewCommentComma
 import com.keplerops.groundcontrol.domain.research.service.AdvanceStageCommand;
 import com.keplerops.groundcontrol.domain.research.service.CreateDisclosureCommand;
 import com.keplerops.groundcontrol.domain.research.service.GateDecisionCommand;
+import com.keplerops.groundcontrol.domain.research.service.MethodologyCatalog;
 import com.keplerops.groundcontrol.domain.research.service.RecordArtifactCommand;
 import com.keplerops.groundcontrol.domain.research.service.ResearchRunService;
 import com.keplerops.groundcontrol.domain.research.service.ResolveReviewCommentCommand;
@@ -113,8 +120,17 @@ class ResearchRunDecisionSurfacesServiceTest {
     @Mock
     private ProjectService projectService;
 
+    @Mock
+    private ResearchRunMethodologySelectionRepository selectionRepository;
+
+    @Mock
+    private ResearchRunMethodologySourceRepository sourceRepository;
+
     private ResearchRunService service;
     private Project project;
+
+    // Real catalog (loads classpath:research/methodology-catalog.yaml).
+    private final MethodologyCatalog methodologyCatalog = new MethodologyCatalog();
 
     @BeforeEach
     void setUp() {
@@ -128,7 +144,10 @@ class ResearchRunDecisionSurfacesServiceTest {
                 disclosureRepository,
                 disclosureEntryRepository,
                 intakeRepository,
-                projectService);
+                projectService,
+                selectionRepository,
+                sourceRepository,
+                methodologyCatalog);
         project = new Project("research-p", "Research Project", ProjectType.RESEARCH);
         TestUtil.setField(project, "id", PROJECT_ID);
         when(projectService.getById(PROJECT_ID)).thenReturn(project);
@@ -185,6 +204,33 @@ class ResearchRunDecisionSurfacesServiceTest {
 
     private ResearchRunGate gate(ResearchRun run, ResearchGatePoint point, ResearchGateBehavior behavior) {
         return new ResearchRunGate(run, point, behavior, "test");
+    }
+
+    /**
+     * Stub an active methodology selection with one required source already in READ
+     * state so the GC-RSCH-F006 coverage gate passes when a METHODOLOGY_REQUIREMENTS
+     * artifact is recorded. Required sources are declared at selection time and must
+     * reach READ before the gate opens.
+     * Call this in any test that records that artifact type.
+     */
+    private void withPassingCoverageGate(ResearchRun run) {
+        // Mirror a real catalog selection: method "systematic" with its two derived
+        // required sources already transitioned to READ so the F006 coverage gate opens.
+        var sel = new ResearchRunMethodologySelection(run, "systematic", "actor");
+        sel.setProfileVersion("1");
+        sel.setCatalogVersion("1");
+        var selId = UUID.randomUUID();
+        TestUtil.setField(sel, "id", selId);
+        when(selectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(RUN_ID))
+                .thenReturn(Optional.of(sel));
+        var sources = new java.util.ArrayList<ResearchRunMethodologySource>();
+        for (var ref : List.of("FRM9HPNG", "MJX3HCT5")) {
+            var src = new ResearchRunMethodologySource(sel, ref, true, "actor");
+            TestUtil.setField(src, "id", UUID.randomUUID());
+            TestUtil.setField(src, "state", MethodologySourceState.READ);
+            sources.add(src);
+        }
+        when(sourceRepository.findBySelectionId(selId)).thenReturn(sources);
     }
 
     private ResearchRunDisclosure disclosure(
@@ -275,6 +321,7 @@ class ResearchRunDecisionSurfacesServiceTest {
         resolvedGate.resolve(ResearchGateDecisionOutcome.APPROVED, null, "ok", "server-actor");
         when(gateRepository.findByResearchRunIdAndGatePoint(RUN_ID, ResearchGatePoint.METHOD_DECISION))
                 .thenReturn(Optional.of(resolvedGate));
+        withPassingCoverageGate(run);
 
         service.recordArtifact(
                 PROJECT_ID,
@@ -946,6 +993,8 @@ class ResearchRunDecisionSurfacesServiceTest {
         assertThat(service.listGateDecisionLog(PROJECT_ID, RUN_ID)).isEmpty();
         assertThat(service.listReviewComments(PROJECT_ID, RUN_ID)).isEmpty();
         assertThat(service.listRationale(PROJECT_ID, RUN_ID)).isEmpty();
+        // All three reads must pass through the project-scoped run-ownership check.
+        verify(runRepository, times(3)).findByIdAndProjectId(RUN_ID, PROJECT_ID);
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.projects.model.ProjectType;
 import com.keplerops.groundcontrol.domain.projects.service.CreateProjectCommand;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.research.model.MethodologySourceState;
 import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactReadiness;
 import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactType;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRun;
@@ -17,7 +18,9 @@ import com.keplerops.groundcontrol.domain.research.service.AdvanceStageCommand;
 import com.keplerops.groundcontrol.domain.research.service.RecordArtifactCommand;
 import com.keplerops.groundcontrol.domain.research.service.ResearchIntakeCommand;
 import com.keplerops.groundcontrol.domain.research.service.ResearchRunService;
+import com.keplerops.groundcontrol.domain.research.service.SelectMethodologyCommand;
 import com.keplerops.groundcontrol.domain.research.service.StartResearchRunCommand;
+import com.keplerops.groundcontrol.domain.research.service.UpdateMethodologySourceStateCommand;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -128,6 +131,22 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
             stmt.executeUpdate("DELETE FROM research_run_rationale_entry WHERE research_run_id IN "
                     + "(SELECT r.id FROM research_run r "
                     + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_methodology_source_audit WHERE id IN "
+                    + "(SELECT s.id FROM research_run_methodology_source s "
+                    + "JOIN research_run_methodology_selection sel ON s.selection_id = sel.id "
+                    + "JOIN research_run r ON sel.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_methodology_source WHERE selection_id IN "
+                    + "(SELECT sel.id FROM research_run_methodology_selection sel "
+                    + "JOIN research_run r ON sel.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_methodology_selection_audit WHERE id IN "
+                    + "(SELECT sel.id FROM research_run_methodology_selection sel "
+                    + "JOIN research_run r ON sel.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM research_run_methodology_selection WHERE research_run_id IN "
+                    + "(SELECT r.id FROM research_run r "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
             stmt.executeUpdate("DELETE FROM research_run WHERE project_id IN "
                     + "(SELECT id FROM project WHERE identifier = '" + PROJECT + "')");
             stmt.executeUpdate("DELETE FROM research_intake_audit WHERE id IN (SELECT id FROM research_intake "
@@ -165,6 +184,22 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
         assertThatThrownBy(() -> researchRunService.advanceStage(projectId, runId, blockedAdvance))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("required artifact");
+
+        // GC-RSCH-F006 / ADR-078 — select a real catalog method and read its derived
+        // required sources so the METHODOLOGY_REQUIREMENTS coverage gate opens.
+        researchRunService.selectMethodology(projectId, runId, new SelectMethodologyCommand("systematic"));
+        for (var source : researchRunService.listMethodologySources(projectId, runId)) {
+            researchRunService.updateMethodologySourceState(
+                    projectId,
+                    runId,
+                    source.getId(),
+                    new UpdateMethodologySourceStateCommand(MethodologySourceState.OBTAINED));
+            researchRunService.updateMethodologySourceState(
+                    projectId,
+                    runId,
+                    source.getId(),
+                    new UpdateMethodologySourceStateCommand(MethodologySourceState.READ));
+        }
 
         // Record the methodology artifact, then advance (autonomous gate auto-accepts).
         researchRunService.recordArtifact(
