@@ -84,7 +84,7 @@ public class ControlIdentificationService {
         var threats = enumeration.candidates().stream()
                 .map(MappableThreat::fromCandidate)
                 .toList();
-        var controls = loadAvailableControls(projectId);
+        var controls = doLoadAvailableControls(projectId);
         var result = identify(ruleSet, threats, controls);
         log.info(
                 "control_identification: project={} threats={} controls={} candidates={} gaps={}",
@@ -99,6 +99,17 @@ public class ControlIdentificationService {
     /** Assemble the project's candidate-eligible controls with pack provenance and framework identifiers. */
     @Transactional(readOnly = true)
     public List<AvailableControl> loadAvailableControls(UUID projectId) {
+        return doLoadAvailableControls(projectId);
+    }
+
+    /**
+     * Load available controls without opening its own transaction. The public {@link
+     * #loadAvailableControls} wrapper carries the {@code @Transactional} boundary for external callers;
+     * the {@code identify*} wrappers already run inside a read-only transaction and call this directly so
+     * they do not self-invoke a proxied transactional method (Sonar S6809), mirroring
+     * {@code ThreatEnumerationService}.
+     */
+    private List<AvailableControl> doLoadAvailableControls(UUID projectId) {
         List<AvailableControl> available = new ArrayList<>();
         for (var control : controlRepository.findByProjectIdOrderByCreatedAtDesc(projectId)) {
             var entries = controlPackEntryRepository.findByControlId(control.getId());
@@ -247,17 +258,13 @@ public class ControlIdentificationService {
             Set<String> seenCandidate) {
         boolean matchedAny = false;
         for (var control : controls) {
-            if (!control.active()) {
-                continue;
-            }
-            var matchedSelectors = matchedSelectors(rule, control);
-            if (matchedSelectors.isEmpty()) {
-                continue;
-            }
-            matchedAny = true;
-            var key = threat.threatRef() + "|" + rule.ruleId() + "|" + control.controlId();
-            if (seenCandidate.add(key)) {
-                candidates.add(buildCandidate(ruleSet, rule, threat, control, matchedSelectors));
+            var matchedSelectors = control.active() ? matchedSelectors(rule, control) : Set.<String>of();
+            if (!matchedSelectors.isEmpty()) {
+                matchedAny = true;
+                var key = threat.threatRef() + "|" + rule.ruleId() + "|" + control.controlId();
+                if (seenCandidate.add(key)) {
+                    candidates.add(buildCandidate(ruleSet, rule, threat, control, matchedSelectors));
+                }
             }
         }
         if (!matchedAny) {

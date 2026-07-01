@@ -216,8 +216,7 @@ class ControlIdentificationServiceTest {
                 ruleSet(spoofingRule()), List.of(spoofingThreat("t1")), List.of(control));
 
         assertThat(result.candidates()).hasSize(1);
-        assertThat(result.candidates().get(0).matchedFacts().get("matchedSelectors"))
-                .isEqualTo("AC,IA");
+        assertThat(result.candidates().get(0).matchedFacts()).containsEntry("matchedSelectors", "AC,IA");
     }
 
     @Test
