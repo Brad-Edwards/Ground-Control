@@ -16,6 +16,7 @@ import com.keplerops.groundcontrol.domain.projects.model.ProjectType;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.research.model.AutonomyLevel;
 import com.keplerops.groundcontrol.domain.research.model.IntendedOutput;
+import com.keplerops.groundcontrol.domain.research.model.MethodologySourceState;
 import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactStatus;
 import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactType;
 import com.keplerops.groundcontrol.domain.research.model.ResearchGateBehavior;
@@ -25,13 +26,18 @@ import com.keplerops.groundcontrol.domain.research.model.ResearchGateStatus;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRun;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunArtifact;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunGate;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunMethodologySelection;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunMethodologySource;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunStage;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunStatus;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchIntakeRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunArtifactRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunGateRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ResearchRunMethodologySelectionRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ResearchRunMethodologySourceRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunRepository;
 import com.keplerops.groundcontrol.domain.research.service.AdvanceStageCommand;
+import com.keplerops.groundcontrol.domain.research.service.MethodologyCatalog;
 import com.keplerops.groundcontrol.domain.research.service.ResearchRunService;
 import java.util.List;
 import java.util.Optional;
@@ -92,8 +98,17 @@ class ResearchRunServiceTest {
     @Mock
     private ProjectService projectService;
 
+    @Mock
+    private ResearchRunMethodologySelectionRepository selectionRepository;
+
+    @Mock
+    private ResearchRunMethodologySourceRepository sourceRepository;
+
     private ResearchRunService service;
     private Project project;
+
+    // Real catalog (loads classpath:research/methodology-catalog.yaml).
+    private final MethodologyCatalog methodologyCatalog = new MethodologyCatalog();
 
     @BeforeEach
     void setUp() {
@@ -107,7 +122,10 @@ class ResearchRunServiceTest {
                 disclosureRepository,
                 disclosureEntryRepository,
                 intakeRepository,
-                projectService);
+                projectService,
+                selectionRepository,
+                sourceRepository,
+                methodologyCatalog);
         project = new Project("research-p", "Research Project", ProjectType.RESEARCH);
         TestUtil.setField(project, "id", PROJECT_ID);
         when(projectService.getById(PROJECT_ID)).thenReturn(project);
@@ -146,6 +164,32 @@ class ResearchRunServiceTest {
 
     private ResearchRunGate gate(ResearchRun run, ResearchGatePoint point, ResearchGateBehavior behavior) {
         return new ResearchRunGate(run, point, behavior, "test");
+    }
+
+    /**
+     * Stubs selectionRepository and sourceRepository so the F006 coverage gate passes.
+     * Declares one required source at selection in READ state (ATTEMPTED→OBTAINED→READ
+     * already completed) so METHODOLOGY_REQUIREMENTS recording is not blocked.
+     * Call this in any test that records a METHODOLOGY_REQUIREMENTS artifact.
+     */
+    private void withPassingCoverageGate(ResearchRun run) {
+        // Mirror a real catalog selection: method "systematic" with its two derived
+        // required sources already transitioned to READ so the F006 coverage gate opens.
+        var sel = new ResearchRunMethodologySelection(run, "systematic", "actor");
+        sel.setProfileVersion("1");
+        sel.setCatalogVersion("1");
+        var selId = UUID.randomUUID();
+        TestUtil.setField(sel, "id", selId);
+        when(selectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(RUN_ID))
+                .thenReturn(Optional.of(sel));
+        var sources = new java.util.ArrayList<ResearchRunMethodologySource>();
+        for (var ref : List.of("FRM9HPNG", "MJX3HCT5")) {
+            var src = new ResearchRunMethodologySource(sel, ref, true, "actor");
+            TestUtil.setField(src, "id", UUID.randomUUID());
+            TestUtil.setField(src, "state", MethodologySourceState.READ);
+            sources.add(src);
+        }
+        when(sourceRepository.findBySelectionId(selId)).thenReturn(sources);
     }
 
     // ---------------------------------------------------------------- start
@@ -223,6 +267,7 @@ class ResearchRunServiceTest {
     @Test
     void recordArtifact_idempotentReplay_returnsExistingWithoutDuplicating() {
         var run = runAt(ResearchRunStage.METHODOLOGY_SELECTION, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.COPILOT);
+        withPassingCoverageGate(run);
         var existing = artifact(run, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE);
         when(artifactRepository.findByResearchRunIdAndIdempotencyKey(RUN_ID, "key-1"))
                 .thenReturn(Optional.of(existing));
@@ -238,6 +283,7 @@ class ResearchRunServiceTest {
     @Test
     void recordArtifact_rework_supersedesPriorActiveRecord() {
         var run = runAt(ResearchRunStage.METHODOLOGY_SELECTION, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.COPILOT);
+        withPassingCoverageGate(run);
         var prior = artifact(run, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE);
         when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
                         RUN_ID, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE))
@@ -381,6 +427,7 @@ class ResearchRunServiceTest {
     @Test
     void recordArtifact_rework_reopensResolvedGuardingGateAndUnblocksRun() {
         var run = runAt(ResearchRunStage.METHODOLOGY_SELECTION, ResearchRunStatus.BLOCKED, AutonomyLevel.COPILOT);
+        withPassingCoverageGate(run);
         var prior = artifact(run, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE);
         when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
                         RUN_ID, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE))

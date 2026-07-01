@@ -92,5 +92,9 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [072](072-research-rest-and-mcp-tool-surface.md) | Research REST and MCP Tool Surface | Accepted |
 | [073](073-research-extensibility-and-adapter-boundary.md) | Research Extensibility and Adapter Boundary | Accepted |
 | [074](074-scheduled-evidence-collection.md) | Scheduled Evidence Collection Campaigns | Accepted |
+| [075](075-research-factuality-claim-grounding.md) | Research Factuality and Claim Grounding Boundary | Accepted |
+| [076](076-research-scientific-humility-surface.md) | Research Scientific Humility Surface | Accepted |
+| [077](077-research-behavior-versioning-and-regression-tests.md) | Research Behavior Versioning and Regression Tests | Accepted (amended by ADR-078) |
+| [078](078-research-methodology-catalog-reference-data.md) | Research Methodology Catalog as Backend Reference Data | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.
