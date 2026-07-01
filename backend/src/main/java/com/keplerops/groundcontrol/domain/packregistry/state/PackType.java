@@ -4,5 +4,6 @@ public enum PackType {
     UNKNOWN,
     CONTROL_PACK,
     REQUIREMENTS_PACK,
-    CUSTOM
+    CUSTOM,
+    THREAT_RULE_PACK
 }

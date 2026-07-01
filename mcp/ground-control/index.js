@@ -298,6 +298,11 @@ import {
   GC_DATA_CLASSIFICATION_DESCRIPTION,
 } from "./gc-data-classification.js";
 import {
+  gcThreatEnumerationZodShape,
+  gcThreatEnumerationToolHandler,
+  GC_THREAT_ENUMERATION_DESCRIPTION,
+} from "./gc-threat-enumeration.js";
+import {
   gcAuditZodShape,
   gcAuditToolHandler,
   GC_AUDIT_DESCRIPTION,
@@ -2361,6 +2366,21 @@ server.tool(
   async (args) => {
     try {
       const result = await gcDataClassificationToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_threat_enumeration: GC-GRC-007 deterministic threat enumeration.
+// Read-only: enumerates candidate threats from an architecture-model snapshot
+// against a registered THREAT_RULE_PACK using a closed predicate model (no LLM).
+server.tool(
+  "gc_threat_enumeration",
+  GC_THREAT_ENUMERATION_DESCRIPTION,
+  gcThreatEnumerationZodShape,
+  async (args) => {
+    try {
+      const result = await gcThreatEnumerationToolHandler(args);
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },

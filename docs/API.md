@@ -1415,6 +1415,48 @@ MCP surface: `gc_data_classification` with actions `get_lattice`, `set_lattice`,
 `labels[].{key,display_name,description,rank}` and `permitted_flows[].{from,to}`.
 `gc_query` allowlists read-only `/api/v1/data-classification` paths.
 
+### Threat Enumeration (GC-GRC-007)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/threat-enumeration?project=&packId=&version=&snapshotId=` | - | 200 | Enumerate candidate threats for a project using a registered threat rule pack |
+
+`packId` is required. `version` is optional and pins a specific semantic version of
+the rule pack; when omitted, the latest registered version resolves. `snapshotId`
+is optional; when omitted, the endpoint targets the latest persisted
+architecture-model snapshot for the project. `project` is optional in
+single-project deployments.
+
+Enumeration is **deterministic**: given the same architecture-model snapshot and
+the same pinned rule pack version, the engine produces identical candidate sets
+with no LLM involvement. Rule packs of type `THREAT_RULE_PACK` are registered,
+versioned, and pinned through the admin pack-registry surface
+(`/api/v1/pack-registry/**`, `ROLE_ADMIN`). To register one, `POST` to
+`/api/v1/pack-registry` with `packType: "THREAT_RULE_PACK"` and a
+`threatRuleEntries` array; each entry's per-rule invariants are validated at
+registration time, so a malformed pack is rejected before it is stored rather
+than failing later during enumeration. The enumeration endpoint itself is a
+read-only operation restricted to authenticated callers under the
+`/api/v1/**` authenticated rule.
+
+**ThreatEnumerationResponse fields:** `schemaVersion`, `packId`,
+`resolvedVersion`, `checksum`, `snapshotId`, `modelVersion`, `candidates[]`, and
+`limitations[]`.
+
+Each `candidate` carries: `producingRuleId`, `category` (`ThreatRuleCategory`
+value: `STRIDE_BASELINE`, `DEPLOYMENT_PIPELINE`, `AUTHN_AUTHZ`,
+`SECRET_HANDLING`, `UNTRUSTED_INPUT`, `DATA_EGRESS`, or `CRYPTO`),
+`strideCategory`, `elementStableKey`, `elementKind`, `matchedFacts{}`, and
+`narrative`.
+
+Each `limitation` carries: `reason` (`ThreatEnumerationLimitationReason` value:
+`NO_RULE_PACK_RESOLVED`, `NO_SNAPSHOT`, `UNKNOWN_ELEMENT_KIND`,
+`MISSING_STABLE_KEY`, or `DANGLING_FLOW_ENDPOINT`), `detail`, and
+`elementStableKey`.
+
+MCP surface: `gc_threat_enumeration` (dedicated tool). Parameters: `project`
+(optional), `packId` (required), `version` (optional), `snapshotId` (optional).
+
 ### Plugins
 
 | Method | Path | Body | Status | Purpose |

@@ -9,6 +9,7 @@ import com.keplerops.groundcontrol.domain.audits.model.AuditPhase;
 import com.keplerops.groundcontrol.domain.evidence.model.EvidenceSourceRef;
 import com.keplerops.groundcontrol.domain.packregistry.model.PackDependency;
 import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPackEntry;
+import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredThreatRule;
 import com.keplerops.groundcontrol.domain.packregistry.model.TrustPolicyRule;
 import com.keplerops.groundcontrol.domain.riskappetite.model.ToleranceThreshold;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
@@ -111,6 +112,15 @@ public final class JacksonTextCollectionConverters {
     public static class TrustPolicyRuleListConverter extends AbstractJsonTextConverter<List<TrustPolicyRule>> {
 
         public TrustPolicyRuleListConverter() {
+            super(new TypeReference<>() {});
+        }
+    }
+
+    @Converter
+    public static class RegisteredThreatRuleListConverter
+            extends AbstractJsonTextConverter<List<RegisteredThreatRule>> {
+
+        public RegisteredThreatRuleListConverter() {
             super(new TypeReference<>() {});
         }
     }

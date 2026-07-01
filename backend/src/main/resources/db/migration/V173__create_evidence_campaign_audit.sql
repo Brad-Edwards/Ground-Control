@@ -1,4 +1,4 @@
--- V172: evidence_campaign_audit (GC-S005).
+-- V173: evidence_campaign_audit (GC-S005).
 --
 -- Envers shadow table for evidence_campaign. The project FK is @NotAudited
 -- (ADR-038), so project_id is intentionally absent here. AuditRetentionJob ages
