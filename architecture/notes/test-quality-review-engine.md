@@ -50,7 +50,7 @@ gc_test_quality_review({
   pr_number?:   int,              // passed through to the envelope
   override_cap?: bool,            // cycle hardCap+1 onward requires this
   override_reason?: string,       // required when override_cap=true
-  model?:       string,           // defaults to claude-sonnet-4-6
+  model?:       string,           // defaults to claude-sonnet-5
 })
 ```
 
@@ -110,7 +110,7 @@ under "Failure modes" below.
 |   4. build prompt (canonical rubric + file list)  |
 |   5. shell out:                                   |
 |        claude --print                             |
-|               --model claude-sonnet-4-6           |
+|               --model claude-sonnet-5             |
 |               --output-format json                |
 |               --json-schema '<findings schema>'   |
 |               --add-dir <repo>                    |
@@ -175,8 +175,10 @@ Operator implications:
 
 ## Model selection
 
-Default model: `claude-sonnet-4-6`. Chosen by the user in #884 v2 as
-the right cost/quality balance for false-assurance-test detection.
+Default model: `claude-sonnet-5` (bumped from `claude-sonnet-4-6` by
+#1264). `claude-sonnet-4-6` was chosen by the user in #884 v2 as the
+right cost/quality balance for false-assurance-test detection; #1264
+moved the default to the current Sonnet generation.
 
 The MCP tool accepts an optional `model` parameter; pass a different
 model alias (`claude-haiku-4-5`, `claude-opus-4-8`, etc.) or full ID

@@ -67,10 +67,10 @@ routing:
       agent: parent
     codebase_assessment:
       tier: medium
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5
     grc_screening:
       tier: medium
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5
     planning:
       tier: high
       model: claude-opus-4-8
@@ -78,10 +78,10 @@ routing:
       fallback: error
     implementation:
       tier: medium
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5
     clause_mapping:
       tier: medium
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5
     precommit:
       tier: low
       model: claude-haiku-4-5
@@ -95,7 +95,7 @@ routing:
       fallback: error
     review_fix_application:
       tier: medium
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5
     git_publish:
       tier: low
       model: claude-haiku-4-5
@@ -110,7 +110,7 @@ routing:
       model: claude-haiku-4-5
     test_quality_review:
       tier: medium
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5
       # Runs at the parent: drives a gc_codex_job async poll loop
       # (gc_test_quality_review_cycle); see architecture_preflight (issue #1168).
       agent: parent
@@ -119,7 +119,7 @@ routing:
       model: claude-haiku-4-5
     transition_reconcile:
       tier: medium
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5
     final_report:
       tier: low
       model: claude-haiku-4-5

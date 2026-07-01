@@ -122,7 +122,7 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#   # stages:",
     "#   #   implementation:",
     "#   #     tier: medium",
-    "#   #     model: claude-sonnet-4-6",
+    "#   #     model: claude-sonnet-5",
     "# telemetry:",
     "#   enabled: false",
     "",
@@ -2930,8 +2930,8 @@ function normalizeRoutingStageConfig(stage, raw, { defaultProvider, defaultFallb
     errors.push(`${prefix}.agent must be one of: ${ROUTING_AGENTS.join(", ")}`);
   }
   const model = raw.model ?? CLAUDE_MODEL_BY_TIER[tier];
-  if (provider === "claude" && typeof model === "string" && !/^claude-(haiku|sonnet|opus)-[0-9]+-[0-9]+$/.test(model)) {
-    errors.push(`${prefix}.model must be a canonical Claude model id like claude-sonnet-4-6`);
+  if (provider === "claude" && typeof model === "string" && !/^claude-(haiku|sonnet|opus)-[0-9]+(-[0-9]+)?$/.test(model)) {
+    errors.push(`${prefix}.model must be a canonical Claude model id like claude-sonnet-5`);
   } else if (typeof model !== "string" || model.trim() === "") {
     errors.push(`${prefix}.model must be a non-empty string`);
   }
@@ -7041,9 +7041,10 @@ export const TEST_QUALITY_REVIEW_SCHEMA = {
 export const TEST_QUALITY_REVIEW_FINDINGS_SCHEMA = TEST_QUALITY_REVIEW_SCHEMA;
 
 // Default model for the test-quality review engine. Per user direction
-// (#884 follow-up): claude-sonnet-4-6 is the right balance — strong enough
-// to catch false-assurance tests, cheap enough to run on every PR.
-export const TEST_QUALITY_REVIEW_DEFAULT_MODEL = "claude-sonnet-4-6";
+// (#884 follow-up): Sonnet is the right balance — strong enough to catch
+// false-assurance tests, cheap enough to run on every PR. #1264 bumped
+// the default from claude-sonnet-4-6 to the current Sonnet generation.
+export const TEST_QUALITY_REVIEW_DEFAULT_MODEL = "claude-sonnet-5";
 
 // Hard timeout for a single review call. Claude with file-reading tools
 // can take 1–3 minutes against a moderate-sized test diff. 10 minutes is
@@ -17558,7 +17559,7 @@ export const ROUTING_FALLBACKS = Object.freeze(["parent", "error", "skip"]);
 export const ROUTING_STAGE_NAME_RE = /^[a-z][a-z0-9_-]*$/;
 export const CLAUDE_MODEL_BY_TIER = Object.freeze({
   low: "claude-haiku-4-5",
-  medium: "claude-sonnet-4-6",
+  medium: "claude-sonnet-5",
   high: "claude-opus-4-8",
 });
 export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
