@@ -105,25 +105,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         entityManager
                 .createNativeQuery("SELECT 1 FROM operational_asset_audit LIMIT 1")
                 .getResultList();
-        // GC-M012 column-existence probes (V069 / V070). A column-by-column
-        // SELECT throws PersistenceException if any ALTER TABLE in the
-        // migration silently omitted a column, where the table-only
-        // `SELECT 1 FROM operational_asset` check would not. Wrap with
-        // assertThatCode so the intent — "these six columns must exist" —
-        // is expressed as an assertion a reader can recognize, not as the
-        // absence of a thrown exception.
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery(
-                                "SELECT owner, steward, environment, criticality, business_context, scope_designation"
-                                        + " FROM operational_asset LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery(
-                                "SELECT owner, steward, environment, criticality, business_context, scope_designation"
-                                        + " FROM operational_asset_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
+        assertOperationalAssetColumns();
         entityManager.createNativeQuery("SELECT 1 FROM asset_relation LIMIT 1").getResultList();
         entityManager
                 .createNativeQuery("SELECT 1 FROM asset_relation_audit LIMIT 1")
@@ -1199,6 +1181,28 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery("SELECT source_ref, source_label, required, state, actor,"
                                 + " created_at, updated_at"
                                 + " FROM research_run_methodology_source_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+    }
+
+    /**
+     * GC-M012 column-existence probes (V069 / V070). A column-by-column SELECT
+     * throws PersistenceException if any ALTER TABLE in the migration silently
+     * omitted a column, where the table-only {@code SELECT 1 FROM operational_asset}
+     * check would not. Extracted from {@link #auditTablesExist()} to keep that
+     * probe roster's assertion count bounded.
+     */
+    private void assertOperationalAssetColumns() {
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery(
+                                "SELECT owner, steward, environment, criticality, business_context, scope_designation"
+                                        + " FROM operational_asset LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery(
+                                "SELECT owner, steward, environment, criticality, business_context, scope_designation"
+                                        + " FROM operational_asset_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }

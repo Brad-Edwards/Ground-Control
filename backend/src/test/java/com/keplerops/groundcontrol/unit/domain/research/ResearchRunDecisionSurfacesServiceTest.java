@@ -993,8 +993,7 @@ class ResearchRunDecisionSurfacesServiceTest {
         assertThat(service.listGateDecisionLog(PROJECT_ID, RUN_ID)).isEmpty();
         assertThat(service.listReviewComments(PROJECT_ID, RUN_ID)).isEmpty();
         assertThat(service.listRationale(PROJECT_ID, RUN_ID)).isEmpty();
-        // Each read must resolve the run through the project-scoped ownership guard;
-        // dropping that guard would allow cross-project data to leak.
+        // All three reads must pass through the project-scoped run-ownership check.
         verify(runRepository, times(3)).findByIdAndProjectId(RUN_ID, PROJECT_ID);
     }
 
