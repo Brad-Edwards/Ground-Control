@@ -86,14 +86,13 @@ import {
   runAssertTraceabilityReconciled, runAssertGrcReconciled, runAssertQualityGates, runCloseIssueAfterMerge,
   runAssertCompletion,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
-  runPostGrcScreening,
+  runComputeGrcScreening,
   runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
   runCodexReviewCycle, runTestQualityReviewCycle,
   runReviewCapDisposition,
   startReviewJob, pollReviewJob, cancelReviewJob,
   runResolveWorkflowRoute,
   DECISION_RECORD_REVIEWERS, DECISION_RECORD_DECISIONS, DECISION_RECORD_CLASSIFICATIONS,
-  GRC_SCREENING_VERDICTS,
   PR_BODY_CHANGE_CLASSES, PR_REQUIREMENT_RE, EXACT_REQUIREMENT_UID_RE,
   TELEMETRY_TIERS, TELEMETRY_OUTCOMES,
   buildCodexReviewToolDescription, buildCodexReviewOverrideCapDescription,
@@ -930,41 +929,30 @@ server.tool(
 
 server.tool(
   "gc_post_grc_screening",
-  "Post the canonical Step 3.5 GRC screening record as a comment on the GitHub issue. Accepts one of three verdicts: 'security_relevant' (threat-model entries, risk scenarios, controls, and CODE links were created/updated/confirmed during this run — entities_created/updated/confirmed and code_links required), 'not_security_relevant' (change does not touch a security-relevant surface — rationale required, entity/link arrays empty), 'no_baseline' (project has no threat-model baseline — explicit declination, not a clean verdict). Renders a schema-versioned 'gc.implement.grc-screening/v1' record with machine-parseable marker family 'gc:grc-screening'; runs the sensitive-content filter and body-size cap before posting; writes the grc_screening phase marker on success. Rejects caller-controlled fields carrying reserved '<!-- gc:' marker sequences. Returns {ok, verdict, comment_url, comment_id, phase_marker_posted}.",
+  "Post the canonical Step 3.5 GRC screening record (GC-GRC-009, ADR-058 §5). The tool COMPUTES the classification from the change itself — the agent no longer asserts a verdict. It reads the diff (base_commit_sha..commit_sha; base defaults to merge-base with the repo's base branch) — the touched surface is always computed from the diff, never caller-supplied — plus the existing GRC CODE-link graph, and the latest/pinned derivation run + architecture-model snapshot, then derives three sets: impact_set (existing GRC entities the change touches), gap_set (touched security-relevant surfaces with no coverage — reason no_derivation_coverage/no_model_coverage/no_threat_coverage/no_control_coverage), and stale_set (ACTIVE linked entities whose underlying code changed). There is NO passing no_baseline verdict: an empty/absent baseline yields a gap_set over the touched surface, recorded with a capture limit. When a snapshot exists, deterministic GC-GRC-007 candidate threats and GC-GRC-008 candidate controls are attached. Renders a schema-versioned 'gc.implement.grc-screening/v2' record (marker family 'gc:grc-screening') reproducible from recorded provenance; runs the reserved-marker/HTML-delimiter guard on caller free-text, the sensitive-content filter, and body-size cap before posting; writes the grc_screening phase marker on success. Returns {ok, schema, derived_verdict, impact_count, gap_count, stale_count, comment_url, comment_id, phase_marker_posted}.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
-    verdict: z.enum(GRC_SCREENING_VERDICTS),
-    rationale: z.string().min(1),
-    entities_created: z.array(z.object({
-      type: z.string().min(1).optional(),
-      uid: z.string().min(1),
-    })).optional().default([]),
-    entities_updated: z.array(z.object({
-      type: z.string().min(1).optional(),
-      uid: z.string().min(1),
-    })).optional().default([]),
-    entities_confirmed: z.array(z.object({
-      type: z.string().min(1).optional(),
-      uid: z.string().min(1),
-    })).optional().default([]),
-    code_links: z.array(z.object({
-      owner_type: z.string().min(1).optional(),
-      owner_uid: z.string().min(1).optional(),
-      target_identifier: z.string().min(1),
-    })).optional().default([]),
+    project: z.string().optional(),
+    base_commit_sha: z.string().regex(/^[0-9a-fA-F]{7,64}$/).optional(),
+    commit_sha: z.string().regex(/^[0-9a-fA-F]{7,64}$/).optional(),
+    threat_pack_id: z.string().min(1).max(200).optional(),
+    threat_pack_version: z.string().max(100).optional(),
+    derivation_run_id: z.string().uuid().optional(),
+    rationale: z.string().min(1).max(800).optional(),
   },
-  async ({ repo_path, issue_number, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links }) => {
+  async ({ repo_path, issue_number, project, base_commit_sha, commit_sha, threat_pack_id, threat_pack_version, derivation_run_id, rationale }) => {
     try {
-      return ok(JSON.stringify(await runPostGrcScreening({
+      return ok(JSON.stringify(await runComputeGrcScreening({
         repoPath: repo_path,
         issueNumber: issue_number,
-        verdict,
-        rationale,
-        entities_created: entities_created ?? [],
-        entities_updated: entities_updated ?? [],
-        entities_confirmed: entities_confirmed ?? [],
-        code_links: code_links ?? [],
+        project: project ?? null,
+        baseCommitSha: base_commit_sha ?? null,
+        commitSha: commit_sha ?? null,
+        threatPackId: threat_pack_id ?? null,
+        threatPackVersion: threat_pack_version ?? null,
+        derivationRunId: derivation_run_id ?? null,
+        rationale: rationale ?? null,
       }), null, 2));
     } catch (e) { return err(e); }
   },

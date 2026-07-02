@@ -12756,6 +12756,522 @@ export async function runPostGrcScreening({ repoPath, issueNumber, verdict, rati
   };
 }
 
+// ===========================================================================
+// GC-GRC-009 — derivation-backed change screening (v2)
+// ===========================================================================
+//
+// v1 (above) records an agent-asserted verdict. v2 removes agent assertion:
+// the tool computes the classification from the change itself (ADR-058 §5).
+// It derives three sets from the diff, the existing GRC CODE-link graph, and
+// (when present) derived facts:
+//   - impact_set: existing GRC entities whose CODE links overlap touched paths.
+//   - gap_set:    touched security-relevant surfaces with no coverage.
+//   - stale_set:  ACTIVE linked entities whose underlying code changed.
+// There is no passing `no_baseline` verdict: an empty/absent baseline yields a
+// gap_set over the touched security-relevant surface (never a silent pass).
+//
+// v1 record functions above are retained so historical/in-flight v1 records
+// still render and parse; new screening posts use the v2 path. Reconciliation
+// (runAssertGrcReconciled) branches on the parsed record's schema.
+
+export const GRC_SCREENING_SCHEMA_VERSION_V2 = "gc.implement.grc-screening/v2";
+
+// Why a touched security-relevant surface has no coverage. `no_derivation_coverage`
+// is the structural replacement for the retired `no_baseline` pass: an absent
+// baseline makes every uncovered source surface a gap, not a free pass.
+export const GRC_SCREENING_GAP_REASONS = Object.freeze([
+  "no_derivation_coverage",
+  "no_model_coverage",
+  "no_threat_coverage",
+  "no_control_coverage",
+]);
+
+// Why a linked GRC entity may be stale and need reassessment.
+export const GRC_SCREENING_STALE_REASONS = Object.freeze([
+  "linked_code_changed",
+  "pack_version_changed",
+  "snapshot_changed",
+  "boundary_changed",
+]);
+
+// Path classes that are NOT a security-relevant *surface* for screening. This
+// reuses the repository's own source/non-source boundary — the same doc/metadata
+// classes tools/policy/checks.py treats as non-application-source, plus test
+// files — rather than inventing a filename-based security taxonomy (which
+// ADR-058 forbids as a relevance signal). Tests exercise security surfaces; they
+// do not introduce one. Everything else under an application-source path is a
+// security-relevant surface whose classification must come from coverage, never
+// from its filename.
+const NON_SECURITY_SURFACE_PATTERNS = [
+  /^docs\//,
+  /^architecture\//,
+  /^\.gc\//,
+  /^skills\//,
+  /^changelog\.d\//,
+  /(^|\/)README(\.md)?$/,
+  /(^|\/)CONTRIBUTING\.md$/,
+  /(^|\/)CHANGELOG\.md$/,
+  /\.md$/,
+  /^tools\/policy\//,
+  /^tools\/tests\//,
+  /(^|\/)src\/test\//,
+  /\.test\.[cm]?[jt]sx?$/,
+  /(^|\/)__tests__\//,
+];
+
+export function isNonSecuritySurfacePath(path) {
+  if (typeof path !== "string" || path.trim() === "") return true;
+  return NON_SECURITY_SURFACE_PATTERNS.some((re) => re.test(path));
+}
+
+// Match a CODE-link target against the touched-path set. Exact match, or
+// directory-prefix match when the link target names a directory (bare or
+// trailing-slash), so a boundary-level link like `mcp/` covers a touched file
+// under it. Returns the touched paths that matched.
+function codeLinkMatchesTouched(linkTarget, touchedPaths) {
+  if (typeof linkTarget !== "string" || linkTarget === "") return [];
+  const target = linkTarget.replace(/^\.\/+/, "");
+  const asDirPrefix = target.endsWith("/") ? target : `${target}/`;
+  const matched = [];
+  for (const tp of touchedPaths) {
+    if (tp === target || tp.startsWith(asDirPrefix)) matched.push(tp);
+  }
+  return matched;
+}
+
+// Pure classification: given the touched paths, the GRC CODE-link graph, and
+// optional derivation coverage, compute impact/gap/stale sets and a derived
+// verdict. No network, no agent assertion — deterministic and unit-testable.
+//   entities: [{ type, uid, status, codeLinks: [target_identifier] }]
+//   derivation: { coveredPaths: [path] } | null
+export function classifyGrcScreening({ touchedPaths = [], entities = [], derivation = null } = {}) {
+  const touched = (Array.isArray(touchedPaths) ? touchedPaths : []).filter(
+    (p) => typeof p === "string" && p !== "",
+  );
+  const sourcePaths = touched.filter((p) => !isNonSecuritySurfacePath(p));
+
+  const impact_set = [];
+  const stale_set = [];
+  const coveredSource = new Set();
+
+  for (const entity of Array.isArray(entities) ? entities : []) {
+    const links = Array.isArray(entity?.codeLinks) ? entity.codeLinks : [];
+    const matched = new Set();
+    for (const link of links) {
+      for (const m of codeLinkMatchesTouched(link, touched)) matched.add(m);
+    }
+    if (matched.size === 0) continue;
+    const matched_paths = [...matched].sort();
+    const type = normalizeEntityType(entity.type);
+    impact_set.push({ type, uid: entity.uid, matched_paths });
+    for (const m of matched_paths) {
+      if (!isNonSecuritySurfacePath(m)) coveredSource.add(m);
+    }
+    // An ACTIVE modeled entity whose linked code changed is now potentially
+    // stale and needs reassessment. A DRAFT entity is not yet an accepted
+    // baseline, so a code change does not make it "stale".
+    if (String(entity.status).toUpperCase() === "ACTIVE") {
+      stale_set.push({ type, uid: entity.uid, reason: "linked_code_changed", changed_paths: matched_paths });
+    }
+  }
+
+  const derivationCovered = new Set(
+    derivation && Array.isArray(derivation.coveredPaths) ? derivation.coveredPaths : [],
+  );
+
+  const gap_set = [];
+  for (const sp of sourcePaths) {
+    if (coveredSource.has(sp)) continue;
+    // Modeled by derivation but no GRC threat/control coverage → a coverage gap.
+    // Not modeled at all (including the empty/absent-baseline case) → a
+    // derivation-coverage gap. Either way it is a gap, never a pass.
+    const reason = derivationCovered.has(sp) ? "no_threat_coverage" : "no_derivation_coverage";
+    gap_set.push({ surface: sp, reason, boundary: null });
+  }
+
+  const derived_verdict =
+    impact_set.length === 0 && gap_set.length === 0 ? "not_security_relevant" : "security_relevant";
+
+  return { impact_set, gap_set, stale_set, derived_verdict };
+}
+
+export function serializeGrcScreeningDataV2(payload) {
+  return `<!-- gc:grc-screening-data ${JSON.stringify(payload)} -->`;
+}
+
+// Render the durable v2 screening record: main marker (schema + derived
+// verdict) + machine-parseable data block (reproducible from provenance) +
+// human-readable Markdown view over the computed sets. Only stable keys, UIDs,
+// repo-relative paths, run/snapshot ids, pack versions/checksums, and rule ids
+// are rendered — never raw diffs, secrets, or tool output.
+export function buildGrcScreeningRecordV2({
+  issueNumber,
+  rationale = null,
+  classification,
+  candidate_threats = [],
+  candidate_controls = [],
+  provenance,
+}) {
+  const { impact_set = [], gap_set = [], stale_set = [], derived_verdict } = classification || {};
+  const prov = provenance || { capture_limits: [] };
+  const lines = [];
+  lines.push(buildGrcScreeningMarker({ issueNumber, verdict: derived_verdict, schema: GRC_SCREENING_SCHEMA_VERSION_V2 }));
+  lines.push(
+    serializeGrcScreeningDataV2({
+      schema: GRC_SCREENING_SCHEMA_VERSION_V2,
+      derived_verdict,
+      impact_set,
+      gap_set,
+      stale_set,
+      candidate_threats,
+      candidate_controls,
+      provenance: prov,
+    }),
+  );
+  lines.push("");
+  lines.push(`## GRC screening record — issue #${issueNumber}`);
+  lines.push("");
+  lines.push(`**Schema:** \`${GRC_SCREENING_SCHEMA_VERSION_V2}\`  `);
+  lines.push(
+    `**Derived verdict:** \`${derived_verdict}\` _(computed from derived facts + the GRC coverage graph — not agent-asserted)_  `,
+  );
+  lines.push("");
+  if (rationale) {
+    lines.push(`**Rationale:** ${rationale}`);
+    lines.push("");
+  }
+
+  lines.push("**Provenance:**");
+  lines.push(`- base \`${prov.base_commit_sha ?? "?"}\` → head \`${prov.commit_sha ?? "?"}\``);
+  lines.push(
+    `- derivation run: \`${prov.derivation_run_id ?? "none"}\` · architecture snapshot: \`${prov.architecture_model_snapshot_id ?? "none"}\``,
+  );
+  if (prov.threat_pack_id) {
+    lines.push(`- threat pack: \`${prov.threat_pack_id}@${prov.threat_pack_version ?? "latest"}\``);
+  }
+  if (prov.control_ruleset_version) {
+    lines.push(`- control rule-set: \`${prov.control_ruleset_version}\``);
+  }
+  const captureLimits = Array.isArray(prov.capture_limits) ? prov.capture_limits : [];
+  if (captureLimits.length > 0) {
+    lines.push("");
+    lines.push("**Capture limits:**");
+    for (const cl of captureLimits) {
+      lines.push(`- \`${cl.reason ?? "unknown"}\`${cl.surface ? ` — \`${cl.surface}\`` : ""}${cl.detail ? `: ${cl.detail}` : ""}`);
+    }
+  }
+
+  lines.push("");
+  lines.push(`**Impact set** (existing coverage the change touches) — ${impact_set.length}:`);
+  if (impact_set.length === 0) lines.push("- _(none)_");
+  else for (const e of impact_set) lines.push(`- \`${e.uid}\` (${e.type}) → ${e.matched_paths.map((p) => `\`${p}\``).join(", ")}`);
+
+  lines.push("");
+  lines.push(`**Gap set** (touched security-relevant surface with no coverage — must be modeled, controlled, or dispositioned before completion) — ${gap_set.length}:`);
+  if (gap_set.length === 0) lines.push("- _(none)_");
+  else for (const g of gap_set) lines.push(`- \`${g.surface}\` — ${g.reason}${g.boundary ? ` (boundary \`${g.boundary}\`)` : ""}`);
+
+  lines.push("");
+  lines.push(`**Stale set** (linked entities whose underlying code changed) — ${stale_set.length}:`);
+  if (stale_set.length === 0) lines.push("- _(none)_");
+  else for (const s of stale_set) lines.push(`- \`${s.uid}\` (${s.type}) — ${s.reason}`);
+
+  lines.push("");
+  lines.push(`**Candidate threats** (GC-GRC-007, deterministic) — ${candidate_threats.length}:`);
+  if (candidate_threats.length === 0) lines.push("- _(none — no architecture-model snapshot to enumerate against)_");
+  else for (const c of candidate_threats) lines.push(`- \`${c.producing_rule_id ?? "?"}\` ${c.stride_category ?? ""} → \`${c.element_stable_key ?? "?"}\``);
+
+  lines.push("");
+  lines.push(`**Candidate controls** (GC-GRC-008, deterministic) — ${candidate_controls.length}:`);
+  if (candidate_controls.length === 0) lines.push("- _(none)_");
+  else for (const c of candidate_controls) lines.push(`- \`${c.control_uid ?? c.objective_key ?? "?"}\`${c.threat_ref ? ` for \`${c.threat_ref}\`` : ""} (${c.source ?? "?"})`);
+
+  return lines.join("\n");
+}
+
+// Default data-gathering seams for the v2 runner. Each is injectable via `deps`
+// so runComputeGrcScreening is unit-testable without network or a live repo.
+
+async function defaultComputeTouchedPaths(repoRoot, baseCommitSha, commitSha, baseBranch) {
+  const head = commitSha || "HEAD";
+  let base = baseCommitSha;
+  if (!base) {
+    try {
+      const { stdout } = await execFile("git", ["merge-base", baseBranch || "dev", head], { cwd: repoRoot });
+      base = stdout.trim();
+    } catch {
+      base = null;
+    }
+  }
+  const range = base ? `${base}...${head}` : head;
+  const args = ["-C", repoRoot, "diff", "--name-only", range];
+  const { stdout } = await execFile("git", args.slice(0, 1).concat(args.slice(1)), { cwd: repoRoot });
+  const paths = stdout.split("\n").map((s) => s.trim()).filter(Boolean);
+  return { touchedPaths: paths, base, head };
+}
+
+async function defaultFetchGrcGraph(project) {
+  const entities = [];
+  const collect = async (list, type, linkFn) => {
+    let rows;
+    try {
+      rows = await list(project);
+    } catch {
+      return;
+    }
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (!row?.id || !row?.uid) continue;
+      let links = [];
+      try {
+        links = await linkFn(row.id);
+      } catch {
+        links = [];
+      }
+      const codeLinks = (Array.isArray(links) ? links : [])
+        .filter((l) => l?.target_type === "CODE" && typeof l?.target_identifier === "string")
+        .map((l) => l.target_identifier);
+      entities.push({ type, uid: row.uid, status: row.status, id: row.id, codeLinks });
+    }
+  };
+  await collect(listThreatModels, "threat_model", (id) => listThreatModelLinks(id, project));
+  await collect(listRiskScenarios, "risk_scenario", (id) => listRiskScenarioLinks(id, { targetType: "CODE", project }));
+  await collect(listControls, "control", (id) => listControlLinks(id, { targetType: "CODE", project }));
+  return entities;
+}
+
+async function defaultFetchDerivationState(project, derivationRunId) {
+  let runs;
+  try {
+    runs = await listDerivationRuns({ project });
+  } catch {
+    return null;
+  }
+  const list = Array.isArray(runs) ? runs : [];
+  if (list.length === 0) return null;
+  const run = derivationRunId ? list.find((r) => r?.id === derivationRunId) : list[0];
+  if (!run?.id) return null;
+  let facts = [];
+  try {
+    facts = await listDerivationFacts({ project, runId: run.id });
+  } catch {
+    facts = [];
+  }
+  const coveredPaths = [
+    ...new Set(
+      (Array.isArray(facts) ? facts : [])
+        .map((f) => f?.source_path ?? f?.sourcePath ?? f?.path)
+        .filter((p) => typeof p === "string" && p !== ""),
+    ),
+  ];
+  return {
+    runId: run.id,
+    snapshotId: run.architecture_model_snapshot_id ?? run.snapshot_id ?? null,
+    coveredPaths,
+  };
+}
+
+async function defaultEnumerateCandidates(project, snapshotId, threatPackId, threatPackVersion) {
+  if (!snapshotId || !threatPackId) return { candidate_threats: [], candidate_controls: [], control_ruleset_version: null, pack_checksums: {} };
+  let threats = [];
+  let controls = [];
+  try {
+    const te = await threatEnumeration({ project, packId: threatPackId, version: threatPackVersion, snapshotId });
+    threats = Array.isArray(te?.candidates) ? te.candidates : [];
+  } catch {
+    threats = [];
+  }
+  try {
+    const ci = await controlIdentification({ project, threatPackId, version: threatPackVersion, snapshotId });
+    controls = Array.isArray(ci?.candidates) ? ci.candidates : [];
+  } catch {
+    controls = [];
+  }
+  return {
+    candidate_threats: threats.map((c) => ({
+      producing_rule_id: c.producingRuleId ?? null,
+      category: c.category ?? null,
+      stride_category: c.strideCategory ?? null,
+      element_stable_key: c.elementStableKey ?? null,
+    })),
+    candidate_controls: controls.map((c) => ({
+      producing_rule_id: c.producingRuleId ?? null,
+      objective_key: c.objectiveKey ?? null,
+      control_uid: c.controlUid ?? null,
+      threat_ref: c.threatRef ?? null,
+      source: c.source ?? null,
+    })),
+    control_ruleset_version: null,
+    pack_checksums: {},
+  };
+}
+
+// Shared post tail for screening records: reserved-marker + HTML-delimiter
+// guard on the rendered body, sensitive-content filter, body-size cap, argv
+// gh post, and grc_screening phase marker. Reused by v1 and v2 runners so the
+// trust-boundary checks live in one place.
+async function postGrcScreeningComment({ repoRoot, owner, name, issueNumber, body }) {
+  const sensitiveError = detectSensitiveBodyContent(body);
+  if (sensitiveError) {
+    return { ok: false, error: "grc_screening_body_rejected", message: sensitiveError, issue_number: issueNumber, next_action: "scrub_secrets_from_fields_and_retry" };
+  }
+  if (Buffer.byteLength(body, "utf8") > GITHUB_ISSUE_COMMENT_BODY_MAX) {
+    return { ok: false, error: "grc_screening_body_too_large", message: `rendered body is ${Buffer.byteLength(body, "utf8")} bytes; GitHub's issue-comment body cap is ${GITHUB_ISSUE_COMMENT_BODY_MAX} bytes`, issue_number: issueNumber, next_action: "reduce_scope_and_retry" };
+  }
+  let apiResponse = null;
+  try {
+    const { stdout } = await execFile(
+      "gh",
+      ["api", "--method", "POST", `/repos/${owner}/${name}/issues/${issueNumber}/comments`, "-f", `body=${body}`],
+      { cwd: repoRoot },
+    );
+    try { apiResponse = JSON.parse(stdout); } catch { apiResponse = null; }
+  } catch (error) {
+    return { ok: false, error: "grc_screening_post_failed", message: extractGhErrorMessage(error), issue_number: issueNumber, next_action: "retry_after_resolving_gh_failure" };
+  }
+  let phase_marker_posted = true;
+  try {
+    await postPhaseMarker(repoRoot, owner, name, issueNumber, "grc_screening");
+  } catch {
+    phase_marker_posted = false;
+  }
+  return {
+    ok: true,
+    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+    phase_marker_posted,
+  };
+}
+
+// v2 runner: compute the classification from the change and post the record.
+// The agent supplies scope inputs only; verdict/entities/links are computed.
+export async function runComputeGrcScreening({
+  repoPath,
+  issueNumber,
+  project = null,
+  baseCommitSha = null,
+  commitSha = null,
+  threatPackId = null,
+  threatPackVersion = null,
+  derivationRunId = null,
+  rationale = null,
+  deps = {},
+}) {
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    return { ok: false, error: "grc_screening_input_invalid", message: "issueNumber must be a positive integer", issue_number: issueNumber ?? null };
+  }
+  // Reserved-marker / HTML-delimiter guard on the only caller-controlled
+  // free-text field rendered into the durable body (rationale), BEFORE any
+  // network I/O. This is the v2 marker-injection trust boundary. The touched
+  // surface is NOT caller-supplied — it is always computed from the git diff
+  // (there is no `paths` override), so a caller cannot narrow or forge the
+  // classified surface and turn the computed gate back into an assertion.
+  const callerFields = [["rationale", rationale]];
+  for (const [fieldName, value] of callerFields) {
+    if (value == null) continue;
+    const err = rejectReservedMarkerSequence(value, fieldName);
+    if (err) {
+      return { ok: false, error: "grc_screening_reserved_marker", message: err, issue_number: issueNumber, next_action: "remove_reserved_marker_prefix_and_retry" };
+    }
+    if (typeof value === "string" && (value.includes("<!--") || value.includes("-->"))) {
+      return { ok: false, error: "grc_screening_reserved_marker", message: `${fieldName}: caller-controlled text carries an HTML comment delimiter (<!-- or -->); refused to prevent comment breakout`, issue_number: issueNumber, next_action: "remove_html_comment_delimiter_and_retry" };
+    }
+  }
+
+  const computeTouchedPaths = deps.computeTouchedPaths ?? defaultComputeTouchedPaths;
+  const fetchGrcGraph = deps.fetchGrcGraph ?? defaultFetchGrcGraph;
+  const fetchDerivationState = deps.fetchDerivationState ?? defaultFetchDerivationState;
+  const enumerateCandidates = deps.enumerateCandidates ?? defaultEnumerateCandidates;
+  const postComment = deps.postComment ?? postGrcScreeningComment;
+
+  const repoRoot = await ensureGitRepo(repoPath);
+  const { owner, name } = await getOwnerRepo(repoRoot);
+
+  // Resolve project + base branch from .ground-control.yaml when not supplied.
+  let resolvedProject = project;
+  let baseBranch = "dev";
+  try {
+    const ctx = await getRepoGroundControlContext(repoRoot);
+    if (ctx?.status === "ok") {
+      resolvedProject = resolvedProject ?? ctx.project;
+      baseBranch = ctx.workflow?.base_branch ?? baseBranch;
+    }
+  } catch {
+    // fall through with defaults
+  }
+
+  // 1. Touched surface — always computed from the git diff. base/head are the
+  // only caller-supplied scope inputs and are verifiable git refs (validated as
+  // commit SHAs at the tool boundary), not an arbitrary path list.
+  const diff = await computeTouchedPaths(repoRoot, baseCommitSha, commitSha, baseBranch);
+  const touchedPaths = diff.touchedPaths;
+  const base = diff.base;
+  const head = diff.head;
+
+  // 2. Derived facts (latest run or pinned) — absence handled as gaps below.
+  const derivation = await fetchDerivationState(resolvedProject, derivationRunId);
+  // 3. Existing GRC CODE-link graph.
+  const entities = await fetchGrcGraph(resolvedProject);
+  // 4. Deterministic candidates (only when a snapshot exists to enumerate).
+  const enumerated = await enumerateCandidates(
+    resolvedProject,
+    derivation?.snapshotId ?? null,
+    threatPackId,
+    threatPackVersion,
+  );
+
+  // 5. Classify.
+  const classification = classifyGrcScreening({
+    touchedPaths,
+    entities,
+    derivation: derivation ? { coveredPaths: derivation.coveredPaths } : null,
+  });
+
+  // Record a capture limit when derivation coverage was unavailable for a
+  // touched security-relevant surface — adapter absence is never silent.
+  const capture_limits = [];
+  if (!derivation && classification.gap_set.some((g) => g.reason === "no_derivation_coverage")) {
+    capture_limits.push({ reason: "no_derivation_run", detail: "no derivation run for project; touched surface unclassified by adapters", surface: null });
+  }
+
+  const provenance = {
+    base_commit_sha: base,
+    commit_sha: head,
+    derivation_run_id: derivation?.runId ?? null,
+    architecture_model_snapshot_id: derivation?.snapshotId ?? null,
+    threat_pack_id: threatPackId,
+    threat_pack_version: threatPackVersion,
+    control_ruleset_version: enumerated.control_ruleset_version ?? null,
+    pack_checksums: enumerated.pack_checksums ?? {},
+    capture_limits,
+  };
+
+  const body = buildGrcScreeningRecordV2({
+    issueNumber,
+    rationale,
+    classification,
+    candidate_threats: enumerated.candidate_threats ?? [],
+    candidate_controls: enumerated.candidate_controls ?? [],
+    provenance,
+  });
+
+  const posted = await postComment({ repoRoot, owner, name, issueNumber, body });
+  if (!posted.ok) return posted;
+
+  return {
+    ok: true,
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    schema: GRC_SCREENING_SCHEMA_VERSION_V2,
+    derived_verdict: classification.derived_verdict,
+    impact_count: classification.impact_set.length,
+    gap_count: classification.gap_set.length,
+    stale_count: classification.stale_set.length,
+    comment_url: posted.comment_url,
+    comment_id: posted.comment_id,
+    phase_marker_posted: posted.phase_marker_posted,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Final report renderer (gc_post_final_report)
 // ---------------------------------------------------------------------------
@@ -14057,10 +14573,103 @@ function grcEntityKey(type, uid) {
   return `${normalizeEntityType(type)}::${uid}`;
 }
 
+// Reconcile a v2 (derivation-backed) screening record. Rather than trusting the
+// stored record's sets (which may have been computed early, before the final
+// diff existed — the "screened on an empty/floating diff" bypass), this
+// RECOMPUTES the classification from the FINAL diff (the record's recorded base
+// commit to the current HEAD) against the live GRC CODE-link graph and derived
+// facts, and BLOCKS on the freshly-computed gap_set. This is the structural
+// replacement for the retired passing `no_baseline` verdict and closes the
+// stale-record freshness hole: source added after screening is compared back to
+// the model, so final code cannot bypass gap_set. The stale_set is reported but
+// not independently blocking here; per-surface control/efficacy teeth and
+// stale-set addressing are GC-GRC-012's completion-coverage gate. The only
+// authorized bypass of a gap_set is gc_post_final_report's phaseOverride (an
+// audited disposition). Data-gathering seams are injectable via `deps` for tests.
+async function reconcileGrcScreeningV2({ record, repoRoot, owner, name, issueNumber, project, deps = {} }) {
+  const computeTouchedPaths = deps.computeTouchedPaths ?? defaultComputeTouchedPaths;
+  const fetchGrcGraph = deps.fetchGrcGraph ?? defaultFetchGrcGraph;
+  const fetchDerivationState = deps.fetchDerivationState ?? defaultFetchDerivationState;
+
+  // Resolve the base branch (for merge-base fallback) from .ground-control.yaml.
+  let baseBranch = "dev";
+  try {
+    const ctx = await getRepoGroundControlContext(repoRoot);
+    if (ctx?.status === "ok") baseBranch = ctx.workflow?.base_branch ?? baseBranch;
+  } catch {
+    // fall through with default
+  }
+
+  // Recompute the FINAL touched surface: from the record's recorded base commit
+  // (or merge-base with the base branch) to the current HEAD — this captures
+  // any source changed after screening ran.
+  const recordedBase =
+    record.provenance && typeof record.provenance.base_commit_sha === "string"
+      ? record.provenance.base_commit_sha
+      : null;
+  let touchedPaths;
+  try {
+    const diff = await computeTouchedPaths(repoRoot, recordedBase, null, baseBranch);
+    touchedPaths = diff.touchedPaths;
+  } catch (error) {
+    return { ok: false, error: "grc_diff_recompute_failed", message: `Failed to recompute the final diff for reconciliation: ${error.message}`, issue_number: issueNumber };
+  }
+
+  let entities;
+  try {
+    entities = await fetchGrcGraph(project);
+  } catch (error) {
+    return { ok: false, error: "grc_graph_lookup_failed", message: `Failed to read the GRC graph for reconciliation: ${error.message}`, issue_number: issueNumber };
+  }
+  const derivation = await fetchDerivationState(project, record.provenance?.derivation_run_id ?? null);
+
+  const recomputed = classifyGrcScreening({
+    touchedPaths,
+    entities,
+    derivation: derivation ? { coveredPaths: derivation.coveredPaths } : null,
+  });
+
+  // Block on the FRESHLY-computed gap_set — not the stored one.
+  const missing = recomputed.gap_set.map((g) => ({ kind: "gap", surface: g.surface, reason: g.reason, boundary: g.boundary ?? null }));
+
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      error: "grc_not_reconciled",
+      schema: record.schema,
+      missing,
+      checked: recomputed.impact_set.length + recomputed.gap_set.length,
+      stale_set: recomputed.stale_set,
+      recomputed_from_final_diff: true,
+      issue_number: issueNumber,
+      next_action: "model_control_or_disposition_gap_set_and_refresh_impact_links",
+    };
+  }
+
+  const summary = `_GRC screening \`${record.schema}\` reconciled against the final diff — ${recomputed.impact_set.length} impacted, 0 gaps, ${recomputed.stale_set.length} stale (reassessment tracked by GC-GRC-012)._`;
+  const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "grc_reconciled", { commentBody: summary });
+  return {
+    ok: true,
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    schema: record.schema,
+    derived_verdict: recomputed.derived_verdict,
+    missing: [],
+    checked: recomputed.impact_set.length + recomputed.gap_set.length,
+    impact_set: recomputed.impact_set,
+    stale_set: recomputed.stale_set,
+    recomputed_from_final_diff: true,
+    phase_marker: { phase: "grc_reconciled", issue_number: issueNumber },
+    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+  };
+}
+
 export async function runAssertGrcReconciled({
   repoPath,
   issueNumber,
   project = null,
+  deps = {},
 }) {
   if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
     throw new Error("gc_assert_grc_reconciled requires a positive integer issue_number");
@@ -14087,6 +14696,14 @@ export async function runAssertGrcReconciled({
       issue_number: issueNumber,
       next_action: "run_step_3.5_grc_screening_first",
     };
+  }
+
+  // v2 records (GC-GRC-009) carry computed impact/gap/stale sets; reconcile via
+  // the set-based path. v1 records (agent-asserted verdict) keep the original
+  // verify-what-was-claimed path below so in-flight runs and historical records
+  // still reconcile (ADR-058: existing v1 records remain historical).
+  if (record.schema === GRC_SCREENING_SCHEMA_VERSION_V2 || Array.isArray(record.gap_set) || Array.isArray(record.impact_set)) {
+    return await reconcileGrcScreeningV2({ record, repoRoot, owner, name, issueNumber, project, deps });
   }
 
   const { verdict, entities_created = [], entities_updated = [], entities_confirmed = [], code_links = [] } = record;

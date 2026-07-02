@@ -12,7 +12,20 @@ import {
   runPostGrcScreening,
   GRC_ENTITY_TYPES,
   runAssertGrcReconciled,
+  buildGrcScreeningRecordV2,
 } from "./lib.js";
+
+// Build a v2 (derivation-backed) screening record body for reconciliation tests.
+function v2Body({ issueNumber = 1100, impact_set = [], gap_set = [], stale_set = [], derived_verdict = "security_relevant" } = {}) {
+  return buildGrcScreeningRecordV2({
+    issueNumber,
+    rationale: "v2 record.",
+    classification: { impact_set, gap_set, stale_set, derived_verdict },
+    candidate_threats: [],
+    candidate_controls: [],
+    provenance: { base_commit_sha: "aaaaaaa", commit_sha: "bbbbbbb", derivation_run_id: null, architecture_model_snapshot_id: null, capture_limits: [] },
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -780,6 +793,101 @@ describe("runPostFinalReport grc_reconciled prerequisite (issue #1100)", () => {
         assert.equal(r.ok, true);
         assert.equal(r.comment_id, 9301);
       });
+    } finally {
+      shim.cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runAssertGrcReconciled — v2 (derivation-backed) records (GC-GRC-009)
+//
+// v2 reconciliation RECOMPUTES the classification from the final diff + live
+// GRC graph (injected via deps here) and blocks on the freshly-computed
+// gap_set, rather than trusting the stored record. This closes the
+// "screened on an empty/floating diff, then trust the stale record" bypass.
+// ---------------------------------------------------------------------------
+
+describe("runAssertGrcReconciled — v2 recomputes from the final diff", () => {
+  it("blocks when the recomputed final diff has an uncovered source surface (fresh gap_set)", async () => {
+    // Stored record claims clean (empty sets); the RECOMPUTE finds a gap.
+    const body = v2Body({ impact_set: [], gap_set: [], stale_set: [], derived_verdict: "not_security_relevant" });
+    const shim = makeGrcShimRepo({ comments: [{ body }], commentId: 9401 });
+    try {
+      const r = await withShimPath(shim.binDir, () =>
+        runAssertGrcReconciled({
+          repoPath: shim.repoDir,
+          issueNumber: 1100,
+          project: "acme",
+          deps: {
+            computeTouchedPaths: async () => ({ touchedPaths: ["mcp/x/added_after_screening.js"], base: "aaaaaaa", head: "HEAD" }),
+            fetchGrcGraph: async () => [],
+            fetchDerivationState: async () => null,
+          },
+        }),
+      );
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "grc_not_reconciled");
+      assert.equal(r.recomputed_from_final_diff, true);
+      const gap = r.missing.find((m) => m.kind === "gap");
+      assert.ok(gap, `expected a recomputed gap; got ${JSON.stringify(r.missing)}`);
+      assert.equal(gap.surface, "mcp/x/added_after_screening.js");
+      assert.equal(gap.reason, "no_derivation_coverage");
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("passes when the recomputed final diff is fully covered by an ACTIVE entity's CODE link", async () => {
+    const body = v2Body({ impact_set: [], gap_set: [], stale_set: [], derived_verdict: "not_security_relevant" });
+    const shim = makeGrcShimRepo({ comments: [{ body }], commentId: 9402 });
+    try {
+      const r = await withShimPath(shim.binDir, () =>
+        runAssertGrcReconciled({
+          repoPath: shim.repoDir,
+          issueNumber: 1100,
+          project: "acme",
+          deps: {
+            computeTouchedPaths: async () => ({ touchedPaths: ["mcp/ground-control/lib.js"], base: "aaaaaaa", head: "HEAD" }),
+            fetchGrcGraph: async () => [
+              { type: "threat_model", uid: "GC-TM-002", status: "ACTIVE", id: "tm-uuid-1", codeLinks: ["mcp/ground-control/lib.js"] },
+            ],
+            fetchDerivationState: async () => null,
+          },
+        }),
+      );
+      assert.equal(r.ok, true, `errors: ${JSON.stringify(r)}`);
+      assert.equal(r.recomputed_from_final_diff, true);
+      assert.equal(r.comment_id, 9402);
+      assert.equal(r.impact_set.length, 1);
+      assert.equal(r.stale_set.length, 1);
+      assert.deepEqual(r.missing, []);
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("passes when the recomputed final diff touches only non-source paths (no gap)", async () => {
+    const body = v2Body({ impact_set: [], gap_set: [{ surface: "mcp/stale.js", reason: "no_derivation_coverage", boundary: null }], stale_set: [] });
+    const shim = makeGrcShimRepo({ comments: [{ body }], commentId: 9403 });
+    try {
+      // The stored record even had a gap, but the FINAL diff is docs-only:
+      // recompute is authoritative, so reconciliation passes.
+      const r = await withShimPath(shim.binDir, () =>
+        runAssertGrcReconciled({
+          repoPath: shim.repoDir,
+          issueNumber: 1100,
+          project: "acme",
+          deps: {
+            computeTouchedPaths: async () => ({ touchedPaths: ["docs/WORKFLOW.md", "changelog.d/1.changed.md"], base: "aaaaaaa", head: "HEAD" }),
+            fetchGrcGraph: async () => [],
+            fetchDerivationState: async () => null,
+          },
+        }),
+      );
+      assert.equal(r.ok, true, `errors: ${JSON.stringify(r)}`);
+      assert.equal(r.derived_verdict, "not_security_relevant");
+      assert.deepEqual(r.missing, []);
     } finally {
       shim.cleanup();
     }
