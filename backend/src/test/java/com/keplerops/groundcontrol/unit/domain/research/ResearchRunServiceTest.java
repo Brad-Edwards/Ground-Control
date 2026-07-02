@@ -137,7 +137,13 @@ class ResearchRunServiceTest {
                                 .MethodologyRequirementsContractEntrySourceLinkRepository.class),
                 org.mockito.Mockito.mock(
                         com.keplerops.groundcontrol.domain.research.repository
-                                .MethodologyRequirementsContractRejectedAlternativeRepository.class));
+                                .MethodologyRequirementsContractRejectedAlternativeRepository.class),
+                org.mockito.Mockito.mock(
+                        com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanRepository.class),
+                org.mockito.Mockito.mock(
+                        com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanCoverageRepository.class),
+                org.mockito.Mockito.mock(
+                        com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanSectionRepository.class));
         project = new Project("research-p", "Research Project", ProjectType.RESEARCH);
         TestUtil.setField(project, "id", PROJECT_ID);
         when(projectService.getById(PROJECT_ID)).thenReturn(project);

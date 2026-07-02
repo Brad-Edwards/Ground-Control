@@ -129,6 +129,17 @@ class ResearchRunMethodologyContractServiceTest {
     @Mock
     private MethodologyRequirementsContractRejectedAlternativeRepository contractRejectedAlternativeRepository;
 
+    @Mock
+    private com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanRepository protocolPlanRepository;
+
+    @Mock
+    private com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanCoverageRepository
+            protocolPlanCoverageRepository;
+
+    @Mock
+    private com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanSectionRepository
+            protocolPlanSectionRepository;
+
     private final MethodologyCatalog methodologyCatalog = new MethodologyCatalog();
     private ResearchRunService service;
     private Project project;
@@ -152,7 +163,10 @@ class ResearchRunMethodologyContractServiceTest {
                 contractRepository,
                 contractEntryRepository,
                 contractEntrySourceLinkRepository,
-                contractRejectedAlternativeRepository);
+                contractRejectedAlternativeRepository,
+                protocolPlanRepository,
+                protocolPlanCoverageRepository,
+                protocolPlanSectionRepository);
         project = new Project("research-p", "Research Project", ProjectType.RESEARCH);
         TestUtil.setField(project, "id", PROJECT_ID);
         when(contractRepository.save(any())).thenAnswer(inv -> {

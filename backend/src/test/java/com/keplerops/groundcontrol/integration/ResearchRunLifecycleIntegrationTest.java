@@ -8,7 +8,11 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.projects.model.ProjectType;
 import com.keplerops.groundcontrol.domain.projects.service.CreateProjectCommand;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.research.model.ContractEntryKind;
 import com.keplerops.groundcontrol.domain.research.model.MethodologySourceState;
+import com.keplerops.groundcontrol.domain.research.model.ProtocolAnswerProvenance;
+import com.keplerops.groundcontrol.domain.research.model.ProtocolCoverageDisposition;
+import com.keplerops.groundcontrol.domain.research.model.ProtocolSectionKind;
 import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactReadiness;
 import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactType;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRun;
@@ -16,6 +20,12 @@ import com.keplerops.groundcontrol.domain.research.model.ResearchRunStage;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunStatus;
 import com.keplerops.groundcontrol.domain.research.service.AdvanceStageCommand;
 import com.keplerops.groundcontrol.domain.research.service.RecordArtifactCommand;
+import com.keplerops.groundcontrol.domain.research.service.RecordMethodologyRequirementsContractCommand;
+import com.keplerops.groundcontrol.domain.research.service.RecordMethodologyRequirementsContractCommand.EntryCommand;
+import com.keplerops.groundcontrol.domain.research.service.RecordMethodologyRequirementsContractCommand.SourceLinkCommand;
+import com.keplerops.groundcontrol.domain.research.service.RecordProtocolPlanCommand;
+import com.keplerops.groundcontrol.domain.research.service.RecordProtocolPlanCommand.CoverageCommand;
+import com.keplerops.groundcontrol.domain.research.service.RecordProtocolPlanCommand.SectionCommand;
 import com.keplerops.groundcontrol.domain.research.service.ResearchIntakeCommand;
 import com.keplerops.groundcontrol.domain.research.service.ResearchRunService;
 import com.keplerops.groundcontrol.domain.research.service.SelectMethodologyCommand;
@@ -76,6 +86,24 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
     void cleanup() throws Exception {
         try (var conn = dataSource.getConnection();
                 var stmt = conn.createStatement()) {
+            // #1007 ADR-081: protocol plan child rows reference the plan, which
+            // references the methodology requirements contract + artifact, so they
+            // must be deleted before those parents below.
+            stmt.executeUpdate("DELETE FROM protocol_plan_section WHERE protocol_plan_id IN "
+                    + "(SELECT pp.id FROM protocol_plan pp "
+                    + "JOIN research_run r ON pp.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM protocol_plan_coverage WHERE protocol_plan_id IN "
+                    + "(SELECT pp.id FROM protocol_plan pp "
+                    + "JOIN research_run r ON pp.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM protocol_plan_audit WHERE id IN "
+                    + "(SELECT pp.id FROM protocol_plan pp "
+                    + "JOIN research_run r ON pp.research_run_id = r.id "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
+            stmt.executeUpdate("DELETE FROM protocol_plan WHERE research_run_id IN "
+                    + "(SELECT r.id FROM research_run r "
+                    + "JOIN project p ON r.project_id = p.id WHERE p.identifier = '" + PROJECT + "')");
             // #1006 ADR-080: methodology requirements contract child rows reference
             // artifact / methodology-source / rationale / selection / run, so they
             // must be deleted before those parents below.
@@ -212,7 +240,8 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
         // GC-RSCH-F006 / ADR-078 — select a real catalog method and read its derived
         // required sources so the METHODOLOGY_REQUIREMENTS coverage gate opens.
         researchRunService.selectMethodology(projectId, runId, new SelectMethodologyCommand("systematic"));
-        for (var source : researchRunService.listMethodologySources(projectId, runId)) {
+        var sources = researchRunService.listMethodologySources(projectId, runId);
+        for (var source : sources) {
             researchRunService.updateMethodologySourceState(
                     projectId,
                     runId,
@@ -239,6 +268,19 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
                         null,
                         null,
                         null));
+
+        // GC-RSCH-F007 / ADR-080 — record the structured methodology requirements
+        // contract behind that artifact; the protocol plan answers this contract.
+        var contractCommand = new RecordMethodologyRequirementsContractCommand(
+                List.of(new EntryCommand(
+                        ContractEntryKind.REQUIREMENT,
+                        "req-1",
+                        "the protocol must state databases searched",
+                        List.of(new SourceLinkCommand(sources.get(0).getId(), "p.1")),
+                        null)),
+                List.of());
+        researchRunService.recordMethodologyRequirementsContract(projectId, runId, contractCommand);
+
         var advanced = researchRunService.advanceStage(
                 projectId, runId, new AdvanceStageCommand(ResearchRunStage.PROTOCOL_PLANNING));
         assertThat(advanced.getCurrentStage()).isEqualTo(ResearchRunStage.PROTOCOL_PLANNING);
@@ -248,6 +290,23 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
                 runId,
                 new RecordArtifactCommand(
                         ResearchArtifactType.PROTOCOL_PLAN, null, null, null, null, null, null, null, null));
+
+        // GC-RSCH-F008 / GC-RSCH-F009 / ADR-081 — a complete, non-blocking protocol
+        // plan is required before SOURCE_SEARCH may start (the durable search gate).
+        researchRunService.recordProtocolPlan(
+                projectId,
+                runId,
+                new RecordProtocolPlanCommand(
+                        "1",
+                        List.of(new CoverageCommand(
+                                "req-1",
+                                ProtocolCoverageDisposition.FILLED,
+                                "systematic search across the selected databases",
+                                ProtocolAnswerProvenance.METHODOLOGY_SOURCE,
+                                null,
+                                null,
+                                null)),
+                        systematicReviewSections()));
         researchRunService.advanceStage(projectId, runId, new AdvanceStageCommand(ResearchRunStage.SOURCE_SEARCH));
         researchRunService.recordArtifact(
                 projectId,
@@ -316,5 +375,136 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
                 // best-effort cleanup
             }
         }
+    }
+
+    /**
+     * GC-RSCH-F008 / ADR-081 §2 — the SOURCE_SEARCH durable gate: advancing past
+     * PROTOCOL_PLANNING is blocked while the active protocol plan carries an
+     * unresolved BLOCKING_DECISION_REQUIRED coverage, and allowed once a reworked
+     * plan resolves it.
+     */
+    @Test
+    void advanceToSourceSearch_blockedByBlockingCoverage_thenAllowedAfterRework() {
+        var projectId = ensureProject();
+        ActorHolder.set("it-actor-2");
+        ResearchRun run;
+        try {
+            run = researchRunService.start(new StartResearchRunCommand(projectId, "RUN-IT-2", null, null, Map.of()));
+        } finally {
+            ActorHolder.clear();
+        }
+        var runId = run.getId();
+
+        researchRunService.selectMethodology(projectId, runId, new SelectMethodologyCommand("systematic"));
+        var sources = researchRunService.listMethodologySources(projectId, runId);
+        for (var source : sources) {
+            researchRunService.updateMethodologySourceState(
+                    projectId,
+                    runId,
+                    source.getId(),
+                    new UpdateMethodologySourceStateCommand(MethodologySourceState.OBTAINED));
+            researchRunService.updateMethodologySourceState(
+                    projectId,
+                    runId,
+                    source.getId(),
+                    new UpdateMethodologySourceStateCommand(MethodologySourceState.READ));
+        }
+        researchRunService.recordArtifact(
+                projectId,
+                runId,
+                new RecordArtifactCommand(
+                        ResearchArtifactType.METHODOLOGY_REQUIREMENTS,
+                        "ws://m",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null));
+        researchRunService.recordMethodologyRequirementsContract(
+                projectId,
+                runId,
+                new RecordMethodologyRequirementsContractCommand(
+                        List.of(new EntryCommand(
+                                ContractEntryKind.OPEN_PROTOCOL_QUESTION,
+                                "oq-1",
+                                "which risk-of-bias tool?",
+                                List.of(new SourceLinkCommand(sources.get(0).getId(), "p.1")),
+                                null)),
+                        List.of()));
+        researchRunService.advanceStage(projectId, runId, new AdvanceStageCommand(ResearchRunStage.PROTOCOL_PLANNING));
+
+        // First PROTOCOL_PLAN attempt leaves oq-1 as BLOCKING_DECISION_REQUIRED.
+        researchRunService.recordArtifact(
+                projectId,
+                runId,
+                new RecordArtifactCommand(
+                        ResearchArtifactType.PROTOCOL_PLAN, null, null, null, null, null, null, null, null));
+        researchRunService.recordProtocolPlan(
+                projectId,
+                runId,
+                new RecordProtocolPlanCommand(
+                        "1",
+                        List.of(new CoverageCommand(
+                                "oq-1",
+                                ProtocolCoverageDisposition.BLOCKING_DECISION_REQUIRED,
+                                null,
+                                null,
+                                "needs a human call on the RoB tool",
+                                null,
+                                null)),
+                        systematicReviewSections()));
+        var blockedAdvance = new AdvanceStageCommand(ResearchRunStage.SOURCE_SEARCH);
+        assertThatThrownBy(() -> researchRunService.advanceStage(projectId, runId, blockedAdvance))
+                .isInstanceOf(DomainValidationException.class)
+                .extracting(e -> ((DomainValidationException) e).getErrorCode())
+                .isEqualTo("research_run_protocol_plan_blocking");
+        assertThat(researchRunService.getById(projectId, runId).getCurrentStage())
+                .isEqualTo(ResearchRunStage.PROTOCOL_PLANNING);
+
+        // Rework the artifact (new attempt) with a plan that resolves oq-1: now allowed.
+        researchRunService.recordArtifact(
+                projectId,
+                runId,
+                new RecordArtifactCommand(
+                        ResearchArtifactType.PROTOCOL_PLAN, null, null, null, null, null, null, null, null));
+        researchRunService.recordProtocolPlan(
+                projectId,
+                runId,
+                new RecordProtocolPlanCommand(
+                        "1",
+                        List.of(new CoverageCommand(
+                                "oq-1",
+                                ProtocolCoverageDisposition.RESOLVED_BY_USER_DECISION,
+                                null,
+                                null,
+                                null,
+                                null,
+                                "gate-decision:PROTOCOL_DECISION")),
+                        systematicReviewSections()));
+        var advanced = researchRunService.advanceStage(
+                projectId, runId, new AdvanceStageCommand(ResearchRunStage.SOURCE_SEARCH));
+        assertThat(advanced.getCurrentStage()).isEqualTo(ResearchRunStage.SOURCE_SEARCH);
+    }
+
+    private static List<SectionCommand> systematicReviewSections() {
+        return List.of(
+                new SectionCommand(
+                        "s-eligibility", ProtocolSectionKind.ELIGIBILITY_CRITERIA, null, "eligibility criteria"),
+                new SectionCommand(
+                        "s-databases",
+                        ProtocolSectionKind.DATABASES_SEARCH_STRINGS,
+                        null,
+                        "databases and search strings"),
+                new SectionCommand("s-screening", ProtocolSectionKind.SCREENING, null, "screening process"),
+                new SectionCommand("s-extraction", ProtocolSectionKind.DATA_EXTRACTION, null, "data extraction plan"),
+                new SectionCommand("s-rob", ProtocolSectionKind.RISK_OF_BIAS_POSTURE, null, "risk of bias posture"),
+                new SectionCommand("s-synthesis", ProtocolSectionKind.SYNTHESIS_PLAN, null, "synthesis plan"),
+                new SectionCommand("s-reporting", ProtocolSectionKind.REPORTING_STANDARD, null, "reporting standard"),
+                new SectionCommand(
+                        "s-certainty", ProtocolSectionKind.CERTAINTY_CLAIM_LIMITS, null, "certainty and claim limits"),
+                new SectionCommand("s-limits", ProtocolSectionKind.METHOD_LIMITS, null, "method limits"),
+                new SectionCommand("s-nonclaims", ProtocolSectionKind.NON_CLAIMS, null, "non-claims"));
     }
 }
