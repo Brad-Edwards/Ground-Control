@@ -97,5 +97,6 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [077](077-research-behavior-versioning-and-regression-tests.md) | Research Behavior Versioning and Regression Tests | Accepted (amended by ADR-078) |
 | [078](078-research-methodology-catalog-reference-data.md) | Research Methodology Catalog as Backend Reference Data | Accepted |
 | [079](079-commit-time-pre-commit-hook-activation.md) | Commit-Time Pre-commit Hook Activation | Accepted |
+| [080](080-research-methodology-requirements-contract-artifact.md) | Research Methodology Requirements Contract Artifact | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.

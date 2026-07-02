@@ -11059,6 +11059,15 @@ export const RESEARCH_ARTIFACT_TYPES = [
   "MANUSCRIPT",
 ];
 
+// GC-RSCH-F007 / ADR-080 — closed vocabulary for methodology requirements
+// contract entries. Mirrors ContractEntryKind (backend enum contract, ADR-034).
+export const CONTRACT_ENTRY_KINDS = [
+  "REQUIREMENT",
+  "METHOD_LIMIT",
+  "NON_CLAIM",
+  "OPEN_PROTOCOL_QUESTION",
+];
+
 export const RESEARCH_GATE_POINTS = [
   "METHOD_DECISION",
   "PROTOCOL_DECISION",
@@ -11226,6 +11235,25 @@ export async function listMethodologySources(id, project) {
 // /api/v1/research-runs allow-list.
 export async function listMethodologyCatalog() {
   return request("GET", "/api/v1/research-runs/methodology/catalog", {});
+}
+
+// GC-RSCH-F007 / GC-RSCH-F008 / ADR-080 — methodology requirements contract behind
+// the METHODOLOGY_REQUIREMENTS artifact. Read also routes through gc_query under
+// the /api/v1/research-runs allow-list.
+export async function recordMethodologyRequirementsContract(id, data, project) {
+  return request(
+    "POST",
+    `/api/v1/research-runs/${encodeURIComponent(id)}/methodology/requirements-contract`,
+    { body: data, params: { project } },
+  );
+}
+
+export async function getMethodologyRequirementsContract(id, project) {
+  return request(
+    "GET",
+    `/api/v1/research-runs/${encodeURIComponent(id)}/methodology/requirements-contract`,
+    { params: { project } },
+  );
 }
 
 export async function createControl(data, project) {

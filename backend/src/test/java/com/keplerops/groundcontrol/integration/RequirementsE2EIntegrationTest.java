@@ -597,6 +597,11 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "175", // V175: create research_run_methodology_selection (#1005, GC-RSCH-F006)
                         "176", // V176: create research_run_methodology_selection_audit (#1005 audit parity)
                         "177", // V177: create research_run_methodology_source (#1005, GC-RSCH-F006)
-                        "178"); // V178: create research_run_methodology_source_audit (#1005 audit parity)
+                        "178", // V178: create research_run_methodology_source_audit (#1005 audit parity)
+                        "179", // V179: create methodology_requirements_contract (#1006, ADR-080)
+                        "180", // V180: create methodology_requirements_contract_audit (#1006 audit parity)
+                        "181", // V181: create methodology_requirements_contract_entry (#1006, ADR-080)
+                        "182", // V182: create methodology_requirements_contract_entry_source_link (#1006)
+                        "183"); // V183: create methodology_requirements_contract_rejected_alternative (#1006)
     }
 }

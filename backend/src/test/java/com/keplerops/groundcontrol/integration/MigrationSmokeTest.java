@@ -73,7 +73,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "136", "137", "138", "139", "140", "141", "142", "143", "144", "145", "146", "147", "148",
                         "149", "150", "151", "152", "153", "154", "155", "156", "157", "158", "159", "160", "161",
                         "162", "163", "164", "165", "166", "167", "168", "169", "170", "171", "172", "173", "174",
-                        "175", "176", "177", "178");
+                        "175", "176", "177", "178", "179", "180", "181", "182", "183");
     }
 
     @Test
@@ -843,29 +843,15 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         + " WHERE table_name = 'test_run_case_result'"
                         + " AND constraint_name = 'ck_test_run_case_result_status'")
                 .getSingleResult();
-        // V105 / V107 / V109 audit-shadow column probes. The audit tables are
-        // not Hibernate-managed entities, so ddl-auto: validate does not
-        // inspect them; without explicit column probes, a copy-paste regression
-        // in V105 / V107 / V109 that dropped uid / tester_name / snapshot
-        // columns silently creates wrong-shape shadows that pass at boot but
-        // fail on the first audit revision flush at runtime.
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT uid, name, status, environment, version, build,"
-                                + " start_at, end_at, created_at, updated_at"
-                                + " FROM test_run_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT test_run_id, tester_name, created_at, updated_at"
-                                + " FROM test_run_tester_assignment_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT test_run_id, test_case_id, test_case_uid, test_case_title,"
-                                + " snapshot_order, status, notes, created_at, updated_at"
-                                + " FROM test_run_case_result_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
+        // V105 / V107 / V109 / V116-V118 (TC-008 / TC-009, ADR-049 / ADR-050)
+        // test-run audit-shadow column probes. The audit tables are not
+        // Hibernate-managed entities, so ddl-auto: validate does not inspect
+        // them; without explicit column probes, a copy-paste regression that
+        // dropped uid / tester_name / snapshot columns silently creates
+        // wrong-shape shadows that pass at boot but fail on the first audit
+        // revision flush at runtime. Extracted from this method to keep the
+        // probe roster's assertion count bounded (see assertTestRunAuditColumns).
+        assertTestRunAuditColumns();
         // V116-V118 step-result + cursor (TC-009 / ADR-050). Pin the
         // snapshot columns + status backstop on the live table and the
         // shape of the _audit shadow so a downstream alter cannot silently
@@ -912,13 +898,6 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         + " WHERE table_name = 'test_run_step_result'"
                         + " AND constraint_name = 'ck_test_run_step_result_status'")
                 .getSingleResult();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT test_run_case_result_id, test_case_step_id,"
-                                + " step_number_snapshot, action_snapshot, expected_result_snapshot,"
-                                + " snapshot_order, status, comment, executed_at, created_at, updated_at"
-                                + " FROM test_run_step_result_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
         // V118 cursor columns on test_run live table only.
         entityManager
                 .createNativeQuery("SELECT 1 FROM information_schema.columns"
@@ -1154,6 +1133,45 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         assertResearchProvenanceAuditColumns();
         // V175-V178 (#1005, GC-RSCH-F006): methodology selection + source tables.
         assertResearchMethodologyAuditColumns();
+        // V179-V183 (#1006, ADR-080): methodology requirements contract tables.
+        assertMethodologyContractColumns();
+    }
+
+    /**
+     * V179-V183 (#1006, ADR-080) — column-level probes for the methodology
+     * requirements contract, its entries, source links, rejected alternatives, and
+     * the contract Envers audit shadow. ddl-auto:validate does not inspect audit
+     * tables, so probe the audited payload columns explicitly.
+     */
+    private void assertMethodologyContractColumns() {
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT research_run_id, selection_id, artifact_id, attempt_no,"
+                                + " schema_version, actor, created_at, updated_at"
+                                + " FROM methodology_requirements_contract LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT artifact_id, attempt_no, schema_version, actor,"
+                                + " created_at, updated_at"
+                                + " FROM methodology_requirements_contract_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT contract_id, kind, entry_key, statement, references_entry_key, actor"
+                                + " FROM methodology_requirements_contract_entry LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT entry_id, source_id, locator"
+                                + " FROM methodology_requirements_contract_entry_source_link LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery(
+                                "SELECT contract_id, rationale_entry_id, method_key, profile_version, external"
+                                        + " FROM methodology_requirements_contract_rejected_alternative LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
     }
 
     /**
@@ -1204,6 +1222,44 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery(
                                 "SELECT owner, steward, environment, criticality, business_context, scope_designation"
                                         + " FROM operational_asset_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+    }
+
+    /**
+     * V105 / V107 / V109 / V116-V118 (TC-008 / TC-009, ADR-049 / ADR-050) —
+     * column-level probes for the test-run, tester-assignment, case-result, and
+     * step-result Envers audit shadows. The audit tables are not Hibernate-managed
+     * entities, so ddl-auto:validate does not inspect them; without explicit
+     * column probes, a copy-paste regression that dropped a uid / tester_name /
+     * snapshot column would silently create a wrong-shape shadow that passes at
+     * boot but fails on the first audit revision flush at runtime. Extracted from
+     * {@link #auditTablesExist()} to keep that probe roster's assertion count
+     * bounded.
+     */
+    private void assertTestRunAuditColumns() {
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT uid, name, status, environment, version, build,"
+                                + " start_at, end_at, created_at, updated_at"
+                                + " FROM test_run_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT test_run_id, tester_name, created_at, updated_at"
+                                + " FROM test_run_tester_assignment_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT test_run_id, test_case_id, test_case_uid, test_case_title,"
+                                + " snapshot_order, status, notes, created_at, updated_at"
+                                + " FROM test_run_case_result_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT test_run_case_result_id, test_case_step_id,"
+                                + " step_number_snapshot, action_snapshot, expected_result_snapshot,"
+                                + " snapshot_order, status, comment, executed_at, created_at, updated_at"
+                                + " FROM test_run_step_result_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }

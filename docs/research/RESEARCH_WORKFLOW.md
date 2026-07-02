@@ -13,7 +13,8 @@ by ADR-068. Research factuality and claim grounding are governed by ADR-075.
 Scientific humility exposure for negative results, failed searches, access gaps,
 missing evidence, method limits, and non-claims is governed by ADR-076.
 Versioning and regression expectations for prompts, method profiles, schemas,
-and workflow policies are governed by ADR-077.
+and workflow policies are governed by ADR-077. The structured phase-1
+methodology requirements contract artifact is governed by ADR-080.
 
 ## Phases
 
@@ -86,6 +87,14 @@ Adding a method: append a new entry with the primary methodology source Zotero k
 ## F006 backend contract: methodology source coverage gate
 
 The backend enforces the source-coverage invariant via `ResearchRunService`. Selecting a methodology (`POST /api/v1/research-runs/{id}/methodology/selection`) takes only a `methodKey`: the required-source set is **derived from the backend-owned methodology catalog** (`backend/src/main/resources/research/methodology-catalog.yaml`, the source of truth that the skill catalog mirrors under a `make policy` drift check - ADR-078), not supplied by the caller. The resolved method profile's required primary sources are snapshotted as immutable `required: true` rows at selection; an unknown `methodKey` is rejected with `research_run_methodology_unknown_method`. Before a `METHODOLOGY_REQUIREMENTS` artifact can be recorded, the run must have an active methodology selection and every source marked `required: true` must be in `READ` state (tracked via `POST /api/v1/research-runs/{id}/methodology/sources` and `PATCH /api/v1/research-runs/{id}/methodology/sources/{sourceId}`). A required source in `BLOCKED` state raises a `409 Conflict` with error code `research_run_methodology_source_blocked`; any required source not yet `READ` raises `422 Unprocessable Entity` with code `research_run_methodology_sources_incomplete`. Optional sources never block the gate. Once a `METHODOLOGY_REQUIREMENTS` artifact has been recorded, the methodology is locked: reselecting a different method (which would re-snapshot a fresh, unread required set and silently invalidate the accepted artifact's coverage) is rejected with `409 Conflict` code `research_run_methodology_locked_after_requirements`. The full catalog is readable at `GET /api/v1/research-runs/methodology/catalog`. The MCP surface exposes these operations through the `gc_research_run` tool actions `list_methodology_catalog`, `select_methodology`, `get_methodology_selection`, `record_methodology_source`, `update_methodology_source_state`, and `list_methodology_sources`.
+
+## F007 artifact boundary: methodology requirements contract
+
+ADR-080 defines the phase-1 artifact as a structured, run-scoped methodology requirements contract tied to the active methodology selection and the `METHODOLOGY_REQUIREMENTS` artifact manifest attempt. The contract records source-linked methodology obligations, method limits, non-claims, and open protocol-planning questions. It is not a Ground Control `Requirement`, not a raw markdown body stored on `ResearchRunArtifact`, and not a duplicate rationale/provenance schema.
+
+The chosen method remains the active methodology selection from ADR-078. Rejected alternatives remain methodology-choice rationale entries. Every extracted requirement, limit, or non-claim must link back to methodology source coverage rows from the same active selection. Phase 1 has no first-class fields for protocol answers such as databases, query strings, date ranges, charting categories, synthesis dimensions, or source-set caps; phase 2 fills or defers those answers against the contract.
+
+The contract is recorded once per `METHODOLOGY_REQUIREMENTS` artifact attempt (a rework records a new artifact attempt, then a new contract) via `POST /api/v1/research-runs/{id}/methodology/requirements-contract` and read via `GET /api/v1/research-runs/{id}/methodology/requirements-contract`. Each entry carries a closed `kind` (`REQUIREMENT`, `METHOD_LIMIT`, `NON_CLAIM`, `OPEN_PROTOCOL_QUESTION`) and a stable `entryKey`. `REQUIREMENT`, `METHOD_LIMIT`, and `NON_CLAIM` entries must link at least one methodology source of the active selection that is in `READ` state (a claim with no `READ` source link is rejected - no model memory as scientific evidence, GC-RSCH-R002); an `OPEN_PROTOCOL_QUESTION` may instead reference another entry by key. Recording requires an active `METHODOLOGY_REQUIREMENTS` artifact and complete required-source coverage; a second contract for the same artifact attempt is rejected with `409 Conflict` code `research_run_methodology_contract_exists`. The MCP surface exposes these through the `gc_research_run` tool actions `record_methodology_requirements_contract` and `get_methodology_requirements_contract`.
 
 ## Citation MCP
 
