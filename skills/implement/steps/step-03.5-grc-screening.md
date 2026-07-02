@@ -40,7 +40,7 @@ The `derived_verdict` is computed, not chosen: `not_security_relevant` when both
 
 ## Handoff to next step
 
-The screening record is durable workflow state. The `grc_screening` phase marker written by the tool signals the gate completed. `gc_assert_grc_reconciled` (post-merge, Phase E) does not trust the stored record: it **recomputes** the classification from the final diff (the record's recorded base commit to the current HEAD) against the live GRC graph and **blocks on the freshly-computed `gap_set`**, so source added after screening ran cannot bypass the gate. The only authorized bypass is `gc_post_final_report`'s `phaseOverride` (an audited disposition). Historical/in-flight v1 records continue to reconcile via the v1 verdict path.
+The screening record is durable workflow state. The `grc_screening` phase marker written by the tool signals the gate completed. **Step 4 (planning) requires this marker and reads this record:** when the `derived_verdict` is `security_relevant`, `gc_post_implementation_plan` refuses a plan that does not enumerate structured `grc_deliverables` covering the `gap_set` and `stale_set` (GC-GRC-010 design-time GRC gate) — so the deliverables you plan are derived directly from the sets recorded here. `gc_assert_grc_reconciled` (post-merge, Phase E) does not trust the stored record: it **recomputes** the classification from the final diff (the record's recorded base commit to the current HEAD) against the live GRC graph and **blocks on the freshly-computed `gap_set`**, so source added after screening ran cannot bypass the gate. The only authorized bypass is `gc_post_final_report`'s `phaseOverride` (an audited disposition). Historical/in-flight v1 records continue to reconcile via the v1 verdict path.
 
 ## Return contract
 
