@@ -2,7 +2,7 @@
        assert-backup-policy test-backup-restore-local vale-install vale-lint \
        ground-control-mcp-install sync-ground-control-policy scaffold-controller scaffold-audited-entity \
        scaffold-l2-state-machine sync-packs trigger-pack-sync dev clean up down docker-build smoke frontend-install frontend-dev \
-       frontend-build frontend-lint frontend-format frontend-test deploy deploy-status deploy-manifest deploy-infra mcp-openapi-contract rollback
+       frontend-build frontend-lint frontend-format frontend-test deploy deploy-status deploy-manifest deploy-infra mcp-openapi-contract rollback hooks
 
 # --- Rapid dev loop (< 5s) ---
 
@@ -28,6 +28,9 @@ format: ## Format code with Spotless
 
 lint: ## Check formatting
 	cd backend && ./gradlew spotlessCheck
+
+hooks: ## Activate + verify commit-time pre-commit hooks for this clone (ADR-079)
+	bash scripts/install-hooks.sh
 
 # --- Full verification (CI-equivalent) ---
 
@@ -67,7 +70,6 @@ vale-lint: vale-install ## Run Vale on .md docs touched in the diff vs BASE_REF 
 
 policy: policy-tests assert-backup-policy vale-lint ## Run repo-native policy checks shared by Claude and Codex
 	python3 bin/policy --skip-pr-body
-	python3 tools/policy/check_operating_controls.py
 
 assert-backup-policy: ## Assert GC-P021 backup cadence / retention / verification defaults are intact
 	bash scripts/assert-backup-policy.sh

@@ -112,7 +112,7 @@ routing:
     implementation:
       tier: medium
       provider: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5
       agent: subagent
       fallback: parent
 
@@ -137,7 +137,7 @@ Config contract:
 - `routing.enabled` defaults to `false`. When enabled, omitted `/implement` stages use built-in defaults; `routing.stages.<stage>` overrides a specific stage/purpose route.
 - Routing stages use lowercase stage keys matching `[a-z][a-z0-9_-]*`. Route fields are `tier`, `provider`, `model`, `agent`, and `fallback`.
 - Routing `tier` is one of `low`, `medium`, or `high`; `provider` currently supports `claude`; `agent` is one of `parent`, `subagent`, or `cli`; `fallback` is one of `parent`, `error`, or `skip`.
-- Claude model values in executable routing config must be canonical CLI ids such as `claude-haiku-4-5`, `claude-sonnet-4-6`, or `claude-opus-4-8`; display aliases like `sonnet-4.6` are rejected.
+- Claude model values in executable routing config must be canonical CLI ids such as `claude-haiku-4-5`, `claude-sonnet-5`, or `claude-opus-4-8`; display aliases like `sonnet-4.6` are rejected.
 - `telemetry.enabled` defaults to `false`. `gc_log_step_telemetry` refuses to write telemetry unless this is explicitly true.
 
 `AGENTS.md` should still carry a brief `Ground Control Context` section that points agents at `.ground-control.yaml` and `.gc/`, so repo newcomers know where the workflow config lives.
@@ -227,7 +227,7 @@ flowchart TB
 
 ```
 claude --print
-       --model claude-sonnet-4-6
+       --model claude-sonnet-5
        --output-format json
        --json-schema <findings schema>
        --add-dir <repo>
@@ -241,7 +241,7 @@ with the prompt on stdin and `ANTHROPIC_API_KEY` **stripped from the subprocess 
 1. Run `claude login` on the host once (credentials persist in `~/.claude`).
 2. `/implement <issue>` invokes Step 6.6 automatically; no separate action needed.
 
-**Model override:** pass `model` in the MCP call (`claude-haiku-4-5`, `claude-opus-4-8`, etc.). The /implement SKILL uses the default `claude-sonnet-4-6`.
+**Model override:** pass `model` in the MCP call (`claude-haiku-4-5`, `claude-opus-4-8`, etc.). The /implement SKILL uses the default `claude-sonnet-5`.
 
 **Separate billing account:** if the env-var path is preferred, remove the env-var strip in `runSingleClaudeTestQualityReview` (lib.js) and ensure `ANTHROPIC_API_KEY` has credits. The default strip path keeps OAuth as the canonical auth.
 
@@ -286,7 +286,7 @@ Per ADR-036 the `/implement` skill carries three cost-side optimizations layered
 
 | Optimization | What it changes | Opt-in knob |
 |--------------|-----------------|-------------|
-| Per-step routing | Each step carries a provider-neutral tier (`low`, `medium`, `high`); `gc_resolve_workflow_route` resolves the stage/purpose from `.ground-control.yaml` to a concrete provider, agent, canonical model id, and fallback policy. Claude Code routes subagent stages to canonical model ids such as `claude-haiku-4-5` and `claude-sonnet-4-6`; parent-only high-tier stages use `claude-opus-4-8`. Codex drivers ignore delegation today unless they explicitly call the resolver and external runner. | `.ground-control.yaml` → `routing.enabled` (default `false`) plus optional `routing.stages.<stage>` overrides |
+| Per-step routing | Each step carries a provider-neutral tier (`low`, `medium`, `high`); `gc_resolve_workflow_route` resolves the stage/purpose from `.ground-control.yaml` to a concrete provider, agent, canonical model id, and fallback policy. Claude Code routes subagent stages to canonical model ids such as `claude-haiku-4-5` and `claude-sonnet-5`; parent-only high-tier stages use `claude-opus-4-8`. Codex drivers ignore delegation today unless they explicitly call the resolver and external runner. | `.ground-control.yaml` → `routing.enabled` (default `false`) plus optional `routing.stages.<stage>` overrides |
 | Durable-record MCP tools | `gc_post_decision_record` (Step 6.5 cycle decisions), `gc_post_final_report` (Step 17 final report, invoked via `gc_assert_completion`), `gc_render_pr_body` (Step 9 PR body) replace agent free-prose with deterministic structured-input renderers. All three filter sensitive content, post under a structured marker family, and reject `decision: "defer"` server-side. `gc_post_final_report` also requires `/implement` callers to pass `plain_english_outcome`, which renders an Outcome section before the structured evidence. | Always available; SKILL calls them unconditionally once the tools are present |
 | Traceability + post-merge close gates (#1058/#1156/#1103) | `gc_assert_completion` (Step 17) sequences `gc_assert_traceability_reconciled` (posts `traceability_reconciled` marker), `gc_assert_grc_reconciled` (posts `grc_reconciled` marker), and `gc_post_final_report` in one deterministic call. The `traceability_reconciled` marker is posted by the traceability assertion within `gc_assert_completion`; `gc_post_final_report` refuses to publish without both markers, and `gc_assert_completion` uses `internalVerifiedPhases` to avoid a GitHub read-after-write race on the markers it just posted. `gc_close_issue_after_merge` (Step 20 / Phase E) verifies the linked PR's `merged_at` non-null AND state `MERGED` before closing the issue, idempotent on already-closed issues. After a successful close, the tool returns a best-effort `next_issue_recommendation` or an explicit no-recommendation/failure reason. The /quickfix lane is requirement-free and exempt from the traceability and outcome gate. | Always on for `/implement`; `lane: "quickfix"` opts out of the traceability and outcome prerequisites |
 | GRC reconciliation gate (#1100, v1; ADR-058 target v2; #1103) | `gc_assert_grc_reconciled` (called within `gc_assert_completion` at Step 17) reads the GRC screening record written by `gc_post_grc_screening` (Step 3.5) from the issue thread and verifies it server-side: for `security_relevant` verdicts it resolves each entity ref (threat model, risk scenario, control) via the REST API and confirms each claimed `CODE` link exists on the owner entity; for `not_security_relevant` / `no_baseline` v1 verdicts the gate passes immediately. ADR-058 evolves this to computed `impact_set` / `gap_set` / `stale_set` coverage: a missing baseline is a gap set to address, and completion verifies required coverage, controls, efficacy tests, or authorized dispositions rather than only verifying what the v1 record claimed. On success it posts the `grc_reconciled` phase marker. `gc_post_final_report` requires **both** `traceability_reconciled` **and** `grc_reconciled` markers before publishing. The /quickfix lane is exempt from the gate. | Always on for `/implement`; `lane: "quickfix"` opts out; a user-authorized skip is taken at the final-report phase override |
@@ -305,7 +305,7 @@ One mandatory pre-implementation architecture pass, then a single pre-push codex
 | Trivy (advisory) | Container image vulnerabilities, Dockerfile/IaC misconfigurations, in-image secrets | CI job; SARIF artifact `trivy-sarif` on the workflow run page; non-blocking |
 | OSV-scanner (advisory) | CVEs in Java/Gradle dependencies (read from `backend/gradle.lockfile`) | CI job; SARIF artifact `osv-scanner-sarif` on the workflow run page; non-blocking |
 | Codex review (pre-push, Step 6.5) | Fitness for purpose, architectural soundness, maintainability, extensibility, security, established patterns, consistency with the larger codebase. Codex returns structured findings; the MCP server posts a verbatim findings record to the resolved issue thread from the host side; the coding agent dispatches on the returned `next_action` (re-invoke only on `fix_findings_and_reinvoke`; on `fix_findings_then_summarize_and_escalate` fix + escalate without re-invoke). There is no PR yet at Step 6.5, so no inline PR comments are written by the SKILL - inline anchored comments only happen if a direct caller invokes `gc_codex_review` post-push (with a `pr_number`), which the SKILL no longer drives (issue #804). | `gc_codex_review` (`uncommitted=true`); MCP posts the issue-thread findings record |
-| `gc_test_quality_review` (Step 6.6) | Assertion-free tests, mock-only assertions, integration-as-unit, tests that can't detect regressions | `gc_test_quality_review` MCP tool (shells out to `claude --print --model claude-sonnet-4-6` by default; full mechanism in `architecture/notes/test-quality-review-engine.md`) |
+| `gc_test_quality_review` (Step 6.6) | Assertion-free tests, mock-only assertions, integration-as-unit, tests that can't detect regressions | `gc_test_quality_review` MCP tool (shells out to `claude --print --model claude-sonnet-5` by default; full mechanism in `architecture/notes/test-quality-review-engine.md`) |
 
 **Async execution (issue #937).** The codex review, codex architecture preflight, and test-quality review tools each spawn a child process (`codex exec` / `claude --print`) that legitimately runs for several minutes. Run synchronously, a single MCP tool-call blocked past the MCP client's per-call timeout; the client abandoned the call and the orphaned child left the workflow with no result handle (issue #893). All five tools (`gc_codex_architecture_preflight`, `gc_codex_review`, `gc_codex_review_cycle`, `gc_test_quality_review`, `gc_test_quality_review_cycle`) now take an opt-in `async` flag (default `false`; synchronous behavior unchanged for direct callers). With `async: true` the tool starts a background job and returns `{ok, status: "running", job_id}` immediately; the new `gc_codex_job` tool polls for the result envelope (`status: "done"` carries the full review result under `result`) or cancels a stuck job (cancel aborts an `AbortController` whose signal kills the child, so nothing is orphaned). The `/implement` step files (2.5 / 6.5 / 6.6) drive the start-then-poll loop. Client-side, `.claude/settings.json` sets `MCP_TOOL_TIMEOUT` / `MCP_TIMEOUT` so long-running MCP tools (including `gc_watch_ci_run` and `gc_watch_sonar_analysis`) have headroom. Full design in ADR-036 (amendments).
 
@@ -362,15 +362,18 @@ PreToolUse hook on `Bash`. The user owns every actual merge. Blocked uncondition
   fails on new issues, and `.github/branch-protection-baseline.json` requires
   strict status checks for `main` and `dev` while retaining admin bypass
 - `make policy` is the common path for Claude, Codex, pre-commit, and CI
-- `python3 tools/policy/check_operating_controls.py` (run by `make policy` and
-  the CI `policy` job) is the durable-record guard for the source-gate operating
-  control `compliance-requirement-traceability`, whose durable home is Ground
-  Control (penumbra-cell#34 routes to it). It fails when
-  `docs/architecture/operating-controls/{README,source}.md` go missing or drift
-  away from the control objective, the `before-source` gate, or the four named
-  sources of truth. It is standalone (not a `run_*` in `tools/policy/checks.py`)
-  so it does not trip the `doc-coverage-gate-sync` ADR rule keyed on `checks.py`.
 - `make sync-ground-control-policy` and `make policy-live` keep Ground Control quality gates and ADR metadata aligned when a live GC instance is available
+
+Commit-time pre-commit activation is a separate per-clone contract from the
+presence of `.pre-commit-config.yaml` and the CI pre-commit job. ADR-079 requires
+repo setup to verify Git's effective hook dispatch path for the current clone,
+adapt to a supported global `core.hooksPath` dispatcher without mutating global
+Git config, and fail closed when hooks are present in config but not wired for
+commit-time execution. Run `make hooks` (a wrapper for `scripts/install-hooks.sh`)
+once per fresh clone: it writes managed `pre-commit`/`pre-push` hooks into the
+clone-local hook path the dispatcher delegates to, proves Git actually dispatches
+to them, then runs `pre-commit run --all-files`. `.git/hooks/` is not versioned, so
+this step does not survive a fresh clone by design; re-run it after cloning.
 
 ### MCP–Backend Write-Contract Gate (ADR-034, #1106)
 

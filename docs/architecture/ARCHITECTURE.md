@@ -212,6 +212,113 @@ The four public operations on the mixed-entity graph (GC-G008) are:
 
 **Legacy compatibility:** `/api/v1/requirements/graph/**` routes remain available as requirement-only compatibility endpoints. They must not be extended for mixed-entity traversal; all new cross-entity graph operations go through `/api/v1/graph/**`.
 
+## Deterministic Threat Enumeration Boundary (GC-GRC-007)
+
+GC-GRC-007 belongs to the derivation-backed GRC engine, not to free-form LLM
+generation. The enumeration step is a pure, deterministic domain evaluation
+over an `ArchitectureModelSnapshotView` and a resolved, project-pinned rule
+pack. Given the same snapshot, same rule-pack pin, and same engine version, it
+must produce byte-stable candidate ordering and candidate identities.
+
+### Engine Design
+
+The enumeration engine lives in `domain/threatenumeration/service/`. `ThreatEnumerationService`
+mirrors the `DataClassificationEvaluationService` sibling pattern:
+
+- **Pure static method**: `enumerate(ThreatRulePackDefinition, String snapshotId, String
+  modelVersion, List<ThreatCandidateElementView>)` is side-effect free and directly unit-tested.
+  The same definition and views always produce an identical candidate list sorted by
+  `(elementStableKey, ruleId, strideCategory)`.
+- **Read-only service wrappers**: `enumerateLatest` and `enumerateSnapshot` resolve the pack
+  definition via `resolvePackDefinition`, load the architecture-model snapshot, project element
+  states to `ThreatCandidateElementView`s, and delegate to `enumerate`.
+
+The predicate model (`ThreatRuleMatchPredicate`) is closed: `ALWAYS`, `CROSSES_TRUST_BOUNDARY`,
+`SOURCE_IS_EXTERNAL`, `TARGET_IS_EXTERNAL`, `HAS_DATA_CLASSIFICATION`, `HAS_TRUST_BOUNDARY`,
+`HAS_METADATA_TAG`. No predicate makes external calls; all are total functions over stored state.
+
+### Rule-Pack Registry Integration
+
+Rule-pack storage and resolution reuse the pack-registry boundary: `PackRegistryService`,
+`PackResolver`, and `PackIntegrityVerifier` own version resolution, compatibility,
+checksum/signature verification, withdrawal state, and dependencies. A new `THREAT_RULE_PACK`
+pack type and `ThreatRulePackTypeHandler` store rules in the `threat_rule_entries` TEXT column
+on `pack_registry_entry` (V171). The integrity verifier's canonical payload covers
+`threatRuleEntries` deterministically so the checksum/signature protects rule content. There is
+no second registry and no repo-local file loader at enumeration time.
+
+Pack writes remain behind the `ROLE_ADMIN` pack-registry gate. Enumeration reads are available
+to any authenticated project caller, consistent with the data-classification evaluation posture.
+
+### Candidate Provenance
+
+Candidate threats are not accepted `ThreatModel` records. They are an explainable intermediate:
+each `ThreatCandidate` carries the producing rule id, STRIDE category, element stable key,
+element kind, and a bounded `matchedFacts` map—references only to persisted architecture-model
+state keys (for example, `elementKind`, `predicate`, `trustBoundaryKey`), never raw adapter payloads.
+The existing derivation and architecture-model raw-content key filters remain the leakage
+boundary for secrets and source text.
+
+### Curation Contract
+
+Downstream curation is a separate step. Curation may create or update DRAFT `ThreatModel`
+entries and link affected elements through `ThreatModelLinkTargetType.ARCHITECTURE_MODEL`,
+which already resolves to `ARCHITECTURE_MODEL_ELEMENT` graph nodes. The LLM may confirm,
+discard with rationale, or augment deterministic candidates; it must not originate first-pass
+enumeration candidates. Likelihood, impact, treatment, and control coverage remain on the
+risk-scenario, risk-control, and GRC-analysis lanes.
+
+## Deterministic Control Identification Boundary (GC-GRC-008)
+
+GC-GRC-008 is the deterministic step that follows threat enumeration in the
+derivation-backed GRC pipeline (ADR-058 §3): `threat category → control objective →
+candidate controls`. Like enumeration, it is a pure domain evaluation (no LLM in the
+identification path), so the same enumerated threats and installed controls always
+produce the same ordered candidates and gaps.
+
+### Engine Design
+
+The engine lives in `domain/controlidentification/service/` and mirrors the
+`ThreatEnumerationService` shape:
+
+- **Pure static method**: `ControlIdentificationService.identify(ControlMappingRuleSet,
+  List<MappableThreat>, List<AvailableControl>)` is side-effect free and directly unit-tested.
+  Candidates sort by `(threatRef, producingRuleId, controlUid)`; gaps by
+  `(threatRef, producingRuleId, objectiveKey)`.
+- **Read-only service wrappers**: `identifyForLatestSnapshot` / `identifyForSnapshot` run
+  `ThreatEnumerationService`, assemble `AvailableControl`s from catalog `Control`s and their
+  installed `ControlPackEntry`s, and delegate.
+
+The mapping rules are a built-in, data-driven `DefaultControlMappingRuleSet` (rule-set
+id/version carried as candidate provenance) rather than a new pack type; the
+category-to-objective mapping is small and framework-agnostic. Candidate *controls* are still
+drawn from installed control packs (OSCAL catalogs, for example NIST SP 800-53/800-218) and the
+project's existing controls; selection matches a rule's framework-family/id selectors against
+each control's framework identifiers with no unbounded narrative search.
+
+### Candidate Provenance and Gaps
+
+Candidate controls are suggestions, not confirmed mitigation. Each `ControlCandidate` carries
+implementation guidance (from the control pack entry, falling back to the rule default) and rule
+provenance: producing rule id, rule-set id/version, resolved objective, candidate source
+(`CONTROL_PACK` / `PROJECT_CONTROL`) with pack id/version/checksum, and the matched framework
+selectors/identifiers. Where a rule fires but no control matches, a `ControlIdentificationGap`
+(`NO_MATCHING_CONTROL` / `NO_CONTROLS_AVAILABLE`) is surfaced as explicit control-design work,
+never silently dropped.
+
+### Confirmation Contract
+
+Confirmation is a separate write step (`ControlMappingConfirmationService`) that records a
+threat→control relationship through **both** canonical mapping aggregates (the
+`RiskControlMapping` coverage edge and the `ThreatModelLink MITIGATED_BY` to `CONTROL` traversal
+edge), so coverage is graph-queryable two ways. It is idempotent. Confirmation is guarded by
+server-side candidacy re-derivation: only a control the engine selects for the threat's STRIDE
+category may be confirmed, so a forged or LLM-invented mitigation cannot be recorded through this
+route (GC-RS-012); non-derived mappings use the generic risk-control-mapping surface. The confirmation and
+coverage-read routes are authenticated under `/api/v1/**` at the same authorization level as the
+existing risk-control-mapping and threat-model-link write surfaces; no new trust boundary is
+introduced.
+
 ## Status Drift Analysis
 
 Status drift analysis is a read-only requirements-domain analysis. It flags requirements that are still `DRAFT` while independent artifacts suggest implementation or design completion has already landed. It does not create traceability links, transition requirements, or relax the `IMPLEMENTS`-only on `ACTIVE` rule.
@@ -248,6 +355,7 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 - Cloud infrastructure evidence adapter specification (`domain/evidence/collection/cloud/`: `CloudEvidenceProvider`, `CloudEvidenceFamily`, `CloudEvidenceSpecification`). This is the GC-S003 normative contract: it specifies - as data over the GC-S001 port, not a new adapter hierarchy - the supported providers (AWS, Azure, GCP), the five evidence families (security group configurations, encryption-at-rest status, logging configurations, backup policies, compliance scan results from AWS Config / Azure Policy / GCP Security Command Center) as canonical scope types and versioned `1.0.0` output schemas, and the descriptor capabilities a conforming cloud collector advertises. Concrete provider collectors remain out of scope (see "Does not exist yet"); design rationale in `architecture/notes/cloud-infrastructure-evidence-adapter-spec-preflight.md`.
 - Canonical boundary model derivation (GC-GRC-004). `DerivationService` persists versioned boundary-model snapshots from derived `TRUST_BOUNDARY` facts plus declared `grc.boundaries` from `.ground-control.yaml`; each assignable system-model fact is either mapped to one canonical boundary or recorded as a modeling gap. The persisted model separates boundary gaps from `DerivationCaptureLimit` records, and readback is available at `/api/v1/derivations/runs/{id}/boundary-model` plus the `gc_derivation get_boundary_model` action.
 - Canonical architecture model aggregate (GC-GRC-005). `ArchitectureModelService` persists project-scoped, versioned DFD snapshots under `domain/architecturemodel`: stable `ArchitectureModelElement` identities are the linkable graph target, while snapshot-local states carry component/process/data-store/external-entity/data-flow/trust-boundary/data-classification semantics plus provenance. `DerivationService` builds architecture-model snapshots from normalized system-model facts after each run; manual write/read/diff is available at `/api/v1/architecture-models/**` and through `gc_architecture_model`.
+- Scheduled evidence collection campaigns (GC-S005, ADR-074). `EvidenceCampaignService` owns project-scoped campaigns under `domain/evidence/campaign`: an `@Audited` `EvidenceCampaign` aggregate carries the frequency (`DAILY`/`WEEKLY`/`MONTHLY`/`QUARTERLY`), scope (adapter + scope type/criteria), connection profile, `credentialRef` (indirection key, never a raw secret), target controls, retention horizon, and the `nextRunAt` scheduling cursor; immutable `EvidenceCampaignRun` rows record each execution. The opt-in scheduler (`infrastructure/campaign`, gated by `groundcontrol.evidence.campaign.enabled`) claims each due campaign with an optimistic conditional cursor advance so concurrent ticks cannot double-run a window, invokes the campaign's `EvidenceCollectionAdapter` over the GC-S001 port, stores each result through `EvidenceArtifactService` (ADR-045) linked to the target controls with an `EVIDENCED_BY` `ControlLink`, and prunes finished runs past retention. REST at `/api/v1/evidence-campaigns/**` (the on-demand `trigger` is admin-only) and the `gc_evidence_campaign` MCP tool.
 - CMDB/asset-management evidence adapter specification (`domain/evidence/collection/cmdb/`: `CmdbEvidenceProvider`, `CmdbEvidenceFamily`, `CmdbEvidenceSpecification`). This is the GC-S004 normative contract: it specifies - as data over the GC-S001 port, not a new adapter hierarchy - the supported providers (ServiceNow, Snipe-IT, Jamf), the five evidence families (asset inventory, configuration item status, patch levels, software license compliance, end-of-life tracking) as canonical scope types and versioned `1.0.0` output schemas, and the descriptor capabilities a conforming CMDB collector advertises. External CMDB/device records stay separate from `OperationalAsset` (mapping is a deliberate sync behavior through `AssetExternalId`); concrete provider collectors remain out of scope (see "Does not exist yet"); design rationale in `architecture/notes/cmdb-asset-evidence-adapter-spec-preflight.md`.
 - Self-referential traceability enforcement - `check_live_policy.mjs` verifies substantive code files have reverse traceability links to requirements (GC-O002), using the `GET /requirements/traceability/by-artifact` reverse lookup endpoint. Lookup errors are tracked separately for debuggability when the endpoint is unavailable.
 - Server-side quality gates (`QualityGateService.evaluate`) synced from `tools/ground_control/policy.json`, evaluated in CI (`make policy-live`) and enforced at the `/implement` completion gate via `gc_assert_quality_gates`. Enforced metric types are `COVERAGE` (IMPLEMENTS / TESTS / DOCUMENTS link coverage for ACTIVE requirements), `ORPHAN_COUNT`, and `COMPLETENESS`; a failing gate blocks the run with a `{name, metric_type, threshold, actual}` envelope.

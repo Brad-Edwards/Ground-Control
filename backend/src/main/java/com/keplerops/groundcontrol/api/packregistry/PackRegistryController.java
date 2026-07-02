@@ -10,6 +10,8 @@ import com.keplerops.groundcontrol.domain.packregistry.service.PackRegistryImpor
 import com.keplerops.groundcontrol.domain.packregistry.service.PackRegistryService;
 import com.keplerops.groundcontrol.domain.packregistry.service.PackResolver;
 import com.keplerops.groundcontrol.domain.packregistry.service.RegisterPackCommand;
+import com.keplerops.groundcontrol.domain.packregistry.service.ThreatRuleEntryDefinition;
+import com.keplerops.groundcontrol.domain.packregistry.service.ThreatRulePackRegistrationContent;
 import com.keplerops.groundcontrol.domain.packregistry.service.UpdatePackRegistryEntryCommand;
 import com.keplerops.groundcontrol.domain.packregistry.state.PackType;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
@@ -72,7 +74,7 @@ public class PackRegistryController {
                 request.signatureInfo(),
                 request.compatibility(),
                 PackDependencyRequest.toDomainList(request.dependencies()),
-                toRegistrationContent(request.controlPackEntries()),
+                selectRegistrationContent(request),
                 request.provenance(),
                 request.registryMetadata()));
         return PackRegistryEntryResponse.from(result);
@@ -148,9 +150,7 @@ public class PackRegistryController {
                         request.signatureInfo(),
                         request.compatibility(),
                         PackDependencyRequest.toDomainList(request.dependencies()),
-                        request.controlPackEntries() != null
-                                ? toRegistrationContent(request.controlPackEntries())
-                                : null,
+                        selectUpdateRegistrationContent(request),
                         request.provenance(),
                         request.registryMetadata()));
         return PackRegistryEntryResponse.from(result);
@@ -218,6 +218,53 @@ public class PackRegistryController {
         return new ControlPackRegistrationContent(requests.stream()
                 .map(PackRegistryController::toControlPackEntryDefinition)
                 .toList());
+    }
+
+    /**
+     * Select the typed registration content for a create. THREAT_RULE_PACK entries carry their
+     * rules in {@code threatRuleEntries}; every other pack type carries {@code controlPackEntries}
+     * (or none). This is what wires the admin registration JSON into the THREAT_RULE_PACK write
+     * boundary so enumeration has a registered, version-pinned pack to resolve (GC-GRC-007).
+     */
+    private static PackRegistrationContent selectRegistrationContent(RegisterPackRequest request) {
+        if (request.packType() == PackType.THREAT_RULE_PACK) {
+            return toThreatRuleRegistrationContent(request.threatRuleEntries());
+        }
+        return toRegistrationContent(request.controlPackEntries());
+    }
+
+    /** Select typed content for an update; the present entry list determines the pack family. */
+    private static PackRegistrationContent selectUpdateRegistrationContent(UpdatePackRegistryEntryRequest request) {
+        if (request.threatRuleEntries() != null) {
+            return toThreatRuleRegistrationContent(request.threatRuleEntries());
+        }
+        if (request.controlPackEntries() != null) {
+            return toRegistrationContent(request.controlPackEntries());
+        }
+        return null;
+    }
+
+    private static PackRegistrationContent toThreatRuleRegistrationContent(
+            List<ThreatRuleEntryDefinitionRequest> requests) {
+        if (requests == null) {
+            return EmptyPackRegistrationContent.INSTANCE;
+        }
+        return new ThreatRulePackRegistrationContent(requests.stream()
+                .map(PackRegistryController::toThreatRuleEntryDefinition)
+                .toList());
+    }
+
+    private static ThreatRuleEntryDefinition toThreatRuleEntryDefinition(ThreatRuleEntryDefinitionRequest request) {
+        return new ThreatRuleEntryDefinition(
+                request.ruleId(),
+                request.title(),
+                request.category(),
+                request.strideCategory(),
+                request.targetElementKinds(),
+                request.predicate(),
+                request.metadataTagKey(),
+                request.narrativeSkeleton(),
+                request.rationale());
     }
 
     private static byte[] readFileBytes(MultipartFile file) {

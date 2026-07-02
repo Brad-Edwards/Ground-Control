@@ -3,6 +3,8 @@ package com.keplerops.groundcontrol.unit.api;
 import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -24,6 +26,7 @@ import com.keplerops.groundcontrol.domain.packregistry.service.PackRegistryServi
 import com.keplerops.groundcontrol.domain.packregistry.service.PackResolver;
 import com.keplerops.groundcontrol.domain.packregistry.service.RegisterPackCommand;
 import com.keplerops.groundcontrol.domain.packregistry.service.ResolvedPack;
+import com.keplerops.groundcontrol.domain.packregistry.service.ThreatRulePackRegistrationContent;
 import com.keplerops.groundcontrol.domain.packregistry.service.UpdatePackRegistryEntryCommand;
 import com.keplerops.groundcontrol.domain.packregistry.state.CatalogStatus;
 import com.keplerops.groundcontrol.domain.packregistry.state.PackType;
@@ -34,6 +37,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -126,7 +130,8 @@ class PackRegistryControllerTest {
     @Test
     void registerWithDependenciesConvertsCorrectly() throws Exception {
         when(projectService.resolveProjectId(null)).thenReturn(PROJECT_ID);
-        when(registryService.registerEntry(any(RegisterPackCommand.class))).thenReturn(makeEntry());
+        var captor = ArgumentCaptor.forClass(RegisterPackCommand.class);
+        when(registryService.registerEntry(captor.capture())).thenReturn(makeEntry());
 
         mockMvc.perform(
                         post("/api/v1/pack-registry")
@@ -137,6 +142,35 @@ class PackRegistryControllerTest {
                  "dependencies":[{"packId":"dep-pack","versionConstraint":"^1.0.0"}]}
                 """))
                 .andExpect(status().isCreated());
+
+        var dependencies = captor.getValue().dependencies();
+        assertEquals(1, dependencies.size());
+        assertEquals("dep-pack", dependencies.get(0).packId());
+        assertEquals("^1.0.0", dependencies.get(0).versionConstraint());
+    }
+
+    @Test
+    void registerThreatRulePackMapsThreatRuleEntries() throws Exception {
+        when(projectService.resolveProjectId(null)).thenReturn(PROJECT_ID);
+        var captor = ArgumentCaptor.forClass(RegisterPackCommand.class);
+        when(registryService.registerEntry(captor.capture())).thenReturn(makeEntry());
+
+        mockMvc.perform(
+                        post("/api/v1/pack-registry")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                {"packId":"stride-baseline","packType":"THREAT_RULE_PACK","version":"1.0.0",
+                 "threatRuleEntries":[{"ruleId":"stride.process.spoofing","title":"Process spoofing",
+                   "category":"STRIDE_BASELINE","strideCategory":"SPOOFING",
+                   "targetElementKinds":["PROCESS"],"predicate":"ALWAYS"}]}
+                """))
+                .andExpect(status().isCreated());
+
+        var content = captor.getValue().registrationContent();
+        var threatContent = assertInstanceOf(ThreatRulePackRegistrationContent.class, content);
+        assertEquals(1, threatContent.entries().size());
+        assertEquals("stride.process.spoofing", threatContent.entries().get(0).ruleId());
     }
 
     @Test

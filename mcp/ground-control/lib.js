@@ -122,7 +122,7 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#   # stages:",
     "#   #   implementation:",
     "#   #     tier: medium",
-    "#   #     model: claude-sonnet-4-6",
+    "#   #     model: claude-sonnet-5",
     "# telemetry:",
     "#   enabled: false",
     "",
@@ -2930,8 +2930,8 @@ function normalizeRoutingStageConfig(stage, raw, { defaultProvider, defaultFallb
     errors.push(`${prefix}.agent must be one of: ${ROUTING_AGENTS.join(", ")}`);
   }
   const model = raw.model ?? CLAUDE_MODEL_BY_TIER[tier];
-  if (provider === "claude" && typeof model === "string" && !/^claude-(haiku|sonnet|opus)-[0-9]+-[0-9]+$/.test(model)) {
-    errors.push(`${prefix}.model must be a canonical Claude model id like claude-sonnet-4-6`);
+  if (provider === "claude" && typeof model === "string" && !/^claude-(haiku|sonnet|opus)-[0-9]+(-[0-9]+)?$/.test(model)) {
+    errors.push(`${prefix}.model must be a canonical Claude model id like claude-sonnet-5`);
   } else if (typeof model !== "string" || model.trim() === "") {
     errors.push(`${prefix}.model must be a non-empty string`);
   }
@@ -3009,9 +3009,14 @@ function normalizeKnowledgeConfig(raw) {
 // root is known.
 // ---------------------------------------------------------------------------
 
-const GRC_TOP_KEYS = ["boundaries"];
+const GRC_TOP_KEYS = ["boundaries", "data_classification"];
 const GRC_BOUNDARY_KEYS = ["key", "name", "description", "paths", "surfaces"];
 const GRC_BOUNDARY_KEY_RE = /^[a-z0-9][a-z0-9_.-]{0,119}$/;
+// GC-GRC-006: data classification lattice config surface (GC-GRC-023). Validated
+// here and forwarded to the backend, which remains the semantic authority.
+const GRC_LABEL_KEYS = ["key", "display_name", "description", "rank"];
+const GRC_FLOW_KEYS = ["from", "to"];
+const GRC_LABEL_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/;
 
 function emptyGrcConfig() {
   return { boundaries: [] };
@@ -3097,6 +3102,82 @@ function normalizeGrcConfig(raw) {
           });
         }
       });
+    }
+  }
+  if (raw.data_classification != null) {
+    const dc = raw.data_classification;
+    const prefix = "grc.data_classification";
+    if (typeof dc !== "object" || Array.isArray(dc)) {
+      errors.push(`${prefix} must be a mapping`);
+    } else {
+      for (const key of Object.keys(dc)) {
+        if (key !== "labels" && key !== "permitted_flows") {
+          errors.push(`${prefix} has unknown key '${key}'`);
+        }
+      }
+      const labels = [];
+      const seenLabels = new Set();
+      if (!Array.isArray(dc.labels) || dc.labels.length === 0) {
+        errors.push(`${prefix}.labels must be a non-empty list`);
+      } else {
+        dc.labels.forEach((entry, i) => {
+          const lp = `${prefix}.labels[${i}]`;
+          if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+            errors.push(`${lp} must be a mapping`);
+            return;
+          }
+          for (const key of Object.keys(entry)) {
+            if (!GRC_LABEL_KEYS.includes(key)) errors.push(`${lp} has unknown key '${key}'`);
+          }
+          if (typeof entry.key !== "string" || !GRC_LABEL_KEY_RE.test(entry.key)) {
+            errors.push(`${lp}.key must match ${GRC_LABEL_KEY_RE.source}`);
+          } else if (seenLabels.has(entry.key)) {
+            errors.push(`${lp}.key duplicates an earlier label key '${entry.key}'`);
+          } else {
+            seenLabels.add(entry.key);
+          }
+          if (typeof entry.display_name !== "string" || entry.display_name.trim() === "") {
+            errors.push(`${lp}.display_name must be a non-empty string`);
+          }
+          if (entry.description != null && (typeof entry.description !== "string" || entry.description.trim() === "")) {
+            errors.push(`${lp}.description must be a non-empty string when set`);
+          }
+          if (entry.rank != null && !Number.isInteger(entry.rank)) {
+            errors.push(`${lp}.rank must be an integer when set`);
+          }
+          labels.push({
+            key: entry.key,
+            display_name: entry.display_name,
+            description: entry.description ?? null,
+            rank: entry.rank ?? null,
+          });
+        });
+      }
+      const flows = [];
+      if (dc.permitted_flows != null) {
+        if (!Array.isArray(dc.permitted_flows)) {
+          errors.push(`${prefix}.permitted_flows must be a list when set`);
+        } else {
+          dc.permitted_flows.forEach((entry, i) => {
+            const fp = `${prefix}.permitted_flows[${i}]`;
+            if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+              errors.push(`${fp} must be a mapping`);
+              return;
+            }
+            for (const key of Object.keys(entry)) {
+              if (!GRC_FLOW_KEYS.includes(key)) errors.push(`${fp} has unknown key '${key}'`);
+            }
+            if (typeof entry.from !== "string" || entry.from.trim() === "") {
+              errors.push(`${fp}.from must be a non-empty string`);
+            }
+            if (typeof entry.to !== "string" || entry.to.trim() === "") {
+              errors.push(`${fp}.to must be a non-empty string`);
+            }
+            flows.push({ from: entry.from, to: entry.to });
+          });
+        }
+      }
+      value.data_classification = { labels, permitted_flows: flows };
     }
   }
   if (errors.length) return { ok: false, errors };
@@ -6960,9 +7041,10 @@ export const TEST_QUALITY_REVIEW_SCHEMA = {
 export const TEST_QUALITY_REVIEW_FINDINGS_SCHEMA = TEST_QUALITY_REVIEW_SCHEMA;
 
 // Default model for the test-quality review engine. Per user direction
-// (#884 follow-up): claude-sonnet-4-6 is the right balance — strong enough
-// to catch false-assurance tests, cheap enough to run on every PR.
-export const TEST_QUALITY_REVIEW_DEFAULT_MODEL = "claude-sonnet-4-6";
+// (#884 follow-up): Sonnet is the right balance — strong enough to catch
+// false-assurance tests, cheap enough to run on every PR. #1264 bumped
+// the default from claude-sonnet-4-6 to the current Sonnet generation.
+export const TEST_QUALITY_REVIEW_DEFAULT_MODEL = "claude-sonnet-5";
 
 // Hard timeout for a single review call. Claude with file-reading tools
 // can take 1–3 minutes against a moderate-sized test diff. 10 minutes is
@@ -10258,6 +10340,83 @@ export async function diffArchitectureModelSnapshots({ project, fromSnapshotId, 
 }
 
 // ---------------------------------------------------------------------------
+// GC-S005: scheduled evidence-collection campaigns.
+// ---------------------------------------------------------------------------
+
+export const EVIDENCE_CAMPAIGN_FREQUENCIES = ["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY"];
+
+export async function createEvidenceCampaign(data, project) {
+  return request("POST", "/api/v1/evidence-campaigns", { body: data, params: { project } });
+}
+
+export async function updateEvidenceCampaign(id, data, project) {
+  return request("PUT", `/api/v1/evidence-campaigns/${encodeURIComponent(id)}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function pauseEvidenceCampaign(id, project) {
+  return request("POST", `/api/v1/evidence-campaigns/${encodeURIComponent(id)}/pause`, { params: { project } });
+}
+
+export async function resumeEvidenceCampaign(id, project) {
+  return request("POST", `/api/v1/evidence-campaigns/${encodeURIComponent(id)}/resume`, { params: { project } });
+}
+
+export async function triggerEvidenceCampaign(id, project) {
+  return request("POST", `/api/v1/evidence-campaigns/${encodeURIComponent(id)}/trigger`, { params: { project } });
+}
+
+// ---------------------------------------------------------------------------
+// Data classification lattice (GC-GRC-006). Lattice writes are admin-only on the
+// backend; reads + evaluation are project-scoped.
+// ---------------------------------------------------------------------------
+
+export async function getDataClassificationLattice({ project } = {}) {
+  return request("GET", "/api/v1/data-classification/lattice", { params: { project } });
+}
+
+export async function putDataClassificationLattice(data, project) {
+  return request("PUT", "/api/v1/data-classification/lattice", { body: data, params: { project } });
+}
+
+export async function resetDataClassificationLattice({ project } = {}) {
+  return request("DELETE", "/api/v1/data-classification/lattice", { params: { project } });
+}
+
+export async function evaluateDataClassification({ project, snapshotId } = {}) {
+  return request("GET", "/api/v1/data-classification/evaluation", { params: { project, snapshotId } });
+}
+
+// ---------------------------------------------------------------------------
+// Threat enumeration (GC-GRC-007). Read-only deterministic enumeration of
+// candidate threats from an architecture-model snapshot against a registered
+// threat rule pack.
+// ---------------------------------------------------------------------------
+
+export async function threatEnumeration({ project, packId, version, snapshotId } = {}) {
+  return request("GET", "/api/v1/threat-enumeration", { params: { project, packId, version, snapshotId } });
+}
+
+// ---------------------------------------------------------------------------
+// Control identification (GC-GRC-008): deterministic mapping of enumerated
+// threats to candidate controls, and the confirmed-coverage read.
+// ---------------------------------------------------------------------------
+
+export async function controlIdentification({ project, threatPackId, version, snapshotId } = {}) {
+  return request("GET", "/api/v1/control-identification", {
+    params: { project, threatPackId, version, snapshotId },
+  });
+}
+
+export async function controlCoverage({ project, threatModelId } = {}) {
+  return request("GET", "/api/v1/control-identification/coverage", {
+    params: { project, threatModelId },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // NIST SP 800-30 Rev. 1 enums (GC-T014, ADR-034 mirror policy)
 // ---------------------------------------------------------------------------
 
@@ -11022,6 +11181,51 @@ export async function addResearchRunDisclosureEntry(id, disclosureId, data, proj
     `/api/v1/research-runs/${encodeURIComponent(id)}/disclosure/${encodeURIComponent(disclosureId)}/entries`,
     { body: data, params: { project } },
   );
+}
+
+// GC-RSCH-F006 — methodology source state enum (mirrors Java MethodologySourceState)
+export const METHODOLOGY_SOURCE_STATES = ["ATTEMPTED", "OBTAINED", "READ", "BLOCKED"];
+
+export async function selectMethodology(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/methodology/selection`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function getMethodologySelection(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/methodology/selection`, {
+    params: { project },
+  });
+}
+
+export async function recordMethodologySource(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/methodology/sources`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function updateMethodologySourceState(id, sourceId, data, project) {
+  return request(
+    "PATCH",
+    `/api/v1/research-runs/${encodeURIComponent(id)}/methodology/sources/${encodeURIComponent(sourceId)}`,
+    { body: data, params: { project } },
+  );
+}
+
+export async function listMethodologySources(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/methodology/sources`, {
+    params: { project },
+  });
+}
+
+// GC-RSCH-F006 / ADR-078 — backend-owned methodology catalog. Global reference
+// data (no run id, no project scope): all method profiles with their required
+// primary sources. Read also routes through gc_query under the
+// /api/v1/research-runs allow-list.
+export async function listMethodologyCatalog() {
+  return request("GET", "/api/v1/research-runs/methodology/catalog", {});
 }
 
 export async function createControl(data, project) {
@@ -17417,7 +17621,7 @@ export const ROUTING_FALLBACKS = Object.freeze(["parent", "error", "skip"]);
 export const ROUTING_STAGE_NAME_RE = /^[a-z][a-z0-9_-]*$/;
 export const CLAUDE_MODEL_BY_TIER = Object.freeze({
   low: "claude-haiku-4-5",
-  medium: "claude-sonnet-4-6",
+  medium: "claude-sonnet-5",
   high: "claude-opus-4-8",
 });
 export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({

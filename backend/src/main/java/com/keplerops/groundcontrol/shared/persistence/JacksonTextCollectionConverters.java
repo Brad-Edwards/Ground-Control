@@ -9,6 +9,7 @@ import com.keplerops.groundcontrol.domain.audits.model.AuditPhase;
 import com.keplerops.groundcontrol.domain.evidence.model.EvidenceSourceRef;
 import com.keplerops.groundcontrol.domain.packregistry.model.PackDependency;
 import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPackEntry;
+import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredThreatRule;
 import com.keplerops.groundcontrol.domain.packregistry.model.TrustPolicyRule;
 import com.keplerops.groundcontrol.domain.riskappetite.model.ToleranceThreshold;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
@@ -116,9 +117,26 @@ public final class JacksonTextCollectionConverters {
     }
 
     @Converter
+    public static class RegisteredThreatRuleListConverter
+            extends AbstractJsonTextConverter<List<RegisteredThreatRule>> {
+
+        public RegisteredThreatRuleListConverter() {
+            super(new TypeReference<>() {});
+        }
+    }
+
+    @Converter
     public static class StringSetConverter extends AbstractJsonTextConverter<Set<String>> {
 
         public StringSetConverter() {
+            super(new TypeReference<>() {});
+        }
+    }
+
+    @Converter
+    public static class UuidListConverter extends AbstractJsonTextConverter<List<java.util.UUID>> {
+
+        public UuidListConverter() {
             super(new TypeReference<>() {});
         }
     }

@@ -1314,6 +1314,203 @@ request fields; `diff_snapshots` requires `from_snapshot_id` and
 `to_snapshot_id`. `gc_query` allowlists read-only `/api/v1/architecture-models`
 paths.
 
+### Evidence Campaigns (GC-S005)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/evidence-campaigns` | EvidenceCampaignRequest | 201 | Schedule a recurring evidence-collection campaign (ROLE_ADMIN) |
+| GET | `/evidence-campaigns` | - | 200 | List campaigns for a project (newest first) |
+| GET | `/evidence-campaigns/{id}` | - | 200 | Get one campaign |
+| PUT | `/evidence-campaigns/{id}` | EvidenceCampaignUpdateRequest | 200 | Partially update a campaign (ROLE_ADMIN) |
+| POST | `/evidence-campaigns/{id}/pause` | - | 200 | Pause scheduling (skipped by the sweep) (ROLE_ADMIN) |
+| POST | `/evidence-campaigns/{id}/resume` | - | 200 | Resume scheduling (ROLE_ADMIN) |
+| POST | `/evidence-campaigns/{id}/trigger` | - | 201 | Run now; returns the resulting run (ROLE_ADMIN) |
+| GET | `/evidence-campaigns/{id}/runs` | - | 200 | List prior runs (newest window first) |
+
+All endpoints accept an optional `project` query parameter. Multi-project
+deployments must pass it; single-project deployments can resolve it
+automatically.
+
+Writes (POST/PUT, including pause/resume/trigger) require **ROLE_ADMIN**,
+enforced centrally in `ApiPathMatrix`: a campaign is a stored directive to make a
+credentialed outbound call and ingest the result as evidence, so configuring or
+enabling one is an administrative act. Reads (list, get, runs) are available to
+any authenticated project member. `connectionEndpoint` is additionally validated
+against an SSRF policy at create/update **and re-validated at execution time**:
+the scheme must be http/https, and the host is resolved and rejected if any
+resolved address is loopback, link-local (including the `169.254.169.254`
+cloud-metadata address), private/RFC1918, IPv6 unique-local, wildcard, or
+multicast. The execution-time check pins the validated address so a rebinding
+hostname cannot redirect the credentialed call. `sanitizedError` on a run is a
+redacted, length-bounded category/summary - never raw provider or exception text.
+
+**EvidenceCampaignRequest fields:** required `uid`, `name`, `frequency`
+(`DAILY`, `WEEKLY`, `MONTHLY`, `QUARTERLY`), `adapterName`, `scopeType`,
+`connectionProfileId`, `connectionEndpoint`, `credentialRef`; optional
+`schemaId`, `scopeCriteria` (JSON map), `targetControlIds` (UUID list),
+`retentionDays` (positive), and `firstRunAt` (defaults to now). `credentialRef`
+is an indirection key only - never a raw secret. `EvidenceCampaignUpdateRequest`
+accepts the same fields except `uid`/`adapterName` (identity-bearing) and only
+applies the non-null ones.
+
+**EvidenceCampaignResponse fields:** `id`, `projectIdentifier`, `uid`, `name`,
+`frequency`, `status` (`ACTIVE`/`PAUSED`), `adapterName`, `scopeType`,
+`schemaId`, `connectionProfileId`, `connectionEndpoint`, `credentialRef`,
+`scopeCriteria`, `targetControlIds`, `retentionDays`, `nextRunAt`, `lastRunAt`,
+`createdAt`, `updatedAt`.
+
+**EvidenceCampaignRunResponse fields:** `id`, `campaignId`, `projectIdentifier`,
+`status` (`PENDING`/`RUNNING`/`COMPLETED`/`PARTIAL`/`FAILED`), `windowStart`,
+`windowEnd`, `startedAt`, `finishedAt`, `artifactCount`, `errorCount`,
+`sanitizedError`, `producedArtifactIds`, `createdAt`, `updatedAt`.
+
+Each run invokes the campaign's collection adapter, stores results as evidence
+artifacts (ADR-045) linked to the target controls with an `EVIDENCED_BY` control
+link, and is aged out per `retentionDays`. The scheduler is opt-in via
+`groundcontrol.evidence.campaign.enabled=true`. MCP surface:
+`gc_evidence_campaign` with write actions `create`, `update`, `pause`,
+`resume`, `trigger`; reads (list, get, runs) route through `gc_query`.
+
+### Data Classification Lattice (GC-GRC-006)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/data-classification/lattice` | - | 200 | Get the project's active lattice (custom policy, or the shipped default) |
+| PUT | `/data-classification/lattice` | DataClassificationLatticeRequest | 200 | Replace the project's lattice (ROLE_ADMIN) |
+| DELETE | `/data-classification/lattice` | - | 200 | Revert the project to the default lattice (ROLE_ADMIN) |
+| GET | `/data-classification/evaluation?snapshotId=` | - | 200 | Evaluate a snapshot's flows against the active lattice (latest snapshot when `snapshotId` omitted) |
+
+All endpoints accept an optional `project` query parameter. Writes (`PUT`,
+`DELETE`) are restricted to ROLE_ADMIN in `ApiPathMatrix`: tampering with the
+taxonomy or permitted-flow relation would silently defeat the deterministic
+leak detector (GC-TM-010). Reads and evaluation are available to any
+authenticated project caller.
+
+**DataClassificationLatticeRequest fields:** non-empty `labels` (each with
+`key` matching `^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$`, `displayName`, optional
+`description`/`rank`) and optional `permittedFlows` (each `{from, to}`). A
+permitted-flow edge means data labeled `from` may flow to a sink labeled `to`;
+the service validates lattice soundness (no dangling edges, no
+antisymmetry-breaking cycles between distinct labels) and stores the
+reflexive-transitive closure so the allow decision is total. `rank` is a
+display hint only, never the authoritative ordering.
+
+**DataClassificationLatticeResponse fields:** `projectIdentifier`,
+`schemaVersion`, `source` (`DEFAULT` | `CUSTOM`), `policyVersion` (content
+digest), `labelCount`, `edgeCount`, `labels`, and `permittedFlows`.
+
+**DataClassificationEvaluationResponse fields:** `projectIdentifier`,
+`schemaVersion`, `policyVersion`, `source`, `modelVersion`, `snapshotId`,
+`evaluatedFlowCount`, `violationCount`, `limitationCount`, `violations`, and
+`limitations`. Each finding carries `flowStableKey`, `sourceStableKey`,
+`sinkStableKey`, `sourceLabelKey`, `sinkLabelKey`, `reason`, and `detail`.
+Violations use reason `LABEL_FLOW_NOT_PERMITTED`; limitations use
+`MISSING_SOURCE_LABEL`, `MISSING_SINK_LABEL`, `UNKNOWN_SOURCE_LABEL`,
+`UNKNOWN_SINK_LABEL`, or `DANGLING_FLOW_ENDPOINT`. Label assignments are read
+from `data_classification_key` on the architecture-model element states, so they
+version with the snapshot.
+
+MCP surface: `gc_data_classification` with actions `get_lattice`, `set_lattice`,
+`reset_lattice`, and `evaluate`. `set_lattice` accepts snake_case
+`labels[].{key,display_name,description,rank}` and `permitted_flows[].{from,to}`.
+`gc_query` allowlists read-only `/api/v1/data-classification` paths.
+
+### Threat Enumeration (GC-GRC-007)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/threat-enumeration?project=&packId=&version=&snapshotId=` | - | 200 | Enumerate candidate threats for a project using a registered threat rule pack |
+
+`packId` is required. `version` is optional and pins a specific semantic version of
+the rule pack; when omitted, the latest registered version resolves. `snapshotId`
+is optional; when omitted, the endpoint targets the latest persisted
+architecture-model snapshot for the project. `project` is optional in
+single-project deployments.
+
+Enumeration is **deterministic**: given the same architecture-model snapshot and
+the same pinned rule pack version, the engine produces identical candidate sets
+with no LLM involvement. Rule packs of type `THREAT_RULE_PACK` are registered,
+versioned, and pinned through the admin pack-registry surface
+(`/api/v1/pack-registry/**`, `ROLE_ADMIN`). To register one, `POST` to
+`/api/v1/pack-registry` with `packType: "THREAT_RULE_PACK"` and a
+`threatRuleEntries` array; each entry's per-rule invariants are validated at
+registration time, so a malformed pack is rejected before it is stored rather
+than failing later during enumeration. The enumeration endpoint itself is a
+read-only operation restricted to authenticated callers under the
+`/api/v1/**` authenticated rule.
+
+**ThreatEnumerationResponse fields:** `schemaVersion`, `packId`,
+`resolvedVersion`, `checksum`, `snapshotId`, `modelVersion`, `candidates[]`, and
+`limitations[]`.
+
+Each `candidate` carries: `producingRuleId`, `category` (`ThreatRuleCategory`
+value: `STRIDE_BASELINE`, `DEPLOYMENT_PIPELINE`, `AUTHN_AUTHZ`,
+`SECRET_HANDLING`, `UNTRUSTED_INPUT`, `DATA_EGRESS`, or `CRYPTO`),
+`strideCategory`, `elementStableKey`, `elementKind`, `matchedFacts{}`, and
+`narrative`.
+
+Each `limitation` carries: `reason` (`ThreatEnumerationLimitationReason` value:
+`NO_RULE_PACK_RESOLVED`, `NO_SNAPSHOT`, `UNKNOWN_ELEMENT_KIND`,
+`MISSING_STABLE_KEY`, or `DANGLING_FLOW_ENDPOINT`), `detail`, and
+`elementStableKey`.
+
+MCP surface: `gc_threat_enumeration` (dedicated tool). Parameters: `project`
+(optional), `packId` (required), `version` (optional), `snapshotId` (optional).
+
+### Control Identification (GC-GRC-008)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/control-identification?project=&threatPackId=&version=&snapshotId=` | - | 200 | Identify candidate controls (and control-design gaps) for a project's enumerated threats |
+| GET | `/control-identification/coverage?project=&threatModelId=` | - | 200 | List the controls recorded as covering a threat |
+| POST | `/control-identification/confirmations?project=` | ConfirmControlMappingRequest | 200 | Confirm a candidate control as a threat mitigation |
+
+Identification is **deterministic**: threats enumerated for the project (GC-GRC-007)
+are mapped `threat category → control objective → candidate controls` by a built-in
+rule set, drawing candidate controls from installed control packs (OSCAL catalogs
+such as NIST SP 800-53/800-218) and the project's existing controls. No LLM is
+involved. `threatPackId` is required and names the `THREAT_RULE_PACK` used to
+enumerate; `version` and `snapshotId` are optional (latest when omitted). `project`
+is optional in single-project deployments. All routes are authenticated under the
+`/api/v1/**` rule; the confirmation write records through the same canonical
+aggregates (and at the same authorization level) as the existing
+risk-control-mapping and threat-model-link write surfaces.
+
+**ControlIdentificationResponse fields:** `projectIdentifier`, `schemaVersion`,
+`ruleSetId`, `ruleSetVersion`, `candidateCount`, `gapCount`, `candidates[]`, and
+`gaps[]`.
+
+Each `candidate` carries: `producingRuleId`, `ruleSetId`, `ruleSetVersion`,
+`threatCategory`, `strideCategory`, `objectiveKey`, `threatRef`, `controlId`,
+`controlUid`, `source` (`ControlCandidateSource`: `CONTROL_PACK` or
+`PROJECT_CONTROL`), `packId`, `packVersion`, `packChecksum`,
+`implementationGuidance`, `matchedFacts{}` (matched framework selectors and
+identifiers), and `rationale`.
+
+Each `gap` carries: `threatCategory`, `strideCategory`, `objectiveKey`,
+`producingRuleId`, `threatRef`, `reason` (`ControlIdentificationGapReason`:
+`NO_MATCHING_CONTROL` or `NO_CONTROLS_AVAILABLE`), and `description`.
+
+`ConfirmControlMappingRequest`: `threatModelId` (required), `controlId` (required),
+`controlRole` (optional `MappingControlRole`; defaults to `PREVENTIVE`),
+`mappingObjective` (optional), `mappingScope` (optional). The control must be one the
+deterministic mapping engine selects for the threat (re-derived server-side from the
+threat's STRIDE category), so only framework-derived mitigations, not LLM-invented or
+forged ones, are recorded through this route. A non-derived control is rejected `422`.
+The derived control objective is carried onto the recorded mapping as provenance when
+`mappingObjective` is omitted. Confirmation records the relationship through **both** the
+`RiskControlMapping` coverage edge and the `ThreatModelLink MITIGATED_BY` to `CONTROL`
+traversal edge, and is idempotent: re-confirming an already-recorded pair returns the
+existing edge ids. Response: `riskControlMappingId`, `threatModelLinkId`,
+`mappingCreated`, `linkCreated`.
+
+MCP surface: `gc_control_identification` (dedicated read tool). Parameters:
+`action` (`identify` default, or `coverage`), `project` (optional), `threatPackId`
+(required for `identify`), `version` (optional), `snapshotId` (optional),
+`threatModelId` (required for `coverage`). Confirmation is a write, performed via
+the REST `/confirmations` route or the existing `gc_threat_model` /
+`gc_risk_control_mapping` write tools.
+
 ### Plugins
 
 | Method | Path | Body | Status | Purpose |
@@ -2331,6 +2528,12 @@ Response wraps results in a Spring Page object with `content`, `totalElements`,
 | POST | `/research-runs/{id}/disclosure` | CreateDisclosureRequest | 201 | Create the final-manuscript AI-use and uncertainty disclosure for a run (GC-RSCH-N013, ADR-068 §4) |
 | GET | `/research-runs/{id}/disclosure` | - | 200 | Get the current disclosure for a run (GC-RSCH-N013, ADR-068 §4) |
 | POST | `/research-runs/{id}/disclosure/{disclosureId}/entries` | AddDisclosureEntryRequest | 201 | Add one disclosed item (AI-generated portion or unresolved uncertainty) to a disclosure (GC-RSCH-N013, ADR-068 §4) |
+| GET    | `/research-runs/methodology/catalog`                | -                              | 200 | List the backend-owned methodology catalog: every method profile with its required primary sources (GC-RSCH-F006 / ADR-078). Global reference data - no project/run scope. `MethodologyCatalogResponse`: `catalogVersion`, `methods[]` (`methodKey`, `label`, `profileVersion`, `catalogVersion`, `requiredSources[]` with `ref` + `title`). |
+| POST   | `/research-runs/{id}/methodology/selection`         | SelectMethodologyRequest       | 201 | Select (or re-select) the active methodology for a run (GC-RSCH-F006 / ADR-078). `SelectMethodologyRequest` fields: `methodKey` (required, max 200). The method label, profile/catalog version, and the required-source set are derived server-side from the backend methodology catalog - an unknown `methodKey` is rejected (`research_run_methodology_unknown_method`), and the resolved profile's required primary sources are snapshotted as immutable `required=true` rows at selection time. Idempotent when the same method is re-selected and the snapshot still matches the catalog; selecting a different method supersedes the prior active selection and re-snapshots. |
+| GET    | `/research-runs/{id}/methodology/selection`         | -                              | 200 | Get the active methodology selection for a run |
+| POST   | `/research-runs/{id}/methodology/sources`           | RecordMethodologySourceRequest | 201 | Record an additional (optional) methodology source on the active selection (GC-RSCH-F006). Required sources are derived from the selected method's catalog profile at selection; sources recorded here are always optional. `RecordMethodologySourceRequest` fields: `sourceRef` (required, max 500), `sourceLabel` (optional, max 500). |
+| PATCH  | `/research-runs/{id}/methodology/sources/{sid}`     | UpdateMethodologySourceStateRequest | 200 | Update the state of a methodology source (GC-RSCH-F006) |
+| GET    | `/research-runs/{id}/methodology/sources`           | -                              | 200 | List methodology sources for the active selection |
 | POST | `/research-runs/{id}/stop` | - | 200 | Stop an active run (resumable) |
 | POST | `/research-runs/{id}/fail` | FailRunRequest | 200 | Fail a run with a bounded failure observation |
 | POST | `/research-runs/{id}/resume` | - | 200 | Resume a stopped/failed run from its last completed stage without duplicating work |

@@ -1,0 +1,79 @@
+# GC-RSCH-F006 / ADR-078 — backend-owned methodology catalog (reference data).
+#
+# This is the single source of truth for the literature-review method profiles
+# the research run methodology gate derives required-source coverage from. The
+# skill-side lookup at skills/lit-review/methodology/catalog.yaml mirrors this
+# file; the policy drift check (tools/policy/checks.py) fails CI if the two
+# disagree on method keys or source identifiers.
+#
+# Loaded and validated on startup by MethodologyCatalog. Every method must have
+# a non-blank key/label and at least one required source; every source must have
+# a non-blank ref. Bump catalog_version (and the affected method version) when
+# the required-source set for a method changes.
+
+catalog_version: "1"
+methods:
+  - key: scoping
+    label: Scoping review
+    version: "1"
+    required_sources:
+      - ref: UNMJUBXU
+        title: "Scoping studies: towards a methodological framework"
+      - ref: 4ZZU62K6
+        title: "Scoping studies: advancing the methodology"
+      - ref: W4HIAEIK
+        title: "PRISMA Extension for Scoping Reviews (PRISMA-ScR): Checklist and Explanation"
+
+  - key: systematic
+    label: Systematic review
+    version: "1"
+    required_sources:
+      - ref: FRM9HPNG
+        title: "Guidelines for performing Systematic Literature Reviews in Software Engineering"
+      - ref: MJX3HCT5
+        title: "The PRISMA 2020 statement: an updated guideline for reporting systematic reviews"
+
+  - key: mapping
+    label: Systematic mapping review
+    version: "1"
+    required_sources:
+      - ref: 7H3MVIUS
+        title: "Systematic Mapping Studies in Software Engineering"
+      - ref: SIA2M3JX
+        title: "Guidelines for conducting systematic mapping studies in software engineering: An update"
+
+  - key: critical
+    label: Critical review
+    version: "1"
+    required_sources:
+      - ref: WM8CQC62
+        title: "A typology of reviews: an analysis of 14 review types and associated methodologies"
+      - ref: KKQZZZ85
+        title: "Literature review as a research methodology: An overview and guidelines"
+
+  - key: narrative_conceptual
+    label: Narrative / conceptual review
+    version: "1"
+    required_sources:
+      - ref: XVR4XPMQ
+        title: "The integrative review: updated methodology"
+      - ref: MK62GIH3
+        title: "Writing Integrative Literature Reviews: Guidelines and Examples"
+
+  - key: targeted_related_work
+    label: Targeted related-work review
+    version: "1"
+    required_sources:
+      - ref: PJBMHN3N
+        title: "Guidelines for snowballing in systematic literature studies and a replication in software engineering"
+      - ref: FRM9HPNG
+        title: "Guidelines for performing Systematic Literature Reviews in Software Engineering"
+
+  - key: taxonomy_development
+    label: Taxonomy development
+    version: "1"
+    required_sources:
+      - ref: 5IEWQBCY
+        title: "A method for taxonomy development and its application in information systems"
+      - ref: CZZN2X64
+        title: "An Update for Taxonomy Designers: Methodological Guidance from Information Systems Research"

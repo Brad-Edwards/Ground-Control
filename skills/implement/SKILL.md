@@ -92,7 +92,7 @@ Verbatim review prose, per-finding bodies, and raw cycle-tool envelopes never re
 
 Routing is opt-in per repo via `routing.enabled` in `.ground-control.yaml` (default `false`). When the knob is off, every step runs on the parent session's model and this section is advisory. The `tier` annotation on each step file is the provider-neutral capability hint; the resolver maps it to a concrete model.
 
-**Claude tier mapping** (canonical): `low` → `claude-haiku-4-5`, `medium` → `claude-sonnet-4-6`, `high` → `claude-opus-4-8` (the parent - no subagent spawn).
+**Claude tier mapping** (canonical): `low` → `claude-haiku-4-5`, `medium` → `claude-sonnet-5`, `high` → `claude-opus-4-8` (the parent - no subagent spawn).
 
 **Codex** (and other drivers without subagent-with-model support): ignore the tier annotation and run every step on the session model. The contract is forward-compatible - a future router consumes the same step-id + tier hints without changing this SKILL.
 

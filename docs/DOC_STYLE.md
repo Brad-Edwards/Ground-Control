@@ -1,5 +1,19 @@
 # Documentation style
 
+> **Sync note for issue #1121 (2026-07-01 GC-GRC-008):** Registered the `gc_control_identification` MCP tool (handler `mcp/ground-control/gc-control-identification.js`; read actions `identify` / `coverage`) and the `controlIdentification` / `controlCoverage` API-client helpers in `mcp/ground-control/lib.js`, backed by the new `GET /api/v1/control-identification` REST surface for GC-GRC-008 deterministic control identification and mapping. Documentation lives in `docs/API.md` (`### Control Identification (GC-GRC-008)`), the `index.js` tool description, and the ADR-054 amendment below. The confirmation write is REST-only (records through existing `RiskControlMapping` / `ThreatModelLink` aggregates); the read tool does not touch the `gc_query` allowlist. No style rule changed.
+
+> **Sync note for issue #214 (2026-06-30 GC-S005):** Registered the project-scoped `gc_evidence_campaign` MCP tool (actions: create / list / get / update / pause / resume / trigger / runs_list) in `mcp/ground-control/index.js`, `mcp/ground-control/lib.js`, and `mcp/ground-control/gc-evidence-campaign.js`, backed by the new `/api/v1/evidence-campaigns**` REST surface for scheduled evidence collection. Documentation lives in `docs/API.md`, `docs/architecture/ARCHITECTURE.md`, and `architecture/adrs/074-scheduled-evidence-collection.md`; the surface addition is recorded in the ADR-054 amendment below. New request/response schemas are documented under the relevant `docs/API.md` service section per the "Adding a new MCP tool" rule. No style rule changed.
+
+> **Sync note for issue #1120 (2026-06-30):** Registered the `gc_threat_enumeration` MCP tool
+> (handler `mcp/ground-control/gc-threat-enumeration.js`) and the `threatEnumeration` API-client
+> helper in `mcp/ground-control/lib.js`, backed by the new `GET /api/v1/threat-enumeration` REST
+> surface for GC-GRC-007 deterministic threat enumeration. Documentation lives in `docs/API.md`
+> (`### Threat Enumeration (GC-GRC-007)`), the `index.js` tool description, and the ADR-054
+> amendment. The tool is a dedicated read-only adapter that does not touch the `gc_query` allowlist;
+> the surface addition is recorded in the ADR-054 amendment. No style rule changed.
+
+> **Sync note for issue #1119 (2026-06-29):** Registered the `gc_data_classification` MCP tool (handler `mcp/ground-control/gc-data-classification.js`; actions `get_lattice` / `set_lattice` / `reset_lattice` / `evaluate`) and its API-client helpers plus the `grc.data_classification` config normalizer in `mcp/ground-control/lib.js`, backed by the new `/api/v1/data-classification` REST surface for the GC-GRC-006 data classification lattice. The `/api/v1/data-classification` read prefix was added to the `gc_query` allowlist (`gc-query.js`, `mcp/ground-control/README.md`, ADR-035). Documentation lives in `docs/API.md`, the `index.js` tool description, and ADR-072; the surface addition is recorded in the ADR-054 amendment. No style rule changed.
+
 > **Sync note for issue #1118 (2026-06-28):** Registered the `gc_architecture_model` MCP tool and architecture-model client helpers for the canonical server-side aggregate. The REST and MCP contract is documented in `docs/API.md`, `docs/architecture/ARCHITECTURE.md`, `mcp/ground-control/README.md`, and the tool description; ADR-035 carries the `gc_query` read allowlist update. No style rule changed.
 
 > **Sync note for issue #1002 (2026-06-28):** A new MCP tool `gc_research_provenance` (actions: record_node / record_edge / list_nodes / list_edges / chain) was registered in `mcp/ground-control/index.js` and `mcp/ground-control/lib.js` (handler in `gc-research-provenance.js`), backed by the new `/api/v1/research-runs/{runId}/provenance/**` REST surface for the research provenance ledger (ADR-069). It is an additive curated-write tool whose run-scoped reads also route through the existing `gc_query` `/api/v1/research-runs` allow-list. Documentation lives in `docs/API.md`, the `index.js` tool description, and ADR-069; the two write surfaces are covered by the `openapi-contract.test.js` drift gate. The surface addition is recorded in the ADR-054 amendment below. No style rule changed.
@@ -42,6 +56,10 @@
 > **Sync note for issue #1167 (2026-06-21):** Corrected `tools/policy/checks.py::run_controller_contracts` (and the parallel `ControllerPolicyTest`) to map a controller to its `@WebMvcTest` companion by fully qualified class instead of filename stem, fixing a same-named-controller collision across packages. The parser strips the `.class` suffix in code so the matching regex stays linear-time (Sonar S8786). The classifier, Vale rules, `.vale.ini`, and this document's style rules are unchanged.
 
 > **Sync note for issue #963 (2026-06-22):** Added a `phase` parameter to the `gc_assert_completion` MCP tool (`mcp/ground-control/index.js`, `mcp/ground-control/lib.js`) so the requirement transition, traceability reconciliation, and final report run post-merge (Phase E). The tool-description text and the operative agent prose in `skills/implement/steps/step-17-completion.md` were reviewed against these rules; the surface addition is recorded in ADR-054 and the `changelog.d/963.changed.md` fragment. The classifier, Vale rules, `.vale.ini`, and this document's style rules are unchanged.
+
+> **Sync note for issue #1005 (2026-06-29):** The `gc_research_run` MCP tool's `record_methodology_source` action lost `source_required` (boolean) and `select_methodology` gained `required_source_refs` (optional string array, max 500 chars per element) in `mcp/ground-control/index.js`. Required sources are now snapshotted immutably at selection time; callers cannot inject a required flag via the record-source endpoint. The surface change is recorded in the ADR-054 amendment; no style rule changed.
+
+> **Sync note for issue #1005 / ADR-078 (2026-06-30):** The methodology catalog became backend-owned, validated-on-load reference data, and the required-source set is now derived from it rather than supplied by the caller. The `gc_research_run` MCP tool's `select_methodology` action was reduced to `{id, method_key}` (dropping `method_label`, `profile_version`, `catalog_version`, `required_source_refs`), and a new global read action `list_methodology_catalog` (`GET /api/v1/research-runs/methodology/catalog`) was added in `mcp/ground-control/index.js` + `lib.js`. The surface change is recorded in the ADR-054 amendment and `docs/API.md`; no style rule changed.
 
 ## Rules
 
@@ -267,6 +285,8 @@ Correcting a `GOVERNANCE_FIELDS` create/update allowlist in `mcp/ground-control/
 Bumping the `CLAUDE_MODEL_BY_TIER.high` routing-default model id in `mcp/ground-control/lib.js` from `claude-opus-4-7` to `claude-opus-4-8` (issue #1181) is a constant change recorded in an ADR-054 amendment, not a new doc page or style rule.
 
 Adding `expected_model` and `model_matches_expected` to the `/implement` step-telemetry record in `mcp/ground-control/lib.js` (issue #1181, schema `gc.implement.telemetry/v2`) is a telemetry-record field addition documented in ADR-036 and recorded in an ADR-054 amendment, not a new doc page or style rule.
+
+Bumping the `CLAUDE_MODEL_BY_TIER.medium` routing-default model id and the `TEST_QUALITY_REVIEW_DEFAULT_MODEL` engine default in `mcp/ground-control/lib.js` from `claude-sonnet-4-6` to `claude-sonnet-5`, and loosening the routing model-id validator to accept single-segment canonical ids (issue #1264), is a constant change plus a validator relaxation recorded in an ADR-054 amendment, not a new doc page or style rule.
 
 New `/implement` workflow-gate configuration under `.ground-control.yaml`
 (for example, `workflow.dev_start_gate` for GC-O007 / #1194) follows the same
