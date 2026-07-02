@@ -47,23 +47,31 @@ public record RecordMethodologyRequirementsContractRequest(
         var entryCommands = entries == null
                 ? List.<EntryCommand>of()
                 : entries.stream()
-                        .map(e -> new EntryCommand(
-                                e.kind(),
-                                e.entryKey(),
-                                e.statement(),
-                                e.sourceLinks() == null
-                                        ? List.<SourceLinkCommand>of()
-                                        : e.sourceLinks().stream()
-                                                .map(s -> new SourceLinkCommand(s.sourceId(), s.locator()))
-                                                .toList(),
-                                e.referencesEntryKey()))
+                        .map(RecordMethodologyRequirementsContractRequest::toEntryCommand)
                         .toList();
         var rejectedCommands = rejectedAlternatives == null
                 ? List.<RejectedAlternativeCommand>of()
                 : rejectedAlternatives.stream()
-                        .map(r -> new RejectedAlternativeCommand(
-                                r.methodKey(), r.profileVersion(), r.rationaleEntryId(), r.external()))
+                        .map(RecordMethodologyRequirementsContractRequest::toRejectedAlternativeCommand)
                         .toList();
         return new RecordMethodologyRequirementsContractCommand(entryCommands, rejectedCommands);
+    }
+
+    private static EntryCommand toEntryCommand(EntryRequest e) {
+        return new EntryCommand(
+                e.kind(), e.entryKey(), e.statement(), toSourceLinkCommands(e.sourceLinks()), e.referencesEntryKey());
+    }
+
+    private static List<SourceLinkCommand> toSourceLinkCommands(List<SourceLinkRequest> sourceLinks) {
+        if (sourceLinks == null) {
+            return List.of();
+        }
+        return sourceLinks.stream()
+                .map(s -> new SourceLinkCommand(s.sourceId(), s.locator()))
+                .toList();
+    }
+
+    private static RejectedAlternativeCommand toRejectedAlternativeCommand(RejectedAlternativeRequest r) {
+        return new RejectedAlternativeCommand(r.methodKey(), r.profileVersion(), r.rationaleEntryId(), r.external());
     }
 }

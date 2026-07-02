@@ -109,6 +109,10 @@ public class ResearchRunService {
     private static final int PROFILE_VERSION_MAX = 100;
     private static final String CONTRACT_SCHEMA_VERSION = "1";
     private static final String CONTRACT_ENTRY_KEY_FIELD = "entryKey";
+    private static final String LOCATOR_FIELD = "locator";
+    private static final String METHOD_KEY_FIELD = "methodKey";
+    private static final String REFERENCES_ENTRY_KEY_FIELD = "references_entry_key";
+    private static final String SOURCE_ID_FIELD = "source_id";
 
     private static final String AUTONOMOUS_DEFAULT_BASIS = "AUTONOMOUS_DEFAULT";
 
@@ -289,7 +293,7 @@ public class ResearchRunService {
                 return existing.get(); // idempotent replay — no duplicate, no rework
             }
         }
-        requireUnder(command.locator(), LOCATOR_MAX, "locator");
+        requireUnder(command.locator(), LOCATOR_MAX, LOCATOR_FIELD);
         requireUnder(command.contentHash(), HASH_MAX, "contentHash");
 
         var activeExisting = artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
@@ -774,7 +778,7 @@ public class ResearchRunService {
         }
         requireUnder(command.summary(), SUMMARY_MAX, "summary");
         requireUnder(command.sectionKey(), SECTION_KEY_MAX, "sectionKey");
-        requireUnder(command.locator(), LOCATOR_MAX, "locator");
+        requireUnder(command.locator(), LOCATOR_MAX, LOCATOR_FIELD);
         requireUnder(command.modelLabel(), MODEL_LABEL_MAX, "modelLabel");
         requireSameRunReference(
                 command.rationaleEntryId(), runId, rationaleRepository::existsByIdAndResearchRunId, "rationaleEntryId");
@@ -1093,10 +1097,10 @@ public class ResearchRunService {
         requireActive(run);
         if (cmd == null || cmd.methodKey() == null || cmd.methodKey().isBlank()) {
             throw new DomainValidationException(
-                    "methodKey must not be blank", INVALID_CODE, Map.of(FIELD, "methodKey"));
+                    "methodKey must not be blank", INVALID_CODE, Map.of(FIELD, METHOD_KEY_FIELD));
         }
         var methodKey = cmd.methodKey().trim();
-        requireUnder(methodKey, METHOD_KEY_MAX, "methodKey");
+        requireUnder(methodKey, METHOD_KEY_MAX, METHOD_KEY_FIELD);
         var profile = methodologyCatalog.requireProfile(methodKey);
 
         var existing = methodologySelectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(runId);
@@ -1415,8 +1419,21 @@ public class ResearchRunService {
             selectionSources.put(s.getId(), s);
         }
 
-        // First pass: validate entry shape and collect keys (needed to resolve
-        // OPEN_PROTOCOL_QUESTION references in the second pass).
+        var kindByKey = validateContractEntryShape(entryCommands);
+        validateContractEntryGrounding(entryCommands, kindByKey, selectionSources);
+        var rejectedCommands = command.rejectedAlternatives();
+        validateRejectedAlternatives(rejectedCommands, runId);
+
+        return persistContract(run, selection, artifact, entryCommands, rejectedCommands, selectionSources);
+    }
+
+    /**
+     * First pass over the entries: validates shape (kind/entryKey/statement) and
+     * returns the kind-by-key map needed to resolve {@code OPEN_PROTOCOL_QUESTION}
+     * references in {@link #validateContractEntryGrounding}.
+     */
+    private Map<String, ContractEntryKind> validateContractEntryShape(
+            List<RecordMethodologyRequirementsContractCommand.EntryCommand> entryCommands) {
         var entryKeys = new HashSet<String>();
         var kindByKey = new HashMap<String, ContractEntryKind>();
         for (var e : entryCommands) {
@@ -1442,134 +1459,174 @@ public class ResearchRunService {
             }
             requireUnder(e.statement(), STATEMENT_MAX, "statement");
         }
+        return kindByKey;
+    }
 
-        // Second pass: validate grounding (source links / references).
+    /** Second pass over the entries: validates grounding (source links / references). */
+    private void validateContractEntryGrounding(
+            List<RecordMethodologyRequirementsContractCommand.EntryCommand> entryCommands,
+            Map<String, ContractEntryKind> kindByKey,
+            Map<UUID, ResearchRunMethodologySource> selectionSources) {
         for (var e : entryCommands) {
             var links = e.sourceLinks();
             var hasLinks = links != null && !links.isEmpty();
             var reference = emptyToNull(e.referencesEntryKey());
-            if (e.kind().requiresSourceGrounding()) {
-                if (!hasLinks) {
-                    throw new DomainValidationException(
-                            e.kind() + " entry '" + key(e) + "' must link at least one methodology source",
-                            "research_run_methodology_contract_entry_ungrounded",
-                            Map.of(
-                                    CONTRACT_ENTRY_KEY_FIELD,
-                                    key(e),
-                                    "kind",
-                                    e.kind().name()));
-                }
-            } else if (!hasLinks && reference == null) {
-                throw new DomainValidationException(
-                        "OPEN_PROTOCOL_QUESTION entry '" + key(e) + "' must link a source or reference another entry",
-                        "research_run_methodology_contract_open_question_unlinked",
-                        Map.of(CONTRACT_ENTRY_KEY_FIELD, key(e)));
-            }
+            requireEntryGroundingPresent(e, hasLinks, reference);
             if (reference != null) {
-                if (reference.equals(key(e))) {
-                    throw new DomainValidationException(
-                            "entry '" + key(e) + "' may not reference itself",
-                            "research_run_methodology_contract_self_reference",
-                            Map.of("references_entry_key", reference));
-                }
-                var referencedKind = kindByKey.get(reference);
-                if (referencedKind == null) {
-                    throw new DomainValidationException(
-                            "referencesEntryKey '" + reference + "' does not match any entry in this contract",
-                            "research_run_methodology_contract_bad_reference",
-                            Map.of("references_entry_key", reference));
-                }
-                // ADR-079 §3: a reference must resolve to a source-grounded entry
-                // (REQUIREMENT / METHOD_LIMIT / NON_CLAIM), never to another
-                // OPEN_PROTOCOL_QUESTION — otherwise an unlinked question could chain
-                // to another question and enter phase 2 with no source grounding.
-                if (!referencedKind.requiresSourceGrounding()) {
-                    throw new DomainValidationException(
-                            "referencesEntryKey '" + reference
-                                    + "' must target a source-grounded entry (REQUIREMENT, METHOD_LIMIT, or NON_CLAIM)",
-                            "research_run_methodology_contract_reference_not_grounded",
-                            Map.of("references_entry_key", reference, "referenced_kind", referencedKind.name()));
-                }
+                validateEntryReference(e, reference, kindByKey);
             }
             if (hasLinks) {
-                var seenSources = new HashSet<UUID>();
-                for (var link : links) {
-                    if (link == null || link.sourceId() == null) {
-                        throw new DomainValidationException(
-                                "source link sourceId must not be null", INVALID_CODE, Map.of(FIELD, "sourceId"));
-                    }
-                    if (!seenSources.add(link.sourceId())) {
-                        throw new DomainValidationException(
-                                "Duplicate source link within entry '" + key(e) + "'",
-                                "research_run_methodology_contract_duplicate_source_link",
-                                Map.of("source_id", link.sourceId().toString()));
-                    }
-                    var source = selectionSources.get(link.sourceId());
-                    if (source == null) {
-                        throw new DomainValidationException(
-                                "Source link target is not a source of the active methodology selection",
-                                "research_run_methodology_contract_source_not_in_selection",
-                                Map.of("source_id", link.sourceId().toString()));
-                    }
-                    if (source.getState() != MethodologySourceState.READ) {
-                        throw new DomainValidationException(
-                                "Source link target must be READ before it can ground a contract entry",
-                                "research_run_methodology_contract_source_not_read",
-                                Map.of(
-                                        "source_id",
-                                        link.sourceId().toString(),
-                                        "state",
-                                        source.getState().name()));
-                    }
-                    requireUnder(link.locator(), LOCATOR_MAX, "locator");
-                }
+                validateEntrySourceLinks(e, links, selectionSources);
             }
         }
+    }
 
-        // Validate rejected alternatives.
-        var rejectedCommands = command.rejectedAlternatives();
-        if (rejectedCommands != null) {
-            for (var r : rejectedCommands) {
-                if (r == null || emptyToNull(r.methodKey()) == null) {
-                    throw new DomainValidationException(
-                            "rejected alternative methodKey must not be blank",
-                            INVALID_CODE,
-                            Map.of(FIELD, "methodKey"));
-                }
-                requireUnder(r.methodKey(), METHOD_KEY_MAX, "methodKey");
-                requireUnder(r.profileVersion(), PROFILE_VERSION_MAX, "profileVersion");
-                // ADR-079 §2: a non-external rejected alternative claims a catalog
-                // method and must resolve against the backend MethodologyCatalog;
-                // an unknown method must be recorded through the external/manual path.
-                if (!r.external()
-                        && methodologyCatalog.findProfile(r.methodKey().trim()).isEmpty()) {
-                    throw new DomainValidationException(
-                            "rejected alternative method '" + r.methodKey().trim()
-                                    + "' is not in the methodology catalog; unknown methods must be recorded as external",
-                            "research_run_methodology_contract_rejected_alternative_unknown_method",
-                            Map.of("method_key", r.methodKey().trim()));
-                }
-                if (r.rationaleEntryId() != null) {
-                    var rationale = rationaleRepository
-                            .findById(r.rationaleEntryId())
-                            .filter(entry -> entry.getResearchRun().getId().equals(runId))
-                            .orElseThrow(() -> new DomainValidationException(
-                                    "rejected alternative rationale entry not found for this run",
-                                    "research_run_methodology_contract_rationale_not_found",
-                                    Map.of(
-                                            "rationale_entry_id",
-                                            r.rationaleEntryId().toString())));
-                    if (rationale.getKind() != RationaleEntryKind.METHODOLOGY_CHOICE) {
-                        throw new DomainValidationException(
-                                "rejected alternative rationale entry must be of kind METHODOLOGY_CHOICE",
-                                "research_run_methodology_contract_rationale_wrong_kind",
-                                Map.of("kind", rationale.getKind().name()));
-                    }
-                }
+    private void requireEntryGroundingPresent(
+            RecordMethodologyRequirementsContractCommand.EntryCommand e, boolean hasLinks, String reference) {
+        if (e.kind().requiresSourceGrounding()) {
+            if (!hasLinks) {
+                throw new DomainValidationException(
+                        e.kind() + " entry '" + key(e) + "' must link at least one methodology source",
+                        "research_run_methodology_contract_entry_ungrounded",
+                        Map.of(
+                                CONTRACT_ENTRY_KEY_FIELD,
+                                key(e),
+                                "kind",
+                                e.kind().name()));
+            }
+        } else if (!hasLinks && reference == null) {
+            throw new DomainValidationException(
+                    "OPEN_PROTOCOL_QUESTION entry '" + key(e) + "' must link a source or reference another entry",
+                    "research_run_methodology_contract_open_question_unlinked",
+                    Map.of(CONTRACT_ENTRY_KEY_FIELD, key(e)));
+        }
+    }
+
+    private void validateEntryReference(
+            RecordMethodologyRequirementsContractCommand.EntryCommand e,
+            String reference,
+            Map<String, ContractEntryKind> kindByKey) {
+        if (reference.equals(key(e))) {
+            throw new DomainValidationException(
+                    "entry '" + key(e) + "' may not reference itself",
+                    "research_run_methodology_contract_self_reference",
+                    Map.of(REFERENCES_ENTRY_KEY_FIELD, reference));
+        }
+        var referencedKind = kindByKey.get(reference);
+        if (referencedKind == null) {
+            throw new DomainValidationException(
+                    "referencesEntryKey '" + reference + "' does not match any entry in this contract",
+                    "research_run_methodology_contract_bad_reference",
+                    Map.of(REFERENCES_ENTRY_KEY_FIELD, reference));
+        }
+        // ADR-079 §3: a reference must resolve to a source-grounded entry
+        // (REQUIREMENT / METHOD_LIMIT / NON_CLAIM), never to another
+        // OPEN_PROTOCOL_QUESTION — otherwise an unlinked question could chain
+        // to another question and enter phase 2 with no source grounding.
+        if (!referencedKind.requiresSourceGrounding()) {
+            throw new DomainValidationException(
+                    "referencesEntryKey '" + reference
+                            + "' must target a source-grounded entry (REQUIREMENT, METHOD_LIMIT, or NON_CLAIM)",
+                    "research_run_methodology_contract_reference_not_grounded",
+                    Map.of(REFERENCES_ENTRY_KEY_FIELD, reference, "referenced_kind", referencedKind.name()));
+        }
+    }
+
+    private void validateEntrySourceLinks(
+            RecordMethodologyRequirementsContractCommand.EntryCommand e,
+            List<RecordMethodologyRequirementsContractCommand.SourceLinkCommand> links,
+            Map<UUID, ResearchRunMethodologySource> selectionSources) {
+        var seenSources = new HashSet<UUID>();
+        for (var link : links) {
+            if (link == null || link.sourceId() == null) {
+                throw new DomainValidationException(
+                        "source link sourceId must not be null", INVALID_CODE, Map.of(FIELD, "sourceId"));
+            }
+            if (!seenSources.add(link.sourceId())) {
+                throw new DomainValidationException(
+                        "Duplicate source link within entry '" + key(e) + "'",
+                        "research_run_methodology_contract_duplicate_source_link",
+                        Map.of(SOURCE_ID_FIELD, link.sourceId().toString()));
+            }
+            var source = selectionSources.get(link.sourceId());
+            if (source == null) {
+                throw new DomainValidationException(
+                        "Source link target is not a source of the active methodology selection",
+                        "research_run_methodology_contract_source_not_in_selection",
+                        Map.of(SOURCE_ID_FIELD, link.sourceId().toString()));
+            }
+            if (source.getState() != MethodologySourceState.READ) {
+                throw new DomainValidationException(
+                        "Source link target must be READ before it can ground a contract entry",
+                        "research_run_methodology_contract_source_not_read",
+                        Map.of(
+                                SOURCE_ID_FIELD,
+                                link.sourceId().toString(),
+                                "state",
+                                source.getState().name()));
+            }
+            requireUnder(link.locator(), LOCATOR_MAX, LOCATOR_FIELD);
+        }
+    }
+
+    /** Validates rejected alternatives: shape, catalog membership, and rationale linkage. */
+    private void validateRejectedAlternatives(
+            List<RecordMethodologyRequirementsContractCommand.RejectedAlternativeCommand> rejectedCommands,
+            UUID runId) {
+        if (rejectedCommands == null) {
+            return;
+        }
+        for (var r : rejectedCommands) {
+            if (r == null || emptyToNull(r.methodKey()) == null) {
+                throw new DomainValidationException(
+                        "rejected alternative methodKey must not be blank",
+                        INVALID_CODE,
+                        Map.of(FIELD, METHOD_KEY_FIELD));
+            }
+            requireUnder(r.methodKey(), METHOD_KEY_MAX, METHOD_KEY_FIELD);
+            requireUnder(r.profileVersion(), PROFILE_VERSION_MAX, "profileVersion");
+            // ADR-079 §2: a non-external rejected alternative claims a catalog
+            // method and must resolve against the backend MethodologyCatalog. An
+            // unknown method must instead be recorded through the external/manual path.
+            if (!r.external()
+                    && methodologyCatalog.findProfile(r.methodKey().trim()).isEmpty()) {
+                throw new DomainValidationException(
+                        "rejected alternative method '" + r.methodKey().trim()
+                                + "' is not in the methodology catalog; unknown methods must be recorded as external",
+                        "research_run_methodology_contract_rejected_alternative_unknown_method",
+                        Map.of("method_key", r.methodKey().trim()));
+            }
+            if (r.rationaleEntryId() != null) {
+                requireRejectedAlternativeRationale(r, runId);
             }
         }
+    }
 
-        // Persist the aggregate.
+    private void requireRejectedAlternativeRationale(
+            RecordMethodologyRequirementsContractCommand.RejectedAlternativeCommand r, UUID runId) {
+        var rationale = rationaleRepository
+                .findById(r.rationaleEntryId())
+                .filter(entry -> entry.getResearchRun().getId().equals(runId))
+                .orElseThrow(() -> new DomainValidationException(
+                        "rejected alternative rationale entry not found for this run",
+                        "research_run_methodology_contract_rationale_not_found",
+                        Map.of("rationale_entry_id", r.rationaleEntryId().toString())));
+        if (rationale.getKind() != RationaleEntryKind.METHODOLOGY_CHOICE) {
+            throw new DomainValidationException(
+                    "rejected alternative rationale entry must be of kind METHODOLOGY_CHOICE",
+                    "research_run_methodology_contract_rationale_wrong_kind",
+                    Map.of("kind", rationale.getKind().name()));
+        }
+    }
+
+    /** Persists the contract aggregate (contract, entries, source links, rejected alternatives). */
+    private MethodologyRequirementsContractAggregate persistContract(
+            ResearchRun run,
+            ResearchRunMethodologySelection selection,
+            ResearchRunArtifact artifact,
+            List<RecordMethodologyRequirementsContractCommand.EntryCommand> entryCommands,
+            List<RecordMethodologyRequirementsContractCommand.RejectedAlternativeCommand> rejectedCommands,
+            Map<UUID, ResearchRunMethodologySource> selectionSources) {
         var actor = currentActor();
         var contract = new MethodologyRequirementsContract(
                 run, selection, artifact.getId(), artifact.getAttemptNo(), CONTRACT_SCHEMA_VERSION, actor);
@@ -1608,7 +1665,7 @@ public class ResearchRunService {
         log.info(
                 "research_run_methodology_contract_recorded: project={} run={} artifact={} attempt={} entries={} links={} rejected={}",
                 run.getProject().getIdentifier(),
-                runId,
+                run.getId(),
                 artifact.getId(),
                 artifact.getAttemptNo(),
                 savedEntries.size(),

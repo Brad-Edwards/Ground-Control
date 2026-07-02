@@ -281,8 +281,8 @@ class ResearchRunMethodologyContractServiceTest {
     @Test
     void record_crossProjectRun_concealedAsNotFound() {
         when(runRepository.findByIdAndProjectId(RUN_ID, PROJECT_ID)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.recordMethodologyRequirementsContract(
-                        PROJECT_ID, RUN_ID, cmd(List.of(requirement("r", READ_SOURCE_ID)))))
+        var cmd = cmd(List.of(requirement("r", READ_SOURCE_ID)));
+        assertThatThrownBy(() -> service.recordMethodologyRequirementsContract(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(NotFoundException.class);
     }
 
@@ -292,8 +292,8 @@ class ResearchRunMethodologyContractServiceTest {
         when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
                         RUN_ID, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE))
                 .thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.recordMethodologyRequirementsContract(
-                        PROJECT_ID, RUN_ID, cmd(List.of(requirement("r", READ_SOURCE_ID)))))
+        var cmd = cmd(List.of(requirement("r", READ_SOURCE_ID)));
+        assertThatThrownBy(() -> service.recordMethodologyRequirementsContract(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(DomainValidationException.class)
                 .extracting(e -> ((DomainValidationException) e).getErrorCode())
                 .isEqualTo("research_run_methodology_artifact_missing");
@@ -310,8 +310,8 @@ class ResearchRunMethodologyContractServiceTest {
                 .thenReturn(Optional.of(sel));
         when(sourceRepository.findBySelectionId(SELECTION_ID))
                 .thenReturn(List.of(source(sel, READ_SOURCE_ID, "doi:read", true, MethodologySourceState.OBTAINED)));
-        assertThatThrownBy(() -> service.recordMethodologyRequirementsContract(
-                        PROJECT_ID, RUN_ID, cmd(List.of(requirement("r", READ_SOURCE_ID)))))
+        var cmd = cmd(List.of(requirement("r", READ_SOURCE_ID)));
+        assertThatThrownBy(() -> service.recordMethodologyRequirementsContract(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(DomainValidationException.class)
                 .extracting(e -> ((DomainValidationException) e).getErrorCode())
                 .isEqualTo("research_run_methodology_sources_incomplete");
@@ -321,8 +321,8 @@ class ResearchRunMethodologyContractServiceTest {
     void record_contractAlreadyExists_throwsConflict() {
         readyRun();
         when(contractRepository.existsByArtifactId(ARTIFACT_ID)).thenReturn(true);
-        assertThatThrownBy(() -> service.recordMethodologyRequirementsContract(
-                        PROJECT_ID, RUN_ID, cmd(List.of(requirement("r", READ_SOURCE_ID)))))
+        var cmd = cmd(List.of(requirement("r", READ_SOURCE_ID)));
+        assertThatThrownBy(() -> service.recordMethodologyRequirementsContract(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(ConflictException.class)
                 .extracting(e -> ((ConflictException) e).getErrorCode())
                 .isEqualTo("research_run_methodology_contract_exists");
@@ -331,7 +331,8 @@ class ResearchRunMethodologyContractServiceTest {
     @Test
     void record_emptyEntries_throwsValidation() {
         readyRun();
-        assertThatThrownBy(() -> service.recordMethodologyRequirementsContract(PROJECT_ID, RUN_ID, cmd(List.of())))
+        var cmd = cmd(List.of());
+        assertThatThrownBy(() -> service.recordMethodologyRequirementsContract(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(DomainValidationException.class);
     }
 

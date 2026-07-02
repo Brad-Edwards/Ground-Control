@@ -133,7 +133,7 @@ class ResearchRunMethodologyContractControllerTest {
     @Test
     void get_happyPath_returns200() throws Exception {
         when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
-        when(researchRunService.getMethodologyRequirementsContract(eq(PROJECT_ID), eq(RUN_ID)))
+        when(researchRunService.getMethodologyRequirementsContract(PROJECT_ID, RUN_ID))
                 .thenReturn(aggregate());
 
         mockMvc.perform(get("/api/v1/research-runs/{id}/methodology/requirements-contract", RUN_ID)
@@ -146,7 +146,7 @@ class ResearchRunMethodologyContractControllerTest {
     @Test
     void get_notFound_returns404() throws Exception {
         when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
-        when(researchRunService.getMethodologyRequirementsContract(eq(PROJECT_ID), eq(RUN_ID)))
+        when(researchRunService.getMethodologyRequirementsContract(PROJECT_ID, RUN_ID))
                 .thenThrow(new NotFoundException("No methodology requirements contract for run " + RUN_ID));
 
         mockMvc.perform(get("/api/v1/research-runs/{id}/methodology/requirements-contract", RUN_ID)
