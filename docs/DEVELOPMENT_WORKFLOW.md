@@ -364,6 +364,17 @@ PreToolUse hook on `Bash`. The user owns every actual merge. Blocked uncondition
 - `make policy` is the common path for Claude, Codex, pre-commit, and CI
 - `make sync-ground-control-policy` and `make policy-live` keep Ground Control quality gates and ADR metadata aligned when a live GC instance is available
 
+Commit-time pre-commit activation is a separate per-clone contract from the
+presence of `.pre-commit-config.yaml` and the CI pre-commit job. ADR-079 requires
+repo setup to verify Git's effective hook dispatch path for the current clone,
+adapt to a supported global `core.hooksPath` dispatcher without mutating global
+Git config, and fail closed when hooks are present in config but not wired for
+commit-time execution. Run `make hooks` (a wrapper for `scripts/install-hooks.sh`)
+once per fresh clone: it writes managed `pre-commit`/`pre-push` hooks into the
+clone-local hook path the dispatcher delegates to, proves Git actually dispatches
+to them, then runs `pre-commit run --all-files`. `.git/hooks/` is not versioned, so
+this step does not survive a fresh clone by design; re-run it after cloning.
+
 ### MCP–Backend Write-Contract Gate (ADR-034, #1106)
 
 `make mcp-openapi-contract` (CI job `mcp-contract`) fails the build when an MCP

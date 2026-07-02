@@ -118,17 +118,20 @@ Add based on what's relevant:
 - Use `pass_filenames: false` for test runners
 - Scope with appropriate `files:` patterns
 
-4. Install the hooks:
+4. Activate **and verify** the hooks with the repo-native installer rather than a bare `pre-commit install`:
 ```bash
-pre-commit install
+scripts/install-hooks.sh   # or: make hooks
 ```
 
-5. Run against all files to verify:
-```bash
-pre-commit run --all-files
-```
+   **Do not run `pre-commit install` directly.** It cowardly refuses whenever git's `core.hooksPath` is set (any value), so under an environment-level global hooks dispatcher (for example `~/.git-hooks` with a `_chain` script) it silently produces **no** commit-time hook: the repo gets a valid `.pre-commit-config.yaml` and a green CI pre-commit job while commits run zero hooks. Commit-time activation is a **separate contract** from config presence and CI execution (ADR-079).
 
-Fix any issues that arise. It's normal for formatters to make changes on first run - stage those changes.
+   `scripts/install-hooks.sh` is the durable, repo-native installer/verifier. For the current clone it:
+   - writes GC-managed `pre-commit`/`pre-push` hooks into the clone-local hook path the dispatcher delegates to (`$(git rev-parse --git-dir)/hooks`), which is what `pre-commit install` cannot do while `core.hooksPath` is set;
+   - **never touches global git config** and never overwrites an unmanaged or symlinked hook without `--force` (host ownership boundary);
+   - **proves** git's effective dispatch actually reaches the managed hook (via `git hook run`) instead of trusting config presence, and **fails closed** with an actionable diagnostic when a non-empty `core.hooksPath` points at a dispatcher that does not delegate to the clone-local hook path;
+   - finally runs `pre-commit run --all-files`.
+
+   Because `.git/hooks/` is not versioned, every fresh clone must re-run `make hooks`; document that in the onboarded repo's CONTRIBUTING/README. It's normal for formatters to make changes on the first `pre-commit run`, so stage those changes.
 
 ### 3. SonarCloud Setup
 

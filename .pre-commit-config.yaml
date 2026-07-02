@@ -27,7 +27,7 @@ repos:
         name: bash -n (deploy + ops scripts)
         entry: bash -c 'for f in "$@"; do bash -n "$f" || exit 1; done' --
         language: system
-        files: ^(deploy/scripts/.*\.sh|scripts/(assert-backup-policy|deploy)\.sh)$
+        files: ^(deploy/scripts/.*\.sh|scripts/(assert-backup-policy|deploy|install-hooks)\.sh)$
 
       - id: assert-backup-policy
         name: assert GC-P021 backup policy defaults
