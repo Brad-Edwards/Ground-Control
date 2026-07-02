@@ -12,12 +12,12 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 /**
- * GC-RSCH-F007 / ADR-079 §3 — one extracted entry within a {@link
+ * GC-RSCH-F007 / ADR-080 §3 — one extracted entry within a {@link
  * MethodologyRequirementsContract}. Its {@link ContractEntryKind} fixes the
  * semantic class; {@code entryKey} is a stable key (unique per contract) that
  * protocol planning references to fill, gate, or defer the item. {@code
  * statement} is bounded free text; the backend does not parse it for domain
- * answers (ADR-079 §4). Entries are written once with the contract (immutable
+ * answers (ADR-080 §4). Entries are written once with the contract (immutable
  * snapshot), so they are not separately audited.
  */
 @Entity

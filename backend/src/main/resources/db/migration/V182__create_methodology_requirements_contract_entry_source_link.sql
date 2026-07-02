@@ -1,4 +1,4 @@
--- GC-RSCH-F007 / GC-RSCH-R002 / ADR-079 §3 (#1006). Links a contract entry to a
+-- GC-RSCH-F007 / GC-RSCH-R002 / ADR-080 §3 (#1006). Links a contract entry to a
 -- methodology source that grounds it. The source must belong to the same run's
 -- active methodology selection and be in READ state — a claim with no READ
 -- source link is never accepted (no model memory as evidence). locator is a

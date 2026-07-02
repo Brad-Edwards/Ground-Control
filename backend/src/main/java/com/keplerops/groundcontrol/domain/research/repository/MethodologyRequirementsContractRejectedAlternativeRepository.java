@@ -6,7 +6,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
- * GC-RSCH-N012 / ADR-079 — persistence boundary for {@link
+ * GC-RSCH-N012 / ADR-080 — persistence boundary for {@link
  * MethodologyRequirementsContractRejectedAlternative}.
  */
 public interface MethodologyRequirementsContractRejectedAlternativeRepository

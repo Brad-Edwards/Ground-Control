@@ -14,7 +14,7 @@ Scientific humility exposure for negative results, failed searches, access gaps,
 missing evidence, method limits, and non-claims is governed by ADR-076.
 Versioning and regression expectations for prompts, method profiles, schemas,
 and workflow policies are governed by ADR-077. The structured phase-1
-methodology requirements contract artifact is governed by ADR-079.
+methodology requirements contract artifact is governed by ADR-080.
 
 ## Phases
 
@@ -90,7 +90,7 @@ The backend enforces the source-coverage invariant via `ResearchRunService`. Sel
 
 ## F007 artifact boundary: methodology requirements contract
 
-ADR-079 defines the phase-1 artifact as a structured, run-scoped methodology requirements contract tied to the active methodology selection and the `METHODOLOGY_REQUIREMENTS` artifact manifest attempt. The contract records source-linked methodology obligations, method limits, non-claims, and open protocol-planning questions. It is not a Ground Control `Requirement`, not a raw markdown body stored on `ResearchRunArtifact`, and not a duplicate rationale/provenance schema.
+ADR-080 defines the phase-1 artifact as a structured, run-scoped methodology requirements contract tied to the active methodology selection and the `METHODOLOGY_REQUIREMENTS` artifact manifest attempt. The contract records source-linked methodology obligations, method limits, non-claims, and open protocol-planning questions. It is not a Ground Control `Requirement`, not a raw markdown body stored on `ResearchRunArtifact`, and not a duplicate rationale/provenance schema.
 
 The chosen method remains the active methodology selection from ADR-078. Rejected alternatives remain methodology-choice rationale entries. Every extracted requirement, limit, or non-claim must link back to methodology source coverage rows from the same active selection. Phase 1 has no first-class fields for protocol answers such as databases, query strings, date ranges, charting categories, synthesis dimensions, or source-set caps; phase 2 fills or defers those answers against the contract.
 

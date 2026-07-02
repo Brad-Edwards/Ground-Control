@@ -271,7 +271,7 @@ public class ResearchRunController {
                 .toList();
     }
 
-    // GC-RSCH-F007 / GC-RSCH-F008 / ADR-079 — structured methodology requirements
+    // GC-RSCH-F007 / GC-RSCH-F008 / ADR-080 — structured methodology requirements
     // contract behind the METHODOLOGY_REQUIREMENTS artifact.
     @PostMapping("/{id}/methodology/requirements-contract")
     @ResponseStatus(HttpStatus.CREATED)

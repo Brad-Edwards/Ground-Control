@@ -16,15 +16,18 @@ git clone https://github.com/KeplerOps/Ground-Control.git
 cd Ground-Control
 git checkout -b feature/your-feature dev
 
-# 2. Start PostgreSQL and Redis
+# 2. Activate commit-time hooks for THIS clone (required once per clone, ADR-079)
+make hooks                         # writes + verifies the pre-commit/pre-push hooks
+
+# 3. Start PostgreSQL and Redis
 cp .env.example .env
 make up
 
-# 3. Build and test
+# 4. Build and test
 make rapid                         # Format + compile (~1s with warm daemon)
 make test                          # Unit tests
 
-# 4. Start development server
+# 5. Start development server
 make dev                           # Spring Boot on :8000
 ```
 
@@ -32,6 +35,7 @@ make dev                           # Spring Boot on :8000
 
 | Target | Description |
 |--------|-------------|
+| `make hooks` | Activate + verify commit-time pre-commit hooks for this clone (run once per clone) |
 | `make rapid` | Format + compile, no tests or static analysis (~1 second warm) |
 | `make test` | Run unit tests (no static analysis) |
 | `make check` | Full build + tests + static analysis + coverage (CI-equivalent) |

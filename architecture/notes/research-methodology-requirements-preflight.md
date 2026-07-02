@@ -46,7 +46,7 @@ work must be a bounded extension of the existing research run surfaces:
   expectations for issue #1005.
 - ADR-078 owns the backend methodology catalog as validated-on-load reference
   data and the policy drift check against the skill-side mirror.
-- ADR-079, if adopted from the current worktree draft, owns the typed
+- ADR-080, if adopted from the current worktree draft, owns the typed
   methodology requirements contract artifact and must still compose the
   existing lifecycle, source-coverage, rationale, provenance, and humility
   surfaces rather than replace them.

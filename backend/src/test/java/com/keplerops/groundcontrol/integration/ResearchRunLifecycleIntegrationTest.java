@@ -76,7 +76,7 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
     void cleanup() throws Exception {
         try (var conn = dataSource.getConnection();
                 var stmt = conn.createStatement()) {
-            // #1006 ADR-079: methodology requirements contract child rows reference
+            // #1006 ADR-080: methodology requirements contract child rows reference
             // artifact / methodology-source / rationale / selection / run, so they
             // must be deleted before those parents below.
             stmt.executeUpdate("DELETE FROM methodology_requirements_contract_entry_source_link WHERE entry_id IN "

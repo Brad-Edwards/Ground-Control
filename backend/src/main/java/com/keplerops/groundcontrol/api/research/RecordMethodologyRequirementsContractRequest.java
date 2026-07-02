@@ -14,11 +14,11 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * GC-RSCH-F007 / ADR-079 — record the methodology requirements contract for the
+ * GC-RSCH-F007 / ADR-080 — record the methodology requirements contract for the
  * run's ACTIVE {@code METHODOLOGY_REQUIREMENTS} artifact attempt. Deliberately
  * has no fields for domain answers (databases, queries, date ranges, inclusion
  * criteria, charting categories, synthesis dimensions, source caps): the
- * phase-1/phase-2 boundary is structural (ADR-079 §4). Actor, chosen method,
+ * phase-1/phase-2 boundary is structural (ADR-080 §4). Actor, chosen method,
  * artifact id, and attempt are resolved server-side (ADR-026), never from this
  * body.
  */

@@ -1354,11 +1354,11 @@ public class ResearchRunService {
     }
 
     // ------------------------------------------------------------------
-    // Methodology requirements contract (GC-RSCH-F007 / ADR-079)
+    // Methodology requirements contract (GC-RSCH-F007 / ADR-080)
     // ------------------------------------------------------------------
 
     /**
-     * GC-RSCH-F007 / GC-RSCH-R002 / ADR-079 — record the structured phase-1
+     * GC-RSCH-F007 / GC-RSCH-R002 / ADR-080 — record the structured phase-1
      * methodology requirements contract behind the run's ACTIVE {@code
      * METHODOLOGY_REQUIREMENTS} artifact attempt. The chosen method (active
      * selection), artifact id, and attempt are resolved server-side. Exactly one
@@ -1391,7 +1391,7 @@ public class ResearchRunService {
                         Map.of()));
 
         // Required methodology sources must be READ before the contract is accepted
-        // (ADR-079 §3) — the same gate the artifact recording enforced.
+        // (ADR-080 §3) — the same gate the artifact recording enforced.
         requireMethodologySourceCoverageComplete(runId);
         var selection = methodologySelectionRepository
                 .findFirstByResearchRunIdAndSupersededAtIsNull(runId)
@@ -1519,7 +1519,7 @@ public class ResearchRunService {
                     "research_run_methodology_contract_bad_reference",
                     Map.of(REFERENCES_ENTRY_KEY_FIELD, reference));
         }
-        // ADR-079 §3: a reference must resolve to a source-grounded entry
+        // ADR-080 §3: a reference must resolve to a source-grounded entry
         // (REQUIREMENT / METHOD_LIMIT / NON_CLAIM), never to another
         // OPEN_PROTOCOL_QUESTION — otherwise an unlinked question could chain
         // to another question and enter phase 2 with no source grounding.
@@ -1585,7 +1585,7 @@ public class ResearchRunService {
             }
             requireUnder(r.methodKey(), METHOD_KEY_MAX, METHOD_KEY_FIELD);
             requireUnder(r.profileVersion(), PROFILE_VERSION_MAX, "profileVersion");
-            // ADR-079 §2: a non-external rejected alternative claims a catalog
+            // ADR-080 §2: a non-external rejected alternative claims a catalog
             // method and must resolve against the backend MethodologyCatalog. An
             // unknown method must instead be recorded through the external/manual path.
             if (!r.external()
@@ -1676,7 +1676,7 @@ public class ResearchRunService {
     }
 
     /**
-     * GC-RSCH-F008 / ADR-079 §5 — read the active methodology requirements
+     * GC-RSCH-F008 / ADR-080 §5 — read the active methodology requirements
      * contract (the surface protocol planning consumes as its contract). Resolves
      * the ACTIVE {@code METHODOLOGY_REQUIREMENTS} artifact, then the contract tied
      * to that attempt, and bundles its entries, source links, and rejected

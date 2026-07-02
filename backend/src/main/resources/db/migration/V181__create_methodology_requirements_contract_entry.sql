@@ -1,8 +1,8 @@
--- GC-RSCH-F007 / ADR-079 §3 (#1006). One extracted entry within a methodology
+-- GC-RSCH-F007 / ADR-080 §3 (#1006). One extracted entry within a methodology
 -- requirements contract. Entries are written once with the contract (immutable
 -- snapshot, not audited separately). entry_key is a stable, contract-unique key
 -- that protocol planning references. statement is bounded free text; the backend
--- does not parse it for domain answers (ADR-079 §4).
+-- does not parse it for domain answers (ADR-080 §4).
 CREATE TABLE methodology_requirements_contract_entry (
     id          UUID          PRIMARY KEY,
     contract_id UUID          NOT NULL REFERENCES methodology_requirements_contract(id),

@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * GC-RSCH-F007 / ADR-079 — record the structured methodology requirements
+ * GC-RSCH-F007 / ADR-080 — record the structured methodology requirements
  * contract behind the run's ACTIVE {@code METHODOLOGY_REQUIREMENTS} artifact
  * attempt. The chosen method, artifact id, and attempt are resolved server-side
  * from the run's active selection and active artifact, not this command. The
@@ -14,7 +14,7 @@ import java.util.UUID;
  * <p>The command shape deliberately has no first-class fields for domain answers
  * (databases, query strings, date ranges, inclusion/exclusion values, charting
  * categories, synthesis dimensions, source-set caps): that phase-1/phase-2
- * boundary is structural (ADR-079 §4).
+ * boundary is structural (ADR-080 §4).
  */
 public record RecordMethodologyRequirementsContractCommand(
         List<EntryCommand> entries, List<RejectedAlternativeCommand> rejectedAlternatives) {

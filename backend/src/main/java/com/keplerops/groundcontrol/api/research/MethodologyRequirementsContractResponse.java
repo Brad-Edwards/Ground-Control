@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * GC-RSCH-F007 / GC-RSCH-F008 / ADR-079 — the methodology requirements contract
+ * GC-RSCH-F007 / GC-RSCH-F008 / ADR-080 — the methodology requirements contract
  * as protocol planning consumes it: the chosen method (selection), the artifact
  * attempt it belongs to, extracted entries with stable keys and their source
  * links, and rejected alternatives. Bounded metadata only — never source text.

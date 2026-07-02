@@ -66,7 +66,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 /**
- * GC-RSCH-F007 / GC-RSCH-F008 / GC-RSCH-R002 / ADR-079 — service-layer unit tests
+ * GC-RSCH-F007 / GC-RSCH-F008 / GC-RSCH-R002 / ADR-080 — service-layer unit tests
  * for the methodology requirements contract on {@link ResearchRunService}.
  */
 @ExtendWith(MockitoExtension.class)

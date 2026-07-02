@@ -5,7 +5,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-/** GC-RSCH-F007 / ADR-079 — persistence boundary for {@link MethodologyRequirementsContract}. */
+/** GC-RSCH-F007 / ADR-080 — persistence boundary for {@link MethodologyRequirementsContract}. */
 public interface MethodologyRequirementsContractRepository
         extends JpaRepository<MethodologyRequirementsContract, UUID> {
 

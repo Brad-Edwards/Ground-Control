@@ -1,7 +1,7 @@
 package com.keplerops.groundcontrol.domain.research.model;
 
 /**
- * GC-RSCH-F007 / ADR-079 §3 — closed vocabulary for the semantic class of a
+ * GC-RSCH-F007 / ADR-080 §3 — closed vocabulary for the semantic class of a
  * {@link MethodologyRequirementsContractEntry}. The set is API-visible and
  * follows ADR-034 enum-contract rules; extend it deliberately rather than
  * overloading an existing value.

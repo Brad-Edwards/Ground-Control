@@ -13,7 +13,7 @@ import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 
 /**
- * GC-RSCH-F007 / ADR-079 — the structured phase-1 methodology requirements
+ * GC-RSCH-F007 / ADR-080 — the structured phase-1 methodology requirements
  * contract for one research run. It sits behind, and is tied by run + artifact
  * attempt to, the ACTIVE {@link ResearchArtifactType#METHODOLOGY_REQUIREMENTS}
  * {@link ResearchRunArtifact} manifest (the manifest stays lifecycle metadata;

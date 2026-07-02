@@ -10,7 +10,7 @@ import jakarta.persistence.Table;
 import java.util.UUID;
 
 /**
- * GC-RSCH-N012 / ADR-079 §2 — a methodology alternative rejected in favour of the
+ * GC-RSCH-N012 / ADR-080 §2 — a methodology alternative rejected in favour of the
  * contract's active selection. The rationale ledger stays the authority for
  * <em>why</em>: {@code rationaleEntryId} references a {@code METHODOLOGY_CHOICE}
  * {@link ResearchRunRationaleEntry} for the same run. An alternative not present

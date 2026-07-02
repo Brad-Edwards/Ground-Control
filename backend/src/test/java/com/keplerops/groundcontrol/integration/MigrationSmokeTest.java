@@ -1133,12 +1133,12 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         assertResearchProvenanceAuditColumns();
         // V175-V178 (#1005, GC-RSCH-F006): methodology selection + source tables.
         assertResearchMethodologyAuditColumns();
-        // V179-V183 (#1006, ADR-079): methodology requirements contract tables.
+        // V179-V183 (#1006, ADR-080): methodology requirements contract tables.
         assertMethodologyContractColumns();
     }
 
     /**
-     * V179-V183 (#1006, ADR-079) — column-level probes for the methodology
+     * V179-V183 (#1006, ADR-080) — column-level probes for the methodology
      * requirements contract, its entries, source links, rejected alternatives, and
      * the contract Envers audit shadow. ddl-auto:validate does not inspect audit
      * tables, so probe the audited payload columns explicitly.

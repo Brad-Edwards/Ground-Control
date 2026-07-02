@@ -3292,7 +3292,7 @@ server.tool(
     source_label: z.string().optional(),
     source_state: z.enum(METHODOLOGY_SOURCE_STATES).optional(),
     source_id: z.string().uuid().optional(),
-    // methodology requirements contract (GC-RSCH-F007 / ADR-079). No domain-answer
+    // methodology requirements contract (GC-RSCH-F007 / ADR-080). No domain-answer
     // fields; chosen method, artifact id, and attempt are resolved server-side.
     entries: z
       .array(

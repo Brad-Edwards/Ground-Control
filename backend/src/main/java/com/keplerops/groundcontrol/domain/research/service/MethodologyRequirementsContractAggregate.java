@@ -7,7 +7,7 @@ import com.keplerops.groundcontrol.domain.research.model.MethodologyRequirements
 import java.util.List;
 
 /**
- * GC-RSCH-F007 / ADR-079 — read view of a methodology requirements contract and
+ * GC-RSCH-F007 / ADR-080 — read view of a methodology requirements contract and
  * its child rows, returned as one bundle so the API layer never re-queries
  * repositories. {@code sourceLinks} carries every link for the contract; the
  * response groups them by entry id.

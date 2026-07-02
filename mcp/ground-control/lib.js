@@ -11059,7 +11059,7 @@ export const RESEARCH_ARTIFACT_TYPES = [
   "MANUSCRIPT",
 ];
 
-// GC-RSCH-F007 / ADR-079 — closed vocabulary for methodology requirements
+// GC-RSCH-F007 / ADR-080 — closed vocabulary for methodology requirements
 // contract entries. Mirrors ContractEntryKind (backend enum contract, ADR-034).
 export const CONTRACT_ENTRY_KINDS = [
   "REQUIREMENT",
@@ -11237,7 +11237,7 @@ export async function listMethodologyCatalog() {
   return request("GET", "/api/v1/research-runs/methodology/catalog", {});
 }
 
-// GC-RSCH-F007 / GC-RSCH-F008 / ADR-079 — methodology requirements contract behind
+// GC-RSCH-F007 / GC-RSCH-F008 / ADR-080 — methodology requirements contract behind
 // the METHODOLOGY_REQUIREMENTS artifact. Read also routes through gc_query under
 // the /api/v1/research-runs allow-list.
 export async function recordMethodologyRequirementsContract(id, data, project) {

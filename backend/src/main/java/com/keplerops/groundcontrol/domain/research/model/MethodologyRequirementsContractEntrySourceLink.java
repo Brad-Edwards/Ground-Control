@@ -10,7 +10,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 /**
- * GC-RSCH-F007 / GC-RSCH-R002 / ADR-079 §3 — grounds a {@link
+ * GC-RSCH-F007 / GC-RSCH-R002 / ADR-080 §3 — grounds a {@link
  * MethodologyRequirementsContractEntry} in a {@link ResearchRunMethodologySource}
  * that supports it. The linked source must belong to the same run's active
  * methodology selection and be in {@code READ} state; the service rejects a claim

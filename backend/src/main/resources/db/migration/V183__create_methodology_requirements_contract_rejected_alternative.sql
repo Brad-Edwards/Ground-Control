@@ -1,4 +1,4 @@
--- GC-RSCH-N012 / ADR-079 §2 (#1006). A methodology alternative that was rejected
+-- GC-RSCH-N012 / ADR-080 §2 (#1006). A methodology alternative that was rejected
 -- in favour of the contract's active selection. The "why" stays in the rationale
 -- ledger: rationale_entry_id references a METHODOLOGY_CHOICE rationale entry for
 -- the same run. A rejected alternative not present in the backend catalog is

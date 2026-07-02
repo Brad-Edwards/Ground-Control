@@ -37,7 +37,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * GC-RSCH-F007 / GC-RSCH-F008 / ADR-079 — controller slice for the methodology
+ * GC-RSCH-F007 / GC-RSCH-F008 / ADR-080 — controller slice for the methodology
  * requirements contract endpoints on {@link ResearchRunController}.
  */
 @AutoConfigureMockMvc(addFilters = false)

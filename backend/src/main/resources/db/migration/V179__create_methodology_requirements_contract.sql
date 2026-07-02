@@ -1,4 +1,4 @@
--- GC-RSCH-F007 / ADR-079 (#1006). The structured phase-1 methodology
+-- GC-RSCH-F007 / ADR-080 (#1006). The structured phase-1 methodology
 -- requirements contract that sits behind the METHODOLOGY_REQUIREMENTS artifact
 -- manifest. Exactly one contract exists per artifact attempt (unique artifact_id);
 -- rework records a new artifact attempt and therefore a new contract. Bounded
