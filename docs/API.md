@@ -1457,6 +1457,60 @@ Each `limitation` carries: `reason` (`ThreatEnumerationLimitationReason` value:
 MCP surface: `gc_threat_enumeration` (dedicated tool). Parameters: `project`
 (optional), `packId` (required), `version` (optional), `snapshotId` (optional).
 
+### Control Identification (GC-GRC-008)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/control-identification?project=&threatPackId=&version=&snapshotId=` | - | 200 | Identify candidate controls (and control-design gaps) for a project's enumerated threats |
+| GET | `/control-identification/coverage?project=&threatModelId=` | - | 200 | List the controls recorded as covering a threat |
+| POST | `/control-identification/confirmations?project=` | ConfirmControlMappingRequest | 200 | Confirm a candidate control as a threat mitigation |
+
+Identification is **deterministic**: threats enumerated for the project (GC-GRC-007)
+are mapped `threat category → control objective → candidate controls` by a built-in
+rule set, drawing candidate controls from installed control packs (OSCAL catalogs
+such as NIST SP 800-53/800-218) and the project's existing controls. No LLM is
+involved. `threatPackId` is required and names the `THREAT_RULE_PACK` used to
+enumerate; `version` and `snapshotId` are optional (latest when omitted). `project`
+is optional in single-project deployments. All routes are authenticated under the
+`/api/v1/**` rule; the confirmation write records through the same canonical
+aggregates (and at the same authorization level) as the existing
+risk-control-mapping and threat-model-link write surfaces.
+
+**ControlIdentificationResponse fields:** `projectIdentifier`, `schemaVersion`,
+`ruleSetId`, `ruleSetVersion`, `candidateCount`, `gapCount`, `candidates[]`, and
+`gaps[]`.
+
+Each `candidate` carries: `producingRuleId`, `ruleSetId`, `ruleSetVersion`,
+`threatCategory`, `strideCategory`, `objectiveKey`, `threatRef`, `controlId`,
+`controlUid`, `source` (`ControlCandidateSource`: `CONTROL_PACK` or
+`PROJECT_CONTROL`), `packId`, `packVersion`, `packChecksum`,
+`implementationGuidance`, `matchedFacts{}` (matched framework selectors and
+identifiers), and `rationale`.
+
+Each `gap` carries: `threatCategory`, `strideCategory`, `objectiveKey`,
+`producingRuleId`, `threatRef`, `reason` (`ControlIdentificationGapReason`:
+`NO_MATCHING_CONTROL` or `NO_CONTROLS_AVAILABLE`), and `description`.
+
+`ConfirmControlMappingRequest`: `threatModelId` (required), `controlId` (required),
+`controlRole` (optional `MappingControlRole`; defaults to `PREVENTIVE`),
+`mappingObjective` (optional), `mappingScope` (optional). The control must be one the
+deterministic mapping engine selects for the threat (re-derived server-side from the
+threat's STRIDE category), so only framework-derived mitigations, not LLM-invented or
+forged ones, are recorded through this route. A non-derived control is rejected `422`.
+The derived control objective is carried onto the recorded mapping as provenance when
+`mappingObjective` is omitted. Confirmation records the relationship through **both** the
+`RiskControlMapping` coverage edge and the `ThreatModelLink MITIGATED_BY` to `CONTROL`
+traversal edge, and is idempotent: re-confirming an already-recorded pair returns the
+existing edge ids. Response: `riskControlMappingId`, `threatModelLinkId`,
+`mappingCreated`, `linkCreated`.
+
+MCP surface: `gc_control_identification` (dedicated read tool). Parameters:
+`action` (`identify` default, or `coverage`), `project` (optional), `threatPackId`
+(required for `identify`), `version` (optional), `snapshotId` (optional),
+`threatModelId` (required for `coverage`). Confirmation is a write, performed via
+the REST `/confirmations` route or the existing `gc_threat_model` /
+`gc_risk_control_mapping` write tools.
+
 ### Plugins
 
 | Method | Path | Body | Status | Purpose |

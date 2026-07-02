@@ -10400,6 +10400,23 @@ export async function threatEnumeration({ project, packId, version, snapshotId }
 }
 
 // ---------------------------------------------------------------------------
+// Control identification (GC-GRC-008): deterministic mapping of enumerated
+// threats to candidate controls, and the confirmed-coverage read.
+// ---------------------------------------------------------------------------
+
+export async function controlIdentification({ project, threatPackId, version, snapshotId } = {}) {
+  return request("GET", "/api/v1/control-identification", {
+    params: { project, threatPackId, version, snapshotId },
+  });
+}
+
+export async function controlCoverage({ project, threatModelId } = {}) {
+  return request("GET", "/api/v1/control-identification/coverage", {
+    params: { project, threatModelId },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // NIST SP 800-30 Rev. 1 enums (GC-T014, ADR-034 mirror policy)
 // ---------------------------------------------------------------------------
 
