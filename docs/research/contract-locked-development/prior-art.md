@@ -24,7 +24,9 @@ Partially, under two names, with a documented gap between them:
   testing as the oracle audit. No published methodology combines them; this
   is the space contract-locked development occupies.
 
-Sources: IEEE Software 2002 "Correctness by Construction";
+Sources: Hall and Chapman, "Correctness by Construction: Developing a
+Commercial Secure System," IEEE Software 19(1), 2002,
+<https://doi.org/10.1109/52.976940>;
 <https://arxiv.org/abs/2602.00180>;
 <https://martinfowler.com/articles/exploring-gen-ai/sdd-3-tools.html>.
 
@@ -45,7 +47,13 @@ about not certifying their own work, and training cost is a prompt. Replace
 Cleanroom's human functional verification (the part that did not scale) with
 the machine-checked layers below. Certify against sampled operational
 behavior, not implementer-chosen cases.
-Sources: <https://en.wikipedia.org/wiki/Cleanroom_software_engineering>;
+Sources: Mills, Dyer, and Linger, "Cleanroom Software Engineering," IEEE
+Software 4(5), 1987, <https://doi.org/10.1109/MS.1987.231413>; Currit,
+Dyer, and Mills, "Certifying the Reliability of Software," IEEE TSE
+SE-12(1), 1986, <https://doi.org/10.1109/TSE.1986.6312914>; Hausler,
+Linger, and Trammell, "Adopting Cleanroom Software Engineering with a
+Phased Approach," IBM Systems Journal 33(1), 1994,
+<https://doi.org/10.1147/sj.331.0089>;
 <https://www.sei.cmu.edu/library/cleanroom-software-engineering-reference/>.
 
 ### Design by Contract (Meyer, Eiffel)
@@ -64,8 +72,10 @@ catch what executions reach, so contracts need a driver (property tests,
 verification) to count as enforcement - hence the invariant-to-check
 inventory rule. Blame assignment is newly precious with multiple agents: a
 failing postcondition tells the orchestrator which party is wrong.
-Sources: ECOOP 2017 Contracts in the Wild
-(<https://drops.dagstuhl.de/storage/00lipics/lipics-vol074-ecoop2017/LIPIcs.ECOOP.2017.9/LIPIcs.ECOOP.2017.9.pdf>);
+Sources: Meyer, "Applying 'Design by Contract'," IEEE Computer 25(10),
+1992, <https://doi.org/10.1109/2.161279>; Dietrich et al., "Contracts in
+the Wild: A Study of Java Programs," ECOOP 2017,
+<https://doi.org/10.4230/LIPIcs.ECOOP.2017.9>;
 <https://www.eiffel.com/values/design-by-contract/>.
 
 ### Refinement methods: B-Method/Event-B, Z, VDM
@@ -82,9 +92,13 @@ recurring economic shape of all verification: automate the bulk, budget
 scarce strong attention for the residue. Refinement chains are also the
 natural strong-model/weak-model split: each obligation is small and
 checkable. Reserve real refinement for the highest-scored kernels.
-Sources:
-<https://www.clearsy.com/en/the-tools/extension-of-line-14-of-the-paris-metro-over-25-years-of-reliability-thanks-to-the-b-formal-method/>;
-<https://arxiv.org/pdf/2005.07190>.
+Sources: Behm, Benoit, Faivre, and Meynadier, "Meteor: A Successful
+Application of B in a Large Project," FM'99, LNCS 1708,
+<https://doi.org/10.1007/3-540-48119-2_22>; Abrial, *The B-Book: Assigning
+Programs to Meanings*, Cambridge University Press, 1996; Lecomte et al.,
+"Applying a Formal Method in Industry: A 25-Year Trajectory,"
+<https://arxiv.org/abs/2005.07190>;
+<https://www.clearsy.com/en/the-tools/extension-of-line-14-of-the-paris-metro-over-25-years-of-reliability-thanks-to-the-b-formal-method/>.
 
 ### SPARK Ada and the Stone-to-Platinum ladder
 
@@ -104,7 +118,13 @@ to an analyzable fragment - mechanically enforceable, multiplies every later
 check) and the observation that Silver-tier "no runtime errors" delivers the
 best prevention-per-cost on the ladder because it needs almost no spec
 authoring.
-Sources: <https://www.adacore.com/uploads/books/pdf/ePDF-ImplementationGuidanceSPARK.pdf>;
+Sources: AdaCore and Thales, *Implementation Guidance for the Adoption of
+SPARK*,
+<https://www.adacore.com/uploads/books/pdf/ePDF-ImplementationGuidanceSPARK.pdf>;
+Hall and Chapman, IEEE Software 19(1), 2002,
+<https://doi.org/10.1109/52.976940>; Barnes, Chapman, Johnson, Widmaier,
+Cooper, and Everett, "Engineering the Tokeneer Enclave Protection
+Software," IEEE ISSSE 2006;
 <https://blog.adacore.com/new-guidance-for-adoption-of-spark>.
 
 ### Amazon's lightweight formal methods (ShardStore, Cedar, TLA+, s2n)
@@ -135,10 +155,17 @@ safely because conformance is mechanical against an oracle they cannot
 redefine without visibly editing the model. Import the failure mode too:
 measure the checkers (reachability/coverage of the battery), and keep the
 model-as-mock coupling or reference models rot like DbC contracts did.
-Sources: <https://jamesbornholt.com/papers/shardstore-sosp21.pdf>;
-<https://cacm.acm.org/research/how-amazon-web-services-uses-formal-methods/>;
-<https://www.amazon.science/blog/how-we-built-cedar-with-automated-reasoning-and-differential-testing>;
-<https://spawn-queue.acm.org/doi/10.1145/3712057>.
+Sources: Bornholt et al., "Using Lightweight Formal Methods to Validate a
+Key-Value Storage Node in Amazon S3," SOSP 2021,
+<https://doi.org/10.1145/3477132.3483540>; Newcombe, Rath, Zhang,
+Munteanu, Brooker, and Deardeuff, "How Amazon Web Services Uses Formal
+Methods," CACM 58(4), 2015, <https://doi.org/10.1145/2699417>; Cutler et
+al., "Cedar: A New Language for Expressive, Fast, Safe, and Analyzable
+Authorization," <https://arxiv.org/abs/2403.04651>; Chudnov et al.,
+"Continuous Formal Verification of Amazon s2n," CAV 2018,
+<https://doi.org/10.1007/978-3-319-96142-2_26>; "Systems Correctness
+Practices at Amazon Web Services," ACM Queue, 2025,
+<https://doi.org/10.1145/3712057>.
 
 ### Full verification: seL4, CompCert
 
@@ -153,8 +180,13 @@ only for tiny, frozen, maximally leveraged kernels, and the "is the spec
 right?" residual survives any amount of proof - the deliverable is proofs
 plus a written assumption list. One live silver lining for agents: a proof
 checker is the one verifier class an implementer categorically cannot game.
-Sources: <https://cacm.acm.org/research/sel4-formal-verification-of-an-operating-system-kernel/>;
-<https://sel4.systems/Verification/assumptions.html>; <https://compcert.org/>.
+Sources: Klein et al., "seL4: Formal Verification of an OS Kernel," SOSP
+2009, <https://doi.org/10.1145/1629575.1629596>; Leroy, "Formal
+Verification of a Realistic Compiler," CACM 52(7), 2009,
+<https://doi.org/10.1145/1538788.1538814>; Yang, Chen, Eide, and Regehr,
+"Finding and Understanding Bugs in C Compilers," PLDI 2011,
+<https://doi.org/10.1145/1993498.1993532>;
+<https://sel4.systems/Verification/assumptions.html>.
 
 ### Auto-active verification friction: Dafny, Frama-C, Why3
 
@@ -203,8 +235,10 @@ radius is bounded by what the interface exposes, and interface minimality is
 itself checkable (the architecture-registry layer). And a portfolio of
 per-property checkers beats one grand verifier - ShardStore reached the same
 design independently.
-Sources: <http://sunnyday.mit.edu/16.355/parnas-criteria.html>;
-<https://dl.acm.org/doi/10.1145/602382.602403>.
+Sources: Parnas, "On the Criteria to Be Used in Decomposing Systems into
+Modules," CACM 15(12), 1972, <https://doi.org/10.1145/361598.361623>;
+Hoare, "The Verifying Compiler: A Grand Challenge for Computing Research,"
+JACM 50(1), 2003, <https://doi.org/10.1145/602382.602403>.
 
 ### Industrial-lightweight boundary locks: Pact, schema-first, semver tools
 
@@ -221,6 +255,8 @@ consumer-driven inversion keeps contracts minimal (Parnas again), and
 compatibility must be computed by a tool, never asserted by the implementer,
 human or model.
 Sources: <https://docs.pact.io/>; <https://buf.build/docs/breaking/>;
+Gruevski, "SemVer Violations Are Common" (the empirical release study),
+<https://predr.ag/blog/semver-violations-are-common-better-tooling-is-the-answer/>;
 <https://crates.io/crates/cargo-semver-checks>.
 
 ### Mutation testing: the audit layer for the oracle itself
@@ -241,9 +277,15 @@ control against the documented agent failure mode of plausible, green,
 vacuous tests. Adopt the Google recipe wholesale for CI economics: mutate
 the diff, one mutant per line, suppress arid code, gate hard on surviving
 mutants in changed contract-adjacent code.
-Sources: <https://research.google/pubs/state-of-mutation-testing-at-google/>;
-<https://arxiv.org/pdf/2010.13464>;
-<https://github.com/theofidry/awesome-mutation-testing>.
+Sources: DeMillo, Lipton, and Sayward, "Hints on Test Data Selection: Help
+for the Practicing Programmer," IEEE Computer 11(4), 1978,
+<https://doi.org/10.1109/C-M.1978.218136>; Petrovic and Ivankovic, "State
+of Mutation Testing at Google," ICSE-SEIP 2018,
+<https://doi.org/10.1145/3183519.3183521>; Beller et al., "What It Would
+Take to Use Mutation Testing in Industry: A Study at Facebook,"
+<https://arxiv.org/abs/2010.13464>; Coles et al., "PIT: A Practical
+Mutation Testing Tool for Java," ISSTA 2016,
+<https://doi.org/10.1145/2931037.2948707>.
 
 ## Priority ranking: prevention per unit adoption cost
 
@@ -384,6 +426,9 @@ source.
 
 ### Register sources
 
+Knight and Leveson, "An Experimental Evaluation of the Assumption of
+Independence in Multiversion Programming," IEEE TSE SE-12(1), 1986,
+<https://doi.org/10.1109/TSE.1986.6312924>;
 ImpossibleBench <https://arxiv.org/abs/2510.20270>; CoT monitoring
 <https://arxiv.org/abs/2503.11926>; oracle contamination
 <https://arxiv.org/abs/2409.09464>, <https://arxiv.org/abs/2410.21136>;

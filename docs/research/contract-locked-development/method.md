@@ -299,3 +299,28 @@ modes are bounded to "does not go green" (visible, cheap, retryable) rather
 than "goes green wrongly" (invisible, expensive), to the degree the battery's
 measured strength supports - which is exactly the number the evaluation
 harness (issue #1297) reports.
+
+## References for load-bearing claims
+
+- Separation of powers and statistical certification: Mills, Dyer, and
+  Linger, "Cleanroom Software Engineering," IEEE Software 4(5), 1987,
+  <https://doi.org/10.1109/MS.1987.231413>.
+- Build quality into the process, not inspection: Deming, *Out of the
+  Crisis*, MIT Press, 1986.
+- Poka-yoke / mistake-proofing: Shingo, *Zero Quality Control: Source
+  Inspection and the Poka-Yoke System*, Productivity Press, 1986.
+- Reference models, conformance checking, models-as-mocks, and the 13-20%
+  overhead figure: Bornholt et al., "Using Lightweight Formal Methods to
+  Validate a Key-Value Storage Node in Amazon S3," SOSP 2021,
+  <https://doi.org/10.1145/3477132.3483540>.
+- Assurance-ladder rules (machine-decidable exit criteria; transitional
+  levels are not destinations): AdaCore and Thales, *Implementation
+  Guidance for the Adoption of SPARK*,
+  <https://www.adacore.com/uploads/books/pdf/ePDF-ImplementationGuidanceSPARK.pdf>.
+- Mutation testing as the measurement of test strength: DeMillo, Lipton,
+  and Sayward, IEEE Computer 11(4), 1978,
+  <https://doi.org/10.1109/C-M.1978.218136>; Petrovic and Ivankovic,
+  ICSE-SEIP 2018, <https://doi.org/10.1145/3183519.3183521>.
+
+Full per-tradition sourcing, including the LLM-era failure register, is in
+[prior-art.md](prior-art.md).
