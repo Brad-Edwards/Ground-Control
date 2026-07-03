@@ -281,6 +281,31 @@ to the authoritative graph version. Dynamic/runtime analysis, DAST, and runtime
 instrumentation are outside ADR-058's build-time derivation scope; runtime
 evidence belongs to the ADR-014 verifier/runtime-evidence adapter world.
 
+## Temporal Dev Workflow and Console Program (ADR-081)
+
+ADR-081 defines the program that moves workflow execution from the agent-side
+skill lane onto the GC-O009 Temporal engine, operated through the Ground
+Control web console (milestone 17). The engine build order is contract-first:
+each phase publishes its REST/MCP and workflow/activity payload contracts
+under the ADR-082 `contracts/` surface (drift + breaking gates green) before
+its implementation merges.
+
+Load-bearing constraints, locked in ADR-081:
+
+- **The gate model does not change.** One human touchpoint (PR merge,
+  ADR-029), observed from GitHub as the authoritative event - never a
+  Temporal signal. Console gate actions are limited to the workflow
+  contract's explicit operator signal set.
+- **Skill-lane cutover is per-phase and evidence-gated.** The `/implement`
+  lane stays authoritative for a phase until the parity harness is green and
+  the transfer is recorded as a dated amendment on ADR-021/ADR-029. The
+  bridge holds no counters, phase state, or gate rules of its own (ADR-028).
+- **Identity before console gate actions.** Users/groups/roles-as-data
+  (GC-P024) authorize operator signals; project scoping stays distinct from
+  tenancy, which remains milestone-5 work behind its own ADR.
+- **Temporal Web is infrastructure, never the product UI** (ADR-028); the
+  console consumes only the product workflow control surface.
+
 ## Per-step routing, tool surfaces, and telemetry (ADR-036)
 
 Per ADR-036 the `/implement` skill carries three cost-side optimizations layered on top of the GC-O007 gate model (which is unchanged on the contract - one human touchpoint at PR merge, ADR-029's configurable pre-push Codex cap [default 1 cycle per #906; per-repo override via `workflow.codex_review.pre_push_cap`], zero deferral, four-phase structure).
