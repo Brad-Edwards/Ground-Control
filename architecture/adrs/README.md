@@ -37,13 +37,13 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [018](018-aws-ec2-deployment.md) | AWS EC2 Deployment | Superseded by ADR-030 |
 | [019](019-asset-topology-model.md) | Asset Topology and Boundary Relationships | Accepted |
 | [020](020-asset-cross-entity-linking.md) | Asset Cross-Entity Linking | Accepted |
-| [021](021-gated-agentic-development-loop.md) | Gated Agentic Development Loop | Accepted (amended by ADR-029, ADR-036) |
+| [021](021-gated-agentic-development-loop.md) | Gated Agentic Development Loop | Accepted (amended by ADR-029, ADR-036, ADR-081) |
 | [022](022-content-pack-distribution-architecture.md) | Content Pack Distribution Architecture | Accepted |
 | [023](023-plugin-architecture.md) | Plugin Architecture | Accepted |
 | [024](024-threat-model-entry-boundary.md) | Threat Model Entry Boundary | Accepted |
 | [025](025-backup-policy.md) | Backup Policy (GC-P021) | Accepted |
 | [026](026-rest-api-access-control.md) | REST API Access Control (GC-P011) | Accepted |
-| [027](027-agent-neutral-implement-workflow-packaging.md) | Agent-Neutral Implement Workflow Packaging | Accepted (amended 2026-05-26, GC-O011/#989) |
+| [027](027-agent-neutral-implement-workflow-packaging.md) | Agent-Neutral Implement Workflow Packaging | Accepted (amended 2026-05-26, GC-O011/#989; 2026-07-03, ADR-081) |
 | [028](028-temporal-workflow-orchestration-boundary.md) | Temporal Workflow Orchestration Boundary | Accepted |
 | [029](029-issue-thread-gate-model.md) | Issue-Thread Gate Model | Accepted (amended 2026-05-26, GC-O011/#989) |
 | [030](030-on-prem-hetzner-deployment.md) | On-prem Hetzner Deployment | Accepted (extended by ADR-063) |
@@ -52,7 +52,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [033](033-authenticated-audit-actor-provenance.md) | Authenticated Audit Actor Provenance | Accepted |
 | [034](034-api-enum-contract-single-source.md) | API Enum Contract Single Source of Truth | Accepted (amended 2026-06-15, #1106) |
 | [035](035-mcp-tool-catalog-curation.md) | MCP Tool Catalog Curation | Accepted |
-| [036](036-per-step-routing-tool-surfaces-telemetry.md) | Per-Step Model Routing, Durable-Record Tool Surfaces, and Step Telemetry (amends ADR-021) | Accepted (amended 2026-05-26, GC-O011/#989) |
+| [036](036-per-step-routing-tool-surfaces-telemetry.md) | Per-Step Model Routing, Durable-Record Tool Surfaces, and Step Telemetry (amends ADR-021) | Accepted (amended 2026-05-26, GC-O011/#989; 2026-07-03, ADR-081) |
 | [037](037-browser-session-access-control.md) | Browser Session Access Control | Accepted |
 | [038](038-finding-entity-boundary.md) | Finding Entity Boundary | Accepted |
 | [039](039-control-verification-subsystem.md) | Control Verification Subsystem (Tests + Effectiveness Assessments) | Accepted |
@@ -98,5 +98,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [078](078-research-methodology-catalog-reference-data.md) | Research Methodology Catalog as Backend Reference Data | Accepted |
 | [079](079-commit-time-pre-commit-hook-activation.md) | Commit-Time Pre-commit Hook Activation | Accepted |
 | [080](080-research-methodology-requirements-contract-artifact.md) | Research Methodology Requirements Contract Artifact | Accepted |
+| [081](081-temporal-dev-workflow-and-console-program.md) | Temporal Dev Workflow and Console Program | Accepted |
+| [082](082-contract-surface-architecture.md) | Contract Surface Architecture and Enforcement Gates | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.
