@@ -136,7 +136,7 @@ public final class JacksonTextCollectionConverters {
 
     /**
      * Persistence converter for the run-snapshotted / intake-declared research
-     * egress policy (per GC-RSCH-N006 / ADR-085 §2, issue #1008).
+     * egress policy (per GC-RSCH-N006 / ADR-086 §2, issue #1008).
      */
     @Converter
     public static class ResearchEgressAllowanceListConverter

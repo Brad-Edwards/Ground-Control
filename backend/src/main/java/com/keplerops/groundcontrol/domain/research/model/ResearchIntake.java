@@ -64,7 +64,7 @@ public class ResearchIntake extends BaseEntity {
     @Column(name = "privacy_constraints", columnDefinition = "TEXT")
     private String privacyConstraints;
 
-    // Structured, default-deny data-egress policy (GC-RSCH-N006 / ADR-085 §2).
+    // Structured, default-deny data-egress policy (GC-RSCH-N006 / ADR-086 §2).
     // The run snapshots this at start; absence of an allow rule is deny (local
     // only). Distinct from the free-text privacyConstraints, which is operator
     // context only, never the enforcement input.

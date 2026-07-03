@@ -344,7 +344,7 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 - Search
 - Concrete verifier adapter implementations in `infrastructure/verifiers/` (ADR-014 §6). The `VerifierAdapter` port interface and request/outcome contracts are defined in the domain layer; future work is implementing adapters for each prover (OpenJML, TLA+/TLC, OPA/Rego, Frama-C, manual review).
 - Concrete evidence collection adapter implementations. The `EvidenceCollectionAdapter` port interface, request/result contracts, and classpath/dynamic descriptor registry are defined in the domain layer; external-system collectors belong in infrastructure or trusted plugin code.
-- Research high-risk operation **executors** and sandbox runtime. ADR-085's
+- Research high-risk operation **executors** and sandbox runtime. ADR-086's
   authorization control plane now exists (see "Exists now"), but the executors
   that perform generated-code execution, browser activity, lab/hardware actions,
   and external writes (and the sandbox runtime they run in) are not implemented
@@ -372,7 +372,7 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
   API's `folder_title` field, keeping repo ADR titles and live Ground Control
   records comparable under the MCP client's response normalization.
 - Research high-risk operation authorization control plane (GC-RSCH-R005 /
-  GC-RSCH-N005 / GC-RSCH-N006 / GC-RSCH-N014, ADR-085). A run snapshots its
+  GC-RSCH-N005 / GC-RSCH-N006 / GC-RSCH-N014, ADR-086). A run snapshots its
   high-risk operation policy at start (`allowedTools` inventory, structured
   default-deny `egressPolicy`, and display-only `privacyConstraints`) so later
   intake edits never re-authorize an active run. `ResearchOperationAuthorizationService`

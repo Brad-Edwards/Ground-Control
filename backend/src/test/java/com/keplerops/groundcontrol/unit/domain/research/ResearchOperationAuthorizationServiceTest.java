@@ -44,7 +44,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 /**
- * GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006 / GC-RSCH-N014 / ADR-085 —
+ * GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006 / GC-RSCH-N014 / ADR-086 —
  * behavioral unit tests for {@link ResearchOperationAuthorizationService}: the
  * default-deny authorization lifecycle (propose, admin decide, one-time consume),
  * idempotency, tool-inventory gating, actor sourcing, and cross-scope concealment.
@@ -124,7 +124,7 @@ class ResearchOperationAuthorizationServiceTest {
 
     @Test
     void requestRejectsMissingConcreteEffectIdentity() {
-        // ADR-085 §1: a null/blank toolId (adapter identity) is rejected so the
+        // ADR-086 §1: a null/blank toolId (adapter identity) is rejected so the
         // record always binds a concrete effect and never skips inventory.
         var cmd = new RequestOperationAuthorizationCommand(
                 ResearchHighRiskOperationKind.EXTERNAL_WRITE,

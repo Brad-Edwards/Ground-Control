@@ -64,7 +64,7 @@ import {
   PROVENANCE_EDGE_RELATIONS,
   // Methodology source coverage gate (GC-RSCH-F006)
   METHODOLOGY_SOURCE_STATES,
-  // Research high-risk operation authorization (GC-RSCH-R005 / ADR-085)
+  // Research high-risk operation authorization (GC-RSCH-R005 / ADR-086)
   RESEARCH_HIGH_RISK_OPERATION_KINDS,
   RESEARCH_DATA_CLASSES,
   RESEARCH_DESTINATION_CLASSES,
@@ -1284,7 +1284,7 @@ describe("MCP–OpenAPI write-contract", () => {
   });
 
   // -------------------------------------------------------------------------
-  // gc_research_operation_authorization — request (GC-RSCH-R005 / ADR-085 §3)
+  // gc_research_operation_authorization — request (GC-RSCH-R005 / ADR-086 §3)
   // -------------------------------------------------------------------------
 
   describe("gc_research_operation_authorization/request → OperationAuthorizationRequest", () => {
@@ -1309,7 +1309,7 @@ describe("MCP–OpenAPI write-contract", () => {
   });
 
   // -------------------------------------------------------------------------
-  // gc_research_operation_authorization — decide (GC-RSCH-R005 / ADR-085 §3)
+  // gc_research_operation_authorization — decide (GC-RSCH-R005 / ADR-086 §3)
   // -------------------------------------------------------------------------
 
   describe("gc_research_operation_authorization/decide → OperationAuthorizationDecisionRequest", () => {

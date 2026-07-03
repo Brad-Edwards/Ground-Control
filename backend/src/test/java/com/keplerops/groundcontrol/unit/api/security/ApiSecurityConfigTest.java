@@ -105,7 +105,7 @@ class ApiSecurityConfigTest {
             return "derivations-ok";
         }
 
-        // Research high-risk operation authorization (issue #1008 / ADR-085): the decision and
+        // Research high-risk operation authorization (issue #1008 / ADR-086): the decision and
         // consume routes are admin-only; propose/list/get fall through to authenticated(). Real
         // path shapes so the single-segment wildcard matcher applies.
         @PostMapping(
@@ -251,7 +251,7 @@ class ApiSecurityConfigTest {
 
         @Test
         void userTokenOnResearchOpAuthDecision_returns403() throws Exception {
-            // ADR-085 §3: an AUTONOMOUS run (or ordinary member) cannot approve a high-risk operation.
+            // ADR-086 §3: an AUTONOMOUS run (or ordinary member) cannot approve a high-risk operation.
             mockMvc.perform(post(OP_AUTH_DECISION).header("Authorization", "Bearer user-token-aaa"))
                     .andExpect(status().isForbidden());
         }
@@ -265,7 +265,7 @@ class ApiSecurityConfigTest {
 
         @Test
         void userTokenOnResearchOpAuthConsume_returns403() throws Exception {
-            // ADR-085 §3: spending a one-time-use approval is the trusted executor/operator boundary.
+            // ADR-086 §3: spending a one-time-use approval is the trusted executor/operator boundary.
             mockMvc.perform(post(OP_AUTH_CONSUME).header("Authorization", "Bearer user-token-aaa"))
                     .andExpect(status().isForbidden());
         }

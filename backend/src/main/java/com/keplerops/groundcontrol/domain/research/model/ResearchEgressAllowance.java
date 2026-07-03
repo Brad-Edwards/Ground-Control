@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
- * GC-RSCH-N006 / ADR-085 §2 — one structured allow rule in a research egress
+ * GC-RSCH-N006 / ADR-086 §2 — one structured allow rule in a research egress
  * policy. It binds a {@link ResearchDataClass} and {@link ResearchDestinationClass}
  * to the maximum {@link ResearchDataForm} that may leave the local boundary for
  * that pair, with an optional bounded {@code purpose}. Absence of a matching

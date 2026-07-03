@@ -27,7 +27,7 @@ Keep these states separate:
   route selection, credential reference, authorization state, and executor
   command shape.
 - **High-risk effects:** generated code execution, browser activity,
-  lab/hardware actions, and external writes under ADR-085.
+  lab/hardware actions, and external writes under ADR-086.
 
 Only accepted bounded facts may enter durable research records. Raw retrieved
 content can inform a fact after structured acceptance, but it must never alter
@@ -37,7 +37,7 @@ a command remain source content, not authority.
 
 ## Incumbents To Reuse
 
-- ADR-085 is the binding decision for prompt-injection handling, structured
+- ADR-086 is the binding decision for prompt-injection handling, structured
   egress policy, and high-risk operation authorization.
 - ADR-064 owns `ResearchRun`, lifecycle gates, artifact manifests,
   checkpoint/resume, and run-snapshotted intake values. Do not gate later stages
@@ -101,7 +101,7 @@ a command remain source content, not authority.
   must be resolved from run-snapshotted policy and structured records. Free-text
   `privacyConstraints`, prompts, reviewer notes, source text, metadata, or skill
   prose cannot be the executable policy.
-- **High-risk authorization:** ADR-085 operation authorization is required
+- **High-risk authorization:** ADR-086 operation authorization is required
   before any generated code execution, browser activity, external write, or
   lab/hardware action. Retrieved content and autonomous mode may suggest an
   operation, but they cannot approve it.
@@ -186,7 +186,7 @@ or a universal `execute(Map)` extension API.
 - No new full-text/PDF/manuscript/provider-payload store.
 - No replacement of ADR-055 citation MCP, ADR-064 lifecycle, ADR-069 provenance,
   ADR-071 source identity, ADR-072 REST/MCP surface, ADR-073 adapter boundary,
-  or ADR-085 high-risk operation authorization.
+  or ADR-086 high-risk operation authorization.
 - No generic workflow engine, approval engine, prompt firewall, dynamic plugin
   execution framework, credential store, or provider marketplace.
 - No new authentication model, actor override mechanism, exception hierarchy,

@@ -252,7 +252,7 @@ public class ResearchRunService {
             run.setBudgetWallClockMinutes(i.getBudgetWallClockMinutes());
             run.setBudgetCostUsdMicros(i.getBudgetCostUsdMicros());
             // Snapshot the high-risk operation policy at start so later intake
-            // edits never re-authorize an active run (GC-RSCH-R005 / ADR-085 §2).
+            // edits never re-authorize an active run (GC-RSCH-R005 / ADR-086 §2).
             run.setAllowedTools(i.getAllowedTools());
             run.setPrivacyConstraints(i.getPrivacyConstraints());
             run.setEgressPolicy(i.getEgressPolicy());

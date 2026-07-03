@@ -37,7 +37,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Controller slice for {@link ResearchOperationAuthorizationController}
- * (GC-RSCH-R005 / ADR-085). Verifies status codes, DTO validation, and that each
+ * (GC-RSCH-R005 / ADR-086). Verifies status codes, DTO validation, and that each
  * request DTO's {@code toCommand()} is forwarded with request-derived fields.
  */
 @AutoConfigureMockMvc(addFilters = false)

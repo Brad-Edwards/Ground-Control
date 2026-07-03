@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
- * GC-RSCH-R005 / ADR-085 §3 — an admin/operator decision on a proposed research
+ * GC-RSCH-R005 / ADR-086 §3 — an admin/operator decision on a proposed research
  * high-risk operation authorization. The deciding actor is the authenticated
  * principal, never a request field.
  */

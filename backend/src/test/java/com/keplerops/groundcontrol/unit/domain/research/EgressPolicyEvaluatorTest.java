@@ -11,7 +11,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * GC-RSCH-N006 / ADR-085 §2 — behavioral tests for the default-deny egress
+ * GC-RSCH-N006 / ADR-086 §2 — behavioral tests for the default-deny egress
  * evaluator. Each test exercises a real allow/deny decision rather than a
  * tautology.
  */

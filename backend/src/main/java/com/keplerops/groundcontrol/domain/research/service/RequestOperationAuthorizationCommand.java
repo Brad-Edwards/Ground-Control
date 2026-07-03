@@ -7,7 +7,7 @@ import com.keplerops.groundcontrol.domain.research.model.ResearchHighRiskOperati
 import java.time.Instant;
 
 /**
- * GC-RSCH-R005 / ADR-085 §3 — request (propose) a research high-risk operation
+ * GC-RSCH-R005 / ADR-086 §3 — request (propose) a research high-risk operation
  * authorization. Bounded, typed facts only; the proposing actor is taken from
  * the authenticated server context, not this command. All policy fields are
  * closed enums so retrieved/untrusted content can never set them (GC-RSCH-N014).

@@ -12,7 +12,7 @@ import java.util.List;
  * normalises optional vs required per field, and the Bean Validation +
  * service-layer guard enforces the "intake required iff project.type=RESEARCH"
  * invariant. {@code egressPolicy} is the structured, default-deny data-egress
- * allowlist (GC-RSCH-N006 / ADR-085 §2). See ADR-056.
+ * allowlist (GC-RSCH-N006 / ADR-086 §2). See ADR-056.
  */
 public record ResearchIntakeCommand(
         String goal,

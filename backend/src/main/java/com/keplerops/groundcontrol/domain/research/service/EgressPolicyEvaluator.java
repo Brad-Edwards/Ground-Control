@@ -7,7 +7,7 @@ import com.keplerops.groundcontrol.domain.research.model.ResearchEgressAllowance
 import java.util.List;
 
 /**
- * GC-RSCH-N006 / ADR-085 §2 — pure, default-deny evaluator for a research run's
+ * GC-RSCH-N006 / ADR-086 §2 — pure, default-deny evaluator for a research run's
  * snapshotted egress policy. A request to keep material {@code LOCAL}, or to move
  * only {@code NONE} data, is always permitted; every other (dataClass,
  * destinationClass, form) is permitted only when a snapshotted

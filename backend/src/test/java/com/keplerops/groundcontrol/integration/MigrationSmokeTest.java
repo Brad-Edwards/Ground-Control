@@ -242,7 +242,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "185",
                         "186",
                         "187",
-                        // V188-V195 (#1008, ADR-085): research high-risk operation authorization —
+                        // V188-V195 (#1008, ADR-086): research high-risk operation authorization —
                         // run policy snapshot, intake egress policy, artifact data class, and the
                         // operation-authorization table (each with its Envers audit shadow).
                         "188",

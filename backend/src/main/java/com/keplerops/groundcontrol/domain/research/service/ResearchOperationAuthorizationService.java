@@ -20,10 +20,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006 / GC-RSCH-N014 / ADR-085 —
+ * GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006 / GC-RSCH-N014 / ADR-086 —
  * application service that authorizes and records research high-risk operations.
  * It is the sole authority for authorization write legality; it never executes an
- * operation (execution is an adapter/orchestrator concern per ADR-085 §4).
+ * operation (execution is an adapter/orchestrator concern per ADR-086 §4).
  *
  * <p>Every lookup is project- and run-scoped, and a cross-project/cross-run
  * reference is concealed as {@link NotFoundException} so a probing caller cannot
@@ -109,7 +109,7 @@ public class ResearchOperationAuthorizationService {
 
     /**
      * Approve or deny a proposed authorization. Approval requires an authenticated
-     * deciding actor (an {@code AUTONOMOUS} run cannot self-approve — ADR-085 §3;
+     * deciding actor (an {@code AUTONOMOUS} run cannot self-approve — ADR-086 §3;
      * the REST route is admin-gated) AND the run's snapshotted egress policy to
      * permit the (dataClass, destination, form) tuple (default-deny otherwise).
      */
@@ -180,7 +180,7 @@ public class ResearchOperationAuthorizationService {
             throw new DomainValidationException(
                     "operationKind, dataClass, destinationClass, and requestedForm are required", INVALID, Map.of());
         }
-        // ADR-085 §1: the record must bind a concrete effect request — the
+        // ADR-086 §1: the record must bind a concrete effect request — the
         // adapter/tool identity, sandbox profile, bounded action summary, and a
         // retry-safe source-action id are all required so an executor can prove
         // which adapter/action/sandbox was authorized (and so a tool-less request
@@ -197,7 +197,7 @@ public class ResearchOperationAuthorizationService {
     }
 
     /**
-     * {@code allowedTools} is the run's declared tool inventory (ADR-085 §2): a
+     * {@code allowedTools} is the run's declared tool inventory (ADR-086 §2): a
      * tool that is not in inventory may not even be requested. A null tool id is a
      * tool-less operation and skips the check.
      */

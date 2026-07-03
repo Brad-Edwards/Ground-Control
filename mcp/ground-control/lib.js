@@ -11122,7 +11122,7 @@ export async function getResearchProvenanceChain(runId, nodeId, depth, project) 
 }
 
 // gc_research_operation_authorization enum vocabularies — mirror the backend
-// closed enums (GC-RSCH-R005 / GC-RSCH-N006, ADR-085). Imported by index.js for
+// closed enums (GC-RSCH-R005 / GC-RSCH-N006, ADR-086). Imported by index.js for
 // the Zod schema and by the OpenAPI drift test.
 export const RESEARCH_HIGH_RISK_OPERATION_KINDS = [
   "GENERATED_CODE_EXECUTION",

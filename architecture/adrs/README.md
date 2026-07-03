@@ -102,6 +102,6 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [082](082-contract-surface-architecture.md) | Contract Surface Architecture and Enforcement Gates | Accepted |
 | [083](083-research-protocol-plan-artifact-and-method-outputs.md) | Research Protocol Plan Artifact and Method-Specific Outputs | Accepted |
 | [084](084-context-graph-concept-authority.md) | Context-Graph Concept Authority and Time Semantics | Accepted |
-| [085](085-research-high-risk-operation-authorization.md) | Research High-Risk Operation Authorization | Accepted |
+| [086](086-research-high-risk-operation-authorization.md) | Research High-Risk Operation Authorization | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.

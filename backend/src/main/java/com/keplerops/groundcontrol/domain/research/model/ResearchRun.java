@@ -79,7 +79,7 @@ public class ResearchRun extends BaseEntity {
     private Long budgetCostUsdMicros;
 
     // High-risk operation policy snapshotted from ResearchIntake at start
-    // (GC-RSCH-R005/N005/N006 — ADR-085 §2). Later intake edits never rewrite an
+    // (GC-RSCH-R005/N005/N006 — ADR-086 §2). Later intake edits never rewrite an
     // active or completed run. allowedTools is inventory (which tools may be
     // requested), not authorization; egressPolicy is the structured, default-deny
     // data-egress allowlist; privacyConstraints is preserved operator context and

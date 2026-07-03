@@ -1,4 +1,4 @@
--- GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006 — ADR-085 §2 (#1008). Snapshot the
+-- GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006 — ADR-086 §2 (#1008). Snapshot the
 -- high-risk operation policy onto the run at start so later intake edits never
 -- re-authorize an active or completed run. allowed_tools is the tool inventory,
 -- egress_policy is the structured default-deny egress allowlist (JSON), and

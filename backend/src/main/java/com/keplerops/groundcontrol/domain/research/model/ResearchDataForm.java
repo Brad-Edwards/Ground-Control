@@ -1,7 +1,7 @@
 package com.keplerops.groundcontrol.domain.research.model;
 
 /**
- * GC-RSCH-N006 / ADR-085 §2–3 — the form in which research material may leave
+ * GC-RSCH-N006 / ADR-086 §2–3 — the form in which research material may leave
  * the local boundary. Declaration order is a total order of increasing
  * disclosure: authorizing derived metadata, identifiers/hashes, or short
  * summaries is strictly distinct from authorizing raw content (manuscript prose,

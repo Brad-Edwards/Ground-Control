@@ -1,4 +1,4 @@
--- GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006 — ADR-085 §3 (#1008). Durable,
+-- GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006 — ADR-086 §3 (#1008). Durable,
 -- run-scoped authorization record for one research high-risk operation. Bounded
 -- facts only — no prompts, generated code, PDFs, page bodies, cookies,
 -- credentials, external-write payloads, or absolute paths. Default-deny: a record

@@ -1,7 +1,7 @@
 package com.keplerops.groundcontrol.domain.research.model;
 
 /**
- * GC-RSCH-N006 / ADR-085 §2 — bounded destination class for a research egress
+ * GC-RSCH-N006 / ADR-086 §2 — bounded destination class for a research egress
  * decision. {@code LOCAL} is the default-permitted destination; every other
  * value is an external service that a run's snapshotted egress policy must
  * explicitly allow (for a given {@link ResearchDataClass} and

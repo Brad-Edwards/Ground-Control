@@ -124,7 +124,7 @@ final class ApiPathMatrix {
                 .hasRole(ROLE_ADMIN)
                 .requestMatchers(HttpMethod.DELETE, DATA_CLASSIFICATION_LATTICE)
                 .hasRole(ROLE_ADMIN)
-                // GC-RSCH-R005 / ADR-085 §3: approving a research high-risk operation (generated code
+                // GC-RSCH-R005 / ADR-086 §3: approving a research high-risk operation (generated code
                 // execution, browser activity, lab/hardware action, external write) is an
                 // admin/operator decision — an AUTONOMOUS run may propose but must never approve its
                 // own operations. Gate only the decision route to ROLE_ADMIN; propose (POST),
