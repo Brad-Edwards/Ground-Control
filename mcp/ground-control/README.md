@@ -113,7 +113,7 @@ GETs (history, timeline, exports, list-by-X) onto `gc_query`.
 | `gc_bulk_transition_status` | Transition many requirements at once |
 | `gc_create_github_issue` | Create a GitHub issue from a requirement |
 | `gc_codex_architecture_preflight` | Codex preflight before `/implement` |
-| `gc_post_implementation_plan` | Post plan to issue thread |
+| `gc_post_implementation_plan` | Post plan to issue thread; requires `preflight` + `grc_screening` markers, and (GC-GRC-010) structured `grc_deliverables` covering the screening gap/stale sets when the change is security-relevant |
 | `gc_codex_review` | Run Codex review with cycle caps |
 | `gc_codex_verify_finding` | Verify a specific finding resolved |
 | `gc_query` | Read-only ad-hoc `/api/v1/*` GET (see below) |

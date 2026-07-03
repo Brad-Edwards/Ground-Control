@@ -167,6 +167,22 @@ versions. `not_security_relevant` becomes a derived empty-impact/empty-gap
 result, not an agent assertion. Existing v1 records remain historical records;
 new implementation work should target the computed contract.
 
+The plan gate realizes GC-GRC-010: `gc_post_implementation_plan` requires both a
+`preflight` and a `grc_screening` marker, and for a `security_relevant` screening
+record it requires structured `grc_deliverables` (kind + source-set target)
+covering every `gap_set` surface and `stale_set` entity. Coverage is kind-aware: a
+gap surface is closed by a threat/risk/control deliverable and a stale entity by a
+stale-refresh deliverable. Deliverables are modeled by kind, not scraped from plan
+prose, and are rendered into the plan comment as an authoritative
+`gc:grc-deliverables-data` machine block: the durable plan-to-completion trace the
+completion gate reads. In-scope GRC work cannot be deferred to a follow-up issue.
+A disposition is the no-defer rule's single relief valve; because this MCP surface
+has no per-user authentication (a caller-supplied authorizer is self-attested), a
+disposition is honored only under the audited `override` escalation, and
+GC-GRC-015 supplies the graph-verified, drift-aware per-entity disposition. Candidate threats/controls
+(GC-GRC-007/008) are surfaced as suggestions but never auto-counted as selected or
+implemented controls.
+
 The completion gate becomes a blocking GRC coverage assertion (GC-GRC-012): each
 security-relevant touched surface must have an active threat-model entry, a
 control at IMPLEMENTED or OPERATIONAL with code and efficacy-test linkage, or an
