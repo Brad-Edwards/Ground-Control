@@ -68,6 +68,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -813,7 +814,7 @@ public class ResearchRunService {
             throw new DomainValidationException("summary must not be blank", INVALID_CODE, Map.of(FIELD, "summary"));
         }
         requireUnder(command.summary(), SUMMARY_MAX, "summary");
-        requireUnder(command.sectionKey(), SECTION_KEY_MAX, "sectionKey");
+        requireUnder(command.sectionKey(), SECTION_KEY_MAX, SECTION_KEY_JSON_FIELD);
         requireUnder(command.locator(), LOCATOR_MAX, LOCATOR_FIELD);
         requireUnder(command.modelLabel(), MODEL_LABEL_MAX, "modelLabel");
         requireSameRunReference(
@@ -1832,40 +1833,7 @@ public class ResearchRunService {
         var commands =
                 coverageCommands == null ? List.<RecordProtocolPlanCommand.CoverageCommand>of() : coverageCommands;
         for (var c : commands) {
-            if (c == null || emptyToNull(c.contractEntryKey()) == null) {
-                throw new DomainValidationException(
-                        "contractEntryKey must not be blank",
-                        INVALID_CODE,
-                        Map.of(FIELD, CONTRACT_ENTRY_KEY_JSON_FIELD));
-            }
-            var key = c.contractEntryKey().trim();
-            requireUnder(key, ENTRY_KEY_MAX, CONTRACT_ENTRY_KEY_JSON_FIELD);
-            if (!seenKeys.add(key)) {
-                throw new DomainValidationException(
-                        "Duplicate protocol plan coverage for contract entry: " + key,
-                        "research_run_protocol_plan_duplicate_coverage",
-                        Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
-            }
-            var kind = kindByKey.get(key);
-            if (kind == null) {
-                throw new DomainValidationException(
-                        "contractEntryKey '" + key
-                                + "' does not match any entry in the active methodology requirements contract",
-                        "research_run_protocol_plan_unknown_contract_entry",
-                        Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
-            }
-            if (kind == ContractEntryKind.METHOD_LIMIT || kind == ContractEntryKind.NON_CLAIM) {
-                throw new DomainValidationException(
-                        "contractEntryKey '" + key + "' is a " + kind
-                                + "; it is a constraint the plan carries forward, not a coverable answer",
-                        "research_run_protocol_plan_entry_not_coverable",
-                        Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key, "kind", kind.name()));
-            }
-            if (c.disposition() == null) {
-                throw new DomainValidationException(
-                        "disposition must not be null", INVALID_CODE, Map.of(FIELD, DISPOSITION_FIELD));
-            }
-            validateCoverageDispositionFields(c, key);
+            validateCoverageEntry(c, kindByKey, seenKeys);
         }
         if (!seenKeys.containsAll(coverableKeys)) {
             var missing = new HashSet<>(coverableKeys);
@@ -1877,54 +1845,118 @@ public class ResearchRunService {
         }
     }
 
-    /** Second validation pass: the fields a disposition requires are present and bounded (ADR-081 §2). */
+    /**
+     * Validates one coverage command: shape (blank/duplicate/unknown {@code
+     * contractEntryKey}), that the targeted entry is coverable (not a {@code
+     * METHOD_LIMIT}/{@code NON_CLAIM} constraint), that a disposition is present,
+     * and — via {@link #validateCoverageDispositionFields} — that the
+     * disposition's required fields are present and bounded.
+     */
+    private void validateCoverageEntry(
+            RecordProtocolPlanCommand.CoverageCommand c,
+            Map<String, ContractEntryKind> kindByKey,
+            Set<String> seenKeys) {
+        if (c == null || emptyToNull(c.contractEntryKey()) == null) {
+            throw new DomainValidationException(
+                    "contractEntryKey must not be blank", INVALID_CODE, Map.of(FIELD, CONTRACT_ENTRY_KEY_JSON_FIELD));
+        }
+        var key = c.contractEntryKey().trim();
+        requireUnder(key, ENTRY_KEY_MAX, CONTRACT_ENTRY_KEY_JSON_FIELD);
+        if (!seenKeys.add(key)) {
+            throw new DomainValidationException(
+                    "Duplicate protocol plan coverage for contract entry: " + key,
+                    "research_run_protocol_plan_duplicate_coverage",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
+        }
+        var kind = kindByKey.get(key);
+        if (kind == null) {
+            throw new DomainValidationException(
+                    "contractEntryKey '" + key
+                            + "' does not match any entry in the active methodology requirements contract",
+                    "research_run_protocol_plan_unknown_contract_entry",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
+        }
+        if (kind == ContractEntryKind.METHOD_LIMIT || kind == ContractEntryKind.NON_CLAIM) {
+            throw new DomainValidationException(
+                    "contractEntryKey '" + key + "' is a " + kind
+                            + "; it is a constraint the plan carries forward, not a coverable answer",
+                    "research_run_protocol_plan_entry_not_coverable",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key, "kind", kind.name()));
+        }
+        if (c.disposition() == null) {
+            throw new DomainValidationException(
+                    "disposition must not be null", INVALID_CODE, Map.of(FIELD, DISPOSITION_FIELD));
+        }
+        validateCoverageDispositionFields(c, key);
+    }
+
+    /**
+     * Second validation pass: the fields a disposition requires are present and
+     * bounded (ADR-081 §2). Each disposition's own completeness rule lives in a
+     * dedicated {@code requireXxxComplete} method so this dispatcher never holds
+     * conditional logic itself (S6916) — {@code switch} on a plain enum constant
+     * cannot carry a {@code when} guard (JLS 14.11.1 restricts guards to pattern
+     * case labels), so the per-branch condition is pushed into the callee instead.
+     */
     private void validateCoverageDispositionFields(RecordProtocolPlanCommand.CoverageCommand c, String key) {
         requireUnder(c.answerSummary(), ANSWER_SUMMARY_MAX, "answerSummary");
         requireUnder(c.rationale(), PROTOCOL_RATIONALE_MAX, "rationale");
         requireUnder(c.decisionReference(), DECISION_REFERENCE_MAX, "decisionReference");
         switch (c.disposition()) {
-            case FILLED -> {
-                if (c.answerProvenance() == null || emptyToNull(c.answerSummary()) == null) {
-                    throw new DomainValidationException(
-                            "FILLED coverage for '" + key + "' requires answerProvenance and answerSummary",
-                            "research_run_protocol_plan_filled_incomplete",
-                            Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
-                }
+            case FILLED -> requireFilledComplete(c, key);
+            case DEFERRED_NON_BLOCKING -> requireDeferredNonBlockingComplete(c, key);
+            case NOT_APPLICABLE_WITH_RATIONALE -> requireNotApplicableWithRationaleComplete(c, key);
+            case RESOLVED_BY_USER_DECISION -> requireResolvedByUserDecisionComplete(c, key);
+            case BLOCKING_DECISION_REQUIRED -> requireBlockingDecisionRequiredComplete(c, key);
+            default -> {
+                // Unreachable: every ProtocolCoverageDisposition constant is handled above.
+                // Checkstyle's MissingSwitchDefault still requires this clause.
             }
-            case DEFERRED_NON_BLOCKING -> {
-                if (c.deferredToStage() == null || emptyToNull(c.rationale()) == null) {
-                    throw new DomainValidationException(
-                            "DEFERRED_NON_BLOCKING coverage for '" + key + "' requires deferredToStage and rationale",
-                            "research_run_protocol_plan_deferred_incomplete",
-                            Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
-                }
-            }
-            case NOT_APPLICABLE_WITH_RATIONALE -> {
-                if (emptyToNull(c.rationale()) == null) {
-                    throw new DomainValidationException(
-                            "NOT_APPLICABLE_WITH_RATIONALE coverage for '" + key + "' requires rationale",
-                            "research_run_protocol_plan_not_applicable_incomplete",
-                            Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
-                }
-            }
-            case RESOLVED_BY_USER_DECISION -> {
-                if (emptyToNull(c.decisionReference()) == null && emptyToNull(c.rationale()) == null) {
-                    throw new DomainValidationException(
-                            "RESOLVED_BY_USER_DECISION coverage for '" + key
-                                    + "' requires decisionReference or rationale",
-                            "research_run_protocol_plan_resolved_incomplete",
-                            Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
-                }
-            }
-            case BLOCKING_DECISION_REQUIRED -> {
-                if (emptyToNull(c.rationale()) == null) {
-                    throw new DomainValidationException(
-                            "BLOCKING_DECISION_REQUIRED coverage for '" + key + "' requires rationale",
-                            "research_run_protocol_plan_blocking_incomplete",
-                            Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
-                }
-            }
-            default -> throw new IllegalStateException("Unhandled coverage disposition: " + c.disposition());
+        }
+    }
+
+    private void requireFilledComplete(RecordProtocolPlanCommand.CoverageCommand c, String key) {
+        if (c.answerProvenance() == null || emptyToNull(c.answerSummary()) == null) {
+            throw new DomainValidationException(
+                    "FILLED coverage for '" + key + "' requires answerProvenance and answerSummary",
+                    "research_run_protocol_plan_filled_incomplete",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
+        }
+    }
+
+    private void requireDeferredNonBlockingComplete(RecordProtocolPlanCommand.CoverageCommand c, String key) {
+        if (c.deferredToStage() == null || emptyToNull(c.rationale()) == null) {
+            throw new DomainValidationException(
+                    "DEFERRED_NON_BLOCKING coverage for '" + key + "' requires deferredToStage and rationale",
+                    "research_run_protocol_plan_deferred_incomplete",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
+        }
+    }
+
+    private void requireNotApplicableWithRationaleComplete(RecordProtocolPlanCommand.CoverageCommand c, String key) {
+        if (emptyToNull(c.rationale()) == null) {
+            throw new DomainValidationException(
+                    "NOT_APPLICABLE_WITH_RATIONALE coverage for '" + key + "' requires rationale",
+                    "research_run_protocol_plan_not_applicable_incomplete",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
+        }
+    }
+
+    private void requireResolvedByUserDecisionComplete(RecordProtocolPlanCommand.CoverageCommand c, String key) {
+        if (emptyToNull(c.decisionReference()) == null && emptyToNull(c.rationale()) == null) {
+            throw new DomainValidationException(
+                    "RESOLVED_BY_USER_DECISION coverage for '" + key + "' requires decisionReference or rationale",
+                    "research_run_protocol_plan_resolved_incomplete",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
+        }
+    }
+
+    private void requireBlockingDecisionRequiredComplete(RecordProtocolPlanCommand.CoverageCommand c, String key) {
+        if (emptyToNull(c.rationale()) == null) {
+            throw new DomainValidationException(
+                    "BLOCKING_DECISION_REQUIRED coverage for '" + key + "' requires rationale",
+                    "research_run_protocol_plan_blocking_incomplete",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
         }
     }
 
@@ -1945,47 +1977,7 @@ public class ResearchRunService {
         var isTaxonomy = ProtocolMethodShape.isTaxonomyDevelopment(methodKey);
         var taxonomySourceRoles = EnumSet.noneOf(ProtocolSourceRole.class);
         for (var s : sectionCommands) {
-            if (s == null || emptyToNull(s.sectionKey()) == null) {
-                throw new DomainValidationException(
-                        "sectionKey must not be blank", INVALID_CODE, Map.of(FIELD, SECTION_KEY_JSON_FIELD));
-            }
-            var key = s.sectionKey().trim();
-            requireUnder(key, SECTION_KEY_MAX, SECTION_KEY_JSON_FIELD);
-            if (!seenKeys.add(key)) {
-                throw new DomainValidationException(
-                        "Duplicate protocol plan sectionKey: " + key,
-                        "research_run_protocol_plan_duplicate_section_key",
-                        Map.of(SECTION_KEY_JSON_FIELD, key));
-            }
-            if (s.sectionKind() == null) {
-                throw new DomainValidationException(
-                        "sectionKind must not be null", INVALID_CODE, Map.of(FIELD, SECTION_KIND_FIELD));
-            }
-            if (emptyToNull(s.contentSummary()) == null) {
-                throw new DomainValidationException(
-                        "contentSummary must not be blank", INVALID_CODE, Map.of(FIELD, "contentSummary"));
-            }
-            requireUnder(s.contentSummary(), SUMMARY_MAX, "contentSummary");
-            var isTaxonomySourceRoleSection = isTaxonomy && s.sectionKind() == ProtocolSectionKind.SOURCE_ROLES;
-            if (s.sourceRole() != null && !isTaxonomySourceRoleSection) {
-                throw new DomainValidationException(
-                        "sourceRole is only permitted on SOURCE_ROLES sections of the taxonomy-development method",
-                        "research_run_protocol_plan_source_role_not_allowed",
-                        Map.of(SECTION_KEY_JSON_FIELD, key, METHOD_KEY_FIELD, methodKey == null ? "" : methodKey));
-            }
-            // ADR-081 §3 — taxonomy source-role separation is the hard boundary case: a
-            // SOURCE_ROLES section must name the role it carries so background/framing,
-            // methodology, and validation material cannot collapse into the taxonomy corpus.
-            if (isTaxonomySourceRoleSection) {
-                if (s.sourceRole() == null) {
-                    throw new DomainValidationException(
-                            "A taxonomy-development SOURCE_ROLES section must declare a sourceRole",
-                            "research_run_protocol_plan_source_role_required",
-                            Map.of(SECTION_KEY_JSON_FIELD, key));
-                }
-                taxonomySourceRoles.add(s.sourceRole());
-            }
-            presentKinds.add(s.sectionKind());
+            presentKinds.add(validateSectionEntry(s, seenKeys, isTaxonomy, taxonomySourceRoles, methodKey));
         }
         var required = ProtocolMethodShape.requiredSections(methodKey);
         if (!presentKinds.containsAll(required)) {
@@ -2000,24 +1992,86 @@ public class ResearchRunService {
                             "missing_section_kinds",
                             missing.toString()));
         }
-        // ADR-081 §3 — the accepted taxonomy plan must actually carry every distinct
-        // source role, not merely permit them; otherwise later stages cannot rely on the
-        // plan to keep background sources from supporting taxonomy claims.
         if (isTaxonomy) {
-            var requiredRoles = EnumSet.allOf(ProtocolSourceRole.class);
-            if (!taxonomySourceRoles.containsAll(requiredRoles)) {
-                var missingRoles = EnumSet.copyOf(requiredRoles);
-                missingRoles.removeAll(taxonomySourceRoles);
+            requireTaxonomySourceRolesComplete(taxonomySourceRoles, methodKey);
+        }
+    }
+
+    /**
+     * Validates one section command (blank/duplicate {@code sectionKey}, presence
+     * of {@code sectionKind}/{@code contentSummary}, and the {@code sourceRole}
+     * constraints of ADR-081 §3), recording its taxonomy source role — if any —
+     * into {@code taxonomySourceRoles}, and returns its section kind for the
+     * caller's required-sections check.
+     */
+    private ProtocolSectionKind validateSectionEntry(
+            RecordProtocolPlanCommand.SectionCommand s,
+            Set<String> seenKeys,
+            boolean isTaxonomy,
+            EnumSet<ProtocolSourceRole> taxonomySourceRoles,
+            String methodKey) {
+        if (s == null || emptyToNull(s.sectionKey()) == null) {
+            throw new DomainValidationException(
+                    "sectionKey must not be blank", INVALID_CODE, Map.of(FIELD, SECTION_KEY_JSON_FIELD));
+        }
+        var key = s.sectionKey().trim();
+        requireUnder(key, SECTION_KEY_MAX, SECTION_KEY_JSON_FIELD);
+        if (!seenKeys.add(key)) {
+            throw new DomainValidationException(
+                    "Duplicate protocol plan sectionKey: " + key,
+                    "research_run_protocol_plan_duplicate_section_key",
+                    Map.of(SECTION_KEY_JSON_FIELD, key));
+        }
+        if (s.sectionKind() == null) {
+            throw new DomainValidationException(
+                    "sectionKind must not be null", INVALID_CODE, Map.of(FIELD, SECTION_KIND_FIELD));
+        }
+        if (emptyToNull(s.contentSummary()) == null) {
+            throw new DomainValidationException(
+                    "contentSummary must not be blank", INVALID_CODE, Map.of(FIELD, "contentSummary"));
+        }
+        requireUnder(s.contentSummary(), SUMMARY_MAX, "contentSummary");
+        var isTaxonomySourceRoleSection = isTaxonomy && s.sectionKind() == ProtocolSectionKind.SOURCE_ROLES;
+        if (s.sourceRole() != null && !isTaxonomySourceRoleSection) {
+            throw new DomainValidationException(
+                    "sourceRole is only permitted on SOURCE_ROLES sections of the taxonomy-development method",
+                    "research_run_protocol_plan_source_role_not_allowed",
+                    Map.of(SECTION_KEY_JSON_FIELD, key, METHOD_KEY_FIELD, methodKey == null ? "" : methodKey));
+        }
+        // ADR-081 §3 — taxonomy source-role separation is the hard boundary case: a
+        // SOURCE_ROLES section must name the role it carries so background/framing,
+        // methodology, and validation material cannot collapse into the taxonomy corpus.
+        if (isTaxonomySourceRoleSection) {
+            if (s.sourceRole() == null) {
                 throw new DomainValidationException(
-                        "Taxonomy-development protocol plan must separate all source roles across SOURCE_ROLES"
-                                + " sections; missing: " + missingRoles,
-                        "research_run_protocol_plan_source_roles_incomplete",
-                        Map.of(
-                                METHOD_KEY_FIELD,
-                                methodKey == null ? "" : methodKey,
-                                "missing_source_roles",
-                                missingRoles.toString()));
+                        "A taxonomy-development SOURCE_ROLES section must declare a sourceRole",
+                        "research_run_protocol_plan_source_role_required",
+                        Map.of(SECTION_KEY_JSON_FIELD, key));
             }
+            taxonomySourceRoles.add(s.sourceRole());
+        }
+        return s.sectionKind();
+    }
+
+    /**
+     * ADR-081 §3 — the accepted taxonomy plan must actually carry every distinct
+     * source role, not merely permit them; otherwise later stages cannot rely on the
+     * plan to keep background sources from supporting taxonomy claims.
+     */
+    private void requireTaxonomySourceRolesComplete(EnumSet<ProtocolSourceRole> taxonomySourceRoles, String methodKey) {
+        var requiredRoles = EnumSet.allOf(ProtocolSourceRole.class);
+        if (!taxonomySourceRoles.containsAll(requiredRoles)) {
+            var missingRoles = EnumSet.copyOf(requiredRoles);
+            missingRoles.removeAll(taxonomySourceRoles);
+            throw new DomainValidationException(
+                    "Taxonomy-development protocol plan must separate all source roles across SOURCE_ROLES"
+                            + " sections; missing: " + missingRoles,
+                    "research_run_protocol_plan_source_roles_incomplete",
+                    Map.of(
+                            METHOD_KEY_FIELD,
+                            methodKey == null ? "" : methodKey,
+                            "missing_source_roles",
+                            missingRoles.toString()));
         }
     }
 

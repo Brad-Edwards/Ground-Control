@@ -58,9 +58,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -344,58 +348,37 @@ class ResearchRunProtocolPlanServiceTest {
 
     // ---- record: coverage validation ------------------------------------------
 
-    @Test
-    void record_missingCoverageForRequirement_throwsIncomplete() {
+    @ParameterizedTest
+    @MethodSource("coverageValidationScenarios")
+    void record_invalidCoverage_throwsExpectedCode(List<CoverageCommand> coverages, String expectedErrorCode) {
         readyRun();
-        var cmd = new RecordProtocolPlanCommand("1", List.of(filled("req-1")), systematicSections());
+        var cmd = new RecordProtocolPlanCommand("1", coverages, systematicSections());
         assertThatThrownBy(() -> service.recordProtocolPlan(PROJECT_ID, RUN_ID, cmd))
                 .isInstanceOf(DomainValidationException.class)
                 .extracting(e -> ((DomainValidationException) e).getErrorCode())
-                .isEqualTo("research_run_protocol_plan_coverage_incomplete");
+                .isEqualTo(expectedErrorCode);
     }
 
-    @Test
-    void record_unknownContractEntryKey_throwsValidation() {
-        readyRun();
-        var cmd = new RecordProtocolPlanCommand(
-                "1", List.of(filled("req-1"), deferred("oq-1"), filled("nope")), systematicSections());
-        assertThatThrownBy(() -> service.recordProtocolPlan(PROJECT_ID, RUN_ID, cmd))
-                .isInstanceOf(DomainValidationException.class)
-                .extracting(e -> ((DomainValidationException) e).getErrorCode())
-                .isEqualTo("research_run_protocol_plan_unknown_contract_entry");
-    }
-
-    @Test
-    void record_duplicateCoverage_throwsValidation() {
-        readyRun();
-        var cmd = new RecordProtocolPlanCommand(
-                "1", List.of(filled("req-1"), filled("req-1"), deferred("oq-1")), systematicSections());
-        assertThatThrownBy(() -> service.recordProtocolPlan(PROJECT_ID, RUN_ID, cmd))
-                .isInstanceOf(DomainValidationException.class)
-                .extracting(e -> ((DomainValidationException) e).getErrorCode())
-                .isEqualTo("research_run_protocol_plan_duplicate_coverage");
-    }
-
-    @Test
-    void record_coverageOnMethodLimit_throwsNotCoverable() {
-        readyRun();
-        var cmd = new RecordProtocolPlanCommand(
-                "1", List.of(filled("req-1"), deferred("oq-1"), filled("lim-1")), systematicSections());
-        assertThatThrownBy(() -> service.recordProtocolPlan(PROJECT_ID, RUN_ID, cmd))
-                .isInstanceOf(DomainValidationException.class)
-                .extracting(e -> ((DomainValidationException) e).getErrorCode())
-                .isEqualTo("research_run_protocol_plan_entry_not_coverable");
-    }
-
-    @Test
-    void record_coverageOnNonClaim_throwsNotCoverable() {
-        readyRun();
-        var cmd = new RecordProtocolPlanCommand(
-                "1", List.of(filled("req-1"), deferred("oq-1"), filled("nc-1")), systematicSections());
-        assertThatThrownBy(() -> service.recordProtocolPlan(PROJECT_ID, RUN_ID, cmd))
-                .isInstanceOf(DomainValidationException.class)
-                .extracting(e -> ((DomainValidationException) e).getErrorCode())
-                .isEqualTo("research_run_protocol_plan_entry_not_coverable");
+    private static Stream<Arguments> coverageValidationScenarios() {
+        return Stream.of(
+                // record_missingCoverageForRequirement_throwsIncomplete
+                Arguments.of(List.of(filled("req-1")), "research_run_protocol_plan_coverage_incomplete"),
+                // record_unknownContractEntryKey_throwsValidation
+                Arguments.of(
+                        List.of(filled("req-1"), deferred("oq-1"), filled("nope")),
+                        "research_run_protocol_plan_unknown_contract_entry"),
+                // record_duplicateCoverage_throwsValidation
+                Arguments.of(
+                        List.of(filled("req-1"), filled("req-1"), deferred("oq-1")),
+                        "research_run_protocol_plan_duplicate_coverage"),
+                // record_coverageOnMethodLimit_throwsNotCoverable
+                Arguments.of(
+                        List.of(filled("req-1"), deferred("oq-1"), filled("lim-1")),
+                        "research_run_protocol_plan_entry_not_coverable"),
+                // record_coverageOnNonClaim_throwsNotCoverable
+                Arguments.of(
+                        List.of(filled("req-1"), deferred("oq-1"), filled("nc-1")),
+                        "research_run_protocol_plan_entry_not_coverable"));
     }
 
     // ---- record: per-disposition field validation ------------------------------
