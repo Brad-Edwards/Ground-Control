@@ -1,4 +1,4 @@
-# ADR-083: Context-Graph Concept Authority and Time Semantics
+# ADR-084: Context-Graph Concept Authority and Time Semantics
 
 ## Status
 

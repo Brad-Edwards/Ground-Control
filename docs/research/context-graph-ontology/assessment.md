@@ -1,6 +1,6 @@
 # Context-Graph Ontology, Identity, and Time: Assessment
 
-Status: assessment for issue #1301 (milestone 19). Decision record: ADR-083.
+Status: assessment for issue #1301 (milestone 19). Decision record: ADR-084.
 Evidence: full code census of this repository plus a read-only review of
 `../aces-sdl` at `origin/dev`.
 
@@ -204,6 +204,6 @@ convergence mechanical instead of aspirational.
 
 ## 5. Decision and work layout
 
-The binding decision is ADR-083 (option C plus the repairs). Follow-on
+The binding decision is ADR-084 (option C plus the repairs). Follow-on
 implementation issues are filed in milestone 19; see the milestone for the
 current set.
