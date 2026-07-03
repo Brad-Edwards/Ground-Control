@@ -1,4 +1,4 @@
--- GC-RSCH-N006 — ADR-084 §2 (#1008). Optional privacy/access classification of a
+-- GC-RSCH-N006 — ADR-085 §2 (#1008). Optional privacy/access classification of a
 -- research artifact's material. Null = unclassified. The class is the input the
 -- egress policy checks before any external disclosure. The CHECK backstops the
 -- JPA-side closed enum.

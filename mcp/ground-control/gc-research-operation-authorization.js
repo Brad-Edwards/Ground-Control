@@ -1,6 +1,6 @@
 // gc_research_operation_authorization: action-discriminated MCP adapter for the
 // backend research high-risk operation authorization REST surface (GC-RSCH-R005 /
-// GC-RSCH-N005 / GC-RSCH-N006, ADR-084). Run-scoped, default-deny authorization
+// GC-RSCH-N005 / GC-RSCH-N006, ADR-085). Run-scoped, default-deny authorization
 // records for generated-code execution, browser activity, lab/hardware actions,
 // and external writes. Curated writes (request / decide / consume) mirror REST
 // because gc_query is read-only; reads (list / get) are exposed here and also
@@ -45,7 +45,7 @@ export const GC_RESEARCH_OPERATION_AUTHORIZATION_REQUEST_REQUIRED_FIELDS = [
   "data_class",
   "destination_class",
   "requested_form",
-  // ADR-084 §1: an authorization must bind a concrete effect request.
+  // ADR-085 §1: an authorization must bind a concrete effect request.
   "tool_id",
   "sandbox_profile",
   "summary",
@@ -74,7 +74,7 @@ export const gcResearchOperationAuthorizationZodShape = {
 };
 
 export const GC_RESEARCH_OPERATION_AUTHORIZATION_DESCRIPTION =
-  `Research high-risk operation authorization (GC-RSCH-R005 / ADR-084). Run-scoped, default-deny ` +
+  `Research high-risk operation authorization (GC-RSCH-R005 / ADR-085). Run-scoped, default-deny ` +
   `records for generated-code execution, browser activity, lab/hardware actions, and external writes. ` +
   `Actions: ${GC_RESEARCH_OPERATION_AUTHORIZATION_ACTIONS.join(", ")}. All actions require run_id. ` +
   `request requires ${GC_RESEARCH_OPERATION_AUTHORIZATION_REQUEST_REQUIRED_FIELDS.join(", ")} ` +

@@ -1,4 +1,4 @@
--- GC-RSCH-R005 / ADR-084 §3 (#1008). Envers audit shadow for
+-- GC-RSCH-R005 / ADR-085 §3 (#1008). Envers audit shadow for
 -- research_run_operation_authorization. research_run_id is intentionally absent
 -- (@NotAudited on the JPA mapping); all other payload columns are audited
 -- business state. BaseEntity timestamps are mirrored for retention purging.

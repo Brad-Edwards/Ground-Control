@@ -18,7 +18,7 @@ methodology requirements contract artifact is governed by ADR-080. The
 structured phase-2 protocol-plan artifact and method-specific output shapes are
 governed by ADR-083. High-risk generated code execution, browser activity,
 lab/hardware actions, external writes, sandbox policy, egress policy, and
-prompt-injection handling are governed by ADR-084.
+prompt-injection handling are governed by ADR-085.
 
 ## Phases
 
@@ -115,7 +115,7 @@ The plan is recorded once per `PROTOCOL_PLAN` artifact attempt via `POST /api/v1
 
 ## High-risk operation authorization, egress policy, and prompt injection
 
-ADR-084 governs the security/privacy control plane for research runs. It is an
+ADR-085 governs the security/privacy control plane for research runs. It is an
 authorization + policy layer; executors and the sandbox runtime are out of scope
 (a future executor must consult these records before acting).
 
@@ -141,7 +141,7 @@ optional `dataClass` that feeds this check.
 **Authorization records.** Generated-code execution, browser activity,
 lab/hardware actions, and external writes each need a durable, run-scoped
 `ResearchRunOperationAuthorization`. A request must bind a concrete effect
-(ADR-084 §1): the adapter/tool id, sandbox profile, bounded action summary, and a
+(ADR-085 §1): the adapter/tool id, sandbox profile, bounded action summary, and a
 retry-safe `sourceActionId` are required so an executor consuming an approval can
 prove which adapter/action/sandbox was authorized (and a tool-less request can
 never sidestep the allowed-tool inventory check). A request lands `PROPOSED`; an

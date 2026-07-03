@@ -11,7 +11,7 @@ import com.keplerops.groundcontrol.domain.research.model.ResearchDataClass;
  * optional bounded source counts update the run's observability summary
  * (ADR-065 §5); a null count leaves the corresponding summary unchanged. The
  * optional {@code dataClass} records the artifact's privacy/access
- * classification (GC-RSCH-N006 / ADR-084 §2). The recording actor is taken from
+ * classification (GC-RSCH-N006 / ADR-085 §2). The recording actor is taken from
  * the authenticated server context (ADR-026), not this command, so lifecycle
  * provenance cannot be forged by the caller.
  */

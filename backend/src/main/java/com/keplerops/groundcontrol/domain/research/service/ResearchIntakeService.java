@@ -187,7 +187,7 @@ public class ResearchIntakeService {
     /**
      * Bound the egress policy and require each rule's classification enums (the
      * enforcement fields) to be present — a partially-specified rule cannot
-     * silently degrade the default-deny decision (GC-RSCH-N006 / ADR-084 §2).
+     * silently degrade the default-deny decision (GC-RSCH-N006 / ADR-085 §2).
      */
     private void validateEgressPolicy(List<ResearchEgressAllowance> policy) {
         if (policy == null) {

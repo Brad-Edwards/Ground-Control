@@ -16,7 +16,7 @@ import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 
 /**
- * GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006 / ADR-084 §3 — durable, run-scoped
+ * GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006 / ADR-085 §3 — durable, run-scoped
  * authorization record for one research high-risk operation (generated-code
  * execution, browser activity, lab/hardware action, external write). It is
  * research execution metadata, not a lifecycle gate or GRC quality gate.

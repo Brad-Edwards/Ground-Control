@@ -11,7 +11,7 @@ import jakarta.validation.constraints.Size;
 import java.time.Instant;
 
 /**
- * GC-RSCH-R005 / ADR-084 §1, §3 — request (propose) a research high-risk operation
+ * GC-RSCH-R005 / ADR-085 §1, §3 — request (propose) a research high-risk operation
  * authorization. An authorization must bind a concrete effect request, not just an
  * operation kind plus egress tuple, so the adapter/tool identity ({@code toolId}),
  * sandbox profile, bounded action summary, and retry-safe {@code sourceActionId}

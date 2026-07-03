@@ -3721,7 +3721,7 @@ server.tool(
 );
 
 // gc_research_operation_authorization: GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006,
-// ADR-084. Run-scoped, default-deny authorization records for research high-risk
+// ADR-085. Run-scoped, default-deny authorization records for research high-risk
 // operations. Curated writes (request/decide/consume) mirror REST (gc_query is
 // read-only); reads (list/get) also route through gc_query under the
 // /api/v1/research-runs allow-list. Handler lives in

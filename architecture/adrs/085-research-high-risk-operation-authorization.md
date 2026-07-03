@@ -1,4 +1,4 @@
-# ADR-084: Research High-Risk Operation Authorization
+# ADR-085: Research High-Risk Operation Authorization
 
 ## Status
 

@@ -1,7 +1,7 @@
 package com.keplerops.groundcontrol.domain.research.model;
 
 /**
- * GC-RSCH-R005 / ADR-084 §1 — closed vocabulary of research high-risk operation
+ * GC-RSCH-R005 / ADR-085 §1 — closed vocabulary of research high-risk operation
  * kinds. Each value is a concrete effect request, not a tool label: a tool being
  * allowed in inventory ({@code ResearchIntake.allowedTools}) never by itself
  * authorizes one of these effects. Adding a kind is an API-visible contract

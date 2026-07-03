@@ -48,7 +48,7 @@ public class ResearchRunArtifact extends BaseEntity {
     private ResearchArtifactStatus status = ResearchArtifactStatus.ACTIVE;
 
     // Optional privacy/access classification of the artifact's material
-    // (GC-RSCH-N006 / ADR-084 §2). Null = unclassified. An artifact's data class
+    // (GC-RSCH-N006 / ADR-085 §2). Null = unclassified. An artifact's data class
     // is the input the egress policy checks before any external disclosure.
     @Enumerated(EnumType.STRING)
     @Column(name = "data_class", length = 20)

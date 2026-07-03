@@ -7,7 +7,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
- * GC-RSCH-R005 / ADR-084 — research high-risk operation authorization records for
+ * GC-RSCH-R005 / ADR-085 — research high-risk operation authorization records for
  * a run. Run-scoped reads only; idempotency is a run-scoped source-action lookup.
  */
 public interface ResearchRunOperationAuthorizationRepository

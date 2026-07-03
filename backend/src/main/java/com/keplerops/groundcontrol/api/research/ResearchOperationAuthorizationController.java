@@ -16,12 +16,12 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006 / ADR-084 — REST surface for
+ * GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006 / ADR-085 — REST surface for
  * research high-risk operation authorizations. Routes live under
  * {@code /api/v1/research-runs/{runId}/operation-authorizations/**}; the request
  * and list/get reads apply via the shared {@code /api/v1/**}
  * {@code .authenticated()} rule, while the decision route (an {@code AUTONOMOUS}
- * run cannot approve its own proposals, ADR-084 §3) and the consume route (only
+ * run cannot approve its own proposals, ADR-085 §3) and the consume route (only
  * the trusted executor/operator may spend a one-time-use approval) are both
  * admin-gated in {@code ApiPathMatrix}. The controller only resolves the project and forwards a
  * request DTO's {@code toCommand()} to the service; all write legality (run

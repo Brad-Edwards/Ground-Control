@@ -19,7 +19,7 @@ import java.util.List;
  * full-replacement updates. Required fields are enforced by Bean Validation
  * here and re-checked at the service layer for bypass writes. {@code egressPolicy}
  * is the optional structured, default-deny data-egress allowlist (GC-RSCH-N006 /
- * ADR-084 §2); absent/empty means local-only. See ADR-056.
+ * ADR-085 §2); absent/empty means local-only. See ADR-056.
  */
 public record ResearchIntakeRequest(
         @NotBlank @Size(max = 4000) String goal,
