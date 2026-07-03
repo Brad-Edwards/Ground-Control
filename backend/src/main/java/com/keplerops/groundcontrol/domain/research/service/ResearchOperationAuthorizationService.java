@@ -47,6 +47,8 @@ public class ResearchOperationAuthorizationService {
 
     private static final String INVALID = "invalid_operation_authorization";
     private static final String FIELD = "field";
+    private static final String TOOL_ID_FIELD = "toolId";
+    private static final String SOURCE_ACTION_ID_FIELD = "sourceActionId";
 
     private final ResearchRunRepository runRepository;
     private final ResearchRunOperationAuthorizationRepository authorizationRepository;
@@ -59,7 +61,7 @@ public class ResearchOperationAuthorizationService {
 
     /**
      * Propose a high-risk operation authorization. Idempotent on a run-scoped
-     * {@code sourceActionId}. The record lands {@code PROPOSED} with a
+     * {@code sourceActionId}. The authorization lands {@code PROPOSED} with a
      * default-deny policy basis computed from the run snapshot; it is never
      * auto-approved.
      */
@@ -75,27 +77,27 @@ public class ResearchOperationAuthorizationService {
                     throw new ConflictException(
                             "Source action id reused with a different authorization payload",
                             "operation_authorization_idempotency_conflict",
-                            Map.of(FIELD, "sourceActionId"));
+                            Map.of(FIELD, SOURCE_ACTION_ID_FIELD));
                 }
                 return existing.get();
             }
         }
         requireToolInInventory(run, command.toolId());
 
-        var record = new ResearchRunOperationAuthorization(
+        var authorization = new ResearchRunOperationAuthorization(
                 run, command.operationKind(), command.dataClass(), command.destinationClass(), command.requestedForm());
-        record.setToolId(emptyToNull(command.toolId()));
-        record.setSandboxProfile(emptyToNull(command.sandboxProfile()));
-        record.setTargetClass(emptyToNull(command.targetClass()));
-        record.setSummary(emptyToNull(command.summary()));
-        record.setSourceActionId(sourceActionId);
-        record.setExpiresAt(command.expiresAt());
-        record.setProposingActor(currentActor());
+        authorization.setToolId(emptyToNull(command.toolId()));
+        authorization.setSandboxProfile(emptyToNull(command.sandboxProfile()));
+        authorization.setTargetClass(emptyToNull(command.targetClass()));
+        authorization.setSummary(emptyToNull(command.summary()));
+        authorization.setSourceActionId(sourceActionId);
+        authorization.setExpiresAt(command.expiresAt());
+        authorization.setProposingActor(currentActor());
         var decision = EgressPolicyEvaluator.evaluate(
                 run.getEgressPolicy(), command.dataClass(), command.destinationClass(), command.requestedForm());
-        record.setPolicyBasis(decision.basis());
+        authorization.setPolicyBasis(decision.basis());
 
-        var saved = authorizationRepository.save(record);
+        var saved = authorizationRepository.save(authorization);
         log.info(
                 "research_operation_authorization_proposed: project={} run={} kind={} destination={} form={} egressPermitted={}",
                 run.getProject().getIdentifier(),
@@ -116,7 +118,7 @@ public class ResearchOperationAuthorizationService {
     public ResearchRunOperationAuthorization decideAuthorization(
             UUID projectId, UUID runId, UUID authorizationId, DecideOperationAuthorizationCommand command) {
         var run = requireRun(projectId, runId);
-        var record = requireAuthorization(runId, authorizationId);
+        var authorization = requireAuthorization(runId, authorizationId);
         var actor = currentActor();
         if (command.approve()) {
             if (actor == null) {
@@ -124,18 +126,18 @@ public class ResearchOperationAuthorizationService {
             }
             var decision = EgressPolicyEvaluator.evaluate(
                     run.getEgressPolicy(),
-                    record.getDataClass(),
-                    record.getDestinationClass(),
-                    record.getRequestedForm());
+                    authorization.getDataClass(),
+                    authorization.getDestinationClass(),
+                    authorization.getRequestedForm());
             if (!decision.permitted()) {
                 throw new AuthorizationException(
                         "Run egress policy does not permit this operation (default deny): " + decision.basis());
             }
-            record.approve(actor, decision.basis());
+            authorization.approve(actor, decision.basis());
         } else {
-            record.deny(actor, "denied");
+            authorization.deny(actor, "denied");
         }
-        var saved = authorizationRepository.save(record);
+        var saved = authorizationRepository.save(authorization);
         log.info(
                 "research_operation_authorization_decided: project={} run={} id={} approve={} state={}",
                 run.getProject().getIdentifier(),
@@ -149,9 +151,9 @@ public class ResearchOperationAuthorizationService {
     /** Spend a one-time-use approved authorization (executor-side). Expired approvals are rejected. */
     public ResearchRunOperationAuthorization consumeAuthorization(UUID projectId, UUID runId, UUID authorizationId) {
         var run = requireRun(projectId, runId);
-        var record = requireAuthorization(runId, authorizationId);
-        record.consume(Instant.now());
-        var saved = authorizationRepository.save(record);
+        var authorization = requireAuthorization(runId, authorizationId);
+        authorization.consume(Instant.now());
+        var saved = authorizationRepository.save(authorization);
         log.info(
                 "research_operation_authorization_consumed: project={} run={} id={} state={}",
                 run.getProject().getIdentifier(),
@@ -180,20 +182,20 @@ public class ResearchOperationAuthorizationService {
             throw new DomainValidationException(
                     "operationKind, dataClass, destinationClass, and requestedForm are required", INVALID, Map.of());
         }
-        // ADR-086 §1: the record must bind a concrete effect request — the
+        // ADR-086 §1: the authorization must bind a concrete effect request — the
         // adapter/tool identity, sandbox profile, bounded action summary, and a
         // retry-safe source-action id are all required so an executor can prove
         // which adapter/action/sandbox was authorized (and so a tool-less request
         // can never sidestep the allowed-tool inventory check).
-        requireNotBlank(command.toolId(), "toolId");
+        requireNotBlank(command.toolId(), TOOL_ID_FIELD);
         requireNotBlank(command.sandboxProfile(), "sandboxProfile");
         requireNotBlank(command.summary(), "summary");
-        requireNotBlank(command.sourceActionId(), "sourceActionId");
-        requireUnder(command.toolId(), TOOL_ID_MAX, "toolId");
+        requireNotBlank(command.sourceActionId(), SOURCE_ACTION_ID_FIELD);
+        requireUnder(command.toolId(), TOOL_ID_MAX, TOOL_ID_FIELD);
         requireUnder(command.sandboxProfile(), SANDBOX_PROFILE_MAX, "sandboxProfile");
         requireUnder(command.targetClass(), TARGET_CLASS_MAX, "targetClass");
         requireUnder(command.summary(), SUMMARY_MAX, "summary");
-        requireUnder(command.sourceActionId(), ACTION_ID_MAX, "sourceActionId");
+        requireUnder(command.sourceActionId(), ACTION_ID_MAX, SOURCE_ACTION_ID_FIELD);
     }
 
     /**
@@ -209,7 +211,7 @@ public class ResearchOperationAuthorizationService {
         var allowed = run.getAllowedTools();
         if (allowed == null || !allowed.contains(tool)) {
             throw new DomainValidationException(
-                    "Tool is not in the run's allowed-tool inventory", INVALID, Map.of(FIELD, "toolId"));
+                    "Tool is not in the run's allowed-tool inventory", INVALID, Map.of(FIELD, TOOL_ID_FIELD));
         }
     }
 

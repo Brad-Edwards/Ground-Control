@@ -125,7 +125,7 @@ class ResearchOperationAuthorizationServiceTest {
     @Test
     void requestRejectsMissingConcreteEffectIdentity() {
         // ADR-086 §1: a null/blank toolId (adapter identity) is rejected so the
-        // record always binds a concrete effect and never skips inventory.
+        // authorization always binds a concrete effect and never skips inventory.
         var cmd = new RequestOperationAuthorizationCommand(
                 ResearchHighRiskOperationKind.EXTERNAL_WRITE,
                 ResearchDataClass.PUBLIC,
@@ -219,23 +219,23 @@ class ResearchOperationAuthorizationServiceTest {
     @Test
     void approveIsRejectedWhenRunPolicyDoesNotPermit() {
         // run has an empty egress policy -> default deny
-        var record = proposed(
+        var authorization = proposed(
                 ResearchDataClass.CONFIDENTIAL, ResearchDestinationClass.AI_PROVIDER, ResearchDataForm.RAW_CONTENT);
-        when(authorizationRepository.findByIdAndResearchRunId(AUTH_ID, RUN_ID)).thenReturn(Optional.of(record));
+        when(authorizationRepository.findByIdAndResearchRunId(AUTH_ID, RUN_ID)).thenReturn(Optional.of(authorization));
+        var approveCommand = new DecideOperationAuthorizationCommand(true, null);
 
-        assertThatThrownBy(() -> service.decideAuthorization(
-                        PROJECT_ID, RUN_ID, AUTH_ID, new DecideOperationAuthorizationCommand(true, null)))
+        assertThatThrownBy(() -> service.decideAuthorization(PROJECT_ID, RUN_ID, AUTH_ID, approveCommand))
                 .isInstanceOf(AuthorizationException.class);
-        assertThat(record.getState()).isEqualTo(ResearchOperationAuthorizationState.PROPOSED);
+        assertThat(authorization.getState()).isEqualTo(ResearchOperationAuthorizationState.PROPOSED);
     }
 
     @Test
     void approveSucceedsWhenRunPolicyPermitsAndActorPresent() {
         run.setEgressPolicy(List.of(new ResearchEgressAllowance(
                 ResearchDataClass.CONFIDENTIAL, ResearchDestinationClass.AI_PROVIDER, ResearchDataForm.SUMMARY, null)));
-        var record = proposed(
+        var authorization = proposed(
                 ResearchDataClass.CONFIDENTIAL, ResearchDestinationClass.AI_PROVIDER, ResearchDataForm.SUMMARY);
-        when(authorizationRepository.findByIdAndResearchRunId(AUTH_ID, RUN_ID)).thenReturn(Optional.of(record));
+        when(authorizationRepository.findByIdAndResearchRunId(AUTH_ID, RUN_ID)).thenReturn(Optional.of(authorization));
 
         var decided = service.decideAuthorization(
                 PROJECT_ID, RUN_ID, AUTH_ID, new DecideOperationAuthorizationCommand(true, "ok"));
@@ -249,18 +249,20 @@ class ResearchOperationAuthorizationServiceTest {
         ActorHolder.clear(); // an AUTONOMOUS run carries no authenticated approver
         run.setEgressPolicy(List.of(new ResearchEgressAllowance(
                 ResearchDataClass.PUBLIC, ResearchDestinationClass.AI_PROVIDER, ResearchDataForm.SUMMARY, null)));
-        var record = proposed(ResearchDataClass.PUBLIC, ResearchDestinationClass.AI_PROVIDER, ResearchDataForm.SUMMARY);
-        when(authorizationRepository.findByIdAndResearchRunId(AUTH_ID, RUN_ID)).thenReturn(Optional.of(record));
+        var authorization =
+                proposed(ResearchDataClass.PUBLIC, ResearchDestinationClass.AI_PROVIDER, ResearchDataForm.SUMMARY);
+        when(authorizationRepository.findByIdAndResearchRunId(AUTH_ID, RUN_ID)).thenReturn(Optional.of(authorization));
+        var approveCommand = new DecideOperationAuthorizationCommand(true, null);
 
-        assertThatThrownBy(() -> service.decideAuthorization(
-                        PROJECT_ID, RUN_ID, AUTH_ID, new DecideOperationAuthorizationCommand(true, null)))
+        assertThatThrownBy(() -> service.decideAuthorization(PROJECT_ID, RUN_ID, AUTH_ID, approveCommand))
                 .isInstanceOf(AuthorizationException.class);
     }
 
     @Test
     void denyMovesRecordToDenied() {
-        var record = proposed(ResearchDataClass.PUBLIC, ResearchDestinationClass.AI_PROVIDER, ResearchDataForm.SUMMARY);
-        when(authorizationRepository.findByIdAndResearchRunId(AUTH_ID, RUN_ID)).thenReturn(Optional.of(record));
+        var authorization =
+                proposed(ResearchDataClass.PUBLIC, ResearchDestinationClass.AI_PROVIDER, ResearchDataForm.SUMMARY);
+        when(authorizationRepository.findByIdAndResearchRunId(AUTH_ID, RUN_ID)).thenReturn(Optional.of(authorization));
 
         var decided = service.decideAuthorization(
                 PROJECT_ID, RUN_ID, AUTH_ID, new DecideOperationAuthorizationCommand(false, "no"));
@@ -270,9 +272,10 @@ class ResearchOperationAuthorizationServiceTest {
 
     @Test
     void consumeSpendsApprovedRecordExactlyOnce() {
-        var record = proposed(ResearchDataClass.PUBLIC, ResearchDestinationClass.AI_PROVIDER, ResearchDataForm.SUMMARY);
-        record.approve("admin@keplerops", "allow");
-        when(authorizationRepository.findByIdAndResearchRunId(AUTH_ID, RUN_ID)).thenReturn(Optional.of(record));
+        var authorization =
+                proposed(ResearchDataClass.PUBLIC, ResearchDestinationClass.AI_PROVIDER, ResearchDataForm.SUMMARY);
+        authorization.approve("admin@keplerops", "allow");
+        when(authorizationRepository.findByIdAndResearchRunId(AUTH_ID, RUN_ID)).thenReturn(Optional.of(authorization));
 
         var consumed = service.consumeAuthorization(PROJECT_ID, RUN_ID, AUTH_ID);
         assertThat(consumed.getState()).isEqualTo(ResearchOperationAuthorizationState.CONSUMED);
@@ -283,14 +286,15 @@ class ResearchOperationAuthorizationServiceTest {
 
     @Test
     void consumeRejectsExpiredApproval() {
-        var record = proposed(ResearchDataClass.PUBLIC, ResearchDestinationClass.AI_PROVIDER, ResearchDataForm.SUMMARY);
-        record.approve("admin@keplerops", "allow");
-        record.setExpiresAt(Instant.now().minus(1, ChronoUnit.HOURS));
-        when(authorizationRepository.findByIdAndResearchRunId(AUTH_ID, RUN_ID)).thenReturn(Optional.of(record));
+        var authorization =
+                proposed(ResearchDataClass.PUBLIC, ResearchDestinationClass.AI_PROVIDER, ResearchDataForm.SUMMARY);
+        authorization.approve("admin@keplerops", "allow");
+        authorization.setExpiresAt(Instant.now().minus(1, ChronoUnit.HOURS));
+        when(authorizationRepository.findByIdAndResearchRunId(AUTH_ID, RUN_ID)).thenReturn(Optional.of(authorization));
 
         assertThatThrownBy(() -> service.consumeAuthorization(PROJECT_ID, RUN_ID, AUTH_ID))
                 .isInstanceOf(DomainValidationException.class);
-        assertThat(record.getState()).isEqualTo(ResearchOperationAuthorizationState.EXPIRED);
+        assertThat(authorization.getState()).isEqualTo(ResearchOperationAuthorizationState.EXPIRED);
     }
 
     @Test
@@ -310,9 +314,9 @@ class ResearchOperationAuthorizationServiceTest {
 
     private ResearchRunOperationAuthorization proposed(
             ResearchDataClass dataClass, ResearchDestinationClass destination, ResearchDataForm form) {
-        var record = new ResearchRunOperationAuthorization(
+        var authorization = new ResearchRunOperationAuthorization(
                 run, ResearchHighRiskOperationKind.EXTERNAL_WRITE, dataClass, destination, form);
-        TestUtil.setField(record, "id", AUTH_ID);
-        return record;
+        TestUtil.setField(authorization, "id", AUTH_ID);
+        return authorization;
     }
 }

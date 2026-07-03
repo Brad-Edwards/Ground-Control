@@ -61,7 +61,7 @@ class ResearchOperationAuthorizationControllerTest {
     void requestReturns201AndForwardsCommand() throws Exception {
         when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
         when(authorizationService.requestAuthorization(eq(PROJECT_ID), eq(RUN_ID), any()))
-                .thenReturn(record());
+                .thenReturn(authorization());
 
         mockMvc.perform(post("/api/v1/research-runs/{runId}/operation-authorizations", RUN_ID)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -94,7 +94,8 @@ class ResearchOperationAuthorizationControllerTest {
     @Test
     void listReturns200() throws Exception {
         when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
-        when(authorizationService.listAuthorizations(PROJECT_ID, RUN_ID)).thenReturn(java.util.List.of(record()));
+        when(authorizationService.listAuthorizations(PROJECT_ID, RUN_ID))
+                .thenReturn(java.util.List.of(authorization()));
 
         mockMvc.perform(get("/api/v1/research-runs/{runId}/operation-authorizations", RUN_ID))
                 .andExpect(status().isOk())
@@ -105,7 +106,7 @@ class ResearchOperationAuthorizationControllerTest {
     void decisionForwardsApproveFlag() throws Exception {
         when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
         when(authorizationService.decideAuthorization(eq(PROJECT_ID), eq(RUN_ID), eq(AUTH_ID), any()))
-                .thenReturn(record());
+                .thenReturn(authorization());
 
         mockMvc.perform(post("/api/v1/research-runs/{runId}/operation-authorizations/{id}/decision", RUN_ID, AUTH_ID)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -122,24 +123,24 @@ class ResearchOperationAuthorizationControllerTest {
     void consumeReturns200() throws Exception {
         when(projectService.requireProjectId(any())).thenReturn(PROJECT_ID);
         when(authorizationService.consumeAuthorization(PROJECT_ID, RUN_ID, AUTH_ID))
-                .thenReturn(record());
+                .thenReturn(authorization());
 
         mockMvc.perform(post("/api/v1/research-runs/{runId}/operation-authorizations/{id}/consume", RUN_ID, AUTH_ID))
                 .andExpect(status().isOk());
     }
 
-    private ResearchRunOperationAuthorization record() {
+    private ResearchRunOperationAuthorization authorization() {
         var project = new Project("research-p", "Research Project", ProjectType.RESEARCH);
         TestUtil.setField(project, "id", PROJECT_ID);
         var run = new ResearchRun(project, "RUN-1", AutonomyLevel.COPILOT);
         TestUtil.setField(run, "id", RUN_ID);
-        var record = new ResearchRunOperationAuthorization(
+        var authorization = new ResearchRunOperationAuthorization(
                 run,
                 ResearchHighRiskOperationKind.EXTERNAL_WRITE,
                 ResearchDataClass.CONFIDENTIAL,
                 ResearchDestinationClass.AI_PROVIDER,
                 ResearchDataForm.SUMMARY);
-        TestUtil.setField(record, "id", AUTH_ID);
-        return record;
+        TestUtil.setField(authorization, "id", AUTH_ID);
+        return authorization;
     }
 }
