@@ -71,7 +71,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 /**
- * GC-RSCH-F008 / GC-RSCH-F009 / ADR-081 — service-layer unit tests for the
+ * GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 — service-layer unit tests for the
  * protocol plan on {@link ResearchRunService}.
  */
 @ExtendWith(MockitoExtension.class)
@@ -570,7 +570,7 @@ class ResearchRunProtocolPlanServiceTest {
                 .thenReturn(Optional.of(sel));
         when(protocolPlanRepository.existsByArtifactId(PROTOCOL_ARTIFACT_ID)).thenReturn(false);
 
-        // Only two of the four ADR-081 §3 taxonomy source roles are carried.
+        // Only two of the four ADR-083 §3 taxonomy source roles are carried.
         var taxonomySections = List.of(
                 section("meta", ProtocolSectionKind.META_CHARACTERISTIC),
                 section("unit", ProtocolSectionKind.UNIT_OF_ANALYSIS),
@@ -640,7 +640,7 @@ class ResearchRunProtocolPlanServiceTest {
                 .isEqualTo("research_run_protocol_plan_source_role_required");
     }
 
-    /** A complete taxonomy-development section set carrying all four ADR-081 §3 source roles. */
+    /** A complete taxonomy-development section set carrying all four ADR-083 §3 source roles. */
     private static List<SectionCommand> taxonomySectionsAllRoles() {
         return List.of(
                 section("meta", ProtocolSectionKind.META_CHARACTERISTIC),

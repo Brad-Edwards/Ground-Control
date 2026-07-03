@@ -13,7 +13,7 @@ import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 
 /**
- * GC-RSCH-F008 / GC-RSCH-F009 / ADR-081 — the structured phase-2 protocol plan
+ * GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 — the structured phase-2 protocol plan
  * for one research run. It sits behind, and is tied by run + artifact attempt
  * to, the ACTIVE {@link ResearchArtifactType#PROTOCOL_PLAN} {@link
  * ResearchRunArtifact} manifest (the manifest stays lifecycle metadata; this is

@@ -603,9 +603,9 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "181", // V181: create methodology_requirements_contract_entry (#1006, ADR-080)
                         "182", // V182: create methodology_requirements_contract_entry_source_link (#1006)
                         "183", // V183: create methodology_requirements_contract_rejected_alternative (#1006)
-                        "184", // V184: create protocol_plan (#1007, ADR-081)
+                        "184", // V184: create protocol_plan (#1007, ADR-083)
                         "185", // V185: create protocol_plan_audit (#1007 audit parity)
-                        "186", // V186: create protocol_plan_coverage (#1007, ADR-081)
-                        "187"); // V187: create protocol_plan_section (#1007, ADR-081)
+                        "186", // V186: create protocol_plan_coverage (#1007, ADR-083)
+                        "187"); // V187: create protocol_plan_section (#1007, ADR-083)
     }
 }

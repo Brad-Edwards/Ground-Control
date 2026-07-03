@@ -1,7 +1,7 @@
 package com.keplerops.groundcontrol.domain.research.model;
 
 /**
- * GC-RSCH-F009 / ADR-081 §3 — closed vocabulary for the semantic class of a
+ * GC-RSCH-F009 / ADR-083 §3 — closed vocabulary for the semantic class of a
  * {@link ProtocolPlanSection}. The selected method profile determines which
  * subset of kinds a {@link ProtocolPlan} must include ({@link
  * com.keplerops.groundcontrol.domain.research.service.ProtocolMethodShape}).

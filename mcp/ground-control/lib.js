@@ -11068,7 +11068,7 @@ export const CONTRACT_ENTRY_KINDS = [
   "OPEN_PROTOCOL_QUESTION",
 ];
 
-// GC-RSCH-F008 / ADR-081 §2 — closed vocabulary for how a protocol plan
+// GC-RSCH-F008 / ADR-083 §2 — closed vocabulary for how a protocol plan
 // resolves one ADR-080 REQUIREMENT/OPEN_PROTOCOL_QUESTION contract entry.
 // Mirrors ProtocolCoverageDisposition (backend enum contract, ADR-034).
 export const PROTOCOL_COVERAGE_DISPOSITIONS = [
@@ -11079,7 +11079,7 @@ export const PROTOCOL_COVERAGE_DISPOSITIONS = [
   "BLOCKING_DECISION_REQUIRED",
 ];
 
-// GC-RSCH-F008 / GC-RSCH-R002 / ADR-081 §4 — closed vocabulary classifying
+// GC-RSCH-F008 / GC-RSCH-R002 / ADR-083 §4 — closed vocabulary classifying
 // where a FILLED coverage answer came from. Mirrors ProtocolAnswerProvenance.
 export const PROTOCOL_ANSWER_PROVENANCES = [
   "METHODOLOGY_SOURCE",
@@ -11090,7 +11090,7 @@ export const PROTOCOL_ANSWER_PROVENANCES = [
   "ADAPTER_OUTPUT",
 ];
 
-// GC-RSCH-F009 / ADR-081 §3 — closed vocabulary for the semantic class of a
+// GC-RSCH-F009 / ADR-083 §3 — closed vocabulary for the semantic class of a
 // protocol plan section. Mirrors ProtocolSectionKind (backend enum contract,
 // ADR-034); the selected method profile determines which subset is required.
 export const PROTOCOL_SECTION_KINDS = [
@@ -11139,7 +11139,7 @@ export const PROTOCOL_SECTION_KINDS = [
   "NON_CLAIMS",
 ];
 
-// GC-RSCH-F009 / ADR-081 §3 — closed vocabulary for source roles in the
+// GC-RSCH-F009 / ADR-083 §3 — closed vocabulary for source roles in the
 // taxonomy-development method family. Mirrors ProtocolSourceRole; legal only
 // on SOURCE_ROLES sections of the taxonomy_development method.
 export const PROTOCOL_SOURCE_ROLES = [
@@ -11337,7 +11337,7 @@ export async function getMethodologyRequirementsContract(id, project) {
   );
 }
 
-// GC-RSCH-F008 / GC-RSCH-F009 / ADR-081 — structured protocol plan behind the
+// GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 — structured protocol plan behind the
 // PROTOCOL_PLAN artifact. Read also routes through gc_query under the
 // /api/v1/research-runs allow-list.
 export async function recordProtocolPlan(id, data, project) {

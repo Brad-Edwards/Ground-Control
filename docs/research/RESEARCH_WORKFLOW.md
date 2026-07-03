@@ -16,7 +16,7 @@ Versioning and regression expectations for prompts, method profiles, schemas,
 and workflow policies are governed by ADR-077. The structured phase-1
 methodology requirements contract artifact is governed by ADR-080. The
 structured phase-2 protocol-plan artifact and method-specific output shapes are
-governed by ADR-081.
+governed by ADR-083.
 
 ## Phases
 
@@ -100,7 +100,7 @@ The contract is recorded once per `METHODOLOGY_REQUIREMENTS` artifact attempt (a
 
 ## F008/F009 artifact boundary: protocol plan and method-specific outputs
 
-ADR-081 defines the phase-2 protocol plan as structured, run-scoped content behind the `PROTOCOL_PLAN` artifact manifest. It consumes the active ADR-080 methodology requirements contract by contract id and artifact attempt, then gives every `REQUIREMENT` and `OPEN_PROTOCOL_QUESTION` exactly one bounded coverage disposition: filled, resolved by durable user decision, explicitly deferred as non-blocking, not applicable with rationale, or blocking decision required. A protocol plan with missing coverage or any unresolved blocking decision cannot become the active `PROTOCOL_PLAN`; source search must recheck that active complete plan before executing.
+ADR-083 defines the phase-2 protocol plan as structured, run-scoped content behind the `PROTOCOL_PLAN` artifact manifest. It consumes the active ADR-080 methodology requirements contract by contract id and artifact attempt, then gives every `REQUIREMENT` and `OPEN_PROTOCOL_QUESTION` exactly one bounded coverage disposition: filled, resolved by durable user decision, explicitly deferred as non-blocking, not applicable with rationale, or blocking decision required. A protocol plan with missing coverage or any unresolved blocking decision cannot become the active `PROTOCOL_PLAN`; source search must recheck that active complete plan before executing.
 
 The protocol plan carries phase-1 `METHOD_LIMIT` and `NON_CLAIM` entries forward
 as scientific-humility constraints and records known missing evidence, access

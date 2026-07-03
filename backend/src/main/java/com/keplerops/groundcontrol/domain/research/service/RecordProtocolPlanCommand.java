@@ -8,7 +8,7 @@ import com.keplerops.groundcontrol.domain.research.model.ResearchRunStage;
 import java.util.List;
 
 /**
- * GC-RSCH-F008 / GC-RSCH-F009 / ADR-081 — record the structured protocol plan
+ * GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 — record the structured protocol plan
  * behind the run's ACTIVE {@code PROTOCOL_PLAN} artifact attempt. The method
  * key, method profile version, methodology contract id/attempt, and artifact
  * attempt are resolved server-side from the run's active selection and active
@@ -21,7 +21,7 @@ public record RecordProtocolPlanCommand(
     /**
      * One coverage disposition for an ADR-080 {@code REQUIREMENT} or {@code
      * OPEN_PROTOCOL_QUESTION} contract entry. Which fields are required depends
-     * on {@code disposition} (ADR-081 §2).
+     * on {@code disposition} (ADR-083 §2).
      */
     public record CoverageCommand(
             String contractEntryKey,

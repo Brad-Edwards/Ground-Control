@@ -292,7 +292,7 @@ public class ResearchRunController {
                 researchRunService.getMethodologyRequirementsContract(projectId, id));
     }
 
-    // GC-RSCH-F008 / GC-RSCH-F009 / ADR-081 — structured protocol plan behind
+    // GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 — structured protocol plan behind
     // the PROTOCOL_PLAN artifact.
     @PostMapping("/{id}/protocol-plan")
     @ResponseStatus(HttpStatus.CREATED)

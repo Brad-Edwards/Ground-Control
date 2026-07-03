@@ -1,4 +1,4 @@
--- GC-RSCH-F008 / ADR-081 §2 (#1007). One coverage disposition for a single
+-- GC-RSCH-F008 / ADR-083 §2 (#1007). One coverage disposition for a single
 -- ADR-080 REQUIREMENT / OPEN_PROTOCOL_QUESTION contract entry within a
 -- protocol plan. Rows are written once with the plan (immutable snapshot, not
 -- audited separately). contract_entry_key is a stable, plan-unique key

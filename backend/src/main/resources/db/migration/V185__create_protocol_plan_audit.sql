@@ -1,4 +1,4 @@
--- GC-RSCH-F008 / ADR-081 (#1007). Envers audit shadow for protocol_plan.
+-- GC-RSCH-F008 / ADR-083 (#1007). Envers audit shadow for protocol_plan.
 --
 -- research_run_id and methodology_requirements_contract_id are intentionally
 -- absent (@NotAudited on the JPA mapping); all other payload columns are

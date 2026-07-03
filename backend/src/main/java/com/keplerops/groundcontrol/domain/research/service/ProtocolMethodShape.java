@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * GC-RSCH-F009 / ADR-081 §3 — the method-specific protocol output shape: which
+ * GC-RSCH-F009 / ADR-083 §3 — the method-specific protocol output shape: which
  * {@link ProtocolSectionKind}s a {@link com.keplerops.groundcontrol.domain.research.model.ProtocolPlan}
  * must include for a given catalog method key. This is the extension seam the
  * ADR calls for: adding a method or variation is a data addition here, not a
@@ -16,7 +16,7 @@ import java.util.Set;
  * ({@code scoping}, {@code systematic}, {@code mapping}, {@code critical},
  * {@code narrative_conceptual}, {@code targeted_related_work}, {@code
  * taxonomy_development}). {@code critical} and {@code narrative_conceptual}
- * share the critical/integrative-review family shape (ADR-081 §3). Every
+ * share the critical/integrative-review family shape (ADR-083 §3). Every
  * family — including the fallback for an unmapped method key — requires
  * {@link ProtocolSectionKind#METHOD_LIMITS} and {@link
  * ProtocolSectionKind#NON_CLAIMS} (GC-RSCH-N016).

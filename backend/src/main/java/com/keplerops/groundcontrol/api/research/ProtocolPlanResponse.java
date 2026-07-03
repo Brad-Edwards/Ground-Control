@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * GC-RSCH-F008 / GC-RSCH-F009 / ADR-081 — the protocol plan as later stages
+ * GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 — the protocol plan as later stages
  * consume it: the artifact/contract attempt it belongs to, the chosen method,
  * coverage dispositions for the ADR-080 contract's requirements/questions, and
  * method-specific output sections. Bounded metadata only — never source text.

@@ -3310,7 +3310,7 @@ server.tool(
         }),
       )
       .optional(),
-    // protocol plan (GC-RSCH-F008 / GC-RSCH-F009 / ADR-081). Method key, profile
+    // protocol plan (GC-RSCH-F008 / GC-RSCH-F009 / ADR-083). Method key, profile
     // version, methodology contract id/attempt, and artifact attempt are resolved
     // server-side from the run's active selection and active artifacts, never
     // passed here.

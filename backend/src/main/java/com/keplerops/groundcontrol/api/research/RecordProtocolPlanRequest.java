@@ -16,7 +16,7 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 /**
- * GC-RSCH-F008 / GC-RSCH-F009 / ADR-081 — record the protocol plan for the
+ * GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 — record the protocol plan for the
  * run's ACTIVE {@code PROTOCOL_PLAN} artifact attempt. Method key, profile
  * version, methodology contract id/attempt, and artifact attempt are resolved
  * server-side (ADR-026), never from this body.

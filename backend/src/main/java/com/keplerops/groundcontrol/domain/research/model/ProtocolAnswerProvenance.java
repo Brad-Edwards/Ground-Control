@@ -1,7 +1,7 @@
 package com.keplerops.groundcontrol.domain.research.model;
 
 /**
- * GC-RSCH-F008 / GC-RSCH-R002 / ADR-081 §4 — closed vocabulary classifying
+ * GC-RSCH-F008 / GC-RSCH-R002 / ADR-083 §4 — closed vocabulary classifying
  * where a {@link ProtocolCoverageDisposition#FILLED} answer came from. This
  * classification is not proof by itself: it tells later validation which
  * existing surface must support the answer. The backend does not treat model

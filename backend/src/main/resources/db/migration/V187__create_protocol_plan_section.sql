@@ -1,4 +1,4 @@
--- GC-RSCH-F009 / ADR-081 §3 (#1007). One method-specific output section of a
+-- GC-RSCH-F009 / ADR-083 §3 (#1007). One method-specific output section of a
 -- protocol plan. Rows are written once with the plan (immutable snapshot, not
 -- audited separately). section_key is a stable, plan-unique key; several
 -- sections may share a section_kind (e.g. multiple SOURCE_ROLES sections for

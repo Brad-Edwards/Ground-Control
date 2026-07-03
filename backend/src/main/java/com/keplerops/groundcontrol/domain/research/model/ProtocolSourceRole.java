@@ -1,7 +1,7 @@
 package com.keplerops.groundcontrol.domain.research.model;
 
 /**
- * GC-RSCH-F009 / ADR-081 §3 — closed vocabulary for source roles in the
+ * GC-RSCH-F009 / ADR-083 §3 — closed vocabulary for source roles in the
  * taxonomy-development method family. Taxonomy-instance corpus,
  * background/framing literature, methodology literature, and
  * validation/evaluation material must remain separate roles: background or

@@ -1,4 +1,4 @@
-# ADR-081: Research Protocol Plan Artifact and Method-Specific Outputs
+# ADR-083: Research Protocol Plan Artifact and Method-Specific Outputs
 
 ## Status
 

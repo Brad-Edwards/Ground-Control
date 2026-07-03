@@ -1,7 +1,7 @@
 package com.keplerops.groundcontrol.domain.research.model;
 
 /**
- * GC-RSCH-F008 / ADR-081 §2 — closed vocabulary for how a {@link ProtocolPlan}
+ * GC-RSCH-F008 / ADR-083 §2 — closed vocabulary for how a {@link ProtocolPlan}
  * resolves one ADR-080 {@code REQUIREMENT} or {@code OPEN_PROTOCOL_QUESTION}
  * contract entry. Every current entry of those two kinds must have exactly one
  * disposition; the set is API-visible and follows ADR-034 enum-contract rules.

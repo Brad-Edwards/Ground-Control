@@ -444,7 +444,7 @@ public class ResearchRunService {
                     Map.of(CURRENT_STAGE, run.getCurrentStage().name(), "missing_artifact", requiredArtifact.name()));
         }
 
-        // GC-RSCH-F008 / ADR-081 §2 — the SOURCE_SEARCH durable gate: an active
+        // GC-RSCH-F008 / ADR-083 §2 — the SOURCE_SEARCH durable gate: an active
         // PROTOCOL_PLAN artifact is not enough on its own. The structured protocol
         // plan behind it must exist and have no unresolved BLOCKING_DECISION_REQUIRED
         // coverage, or search execution stays blocked regardless of caller.
@@ -1740,20 +1740,20 @@ public class ResearchRunService {
     }
 
     // ------------------------------------------------------------------
-    // Protocol plan (GC-RSCH-F008 / GC-RSCH-F009 / ADR-081)
+    // Protocol plan (GC-RSCH-F008 / GC-RSCH-F009 / ADR-083)
     // ------------------------------------------------------------------
 
     /**
-     * GC-RSCH-F008 / GC-RSCH-F009 / ADR-081 — record the structured protocol
+     * GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 — record the structured protocol
      * plan behind the run's ACTIVE {@code PROTOCOL_PLAN} artifact attempt,
      * answering the run's one active ADR-080 methodology requirements contract.
      * Every current {@code REQUIREMENT} / {@code OPEN_PROTOCOL_QUESTION}
      * contract entry must have exactly one coverage disposition; {@code
      * METHOD_LIMIT} / {@code NON_CLAIM} entries are constraints the plan
-     * carries forward, not coverable answers (ADR-081 §2). The plan must also
+     * carries forward, not coverable answers (ADR-083 §2). The plan must also
      * include every section kind the selected method profile requires ({@link
      * ProtocolMethodShape}); a source role may only be assigned on a {@code
-     * SOURCE_ROLES} section of the taxonomy-development method (ADR-081 §3).
+     * SOURCE_ROLES} section of the taxonomy-development method (ADR-083 §3).
      */
     public ProtocolPlanAggregate recordProtocolPlan(UUID projectId, UUID runId, RecordProtocolPlanCommand command) {
         var run = requireRun(projectId, runId);
@@ -1892,7 +1892,7 @@ public class ResearchRunService {
 
     /**
      * Second validation pass: the fields a disposition requires are present and
-     * bounded (ADR-081 §2). Each disposition's own completeness rule lives in a
+     * bounded (ADR-083 §2). Each disposition's own completeness rule lives in a
      * dedicated {@code requireXxxComplete} method so this dispatcher never holds
      * conditional logic itself (S6916) — {@code switch} on a plain enum constant
      * cannot carry a {@code when} guard (JLS 14.11.1 restricts guards to pattern
@@ -1964,7 +1964,7 @@ public class ResearchRunService {
      * Third validation pass: every section kind the selected method profile
      * requires is present ({@link ProtocolMethodShape}), section keys are
      * unique, and {@code sourceRole} is only assigned on a {@code
-     * SOURCE_ROLES} section of the taxonomy-development method (ADR-081 §3).
+     * SOURCE_ROLES} section of the taxonomy-development method (ADR-083 §3).
      */
     private void validateProtocolPlanSections(
             List<RecordProtocolPlanCommand.SectionCommand> sectionCommands, String methodKey) {
@@ -2000,7 +2000,7 @@ public class ResearchRunService {
     /**
      * Validates one section command (blank/duplicate {@code sectionKey}, presence
      * of {@code sectionKind}/{@code contentSummary}, and the {@code sourceRole}
-     * constraints of ADR-081 §3), recording its taxonomy source role — if any —
+     * constraints of ADR-083 §3), recording its taxonomy source role — if any —
      * into {@code taxonomySourceRoles}, and returns its section kind for the
      * caller's required-sections check.
      */
@@ -2038,7 +2038,7 @@ public class ResearchRunService {
                     "research_run_protocol_plan_source_role_not_allowed",
                     Map.of(SECTION_KEY_JSON_FIELD, key, METHOD_KEY_FIELD, methodKey == null ? "" : methodKey));
         }
-        // ADR-081 §3 — taxonomy source-role separation is the hard boundary case: a
+        // ADR-083 §3 — taxonomy source-role separation is the hard boundary case: a
         // SOURCE_ROLES section must name the role it carries so background/framing,
         // methodology, and validation material cannot collapse into the taxonomy corpus.
         if (isTaxonomySourceRoleSection) {
@@ -2054,7 +2054,7 @@ public class ResearchRunService {
     }
 
     /**
-     * ADR-081 §3 — the accepted taxonomy plan must actually carry every distinct
+     * ADR-083 §3 — the accepted taxonomy plan must actually carry every distinct
      * source role, not merely permit them; otherwise later stages cannot rely on the
      * plan to keep background sources from supporting taxonomy claims.
      */
@@ -2157,7 +2157,7 @@ public class ResearchRunService {
     }
 
     /**
-     * GC-RSCH-F008 / ADR-081 §2 — the {@code SOURCE_SEARCH} durable gate: an
+     * GC-RSCH-F008 / ADR-083 §2 — the {@code SOURCE_SEARCH} durable gate: an
      * active {@code PROTOCOL_PLAN} artifact is not enough on its own. The
      * structured protocol plan behind it must exist and carry no unresolved
      * {@code BLOCKING_DECISION_REQUIRED} coverage, or advancing past {@code

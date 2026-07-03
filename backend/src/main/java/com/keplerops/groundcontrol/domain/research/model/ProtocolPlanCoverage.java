@@ -12,7 +12,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 /**
- * GC-RSCH-F008 / ADR-081 §2 — one plan coverage row disposing of a single
+ * GC-RSCH-F008 / ADR-083 §2 — one plan coverage row disposing of a single
  * ADR-080 {@code REQUIREMENT} or {@code OPEN_PROTOCOL_QUESTION} contract entry
  * (keyed by its stable {@code entryKey}, {@code contractEntryKey} here). Rows
  * are written once with the plan (immutable snapshot), so they are not

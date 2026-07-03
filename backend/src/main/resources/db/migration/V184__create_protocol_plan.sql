@@ -1,4 +1,4 @@
--- GC-RSCH-F008 / GC-RSCH-F009 / ADR-081 (#1007). The structured phase-2
+-- GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 (#1007). The structured phase-2
 -- protocol plan that sits behind the PROTOCOL_PLAN artifact manifest and
 -- answers one active ADR-080 methodology requirements contract attempt.
 -- Exactly one plan exists per artifact attempt (unique artifact_id); rework

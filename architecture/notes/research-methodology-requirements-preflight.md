@@ -8,7 +8,7 @@ Issue context: #1005, with related source-catalog/source-coverage requirements
 
 Amendment context: #1006 / `GC-RSCH-F008` - produce an executable protocol that
 traces every requirement to a filled answer, user gate, or explicit deferral.
-Update: ADR-081 is now the authoritative #1007 decision for the structured
+Update: ADR-083 is now the authoritative #1007 decision for the structured
 phase-2 protocol planning artifact. It supersedes the earlier "not a new
 protocol-content table by default" posture below once backend validation of F008
 protocol coverage is required.

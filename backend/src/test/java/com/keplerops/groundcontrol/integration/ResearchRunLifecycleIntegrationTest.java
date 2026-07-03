@@ -86,7 +86,7 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
     void cleanup() throws Exception {
         try (var conn = dataSource.getConnection();
                 var stmt = conn.createStatement()) {
-            // #1007 ADR-081: protocol plan child rows reference the plan, which
+            // #1007 ADR-083: protocol plan child rows reference the plan, which
             // references the methodology requirements contract + artifact, so they
             // must be deleted before those parents below.
             stmt.executeUpdate("DELETE FROM protocol_plan_section WHERE protocol_plan_id IN "
@@ -291,7 +291,7 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
                 new RecordArtifactCommand(
                         ResearchArtifactType.PROTOCOL_PLAN, null, null, null, null, null, null, null, null));
 
-        // GC-RSCH-F008 / GC-RSCH-F009 / ADR-081 — a complete, non-blocking protocol
+        // GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 — a complete, non-blocking protocol
         // plan is required before SOURCE_SEARCH may start (the durable search gate).
         researchRunService.recordProtocolPlan(
                 projectId,
@@ -378,7 +378,7 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
     }
 
     /**
-     * GC-RSCH-F008 / ADR-081 §2 — the SOURCE_SEARCH durable gate: advancing past
+     * GC-RSCH-F008 / ADR-083 §2 — the SOURCE_SEARCH durable gate: advancing past
      * PROTOCOL_PLANNING is blocked while the active protocol plan carries an
      * unresolved BLOCKING_DECISION_REQUIRED coverage, and allowed once a reworked
      * plan resolves it.
