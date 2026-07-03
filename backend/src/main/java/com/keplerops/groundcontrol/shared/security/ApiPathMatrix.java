@@ -24,6 +24,10 @@ final class ApiPathMatrix {
     private static final String EVIDENCE_CAMPAIGNS = "/api/v1/evidence-campaigns";
     private static final String EVIDENCE_CAMPAIGNS_WILDCARD = "/api/v1/evidence-campaigns/**";
     private static final String DATA_CLASSIFICATION_LATTICE = "/api/v1/data-classification/lattice";
+    private static final String RESEARCH_OPERATION_AUTHORIZATION_DECISION =
+            "/api/v1/research-runs/*/operation-authorizations/*/decision";
+    private static final String RESEARCH_OPERATION_AUTHORIZATION_CONSUME =
+            "/api/v1/research-runs/*/operation-authorizations/*/consume";
 
     private ApiPathMatrix() {
         // utility
@@ -119,6 +123,20 @@ final class ApiPathMatrix {
                 .requestMatchers(HttpMethod.PUT, DATA_CLASSIFICATION_LATTICE)
                 .hasRole(ROLE_ADMIN)
                 .requestMatchers(HttpMethod.DELETE, DATA_CLASSIFICATION_LATTICE)
+                .hasRole(ROLE_ADMIN)
+                // GC-RSCH-R005 / ADR-084 §3: approving a research high-risk operation (generated code
+                // execution, browser activity, lab/hardware action, external write) is an
+                // admin/operator decision — an AUTONOMOUS run may propose but must never approve its
+                // own operations. Gate only the decision route to ROLE_ADMIN; propose (POST),
+                // list/get (GET), and consume fall through to the authenticated() rule so any project
+                // member may propose or read an authorization. The consume route spends a one-time-use
+                // APPROVED authorization, so it is the trusted executor/operator boundary — gate it to
+                // ROLE_ADMIN too, otherwise any authenticated project member who can read an
+                // authorization id (via list/get) could burn an approved high-risk-operation grant.
+                .requestMatchers(
+                        HttpMethod.POST,
+                        RESEARCH_OPERATION_AUTHORIZATION_DECISION,
+                        RESEARCH_OPERATION_AUTHORIZATION_CONSUME)
                 .hasRole(ROLE_ADMIN)
                 .requestMatchers("/api/v1/**")
                 .authenticated()

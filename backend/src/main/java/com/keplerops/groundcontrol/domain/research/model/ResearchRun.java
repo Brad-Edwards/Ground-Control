@@ -3,7 +3,9 @@ package com.keplerops.groundcontrol.domain.research.model;
 import com.keplerops.groundcontrol.domain.BaseEntity;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
+import com.keplerops.groundcontrol.shared.persistence.JacksonTextCollectionConverters;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -13,6 +15,8 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
@@ -73,6 +77,23 @@ public class ResearchRun extends BaseEntity {
 
     @Column(name = "budget_cost_usd_micros")
     private Long budgetCostUsdMicros;
+
+    // High-risk operation policy snapshotted from ResearchIntake at start
+    // (GC-RSCH-R005/N005/N006 — ADR-084 §2). Later intake edits never rewrite an
+    // active or completed run. allowedTools is inventory (which tools may be
+    // requested), not authorization; egressPolicy is the structured, default-deny
+    // data-egress allowlist; privacyConstraints is preserved operator context and
+    // is display-only, never the enforcement input.
+    @Convert(converter = JacksonTextCollectionConverters.StringListConverter.class)
+    @Column(name = "allowed_tools", nullable = false, columnDefinition = "TEXT")
+    private List<String> allowedTools = new ArrayList<>();
+
+    @Column(name = "privacy_constraints", columnDefinition = "TEXT")
+    private String privacyConstraints;
+
+    @Convert(converter = JacksonTextCollectionConverters.ResearchEgressAllowanceListConverter.class)
+    @Column(name = "egress_policy", nullable = false, columnDefinition = "TEXT")
+    private List<ResearchEgressAllowance> egressPolicy = new ArrayList<>();
 
     // Observed usage — separate from caps (ADR-065 §7). Accumulated via recordUsage.
     @Column(name = "observed_tokens", nullable = false)
@@ -229,6 +250,30 @@ public class ResearchRun extends BaseEntity {
 
     public void setBudgetCostUsdMicros(Long budgetCostUsdMicros) {
         this.budgetCostUsdMicros = budgetCostUsdMicros;
+    }
+
+    public List<String> getAllowedTools() {
+        return allowedTools;
+    }
+
+    public void setAllowedTools(List<String> allowedTools) {
+        this.allowedTools = allowedTools != null ? new ArrayList<>(allowedTools) : new ArrayList<>();
+    }
+
+    public String getPrivacyConstraints() {
+        return privacyConstraints;
+    }
+
+    public void setPrivacyConstraints(String privacyConstraints) {
+        this.privacyConstraints = privacyConstraints;
+    }
+
+    public List<ResearchEgressAllowance> getEgressPolicy() {
+        return egressPolicy;
+    }
+
+    public void setEgressPolicy(List<ResearchEgressAllowance> egressPolicy) {
+        this.egressPolicy = egressPolicy != null ? new ArrayList<>(egressPolicy) : new ArrayList<>();
     }
 
     public long getObservedTokens() {

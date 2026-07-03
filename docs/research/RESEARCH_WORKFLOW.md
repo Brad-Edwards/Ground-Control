@@ -16,7 +16,9 @@ Versioning and regression expectations for prompts, method profiles, schemas,
 and workflow policies are governed by ADR-077. The structured phase-1
 methodology requirements contract artifact is governed by ADR-080. The
 structured phase-2 protocol-plan artifact and method-specific output shapes are
-governed by ADR-083.
+governed by ADR-083. High-risk generated code execution, browser activity,
+lab/hardware actions, external writes, sandbox policy, egress policy, and
+prompt-injection handling are governed by ADR-084.
 
 ## Phases
 
@@ -110,6 +112,56 @@ than hiding them in prose.
 Method-specific output shape is selected by method key/profile version plus a protocol schema version, not by adding one controller, table, or MCP action per method. Scoping, systematic, mapping, critical/integrative, targeted related-work, and taxonomy-development plans keep distinct section/source-role/output obligations. Taxonomy development keeps taxonomy-instance corpus, background/framing, methodology, and validation/evaluation roles separate so background sources do not silently support recurrence, coverage, exhaustiveness, or taxonomy-validity claims.
 
 The plan is recorded once per `PROTOCOL_PLAN` artifact attempt via `POST /api/v1/research-runs/{id}/protocol-plan` and read via `GET /api/v1/research-runs/{id}/protocol-plan`; a second plan for the same artifact attempt is rejected with `409 Conflict` code `research_run_protocol_plan_exists`. Recording requires an ACTIVE `PROTOCOL_PLAN` artifact and an ACTIVE `METHODOLOGY_REQUIREMENTS` contract to answer (`research_run_protocol_plan_artifact_missing` / `research_run_protocol_plan_contract_missing` otherwise). Every `REQUIREMENT`/`OPEN_PROTOCOL_QUESTION` contract entry must receive exactly one coverage - missing entries reject with `research_run_protocol_plan_coverage_incomplete`, and unknown keys, `METHOD_LIMIT`/`NON_CLAIM` keys, or duplicate coverage are also rejected - and each disposition's own required fields must be present (`FILLED` needs `answerProvenance` + `answerSummary`; `DEFERRED_NON_BLOCKING` needs `deferredToStage` + `rationale`; `NOT_APPLICABLE_WITH_RATIONALE` and `BLOCKING_DECISION_REQUIRED` need `rationale`; `RESOLVED_BY_USER_DECISION` needs `decisionReference` or `rationale`). Sections must cover every kind the selected method profile requires, section keys must be unique, and `sourceRole` may only appear on a `SOURCE_ROLES` section of the `taxonomy_development` method. The `SOURCE_SEARCH` durable gate independently rechecks the active plan at stage-advance time (`research_run_protocol_plan_blocking` if no plan has been recorded or any coverage is still `BLOCKING_DECISION_REQUIRED`), so a caller cannot bypass the check by invoking a lower-level action directly. The MCP surface exposes these through the `gc_research_run` tool actions `record_protocol_plan` and `get_protocol_plan`.
+
+## High-risk operation authorization, egress policy, and prompt injection
+
+ADR-084 governs the security/privacy control plane for research runs. It is an
+authorization + policy layer; executors and the sandbox runtime are out of scope
+(a future executor must consult these records before acting).
+
+**Run policy snapshot.** At run start the backend snapshots the run-driving
+policy from `ResearchIntake` onto the `ResearchRun`: the `allowedTools` inventory
+(which tools may be *requested*, not authorization to act), a structured
+default-deny `egressPolicy`, and the free-text `privacyConstraints` (preserved as
+operator context, display-only, never an enforcement input). Later intake edits
+never re-authorize an active or completed run.
+
+**Structured egress policy.** `egressPolicy` is a list of allowances, each binding
+a data class (`PUBLIC`/`INTERNAL`/`CONFIDENTIAL`/`RESTRICTED`), a destination class
+(`LOCAL`, `AI_PROVIDER`, `CITATION_PROVIDER`, `VERSION_CONTROL`, `REFERENCE_MANAGER`,
+`BROWSER_TARGET`, `EXTERNAL_STORAGE`, `LAB_HARDWARE`, `OTHER_EXTERNAL`) and the
+maximum data form allowed (`NONE` < `DERIVED_METADATA` < `SUMMARY` < `RAW_CONTENT`).
+Keeping material `LOCAL` or moving only `NONE` data is always permitted; every other
+`(dataClass, destinationClass, form)` is permitted only when a matching allowance
+covers it at least at the requested form. Absence of an allow rule is deny: private
+manuscripts, PDFs, reviewer notes, and credentials stay local unless the policy
+explicitly permits their disclosure (GC-RSCH-N006). Research artifacts carry an
+optional `dataClass` that feeds this check.
+
+**Authorization records.** Generated-code execution, browser activity,
+lab/hardware actions, and external writes each need a durable, run-scoped
+`ResearchRunOperationAuthorization`. A request must bind a concrete effect
+(ADR-084 §1): the adapter/tool id, sandbox profile, bounded action summary, and a
+retry-safe `sourceActionId` are required so an executor consuming an approval can
+prove which adapter/action/sandbox was authorized (and a tool-less request can
+never sidestep the allowed-tool inventory check). A request lands `PROPOSED`; an
+admin/operator decision moves it to `APPROVED` only when the run's egress policy
+permits the operation's `(dataClass, destinationClass, requestedForm)` tuple
+(default-deny otherwise) and an authenticated approver is present. An
+`AUTONOMOUS` run may *propose* but never *approve* its own operations
+(GC-RSCH-R005). One-time-use approvals are spent to `CONSUMED`; expired approvals
+are rejected. The proposing/deciding actor is server-populated, never a request
+field. REST lives under `/api/v1/research-runs/{runId}/operation-authorizations/**`
+(the decision and consume routes are admin-gated) and the
+`gc_research_operation_authorization` MCP tool mirrors it.
+
+**Prompt injection is a data-flow rule (GC-RSCH-N014).** Retrieved PDFs, web
+pages, metadata, and provider payloads are untrusted input. Every policy and
+authorization field is a closed enum or a bounded, service-validated value built
+only from structured accepted records, never free text lifted from retrieved
+content. Untrusted content therefore cannot set allowed tools, egress policy,
+sandbox profile, or approval state; prompt-injection handling is enforced by the
+typed control plane, not by skill prose alone.
 
 ## Citation MCP
 

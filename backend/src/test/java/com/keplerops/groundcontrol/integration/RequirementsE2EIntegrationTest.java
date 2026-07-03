@@ -606,6 +606,14 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "184", // V184: create protocol_plan (#1007, ADR-083)
                         "185", // V185: create protocol_plan_audit (#1007 audit parity)
                         "186", // V186: create protocol_plan_coverage (#1007, ADR-083)
-                        "187"); // V187: create protocol_plan_section (#1007, ADR-083)
+                        "187", // V187: create protocol_plan_section (#1007, ADR-083)
+                        "188", // V188: research_run operation policy snapshot (#1008, ADR-084)
+                        "189", // V189: research_run policy snapshot audit (#1008 audit parity)
+                        "190", // V190: research_intake egress policy (#1008, ADR-084)
+                        "191", // V191: research_intake egress policy audit (#1008 audit parity)
+                        "192", // V192: research_run_artifact data class (#1008, ADR-084)
+                        "193", // V193: research_run_artifact data class audit (#1008 audit parity)
+                        "194", // V194: create research_run_operation_authorization (#1008, ADR-084)
+                        "195"); // V195: research_run_operation_authorization audit (#1008 audit parity)
     }
 }

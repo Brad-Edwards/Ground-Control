@@ -251,6 +251,11 @@ public class ResearchRunService {
             run.setBudgetTokens(i.getBudgetTokens());
             run.setBudgetWallClockMinutes(i.getBudgetWallClockMinutes());
             run.setBudgetCostUsdMicros(i.getBudgetCostUsdMicros());
+            // Snapshot the high-risk operation policy at start so later intake
+            // edits never re-authorize an active run (GC-RSCH-R005 / ADR-084 §2).
+            run.setAllowedTools(i.getAllowedTools());
+            run.setPrivacyConstraints(i.getPrivacyConstraints());
+            run.setEgressPolicy(i.getEgressPolicy());
         });
         var saved = runRepository.save(run);
 
@@ -343,6 +348,7 @@ public class ResearchRunService {
         artifact.setLocator(emptyToNull(command.locator()));
         artifact.setContentHash(emptyToNull(command.contentHash()));
         artifact.setIdempotencyKey(key);
+        artifact.setDataClass(command.dataClass());
         artifact.setActor(currentActor());
         var saved = artifactRepository.save(artifact);
 

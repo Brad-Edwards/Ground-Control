@@ -2,6 +2,7 @@ package com.keplerops.groundcontrol.api.research;
 
 import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactStatus;
 import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactType;
+import com.keplerops.groundcontrol.domain.research.model.ResearchDataClass;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunArtifact;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunStage;
 import java.time.Instant;
@@ -13,6 +14,7 @@ public record ResearchRunArtifactResponse(
         ResearchRunStage stage,
         ResearchArtifactType artifactType,
         ResearchArtifactStatus status,
+        ResearchDataClass dataClass,
         String locator,
         String contentHash,
         String idempotencyKey,
@@ -28,6 +30,7 @@ public record ResearchRunArtifactResponse(
                 a.getStage(),
                 a.getArtifactType(),
                 a.getStatus(),
+                a.getDataClass(),
                 a.getLocator(),
                 a.getContentHash(),
                 a.getIdempotencyKey(),

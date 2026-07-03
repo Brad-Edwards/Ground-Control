@@ -11121,6 +11121,69 @@ export async function getResearchProvenanceChain(runId, nodeId, depth, project) 
   );
 }
 
+// gc_research_operation_authorization enum vocabularies — mirror the backend
+// closed enums (GC-RSCH-R005 / GC-RSCH-N006, ADR-084). Imported by index.js for
+// the Zod schema and by the OpenAPI drift test.
+export const RESEARCH_HIGH_RISK_OPERATION_KINDS = [
+  "GENERATED_CODE_EXECUTION",
+  "BROWSER_ACTIVITY",
+  "LAB_HARDWARE_ACTION",
+  "EXTERNAL_WRITE",
+];
+
+export const RESEARCH_DATA_CLASSES = ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"];
+
+export const RESEARCH_DESTINATION_CLASSES = [
+  "LOCAL",
+  "AI_PROVIDER",
+  "CITATION_PROVIDER",
+  "VERSION_CONTROL",
+  "REFERENCE_MANAGER",
+  "BROWSER_TARGET",
+  "EXTERNAL_STORAGE",
+  "LAB_HARDWARE",
+  "OTHER_EXTERNAL",
+];
+
+export const RESEARCH_DATA_FORMS = ["NONE", "DERIVED_METADATA", "SUMMARY", "RAW_CONTENT"];
+
+export async function requestResearchOperationAuthorization(runId, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(runId)}/operation-authorizations`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function listResearchOperationAuthorizations(runId, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(runId)}/operation-authorizations`, {
+    params: { project },
+  });
+}
+
+export async function getResearchOperationAuthorization(runId, authorizationId, project) {
+  return request(
+    "GET",
+    `/api/v1/research-runs/${encodeURIComponent(runId)}/operation-authorizations/${encodeURIComponent(authorizationId)}`,
+    { params: { project } },
+  );
+}
+
+export async function decideResearchOperationAuthorization(runId, authorizationId, data, project) {
+  return request(
+    "POST",
+    `/api/v1/research-runs/${encodeURIComponent(runId)}/operation-authorizations/${encodeURIComponent(authorizationId)}/decision`,
+    { body: data, params: { project } },
+  );
+}
+
+export async function consumeResearchOperationAuthorization(runId, authorizationId, project) {
+  return request(
+    "POST",
+    `/api/v1/research-runs/${encodeURIComponent(runId)}/operation-authorizations/${encodeURIComponent(authorizationId)}/consume`,
+    { params: { project } },
+  );
+}
+
 export async function decideResearchRunGate(id, data, project) {
   return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/gates/decision`, {
     body: data,
