@@ -4237,7 +4237,15 @@ export async function runCodexArchitecturePreflight({
 // the agent passed in.
 // ---------------------------------------------------------------------------
 
-export async function runPostImplementationPlan({ repoPath, issueNumber, planBody, override = false, overrideReason = null }) {
+export async function runPostImplementationPlan({
+  repoPath,
+  issueNumber,
+  planBody,
+  grcDeliverables = null,
+  override = false,
+  overrideReason = null,
+  deps = {},
+}) {
   if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
     throw new Error("gc_post_implementation_plan requires a positive integer issue_number");
   }
@@ -4247,6 +4255,7 @@ export async function runPostImplementationPlan({ repoPath, issueNumber, planBod
 
   const repoRoot = await ensureGitRepo(repoPath);
   const { owner, name } = await getOwnerRepo(repoRoot);
+  const readCommentBodies = deps.readCommentBodies ?? readIssueCommentBodies;
 
   // Prerequisite check: preflight must have run for this issue. Override is
   // available for the same reason as the codex-review cap override — the user
@@ -4268,7 +4277,10 @@ export async function runPostImplementationPlan({ repoPath, issueNumber, planBod
     const decision = evaluatePhasePrerequisite({
       completed,
       nextPhase: "plan",
-      requires: ["preflight"],
+      // GC-GRC-010: screening must precede planning so the deliverables gate has
+      // sets to derive from — a plan cannot enumerate GRC deliverables "derived
+      // from the screening sets" if screening never ran.
+      requires: ["preflight", "grc_screening"],
       issueNumber,
     });
     if (!decision.ok) {
@@ -4280,7 +4292,9 @@ export async function runPostImplementationPlan({ repoPath, issueNumber, planBod
         message: decision.message,
         missing: decision.missing,
         completed: decision.completed,
-        next_action: "run_gc_codex_architecture_preflight_first",
+        next_action: Array.isArray(decision.missing) && decision.missing.includes("grc_screening")
+          ? "run_gc_post_grc_screening_first"
+          : "run_gc_codex_architecture_preflight_first",
       };
     }
   }
@@ -4308,9 +4322,123 @@ export async function runPostImplementationPlan({ repoPath, issueNumber, planBod
     };
   }
 
+  // GC-GRC-010: design-time GRC deliverables gate. Read the Step 3.5 screening
+  // record; when the change is security-relevant the plan must enumerate
+  // structured deliverables covering every gap surface and stale entity (no-defer
+  // without an authorized disposition). Runs regardless of `override` — override
+  // authorizes skipping the preflight/screening prerequisites, not shipping a
+  // security-relevant change with no security design; the disposition markers are
+  // the deliberate relief valve, and the post-merge reconcile is the backstop.
+  let screeningRecord = null;
+  try {
+    const bodies = await readCommentBodies(repoRoot, owner, name, issueNumber);
+    screeningRecord = parseGrcScreeningData(bodies, issueNumber);
+  } catch {
+    screeningRecord = null;
+  }
+  const deliverablesGate = validateGrcDeliverablesPlanGate({
+    deliverables: grcDeliverables,
+    screeningRecord,
+    // A disposition is honored only under the audited override escalation (which
+    // requires a non-empty override_reason, validated above) — never as a silent
+    // caller-asserted skip (codex security cycle 1).
+    dispositionsAuthorized: override === true,
+  });
+  if (!deliverablesGate.ok) {
+    return {
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      ok: false,
+      error: deliverablesGate.error,
+      message: buildGrcDeliverablesFailureMessage(deliverablesGate),
+      security_relevant: true,
+      invalid: deliverablesGate.invalid ?? [],
+      uncovered: deliverablesGate.uncovered ?? [],
+      rendered_scaffold: renderGrcDeliverablesScaffold(screeningRecord),
+      next_action: "add_grc_deliverables_to_plan_and_retry",
+    };
+  }
+
+  // Publish-safety guards on the caller-controlled plan body (the same argv-based
+  // `gh` post used for every screening/decision record): reject a hand-forged
+  // deliverables machine block, scrub sensitive content, cap body size. The
+  // reserved-marker prefix guard is intentionally NOT applied to the whole plan
+  // body — a plan legitimately discusses gc: marker families in prose.
+  const forgedBlock = rejectForgedDeliverablesBlock(planBody, "plan_body");
+  if (forgedBlock) {
+    return {
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      ok: false,
+      error: "plan_body_reserved_marker",
+      message: forgedBlock,
+      next_action: "remove_gc_grc_deliverables_data_block_from_plan_body_and_retry",
+    };
+  }
+
+  const hasDeliverables = Array.isArray(grcDeliverables) && grcDeliverables.length > 0;
+
+  // Deliverable free-text fields are short structured input rendered into the
+  // published comment, so the strict reserved-marker prefix guard applies here
+  // (unlike the long plan-body prose): a forged `<!-- gc:phase ... -->` in an
+  // action string would otherwise mint a phase marker on post.
+  if (hasDeliverables) {
+    for (let i = 0; i < grcDeliverables.length; i++) {
+      const d = grcDeliverables[i];
+      const fields = [
+        [d?.target, `grc_deliverables[${i}].target`],
+        [d?.action, `grc_deliverables[${i}].action`],
+        [d?.disposition?.authorized_by, `grc_deliverables[${i}].disposition.authorized_by`],
+        [d?.disposition?.rationale, `grc_deliverables[${i}].disposition.rationale`],
+      ];
+      for (const [value, fieldName] of fields) {
+        const markerErr = rejectReservedMarkerSequence(value, fieldName);
+        if (markerErr) {
+          return {
+            repo_path: repoRoot,
+            issue_number: issueNumber,
+            ok: false,
+            error: "grc_deliverables_reserved_marker",
+            message: markerErr,
+            next_action: "remove_reserved_marker_from_grc_deliverables_and_retry",
+          };
+        }
+      }
+    }
+  }
+
+  // When deliverables are supplied, append the server-rendered deliverables record
+  // (authoritative machine block + human section) after the plan prose so
+  // downstream latest-wins parsing reads the validated data, not caller prose.
+  const combinedBody = hasDeliverables
+    ? `${planBody.trimEnd()}\n\n${renderGrcDeliverablesRecord({ deliverables: grcDeliverables, screeningRecord })}`
+    : planBody;
+
+  const sensitiveError = detectSensitiveBodyContent(combinedBody);
+  if (sensitiveError) {
+    return {
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      ok: false,
+      error: "plan_body_rejected",
+      message: sensitiveError,
+      next_action: "scrub_secrets_from_plan_and_retry",
+    };
+  }
+  if (Buffer.byteLength(combinedBody, "utf8") > GITHUB_ISSUE_COMMENT_BODY_MAX) {
+    return {
+      repo_path: repoRoot,
+      issue_number: issueNumber,
+      ok: false,
+      error: "plan_body_too_large",
+      message: `rendered plan body is ${Buffer.byteLength(combinedBody, "utf8")} bytes; GitHub's issue-comment body cap is ${GITHUB_ISSUE_COMMENT_BODY_MAX} bytes`,
+      next_action: "reduce_plan_size_and_retry",
+    };
+  }
+
   // Post the plan + the `plan` phase marker as a single combined comment so
   // the marker and the human-visible plan are the same thread artifact.
-  const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "plan", { commentBody: planBody });
+  const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "plan", { commentBody: combinedBody });
 
   return {
     repo_path: repoRoot,
@@ -4319,6 +4447,8 @@ export async function runPostImplementationPlan({ repoPath, issueNumber, planBod
     phase_marker: { phase: "plan", issue_number: issueNumber },
     override: override === true ? true : false,
     override_reason: override === true ? overrideReason.trim() : null,
+    security_relevant: deliverablesGate.security_relevant === true,
+    grc_deliverables_count: hasDeliverables ? grcDeliverables.length : 0,
     comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
     comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
   };
@@ -13084,6 +13214,332 @@ export function buildGrcScreeningRecordV2({
   else for (const c of candidate_controls) lines.push(`- \`${c.control_uid ?? c.objective_key ?? "?"}\`${c.threat_ref ? ` for \`${c.threat_ref}\`` : ""} (${c.source ?? "?"})`);
 
   return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// GC-GRC-010: design-time GRC deliverables gate (gc_post_implementation_plan)
+//
+// A security-relevant change must enumerate its GRC deliverables as first-class,
+// structured plan items derived from the Step 3.5 screening sets — threats to
+// model/update, risks to assess, controls to select/implement, stale entities
+// to refresh. Enforcement is mechanical at the plan-post boundary (ADR-058):
+//   1. the deliverables are a STRUCTURED param (kind + source-set target),
+//      never scraped from plan prose, so GC-GRC-012 can later verify
+//      planned -> implemented -> completed against the rendered machine block;
+//   2. every screening gap surface and stale entity must be covered by a
+//      matching deliverable or an authorized disposition (GC-GRC-015) — the
+//      no-defer rule, with the disposition as its single relief valve.
+// The candidate threats/controls from the screening record (GC-GRC-007/008) are
+// deterministic SUGGESTIONS surfaced in the failure scaffold; they are never
+// auto-counted as selected/implemented controls.
+// ---------------------------------------------------------------------------
+
+export const GRC_DELIVERABLES_SCHEMA_VERSION = "gc.implement.grc-deliverables/v1";
+export const GRC_DELIVERABLE_KINDS = Object.freeze(["threat", "risk", "control", "stale_refresh"]);
+export const GRC_DISPOSITION_TYPES = Object.freeze(["accept", "wontfix", "not_applicable"]);
+
+const GRC_DELIVERABLE_KIND_LABELS = Object.freeze({
+  threat: "Threats to model/update",
+  risk: "Risks to assess",
+  control: "Controls to select/implement",
+  stale_refresh: "Stale entities to refresh",
+});
+
+// Deferral language in a deliverable's action is forbidden UNLESS the deliverable
+// carries an authorized disposition (GC-GRC-015). This is the mechanical half of
+// the no-defer rule: "we'll do the threat model in a follow-up PR" is exactly the
+// retrofit the requirement exists to prevent.
+const GRC_DEFER_LANGUAGE_RE =
+  /\b(?:defer(?:red|ral)?|follow[-\s]?ups?|out[-\s]of[-\s]scope|(?:separate|subsequent|later|future|another)\s+(?:pr|issue|ticket|change))\b/i;
+
+// Parser for the server-rendered machine block. Distinct family from
+// gc:grc-screening-data. Downstream (GC-GRC-012) reads the planned deliverables
+// from this block without scraping plan prose.
+const GRC_DELIVERABLES_DATA_RE = /<!--\s*gc:grc-deliverables-data\s+(\{[^]*?\})\s*-->/g;
+
+function isScreeningSecurityRelevant(record) {
+  if (record == null || typeof record !== "object") return false;
+  // v2 records carry derived_verdict; v1 records carry verdict.
+  const verdict = record.derived_verdict ?? record.verdict;
+  return verdict === "security_relevant";
+}
+
+function validateGrcDisposition(disposition, label) {
+  const errs = [];
+  if (disposition == null || typeof disposition !== "object" || Array.isArray(disposition)) {
+    errs.push(`${label} must be an object`);
+    return errs;
+  }
+  if (!GRC_DISPOSITION_TYPES.includes(disposition.type)) {
+    errs.push(`${label}.type must be one of: ${GRC_DISPOSITION_TYPES.join(", ")}`);
+  }
+  if (typeof disposition.authorized_by !== "string" || disposition.authorized_by.trim() === "") {
+    errs.push(`${label}.authorized_by must name the authorizing user`);
+  }
+  if (typeof disposition.rationale !== "string" || disposition.rationale.trim() === "") {
+    errs.push(`${label}.rationale must be a non-empty string`);
+  }
+  return errs;
+}
+
+// A deliverable's `target` covers a gap surface when it names the surface exactly
+// or a boundary directory containing it (so one boundary-level deliverable can
+// cover many touched files under it). Mirrors codeLinkMatchesTouched's
+// directory-prefix semantics.
+function deliverableCoversSurface(target, surface) {
+  if (typeof target !== "string" || typeof surface !== "string") return false;
+  const t = target.trim().replace(/^\.\/+/, "").replace(/\/+$/, "");
+  if (t === "") return false;
+  return surface === t || surface.startsWith(`${t}/`);
+}
+
+// Kinds that can cover a screening GAP surface (the security work that closes a
+// gap is a threat/risk/control, never a stale-entity refresh).
+const GRC_GAP_COVERING_KINDS = Object.freeze(["threat", "risk", "control"]);
+
+// Coverage is KIND-AWARE: a gap surface is closed only by a threat/risk/control
+// deliverable (or an authorized disposition), and a stale entity only by a
+// stale_refresh deliverable (or an authorized disposition). A disposition covers
+// EITHER, but only when the run is authorized to disposition GRC work
+// (dispositionsAuthorized) — a caller-supplied authorized_by is recorded metadata,
+// not a server-verifiable authorization, so it cannot silently satisfy coverage.
+function deliverableCoversGap(d, surface, dispositionsAuthorized) {
+  if (!deliverableCoversSurface(d?.target, surface)) return false;
+  if (d?.disposition != null) return dispositionsAuthorized === true;
+  return GRC_GAP_COVERING_KINDS.includes(d?.kind);
+}
+
+function deliverableCoversStale(d, uid, dispositionsAuthorized) {
+  if (typeof d?.target !== "string" || d.target.trim() !== uid) return false;
+  if (d?.disposition != null) return dispositionsAuthorized === true;
+  return d?.kind === "stale_refresh";
+}
+
+function computeUncoveredGrcDeliverables(deliverables, record, dispositionsAuthorized) {
+  const list = Array.isArray(deliverables) ? deliverables : [];
+  const uncovered = [];
+  const gaps = Array.isArray(record?.gap_set) ? record.gap_set : [];
+  const stale = Array.isArray(record?.stale_set) ? record.stale_set : [];
+  for (const g of gaps) {
+    const surface = g?.surface;
+    if (typeof surface !== "string" || surface === "") continue;
+    const covered = list.some((d) => deliverableCoversGap(d, surface, dispositionsAuthorized));
+    if (!covered) uncovered.push({ kind: "gap", surface, reason: g.reason ?? null });
+  }
+  for (const s of stale) {
+    const uid = s?.uid;
+    if (typeof uid !== "string" || uid === "") continue;
+    const covered = list.some((d) => deliverableCoversStale(d, uid, dispositionsAuthorized));
+    if (!covered) uncovered.push({ kind: "stale", uid, entity_type: s.type ?? null });
+  }
+  return uncovered;
+}
+
+// Pure plan-gate validator. Mirrors validateDevStartPlanGate's shape so the
+// runPostImplementationPlan wiring is uniform. Returns
+//   { ok, checked, security_relevant, error?, invalid?, uncovered?, deliverable_count? }.
+export function validateGrcDeliverablesPlanGate({ deliverables, screeningRecord, dispositionsAuthorized = false } = {}) {
+  if (!isScreeningSecurityRelevant(screeningRecord)) {
+    // Not security-relevant (or no readable screening record): no deliverables
+    // required. The post-merge reconcile recompute (gc_assert_grc_reconciled)
+    // remains the backstop if the final diff turns out security-relevant.
+    return { ok: true, checked: true, security_relevant: false };
+  }
+
+  const list = Array.isArray(deliverables) ? deliverables : null;
+  if (list == null || list.length === 0) {
+    return {
+      ok: false,
+      checked: true,
+      security_relevant: true,
+      error: "grc_deliverables_missing",
+      invalid: [],
+      uncovered: computeUncoveredGrcDeliverables([], screeningRecord, dispositionsAuthorized),
+    };
+  }
+
+  const invalid = [];
+  list.forEach((d, i) => {
+    const label = `deliverables[${i}]`;
+    if (d == null || typeof d !== "object" || Array.isArray(d)) {
+      invalid.push(`${label} must be an object`);
+      return;
+    }
+    if (!GRC_DELIVERABLE_KINDS.includes(d.kind)) {
+      invalid.push(`${label}.kind must be one of: ${GRC_DELIVERABLE_KINDS.join(", ")}`);
+    }
+    if (typeof d.target !== "string" || d.target.trim() === "") {
+      invalid.push(`${label}.target must be a non-empty string`);
+    }
+    if (d.disposition != null) {
+      invalid.push(...validateGrcDisposition(d.disposition, `${label}.disposition`));
+      // A disposition is an authorization to decline in-scope GRC work. The
+      // caller-supplied authorized_by is recorded metadata, NOT a server-
+      // verifiable authorization (this MCP has a single identity, GC-TM-001), so
+      // a disposition is honored only when the run carries the audited
+      // override=true + override_reason escalation that the agent sources from the
+      // user (the same authorization channel every other workflow gate uses).
+      // GC-GRC-015 will replace this with graph-verified, drift-aware per-entity
+      // dispositions (risk-register record + ACCEPT treatment plan + owner).
+      if (dispositionsAuthorized !== true) {
+        invalid.push(
+          `${label}.disposition is present but the run is not authorized to disposition GRC work; re-run with override=true and override_reason quoting the user's authorization (a caller-supplied authorized_by is not a server-verifiable authorization; server-verified per-entity dispositions arrive with GC-GRC-015)`,
+        );
+      }
+    } else if (typeof d.action !== "string" || d.action.trim() === "") {
+      invalid.push(`${label}.action must be a non-empty string (or provide an authorized disposition)`);
+    } else if (GRC_DEFER_LANGUAGE_RE.test(d.action)) {
+      invalid.push(
+        `${label}.action defers GRC work without an authorized disposition (GC-GRC-015): "${d.action.trim().slice(0, 80)}"`,
+      );
+    }
+  });
+
+  const uncovered = computeUncoveredGrcDeliverables(list, screeningRecord, dispositionsAuthorized);
+
+  if (invalid.length > 0 || uncovered.length > 0) {
+    return {
+      ok: false,
+      checked: true,
+      security_relevant: true,
+      error: invalid.length > 0 ? "grc_deliverables_invalid" : "grc_deliverables_incomplete",
+      invalid,
+      uncovered,
+    };
+  }
+
+  return { ok: true, checked: true, security_relevant: true, deliverable_count: list.length };
+}
+
+// Build the suggested deliverables array from the screening sets — one item per
+// gap surface and stale entity, so the failure envelope shows the caller exactly
+// what to enumerate (mirrors the quality-gate "fix obvious from the error" shape).
+export function renderGrcDeliverablesScaffold(screeningRecord) {
+  const out = [];
+  const gaps = Array.isArray(screeningRecord?.gap_set) ? screeningRecord.gap_set : [];
+  const stale = Array.isArray(screeningRecord?.stale_set) ? screeningRecord.stale_set : [];
+  const candidateThreats = Array.isArray(screeningRecord?.candidate_threats) ? screeningRecord.candidate_threats : [];
+  const candidateControls = Array.isArray(screeningRecord?.candidate_controls) ? screeningRecord.candidate_controls : [];
+  for (const g of gaps) {
+    if (typeof g?.surface !== "string" || g.surface === "") continue;
+    out.push({
+      kind: "threat",
+      target: g.surface,
+      action: `Model or confirm a threat covering ${g.surface} (screening gap: ${g.reason ?? "uncovered"}) and select an implementing control, or record an authorized disposition.`,
+    });
+  }
+  for (const s of stale) {
+    if (typeof s?.uid !== "string" || s.uid === "") continue;
+    out.push({
+      kind: "stale_refresh",
+      target: s.uid,
+      action: `Refresh ${s.type ?? "entity"} ${s.uid} whose linked code changed (${s.reason ?? "stale"}), or record an authorized disposition.`,
+    });
+  }
+  return {
+    deliverables: out,
+    candidate_threats: candidateThreats,
+    candidate_controls: candidateControls,
+  };
+}
+
+export function serializeGrcDeliverablesData(payload) {
+  return `<!-- gc:grc-deliverables-data ${JSON.stringify(payload)} -->`;
+}
+
+// Render the durable deliverables record appended to the plan comment: a
+// machine-parseable data block (authoritative, read by GC-GRC-012) followed by a
+// human-readable section grouped by kind.
+export function renderGrcDeliverablesRecord({ deliverables, screeningRecord }) {
+  const list = Array.isArray(deliverables) ? deliverables : [];
+  const verdict = screeningRecord?.derived_verdict ?? screeningRecord?.verdict ?? null;
+  const lines = [];
+  lines.push(
+    serializeGrcDeliverablesData({
+      schema: GRC_DELIVERABLES_SCHEMA_VERSION,
+      screening_verdict: verdict,
+      deliverables: list,
+    }),
+  );
+  lines.push("");
+  lines.push("## GRC Deliverables (design-time — GC-GRC-010)");
+  lines.push("");
+  lines.push(
+    `_Derived from the Step 3.5 screening record (verdict: \`${verdict ?? "unknown"}\`). Each item ships with this change or carries an authorized disposition (GC-GRC-015)._`,
+  );
+  const other = [];
+  for (const kind of GRC_DELIVERABLE_KINDS) {
+    const items = list.filter((d) => d?.kind === kind);
+    if (items.length === 0) continue;
+    lines.push("");
+    lines.push(`**${GRC_DELIVERABLE_KIND_LABELS[kind]}:**`);
+    for (const d of items) lines.push(renderDeliverableBullet(d));
+  }
+  for (const d of list) {
+    if (!GRC_DELIVERABLE_KINDS.includes(d?.kind)) other.push(d);
+  }
+  if (other.length > 0) {
+    lines.push("");
+    lines.push("**Other:**");
+    for (const d of other) lines.push(renderDeliverableBullet(d));
+  }
+  return lines.join("\n");
+}
+
+function renderDeliverableBullet(d) {
+  const target = typeof d?.target === "string" ? d.target : "(unspecified)";
+  if (d?.disposition != null && typeof d.disposition === "object") {
+    return `- \`${target}\` — _disposition ${d.disposition.type}_ (authorized by ${d.disposition.authorized_by}): ${d.disposition.rationale}`;
+  }
+  return `- \`${target}\` — ${typeof d?.action === "string" ? d.action : ""}`;
+}
+
+// Read the latest planned GRC deliverables from an array of issue-comment bodies.
+// Latest-block-wins, so the server-appended record (rendered last, after any
+// caller prose) is authoritative. Tolerates malformed JSON (skip). This is the
+// plan -> completion trace GC-GRC-012 will consume.
+export function parseGrcDeliverablesData(commentBodies) {
+  if (!Array.isArray(commentBodies)) return null;
+  let latest = null;
+  for (const body of commentBodies) {
+    if (typeof body !== "string") continue;
+    GRC_DELIVERABLES_DATA_RE.lastIndex = 0;
+    for (const m of body.matchAll(GRC_DELIVERABLES_DATA_RE)) {
+      try {
+        latest = JSON.parse(m[1]);
+      } catch {
+        // malformed — skip
+      }
+    }
+  }
+  return latest;
+}
+
+// Reject a caller-supplied plan body that embeds a WELL-FORMED deliverables data
+// block: the server renders the authoritative block from the validated param, so
+// a hand-forged block in the plan prose could otherwise be mistaken for it. Only
+// the parseable form (with a JSON payload) is rejected — the plan may still
+// discuss the marker family in prose, which keeps the workflow self-documenting.
+function rejectForgedDeliverablesBlock(text, fieldName) {
+  if (typeof text !== "string" || text === "") return null;
+  GRC_DELIVERABLES_DATA_RE.lastIndex = 0;
+  if (GRC_DELIVERABLES_DATA_RE.test(text)) {
+    return `${fieldName}: carries a machine-parseable gc:grc-deliverables-data block; that block is server-rendered from the validated grc_deliverables param and may not be hand-authored`;
+  }
+  return null;
+}
+
+function buildGrcDeliverablesFailureMessage(gate) {
+  if (gate.error === "grc_deliverables_missing") {
+    return "This is a security-relevant change (per Step 3.5 screening) but the plan enumerates no GRC deliverables. Pass grc_deliverables covering every screening gap and stale entity (GC-GRC-010).";
+  }
+  if (gate.error === "grc_deliverables_invalid") {
+    return `The plan's GRC deliverables are structurally invalid: ${(gate.invalid ?? []).join("; ")}`;
+  }
+  const uncovered = (gate.uncovered ?? [])
+    .map((u) => (u.kind === "gap" ? `gap:${u.surface}` : `stale:${u.uid}`))
+    .join(", ");
+  return `The plan's GRC deliverables do not cover every screening gap/stale item: ${uncovered}. Add a covering deliverable or an authorized disposition (GC-GRC-015).`;
 }
 
 // Default data-gathering seams for the v2 runner. Each is injectable via `deps`

@@ -679,18 +679,29 @@ server.tool(
 
 server.tool(
   "gc_post_implementation_plan",
-  "Post the implementation plan as a comment on the GitHub issue. Refuses unless a 'preflight' phase marker exists for the issue. Writes a 'plan' phase marker on success.",
+  "Post the implementation plan as a comment on the GitHub issue. Refuses unless both a 'preflight' AND a 'grc_screening' phase marker exist for the issue (screening must precede planning so GRC deliverables can be derived from the screening sets). GC-GRC-010 design-time GRC gate: when the Step 3.5 screening record is 'security_relevant', the caller MUST pass grc_deliverables — structured, first-class deliverables (kind + source-set target) covering every screening gap surface and stale entity. Coverage is kind-aware: a gap surface is covered by a threat/risk/control deliverable ({kind, target, action}) and a stale entity by a stale_refresh deliverable. A disposition ({type: accept|wontfix|not_applicable, authorized_by, rationale}) may cover either, but ONLY when the run is authorized via override=true + override_reason quoting the user's authorization — a caller-supplied authorized_by is recorded metadata, not a server-verifiable authorization; server-verified per-entity dispositions arrive with GC-GRC-015. Deferring in-scope GRC work otherwise is refused (no-defer). On refusal the envelope returns uncovered[]/invalid[] plus a rendered_scaffold of the deliverables to enumerate. On success the tool renders an authoritative gc:grc-deliverables-data machine block into the plan comment (the plan->completion trace GC-GRC-012 reads) and writes a 'plan' phase marker. Also scrubs sensitive content, rejects forged machine blocks / reserved markers, and caps body size.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
     plan_body: z.string().min(1),
+    grc_deliverables: z.array(z.object({
+      kind: z.enum(["threat", "risk", "control", "stale_refresh"]),
+      target: z.string().min(1),
+      action: z.string().optional(),
+      disposition: z.object({
+        type: z.enum(["accept", "wontfix", "not_applicable"]),
+        authorized_by: z.string().min(1),
+        rationale: z.string().min(1),
+      }).optional(),
+    })).optional(),
     override: z.boolean().optional(),
     override_reason: z.string().optional(),
   },
-  async ({ repo_path, issue_number, plan_body, override, override_reason }) => {
+  async ({ repo_path, issue_number, plan_body, grc_deliverables, override, override_reason }) => {
     try {
       return ok(JSON.stringify(await runPostImplementationPlan({
         repoPath: repo_path, issueNumber: issue_number, planBody: plan_body,
+        grcDeliverables: grc_deliverables ?? null,
         override: Boolean(override), overrideReason: override_reason ?? null,
       }), null, 2));
     } catch (e) { return err(e); }
