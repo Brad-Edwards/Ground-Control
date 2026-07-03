@@ -11198,6 +11198,87 @@ export const CONTRACT_ENTRY_KINDS = [
   "OPEN_PROTOCOL_QUESTION",
 ];
 
+// GC-RSCH-F008 / ADR-083 §2 — closed vocabulary for how a protocol plan
+// resolves one ADR-080 REQUIREMENT/OPEN_PROTOCOL_QUESTION contract entry.
+// Mirrors ProtocolCoverageDisposition (backend enum contract, ADR-034).
+export const PROTOCOL_COVERAGE_DISPOSITIONS = [
+  "FILLED",
+  "RESOLVED_BY_USER_DECISION",
+  "DEFERRED_NON_BLOCKING",
+  "NOT_APPLICABLE_WITH_RATIONALE",
+  "BLOCKING_DECISION_REQUIRED",
+];
+
+// GC-RSCH-F008 / GC-RSCH-R002 / ADR-083 §4 — closed vocabulary classifying
+// where a FILLED coverage answer came from. Mirrors ProtocolAnswerProvenance.
+export const PROTOCOL_ANSWER_PROVENANCES = [
+  "METHODOLOGY_SOURCE",
+  "RESEARCH_INTAKE",
+  "USER_DECISION",
+  "CITED_SOURCE",
+  "DEFERRED_PILOT",
+  "ADAPTER_OUTPUT",
+];
+
+// GC-RSCH-F009 / ADR-083 §3 — closed vocabulary for the semantic class of a
+// protocol plan section. Mirrors ProtocolSectionKind (backend enum contract,
+// ADR-034); the selected method profile determines which subset is required.
+export const PROTOCOL_SECTION_KINDS = [
+  "PCC_SCOPE_FRAMING",
+  "INFORMATION_SOURCES",
+  "SEARCH_STRATEGY",
+  "ELIGIBILITY_CRITERIA",
+  "DATABASES_SEARCH_STRINGS",
+  "SCREENING",
+  "DATA_EXTRACTION",
+  "CHARTING",
+  "RISK_OF_BIAS_POSTURE",
+  "SYNTHESIS_PLAN",
+  "SYNTHESIS_REPORTING",
+  "REPORTING_STANDARD",
+  "CERTAINTY_CLAIM_LIMITS",
+  "CONSULTATION_POSTURE",
+  "CRITICAL_APPRAISAL_DECISION",
+  "PROTOCOL_REGISTRATION",
+  "MAPPING_QUESTIONS",
+  "SEARCH_SCREENING_PLAN",
+  "CODING_MAP_SCHEMA",
+  "CLASSIFICATION_PROVENANCE",
+  "VISUALIZATION_OUTPUT",
+  "CLAIM_LIMITS",
+  "THEORETICAL_FRAME",
+  "SELECTION_RATIONALE",
+  "APPRAISAL_CRITIQUE_DIMENSIONS",
+  "SYNTHESIS_ARGUMENT_POSTURE",
+  "INCLUSION_LIMITS",
+  "BOUNDED_PURPOSE",
+  "SEED_SOURCE_STRATEGY",
+  "INCLUSION_RATIONALE",
+  "COMPARISON_DIMENSIONS",
+  "NON_EXHAUSTIVENESS_DISCLOSURE",
+  "META_CHARACTERISTIC",
+  "UNIT_OF_ANALYSIS",
+  "SOURCE_ROLES",
+  "STARTING_CONCEPTS",
+  "CONSTRUCTION_PROCEDURE",
+  "ITERATION_LOG_PROTOCOL",
+  "ENDING_CONDITIONS",
+  "EVALUATION_PLAN",
+  "VALIDITY_THREATS",
+  "METHOD_LIMITS",
+  "NON_CLAIMS",
+];
+
+// GC-RSCH-F009 / ADR-083 §3 — closed vocabulary for source roles in the
+// taxonomy-development method family. Mirrors ProtocolSourceRole; legal only
+// on SOURCE_ROLES sections of the taxonomy_development method.
+export const PROTOCOL_SOURCE_ROLES = [
+  "TAXONOMY_INSTANCE_CORPUS",
+  "BACKGROUND_FRAMING",
+  "METHODOLOGY_LITERATURE",
+  "VALIDATION_EVALUATION",
+];
+
 export const RESEARCH_GATE_POINTS = [
   "METHOD_DECISION",
   "PROTOCOL_DECISION",
@@ -11384,6 +11465,22 @@ export async function getMethodologyRequirementsContract(id, project) {
     `/api/v1/research-runs/${encodeURIComponent(id)}/methodology/requirements-contract`,
     { params: { project } },
   );
+}
+
+// GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 — structured protocol plan behind the
+// PROTOCOL_PLAN artifact. Read also routes through gc_query under the
+// /api/v1/research-runs allow-list.
+export async function recordProtocolPlan(id, data, project) {
+  return request("POST", `/api/v1/research-runs/${encodeURIComponent(id)}/protocol-plan`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function getProtocolPlan(id, project) {
+  return request("GET", `/api/v1/research-runs/${encodeURIComponent(id)}/protocol-plan`, {
+    params: { project },
+  });
 }
 
 export async function createControl(data, project) {

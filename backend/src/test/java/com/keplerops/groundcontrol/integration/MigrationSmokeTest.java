@@ -73,7 +73,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "136", "137", "138", "139", "140", "141", "142", "143", "144", "145", "146", "147", "148",
                         "149", "150", "151", "152", "153", "154", "155", "156", "157", "158", "159", "160", "161",
                         "162", "163", "164", "165", "166", "167", "168", "169", "170", "171", "172", "173", "174",
-                        "175", "176", "177", "178", "179", "180", "181", "182", "183");
+                        "175", "176", "177", "178", "179", "180", "181", "182", "183", "184", "185", "186", "187");
     }
 
     @Test
@@ -1135,6 +1135,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         assertResearchMethodologyAuditColumns();
         // V179-V183 (#1006, ADR-080): methodology requirements contract tables.
         assertMethodologyContractColumns();
+        // V184-V187 (#1007, ADR-083): protocol plan tables.
+        assertProtocolPlanColumns();
     }
 
     /**
@@ -1170,6 +1172,41 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         .createNativeQuery(
                                 "SELECT contract_id, rationale_entry_id, method_key, profile_version, external"
                                         + " FROM methodology_requirements_contract_rejected_alternative LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+    }
+
+    /**
+     * V184-V187 (#1007, ADR-083) — column-level probes for the protocol plan, its
+     * coverage rows, sections, and the plan Envers audit shadow. ddl-auto:validate
+     * does not inspect audit tables, so probe the audited payload columns
+     * explicitly.
+     */
+    private void assertProtocolPlanColumns() {
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT research_run_id, methodology_requirements_contract_id,"
+                                + " artifact_id, attempt_no, protocol_schema_version, method_key,"
+                                + " method_profile_version, actor, created_at, updated_at"
+                                + " FROM protocol_plan LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT artifact_id, attempt_no, protocol_schema_version, method_key,"
+                                + " method_profile_version, actor, created_at, updated_at"
+                                + " FROM protocol_plan_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT protocol_plan_id, contract_entry_key, disposition,"
+                                + " answer_summary, answer_provenance, rationale, deferred_to_stage,"
+                                + " decision_reference, actor"
+                                + " FROM protocol_plan_coverage LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT protocol_plan_id, section_key, section_kind, source_role,"
+                                + " content_summary, actor"
+                                + " FROM protocol_plan_section LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
     }

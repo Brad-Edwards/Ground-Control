@@ -213,7 +213,10 @@ import {
   selectMethodology, getMethodologySelection, recordMethodologySource,
   updateMethodologySourceState, listMethodologySources, listMethodologyCatalog,
   recordMethodologyRequirementsContract, getMethodologyRequirementsContract,
+  recordProtocolPlan, getProtocolPlan,
   METHODOLOGY_SOURCE_STATES, CONTRACT_ENTRY_KINDS,
+  PROTOCOL_COVERAGE_DISPOSITIONS, PROTOCOL_ANSWER_PROVENANCES,
+  PROTOCOL_SECTION_KINDS, PROTOCOL_SOURCE_ROLES,
   RESEARCH_RUN_AUTONOMY_LEVELS, RESEARCH_RUN_INTENDED_OUTPUTS,
   RESEARCH_RUN_STAGES, RESEARCH_ARTIFACT_TYPES, RESEARCH_GATE_POINTS,
   RESEARCH_GATE_BEHAVIORS, RESEARCH_GATE_DECISION_OUTCOMES,
@@ -3193,6 +3196,8 @@ const RESEARCH_RUN_ACTIONS = [
   "list_methodology_sources",
   "record_methodology_requirements_contract",
   "get_methodology_requirements_contract",
+  "record_protocol_plan",
+  "get_protocol_plan",
   "stop",
   "fail",
   "resume",
@@ -3204,8 +3209,8 @@ server.tool(
   "gc_research_run",
   `Research run lifecycle operations (GC-RSCH-R001/R003/F003/F006/F034/F036/N007/N011/N012/N013, ADR-064 / ADR-065 / ADR-066 / ADR-067 / ADR-068). ` +
     `Actions: ${RESEARCH_RUN_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, get_by_uid, snapshot, list_artifacts, list_gates, list_gate_decision_log, list_review_comments, list_rationale, get_disclosure, list_methodology_catalog, get_methodology_selection, list_methodology_sources, get_methodology_requirements_contract) also route through gc_query. ` +
-    `Required fields per action: start→{uid}; get/snapshot/list_artifacts/list_gates/stop/resume/complete→{id}; get_by_uid→{uid}; record_artifact→{id,artifact_type}; advance→{id,target_stage}; gate_decision→{id,gate_point,outcome}; list_gate_decision_log→{id}; add_review_comment→{id,target_type,body,provenance}; list_review_comments→{id}; resolve_review_comment→{id,comment_id}; add_rationale→{id,stage,kind,evidence_basis,provenance,subject_key,rationale_summary}; list_rationale→{id}; create_disclosure→{id,final_artifact_id,final_attempt_no}; get_disclosure→{id}; add_disclosure_entry→{id,disclosure_id,family,summary}; list_methodology_catalog→{} (global; no run id — lists every catalog method profile with its required primary sources); select_methodology→{id,method_key} (method label, profile/catalog version, and the required-source set are derived server-side from the backend methodology catalog and snapshotted as required=true rows); get_methodology_selection→{id}; record_methodology_source→{id,source_ref} (always optional/additional); update_methodology_source_state→{id,source_id,source_state}; list_methodology_sources→{id}; record_methodology_requirements_contract→{id,entries} (each entry {kind,entry_key,statement,source_links?,references_entry_key?}; REQUIREMENT/METHOD_LIMIT/NON_CLAIM need ≥1 READ source_link); get_methodology_requirements_contract→{id}; fail→{id}; record_usage→{id,tokens,cost_usd_micros}. ` +
+    `Reads (list, get, get_by_uid, snapshot, list_artifacts, list_gates, list_gate_decision_log, list_review_comments, list_rationale, get_disclosure, list_methodology_catalog, get_methodology_selection, list_methodology_sources, get_methodology_requirements_contract, get_protocol_plan) also route through gc_query. ` +
+    `Required fields per action: start→{uid}; get/snapshot/list_artifacts/list_gates/stop/resume/complete→{id}; get_by_uid→{uid}; record_artifact→{id,artifact_type}; advance→{id,target_stage}; gate_decision→{id,gate_point,outcome}; list_gate_decision_log→{id}; add_review_comment→{id,target_type,body,provenance}; list_review_comments→{id}; resolve_review_comment→{id,comment_id}; add_rationale→{id,stage,kind,evidence_basis,provenance,subject_key,rationale_summary}; list_rationale→{id}; create_disclosure→{id,final_artifact_id,final_attempt_no}; get_disclosure→{id}; add_disclosure_entry→{id,disclosure_id,family,summary}; list_methodology_catalog→{} (global; no run id — lists every catalog method profile with its required primary sources); select_methodology→{id,method_key} (method label, profile/catalog version, and the required-source set are derived server-side from the backend methodology catalog and snapshotted as required=true rows); get_methodology_selection→{id}; record_methodology_source→{id,source_ref} (always optional/additional); update_methodology_source_state→{id,source_id,source_state}; list_methodology_sources→{id}; record_methodology_requirements_contract→{id,entries} (each entry {kind,entry_key,statement,source_links?,references_entry_key?}; REQUIREMENT/METHOD_LIMIT/NON_CLAIM need ≥1 READ source_link); get_methodology_requirements_contract→{id}; record_protocol_plan→{id,protocol_schema_version,coverages,sections} (method key, profile version, methodology contract id/attempt, and artifact attempt are resolved server-side; each coverage {contract_entry_key,disposition,answer_summary?,answer_provenance?,rationale?,deferred_to_stage?,decision_reference?}; each section {section_key,section_kind,source_role?,content_summary}); get_protocol_plan→{id}; fail→{id}; record_usage→{id,tokens,cost_usd_micros}. ` +
     `Bounded metadata only — never pass prompts, manuscript bodies, secrets, or absolute paths. Actor is always from server context (ADR-026).`,
   {
     action: z.enum(RESEARCH_RUN_ACTIONS),
@@ -3313,6 +3318,34 @@ server.tool(
           profile_version: z.string().optional(),
           rationale_entry_id: z.string().uuid().optional(),
           external: z.boolean().optional(),
+        }),
+      )
+      .optional(),
+    // protocol plan (GC-RSCH-F008 / GC-RSCH-F009 / ADR-083). Method key, profile
+    // version, methodology contract id/attempt, and artifact attempt are resolved
+    // server-side from the run's active selection and active artifacts, never
+    // passed here.
+    protocol_schema_version: z.string().optional(),
+    coverages: z
+      .array(
+        z.object({
+          contract_entry_key: z.string(),
+          disposition: z.enum(PROTOCOL_COVERAGE_DISPOSITIONS),
+          answer_summary: z.string().optional(),
+          answer_provenance: z.enum(PROTOCOL_ANSWER_PROVENANCES).optional(),
+          rationale: z.string().optional(),
+          deferred_to_stage: z.enum(RESEARCH_RUN_STAGES).optional(),
+          decision_reference: z.string().optional(),
+        }),
+      )
+      .optional(),
+    sections: z
+      .array(
+        z.object({
+          section_key: z.string(),
+          section_kind: z.enum(PROTOCOL_SECTION_KINDS),
+          source_role: z.enum(PROTOCOL_SOURCE_ROLES).optional(),
+          content_summary: z.string(),
         }),
       )
       .optional(),
@@ -3626,6 +3659,39 @@ server.tool(
             null,
             2,
           ));
+        }
+        case "record_protocol_plan": {
+          reqArg(args, "id", "record_protocol_plan");
+          reqArg(args, "protocol_schema_version", "record_protocol_plan");
+          reqArg(args, "coverages", "record_protocol_plan");
+          reqArg(args, "sections", "record_protocol_plan");
+          const protocolPlanBody = {
+            protocolSchemaVersion: args.protocol_schema_version,
+            coverages: (args.coverages || []).map((c) => ({
+              contractEntryKey: c.contract_entry_key,
+              disposition: c.disposition,
+              answerSummary: c.answer_summary,
+              answerProvenance: c.answer_provenance,
+              rationale: c.rationale,
+              deferredToStage: c.deferred_to_stage,
+              decisionReference: c.decision_reference,
+            })),
+            sections: (args.sections || []).map((s) => ({
+              sectionKey: s.section_key,
+              sectionKind: s.section_kind,
+              sourceRole: s.source_role,
+              contentSummary: s.content_summary,
+            })),
+          };
+          return ok(JSON.stringify(
+            await recordProtocolPlan(args.id, protocolPlanBody, args.project),
+            null,
+            2,
+          ));
+        }
+        case "get_protocol_plan": {
+          reqArg(args, "id", "get_protocol_plan");
+          return ok(JSON.stringify(await getProtocolPlan(args.id, args.project), null, 2));
         }
         default: return err(new Error(`Unknown action: ${args.action}`));
       }

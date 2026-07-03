@@ -14,7 +14,9 @@ Scientific humility exposure for negative results, failed searches, access gaps,
 missing evidence, method limits, and non-claims is governed by ADR-076.
 Versioning and regression expectations for prompts, method profiles, schemas,
 and workflow policies are governed by ADR-077. The structured phase-1
-methodology requirements contract artifact is governed by ADR-080.
+methodology requirements contract artifact is governed by ADR-080. The
+structured phase-2 protocol-plan artifact and method-specific output shapes are
+governed by ADR-083.
 
 ## Phases
 
@@ -95,6 +97,19 @@ ADR-080 defines the phase-1 artifact as a structured, run-scoped methodology req
 The chosen method remains the active methodology selection from ADR-078. Rejected alternatives remain methodology-choice rationale entries. Every extracted requirement, limit, or non-claim must link back to methodology source coverage rows from the same active selection. Phase 1 has no first-class fields for protocol answers such as databases, query strings, date ranges, charting categories, synthesis dimensions, or source-set caps; phase 2 fills or defers those answers against the contract.
 
 The contract is recorded once per `METHODOLOGY_REQUIREMENTS` artifact attempt (a rework records a new artifact attempt, then a new contract) via `POST /api/v1/research-runs/{id}/methodology/requirements-contract` and read via `GET /api/v1/research-runs/{id}/methodology/requirements-contract`. Each entry carries a closed `kind` (`REQUIREMENT`, `METHOD_LIMIT`, `NON_CLAIM`, `OPEN_PROTOCOL_QUESTION`) and a stable `entryKey`. `REQUIREMENT`, `METHOD_LIMIT`, and `NON_CLAIM` entries must link at least one methodology source of the active selection that is in `READ` state (a claim with no `READ` source link is rejected - no model memory as scientific evidence, GC-RSCH-R002); an `OPEN_PROTOCOL_QUESTION` may instead reference another entry by key. Recording requires an active `METHODOLOGY_REQUIREMENTS` artifact and complete required-source coverage; a second contract for the same artifact attempt is rejected with `409 Conflict` code `research_run_methodology_contract_exists`. The MCP surface exposes these through the `gc_research_run` tool actions `record_methodology_requirements_contract` and `get_methodology_requirements_contract`.
+
+## F008/F009 artifact boundary: protocol plan and method-specific outputs
+
+ADR-083 defines the phase-2 protocol plan as structured, run-scoped content behind the `PROTOCOL_PLAN` artifact manifest. It consumes the active ADR-080 methodology requirements contract by contract id and artifact attempt, then gives every `REQUIREMENT` and `OPEN_PROTOCOL_QUESTION` exactly one bounded coverage disposition: filled, resolved by durable user decision, explicitly deferred as non-blocking, not applicable with rationale, or blocking decision required. A protocol plan with missing coverage or any unresolved blocking decision cannot become the active `PROTOCOL_PLAN`; source search must recheck that active complete plan before executing.
+
+The protocol plan carries phase-1 `METHOD_LIMIT` and `NON_CLAIM` entries forward
+as scientific-humility constraints and records known missing evidence, access
+gaps, deferrals, and user-dependent decisions as bounded product facts rather
+than hiding them in prose.
+
+Method-specific output shape is selected by method key/profile version plus a protocol schema version, not by adding one controller, table, or MCP action per method. Scoping, systematic, mapping, critical/integrative, targeted related-work, and taxonomy-development plans keep distinct section/source-role/output obligations. Taxonomy development keeps taxonomy-instance corpus, background/framing, methodology, and validation/evaluation roles separate so background sources do not silently support recurrence, coverage, exhaustiveness, or taxonomy-validity claims.
+
+The plan is recorded once per `PROTOCOL_PLAN` artifact attempt via `POST /api/v1/research-runs/{id}/protocol-plan` and read via `GET /api/v1/research-runs/{id}/protocol-plan`; a second plan for the same artifact attempt is rejected with `409 Conflict` code `research_run_protocol_plan_exists`. Recording requires an ACTIVE `PROTOCOL_PLAN` artifact and an ACTIVE `METHODOLOGY_REQUIREMENTS` contract to answer (`research_run_protocol_plan_artifact_missing` / `research_run_protocol_plan_contract_missing` otherwise). Every `REQUIREMENT`/`OPEN_PROTOCOL_QUESTION` contract entry must receive exactly one coverage - missing entries reject with `research_run_protocol_plan_coverage_incomplete`, and unknown keys, `METHOD_LIMIT`/`NON_CLAIM` keys, or duplicate coverage are also rejected - and each disposition's own required fields must be present (`FILLED` needs `answerProvenance` + `answerSummary`; `DEFERRED_NON_BLOCKING` needs `deferredToStage` + `rationale`; `NOT_APPLICABLE_WITH_RATIONALE` and `BLOCKING_DECISION_REQUIRED` need `rationale`; `RESOLVED_BY_USER_DECISION` needs `decisionReference` or `rationale`). Sections must cover every kind the selected method profile requires, section keys must be unique, and `sourceRole` may only appear on a `SOURCE_ROLES` section of the `taxonomy_development` method. The `SOURCE_SEARCH` durable gate independently rechecks the active plan at stage-advance time (`research_run_protocol_plan_blocking` if no plan has been recorded or any coverage is still `BLOCKING_DECISION_REQUIRED`), so a caller cannot bypass the check by invoking a lower-level action directly. The MCP surface exposes these through the `gc_research_run` tool actions `record_protocol_plan` and `get_protocol_plan`.
 
 ## Citation MCP
 
