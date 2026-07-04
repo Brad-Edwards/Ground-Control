@@ -37,6 +37,7 @@ import com.keplerops.groundcontrol.domain.threatenumeration.service.ThreatEnumer
 import com.keplerops.groundcontrol.domain.threatenumeration.service.ThreatEnumerationService;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -196,6 +197,115 @@ class GrcAssessmentRunServiceTest {
     }
 
     @Test
+    void rejectedCreateRunPersistsRejectedStateWithoutGraphEffects() {
+        var run = service.createRun(new CreateGrcAssessmentRunCommand(
+                PROJECT_ID,
+                GrcAssessmentMode.MODEL,
+                GrcAssessmentScopeType.WHOLE_PROJECT,
+                List.of(),
+                COMMIT,
+                null,
+                List.of("java"),
+                List.of("application"),
+                List.of(),
+                null,
+                null,
+                GrcAssessmentReviewPolicy.REQUIRED,
+                GrcAssessmentReviewDecision.REJECTED,
+                "gc-1129-rejected-create",
+                50));
+
+        assertThat(run.getState()).isEqualTo(GrcAssessmentRunState.REJECTED);
+        assertThat(run.getGraphEffectCount()).isZero();
+        verifyNoInteractions(derivationService, threatEnumerationService, controlIdentificationService);
+    }
+
+    @Test
+    void reviewRunCanRejectReadyForReviewRun() {
+        var ready = readyRun(GrcAssessmentMode.MODEL, GrcAssessmentScopeType.WHOLE_PROJECT);
+        when(runRepository.findByIdAndProjectId(RUN_ID, PROJECT_ID)).thenReturn(Optional.of(ready));
+
+        var reviewed = service.reviewRun(new ReviewGrcAssessmentRunCommand(
+                PROJECT_ID, RUN_ID, GrcAssessmentReviewDecision.REJECTED, "reviewer", "out of scope"));
+
+        assertThat(reviewed.getState()).isEqualTo(GrcAssessmentRunState.REJECTED);
+        assertThat(reviewed.getReviewedBy()).isEqualTo("reviewer");
+        assertThat(reviewed.getReviewRationale()).isEqualTo("out of scope");
+        verify(runRepository).save(ready);
+        verifyNoInteractions(derivationService, threatEnumerationService, controlIdentificationService);
+    }
+
+    @Test
+    void reviewRunApprovesReadyBoundaryRunUsingPersistedBoundaryMetadata() {
+        when(derivationService.run(any())).thenReturn(derivationResult(DerivationScopeMode.PATH_SET));
+        var ready = readyRun(GrcAssessmentMode.REASSESS, GrcAssessmentScopeType.BOUNDARY);
+        ready.recordPartitions(
+                1,
+                List.of(Map.of(
+                        "partitionKey",
+                        "boundary:payments",
+                        "scopeType",
+                        "BOUNDARY",
+                        "scopeValue",
+                        "payments",
+                        "paths",
+                        List.of("backend/payments/**"))),
+                1);
+        ready.setDeclaredBoundaries(List.of(Map.of(
+                "key",
+                "payments",
+                "name",
+                "Payments",
+                "description",
+                "Payment processing",
+                "pathSelectors",
+                List.of("backend/payments/**"),
+                "surfaces",
+                List.of("application"))));
+        when(runRepository.findByIdAndProjectId(RUN_ID, PROJECT_ID)).thenReturn(Optional.of(ready));
+
+        var reviewed = service.reviewRun(new ReviewGrcAssessmentRunCommand(
+                PROJECT_ID, RUN_ID, GrcAssessmentReviewDecision.APPROVED, "reviewer", "ship it"));
+
+        var command = ArgumentCaptor.forClass(CreateDerivationRunCommand.class);
+        verify(derivationService).run(command.capture());
+        assertThat(command.getValue().declaredBoundaries()).singleElement().satisfies(boundary -> {
+            assertThat(boundary.key()).isEqualTo("payments");
+            assertThat(boundary.name()).isEqualTo("Payments");
+            assertThat(boundary.description()).isEqualTo("Payment processing");
+        });
+        assertThat(reviewed.getState()).isEqualTo(GrcAssessmentRunState.COMMITTED);
+        assertThat(reviewed.getGraphEffectCount()).isEqualTo(2);
+    }
+
+    @Test
+    void approvedBoundaryWithoutDeclaredPathRecordsScopeOnlyEffect() {
+        var run = service.createRun(new CreateGrcAssessmentRunCommand(
+                PROJECT_ID,
+                GrcAssessmentMode.MODEL,
+                GrcAssessmentScopeType.BOUNDARY,
+                List.of("missing-boundary"),
+                COMMIT,
+                null,
+                List.of("java"),
+                List.of("application"),
+                List.of(),
+                null,
+                null,
+                GrcAssessmentReviewPolicy.REQUIRED,
+                GrcAssessmentReviewDecision.APPROVED,
+                "gc-1129-boundary-no-path",
+                50));
+
+        assertThat(run.getState()).isEqualTo(GrcAssessmentRunState.COMMITTED);
+        assertThat(run.getGraphEffects()).singleElement().satisfies(effect -> {
+            assertThat(effect).containsEntry("effectType", "SCOPE_RECORDED");
+            assertThat(effect).containsEntry("scopeType", "BOUNDARY");
+        });
+        verify(derivationService, never()).run(any());
+    }
+
+    @Test
     void approvedReScreenUsesEnumerationAndControlIdentificationWithoutDerivation() {
         when(threatEnumerationService.enumerateLatest(PROJECT_ID, "nist-800-53", "1.0.0"))
                 .thenReturn(new ThreatEnumerationResult(
@@ -239,6 +349,33 @@ class GrcAssessmentRunServiceTest {
     }
 
     @Test
+    void reScreenWithoutThreatPackRecordsNoThreatPackEffect() {
+        var run = service.createRun(new CreateGrcAssessmentRunCommand(
+                PROJECT_ID,
+                GrcAssessmentMode.RE_SCREEN,
+                GrcAssessmentScopeType.WHOLE_PROJECT,
+                List.of(),
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                null,
+                GrcAssessmentReviewPolicy.REQUIRED,
+                GrcAssessmentReviewDecision.APPROVED,
+                "gc-1129-rescreen-no-pack",
+                50));
+
+        assertThat(run.getState()).isEqualTo(GrcAssessmentRunState.COMMITTED);
+        assertThat(run.getGraphEffects()).singleElement().satisfies(effect -> {
+            assertThat(effect).containsEntry("effectType", "RE_SCREEN");
+            assertThat(effect).containsEntry("reason", "no_threat_pack");
+        });
+        verifyNoInteractions(derivationService, threatEnumerationService, controlIdentificationService);
+    }
+
+    @Test
     void idempotencyKeyReturnsExistingRunWithoutReExecuting() {
         var existing = new GrcAssessmentRun(
                 project,
@@ -278,6 +415,107 @@ class GrcAssessmentRunServiceTest {
     }
 
     @Test
+    void getRunAndListRunsEnforceProjectScopeAndBoundedLimits() {
+        var ready = readyRun(GrcAssessmentMode.MODEL, GrcAssessmentScopeType.WHOLE_PROJECT);
+        when(runRepository.findByIdAndProjectId(RUN_ID, PROJECT_ID)).thenReturn(Optional.of(ready));
+        when(runRepository.findByProjectIdOrderByCreatedAtDesc(any(), any())).thenReturn(List.of(ready));
+
+        assertThat(service.getRun(PROJECT_ID, RUN_ID)).isSameAs(ready);
+        assertThat(service.listRuns(PROJECT_ID, 0)).containsExactly(ready);
+        assertThat(service.listRuns(PROJECT_ID, 150)).containsExactly(ready);
+
+        var page = ArgumentCaptor.forClass(org.springframework.data.domain.Pageable.class);
+        verify(runRepository, org.mockito.Mockito.times(2)).findByProjectIdOrderByCreatedAtDesc(any(), page.capture());
+        assertThat(page.getAllValues())
+                .extracting(org.springframework.data.domain.Pageable::getPageSize)
+                .containsExactly(25, 100);
+
+        assertThatThrownBy(() -> service.getRun(PROJECT_ID, UUID.randomUUID()))
+                .hasMessageContaining("GRC assessment run not found");
+    }
+
+    @Test
+    void createRunRejectsInvalidInputsBeforePersisting() {
+        assertThatThrownBy(() -> service.createRun(new CreateGrcAssessmentRunCommand(
+                        PROJECT_ID,
+                        null,
+                        GrcAssessmentScopeType.WHOLE_PROJECT,
+                        List.of(),
+                        COMMIT,
+                        null,
+                        List.of("java"),
+                        List.of("application"),
+                        List.of(),
+                        null,
+                        null,
+                        GrcAssessmentReviewPolicy.REQUIRED,
+                        GrcAssessmentReviewDecision.REQUEST_REVIEW,
+                        null,
+                        50)))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("mode is required");
+
+        assertThatThrownBy(() -> service.createRun(new CreateGrcAssessmentRunCommand(
+                        PROJECT_ID,
+                        GrcAssessmentMode.MODEL,
+                        GrcAssessmentScopeType.WHOLE_PROJECT,
+                        List.of(),
+                        "not-a-sha",
+                        null,
+                        List.of("java"),
+                        List.of("application"),
+                        List.of(),
+                        null,
+                        null,
+                        GrcAssessmentReviewPolicy.REQUIRED,
+                        GrcAssessmentReviewDecision.REQUEST_REVIEW,
+                        null,
+                        50)))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("commitSha must be");
+
+        assertThatThrownBy(() -> service.createRun(new CreateGrcAssessmentRunCommand(
+                        PROJECT_ID,
+                        GrcAssessmentMode.MODEL,
+                        GrcAssessmentScopeType.PACKAGE_PATH_SET,
+                        List.of(),
+                        COMMIT,
+                        null,
+                        List.of("java"),
+                        List.of("application"),
+                        List.of(),
+                        null,
+                        null,
+                        GrcAssessmentReviewPolicy.REQUIRED,
+                        GrcAssessmentReviewDecision.REQUEST_REVIEW,
+                        null,
+                        50)))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("scopeValues is required");
+
+        assertThatThrownBy(() -> service.createRun(new CreateGrcAssessmentRunCommand(
+                        PROJECT_ID,
+                        GrcAssessmentMode.MODEL,
+                        GrcAssessmentScopeType.PACKAGE_PATH_SET,
+                        List.of("backend/**", "mcp/**"),
+                        COMMIT,
+                        null,
+                        List.of("java"),
+                        List.of("application"),
+                        List.of(),
+                        null,
+                        null,
+                        GrcAssessmentReviewPolicy.REQUIRED,
+                        GrcAssessmentReviewDecision.REQUEST_REVIEW,
+                        null,
+                        1)))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("partition count exceeds partitionLimit");
+
+        verify(runRepository, never()).save(any());
+    }
+
+    @Test
     void reviewRunRejectsMutationAfterGraphEffectsCommitted() {
         var committed = new GrcAssessmentRun(
                 project,
@@ -302,6 +540,22 @@ class GrcAssessmentRunServiceTest {
         assertThat(committed.getState()).isEqualTo(GrcAssessmentRunState.COMMITTED);
         verify(runRepository, never()).save(any());
         verifyNoInteractions(derivationService, threatEnumerationService, controlIdentificationService);
+    }
+
+    private GrcAssessmentRun readyRun(GrcAssessmentMode mode, GrcAssessmentScopeType scopeType) {
+        var run = new GrcAssessmentRun(
+                project,
+                mode,
+                scopeType,
+                mode == GrcAssessmentMode.RE_SCREEN ? null : COMMIT,
+                null,
+                mode == GrcAssessmentMode.RE_SCREEN ? List.of() : List.of("java"),
+                mode == GrcAssessmentMode.RE_SCREEN ? List.of() : List.of("application"),
+                GrcAssessmentReviewPolicy.REQUIRED,
+                "ready-key");
+        setField(run, "id", RUN_ID);
+        run.recordPartitions(1, List.of(Map.of("partitionKey", "whole-project", "paths", List.of())), 1);
+        return run;
     }
 
     private DerivationRunResult derivationResult(DerivationScopeMode mode) {
