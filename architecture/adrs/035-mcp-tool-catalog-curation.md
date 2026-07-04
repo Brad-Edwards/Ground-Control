@@ -196,7 +196,7 @@ adds the bearer token, and the request always emits
 `/api/v1/control-effectiveness-assessments`, `/api/v1/control-tests`,
 `/api/v1/controls`, `/api/v1/dashboard`, `/api/v1/data-classification`, `/api/v1/derivations`, `/api/v1/documents`,
 `/api/v1/evidence-artifacts`, `/api/v1/findings`, `/api/v1/graph`,
-`/api/v1/mcp-tool-usage`, `/api/v1/methodology-profiles`, `/api/v1/observations`, `/api/v1/projects`,
+`/api/v1/grc-assessment-runs`, `/api/v1/mcp-tool-usage`, `/api/v1/methodology-profiles`, `/api/v1/observations`, `/api/v1/projects`,
 `/api/v1/quality-gates`, `/api/v1/relations`, `/api/v1/requirements`,
 `/api/v1/research-runs`, `/api/v1/risk-assessment-results`, `/api/v1/risk-register-records`,
 `/api/v1/risk-scenarios`, `/api/v1/sections`, `/api/v1/test-cases`,

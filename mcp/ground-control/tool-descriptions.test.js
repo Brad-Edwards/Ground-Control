@@ -55,6 +55,9 @@ const REQUIRED_FIELD_REGISTRY = {
     "risk_register_record_id", "strategy",
     "approval_state", "status",
   ],
+  gc_grc_assess: [
+    "mode", "scope_type", "review_decision", "id",
+  ],
   gc_requirement: ["uid", "title", "statement", "source_uid", "new_uid"],
   gc_baseline: ["name", "baseline_a", "baseline_b"],
   gc_graph: ["uid", "source", "target", "roots"],

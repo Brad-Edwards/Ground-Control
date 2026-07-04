@@ -135,6 +135,7 @@ GETs (history, timeline, exports, list-by-X) onto `gc_query`.
 | `gc_control` | create, update, delete, transition, link_* |
 | `gc_control_assurance_workspace` | read-only GC-Q011 control catalog, assurance evidence, findings, mappings, and owner queue view |
 | `gc_derivation` | run, list_runs, get_run, get_boundary_model, list_facts, list_capture_limits |
+| `gc_grc_assess` | run, review, get, list |
 | `gc_risk_governance` | `{entity, action}` over methodology_profile, risk_register_record, risk_assessment_result, treatment_plan, verification_result |
 | `gc_analyze` | cycles, orphans, coverage_gaps, impact, cross_wave, consistency, completeness, status_drift, similarity, work_order, evidence_freshness, observation_exposure, control_state, vendor_risk_aggregation |
 | `gc_graph` | ancestors, descendants, paths, find_paths, subgraph, visualization, traverse |
@@ -163,7 +164,8 @@ under the `workflow` catalog, so it is always available.
   `/api/v1/audits`, `/api/v1/baselines`, `/api/v1/control-effectiveness-assessments`,
   `/api/v1/control-tests`, `/api/v1/controls`, `/api/v1/dashboard`,
   `/api/v1/data-classification`,
-  `/api/v1/derivations`, `/api/v1/documents`, `/api/v1/evidence-artifacts`, `/api/v1/findings`, `/api/v1/graph`, `/api/v1/mcp-tool-usage`,
+  `/api/v1/derivations`, `/api/v1/documents`, `/api/v1/evidence-artifacts`, `/api/v1/findings`, `/api/v1/graph`,
+  `/api/v1/grc-assessment-runs`, `/api/v1/mcp-tool-usage`,
   `/api/v1/methodology-profiles`,
   `/api/v1/observations`, `/api/v1/projects`, `/api/v1/quality-gates`,
   `/api/v1/relations`, `/api/v1/requirements`, `/api/v1/research-runs`,
