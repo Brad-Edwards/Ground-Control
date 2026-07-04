@@ -306,6 +306,45 @@ Load-bearing constraints, locked in ADR-081:
 - **Temporal Web is infrastructure, never the product UI** (ADR-028); the
   console consumes only the product workflow control surface.
 
+## Contract-Locked Development Program (ADR-087)
+
+ADR-087 adopts Contract-Locked Development (CLD) as the method for
+high-assurance agentic implementation work. CLD treats a boundary's contract
+package as the primary artifact and the implementation as a replaceable part
+whose definition of done is satisfying a measured oracle battery.
+
+Load-bearing constraints, locked in ADR-087:
+
+- **Separated powers are enforced by tooling.** The design authority owns
+  contracts, invariants, oracle batteries, architecture registry entries, lock
+  levels, and risk scores. The implementer owns implementation code and
+  interior tests. The verifier is CI plus independent review and measurement.
+  Implementation-lane edits to protected contract, battery, registry, policy,
+  or threshold paths require an explicit design-authority approval record.
+- **Contract layers count only with checks.** Structural, syntactic, semantic,
+  protocol, and policy layers are contract content only when each layer has a
+  named machine check. Documentation without a check is context, not an
+  enforced layer.
+- **Risk scoring selects assurance.** CLD operationalizes ADR-012 per
+  boundary; it does not mandate the full stack everywhere. Locked and
+  high-risk boundaries get stronger batteries and meta-oracle measurement;
+  fluid internals stay lightweight.
+- **ADR-082 is the first reference instance.** The contract surface from
+  ADR-082 is CLD's syntactic layer for Ground Control's REST, MCP, workflow,
+  and durable-record surfaces, not a competing schema system.
+- **The current gate model remains intact.** CLD adds design-authority records,
+  battery assertions, protected-path checks, and mutation thresholds over time;
+  it does not weaken GC-O007, remove ADR-029's one human merge touchpoint, or
+  bypass the existing traceability, CI, SonarCloud, review, and final-report
+  gates.
+
+Wave 9 carries the CLD requirements (`GC-CLD-1` through `GC-CLD-9`):
+method authority (#1291), oracle batteries (#1292), mutation meta-oracle
+(#1293), protected paths (#1294), architecture registry (#1295), pilot
+(#1296), evaluation harness (#1297), workflow productization (#1298), and
+portfolio packaging (#1299). Those requirements remain DRAFT until their
+implementation issues ship and reconcile traceability after merge.
+
 ## Per-step routing, tool surfaces, and telemetry (ADR-036)
 
 Per ADR-036 the `/implement` skill carries three cost-side optimizations layered on top of the GC-O007 gate model (which is unchanged on the contract - one human touchpoint at PR merge, ADR-029's configurable pre-push Codex cap [default 1 cycle per #906; per-repo override via `workflow.codex_review.pre_push_cap`], zero deferral, four-phase structure).
