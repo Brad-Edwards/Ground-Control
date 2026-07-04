@@ -35,6 +35,21 @@ public class GrcAssessmentRunService {
     private static final Pattern COMMIT_SHA = Pattern.compile("^[0-9a-fA-F]{7,64}$");
     private static final int DEFAULT_PARTITION_LIMIT = 100;
     private static final int MAX_PARTITION_LIMIT = 500;
+    private static final String ALL_PARTITIONS_KEY = "all-partitions";
+    private static final String FIELD_BASE_COMMIT_SHA = "baseCommitSha";
+    private static final String FIELD_COMMIT_SHA = "commitSha";
+    private static final String FIELD_LANGUAGES = "languages";
+    private static final String FIELD_PARTITION_LIMIT = "partitionLimit";
+    private static final String FIELD_REVIEW_DECISION = "reviewDecision";
+    private static final String FIELD_SCOPE_TYPE = "scopeType";
+    private static final String FIELD_SCOPE_VALUES = "scopeValues";
+    private static final String FIELD_SURFACES = "surfaces";
+    private static final String MAP_EFFECT_ID = "effectId";
+    private static final String MAP_EFFECT_TYPE = "effectType";
+    private static final String MAP_PARTITION_KEY = "partitionKey";
+    private static final String MAP_PATHS = "paths";
+    private static final String MAP_SCOPE_VALUE = "scopeValue";
+    private static final String WHOLE_PROJECT_KEY = "whole-project";
 
     private final GrcAssessmentRunRepository runRepository;
     private final ProjectService projectService;
@@ -67,11 +82,11 @@ public class GrcAssessmentRunService {
 
         var project = projectService.getById(command.projectId());
         var mode = require(command.mode(), "mode");
-        var scopeType = require(command.scopeType(), "scopeType");
+        var scopeType = require(command.scopeType(), FIELD_SCOPE_TYPE);
         var commitSha = normalizeCommit(command.commitSha(), mode);
-        var baseCommitSha = normalizeOptionalCommit(command.baseCommitSha(), "baseCommitSha");
-        var languages = normalizeTokens(command.languages(), "languages", mode != GrcAssessmentMode.RE_SCREEN);
-        var surfaces = normalizeTokens(command.surfaces(), "surfaces", mode != GrcAssessmentMode.RE_SCREEN);
+        var baseCommitSha = normalizeOptionalCommit(command.baseCommitSha(), FIELD_BASE_COMMIT_SHA);
+        var languages = normalizeTokens(command.languages(), FIELD_LANGUAGES, mode != GrcAssessmentMode.RE_SCREEN);
+        var surfaces = normalizeTokens(command.surfaces(), FIELD_SURFACES, mode != GrcAssessmentMode.RE_SCREEN);
         var declaredBoundaries =
                 command.declaredBoundaries() == null ? List.<BoundaryDeclaration>of() : command.declaredBoundaries();
         var partitions = buildPartitions(
@@ -115,8 +130,8 @@ public class GrcAssessmentRunService {
 
     @Transactional
     public GrcAssessmentRun reviewRun(ReviewGrcAssessmentRunCommand command) {
-        var run = getRun(command.projectId(), command.runId());
-        var decision = require(command.reviewDecision(), "reviewDecision");
+        var run = findRun(command.projectId(), command.runId());
+        var decision = require(command.reviewDecision(), FIELD_REVIEW_DECISION);
         if (run.getState() != GrcAssessmentRunState.READY_FOR_REVIEW) {
             throw validation("Only READY_FOR_REVIEW GRC assessment runs can be reviewed", "state");
         }
@@ -133,6 +148,10 @@ public class GrcAssessmentRunService {
 
     @Transactional(readOnly = true)
     public GrcAssessmentRun getRun(UUID projectId, UUID runId) {
+        return findRun(projectId, runId);
+    }
+
+    private GrcAssessmentRun findRun(UUID projectId, UUID runId) {
         return runRepository
                 .findByIdAndProjectId(runId, projectId)
                 .orElseThrow(() -> new NotFoundException("GRC assessment run not found: " + runId));
@@ -140,7 +159,7 @@ public class GrcAssessmentRunService {
 
     @Transactional(readOnly = true)
     public List<GrcAssessmentRun> listRuns(UUID projectId, int limit) {
-        int bounded = Math.max(1, Math.min(limit <= 0 ? 25 : limit, 100));
+        int bounded = Math.clamp(limit <= 0 ? 25 : limit, 1, 100);
         return runRepository.findByProjectIdOrderByCreatedAtDesc(projectId, PageRequest.of(0, bounded));
     }
 
@@ -152,16 +171,17 @@ public class GrcAssessmentRunService {
 
         List<Map<String, Object>> effects = new ArrayList<>();
         for (var partition : run.getPartitions()) {
-            var partitionKey = string(partition.get("partitionKey"));
-            var paths = stringList(partition.get("paths"));
-            DerivationScopeMode scopeMode =
-                    "whole-project".equals(partitionKey) ? DerivationScopeMode.FULL_REPO : DerivationScopeMode.PATH_SET;
+            var partitionKey = string(partition.get(MAP_PARTITION_KEY));
+            var paths = stringList(partition.get(MAP_PATHS));
+            DerivationScopeMode scopeMode = WHOLE_PROJECT_KEY.equals(partitionKey)
+                    ? DerivationScopeMode.FULL_REPO
+                    : DerivationScopeMode.PATH_SET;
             if (scopeMode == DerivationScopeMode.PATH_SET && paths.isEmpty()) {
                 effects.add(effect(
                         "SCOPE_RECORDED",
                         partitionKey,
                         null,
-                        Map.of("scopeType", run.getScopeType().name())));
+                        Map.of(FIELD_SCOPE_TYPE, run.getScopeType().name())));
                 continue;
             }
             var result = derivationService.run(new CreateDerivationRunCommand(
@@ -200,7 +220,7 @@ public class GrcAssessmentRunService {
     private List<Map<String, Object>> reScreenEffects(GrcAssessmentRun run) {
         var threatPackId = run.getThreatPackId();
         if (threatPackId == null || threatPackId.isBlank()) {
-            return List.of(effect("RE_SCREEN", "all-partitions", null, Map.of("reason", "no_threat_pack")));
+            return List.of(effect("RE_SCREEN", ALL_PARTITIONS_KEY, null, Map.of("reason", "no_threat_pack")));
         }
         var version = run.getThreatPackVersion();
         var threats = threatEnumerationService.enumerateLatest(run.getProject().getId(), threatPackId, version);
@@ -209,7 +229,7 @@ public class GrcAssessmentRunService {
         return List.of(
                 effect(
                         "THREAT_ENUMERATION",
-                        "all-partitions",
+                        ALL_PARTITIONS_KEY,
                         threats.snapshotId(),
                         Map.of(
                                 "candidateCount", threats.candidates().size(),
@@ -218,7 +238,7 @@ public class GrcAssessmentRunService {
                                 "resolvedVersion", threats.resolvedVersion())),
                 effect(
                         "CONTROL_IDENTIFICATION",
-                        "all-partitions",
+                        ALL_PARTITIONS_KEY,
                         null,
                         Map.of(
                                 "candidateCount", controls.candidates().size(),
@@ -234,79 +254,85 @@ public class GrcAssessmentRunService {
             int partitionLimit) {
         List<Map<String, Object>> requested = new ArrayList<>();
         var values = normalizeScopeValues(scopeValues);
-        switch (scopeType) {
-            case WHOLE_PROJECT -> requested.add(partition("whole-project", scopeType, "whole-project", List.of()));
-            case STALE_DRIFT_SET -> requested.add(
-                    partition("stale-drift-set", scopeType, "stale-drift-set", List.of()));
-            case BOUNDARY -> {
-                var declarations = new LinkedHashMap<String, BoundaryDeclaration>();
-                for (var boundary : declaredBoundaries) {
-                    declarations.put(boundary.key(), boundary);
-                }
-                for (var value : values) {
-                    var boundary = declarations.get(value);
-                    requested.add(partition(
-                            "boundary:" + value,
-                            scopeType,
-                            value,
-                            boundary == null ? List.of() : boundary.pathSelectors()));
-                }
-            }
-            case PACKAGE_PATH_SET -> {
-                for (var value : values) {
-                    requested.add(partition("path:" + value, scopeType, value, List.of(value)));
-                }
-            }
-            case ASSET -> {
-                for (var value : values) {
-                    requested.add(partition("asset:" + value, scopeType, value, List.of()));
-                }
-            }
-            case NAMED_THREAT_SET -> {
-                for (var value : values) {
-                    requested.add(partition("threat-set:" + value, scopeType, value, List.of()));
-                }
-            }
-            case NAMED_RISK_SET -> {
-                for (var value : values) {
-                    requested.add(partition("risk-set:" + value, scopeType, value, List.of()));
-                }
-            }
-            default -> throw validation("Unsupported scopeType: " + scopeType, "scopeType");
-        }
+        requested.addAll(requestedPartitions(scopeType, values, declaredBoundaries));
         if (requested.isEmpty()) {
-            throw validation("scopeValues is required for " + scopeType, "scopeValues");
+            throw validation("scopeValues is required for " + scopeType, FIELD_SCOPE_VALUES);
         }
         var unique = new LinkedHashMap<String, Map<String, Object>>();
         for (var partition : requested) {
-            unique.putIfAbsent(string(partition.get("partitionKey")), partition);
+            unique.putIfAbsent(string(partition.get(MAP_PARTITION_KEY)), partition);
         }
         var sorted = unique.values().stream()
-                .sorted(Comparator.comparing(partition -> string(partition.get("partitionKey"))))
+                .sorted(Comparator.comparing(partition -> string(partition.get(MAP_PARTITION_KEY))))
                 .toList();
         if (sorted.size() > partitionLimit) {
-            throw validation("partition count exceeds partitionLimit", "partitionLimit");
+            throw validation("partition count exceeds partitionLimit", FIELD_PARTITION_LIMIT);
         }
         return new PartitionBuildResult(requested.size(), sorted);
+    }
+
+    private static List<Map<String, Object>> requestedPartitions(
+            GrcAssessmentScopeType scopeType, List<String> values, List<BoundaryDeclaration> declaredBoundaries) {
+        switch (scopeType) {
+            case WHOLE_PROJECT:
+                return List.of(partition(WHOLE_PROJECT_KEY, scopeType, WHOLE_PROJECT_KEY, List.of()));
+            case STALE_DRIFT_SET:
+                return List.of(partition("stale-drift-set", scopeType, "stale-drift-set", List.of()));
+            case BOUNDARY:
+                return boundaryPartitions(values, declaredBoundaries, scopeType);
+            case PACKAGE_PATH_SET:
+                return valuePartitions(values, scopeType, "path:", true);
+            case ASSET:
+                return valuePartitions(values, scopeType, "asset:", false);
+            case NAMED_THREAT_SET:
+                return valuePartitions(values, scopeType, "threat-set:", false);
+            case NAMED_RISK_SET:
+                return valuePartitions(values, scopeType, "risk-set:", false);
+            default:
+                throw validation("Unsupported scopeType: " + scopeType, FIELD_SCOPE_TYPE);
+        }
+    }
+
+    private static List<Map<String, Object>> boundaryPartitions(
+            List<String> values, List<BoundaryDeclaration> declaredBoundaries, GrcAssessmentScopeType scopeType) {
+        var declarations = new LinkedHashMap<String, BoundaryDeclaration>();
+        for (var boundary : declaredBoundaries) {
+            declarations.put(boundary.key(), boundary);
+        }
+        return values.stream()
+                .map(value -> {
+                    var boundary = declarations.get(value);
+                    var paths = boundary == null ? List.<String>of() : boundary.pathSelectors();
+                    return partition("boundary:" + value, scopeType, value, paths);
+                })
+                .toList();
+    }
+
+    private static List<Map<String, Object>> valuePartitions(
+            List<String> values, GrcAssessmentScopeType scopeType, String prefix, boolean includeValueAsPath) {
+        return values.stream()
+                .map(value ->
+                        partition(prefix + value, scopeType, value, includeValueAsPath ? List.of(value) : List.of()))
+                .toList();
     }
 
     private static Map<String, Object> partition(
             String partitionKey, GrcAssessmentScopeType scopeType, String scopeValue, List<String> paths) {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("partitionKey", partitionKey);
-        map.put("scopeType", scopeType.name());
-        map.put("scopeValue", scopeValue);
-        map.put("paths", paths == null ? List.of() : List.copyOf(paths));
+        map.put(MAP_PARTITION_KEY, partitionKey);
+        map.put(FIELD_SCOPE_TYPE, scopeType.name());
+        map.put(MAP_SCOPE_VALUE, scopeValue);
+        map.put(MAP_PATHS, paths == null ? List.of() : List.copyOf(paths));
         return map;
     }
 
     private static Map<String, Object> effect(
             String effectType, String partitionKey, Object effectId, Map<String, Object> extra) {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("effectType", effectType);
-        map.put("partitionKey", partitionKey);
+        map.put(MAP_EFFECT_TYPE, effectType);
+        map.put(MAP_PARTITION_KEY, partitionKey);
         if (effectId != null) {
-            map.put("effectId", effectId.toString());
+            map.put(MAP_EFFECT_ID, effectId.toString());
         }
         if (extra != null) {
             map.putAll(extra);
@@ -322,7 +348,7 @@ public class GrcAssessmentRunService {
             map.put("description", boundary.description());
         }
         map.put("pathSelectors", boundary.pathSelectors());
-        map.put("surfaces", boundary.surfaces());
+        map.put(FIELD_SURFACES, boundary.surfaces());
         return map;
     }
 
@@ -333,7 +359,7 @@ public class GrcAssessmentRunService {
                         string(map.get("name")),
                         string(map.get("description")),
                         stringList(map.get("pathSelectors")),
-                        stringList(map.get("surfaces"))))
+                        stringList(map.get(FIELD_SURFACES))))
                 .toList();
     }
 
@@ -348,7 +374,7 @@ public class GrcAssessmentRunService {
         if (mode == GrcAssessmentMode.RE_SCREEN && (value == null || value.isBlank())) {
             return null;
         }
-        return normalizeOptionalCommit(value, "commitSha");
+        return normalizeOptionalCommit(value, FIELD_COMMIT_SHA);
     }
 
     private static String normalizeOptionalCommit(String value, String field) {
@@ -393,7 +419,7 @@ public class GrcAssessmentRunService {
             return DEFAULT_PARTITION_LIMIT;
         }
         if (value < 1 || value > MAX_PARTITION_LIMIT) {
-            throw validation("partitionLimit must be between 1 and " + MAX_PARTITION_LIMIT, "partitionLimit");
+            throw validation("partitionLimit must be between 1 and " + MAX_PARTITION_LIMIT, FIELD_PARTITION_LIMIT);
         }
         return value;
     }

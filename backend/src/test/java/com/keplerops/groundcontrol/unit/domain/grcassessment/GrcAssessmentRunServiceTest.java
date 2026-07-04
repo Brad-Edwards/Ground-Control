@@ -436,79 +436,83 @@ class GrcAssessmentRunServiceTest {
 
     @Test
     void createRunRejectsInvalidInputsBeforePersisting() {
-        assertThatThrownBy(() -> service.createRun(new CreateGrcAssessmentRunCommand(
-                        PROJECT_ID,
-                        null,
-                        GrcAssessmentScopeType.WHOLE_PROJECT,
-                        List.of(),
-                        COMMIT,
-                        null,
-                        List.of("java"),
-                        List.of("application"),
-                        List.of(),
-                        null,
-                        null,
-                        GrcAssessmentReviewPolicy.REQUIRED,
-                        GrcAssessmentReviewDecision.REQUEST_REVIEW,
-                        null,
-                        50)))
+        var missingMode = new CreateGrcAssessmentRunCommand(
+                PROJECT_ID,
+                null,
+                GrcAssessmentScopeType.WHOLE_PROJECT,
+                List.of(),
+                COMMIT,
+                null,
+                List.of("java"),
+                List.of("application"),
+                List.of(),
+                null,
+                null,
+                GrcAssessmentReviewPolicy.REQUIRED,
+                GrcAssessmentReviewDecision.REQUEST_REVIEW,
+                null,
+                50);
+        assertThatThrownBy(() -> service.createRun(missingMode))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("mode is required");
 
-        assertThatThrownBy(() -> service.createRun(new CreateGrcAssessmentRunCommand(
-                        PROJECT_ID,
-                        GrcAssessmentMode.MODEL,
-                        GrcAssessmentScopeType.WHOLE_PROJECT,
-                        List.of(),
-                        "not-a-sha",
-                        null,
-                        List.of("java"),
-                        List.of("application"),
-                        List.of(),
-                        null,
-                        null,
-                        GrcAssessmentReviewPolicy.REQUIRED,
-                        GrcAssessmentReviewDecision.REQUEST_REVIEW,
-                        null,
-                        50)))
+        var invalidCommit = new CreateGrcAssessmentRunCommand(
+                PROJECT_ID,
+                GrcAssessmentMode.MODEL,
+                GrcAssessmentScopeType.WHOLE_PROJECT,
+                List.of(),
+                "not-a-sha",
+                null,
+                List.of("java"),
+                List.of("application"),
+                List.of(),
+                null,
+                null,
+                GrcAssessmentReviewPolicy.REQUIRED,
+                GrcAssessmentReviewDecision.REQUEST_REVIEW,
+                null,
+                50);
+        assertThatThrownBy(() -> service.createRun(invalidCommit))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("commitSha must be");
 
-        assertThatThrownBy(() -> service.createRun(new CreateGrcAssessmentRunCommand(
-                        PROJECT_ID,
-                        GrcAssessmentMode.MODEL,
-                        GrcAssessmentScopeType.PACKAGE_PATH_SET,
-                        List.of(),
-                        COMMIT,
-                        null,
-                        List.of("java"),
-                        List.of("application"),
-                        List.of(),
-                        null,
-                        null,
-                        GrcAssessmentReviewPolicy.REQUIRED,
-                        GrcAssessmentReviewDecision.REQUEST_REVIEW,
-                        null,
-                        50)))
+        var missingScopeValues = new CreateGrcAssessmentRunCommand(
+                PROJECT_ID,
+                GrcAssessmentMode.MODEL,
+                GrcAssessmentScopeType.PACKAGE_PATH_SET,
+                List.of(),
+                COMMIT,
+                null,
+                List.of("java"),
+                List.of("application"),
+                List.of(),
+                null,
+                null,
+                GrcAssessmentReviewPolicy.REQUIRED,
+                GrcAssessmentReviewDecision.REQUEST_REVIEW,
+                null,
+                50);
+        assertThatThrownBy(() -> service.createRun(missingScopeValues))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("scopeValues is required");
 
-        assertThatThrownBy(() -> service.createRun(new CreateGrcAssessmentRunCommand(
-                        PROJECT_ID,
-                        GrcAssessmentMode.MODEL,
-                        GrcAssessmentScopeType.PACKAGE_PATH_SET,
-                        List.of("backend/**", "mcp/**"),
-                        COMMIT,
-                        null,
-                        List.of("java"),
-                        List.of("application"),
-                        List.of(),
-                        null,
-                        null,
-                        GrcAssessmentReviewPolicy.REQUIRED,
-                        GrcAssessmentReviewDecision.REQUEST_REVIEW,
-                        null,
-                        1)))
+        var tooManyPartitions = new CreateGrcAssessmentRunCommand(
+                PROJECT_ID,
+                GrcAssessmentMode.MODEL,
+                GrcAssessmentScopeType.PACKAGE_PATH_SET,
+                List.of("backend/**", "mcp/**"),
+                COMMIT,
+                null,
+                List.of("java"),
+                List.of("application"),
+                List.of(),
+                null,
+                null,
+                GrcAssessmentReviewPolicy.REQUIRED,
+                GrcAssessmentReviewDecision.REQUEST_REVIEW,
+                null,
+                1);
+        assertThatThrownBy(() -> service.createRun(tooManyPartitions))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("partition count exceeds partitionLimit");
 
@@ -532,8 +536,9 @@ class GrcAssessmentRunServiceTest {
         committed.recordGraphEffects(List.of(java.util.Map.of("effectType", "DERIVATION_RUN")));
         when(runRepository.findByIdAndProjectId(RUN_ID, PROJECT_ID)).thenReturn(Optional.of(committed));
 
-        assertThatThrownBy(() -> service.reviewRun(new ReviewGrcAssessmentRunCommand(
-                        PROJECT_ID, RUN_ID, GrcAssessmentReviewDecision.REJECTED, "reviewer", "too late")))
+        var rejectedReview = new ReviewGrcAssessmentRunCommand(
+                PROJECT_ID, RUN_ID, GrcAssessmentReviewDecision.REJECTED, "reviewer", "too late");
+        assertThatThrownBy(() -> service.reviewRun(rejectedReview))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("READY_FOR_REVIEW");
 
