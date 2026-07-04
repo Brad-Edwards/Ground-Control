@@ -1,7 +1,7 @@
 # Contract-Locked Development: The Method
 
-Status: research draft for review (issue #1290). The binding version of this
-method will be the ADR authored under issue #1291 after review.
+Status: reviewed research packet for issue #1290. The binding version of this
+method is ADR-087, authored under issue #1291.
 
 ## The problem this method solves
 

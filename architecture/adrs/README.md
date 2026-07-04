@@ -104,5 +104,6 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [084](084-context-graph-concept-authority.md) | Context-Graph Concept Authority and Time Semantics | Accepted |
 | [085](085-identity-model-users-groups-roles.md) | Identity Model - Users, Groups, and Roles as Data | Accepted |
 | [086](086-research-high-risk-operation-authorization.md) | Research High-Risk Operation Authorization | Accepted |
+| [087](087-contract-locked-development-methodology.md) | Contract-Locked Development Methodology | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.

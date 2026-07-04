@@ -1,8 +1,8 @@
 # Contract-Locked Development (CLD)
 
 Research and method-definition docs for milestone 18 (issue #1290). Status:
-draft for review; the binding version will be the ADR authored under #1291
-after this material is reviewed.
+reviewed research packet; the binding method authority is ADR-087, authored
+under #1291.
 
 ## The method in one page
 
@@ -83,7 +83,7 @@ verification); not everything deserves it - risk scoring decides.
 | Issue | Work |
 |-------|------|
 | #1290 | These docs |
-| #1291 | Method ADR + requirement wave (gated on review of these docs) |
+| #1291 | ADR-087 method authority + GC-CLD requirement wave |
 | #1292 | Oracle battery toolkit |
 | #1293 | Mutation-testing gate |
 | #1294 | Spec-authority separation (protected paths) |
