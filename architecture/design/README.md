@@ -19,3 +19,5 @@ For architecture decisions, see [ADRs](../adrs/).
 | [Architecture Model Artifacts](../notes/architecture-model-artifacts.md) | 5 | Guardrails for modeling C4 diagrams, architecture tests, and fitness functions as traceable artifacts without introducing a parallel artifact domain |
 | [Security Scanner CI Preflight](../notes/security-scanner-ci-preflight.md) | CI | Guardrails for adding advisory Trivy and OSV-scanner jobs without duplicating policy, security, or runtime abstractions |
 | [Mixed Entity Graph Traversal Preflight](../notes/mixed-entity-graph-traversal-preflight.md) | 4 | Guardrails for mixed-entity graph traversal, path finding, subgraph extraction, and visualization |
+| [Console IA and Design-System Foundations](console-ia-design-system.md) | Console | Construction reference for GC-Q015/GC-Q016 console shell, navigation, design-system, session UX, and workflow operations |
+| [Console IA and Design-System Foundations Preflight](../notes/console-ia-design-system-preflight.md) | Console | Guardrails for the GC-Q015/GC-Q016 information architecture, design-system, session UX, and workflow-operations reference |
