@@ -185,7 +185,7 @@ exports (alongside `request_id` / `tenant_id`). See [ADR-033](../../architecture
 
 **Frontend:** React 19 / TypeScript SPA served as embedded static resources from the Spring Boot JAR. Views: Dashboard (project health metrics), GRC Portfolio (`p/:projectId/portfolio`, GC-Q013), Requirements Explorer (browse/filter/author), Requirement Detail (fields, relations, traceability, audit), Dependency Graph (Cytoscape.js DAG visualization), Control and Assurance Workspace (`p/:projectId/control-assurance`, GC-Q011), Evidence and State Explorer (`p/:projectId/evidence-state`, GC-Q012), Threat Modeling Workspace (`p/:projectId/threat-modeling`, GC-Q010), Risk Scenario Workspace (`p/:projectId/risk-scenarios`, GC-Q009). See [ADR-017](../../architecture/adrs/017-interactive-web-application.md).
 
-**Tooling:** Status state machine with JML contracts (verified by OpenJML ESC + Z3), Flyway migrations, Spotless/Error Prone/SpotBugs/Checkstyle/JaCoCo, ArchUnit architecture tests, CI pipeline (build + test + integration + verify), production Dockerfile, GHCR publishing, E2E integration tests.
+**Tooling:** Status state machine with JML contracts (verified by OpenJML ESC + Z3), Flyway migrations, Spotless/Error Prone/SpotBugs/Checkstyle/JaCoCo, ArchUnit architecture tests, CLD oracle battery scaffolds for conformance/property/negative/golden/differential tests, CI pipeline (build + test + integration + verify), production Dockerfile, GHCR publishing, E2E integration tests.
 
 ## Mixed-Entity Graph Participants
 

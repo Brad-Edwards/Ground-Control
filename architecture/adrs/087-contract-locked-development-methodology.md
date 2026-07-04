@@ -117,6 +117,13 @@ Every invariant gets a stable identifier and an inventory row naming its
 enforcing check. Removing or weakening a check without removing or re-homing
 the invariant is a policy failure.
 
+Issue #1292 adds the reusable oracle battery toolkit and selection guide for
+these checks. The guide lives at
+`docs/research/contract-locked-development/oracle-battery-toolkit.md`; it is
+the operating reference for choosing conformance suites, property tests,
+negative suites, golden/replay corpora, differential reference models, and
+formal specs for a boundary.
+
 ### 5. Implementation Runs Inside a Sandbox
 
 An implementation item gives the implementer:
