@@ -79,7 +79,7 @@ class OracleBatteryScaffoldTest extends AbstractPortConformanceSuite<OracleBatte
     void conformanceSuiteRejectsEmptyImplementationSet() {
         var suite = new EmptyConformanceSuite();
 
-        assertThatThrownBy(() -> suite.tests().toList())
+        assertThatThrownBy(() -> collectTests(suite))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("at least one implementation");
     }
@@ -109,13 +109,15 @@ class OracleBatteryScaffoldTest extends AbstractPortConformanceSuite<OracleBatte
 
     @Test
     void invariantHelpersFailOnRealPropertyViolations() {
+        var unsortedValues = List.of(2, 1);
+
         assertThatThrownBy(() -> OracleInvariants.assertIdempotent("broken-idempotence", "x", value -> value + "!"))
                 .isInstanceOf(AssertionError.class)
                 .hasMessageContaining("broken-idempotence");
         assertThatThrownBy(() -> OracleInvariants.assertRoundTrip("broken-round-trip", 42, Object::toString, text -> 0))
                 .isInstanceOf(AssertionError.class)
                 .hasMessageContaining("broken-round-trip");
-        assertThatThrownBy(() -> OracleInvariants.assertOrdered("broken-order", List.of(2, 1), Integer::compareTo))
+        assertThatThrownBy(() -> OracleInvariants.assertOrdered("broken-order", unsortedValues, Integer::compareTo))
                 .isInstanceOf(AssertionError.class)
                 .hasMessageContaining("broken-order");
     }
@@ -147,10 +149,15 @@ class OracleBatteryScaffoldTest extends AbstractPortConformanceSuite<OracleBatte
     void goldenCorpusDynamicTestFailsWhenRendererDriftsFromPinnedOutput() {
         var corpus = new GoldenCorpus<>("renderer", List.of(new GoldenCorpus.Case<>("lowercase", "CLD", "cld")));
         var tests = corpus.dynamicTests(input -> input);
+        var executable = tests.get(0).getExecutable();
 
-        assertThatThrownBy(() -> tests.get(0).getExecutable().execute())
+        assertThatThrownBy(executable::execute)
                 .isInstanceOf(AssertionError.class)
                 .hasMessageContaining("lowercase");
+    }
+
+    private static List<DynamicTest> collectTests(EmptyConformanceSuite suite) {
+        return suite.tests().toList();
     }
 
     private static final class EmptyConformanceSuite extends AbstractPortConformanceSuite<StringPort> {
