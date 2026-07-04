@@ -33,8 +33,8 @@ Ground Control already owns every substrate the method needs:
 
 ### Stage 0: Method (issues #1290, #1291)
 
-The docs in this folder, the user review round, then the binding ADR plus a
-requirement wave. Everything else is gated behind stage 0.
+The docs in this folder, the user review round, then ADR-087 plus the
+GC-CLD requirement wave. Everything else is gated behind stage 0.
 
 ### Stage 1: Enforcement primitives in this repo (#1292-#1295)
 
