@@ -52,6 +52,7 @@ export const GC_QUERY_PATH_ALLOWLIST = Object.freeze([
   "/api/v1/evidence-artifacts",
   "/api/v1/findings",
   "/api/v1/graph",
+  "/api/v1/grc-assessment-runs",
   "/api/v1/mcp-tool-usage",
   "/api/v1/methodology-profiles",
   "/api/v1/observations",

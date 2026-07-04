@@ -614,6 +614,8 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "192", // V192: research_run_artifact data class (#1008, ADR-086)
                         "193", // V193: research_run_artifact data class audit (#1008 audit parity)
                         "194", // V194: create research_run_operation_authorization (#1008, ADR-086)
-                        "195"); // V195: research_run_operation_authorization audit (#1008 audit parity)
+                        "195", // V195: research_run_operation_authorization audit (#1008 audit parity)
+                        "196", // V196: create grc_assessment_run (GC-GRC-016, #1129)
+                        "197"); // V197: grc_assessment_run audit (GC-GRC-016 audit parity)
     }
 }

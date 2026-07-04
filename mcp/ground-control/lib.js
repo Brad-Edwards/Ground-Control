@@ -903,6 +903,20 @@ export const TO_CAMEL = {
   derivation_run_id: "derivationRunId",
   from_snapshot_id: "fromSnapshotId",
   to_snapshot_id: "toSnapshotId",
+  // GC-GRC-016 — on-demand assessment lane.
+  base_commit_sha: "baseCommitSha",
+  declared_boundaries: "declaredBoundaries",
+  path_selectors: "pathSelectors",
+  scope_type: "scopeType",
+  scope_values: "scopeValues",
+  threat_pack_id: "threatPackId",
+  threat_pack_version: "threatPackVersion",
+  review_policy: "reviewPolicy",
+  review_decision: "reviewDecision",
+  reviewed_by: "reviewedBy",
+  review_rationale: "reviewRationale",
+  idempotency_key: "idempotencyKey",
+  partition_limit: "partitionLimit",
 };
 
 const TO_SNAKE = Object.fromEntries(Object.entries(TO_CAMEL).map(([k, v]) => [v, k]));
@@ -10544,6 +10558,29 @@ export async function controlCoverage({ project, threatModelId } = {}) {
   return request("GET", "/api/v1/control-identification/coverage", {
     params: { project, threatModelId },
   });
+}
+
+// ---------------------------------------------------------------------------
+// On-demand GRC assessment lane (GC-GRC-016)
+// ---------------------------------------------------------------------------
+
+export async function createGrcAssessmentRun(data, project) {
+  return request("POST", "/api/v1/grc-assessment-runs", { body: data, params: { project } });
+}
+
+export async function reviewGrcAssessmentRun(id, data, project) {
+  return request("POST", `/api/v1/grc-assessment-runs/${encodeURIComponent(id)}/review`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function getGrcAssessmentRun(id, project) {
+  return request("GET", `/api/v1/grc-assessment-runs/${encodeURIComponent(id)}`, { params: { project } });
+}
+
+export async function listGrcAssessmentRuns({ project, limit } = {}) {
+  return request("GET", "/api/v1/grc-assessment-runs", { params: { project, limit } });
 }
 
 // ---------------------------------------------------------------------------

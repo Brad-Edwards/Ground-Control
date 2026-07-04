@@ -319,6 +319,11 @@ import {
   GC_CONTROL_IDENTIFICATION_DESCRIPTION,
 } from "./gc-control-identification.js";
 import {
+  gcGrcAssessZodShape,
+  gcGrcAssessToolHandler,
+  GC_GRC_ASSESS_DESCRIPTION,
+} from "./gc-grc-assess.js";
+import {
   gcAuditZodShape,
   gcAuditToolHandler,
   GC_AUDIT_DESCRIPTION,
@@ -2412,6 +2417,21 @@ server.tool(
   async (args) => {
     try {
       const result = await gcControlIdentificationToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_grc_assess: GC-GRC-016 standalone assessment lane. The backend owns the
+// durable lane-run record, deterministic partition/merge state, review gate,
+// and graph-effect execution over the shared derivation-backed engine.
+server.tool(
+  "gc_grc_assess",
+  GC_GRC_ASSESS_DESCRIPTION,
+  gcGrcAssessZodShape,
+  async (args) => {
+    try {
+      const result = await gcGrcAssessToolHandler(args);
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },

@@ -252,7 +252,11 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "192",
                         "193",
                         "194",
-                        "195");
+                        "195",
+                        // V196-V197 (#1129, GC-GRC-016): durable on-demand GRC assessment lane run
+                        // record and Envers audit shadow.
+                        "196",
+                        "197");
     }
 
     @Test

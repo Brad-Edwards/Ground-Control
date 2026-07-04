@@ -273,7 +273,12 @@ shared lifecycle is `derive -> enumerate -> judge -> enforce -> maintain`.
   tests, or authorized dispositions.
 - **Maintain:** the standalone assessment lane shares the same engine for
   bootstrap, reassessment, scheduled/event-triggered runs, drift control, and
-  compliance/evidence exports.
+  compliance/evidence exports. `/assess` drives this lane through
+  `gc_grc_assess`: it creates a durable preview run for a user-directed scope
+  (`whole_project`, paths/packages, boundaries, assets, named threat/risk sets,
+  or stale/drift), requires review unless project policy disables the gate, and
+  commits approved graph effects through the shared derivation/enumeration
+  engine.
 
 GRC artifacts are authoritative in Ground Control's server-side graph by
 default. Repository mirroring is opt-in and must carry generation markers back

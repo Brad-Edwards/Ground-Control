@@ -1199,6 +1199,44 @@ in its allowlist; the cross-project rollup and all POST paths are excluded. Brid
 ingestion (`gc_workflow_run_ingest`) seeds the read-model from canonical issue-thread
 `gc:` markers with `provenance=ISSUE_THREAD`.
 
+### GRC Assessment Runs (GC-GRC-016)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/grc-assessment-runs` | GrcAssessmentRunRequest | 201 | Create a durable on-demand assessment lane run; approved runs commit bounded graph effects |
+| POST | `/grc-assessment-runs/{id}/review` | GrcAssessmentReviewRequest | 200 | Approve or reject a pending assessment run |
+| GET | `/grc-assessment-runs` | - | 200 | List recent assessment lane runs for a project |
+| GET | `/grc-assessment-runs/{id}` | - | 200 | Get one durable assessment lane run |
+
+All endpoints accept an optional `project` query parameter. The lane reuses the
+ADR-058 derivation-backed engine. `REQUEST_REVIEW` creates a durable preview
+record and does not execute derivation/model graph effects. `APPROVED`, or a
+later approved review, executes the selected mode and records only bounded
+graph-effect ids/counts/provenance. Raw source, raw diffs, scanner output,
+prompts, and secrets are not persisted.
+
+**GrcAssessmentRunRequest fields:** `mode` (`MODEL`, `REASSESS`, or
+`RE_SCREEN`), `scopeType` (`WHOLE_PROJECT`, `PACKAGE_PATH_SET`, `BOUNDARY`,
+`ASSET`, `NAMED_THREAT_SET`, `NAMED_RISK_SET`, or `STALE_DRIFT_SET`),
+optional `scopeValues`, `commitSha`, `baseCommitSha`, `languages`, `surfaces`,
+`declaredBoundaries`, `threatPackId`, `threatPackVersion`, `reviewPolicy`
+(`REQUIRED`, `OPTIONAL`, `DISABLED`), `reviewDecision` (`REQUEST_REVIEW`,
+`APPROVED`, `REJECTED`), `idempotencyKey`, and `partitionLimit`.
+
+**GrcAssessmentRunResponse fields:** run identity, project, mode/scope, commit
+and pack selectors, review state, partition counts, dedup/merge summary,
+partitions, graph effect count, graph effects, timestamps, and idempotency key.
+Partition merge is deterministic by stable partition key; duplicate requested
+partitions are counted and removed before graph-effect execution. Reusing the
+same non-null `idempotencyKey` returns the existing run without re-executing.
+
+MCP surface: `gc_grc_assess` with actions `run`, `review`, `get`, and `list`.
+`run` accepts snake_case equivalents (`mode=model|reassess|re_screen`,
+`scope_type=whole_project|package_path_set|boundary|asset|named_threat_set|named_risk_set|stale_drift_set`,
+`review_policy`, `review_decision`, `declared_boundaries`). Boundary scopes
+should pass `declared_boundaries[].path_selectors` so approved commits can
+route through `gc_derivation` partitioned by boundary.
+
 ### Derivations (GC-GRC-001)
 
 | Method | Path | Body | Status | Purpose |
