@@ -105,6 +105,26 @@ class ApiSecurityConfigTest {
             return "derivations-ok";
         }
 
+        // Research high-risk operation authorization (issue #1008 / ADR-086): the decision and
+        // consume routes are admin-only; propose/list/get fall through to authenticated(). Real
+        // path shapes so the single-segment wildcard matcher applies.
+        @PostMapping(
+                "/api/v1/research-runs/00000000-0000-0000-0000-000000000010/operation-authorizations/00000000-0000-0000-0000-000000000100/decision")
+        String researchOpAuthDecision() {
+            return "op-auth-decision-ok";
+        }
+
+        @PostMapping(
+                "/api/v1/research-runs/00000000-0000-0000-0000-000000000010/operation-authorizations/00000000-0000-0000-0000-000000000100/consume")
+        String researchOpAuthConsume() {
+            return "op-auth-consume-ok";
+        }
+
+        @PostMapping("/api/v1/research-runs/00000000-0000-0000-0000-000000000010/operation-authorizations")
+        String researchOpAuthPropose() {
+            return "op-auth-propose-ok";
+        }
+
         @GetMapping("/")
         String spaShell() {
             return "spa-shell";
@@ -220,6 +240,49 @@ class ApiSecurityConfigTest {
         @Test
         void anonymousOnDerivationPath_returns401() throws Exception {
             mockMvc.perform(get("/api/v1/derivations/echo")).andExpect(status().isUnauthorized());
+        }
+
+        private static final String OP_AUTH_DECISION =
+                "/api/v1/research-runs/00000000-0000-0000-0000-000000000010/operation-authorizations/00000000-0000-0000-0000-000000000100/decision";
+        private static final String OP_AUTH_CONSUME =
+                "/api/v1/research-runs/00000000-0000-0000-0000-000000000010/operation-authorizations/00000000-0000-0000-0000-000000000100/consume";
+        private static final String OP_AUTH_PROPOSE =
+                "/api/v1/research-runs/00000000-0000-0000-0000-000000000010/operation-authorizations";
+
+        @Test
+        void userTokenOnResearchOpAuthDecision_returns403() throws Exception {
+            // ADR-086 §3: an AUTONOMOUS run (or ordinary member) cannot approve a high-risk operation.
+            mockMvc.perform(post(OP_AUTH_DECISION).header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void adminTokenOnResearchOpAuthDecision_returns200() throws Exception {
+            mockMvc.perform(post(OP_AUTH_DECISION).header("Authorization", "Bearer admin-token-bbb"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("op-auth-decision-ok"));
+        }
+
+        @Test
+        void userTokenOnResearchOpAuthConsume_returns403() throws Exception {
+            // ADR-086 §3: spending a one-time-use approval is the trusted executor/operator boundary.
+            mockMvc.perform(post(OP_AUTH_CONSUME).header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void adminTokenOnResearchOpAuthConsume_returns200() throws Exception {
+            mockMvc.perform(post(OP_AUTH_CONSUME).header("Authorization", "Bearer admin-token-bbb"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("op-auth-consume-ok"));
+        }
+
+        @Test
+        void userTokenOnResearchOpAuthPropose_returns200() throws Exception {
+            // Proposing/reading an authorization is authenticated-tier, not admin-gated.
+            mockMvc.perform(post(OP_AUTH_PROPOSE).header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("op-auth-propose-ok"));
         }
 
         @Test

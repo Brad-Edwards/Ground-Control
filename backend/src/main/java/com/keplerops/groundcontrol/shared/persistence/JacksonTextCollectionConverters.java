@@ -11,6 +11,7 @@ import com.keplerops.groundcontrol.domain.packregistry.model.PackDependency;
 import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPackEntry;
 import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredThreatRule;
 import com.keplerops.groundcontrol.domain.packregistry.model.TrustPolicyRule;
+import com.keplerops.groundcontrol.domain.research.model.ResearchEgressAllowance;
 import com.keplerops.groundcontrol.domain.riskappetite.model.ToleranceThreshold;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.ActionItem;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.CrosswalkEntry;
@@ -129,6 +130,19 @@ public final class JacksonTextCollectionConverters {
     public static class StringSetConverter extends AbstractJsonTextConverter<Set<String>> {
 
         public StringSetConverter() {
+            super(new TypeReference<>() {});
+        }
+    }
+
+    /**
+     * Persistence converter for the run-snapshotted / intake-declared research
+     * egress policy (per GC-RSCH-N006 / ADR-086 §2, issue #1008).
+     */
+    @Converter
+    public static class ResearchEgressAllowanceListConverter
+            extends AbstractJsonTextConverter<List<ResearchEgressAllowance>> {
+
+        public ResearchEgressAllowanceListConverter() {
             super(new TypeReference<>() {});
         }
     }

@@ -64,6 +64,14 @@ public class ResearchIntake extends BaseEntity {
     @Column(name = "privacy_constraints", columnDefinition = "TEXT")
     private String privacyConstraints;
 
+    // Structured, default-deny data-egress policy (GC-RSCH-N006 / ADR-086 §2).
+    // The run snapshots this at start; absence of an allow rule is deny (local
+    // only). Distinct from the free-text privacyConstraints, which is operator
+    // context only, never the enforcement input.
+    @Convert(converter = JacksonTextCollectionConverters.ResearchEgressAllowanceListConverter.class)
+    @Column(name = "egress_policy", nullable = false, columnDefinition = "TEXT")
+    private List<ResearchEgressAllowance> egressPolicy = new ArrayList<>();
+
     @Column(name = "budget_tokens")
     private Long budgetTokens;
 
@@ -150,6 +158,14 @@ public class ResearchIntake extends BaseEntity {
 
     public void setPrivacyConstraints(String privacyConstraints) {
         this.privacyConstraints = privacyConstraints;
+    }
+
+    public List<ResearchEgressAllowance> getEgressPolicy() {
+        return egressPolicy;
+    }
+
+    public void setEgressPolicy(List<ResearchEgressAllowance> egressPolicy) {
+        this.egressPolicy = egressPolicy == null ? new ArrayList<>() : new ArrayList<>(egressPolicy);
     }
 
     public Long getBudgetTokens() {

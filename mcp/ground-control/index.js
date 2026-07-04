@@ -289,6 +289,11 @@ import {
   GC_RESEARCH_PROVENANCE_DESCRIPTION,
 } from "./gc-research-provenance.js";
 import {
+  gcResearchOperationAuthorizationZodShape,
+  gcResearchOperationAuthorizationToolHandler,
+  GC_RESEARCH_OPERATION_AUTHORIZATION_DESCRIPTION,
+} from "./gc-research-operation-authorization.js";
+import {
   gcDerivationZodShape,
   gcDerivationToolHandler,
   GC_DERIVATION_DESCRIPTION,
@@ -3710,6 +3715,24 @@ server.tool(
   async (args) => {
     try {
       const result = await gcResearchProvenanceToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_research_operation_authorization: GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006,
+// ADR-086. Run-scoped, default-deny authorization records for research high-risk
+// operations. Curated writes (request/decide/consume) mirror REST (gc_query is
+// read-only); reads (list/get) also route through gc_query under the
+// /api/v1/research-runs allow-list. Handler lives in
+// gc-research-operation-authorization.js.
+server.tool(
+  "gc_research_operation_authorization",
+  GC_RESEARCH_OPERATION_AUTHORIZATION_DESCRIPTION,
+  gcResearchOperationAuthorizationZodShape,
+  async (args) => {
+    try {
+      const result = await gcResearchOperationAuthorizationToolHandler(args);
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },

@@ -344,6 +344,12 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 - Search
 - Concrete verifier adapter implementations in `infrastructure/verifiers/` (ADR-014 §6). The `VerifierAdapter` port interface and request/outcome contracts are defined in the domain layer; future work is implementing adapters for each prover (OpenJML, TLA+/TLC, OPA/Rego, Frama-C, manual review).
 - Concrete evidence collection adapter implementations. The `EvidenceCollectionAdapter` port interface, request/result contracts, and classpath/dynamic descriptor registry are defined in the domain layer; external-system collectors belong in infrastructure or trusted plugin code.
+- Research high-risk operation **executors** and sandbox runtime. ADR-086's
+  authorization control plane now exists (see "Exists now"), but the executors
+  that perform generated-code execution, browser activity, lab/hardware actions,
+  and external writes (and the sandbox runtime they run in) are not implemented
+  yet. An executor must present an unexpired, matching authorization record and
+  run under the declared sandbox profile before performing any effect.
 - Traceability Matrix view (`/traceability`) and Audit Timeline view (`/audit`) in the frontend
 - Apache AGE is optional - the app gracefully degrades to JPA-only analysis when AGE is unavailable
 
@@ -365,6 +371,24 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
   `tools/ground_control/common.mjs` to normalize the live ADR title from the
   API's `folder_title` field, keeping repo ADR titles and live Ground Control
   records comparable under the MCP client's response normalization.
+- Research high-risk operation authorization control plane (GC-RSCH-R005 /
+  GC-RSCH-N005 / GC-RSCH-N006 / GC-RSCH-N014, ADR-086). A run snapshots its
+  high-risk operation policy at start (`allowedTools` inventory, structured
+  default-deny `egressPolicy`, and display-only `privacyConstraints`) so later
+  intake edits never re-authorize an active run. `ResearchOperationAuthorizationService`
+  owns a durable, run-scoped `ResearchRunOperationAuthorization` record: a request
+  lands `PROPOSED`, an admin/operator decision (an `AUTONOMOUS` run cannot
+  self-approve) moves it to `APPROVED`/`DENIED` only when the run's snapshotted
+  egress policy permits the `(dataClass, destinationClass, requestedForm)` tuple
+  (`EgressPolicyEvaluator`, default-deny), and a one-time-use `APPROVED` record is
+  spent to `CONSUMED`. Research artifacts carry an optional `dataClass`. Policy and
+  authorization fields are closed enums built only from structured, service-validated
+  inputs, so retrieved/untrusted content can never set tools, egress, sandbox, or
+  approval state (prompt-injection as a data-flow rule). REST at
+  `/api/v1/research-runs/{runId}/operation-authorizations/**` (the decision route is
+  admin-gated in `ApiPathMatrix`) and the `gc_research_operation_authorization` MCP
+  tool. Executors and the sandbox runtime remain out of scope (see "Does not exist
+  yet").
 
 ## MethodologyProfile Aggregate and Risk Terminology Crosswalk (GC-T012)
 

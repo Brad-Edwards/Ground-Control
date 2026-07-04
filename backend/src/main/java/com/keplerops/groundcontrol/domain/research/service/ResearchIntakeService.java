@@ -5,6 +5,7 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.model.ProjectType;
+import com.keplerops.groundcontrol.domain.research.model.ResearchEgressAllowance;
 import com.keplerops.groundcontrol.domain.research.model.ResearchIntake;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchIntakeRepository;
 import java.util.ArrayList;
@@ -36,9 +37,11 @@ public class ResearchIntakeService {
     private static final int PRIVACY_CONSTRAINTS_MAX = 4000;
     private static final int ALLOWED_TOOL_MAX = 100;
     private static final int ALLOWED_TOOLS_MAX_COUNT = 100;
+    private static final int EGRESS_POLICY_MAX_COUNT = 200;
 
     private static final String FIELD = "field";
     private static final String ALLOWED_TOOLS = "allowedTools";
+    private static final String EGRESS_POLICY = "egressPolicy";
     private static final String INVALID_CODE = "research_intake_invalid";
 
     private final ResearchIntakeRepository intakeRepository;
@@ -71,6 +74,7 @@ public class ResearchIntakeService {
                 normaliseTools(command.allowedTools()));
         intake.setPaperContext(emptyToNull(command.paperContext()));
         intake.setPrivacyConstraints(emptyToNull(command.privacyConstraints()));
+        intake.setEgressPolicy(command.egressPolicy());
         intake.setBudgetTokens(command.budgetTokens());
         intake.setBudgetWallClockMinutes(command.budgetWallClockMinutes());
         intake.setBudgetCostUsdMicros(command.budgetCostUsdMicros());
@@ -108,6 +112,7 @@ public class ResearchIntakeService {
         intake.setAutonomyLevel(command.autonomyLevel());
         intake.setAllowedTools(normaliseTools(command.allowedTools()));
         intake.setPrivacyConstraints(emptyToNull(command.privacyConstraints()));
+        intake.setEgressPolicy(command.egressPolicy());
         intake.setBudgetTokens(command.budgetTokens());
         intake.setBudgetWallClockMinutes(command.budgetWallClockMinutes());
         intake.setBudgetCostUsdMicros(command.budgetCostUsdMicros());
@@ -173,9 +178,38 @@ public class ResearchIntakeService {
                         Map.of(FIELD, ALLOWED_TOOLS, "max", ALLOWED_TOOL_MAX));
             }
         }
+        validateEgressPolicy(command.egressPolicy());
         rejectNegative(command.budgetTokens(), "budgetTokens");
         rejectNegative(command.budgetWallClockMinutes(), "budgetWallClockMinutes");
         rejectNegative(command.budgetCostUsdMicros(), "budgetCostUsdMicros");
+    }
+
+    /**
+     * Bound the egress policy and require each rule's classification enums (the
+     * enforcement fields) to be present — a partially-specified rule cannot
+     * silently degrade the default-deny decision (GC-RSCH-N006 / ADR-086 §2).
+     */
+    private void validateEgressPolicy(List<ResearchEgressAllowance> policy) {
+        if (policy == null) {
+            return;
+        }
+        if (policy.size() > EGRESS_POLICY_MAX_COUNT) {
+            throw new DomainValidationException(
+                    "ResearchIntake.egressPolicy has too many entries",
+                    INVALID_CODE,
+                    Map.of(FIELD, EGRESS_POLICY, "max", EGRESS_POLICY_MAX_COUNT));
+        }
+        for (var allowance : policy) {
+            if (allowance == null
+                    || allowance.dataClass() == null
+                    || allowance.destinationClass() == null
+                    || allowance.allowedForm() == null) {
+                throw new DomainValidationException(
+                        "ResearchIntake.egressPolicy entries require dataClass, destinationClass, and allowedForm",
+                        INVALID_CODE,
+                        Map.of(FIELD, EGRESS_POLICY));
+            }
+        }
     }
 
     private void requireUnder(String value, int max, String field) {

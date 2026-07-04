@@ -240,6 +240,34 @@ class ResearchRunServiceTest {
     }
 
     @Test
+    void start_snapshotsAllowedToolsPrivacyAndEgressPolicy() {
+        var intake = new com.keplerops.groundcontrol.domain.research.model.ResearchIntake(
+                project,
+                "goal",
+                com.keplerops.groundcontrol.domain.research.model.ContributionType.REVIEW,
+                IntendedOutput.SCOPING_REVIEW,
+                AutonomyLevel.COPILOT,
+                List.of("scholarly-search"));
+        intake.setPrivacyConstraints("no external providers");
+        intake.setEgressPolicy(List.of(new com.keplerops.groundcontrol.domain.research.model.ResearchEgressAllowance(
+                com.keplerops.groundcontrol.domain.research.model.ResearchDataClass.PUBLIC,
+                com.keplerops.groundcontrol.domain.research.model.ResearchDestinationClass.CITATION_PROVIDER,
+                com.keplerops.groundcontrol.domain.research.model.ResearchDataForm.DERIVED_METADATA,
+                null)));
+        when(intakeRepository.findByProjectId(PROJECT_ID)).thenReturn(Optional.of(intake));
+        when(runRepository.existsByProjectIdAndUid(PROJECT_ID, "RUN-1")).thenReturn(false);
+
+        var run = service.start(new StartCmd("RUN-1", null, null).toCommand());
+
+        assertThat(run.getAllowedTools()).containsExactly("scholarly-search");
+        assertThat(run.getPrivacyConstraints()).isEqualTo("no external providers");
+        assertThat(run.getEgressPolicy()).hasSize(1);
+        assertThat(run.getEgressPolicy().get(0).destinationClass())
+                .isEqualTo(
+                        com.keplerops.groundcontrol.domain.research.model.ResearchDestinationClass.CITATION_PROVIDER);
+    }
+
+    @Test
     void start_autonomousMode_gatesUseAutonomousDefault() {
         when(intakeRepository.findByProjectId(PROJECT_ID)).thenReturn(Optional.empty());
         when(runRepository.existsByProjectIdAndUid(PROJECT_ID, "RUN-1")).thenReturn(false);

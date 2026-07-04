@@ -64,6 +64,11 @@ import {
   PROVENANCE_EDGE_RELATIONS,
   // Methodology source coverage gate (GC-RSCH-F006)
   METHODOLOGY_SOURCE_STATES,
+  // Research high-risk operation authorization (GC-RSCH-R005 / ADR-086)
+  RESEARCH_HIGH_RISK_OPERATION_KINDS,
+  RESEARCH_DATA_CLASSES,
+  RESEARCH_DESTINATION_CLASSES,
+  RESEARCH_DATA_FORMS,
 } from "./lib.js";
 
 import {
@@ -1274,6 +1279,48 @@ describe("MCP–OpenAPI write-contract", () => {
       },
       enums: {
         relation: PROVENANCE_EDGE_RELATIONS,
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_operation_authorization — request (GC-RSCH-R005 / ADR-086 §3)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_operation_authorization/request → OperationAuthorizationRequest", () => {
+    assertRow({
+      label: "gc_research_operation_authorization/request",
+      mcpFields: [
+        "operation_kind", "data_class", "destination_class", "requested_form",
+        "tool_id", "sandbox_profile", "target_class", "expires_at", "summary", "source_action_id",
+      ],
+      openapiSchema: "OperationAuthorizationRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+        runId: "path param /research-runs/{runId} — not a body field",
+      },
+      enums: {
+        operationKind: RESEARCH_HIGH_RISK_OPERATION_KINDS,
+        dataClass: RESEARCH_DATA_CLASSES,
+        destinationClass: RESEARCH_DESTINATION_CLASSES,
+        requestedForm: RESEARCH_DATA_FORMS,
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_research_operation_authorization — decide (GC-RSCH-R005 / ADR-086 §3)
+  // -------------------------------------------------------------------------
+
+  describe("gc_research_operation_authorization/decide → OperationAuthorizationDecisionRequest", () => {
+    assertRow({
+      label: "gc_research_operation_authorization/decide",
+      mcpFields: ["approve", "note"],
+      openapiSchema: "OperationAuthorizationDecisionRequest",
+      mcpOnly: {
+        ...MCP_CONTROL_ARGS,
+        runId: "path param /research-runs/{runId} — not a body field",
+        authorizationId: "path param /operation-authorizations/{authorizationId} — not a body field",
       },
     });
   });
