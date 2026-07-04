@@ -76,10 +76,15 @@ regeneration is deterministic and diffs are meaningful.
 
 - **Frontend:** `openapi-typescript` generates client types under
   `contracts/gen/typescript/`, consumed by `frontend/src/lib/api-client.ts`.
-  The hand-maintained unions in `frontend/src/types/api.ts` are removed as
-  pages migrate (GC-Q015 clause d completes the removal). ADR-034's enum
-  extractor check retires per mirror only when the generated client replaces
-  that mirror; until then both gates run.
+  Generation owns the contract shape, not a second HTTP runtime: the console
+  must keep using the existing `apiFetch`/`apiUpload`/`apiDelete` boundary, or
+  configure any generated operation helpers to delegate through that boundary,
+  so CSRF headers, same-origin credentials, 401 login redirect behavior, and
+  `ErrorResponse` parsing stay centralized. The hand-maintained unions in
+  `frontend/src/types/api.ts` are removed as pages migrate (GC-Q015 clause d
+  completes the removal). ADR-034's enum extractor check retires per mirror
+  only when the generated client replaces that mirror; until then both gates
+  run.
 - **MCP:** the write-tool allowlists stay inventory-gated per the ADR-034
   amendment (#1106) - importing live exported arrays and comparing against
   the spec proved robust, and generating a schema module for MCP is deferred.

@@ -445,19 +445,35 @@ clone-local hook path the dispatcher delegates to, proves Git actually dispatche
 to them, then runs `pre-commit run --all-files`. `.git/hooks/` is not versioned, so
 this step does not survive a fresh clone by design; re-run it after cloning.
 
-### MCP–Backend Write-Contract Gate (ADR-034, #1106)
+### Contract Surface and MCP Write-Contract Gates (ADR-034, ADR-082)
 
-`make mcp-openapi-contract` (CI job `mcp-contract`) fails the build when an MCP
-write tool's request-body field allowlist or enum mirror drifts from the
-backend's generated OpenAPI contract. It is **separate from `make policy`**: the
-contract is compared against the Springdoc OpenAPI generated from the *current
-backend build*, which requires booting the full Spring context (Testcontainers
-Postgres + AGE), which the Python-only `policy` job cannot do. The flow is:
+`make contracts` regenerates the committed contract surface: Springdoc OpenAPI
+into `contracts/openapi/openapi.json` and generated TypeScript API types under
+`contracts/gen/typescript/`. `frontend/src/types/api.ts` is a compatibility
+re-export only; hand-mirrored DTOs and enum constants belong in the generator
+inventory, not in frontend source. `make contracts-check` reruns generation and
+fails on `git diff` across `contracts/` and that frontend shim.
+
+`make mcp-openapi-contract` (CI job `mcp-contract`) extends the same flow for
+MCP write-tool parity. It is **separate from `make policy`** because OpenAPI is
+generated from the current backend build, which requires booting the full Spring
+context (Testcontainers Postgres + AGE), while the Python-only `policy` job
+cannot do that. The CI flow is:
 
 1. `generateContractOpenApi` (Gradle, `McpOpenApiContractSpecTest`) boots the app
-   via Testcontainers, captures `/api/openapi.json`, and writes
-   `backend/build/contract/openapi.json`.
-2. `node --test mcp/ground-control/openapi-contract.test.js` imports the live MCP
+   via Testcontainers, captures `/api/openapi.json`, and writes both
+   `backend/build/contract/openapi.json` and
+   `contracts/openapi/openapi.json`.
+2. `node tools/contracts/generate-contracts.mjs` canonicalizes the committed
+   OpenAPI artifact and refreshes the generated TypeScript surface.
+3. `git diff --exit-code contracts/ frontend/src/types/api.ts` fails on
+   generated-artifact drift.
+4. `node tools/contracts/check-breaking-changes.mjs` compares
+   `contracts/openapi/openapi.json` against `BASE_REF` and fails removed paths,
+   operations, fields, retyped fields, narrowed enums, or tightened required
+   sets unless `contracts/CHANGES.md` carries a BREAKING/deprecation record.
+5. `GC_OPENAPI_SPEC=contracts/openapi/openapi.json node --test
+   mcp/ground-control/openapi-contract.test.js` imports the live MCP
    field arrays (`GOVERNANCE_FIELDS`, `CONTROL_FIELDS`, the per-tool
    `*_BODY_FIELDS`, `LINK_CREATE_BODY_FIELDS`) and asserts, per tool/entity/action
    inventory row, that every MCP field maps to an OpenAPI request-schema property

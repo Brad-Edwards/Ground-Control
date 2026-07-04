@@ -16,6 +16,7 @@ repos:
       - id: check-json
       - id: check-added-large-files
         args: [--maxkb=500]
+        exclude: ^contracts/openapi/openapi\.json$
       - id: check-merge-conflict
       - id: detect-private-key
         exclude: ^backend/src/test/

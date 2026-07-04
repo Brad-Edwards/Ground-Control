@@ -1,0 +1,72 @@
+# GC-O014 / ADR-082 authorization matrix contract.
+# Runtime enforcement stays in ApiPathMatrix.java. This file is the committed
+# contract artifact that policy checks sync against that Java source.
+rules:
+  - id: admin-prefix
+    method: "*"
+    path: "/api/v1/admin/**"
+    access: "ROLE_ADMIN"
+  - id: embeddings-prefix
+    method: "*"
+    path: "/api/v1/embeddings/**"
+    access: "ROLE_ADMIN"
+  - id: sweep-prefix
+    method: "*"
+    path: "/api/v1/analysis/sweep/**"
+    access: "ROLE_ADMIN"
+  - id: pack-registry-prefix
+    method: "*"
+    path: "/api/v1/pack-registry/**"
+    access: "ROLE_ADMIN"
+  - id: trust-policies-prefix
+    method: "*"
+    path: "/api/v1/trust-policies/**"
+    access: "ROLE_ADMIN"
+  - id: pack-install-records-prefix
+    method: "*"
+    path: "/api/v1/pack-install-records/**"
+    access: "ROLE_ADMIN"
+  - id: mcp-tool-usage-read-root
+    method: "GET"
+    path: "/api/v1/mcp-tool-usage"
+    access: "ROLE_ADMIN"
+  - id: mcp-tool-usage-read-prefix
+    method: "GET"
+    path: "/api/v1/mcp-tool-usage/**"
+    access: "ROLE_ADMIN"
+  - id: workflow-cross-project-root
+    method: "GET"
+    path: "/api/v1/workflow-runs/cross-project-aggregate"
+    access: "ROLE_ADMIN"
+  - id: workflow-cross-project-prefix
+    method: "GET"
+    path: "/api/v1/workflow-runs/cross-project-aggregate/**"
+    access: "ROLE_ADMIN"
+  - id: risk-appetite-create
+    method: "POST"
+    path: "/api/v1/risk-appetite-profiles"
+    access: "ROLE_ADMIN"
+  - id: risk-appetite-write-prefix
+    method: "POST|PUT|DELETE"
+    path: "/api/v1/risk-appetite-profiles/**"
+    access: "ROLE_ADMIN"
+  - id: evidence-campaign-create
+    method: "POST"
+    path: "/api/v1/evidence-campaigns"
+    access: "ROLE_ADMIN"
+  - id: evidence-campaign-write-prefix
+    method: "POST|PUT"
+    path: "/api/v1/evidence-campaigns/**"
+    access: "ROLE_ADMIN"
+  - id: data-classification-lattice-write
+    method: "PUT|DELETE"
+    path: "/api/v1/data-classification/lattice"
+    access: "ROLE_ADMIN"
+  - id: research-operation-authorization-decision
+    method: "POST"
+    path: "/api/v1/research-runs/*/operation-authorizations/*/decision"
+    access: "ROLE_ADMIN"
+  - id: research-operation-authorization-consume
+    method: "POST"
+    path: "/api/v1/research-runs/*/operation-authorizations/*/consume"
+    access: "ROLE_ADMIN"
