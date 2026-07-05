@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "boundaries": [
+    {
+      "id": "backend-boundary-model",
+      "name": "Backend boundary model service",
+      "lock_level": "guarded",
+      "paths": [
+        "backend/src/main/java/com/keplerops/groundcontrol/domain/derivation/service/BoundaryModelService.java",
+        "backend/src/test/java/com/keplerops/groundcontrol/unit/domain/derivation/BoundaryModelServiceTest.java"
+      ],
+      "mutation": {
+        "enabled": true,
+        "tool": "pitest",
+        "threshold": 64,
+        "time_budget_minutes": 15,
+        "baseline": {
+          "score": 64.0,
+          "killed": 46,
+          "survived": 19,
+          "no_coverage": 7,
+          "total": 72,
+          "measured_at": "2026-07-04",
+          "tool_version": "pitest 1.17.0"
+        },
+        "pitest": {
+          "target_classes": [
+            "com.keplerops.groundcontrol.domain.derivation.service.BoundaryModelService"
+          ],
+          "target_tests": [
+            "com.keplerops.groundcontrol.unit.domain.derivation.BoundaryModelServiceTest"
+          ]
+        }
+      }
+    },
+    {
+      "id": "frontend-oracle-battery",
+      "name": "Frontend oracle battery scaffold",
+      "lock_level": "guarded",
+      "paths": [
+        "frontend/src/test/oracle-battery.ts",
+        "frontend/src/test/oracle-battery.test.ts"
+      ],
+      "mutation": {
+        "enabled": true,
+        "tool": "stryker",
+        "threshold": 31,
+        "time_budget_minutes": 10,
+        "baseline": {
+          "score": 31.58,
+          "killed": 18,
+          "survived": 37,
+          "no_coverage": 2,
+          "total": 57,
+          "measured_at": "2026-07-04",
+          "tool_version": "stryker-js 9.6.1"
+        },
+        "stryker": {
+          "mutate": [
+            "src/test/oracle-battery.ts"
+          ],
+          "test_files": [
+            "src/test/oracle-battery.test.ts"
+          ],
+          "concurrency": 2
+        }
+      }
+    }
+  ]
+}

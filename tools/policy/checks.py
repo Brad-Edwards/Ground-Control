@@ -19,6 +19,8 @@ BRANCH_PROTECTION_BASELINE_PATH = Path(".github/branch-protection-baseline.json"
 CI_WORKFLOW_PATH = Path(".github/workflows/ci.yml")
 PRE_COMMIT_CONFIG_PATH = Path(".pre-commit-config.yaml")
 SONAR_NEW_ISSUE_GATE_PATH = Path("tools/sonar/assert_no_new_issues.py")
+MUTATION_REGISTRY_PATH = Path("architecture/registry/mutation-boundaries.json")
+MUTATION_GATE_SCRIPT_PATH = Path("tools/mutation/run_boundary_mutation.py")
 CONTROLLER_PATH_RE = re.compile(
     r"^backend/src/main/java/com/keplerops/groundcontrol/api/.+Controller\.java$"
 )
@@ -31,6 +33,7 @@ CI_STRICTNESS_REQUIRED_CONTEXTS = frozenset(
         "SonarCloud Code Analysis",
         "build",
         "integration",
+        "mutation",
         "osv-scanner",
         "policy",
         "sonar",
@@ -1235,6 +1238,229 @@ def run_ci_strictness_contract(root: Path = REPO_ROOT) -> list[Violation]:
             )
 
     return violations
+
+
+def run_mutation_gate_contract(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert the CLD mutation gate stays wired to registry data and CI."""
+    violations: list[Violation] = []
+    registry_path = root / MUTATION_REGISTRY_PATH
+    runner_path = root / MUTATION_GATE_SCRIPT_PATH
+    workflow_path = root / CI_WORKFLOW_PATH
+    branch_protection_path = root / BRANCH_PROTECTION_BASELINE_PATH
+
+    if not runner_path.exists():
+        violations.append(
+            Violation(
+                code="mutation-gate-runner-missing",
+                message="CLD mutation gate runner is missing.",
+                details=[f"expected at {MUTATION_GATE_SCRIPT_PATH.as_posix()}"],
+            )
+        )
+    if not registry_path.exists():
+        violations.append(
+            Violation(
+                code="mutation-gate-registry-missing",
+                message="CLD mutation boundary registry is missing.",
+                details=[f"expected at {MUTATION_REGISTRY_PATH.as_posix()}"],
+            )
+        )
+    else:
+        violations.extend(_validate_mutation_registry(registry_path, root))
+
+    if not workflow_path.exists():
+        violations.append(
+            Violation(
+                code="mutation-gate-ci-missing",
+                message="CI workflow is missing, so the mutation check cannot run.",
+                details=[f"expected at {CI_WORKFLOW_PATH.as_posix()}"],
+            )
+        )
+    else:
+        workflow_text = workflow_path.read_text(encoding="utf-8")
+        if re.search(r"(?m)^  mutation:\s*$", workflow_text) is None:
+            violations.append(
+                Violation(
+                    code="mutation-gate-ci-job-missing",
+                    message="CI workflow must define a top-level mutation job.",
+                    details=[f"missing `mutation:` job in {CI_WORKFLOW_PATH.as_posix()}"],
+                )
+            )
+        if MUTATION_GATE_SCRIPT_PATH.as_posix() not in workflow_text:
+            violations.append(
+                Violation(
+                    code="mutation-gate-ci-runner-missing",
+                    message="CI mutation job must invoke the repo mutation runner.",
+                    details=[f"missing {MUTATION_GATE_SCRIPT_PATH.as_posix()} invocation"],
+                )
+            )
+        if "BASE_REF: origin/${{ github.base_ref }}" not in workflow_text:
+            violations.append(
+                Violation(
+                    code="mutation-gate-ci-base-ref",
+                    message="CI mutation job must scope changed paths against the pull request base ref.",
+                    details=["missing `BASE_REF: origin/${{ github.base_ref }}`"],
+                )
+            )
+        if "mutation-reports" not in workflow_text:
+            violations.append(
+                Violation(
+                    code="mutation-gate-ci-artifact",
+                    message="CI mutation job must upload bounded mutation reports for inspection.",
+                    details=["missing mutation-reports artifact upload"],
+                )
+            )
+
+    if not branch_protection_path.exists():
+        violations.append(
+            Violation(
+                code="mutation-gate-branch-protection-missing",
+                message="Versioned branch-protection baseline is missing.",
+                details=[f"expected at {BRANCH_PROTECTION_BASELINE_PATH.as_posix()}"],
+            )
+        )
+    else:
+        try:
+            baseline = load_json(branch_protection_path)
+        except json.JSONDecodeError as exc:
+            violations.append(
+                Violation(
+                    code="mutation-gate-branch-protection-invalid",
+                    message="Versioned branch-protection baseline is not valid JSON.",
+                    details=[str(exc)],
+                )
+            )
+        else:
+            branches = baseline.get("branches", {})
+            for branch in CI_STRICTNESS_BRANCHES:
+                contexts = (
+                    branches.get(branch, {})
+                    .get("required_status_checks", {})
+                    .get("contexts", [])
+                )
+                if "mutation" not in contexts:
+                    violations.append(
+                        Violation(
+                            code="mutation-gate-branch-protection-context",
+                            message=f"{branch} branch protection must require the mutation check.",
+                            details=["missing required context: mutation"],
+                        )
+                    )
+
+    return violations
+
+
+def _validate_mutation_registry(registry_path: Path, root: Path) -> list[Violation]:
+    violations: list[Violation] = []
+    try:
+        registry = load_json(registry_path)
+    except json.JSONDecodeError as exc:
+        return [
+            Violation(
+                code="mutation-gate-registry-invalid-json",
+                message="CLD mutation boundary registry is not valid JSON.",
+                details=[str(exc)],
+            )
+        ]
+
+    if registry.get("schema_version") != 1:
+        violations.append(
+            Violation(
+                code="mutation-gate-registry-schema",
+                message="CLD mutation registry schema_version must be 1.",
+                details=[f"path: {MUTATION_REGISTRY_PATH.as_posix()}"],
+            )
+        )
+    boundaries = registry.get("boundaries")
+    if not isinstance(boundaries, list) or not boundaries:
+        violations.append(
+            Violation(
+                code="mutation-gate-registry-boundaries",
+                message="CLD mutation registry must declare at least one boundary.",
+                details=[f"path: {MUTATION_REGISTRY_PATH.as_posix()}"],
+            )
+        )
+        return violations
+
+    seen_ids: set[str] = set()
+    for index, boundary in enumerate(boundaries):
+        prefix = f"boundaries[{index}]"
+        if not isinstance(boundary, dict):
+            violations.append(_mutation_registry_violation(prefix, "boundary must be an object"))
+            continue
+        boundary_id = boundary.get("id")
+        if not isinstance(boundary_id, str) or not boundary_id.strip():
+            violations.append(_mutation_registry_violation(prefix, "id must be a non-empty string"))
+        elif boundary_id in seen_ids:
+            violations.append(_mutation_registry_violation(prefix, f"id duplicates {boundary_id}"))
+        else:
+            seen_ids.add(boundary_id)
+        if boundary.get("lock_level") not in {"locked", "guarded", "fluid"}:
+            violations.append(_mutation_registry_violation(prefix, "lock_level must be locked, guarded, or fluid"))
+        paths = boundary.get("paths")
+        if not isinstance(paths, list) or not paths:
+            violations.append(_mutation_registry_violation(prefix, "paths must be a non-empty list"))
+        else:
+            for path_index, selector in enumerate(paths):
+                if not isinstance(selector, str) or not selector.strip():
+                    violations.append(_mutation_registry_violation(prefix, f"paths[{path_index}] must be non-empty"))
+                    continue
+                selector_prefix = selector.removesuffix("/**")
+                if selector.startswith("/") or ".." in Path(selector_prefix).parts:
+                    violations.append(_mutation_registry_violation(prefix, f"paths[{path_index}] escapes repo"))
+                if "*" in selector_prefix or ("*" in selector and not selector.endswith("/**")):
+                    violations.append(
+                        _mutation_registry_violation(prefix, f"paths[{path_index}] only supports exact paths or /**")
+                    )
+                candidate = root / selector_prefix
+                try:
+                    candidate.resolve().relative_to(root.resolve())
+                except ValueError:
+                    violations.append(_mutation_registry_violation(prefix, f"paths[{path_index}] escapes repo"))
+
+        mutation = boundary.get("mutation")
+        if not isinstance(mutation, dict):
+            violations.append(_mutation_registry_violation(prefix, "mutation must be an object"))
+            continue
+        tool = mutation.get("tool")
+        if tool not in {"pitest", "stryker"}:
+            violations.append(_mutation_registry_violation(prefix, "mutation.tool must be pitest or stryker"))
+        threshold = mutation.get("threshold")
+        if not isinstance(threshold, int) or isinstance(threshold, bool) or threshold < 1 or threshold > 100:
+            violations.append(_mutation_registry_violation(prefix, "mutation.threshold must be an integer in [1, 100]"))
+        time_budget = mutation.get("time_budget_minutes")
+        if not isinstance(time_budget, int) or isinstance(time_budget, bool) or time_budget < 1:
+            violations.append(_mutation_registry_violation(prefix, "mutation.time_budget_minutes must be positive"))
+        baseline = mutation.get("baseline")
+        if not isinstance(baseline, dict):
+            violations.append(_mutation_registry_violation(prefix, "mutation.baseline is required"))
+        else:
+            for key in ("score", "killed", "survived", "total", "measured_at", "tool_version"):
+                if key not in baseline:
+                    violations.append(_mutation_registry_violation(prefix, f"mutation.baseline.{key} is required"))
+        if tool == "pitest":
+            pitest = mutation.get("pitest")
+            if not isinstance(pitest, dict) or not pitest.get("target_classes") or not pitest.get("target_tests"):
+                violations.append(
+                    _mutation_registry_violation(
+                        prefix, "mutation.pitest.target_classes and target_tests are required"
+                    )
+                )
+        if tool == "stryker":
+            stryker = mutation.get("stryker")
+            if not isinstance(stryker, dict) or not stryker.get("mutate") or not stryker.get("test_files"):
+                violations.append(
+                    _mutation_registry_violation(prefix, "mutation.stryker.mutate and test_files are required")
+                )
+
+    return violations
+
+
+def _mutation_registry_violation(prefix: str, detail: str) -> Violation:
+    return Violation(
+        code="mutation-gate-registry-invalid",
+        message="CLD mutation boundary registry is invalid.",
+        details=[f"{prefix}: {detail}"],
+    )
 
 
 def run_deploy_compose_credential_passthrough(root: Path = REPO_ROOT) -> list[Violation]:
@@ -3078,6 +3304,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_migration_policy(changed_files, base=args.base))
     violations.extend(run_changelog_fragment_check(changed_files))
     violations.extend(run_ci_strictness_contract())
+    violations.extend(run_mutation_gate_contract())
     violations.extend(run_deploy_compose_credential_passthrough())
     violations.extend(run_ghcr_namespace_drift())
     violations.extend(run_deploy_artifact_consistency())

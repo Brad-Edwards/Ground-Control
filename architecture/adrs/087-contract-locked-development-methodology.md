@@ -233,6 +233,19 @@ No later stage may weaken an existing GC-O007, ADR-029, ADR-036, ADR-058, or
 ADR-082 gate. CLD adds checks and authority records; it does not remove the
 current workflow's traceability, review, CI, SonarCloud, or merge gates.
 
+## Amendments
+
+**2026-07-04 (issue #1293, mutation meta-oracle gate).** Stage 1 now includes
+a repo-native mutation gate for the first registered CLD boundaries. Boundary
+thresholds and baselines live in committed architecture-registry data under
+`architecture/registry/`, not in Gradle, npm, Makefile, or CI YAML. The
+`tools/mutation/run_boundary_mutation.py` runner maps PR changed paths to
+registry selectors and invokes PIT or Stryker with fixed argv only for changed
+mutation-contract boundaries. Interior-only changes emit a deterministic green
+no-op. The CI `mutation` job is a required PR context on `main` and `dev`, and
+`tools/policy/checks.py` validates the registry, runner, CI invocation, report
+artifact upload, and branch-protection baseline remain synchronized.
+
 ## Consequences
 
 ### Positive

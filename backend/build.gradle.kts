@@ -37,6 +37,11 @@ sonar {
 // -Pquick: disable slow static analysis for fast dev loops
 val quick = providers.gradleProperty("quick").isPresent
 
+fun csvGradleProperty(name: String) =
+    providers.gradleProperty(name).map { value ->
+        value.split(",").map(String::trim).filter(String::isNotEmpty).toSet()
+    }
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
@@ -229,18 +234,23 @@ tasks.check {
 pitest {
     junit5PluginVersion.set("1.2.1")
     pitestVersion.set("1.17.0")
-    targetClasses.set(listOf("com.keplerops.groundcontrol.*"))
+    targetClasses.set(csvGradleProperty("mutationTargetClasses").orElse(setOf("com.keplerops.groundcontrol.*")))
+    targetTests.set(csvGradleProperty("mutationTargetTests").orElse(emptySet()))
     // Mutators: default set is good enough for the initial calibration.
     mutators.set(listOf("DEFAULTS"))
     threads.set(4)
     outputFormats.set(listOf("HTML", "XML"))
     timestampedReports.set(false)
+    reportDir.set(
+            providers.gradleProperty("mutationReportDir")
+                    .map { layout.projectDirectory.dir(it) }
+                    .orElse(layout.projectDirectory.dir("build/reports/pitest")))
     // Advisory-only thresholds (#931 codex F2). Score is in the report;
     // build does not fail on low mutation/coverage during the calibration
     // window. Tighten after the first ~5 PRs of evidence.
-    mutationThreshold.set(0)
+    mutationThreshold.set(providers.gradleProperty("mutationThreshold").map(String::toInt).orElse(0))
     coverageThreshold.set(0)
-    failWhenNoMutations.set(false)
+    failWhenNoMutations.set(providers.gradleProperty("mutationFailWhenNoMutations").map(String::toBoolean).orElse(false))
 }
 
 // SpotBugs

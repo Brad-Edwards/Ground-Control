@@ -38,6 +38,7 @@ from tools.policy.checks import (
     run_enum_contract_check,
     run_ghcr_namespace_drift,
     run_migration_policy,
+    run_mutation_gate_contract,
     run_no_deferral_disposition_check,
     run_pr_body_check,
     run_test_quality_decision_record_contract,
@@ -506,6 +507,80 @@ class PolicyChecksTest(unittest.TestCase):
             codes = {item.code for item in violations}
             self.assertIn("ci-strictness-branch-protection-strict", codes)
             self.assertIn("ci-strictness-branch-protection-contexts", codes)
+
+    def test_mutation_gate_contract_passes_on_repo(self):
+        violations = run_mutation_gate_contract(root=REPO_ROOT)
+        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
+
+    @staticmethod
+    def _copy_mutation_gate_contract_fixture(root: Path) -> None:
+        for rel in [
+            ".github/workflows/ci.yml",
+            ".github/branch-protection-baseline.json",
+            "architecture/registry/mutation-boundaries.json",
+            "tools/mutation/run_boundary_mutation.py",
+        ]:
+            src = REPO_ROOT / rel
+            dst = root / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+    def test_mutation_gate_contract_rejects_missing_required_context(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._copy_mutation_gate_contract_fixture(root)
+
+            baseline_path = root / ".github/branch-protection-baseline.json"
+            baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+            baseline["branches"]["dev"]["required_status_checks"]["contexts"].remove("mutation")
+            baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+
+            violations = run_mutation_gate_contract(root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("mutation-gate-branch-protection-context", codes)
+
+    def test_mutation_gate_contract_rejects_registry_schema_errors(self):
+        def duplicate_id(data: dict) -> None:
+            data["boundaries"][1]["id"] = data["boundaries"][0]["id"]
+
+        def invalid_tool(data: dict) -> None:
+            data["boundaries"][0]["mutation"]["tool"] = "mutmut"
+
+        def escaped_selector(data: dict) -> None:
+            data["boundaries"][0]["paths"] = ["../outside.java"]
+
+        def invalid_threshold(data: dict) -> None:
+            data["boundaries"][0]["mutation"]["threshold"] = 0
+
+        def missing_baseline_field(data: dict) -> None:
+            del data["boundaries"][0]["mutation"]["baseline"]["tool_version"]
+
+        def missing_stryker_targets(data: dict) -> None:
+            del data["boundaries"][1]["mutation"]["stryker"]["test_files"]
+
+        cases = [
+            ("duplicate-id", duplicate_id, "id duplicates"),
+            ("invalid-tool", invalid_tool, "mutation.tool must be pitest or stryker"),
+            ("escaped-selector", escaped_selector, "escapes repo"),
+            ("invalid-threshold", invalid_threshold, "mutation.threshold must be an integer"),
+            ("missing-baseline-field", missing_baseline_field, "mutation.baseline.tool_version is required"),
+            ("missing-stryker-targets", missing_stryker_targets, "mutation.stryker.mutate and test_files are required"),
+        ]
+
+        for name, mutate, expected in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp_dir:
+                root = Path(tmp_dir)
+                self._copy_mutation_gate_contract_fixture(root)
+                registry_path = root / "architecture/registry/mutation-boundaries.json"
+                registry = json.loads(registry_path.read_text(encoding="utf-8"))
+                mutate(registry)
+                registry_path.write_text(json.dumps(registry), encoding="utf-8")
+
+                violations = run_mutation_gate_contract(root=root)
+                rendered = "\n".join(item.render() for item in violations)
+
+                self.assertIn("mutation-gate-registry-invalid", {item.code for item in violations})
+                self.assertIn(expected, rendered)
 
     def test_poll_loop_routing_stages_are_the_async_poll_steps(self):
         self.assertEqual(

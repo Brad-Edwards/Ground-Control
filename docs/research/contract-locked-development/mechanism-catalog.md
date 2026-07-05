@@ -61,7 +61,7 @@ depends on the ADR (#1291) or on milestone-17 substrate.
 
 | Mechanism | Stack | Status |
 |-----------|-------|--------|
-| Mutation testing with per-boundary thresholds | Java: PIT; TS: Stryker | Later (#1293) |
+| Mutation testing with per-boundary thresholds | Java: PIT; TS: Stryker | Now (#1293) |
 | Seeded-defect red-team runs scoring battery catch rate | any | Later (#1297) |
 | Metrics: invariant coverage, first-pass green rate, defect escape rate | any | Later (#1297) |
 

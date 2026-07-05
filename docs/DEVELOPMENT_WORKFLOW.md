@@ -429,8 +429,9 @@ PreToolUse hook on `Bash`. The user owns every actual merge. Blocked uncondition
 - `python3 bin/policy` enforces ADR/workflow, controller/MCP/docs, migration, and PR-body policy
 - `python3 bin/policy` also pins the #1155 CI strictness baseline:
   selected pre-commit hygiene and secret-scan hooks run in CI, the Sonar job
-  fails on new issues, and `.github/branch-protection-baseline.json` requires
-  strict status checks for `main` and `dev` while retaining admin bypass
+  fails on new issues, the CLD mutation gate stays wired, and
+  `.github/branch-protection-baseline.json` requires strict status checks for
+  `main` and `dev` while retaining admin bypass
 - `make policy` is the common path for Claude, Codex, pre-commit, and CI
 - `make sync-ground-control-policy` and `make policy-live` keep Ground Control quality gates and ADR metadata aligned when a live GC instance is available
 
@@ -678,21 +679,25 @@ agent "/implement 123"
 
 **CLI permissions** live in [`.cursor/cli.json`](.cursor/cli.json) (project override). For long autonomous runs, pass `--force` if approval prompts would block git/gh/make/MCP calls. The Cursor CLI driver runs every step on the parent session (Codex-style); see the Cursor CLI section in `skills/implement/SKILL.md`.
 
-## Test tooling beyond unit tests (#931)
+## Test tooling beyond unit tests (#931, #1293)
 
 The `make test` target runs the unit-test suite; the project also ships three
 complementary test-quality signals:
 
 | Signal | Purpose | How to run |
 |--------|---------|-----------|
-| **Mutation testing (Pitest)** | Directly measures whether the unit tests detect breakage. A high mutation-kill score is a stronger signal than line coverage. | `make test-quality` |
+| **Mutation testing (CLD gate)** | Directly measures whether registered boundary batteries detect seeded wrongness. Changed registered boundaries run PIT or Stryker against the scoped boundary target and fail below the registry threshold; interior-only changes produce a green no-op check. | `make mutation` or CI job `mutation` |
+| **Mutation testing (legacy PIT advisory)** | Runs the backend PIT task outside the scoped CLD gate. Useful for broader local calibration, not a required PR context. | `make test-quality` |
 | **Property-based testing (jqwik)** | Already wired on five domain surfaces - cycle detection, finding-status state machine, impact analysis, audit-status state machine, requirement-status transitions. Property tests find edge cases TDD misses by construction. | `make test` (runs alongside the unit suite) |
 | **Dependency / SBOM scanning (OSV + Trivy)** | OSV-scanner runs against `backend/gradle.lockfile` in CI. Findings are advisory, **except**: any new CRITICAL CVE fails the job (added in #931). Trivy scans the deploy image + IaC, advisory-only. | `.github/workflows/ci.yml` (`osv-scanner` job) |
 
-Pitest's initial thresholds are intentionally loose (60% mutation, 0% coverage)
-so the very first PR doesn't fail before there is calibration data. After the
-first ~5 PRs of mutation-score evidence, tighten via `pitest { mutationThreshold = ... }`
-in `backend/build.gradle.kts`.
+The CLD mutation gate is registry-driven. Boundary data lives in
+`architecture/registry/mutation-boundaries.json`; baseline scores are recorded
+in `architecture/registry/mutation-baseline.md`. CI invokes
+`tools/mutation/run_boundary_mutation.py` against the PR base ref. The runner
+maps changed files to registry path selectors, uses fixed argv for PIT/Stryker,
+and uploads reports from `backend/build/reports/pitest/` and
+`frontend/build/reports/stryker/`.
 
 ## Rollback
 
