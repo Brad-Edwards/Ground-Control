@@ -50,7 +50,7 @@ class TemporalWorkerConfigurationTest {
     }
 
     @Test
-    void workerFactoryRegistersSmokeWorkflowOnConfiguredTaskQueue() throws Exception {
+    void workerFactoryRegistersSmokeWorkflowOnConfiguredTaskQueue() {
         var configuration = new TemporalWorkerConfiguration();
         var properties = new TemporalWorkerProperties(true, "unused:7233", "default", "config-smoke-test");
         WorkflowServiceStubs serviceStubs = mock(WorkflowServiceStubs.class);
