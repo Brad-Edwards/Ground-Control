@@ -33,6 +33,8 @@
 #   GC_RESTORE_TEST_CONTAINER default gc-restore-test
 #   GC_RESTORE_TEST_IMAGE     default apache/age:release_PG16_1.6.0
 #   POSTGRES_USER / POSTGRES_DB  defaults gc / ground_control
+#   GC_TEMPORAL_DUMP_FILE / GC_TEMPORAL_VISIBILITY_DUMP_FILE override the
+#     timestamp-matched Temporal core / visibility dumps selected from the app dump
 set -euo pipefail
 
 LOCAL_DIR=${GC_BACKUP_DIR:-/data/backups}
@@ -52,13 +54,35 @@ POSTGRES_DB=${POSTGRES_DB:-ground_control}
 # container ever sees it, and the container is destroyed on exit.
 PGPASSWORD_TEST="$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 24)"
 
-# Argument or latest local dump.
-DUMP_FILE="${1:-$(ls -t "${LOCAL_DIR}"/gc-*.dump 2>/dev/null | head -1)}"
+# Argument or latest local dump. The selected app dump timestamp also selects
+# the matching Temporal core and visibility dumps unless explicit overrides are
+# supplied, so the drill verifies one coherent backup set.
+DUMP_FILE="${1:-$(ls -t "${LOCAL_DIR}"/gc-[0-9]*.dump 2>/dev/null | head -1)}"
 [ -n "${DUMP_FILE}" ] || { echo "ERROR: no backup file found in ${LOCAL_DIR}" >&2; exit 1; }
 [ -f "${DUMP_FILE}" ] || { echo "ERROR: file not found: ${DUMP_FILE}" >&2; exit 1; }
 [ -s "${DUMP_FILE}" ] || { echo "ERROR: empty dump file: ${DUMP_FILE}" >&2; exit 1; }
 
+DUMP_BASENAME="$(basename "${DUMP_FILE}")"
+case "${DUMP_BASENAME}" in
+  gc-[0-9]*.dump) ;;
+  *) echo "ERROR: app dump filename must match gc-<UTC-timestamp>.dump: ${DUMP_FILE}" >&2; exit 1 ;;
+esac
+APP_DUMP_TIMESTAMP="${DUMP_BASENAME#gc-}"
+APP_DUMP_TIMESTAMP="${APP_DUMP_TIMESTAMP%.dump}"
+DUMP_DIR="$(dirname "${DUMP_FILE}")"
+
+TEMPORAL_DUMP_FILE="${GC_TEMPORAL_DUMP_FILE:-${DUMP_DIR}/gc-temporal-${APP_DUMP_TIMESTAMP}.dump}"
+TEMPORAL_VISIBILITY_DUMP_FILE="${GC_TEMPORAL_VISIBILITY_DUMP_FILE:-${DUMP_DIR}/gc-temporal-visibility-${APP_DUMP_TIMESTAMP}.dump}"
+[ -n "${TEMPORAL_DUMP_FILE}" ] || { echo "ERROR: no Temporal core dump found in ${LOCAL_DIR}" >&2; exit 1; }
+[ -f "${TEMPORAL_DUMP_FILE}" ] || { echo "ERROR: file not found: ${TEMPORAL_DUMP_FILE}" >&2; exit 1; }
+[ -s "${TEMPORAL_DUMP_FILE}" ] || { echo "ERROR: empty dump file: ${TEMPORAL_DUMP_FILE}" >&2; exit 1; }
+[ -n "${TEMPORAL_VISIBILITY_DUMP_FILE}" ] || { echo "ERROR: no Temporal visibility dump found in ${LOCAL_DIR}" >&2; exit 1; }
+[ -f "${TEMPORAL_VISIBILITY_DUMP_FILE}" ] || { echo "ERROR: file not found: ${TEMPORAL_VISIBILITY_DUMP_FILE}" >&2; exit 1; }
+[ -s "${TEMPORAL_VISIBILITY_DUMP_FILE}" ] || { echo "ERROR: empty dump file: ${TEMPORAL_VISIBILITY_DUMP_FILE}" >&2; exit 1; }
+
 echo "Testing restore of: ${DUMP_FILE}"
+echo "Testing Temporal core restore of: ${TEMPORAL_DUMP_FILE}"
+echo "Testing Temporal visibility restore of: ${TEMPORAL_VISIBILITY_DUMP_FILE}"
 
 cleanup() {
   docker rm -f "${TEST_CONTAINER}" >/dev/null 2>&1 || true
@@ -116,8 +140,13 @@ echo "OK: pg_restore completed cleanly"
 # Runs queries as the restored-DB role; ON_ERROR_STOP makes a query error a
 # non-zero exit so `set -e` aborts the script.
 psql_scalar() {
+  psql_scalar_in_db "${POSTGRES_DB}" "$1"
+}
+
+psql_scalar_in_db() {
+  local db="$1" query="$2"
   docker exec "${TEST_CONTAINER}" \
-    psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -t -A -v ON_ERROR_STOP=1 -c "$1"
+    psql -U "${POSTGRES_USER}" -d "${db}" -t -A -v ON_ERROR_STOP=1 -c "${query}"
 }
 
 echo "Running verification queries..."
@@ -179,5 +208,50 @@ docker exec "${TEST_CONTAINER}" \
   psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -q -c \
   "LOAD 'age'; SET search_path = ag_catalog, \"\$user\", public; SELECT create_graph('requirements_verify'); SELECT drop_graph('requirements_verify', true);"
 echo "PASS: graph materialisable via create_graph('requirements_verify')"
+
+restore_plain_database() {
+  local db="$1" dump="$2"
+  docker exec "${TEST_CONTAINER}" createdb -U "${POSTGRES_USER}" "${db}"
+  if ! docker exec -i "${TEST_CONTAINER}" \
+      pg_restore -U "${POSTGRES_USER}" -d "${db}" \
+      --clean --if-exists --no-owner --no-acl < "${dump}"; then
+    echo "FAIL: pg_restore did not complete cleanly for ${db}; restore is not trustworthy" >&2
+    exit 1
+  fi
+  echo "OK: pg_restore completed cleanly for ${db}"
+}
+
+restore_plain_database temporal_verify "${TEMPORAL_DUMP_FILE}"
+restore_plain_database temporal_visibility_verify "${TEMPORAL_VISIBILITY_DUMP_FILE}"
+
+TEMPORAL_CORE_TABLES="executions current_executions namespaces schema_version"
+missing_temporal=""
+for t in ${TEMPORAL_CORE_TABLES}; do
+  exists="$(psql_scalar_in_db temporal_verify "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='${t}';")"
+  if [ "${exists}" -lt 1 ]; then
+    missing_temporal="${missing_temporal} ${t}"
+  fi
+done
+if [ -z "${missing_temporal}" ]; then
+  echo "PASS: Temporal core tables present (${TEMPORAL_CORE_TABLES})"
+else
+  echo "FAIL: Temporal core tables missing:${missing_temporal}" >&2
+  exit 1
+fi
+
+TEMPORAL_VISIBILITY_TABLES="executions_visibility schema_version"
+missing_visibility=""
+for t in ${TEMPORAL_VISIBILITY_TABLES}; do
+  exists="$(psql_scalar_in_db temporal_visibility_verify "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='${t}';")"
+  if [ "${exists}" -lt 1 ]; then
+    missing_visibility="${missing_visibility} ${t}"
+  fi
+done
+if [ -z "${missing_visibility}" ]; then
+  echo "PASS: Temporal visibility tables present (${TEMPORAL_VISIBILITY_TABLES})"
+else
+  echo "FAIL: Temporal visibility tables missing:${missing_visibility}" >&2
+  exit 1
+fi
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ): restore test PASSED — ${DUMP_FILE}"

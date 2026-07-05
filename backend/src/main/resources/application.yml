@@ -85,6 +85,12 @@ groundcontrol:
     dimensions: ${GC_EMBEDDING_DIMENSIONS:1536}
     batch-size: ${GC_EMBEDDING_BATCH_SIZE:100}
     similarity-threshold: ${GC_EMBEDDING_SIMILARITY_THRESHOLD:0.85}
+  temporal:
+    worker:
+      enabled: ${GROUNDCONTROL_TEMPORAL_WORKER_ENABLED:false}
+      target: ${GROUNDCONTROL_TEMPORAL_WORKER_TARGET:localhost:7233}
+      namespace: ${GROUNDCONTROL_TEMPORAL_WORKER_NAMESPACE:ground-control}
+      task-queue: ${GROUNDCONTROL_TEMPORAL_WORKER_TASK_QUEUE:ground-control-implement}
   derivation:
     boundary:
       # Canonical boundary-model derivation input adapter (GC-GRC-004).
