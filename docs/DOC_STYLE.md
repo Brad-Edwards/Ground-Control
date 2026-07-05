@@ -1,5 +1,7 @@
 # Documentation style
 
+> **Sync note for issue #1294 (2026-07-05 GC-CLD-5):** Added protected-path authority policy in `tools/policy/checks.py`, the `architecture/registry/protected-paths.json` registry, and the scope-bound `gc_post_design_authority_approval` MCP marker surface in `mcp/ground-control/index.js` and `mcp/ground-control/lib.js`. Documentation lives in `docs/DEVELOPMENT_WORKFLOW.md`, ADR-087, and the ADR-054 sync note; the change is a policy/workflow-gate surface update, not a documentation style update. No style rule changed.
+
 > **Sync note for issue #1293 (2026-07-04 GC-CLD-4):** Added `tools/policy/checks.py::run_mutation_gate_contract` so `make policy` verifies the CLD mutation gate runner, registry schema, CI mutation job, pull-request base-ref scoping, report artifact, and branch-protection context. Documentation lives in `docs/DEVELOPMENT_WORKFLOW.md`, ADR-087, and the mutation registry README; the surface change is recorded in the ADR-054 amendment. No style rule changed.
 
 > **Sync note for issue #1275 (2026-07-04 GC-O014):** Added contract-surface policy checks in `tools/policy/checks.py` for the committed `contracts/` artifact set, generated frontend API type shim, JSON Schema invariant enforcement metadata, and authorization path-matrix synchronization. The contract-surface documentation lives in ADR-082, `docs/DEVELOPMENT_WORKFLOW.md`, and `docs/architecture/ARCHITECTURE.md`; ADR-054 records the policy-surface amendment. No style rule changed.

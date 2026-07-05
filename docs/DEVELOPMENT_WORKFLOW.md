@@ -218,7 +218,7 @@ flowchart TB
 - **The completion gate (step 8) evaluates the project's quality gates** server-side via `gc_assert_quality_gates` (issue #1101) and blocks the run on any failing gate. The failure envelope lists each project-level failing gate as `{name, metric_type, threshold, actual}` so the metric to fix is obvious from the error alone. The enforced metric types are `COVERAGE` (over IMPLEMENTS / TESTS / DOCUMENTS link coverage), `ORPHAN_COUNT`, and `COMPLETENESS`. The tool also receives `in_scope_requirements[]`; when the active `DOCUMENTS` coverage gate exists, it checks every in-scope requirement for a `DOCUMENTS` traceability link regardless of DRAFT or ACTIVE status and returns `in_scope_documentation_coverage_failed` with `missing_documents[]` on gaps. The gates themselves are declared in `tools/ground_control/policy.json` and synced to the live instance with `make sync-ground-control-policy`; the same project-level evaluation runs in CI via `make policy-live`. The backend (`QualityGateService.evaluate`) owns project gate math; the tool shapes the pass/fail envelope and adds the PR-scoped in-scope check.
 - **Step 8.5 (= SKILL Step 6.5)** is the pre-push Codex review pass per issue #804: `gc_codex_review` with `uncommitted=true` runs locally against the staged + unstaged diff and posts a verbatim findings record to the resolved issue thread for each cycle (durable per ADR-029). **Default cap is 1 cycle** (issue #906); configurable per repo via `workflow.codex_review.pre_push_cap` in `.ground-control.yaml`, bounds `[1, 10]`. The cap is enforced **per issue** (the cycle counter is anchored to the GitHub issue thread; the current branch is recorded in the marker for audit context but is NOT part of the cap key, so a branch rename on the same issue cannot reset the counter; see ADR-029). After a cycle's findings are surfaced, the agent **dispatches on the returned `next_action`**: re-stage and re-invoke ONLY on `fix_findings_and_reinvoke`; on `fix_findings_then_summarize_and_escalate` (the last-in-cap action, which fires on cycle 1 under the cap-1 default when findings are present) fix and post the decision record but escalate to the user instead of a blind re-invoke that would only return `codex_review_prepush_cap_reached`. No commit/push between cycles. The post-push codex review (former Step 12 in earlier numbering) was removed by issue #804; merge-commit drift is the responsibility of CI (compile/tests/integration) and SonarCloud (quality).
 - **Step 8.6 (= SKILL Step 6.6)** is the pre-push test-quality review, moved pre-push by issue #906 from the former post-PR Step 13. `gc_test_quality_review` runs locally against the same staged + unstaged + untracked diff. **Default cap is 1 cycle**; configurable per repo via `workflow.test_quality_review.pre_push_cap`. Same local-only iteration loop as Step 6.5 (re-stage, do NOT commit between cycles); same `gc_post_decision_record` contract for the durable record. The MCP tool returns a `{findings, cycle, cap, next_action, ...}` envelope; the parent /implement agent reads `next_action` as a directive (`fix_findings_and_reinvoke` / `post_clean_decision_record_and_advance_to_phase_c` / `fix_findings_then_summarize_and_escalate` (last in-cap cycle: fix + escalate, NOT re-invoke) / `post_summary_and_escalate_to_user`), not as prose to summarize back to the user. Per #884 v2 this is an MCP tool, not a Skill; the v1 Skill-tool boundary returned prose findings that the parent's autoregressive "I just got a result, present it" bias kept echoing back to the user instead of fixing in-turn; the MCP boundary closes that bias structurally. See `architecture/notes/test-quality-review-engine.md` for the full mechanism (engine, auth, failure modes).
-- **Automated cap disposition (optional, default off; issue #1245).** When `workflow.review_disposition.enabled` is true, the cap boundary at Step 6.5 / 6.6 is dispositioned automatically instead of always stopping for the user. After the last-in-cap findings are fixed, self-verified, and re-staged, the orchestrator calls `gc_review_cap_disposition`, which scores the **post-fix** diff server-side (diff size, changed-surface class, the Step 3.5 GRC verdict, finding shape, and prior auto-overrides) and returns `proceed` (advance), `one_more_cycle` (re-invoke the cycle tool with `override_cap=true` + `auto_grant=true`), or `escalate_to_human` (stop for the user as today). A gray-zone LLM judge ranks only the residual undecided band; it can never override the deterministic ceiling/fast paths. Authority for the one auto-granted over-cap cycle is a durable `gc:review-auto-disposition` marker the tool posts, **not** agent `override_reason` text; the cycle wrappers verify the marker before honoring `auto_grant=true`. A hard `max_auto_overrides` ceiling (default 1) caps the auto path at one extra cycle; beyond it only the human `override_cap` escape proceeds. `mode: shadow` (the enabled default) posts the disposition but still escalates, building agreement data before `mode: authoritative` lets the disposition drive control flow. With the knob off, behavior is byte-for-byte unchanged. Enforced in the MCP layer (ADR-031 / ADR-029 amendments, GC-O007).
+- **Automated cap disposition (optional, default off; issue #1245).** When `workflow.review_disposition.enabled` is true, the cap boundary at Step 6.5 / 6.6 is dispositioned automatically instead of always stopping for the user. After the last-in-cap findings are fixed, self-verified, and re-staged, the orchestrator calls `gc_review_cap_disposition`, which scores the **post-fix** diff server-side (diff size, changed-surface class, the Step 3.5 GRC verdict, finding shape, and prior auto-overrides) and returns `proceed` (advance), `one_more_cycle` (re-invoke the cycle tool with `override_cap=true` + `auto_grant=true`), or `escalate_to_human` (stop for the user as today). A gray-zone LLM judge ranks only the residual undecided band; it can never override the deterministic ceiling/fast paths. Authority for the one auto-granted over-cap cycle is a durable `gc:review-auto-disposition` marker the tool posts, **not** agent `override_reason` text; the cycle wrappers verify the marker before honoring `auto_grant=true`. A hard `max_auto_overrides` ceiling (default 1) caps the auto path at one extra cycle; beyond it only the human `override_cap` escape proceeds. `mode: shadow` (the enabled default) posts the disposition but still escalates, building agreement data before `mode: authoritative` lets the disposition drive control flow. This repo runs the enabled workflow in `mode: authoritative`, so approved dispositions drive the next step automatically. With the knob off, behavior is byte-for-byte unchanged. Enforced in the MCP layer (ADR-031 / ADR-029 amendments, GC-O007).
 - **Steps 9–11** commit, push, open the PR, and block on CI + SonarCloud before any reviewer looks at the code. **PR title format (issue #901):** Step 9 validates the title locally before `gh pr create`. Two rules: (1) a single conventional-commit type with optional scope (`<type>(<optional-scope>): <subject>`); compound prefixes like `security/docs:` are rejected by `amannn/action-semantic-pull-request` and similar linters downstream repos run; for bundled PRs pick the dominant type and describe the rest in the subject; (2) the subject must start with a lowercase letter (`^[a-z].*$`); uppercase acronyms (NGFW, GCP, MCP) must be reshaped (lowercase, relocate into a slash-prefixed path, or front with a verb). Per-repo override via `.ground-control.yaml::workflow.pr_title.types` / `subject_pattern`; otherwise the conventional-commits canonical allow-list + `^[a-z]` pattern apply. Catching both locally removes the edit-cycle-per-failure cost the agent otherwise pays after every `gh pr create`. See `skills/implement/SKILL.md` Step 9 for the full rule + reshape examples.
 - **Steps 13 / 14 were merged out by issue #906.** Test-quality review moved pre-push to Step 6.6; there is no separate post-PR review step. Final CI re-verify (former Step 14) collapsed into Step 10's existing CI watch on the original push; without a post-push fix loop there is no second CI run to re-verify. **Steps 18 / 19 were consolidated into Step 17 by issue #1103.** The consolidated Step 17 calls `gc_assert_completion`, which sequences the traceability reconciliation assertion, GRC reconciliation assertion, and final report post in one deterministic call. The numbering of Steps 15 / 16 / 18 / 19 (transitions, reconciliation, label, final report) is preserved so external references don't track a moving target; Steps 13 / 14 / 18 / 19 are intentional tombstones in SKILL.md, not errors.
 
@@ -349,6 +349,32 @@ method authority (#1291), oracle batteries (#1292), mutation meta-oracle
 (#1296), evaluation harness (#1297), workflow productization (#1298), and
 portfolio packaging (#1299). Those requirements remain DRAFT until their
 implementation issues ship and reconcile traceability after merge.
+
+The protected-path gate for #1294 is registry-driven. Protected selectors live
+in `architecture/registry/protected-paths.json`; explicit review routes live
+in `.github/CODEOWNERS`; CI runs `bin/policy` with the PR number so
+`tools/policy/checks.py::run_protected_path_authority_check` can read durable
+PR-thread approval markers. A PR that changes implementation paths together
+with protected contract, oracle-battery, architecture-registry, policy,
+workflow, or durable-record tooling paths fails unless the PR thread carries a
+`gc:design-authority-approval` marker posted by the MCP tool
+`gc_post_design_authority_approval` from an authorized CODEOWNER account. The
+tool refuses to post unless the caller supplies an out-of-band
+`approval_token` matching the MCP server's configured design-authority grant.
+The marker carries a machine-readable scope over protected paths,
+implementation paths, weakening findings, and the diff hash when a base ref is
+supplied, so a stale approval cannot be reused after the PR changes.
+Once `architecture/registry/protected-paths.json` exists on the PR base branch,
+the gate reads that base-branch registry and base-branch CODEOWNERS as the
+authority model, preventing a PR from rewriting its own protected selectors or
+authorized approvers.
+Battery weakening is checked by the same gate: deleted/skipped oracle tests,
+disabled mutation boundaries, lowered thresholds, and narrowed mutation
+targets/test sets require the same marker. CODEOWNERS routes review; the
+marker is the machine-readable audit event. The pre-push review prompts also
+carry a CLD anti-gaming checklist for test-visible special-casing, fixture
+edits, and oracle edits that could make wrong implementation behavior appear
+green.
 
 ## Per-step routing, tool surfaces, and telemetry (ADR-036)
 
@@ -698,6 +724,21 @@ in `architecture/registry/mutation-baseline.md`. CI invokes
 maps changed files to registry path selectors, uses fixed argv for PIT/Stryker,
 and uploads reports from `backend/build/reports/pitest/` and
 `frontend/build/reports/stryker/`.
+
+The CLD protected-path gate is also registry-driven. `make policy` validates
+`architecture/registry/protected-paths.json`, verifies explicit CODEOWNERS
+routes, classifies PR changed paths from the merge base, detects battery
+weakening, and requires a durable design-authority marker on mixed
+implementation plus protected-path diffs. The marker must match the current
+approval scope, including protected paths, implementation paths, weakening
+findings, and the diff hash when available. PR CI evaluates protected selectors
+and authorized approvers from the base branch once the registry exists there;
+the working-tree registry fallback is only for the bootstrap change that
+introduces the first registry. Local non-PR runs can validate the registry and
+pure design changes; PR CI fetches sanitized issue comments in a token-bearing
+shell step, then runs PR-head policy code without `GH_TOKEN` and passes
+`--pr-comments-json` plus `--pr-number` so the gate can read the PR-thread
+marker.
 
 ## Rollback
 

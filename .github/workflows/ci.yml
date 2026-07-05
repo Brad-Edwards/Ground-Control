@@ -21,7 +21,19 @@ permissions:
 jobs:
   policy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
     steps:
+      - name: Fetch PR comments for policy
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${{ github.event.pull_request.number }}/comments" \
+            --jq '.[] | {body: .body, author: .user.login}' \
+            > "$RUNNER_TEMP/gc-pr-comments.jsonl"
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
@@ -62,7 +74,12 @@ jobs:
         run: npm --prefix mcp/ground-control test
       - name: Repo policy checks
         if: github.event_name == 'pull_request'
-        run: python3 bin/policy --base "origin/${{ github.base_ref }}"
+        run: >
+          python3 bin/policy
+          --base "origin/${{ github.base_ref }}"
+          --pr-number "${{ github.event.pull_request.number }}"
+          --event-path "$GITHUB_EVENT_PATH"
+          --pr-comments-json "$RUNNER_TEMP/gc-pr-comments.jsonl"
       - name: Repo policy checks (push)
         if: github.event_name != 'pull_request'
         run: python3 bin/policy --skip-pr-body

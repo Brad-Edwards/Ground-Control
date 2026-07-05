@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath } from "node:path";
 import { execFile as execFileCb, spawn as spawnChild } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { dump as dumpYaml, load as parseYaml } from "js-yaml";
 import properLockfile from "proper-lockfile";
@@ -4704,6 +4704,11 @@ export function buildPrincipalEngineerRubric({ reviewerLabel, vocabulary = null,
   lines.push("Sweep evidence (one-off classification):");
   lines.push("- Every blocking finding classified as `one-off` MUST carry a `sweep_evidence` field stating what you swept and what you did NOT find. Example: \"grepped for `*Repository` calls across `backend/src/main` — 12 sites, all use the scoped helper; this site is the only one bypassing it.\" An unswept one-off is rejected.");
   lines.push("- A `class` finding's `category.instances` list must include this finding's own site and every analogue you can see in the diff and adjacent repo code. The agent designs the fix at the category level; under-reporting instances costs a cycle.");
+  lines.push("");
+  lines.push("CLD anti-gaming checklist:");
+  lines.push("- Treat test-visible implementation special-casing as blocking. Examples: production code branching on fixture names, test-only constants, snapshot filenames, environment values, or oracle file paths instead of implementing the contract.");
+  lines.push("- Treat fixture or oracle edits that make a wrong implementation look green as blocking unless the diff also carries the protected-path design-authority approval path and explains the contract change.");
+  lines.push("- When the diff touches tests, fixtures, snapshots, contracts, or oracle batteries, sweep adjacent implementation code for matching literals and shortcuts before classifying the finding as one-off.");
   lines.push("");
   lines.push(`Output envelope — emit at the end of your message inside a \`===REVIEW===\`...\`===END===\` block. The block must be the last thing — no prose after \`===END===\`. The block contains exactly one JSON object:`);
   lines.push("");
@@ -12662,6 +12667,461 @@ export async function runPostDecisionRecord({ repoPath, issueNumber, cycle, revi
     cycle,
     reviewer,
     finding_count: findings.length,
+    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
+    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Design-authority approval renderer (gc_post_design_authority_approval)
+// ---------------------------------------------------------------------------
+//
+// CLD protected-path enforcement needs a durable, machine-readable approval
+// event when implementation code and protected contract/battery/policy paths
+// change in the same PR. The marker is PR-scoped because CI validates the PR
+// thread. The comment author is the auditable actor; GC-P024 can later bind
+// that actor to first-class role grants without changing the marker family.
+
+export const DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION = "gc.cld.design-authority-approval/v1";
+export const DESIGN_AUTHORITY_APPROVAL_MARKER_PREFIX = "<!-- gc:design-authority-approval";
+const DESIGN_AUTHORITY_APPROVAL_RATIONALE_MAX = 1200;
+const DESIGN_AUTHORITY_APPROVAL_PATH_MAX = 100;
+const DESIGN_AUTHORITY_APPROVAL_PATH_RE = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/@:+,=-]+(?:\/[A-Za-z0-9._/@:+,=-]+)*$/;
+const DESIGN_AUTHORITY_APPROVAL_MARKER_RE = /<!--\s*gc:design-authority-approval\s+schema="([^"]+)"\s+issue="(\d+)"\s+pr="(\d+)"\s*-->/g;
+const DESIGN_AUTHORITY_APPROVAL_DATA_RE = /<!--\s*gc:design-authority-approval-data\s+({.*?})\s*-->/gs;
+const DESIGN_AUTHORITY_APPROVAL_REF_RE = /^[A-Za-z0-9._/@:+,=-]+$/;
+const DESIGN_AUTHORITY_APPROVAL_TOKEN_HASH_ENV = "GC_DESIGN_AUTHORITY_APPROVAL_TOKEN_SHA256";
+const DESIGN_AUTHORITY_APPROVAL_TOKEN_ENV = "GC_DESIGN_AUTHORITY_APPROVAL_TOKEN";
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
+
+function validateApprovalPaths(paths, fieldName, { required }) {
+  const errors = [];
+  if (paths === undefined || paths === null) {
+    if (required) errors.push(`${fieldName} must be a non-empty array`);
+    return errors;
+  }
+  if (!Array.isArray(paths)) {
+    return [`${fieldName} must be an array`];
+  }
+  if (required && paths.length === 0) {
+    errors.push(`${fieldName} must be a non-empty array`);
+  }
+  if (paths.length > DESIGN_AUTHORITY_APPROVAL_PATH_MAX) {
+    errors.push(`${fieldName} must contain at most ${DESIGN_AUTHORITY_APPROVAL_PATH_MAX} entries`);
+  }
+  paths.forEach((path, index) => {
+    if (typeof path !== "string" || path.trim() === "") {
+      errors.push(`${fieldName}[${index}] must be a non-empty repo-relative path`);
+      return;
+    }
+    if (path !== path.trim()) {
+      errors.push(`${fieldName}[${index}] must not have surrounding whitespace`);
+    }
+    if (!DESIGN_AUTHORITY_APPROVAL_PATH_RE.test(path)) {
+      errors.push(`${fieldName}[${index}] must be a repo-relative path that does not escape the repository`);
+    }
+  });
+  return errors;
+}
+
+function validateApprovalStrings(values, fieldName) {
+  const errors = [];
+  if (values === undefined || values === null) return errors;
+  if (!Array.isArray(values)) return [`${fieldName} must be an array`];
+  if (values.length > DESIGN_AUTHORITY_APPROVAL_PATH_MAX) {
+    errors.push(`${fieldName} must contain at most ${DESIGN_AUTHORITY_APPROVAL_PATH_MAX} entries`);
+  }
+  values.forEach((value, index) => {
+    if (typeof value !== "string" || value.trim() === "") {
+      errors.push(`${fieldName}[${index}] must be a non-empty string`);
+    } else if (value !== value.trim()) {
+      errors.push(`${fieldName}[${index}] must not have surrounding whitespace`);
+    }
+  });
+  return errors;
+}
+
+function sortedUniqueStrings(values) {
+  return Array.from(new Set((Array.isArray(values) ? values : []).map((value) => String(value)))).sort();
+}
+
+export function buildDesignAuthorityApprovalScope({
+  protectedPaths,
+  implementationPaths = [],
+  weakeningFindings = [],
+  diffHash = null,
+}) {
+  return {
+    schema: DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION,
+    protected_paths: sortedUniqueStrings(protectedPaths),
+    implementation_paths: sortedUniqueStrings(implementationPaths),
+    weakening_findings: sortedUniqueStrings(weakeningFindings),
+    diff_hash: typeof diffHash === "string" && diffHash.trim() !== "" ? diffHash : null,
+  };
+}
+
+export function buildDesignAuthorityApprovalDataMarker({ issueNumber, prNumber, scope }) {
+  const data = {
+    issue_number: issueNumber,
+    pr_number: prNumber,
+    ...scope,
+  };
+  return `<!-- gc:design-authority-approval-data ${JSON.stringify(data)} -->`;
+}
+
+export function validateDesignAuthorityApprovalInput(input) {
+  const errors = [];
+  if (input == null || typeof input !== "object") {
+    return { ok: false, errors: ["input must be an object"] };
+  }
+  const { issueNumber, prNumber, protectedPaths, implementationPaths, weakeningFindings, baseRef, rationale } = input;
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    errors.push("issueNumber must be a positive integer");
+  }
+  if (!Number.isInteger(prNumber) || prNumber <= 0) {
+    errors.push("prNumber must be a positive integer");
+  }
+  errors.push(...validateApprovalPaths(protectedPaths, "protectedPaths", { required: true }));
+  errors.push(...validateApprovalPaths(implementationPaths ?? [], "implementationPaths", { required: false }));
+  errors.push(...validateApprovalStrings(weakeningFindings ?? [], "weakeningFindings"));
+  if (baseRef != null && (typeof baseRef !== "string" || baseRef.trim() === "" || !DESIGN_AUTHORITY_APPROVAL_REF_RE.test(baseRef))) {
+    errors.push("baseRef must be a non-empty git ref without whitespace when set");
+  }
+  if (typeof rationale !== "string" || rationale.trim() === "") {
+    errors.push("rationale must be a non-empty string");
+  } else if (Buffer.byteLength(rationale.trim(), "utf8") > DESIGN_AUTHORITY_APPROVAL_RATIONALE_MAX) {
+    errors.push(`rationale exceeds ${DESIGN_AUTHORITY_APPROVAL_RATIONALE_MAX} bytes`);
+  }
+  if (errors.length) return { ok: false, errors };
+  return { ok: true };
+}
+
+function sha256Hex(value) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function safeEqualHex(a, b) {
+  if (!SHA256_HEX_RE.test(a) || !SHA256_HEX_RE.test(b)) return false;
+  return timingSafeEqual(Buffer.from(a.toLowerCase(), "hex"), Buffer.from(b.toLowerCase(), "hex"));
+}
+
+export function validateDesignAuthorityApprovalGrant(approvalToken, env = process.env) {
+  const configuredHash = typeof env[DESIGN_AUTHORITY_APPROVAL_TOKEN_HASH_ENV] === "string"
+    ? env[DESIGN_AUTHORITY_APPROVAL_TOKEN_HASH_ENV].trim()
+    : "";
+  const configuredToken = typeof env[DESIGN_AUTHORITY_APPROVAL_TOKEN_ENV] === "string"
+    ? env[DESIGN_AUTHORITY_APPROVAL_TOKEN_ENV]
+    : "";
+  const expectedHash = configuredHash || (configuredToken ? sha256Hex(configuredToken) : "");
+  if (!expectedHash) {
+    return {
+      ok: false,
+      error: "design_authority_approval_grant_not_configured",
+      message: `set ${DESIGN_AUTHORITY_APPROVAL_TOKEN_HASH_ENV} or ${DESIGN_AUTHORITY_APPROVAL_TOKEN_ENV} on the MCP server before posting design-authority approvals`,
+    };
+  }
+  if (!SHA256_HEX_RE.test(expectedHash)) {
+    return {
+      ok: false,
+      error: "design_authority_approval_grant_invalid_config",
+      message: `${DESIGN_AUTHORITY_APPROVAL_TOKEN_HASH_ENV} must be a SHA-256 hex digest when set`,
+    };
+  }
+  if (typeof approvalToken !== "string" || approvalToken.trim() === "") {
+    return {
+      ok: false,
+      error: "design_authority_approval_grant_required",
+      message: "approval_token is required and must be supplied out of band by an authorized design authority",
+    };
+  }
+  if (!safeEqualHex(sha256Hex(approvalToken), expectedHash)) {
+    return {
+      ok: false,
+      error: "design_authority_approval_grant_rejected",
+      message: "approval_token did not match the configured design-authority grant",
+    };
+  }
+  return { ok: true };
+}
+
+export function buildDesignAuthorityApprovalMarker({ issueNumber, prNumber }) {
+  return `${DESIGN_AUTHORITY_APPROVAL_MARKER_PREFIX} schema="${DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION}" issue="${issueNumber}" pr="${prNumber}" -->`;
+}
+
+export function buildDesignAuthorityApprovalRecord({
+  issueNumber,
+  prNumber,
+  protectedPaths,
+  implementationPaths = [],
+  weakeningFindings = [],
+  diffHash = null,
+  rationale,
+}) {
+  const validation = validateDesignAuthorityApprovalInput({
+    issueNumber,
+    prNumber,
+    protectedPaths,
+    implementationPaths,
+    weakeningFindings,
+    rationale,
+  });
+  if (!validation.ok) {
+    throw new Error(`buildDesignAuthorityApprovalRecord input invalid: ${validation.errors.join("; ")}`);
+  }
+  const scope = buildDesignAuthorityApprovalScope({
+    protectedPaths,
+    implementationPaths,
+    weakeningFindings,
+    diffHash,
+  });
+  const lines = [];
+  lines.push(buildDesignAuthorityApprovalMarker({ issueNumber, prNumber }));
+  lines.push(buildDesignAuthorityApprovalDataMarker({ issueNumber, prNumber, scope }));
+  lines.push("");
+  lines.push("## Design-authority approval");
+  lines.push("");
+  lines.push(`**Schema:** \`${DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION}\`  `);
+  lines.push(`**Issue:** #${issueNumber}  `);
+  lines.push(`**Pull request:** #${prNumber}`);
+  lines.push("");
+  lines.push("**Protected paths:**");
+  for (const path of protectedPaths) {
+    lines.push(`- \`${path}\``);
+  }
+  lines.push("");
+  lines.push("**Implementation paths:**");
+  if (implementationPaths.length === 0) {
+    lines.push("- `(none)`");
+  } else {
+    for (const path of implementationPaths) {
+      lines.push(`- \`${path}\``);
+    }
+  }
+  lines.push("");
+  lines.push("**Weakening findings:**");
+  if (scope.weakening_findings.length === 0) {
+    lines.push("- `(none)`");
+  } else {
+    for (const finding of scope.weakening_findings) {
+      lines.push(`- \`${finding}\``);
+    }
+  }
+  lines.push("");
+  lines.push(`**Diff hash:** \`${scope.diff_hash ?? "none"}\``);
+  lines.push("");
+  lines.push("**Rationale:**");
+  lines.push("");
+  lines.push(rationale.trim());
+  return lines.join("\n");
+}
+
+export function parseDesignAuthorityApprovalMarkers(comments, prNumber) {
+  const markers = [];
+  if (!Array.isArray(comments)) return markers;
+  for (const comment of comments) {
+    const body = typeof comment === "string" ? comment : comment?.body;
+    const author = typeof comment === "object" && comment != null ? comment.author ?? comment.user ?? "" : "";
+    if (typeof body !== "string") continue;
+    const scopes = [];
+    for (const dataMatch of body.matchAll(DESIGN_AUTHORITY_APPROVAL_DATA_RE)) {
+      try {
+        const data = JSON.parse(dataMatch[1]);
+        if (data.schema !== DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION) continue;
+        scopes.push(data);
+      } catch {
+        // Ignore malformed data markers; the policy side will reject stale or
+        // unscoped approvals by failing to find an exact scope match.
+      }
+    }
+    for (const match of body.matchAll(DESIGN_AUTHORITY_APPROVAL_MARKER_RE)) {
+      const schema = match[1];
+      const issue = Number.parseInt(match[2], 10);
+      const pr = Number.parseInt(match[3], 10);
+      if (schema !== DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION) continue;
+      if (Number.isInteger(prNumber) && pr !== prNumber) continue;
+      const data = scopes.find((item) => item.issue_number === issue && item.pr_number === pr) ?? null;
+      const scope = data == null
+        ? null
+        : Object.fromEntries(Object.entries(data).filter(([key]) => key !== "issue_number" && key !== "pr_number"));
+      markers.push({
+        schema,
+        issue_number: issue,
+        pr_number: pr,
+        author,
+        scope,
+      });
+    }
+  }
+  return markers;
+}
+
+async function computeDesignAuthorityApprovalDiffHash(repoRoot, baseRef, paths) {
+  if (typeof baseRef !== "string" || baseRef.trim() === "" || paths.length === 0) return null;
+  const { stdout } = await execFile(
+    "git",
+    ["-C", repoRoot, "diff", "--binary", "--full-index", baseRef, "--", ...paths],
+    { maxBuffer: 50 * 1024 * 1024 },
+  );
+  return createHash("sha256").update(stdout, "utf8").digest("hex");
+}
+
+export async function runPostDesignAuthorityApproval({
+  repoPath,
+  issueNumber,
+  prNumber,
+  protectedPaths,
+  implementationPaths = [],
+  weakeningFindings = [],
+  baseRef = null,
+  rationale,
+  approvalToken,
+}) {
+  const validation = validateDesignAuthorityApprovalInput({
+    issueNumber,
+    prNumber,
+    protectedPaths,
+    implementationPaths,
+    weakeningFindings,
+    baseRef,
+    rationale,
+  });
+  if (!validation.ok) {
+    return {
+      ok: false,
+      error: "design_authority_approval_input_invalid",
+      message: validation.errors.join("; "),
+      issue_number: issueNumber ?? null,
+      pr_number: prNumber ?? null,
+    };
+  }
+  const grant = validateDesignAuthorityApprovalGrant(approvalToken);
+  if (!grant.ok) {
+    return {
+      ok: false,
+      error: grant.error,
+      message: grant.message,
+      issue_number: issueNumber ?? null,
+      pr_number: prNumber ?? null,
+      next_action: "obtain_design_authority_grant_and_retry",
+    };
+  }
+  const effectiveImplementationPaths = implementationPaths ?? [];
+  const effectiveWeakeningFindings = weakeningFindings ?? [];
+  for (const [fieldName, values] of [
+    ["protectedPaths", protectedPaths],
+    ["implementationPaths", effectiveImplementationPaths],
+    ["weakeningFindings", effectiveWeakeningFindings],
+  ]) {
+    for (let i = 0; i < values.length; i += 1) {
+      const err = rejectReservedMarkerSequence(values[i], `${fieldName}[${i}]`);
+      if (err) {
+        return {
+          ok: false,
+          error: "design_authority_approval_reserved_marker",
+          message: err,
+          issue_number: issueNumber,
+          pr_number: prNumber,
+          next_action: "remove_reserved_marker_prefix_and_retry",
+        };
+      }
+    }
+  }
+  const rationaleErr = rejectReservedMarkerSequence(rationale, "rationale");
+  if (rationaleErr) {
+    return {
+      ok: false,
+      error: "design_authority_approval_reserved_marker",
+      message: rationaleErr,
+      issue_number: issueNumber,
+      pr_number: prNumber,
+      next_action: "remove_reserved_marker_prefix_and_retry",
+    };
+  }
+  const repoRoot = await ensureGitRepo(repoPath);
+  const scopePaths = sortedUniqueStrings([...(protectedPaths ?? []), ...effectiveImplementationPaths]);
+  let diffHash = null;
+  try {
+    diffHash = await computeDesignAuthorityApprovalDiffHash(repoRoot, baseRef, scopePaths);
+  } catch (error) {
+    return {
+      ok: false,
+      error: "design_authority_approval_diff_hash_failed",
+      message: extractGhErrorMessage(error),
+      issue_number: issueNumber,
+      pr_number: prNumber,
+      next_action: "fetch_base_ref_or_retry_without_stale_scope",
+    };
+  }
+  const body = buildDesignAuthorityApprovalRecord({
+    issueNumber,
+    prNumber,
+    protectedPaths,
+    implementationPaths: effectiveImplementationPaths,
+    weakeningFindings: effectiveWeakeningFindings,
+    diffHash,
+    rationale,
+  });
+  const sensitiveError = detectSensitiveBodyContent(body);
+  if (sensitiveError) {
+    return {
+      ok: false,
+      error: "design_authority_approval_body_rejected",
+      message: sensitiveError,
+      issue_number: issueNumber,
+      pr_number: prNumber,
+      next_action: "scrub_secrets_from_approval_and_retry",
+    };
+  }
+  if (Buffer.byteLength(body, "utf8") > GITHUB_ISSUE_COMMENT_BODY_MAX) {
+    return {
+      ok: false,
+      error: "design_authority_approval_body_too_large",
+      message: `rendered body is ${Buffer.byteLength(body, "utf8")} bytes; GitHub's issue-comment body cap is ${GITHUB_ISSUE_COMMENT_BODY_MAX} bytes`,
+      issue_number: issueNumber,
+      pr_number: prNumber,
+      next_action: "reduce_scope_or_rationale_and_retry",
+    };
+  }
+  const { owner, name } = await getOwnerRepo(repoRoot);
+  let apiResponse = null;
+  try {
+    const { stdout } = await execFile(
+      "gh",
+      [
+        "api",
+        "--method",
+        "POST",
+        `/repos/${owner}/${name}/issues/${prNumber}/comments`,
+        "-f",
+        `body=${body}`,
+      ],
+      { cwd: repoRoot },
+    );
+    try {
+      apiResponse = JSON.parse(stdout);
+    } catch {
+      apiResponse = null;
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: "design_authority_approval_post_failed",
+      message: extractGhErrorMessage(error),
+      issue_number: issueNumber,
+      pr_number: prNumber,
+      next_action: "retry_after_resolving_gh_failure",
+    };
+  }
+  return {
+    repo_path: repoRoot,
+    issue_number: issueNumber,
+    pr_number: prNumber,
+    ok: true,
+    schema: DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION,
+    protected_path_count: protectedPaths.length,
+    implementation_path_count: effectiveImplementationPaths.length,
+    weakening_finding_count: effectiveWeakeningFindings.length,
+    diff_hash: diffHash,
     comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
     comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
   };
