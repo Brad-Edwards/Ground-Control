@@ -332,6 +332,41 @@ coverage-read routes are authenticated under `/api/v1/**` at the same authorizat
 existing risk-control-mapping and threat-model-link write surfaces; no new trust boundary is
 introduced.
 
+## In-Loop Control Implementation Gate (GC-GRC-011)
+
+A control row in the graph protects nothing on its own. GC-GRC-011 enforces the
+in-loop contract server-side: a `Control` may enter `IMPLEMENTED` or `OPERATIONAL`
+(via `PUT /api/v1/controls/{id}/status`, both the `PROPOSED→IMPLEMENTED`,
+`IMPLEMENTED→OPERATIONAL`, and `DEPRECATED→OPERATIONAL` hops) only when it carries
+**both** kinds of evidence:
+
+- **(a) implementation** — a `ControlLink` with `targetType=CODE` and
+  `linkType=IMPLEMENTS`, naming the implementing artifact;
+- **(b) efficacy** — at least one `ControlTest` linked to the control (its
+  `control_id` FK, projected as the `CONTROL_TEST → CONTROL` `OF_CONTROL` edge).
+
+The gate lives in `ControlService.transitionStatus` — the single seam every caller
+(REST, MCP `gc_control`, future workflow) converges on — not in the controller, MCP
+wrapper, or frontend. It reuses `ControlLinkRepository.existsByControlIdAndTargetTypeAndLinkType`
+and `ControlTestRepository.countByProjectIdAndControlId` as boolean/count existence
+checks (the TEXT-heavy evidence rows are never hydrated to decide a transition). It
+runs only for otherwise-valid hops, so a structurally-impossible move (e.g.
+`DRAFT→IMPLEMENTED`) still fails with the pre-existing `invalid_status_transition`
+(422) rather than being masked. Missing evidence throws `ConflictException`
+(`control_missing_implementation_evidence`, 409) whose `detail` names the control UID,
+the target status, and which evidence kind(s) are missing (`missingCodeLink` /
+`missingEfficacyTest`) — stable identifiers only, never raw test steps, results, or
+code. A control that genuinely cannot be implemented in the change (organizational or
+infrastructure controls) routes to a GC-GRC-015 disposition; the gate refuses the
+transition rather than silently passing.
+
+The efficacy test in (b) must be a genuine efficacy test — one that drives the
+protected behavior through its boundary and fails if the control is removed, bypassed,
+or materially weakened — not an existence test that only asserts the row, link, status,
+or a mock call. The Step 6.6 `gc_test_quality_review` rubric flags control efficacy
+tests that only prove existence (see `docs/DEVELOPMENT_WORKFLOW.md`, "Continuous
+Secure-by-Design GRC Program").
+
 ## Status Drift Analysis
 
 Status drift analysis is a read-only requirements-domain analysis. It flags requirements that are still `DRAFT` while independent artifacts suggest implementation or design completion has already landed. It does not create traceability links, transition requirements, or relax the `IMPLEMENTS`-only on `ACTIVE` rule.

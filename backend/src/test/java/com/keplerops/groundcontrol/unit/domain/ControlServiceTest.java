@@ -168,6 +168,129 @@ class ControlServiceTest {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // GC-GRC-011 (#1124): in-loop control implementation evidence gate.
+    // A control may only enter IMPLEMENTED/OPERATIONAL when it carries both a
+    // CODE/IMPLEMENTS ControlLink and at least one ControlTest (efficacy evidence).
+    // Each test below goes red if the guard is removed — they are efficacy tests
+    // for the guard, not existence tests.
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class ImplementationEvidenceGate {
+
+        private Control proposedControl() {
+            var control = makeControl();
+            setField(control, "status", ControlStatus.PROPOSED);
+            return control;
+        }
+
+        private void stubEvidence(Control control, boolean hasCodeLink, boolean hasEfficacyTest) {
+            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
+                    .thenReturn(Optional.of(control));
+            when(controlLinkRepository.existsByControlIdAndTargetTypeAndLinkType(
+                            control.getId(),
+                            com.keplerops.groundcontrol.domain.controls.state.ControlLinkTargetType.CODE,
+                            com.keplerops.groundcontrol.domain.controls.state.ControlLinkType.IMPLEMENTS))
+                    .thenReturn(hasCodeLink);
+            when(controlTestRepository.countByProjectIdAndControlId(projectId, control.getId()))
+                    .thenReturn(hasEfficacyTest ? 1L : 0L);
+        }
+
+        @Test
+        void blocksImplementedWhenCodeLinkMissing() {
+            var control = proposedControl();
+            stubEvidence(control, false, true);
+
+            var controlId = control.getId();
+            var thrown = org.assertj.core.api.Assertions.catchThrowableOfType(
+                    ConflictException.class,
+                    () -> controlService.transitionStatus(projectId, controlId, ControlStatus.IMPLEMENTED));
+            assertThat(thrown).isNotNull().extracting("errorCode").isEqualTo("control_missing_implementation_evidence");
+            assertThat(thrown.getDetail())
+                    .containsEntry("missingCodeLink", true)
+                    .containsEntry("missingEfficacyTest", false);
+            // The transition must not be persisted when evidence is missing.
+            assertThat(control.getStatus()).isEqualTo(ControlStatus.PROPOSED);
+            verify(controlRepository, org.mockito.Mockito.never()).save(any(Control.class));
+        }
+
+        @Test
+        void blocksImplementedWhenEfficacyTestMissing() {
+            var control = proposedControl();
+            stubEvidence(control, true, false);
+
+            var controlId = control.getId();
+            var thrown = org.assertj.core.api.Assertions.catchThrowableOfType(
+                    ConflictException.class,
+                    () -> controlService.transitionStatus(projectId, controlId, ControlStatus.IMPLEMENTED));
+            assertThat(thrown).isNotNull().extracting("errorCode").isEqualTo("control_missing_implementation_evidence");
+            assertThat(thrown.getDetail())
+                    .containsEntry("missingCodeLink", false)
+                    .containsEntry("missingEfficacyTest", true);
+            assertThat(control.getStatus()).isEqualTo(ControlStatus.PROPOSED);
+        }
+
+        @Test
+        void allowsImplementedWhenBothEvidenceKindsPresent() {
+            var control = proposedControl();
+            stubEvidence(control, true, true);
+            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = controlService.transitionStatus(projectId, control.getId(), ControlStatus.IMPLEMENTED);
+
+            assertThat(result.getStatus()).isEqualTo(ControlStatus.IMPLEMENTED);
+        }
+
+        @Test
+        void gatesReentryToOperationalFromDeprecated() {
+            // DEPRECATED -> OPERATIONAL is a valid shape hop that re-enters an
+            // active status, so the evidence gate applies there too (clause c).
+            var control = makeControl();
+            setField(control, "status", ControlStatus.DEPRECATED);
+            stubEvidence(control, false, false);
+
+            var controlId = control.getId();
+            assertThatThrownBy(() -> controlService.transitionStatus(projectId, controlId, ControlStatus.OPERATIONAL))
+                    .isInstanceOf(ConflictException.class)
+                    .extracting("errorCode")
+                    .isEqualTo("control_missing_implementation_evidence");
+        }
+
+        @Test
+        void doesNotGateNonImplementingTransitions() {
+            // DRAFT -> PROPOSED and IMPLEMENTED -> DEPRECATED require no evidence;
+            // the guard must not touch the evidence repositories for them (strict
+            // stubs would fail if it did).
+            var control = makeControl();
+            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
+                    .thenReturn(Optional.of(control));
+            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = controlService.transitionStatus(projectId, control.getId(), ControlStatus.PROPOSED);
+
+            assertThat(result.getStatus()).isEqualTo(ControlStatus.PROPOSED);
+            org.mockito.Mockito.verifyNoInteractions(controlLinkRepository);
+        }
+
+        @Test
+        void invalidShapeStillThrowsShapeErrorNotEvidenceError() {
+            // DRAFT -> IMPLEMENTED is structurally invalid. The pre-existing shape
+            // error must win so the evidence gate never masks an impossible move;
+            // the guard is skipped entirely (no evidence repository interaction).
+            var control = makeControl(); // DRAFT
+            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
+                    .thenReturn(Optional.of(control));
+
+            var controlId = control.getId();
+            assertThatThrownBy(() -> controlService.transitionStatus(projectId, controlId, ControlStatus.IMPLEMENTED))
+                    .isInstanceOf(com.keplerops.groundcontrol.domain.exception.DomainValidationException.class)
+                    .extracting("errorCode")
+                    .isEqualTo("invalid_status_transition");
+            org.mockito.Mockito.verifyNoInteractions(controlLinkRepository);
+        }
+    }
+
     @Nested
     class GetById {
 

@@ -81,6 +81,8 @@
 
 > **Sync note for issue #1006 / ADR-080 (2026-07-01):** The `gc_research_run` MCP tool gained `record_methodology_requirements_contract` and `get_methodology_requirements_contract` actions (`POST`/`GET /api/v1/research-runs/{id}/methodology/requirements-contract`) in `mcp/ground-control/index.js` + `lib.js` for the structured phase-1 methodology requirements contract. The surface change is recorded in the ADR-054 amendment, `docs/API.md`, and `docs/research/RESEARCH_WORKFLOW.md`; no style rule changed.
 
+> **Sync note for issue #1124 / GC-GRC-011 (2026-07-05):** The `gc_test_quality_review` rubric in `mcp/ground-control/lib.js` (`buildTestQualityReviewPrompt`) gained a critical category flagging control efficacy tests that only prove existence rather than detecting control removal, with a matching key-phrase assertion in `lib.test.js`. This is a workflow-record-tool prompt-contract change, not a documentation-classifier change: the documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new DOC_STYLE.md style rule is established.
+
 ## Rules
 
 Docs describe the system as it ships on the current commit. Write in present

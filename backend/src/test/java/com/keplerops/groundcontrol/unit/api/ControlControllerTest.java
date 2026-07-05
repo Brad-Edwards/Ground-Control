@@ -156,4 +156,34 @@ class ControlControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status", is("PROPOSED")));
     }
+
+    @Test
+    void transitionStatusReturns409WhenImplementationEvidenceMissing() throws Exception {
+        // GC-GRC-011: the service's evidence gate throws ConflictException; the controller
+        // propagates it through GlobalExceptionHandler as a 409 with the stable envelope.
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        java.util.Map<String, java.io.Serializable> detail = new java.util.LinkedHashMap<>();
+        detail.put("controlUid", "CTRL-001");
+        detail.put("targetStatus", "IMPLEMENTED");
+        detail.put("missingCodeLink", true);
+        detail.put("missingEfficacyTest", false);
+        when(controlService.transitionStatus(PROJECT_ID, CONTROL_ID, ControlStatus.IMPLEMENTED))
+                .thenThrow(new com.keplerops.groundcontrol.domain.exception.ConflictException(
+                        "Control CTRL-001 cannot transition to IMPLEMENTED without a CODE implementation"
+                                + " link and an efficacy test (GC-GRC-011).",
+                        "control_missing_implementation_evidence",
+                        detail));
+
+        mockMvc.perform(
+                        put("/api/v1/controls/{id}/status", CONTROL_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {"status":"IMPLEMENTED"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("control_missing_implementation_evidence")))
+                .andExpect(jsonPath("$.error.detail.missingCodeLink", is(true)));
+    }
 }
