@@ -3357,6 +3357,105 @@ def run_contract_invariant_enforcement_check(root: Path = REPO_ROOT) -> list[Vio
     return violations
 
 
+# Deterministic /implement Temporal workflow payload contract (ADR-082 table, owned by issue #1277).
+WORKFLOW_CONTRACT_RECORD_DIR = (
+    "backend/src/main/java/com/keplerops/groundcontrol/infrastructure/temporal/implement/contract"
+)
+WORKFLOW_SCHEMA_DIR = "contracts/schemas/workflow"
+# The ADR-061 telemetry correlation/projection record is not an activity payload.
+WORKFLOW_SCHEMA_NON_PAYLOAD_PREFIXES = ("workflow-run-record",)
+_JAVA_RECORD_RE = re.compile(r"public\s+record\s+(\w+)\s*\(")
+
+
+def _collect_x_gc_records(node: object) -> list[str]:
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "x-gc-record" and isinstance(value, str):
+                found.append(value)
+            else:
+                found.extend(_collect_x_gc_records(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_collect_x_gc_records(item))
+    return found
+
+
+def run_workflow_payload_contract_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert every Temporal activity I/O record maps to a workflow payload schema (ADR-082/#1277).
+
+    Enforces a 1:1 bijection between the Java records under the deterministic ``/implement`` contract
+    package and the ``x-gc-record`` tags in ``contracts/schemas/workflow/``: no record ships without a
+    committed schema (contract-first, ADR-028), and no schema tag dangles without a record.
+    """
+    violations: list[Violation] = []
+    contract_dir = root / WORKFLOW_CONTRACT_RECORD_DIR
+    schema_dir = root / WORKFLOW_SCHEMA_DIR
+    if not contract_dir.exists():
+        # The engine core is not present in this tree; nothing to gate.
+        return violations
+    if not schema_dir.exists():
+        return [
+            Violation(
+                code="workflow-payload-schema-dir-missing",
+                message=f"{WORKFLOW_SCHEMA_DIR} is missing; workflow activity payload contracts cannot be checked.",
+                details=[],
+            )
+        ]
+
+    record_names: set[str] = set()
+    for java_path in sorted(contract_dir.glob("*.java")):
+        match = _JAVA_RECORD_RE.search(java_path.read_text(encoding="utf-8"))
+        if match:
+            record_names.add(match.group(1))
+
+    tagged: dict[str, list[str]] = {}
+    for schema_path in sorted(schema_dir.glob("*.schema.json")):
+        if schema_path.name.startswith(WORKFLOW_SCHEMA_NON_PAYLOAD_PREFIXES):
+            continue
+        try:
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            violations.append(
+                Violation(
+                    code="workflow-payload-schema-json-invalid",
+                    message=f"{schema_path.relative_to(root).as_posix()} is not valid JSON.",
+                    details=[str(exc)],
+                )
+            )
+            continue
+        for tag in _collect_x_gc_records(schema):
+            tagged.setdefault(tag, []).append(schema_path.name)
+
+    tagged_names = set(tagged)
+    for name in sorted(record_names - tagged_names):
+        violations.append(
+            Violation(
+                code="workflow-payload-record-unmapped",
+                message=f"Temporal activity payload record {name} has no x-gc-record mapping under {WORKFLOW_SCHEMA_DIR}.",
+                details=["Publish the schema $def (contract-first) before the record ships (ADR-082)."],
+            )
+        )
+    for name in sorted(tagged_names - record_names):
+        violations.append(
+            Violation(
+                code="workflow-payload-schema-orphan",
+                message=f"{WORKFLOW_SCHEMA_DIR} declares x-gc-record {name} with no matching record class.",
+                details=[],
+            )
+        )
+    for name, files in sorted(tagged.items()):
+        if len(files) > 1:
+            violations.append(
+                Violation(
+                    code="workflow-payload-record-duplicate",
+                    message=f"x-gc-record {name} is declared by multiple workflow schemas: {', '.join(files)}.",
+                    details=[],
+                )
+            )
+    return violations
+
+
 def _parse_authz_contract_rows(text: str) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     current: dict[str, str] = {}
@@ -4192,6 +4291,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_enum_contract_check())
     violations.extend(run_contract_surface_check())
     violations.extend(run_contract_invariant_enforcement_check())
+    violations.extend(run_workflow_payload_contract_check())
     violations.extend(run_authz_matrix_sync_check())
     violations.extend(run_workflow_routing_contract())
     violations.extend(run_test_quality_decision_record_contract())

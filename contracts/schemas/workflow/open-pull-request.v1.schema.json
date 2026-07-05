@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gc.workflow.open-pull-request.v1",
+  "title": "Open-pull-request activity input and output",
+  "description": "Phase D PR creation. Backed by the GitHub workflow port. The title is a bounded scalar.",
+  "x-ground-control-invariants": [
+    {
+      "id": "gc.workflow.open-pull-request.record-schema-conformance",
+      "description": "Open-pull-request records tagged x-gc-record serialize to documents valid against this schema.",
+      "enforcedBy": [
+        "backend/src/test/java/com/keplerops/groundcontrol/unit/infrastructure/temporal/implement/WorkflowContractConformanceTest.java::workflowPayloadRecordsConformToSchemas"
+      ]
+    }
+  ],
+  "$defs": {
+    "OpenPullRequestInput": {
+      "x-gc-record": "OpenPullRequestInput",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "headBranch", "title", "idempotencyKey"],
+      "properties": {
+        "repository": { "type": "object" },
+        "headBranch": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "OpenPullRequestResult": {
+      "x-gc-record": "OpenPullRequestResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prNumber", "url"],
+      "properties": {
+        "prNumber": { "type": "integer", "minimum": 1 },
+        "url": { "type": "string", "minLength": 1, "maxLength": 500 }
+      }
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gc.workflow.resolve-issue.v1",
+  "title": "Resolve-issue activity input and output",
+  "description": "Phase A issue/branch resolution. Deterministic activity backed by the GitHub workflow port + RequirementService.",
+  "x-ground-control-invariants": [
+    {
+      "id": "gc.workflow.resolve-issue.record-schema-conformance",
+      "description": "Resolve-issue records tagged x-gc-record serialize to documents valid against this schema.",
+      "enforcedBy": [
+        "backend/src/test/java/com/keplerops/groundcontrol/unit/infrastructure/temporal/implement/WorkflowContractConformanceTest.java::workflowPayloadRecordsConformToSchemas"
+      ]
+    }
+  ],
+  "$defs": {
+    "ResolveIssueInput": {
+      "x-gc-record": "ResolveIssueInput",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "issueNumber"],
+      "properties": {
+        "repository": { "type": "object" },
+        "issueNumber": { "type": "integer", "minimum": 1 },
+        "requirementUids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "maxItems": 100
+        }
+      }
+    },
+    "ResolveIssueResult": {
+      "x-gc-record": "ResolveIssueResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issueNumber", "branch", "baseBranch"],
+      "properties": {
+        "issueNumber": { "type": "integer", "minimum": 1 },
+        "branch": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "baseBranch": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "requirementUids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "maxItems": 100
+        }
+      }
+    }
+  }
+}
