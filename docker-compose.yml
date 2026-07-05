@@ -31,6 +31,51 @@ services:
       timeout: 5s
       retries: 5
 
+  temporal-db:
+    image: apache/age:release_PG16_1.6.0
+    environment:
+      POSTGRES_DB: temporal
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: ${GC_TEMPORAL_DB_PASSWORD:?Set GC_TEMPORAL_DB_PASSWORD in .env} # ggignore
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - gc-temporal-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal -d temporal"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
+    cpus: "1.0"
+
+  temporal:
+    image: temporalio/auto-setup:1.29.6
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: ${GC_TEMPORAL_DB_PASSWORD:?Set GC_TEMPORAL_DB_PASSWORD in .env} # ggignore
+      POSTGRES_SEEDS: temporal-db
+      DEFAULT_NAMESPACE: ground-control
+      DEFAULT_NAMESPACE_RETENTION: 168h
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CLI_ADDRESS: temporal:7233
+    ports:
+      - "127.0.0.1:7233:7233"
+    depends_on:
+      temporal-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "tctl --address temporal:7233 cluster health | grep -q SERVING"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 768m
+    cpus: "1.0"
+
   backend:
     build:
       context: .
@@ -51,5 +96,36 @@ services:
       redis:
         condition: service_healthy
 
+  temporal-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      GC_DATABASE_URL: jdbc:postgresql://db:5432/ground_control
+      GC_DATABASE_USER: ${GC_DATABASE_USER:-gc}
+      GC_DATABASE_PASSWORD: ${GC_DATABASE_PASSWORD:?Set GC_DATABASE_PASSWORD in .env} # ggignore
+      GC_REDIS_URL: redis://redis:6379
+      GC_SERVER_PORT: "8001"
+      GROUNDCONTROL_TEMPORAL_WORKER_ENABLED: "true"
+      GROUNDCONTROL_TEMPORAL_WORKER_TARGET: temporal:7233
+      GROUNDCONTROL_TEMPORAL_WORKER_NAMESPACE: ground-control
+      GROUNDCONTROL_TEMPORAL_WORKER_TASK_QUEUE: ground-control-implement
+      SPRING_PROFILES_ACTIVE: dev
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8001/actuator/health | grep -q '\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 1024m
+    cpus: "1.0"
+
 volumes:
   gc-postgres-data:
+  gc-temporal-postgres-data:

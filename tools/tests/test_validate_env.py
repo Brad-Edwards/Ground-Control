@@ -27,6 +27,11 @@ VALID_ENV = {
     "POSTGRES_DB": "ground_control",
     "POSTGRES_USER": "gc",
     "POSTGRES_PASSWORD": "p@ss",
+    "TEMPORAL_POSTGRES_DB": "temporal",
+    "TEMPORAL_POSTGRES_USER": "temporal",
+    "TEMPORAL_POSTGRES_PASSWORD": "p@ss",  # ggignore
+    "TEMPORAL_VISIBILITY_DB": "temporal_visibility",
+    "GC_BIND_IP": "100.98.28.66",
     "GC_IMAGE": "ghcr.io/autarchy-ai/ground-control:1.0.1",
     "GC_SECURITY_ENABLED": "true",
     "GROUNDCONTROL_SECURITY_CREDENTIALS_0_PRINCIPAL_NAME": "mcp",

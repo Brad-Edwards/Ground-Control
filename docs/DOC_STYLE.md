@@ -1,5 +1,7 @@
 # Documentation style
 
+> **Sync note for issue #1276 (2026-07-05 GC-O009):** Extended `tools/policy/checks.py::run_deploy_artifact_consistency` with the `deploy-temporal-topology` guard for the required Temporal production compose services, pinned images, SQL visibility database wiring, Tailscale-bound gRPC port, health checks, and resource limits. Documentation lives in `deploy/docker/README.md`, `docs/deployment/DEPLOYMENT.md`, `docs/operations/backup-restore.md`, and `docs/DEVELOPMENT_WORKFLOW.md`; ADR-054 records the policy-surface amendment. No style rule changed.
+
 > **Sync note for issue #1293 (2026-07-04 GC-CLD-4):** Added `tools/policy/checks.py::run_mutation_gate_contract` so `make policy` verifies the CLD mutation gate runner, registry schema, CI mutation job, pull-request base-ref scoping, report artifact, and branch-protection context. Documentation lives in `docs/DEVELOPMENT_WORKFLOW.md`, ADR-087, and the mutation registry README; the surface change is recorded in the ADR-054 amendment. No style rule changed.
 
 > **Sync note for issue #1275 (2026-07-04 GC-O014):** Added contract-surface policy checks in `tools/policy/checks.py` for the committed `contracts/` artifact set, generated frontend API type shim, JSON Schema invariant enforcement metadata, and authorization path-matrix synchronization. The contract-surface documentation lives in ADR-082, `docs/DEVELOPMENT_WORKFLOW.md`, and `docs/architecture/ARCHITECTURE.md`; ADR-054 records the policy-surface amendment. No style rule changed.
