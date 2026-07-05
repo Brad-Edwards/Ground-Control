@@ -1380,15 +1380,70 @@ class PolicyChecksTest(unittest.TestCase):
             "GC_IMAGE=ghcr.io/autarchy-ai/ground-control:main\n", encoding="utf-8"
         )
         (ddir / "env.schema").write_text(
-            "REQUIRED GC_IMAGE\nRELEASE_PIN GC_IMAGE\nREQUIRED GC_DATABASE_URL\n",
+            "REQUIRED GC_IMAGE\n"
+            "RELEASE_PIN GC_IMAGE\n"
+            "REQUIRED GC_DATABASE_URL\n"
+            "REQUIRED TEMPORAL_POSTGRES_DB\n"
+            "REQUIRED TEMPORAL_POSTGRES_USER\n"
+            "REQUIRED TEMPORAL_POSTGRES_PASSWORD\n"
+            "REQUIRED TEMPORAL_VISIBILITY_DB\n"
+            "REQUIRED GC_BIND_IP\n"
+            "OPTIONAL TEMPORAL_NAMESPACE\n"
+            "OPTIONAL TEMPORAL_TASK_QUEUE\n",
             encoding="utf-8",
         )
         (ddir / "docker-compose.prod.yml").write_text(
             "services:\n"
+            "  temporal-db:\n"
+            "    image: apache/age:release_PG16_1.6.0\n"
+            "    environment:\n"
+            "      POSTGRES_DB: ${TEMPORAL_POSTGRES_DB}\n"
+            "      POSTGRES_USER: ${TEMPORAL_POSTGRES_USER}\n"
+            "      POSTGRES_PASSWORD: ${TEMPORAL_POSTGRES_PASSWORD}\n"
+            "    volumes:\n"
+            "      - /data/temporal-postgres:/var/lib/postgresql/data\n"
+            "    healthcheck:\n"
+            "      test: [\"CMD-SHELL\", \"pg_isready -U ${TEMPORAL_POSTGRES_USER} -d ${TEMPORAL_POSTGRES_DB}\"]\n"
+            "    mem_limit: 512m\n"
+            "    cpus: \"1.0\"\n"
+            "  temporal:\n"
+            "    image: temporalio/auto-setup:1.29.6\n"
+            "    environment:\n"
+            "      - DB=postgres12\n"
+            "      - DBNAME=${TEMPORAL_POSTGRES_DB}\n"
+            "      - VISIBILITY_DBNAME=${TEMPORAL_VISIBILITY_DB}\n"
+            "      - POSTGRES_USER=${TEMPORAL_POSTGRES_USER}\n"
+            "      - POSTGRES_PWD=${TEMPORAL_POSTGRES_PASSWORD}\n"
+            "      - POSTGRES_SEEDS=temporal-db\n"
+            "      - DEFAULT_NAMESPACE=${TEMPORAL_NAMESPACE:-ground-control}\n"
+            "    ports:\n"
+            "      - \"${GC_BIND_IP}:7233:7233\"\n"
+            "    depends_on:\n"
+            "      temporal-db:\n"
+            "        condition: service_healthy\n"
+            "    healthcheck:\n"
+            "      test: [\"CMD-SHELL\", \"tctl --address temporal:7233 cluster health | grep -q SERVING\"]\n"
+            "    mem_limit: 768m\n"
+            "    cpus: \"1.0\"\n"
             "  backend:\n"
             "    image: ${GC_IMAGE}\n"
             "    environment:\n"
-            "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n",
+            "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n"
+            "  temporal-worker:\n"
+            "    image: ${GC_IMAGE}\n"
+            "    environment:\n"
+            "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n"
+            "      - GROUNDCONTROL_TEMPORAL_WORKER_ENABLED=true\n"
+            "      - GROUNDCONTROL_TEMPORAL_WORKER_TARGET=temporal:7233\n"
+            "      - GROUNDCONTROL_TEMPORAL_WORKER_NAMESPACE=${TEMPORAL_NAMESPACE:-ground-control}\n"
+            "      - GROUNDCONTROL_TEMPORAL_WORKER_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-ground-control-implement}\n"
+            "    depends_on:\n"
+            "      temporal:\n"
+            "        condition: service_healthy\n"
+            "    healthcheck:\n"
+            "      test: [\"CMD-SHELL\", \"wget -q -O - http://localhost:8001/actuator/health | grep -q '\\\"UP\\\"'\"]\n"
+            "    mem_limit: 1024m\n"
+            "    cpus: \"1.0\"\n",
             encoding="utf-8",
         )
         (ddir / "deploy.sh").write_text("#!/bin/bash\ndocker compose --env-file .env up -d\n", encoding="utf-8")
@@ -1458,6 +1513,58 @@ class PolicyChecksTest(unittest.TestCase):
             self.assertIn("deploy-env-schema-incomplete", codes)
             details = " ".join(d for v in violations for d in v.details)
             self.assertIn("GC_NEW_KNOB", details)
+
+    def test_deploy_artifact_consistency_flags_missing_temporal_services(self):
+        # GC-O009 phase 1 makes Temporal a first-class production topology
+        # surface: compose drift must fail before the deploy host sees it.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                "services:\n"
+                "  backend:\n"
+                "    image: ${GC_IMAGE}\n"
+                "    environment:\n"
+                "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n",
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-temporal-topology", codes)
+
+    def test_deploy_artifact_consistency_flags_unpinned_temporal_image(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                compose.read_text(encoding="utf-8").replace(
+                    "temporalio/auto-setup:1.29.6", "temporalio/auto-setup:latest"
+                ),
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-temporal-topology", codes)
+
+    def test_deploy_artifact_consistency_flags_temporal_without_tailnet_bind(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                compose.read_text(encoding="utf-8").replace(
+                    '"${GC_BIND_IP}:7233:7233"', '"7233:7233"'
+                ),
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-temporal-topology", codes)
 
     def test_deploy_artifact_consistency_flags_missing_release_pin(self):
         # Dropping RELEASE_PIN GC_IMAGE would let a floating branch tag (:main)

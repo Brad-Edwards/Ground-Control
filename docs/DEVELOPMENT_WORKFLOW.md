@@ -311,6 +311,13 @@ Load-bearing constraints, locked in ADR-081:
 - **Temporal Web is infrastructure, never the product UI** (ADR-028); the
   console consumes only the product workflow control surface.
 
+Issue #1276 lands phase-1 infrastructure only: `docker-compose.yml` and
+`deploy/docker/docker-compose.prod.yml` run `temporal-db`, `temporal`, and
+`temporal-worker`; the Java worker skeleton is under `infrastructure/`; and
+`make policy` covers deploy topology plus Temporal backup/restore evidence.
+The single namespace remains `ground-control`; projects are partitioned by
+workflow IDs and Search Attributes, not by namespace.
+
 ## Contract-Locked Development Program (ADR-087)
 
 ADR-087 adopts Contract-Locked Development (CLD) as the method for

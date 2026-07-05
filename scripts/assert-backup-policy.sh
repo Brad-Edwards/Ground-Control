@@ -78,6 +78,14 @@ grep -q '^User=gc-backup' "${SERVICE_UNIT}" \
 grep -q 'GC_BACKUP_RSYNC_TARGET' "${BACKUP_SCRIPT}" \
   || fail "${BACKUP_SCRIPT#${REPO_ROOT}/}: must declare GC_BACKUP_RSYNC_TARGET (off-box durability is part of GC-P021)"
 
+# 5b. GC-O009 adds Temporal core + SQL visibility persistence to the production
+#     topology. The backup contract must dump both databases, not only the
+#     Ground Control application database.
+for token in 'GC_BACKUP_TEMPORAL_DB_CONTAINER' 'gc-temporal-' 'gc-temporal-visibility-' 'TEMPORAL_VISIBILITY_DB'; do
+  grep -qF "${token}" "${BACKUP_SCRIPT}" \
+    || fail "${BACKUP_SCRIPT#${REPO_ROOT}/}: Temporal persistence backup must include '${token}'"
+done
+
 # 6. Aurora-side setup pins to an rrsync forced command (the gc-backup
 #    key on aurora can do nothing except land rsync payloads into the
 #    backup dir). Drift here weakens the off-box trust boundary.
@@ -105,6 +113,13 @@ grep -q '^User=gc-backup' "${RESTORE_SERVICE_UNIT}" \
 for token in 'pg_extension' "version = '010'" 'create_graph'; do
   grep -qF "${token}" "${RESTORE_SCRIPT}" \
     || fail "${RESTORE_SCRIPT#${REPO_ROOT}/}: restore verification must assert '${token}' so AGE-layer regressions are caught"
+done
+
+# 10. Restore verification must also exercise Temporal's core and visibility
+#     dumps. This keeps GC-O009 persistence inside the recurring GC-P021 drill.
+for token in 'APP_DUMP_TIMESTAMP' 'gc-temporal-${APP_DUMP_TIMESTAMP}.dump' 'gc-temporal-visibility-${APP_DUMP_TIMESTAMP}.dump' 'executions_visibility' 'temporal_verify' 'temporal_visibility_verify'; do
+  grep -qF "${token}" "${RESTORE_SCRIPT}" \
+    || fail "${RESTORE_SCRIPT#${REPO_ROOT}/}: restore verification must assert Temporal persistence token '${token}'"
 done
 
 if [ "${errors}" -gt 0 ]; then

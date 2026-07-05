@@ -54,8 +54,12 @@ The `docker-compose.yml` in the project root runs infrastructure only. Spring Bo
 |---------|-------|------|---------|
 | `db` | `apache/age:release_PG16_1.6.0` | 5432 | Primary database (PostgreSQL 16 + Apache AGE 1.6.0) |
 | `redis` | `redis:7` | 6379 | Available for future use (not used by the application currently) |
+| `temporal-db` | `apache/age:release_PG16_1.6.0` | 5433 | Local Temporal core + SQL visibility persistence |
+| `temporal` | `temporalio/auto-setup:1.29.6` | 7233 | Local Temporal frontend using one `ground-control` namespace |
+| `temporal-worker` | local backend image | internal 8001 | Worker skeleton with `GROUNDCONTROL_TEMPORAL_WORKER_ENABLED=true` |
 
-PostgreSQL data persists in the `gc-postgres-data` named volume.
+PostgreSQL data persists in the `gc-postgres-data` named volume. Temporal data
+persists separately in `gc-temporal-postgres-data`.
 
 ### Environment Variables
 
@@ -68,6 +72,11 @@ All settings use the `GC_` prefix. See `.env.example`.
 | `GC_DATABASE_PASSWORD` | `gc` | Database password |
 | `GC_REDIS_URL` | `redis://localhost:6379` | Redis connection URL (unused by app currently) |
 | `GC_SERVER_PORT` | `8000` | HTTP server port |
+| `GC_TEMPORAL_DB_PASSWORD` | _(required for compose)_ | Local Temporal Postgres password used by `temporal-db` and `temporal` |
+| `GROUNDCONTROL_TEMPORAL_WORKER_ENABLED` | `false` | Starts the worker skeleton when true |
+| `GROUNDCONTROL_TEMPORAL_WORKER_TARGET` | `localhost:7233` | Temporal frontend endpoint for the worker |
+| `GROUNDCONTROL_TEMPORAL_WORKER_NAMESPACE` | `ground-control` | Single Temporal namespace (project partitioning is by workflow ID/Search Attributes) |
+| `GROUNDCONTROL_TEMPORAL_WORKER_TASK_QUEUE` | `ground-control-implement` | Worker task queue |
 | `GC_AGE_ENABLED` | `false` | Enable Apache AGE graph queries |
 | `GC_SWEEP_ENABLED` | `false` | Enable scheduled analysis sweeps |
 | `GC_SWEEP_CRON` | `0 0 6 * * *` | Cron expression for sweep schedule |
@@ -284,6 +293,10 @@ IPv4 / IPv6 attempts to reach the API never even establish a TCP connection
 to the proxy. Defense in depth on top of ADR-026 bearer auth: even if the
 backend has a future auth bypass, an attacker would need a tailnet identity
 to reach it.
+
+Temporal gRPC publishes on `${GC_BIND_IP}:7233:7233` with no fallback because
+the Temporal frontend is infrastructure, not a bearer-authenticated application
+endpoint. Production `.env` validation requires `GC_BIND_IP` before rollout.
 
 A second, host-firewall layer drops TCP packets that arrive on the public
 interface bound for port 8000, regardless of what docker-proxy is listening
@@ -757,6 +770,10 @@ JAVA_TOOL_OPTIONS=-Xmx512m -Xms256m
 POSTGRES_DB=ground_control
 POSTGRES_USER=gc
 POSTGRES_PASSWORD=...
+TEMPORAL_POSTGRES_DB=temporal
+TEMPORAL_POSTGRES_USER=temporal
+TEMPORAL_POSTGRES_PASSWORD=...
+TEMPORAL_VISIBILITY_DB=temporal_visibility
 GC_IMAGE=ghcr.io/autarchy-ai/ground-control:<X.Y.Z>
 GC_BIND_IP=<host's tailnet IP>
 GC_EMBEDDING_PROVIDER=openai
@@ -764,7 +781,7 @@ GC_EMBEDDING_API_KEY=...
 EOF
 ```
 
-`GC_IMAGE` MUST be an immutable versioned release tag like `:1.0.1` (ADR-063), not a floating branch tag (`:main`, `:latest`, `:dev`): production runs a promoted release, and bumping this pin is the deliberate promotion act. A rollback pins the previous release's digest with `GC_ALLOW_IMAGE_PIN=1`; `validate-env.sh` rejects a floating tag and rejects a bare digest without that override. `GC_BIND_IP` restricts the host port-binding to the tailnet interface only (per #828 / ADR-026 defense in depth); leaving it unset binds `0.0.0.0` and exposes port 8000 on the public interface.
+`GC_IMAGE` MUST be an immutable versioned release tag like `:1.0.1` (ADR-063), not a floating branch tag (`:main`, `:latest`, `:dev`): production runs a promoted release, and bumping this pin is the deliberate promotion act. A rollback pins the previous release's digest with `GC_ALLOW_IMAGE_PIN=1`; `validate-env.sh` rejects a floating tag and rejects a bare digest without that override. `GC_BIND_IP` restricts host port bindings to the tailnet interface only (per #828 / ADR-026 defense in depth) and is required before rollout.
 
 To roll back to a prior version, use `make rollback VERSION=<version-or-digest>` (or `./scripts/rollback.sh <version-or-digest>`). The wrapper patches `GC_IMAGE` in `/opt/gc/.env` and delegates to the canonical deploy path, so the health gate and auto-rollback apply. See `skills/deploy/SKILL.md` (§Rollback) for the full runbook.
 

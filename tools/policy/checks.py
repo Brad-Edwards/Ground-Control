@@ -2413,6 +2413,9 @@ DEPLOY_CANONICAL_ARTIFACTS: tuple[str, ...] = (
     "validate-env.sh",
     "env.schema",
 )
+TEMPORAL_COMPOSE_SERVICE_RE_TEMPLATE = (
+    r"(?ms)^  {service}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|^[A-Za-z0-9_-]+:\n|\Z)"
+)
 COMPOSE_VAR_REF_RE = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)(:-[^}]*)?\}")
 
 
@@ -2435,6 +2438,74 @@ def _parse_env_schema(text: str) -> dict[str, set[str]]:
             continue
         directives.setdefault(parts[1], set()).add(parts[0])
     return directives
+
+
+def _extract_compose_service_block(compose_text: str, service: str) -> str:
+    pattern = TEMPORAL_COMPOSE_SERVICE_RE_TEMPLATE.format(service=re.escape(service))
+    match = re.search(pattern, compose_text)
+    return match.group("body") if match else ""
+
+
+def _temporal_topology_violations(compose_text: str) -> list[str]:
+    """Return GC-O009 production Temporal topology drift details.
+
+    This intentionally stays structural and stdlib-only like the surrounding
+    deploy policy gates. It does not try to be a full Compose parser; it pins
+    the canonical service names and load-bearing tokens that make deploy,
+    rollback, health, tailnet binding, and backup policy line up.
+    """
+    details: list[str] = []
+    temporal_db = _extract_compose_service_block(compose_text, "temporal-db")
+    temporal = _extract_compose_service_block(compose_text, "temporal")
+    temporal_worker = _extract_compose_service_block(compose_text, "temporal-worker")
+
+    if not temporal_db:
+        details.append("missing service: temporal-db")
+    else:
+        for token, label in (
+            ("image: apache/age:release_PG16_1.6.0", "temporal-db must use the pinned Postgres/AGE image"),
+            ("/data/temporal-postgres:/var/lib/postgresql/data", "temporal-db must bind persistence under /data/temporal-postgres"),
+            ("healthcheck:", "temporal-db must have a healthcheck"),
+            ("mem_limit:", "temporal-db must declare a memory bound"),
+            ("cpus:", "temporal-db must declare a CPU bound"),
+        ):
+            if token not in temporal_db:
+                details.append(label)
+
+    if not temporal:
+        details.append("missing service: temporal")
+    else:
+        for token, label in (
+            ("image: temporalio/auto-setup:1.29.6", "temporal must use pinned temporalio/auto-setup:1.29.6"),
+            ("DB=postgres12", "temporal must use the PostgreSQL 12+ driver"),
+            ("VISIBILITY_DBNAME=${TEMPORAL_VISIBILITY_DB}", "temporal must wire the SQL visibility database"),
+            ("POSTGRES_SEEDS=temporal-db", "temporal must use temporal-db as its persistence seed"),
+            ("DEFAULT_NAMESPACE=${TEMPORAL_NAMESPACE:-ground-control}", "temporal must default to one ground-control namespace"),
+            ('"${GC_BIND_IP}:7233:7233"', "temporal gRPC must require the GC_BIND_IP tailnet bind posture"),
+            ("healthcheck:", "temporal must have a healthcheck"),
+            ("mem_limit:", "temporal must declare a memory bound"),
+            ("cpus:", "temporal must declare a CPU bound"),
+        ):
+            if token not in temporal:
+                details.append(label)
+
+    if not temporal_worker:
+        details.append("missing service: temporal-worker")
+    else:
+        for token, label in (
+            ("image: ${GC_IMAGE}", "temporal-worker must run the promoted backend image"),
+            ("GROUNDCONTROL_TEMPORAL_WORKER_ENABLED=true", "temporal-worker must enable the worker explicitly"),
+            ("GROUNDCONTROL_TEMPORAL_WORKER_TARGET=temporal:7233", "temporal-worker must target the compose Temporal frontend"),
+            ("GROUNDCONTROL_TEMPORAL_WORKER_NAMESPACE=${TEMPORAL_NAMESPACE:-ground-control}", "temporal-worker must share the single namespace"),
+            ("GROUNDCONTROL_TEMPORAL_WORKER_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-ground-control-implement}", "temporal-worker must expose a configurable task queue"),
+            ("healthcheck:", "temporal-worker must have a healthcheck"),
+            ("mem_limit:", "temporal-worker must declare a memory bound"),
+            ("cpus:", "temporal-worker must declare a CPU bound"),
+        ):
+            if token not in temporal_worker:
+                details.append(label)
+
+    return details
 
 
 def run_deploy_artifact_consistency(root: Path = REPO_ROOT) -> list[Violation]:
@@ -2538,6 +2609,20 @@ def run_deploy_artifact_consistency(root: Path = REPO_ROOT) -> list[Violation]:
                         "env.schema does not mark them REQUIRED (GC-P023)."
                     ),
                     details=sorted(not_required),
+                )
+            )
+
+        temporal_details = _temporal_topology_violations(compose_text)
+        if temporal_details:
+            violations.append(
+                Violation(
+                    code="deploy-temporal-topology",
+                    message=(
+                        "Production compose must include the GC-O009 Temporal "
+                        "server, visibility persistence, worker, health, resource, "
+                        "and tailnet-bind topology."
+                    ),
+                    details=temporal_details,
                 )
             )
 
