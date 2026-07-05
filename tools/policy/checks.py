@@ -10,17 +10,47 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ADR_POLICY_PATH = REPO_ROOT / "architecture" / "policies" / "adr-policy.json"
 BRANCH_PROTECTION_BASELINE_PATH = Path(".github/branch-protection-baseline.json")
+CODEOWNERS_PATH = Path(".github/CODEOWNERS")
 CI_WORKFLOW_PATH = Path(".github/workflows/ci.yml")
 PRE_COMMIT_CONFIG_PATH = Path(".pre-commit-config.yaml")
 SONAR_NEW_ISSUE_GATE_PATH = Path("tools/sonar/assert_no_new_issues.py")
 MUTATION_REGISTRY_PATH = Path("architecture/registry/mutation-boundaries.json")
 MUTATION_GATE_SCRIPT_PATH = Path("tools/mutation/run_boundary_mutation.py")
+PROTECTED_PATHS_REGISTRY_PATH = Path("architecture/registry/protected-paths.json")
+DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION = "gc.cld.design-authority-approval/v1"
+DESIGN_AUTHORITY_APPROVAL_MARKER_PREFIX = "<!-- gc:design-authority-approval"
+DESIGN_AUTHORITY_APPROVAL_MARKER_RE = re.compile(
+    r"<!--\s*gc:design-authority-approval\s+([^>]*)-->", re.IGNORECASE
+)
+DESIGN_AUTHORITY_APPROVAL_DATA_RE = re.compile(
+    r"<!--\s*gc:design-authority-approval-data\s+({.*?})\s*-->",
+    re.IGNORECASE | re.DOTALL,
+)
+HTML_ATTR_RE = re.compile(r"([a-zA-Z_][a-zA-Z0-9_-]*)=\"([^\"]*)\"")
+PROTECTED_PATH_APPROVAL_MODES = frozenset({"design_authority"})
+PROTECTED_PATH_DETECTORS = frozenset(
+    {"mutation-threshold", "mutation-targets", "test-delete", "test-skip"}
+)
+PROTECTED_PATH_CATEGORY_KEYS = frozenset(
+    {"id", "name", "selectors", "approval_mode", "codeowners", "weakening_detectors", "freeze_inputs"}
+)
+IMPLEMENTATION_PATH_SELECTORS = (
+    "backend/src/main/**",
+    "backend/src/test/**",
+    "frontend/src/**",
+    "mcp/**",
+    "tools/**",
+)
+SKIPPED_TEST_ADDITION_RE = re.compile(
+    r"^\+(?!\+\+).*(?:@Disabled\b|\.skip\s*\(|\b(?:describe|it|test)\.skip\s*\(|\b(?:xdescribe|xit|xtest)\s*\(|@pytest\.mark\.skip\b)",
+    re.IGNORECASE,
+)
 CONTROLLER_PATH_RE = re.compile(
     r"^backend/src/main/java/com/keplerops/groundcontrol/api/.+Controller\.java$"
 )
@@ -62,6 +92,15 @@ CONTRACT_REQUIRED_PATHS = (
 )
 FRONTEND_CONTRACT_SHIM_PATH = Path("frontend/src/types/api.ts")
 GENERATED_CONTRACT_EXPORT = 'export * from "../../../contracts/gen/typescript/api";'
+
+
+class RefUnreadableError(RuntimeError):
+    """Raised when a caller supplied a base ref that cannot be resolved."""
+
+    def __init__(self, base: str, detail: str):
+        super().__init__(detail)
+        self.base = base
+        self.detail = detail
 
 GROUND_CONTROL_YAML_PATH = Path(".ground-control.yaml")
 # /implement routing stages whose step drives a gc_codex_job async poll loop
@@ -347,6 +386,702 @@ def filter_matches(paths: Iterable[str], patterns: Iterable[str]) -> list[str]:
 
 def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def selector_matches_path(selector: str, path: str) -> bool:
+    normalized_selector = normalize_path(selector)
+    normalized_path = normalize_path(path)
+    if normalized_selector.endswith("/**"):
+        prefix = normalized_selector[:-3]
+        return normalized_path == prefix or normalized_path.startswith(f"{prefix}/")
+    return fnmatch.fnmatch(normalized_path, normalized_selector)
+
+
+def selector_escapes_repo(selector: str) -> bool:
+    exact = selector[:-3] if selector.endswith("/**") else selector
+    return selector.startswith("/") or ".." in Path(exact).parts
+
+
+def selector_has_supported_glob(selector: str) -> bool:
+    exact = selector[:-3] if selector.endswith("/**") else selector
+    return "*" not in exact and ("*" not in selector or selector.endswith("/**"))
+
+
+def parse_codeowners(text: str) -> list[tuple[str, tuple[str, ...]]]:
+    rules: list[tuple[str, tuple[str, ...]]] = []
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parts = stripped.split()
+        if len(parts) < 2:
+            continue
+        pattern = normalize_path(parts[0])
+        owners = tuple(parts[1:])
+        rules.append((pattern, owners))
+    return rules
+
+
+def _parse_html_attrs(attrs_text: str) -> dict[str, str]:
+    return {match.group(1): match.group(2) for match in HTML_ATTR_RE.finditer(attrs_text or "")}
+
+
+def parse_design_authority_approval_markers(
+    comments: Iterable[dict[str, str] | str], pr_number: int | None
+) -> list[dict[str, Any]]:
+    markers: list[dict[str, Any]] = []
+    for comment in comments:
+        if isinstance(comment, dict):
+            body = comment.get("body", "")
+            author = comment.get("author") or comment.get("user") or ""
+        else:
+            body = str(comment)
+            author = ""
+        if not isinstance(body, str):
+            continue
+        data_scopes: list[dict[str, Any]] = []
+        for data_match in DESIGN_AUTHORITY_APPROVAL_DATA_RE.finditer(body):
+            try:
+                parsed_data = json.loads(data_match.group(1))
+            except json.JSONDecodeError:
+                continue
+            if parsed_data.get("schema") == DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION:
+                data_scopes.append(parsed_data)
+        for match in DESIGN_AUTHORITY_APPROVAL_MARKER_RE.finditer(body):
+            attrs = _parse_html_attrs(match.group(1))
+            if attrs.get("schema") != DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION:
+                continue
+            try:
+                issue = int(attrs.get("issue", ""))
+                pr = int(attrs.get("pr", ""))
+            except ValueError:
+                continue
+            if pr_number is not None and pr != pr_number:
+                continue
+            scope = next(
+                (
+                    {key: value for key, value in data.items() if key not in ("issue_number", "pr_number")}
+                    for data in data_scopes
+                    if data.get("issue_number") == issue
+                    and data.get("pr_number") == pr
+                ),
+                None,
+            )
+            markers.append(
+                {
+                    "issue_number": issue,
+                    "pr_number": pr,
+                    "schema": attrs.get("schema"),
+                    "author": author,
+                    "scope": scope,
+                }
+            )
+    return markers
+
+
+def _base_ref_unreadable_violation(base: str, detail: str) -> Violation:
+    return Violation(
+        code="protected-path-authority-base-unreadable",
+        message="CLD protected-path authority base ref could not be read.",
+        details=[
+            f"base ref: {base}",
+            detail,
+            "CI must fetch the PR base ref before evaluating protected-path authority; do not fall back to PR-head policy.",
+        ],
+    )
+
+
+def _read_file_from_ref(path: Path, base: str | None, root: Path) -> str | None:
+    if not base:
+        return None
+    try:
+        run_git(["rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"], root=root)
+    except subprocess.CalledProcessError as exc:
+        detail = str(exc).strip() or f"git rev-parse failed for {base}"
+        raise RefUnreadableError(base, detail) from exc
+    try:
+        return run_git(["show", f"{base}:{path.as_posix()}"], root=root)
+    except subprocess.CalledProcessError:
+        return None
+
+
+def _owner_to_login(owner: str) -> str | None:
+    if not owner.startswith("@") or "/" in owner:
+        return None
+    login = owner[1:].strip().lower()
+    return login or None
+
+
+def _validate_protected_path_registry(root: Path, base: str | None = None) -> tuple[dict[str, Any] | None, list[Violation]]:
+    registry_path = root / PROTECTED_PATHS_REGISTRY_PATH
+    try:
+        registry_text = _read_file_from_ref(PROTECTED_PATHS_REGISTRY_PATH, base, root)
+    except RefUnreadableError as exc:
+        return None, [_base_ref_unreadable_violation(exc.base, exc.detail)]
+    source_label = (
+        f"{base}:{PROTECTED_PATHS_REGISTRY_PATH.as_posix()}"
+        if registry_text is not None and base
+        else PROTECTED_PATHS_REGISTRY_PATH.as_posix()
+    )
+    if registry_text is None and not registry_path.exists():
+        return (
+            None,
+            [
+                Violation(
+                    code="protected-path-registry-missing",
+                    message="CLD protected-path registry is missing.",
+                    details=[f"expected at {source_label}"],
+                )
+            ],
+        )
+    try:
+        registry = json.loads(registry_text) if registry_text is not None else load_json(registry_path)
+    except json.JSONDecodeError as exc:
+        return (
+            None,
+            [
+                Violation(
+                    code="protected-path-registry-invalid-json",
+                    message="CLD protected-path registry is not valid JSON.",
+                    details=[f"{source_label}: {exc}"],
+                )
+            ],
+        )
+
+    violations: list[Violation] = []
+    if registry.get("schema_version") != 1:
+        violations.append(
+            Violation(
+                code="protected-path-registry-invalid",
+                message="CLD protected-path registry schema_version must be 1.",
+                details=[f"path: {source_label}"],
+            )
+        )
+    categories = registry.get("categories")
+    if not isinstance(categories, list) or not categories:
+        violations.append(
+            Violation(
+                code="protected-path-registry-invalid",
+                message="CLD protected-path registry must declare at least one category.",
+                details=["categories must be a non-empty list"],
+            )
+        )
+        return registry, violations
+
+    seen_ids: set[str] = set()
+    for index, category in enumerate(categories):
+        prefix = f"categories[{index}]"
+        if not isinstance(category, dict):
+            violations.append(_protected_registry_violation(prefix, "category must be an object"))
+            continue
+        unknown = sorted(set(category) - PROTECTED_PATH_CATEGORY_KEYS)
+        for key in unknown:
+            violations.append(_protected_registry_violation(prefix, f"unknown key: {key}"))
+        category_id = category.get("id")
+        if not isinstance(category_id, str) or not category_id.strip():
+            violations.append(_protected_registry_violation(prefix, "id must be a non-empty string"))
+        elif category_id in seen_ids:
+            violations.append(_protected_registry_violation(prefix, f"id duplicates {category_id}"))
+        else:
+            seen_ids.add(category_id)
+        if not isinstance(category.get("name"), str) or not category.get("name", "").strip():
+            violations.append(_protected_registry_violation(prefix, "name must be a non-empty string"))
+        if category.get("approval_mode") not in PROTECTED_PATH_APPROVAL_MODES:
+            violations.append(
+                _protected_registry_violation(
+                    prefix,
+                    f"approval_mode must be one of {sorted(PROTECTED_PATH_APPROVAL_MODES)}",
+                )
+            )
+        selectors = category.get("selectors")
+        if not isinstance(selectors, list) or not selectors:
+            violations.append(_protected_registry_violation(prefix, "selectors must be a non-empty list"))
+        else:
+            for selector_index, selector in enumerate(selectors):
+                if not isinstance(selector, str) or not selector.strip():
+                    violations.append(_protected_registry_violation(prefix, f"selectors[{selector_index}] must be non-empty"))
+                    continue
+                raw_selector = selector.strip()
+                if selector_escapes_repo(raw_selector):
+                    violations.append(_protected_registry_violation(prefix, f"selectors[{selector_index}] escapes repo"))
+                if not selector_has_supported_glob(raw_selector):
+                    violations.append(
+                        _protected_registry_violation(
+                            prefix,
+                            f"selectors[{selector_index}] only supports exact paths or trailing /**",
+                        )
+                    )
+        codeowners = category.get("codeowners")
+        if not isinstance(codeowners, list) or not codeowners:
+            violations.append(_protected_registry_violation(prefix, "codeowners must be a non-empty list"))
+        else:
+            for owner_index, owner in enumerate(codeowners):
+                if not isinstance(owner, str) or not owner.startswith("@") or owner.strip() != owner:
+                    violations.append(_protected_registry_violation(prefix, f"codeowners[{owner_index}] must be an @owner token"))
+        detectors = category.get("weakening_detectors", [])
+        if detectors is not None:
+            if not isinstance(detectors, list):
+                violations.append(_protected_registry_violation(prefix, "weakening_detectors must be a list when set"))
+            else:
+                for detector in detectors:
+                    if detector not in PROTECTED_PATH_DETECTORS:
+                        violations.append(_protected_registry_violation(prefix, f"unknown weakening detector: {detector}"))
+        freeze_inputs = category.get("freeze_inputs", [])
+        if freeze_inputs is not None:
+            if not isinstance(freeze_inputs, list):
+                violations.append(_protected_registry_violation(prefix, "freeze_inputs must be a list when set"))
+            else:
+                for input_index, freeze_input in enumerate(freeze_inputs):
+                    if not isinstance(freeze_input, str) or not freeze_input.strip():
+                        violations.append(_protected_registry_violation(prefix, f"freeze_inputs[{input_index}] must be non-empty"))
+                        continue
+                    raw_freeze_input = freeze_input.strip()
+                    if selector_escapes_repo(raw_freeze_input):
+                        violations.append(_protected_registry_violation(prefix, f"freeze_inputs[{input_index}] escapes repo"))
+                    if not selector_has_supported_glob(raw_freeze_input):
+                        violations.append(
+                            _protected_registry_violation(
+                                prefix,
+                                f"freeze_inputs[{input_index}] only supports exact paths or trailing /**",
+                            )
+                        )
+    return registry, violations
+
+
+def _protected_registry_violation(prefix: str, detail: str) -> Violation:
+    return Violation(
+        code="protected-path-registry-invalid",
+        message="CLD protected-path registry is invalid.",
+        details=[f"{prefix}: {detail}"],
+    )
+
+
+def _validate_protected_codeowners_routes(registry: dict[str, Any], root: Path, base: str | None = None) -> list[Violation]:
+    codeowners_path = root / CODEOWNERS_PATH
+    try:
+        codeowners_text = _read_file_from_ref(CODEOWNERS_PATH, base, root)
+    except RefUnreadableError as exc:
+        return [_base_ref_unreadable_violation(exc.base, exc.detail)]
+    source_label = f"{base}:{CODEOWNERS_PATH.as_posix()}" if codeowners_text is not None and base else CODEOWNERS_PATH.as_posix()
+    if codeowners_text is None and not codeowners_path.exists():
+        return [
+            Violation(
+                code="protected-path-codeowners-missing",
+                message="CODEOWNERS is missing, so CLD protected paths have no review route.",
+                details=[f"expected at {source_label}"],
+            )
+        ]
+    rules = parse_codeowners(codeowners_text if codeowners_text is not None else codeowners_path.read_text(encoding="utf-8"))
+    violations: list[Violation] = []
+    for category in registry.get("categories", []):
+        if not isinstance(category, dict):
+            continue
+        owners = set(category.get("codeowners", []))
+        for selector in category.get("selectors", []):
+            selector = normalize_path(str(selector))
+            if any(pattern == selector and owners.intersection(rule_owners) for pattern, rule_owners in rules):
+                continue
+            violations.append(
+                Violation(
+                    code="protected-path-codeowners-route",
+                    message="CLD protected path selector lacks an explicit CODEOWNERS route.",
+                    details=[
+                        f"selector: {selector}",
+                        f"expected one of: {sorted(owners)}",
+                        f"path: {source_label}",
+                    ],
+                )
+            )
+    return violations
+
+
+def _classify_protected_paths(changed_files: list[str], registry: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
+    protected_matches: list[dict[str, Any]] = []
+    protected_paths: set[str] = set()
+    for category in registry.get("categories", []):
+        if not isinstance(category, dict):
+            continue
+        selectors = category.get("selectors", [])
+        if not isinstance(selectors, list):
+            continue
+        matches = sorted(
+            {
+                path
+                for path in changed_files
+                if any(selector_matches_path(str(selector), path) for selector in selectors)
+            }
+        )
+        if matches:
+            protected_paths.update(matches)
+            protected_matches.append({"category": category, "paths": matches})
+    implementation_paths = sorted(
+        {
+            path
+            for path in changed_files
+            if path not in protected_paths
+            and any(selector_matches_path(selector, path) for selector in IMPLEMENTATION_PATH_SELECTORS)
+        }
+    )
+    return protected_matches, implementation_paths
+
+
+def _allowed_design_authority_logins(protected_matches: list[dict[str, Any]]) -> set[str]:
+    logins: set[str] = set()
+    for match in protected_matches:
+        category = match.get("category", {})
+        for owner in category.get("codeowners", []):
+            login = _owner_to_login(owner)
+            if login:
+                logins.add(login)
+    return logins
+
+
+def _has_design_authority_marker(
+    comments: Iterable[dict[str, str] | str],
+    pr_number: int | None,
+    allowed_logins: set[str],
+    required_scope: dict[str, Any],
+) -> bool:
+    markers = parse_design_authority_approval_markers(comments, pr_number)
+    if not markers:
+        return False
+    for marker in markers:
+        if allowed_logins and str(marker.get("author", "")).lower() not in allowed_logins:
+            continue
+        if marker.get("scope") == required_scope:
+            return True
+    return False
+
+
+def _scope_list(values: Iterable[str]) -> list[str]:
+    return sorted({str(value) for value in values})
+
+
+def _diff_hash(base: str | None, paths: list[str], root: Path) -> str | None:
+    if not base or not paths:
+        return None
+    try:
+        output = run_git(["diff", "--binary", "--full-index", base, "--", *paths], root=root)
+    except subprocess.CalledProcessError:
+        return None
+    return hashlib.sha256(output.encode("utf-8", errors="surrogateescape")).hexdigest()
+
+
+def build_design_authority_approval_scope(
+    protected_paths: Iterable[str],
+    implementation_paths: Iterable[str],
+    weakening_findings: Iterable[str],
+    *,
+    base: str | None = None,
+    root: Path = REPO_ROOT,
+) -> dict[str, Any]:
+    protected = _scope_list(protected_paths)
+    implementation = _scope_list(implementation_paths)
+    weakening = _scope_list(weakening_findings)
+    diff_paths = sorted(set(protected).union(implementation))
+    return {
+        "schema": DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION,
+        "protected_paths": protected,
+        "implementation_paths": implementation,
+        "weakening_findings": weakening,
+        "diff_hash": _diff_hash(base, diff_paths, root),
+    }
+
+
+def _resolve_repo_full_name(root: Path) -> str:
+    env_repo = os.getenv("GITHUB_REPOSITORY")
+    if env_repo:
+        return env_repo
+    result = subprocess.run(
+        ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def fetch_pr_issue_comments(pr_number: int, root: Path = REPO_ROOT) -> list[dict[str, str]]:
+    repo = _resolve_repo_full_name(root)
+    result = subprocess.run(
+        [
+            "gh",
+            "api",
+            "--paginate",
+            f"repos/{repo}/issues/{pr_number}/comments",
+            "--jq",
+            ".[] | {body: .body, author: .user.login} | @json",
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    comments: list[dict[str, str]] = []
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        parsed = json.loads(line)
+        comments.append({"body": parsed.get("body", ""), "author": parsed.get("author", "")})
+    return comments
+
+
+def _normalize_pr_comment(entry: Any) -> dict[str, str]:
+    if not isinstance(entry, dict):
+        return {"body": "", "author": ""}
+    body = entry.get("body")
+    author = entry.get("author")
+    user = entry.get("user")
+    if not isinstance(author, str) and isinstance(user, dict):
+        author = user.get("login")
+    return {
+        "body": body if isinstance(body, str) else "",
+        "author": author if isinstance(author, str) else "",
+    }
+
+
+def load_pr_issue_comments(path: str | None) -> list[dict[str, str]] | None:
+    if not path:
+        return None
+    raw = Path(path).read_text(encoding="utf-8")
+    if not raw.strip():
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        comments: list[dict[str, str]] = []
+        for line in raw.splitlines():
+            if not line.strip():
+                continue
+            comments.append(_normalize_pr_comment(json.loads(line)))
+        return comments
+    if isinstance(parsed, list):
+        return [_normalize_pr_comment(item) for item in parsed]
+    if isinstance(parsed, dict) and isinstance(parsed.get("comments"), list):
+        return [_normalize_pr_comment(item) for item in parsed["comments"]]
+    raise ValueError("--pr-comments-json must contain a JSON array, {comments: [...]}, or newline-delimited JSON objects")
+
+
+def _read_name_status(base: str | None, root: Path) -> list[tuple[str, str]]:
+    if not base:
+        return []
+    try:
+        output = run_git(["diff", "--name-status", "--find-renames", "--diff-filter=ACDMRTUXB", base, "--"], root=root)
+    except subprocess.CalledProcessError:
+        return []
+    statuses: list[tuple[str, str]] = []
+    for line in output.splitlines():
+        parts = line.split("\t")
+        if not parts:
+            continue
+        status = parts[0]
+        path = parts[-1]
+        statuses.append((status, normalize_path(path)))
+    return statuses
+
+
+def _read_diff_text(base: str | None, paths: list[str], root: Path) -> str:
+    if not base or not paths:
+        return ""
+    try:
+        return run_git(["diff", "--unified=0", base, "--", *paths], root=root)
+    except subprocess.CalledProcessError:
+        return ""
+
+
+def _read_old_mutation_registry(base: str | None, root: Path) -> dict[str, Any] | None:
+    if not base:
+        return None
+    try:
+        output = run_git(["show", f"{base}:{MUTATION_REGISTRY_PATH.as_posix()}"], root=root)
+    except subprocess.CalledProcessError:
+        return None
+    try:
+        parsed = json.loads(output)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _mutation_boundary_map(registry: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    if not isinstance(registry, dict):
+        return {}
+    boundaries = registry.get("boundaries")
+    if not isinstance(boundaries, list):
+        return {}
+    result: dict[str, dict[str, Any]] = {}
+    for boundary in boundaries:
+        if isinstance(boundary, dict) and isinstance(boundary.get("id"), str):
+            result[boundary["id"]] = boundary
+    return result
+
+
+def _as_string_set(value: Any) -> set[str]:
+    if not isinstance(value, list):
+        return set()
+    return {item for item in value if isinstance(item, str)}
+
+
+def detect_mutation_registry_weakening(old_registry: dict[str, Any] | None, new_registry: dict[str, Any] | None) -> list[str]:
+    old_boundaries = _mutation_boundary_map(old_registry)
+    new_boundaries = _mutation_boundary_map(new_registry)
+    findings: list[str] = []
+    for boundary_id, old_boundary in old_boundaries.items():
+        new_boundary = new_boundaries.get(boundary_id)
+        if new_boundary is None:
+            findings.append(f"{boundary_id}: boundary removed")
+            continue
+        old_mutation = old_boundary.get("mutation", {})
+        new_mutation = new_boundary.get("mutation", {})
+        if not isinstance(old_mutation, dict) or not isinstance(new_mutation, dict):
+            continue
+        if old_mutation.get("enabled", True) is True and new_mutation.get("enabled", True) is False:
+            findings.append(f"{boundary_id}: mutation boundary disabled")
+        old_threshold = old_mutation.get("threshold")
+        new_threshold = new_mutation.get("threshold")
+        if isinstance(old_threshold, int) and isinstance(new_threshold, int) and new_threshold < old_threshold:
+            findings.append(f"{boundary_id}: threshold lowered from {old_threshold} to {new_threshold}")
+        old_baseline = old_mutation.get("baseline", {})
+        new_baseline = new_mutation.get("baseline", {})
+        if isinstance(old_baseline, dict) and isinstance(new_baseline, dict):
+            for key in ("killed", "total"):
+                old_value = old_baseline.get(key)
+                new_value = new_baseline.get(key)
+                if isinstance(old_value, int) and isinstance(new_value, int) and new_value < old_value:
+                    findings.append(f"{boundary_id}: baseline {key} lowered from {old_value} to {new_value}")
+        tool = old_mutation.get("tool")
+        if tool == "pitest":
+            for key in ("target_classes", "target_tests"):
+                old_values = _as_string_set(old_mutation.get("pitest", {}).get(key))
+                new_values = _as_string_set(new_mutation.get("pitest", {}).get(key))
+                if old_values and new_values < old_values:
+                    findings.append(f"{boundary_id}: pitest {key} narrowed")
+        if tool == "stryker":
+            for key in ("mutate", "test_files"):
+                old_values = _as_string_set(old_mutation.get("stryker", {}).get(key))
+                new_values = _as_string_set(new_mutation.get("stryker", {}).get(key))
+                if old_values and new_values < old_values:
+                    findings.append(f"{boundary_id}: stryker {key} narrowed")
+    return findings
+
+
+def _detect_battery_weakening(
+    protected_paths: list[str],
+    *,
+    root: Path,
+    base: str | None,
+    statuses: list[tuple[str, str]] | None = None,
+    old_mutation_registry: dict[str, Any] | None = None,
+) -> list[str]:
+    findings: list[str] = []
+    protected_set = set(protected_paths)
+    statuses = statuses if statuses is not None else _read_name_status(base, root)
+    for status, path in statuses:
+        if status.startswith("D") and path in protected_set and re.search(r"(test|oracle-battery)", path, re.IGNORECASE):
+            findings.append(f"{path}: protected test/oracle file deleted")
+    diff_text = _read_diff_text(base, [path for path in protected_paths if re.search(r"(test|oracle-battery)", path, re.IGNORECASE)], root)
+    for line in diff_text.splitlines():
+        if SKIPPED_TEST_ADDITION_RE.search(line):
+            findings.append("new skipped/disabled test marker added")
+            break
+    if MUTATION_REGISTRY_PATH.as_posix() in protected_set:
+        old_registry = old_mutation_registry if old_mutation_registry is not None else _read_old_mutation_registry(base, root)
+        new_path = root / MUTATION_REGISTRY_PATH
+        new_registry = load_json(new_path) if new_path.exists() else None
+        findings.extend(detect_mutation_registry_weakening(old_registry, new_registry))
+    return findings
+
+
+def run_protected_path_authority_check(
+    changed_files: list[str],
+    *,
+    base: str | None = None,
+    pr_number: int | None = None,
+    approval_comments: list[dict[str, str]] | None = None,
+    old_mutation_registry: dict[str, Any] | None = None,
+    root: Path = REPO_ROOT,
+) -> list[Violation]:
+    # Use the base branch's authority model once the registry exists there.
+    # This prevents a PR from rewriting protected selectors or CODEOWNER
+    # identities and then using that rewritten model to approve itself. The
+    # working tree fallback is only for the bootstrap change that introduces
+    # the first registry.
+    try:
+        base_registry_text = _read_file_from_ref(PROTECTED_PATHS_REGISTRY_PATH, base, root)
+    except RefUnreadableError as exc:
+        return [_base_ref_unreadable_violation(exc.base, exc.detail)]
+    authority_base = base if base_registry_text is not None else None
+    registry, violations = _validate_protected_path_registry(root, base=authority_base)
+    if registry is None:
+        return violations
+    violations.extend(_validate_protected_codeowners_routes(registry, root, base=authority_base))
+    if violations:
+        return violations
+
+    protected_matches, implementation_paths = _classify_protected_paths(changed_files, registry)
+    protected_paths = sorted({path for match in protected_matches for path in match["paths"]})
+    if not protected_paths:
+        return []
+
+    allowed_logins = _allowed_design_authority_logins(protected_matches)
+    marker_required_reasons: list[str] = []
+    if implementation_paths:
+        marker_required_reasons.append(
+            "protected paths and implementation paths changed in the same diff"
+        )
+    weakening_findings = _detect_battery_weakening(
+        protected_paths,
+        root=root,
+        base=base,
+        old_mutation_registry=old_mutation_registry,
+    )
+    if weakening_findings:
+        marker_required_reasons.append("battery weakening detected")
+
+    if not marker_required_reasons:
+        return []
+    required_scope = build_design_authority_approval_scope(
+        protected_paths,
+        implementation_paths,
+        weakening_findings,
+        base=base,
+        root=root,
+    )
+
+    comments = approval_comments
+    fetch_error: str | None = None
+    if comments is None and pr_number is not None:
+        try:
+            comments = fetch_pr_issue_comments(pr_number, root=root)
+        except (subprocess.CalledProcessError, json.JSONDecodeError, OSError) as exc:
+            comments = []
+            fetch_error = str(exc)
+    comments = comments or []
+    if _has_design_authority_marker(comments, pr_number, allowed_logins, required_scope):
+        return []
+
+    details = [
+        *(f"reason: {reason}" for reason in marker_required_reasons),
+        *(f"protected path: {path}" for path in protected_paths),
+        *(f"implementation path: {path}" for path in implementation_paths),
+        *(f"weakening: {finding}" for finding in weakening_findings),
+        f"required approval scope: {json.dumps(required_scope, sort_keys=True)}",
+        f"required marker: {DESIGN_AUTHORITY_APPROVAL_MARKER_PREFIX} schema=\"{DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION}\" ... -->",
+    ]
+    if allowed_logins:
+        details.append(f"design-authority comment author must be one of: {sorted(allowed_logins)}")
+    if pr_number is None:
+        details.append("PR number was not provided, so the policy check could not inspect PR-thread approval markers.")
+    if fetch_error:
+        details.append(f"failed to fetch PR comments: {fetch_error}")
+    code = "battery-weakening-approval-missing" if weakening_findings else "protected-path-approval-missing"
+    message = (
+        "CLD battery weakening requires a durable design-authority approval marker."
+        if weakening_findings
+        else "CLD protected paths changed alongside implementation paths without a durable design-authority approval marker."
+    )
+    return [Violation(code=code, message=message, details=details)]
 
 
 def get_repo_relative_files(root: Path, glob_pattern: str) -> list[str]:
@@ -1100,6 +1835,39 @@ def run_ci_strictness_contract(root: Path = REPO_ROOT) -> list[Violation]:
         return violations
 
     workflow_text = workflow_path.read_text(encoding="utf-8")
+    repo_policy_step = re.search(
+        r"(?ms)^\s{6}- name: Repo policy checks\n(?P<body>.*?)(?=^\s{6}- name: |\Z)",
+        workflow_text,
+    )
+    if repo_policy_step is None:
+        violations.append(
+            Violation(
+                code="ci-strictness-repo-policy-step-missing",
+                message="CI policy job must run repo policy checks for pull requests.",
+                details=[f"missing Repo policy checks step in {CI_WORKFLOW_PATH.as_posix()}"],
+            )
+        )
+    else:
+        repo_policy_body = repo_policy_step.group("body")
+        if "GH_TOKEN" in repo_policy_body:
+            violations.append(
+                Violation(
+                    code="ci-strictness-policy-token-exposure",
+                    message="PR-head repo policy code must not receive the GitHub token.",
+                    details=[
+                        "remove GH_TOKEN from the Repo policy checks step",
+                        "fetch sanitized PR comments in a separate shell step and pass --pr-comments-json instead",
+                    ],
+                )
+            )
+        if "--pr-comments-json" not in repo_policy_body:
+            violations.append(
+                Violation(
+                    code="ci-strictness-policy-comments-json",
+                    message="CI repo policy checks must consume sanitized PR comments from a file.",
+                    details=["expected --pr-comments-json in the Repo policy checks step"],
+                )
+            )
     if "python3 -m pip install --user pre-commit" not in workflow_text:
         violations.append(
             Violation(
@@ -3259,6 +4027,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             "`gh pr view <n> --json body`."
         ),
     )
+    parser.add_argument(
+        "--pr-comments-json",
+        help=(
+            "Path to sanitized PR issue comments as a JSON array or JSONL "
+            "objects with body and author fields. CI uses this so PR-head "
+            "policy code does not receive a GitHub token."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -3384,10 +4160,29 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     violations = []
+    try:
+        approval_comments = load_pr_issue_comments(args.pr_comments_json)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        approval_comments = []
+        violations.append(
+            Violation(
+                code="pr-comments-json-invalid",
+                message="PR comments JSON could not be read for protected-path approval markers.",
+                details=[str(exc)],
+            )
+        )
     violations.extend(run_adr_guard(changed_files))
     violations.extend(run_controller_contracts(changed_files))
     violations.extend(run_migration_policy(changed_files, base=args.base))
     violations.extend(run_changelog_fragment_check(changed_files))
+    violations.extend(
+        run_protected_path_authority_check(
+            changed_files,
+            base=args.base,
+            pr_number=args.pr_number,
+            approval_comments=approval_comments,
+        )
+    )
     violations.extend(run_ci_strictness_contract())
     violations.extend(run_mutation_gate_contract())
     violations.extend(run_deploy_compose_credential_passthrough())
@@ -3426,13 +4221,18 @@ def _resolve_pr_body(args: argparse.Namespace) -> str | None:
     """Resolve the PR body string from CLI args / environment, in priority order.
 
     1. ``--pr-body-file`` — local pre-push hook driver.
-    2. ``--pr-number`` — fetched via ``gh pr view <n> --json body``.
-    3. ``--event-path`` or ``GITHUB_EVENT_PATH`` — CI driver.
+    2. ``--event-path`` or ``GITHUB_EVENT_PATH`` — CI driver.
+    3. ``--pr-number`` — fetched via ``gh pr view <n> --json body``.
 
     Returns ``None`` when no source is configured (the check is skipped).
     """
     if args.pr_body_file:
         return Path(args.pr_body_file).read_text(encoding="utf-8")
+    event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
+    if event_path:
+        event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        pull_request = event.get("pull_request") or {}
+        return pull_request.get("body") or ""
     if args.pr_number is not None:
         result = subprocess.run(
             ["gh", "pr", "view", str(args.pr_number), "--json", "body", "--jq", ".body"],
@@ -3441,11 +4241,6 @@ def _resolve_pr_body(args: argparse.Namespace) -> str | None:
             text=True,
         )
         return result.stdout
-    event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
-    if event_path:
-        event = json.loads(Path(event_path).read_text(encoding="utf-8"))
-        pull_request = event.get("pull_request") or {}
-        return pull_request.get("body") or ""
     return None
 
 
@@ -3459,11 +4254,21 @@ RELEASE_PR_HEAD = "dev"
 def _resolve_pr_refs(args: argparse.Namespace) -> tuple[str | None, str | None]:
     """Best-effort ``(base_ref, head_ref)`` for the PR under check.
 
-    Sourced from ``--pr-number`` (``gh pr view``) or the GitHub event payload,
+    Sourced from the GitHub event payload or ``--pr-number`` (``gh pr view``),
     mirroring ``_resolve_pr_body``. Returns ``(None, None)`` when the refs cannot
     be determined (e.g. the local pre-push driver), so the body contract applies
     by default — only a positively-identified release PR is exempted.
     """
+    event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
+    if event_path:
+        try:
+            event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None, None
+        pull_request = event.get("pull_request") or {}
+        base = (pull_request.get("base") or {}).get("ref")
+        head = (pull_request.get("head") or {}).get("ref")
+        return base, head
     if args.pr_number is not None:
         try:
             result = subprocess.run(
@@ -3476,16 +4281,6 @@ def _resolve_pr_refs(args: argparse.Namespace) -> tuple[str | None, str | None]:
             return data.get("baseRefName"), data.get("headRefName")
         except (subprocess.CalledProcessError, json.JSONDecodeError):
             return None, None
-    event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
-    if event_path:
-        try:
-            event = json.loads(Path(event_path).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None, None
-        pull_request = event.get("pull_request") or {}
-        base = (pull_request.get("base") or {}).get("ref")
-        head = (pull_request.get("head") or {}).get("ref")
-        return base, head
     return None, None
 
 

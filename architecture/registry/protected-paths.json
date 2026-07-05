@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "categories": [
+    {
+      "id": "contracts",
+      "name": "Contract surface",
+      "selectors": [
+        "contracts/**"
+      ],
+      "approval_mode": "design_authority",
+      "codeowners": [
+        "@Brad-Edwards"
+      ],
+      "weakening_detectors": [],
+      "freeze_inputs": [
+        "contracts/**"
+      ]
+    },
+    {
+      "id": "oracle-battery",
+      "name": "Oracle battery and mutation boundaries",
+      "selectors": [
+        "architecture/registry/mutation-boundaries.json",
+        "architecture/registry/mutation-baseline.md",
+        "frontend/src/test/oracle-battery.ts",
+        "frontend/src/test/oracle-battery.test.ts",
+        "backend/src/test/java/com/keplerops/groundcontrol/unit/domain/derivation/BoundaryModelServiceTest.java"
+      ],
+      "approval_mode": "design_authority",
+      "codeowners": [
+        "@Brad-Edwards"
+      ],
+      "weakening_detectors": [
+        "mutation-threshold",
+        "mutation-targets",
+        "test-delete",
+        "test-skip"
+      ],
+      "freeze_inputs": [
+        "architecture/registry/mutation-boundaries.json",
+        "architecture/registry/mutation-baseline.md",
+        "frontend/src/test/oracle-battery.ts",
+        "frontend/src/test/oracle-battery.test.ts",
+        "backend/src/test/java/com/keplerops/groundcontrol/unit/domain/derivation/BoundaryModelServiceTest.java"
+      ]
+    },
+    {
+      "id": "architecture-registry",
+      "name": "Architecture registry",
+      "selectors": [
+        "architecture/registry/**"
+      ],
+      "approval_mode": "design_authority",
+      "codeowners": [
+        "@Brad-Edwards"
+      ],
+      "weakening_detectors": [],
+      "freeze_inputs": [
+        "architecture/registry/**"
+      ]
+    },
+    {
+      "id": "architecture-policy",
+      "name": "Architecture policy",
+      "selectors": [
+        "architecture/policies/**"
+      ],
+      "approval_mode": "design_authority",
+      "codeowners": [
+        "@Brad-Edwards"
+      ],
+      "weakening_detectors": [],
+      "freeze_inputs": [
+        "architecture/policies/**"
+      ]
+    },
+    {
+      "id": "repo-policy",
+      "name": "Repository policy checks",
+      "selectors": [
+        "tools/policy/**",
+        "tools/tests/**",
+        "bin/policy"
+      ],
+      "approval_mode": "design_authority",
+      "codeowners": [
+        "@Brad-Edwards"
+      ],
+      "weakening_detectors": [
+        "test-delete",
+        "test-skip"
+      ],
+      "freeze_inputs": [
+        "tools/policy/**",
+        "tools/tests/**",
+        "bin/policy"
+      ]
+    },
+    {
+      "id": "workflow-gates",
+      "name": "Workflow gates and branch protection",
+      "selectors": [
+        ".github/workflows/**",
+        ".github/branch-protection-baseline.json",
+        ".github/CODEOWNERS",
+        ".github/PULL_REQUEST_TEMPLATE.md"
+      ],
+      "approval_mode": "design_authority",
+      "codeowners": [
+        "@Brad-Edwards"
+      ],
+      "weakening_detectors": [],
+      "freeze_inputs": [
+        ".github/workflows/**",
+        ".github/branch-protection-baseline.json",
+        ".github/CODEOWNERS",
+        ".github/PULL_REQUEST_TEMPLATE.md"
+      ]
+    },
+    {
+      "id": "workflow-record-tools",
+      "name": "Durable workflow record tools",
+      "selectors": [
+        "mcp/ground-control/lib.js",
+        "mcp/ground-control/index.js",
+        "mcp/ground-control/lib.test.js"
+      ],
+      "approval_mode": "design_authority",
+      "codeowners": [
+        "@Brad-Edwards"
+      ],
+      "weakening_detectors": [
+        "test-delete",
+        "test-skip"
+      ],
+      "freeze_inputs": [
+        "mcp/ground-control/lib.js",
+        "mcp/ground-control/index.js",
+        "mcp/ground-control/lib.test.js"
+      ]
+    },
+    {
+      "id": "workflow-prose",
+      "name": "Workflow prompts and review checklists",
+      "selectors": [
+        "skills/**",
+        ".claude/**",
+        ".cursor/**",
+        "docs/DEVELOPMENT_WORKFLOW.md"
+      ],
+      "approval_mode": "design_authority",
+      "codeowners": [
+        "@Brad-Edwards"
+      ],
+      "weakening_detectors": [],
+      "freeze_inputs": [
+        "skills/**",
+        ".claude/**",
+        ".cursor/**",
+        "docs/DEVELOPMENT_WORKFLOW.md"
+      ]
+    }
+  ]
+}

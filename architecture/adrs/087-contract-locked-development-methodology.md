@@ -246,6 +246,27 @@ no-op. The CI `mutation` job is a required PR context on `main` and `dev`, and
 `tools/policy/checks.py` validates the registry, runner, CI invocation, report
 artifact upload, and branch-protection baseline remain synchronized.
 
+**2026-07-05 (issue #1294, protected-path power separation).** Stage 1 now
+includes a repo-native protected-path authority gate. Protected selectors live
+in `architecture/registry/protected-paths.json`, CODEOWNERS carries explicit
+routes for those selectors, and `tools/policy/checks.py` fails mixed
+implementation plus protected-path diffs unless the PR thread contains a
+schema-versioned `gc:design-authority-approval` marker posted through the MCP
+tool boundary. The marker carries a machine-readable scope over protected
+paths, implementation paths, weakening findings, and the diff hash when
+available, so an approval for one branch state cannot silently authorize a
+later branch state. Once the registry exists on the PR base branch, CI reads
+the base-branch registry and CODEOWNERS as the authority model, so a PR cannot
+rewrite its own protected selectors or authorized approvers. PR CI passes
+sanitized issue-comment JSON to the PR-head policy process instead of exposing
+`GH_TOKEN`; the MCP approval-posting tool requires an out-of-band
+design-authority grant token before it can post with the GitHub credential. The
+same gate detects current battery-weakening shapes:
+deleted/skipped oracle tests, disabled mutation boundaries, lowered mutation
+thresholds, and narrowed or removed mutation targets or test sets. The marker
+is the auditable design event; CODEOWNERS routes review but is not itself the
+machine-readable approval record.
+
 ## Consequences
 
 ### Positive

@@ -65,7 +65,7 @@ repos:
     hooks:
       - id: repo-policy
         name: repo policy guardrails
-        entry: python3 bin/policy --skip-pr-body --staged
+        entry: bash -c 'BASE_REF="${BASE_REF:-origin/dev}"; python3 bin/policy --base "$BASE_REF" --skip-pr-body'
         language: system
         files: ^(AGENTS\.md|\.claude/|\.github/|architecture/|backend/|docs/|mcp/|specs/|tools/)
         pass_filenames: false
