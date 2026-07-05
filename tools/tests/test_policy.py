@@ -217,6 +217,26 @@ class PolicyChecksTest(unittest.TestCase):
             codes = {item.code for item in violations}
             self.assertIn("protected-path-approval-missing", codes)
 
+    def test_temp_downgrade_approval_missing_is_nonblocking(self):
+        # TEMP (#1330): the protected-path / battery approval-missing results are
+        # downgraded to non-blocking warnings in main() until the (currently
+        # unsatisfiable) design-authority approval mechanism is redesigned. The
+        # detection above still fires; only the blocking exit is suppressed. Every
+        # other violation MUST stay blocking so the downgrade cannot swallow real
+        # failures.
+        from tools.policy.checks import Violation, _downgrade_temp_nonblocking
+
+        blocking, warnings = _downgrade_temp_nonblocking([
+            Violation("protected-path-approval-missing", "m", []),
+            Violation("battery-weakening-approval-missing", "m", []),
+            Violation("changelog-signal-missing", "m", []),
+        ])
+        self.assertEqual(
+            {item.code for item in warnings},
+            {"protected-path-approval-missing", "battery-weakening-approval-missing"},
+        )
+        self.assertEqual([item.code for item in blocking], ["changelog-signal-missing"])
+
     def test_protected_path_authority_accepts_owner_marker(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
