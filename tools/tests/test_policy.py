@@ -43,6 +43,7 @@ from tools.policy.checks import (
     run_enum_contract_check,
     run_ghcr_namespace_drift,
     run_migration_policy,
+    run_module_graph_boundary_check,
     run_mutation_gate_contract,
     run_no_deferral_disposition_check,
     run_pr_body_check,
@@ -379,6 +380,132 @@ class PolicyChecksTest(unittest.TestCase):
                 approval_comments=[],
             )
             self.assertIn("protected-path-authority-base-unreadable", {item.code for item in violations})
+
+    def _module_graph_registry(self, *, edges=None):
+        modules = [
+            {
+                "id": "mcp-tools",
+                "name": "MCP tools",
+                "surface": "mcp",
+                "owner": "@Brad-Edwards",
+                "lock_level": "guarded",
+                "risk_score": 2,
+                "selectors": ["mcp/ground-control/gc-*.js"],
+            },
+            {
+                "id": "mcp-lib",
+                "name": "MCP lib",
+                "surface": "mcp",
+                "owner": "@Brad-Edwards",
+                "lock_level": "locked",
+                "risk_score": 4,
+                "selectors": ["mcp/ground-control/lib.js"],
+            },
+        ]
+        return {
+            "schema_version": 1,
+            "risk_model": "cld-v1",
+            "modules": modules,
+            "allowed_edges": edges if edges is not None else [{"from": "mcp-tools", "to": "mcp-lib"}],
+        }
+
+    def _write_module_graph_fixture(self, root, *, registry=None, protect=True):
+        self._write_file(
+            root, "architecture/registry/module-graph.json", json.dumps(registry or self._module_graph_registry())
+        )
+        if protect:
+            protected = {
+                "schema_version": 1,
+                "categories": [
+                    {
+                        "id": "architecture-registry",
+                        "name": "Architecture registry",
+                        "selectors": ["architecture/registry/**"],
+                        "approval_mode": "design_authority",
+                        "codeowners": ["@Brad-Edwards"],
+                        "weakening_detectors": [],
+                        "freeze_inputs": ["architecture/registry/**"],
+                    }
+                ],
+            }
+            self._write_file(root, "architecture/registry/protected-paths.json", json.dumps(protected))
+
+    def test_module_graph_clean_when_edges_respected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_module_graph_fixture(root)
+            self._write_file(root, "mcp/ground-control/gc-x.js", 'import { a } from "./lib.js";\n')
+            self._write_file(root, "mcp/ground-control/lib.js", "export const a = 1;\n")
+            self.assertEqual(run_module_graph_boundary_check(root=root), [])
+
+    def test_module_graph_forbidden_edge_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_module_graph_fixture(root, registry=self._module_graph_registry(edges=[]))
+            self._write_file(root, "mcp/ground-control/gc-x.js", 'import { a } from "./lib.js";\n')
+            self._write_file(root, "mcp/ground-control/lib.js", "export const a = 1;\n")
+            violations = run_module_graph_boundary_check(root=root)
+            self.assertTrue(any(v.code == "module-graph-boundary-violation" for v in violations))
+
+    def test_module_graph_invalid_schema_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            registry = self._module_graph_registry()
+            registry["schema_version"] = 2
+            self._write_module_graph_fixture(root, registry=registry)
+            violations = run_module_graph_boundary_check(root=root)
+            self.assertTrue(any(v.code == "module-graph-registry-invalid" for v in violations))
+
+    def test_module_graph_unknown_edge_endpoint_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            registry = self._module_graph_registry(edges=[{"from": "mcp-tools", "to": "nope"}])
+            self._write_module_graph_fixture(root, registry=registry)
+            violations = run_module_graph_boundary_check(root=root)
+            self.assertTrue(any(v.code == "module-graph-registry-invalid" for v in violations))
+
+    def test_module_graph_bad_lock_level_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            registry = self._module_graph_registry()
+            registry["modules"][0]["lock_level"] = "frozen"
+            self._write_module_graph_fixture(root, registry=registry)
+            violations = run_module_graph_boundary_check(root=root)
+            self.assertTrue(any(v.code == "module-graph-registry-invalid" for v in violations))
+
+    def test_module_graph_requires_design_authority_protection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_module_graph_fixture(root, protect=False)
+            self._write_file(root, "architecture/registry/protected-paths.json", json.dumps({"schema_version": 1, "categories": []}))
+            violations = run_module_graph_boundary_check(root=root)
+            self.assertTrue(any(v.code == "module-graph-not-design-authority-protected" for v in violations))
+
+    def test_module_graph_missing_registry_skips(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(run_module_graph_boundary_check(root=Path(tmp)), [])
+
+    def test_module_graph_overlapping_selectors_fail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            registry = self._module_graph_registry(edges=[])
+            registry["modules"][0]["surface"] = "frontend"
+            registry["modules"][0]["selectors"] = ["frontend/src/lib/**"]
+            registry["modules"][1]["surface"] = "frontend"
+            registry["modules"][1]["selectors"] = ["frontend/src/lib/sub/**"]
+            self._write_module_graph_fixture(root, registry=registry)
+            violations = run_module_graph_boundary_check(root=root)
+            self.assertTrue(
+                any(
+                    v.code == "module-graph-registry-invalid" and "overlap" in v.details[0]
+                    for v in violations
+                )
+            )
+
+    def test_module_graph_repo_registry_valid_and_clean(self):
+        # Regression guard: the committed registry validates and the current
+        # tree respects every declared edge.
+        self.assertEqual(run_module_graph_boundary_check(root=REPO_ROOT), [])
 
     def test_design_authority_marker_parser_scopes_to_pr_and_author(self):
         body = self._design_authority_marker(protected_paths=["contracts/openapi/openapi.json"])

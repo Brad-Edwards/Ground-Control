@@ -199,7 +199,13 @@ removing fields, and the changelog fragment in `changelog.d/` carries the
 temporal record. Similarly, updates to `tools/policy/checks.py` that extend
 the list of recognized adapter files (for example, adding `gc-risk-scenario.js`
 to the controller-parity check) are policy-surface changes recorded in
-amendments to ADR-054, not documentation edits.
+amendments to ADR-054, not documentation edits. A new repo-native policy
+check added to `tools/policy/checks.py` (for example,
+`run_module_graph_boundary_check` for the CLD architecture registry in
+GC-CLD-2 / #1295) is the same kind of policy-surface change: its user-facing
+reference lives in `architecture/registry/README.md` and
+`docs/DEVELOPMENT_WORKFLOW.md`, and the surface addition is recorded in an
+ADR-054 amendment, not as a new style rule here.
 
 New `gc_analyze` kinds backed by a fixed REST endpoint follow the same
 convention: a new kind value in `ANALYZE_KINDS` (for example
