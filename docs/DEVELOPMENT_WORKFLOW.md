@@ -296,9 +296,9 @@ control). Enforcement is server-side in `ControlService.transitionStatus` (409
 [Architecture → In-Loop Control Implementation Gate](architecture/ARCHITECTURE.md).
 An **efficacy test** drives the protected behavior through its boundary and asserts the
 control effect, so it goes red if the control is removed, bypassed, or materially
-weakened. An **existence test** — asserting a `ControlTest` row or CODE link exists,
+weakened. An **existence test** (asserting a `ControlTest` row or CODE link exists,
 that the control reached `IMPLEMENTED`/`OPERATIONAL`, that a snapshot contains the
-control UID, or that a mock was called — does **not** satisfy GC-GRC-011 and is flagged
+control UID, or that a mock was called) does **not** satisfy GC-GRC-011 and is flagged
 by the Step 6.6 `gc_test_quality_review` rubric (critical category 7). A control that
 cannot be implemented in the change (organizational/infrastructure) routes to a
 GC-GRC-015 disposition, never a silent pass.
@@ -399,6 +399,16 @@ marker is the machine-readable audit event. The pre-push review prompts also
 carry a CLD anti-gaming checklist for test-visible special-casing, fixture
 edits, and oracle edits that could make wrong implementation behavior appear
 green.
+
+> **TEMP (#1330):** the `protected-path-approval-missing` and
+> `battery-weakening-approval-missing` results are currently downgraded to
+> non-blocking warnings in `tools/policy/checks.py::main`, because the
+> `gc:design-authority-approval` marker they require is unsatisfiable in
+> practice: `gc_post_design_authority_approval` refuses to post without an
+> out-of-band `approval_token` configured on no MCP server we run, so the gate
+> dead-locked every protected-path change while `--no-verify` bypassed the
+> local hook. Detection still runs and prints; only the blocking exit is
+> suppressed until the approval mechanism is redesigned (#1330).
 
 ## Per-step routing, tool surfaces, and telemetry (ADR-036)
 
