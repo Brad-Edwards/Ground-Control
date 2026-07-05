@@ -2,7 +2,8 @@
        assert-backup-policy test-backup-restore-local vale-install vale-lint \
        ground-control-mcp-install sync-ground-control-policy scaffold-controller scaffold-audited-entity \
        scaffold-l2-state-machine sync-packs trigger-pack-sync dev clean up down docker-build smoke frontend-install frontend-dev \
-       frontend-build frontend-lint frontend-format frontend-test deploy deploy-status deploy-manifest deploy-infra mcp-openapi-contract rollback hooks
+       frontend-build frontend-lint frontend-format frontend-test deploy deploy-status deploy-manifest deploy-infra \
+       contracts contracts-check contract-breaking mcp-openapi-contract rollback hooks
 
 # --- Rapid dev loop (< 5s) ---
 
@@ -46,9 +47,18 @@ verify: ## Full CI-equivalent verification
 policy-tests: ## Run unit tests for repo policy tooling
 	python3 -m unittest discover -s tools/tests -p 'test_*.py'
 
-mcp-openapi-contract: ## MCP↔backend write-contract drift gate (ADR-034, #1106): generate OpenAPI spec + run contract test
+contracts: ## Regenerate committed contract artifacts (OpenAPI + generated TypeScript)
 	cd backend && ./gradlew generateContractOpenApi
-	node --test mcp/ground-control/openapi-contract.test.js
+	node tools/contracts/generate-contracts.mjs
+
+contracts-check: contracts ## Fail if regenerated contract artifacts differ from committed files
+	git diff --exit-code contracts/ frontend/src/types/api.ts
+
+contract-breaking: ## Check OpenAPI breaking changes against BASE_REF (default origin/dev)
+	node tools/contracts/check-breaking-changes.mjs
+
+mcp-openapi-contract: contracts ## MCP↔backend write-contract drift gate (ADR-034/#1106, ADR-082/#1275)
+	GC_OPENAPI_SPEC=contracts/openapi/openapi.json node --test mcp/ground-control/openapi-contract.test.js
 
 vale-install: ## Install Vale prose linter (tools/install-vale.sh → .tools/vale/)
 	bash tools/install-vale.sh

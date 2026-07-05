@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.keplerops.groundcontrol.test.oracle.AbstractPortConformanceSuite;
 import com.keplerops.groundcontrol.test.oracle.DifferentialOracle;
 import com.keplerops.groundcontrol.test.oracle.GoldenCorpus;
+import com.keplerops.groundcontrol.test.oracle.NegativeAuthorizationMatrix;
 import com.keplerops.groundcontrol.test.oracle.NegativeSuite;
 import com.keplerops.groundcontrol.test.oracle.OracleInvariants;
 import com.keplerops.groundcontrol.test.oracle.PortImplementation;
@@ -18,14 +19,14 @@ import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
-class OracleBatteryScaffoldTest extends AbstractPortConformanceSuite<OracleBatteryScaffoldTest.StringPort> {
+class OracleBatteryScaffoldTest implements AbstractPortConformanceSuite<OracleBatteryScaffoldTest.StringPort> {
 
     interface StringPort {
         String normalize(String value);
     }
 
     @Override
-    protected List<PortImplementation<StringPort>> implementations() {
+    public List<PortImplementation<StringPort>> implementations() {
         return List.of(
                 new PortImplementation<>(
                         "trim-lower", () -> value -> value.trim().toLowerCase(Locale.ROOT)),
@@ -89,6 +90,20 @@ class OracleBatteryScaffoldTest extends AbstractPortConformanceSuite<OracleBatte
         assertThatThrownBy(() -> NegativeSuite.dynamicTests(List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("at least one case");
+    }
+
+    @Test
+    void negativeAuthorizationMatrixEmitsRequiredEndpointCases() {
+        var cases = NegativeAuthorizationMatrix.dynamicTests(List.of(
+                        NegativeAuthorizationMatrix.endpointClass("admin-endpoint", () -> {}, () -> {}, () -> {})))
+                .toList();
+
+        assertThat(cases)
+                .extracting(DynamicTest::getDisplayName)
+                .containsExactly(
+                        "admin-endpoint :: anonymous denied",
+                        "admin-endpoint :: wrong role denied",
+                        "admin-endpoint :: cross-project denied");
     }
 
     @Test
@@ -160,10 +175,10 @@ class OracleBatteryScaffoldTest extends AbstractPortConformanceSuite<OracleBatte
         return suite.tests().toList();
     }
 
-    private static final class EmptyConformanceSuite extends AbstractPortConformanceSuite<StringPort> {
+    private static final class EmptyConformanceSuite implements AbstractPortConformanceSuite<StringPort> {
 
         @Override
-        protected List<PortImplementation<StringPort>> implementations() {
+        public List<PortImplementation<StringPort>> implementations() {
             return List.of();
         }
 

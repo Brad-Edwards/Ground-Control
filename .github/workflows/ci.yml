@@ -389,6 +389,8 @@ jobs:
     needs: [policy]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4
         with:
           distribution: temurin
@@ -399,10 +401,16 @@ jobs:
           node-version: '20'
       - name: Install MCP dependencies
         run: npm --prefix mcp/ground-control ci
-      - name: Generate OpenAPI contract spec
-        run: cd backend && ./gradlew generateContractOpenApi --no-daemon
+      - name: Regenerate committed contract artifacts
+        run: make contracts
+      - name: Assert generated contract artifacts are committed
+        run: git diff --exit-code contracts/ frontend/src/types/api.ts
+      - name: Check OpenAPI breaking changes
+        env:
+          BASE_REF: origin/${{ github.base_ref || 'dev' }}
+        run: node tools/contracts/check-breaking-changes.mjs
       - name: Run MCP contract test
-        run: node --test mcp/ground-control/openapi-contract.test.js
+        run: GC_OPENAPI_SPEC=contracts/openapi/openapi.json node --test mcp/ground-control/openapi-contract.test.js
 
   # ---------------------------------------------------------------------------
   # Docker — builds after integration, verify, sonar, and mcp-contract all pass.
