@@ -383,6 +383,16 @@ carry a CLD anti-gaming checklist for test-visible special-casing, fixture
 edits, and oracle edits that could make wrong implementation behavior appear
 green.
 
+> **TEMP (#1330):** the `protected-path-approval-missing` and
+> `battery-weakening-approval-missing` results are currently downgraded to
+> non-blocking warnings in `tools/policy/checks.py::main`, because the
+> `gc:design-authority-approval` marker they require is unsatisfiable in
+> practice: `gc_post_design_authority_approval` refuses to post without an
+> out-of-band `approval_token` configured on no MCP server we run, so the gate
+> dead-locked every protected-path change while `--no-verify` bypassed the
+> local hook. Detection still runs and prints; only the blocking exit is
+> suppressed until the approval mechanism is redesigned (#1330).
+
 ## Per-step routing, tool surfaces, and telemetry (ADR-036)
 
 Per ADR-036 the `/implement` skill carries three cost-side optimizations layered on top of the GC-O007 gate model (which is unchanged on the contract - one human touchpoint at PR merge, ADR-029's configurable pre-push Codex cap [default 1 cycle per #906; per-repo override via `workflow.codex_review.pre_push_cap`], zero deferral, four-phase structure).
