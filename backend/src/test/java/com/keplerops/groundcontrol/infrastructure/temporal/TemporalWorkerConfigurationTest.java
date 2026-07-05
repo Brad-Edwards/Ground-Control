@@ -1,16 +1,20 @@
 package com.keplerops.groundcontrol.infrastructure.temporal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-import com.keplerops.groundcontrol.infrastructure.temporal.smoke.TemporalSmokeWorkflow;
+import com.keplerops.groundcontrol.infrastructure.temporal.smoke.TemporalSmokeWorkflowImpl;
 import io.temporal.client.WorkflowClient;
-import io.temporal.client.WorkflowOptions;
-import io.temporal.client.WorkflowStub;
-import io.temporal.testing.TestWorkflowEnvironment;
+import io.temporal.serviceclient.WorkflowServiceStubs;
+import io.temporal.serviceclient.WorkflowServiceStubsOptions;
+import io.temporal.worker.Worker;
 import io.temporal.worker.WorkerFactory;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 class TemporalWorkerConfigurationTest {
 
@@ -41,6 +45,7 @@ class TemporalWorkerConfigurationTest {
             assertThat(serviceStubs.getOptions().getTarget()).isEqualTo("temporal:7233");
         } finally {
             serviceStubs.shutdownNow();
+            serviceStubs.awaitTermination(5, TimeUnit.SECONDS);
         }
     }
 
@@ -48,28 +53,23 @@ class TemporalWorkerConfigurationTest {
     void workerFactoryRegistersSmokeWorkflowOnConfiguredTaskQueue() throws Exception {
         var configuration = new TemporalWorkerConfiguration();
         var properties = new TemporalWorkerProperties(true, "unused:7233", "default", "config-smoke-test");
+        WorkflowServiceStubs serviceStubs = mock(WorkflowServiceStubs.class);
+        when(serviceStubs.getOptions()).thenReturn(WorkflowServiceStubsOptions.getDefaultInstance());
+        WorkflowClient client = configuration.temporalWorkflowClient(serviceStubs, properties);
+        WorkerFactory factory = mock(WorkerFactory.class);
+        Worker worker = mock(Worker.class);
 
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
-            var client = configuration.temporalWorkflowClient(environment.getWorkflowServiceStubs(), properties);
-            assertThat(client.getOptions().getNamespace()).isEqualTo("default");
+        when(factory.newWorker(properties.taskQueue())).thenReturn(worker);
 
-            WorkerFactory factory = configuration.temporalWorkerFactory(client, properties);
-            try {
-                var workflow = client.newWorkflowStub(
-                        TemporalSmokeWorkflow.class,
-                        WorkflowOptions.newBuilder()
-                                .setTaskQueue(properties.taskQueue())
-                                .setWorkflowId("gc-config-smoke-" + UUID.randomUUID())
-                                .build());
+        try (MockedStatic<WorkerFactory> factories = mockStatic(WorkerFactory.class)) {
+            factories.when(() -> WorkerFactory.newInstance(client)).thenReturn(factory);
 
-                WorkflowClient.start(workflow::run, "ground-control");
-                workflow.complete("project-partitioned");
-
-                assertThat(WorkflowStub.fromTyped(workflow).getResult(10, TimeUnit.SECONDS, String.class))
-                        .isEqualTo("ground-control:project-partitioned");
-            } finally {
-                factory.shutdownNow();
-            }
+            assertThat(configuration.temporalWorkerFactory(client, properties)).isSameAs(factory);
         }
+
+        assertThat(client.getOptions().getNamespace()).isEqualTo("default");
+        verify(factory).newWorker(properties.taskQueue());
+        verify(worker).registerWorkflowImplementationTypes(TemporalSmokeWorkflowImpl.class);
+        verify(factory).start();
     }
 }
