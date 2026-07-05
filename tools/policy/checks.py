@@ -52,6 +52,16 @@ CI_PRE_COMMIT_HOOKS = (
     "detect-private-key",
     "gitleaks",
 )
+CONTRACT_REQUIRED_PATHS = (
+    "contracts/openapi/openapi.json",
+    "contracts/gen/typescript/api.ts",
+    "contracts/schemas/records/implement-final-report.v1.schema.json",
+    "contracts/schemas/workflow/workflow-run-record.v1.schema.json",
+    "contracts/authz/path-matrix.yaml",
+    "contracts/CHANGES.md",
+)
+FRONTEND_CONTRACT_SHIM_PATH = Path("frontend/src/types/api.ts")
+GENERATED_CONTRACT_EXPORT = 'export * from "../../../contracts/gen/typescript/api";'
 
 GROUND_CONTROL_YAML_PATH = Path(".ground-control.yaml")
 # /implement routing stages whose step drives a gc_codex_job async poll loop
@@ -1999,7 +2009,7 @@ def run_methodology_catalog_drift(root: Path = REPO_ROOT) -> list[Violation]:
 # gate, because the frontend test suite does not run in PR CI today.)
 # ---------------------------------------------------------------------------
 
-FRONTEND_API_TYPES_PATH = "frontend/src/types/api.ts"
+FRONTEND_API_TYPES_PATH = "contracts/gen/typescript/api.ts"
 MCP_LIB_PATH = "mcp/ground-control/lib.js"
 _ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state"
 _AUDIT_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state"
@@ -2320,6 +2330,245 @@ def _drift_violation(label: str, layer: str, expected: list[str], actual: list[s
         message=f"{label} enum drift between backend and {layer} (issue #433 / ADR-034).",
         details=details,
     )
+
+
+# ---------------------------------------------------------------------------
+# Contract surface foundation (GC-O014 / ADR-082).
+#
+# The contract surface is intentionally artifact-backed: backend-generated
+# OpenAPI, generated TypeScript, durable-record/workflow schemas, the authz
+# path matrix, and the breaking-change ledger live under contracts/. These
+# checks are lightweight static policy checks; the heavier regenerate-and-diff
+# gate runs through `make contracts-check`.
+# ---------------------------------------------------------------------------
+
+
+def run_contract_surface_check(root: Path = REPO_ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    for rel in CONTRACT_REQUIRED_PATHS:
+        if not (root / rel).exists():
+            violations.append(
+                Violation(
+                    code="contract-surface-missing",
+                    message=f"Required contract artifact is missing: {rel}.",
+                    details=["Run `make contracts` and commit the generated contract surface."],
+                )
+            )
+
+    shim = root / FRONTEND_CONTRACT_SHIM_PATH
+    if shim.exists():
+        text = shim.read_text(encoding="utf-8")
+        if GENERATED_CONTRACT_EXPORT not in text:
+            violations.append(
+                Violation(
+                    code="contract-frontend-shim",
+                    message="frontend/src/types/api.ts must re-export the generated contract types.",
+                    details=[f"expected line: {GENERATED_CONTRACT_EXPORT}"],
+                )
+            )
+        hand_mirror = re.search(r"^\s*export\s+(interface|type|const)\s+", text, re.MULTILINE)
+        if hand_mirror:
+            violations.append(
+                Violation(
+                    code="contract-frontend-hand-mirror",
+                    message="frontend/src/types/api.ts must not contain hand-mirrored DTOs or enum constants.",
+                    details=["Keep compatibility aliases in contracts/gen/typescript/api.ts via the generator inventory."],
+                )
+            )
+
+    return violations
+
+
+def run_contract_invariant_enforcement_check(root: Path = REPO_ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    schemas_dir = root / "contracts" / "schemas"
+    if not schemas_dir.exists():
+        return [
+            Violation(
+                code="contract-schema-dir-missing",
+                message="contracts/schemas/ is missing; GC-O014 schema invariant coverage cannot be checked.",
+            )
+        ]
+
+    for schema_path in sorted(schemas_dir.rglob("*.schema.json")):
+        rel = schema_path.relative_to(root).as_posix()
+        try:
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            violations.append(
+                Violation(
+                    code="contract-schema-json-invalid",
+                    message=f"{rel} is not valid JSON.",
+                    details=[str(exc)],
+                )
+            )
+            continue
+
+        invariants = schema.get("x-ground-control-invariants")
+        if invariants is None:
+            violations.append(
+                Violation(
+                    code="contract-invariant-inventory-missing",
+                    message=f"{rel} must declare x-ground-control-invariants.",
+                    details=["Use [{\"id\":\"none\", \"rationale\":\"...\"}] only when the schema has no declared invariant."],
+                )
+            )
+            continue
+        if not isinstance(invariants, list) or len(invariants) == 0:
+            violations.append(
+                Violation(
+                    code="contract-invariant-inventory-invalid",
+                    message=f"{rel} has an empty or non-list x-ground-control-invariants value.",
+                )
+            )
+            continue
+
+        for entry in invariants:
+            if not isinstance(entry, dict) or not entry.get("id"):
+                violations.append(
+                    Violation(
+                        code="contract-invariant-entry-invalid",
+                        message=f"{rel} has an invariant entry without an id.",
+                    )
+                )
+                continue
+            if entry["id"] == "none":
+                if not entry.get("rationale"):
+                    violations.append(
+                        Violation(
+                            code="contract-invariant-none-rationale-missing",
+                            message=f"{rel} declares no invariants but omits a rationale.",
+                        )
+                    )
+                continue
+            enforced_by = entry.get("enforcedBy")
+            if not isinstance(enforced_by, list) or len(enforced_by) == 0:
+                violations.append(
+                    Violation(
+                        code="contract-invariant-enforcement-missing",
+                        message=f"{rel} invariant {entry['id']} must name at least one enforcing test or spec file.",
+                    )
+                )
+                continue
+            for target in enforced_by:
+                if not isinstance(target, str):
+                    violations.append(
+                        Violation(
+                            code="contract-invariant-enforcement-invalid",
+                            message=f"{rel} invariant {entry['id']} has an invalid enforcement path.",
+                            details=[str(target)],
+                        )
+                    )
+                    continue
+
+                target_path_text, separator, target_anchor = target.partition("::")
+                target_path = Path(target_path_text)
+                if not separator or not target_anchor:
+                    violations.append(
+                        Violation(
+                            code="contract-invariant-enforcement-anchor-missing",
+                            message=f"{rel} invariant {entry['id']} must name a specific test/spec anchor.",
+                            details=[f"use '<repo-path>::<test-or-rule-id>', got {target}"],
+                        )
+                    )
+                    continue
+                if target_path_text.startswith("/") or ".." in target_path.parts:
+                    violations.append(
+                        Violation(
+                            code="contract-invariant-enforcement-invalid",
+                            message=f"{rel} invariant {entry['id']} has an invalid enforcement path.",
+                            details=[target],
+                        )
+                    )
+                    continue
+
+                resolved = root / target_path
+                if not resolved.exists():
+                    violations.append(
+                        Violation(
+                            code="contract-invariant-enforcement-missing-file",
+                            message=f"{rel} invariant {entry['id']} references a missing enforcement file.",
+                            details=[target_path_text],
+                        )
+                    )
+                elif target_anchor not in resolved.read_text(encoding="utf-8"):
+                    violations.append(
+                        Violation(
+                            code="contract-invariant-enforcement-anchor-missing-file",
+                            message=f"{rel} invariant {entry['id']} references an enforcement anchor that is not present.",
+                            details=[target],
+                        )
+                    )
+
+    return violations
+
+
+def _parse_authz_contract_rows(text: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("- id:"):
+            if current:
+                rows.append(current)
+            current = {"id": line.split(":", 1)[1].strip().strip('"')}
+        elif current and ":" in line:
+            key, value = line.split(":", 1)
+            current[key.strip()] = value.strip().strip('"')
+    if current:
+        rows.append(current)
+    return rows
+
+
+def _java_admin_matrix_paths(java_text: str) -> set[str]:
+    constants = {
+        name: value
+        for name, value in re.findall(r'private\s+static\s+final\s+String\s+(\w+)\s*=\s*"([^"]+)"', java_text)
+    }
+    paths: set[str] = set()
+    for match in re.finditer(r"\.requestMatchers\((.*?)\)\s*\.hasRole\(ROLE_ADMIN\)", java_text, re.DOTALL):
+        block = match.group(1)
+        paths.update(value for value in re.findall(r'"(/api/v1/[^"]+)"', block))
+        for token in re.findall(r"\b[A-Z][A-Z0-9_]+\b", block):
+            if token in constants and constants[token].startswith("/api/v1/"):
+                paths.add(constants[token])
+    return paths
+
+
+def run_authz_matrix_sync_check(root: Path = REPO_ROOT) -> list[Violation]:
+    matrix_path = root / "contracts" / "authz" / "path-matrix.yaml"
+    java_path = root / "backend" / "src" / "main" / "java" / "com" / "keplerops" / "groundcontrol" / "shared" / "security" / "ApiPathMatrix.java"
+    if not matrix_path.exists() or not java_path.exists():
+        return [
+            Violation(
+                code="authz-matrix-source-missing",
+                message="Authz matrix sync check needs contracts/authz/path-matrix.yaml and ApiPathMatrix.java.",
+            )
+        ]
+
+    rows = _parse_authz_contract_rows(matrix_path.read_text(encoding="utf-8"))
+    contract_admin_paths = {row.get("path", "") for row in rows if row.get("access") == "ROLE_ADMIN"}
+    contract_admin_paths.discard("")
+    java_admin_paths = _java_admin_matrix_paths(java_path.read_text(encoding="utf-8"))
+
+    violations: list[Violation] = []
+    missing_from_contract = sorted(java_admin_paths - contract_admin_paths)
+    missing_from_java = sorted(contract_admin_paths - java_admin_paths)
+    if missing_from_contract or missing_from_java:
+        details: list[str] = []
+        if missing_from_contract:
+            details.append(f"admin paths in ApiPathMatrix.java but not contracts/authz/path-matrix.yaml: {missing_from_contract}")
+        if missing_from_java:
+            details.append(f"admin paths in contracts/authz/path-matrix.yaml but not ApiPathMatrix.java: {missing_from_java}")
+        violations.append(
+            Violation(
+                code="authz-matrix-drift",
+                message="contracts/authz/path-matrix.yaml drifted from ApiPathMatrix.java.",
+                details=details,
+            )
+        )
+    return violations
 
 
 def run_pr_body_check(event_path: Path) -> list[Violation]:
@@ -3061,6 +3310,9 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_deploy_artifact_consistency())
     violations.extend(run_methodology_catalog_drift())
     violations.extend(run_enum_contract_check())
+    violations.extend(run_contract_surface_check())
+    violations.extend(run_contract_invariant_enforcement_check())
+    violations.extend(run_authz_matrix_sync_check())
     violations.extend(run_workflow_routing_contract())
     violations.extend(run_test_quality_decision_record_contract())
     violations.extend(run_traceability_reconciliation_gate_contract())

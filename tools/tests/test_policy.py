@@ -28,6 +28,9 @@ from tools.policy.checks import (
     run_adr_guard,
     run_changelog_fragment_check,
     run_ci_strictness_contract,
+    run_authz_matrix_sync_check,
+    run_contract_invariant_enforcement_check,
+    run_contract_surface_check,
     run_controller_contracts,
     run_deploy_artifact_consistency,
     run_deploy_compose_credential_passthrough,
@@ -659,6 +662,149 @@ class PolicyChecksTest(unittest.TestCase):
             codes = {item.code for item in violations}
             self.assertIn("workflow-routing-config-missing", codes)
 
+    def test_contract_surface_check_passes_on_repo(self):
+        violations = run_contract_surface_check(root=REPO_ROOT)
+        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
+
+    def test_contract_invariant_enforcement_rejects_missing_enforcement_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            schema_dir = root / "contracts" / "schemas" / "records"
+            schema_dir.mkdir(parents=True)
+            (schema_dir / "sample.schema.json").write_text(
+                json.dumps(
+                    {
+                        "$id": "gc.test.sample.v1",
+                        "type": "object",
+                        "x-ground-control-invariants": [
+                            {"id": "gc.test.sample.required", "enforcedBy": ["missing/Test.java::testRequired"]}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            violations = run_contract_invariant_enforcement_check(root=root)
+        self.assertTrue(any(v.code == "contract-invariant-enforcement-missing-file" for v in violations))
+
+    def test_contract_invariant_enforcement_rejects_file_only_target(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            schema_dir = root / "contracts" / "schemas" / "records"
+            schema_dir.mkdir(parents=True)
+            test_file = root / "tools" / "tests" / "test_policy.py"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text("def test_sample(): pass\n", encoding="utf-8")
+            (schema_dir / "sample.schema.json").write_text(
+                json.dumps(
+                    {
+                        "$id": "gc.test.sample.v1",
+                        "type": "object",
+                        "x-ground-control-invariants": [
+                            {"id": "gc.test.sample.required", "enforcedBy": ["tools/tests/test_policy.py"]}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            violations = run_contract_invariant_enforcement_check(root=root)
+
+        self.assertTrue(any(v.code == "contract-invariant-enforcement-anchor-missing" for v in violations))
+
+    def test_contract_invariant_enforcement_rejects_missing_anchor(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            schema_dir = root / "contracts" / "schemas" / "records"
+            schema_dir.mkdir(parents=True)
+            test_file = root / "tools" / "tests" / "test_policy.py"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text("def test_sample(): pass\n", encoding="utf-8")
+            (schema_dir / "sample.schema.json").write_text(
+                json.dumps(
+                    {
+                        "$id": "gc.test.sample.v1",
+                        "type": "object",
+                        "x-ground-control-invariants": [
+                            {
+                                "id": "gc.test.sample.required",
+                                "enforcedBy": ["tools/tests/test_policy.py::test_missing"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            violations = run_contract_invariant_enforcement_check(root=root)
+
+        self.assertTrue(any(v.code == "contract-invariant-enforcement-anchor-missing-file" for v in violations))
+
+    def test_implement_final_report_schema_requires_review_evidence_invariant(self):
+        schema = json.loads(
+            (REPO_ROOT / "contracts/schemas/records/implement-final-report.v1.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        invariant_ids = {entry["id"] for entry in schema["x-ground-control-invariants"]}
+
+        self.assertIn("gc.implement.final-report.review-evidence-present", invariant_ids)
+        self.assertIn("reviews", schema["required"])
+        self.assertEqual(schema["properties"]["reviews"]["type"], "array")
+        self.assertEqual(schema["properties"]["reviews"]["items"]["minLength"], 1)
+
+    def test_workflow_run_record_schema_has_closed_state_vocabulary_invariant(self):
+        schema = json.loads(
+            (REPO_ROOT / "contracts/schemas/workflow/workflow-run-record.v1.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        invariant_ids = {entry["id"] for entry in schema["x-ground-control-invariants"]}
+
+        self.assertIn("gc.workflow.run-record.phase-state-closed-set", invariant_ids)
+        self.assertEqual(
+            schema["properties"]["finalState"]["enum"],
+            ["RUNNING", "READY_FOR_REVIEW", "MERGED", "CLOSED", "ESCALATED", "ABANDONED", "SUPERSEDED"],
+        )
+        self.assertEqual(schema["properties"]["provenance"]["enum"], ["ISSUE_THREAD", "TEMPORAL_VISIBILITY", "MANUAL_IMPORT"])
+
+    def test_authz_matrix_sync_detects_missing_contract_row(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            matrix = root / "contracts" / "authz" / "path-matrix.yaml"
+            matrix.parent.mkdir(parents=True)
+            matrix.write_text(
+                "rules:\n"
+                '  - id: admin\n'
+                '    method: "*"\n'
+                '    path: "/api/v1/admin/**"\n'
+                '    access: "ROLE_ADMIN"\n',
+                encoding="utf-8",
+            )
+            java = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "com"
+                / "keplerops"
+                / "groundcontrol"
+                / "shared"
+                / "security"
+                / "ApiPathMatrix.java"
+            )
+            java.parent.mkdir(parents=True)
+            java.write_text(
+                'final class ApiPathMatrix { private static final String ROLE_ADMIN = "ADMIN"; '
+                'void apply(Object auth) { auth.requestMatchers("/api/v1/admin/**").hasRole(ROLE_ADMIN)'
+                '.requestMatchers("/api/v1/pack-registry/**").hasRole(ROLE_ADMIN); }}',
+                encoding="utf-8",
+            )
+            violations = run_authz_matrix_sync_check(root=root)
+        self.assertTrue(any(v.code == "authz-matrix-drift" for v in violations))
+
     def test_deploy_compose_credential_passthrough_passes_on_committed_file(self):
         # The committed deploy/docker/docker-compose.prod.yml must enumerate the
         # ADR-026 credential and IP-allowlist env vars on the backend service so
@@ -1151,8 +1297,8 @@ class PolicyChecksTest(unittest.TestCase):
             api_ts = root / FRONTEND_API_TYPES_PATH
             text = api_ts.read_text(encoding="utf-8")
             # Drop PULL_REQUEST from both the union and the constant array.
-            text = text.replace('  | "PULL_REQUEST"\n', "")
-            text = text.replace('  "PULL_REQUEST",\n', "")
+            text = text.replace('"PULL_REQUEST" | ', "")
+            text = text.replace('"PULL_REQUEST",', "")
             api_ts.write_text(text, encoding="utf-8")
             violations = run_enum_contract_check(root=root)
             codes = {v.code for v in violations}
@@ -1168,8 +1314,8 @@ class PolicyChecksTest(unittest.TestCase):
             api_ts = root / FRONTEND_API_TYPES_PATH
             text = api_ts.read_text(encoding="utf-8")
             text = text.replace(
-                'export const LINK_TYPES: LinkType[] = [\n',
-                'export const LINK_TYPES: LinkType[] = [\n  "BOGUS",\n',
+                "export const LINK_TYPES: LinkType[] = [",
+                'export const LINK_TYPES: LinkType[] = ["BOGUS",',
             )
             api_ts.write_text(text, encoding="utf-8")
             violations = run_enum_contract_check(root=root)
@@ -1215,8 +1361,8 @@ class PolicyChecksTest(unittest.TestCase):
             api_ts = root / FRONTEND_API_TYPES_PATH
             text = api_ts.read_text(encoding="utf-8")
             # Remove TREATMENT from both the union and the constant array.
-            text = text.replace('  | "TREATMENT"\n', "")
-            text = text.replace('  "TREATMENT",\n', "")
+            text = text.replace(' | "TREATMENT"', "")
+            text = text.replace(',"TREATMENT"', "")
             api_ts.write_text(text, encoding="utf-8")
             violations = run_enum_contract_check(root=root)
             codes = {v.code for v in violations}
@@ -1238,8 +1384,8 @@ class PolicyChecksTest(unittest.TestCase):
             api_ts = root / FRONTEND_API_TYPES_PATH
             text = api_ts.read_text(encoding="utf-8")
             # Remove OUTPUT_SCHEMA from the constant array.
-            text = text.replace('  "OUTPUT_SCHEMA",\n', "")
-            text = text.replace('  | "OUTPUT_SCHEMA"\n', "")
+            text = text.replace('"OUTPUT_SCHEMA" | ', "")
+            text = text.replace('"OUTPUT_SCHEMA",', "")
             api_ts.write_text(text, encoding="utf-8")
             violations = run_enum_contract_check(root=root)
             codes = {v.code for v in violations}

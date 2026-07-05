@@ -16,9 +16,10 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Captures the Springdoc-generated OpenAPI spec via MockMvc and writes it to
- * {@code build/contract/openapi.json} for downstream MCP contract testing
- * (issue #1106, ADR-034).
+ * Captures the Springdoc-generated OpenAPI spec via MockMvc and writes it to both
+ * {@code build/contract/openapi.json} for downstream MCP contract testing and
+ * {@code ../contracts/openapi/openapi.json} as the committed contract artifact
+ * (issues #1106/#1275, ADR-034/ADR-082).
  *
  * <p>The test profile already enables {@code groundcontrol.security.openapi-public=true}
  * and {@code groundcontrol.security.enabled=false}, so GET /api/openapi.json succeeds
@@ -56,10 +57,15 @@ class McpOpenApiContractSpecTest extends BaseIntegrationTest {
         assertSchemaPresent(schemas, "EvidenceArtifactRequest");
 
         // Write the pretty-printed spec to build/contract/openapi.json
-        // (relative to the backend module directory, which is the test working dir).
+        // (relative to the backend module directory, which is the test working dir)
+        // and to ../contracts/openapi/openapi.json, the committed contract surface.
         File outputFile = new File("build/contract/openapi.json");
         outputFile.getParentFile().mkdirs();
         mapper.writeValue(outputFile, spec);
+
+        File committedContractFile = new File("../contracts/openapi/openapi.json");
+        committedContractFile.getParentFile().mkdirs();
+        mapper.writeValue(committedContractFile, spec);
     }
 
     private static void assertSchemaPresent(JsonNode schemas, String schemaName) {

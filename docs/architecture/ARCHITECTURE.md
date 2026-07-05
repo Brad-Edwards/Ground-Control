@@ -185,6 +185,17 @@ exports (alongside `request_id` / `tenant_id`). See [ADR-033](../../architecture
 
 **Frontend:** React 19 / TypeScript SPA served as embedded static resources from the Spring Boot JAR. Views: Dashboard (project health metrics), GRC Portfolio (`p/:projectId/portfolio`, GC-Q013), Requirements Explorer (browse/filter/author), Requirement Detail (fields, relations, traceability, audit), Dependency Graph (Cytoscape.js DAG visualization), Control and Assurance Workspace (`p/:projectId/control-assurance`, GC-Q011), Evidence and State Explorer (`p/:projectId/evidence-state`, GC-Q012), Threat Modeling Workspace (`p/:projectId/threat-modeling`, GC-Q010), Risk Scenario Workspace (`p/:projectId/risk-scenarios`, GC-Q009). The console shell, navigation groups, design-system foundations, authenticated-session UX, and workflow-operations interaction patterns are specified in [Console Information Architecture and Design-System Foundations](../../architecture/design/console-ia-design-system.md), which is the construction reference for GC-Q015 and GC-Q016. See [ADR-017](../../architecture/adrs/017-interactive-web-application.md).
 
+**Contract surface (GC-O014 / ADR-082):** `contracts/` is the committed
+contract surface for externally consumed API and workflow shapes. The backend
+remains the semantic source: `generateContractOpenApi` captures Springdoc
+OpenAPI, `make contracts` refreshes `contracts/openapi/openapi.json` and
+`contracts/gen/typescript/api.ts`, and `frontend/src/types/api.ts` is only a
+compatibility re-export to the generated artifact. JSON Schemas under
+`contracts/schemas/` carry invariant inventories, and
+`contracts/authz/path-matrix.yaml` is checked against `ApiPathMatrix.java`.
+`make contracts-check` is the local regenerate-and-diff drift gate; CI also
+runs the breaking-change check against `contracts/CHANGES.md`.
+
 **Tooling:** Status state machine with JML contracts (verified by OpenJML ESC + Z3), Flyway migrations, Spotless/Error Prone/SpotBugs/Checkstyle/JaCoCo, ArchUnit architecture tests, CLD oracle battery scaffolds for conformance/property/negative/golden/differential tests, CI pipeline (build + test + integration + verify), production Dockerfile, GHCR publishing, E2E integration tests.
 
 ## Mixed-Entity Graph Participants

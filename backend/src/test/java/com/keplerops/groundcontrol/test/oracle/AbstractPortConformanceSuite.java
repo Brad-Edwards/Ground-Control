@@ -5,11 +5,11 @@ import java.util.Objects;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DynamicTest;
 
-public abstract class AbstractPortConformanceSuite<T> {
+public interface AbstractPortConformanceSuite<T> {
 
-    protected abstract List<PortImplementation<T>> implementations();
+    List<PortImplementation<T>> implementations();
 
-    protected Stream<DynamicTest> conformanceCase(String behavior, PortAssertion<T> assertion) {
+    default Stream<DynamicTest> conformanceCase(String behavior, PortAssertion<T> assertion) {
         if (behavior == null || behavior.isBlank()) {
             throw new IllegalArgumentException("conformance behavior must not be blank");
         }
@@ -24,7 +24,7 @@ public abstract class AbstractPortConformanceSuite<T> {
     }
 
     @FunctionalInterface
-    protected interface PortAssertion<T> {
+    interface PortAssertion<T> {
         void verify(T port) throws Exception;
     }
 }
