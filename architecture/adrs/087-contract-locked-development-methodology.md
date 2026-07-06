@@ -267,6 +267,29 @@ thresholds, and narrowed or removed mutation targets or test sets. The marker
 is the auditable design event; CODEOWNERS routes review but is not itself the
 machine-readable approval record.
 
+**2026-07-05 (issue #1295, architecture registry).** Stage 1 now includes the
+CLD structural contract registry. `architecture/registry/module-graph.json` is
+the single data source for §1's architecture-registry entries and §3's lock
+levels: modules (with surface, owner, lock level, risk score, selectors, and
+architecture-model projection metadata) and the allowed dependency edges among
+them. One registry drives every checker: the backend `RegistryBoundaryArchitectureTest`
+(ArchUnit) asserts backend layer edges against the registry rather than a
+hand-listed allowlist, and `tools/policy/checks.py::run_module_graph_boundary_check`
+scans frontend and MCP imports against the same file. Edges are enforced as
+negative space among registered modules - an edge not declared in `allowed_edges`
+fails CI in the layer that introduced it, while imports to unregistered targets
+stay unconstrained so the registry can grow incrementally. Lock levels are data
+here and are not duplicated in `mutation-boundaries.json` (disjoint boundary
+ids). Because the registry lives under the design-authority-protected
+`architecture/registry/**` selector (issue #1294), a lock-level or boundary
+change is a design-authority event with machine-decidable exit criteria: a diff
+that mixes the registry with implementation paths requires the
+`gc:design-authority-approval` marker, and a registry-only change is gated by the
+CODEOWNERS design-authority review branch protection enforces; the policy check
+also asserts that protection remains wired. GRC
+architecture-model projection (GC-GRC-005) is designed for via the `projection`
+field but not implemented in this issue.
+
 ## Consequences
 
 ### Positive

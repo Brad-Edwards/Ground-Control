@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "risk_model": "cld-v1",
+  "modules": [
+    {
+      "id": "backend-api",
+      "name": "Backend API layer",
+      "surface": "backend",
+      "owner": "@Brad-Edwards",
+      "lock_level": "locked",
+      "risk_score": 4,
+      "selectors": ["backend/src/main/java/com/keplerops/groundcontrol/api/**"],
+      "package": "..api..",
+      "projection": { "element_kind": "COMPONENT", "stable_key": "module:backend-api" }
+    },
+    {
+      "id": "backend-domain",
+      "name": "Backend domain layer",
+      "surface": "backend",
+      "owner": "@Brad-Edwards",
+      "lock_level": "locked",
+      "risk_score": 5,
+      "selectors": ["backend/src/main/java/com/keplerops/groundcontrol/domain/**"],
+      "package": "..domain..",
+      "projection": { "element_kind": "COMPONENT", "stable_key": "module:backend-domain" }
+    },
+    {
+      "id": "backend-infrastructure",
+      "name": "Backend infrastructure layer",
+      "surface": "backend",
+      "owner": "@Brad-Edwards",
+      "lock_level": "guarded",
+      "risk_score": 3,
+      "selectors": ["backend/src/main/java/com/keplerops/groundcontrol/infrastructure/**"],
+      "package": "..infrastructure..",
+      "projection": { "element_kind": "COMPONENT", "stable_key": "module:backend-infrastructure" }
+    },
+    {
+      "id": "frontend-pages",
+      "name": "Frontend pages",
+      "surface": "frontend",
+      "owner": "@Brad-Edwards",
+      "lock_level": "fluid",
+      "risk_score": 1,
+      "selectors": ["frontend/src/pages/**"],
+      "projection": { "element_kind": "COMPONENT", "stable_key": "module:frontend-pages" }
+    },
+    {
+      "id": "frontend-components",
+      "name": "Frontend components",
+      "surface": "frontend",
+      "owner": "@Brad-Edwards",
+      "lock_level": "guarded",
+      "risk_score": 2,
+      "selectors": ["frontend/src/components/**"],
+      "projection": { "element_kind": "COMPONENT", "stable_key": "module:frontend-components" }
+    },
+    {
+      "id": "frontend-hooks",
+      "name": "Frontend hooks",
+      "surface": "frontend",
+      "owner": "@Brad-Edwards",
+      "lock_level": "guarded",
+      "risk_score": 2,
+      "selectors": ["frontend/src/hooks/**"],
+      "projection": { "element_kind": "COMPONENT", "stable_key": "module:frontend-hooks" }
+    },
+    {
+      "id": "frontend-contexts",
+      "name": "Frontend contexts",
+      "surface": "frontend",
+      "owner": "@Brad-Edwards",
+      "lock_level": "guarded",
+      "risk_score": 2,
+      "selectors": ["frontend/src/contexts/**"],
+      "projection": { "element_kind": "COMPONENT", "stable_key": "module:frontend-contexts" }
+    },
+    {
+      "id": "frontend-lib",
+      "name": "Frontend shared library",
+      "surface": "frontend",
+      "owner": "@Brad-Edwards",
+      "lock_level": "locked",
+      "risk_score": 3,
+      "selectors": ["frontend/src/lib/**"],
+      "projection": { "element_kind": "COMPONENT", "stable_key": "module:frontend-lib" }
+    },
+    {
+      "id": "frontend-types",
+      "name": "Frontend shared types",
+      "surface": "frontend",
+      "owner": "@Brad-Edwards",
+      "lock_level": "locked",
+      "risk_score": 2,
+      "selectors": ["frontend/src/types/**"],
+      "projection": { "element_kind": "COMPONENT", "stable_key": "module:frontend-types" }
+    },
+    {
+      "id": "mcp-server",
+      "name": "MCP server entrypoint",
+      "surface": "mcp",
+      "owner": "@Brad-Edwards",
+      "lock_level": "locked",
+      "risk_score": 3,
+      "selectors": ["mcp/ground-control/index.js"],
+      "projection": { "element_kind": "COMPONENT", "stable_key": "module:mcp-server" }
+    },
+    {
+      "id": "mcp-tools",
+      "name": "MCP tool adapters",
+      "surface": "mcp",
+      "owner": "@Brad-Edwards",
+      "lock_level": "guarded",
+      "risk_score": 2,
+      "selectors": ["mcp/ground-control/gc-*.js"],
+      "projection": { "element_kind": "COMPONENT", "stable_key": "module:mcp-tools" }
+    },
+    {
+      "id": "mcp-lib",
+      "name": "MCP shared core",
+      "surface": "mcp",
+      "owner": "@Brad-Edwards",
+      "lock_level": "locked",
+      "risk_score": 4,
+      "selectors": [
+        "mcp/ground-control/lib.js",
+        "mcp/ground-control/link-create.js"
+      ],
+      "projection": { "element_kind": "COMPONENT", "stable_key": "module:mcp-lib" }
+    }
+  ],
+  "allowed_edges": [
+    { "from": "backend-api", "to": "backend-domain" },
+    { "from": "backend-infrastructure", "to": "backend-domain" },
+
+    { "from": "frontend-pages", "to": "frontend-components" },
+    { "from": "frontend-pages", "to": "frontend-contexts" },
+    { "from": "frontend-pages", "to": "frontend-hooks" },
+    { "from": "frontend-pages", "to": "frontend-lib" },
+    { "from": "frontend-pages", "to": "frontend-types" },
+    { "from": "frontend-components", "to": "frontend-contexts" },
+    { "from": "frontend-components", "to": "frontend-hooks" },
+    { "from": "frontend-components", "to": "frontend-lib" },
+    { "from": "frontend-components", "to": "frontend-types" },
+    { "from": "frontend-hooks", "to": "frontend-contexts" },
+    { "from": "frontend-hooks", "to": "frontend-lib" },
+    { "from": "frontend-hooks", "to": "frontend-types" },
+    { "from": "frontend-contexts", "to": "frontend-components" },
+    { "from": "frontend-contexts", "to": "frontend-hooks" },
+
+    { "from": "mcp-server", "to": "mcp-tools" },
+    { "from": "mcp-server", "to": "mcp-lib" },
+    { "from": "mcp-tools", "to": "mcp-lib" }
+  ]
+}
