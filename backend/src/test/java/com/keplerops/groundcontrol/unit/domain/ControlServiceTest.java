@@ -244,8 +244,8 @@ class ControlServiceTest {
 
         @Test
         void gatesReentryToOperationalFromDeprecated() {
-            // DEPRECATED -> OPERATIONAL is a valid shape hop that re-enters an
-            // active status, so the evidence gate applies there too (clause c).
+            // A transition from DEPRECATED back to OPERATIONAL is a valid shape hop that
+            // re-enters an active status, so the evidence gate applies there too (clause c).
             var control = makeControl();
             setField(control, "status", ControlStatus.DEPRECATED);
             stubEvidence(control, false, false);
@@ -259,9 +259,9 @@ class ControlServiceTest {
 
         @Test
         void doesNotGateNonImplementingTransitions() {
-            // DRAFT -> PROPOSED and IMPLEMENTED -> DEPRECATED require no evidence;
-            // the guard must not touch the evidence repositories for them (strict
-            // stubs would fail if it did).
+            // Transitions such as DRAFT to PROPOSED, or IMPLEMENTED to DEPRECATED, require
+            // no evidence; the guard must not touch the evidence repositories for them
+            // (strict stubs would fail if it did).
             var control = makeControl();
             when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
                     .thenReturn(Optional.of(control));
@@ -275,10 +275,11 @@ class ControlServiceTest {
 
         @Test
         void invalidShapeStillThrowsShapeErrorNotEvidenceError() {
-            // DRAFT -> IMPLEMENTED is structurally invalid. The pre-existing shape
-            // error must win so the evidence gate never masks an impossible move;
-            // the guard is skipped entirely (no evidence repository interaction).
-            var control = makeControl(); // DRAFT
+            // A transition from DRAFT straight to IMPLEMENTED is structurally invalid. The
+            // pre-existing shape error must win so the evidence gate never masks an
+            // impossible move; the guard is skipped entirely (no evidence repository
+            // interaction).
+            var control = makeControl(); // starts in DRAFT
             when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
                     .thenReturn(Optional.of(control));
 
