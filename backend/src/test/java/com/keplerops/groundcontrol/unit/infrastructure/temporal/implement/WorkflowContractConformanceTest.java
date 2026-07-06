@@ -76,6 +76,55 @@ class WorkflowContractConformanceTest {
         assertThat(enumValues(result.at("/outcome/enum"))).containsExactlyInAnyOrder(names(ImplementOutcome.values()));
     }
 
+    /**
+     * Every constant of every contract enum must match its schema field's closed vocabulary exactly
+     * (not just the first constant the record-conformance sampler reaches), so a schema edit that
+     * silently drops a non-first enum value is caught — the conformance surface's stated purpose.
+     */
+    @Test
+    void everyContractEnumMatchesItsSchemaVocabulary() throws IOException {
+        assertEnumMatchesSchema(
+                com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.CiState.class,
+                "ci-observation.v1.schema.json",
+                "/$defs/CiObservationResult/properties/state/enum");
+        assertEnumMatchesSchema(
+                com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.SonarStatus.class,
+                "sonar-gate.v1.schema.json",
+                "/$defs/SonarGateResult/properties/status/enum");
+        assertEnumMatchesSchema(
+                com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.PrState.class,
+                "merge-observation.v1.schema.json",
+                "/$defs/MergeObservationResult/properties/prState/enum");
+        assertEnumMatchesSchema(
+                com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ReviewVerdict.class,
+                "content-activities.v1.schema.json",
+                "/$defs/CodexReviewResult/properties/verdict/enum");
+        assertEnumMatchesSchema(
+                com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ReviewerKind.class,
+                "implement-signals.v1.schema.json",
+                "/$defs/ReviewCapDispositionSignal/properties/reviewer/enum");
+        assertEnumMatchesSchema(
+                com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.CapDisposition.class,
+                "implement-signals.v1.schema.json",
+                "/$defs/ReviewCapDispositionSignal/properties/disposition/enum");
+        assertEnumMatchesSchema(
+                com.keplerops.groundcontrol.domain.requirements.state.Status.class,
+                "status-transition.v1.schema.json",
+                "/$defs/StatusTransitionInput/properties/targetStatus/enum");
+    }
+
+    private static void assertEnumMatchesSchema(Class<?> enumClass, String schemaFile, String enumPointer)
+            throws IOException {
+        JsonNode schema = MAPPER.readTree(Files.readString(schemaDir().resolve(schemaFile)));
+        List<String> schemaValues = enumValues(schema.at(enumPointer));
+        List<String> javaValues = Arrays.stream(enumClass.getEnumConstants())
+                .map(constant -> MAPPER.valueToTree(constant).asText())
+                .toList();
+        assertThat(schemaValues)
+                .as("%s vocabulary in %s", enumClass.getSimpleName(), schemaFile)
+                .containsExactlyInAnyOrderElementsOf(javaValues);
+    }
+
     private static void validate(JsonNode instance, JsonNode def, String ctx) {
         assertThat(instance.isObject()).as("%s serializes to an object", ctx).isTrue();
         JsonNode properties = def.get("properties");

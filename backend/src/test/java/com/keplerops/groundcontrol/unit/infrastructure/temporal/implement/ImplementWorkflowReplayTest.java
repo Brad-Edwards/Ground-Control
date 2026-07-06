@@ -258,6 +258,34 @@ class ImplementWorkflowReplayTest {
     }
 
     @Test
+    void reviewGateRetriesOnPhaseMatchingRetryWithoutDisposition() {
+        try (TestWorkflowEnvironment env = TestWorkflowEnvironment.newInstance()) {
+            FakeActivities activities = new FakeActivities();
+            FakeContentActivities content = new FakeContentActivities();
+            content.codexVerdict = ReviewVerdict.DONT_SHIP; // Phase C codex review blocks.
+            registerAndStart(env, activities, content);
+
+            ImplementWorkflow workflow = env.getWorkflowClient().newWorkflowStub(ImplementWorkflow.class, options());
+            WorkflowClient.start(workflow::run, input());
+            await().atMost(Duration.ofSeconds(15))
+                    .until(() -> workflow.currentOutcome() == ImplementOutcome.ESCALATED
+                            && workflow.currentPhase() == ImplementPhase.C_STAGE_COMMIT_PUSH);
+
+            // A phase-matching retryFrom with NO disposition must re-run the review (RETRY branch), not
+            // proceed. The re-review now passes, so the run completes — and the review activity ran twice.
+            content.codexVerdict = ReviewVerdict.SHIP;
+            workflow.retryFrom(new RetryFromSignal(ImplementPhase.C_STAGE_COMMIT_PUSH, "re-review"));
+
+            ImplementWorkflowResult result = WorkflowStub.fromTyped(workflow).getResult(ImplementWorkflowResult.class);
+            assertThat(result.outcome()).isEqualTo(ImplementOutcome.MERGED);
+            long codexRuns = FakeActivities.CALLS.stream()
+                    .filter("runCodexReview"::equals)
+                    .count();
+            assertThat(codexRuns).isGreaterThanOrEqualTo(2);
+        }
+    }
+
+    @Test
     void shipWithFixesVerdictDoesNotPassTheReviewGate() {
         try (TestWorkflowEnvironment env = TestWorkflowEnvironment.newInstance()) {
             FakeActivities activities = new FakeActivities();
@@ -293,6 +321,108 @@ class ImplementWorkflowReplayTest {
 
             assertThat(result.outcome()).isEqualTo(ImplementOutcome.MERGED);
             assertThat(activities.openPrAttempts.get()).isEqualTo(3);
+        }
+    }
+
+    @Test
+    void ciFailureEscalatesAtShipPipelineAndRetryResumes() {
+        try (TestWorkflowEnvironment env = TestWorkflowEnvironment.newInstance()) {
+            FakeActivities activities = new FakeActivities();
+            activities.ciState = CiState.FAILURE;
+            registerAndStart(env, activities, new FakeContentActivities());
+
+            ImplementWorkflow workflow = env.getWorkflowClient().newWorkflowStub(ImplementWorkflow.class, options());
+            WorkflowClient.start(workflow::run, input());
+            await().atMost(Duration.ofSeconds(15))
+                    .until(() -> workflow.currentOutcome() == ImplementOutcome.ESCALATED
+                            && workflow.currentPhase() == ImplementPhase.D_SHIP_PIPELINE);
+
+            activities.ciState = CiState.SUCCESS;
+            workflow.retryFrom(new RetryFromSignal(ImplementPhase.D_SHIP_PIPELINE, "ci fixed"));
+            ImplementWorkflowResult result = WorkflowStub.fromTyped(workflow).getResult(ImplementWorkflowResult.class);
+            assertThat(result.outcome()).isEqualTo(ImplementOutcome.MERGED);
+        }
+    }
+
+    @Test
+    void ciPendingIsPolledUntilResolved() {
+        try (TestWorkflowEnvironment env = TestWorkflowEnvironment.newInstance()) {
+            FakeActivities activities = new FakeActivities();
+            activities.ciPendingObservations = 2; // two PENDING polls before SUCCESS exercises the poll loop.
+            registerAndStart(env, activities, new FakeContentActivities());
+
+            ImplementWorkflowResult result = env.getWorkflowClient()
+                    .newWorkflowStub(ImplementWorkflow.class, options())
+                    .run(input());
+
+            assertThat(result.outcome()).isEqualTo(ImplementOutcome.MERGED);
+            assertThat(FakeActivities.CALLS.stream().filter("observeCi"::equals).count())
+                    .isGreaterThanOrEqualTo(3);
+        }
+    }
+
+    @Test
+    void sonarErrorEscalatesAndPendingIsPolled() {
+        try (TestWorkflowEnvironment env = TestWorkflowEnvironment.newInstance()) {
+            FakeActivities activities = new FakeActivities();
+            activities.sonarStatus = SonarStatus.ERROR;
+            activities.sonarPendingObservations = 1; // one PENDING poll before the ERROR is returned.
+            registerAndStart(env, activities, new FakeContentActivities());
+
+            ImplementWorkflow workflow = env.getWorkflowClient().newWorkflowStub(ImplementWorkflow.class, options());
+            WorkflowClient.start(workflow::run, input());
+            await().atMost(Duration.ofSeconds(15))
+                    .until(() -> workflow.currentOutcome() == ImplementOutcome.ESCALATED
+                            && workflow.currentPhase() == ImplementPhase.D_SHIP_PIPELINE);
+            assertThat(FakeActivities.CALLS.stream()
+                            .filter("evaluateSonarGate"::equals)
+                            .count())
+                    .isGreaterThanOrEqualTo(2);
+
+            activities.sonarStatus = SonarStatus.OK;
+            workflow.retryFrom(new RetryFromSignal(ImplementPhase.D_SHIP_PIPELINE, "sonar fixed"));
+            ImplementWorkflowResult result = WorkflowStub.fromTyped(workflow).getResult(ImplementWorkflowResult.class);
+            assertThat(result.outcome()).isEqualTo(ImplementOutcome.MERGED);
+        }
+    }
+
+    @Test
+    void closedUnmergedPullRequestYieldsEscalatedWithoutReconciliation() {
+        try (TestWorkflowEnvironment env = TestWorkflowEnvironment.newInstance()) {
+            FakeActivities activities = new FakeActivities();
+            activities.mergeReturnsClosed = true; // PR closed without merge — abandoned run.
+            registerAndStart(env, activities, new FakeContentActivities());
+
+            ImplementWorkflowResult result = env.getWorkflowClient()
+                    .newWorkflowStub(ImplementWorkflow.class, options())
+                    .run(input());
+
+            assertThat(result.outcome()).isEqualTo(ImplementOutcome.ESCALATED);
+            assertThat(result.reconciled()).isFalse();
+            // Phase E never runs for an abandoned PR: no reconciliation or status transition.
+            assertThat(FakeActivities.CALLS).doesNotContain("observeMergedArtifacts", "transitionRequirementStatus");
+        }
+    }
+
+    @Test
+    void shipVerdictWithBlockingFindingsDoesNotPassTheReviewGate() {
+        try (TestWorkflowEnvironment env = TestWorkflowEnvironment.newInstance()) {
+            FakeActivities activities = new FakeActivities();
+            FakeContentActivities content = new FakeContentActivities();
+            content.codexVerdict = ReviewVerdict.SHIP;
+            content.codexBlockingOverride = 1; // SHIP but with a blocking finding — must not ship.
+            registerAndStart(env, activities, content);
+
+            ImplementWorkflow workflow = env.getWorkflowClient().newWorkflowStub(ImplementWorkflow.class, options());
+            WorkflowClient.start(workflow::run, input());
+            await().atMost(Duration.ofSeconds(15))
+                    .until(() -> workflow.currentOutcome() == ImplementOutcome.ESCALATED
+                            && workflow.currentPhase() == ImplementPhase.C_STAGE_COMMIT_PUSH);
+            assertThat(FakeActivities.CALLS).doesNotContain("openPullRequest");
+
+            workflow.cancel(new CancelSignal("done asserting"));
+            ImplementWorkflowResult result = WorkflowStub.fromTyped(workflow).getResult(ImplementWorkflowResult.class);
+            assertThat(result.outcome()).isEqualTo(ImplementOutcome.CANCELLED);
         }
     }
 
@@ -351,8 +481,15 @@ class ImplementWorkflowReplayTest {
         volatile boolean allowMerge = true;
         volatile boolean buildPasses = true;
         volatile int failOpenPrTimes = 0;
+        volatile CiState ciState = CiState.SUCCESS;
+        volatile int ciPendingObservations = 0;
+        volatile SonarStatus sonarStatus = SonarStatus.OK;
+        volatile int sonarPendingObservations = 0;
+        volatile boolean mergeReturnsClosed = false;
         final AtomicInteger openPrAttempts = new AtomicInteger();
         private final AtomicInteger mergeObservations = new AtomicInteger();
+        private final AtomicInteger ciObservations = new AtomicInteger();
+        private final AtomicInteger sonarObservations = new AtomicInteger();
 
         FakeActivities() {
             CALLS.clear();
@@ -405,18 +542,27 @@ class ImplementWorkflowReplayTest {
         @Override
         public CiObservationResult observeCi(CiObservationInput in) {
             CALLS.add("observeCi");
-            return new CiObservationResult(CiState.SUCCESS, List.of());
+            if (ciObservations.getAndIncrement() < ciPendingObservations) {
+                return new CiObservationResult(CiState.PENDING, List.of());
+            }
+            return new CiObservationResult(ciState, ciState == CiState.FAILURE ? List.of("build") : List.of());
         }
 
         @Override
         public SonarGateResult evaluateSonarGate(SonarGateInput in) {
             CALLS.add("evaluateSonarGate");
-            return new SonarGateResult(SonarStatus.OK);
+            if (sonarObservations.getAndIncrement() < sonarPendingObservations) {
+                return new SonarGateResult(SonarStatus.PENDING);
+            }
+            return new SonarGateResult(sonarStatus);
         }
 
         @Override
         public MergeObservationResult observeMergeState(MergeObservationInput in) {
             CALLS.add("observeMergeState");
+            if (mergeReturnsClosed) {
+                return new MergeObservationResult(false, PrState.CLOSED);
+            }
             boolean merged = allowMerge && mergeObservations.incrementAndGet() >= 1;
             return new MergeObservationResult(merged, merged ? PrState.MERGED : PrState.OPEN);
         }
@@ -452,6 +598,9 @@ class ImplementWorkflowReplayTest {
     static final class FakeContentActivities implements ImplementContentActivities {
         volatile boolean testClean = true;
         volatile ReviewVerdict codexVerdict = ReviewVerdict.SHIP;
+        // -1 derives blockingFindings from the verdict; >= 0 overrides it (verdict and blocking count are
+        // independent schema fields, so the gate must check both).
+        volatile int codexBlockingOverride = -1;
 
         @Override
         public AuthorPlanResult authorPlan(AuthorPlanInput in) {
@@ -468,7 +617,8 @@ class ImplementWorkflowReplayTest {
         @Override
         public CodexReviewResult runCodexReview(CodexReviewInput in) {
             FakeActivities.CALLS.add("runCodexReview");
-            int blocking = codexVerdict == ReviewVerdict.SHIP ? 0 : 1;
+            int blocking =
+                    codexBlockingOverride >= 0 ? codexBlockingOverride : (codexVerdict == ReviewVerdict.SHIP ? 0 : 1);
             return new CodexReviewResult(codexVerdict, blocking, 1);
         }
 

@@ -133,6 +133,19 @@ class ImplementActivitiesImplTest {
     }
 
     @Test
+    void stageCommitPushClampsPrecommitRetriesToRange() {
+        when(workspace.stageCommitPush(eq("b"), eq("m"), org.mockito.ArgumentMatchers.anyInt(), eq("k")))
+                .thenReturn(new GitPublishResult("abc1234", true, 1));
+
+        // Below 1 clamps up to 1; above MAX (5) clamps down to 5.
+        activities.stageCommitPush(new GitPublishInput("b", "m", 0, "k"));
+        activities.stageCommitPush(new GitPublishInput("b", "m", 100, "k"));
+
+        verify(workspace).stageCommitPush("b", "m", 1, "k");
+        verify(workspace).stageCommitPush("b", "m", 5, "k");
+    }
+
+    @Test
     void runCompletionGateDelegatesToWorkspace() {
         when(workspace.runCompletionGate("make check")).thenReturn(new CompletionGateResult(true, 0, "ok"));
 
@@ -142,20 +155,31 @@ class ImplementActivitiesImplTest {
     }
 
     @Test
-    void observeMergedArtifactsClassifiesTestAndCodePaths() {
+    void observeMergedArtifactsClassifiesEveryTestPathBranch() {
+        // Exercises all of isTestPath's branches: /test/, /tests/, endsWith Test.java, .test., .spec.,
+        // and backslash normalization; plus code paths that must classify as IMPLEMENTS.
         when(gitHub.changedFiles(BINDING, 7))
                 .thenReturn(List.of(
-                        "backend/src/main/java/App.java",
-                        "backend/src/test/java/AppTest.java",
-                        "frontend/src/app.ts",
-                        "frontend/src/app.test.ts"));
+                        "backend/src/main/java/App.java", // code
+                        "mcp/lib.js", // code
+                        "backend/src/test/java/AppTest.java", // /test/
+                        "tools/tests/helper.py", // /tests/
+                        "backend/src/main/java/FooTest.java", // endsWith Test.java (no /test/)
+                        "frontend/src/app.test.ts", // .test.
+                        "frontend/src/app.spec.ts", // .spec.
+                        "backend\\src\\test\\java\\Win.java")); // backslash-normalized /test/
 
         MergedArtifactsResult result = activities.observeMergedArtifacts(new MergedArtifactsInput(BINDING, 7));
 
-        assertThat(result.implementsArtifacts())
-                .containsExactly("backend/src/main/java/App.java", "frontend/src/app.ts");
+        assertThat(result.implementsArtifacts()).containsExactly("backend/src/main/java/App.java", "mcp/lib.js");
         assertThat(result.testsArtifacts())
-                .containsExactly("backend/src/test/java/AppTest.java", "frontend/src/app.test.ts");
+                .containsExactly(
+                        "backend/src/test/java/AppTest.java",
+                        "tools/tests/helper.py",
+                        "backend/src/main/java/FooTest.java",
+                        "frontend/src/app.test.ts",
+                        "frontend/src/app.spec.ts",
+                        "backend\\src\\test\\java\\Win.java");
     }
 
     @Test
