@@ -892,17 +892,36 @@ def load_pr_issue_comments(path: str | None) -> list[dict[str, str]] | None:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        comments: list[dict[str, str]] = []
-        for line in raw.splitlines():
-            if not line.strip():
-                continue
-            comments.append(_normalize_pr_comment(json.loads(line)))
-        return comments
+        # Newline-delimited JSON objects — the `gh api --jq '.[]|{...}'` shape.
+        # Decode with raw_decode so multiple objects on one line are handled too:
+        # `gh api --paginate` can concatenate a page's last object and the next
+        # page's first object with no separating newline (#1334).
+        return _decode_concatenated_comment_objects(raw)
     if isinstance(parsed, list):
         return [_normalize_pr_comment(item) for item in parsed]
-    if isinstance(parsed, dict) and isinstance(parsed.get("comments"), list):
-        return [_normalize_pr_comment(item) for item in parsed["comments"]]
+    if isinstance(parsed, dict):
+        if isinstance(parsed.get("comments"), list):
+            return [_normalize_pr_comment(item) for item in parsed["comments"]]
+        # A one-comment thread yields a single bare object here: json.loads(raw)
+        # parsed it as a dict, so the JSONL fallback above never ran. Treat the
+        # lone comment object as a one-element list rather than rejecting it (#1334).
+        return [_normalize_pr_comment(parsed)]
     raise ValueError("--pr-comments-json must contain a JSON array, {comments: [...]}, or newline-delimited JSON objects")
+
+
+def _decode_concatenated_comment_objects(raw: str) -> list[dict[str, str]]:
+    decoder = json.JSONDecoder()
+    comments: list[dict[str, str]] = []
+    index = 0
+    length = len(raw)
+    while index < length:
+        while index < length and raw[index].isspace():
+            index += 1
+        if index >= length:
+            break
+        obj, index = decoder.raw_decode(raw, index)
+        comments.append(_normalize_pr_comment(obj))
+    return comments
 
 
 def _read_name_status(base: str | None, root: Path) -> list[tuple[str, str]]:
