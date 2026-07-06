@@ -4,7 +4,10 @@ import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.controls.model.Control;
@@ -212,7 +215,7 @@ class ControlServiceTest {
                     .containsEntry("missingEfficacyTest", false);
             // The transition must not be persisted when evidence is missing.
             assertThat(control.getStatus()).isEqualTo(ControlStatus.PROPOSED);
-            verify(controlRepository, org.mockito.Mockito.never()).save(any(Control.class));
+            verify(controlRepository, never()).save(any(Control.class));
         }
 
         @Test
@@ -270,7 +273,7 @@ class ControlServiceTest {
             var result = controlService.transitionStatus(projectId, control.getId(), ControlStatus.PROPOSED);
 
             assertThat(result.getStatus()).isEqualTo(ControlStatus.PROPOSED);
-            org.mockito.Mockito.verifyNoInteractions(controlLinkRepository);
+            verifyNoInteractions(controlLinkRepository);
         }
 
         @Test
@@ -288,7 +291,7 @@ class ControlServiceTest {
                     .isInstanceOf(com.keplerops.groundcontrol.domain.exception.DomainValidationException.class)
                     .extracting("errorCode")
                     .isEqualTo("invalid_status_transition");
-            org.mockito.Mockito.verifyNoInteractions(controlLinkRepository);
+            verifyNoInteractions(controlLinkRepository);
         }
     }
 
@@ -381,7 +384,7 @@ class ControlServiceTest {
             // delete. Driving outbound link deletes through the repository before
             // deleting the parent closes the parent-delete audit-history gap
             // (cycle-2 pre-push codex review on issue #279).
-            var inOrder = org.mockito.Mockito.inOrder(controlLinkRepository, controlRepository);
+            var inOrder = inOrder(controlLinkRepository, controlRepository);
             inOrder.verify(controlLinkRepository).deleteAll(outboundLinks);
             inOrder.verify(controlRepository).delete(control);
         }
@@ -412,9 +415,8 @@ class ControlServiceTest {
                     .extracting("errorCode")
                     .isEqualTo("control_referenced");
             assertThat(thrown.getDetail()).containsEntry("auditCount", 1);
-            org.mockito.Mockito.verifyNoInteractions(controlLinkRepository);
-            org.mockito.Mockito.verify(controlRepository, org.mockito.Mockito.never())
-                    .delete(control);
+            verifyNoInteractions(controlLinkRepository);
+            verify(controlRepository, never()).delete(control);
         }
 
         @Test
@@ -444,9 +446,8 @@ class ControlServiceTest {
                     .containsEntry("findingCount", 1)
                     .containsEntry("findingUids", (java.io.Serializable) java.util.List.of("FIND-001"));
             // Parent + outbound-link cleanup must be skipped when the guard fires.
-            org.mockito.Mockito.verifyNoInteractions(controlLinkRepository);
-            org.mockito.Mockito.verify(controlRepository, org.mockito.Mockito.never())
-                    .delete(control);
+            verifyNoInteractions(controlLinkRepository);
+            verify(controlRepository, never()).delete(control);
         }
 
         @Test
@@ -552,7 +553,7 @@ class ControlServiceTest {
                     null, null, "Updated description", null, null, null, null, null, null, null);
             controlService.update(projectId, control.getId(), command);
 
-            org.mockito.Mockito.verifyNoInteractions(eventPublisher);
+            verifyNoInteractions(eventPublisher);
         }
     }
 }
