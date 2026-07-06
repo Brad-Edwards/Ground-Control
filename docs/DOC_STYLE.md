@@ -1,5 +1,7 @@
 # Documentation style
 
+> **Sync note for issue #1334 (2026-07-06):** Fixed `load_pr_issue_comments` in `tools/policy/checks.py` so `make policy` no longer fails `pr-comments-json-invalid` on a PR with exactly one comment (the lone bare JSON object `gh api --jq` emits is now accepted; the multi-object fallback uses `JSONDecoder.raw_decode`). This is a policy-tooling correctness fix, not a documentation-classifier change: the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
+
 > **Sync note for issue #1330 (2026-07-05):** `tools/policy/checks.py::main` now downgrades the protected-path / battery approval-missing results to non-blocking warnings (TEMP, pending the #1330 redesign) because the design-authority approval marker is currently unsatisfiable (`gc_post_design_authority_approval` requires an out-of-band token configured on no MCP server). Detection is unchanged; only the blocking exit is suppressed. This is a policy-gate exit-behavior change, not a documentation-classifier change: the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
 
 > **Sync note for issue #1294 (2026-07-05 GC-CLD-5):** Added protected-path authority policy in `tools/policy/checks.py`, the `architecture/registry/protected-paths.json` registry, and the scope-bound `gc_post_design_authority_approval` MCP marker surface in `mcp/ground-control/index.js` and `mcp/ground-control/lib.js`. Documentation lives in `docs/DEVELOPMENT_WORKFLOW.md`, ADR-087, and the ADR-054 sync note; the change is a policy/workflow-gate surface update, not a documentation style update. No style rule changed.
@@ -203,7 +205,13 @@ removing fields, and the changelog fragment in `changelog.d/` carries the
 temporal record. Similarly, updates to `tools/policy/checks.py` that extend
 the list of recognized adapter files (for example, adding `gc-risk-scenario.js`
 to the controller-parity check) are policy-surface changes recorded in
-amendments to ADR-054, not documentation edits.
+amendments to ADR-054, not documentation edits. A new repo-native policy
+check added to `tools/policy/checks.py` (for example,
+`run_module_graph_boundary_check` for the CLD architecture registry in
+GC-CLD-2 / #1295) is the same kind of policy-surface change: its user-facing
+reference lives in `architecture/registry/README.md` and
+`docs/DEVELOPMENT_WORKFLOW.md`, and the surface addition is recorded in an
+ADR-054 amendment, not as a new style rule here.
 
 New `gc_analyze` kinds backed by a fixed REST endpoint follow the same
 convention: a new kind value in `ANALYZE_KINDS` (for example
