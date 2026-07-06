@@ -2108,6 +2108,37 @@ class PolicyChecksTest(unittest.TestCase):
                 ],
             )
 
+    def test_load_pr_issue_comments_accepts_single_comment_object(self):
+        # A one-comment PR thread makes `gh api --jq '.[]|{...}'` emit exactly one
+        # bare JSON object. json.loads(whole file) parses it as a dict, so the JSONL
+        # fallback never runs — the parser must treat a lone comment object as a
+        # one-element list rather than raising (#1334).
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            comments_path = Path(tmp_dir) / "comments.jsonl"
+            comments_path.write_text(
+                '{"body":"## Quality Gate Passed","author":"sonarqubecloud[bot]"}\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                load_pr_issue_comments(str(comments_path)),
+                [{"body": "## Quality Gate Passed", "author": "sonarqubecloud[bot]"}],
+            )
+
+    def test_load_pr_issue_comments_accepts_objects_concatenated_on_one_line(self):
+        # `gh api --paginate --jq` can concatenate a page's last object and the next
+        # page's first object without a newline. The fallback must decode multiple
+        # objects per line, not choke on the first splitline (#1334).
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            comments_path = Path(tmp_dir) / "comments.jsonl"
+            comments_path.write_text(
+                '{"body":"a","author":"one"}{"body":"b","author":"two"}\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                load_pr_issue_comments(str(comments_path)),
+                [{"body": "a", "author": "one"}, {"body": "b", "author": "two"}],
+            )
+
 
 # ---------------------------------------------------------------------------
 # Changelog-fragment workflow (issue #848).
