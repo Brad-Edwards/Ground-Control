@@ -15700,18 +15700,31 @@ function grcEntityKey(type, uid) {
 // stale-set addressing are GC-GRC-012's completion-coverage gate. The only
 // authorized bypass of a gap_set is gc_post_final_report's phaseOverride (an
 // audited disposition). Data-gathering seams are injectable via `deps` for tests.
-async function reconcileGrcScreeningV2({ record, repoRoot, owner, name, issueNumber, project, deps = {} }) {
+export async function reconcileGrcScreeningV2({ record, repoRoot, owner, name, issueNumber, project, deps = {} }) {
   const computeTouchedPaths = deps.computeTouchedPaths ?? defaultComputeTouchedPaths;
   const fetchGrcGraph = deps.fetchGrcGraph ?? defaultFetchGrcGraph;
   const fetchDerivationState = deps.fetchDerivationState ?? defaultFetchDerivationState;
+  const getContext = deps.getRepoGroundControlContext ?? getRepoGroundControlContext;
+  const postMarker = deps.postPhaseMarker ?? postPhaseMarker;
 
-  // Resolve the base branch (for merge-base fallback) from .ground-control.yaml.
+  // Resolve the base branch (for merge-base fallback) AND the project from
+  // .ground-control.yaml. The project must be resolved the same way the screening
+  // runner does (runPostGrcScreening): without it, fetchGrcGraph(null) runs
+  // unscoped and returns no project entities, so every touched source surface
+  // reads as uncovered and the gate spuriously fails grc_not_reconciled even
+  // though the modeled controls/threat-models cover it. A caller that omits
+  // `project` (e.g. gc_assert_completion) must still reconcile against the repo's
+  // own project graph.
   let baseBranch = "dev";
+  let resolvedProject = project;
   try {
-    const ctx = await getRepoGroundControlContext(repoRoot);
-    if (ctx?.status === "ok") baseBranch = ctx.workflow?.base_branch ?? baseBranch;
+    const ctx = await getContext(repoRoot);
+    if (ctx?.status === "ok") {
+      baseBranch = ctx.workflow?.base_branch ?? baseBranch;
+      resolvedProject = resolvedProject ?? ctx.project;
+    }
   } catch {
-    // fall through with default
+    // fall through with defaults
   }
 
   // Recompute the FINAL touched surface: from the record's recorded base commit
@@ -15731,11 +15744,11 @@ async function reconcileGrcScreeningV2({ record, repoRoot, owner, name, issueNum
 
   let entities;
   try {
-    entities = await fetchGrcGraph(project);
+    entities = await fetchGrcGraph(resolvedProject);
   } catch (error) {
     return { ok: false, error: "grc_graph_lookup_failed", message: `Failed to read the GRC graph for reconciliation: ${error.message}`, issue_number: issueNumber };
   }
-  const derivation = await fetchDerivationState(project, record.provenance?.derivation_run_id ?? null);
+  const derivation = await fetchDerivationState(resolvedProject, record.provenance?.derivation_run_id ?? null);
 
   const recomputed = classifyGrcScreening({
     touchedPaths,
@@ -15761,7 +15774,7 @@ async function reconcileGrcScreeningV2({ record, repoRoot, owner, name, issueNum
   }
 
   const summary = `_GRC screening \`${record.schema}\` reconciled against the final diff — ${recomputed.impact_set.length} impacted, 0 gaps, ${recomputed.stale_set.length} stale (reassessment tracked by GC-GRC-012)._`;
-  const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "grc_reconciled", { commentBody: summary });
+  const apiResponse = await postMarker(repoRoot, owner, name, issueNumber, "grc_reconciled", { commentBody: summary });
   return {
     ok: true,
     repo_path: repoRoot,

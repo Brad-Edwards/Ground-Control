@@ -28,6 +28,14 @@ Present the mapping as a checklist with the requirement UID (or `issue`) as the 
 
 Do not proceed until every clause and criterion is checked off.
 
+## Re-screen against the real diff (GC-GRC-009 / GC-GRC-010)
+
+Step 3.5 ran **before** any code existed, so on a fresh run its diff was empty and the screening almost always computed `not_security_relevant` — which means GC-GRC-010's design-time deliverables gate could not fire and any real security relevance stays hidden until the post-merge reconciliation blocks on it (`grc_not_reconciled`). Close that gap here, now that the diff is real:
+
+1. Re-run `gc_post_grc_screening` (Step 3.5) against the implemented diff. The tool always recomputes the touched surface from git, so this is a fresh, trustworthy classification — not a caller-asserted one.
+2. If the `derived_verdict` is now `security_relevant` with a non-empty `gap_set` or `stale_set`, **model the GRC deliverables here** — the same secure-by-design work GC-GRC-010 would have required at plan time: model/confirm the threats, select and link the controls (with CODE + efficacy-test links via `gc_control`), and refresh the stale entities. Do it now rather than discovering it at the completion gate. A control that cannot be implemented in the change routes to a GC-GRC-015 disposition, never a silent pass.
+3. The post-merge reconciliation (Step 17) recomputes the same sets and blocks on any residual `gap_set`, so this step is where you *avoid* that block, not a substitute for it.
+
 Traceability reconciliation (IMPLEMENTS / TESTS links) and the `DRAFT → ACTIVE` status transitions are intentionally NOT done here. They land in **Phase E (Steps 15–16), after the PR merges** (issue #963), so Ground Control state never runs ahead of the actual code that ships - a reviewed-but-abandoned PR leaves the requirement DRAFT and unlinked.
 
 ## Return contract
