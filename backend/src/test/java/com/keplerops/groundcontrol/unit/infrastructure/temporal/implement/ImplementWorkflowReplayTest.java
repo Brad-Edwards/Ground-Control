@@ -152,7 +152,7 @@ class ImplementWorkflowReplayTest {
     }
 
     @Test
-    void executionHistoryReplaysDeterministically() throws Exception {
+    void executionHistoryReplaysDeterministically() {
         String workflowId;
         WorkflowExecutionHistory history;
         try (TestWorkflowEnvironment env = TestWorkflowEnvironment.newInstance()) {

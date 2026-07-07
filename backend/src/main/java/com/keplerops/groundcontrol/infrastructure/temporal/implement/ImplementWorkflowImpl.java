@@ -25,7 +25,6 @@ import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.Me
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.MergedArtifactsInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.MergedArtifactsResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.OpenPullRequestInput;
-import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.OpenPullRequestResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.PrState;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.QualityGateInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.QualityGateResult;
@@ -39,14 +38,14 @@ import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.Re
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ReviewVerdict;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ReviewerKind;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.SonarGateInput;
-import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.SonarGateResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.SonarStatus;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.StatusTransitionInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.TestQualityReviewInput;
-import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.TestQualityReviewResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.TraceabilityReconcileInput;
 import io.temporal.workflow.Workflow;
 import java.time.Duration;
+import java.util.List;
+import java.util.Optional;
 import org.slf4j.Logger;
 
 /**
@@ -54,11 +53,10 @@ import org.slf4j.Logger;
  * repositories, REST/GitHub clients, filesystem, clock, random/UUID, or LLM calls — only activity
  * invocations, Temporal timers, workflow state, and signal handlers (ADR-028 determinism boundary).
  *
- * <p>The method body is the GC-O007/ADR-029 phase graph in order: A plan+implement, B hard quality
- * gate, C stage/commit/push + pre-push codex review, D ship pipeline (PR, CI, Sonar, test-quality
- * review, readiness record) then wait for the observed merge, E post-merge reconciliation. No
- * plan-approval gate; PR merge is observed, never signaled. On a gate failure the run escalates and
- * awaits a {@code retryFrom} or {@code cancel} signal (the durable operator pause).
+ * <p>{@link #run} sequences the GC-O007/ADR-029 phase graph A-E in order, delegating each phase's gate
+ * loop to a helper that returns a terminal result when the run stops (cancel / escalation-abandon) or
+ * empty to advance. No plan-approval gate; PR merge is observed, never signaled. On a gate failure the
+ * run escalates and awaits a phase-bound {@code retryFrom} or {@code cancel} signal (the durable pause).
  */
 public class ImplementWorkflowImpl implements ImplementWorkflow {
 
@@ -89,171 +87,229 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
         CANCELLED
     }
 
+    /** Immutable per-run parameters derived once from the workflow input. */
+    private record RunContext(
+            int issue,
+            int cap,
+            Duration poll,
+            String title,
+            String commitMessage,
+            String runKey,
+            String project,
+            String completionCommand,
+            String sonarProjectKey,
+            List<String> requirementUids) {
+
+        static RunContext from(ImplementWorkflowInput input) {
+            int issue = input.issueNumber();
+            String label = "Implement issue #" + issue;
+            int cap = input.reviewCap() == null ? DEFAULT_REVIEW_CAP : input.reviewCap();
+            long pollSeconds = input.pollIntervalSeconds() == null ? DEFAULT_POLL_SECONDS : input.pollIntervalSeconds();
+            return new RunContext(
+                    issue,
+                    cap,
+                    Duration.ofSeconds(pollSeconds),
+                    label,
+                    label,
+                    Workflow.getInfo().getWorkflowId(),
+                    input.project(),
+                    input.completionCommand(),
+                    input.sonarProjectKey(),
+                    input.requirementUids());
+        }
+    }
+
     @Override
     public ImplementWorkflowResult run(ImplementWorkflowInput input) {
         Logger log = Workflow.getLogger(ImplementWorkflowImpl.class);
-        int issue = input.issueNumber();
-        int cap = input.reviewCap() == null ? DEFAULT_REVIEW_CAP : input.reviewCap();
-        Duration poll = Duration.ofSeconds(
-                input.pollIntervalSeconds() == null ? DEFAULT_POLL_SECONDS : input.pollIntervalSeconds());
-        String title = "Implement issue #" + issue;
-        String commitMessage = "Implement issue #" + issue;
-        // Stable per-run key base; each mutating activity derives a fixed idempotency key from it so an
-        // at-least-once Temporal retry observes-before-creates rather than duplicating a side effect.
-        String runKey = Workflow.getInfo().getWorkflowId();
-        log.info("implement workflow start issue={} project={}", issue, input.project());
+        RunContext ctx = RunContext.from(input);
+        log.info("implement workflow start issue={} project={}", ctx.issue(), ctx.project());
 
         // Phase A: resolve the project-scoped repository binding (privileged GitHub side effects never
-        // trust caller-supplied repo coordinates, ADR-028), then plan + implement (content seams) and
+        // trust caller-supplied repo coordinates, ADR-028), plan + implement (content seams), and
         // resolve the issue's feature branch.
         phase = ImplementPhase.A_PLAN_IMPLEMENT;
         RepositoryBinding repository =
-                activities.resolveRepositoryBinding(new ResolveRepositoryBindingInput(input.project()));
+                activities.resolveRepositoryBinding(new ResolveRepositoryBindingInput(ctx.project()));
         ResolveIssueResult resolved =
-                activities.resolveIssue(new ResolveIssueInput(repository, issue, input.requirementUids()));
-        content.authorPlan(new AuthorPlanInput(issue, input.requirementUids(), runKey + ":plan"));
+                activities.resolveIssue(new ResolveIssueInput(repository, ctx.issue(), ctx.requirementUids()));
+        content.authorPlan(new AuthorPlanInput(ctx.issue(), ctx.requirementUids(), ctx.runKey() + ":plan"));
         ImplementChangeResult change =
-                content.implementChange(new ImplementChangeInput(issue, null, runKey + ":change"));
+                content.implementChange(new ImplementChangeInput(ctx.issue(), null, ctx.runKey() + ":change"));
         if (cancelled) {
-            return terminal(issue, null, ImplementOutcome.CANCELLED, false);
+            return terminal(ctx.issue(), null, ImplementOutcome.CANCELLED, false);
         }
 
-        // Phase B: hard completion gate — build + CHANGELOG + clause mapping.
+        Optional<ImplementWorkflowResult> stopped = runQualityGate(ctx, change);
+        if (stopped.isPresent()) {
+            return stopped.get();
+        }
+        stopped = stageAndCodexReview(ctx, resolved);
+        if (stopped.isPresent()) {
+            return stopped.get();
+        }
+
+        phase = ImplementPhase.D_SHIP_PIPELINE;
+        int prNumber = activities
+                .openPullRequest(
+                        new OpenPullRequestInput(repository, resolved.branch(), ctx.title(), ctx.runKey() + ":pr"))
+                .prNumber();
+        stopped = awaitCi(ctx, repository, prNumber);
+        if (stopped.isPresent()) {
+            return stopped.get();
+        }
+        stopped = awaitSonarGate(ctx, prNumber);
+        if (stopped.isPresent()) {
+            return stopped.get();
+        }
+        stopped = runTestQualityGate(ctx, prNumber);
+        if (stopped.isPresent()) {
+            return stopped.get();
+        }
+
+        content.postReadinessRecord(new ReadinessRecordInput(ctx.issue(), prNumber, ctx.runKey() + ":readiness"));
+        outcome = ImplementOutcome.READY_FOR_REVIEW; // Phase D terminal signal; now await the human merge gate.
+        log.info("implement workflow ready-for-review issue={} pr={}", ctx.issue(), prNumber);
+
+        stopped = awaitMerge(ctx, repository, prNumber);
+        if (stopped.isPresent()) {
+            return stopped.get();
+        }
+        return postMergeReconcile(ctx, resolved, repository, prNumber);
+    }
+
+    /** Phase B: hard completion gate — build + CHANGELOG + clause mapping. */
+    private Optional<ImplementWorkflowResult> runQualityGate(RunContext ctx, ImplementChangeResult change) {
         phase = ImplementPhase.B_QUALITY_GATE;
         while (true) {
             CompletionGateResult build =
-                    buildActivities.runCompletionGate(new CompletionGateInput(input.completionCommand()));
+                    buildActivities.runCompletionGate(new CompletionGateInput(ctx.completionCommand()));
             QualityGateResult gate = activities.evaluateQualityGate(new QualityGateInput(
-                    input.project(), build.passed(), change.changelogUpdated(), change.clauseMappingComplete()));
+                    ctx.project(), build.passed(), change.changelogUpdated(), change.clauseMappingComplete()));
             if (gate.passed()) {
-                break;
+                return Optional.empty();
             }
             if (!escalateAndAwait()) {
-                return terminal(issue, null, ImplementOutcome.CANCELLED, false);
+                return Optional.of(terminal(ctx.issue(), null, ImplementOutcome.CANCELLED, false));
             }
         }
+    }
 
-        // Phase C: stage/commit/push + single pre-push codex review pass.
+    /** Phase C: stage/commit/push + single pre-push codex review pass. */
+    private Optional<ImplementWorkflowResult> stageAndCodexReview(RunContext ctx, ResolveIssueResult resolved) {
         phase = ImplementPhase.C_STAGE_COMMIT_PUSH;
-        activities.stageCommitPush(new GitPublishInput(resolved.branch(), commitMessage, null, runKey + ":push"));
-        while (true) {
-            CodexReviewResult review = content.runCodexReview(new CodexReviewInput(issue, cap));
-            // The gate passes only on a clean review (SHIP with zero blocking findings). Any other
-            // verdict — including SHIP_WITH_FIXES, which means fixes are still required — must not
-            // silently ship: it escalates and awaits an operator PROCEED disposition or retry (GC-O007).
+        activities.stageCommitPush(
+                new GitPublishInput(resolved.branch(), ctx.commitMessage(), null, ctx.runKey() + ":push"));
+        // The gate passes only on a clean review (SHIP with zero blocking findings). Any other verdict —
+        // including SHIP_WITH_FIXES, which means fixes are still required — must not silently ship: it
+        // escalates and awaits an operator PROCEED disposition or a retry (GC-O007 review gate).
+        ReviewGateResolution decision = ReviewGateResolution.RETRY;
+        while (decision == ReviewGateResolution.RETRY) {
+            CodexReviewResult review = content.runCodexReview(new CodexReviewInput(ctx.issue(), ctx.cap()));
             boolean clean = review.verdict() == ReviewVerdict.SHIP && review.blockingFindings() == 0;
-            if (clean) {
-                break;
-            }
-            ReviewGateResolution decision = escalateReviewGate(ReviewerKind.CODEX);
-            if (decision == ReviewGateResolution.CANCELLED) {
-                return terminal(issue, null, ImplementOutcome.CANCELLED, false);
-            }
-            if (decision == ReviewGateResolution.PROCEED) {
-                break;
-            }
+            decision = clean ? ReviewGateResolution.PROCEED : escalateReviewGate(ReviewerKind.CODEX);
         }
+        return decision == ReviewGateResolution.CANCELLED
+                ? Optional.of(terminal(ctx.issue(), null, ImplementOutcome.CANCELLED, false))
+                : Optional.empty();
+    }
 
-        // Phase D: ship pipeline — PR, CI, Sonar, test-quality review, readiness; then await merge.
-        phase = ImplementPhase.D_SHIP_PIPELINE;
-        OpenPullRequestResult pr = activities.openPullRequest(
-                new OpenPullRequestInput(repository, resolved.branch(), title, runKey + ":pr"));
-        int prNumber = pr.prNumber();
-
+    private Optional<ImplementWorkflowResult> awaitCi(RunContext ctx, RepositoryBinding repository, int prNumber) {
         while (true) {
-            CiObservationResult ci = pollCi(repository, prNumber, poll);
+            CiObservationResult ci = pollCi(repository, prNumber, ctx.poll());
             if (cancelled) {
-                return terminal(issue, prNumber, ImplementOutcome.CANCELLED, false);
+                return Optional.of(terminal(ctx.issue(), prNumber, ImplementOutcome.CANCELLED, false));
             }
             if (ci.state() == CiState.SUCCESS) {
-                break;
+                return Optional.empty();
             }
             if (!escalateAndAwait()) {
-                return terminal(issue, prNumber, ImplementOutcome.CANCELLED, false);
+                return Optional.of(terminal(ctx.issue(), prNumber, ImplementOutcome.CANCELLED, false));
             }
         }
+    }
 
-        while (input.sonarProjectKey() != null) {
-            SonarGateResult sonar = activities.evaluateSonarGate(new SonarGateInput(input.sonarProjectKey(), prNumber));
-            if (sonar.status() == SonarStatus.OK || sonar.status() == SonarStatus.NONE) {
-                break;
-            }
-            if (sonar.status() == SonarStatus.PENDING) {
-                if (!sleepUnlessCancelled(poll)) {
-                    return terminal(issue, prNumber, ImplementOutcome.CANCELLED, false);
-                }
-                continue;
-            }
-            if (!escalateAndAwait()) {
-                return terminal(issue, prNumber, ImplementOutcome.CANCELLED, false);
-            }
+    private Optional<ImplementWorkflowResult> awaitSonarGate(RunContext ctx, int prNumber) {
+        if (ctx.sonarProjectKey() == null) {
+            return Optional.empty();
         }
-
         while (true) {
-            TestQualityReviewResult tq = content.runTestQualityReview(new TestQualityReviewInput(issue, cap));
-            if (tq.clean()) {
-                break;
+            SonarStatus status = activities
+                    .evaluateSonarGate(new SonarGateInput(ctx.sonarProjectKey(), prNumber))
+                    .status();
+            if (status == SonarStatus.OK || status == SonarStatus.NONE) {
+                return Optional.empty();
             }
-            ReviewGateResolution decision = escalateReviewGate(ReviewerKind.TEST_QUALITY);
-            if (decision == ReviewGateResolution.CANCELLED) {
-                return terminal(issue, prNumber, ImplementOutcome.CANCELLED, false);
-            }
-            if (decision == ReviewGateResolution.PROCEED) {
-                break;
+            // PENDING waits and re-observes; any failing status escalates for an operator decision. Both
+            // funnel through a single boolean so the loop keeps one exit path (no break/continue).
+            boolean advanced = status == SonarStatus.PENDING ? sleepUnlessCancelled(ctx.poll()) : escalateAndAwait();
+            if (!advanced) {
+                return Optional.of(terminal(ctx.issue(), prNumber, ImplementOutcome.CANCELLED, false));
             }
         }
+    }
 
-        content.postReadinessRecord(new ReadinessRecordInput(issue, prNumber, runKey + ":readiness"));
-        outcome = ImplementOutcome.READY_FOR_REVIEW; // Phase D terminal signal; now await the human merge gate.
-        log.info("implement workflow ready-for-review issue={} pr={}", issue, prNumber);
+    private Optional<ImplementWorkflowResult> runTestQualityGate(RunContext ctx, int prNumber) {
+        ReviewGateResolution decision = ReviewGateResolution.RETRY;
+        while (decision == ReviewGateResolution.RETRY) {
+            boolean clean = content.runTestQualityReview(new TestQualityReviewInput(ctx.issue(), ctx.cap()))
+                    .clean();
+            decision = clean ? ReviewGateResolution.PROCEED : escalateReviewGate(ReviewerKind.TEST_QUALITY);
+        }
+        return decision == ReviewGateResolution.CANCELLED
+                ? Optional.of(terminal(ctx.issue(), prNumber, ImplementOutcome.CANCELLED, false))
+                : Optional.empty();
+    }
 
-        // The single synchronous human gate: PR merge, observed from GitHub (never a Temporal signal).
+    /** The single synchronous human gate: PR merge, observed from GitHub (never a Temporal signal). */
+    private Optional<ImplementWorkflowResult> awaitMerge(RunContext ctx, RepositoryBinding repository, int prNumber) {
         while (true) {
             if (cancelled) {
-                return terminal(issue, prNumber, ImplementOutcome.CANCELLED, false);
+                return Optional.of(terminal(ctx.issue(), prNumber, ImplementOutcome.CANCELLED, false));
             }
             MergeObservationResult merge =
                     activities.observeMergeState(new MergeObservationInput(repository, prNumber));
             if (merge.merged()) {
-                break;
+                return Optional.empty();
             }
             if (merge.prState() == PrState.CLOSED) {
                 // Closed without merge: abandoned. Ground Control state stays unreconciled (GC-O007 E).
-                return terminal(issue, prNumber, ImplementOutcome.ESCALATED, false);
+                return Optional.of(terminal(ctx.issue(), prNumber, ImplementOutcome.ESCALATED, false));
             }
-            Workflow.await(poll, () -> cancelled);
+            Workflow.await(ctx.poll(), () -> cancelled);
         }
+    }
 
-        // Phase E: post-merge reconciliation — transition, reconcile traceability, final report, close.
+    /** Phase E: post-merge reconciliation — transition, reconcile traceability, final report, close. */
+    private ImplementWorkflowResult postMergeReconcile(
+            RunContext ctx, ResolveIssueResult resolved, RepositoryBinding repository, int prNumber) {
         phase = ImplementPhase.E_POST_MERGE_RECONCILE;
         MergedArtifactsResult artifacts =
                 activities.observeMergedArtifacts(new MergedArtifactsInput(repository, prNumber));
         for (String uid : resolved.requirementUids()) {
-            activities.transitionRequirementStatus(new StatusTransitionInput(Status.ACTIVE, input.project(), uid));
+            activities.transitionRequirementStatus(new StatusTransitionInput(Status.ACTIVE, ctx.project(), uid));
         }
         activities.reconcileTraceability(new TraceabilityReconcileInput(
-                input.project(),
+                ctx.project(),
                 resolved.requirementUids(),
                 prNumber,
                 artifacts.implementsArtifacts(),
                 artifacts.testsArtifacts(),
-                runKey + ":reconcile"));
-        content.postFinalReport(
-                new FinalReportInput(issue, prNumber, resolved.requirementUids(), runKey + ":final-report"));
-        activities.closeIssue(new CloseIssueInput(repository, issue, prNumber, runKey + ":close"));
-
-        log.info("implement workflow merged+reconciled issue={} pr={}", issue, prNumber);
-        return terminal(issue, prNumber, ImplementOutcome.MERGED, true);
+                ctx.runKey() + ":reconcile"));
+        content.postFinalReport(new FinalReportInput(
+                ctx.issue(), prNumber, resolved.requirementUids(), ctx.runKey() + ":final-report"));
+        activities.closeIssue(new CloseIssueInput(repository, ctx.issue(), prNumber, ctx.runKey() + ":close"));
+        Workflow.getLogger(ImplementWorkflowImpl.class)
+                .info("implement workflow merged+reconciled issue={} pr={}", ctx.issue(), prNumber);
+        return terminal(ctx.issue(), prNumber, ImplementOutcome.MERGED, true);
     }
 
     private CiObservationResult pollCi(RepositoryBinding repository, int prNumber, Duration poll) {
         CiObservationResult ci = activities.observeCi(new CiObservationInput(repository, prNumber));
         while (ci.state() == CiState.PENDING && !cancelled) {
-            Workflow.await(poll, () -> cancelled);
-            if (cancelled) {
-                break;
+            if (sleepUnlessCancelled(poll)) {
+                ci = activities.observeCi(new CiObservationInput(repository, prNumber));
             }
-            ci = activities.observeCi(new CiObservationInput(repository, prNumber));
         }
         return ci;
     }
@@ -265,10 +321,10 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
     }
 
     /**
-     * Escalate a non-review gate (quality gate, CI, Sonar): mark the run ESCALATED, bind the pause to
-     * the current phase, and await a matching operator {@code retryFrom} or a {@code cancel} (the
-     * durable pause). Any stale/wrong-phase retry is cleared first so only a fresh, phase-matching
-     * decision unblocks. Returns {@code true} to retry the gate, {@code false} when cancelled.
+     * Escalate a non-review gate (quality gate, CI, Sonar): mark the run ESCALATED, bind the pause to the
+     * current phase, and await a matching operator {@code retryFrom} or a {@code cancel} (the durable
+     * pause). Any stale/wrong-phase retry is cleared on entry so only a fresh, phase-matching decision
+     * unblocks. Returns {@code true} to retry the gate, {@code false} when cancelled.
      */
     private boolean escalateAndAwait() {
         outcome = ImplementOutcome.ESCALATED;
@@ -280,7 +336,6 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
         if (cancelled) {
             return false;
         }
-        pendingRetry = null;
         outcome = null;
         return true;
     }
@@ -301,8 +356,6 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
         boolean proceed = !cancelled && proceedDispositionForEscalatedReviewer();
         escalatedPhase = null;
         escalatedReviewer = null;
-        pendingRetry = null;
-        lastDisposition = null;
         if (cancelled) {
             return ReviewGateResolution.CANCELLED;
         }

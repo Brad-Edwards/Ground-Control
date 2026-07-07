@@ -197,29 +197,39 @@ public final class ImplementActivitiesImpl implements ImplementActivities {
 
     @Override
     public TraceabilityReconcileResult reconcileTraceability(TraceabilityReconcileInput input) {
-        return domainCall("traceability_reconcile", () -> {
-            UUID projectId = projectService.resolveProjectId(input.project());
-            int implementsCreated = 0;
-            int testsCreated = 0;
-            for (String uid : input.requirementUids()) {
-                UUID requirementId = requirementService.getByUid(projectId, uid).getId();
-                // Observe-before-create: reconciliation is idempotent under retry — only links that do
-                // not already exist for this requirement are created, so a rerun never duplicates links.
-                Set<String> existing = existingLinkKeys(requirementId);
-                for (String artifact : input.implementsArtifacts()) {
-                    if (createLinkIfAbsent(
-                            requirementId, existing, ArtifactType.CODE_FILE, artifact, LinkType.IMPLEMENTS)) {
-                        implementsCreated++;
-                    }
-                }
-                for (String artifact : input.testsArtifacts()) {
-                    if (createLinkIfAbsent(requirementId, existing, ArtifactType.TEST, artifact, LinkType.TESTS)) {
-                        testsCreated++;
-                    }
-                }
+        return domainCall("traceability_reconcile", () -> reconcileAllRequirements(input));
+    }
+
+    private TraceabilityReconcileResult reconcileAllRequirements(TraceabilityReconcileInput input) {
+        UUID projectId = projectService.resolveProjectId(input.project());
+        int implementsCreated = 0;
+        int testsCreated = 0;
+        for (String uid : input.requirementUids()) {
+            UUID requirementId = requirementService.getByUid(projectId, uid).getId();
+            // Observe-before-create: reconciliation is idempotent under retry — only links that do not
+            // already exist for this requirement are created, so a rerun never duplicates links.
+            Set<String> existing = existingLinkKeys(requirementId);
+            implementsCreated += createLinks(
+                    requirementId, existing, input.implementsArtifacts(), ArtifactType.CODE_FILE, LinkType.IMPLEMENTS);
+            testsCreated +=
+                    createLinks(requirementId, existing, input.testsArtifacts(), ArtifactType.TEST, LinkType.TESTS);
+        }
+        return new TraceabilityReconcileResult(implementsCreated, testsCreated);
+    }
+
+    private int createLinks(
+            UUID requirementId,
+            Set<String> existing,
+            List<String> artifacts,
+            ArtifactType artifactType,
+            LinkType linkType) {
+        int created = 0;
+        for (String artifact : artifacts) {
+            if (createLinkIfAbsent(requirementId, existing, artifactType, artifact, linkType)) {
+                created++;
             }
-            return new TraceabilityReconcileResult(implementsCreated, testsCreated);
-        });
+        }
+        return created;
     }
 
     private Set<String> existingLinkKeys(UUID requirementId) {

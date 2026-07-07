@@ -87,8 +87,9 @@ class ImplementActivitiesImplTest {
     @Test
     void resolveRepositoryBindingRethrowsDomainFailureAsNonRetryable() {
         when(repositoryBinding.resolve("proj")).thenThrow(new DomainValidationException("unknown project"));
+        ResolveRepositoryBindingInput input = new ResolveRepositoryBindingInput("proj");
 
-        assertThatThrownBy(() -> activities.resolveRepositoryBinding(new ResolveRepositoryBindingInput("proj")))
+        assertThatThrownBy(() -> activities.resolveRepositoryBinding(input))
                 .isInstanceOf(ApplicationFailure.class)
                 .satisfies(e ->
                         assertThat(((ApplicationFailure) e).isNonRetryable()).isTrue());
@@ -228,9 +229,9 @@ class ImplementActivitiesImplTest {
         when(draft.getId()).thenReturn(requirementId);
         when(requirementService.transitionStatus(requirementId, Status.ACTIVE))
                 .thenThrow(new DomainValidationException("illegal transition"));
+        StatusTransitionInput input = new StatusTransitionInput(Status.ACTIVE, "proj", "GC-O009");
 
-        assertThatThrownBy(() -> activities.transitionRequirementStatus(
-                        new StatusTransitionInput(Status.ACTIVE, "proj", "GC-O009")))
+        assertThatThrownBy(() -> activities.transitionRequirementStatus(input))
                 .isInstanceOf(ApplicationFailure.class)
                 .satisfies(e -> {
                     ApplicationFailure failure = (ApplicationFailure) e;
@@ -293,14 +294,14 @@ class ImplementActivitiesImplTest {
 
         verify(traceabilityService)
                 .createLink(
-                        eq(requirementId),
-                        eq(new CreateTraceabilityLinkCommand(
-                                ArtifactType.CODE_FILE, "App.java", null, "App.java", LinkType.IMPLEMENTS)));
+                        requirementId,
+                        new CreateTraceabilityLinkCommand(
+                                ArtifactType.CODE_FILE, "App.java", null, "App.java", LinkType.IMPLEMENTS));
         verify(traceabilityService)
                 .createLink(
-                        eq(requirementId),
-                        eq(new CreateTraceabilityLinkCommand(
-                                ArtifactType.TEST, "AppTest.java", null, "AppTest.java", LinkType.TESTS)));
+                        requirementId,
+                        new CreateTraceabilityLinkCommand(
+                                ArtifactType.TEST, "AppTest.java", null, "AppTest.java", LinkType.TESTS));
     }
 
     @Test
