@@ -132,7 +132,7 @@ public final class ImplementActivitiesImpl implements ImplementActivities {
     public GitPublishResult stageCommitPush(GitPublishInput input) {
         int retries = input.maxPrecommitRetries() == null
                 ? MAX_PRECOMMIT_RETRIES
-                : Math.min(Math.max(input.maxPrecommitRetries(), 1), MAX_PRECOMMIT_RETRIES);
+                : Math.clamp(input.maxPrecommitRetries(), 1, MAX_PRECOMMIT_RETRIES);
         return workspace.stageCommitPush(input.branch(), input.commitMessage(), retries, input.idempotencyKey());
     }
 
