@@ -475,6 +475,13 @@ PreToolUse hook on `Bash`. The user owns every actual merge. Blocked uncondition
   fails on new issues, the CLD mutation gate stays wired, and
   `.github/branch-protection-baseline.json` requires strict status checks for
   `main` and `dev` while retaining admin bypass
+- `python3 bin/policy` runs the CLD architecture-registry boundary check
+  (`run_module_graph_boundary_check`): it validates `architecture/registry/module-graph.json`,
+  asserts the registry is covered by a design-authority protected path, and fails
+  any frontend/MCP cross-module import whose edge is not declared in the registry's
+  `allowed_edges`. The backend surface is enforced against the same registry by
+  `RegistryBoundaryArchitectureTest` (ArchUnit, in the `test` job). See
+  `architecture/registry/README.md` for the schema (GC-CLD-2 / ADR-087 §3).
 - `make policy` is the common path for Claude, Codex, pre-commit, and CI
 - `make sync-ground-control-policy` and `make policy-live` keep Ground Control quality gates and ADR metadata aligned when a live GC instance is available
 

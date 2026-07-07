@@ -5,6 +5,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -23,6 +24,32 @@ SONAR_NEW_ISSUE_GATE_PATH = Path("tools/sonar/assert_no_new_issues.py")
 MUTATION_REGISTRY_PATH = Path("architecture/registry/mutation-boundaries.json")
 MUTATION_GATE_SCRIPT_PATH = Path("tools/mutation/run_boundary_mutation.py")
 PROTECTED_PATHS_REGISTRY_PATH = Path("architecture/registry/protected-paths.json")
+MODULE_GRAPH_REGISTRY_PATH = Path("architecture/registry/module-graph.json")
+MODULE_GRAPH_LOCK_LEVELS = frozenset({"locked", "guarded", "fluid"})
+MODULE_GRAPH_SURFACES = frozenset({"backend", "frontend", "mcp"})
+# Surfaces enforced by the in-process import scanner below. The backend surface
+# is enforced against the same registry by RegistryBoundaryArchitectureTest
+# (ArchUnit reads compiled bytecode, which a source import scan cannot match).
+MODULE_GRAPH_SCANNED_SURFACES = frozenset({"frontend", "mcp"})
+MODULE_GRAPH_MODULE_KEYS = frozenset(
+    {"id", "name", "surface", "owner", "lock_level", "risk_score", "selectors", "package", "projection"}
+)
+MODULE_GRAPH_REQUIRED_MODULE_KEYS = frozenset(
+    {"id", "name", "surface", "owner", "lock_level", "risk_score", "selectors"}
+)
+MODULE_GRAPH_EDGE_KEYS = frozenset({"from", "to"})
+MODULE_GRAPH_MAX_RISK_SCORE = 5
+MODULE_GRAPH_SCAN_GLOBS = (
+    "frontend/src/**/*.ts",
+    "frontend/src/**/*.tsx",
+    "frontend/src/**/*.js",
+    "frontend/src/**/*.jsx",
+    "mcp/ground-control/*.js",
+)
+# ESM/TS import specifier after `from`, bare `import`, dynamic `import(`, or `require(`.
+MODULE_GRAPH_IMPORT_RE = re.compile(
+    r"""(?:\bfrom\s+|\bimport\s+|\bimport\s*\(\s*|\brequire\s*\(\s*)['"]([^'"\n]+)['"]"""
+)
 DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION = "gc.cld.design-authority-approval/v1"
 DESIGN_AUTHORITY_APPROVAL_MARKER_PREFIX = "<!-- gc:design-authority-approval"
 DESIGN_AUTHORITY_APPROVAL_MARKER_RE = re.compile(
@@ -865,17 +892,36 @@ def load_pr_issue_comments(path: str | None) -> list[dict[str, str]] | None:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        comments: list[dict[str, str]] = []
-        for line in raw.splitlines():
-            if not line.strip():
-                continue
-            comments.append(_normalize_pr_comment(json.loads(line)))
-        return comments
+        # Newline-delimited JSON objects — the `gh api --jq '.[]|{...}'` shape.
+        # Decode with raw_decode so multiple objects on one line are handled too:
+        # `gh api --paginate` can concatenate a page's last object and the next
+        # page's first object with no separating newline (#1334).
+        return _decode_concatenated_comment_objects(raw)
     if isinstance(parsed, list):
         return [_normalize_pr_comment(item) for item in parsed]
-    if isinstance(parsed, dict) and isinstance(parsed.get("comments"), list):
-        return [_normalize_pr_comment(item) for item in parsed["comments"]]
+    if isinstance(parsed, dict):
+        if isinstance(parsed.get("comments"), list):
+            return [_normalize_pr_comment(item) for item in parsed["comments"]]
+        # A one-comment thread yields a single bare object here: json.loads(raw)
+        # parsed it as a dict, so the JSONL fallback above never ran. Treat the
+        # lone comment object as a one-element list rather than rejecting it (#1334).
+        return [_normalize_pr_comment(parsed)]
     raise ValueError("--pr-comments-json must contain a JSON array, {comments: [...]}, or newline-delimited JSON objects")
+
+
+def _decode_concatenated_comment_objects(raw: str) -> list[dict[str, str]]:
+    decoder = json.JSONDecoder()
+    comments: list[dict[str, str]] = []
+    index = 0
+    length = len(raw)
+    while index < length:
+        while index < length and raw[index].isspace():
+            index += 1
+        if index >= length:
+            break
+        obj, index = decoder.raw_decode(raw, index)
+        comments.append(_normalize_pr_comment(obj))
+    return comments
 
 
 def _read_name_status(base: str | None, root: Path) -> list[tuple[str, str]]:
@@ -1097,6 +1143,304 @@ def run_protected_path_authority_check(
         else "CLD protected paths changed alongside implementation paths without a durable design-authority approval marker."
     )
     return [Violation(code=code, message=message, details=details)]
+
+
+def _module_graph_violation(detail: str) -> Violation:
+    return Violation(
+        code="module-graph-registry-invalid",
+        message="CLD architecture registry (module graph) is invalid.",
+        details=[f"{MODULE_GRAPH_REGISTRY_PATH.as_posix()}: {detail}"],
+    )
+
+
+def _validate_module_graph_registry(root: Path) -> tuple[dict[str, Any] | None, list[Violation]]:
+    """Validate architecture/registry/module-graph.json.
+
+    Returns (registry, []) when valid, (None, []) when the file is absent
+    (registry-less branches are not failed), or (None, [violations]) on any
+    schema error. Fails closed: an unparseable or malformed registry stops
+    boundary enforcement so a broken registry can never silently pass edges.
+    """
+    registry_path = root / MODULE_GRAPH_REGISTRY_PATH
+    if not registry_path.exists():
+        return None, []
+    try:
+        registry = load_json(registry_path)
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, [_module_graph_violation(f"not valid JSON: {exc}")]
+
+    violations: list[Violation] = []
+    if not isinstance(registry, dict) or registry.get("schema_version") != 1:
+        return None, [_module_graph_violation("schema_version must be 1")]
+
+    modules = registry.get("modules")
+    if not isinstance(modules, list) or not modules:
+        return None, [_module_graph_violation("modules must be a non-empty list")]
+
+    module_ids: set[str] = set()
+    all_selectors: list[tuple[str, str]] = []
+    for index, module in enumerate(modules):
+        prefix = f"modules[{index}]"
+        if not isinstance(module, dict):
+            violations.append(_module_graph_violation(f"{prefix} must be an object"))
+            continue
+        for key in module:
+            if key not in MODULE_GRAPH_MODULE_KEYS:
+                violations.append(_module_graph_violation(f"{prefix} unknown key: {key}"))
+        for key in MODULE_GRAPH_REQUIRED_MODULE_KEYS:
+            if key not in module:
+                violations.append(_module_graph_violation(f"{prefix} missing key: {key}"))
+        module_id = module.get("id")
+        if not isinstance(module_id, str) or not module_id:
+            violations.append(_module_graph_violation(f"{prefix} id must be a non-empty string"))
+        elif module_id in module_ids:
+            violations.append(_module_graph_violation(f"{prefix} id duplicates {module_id}"))
+        else:
+            module_ids.add(module_id)
+        if not isinstance(module.get("name"), str) or not module.get("name"):
+            violations.append(_module_graph_violation(f"{prefix} name must be a non-empty string"))
+        if module.get("surface") not in MODULE_GRAPH_SURFACES:
+            violations.append(
+                _module_graph_violation(f"{prefix} surface must be one of {sorted(MODULE_GRAPH_SURFACES)}")
+            )
+        if _owner_to_login(str(module.get("owner", ""))) is None:
+            violations.append(_module_graph_violation(f"{prefix} owner must be an @owner token"))
+        if module.get("lock_level") not in MODULE_GRAPH_LOCK_LEVELS:
+            violations.append(
+                _module_graph_violation(f"{prefix} lock_level must be one of {sorted(MODULE_GRAPH_LOCK_LEVELS)}")
+            )
+        risk = module.get("risk_score")
+        if not isinstance(risk, int) or isinstance(risk, bool) or not 0 <= risk <= MODULE_GRAPH_MAX_RISK_SCORE:
+            violations.append(
+                _module_graph_violation(f"{prefix} risk_score must be an int in [0, {MODULE_GRAPH_MAX_RISK_SCORE}]")
+            )
+        selectors = module.get("selectors")
+        if not isinstance(selectors, list) or not selectors:
+            violations.append(_module_graph_violation(f"{prefix} selectors must be a non-empty list"))
+        else:
+            for selector_index, selector in enumerate(selectors):
+                if not isinstance(selector, str) or not selector:
+                    violations.append(
+                        _module_graph_violation(f"{prefix} selectors[{selector_index}] must be non-empty")
+                    )
+                elif selector_escapes_repo(selector):
+                    violations.append(
+                        _module_graph_violation(f"{prefix} selectors[{selector_index}] escapes repo: {selector}")
+                    )
+                elif isinstance(module_id, str) and module_id:
+                    all_selectors.append((module_id, selector))
+        if "package" in module and (not isinstance(module["package"], str) or not module["package"]):
+            violations.append(_module_graph_violation(f"{prefix} package must be a non-empty string when set"))
+
+    for i in range(len(all_selectors)):
+        module_i, selector_i = all_selectors[i]
+        for j in range(i + 1, len(all_selectors)):
+            module_j, selector_j = all_selectors[j]
+            if module_i != module_j and _selectors_overlap(selector_i, selector_j):
+                violations.append(
+                    _module_graph_violation(
+                        f"selectors overlap across modules '{module_i}' and '{module_j}': "
+                        f"{selector_i} vs {selector_j} (module membership must be unambiguous)"
+                    )
+                )
+
+    edges = registry.get("allowed_edges")
+    if not isinstance(edges, list):
+        violations.append(_module_graph_violation("allowed_edges must be a list"))
+        edges = []
+    seen_edges: set[tuple[str, str]] = set()
+    for index, edge in enumerate(edges):
+        prefix = f"allowed_edges[{index}]"
+        if not isinstance(edge, dict) or set(edge) != MODULE_GRAPH_EDGE_KEYS:
+            violations.append(_module_graph_violation(f"{prefix} must have exactly keys {sorted(MODULE_GRAPH_EDGE_KEYS)}"))
+            continue
+        src, dst = edge.get("from"), edge.get("to")
+        if src not in module_ids:
+            violations.append(_module_graph_violation(f"{prefix} from references unknown module: {src}"))
+        if dst not in module_ids:
+            violations.append(_module_graph_violation(f"{prefix} to references unknown module: {dst}"))
+        if src == dst:
+            violations.append(_module_graph_violation(f"{prefix} self-edge is redundant: {src}"))
+        elif (src, dst) in seen_edges:
+            violations.append(_module_graph_violation(f"{prefix} duplicate edge: {src} -> {dst}"))
+        else:
+            seen_edges.add((src, dst))
+
+    if violations:
+        return None, violations
+    return registry, []
+
+
+def _modules_for_path(
+    path: str, modules: list[dict[str, Any]], surfaces: frozenset[str] | None = None
+) -> list[dict[str, Any]]:
+    """Every module whose selectors match ``path``. More than one match is
+    ambiguous membership and is treated as fail-closed by the caller — the
+    registry validator rejects overlapping selectors up front, so a healthy
+    registry yields at most one match."""
+    matches: list[dict[str, Any]] = []
+    for module in modules:
+        if surfaces is not None and module.get("surface") not in surfaces:
+            continue
+        if any(selector_matches_path(str(selector), path) for selector in module.get("selectors", [])):
+            matches.append(module)
+    return matches
+
+
+def _selectors_overlap(selector_a: str, selector_b: str) -> bool:
+    """Conservative structural test: can any repo path match both selectors?
+
+    Builds concrete probe paths from each selector (the directory and a child
+    for ``/**`` globs, a `*`->`x` instantiation for filename globs, the path
+    itself for exact selectors) and reports overlap if any probe matches both.
+    Fail-closed: a false positive rejects the registry (safe), a boundary the
+    author must disambiguate; ambiguous membership can never pass silently."""
+    probes: set[str] = set()
+    for selector in (selector_a, selector_b):
+        if selector.endswith("/**"):
+            prefix = selector[:-3]
+            probes.add(prefix)
+            probes.add(f"{prefix}/__probe__")
+        elif "*" in selector:
+            probes.add(selector.replace("*", "x"))
+        else:
+            probes.add(selector)
+    return any(
+        selector_matches_path(selector_a, probe) and selector_matches_path(selector_b, probe)
+        for probe in probes
+    )
+
+
+def _resolve_import_target(importer: str, spec: str) -> str | None:
+    """Resolve an import specifier to a repo-relative path, or None if external.
+
+    Handles the frontend `@/` alias (-> frontend/src/) and relative specifiers.
+    Bare specifiers (react, zod, node:test, @scope/pkg) are external and ignored.
+    """
+    if spec.startswith("@/"):
+        return normalize_path("frontend/src/" + spec[2:])
+    if spec.startswith("."):
+        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(importer), spec))
+        if resolved.startswith(".."):
+            return None
+        return normalize_path(resolved)
+    return None
+
+
+def _module_graph_authority_violations(registry: dict[str, Any], root: Path) -> list[Violation]:
+    """AC3 invariant: the lock-level-bearing registry must be covered by a
+    design-authority protected-path category, so #1294's separation-of-powers
+    gate governs every lock-level / boundary change. This asserts the wiring is
+    present; the protected-path check enforces the marker itself."""
+    protected_path = root / PROTECTED_PATHS_REGISTRY_PATH
+    try:
+        protected = load_json(protected_path)
+    except (OSError, json.JSONDecodeError):
+        protected = None
+    covered = False
+    if isinstance(protected, dict):
+        for category in protected.get("categories", []):
+            if not isinstance(category, dict) or category.get("approval_mode") not in PROTECTED_PATH_APPROVAL_MODES:
+                continue
+            if any(
+                selector_matches_path(str(selector), MODULE_GRAPH_REGISTRY_PATH.as_posix())
+                for selector in category.get("selectors", [])
+            ):
+                covered = True
+                break
+    if covered:
+        return []
+    return [
+        Violation(
+            code="module-graph-not-design-authority-protected",
+            message="CLD architecture registry is not covered by a design-authority protected path.",
+            details=[
+                f"{MODULE_GRAPH_REGISTRY_PATH.as_posix()} must match a selector of a "
+                f"protected-paths.json category with approval_mode=design_authority so lock-level "
+                f"and boundary changes require the design-authority approval marker.",
+            ],
+        )
+    ]
+
+
+def run_module_graph_boundary_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """Enforce the CLD architecture registry (GC-CLD-2).
+
+    Validates the registry, asserts it is under design-authority protection
+    (AC3 wiring), and fails any frontend/MCP cross-module import whose edge is
+    not declared in allowed_edges (AC2 for the JS surfaces). The backend surface
+    is enforced by RegistryBoundaryArchitectureTest against the same registry.
+    """
+    registry, violations = _validate_module_graph_registry(root)
+    if registry is None:
+        return violations
+
+    violations.extend(_module_graph_authority_violations(registry, root))
+
+    modules = registry["modules"]
+    allowed = {(edge["from"], edge["to"]) for edge in registry.get("allowed_edges", [])}
+
+    files = sorted(
+        {
+            normalize_path(str(path.relative_to(root)))
+            for glob in MODULE_GRAPH_SCAN_GLOBS
+            for path in root.glob(glob)
+            if path.is_file()
+        }
+    )
+    findings: set[tuple[str, str, str, str]] = set()
+    ambiguous: set[tuple[str, str]] = set()
+    for rel_path in files:
+        source_modules = _modules_for_path(rel_path, modules, MODULE_GRAPH_SCANNED_SURFACES)
+        if not source_modules:
+            continue
+        if len(source_modules) > 1:
+            ambiguous.add((rel_path, ", ".join(sorted(m["id"] for m in source_modules))))
+            continue
+        source_module = source_modules[0]
+        try:
+            text = (root / rel_path).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for spec in MODULE_GRAPH_IMPORT_RE.findall(text):
+            target = _resolve_import_target(rel_path, spec)
+            if target is None:
+                continue
+            target_modules = _modules_for_path(target, modules)
+            if not target_modules:
+                continue
+            if len(target_modules) > 1:
+                ambiguous.add((target, ", ".join(sorted(m["id"] for m in target_modules))))
+                continue
+            target_module = target_modules[0]
+            if target_module["id"] == source_module["id"]:
+                continue
+            edge = (source_module["id"], target_module["id"])
+            if edge not in allowed:
+                findings.add((source_module["surface"], rel_path, edge[0], edge[1]))
+
+    if ambiguous:
+        violations.append(
+            Violation(
+                code="module-graph-ambiguous-membership",
+                message="A file matches more than one architecture-registry module (ambiguous boundary membership).",
+                details=[f"{path} matches modules: {ids}" for path, ids in sorted(ambiguous)],
+            )
+        )
+
+    if findings:
+        details = [
+            f"{surface}: {path} introduces edge {src} -> {dst} not declared in module-graph allowed_edges"
+            for surface, path, src, dst in sorted(findings)
+        ]
+        violations.append(
+            Violation(
+                code="module-graph-boundary-violation",
+                message="A dependency edge not in the architecture registry was introduced.",
+                details=details,
+            )
+        )
+    return violations
 
 
 def get_repo_relative_files(root: Path, glob_pattern: str) -> list[str]:
@@ -4314,6 +4658,7 @@ def main(argv: list[str] | None = None) -> int:
             approval_comments=approval_comments,
         )
     )
+    violations.extend(run_module_graph_boundary_check())
     violations.extend(run_ci_strictness_contract())
     violations.extend(run_mutation_gate_contract())
     violations.extend(run_deploy_compose_credential_passthrough())
