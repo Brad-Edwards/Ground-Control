@@ -4,7 +4,10 @@ import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.controls.model.Control;
@@ -168,6 +171,130 @@ class ControlServiceTest {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // GC-GRC-011 (#1124): in-loop control implementation evidence gate.
+    // A control may only enter IMPLEMENTED/OPERATIONAL when it carries both a
+    // CODE/IMPLEMENTS ControlLink and at least one ControlTest (efficacy evidence).
+    // Each test below goes red if the guard is removed — they are efficacy tests
+    // for the guard, not existence tests.
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class ImplementationEvidenceGate {
+
+        private Control proposedControl() {
+            var control = makeControl();
+            setField(control, "status", ControlStatus.PROPOSED);
+            return control;
+        }
+
+        private void stubEvidence(Control control, boolean hasCodeLink, boolean hasEfficacyTest) {
+            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
+                    .thenReturn(Optional.of(control));
+            when(controlLinkRepository.existsByControlIdAndTargetTypeAndLinkType(
+                            control.getId(),
+                            com.keplerops.groundcontrol.domain.controls.state.ControlLinkTargetType.CODE,
+                            com.keplerops.groundcontrol.domain.controls.state.ControlLinkType.IMPLEMENTS))
+                    .thenReturn(hasCodeLink);
+            when(controlTestRepository.countByProjectIdAndControlId(projectId, control.getId()))
+                    .thenReturn(hasEfficacyTest ? 1L : 0L);
+        }
+
+        @Test
+        void blocksImplementedWhenCodeLinkMissing() {
+            var control = proposedControl();
+            stubEvidence(control, false, true);
+
+            var controlId = control.getId();
+            var thrown = org.assertj.core.api.Assertions.catchThrowableOfType(
+                    ConflictException.class,
+                    () -> controlService.transitionStatus(projectId, controlId, ControlStatus.IMPLEMENTED));
+            assertThat(thrown).isNotNull().extracting("errorCode").isEqualTo("control_missing_implementation_evidence");
+            assertThat(thrown.getDetail())
+                    .containsEntry("missingCodeLink", true)
+                    .containsEntry("missingEfficacyTest", false);
+            // The transition must not be persisted when evidence is missing.
+            assertThat(control.getStatus()).isEqualTo(ControlStatus.PROPOSED);
+            verify(controlRepository, never()).save(any(Control.class));
+        }
+
+        @Test
+        void blocksImplementedWhenEfficacyTestMissing() {
+            var control = proposedControl();
+            stubEvidence(control, true, false);
+
+            var controlId = control.getId();
+            var thrown = org.assertj.core.api.Assertions.catchThrowableOfType(
+                    ConflictException.class,
+                    () -> controlService.transitionStatus(projectId, controlId, ControlStatus.IMPLEMENTED));
+            assertThat(thrown).isNotNull().extracting("errorCode").isEqualTo("control_missing_implementation_evidence");
+            assertThat(thrown.getDetail())
+                    .containsEntry("missingCodeLink", false)
+                    .containsEntry("missingEfficacyTest", true);
+            assertThat(control.getStatus()).isEqualTo(ControlStatus.PROPOSED);
+        }
+
+        @Test
+        void allowsImplementedWhenBothEvidenceKindsPresent() {
+            var control = proposedControl();
+            stubEvidence(control, true, true);
+            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = controlService.transitionStatus(projectId, control.getId(), ControlStatus.IMPLEMENTED);
+
+            assertThat(result.getStatus()).isEqualTo(ControlStatus.IMPLEMENTED);
+        }
+
+        @Test
+        void gatesReentryToOperationalFromDeprecated() {
+            // A transition from DEPRECATED back to OPERATIONAL is a valid shape hop that
+            // re-enters an active status, so the evidence gate applies there too (clause c).
+            var control = makeControl();
+            setField(control, "status", ControlStatus.DEPRECATED);
+            stubEvidence(control, false, false);
+
+            var controlId = control.getId();
+            assertThatThrownBy(() -> controlService.transitionStatus(projectId, controlId, ControlStatus.OPERATIONAL))
+                    .isInstanceOf(ConflictException.class)
+                    .extracting("errorCode")
+                    .isEqualTo("control_missing_implementation_evidence");
+        }
+
+        @Test
+        void doesNotGateNonImplementingTransitions() {
+            // Transitions such as DRAFT to PROPOSED, or IMPLEMENTED to DEPRECATED, require
+            // no evidence; the guard must not touch the evidence repositories for them
+            // (strict stubs would fail if it did).
+            var control = makeControl();
+            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
+                    .thenReturn(Optional.of(control));
+            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = controlService.transitionStatus(projectId, control.getId(), ControlStatus.PROPOSED);
+
+            assertThat(result.getStatus()).isEqualTo(ControlStatus.PROPOSED);
+            verifyNoInteractions(controlLinkRepository);
+        }
+
+        @Test
+        void invalidShapeStillThrowsShapeErrorNotEvidenceError() {
+            // A transition from DRAFT straight to IMPLEMENTED is structurally invalid. The
+            // pre-existing shape error must win so the evidence gate never masks an
+            // impossible move; the guard is skipped entirely (no evidence repository
+            // interaction).
+            var control = makeControl(); // starts in DRAFT
+            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
+                    .thenReturn(Optional.of(control));
+
+            var controlId = control.getId();
+            assertThatThrownBy(() -> controlService.transitionStatus(projectId, controlId, ControlStatus.IMPLEMENTED))
+                    .isInstanceOf(com.keplerops.groundcontrol.domain.exception.DomainValidationException.class)
+                    .extracting("errorCode")
+                    .isEqualTo("invalid_status_transition");
+            verifyNoInteractions(controlLinkRepository);
+        }
+    }
+
     @Nested
     class GetById {
 
@@ -257,7 +384,7 @@ class ControlServiceTest {
             // delete. Driving outbound link deletes through the repository before
             // deleting the parent closes the parent-delete audit-history gap
             // (cycle-2 pre-push codex review on issue #279).
-            var inOrder = org.mockito.Mockito.inOrder(controlLinkRepository, controlRepository);
+            var inOrder = inOrder(controlLinkRepository, controlRepository);
             inOrder.verify(controlLinkRepository).deleteAll(outboundLinks);
             inOrder.verify(controlRepository).delete(control);
         }
@@ -288,9 +415,8 @@ class ControlServiceTest {
                     .extracting("errorCode")
                     .isEqualTo("control_referenced");
             assertThat(thrown.getDetail()).containsEntry("auditCount", 1);
-            org.mockito.Mockito.verifyNoInteractions(controlLinkRepository);
-            org.mockito.Mockito.verify(controlRepository, org.mockito.Mockito.never())
-                    .delete(control);
+            verifyNoInteractions(controlLinkRepository);
+            verify(controlRepository, never()).delete(control);
         }
 
         @Test
@@ -320,9 +446,8 @@ class ControlServiceTest {
                     .containsEntry("findingCount", 1)
                     .containsEntry("findingUids", (java.io.Serializable) java.util.List.of("FIND-001"));
             // Parent + outbound-link cleanup must be skipped when the guard fires.
-            org.mockito.Mockito.verifyNoInteractions(controlLinkRepository);
-            org.mockito.Mockito.verify(controlRepository, org.mockito.Mockito.never())
-                    .delete(control);
+            verifyNoInteractions(controlLinkRepository);
+            verify(controlRepository, never()).delete(control);
         }
 
         @Test
@@ -428,7 +553,7 @@ class ControlServiceTest {
                     null, null, "Updated description", null, null, null, null, null, null, null);
             controlService.update(projectId, control.getId(), command);
 
-            org.mockito.Mockito.verifyNoInteractions(eventPublisher);
+            verifyNoInteractions(eventPublisher);
         }
     }
 }

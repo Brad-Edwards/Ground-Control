@@ -9611,6 +9611,18 @@ describe("buildTestQualityReviewPrompt", () => {
     assert.match(prompt, /No negative test cases/);
   });
 
+  it("flags control efficacy tests that only prove existence (GC-GRC-011)", () => {
+    const prompt = buildTestQualityReviewPrompt({
+      baseBranch: "dev",
+      changedTestFiles: ["ControlServiceTest.java"],
+    });
+    assert.match(prompt, /Control efficacy tests that only prove existence/);
+    assert.match(prompt, /GC-GRC-011/);
+    // The rubric must direct the reviewer at the protected behavior, not the row.
+    assert.match(prompt, /removed, bypassed, or materially weakened/);
+    assert.match(prompt, /if I deleted the control, would this test still pass/);
+  });
+
   it("instructs verdict-envelope output (#931)", () => {
     const prompt = buildTestQualityReviewPrompt({
       baseBranch: "main",

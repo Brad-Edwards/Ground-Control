@@ -12,6 +12,7 @@ import {
   runPostGrcScreening,
   GRC_ENTITY_TYPES,
   runAssertGrcReconciled,
+  reconcileGrcScreeningV2,
   buildGrcScreeningRecordV2,
 } from "./lib.js";
 
@@ -891,5 +892,94 @@ describe("runAssertGrcReconciled — v2 recomputes from the final diff", () => {
     } finally {
       shim.cleanup();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reconcileGrcScreeningV2 — project resolution (#1124 follow-up).
+//
+// Regression for the bug that stalled GC-GRC-011: gc_assert_completion invokes
+// the GRC reconciliation WITHOUT an explicit `project`. reconcileGrcScreeningV2
+// resolved `baseBranch` from .ground-control.yaml but NOT `project`, so
+// fetchGrcGraph(null) ran unscoped, returned no project entities, and every
+// touched source surface read as uncovered — the gate failed grc_not_reconciled
+// even though modeled controls/threat-models cover the surface. The fix resolves
+// `project` from the repo context the same way the screening runner does.
+// ---------------------------------------------------------------------------
+describe("reconcileGrcScreeningV2 — project resolution (#1124)", () => {
+  const touched = "backend/src/main/java/com/example/Guarded.java";
+
+  it("resolves project from .ground-control.yaml when the caller omits it, so the graph fetch is scoped and modeled coverage reconciles", async () => {
+    let graphProject = "SENTINEL";
+    let markerPosted = false;
+    const record = {
+      schema: "gc.implement.grc-screening/v2",
+      provenance: { base_commit_sha: "1234567", derivation_run_id: null },
+      impact_set: [],
+      gap_set: [],
+      stale_set: [],
+    };
+    const result = await reconcileGrcScreeningV2({
+      record,
+      repoRoot: "/tmp/does-not-matter",
+      owner: "o",
+      name: "n",
+      issueNumber: 1124,
+      project: null, // caller (e.g. gc_assert_completion) omitted it
+      deps: {
+        getRepoGroundControlContext: async () => ({
+          status: "ok",
+          project: "ground-control",
+          workflow: { base_branch: "dev" },
+        }),
+        computeTouchedPaths: async () => ({ touchedPaths: [touched], base: "1234567", head: "HEAD" }),
+        // A control CODE-linked to the touched surface covers it — but only when
+        // the fetch is scoped to the right project. Unscoped (null) returns [].
+        fetchGrcGraph: async (proj) => {
+          graphProject = proj;
+          return proj === "ground-control"
+            ? [{ type: "control", uid: "GC-CTRL-X", status: "IMPLEMENTED", id: "c1", codeLinks: [touched] }]
+            : [];
+        },
+        fetchDerivationState: async () => null,
+        postPhaseMarker: async () => {
+          markerPosted = true;
+          return { html_url: "https://example/marker", id: 1 };
+        },
+      },
+    });
+    assert.equal(graphProject, "ground-control", "fetchGrcGraph must receive the resolved project, not null");
+    assert.equal(result.ok, true, "the covered surface reconciles once the graph is project-scoped");
+    assert.equal(markerPosted, true, "grc_reconciled marker posted on success");
+  });
+
+  it("keeps an explicit caller project instead of overriding it with the resolved default", async () => {
+    let graphProject = null;
+    const record = {
+      schema: "gc.implement.grc-screening/v2",
+      provenance: { base_commit_sha: "1234567" },
+      impact_set: [],
+      gap_set: [],
+      stale_set: [],
+    };
+    await reconcileGrcScreeningV2({
+      record,
+      repoRoot: "/tmp/x",
+      owner: "o",
+      name: "n",
+      issueNumber: 1124,
+      project: "explicit-project",
+      deps: {
+        getRepoGroundControlContext: async () => ({ status: "ok", project: "ground-control", workflow: {} }),
+        computeTouchedPaths: async () => ({ touchedPaths: [], base: "1234567", head: "HEAD" }),
+        fetchGrcGraph: async (proj) => {
+          graphProject = proj;
+          return [];
+        },
+        fetchDerivationState: async () => null,
+        postPhaseMarker: async () => ({ html_url: "https://example/marker", id: 1 }),
+      },
+    });
+    assert.equal(graphProject, "explicit-project", "an explicit caller project must win over the resolved default");
   });
 });
