@@ -49,6 +49,7 @@ from tools.policy.checks import (
     run_pr_body_check,
     run_test_quality_decision_record_contract,
     run_traceability_reconciliation_gate_contract,
+    run_workflow_payload_contract_check,
     run_workflow_routing_contract,
     detect_mutation_registry_weakening,
 )
@@ -1190,6 +1191,55 @@ class PolicyChecksTest(unittest.TestCase):
 
     def test_contract_surface_check_passes_on_repo(self):
         violations = run_contract_surface_check(root=REPO_ROOT)
+        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
+
+    def test_workflow_payload_contract_passes_on_repo(self):
+        violations = run_workflow_payload_contract_check(root=REPO_ROOT)
+        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
+
+    def _workflow_contract_dirs(self, root):
+        record_dir = (
+            root
+            / "backend/src/main/java/com/keplerops/groundcontrol/infrastructure/temporal/implement/contract"
+        )
+        schema_dir = root / "contracts/schemas/workflow"
+        record_dir.mkdir(parents=True)
+        schema_dir.mkdir(parents=True)
+        return record_dir, schema_dir
+
+    def test_workflow_payload_contract_rejects_unmapped_record(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            record_dir, _schema_dir = self._workflow_contract_dirs(root)
+            (record_dir / "ResolveIssueInput.java").write_text(
+                "public record ResolveIssueInput(int issueNumber) {}\n", encoding="utf-8"
+            )
+            violations = run_workflow_payload_contract_check(root=root)
+        self.assertTrue(any(v.code == "workflow-payload-record-unmapped" for v in violations))
+
+    def test_workflow_payload_contract_rejects_orphan_schema_tag(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            _record_dir, schema_dir = self._workflow_contract_dirs(root)
+            (schema_dir / "sample.v1.schema.json").write_text(
+                json.dumps({"$defs": {"Ghost": {"x-gc-record": "GhostRecord"}}}),
+                encoding="utf-8",
+            )
+            violations = run_workflow_payload_contract_check(root=root)
+        self.assertTrue(any(v.code == "workflow-payload-schema-orphan" for v in violations))
+
+    def test_workflow_payload_contract_maps_record_to_schema_tag(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            record_dir, schema_dir = self._workflow_contract_dirs(root)
+            (record_dir / "ResolveIssueInput.java").write_text(
+                "public record ResolveIssueInput(int issueNumber) {}\n", encoding="utf-8"
+            )
+            (schema_dir / "resolve-issue.v1.schema.json").write_text(
+                json.dumps({"$defs": {"ResolveIssueInput": {"x-gc-record": "ResolveIssueInput"}}}),
+                encoding="utf-8",
+            )
+            violations = run_workflow_payload_contract_check(root=root)
         self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
 
     def test_contract_invariant_enforcement_rejects_missing_enforcement_file(self):

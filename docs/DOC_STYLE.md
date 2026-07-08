@@ -351,3 +351,11 @@ and ten new Zod enum mirrors in `mcp/ground-control/lib.js`, mirroring the new
 endpoints documented in `docs/API.md`. The surface addition is recorded in the
 ADR-054 amendment and the changelog fragment; no new DOC_STYLE.md style rule is
 established.
+
+The `run_workflow_payload_contract_check` added to `tools/policy/checks.py`
+(GC-O009 / ADR-082, issue #1277) is a new policy-surface check that asserts the
+deterministic `/implement` Temporal activity records map 1:1 to
+`contracts/schemas/workflow/` schemas. Per the convention above it is recorded
+in an amendment to ADR-054, not a documentation edit; the documentation-coverage
+classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
+unchanged and no new DOC_STYLE.md style rule is established.
