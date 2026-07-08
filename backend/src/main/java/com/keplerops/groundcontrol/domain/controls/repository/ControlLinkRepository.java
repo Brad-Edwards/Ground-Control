@@ -32,6 +32,15 @@ public interface ControlLinkRepository extends JpaRepository<ControlLink, UUID> 
             UUID targetEntityId,
             com.keplerops.groundcontrol.domain.controls.state.ControlLinkType linkType);
 
+    // GC-GRC-011: does this control carry an implementation-bearing artifact link of the
+    // given target type? Used by the ControlService lifecycle guard to require a
+    // CODE/IMPLEMENTS link before a control may enter IMPLEMENTED/OPERATIONAL. A
+    // boolean-exists keeps the gate from hydrating link rows just to decide a transition.
+    boolean existsByControlIdAndTargetTypeAndLinkType(
+            UUID controlId,
+            ControlLinkTargetType targetType,
+            com.keplerops.groundcontrol.domain.controls.state.ControlLinkType linkType);
+
     @Query("SELECT l.control.uid FROM ControlLink l WHERE l.targetType = :targetType"
             + " AND l.targetEntityId = :targetEntityId AND l.control.project.id = :projectId")
     List<String> findControlUidsByTargetTypeAndTargetEntityIdAndProjectId(

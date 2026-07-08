@@ -286,6 +286,23 @@ to the authoritative graph version. Dynamic/runtime analysis, DAST, and runtime
 instrumentation are outside ADR-058's build-time derivation scope; runtime
 evidence belongs to the ADR-014 verifier/runtime-evidence adapter world.
 
+**In-loop control implementation + efficacy tests (GC-GRC-011).** Secure-by-design
+means the control ships in the same change as the feature, with a test that fails if
+the control is removed. A `Control` may enter `IMPLEMENTED`/`OPERATIONAL` only when it
+carries both a CODE implementation link (`ControlLink` `targetType=CODE`,
+`linkType=IMPLEMENTS`) and efficacy-test evidence (a `ControlTest` linked to the
+control). Enforcement is server-side in `ControlService.transitionStatus` (409
+`control_missing_implementation_evidence` when either is missing); see
+[Architecture → In-Loop Control Implementation Gate](architecture/ARCHITECTURE.md).
+An **efficacy test** drives the protected behavior through its boundary and asserts the
+control effect, so it goes red if the control is removed, bypassed, or materially
+weakened. An **existence test** (asserting a `ControlTest` row or CODE link exists,
+that the control reached `IMPLEMENTED`/`OPERATIONAL`, that a snapshot contains the
+control UID, or that a mock was called) does **not** satisfy GC-GRC-011 and is flagged
+by the Step 6.6 `gc_test_quality_review` rubric (critical category 7). A control that
+cannot be implemented in the change (organizational/infrastructure) routes to a
+GC-GRC-015 disposition, never a silent pass.
+
 ## Temporal Dev Workflow and Console Program (ADR-081)
 
 ADR-081 defines the program that moves workflow execution from the agent-side

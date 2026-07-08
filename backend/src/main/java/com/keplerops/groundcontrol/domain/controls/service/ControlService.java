@@ -7,6 +7,8 @@ import com.keplerops.groundcontrol.domain.controls.repository.ControlEffectivene
 import com.keplerops.groundcontrol.domain.controls.repository.ControlLinkRepository;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlRepository;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlTestRepository;
+import com.keplerops.groundcontrol.domain.controls.state.ControlLinkTargetType;
+import com.keplerops.groundcontrol.domain.controls.state.ControlLinkType;
 import com.keplerops.groundcontrol.domain.controls.state.ControlStatus;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
@@ -169,6 +171,13 @@ public class ControlService {
     public Control transitionStatus(UUID projectId, UUID id, ControlStatus newStatus) {
         var control = findOrThrow(projectId, id);
         var oldStatus = control.getStatus();
+        // GC-GRC-011: a control may only enter IMPLEMENTED/OPERATIONAL when it carries both a
+        // CODE/IMPLEMENTS implementation link and efficacy-test evidence. Gate only otherwise-valid
+        // hops so the structural invalid_status_transition error still wins for impossible moves
+        // (e.g. DRAFT->IMPLEMENTED) rather than being masked by a missing-evidence conflict.
+        if (requiresImplementationEvidence(newStatus) && oldStatus.canTransitionTo(newStatus)) {
+            requireImplementationEvidence(projectId, control, newStatus);
+        }
         control.transitionStatus(newStatus);
         control = controlRepository.save(control);
         log.info("control_status_changed: uid={} status={}", control.getUid(), newStatus);
@@ -254,6 +263,38 @@ public class ControlService {
         controlLinkRepository.deleteAll(outboundLinks);
         controlRepository.delete(control);
         log.info("control_deleted: uid={} id={} outbound_links_deleted={}", control.getUid(), id, outboundLinks.size());
+    }
+
+    // GC-GRC-011: the two statuses that assert a control is in force. Kept as a helper so the
+    // gate's applicability is one decision, reusable by a future GC-GRC-012 completion check.
+    private static boolean requiresImplementationEvidence(ControlStatus target) {
+        return target == ControlStatus.IMPLEMENTED || target == ControlStatus.OPERATIONAL;
+    }
+
+    // GC-GRC-011 (a)+(b): require a CODE/IMPLEMENTS ControlLink and at least one ControlTest
+    // (efficacy evidence) before the control enters IMPLEMENTED/OPERATIONAL. Existence checks
+    // only — the TEXT-heavy evidence rows are never hydrated to decide a transition. On failure
+    // the detail names the control UID and which evidence kind(s) are missing so the caller (and
+    // the GC-GRC-015 disposition path) can react; it never echoes test steps, results, or code.
+    private void requireImplementationEvidence(UUID projectId, Control control, ControlStatus target) {
+        boolean hasCodeLink = controlLinkRepository.existsByControlIdAndTargetTypeAndLinkType(
+                control.getId(), ControlLinkTargetType.CODE, ControlLinkType.IMPLEMENTS);
+        boolean hasEfficacyTest = controlTestRepository.countByProjectIdAndControlId(projectId, control.getId()) > 0;
+        if (hasCodeLink && hasEfficacyTest) {
+            return;
+        }
+        Map<String, Serializable> detail = new LinkedHashMap<>();
+        detail.put(DETAIL_CONTROL_UID, control.getUid());
+        detail.put("targetStatus", target.name());
+        detail.put("missingCodeLink", !hasCodeLink);
+        detail.put("missingEfficacyTest", !hasEfficacyTest);
+        throw new ConflictException(
+                "Control " + control.getUid() + " cannot transition to " + target
+                        + " without a CODE implementation link and an efficacy test (GC-GRC-011)."
+                        + " Add the missing implementation/efficacy-test evidence, or disposition the"
+                        + " control per GC-GRC-015.",
+                "control_missing_implementation_evidence",
+                detail);
     }
 
     private static Map<String, Object> fieldMap(String key, Object value) {
