@@ -91,6 +91,14 @@ groundcontrol:
       target: ${GROUNDCONTROL_TEMPORAL_WORKER_TARGET:localhost:7233}
       namespace: ${GROUNDCONTROL_TEMPORAL_WORKER_NAMESPACE:ground-control}
       task-queue: ${GROUNDCONTROL_TEMPORAL_WORKER_TASK_QUEUE:ground-control-implement}
+    # GC-O009 #1278 workflow control surface (REST + MCP start/status/signal). Reuses the worker's
+    # WorkflowClient as the Temporal connection, so enabling control also requires worker.enabled=true.
+    control:
+      enabled: ${GROUNDCONTROL_TEMPORAL_CONTROL_ENABLED:false}
+      # Unset by default so the control surface shares the worker's task queue; override only to
+      # deliberately start executions on a different queue.
+      task-queue: ${GROUNDCONTROL_TEMPORAL_CONTROL_TASK_QUEUE:}
+      default-completion-command: ${GROUNDCONTROL_TEMPORAL_CONTROL_DEFAULT_COMPLETION_COMMAND:make check}
   derivation:
     boundary:
       # Canonical boundary-model derivation input adapter (GC-GRC-004).

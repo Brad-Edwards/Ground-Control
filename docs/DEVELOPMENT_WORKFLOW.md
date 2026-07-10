@@ -560,6 +560,19 @@ requirement GC-O013.
 
 `gc_analyze` is the MCP tool for compute-heavy analysis operations. GRC read-analysis kinds route to `GrcAnalysisController` endpoints and return methodology-attributed envelopes: `nist_assessment` (GC-T014) calls `GET /api/v1/analysis/grc/nist-sp-800-30` and returns a NIST SP 800-30 Rev. 1 risk-assessment view; `fair_quantitative` (GC-T011) calls `GET /api/v1/analysis/grc/fair-quantitative` and returns an Open FAIR quantitative risk-analysis view aligned to O-RT 3.0.1 / O-RA 2.0.1 with derived TEF, LEF, LM, and ALE values. Both kinds accept `project`, `as_of`, `risk_assessment_result_id`, and `risk_scenario_id` parameters. Full endpoint contracts are in `docs/API.md`.
 
+### Workflow Control Surface: `gc_workflow_execution` (GC-O009 / ADR-028)
+
+`gc_workflow_execution` is the action-discriminated MCP mirror of the
+`/api/v1/workflow-executions` control surface (issue #1278): `start` an
+`/implement` Temporal execution, `get`/`list` executions (read from Temporal
+Visibility plus Memo correlation data), and `signal` the closed operator catalog
+(`CANCEL`, `RETRY_FROM`, `REVIEW_CAP_DISPOSITION`). PR merge is observed from
+GitHub, never signaled. Every action is project-scoped; `signal` is `ROLE_ADMIN`
+at the backend (interim until GC-P024 gate authority). It is distinct from
+`gc_workflow_run` (ADR-061 run telemetry/economics), which never drives
+execution. The surface is enabled by `groundcontrol.temporal.control.enabled`;
+when off the REST endpoints return `503`.
+
 ## /integrate: Approved PR Integration Manager
 
 The `/integrate` lane is the workflow path for preparing maintainer-approved pull requests against the latest base branch of a target repository. It is a lane for maintainers and release operators who need to rebase a queue of already-approved PRs to a clean state. By default the lane operates in **prepare-only** mode: it rebases, gates, verifies, and pushes, but it does not merge. Passing `--mode merge` enables the merge carve-out from the ADR-029 amendment (2026-05-26): the lane also executes `gh pr merge` for each PR it marks ready, per the configured `merge_strategy`. The `enqueue` mode remains reserved and refuses at runtime.

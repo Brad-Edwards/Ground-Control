@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.infrastructure.temporal;
 
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.ImplementWorkflowImpl;
 import com.keplerops.groundcontrol.infrastructure.temporal.smoke.TemporalSmokeWorkflowImpl;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowClientOptions;
@@ -40,7 +41,7 @@ class TemporalWorkerConfiguration {
     WorkerFactory temporalWorkerFactory(WorkflowClient workflowClient, TemporalWorkerProperties properties) {
         WorkerFactory factory = WorkerFactory.newInstance(workflowClient);
         var worker = factory.newWorker(properties.taskQueue());
-        worker.registerWorkflowImplementationTypes(TemporalSmokeWorkflowImpl.class);
+        worker.registerWorkflowImplementationTypes(TemporalSmokeWorkflowImpl.class, ImplementWorkflowImpl.class);
         factory.start();
         log.info(
                 "Temporal worker started namespace={} taskQueue={} target={}",

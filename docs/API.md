@@ -1199,6 +1199,50 @@ in its allowlist; the cross-project rollup and all POST paths are excluded. Brid
 ingestion (`gc_workflow_run_ingest`) seeds the read-model from canonical issue-thread
 `gc:` markers with `provenance=ISSUE_THREAD`.
 
+### Workflow Control Surface: start / status / signal (GC-O009 / ADR-028, issue #1278)
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| POST | `/workflow-executions` | StartWorkflowExecutionRequest | 201 | Start a workflow execution |
+| GET | `/workflow-executions` | - | 200 | List the project's executions |
+| GET | `/workflow-executions/{workflowId}` | - | 200 (404 if unknown/cross-project) | Describe one execution |
+| POST | `/workflow-executions/{workflowId}/signals` | SendSignalRequest | 202 (ROLE_ADMIN; 403 otherwise) | Send an operator signal |
+
+This is the product control surface for `/implement` Temporal workflows - an
+execution engine surface, distinct from the ADR-061 `/workflow-runs` reporting
+projection. Status reads come from Temporal Visibility plus non-secret Memo
+correlation data; there is **no** mirrored Postgres execution state machine
+(ADR-028). Every path is project-scoped: pass `project` (query parameter,
+resolved via `ProjectService`). Executions are addressed by the slash-free,
+project-partitioned id `gc-implement-<project>-<issue>`; a cross-project or
+unknown id returns **404** without revealing whether it exists elsewhere. Signal
+routes require **ROLE_ADMIN** (`ApiPathMatrix`, interim until GC-P024 gate
+authority); start and reads are authenticated. When
+`groundcontrol.temporal.control.enabled` is off the endpoints return **503**
+(`service_unavailable`).
+
+**StartWorkflowExecutionRequest fields:** `workflowType` (required: `IMPLEMENT`),
+`issueNumber` (required, positive), and the optional `sonarProjectKey`, `reviewCap`
+(1-10), `requirementUids` (string array), `pollIntervalSeconds` (1-86400). The
+workflow completion command the worker executes is **not** a request field - it is
+derived from server-side configuration only, so the control API cannot become an
+arbitrary-command-execution primitive. Response: `{workflowId, runId, workflowType,
+project}`. A duplicate id already running returns **409**.
+
+**SendSignalRequest fields:** `signalType` (required: `CANCEL` | `RETRY_FROM` |
+`REVIEW_CAP_DISPOSITION`), plus the fields the type requires - `CANCEL` needs
+`reason` (max 500); `RETRY_FROM` needs `retryFromPhase` (`A_PLAN_IMPLEMENT` |
+`B_QUALITY_GATE` | `C_STAGE_COMMIT_PUSH` | `D_SHIP_PIPELINE` |
+`E_POST_MERGE_RECONCILE`); `REVIEW_CAP_DISPOSITION` needs `reviewer` (`CODEX` |
+`TEST_QUALITY`) and `disposition` (`PROCEED` | `ONE_MORE_CYCLE` |
+`ESCALATE_TO_HUMAN`). A missing required field returns 422. PR merge is observed
+from GitHub and is **not** a signal.
+
+**Execution read shape:** `{workflowId, runId, workflowType, status
+(RUNNING/COMPLETED/FAILED/CANCELED/TERMINATED/CONTINUED_AS_NEW/TIMED_OUT/PAUSED/UNKNOWN),
+startTime, closeTime, historyLength, project, issueNumber, requirementUids}`. The MCP
+tool `gc_workflow_execution` (`start`/`get`/`list`/`signal`) mirrors this surface.
+
 ### GRC Assessment Runs (GC-GRC-016)
 
 | Method | Path | Body | Status | Purpose |
