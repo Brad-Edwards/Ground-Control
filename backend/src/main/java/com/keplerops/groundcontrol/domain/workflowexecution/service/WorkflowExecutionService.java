@@ -146,24 +146,17 @@ public class WorkflowExecutionService {
         if (request == null || request.type() == null) {
             throw new DomainValidationException("signalType is required");
         }
-        switch (request.type()) {
-            case CANCEL -> {
-                if (isBlank(request.reason())) {
-                    throw new DomainValidationException("reason is required for a CANCEL signal");
-                }
-            }
-            case RETRY_FROM -> {
-                if (request.retryFromPhase() == null) {
-                    throw new DomainValidationException("retryFromPhase is required for a RETRY_FROM signal");
-                }
-            }
-            case REVIEW_CAP_DISPOSITION -> {
-                if (request.reviewer() == null || request.disposition() == null) {
-                    throw new DomainValidationException(
-                            "reviewer and disposition are required for a REVIEW_CAP_DISPOSITION signal");
-                }
-            }
-            default -> throw new DomainValidationException("Unsupported signalType: " + request.type());
+        var type = request.type();
+        if (type == OperatorSignalType.CANCEL && isBlank(request.reason())) {
+            throw new DomainValidationException("reason is required for a CANCEL signal");
+        }
+        if (type == OperatorSignalType.RETRY_FROM && request.retryFromPhase() == null) {
+            throw new DomainValidationException("retryFromPhase is required for a RETRY_FROM signal");
+        }
+        if (type == OperatorSignalType.REVIEW_CAP_DISPOSITION
+                && (request.reviewer() == null || request.disposition() == null)) {
+            throw new DomainValidationException(
+                    "reviewer and disposition are required for a REVIEW_CAP_DISPOSITION signal");
         }
         return new SendSignalCommand(
                 request.type(), request.reason(), request.retryFromPhase(), request.reviewer(), request.disposition());

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -39,9 +40,9 @@ class WorkflowExecutionServiceTest {
     private static final String PROJECT = "ground-control";
     private static final String WORKFLOW_ID = "gc-implement-ground-control-1278";
 
-    private final ObjectProvider<WorkflowControlPort> portProvider = org.mockito.Mockito.mock(ObjectProvider.class);
-    private final WorkflowControlPort port = org.mockito.Mockito.mock(WorkflowControlPort.class);
-    private final ProjectService projectService = org.mockito.Mockito.mock(ProjectService.class);
+    private final ObjectProvider<WorkflowControlPort> portProvider = mock(ObjectProvider.class);
+    private final WorkflowControlPort port = mock(WorkflowControlPort.class);
+    private final ProjectService projectService = mock(ProjectService.class);
     private final WorkflowExecutionService service = new WorkflowExecutionService(portProvider, projectService);
 
     @BeforeEach
@@ -70,16 +71,15 @@ class WorkflowExecutionServiceTest {
 
     @Test
     void startRejectsNullWorkflowType() {
-        assertThatThrownBy(() -> service.start(PROJECT, new StartRequest(null, 1278, null, null, null, null)))
-                .isInstanceOf(DomainValidationException.class);
+        var request = new StartRequest(null, 1278, null, null, null, null);
+        assertThatThrownBy(() -> service.start(PROJECT, request)).isInstanceOf(DomainValidationException.class);
         verify(port, never()).start(any());
     }
 
     @Test
     void startRejectsNonPositiveIssueNumber() {
-        assertThatThrownBy(() ->
-                        service.start(PROJECT, new StartRequest(WorkflowType.IMPLEMENT, 0, null, null, null, null)))
-                .isInstanceOf(DomainValidationException.class);
+        var request = new StartRequest(WorkflowType.IMPLEMENT, 0, null, null, null, null);
+        assertThatThrownBy(() -> service.start(PROJECT, request)).isInstanceOf(DomainValidationException.class);
     }
 
     @Test
@@ -92,14 +92,14 @@ class WorkflowExecutionServiceTest {
     void listScopesToProjectPrefixAndClampsLimit() {
         when(port.listForProject(any(), anyInt())).thenReturn(List.of());
         service.list(PROJECT, 5000);
-        verify(port).listForProject(eq(PROJECT), eq(200));
+        verify(port).listForProject(PROJECT, 200);
     }
 
     @Test
     void listDefaultsLimitWhenNull() {
         when(port.listForProject(any(), anyInt())).thenReturn(List.of());
         service.list(PROJECT, null);
-        verify(port).listForProject(eq(PROJECT), eq(50));
+        verify(port).listForProject(PROJECT, 50);
     }
 
     @Test
@@ -124,34 +124,30 @@ class WorkflowExecutionServiceTest {
 
     @Test
     void signalCancelRequiresReason() {
-        assertThatThrownBy(() -> service.signal(
-                        PROJECT, WORKFLOW_ID, new SignalRequest(OperatorSignalType.CANCEL, "  ", null, null, null)))
+        var request = new SignalRequest(OperatorSignalType.CANCEL, "  ", null, null, null);
+        assertThatThrownBy(() -> service.signal(PROJECT, WORKFLOW_ID, request))
                 .isInstanceOf(DomainValidationException.class);
         verify(port, never()).signal(any(), any());
     }
 
     @Test
     void signalRetryFromRequiresPhase() {
-        assertThatThrownBy(() -> service.signal(
-                        PROJECT, WORKFLOW_ID, new SignalRequest(OperatorSignalType.RETRY_FROM, null, null, null, null)))
+        var request = new SignalRequest(OperatorSignalType.RETRY_FROM, null, null, null, null);
+        assertThatThrownBy(() -> service.signal(PROJECT, WORKFLOW_ID, request))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void signalReviewCapRequiresReviewerAndDisposition() {
-        assertThatThrownBy(() -> service.signal(
-                        PROJECT,
-                        WORKFLOW_ID,
-                        new SignalRequest(OperatorSignalType.REVIEW_CAP_DISPOSITION, null, null, Reviewer.CODEX, null)))
+        var request = new SignalRequest(OperatorSignalType.REVIEW_CAP_DISPOSITION, null, null, Reviewer.CODEX, null);
+        assertThatThrownBy(() -> service.signal(PROJECT, WORKFLOW_ID, request))
                 .isInstanceOf(DomainValidationException.class);
     }
 
     @Test
     void signalRejectsCrossProjectIdAsNotFound() {
-        assertThatThrownBy(() -> service.signal(
-                        PROJECT,
-                        "gc-implement-other-project-1",
-                        new SignalRequest(OperatorSignalType.CANCEL, "stop", null, null, null)))
+        var request = new SignalRequest(OperatorSignalType.CANCEL, "stop", null, null, null);
+        assertThatThrownBy(() -> service.signal(PROJECT, "gc-implement-other-project-1", request))
                 .isInstanceOf(NotFoundException.class);
         verify(port, never()).signal(any(), any());
     }
@@ -159,9 +155,8 @@ class WorkflowExecutionServiceTest {
     @Test
     void signalReturnsNotFoundWhenExecutionMissing() {
         when(port.describe(WORKFLOW_ID)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.signal(
-                        PROJECT, WORKFLOW_ID, new SignalRequest(OperatorSignalType.CANCEL, "stop", null, null, null)))
-                .isInstanceOf(NotFoundException.class);
+        var request = new SignalRequest(OperatorSignalType.CANCEL, "stop", null, null, null);
+        assertThatThrownBy(() -> service.signal(PROJECT, WORKFLOW_ID, request)).isInstanceOf(NotFoundException.class);
         verify(port, never()).signal(any(), any());
     }
 
@@ -177,8 +172,8 @@ class WorkflowExecutionServiceTest {
                 0L,
                 new WorkflowExecutionView.Correlation(PROJECT, 1278, List.of()));
         when(port.describe(WORKFLOW_ID)).thenReturn(Optional.of(completed));
-        assertThatThrownBy(() -> service.signal(
-                        PROJECT, WORKFLOW_ID, new SignalRequest(OperatorSignalType.CANCEL, "stop", null, null, null)))
+        var request = new SignalRequest(OperatorSignalType.CANCEL, "stop", null, null, null);
+        assertThatThrownBy(() -> service.signal(PROJECT, WORKFLOW_ID, request))
                 .isInstanceOf(DomainValidationException.class);
         verify(port, never()).signal(any(), any());
     }
@@ -205,7 +200,8 @@ class WorkflowExecutionServiceTest {
 
     @Test
     void signalRequiresSignalType() {
-        assertThatThrownBy(() -> service.signal(PROJECT, WORKFLOW_ID, new SignalRequest(null, null, null, null, null)))
+        var request = new SignalRequest(null, null, null, null, null);
+        assertThatThrownBy(() -> service.signal(PROJECT, WORKFLOW_ID, request))
                 .isInstanceOf(DomainValidationException.class);
     }
 
