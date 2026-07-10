@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.ImplementWorkflowImpl;
 import com.keplerops.groundcontrol.infrastructure.temporal.smoke.TemporalSmokeWorkflowImpl;
 import io.temporal.client.WorkflowClient;
 import io.temporal.serviceclient.WorkflowServiceStubs;
@@ -69,7 +70,8 @@ class TemporalWorkerConfigurationTest {
 
         assertThat(client.getOptions().getNamespace()).isEqualTo("default");
         verify(factory).newWorker(properties.taskQueue());
-        verify(worker).registerWorkflowImplementationTypes(TemporalSmokeWorkflowImpl.class);
+        verify(worker)
+                .registerWorkflowImplementationTypes(TemporalSmokeWorkflowImpl.class, ImplementWorkflowImpl.class);
         verify(factory).start();
     }
 }

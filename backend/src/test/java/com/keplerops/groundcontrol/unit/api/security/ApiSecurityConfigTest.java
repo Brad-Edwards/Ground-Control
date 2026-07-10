@@ -105,6 +105,24 @@ class ApiSecurityConfigTest {
             return "derivations-ok";
         }
 
+        // Workflow control surface (GC-O009 #1278): sending an operator signal is admin-only; starting
+        // and reading executions are authenticated + project-scoped and fall through to authenticated().
+        // Real path shapes so the single-segment wildcard signal matcher applies.
+        @PostMapping("/api/v1/workflow-executions/gc-implement-ground-control-1278/signals")
+        String workflowExecutionSignal() {
+            return "workflow-signal-ok";
+        }
+
+        @PostMapping("/api/v1/workflow-executions")
+        String workflowExecutionStart() {
+            return "workflow-start-ok";
+        }
+
+        @GetMapping("/api/v1/workflow-executions/echo")
+        String workflowExecutionRead() {
+            return "workflow-exec-read-ok";
+        }
+
         // Research high-risk operation authorization (issue #1008 / ADR-086): the decision and
         // consume routes are admin-only; propose/list/get fall through to authenticated(). Real
         // path shapes so the single-segment wildcard matcher applies.
@@ -240,6 +258,43 @@ class ApiSecurityConfigTest {
         @Test
         void anonymousOnDerivationPath_returns401() throws Exception {
             mockMvc.perform(get("/api/v1/derivations/echo")).andExpect(status().isUnauthorized());
+        }
+
+        private static final String WORKFLOW_SIGNAL =
+                "/api/v1/workflow-executions/gc-implement-ground-control-1278/signals";
+
+        @Test
+        void userTokenOnWorkflowSignal_returns403() throws Exception {
+            // GC-O009 #1278: operator signals are admin-only until GC-P024 gate authority lands.
+            mockMvc.perform(post(WORKFLOW_SIGNAL).header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void adminTokenOnWorkflowSignal_returns200() throws Exception {
+            mockMvc.perform(post(WORKFLOW_SIGNAL).header("Authorization", "Bearer admin-token-bbb"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("workflow-signal-ok"));
+        }
+
+        @Test
+        void anonymousOnWorkflowSignal_returns401() throws Exception {
+            mockMvc.perform(post(WORKFLOW_SIGNAL)).andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        void userTokenOnWorkflowStart_returns200() throws Exception {
+            // Starting an execution is authenticated-tier, not admin-gated (project-scoped in the service).
+            mockMvc.perform(post("/api/v1/workflow-executions").header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("workflow-start-ok"));
+        }
+
+        @Test
+        void userTokenOnWorkflowExecutionRead_returns200() throws Exception {
+            mockMvc.perform(get("/api/v1/workflow-executions/echo").header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("workflow-exec-read-ok"));
         }
 
         private static final String OP_AUTH_DECISION =

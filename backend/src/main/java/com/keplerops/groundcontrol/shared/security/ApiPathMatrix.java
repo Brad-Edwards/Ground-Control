@@ -138,6 +138,14 @@ final class ApiPathMatrix {
                         RESEARCH_OPERATION_AUTHORIZATION_DECISION,
                         RESEARCH_OPERATION_AUTHORIZATION_CONSUME)
                 .hasRole(ROLE_ADMIN)
+                // GC-O009 #1278: sending an operator signal (cancel, retry-from, review-cap
+                // disposition) to a workflow execution is a privileged control action, so it is
+                // admin-only until GC-P024 project-scoped gate authority lands (ADR-085 §54). The
+                // project-scoped start (POST /workflow-executions) and status reads (GET
+                // /workflow-executions, GET /workflow-executions/{id}) resolve through ProjectService
+                // and fall through to the authenticated() rule below.
+                .requestMatchers(HttpMethod.POST, "/api/v1/workflow-executions/*/signals")
+                .hasRole(ROLE_ADMIN)
                 .requestMatchers("/api/v1/**")
                 .authenticated()
                 .requestMatchers("/actuator/**")

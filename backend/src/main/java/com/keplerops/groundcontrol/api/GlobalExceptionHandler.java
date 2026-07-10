@@ -8,6 +8,7 @@ import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.GroundControlException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
+import com.keplerops.groundcontrol.domain.exception.ServiceUnavailableException;
 import com.keplerops.groundcontrol.shared.web.ErrorResponse;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -75,6 +76,12 @@ public class GlobalExceptionHandler {
                 ? ErrorResponse.of(ex.getErrorCode(), ex.getMessage())
                 : ErrorResponse.of(ex.getErrorCode(), ex.getMessage(), detail);
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(ServiceUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleServiceUnavailable(ServiceUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ErrorResponse.of(ex.getErrorCode(), ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

@@ -10,7 +10,7 @@
       "lock_level": "locked",
       "risk_score": 4,
       "selectors": ["backend/src/main/java/com/keplerops/groundcontrol/api/**"],
-      "package": "..api..",
+      "package": "com.keplerops.groundcontrol..api..",
       "projection": { "element_kind": "COMPONENT", "stable_key": "module:backend-api" }
     },
     {
@@ -21,7 +21,7 @@
       "lock_level": "locked",
       "risk_score": 5,
       "selectors": ["backend/src/main/java/com/keplerops/groundcontrol/domain/**"],
-      "package": "..domain..",
+      "package": "com.keplerops.groundcontrol..domain..",
       "projection": { "element_kind": "COMPONENT", "stable_key": "module:backend-domain" }
     },
     {
@@ -32,7 +32,7 @@
       "lock_level": "guarded",
       "risk_score": 3,
       "selectors": ["backend/src/main/java/com/keplerops/groundcontrol/infrastructure/**"],
-      "package": "..infrastructure..",
+      "package": "com.keplerops.groundcontrol..infrastructure..",
       "projection": { "element_kind": "COMPONENT", "stable_key": "module:backend-infrastructure" }
     },
     {

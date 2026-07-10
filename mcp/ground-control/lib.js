@@ -867,6 +867,21 @@ export const TO_CAMEL = {
   event_count: "eventCount",
   escalated_count: "escalatedCount",
   max_cycle_index: "maxCycleIndex",
+  // GC-O009 #1278 — Workflow control surface (start/status/signal). snake_case MCP
+  // args / response fields → camelCase backend DTO fields (StartWorkflowExecutionRequest,
+  // SendSignalRequest, WorkflowExecutionResponse). Missing entries would drop request
+  // fields on write and emit camelCase on reads.
+  workflow_id: "workflowId",
+  run_id: "runId",
+  signal_type: "signalType",
+  retry_from_phase: "retryFromPhase",
+  completion_command: "completionCommand",
+  sonar_project_key: "sonarProjectKey",
+  review_cap: "reviewCap",
+  poll_interval_seconds: "pollIntervalSeconds",
+  start_time: "startTime",
+  close_time: "closeTime",
+  history_length: "historyLength",
   // GC-U001 / ADR-047 — Audit entity. snake_case MCP args → camelCase backend
   // DTO fields. Missing entries would cause Jackson to silently drop the fields.
   audit_id: "auditId",
@@ -20591,5 +20606,39 @@ export async function crossProjectAggregateWorkflowRuns({
 } = {}) {
   return request("GET", "/api/v1/workflow-runs/cross-project-aggregate", {
     params: { repo, runtime, requirement, workflowType, outcome, from, to },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Workflow control surface API functions (GC-O009 phase 3, issue #1278)
+//
+// Distinct from the workflow-run telemetry surface above: these drive live
+// Temporal executions (start / status / signal) through the product REST
+// boundary. The backend enforces project scope on every path and ROLE_ADMIN on
+// the signal route (ADR-028); this transport forwards only the closed field set.
+// ---------------------------------------------------------------------------
+
+/** POST /api/v1/workflow-executions?project=<id> — start an execution. */
+export async function startWorkflowExecution(data, project) {
+  return request("POST", "/api/v1/workflow-executions", { body: data, params: { project } });
+}
+
+/** GET /api/v1/workflow-executions?project=<id>&limit=<n> — list the project's executions. */
+export async function listWorkflowExecutions({ project, limit } = {}) {
+  return request("GET", "/api/v1/workflow-executions", { params: { project, limit } });
+}
+
+/** GET /api/v1/workflow-executions/{workflowId}?project=<id> — describe one execution. */
+export async function getWorkflowExecution(workflowId, project) {
+  return request("GET", `/api/v1/workflow-executions/${encodeURIComponent(workflowId)}`, {
+    params: { project },
+  });
+}
+
+/** POST /api/v1/workflow-executions/{workflowId}/signals?project=<id> — send an operator signal. */
+export async function signalWorkflowExecution(workflowId, data, project) {
+  return request("POST", `/api/v1/workflow-executions/${encodeURIComponent(workflowId)}/signals`, {
+    body: data,
+    params: { project },
   });
 }
