@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -202,8 +203,7 @@ class TemporalWorkflowControlAdapterTest {
     void signalTranslatesClosedWorkflowRaceToNotFound() {
         WorkflowStub stub = mock(WorkflowStub.class);
         when(client.newUntypedWorkflowStub(WORKFLOW_ID)).thenReturn(stub);
-        org.mockito.Mockito.doThrow(
-                        new WorkflowNotFoundException(execution(WORKFLOW_ID, "run-1"), "ImplementWorkflow", null))
+        doThrow(new WorkflowNotFoundException(execution(WORKFLOW_ID, "run-1"), "ImplementWorkflow", null))
                 .when(stub)
                 .signal(eq("cancel"), org.mockito.ArgumentMatchers.<Object>any());
 

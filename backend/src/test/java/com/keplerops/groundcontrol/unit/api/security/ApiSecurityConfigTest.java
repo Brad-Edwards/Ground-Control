@@ -113,7 +113,10 @@ class ApiSecurityConfigTest {
             return "workflow-signal-ok";
         }
 
-        @PostMapping("/api/v1/workflow-executions")
+        // Fake "/echo" path (matched by the authenticated() fall-through, same as the real
+        // POST /api/v1/workflow-executions start) so the stub does not collide with the real
+        // WorkflowExecutionController mapping when the full context loads.
+        @PostMapping("/api/v1/workflow-executions/echo")
         String workflowExecutionStart() {
             return "workflow-start-ok";
         }
@@ -285,7 +288,7 @@ class ApiSecurityConfigTest {
         @Test
         void userTokenOnWorkflowStart_returns200() throws Exception {
             // Starting an execution is authenticated-tier, not admin-gated (project-scoped in the service).
-            mockMvc.perform(post("/api/v1/workflow-executions").header("Authorization", "Bearer user-token-aaa"))
+            mockMvc.perform(post("/api/v1/workflow-executions/echo").header("Authorization", "Bearer user-token-aaa"))
                     .andExpect(status().isOk())
                     .andExpect(content().string("workflow-start-ok"));
         }

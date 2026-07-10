@@ -53,6 +53,7 @@ public class TemporalWorkflowControlAdapter implements WorkflowControlPort {
     private static final String MEMO_PROJECT = "project";
     private static final String MEMO_ISSUE_NUMBER = "issueNumber";
     private static final String MEMO_REQUIREMENT_UIDS = "requirementUids";
+    private static final String MEMO_DECODE_FAILURE_LOG = "Ignoring undecodable memo key {}";
 
     private final WorkflowClient workflowClient;
     private final TemporalControlProperties properties;
@@ -124,8 +125,8 @@ public class TemporalWorkflowControlAdapter implements WorkflowControlPort {
                 default -> throw new IllegalStateException("Unsupported signal type: " + command.type());
             }
         } catch (WorkflowNotFoundException closed) {
-            // The execution closed between the service's eligibility check and this signal (a race);
-            // surface the standard not-found envelope rather than an opaque Temporal error.
+            // Handles the race where the execution closes between the service eligibility check and
+            // this signal. Surface the standard not-found envelope instead of an opaque Temporal error.
             throw new NotFoundException("Workflow execution not found: " + workflowId);
         }
     }
@@ -164,7 +165,9 @@ public class TemporalWorkflowControlAdapter implements WorkflowControlPort {
         return new WorkflowExecutionView(
                 execution.getWorkflowId(),
                 execution.getRunId(),
-                toWorkflowType(metadata.getWorkflowType()),
+                // Only IMPLEMENT is startable through this surface, and the Visibility query already
+                // filters to ImplementWorkflow, so every listed execution maps to IMPLEMENT.
+                WorkflowType.IMPLEMENT,
                 mapStatus(metadata.getStatus()),
                 metadata.getStartTime(),
                 metadata.getCloseTime(),
@@ -179,12 +182,6 @@ public class TemporalWorkflowControlAdapter implements WorkflowControlPort {
         return switch (workflowType) {
             case IMPLEMENT -> "ImplementWorkflow";
         };
-    }
-
-    private static WorkflowType toWorkflowType(String temporalWorkflowType) {
-        // Only IMPLEMENT is startable through this surface; anything else defaults to IMPLEMENT since
-        // the Visibility query already filters to ImplementWorkflow.
-        return WorkflowType.IMPLEMENT;
     }
 
     static WorkflowExecutionStatus mapStatus(io.temporal.api.enums.v1.WorkflowExecutionStatus status) {
@@ -234,7 +231,7 @@ public class TemporalWorkflowControlAdapter implements WorkflowControlPort {
             Object value = metadata.getMemo(key, String.class);
             return value == null ? null : value.toString();
         } catch (RuntimeException decodeFailure) {
-            log.debug("Ignoring undecodable memo key {}", key, decodeFailure);
+            log.debug(MEMO_DECODE_FAILURE_LOG, key, decodeFailure);
             return null;
         }
     }
@@ -247,7 +244,7 @@ public class TemporalWorkflowControlAdapter implements WorkflowControlPort {
             }
             return null;
         } catch (RuntimeException decodeFailure) {
-            log.debug("Ignoring undecodable memo key {}", key, decodeFailure);
+            log.debug(MEMO_DECODE_FAILURE_LOG, key, decodeFailure);
             return null;
         }
     }
@@ -260,7 +257,7 @@ public class TemporalWorkflowControlAdapter implements WorkflowControlPort {
             }
             return List.of();
         } catch (RuntimeException decodeFailure) {
-            log.debug("Ignoring undecodable memo key {}", key, decodeFailure);
+            log.debug(MEMO_DECODE_FAILURE_LOG, key, decodeFailure);
             return List.of();
         }
     }
