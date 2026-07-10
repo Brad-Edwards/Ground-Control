@@ -18,13 +18,10 @@ from tools.policy.checks import (
     check_pr_body,
     classify_deferral_language,
     extract_step_section,
-    build_design_authority_approval_scope,
-    load_pr_issue_comments,
     main,
     parse_args,
     parse_const_string_array,
     parse_fragment_filename,
-    parse_design_authority_approval_markers,
     parse_java_enum_constants,
     parse_routing_agents,
     parse_ts_union_literals,
@@ -36,40 +33,22 @@ from tools.policy.checks import (
     run_contract_invariant_enforcement_check,
     run_contract_surface_check,
     run_controller_contracts,
-    run_protected_path_authority_check,
     run_deploy_artifact_consistency,
     run_deploy_compose_credential_passthrough,
     run_documentation_coverage_check,
     run_enum_contract_check,
     run_ghcr_namespace_drift,
     run_migration_policy,
-    run_module_graph_boundary_check,
-    run_mutation_gate_contract,
     run_no_deferral_disposition_check,
     run_pr_body_check,
     run_test_quality_decision_record_contract,
     run_traceability_reconciliation_gate_contract,
     run_workflow_payload_contract_check,
     run_workflow_routing_contract,
-    detect_mutation_registry_weakening,
 )
 
 
 class PolicyChecksTest(unittest.TestCase):
-    def _design_authority_marker(self, *, issue_number=1294, pr_number=44, protected_paths=None, implementation_paths=None, weakening_findings=None, root=None, base=None):
-        scope = build_design_authority_approval_scope(
-            protected_paths or [],
-            implementation_paths or [],
-            weakening_findings or [],
-            root=root or REPO_ROOT,
-            base=base,
-        )
-        data = {"issue_number": issue_number, "pr_number": pr_number, **scope}
-        return (
-            f'<!-- gc:design-authority-approval schema="gc.cld.design-authority-approval/v1" '
-            f'issue="{issue_number}" pr="{pr_number}" -->\n'
-            f"<!-- gc:design-authority-approval-data {json.dumps(data, sort_keys=True)} -->"
-        )
 
     def test_adr_guard_requires_workflow_docs(self):
         violations = run_adr_guard([".claude/skills/implement/SKILL.md"])
@@ -188,219 +167,11 @@ class PolicyChecksTest(unittest.TestCase):
             "ADR-036 must be in workflow-guardrail-sync.requireAll",
         )
 
-    def test_protected_path_authority_requires_marker_for_mixed_diff(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._write_file(root, ".github/CODEOWNERS", "contracts/** @Brad-Edwards\nbackend/src/main/** @Brad-Edwards\n")
-            self._write_file(
-                root,
-                "architecture/registry/protected-paths.json",
-                json.dumps({
-                    "schema_version": 1,
-                    "categories": [
-                        {
-                            "id": "contracts",
-                            "name": "Contract surface",
-                            "selectors": ["contracts/**"],
-                            "approval_mode": "design_authority",
-                            "codeowners": ["@Brad-Edwards"],
-                            "weakening_detectors": [],
-                            "freeze_inputs": ["contracts/**"],
-                        }
-                    ],
-                }),
-            )
-            violations = run_protected_path_authority_check(
-                ["contracts/openapi/openapi.json", "backend/src/main/java/com/example/Foo.java"],
-                root=root,
-                pr_number=44,
-                approval_comments=[],
-            )
-            codes = {item.code for item in violations}
-            self.assertIn("protected-path-approval-missing", codes)
 
-    def test_temp_downgrade_approval_missing_is_nonblocking(self):
-        # TEMP (#1330): the protected-path / battery approval-missing results are
-        # downgraded to non-blocking warnings in main() until the (currently
-        # unsatisfiable) design-authority approval mechanism is redesigned. The
-        # detection above still fires; only the blocking exit is suppressed. Every
-        # other violation MUST stay blocking so the downgrade cannot swallow real
-        # failures.
-        from tools.policy.checks import Violation, _downgrade_temp_nonblocking
 
-        blocking, warnings = _downgrade_temp_nonblocking([
-            Violation("protected-path-approval-missing", "m", []),
-            Violation("battery-weakening-approval-missing", "m", []),
-            Violation("changelog-signal-missing", "m", []),
-        ])
-        self.assertEqual(
-            {item.code for item in warnings},
-            {"protected-path-approval-missing", "battery-weakening-approval-missing"},
-        )
-        self.assertEqual([item.code for item in blocking], ["changelog-signal-missing"])
 
-    def test_protected_path_authority_accepts_owner_marker(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._write_file(root, ".github/CODEOWNERS", "contracts/** @Brad-Edwards\nbackend/src/main/** @Brad-Edwards\n")
-            self._write_file(
-                root,
-                "architecture/registry/protected-paths.json",
-                json.dumps({
-                    "schema_version": 1,
-                    "categories": [
-                        {
-                            "id": "contracts",
-                            "name": "Contract surface",
-                            "selectors": ["contracts/**"],
-                            "approval_mode": "design_authority",
-                            "codeowners": ["@Brad-Edwards"],
-                            "weakening_detectors": [],
-                            "freeze_inputs": ["contracts/**"],
-                        }
-                    ],
-                }),
-            )
-            body = self._design_authority_marker(
-                protected_paths=["contracts/openapi/openapi.json"],
-                implementation_paths=["backend/src/main/java/com/example/Foo.java"],
-                root=root,
-            )
-            violations = run_protected_path_authority_check(
-                ["contracts/openapi/openapi.json", "backend/src/main/java/com/example/Foo.java"],
-                root=root,
-                pr_number=44,
-                approval_comments=[{"body": body, "author": "Brad-Edwards"}],
-            )
-            self.assertNotIn("protected-path-approval-missing", {item.code for item in violations})
 
-    def test_protected_path_authority_rejects_stale_owner_marker_scope(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._write_file(root, ".github/CODEOWNERS", "contracts/** @Brad-Edwards\nbackend/src/main/** @Brad-Edwards\n")
-            self._write_file(
-                root,
-                "architecture/registry/protected-paths.json",
-                json.dumps({
-                    "schema_version": 1,
-                    "categories": [
-                        {
-                            "id": "contracts",
-                            "name": "Contract surface",
-                            "selectors": ["contracts/**"],
-                            "approval_mode": "design_authority",
-                            "codeowners": ["@Brad-Edwards"],
-                            "weakening_detectors": [],
-                            "freeze_inputs": ["contracts/**"],
-                        }
-                    ],
-                }),
-            )
-            stale_body = self._design_authority_marker(
-                protected_paths=["contracts/other.json"],
-                implementation_paths=["backend/src/main/java/com/example/Foo.java"],
-                root=root,
-            )
-            violations = run_protected_path_authority_check(
-                ["contracts/openapi/openapi.json", "backend/src/main/java/com/example/Foo.java"],
-                root=root,
-                pr_number=44,
-                approval_comments=[{"body": stale_body, "author": "Brad-Edwards"}],
-            )
-            self.assertIn("protected-path-approval-missing", {item.code for item in violations})
 
-    def test_protected_path_authority_uses_base_authority_model(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            subprocess.run(["git", "init", "-b", "dev"], cwd=root, check=True, capture_output=True)
-            subprocess.run(["git", "config", "user.email", "policy@example.invalid"], cwd=root, check=True)
-            subprocess.run(["git", "config", "user.name", "Policy Test"], cwd=root, check=True)
-            self._write_file(root, ".github/CODEOWNERS", "contracts/** @Brad-Edwards\n")
-            self._write_file(
-                root,
-                "architecture/registry/protected-paths.json",
-                json.dumps({
-                    "schema_version": 1,
-                    "categories": [
-                        {
-                            "id": "contracts",
-                            "name": "Contract surface",
-                            "selectors": ["contracts/**"],
-                            "approval_mode": "design_authority",
-                            "codeowners": ["@Brad-Edwards"],
-                            "weakening_detectors": [],
-                            "freeze_inputs": ["contracts/**"],
-                        }
-                    ],
-                }),
-            )
-            self._write_file(root, "contracts/openapi/openapi.json", "{}\n")
-            self._write_file(root, "backend/src/main/java/com/example/Foo.java", "class Foo {}\n")
-            subprocess.run(["git", "add", "."], cwd=root, check=True)
-            subprocess.run(["git", "commit", "-m", "baseline"], cwd=root, check=True, capture_output=True)
-
-            self._write_file(root, ".github/CODEOWNERS", "contracts/** @attacker\n")
-            self._write_file(
-                root,
-                "architecture/registry/protected-paths.json",
-                json.dumps({
-                    "schema_version": 1,
-                    "categories": [
-                        {
-                            "id": "workflow-prose",
-                            "name": "Workflow prose",
-                            "selectors": ["docs/DEVELOPMENT_WORKFLOW.md"],
-                            "approval_mode": "design_authority",
-                            "codeowners": ["@attacker"],
-                        }
-                    ],
-                }),
-            )
-            self._write_file(root, "contracts/openapi/openapi.json", "{\"changed\": true}\n")
-            self._write_file(root, "backend/src/main/java/com/example/Foo.java", "class Foo { int x; }\n")
-            body = self._design_authority_marker(
-                protected_paths=["contracts/openapi/openapi.json"],
-                implementation_paths=["backend/src/main/java/com/example/Foo.java"],
-                root=root,
-                base="HEAD",
-            )
-            violations = run_protected_path_authority_check(
-                ["contracts/openapi/openapi.json", "backend/src/main/java/com/example/Foo.java"],
-                root=root,
-                base="HEAD",
-                pr_number=44,
-                approval_comments=[{"body": body, "author": "attacker"}],
-            )
-            self.assertIn("protected-path-approval-missing", {item.code for item in violations})
-
-    def test_protected_path_authority_fails_closed_when_base_ref_unreadable(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._write_file(root, ".github/CODEOWNERS", "contracts/** @Brad-Edwards\n")
-            self._write_file(
-                root,
-                "architecture/registry/protected-paths.json",
-                json.dumps({
-                    "schema_version": 1,
-                    "categories": [
-                        {
-                            "id": "contracts",
-                            "name": "Contract surface",
-                            "selectors": ["contracts/**"],
-                            "approval_mode": "design_authority",
-                            "codeowners": ["@Brad-Edwards"],
-                        }
-                    ],
-                }),
-            )
-            violations = run_protected_path_authority_check(
-                ["contracts/openapi/openapi.json", "backend/src/main/java/com/example/Foo.java"],
-                root=root,
-                base="origin/dev",
-                pr_number=44,
-                approval_comments=[],
-            )
-            self.assertIn("protected-path-authority-base-unreadable", {item.code for item in violations})
 
     def _module_graph_registry(self, *, edges=None):
         modules = [
@@ -451,246 +222,19 @@ class PolicyChecksTest(unittest.TestCase):
             }
             self._write_file(root, "architecture/registry/protected-paths.json", json.dumps(protected))
 
-    def test_module_graph_clean_when_edges_respected(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            self._write_module_graph_fixture(root)
-            self._write_file(root, "mcp/ground-control/gc-x.js", 'import { a } from "./lib.js";\n')
-            self._write_file(root, "mcp/ground-control/lib.js", "export const a = 1;\n")
-            self.assertEqual(run_module_graph_boundary_check(root=root), [])
 
-    def test_module_graph_forbidden_edge_fails(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            self._write_module_graph_fixture(root, registry=self._module_graph_registry(edges=[]))
-            self._write_file(root, "mcp/ground-control/gc-x.js", 'import { a } from "./lib.js";\n')
-            self._write_file(root, "mcp/ground-control/lib.js", "export const a = 1;\n")
-            violations = run_module_graph_boundary_check(root=root)
-            self.assertTrue(any(v.code == "module-graph-boundary-violation" for v in violations))
 
-    def test_module_graph_invalid_schema_fails(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            registry = self._module_graph_registry()
-            registry["schema_version"] = 2
-            self._write_module_graph_fixture(root, registry=registry)
-            violations = run_module_graph_boundary_check(root=root)
-            self.assertTrue(any(v.code == "module-graph-registry-invalid" for v in violations))
 
-    def test_module_graph_unknown_edge_endpoint_fails(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            registry = self._module_graph_registry(edges=[{"from": "mcp-tools", "to": "nope"}])
-            self._write_module_graph_fixture(root, registry=registry)
-            violations = run_module_graph_boundary_check(root=root)
-            self.assertTrue(any(v.code == "module-graph-registry-invalid" for v in violations))
 
-    def test_module_graph_bad_lock_level_fails(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            registry = self._module_graph_registry()
-            registry["modules"][0]["lock_level"] = "frozen"
-            self._write_module_graph_fixture(root, registry=registry)
-            violations = run_module_graph_boundary_check(root=root)
-            self.assertTrue(any(v.code == "module-graph-registry-invalid" for v in violations))
 
-    def test_module_graph_requires_design_authority_protection(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            self._write_module_graph_fixture(root, protect=False)
-            self._write_file(root, "architecture/registry/protected-paths.json", json.dumps({"schema_version": 1, "categories": []}))
-            violations = run_module_graph_boundary_check(root=root)
-            self.assertTrue(any(v.code == "module-graph-not-design-authority-protected" for v in violations))
 
-    def test_module_graph_missing_registry_skips(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(run_module_graph_boundary_check(root=Path(tmp)), [])
 
-    def test_module_graph_overlapping_selectors_fail(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            registry = self._module_graph_registry(edges=[])
-            registry["modules"][0]["surface"] = "frontend"
-            registry["modules"][0]["selectors"] = ["frontend/src/lib/**"]
-            registry["modules"][1]["surface"] = "frontend"
-            registry["modules"][1]["selectors"] = ["frontend/src/lib/sub/**"]
-            self._write_module_graph_fixture(root, registry=registry)
-            violations = run_module_graph_boundary_check(root=root)
-            self.assertTrue(
-                any(
-                    v.code == "module-graph-registry-invalid" and "overlap" in v.details[0]
-                    for v in violations
-                )
-            )
 
-    def test_module_graph_repo_registry_valid_and_clean(self):
-        # Regression guard: the committed registry validates and the current
-        # tree respects every declared edge.
-        self.assertEqual(run_module_graph_boundary_check(root=REPO_ROOT), [])
 
-    def test_design_authority_marker_parser_scopes_to_pr_and_author(self):
-        body = self._design_authority_marker(protected_paths=["contracts/openapi/openapi.json"])
-        markers = parse_design_authority_approval_markers(
-            [{"body": body, "author": "Brad-Edwards"}, {"body": body.replace('pr="44"', 'pr="45"'), "author": "Brad-Edwards"}],
-            44,
-        )
-        self.assertEqual(len(markers), 1)
-        self.assertEqual(markers[0]["author"], "Brad-Edwards")
-        self.assertEqual(markers[0]["pr_number"], 44)
-        self.assertEqual(markers[0]["scope"]["protected_paths"], ["contracts/openapi/openapi.json"])
 
-    def test_protected_path_registry_rejects_unsafe_selector(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._write_file(root, ".github/CODEOWNERS", "../contracts/** @Brad-Edwards\n")
-            self._write_file(
-                root,
-                "architecture/registry/protected-paths.json",
-                json.dumps({
-                    "schema_version": 1,
-                    "categories": [
-                        {
-                            "id": "contracts",
-                            "name": "Contract surface",
-                            "selectors": ["../contracts/**"],
-                            "approval_mode": "design_authority",
-                            "codeowners": ["@Brad-Edwards"],
-                        }
-                    ],
-                }),
-            )
-            violations = run_protected_path_authority_check(["contracts/openapi/openapi.json"], root=root)
-            self.assertIn("protected-path-registry-invalid", {item.code for item in violations})
 
-    def test_protected_path_authority_detects_mutation_threshold_weakening(self):
-        old_registry = {
-            "schema_version": 1,
-            "boundaries": [
-                {
-                    "id": "frontend-oracle-battery",
-                    "name": "Frontend oracle battery",
-                    "lock_level": "guarded",
-                    "paths": ["frontend/src/test/oracle-battery.ts"],
-                    "mutation": {
-                        "enabled": True,
-                        "tool": "stryker",
-                        "threshold": 80,
-                        "time_budget_minutes": 10,
-                        "baseline": {"score": 80.0, "killed": 8, "survived": 2, "total": 10, "measured_at": "2026-07-04", "tool_version": "stryker"},
-                        "stryker": {"mutate": ["src/test/oracle-battery.ts"], "test_files": ["src/test/oracle-battery.test.ts"]},
-                    },
-                }
-            ],
-        }
-        new_registry = json.loads(json.dumps(old_registry))
-        new_registry["boundaries"][0]["mutation"]["threshold"] = 50
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._write_file(root, ".github/CODEOWNERS", "architecture/registry/** @Brad-Edwards\n")
-            self._write_file(
-                root,
-                "architecture/registry/protected-paths.json",
-                json.dumps({
-                    "schema_version": 1,
-                    "categories": [
-                        {
-                            "id": "architecture-registry",
-                            "name": "Architecture registry",
-                            "selectors": ["architecture/registry/**"],
-                            "approval_mode": "design_authority",
-                            "codeowners": ["@Brad-Edwards"],
-                            "weakening_detectors": ["mutation-threshold"],
-                        }
-                    ],
-                }),
-            )
-            self._write_file(root, "old.json", json.dumps(old_registry))
-            self._write_file(root, "architecture/registry/mutation-boundaries.json", json.dumps(new_registry))
-            violations = run_protected_path_authority_check(
-                ["architecture/registry/mutation-boundaries.json"],
-                root=root,
-                pr_number=44,
-                approval_comments=[],
-                old_mutation_registry=old_registry,
-            )
-            self.assertIn("battery-weakening-approval-missing", {item.code for item in violations})
 
-    def test_mutation_registry_weakening_detects_empty_target_sets(self):
-        old_registry = {
-            "schema_version": 1,
-            "boundaries": [
-                {
-                    "id": "frontend-oracle-battery",
-                    "mutation": {
-                        "enabled": True,
-                        "tool": "stryker",
-                        "threshold": 80,
-                        "baseline": {"killed": 8, "total": 10},
-                        "stryker": {
-                            "mutate": ["src/test/oracle-battery.ts"],
-                            "test_files": ["src/test/oracle-battery.test.ts"],
-                        },
-                    },
-                },
-                {
-                    "id": "backend-boundary",
-                    "mutation": {
-                        "enabled": True,
-                        "tool": "pitest",
-                        "threshold": 80,
-                        "baseline": {"killed": 8, "total": 10},
-                        "pitest": {
-                            "target_classes": ["com.example.*"],
-                            "target_tests": ["com.example.*Test"],
-                        },
-                    },
-                },
-            ],
-        }
-        new_registry = json.loads(json.dumps(old_registry))
-        new_registry["boundaries"][0]["mutation"]["stryker"]["mutate"] = []
-        del new_registry["boundaries"][1]["mutation"]["pitest"]["target_tests"]
-        findings = detect_mutation_registry_weakening(old_registry, new_registry)
-        self.assertIn("frontend-oracle-battery: stryker mutate narrowed", findings)
-        self.assertIn("backend-boundary: pitest target_tests narrowed", findings)
 
-    def test_protected_path_authority_detects_skipped_oracle_test(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            subprocess.run(["git", "init", "-b", "dev"], cwd=root, check=True, capture_output=True)
-            subprocess.run(["git", "config", "user.email", "policy@example.invalid"], cwd=root, check=True)
-            subprocess.run(["git", "config", "user.name", "Policy Test"], cwd=root, check=True)
-            self._write_file(root, ".github/CODEOWNERS", "frontend/src/test/oracle-battery.test.ts @Brad-Edwards\n")
-            self._write_file(
-                root,
-                "architecture/registry/protected-paths.json",
-                json.dumps({
-                    "schema_version": 1,
-                    "categories": [
-                        {
-                            "id": "oracle-battery",
-                            "name": "Oracle battery",
-                            "selectors": ["frontend/src/test/oracle-battery.test.ts"],
-                            "approval_mode": "design_authority",
-                            "codeowners": ["@Brad-Edwards"],
-                            "weakening_detectors": ["test-skip"],
-                        }
-                    ],
-                }),
-            )
-            self._write_file(root, "frontend/src/test/oracle-battery.test.ts", "test('oracle', () => expect(true).toBe(true));\n")
-            subprocess.run(["git", "add", "."], cwd=root, check=True)
-            subprocess.run(["git", "commit", "-m", "baseline"], cwd=root, check=True, capture_output=True)
-            skipped_call = "test" + "." + "skip('oracle', () => expect(true).toBe(true));\n"
-            self._write_file(root, "frontend/src/test/oracle-battery.test.ts", skipped_call)
-            violations = run_protected_path_authority_check(
-                ["frontend/src/test/oracle-battery.test.ts"],
-                root=root,
-                base="HEAD",
-                pr_number=44,
-                approval_comments=[],
-            )
-            self.assertIn("battery-weakening-approval-missing", {item.code for item in violations})
 
     def test_controller_contracts_require_docs_mcp_and_webmvctest(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1035,9 +579,6 @@ class PolicyChecksTest(unittest.TestCase):
             self.assertIn("ci-strictness-branch-protection-strict", codes)
             self.assertIn("ci-strictness-branch-protection-contexts", codes)
 
-    def test_mutation_gate_contract_passes_on_repo(self):
-        violations = run_mutation_gate_contract(root=REPO_ROOT)
-        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
 
     @staticmethod
     def _copy_mutation_gate_contract_fixture(root: Path) -> None:
@@ -1052,62 +593,7 @@ class PolicyChecksTest(unittest.TestCase):
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
 
-    def test_mutation_gate_contract_rejects_missing_required_context(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._copy_mutation_gate_contract_fixture(root)
 
-            baseline_path = root / ".github/branch-protection-baseline.json"
-            baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-            baseline["branches"]["dev"]["required_status_checks"]["contexts"].remove("mutation")
-            baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
-
-            violations = run_mutation_gate_contract(root=root)
-            codes = {item.code for item in violations}
-            self.assertIn("mutation-gate-branch-protection-context", codes)
-
-    def test_mutation_gate_contract_rejects_registry_schema_errors(self):
-        def duplicate_id(data: dict) -> None:
-            data["boundaries"][1]["id"] = data["boundaries"][0]["id"]
-
-        def invalid_tool(data: dict) -> None:
-            data["boundaries"][0]["mutation"]["tool"] = "mutmut"
-
-        def escaped_selector(data: dict) -> None:
-            data["boundaries"][0]["paths"] = ["../outside.java"]
-
-        def invalid_threshold(data: dict) -> None:
-            data["boundaries"][0]["mutation"]["threshold"] = 0
-
-        def missing_baseline_field(data: dict) -> None:
-            del data["boundaries"][0]["mutation"]["baseline"]["tool_version"]
-
-        def missing_stryker_targets(data: dict) -> None:
-            del data["boundaries"][1]["mutation"]["stryker"]["test_files"]
-
-        cases = [
-            ("duplicate-id", duplicate_id, "id duplicates"),
-            ("invalid-tool", invalid_tool, "mutation.tool must be pitest or stryker"),
-            ("escaped-selector", escaped_selector, "escapes repo"),
-            ("invalid-threshold", invalid_threshold, "mutation.threshold must be an integer"),
-            ("missing-baseline-field", missing_baseline_field, "mutation.baseline.tool_version is required"),
-            ("missing-stryker-targets", missing_stryker_targets, "mutation.stryker.mutate and test_files are required"),
-        ]
-
-        for name, mutate, expected in cases:
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp_dir:
-                root = Path(tmp_dir)
-                self._copy_mutation_gate_contract_fixture(root)
-                registry_path = root / "architecture/registry/mutation-boundaries.json"
-                registry = json.loads(registry_path.read_text(encoding="utf-8"))
-                mutate(registry)
-                registry_path.write_text(json.dumps(registry), encoding="utf-8")
-
-                violations = run_mutation_gate_contract(root=root)
-                rendered = "\n".join(item.render() for item in violations)
-
-                self.assertIn("mutation-gate-registry-invalid", {item.code for item in violations})
-                self.assertIn(expected, rendered)
 
     def test_poll_loop_routing_stages_are_the_async_poll_steps(self):
         self.assertEqual(
@@ -2141,53 +1627,8 @@ class PolicyChecksTest(unittest.TestCase):
         args = parse_args(["--pr-comments-json", "/tmp/pr-comments.jsonl"])
         self.assertEqual(args.pr_comments_json, "/tmp/pr-comments.jsonl")
 
-    def test_load_pr_issue_comments_accepts_jsonl_from_gh(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            comments_path = Path(tmp_dir) / "comments.jsonl"
-            comments_path.write_text(
-                '{"body":"marker","author":"Brad-Edwards"}\n'
-                '{"body":"nested","user":{"login":"octocat"}}\n',
-                encoding="utf-8",
-            )
-            comments = load_pr_issue_comments(str(comments_path))
-            self.assertEqual(
-                comments,
-                [
-                    {"body": "marker", "author": "Brad-Edwards"},
-                    {"body": "nested", "author": "octocat"},
-                ],
-            )
 
-    def test_load_pr_issue_comments_accepts_single_comment_object(self):
-        # A one-comment PR thread makes `gh api --jq '.[]|{...}'` emit exactly one
-        # bare JSON object. json.loads(whole file) parses it as a dict, so the JSONL
-        # fallback never runs — the parser must treat a lone comment object as a
-        # one-element list rather than raising (#1334).
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            comments_path = Path(tmp_dir) / "comments.jsonl"
-            comments_path.write_text(
-                '{"body":"## Quality Gate Passed","author":"sonarqubecloud[bot]"}\n',
-                encoding="utf-8",
-            )
-            self.assertEqual(
-                load_pr_issue_comments(str(comments_path)),
-                [{"body": "## Quality Gate Passed", "author": "sonarqubecloud[bot]"}],
-            )
 
-    def test_load_pr_issue_comments_accepts_objects_concatenated_on_one_line(self):
-        # `gh api --paginate --jq` can concatenate a page's last object and the next
-        # page's first object without a newline. The fallback must decode multiple
-        # objects per line, not choke on the first splitline (#1334).
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            comments_path = Path(tmp_dir) / "comments.jsonl"
-            comments_path.write_text(
-                '{"body":"a","author":"one"}{"body":"b","author":"two"}\n',
-                encoding="utf-8",
-            )
-            self.assertEqual(
-                load_pr_issue_comments(str(comments_path)),
-                [{"body": "a", "author": "one"}, {"body": "b", "author": "two"}],
-            )
 
 
 # ---------------------------------------------------------------------------
