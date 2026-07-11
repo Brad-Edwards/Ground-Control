@@ -83,10 +83,8 @@ public class PackRegistryController {
         accessGuard.requireAdminActor();
         var projectId = projectService.resolveProjectId(project);
         var bytes = readFileBytes(file);
-        var filename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "import.json";
         var result = importService.importEntry(
                 projectId,
-                filename,
                 bytes,
                 request != null
                         ? request.toOptions()

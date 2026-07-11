@@ -43,7 +43,6 @@ class PackRegistryImportServiceTest {
 
         var command = service.toRegisterCommand(
                 PROJECT_ID,
-                "manifest.json",
                 json.getBytes(StandardCharsets.UTF_8),
                 new PackRegistryImportOptions(
                         PackRegistryImportFormat.GC_MANIFEST,
@@ -76,7 +75,6 @@ class PackRegistryImportServiceTest {
 
         var result = importService.importEntry(
                 PROJECT_ID,
-                "manifest.json",
                 """
                 {
                   "packId": "demo-pack",
@@ -110,7 +108,7 @@ class PackRegistryImportServiceTest {
         var json = "{\"hello\":\"world\"}";
         var options = defaultOptions(PackRegistryImportFormat.AUTO);
 
-        assertThatThrownBy(() -> toRegisterCommand("unknown.json", json, options))
+        assertThatThrownBy(() -> toRegisterCommand(json, options))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("Could not detect import format");
     }
@@ -120,7 +118,7 @@ class PackRegistryImportServiceTest {
         var json = "{not-json}";
         var options = defaultOptions(PackRegistryImportFormat.AUTO);
 
-        assertThatThrownBy(() -> toRegisterCommand("broken.json", json, options))
+        assertThatThrownBy(() -> toRegisterCommand(json, options))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("Import file must be valid JSON");
     }
@@ -139,7 +137,6 @@ class PackRegistryImportServiceTest {
 
         var command = service.toRegisterCommand(
                 PROJECT_ID,
-                "manifest.json",
                 json.getBytes(StandardCharsets.UTF_8),
                 new PackRegistryImportOptions(
                         PackRegistryImportFormat.GC_MANIFEST,
@@ -176,7 +173,7 @@ class PackRegistryImportServiceTest {
                 """;
         var options = defaultOptions(PackRegistryImportFormat.GC_MANIFEST);
 
-        assertThatThrownBy(() -> toRegisterCommand("bad-deps.json", badDependencyJson, options))
+        assertThatThrownBy(() -> toRegisterCommand(badDependencyJson, options))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("Each dependency must include packId");
     }
@@ -185,21 +182,19 @@ class PackRegistryImportServiceTest {
     void manifestImportRejectsMissingPackIdAndVersion() {
         var options = defaultOptions(PackRegistryImportFormat.GC_MANIFEST);
 
-        assertThatThrownBy(() -> toRegisterCommand(
-                        "missing-packid.json", "{\"packType\":\"REQUIREMENTS_PACK\",\"version\":\"1.0.0\"}", options))
+        assertThatThrownBy(
+                        () -> toRegisterCommand("{\"packType\":\"REQUIREMENTS_PACK\",\"version\":\"1.0.0\"}", options))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("missing packId");
 
-        assertThatThrownBy(() -> toRegisterCommand(
-                        "missing-version.json",
-                        "{\"packId\":\"source-pack\",\"packType\":\"REQUIREMENTS_PACK\"}",
-                        options))
+        assertThatThrownBy(() ->
+                        toRegisterCommand("{\"packId\":\"source-pack\",\"packType\":\"REQUIREMENTS_PACK\"}", options))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("missing version");
     }
 
-    private RegisterPackCommand toRegisterCommand(String filename, String json, PackRegistryImportOptions options) {
-        return service.toRegisterCommand(PROJECT_ID, filename, json.getBytes(StandardCharsets.UTF_8), options);
+    private RegisterPackCommand toRegisterCommand(String json, PackRegistryImportOptions options) {
+        return service.toRegisterCommand(PROJECT_ID, json.getBytes(StandardCharsets.UTF_8), options);
     }
 
     private PackRegistryImportOptions defaultOptions(PackRegistryImportFormat format) {

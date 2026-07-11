@@ -133,8 +133,7 @@ class PackRegistryControllerTest {
     @Test
     void importReturnsCreated() throws Exception {
         when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
-        when(importService.importEntry(eq(PROJECT_ID), eq("manifest.json"), any(), any()))
-                .thenReturn(makeEntry());
+        when(importService.importEntry(eq(PROJECT_ID), any(), any())).thenReturn(makeEntry());
 
         var file = new MockMultipartFile(
                 "file",

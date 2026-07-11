@@ -2,6 +2,7 @@ package com.keplerops.groundcontrol.unit.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.assets.repository.ObservationRepository;
@@ -403,7 +404,7 @@ class GraphTargetResolverServiceTest {
             case EVIDENCE -> when(evidenceArtifactRepository.findByIdAndProjectId(targetId, projectId))
                     .thenReturn(
                             exists
-                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
+                                    ? java.util.Optional.of(mock(
                                             com.keplerops.groundcontrol.domain.evidence.model.EvidenceArtifact.class))
                                     : java.util.Optional.empty());
             case RISK_REGISTER_RECORD,
@@ -422,8 +423,8 @@ class GraphTargetResolverServiceTest {
             case OBSERVATION -> when(observationRepository.findByIdWithAssetAndProjectId(targetId, projectId))
                     .thenReturn(
                             exists
-                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
-                                            com.keplerops.groundcontrol.domain.assets.model.Observation.class))
+                                    ? java.util.Optional.of(
+                                            mock(com.keplerops.groundcontrol.domain.assets.model.Observation.class))
                                     : java.util.Optional.empty());
             case ASSET -> when(assetRepository.existsByIdAndProjectId(targetId, projectId))
                     .thenReturn(exists);
@@ -440,7 +441,7 @@ class GraphTargetResolverServiceTest {
             case EVIDENCE -> when(evidenceArtifactRepository.findByIdAndProjectId(targetId, projectId))
                     .thenReturn(
                             exists
-                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
+                                    ? java.util.Optional.of(mock(
                                             com.keplerops.groundcontrol.domain.evidence.model.EvidenceArtifact.class))
                                     : java.util.Optional.empty());
             case RISK_REGISTER_RECORD,
@@ -465,8 +466,8 @@ class GraphTargetResolverServiceTest {
             case OBSERVATION -> when(observationRepository.findByIdWithAssetAndProjectId(targetId, projectId))
                     .thenReturn(
                             exists
-                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
-                                            com.keplerops.groundcontrol.domain.assets.model.Observation.class))
+                                    ? java.util.Optional.of(
+                                            mock(com.keplerops.groundcontrol.domain.assets.model.Observation.class))
                                     : java.util.Optional.empty());
             case VERIFICATION_RESULT -> when(verificationResultRepository.existsByIdAndProjectId(targetId, projectId))
                     .thenReturn(exists);
@@ -475,7 +476,7 @@ class GraphTargetResolverServiceTest {
             case EVIDENCE -> when(evidenceArtifactRepository.findByIdAndProjectId(targetId, projectId))
                     .thenReturn(
                             exists
-                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
+                                    ? java.util.Optional.of(mock(
                                             com.keplerops.groundcontrol.domain.evidence.model.EvidenceArtifact.class))
                                     : java.util.Optional.empty());
             case RISK_ASSESSMENT_RESULT,
@@ -497,15 +498,15 @@ class GraphTargetResolverServiceTest {
             case OBSERVATION -> when(observationRepository.findByIdWithAssetAndProjectId(targetId, projectId))
                     .thenReturn(
                             exists
-                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
-                                            com.keplerops.groundcontrol.domain.assets.model.Observation.class))
+                                    ? java.util.Optional.of(
+                                            mock(com.keplerops.groundcontrol.domain.assets.model.Observation.class))
                                     : java.util.Optional.empty());
             case FINDING -> when(findingRepository.existsByIdAndProjectId(targetId, projectId))
                     .thenReturn(exists);
             case EVIDENCE -> when(evidenceArtifactRepository.findByIdAndProjectId(targetId, projectId))
                     .thenReturn(
                             exists
-                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
+                                    ? java.util.Optional.of(mock(
                                             com.keplerops.groundcontrol.domain.evidence.model.EvidenceArtifact.class))
                                     : java.util.Optional.empty());
             case RISK_REGISTER_RECORD,
@@ -579,14 +580,14 @@ class GraphTargetResolverServiceTest {
             case ASSET -> when(assetRepository.existsByIdAndProjectId(targetId, projectId))
                     .thenReturn(exists);
             case OBSERVATION -> when(observationRepository.findByIdWithAssetAndProjectId(targetId, projectId))
-                    .thenReturn(java.util.Optional.of(org.mockito.Mockito.mock(
-                            com.keplerops.groundcontrol.domain.assets.model.Observation.class)));
+                    .thenReturn(java.util.Optional.of(
+                            mock(com.keplerops.groundcontrol.domain.assets.model.Observation.class)));
             case AUDIT -> when(auditRepository.existsByIdAndProjectId(targetId, projectId))
                     .thenReturn(exists);
             case EVIDENCE -> when(evidenceArtifactRepository.findByIdAndProjectId(targetId, projectId))
                     .thenReturn(
                             exists
-                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
+                                    ? java.util.Optional.of(mock(
                                             com.keplerops.groundcontrol.domain.evidence.model.EvidenceArtifact.class))
                                     : java.util.Optional.empty());
             case OPERATIONAL_ARTIFACT, REMEDIATION_PLAN, EXTERNAL -> throw new IllegalArgumentException(
@@ -686,7 +687,7 @@ class GraphTargetResolverServiceTest {
             case EVIDENCE -> when(evidenceArtifactRepository.findByIdAndProjectId(targetId, projectId))
                     .thenReturn(
                             exists
-                                    ? java.util.Optional.of(org.mockito.Mockito.mock(
+                                    ? java.util.Optional.of(mock(
                                             com.keplerops.groundcontrol.domain.evidence.model.EvidenceArtifact.class))
                                     : java.util.Optional.empty());
             case FINDING -> when(findingRepository.existsByIdAndProjectId(targetId, projectId))

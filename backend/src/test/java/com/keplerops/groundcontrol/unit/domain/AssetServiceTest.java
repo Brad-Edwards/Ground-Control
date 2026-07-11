@@ -4,6 +4,8 @@ import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -595,8 +597,7 @@ class AssetServiceTest {
                     .isEqualTo("asset_referenced");
             assertThat(thrown.getDetail()).containsEntry("auditCount", 1);
             org.mockito.Mockito.verifyNoInteractions(linkRepository);
-            org.mockito.Mockito.verify(assetRepository, org.mockito.Mockito.never())
-                    .delete(asset);
+            verify(assetRepository, never()).delete(asset);
         }
 
         @Test
@@ -624,8 +625,7 @@ class AssetServiceTest {
             assertThat(thrown.getDetail()).containsEntry("findingCount", 1);
             // Parent + outbound-link cleanup must be skipped when the guard fires.
             org.mockito.Mockito.verifyNoInteractions(linkRepository);
-            org.mockito.Mockito.verify(assetRepository, org.mockito.Mockito.never())
-                    .delete(asset);
+            verify(assetRepository, never()).delete(asset);
         }
     }
 
@@ -1955,7 +1955,7 @@ class AssetServiceTest {
             // UPDATE must hit the DB before the new ACTIVE INSERT, or the
             // partial unique index uk_asset_subtype_schema_active fires
             // against the still-ACTIVE prior row.
-            verify(subtypeSchemaRepository, org.mockito.Mockito.times(2)).saveAndFlush(any());
+            verify(subtypeSchemaRepository, times(2)).saveAndFlush(any());
         }
 
         @Test

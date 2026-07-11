@@ -29,13 +29,11 @@ public class PackRegistryImportService {
         this.packRegistryService = packRegistryService;
     }
 
-    public PackRegistryEntry importEntry(
-            UUID projectId, String filename, byte[] content, PackRegistryImportOptions options) {
-        return packRegistryService.registerEntry(toRegisterCommand(projectId, filename, content, options));
+    public PackRegistryEntry importEntry(UUID projectId, byte[] content, PackRegistryImportOptions options) {
+        return packRegistryService.registerEntry(toRegisterCommand(projectId, content, options));
     }
 
-    public RegisterPackCommand toRegisterCommand(
-            UUID projectId, String filename, byte[] content, PackRegistryImportOptions options) {
+    public RegisterPackCommand toRegisterCommand(UUID projectId, byte[] content, PackRegistryImportOptions options) {
         var root = parseJson(content);
         var format = detectFormat(root, options.format());
         return switch (format) {
