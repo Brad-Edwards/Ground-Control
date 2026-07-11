@@ -66,6 +66,11 @@ class SyncIntegrationTest extends BaseIntegrationTest {
                 }
 
                 @Override
+                public GitHubPullRequestData fetchPullRequest(String owner, String repo, int number) {
+                    throw new UnsupportedOperationException("Not used in sync tests");
+                }
+
+                @Override
                 public GitHubIssueData createIssue(String repo, String title, String body, List<String> labels) {
                     throw new UnsupportedOperationException("Not used in sync tests");
                 }

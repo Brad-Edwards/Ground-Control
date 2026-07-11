@@ -116,6 +116,40 @@ class ImplementWorkflowReplayTest {
     }
 
     @Test
+    void blocksAtReadinessUntilTheAuthoritativeMergeEventIsObserved() {
+        // GC-O009 (b) acceptance criterion: the workflow blocks on merge and resumes on the
+        // authoritative GitHub merge event. allowMerge=false simulates "PR not yet merged"; flipping it
+        // simulates the merge being observed by the polling merge-observation activity.
+        try (TestWorkflowEnvironment env = TestWorkflowEnvironment.newInstance()) {
+            FakeActivities activities = new FakeActivities();
+            activities.allowMerge = false; // the merge gate has not observed a merge yet.
+            registerAndStart(env, activities, new FakeContentActivities());
+
+            ImplementWorkflow workflow = env.getWorkflowClient().newWorkflowStub(ImplementWorkflow.class, options());
+            WorkflowClient.start(workflow::run, input());
+
+            // Advances through the ship pipeline to readiness, then holds at the merge gate — no operator
+            // signal unblocks it, only observing the merge does.
+            await().atMost(Duration.ofSeconds(15))
+                    .until(() -> workflow.currentOutcome() == ImplementOutcome.READY_FOR_REVIEW);
+            assertThat(workflow.currentPhase()).isEqualTo(ImplementPhase.D_SHIP_PIPELINE);
+            // The bounded gate-state read model reports the run is blocked on the human merge gate.
+            var gateState = workflow.gateState();
+            assertThat(gateState.waitingForMerge()).isTrue();
+            assertThat(gateState.phase()).isEqualTo(ImplementPhase.D_SHIP_PIPELINE);
+            assertThat(gateState.escalatedPhase()).isNull();
+
+            // Simulate the authoritative GitHub merge event; the next polled observation reports merged.
+            activities.allowMerge = true;
+
+            ImplementWorkflowResult result = WorkflowStub.fromTyped(workflow).getResult(ImplementWorkflowResult.class);
+            assertThat(result.outcome()).isEqualTo(ImplementOutcome.MERGED);
+            assertThat(result.terminalPhase()).isEqualTo(ImplementPhase.E_POST_MERGE_RECONCILE);
+            assertThat(result.reconciled()).isTrue();
+        }
+    }
+
+    @Test
     void gateOrderMatchesContract() {
         try (TestWorkflowEnvironment env = TestWorkflowEnvironment.newInstance()) {
             FakeActivities activities = new FakeActivities();

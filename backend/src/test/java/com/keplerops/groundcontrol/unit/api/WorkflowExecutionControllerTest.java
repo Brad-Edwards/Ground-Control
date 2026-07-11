@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -13,13 +14,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.keplerops.groundcontrol.api.workflowexecution.WorkflowExecutionController;
+import com.keplerops.groundcontrol.domain.exception.AuthorizationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.workflowexecution.OperatorSignalType;
+import com.keplerops.groundcontrol.domain.workflowexecution.RetryPhase;
 import com.keplerops.groundcontrol.domain.workflowexecution.Reviewer;
 import com.keplerops.groundcontrol.domain.workflowexecution.SignalDisposition;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionRef;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionStatus;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionView;
+import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowOutcome;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowType;
 import com.keplerops.groundcontrol.domain.workflowexecution.service.WorkflowExecutionService;
 import com.keplerops.groundcontrol.domain.workflowexecution.service.WorkflowExecutionService.SignalRequest;
@@ -119,7 +123,11 @@ class WorkflowExecutionControllerTest {
         mockMvc.perform(get("/api/v1/workflow-executions/" + WORKFLOW_ID).param("project", "ground-control"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.workflowId", is(WORKFLOW_ID)))
-                .andExpect(jsonPath("$.issueNumber", is(1278)));
+                .andExpect(jsonPath("$.issueNumber", is(1278)))
+                // Bounded gate-state read model for the operations console (GC-Q016).
+                .andExpect(jsonPath("$.gateState.phase", is("D_SHIP_PIPELINE")))
+                .andExpect(jsonPath("$.gateState.outcome", is("READY_FOR_REVIEW")))
+                .andExpect(jsonPath("$.gateState.waitingForMerge", is(true)));
     }
 
     @Test
@@ -159,6 +167,20 @@ class WorkflowExecutionControllerTest {
     }
 
     @Test
+    void signalReturns403WhenGateAuthorityDenied() throws Exception {
+        doThrow(new AuthorizationException("Operator gate signals require an authenticated actor with gate authority"))
+                .when(service)
+                .signal(eq("ground-control"), eq(WORKFLOW_ID), any());
+
+        mockMvc.perform(post("/api/v1/workflow-executions/" + WORKFLOW_ID + "/signals")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{ \"signalType\": \"CANCEL\", \"reason\": \"stop\" }"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code", is("authorization_error")));
+    }
+
+    @Test
     void signalWithMissingSignalTypeReturns422() throws Exception {
         mockMvc.perform(post("/api/v1/workflow-executions/" + WORKFLOW_ID + "/signals")
                         .param("project", "ground-control")
@@ -189,6 +211,8 @@ class WorkflowExecutionControllerTest {
                 null,
                 null,
                 3L,
-                new WorkflowExecutionView.Correlation("ground-control", 1278, List.of("GC-O009")));
+                new WorkflowExecutionView.Correlation("ground-control", 1278, List.of("GC-O009")),
+                new WorkflowExecutionView.GateState(
+                        RetryPhase.D_SHIP_PIPELINE, WorkflowOutcome.READY_FOR_REVIEW, true, null, null));
     }
 }

@@ -2636,6 +2636,177 @@ def run_workflow_payload_contract_check(root: Path = REPO_ROOT) -> list[Violatio
     return violations
 
 
+# GC-O009 (b) / ADR-029 human-gate invariant. The closed operator-signal catalog is exactly these
+# three; PR merge is observed from GitHub, never signaled, and no plan-approval gate exists. The
+# workflow contract (ImplementWorkflow @SignalMethod set) is the source of truth; the backend enum,
+# the JSON schema, and the MCP tool must mirror it 1:1. Adding a fourth signal — or any plan/merge
+# approval gate — must fail this check.
+_GATE_SET_SIGNAL_TYPES = ("CANCEL", "RETRY_FROM", "REVIEW_CAP_DISPOSITION")
+_GATE_SET_SIGNAL_METHODS = ("applyReviewCapDisposition", "cancel", "retryFrom")
+_GATE_SET_SIGNAL_RECORDS = ("CancelSignal", "ReviewCapDispositionSignal", "RetryFromSignal")
+# Tokens that would signal a reintroduced synchronous gate (ADR-029 forbids these). Scanned across the
+# operator-signal enum, the workflow contract, and the MCP surface. "merge" alone is intentionally NOT
+# forbidden — those files legitimately describe the observed merge gate.
+_GATE_SET_FORBIDDEN_TOKENS = (
+    "PLAN_APPROVAL",
+    "PLAN_APPROVED",
+    "APPROVE_PLAN",
+    "MERGE_APPROVED",
+    "MERGE_APPROVAL",
+    "APPROVE_MERGE",
+    "CONTINUE_AFTER_MERGE",
+    "approveMerge",
+    "approvePlan",
+    "mergeApproved",
+    "planApproved",
+    "continueAfterMerge",
+)
+_OPERATOR_SIGNAL_TYPE_PATH = (
+    "backend/src/main/java/com/keplerops/groundcontrol/domain/workflowexecution/OperatorSignalType.java"
+)
+_IMPLEMENT_WORKFLOW_PATH = (
+    "backend/src/main/java/com/keplerops/groundcontrol/infrastructure/temporal/implement/ImplementWorkflow.java"
+)
+_WORKFLOW_MCP_PATH = "mcp/ground-control/gc-workflow-execution.js"
+_IMPLEMENT_SIGNALS_SCHEMA_PATH = "contracts/schemas/workflow/implement-signals.v1.schema.json"
+_SIGNAL_METHOD_RE = re.compile(r"@SignalMethod\s+\w[\w<>\[\]]*\s+(\w+)\s*\(")
+
+
+def run_gate_set_invariant_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert the operator-gate set equals the workflow contract's, on every surface (GC-O009 (b)).
+
+    A static post-condition (independent of ``changed_files``): the closed operator-signal catalog is
+    exactly ``cancel`` / ``retryFrom`` / ``applyReviewCapDisposition`` and nothing else, mirrored 1:1
+    across the workflow ``@SignalMethod`` contract, the ``OperatorSignalType`` enum, the
+    ``implement-signals.v1`` schema, and the MCP ``WORKFLOW_SIGNAL_TYPES`` catalog. PR merge is observed,
+    never signaled; no plan-approval gate exists (ADR-029). Any surface that adds, drops, or renames a
+    gate — or reintroduces a plan/merge-approval gate — fails ``make policy``. Emits:
+      ``gate-set-source-missing`` — a required source file is absent.
+      ``gate-set-parse-error``    — a file exists but the gate set could not be parsed out of it.
+      ``gate-set-drift``          — a surface does not equal the canonical closed set.
+      ``gate-set-forbidden-gate`` — a plan/merge-approval token appears on a gate surface.
+    """
+    violations: list[Violation] = []
+
+    enum_path = root / _OPERATOR_SIGNAL_TYPE_PATH
+    workflow_path = root / _IMPLEMENT_WORKFLOW_PATH
+    mcp_path = root / _WORKFLOW_MCP_PATH
+    schema_path = root / _IMPLEMENT_SIGNALS_SCHEMA_PATH
+
+    if not enum_path.exists():
+        # The control surface is not present in this tree; nothing to gate.
+        return violations
+    for path, rel in ((workflow_path, _IMPLEMENT_WORKFLOW_PATH), (mcp_path, _WORKFLOW_MCP_PATH), (schema_path, _IMPLEMENT_SIGNALS_SCHEMA_PATH)):
+        if not path.exists():
+            violations.append(
+                Violation(
+                    code="gate-set-source-missing",
+                    message=f"{rel} is missing; the gate-set invariant cannot be verified.",
+                    details=[],
+                )
+            )
+    if violations:
+        return violations
+
+    enum_text = enum_path.read_text(encoding="utf-8")
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    mcp_text = mcp_path.read_text(encoding="utf-8")
+
+    canonical_types = set(_GATE_SET_SIGNAL_TYPES)
+    canonical_methods = set(_GATE_SET_SIGNAL_METHODS)
+    canonical_records = set(_GATE_SET_SIGNAL_RECORDS)
+
+    # 1. Workflow contract @SignalMethod set (the source of truth).
+    signal_methods = set(_SIGNAL_METHOD_RE.findall(workflow_text))
+    if not signal_methods:
+        violations.append(
+            Violation(
+                code="gate-set-parse-error",
+                message=f"No @SignalMethod declarations parsed from {_IMPLEMENT_WORKFLOW_PATH}.",
+                details=[],
+            )
+        )
+    else:
+        _gate_set_diff(violations, "ImplementWorkflow @SignalMethod", signal_methods, canonical_methods)
+
+    # 2. Backend OperatorSignalType enum.
+    enum_constants = set(parse_java_enum_constants(enum_text))
+    if not enum_constants:
+        violations.append(
+            Violation(
+                code="gate-set-parse-error",
+                message=f"No enum constants parsed from {_OPERATOR_SIGNAL_TYPE_PATH}.",
+                details=[],
+            )
+        )
+    else:
+        _gate_set_diff(violations, "OperatorSignalType enum", enum_constants, canonical_types)
+
+    # 3. MCP WORKFLOW_SIGNAL_TYPES catalog.
+    mcp_types = parse_const_string_array(mcp_text, "WORKFLOW_SIGNAL_TYPES")
+    if mcp_types is None:
+        violations.append(
+            Violation(
+                code="gate-set-parse-error",
+                message=f"WORKFLOW_SIGNAL_TYPES not found in {_WORKFLOW_MCP_PATH}.",
+                details=[],
+            )
+        )
+    else:
+        _gate_set_diff(violations, "MCP WORKFLOW_SIGNAL_TYPES", set(mcp_types), canonical_types)
+
+    # 4. implement-signals.v1 schema signal records.
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        violations.append(
+            Violation(
+                code="gate-set-parse-error",
+                message=f"{_IMPLEMENT_SIGNALS_SCHEMA_PATH} is not valid JSON.",
+                details=[str(exc)],
+            )
+        )
+    else:
+        schema_records = set(_collect_x_gc_records(schema))
+        _gate_set_diff(violations, "implement-signals.v1 schema", schema_records, canonical_records)
+
+    # 5. Forbidden plan/merge-approval tokens on any gate surface.
+    for rel, text in (
+        (_OPERATOR_SIGNAL_TYPE_PATH, enum_text),
+        (_IMPLEMENT_WORKFLOW_PATH, workflow_text),
+        (_WORKFLOW_MCP_PATH, mcp_text),
+    ):
+        present = sorted(token for token in _GATE_SET_FORBIDDEN_TOKENS if token in text)
+        if present:
+            violations.append(
+                Violation(
+                    code="gate-set-forbidden-gate",
+                    message=f"{rel} reintroduces a forbidden synchronous gate (ADR-029): PR merge is observed, never signaled; no plan-approval gate.",
+                    details=present,
+                )
+            )
+    return violations
+
+
+def _gate_set_diff(violations: list[Violation], surface: str, actual: set[str], canonical: set[str]) -> None:
+    if actual == canonical:
+        return
+    added = sorted(actual - canonical)
+    removed = sorted(canonical - actual)
+    details = []
+    if added:
+        details.append(f"outside the closed catalog: {', '.join(added)}")
+    if removed:
+        details.append(f"missing from the surface: {', '.join(removed)}")
+    violations.append(
+        Violation(
+            code="gate-set-drift",
+            message=f"{surface} does not equal the closed operator-gate set (the workflow contract's).",
+            details=details,
+        )
+    )
+
+
 def _parse_authz_contract_rows(text: str) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     current: dict[str, str] = {}
@@ -3454,6 +3625,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_contract_surface_check())
     violations.extend(run_contract_invariant_enforcement_check())
     violations.extend(run_workflow_payload_contract_check())
+    violations.extend(run_gate_set_invariant_check())
     violations.extend(run_authz_matrix_sync_check())
     violations.extend(run_workflow_routing_contract())
     violations.extend(run_test_quality_decision_record_contract())

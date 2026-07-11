@@ -104,6 +104,11 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                 }
 
                 @Override
+                public GitHubPullRequestData fetchPullRequest(String owner, String repo, int number) {
+                    throw new UnsupportedOperationException("Not used in requirements E2E tests");
+                }
+
+                @Override
                 public GitHubIssueData createIssue(String repo, String title, String body, List<String> labels) {
                     throw new UnsupportedOperationException("Not used in E2E tests");
                 }
@@ -616,6 +621,7 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "194", // V194: create research_run_operation_authorization (#1008, ADR-086)
                         "195", // V195: research_run_operation_authorization audit (#1008 audit parity)
                         "196", // V196: create grc_assessment_run (GC-GRC-016, #1129)
-                        "197"); // V197: grc_assessment_run audit (GC-GRC-016 audit parity)
+                        "197", // V197: grc_assessment_run audit (GC-GRC-016 audit parity)
+                        "198"); // V198: operator_signal_audit append-only log (GC-O009 (b), #1279)
     }
 }

@@ -58,6 +58,11 @@ class CreateIssueIntegrationTest extends BaseIntegrationTest {
                 }
 
                 @Override
+                public GitHubPullRequestData fetchPullRequest(String owner, String repo, int number) {
+                    throw new UnsupportedOperationException("Not used in create-issue tests");
+                }
+
+                @Override
                 public GitHubIssueData createIssue(String repo, String title, String body, List<String> labels) {
                     return new GitHubIssueData(
                             55, title, "OPEN", "https://github.com/test/repo/issues/55", body, labels);

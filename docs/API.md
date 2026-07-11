@@ -1199,7 +1199,7 @@ in its allowlist; the cross-project rollup and all POST paths are excluded. Brid
 ingestion (`gc_workflow_run_ingest`) seeds the read-model from canonical issue-thread
 `gc:` markers with `provenance=ISSUE_THREAD`.
 
-### Workflow Control Surface: start / status / signal (GC-O009 / ADR-028, issue #1278)
+### Workflow Control Surface: start / status / signal (GC-O009 / ADR-028, issues #1278, #1279)
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
@@ -1238,10 +1238,25 @@ project}`. A duplicate id already running returns **409**.
 `ESCALATE_TO_HUMAN`). A missing required field returns 422. PR merge is observed
 from GitHub and is **not** a signal.
 
+**Signal authorization and audit (GC-O009 (b), #1279):** beyond the `ROLE_ADMIN`
+route gate, the service requires an authenticated actor with gate authority
+(resolved from the request principal, never a body field); an anonymous/absent
+actor returns **403** (`authorization_error`). Every attempt, allowed or denied,
+is written to an append-only `operator_signal_audit` record (actor, project,
+workflow/run id, signal type, contract version, authorization outcome, bounded
+reason/fields), so the gate-authority trail survives independently of Temporal
+history. The gate set is pinned by a `make policy` check (`gate-set-invariant`):
+the operator catalog is closed and no plan or merge-approval gate may be
+reintroduced.
+
 **Execution read shape:** `{workflowId, runId, workflowType, status
 (RUNNING/COMPLETED/FAILED/CANCELED/TERMINATED/CONTINUED_AS_NEW/TIMED_OUT/PAUSED/UNKNOWN),
-startTime, closeTime, historyLength, project, issueNumber, requirementUids}`. The MCP
-tool `gc_workflow_execution` (`start`/`get`/`list`/`signal`) mirrors this surface.
+startTime, closeTime, historyLength, project, issueNumber, requirementUids, gateState}`.
+`gateState` is a bounded read model for the GC-Q016 console (`{phase, outcome,
+waitingForMerge, escalatedPhase, escalatedReviewer}`, queried from the workflow):
+present on single-execution `get` and **null** on bulk `list` (and when a closed
+execution or absent worker cannot answer the query). The MCP tool
+`gc_workflow_execution` (`start`/`get`/`list`/`signal`) mirrors this surface.
 
 ### GRC Assessment Runs (GC-GRC-016)
 

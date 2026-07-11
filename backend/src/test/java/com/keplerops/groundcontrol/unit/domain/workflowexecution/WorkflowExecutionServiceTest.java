@@ -10,10 +10,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.keplerops.groundcontrol.domain.audit.ActorHolder;
+import com.keplerops.groundcontrol.domain.exception.AuthorizationException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.exception.ServiceUnavailableException;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.workflowexecution.OperatorSignalContract;
 import com.keplerops.groundcontrol.domain.workflowexecution.OperatorSignalType;
 import com.keplerops.groundcontrol.domain.workflowexecution.Reviewer;
 import com.keplerops.groundcontrol.domain.workflowexecution.SignalDisposition;
@@ -22,6 +25,8 @@ import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionRef
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionStatus;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionView;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowType;
+import com.keplerops.groundcontrol.domain.workflowexecution.audit.AuthorizationOutcome;
+import com.keplerops.groundcontrol.domain.workflowexecution.audit.OperatorSignalAuditRecorder;
 import com.keplerops.groundcontrol.domain.workflowexecution.service.SendSignalCommand;
 import com.keplerops.groundcontrol.domain.workflowexecution.service.StartWorkflowCommand;
 import com.keplerops.groundcontrol.domain.workflowexecution.service.WorkflowExecutionService;
@@ -29,6 +34,7 @@ import com.keplerops.groundcontrol.domain.workflowexecution.service.WorkflowExec
 import com.keplerops.groundcontrol.domain.workflowexecution.service.WorkflowExecutionService.StartRequest;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -39,16 +45,26 @@ class WorkflowExecutionServiceTest {
 
     private static final String PROJECT = "ground-control";
     private static final String WORKFLOW_ID = "gc-implement-ground-control-1278";
+    private static final String ACTOR = "operator-admin";
 
     private final ObjectProvider<WorkflowControlPort> portProvider = mock(ObjectProvider.class);
     private final WorkflowControlPort port = mock(WorkflowControlPort.class);
     private final ProjectService projectService = mock(ProjectService.class);
-    private final WorkflowExecutionService service = new WorkflowExecutionService(portProvider, projectService);
+    private final OperatorSignalAuditRecorder auditRecorder = mock(OperatorSignalAuditRecorder.class);
+    private final WorkflowExecutionService service =
+            new WorkflowExecutionService(portProvider, projectService, auditRecorder);
 
     @BeforeEach
     void setUp() {
         when(projectService.requireProjectIdentifier(any())).thenReturn(PROJECT);
         when(portProvider.getIfAvailable()).thenReturn(port);
+        // Default to an authorized actor; individual authority tests override this.
+        ActorHolder.set(ACTOR);
+    }
+
+    @AfterEach
+    void tearDown() {
+        ActorHolder.clear();
     }
 
     @Test
@@ -170,7 +186,8 @@ class WorkflowExecutionServiceTest {
                 null,
                 null,
                 0L,
-                new WorkflowExecutionView.Correlation(PROJECT, 1278, List.of()));
+                new WorkflowExecutionView.Correlation(PROJECT, 1278, List.of()),
+                null);
         when(port.describe(WORKFLOW_ID)).thenReturn(Optional.of(completed));
         var request = new SignalRequest(OperatorSignalType.CANCEL, "stop", null, null, null);
         assertThatThrownBy(() -> service.signal(PROJECT, WORKFLOW_ID, request))
@@ -205,6 +222,73 @@ class WorkflowExecutionServiceTest {
                 .isInstanceOf(DomainValidationException.class);
     }
 
+    @Test
+    void signalRecordsAllowedAuditWithRunIdForDeliveredSignal() {
+        when(port.describe(WORKFLOW_ID)).thenReturn(Optional.of(sampleView()));
+        var request = new SignalRequest(OperatorSignalType.CANCEL, "stop", null, null, null);
+
+        service.signal(PROJECT, WORKFLOW_ID, request);
+
+        var captor = ArgumentCaptor.forClass(SendSignalCommand.class);
+        verify(port).signal(eq(WORKFLOW_ID), any());
+        verify(auditRecorder)
+                .record(
+                        eq(ACTOR),
+                        eq(PROJECT),
+                        eq(WORKFLOW_ID),
+                        eq("run-1"),
+                        captor.capture(),
+                        eq(AuthorizationOutcome.ALLOWED));
+        assertThat(captor.getValue().type()).isEqualTo(OperatorSignalType.CANCEL);
+    }
+
+    @Test
+    void signalDeniesUnauthenticatedActorRecordsDeniedAuditAndDoesNotTouchPort() {
+        ActorHolder.set("anonymous"); // ActorFilter's default for an unauthenticated request.
+        var request = new SignalRequest(OperatorSignalType.CANCEL, "stop", null, null, null);
+
+        assertThatThrownBy(() -> service.signal(PROJECT, WORKFLOW_ID, request))
+                .isInstanceOf(AuthorizationException.class);
+
+        // A denied attempt is recorded (with a null runId — the port was never described) and the
+        // control port is never touched, so an unauthorized caller learns nothing about the execution.
+        verify(auditRecorder)
+                .record(
+                        eq("anonymous"),
+                        eq(PROJECT),
+                        eq(WORKFLOW_ID),
+                        eq(null),
+                        any(),
+                        eq(AuthorizationOutcome.DENIED));
+        verify(port, never()).describe(any());
+        verify(port, never()).signal(any(), any());
+    }
+
+    @Test
+    void signalDeniesWhenNoActorIsPresent() {
+        ActorHolder.clear(); // no authenticated actor at all
+        var request = new SignalRequest(OperatorSignalType.CANCEL, "stop", null, null, null);
+
+        assertThatThrownBy(() -> service.signal(PROJECT, WORKFLOW_ID, request))
+                .isInstanceOf(AuthorizationException.class);
+
+        verify(auditRecorder)
+                .record(
+                        eq("anonymous"),
+                        eq(PROJECT),
+                        eq(WORKFLOW_ID),
+                        eq(null),
+                        any(),
+                        eq(AuthorizationOutcome.DENIED));
+        verify(port, never()).signal(any(), any());
+    }
+
+    @Test
+    void operatorSignalContractVersionIsStable() {
+        // The audit trail is keyed to this version; a bump is a deliberate contract change.
+        assertThat(OperatorSignalContract.VERSION).isEqualTo("gc.workflow.implement-signals.v1");
+    }
+
     private static WorkflowExecutionView sampleView() {
         return new WorkflowExecutionView(
                 WORKFLOW_ID,
@@ -214,6 +298,7 @@ class WorkflowExecutionServiceTest {
                 null,
                 null,
                 0L,
-                new WorkflowExecutionView.Correlation(PROJECT, 1278, List.of("GC-O009")));
+                new WorkflowExecutionView.Correlation(PROJECT, 1278, List.of("GC-O009")),
+                null);
     }
 }

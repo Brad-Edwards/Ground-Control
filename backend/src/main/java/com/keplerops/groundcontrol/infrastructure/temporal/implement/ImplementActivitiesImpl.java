@@ -37,6 +37,7 @@ import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.St
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.TraceabilityReconcileInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.TraceabilityReconcileResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.port.GitHubWorkflowPort;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.port.MergeObservationPort;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.port.RepositoryBindingPort;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.port.SonarGatePort;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.port.WorkspacePort;
@@ -69,6 +70,7 @@ public final class ImplementActivitiesImpl implements ImplementActivities {
     private static final int MAX_PRECOMMIT_RETRIES = 5;
 
     private final GitHubWorkflowPort gitHub;
+    private final MergeObservationPort mergeObservation;
     private final WorkspacePort workspace;
     private final SonarGatePort sonar;
     private final RepositoryBindingPort repositoryBinding;
@@ -78,6 +80,7 @@ public final class ImplementActivitiesImpl implements ImplementActivities {
 
     public ImplementActivitiesImpl(
             GitHubWorkflowPort gitHub,
+            MergeObservationPort mergeObservation,
             WorkspacePort workspace,
             SonarGatePort sonar,
             RepositoryBindingPort repositoryBinding,
@@ -85,6 +88,7 @@ public final class ImplementActivitiesImpl implements ImplementActivities {
             ProjectService projectService,
             TraceabilityService traceabilityService) {
         this.gitHub = gitHub;
+        this.mergeObservation = mergeObservation;
         this.workspace = workspace;
         this.sonar = sonar;
         this.repositoryBinding = repositoryBinding;
@@ -154,7 +158,7 @@ public final class ImplementActivitiesImpl implements ImplementActivities {
 
     @Override
     public MergeObservationResult observeMergeState(MergeObservationInput input) {
-        return gitHub.observeMerge(input.repository(), input.prNumber());
+        return mergeObservation.observeMerge(input.repository(), input.prNumber());
     }
 
     @Override

@@ -6245,6 +6245,50 @@
         },
         "type": "object"
       },
+      "GateStateResponse": {
+        "properties": {
+          "escalatedPhase": {
+            "enum": [
+              "A_PLAN_IMPLEMENT",
+              "B_QUALITY_GATE",
+              "C_STAGE_COMMIT_PUSH",
+              "D_SHIP_PIPELINE",
+              "E_POST_MERGE_RECONCILE"
+            ],
+            "type": "string"
+          },
+          "escalatedReviewer": {
+            "enum": [
+              "CODEX",
+              "TEST_QUALITY"
+            ],
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "READY_FOR_REVIEW",
+              "MERGED",
+              "ESCALATED",
+              "CANCELLED"
+            ],
+            "type": "string"
+          },
+          "phase": {
+            "enum": [
+              "A_PLAN_IMPLEMENT",
+              "B_QUALITY_GATE",
+              "C_STAGE_COMMIT_PUSH",
+              "D_SHIP_PIPELINE",
+              "E_POST_MERGE_RECONCILE"
+            ],
+            "type": "string"
+          },
+          "waitingForMerge": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "GitHubIssueRequest": {
         "properties": {
           "extraBody": {
@@ -17773,6 +17817,9 @@
           "closeTime": {
             "format": "date-time",
             "type": "string"
+          },
+          "gateState": {
+            "$ref": "#/components/schemas/GateStateResponse"
           },
           "historyLength": {
             "format": "int64",

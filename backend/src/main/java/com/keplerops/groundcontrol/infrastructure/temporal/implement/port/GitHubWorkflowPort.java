@@ -2,14 +2,15 @@ package com.keplerops.groundcontrol.infrastructure.temporal.implement.port;
 
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.CiObservationResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.CloseIssueResult;
-import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.MergeObservationResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.OpenPullRequestResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.RepositoryBinding;
 import java.util.List;
 
 /**
  * Infrastructure port for the GitHub side effects the deterministic {@code /implement} activities
- * drive (issue/branch resolution, PR creation, CI-check and merge observation, issue close).
+ * drive (issue/branch resolution, PR creation, CI-check observation, changed-file listing, issue
+ * close). Merge-gate observation is a separate single-responsibility seam ({@link MergeObservationPort})
+ * so the human-gate slice can ship a production merge adapter independently.
  *
  * <p>Every method takes a project-resolved {@link RepositoryBinding} rather than caller-supplied
  * owner/name strings, so the side-effect seam is bound to the run's Ground Control project (ADR-028)
@@ -18,10 +19,10 @@ import java.util.List;
  * idempotent — observe-before-create keyed by {@code idempotencyKey} — so a retry after a partial
  * success does not create a duplicate branch, pull request, or issue action.
  *
- * <p>Phase 2 (issue #1277) defines the port; the concrete GitHub adapter and full merge-observation
- * (webhook/polling) implementation land with the control-surface and human-gate phases (#1278/#1279).
- * Activities are typed against this port so tests supply fakes and the engine core is exercised in the
- * Temporal test environment without a live GitHub dependency.
+ * <p>Phase 2 (issue #1277) defines the port; its concrete GitHub adapter lands with a later phase.
+ * The merge-gate slice (#1279) already ships a real {@link MergeObservationPort} adapter. Activities
+ * are typed against these ports so tests supply fakes and the engine core is exercised in the Temporal
+ * test environment without a live GitHub dependency.
  */
 public interface GitHubWorkflowPort {
 
@@ -34,9 +35,6 @@ public interface GitHubWorkflowPort {
 
     /** Observe the aggregate CI state for a pull request. */
     CiObservationResult observeCi(RepositoryBinding repository, int prNumber);
-
-    /** Observe merge state — the single synchronous human gate, read as the authoritative GitHub event. */
-    MergeObservationResult observeMerge(RepositoryBinding repository, int prNumber);
 
     /** List the changed file paths of the merged pull request (for traceability reconciliation). */
     List<String> changedFiles(RepositoryBinding repository, int prNumber);

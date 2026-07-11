@@ -16,11 +16,14 @@ import com.keplerops.groundcontrol.domain.workflowexecution.RetryPhase;
 import com.keplerops.groundcontrol.domain.workflowexecution.Reviewer;
 import com.keplerops.groundcontrol.domain.workflowexecution.SignalDisposition;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionStatus;
+import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowOutcome;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowType;
 import com.keplerops.groundcontrol.domain.workflowexecution.service.SendSignalCommand;
 import com.keplerops.groundcontrol.domain.workflowexecution.service.StartWorkflowCommand;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.CancelSignal;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.CapDisposition;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.GateState;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementOutcome;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementPhase;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementWorkflowInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.RetryFromSignal;
@@ -171,6 +174,62 @@ class TemporalWorkflowControlAdapterTest {
     }
 
     @Test
+    void describePopulatesGateStateFromWorkflowQuery() {
+        WorkflowStub stub = mock(WorkflowStub.class);
+        when(client.newUntypedWorkflowStub(WORKFLOW_ID)).thenReturn(stub);
+        WorkflowExecutionDescription desc = mock(WorkflowExecutionDescription.class);
+        when(stub.describe()).thenReturn(desc);
+        when(desc.getExecution()).thenReturn(execution(WORKFLOW_ID, "run-1"));
+        when(desc.getStatus())
+                .thenReturn(io.temporal.api.enums.v1.WorkflowExecutionStatus.WORKFLOW_EXECUTION_STATUS_RUNNING);
+        when(stub.query("gateState", GateState.class))
+                .thenReturn(new GateState(
+                        ImplementPhase.B_QUALITY_GATE,
+                        ImplementOutcome.ESCALATED,
+                        false,
+                        ImplementPhase.B_QUALITY_GATE,
+                        ReviewerKind.CODEX));
+
+        var gateState = adapter.describe(WORKFLOW_ID).orElseThrow().gateState();
+        assertThat(gateState).isNotNull();
+        assertThat(gateState.phase()).isEqualTo(RetryPhase.B_QUALITY_GATE);
+        assertThat(gateState.outcome()).isEqualTo(WorkflowOutcome.ESCALATED);
+        assertThat(gateState.waitingForMerge()).isFalse();
+        assertThat(gateState.escalatedPhase()).isEqualTo(RetryPhase.B_QUALITY_GATE);
+        assertThat(gateState.escalatedReviewer()).isEqualTo(Reviewer.CODEX);
+    }
+
+    @Test
+    void describeDegradesGateStateToNullWhenQueryFails() {
+        WorkflowStub stub = mock(WorkflowStub.class);
+        when(client.newUntypedWorkflowStub(WORKFLOW_ID)).thenReturn(stub);
+        WorkflowExecutionDescription desc = mock(WorkflowExecutionDescription.class);
+        when(stub.describe()).thenReturn(desc);
+        when(desc.getExecution()).thenReturn(execution(WORKFLOW_ID, "run-1"));
+        when(desc.getStatus())
+                .thenReturn(io.temporal.api.enums.v1.WorkflowExecutionStatus.WORKFLOW_EXECUTION_STATUS_COMPLETED);
+        // A closed execution or absent worker cannot answer the query; the describe still succeeds.
+        when(stub.query("gateState", GateState.class)).thenThrow(new IllegalStateException("closed"));
+
+        var view = adapter.describe(WORKFLOW_ID).orElseThrow();
+        assertThat(view.gateState()).isNull();
+        assertThat(view.status()).isEqualTo(WorkflowExecutionStatus.COMPLETED);
+    }
+
+    @Test
+    void listOmitsGateStateToAvoidPerExecutionQueries() {
+        WorkflowExecutionMetadata mine = mock(WorkflowExecutionMetadata.class);
+        when(mine.getExecution()).thenReturn(execution(WORKFLOW_ID, "run-1"));
+        when(mine.getStatus())
+                .thenReturn(io.temporal.api.enums.v1.WorkflowExecutionStatus.WORKFLOW_EXECUTION_STATUS_RUNNING);
+        when(client.listExecutions(anyString())).thenReturn(Stream.of(mine));
+
+        var views = adapter.listForProject("ground-control", 50);
+        assertThat(views).hasSize(1);
+        assertThat(views.get(0).gateState()).isNull();
+    }
+
+    @Test
     void describeReturnsEmptyWhenNotFound() {
         WorkflowStub stub = mock(WorkflowStub.class);
         when(client.newUntypedWorkflowStub(WORKFLOW_ID)).thenReturn(stub);
@@ -239,6 +298,20 @@ class TemporalWorkflowControlAdapterTest {
             assertThat(TemporalWorkflowControlAdapter.toCapDisposition(disposition)
                             .name())
                     .isEqualTo(disposition.name());
+        }
+        // Reverse (contract -> product) gate-state mappings must also be exhaustive so a new phase,
+        // outcome, or reviewer never silently drops out of the read model.
+        for (var phase : ImplementPhase.values()) {
+            assertThat(TemporalWorkflowControlAdapter.fromImplementPhase(phase).name())
+                    .isEqualTo(phase.name());
+        }
+        for (var outcome : ImplementOutcome.values()) {
+            assertThat(TemporalWorkflowControlAdapter.toWorkflowOutcome(outcome).name())
+                    .isEqualTo(outcome.name());
+        }
+        for (var reviewer : ReviewerKind.values()) {
+            assertThat(TemporalWorkflowControlAdapter.fromReviewerKind(reviewer).name())
+                    .isEqualTo(reviewer.name());
         }
     }
 }

@@ -27,8 +27,11 @@ import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.Co
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.CompletionGateResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.GitPublishInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.GitPublishResult;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.MergeObservationInput;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.MergeObservationResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.MergedArtifactsInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.MergedArtifactsResult;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.PrState;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.QualityGateInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.QualityGateResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.RepositoryBinding;
@@ -40,6 +43,7 @@ import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.St
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.TraceabilityReconcileInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.TraceabilityReconcileResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.port.GitHubWorkflowPort;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.port.MergeObservationPort;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.port.RepositoryBindingPort;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.port.SonarGatePort;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.port.WorkspacePort;
@@ -54,6 +58,7 @@ class ImplementActivitiesImplTest {
     private static final RepositoryBinding BINDING = new RepositoryBinding("acme", "repo", "dev");
 
     private GitHubWorkflowPort gitHub;
+    private MergeObservationPort mergeObservation;
     private WorkspacePort workspace;
     private SonarGatePort sonar;
     private RepositoryBindingPort repositoryBinding;
@@ -65,6 +70,7 @@ class ImplementActivitiesImplTest {
     @BeforeEach
     void setUp() {
         gitHub = mock(GitHubWorkflowPort.class);
+        mergeObservation = mock(MergeObservationPort.class);
         workspace = mock(WorkspacePort.class);
         sonar = mock(SonarGatePort.class);
         repositoryBinding = mock(RepositoryBindingPort.class);
@@ -72,7 +78,14 @@ class ImplementActivitiesImplTest {
         projectService = mock(ProjectService.class);
         traceabilityService = mock(TraceabilityService.class);
         activities = new ImplementActivitiesImpl(
-                gitHub, workspace, sonar, repositoryBinding, requirementService, projectService, traceabilityService);
+                gitHub,
+                mergeObservation,
+                workspace,
+                sonar,
+                repositoryBinding,
+                requirementService,
+                projectService,
+                traceabilityService);
     }
 
     @Test
@@ -153,6 +166,17 @@ class ImplementActivitiesImplTest {
         CompletionGateResult result = activities.runCompletionGate(new CompletionGateInput("make check"));
 
         assertThat(result.passed()).isTrue();
+    }
+
+    @Test
+    void observeMergeStateReadsThroughTheMergeObservationSeam() {
+        when(mergeObservation.observeMerge(BINDING, 7)).thenReturn(new MergeObservationResult(true, PrState.MERGED));
+
+        MergeObservationResult result = activities.observeMergeState(new MergeObservationInput(BINDING, 7));
+
+        assertThat(result.merged()).isTrue();
+        assertThat(result.prState()).isEqualTo(PrState.MERGED);
+        verify(mergeObservation).observeMerge(BINDING, 7);
     }
 
     @Test

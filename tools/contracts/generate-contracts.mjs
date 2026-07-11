@@ -123,6 +123,10 @@ const exactPropertyTypes = {
   "TimelineEntryResponse.changeCategory": "ChangeCategory",
   "WorkspaceControlDto.queueReasons": "ControlWorkspaceQueueReason[]",
   "WorkspaceScenarioDto.reviewIndicator": "ScenarioReviewState",
+  // gateState is null for bulk list entries and executions whose gate state cannot be queried
+  // (GC-O009 (b), #1279). springdoc emits a bare $ref (non-null) for it; this override keeps the
+  // generated client honest about the intentionally-nullable field.
+  "WorkflowExecutionResponse.gateState": "GateStateResponse | null",
 };
 
 function propertyType(schemaName, propName, propSchema) {

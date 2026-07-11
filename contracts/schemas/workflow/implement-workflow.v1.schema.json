@@ -63,6 +63,43 @@
         "prNumber": { "type": ["integer", "null"], "minimum": 1 },
         "reconciled": { "type": "boolean" }
       }
+    },
+    "GateState": {
+      "x-gc-record": "GateState",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "waitingForMerge"],
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": [
+            "A_PLAN_IMPLEMENT",
+            "B_QUALITY_GATE",
+            "C_STAGE_COMMIT_PUSH",
+            "D_SHIP_PIPELINE",
+            "E_POST_MERGE_RECONCILE"
+          ]
+        },
+        "outcome": {
+          "type": ["string", "null"],
+          "enum": ["READY_FOR_REVIEW", "MERGED", "ESCALATED", "CANCELLED"]
+        },
+        "waitingForMerge": { "type": "boolean" },
+        "escalatedPhase": {
+          "type": ["string", "null"],
+          "enum": [
+            "A_PLAN_IMPLEMENT",
+            "B_QUALITY_GATE",
+            "C_STAGE_COMMIT_PUSH",
+            "D_SHIP_PIPELINE",
+            "E_POST_MERGE_RECONCILE"
+          ]
+        },
+        "escalatedReviewer": {
+          "type": ["string", "null"],
+          "enum": ["codex", "test-quality"]
+        }
+      }
     }
   }
 }
