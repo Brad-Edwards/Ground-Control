@@ -5,6 +5,7 @@ import com.keplerops.groundcontrol.domain.workflowexecution.OperatorSignalType;
 import com.keplerops.groundcontrol.domain.workflowexecution.RetryPhase;
 import com.keplerops.groundcontrol.domain.workflowexecution.Reviewer;
 import com.keplerops.groundcontrol.domain.workflowexecution.SignalDisposition;
+import com.keplerops.groundcontrol.domain.workflowexecution.service.SendSignalCommand;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -75,56 +76,32 @@ public class OperatorSignalAudit extends BaseEntity {
         // JPA
     }
 
-    private OperatorSignalAudit(
+    /**
+     * Build an audit row from the attempt context plus the validated {@link SendSignalCommand} (the
+     * signal type and its type-specific fields). {@code reason} is truncated to {@link #MAX_REASON_LENGTH}
+     * to fit the column.
+     */
+    public static OperatorSignalAudit of(
             String actor,
             String project,
             String workflowId,
             String runId,
-            OperatorSignalType signalType,
             String contractVersion,
             AuthorizationOutcome authorizationOutcome,
-            String reason,
-            RetryPhase retryFromPhase,
-            Reviewer reviewer,
-            SignalDisposition disposition) {
-        this.actor = actor;
-        this.project = project;
-        this.workflowId = workflowId;
-        this.runId = runId;
-        this.signalType = signalType;
-        this.contractVersion = contractVersion;
-        this.authorizationOutcome = authorizationOutcome;
-        this.reason = truncateReason(reason);
-        this.retryFromPhase = retryFromPhase;
-        this.reviewer = reviewer;
-        this.disposition = disposition;
-    }
-
-    /** Build an audit row; {@code reason} is truncated to {@link #MAX_REASON_LENGTH} to fit the column. */
-    public static OperatorSignalAudit record(
-            String actor,
-            String project,
-            String workflowId,
-            String runId,
-            OperatorSignalType signalType,
-            String contractVersion,
-            AuthorizationOutcome authorizationOutcome,
-            String reason,
-            RetryPhase retryFromPhase,
-            Reviewer reviewer,
-            SignalDisposition disposition) {
-        return new OperatorSignalAudit(
-                actor,
-                project,
-                workflowId,
-                runId,
-                signalType,
-                contractVersion,
-                authorizationOutcome,
-                reason,
-                retryFromPhase,
-                reviewer,
-                disposition);
+            SendSignalCommand command) {
+        OperatorSignalAudit audit = new OperatorSignalAudit();
+        audit.actor = actor;
+        audit.project = project;
+        audit.workflowId = workflowId;
+        audit.runId = runId;
+        audit.contractVersion = contractVersion;
+        audit.authorizationOutcome = authorizationOutcome;
+        audit.signalType = command.type();
+        audit.reason = truncateReason(command.reason());
+        audit.retryFromPhase = command.retryFromPhase();
+        audit.reviewer = command.reviewer();
+        audit.disposition = command.disposition();
+        return audit;
     }
 
     private static String truncateReason(String reason) {

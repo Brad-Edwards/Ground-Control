@@ -261,8 +261,7 @@ public class GitHubCliClient implements GitHubClient {
         if (number < 1) {
             throw new GroundControlException("Pull request number must be a positive integer", "invalid_pr_number");
         }
-        String stdout = execGh(
-                List.of(ghPath, "api", String.format("repos/%s/%s/pulls/%d", owner, repo, number), "--method", "GET"));
+        String stdout = execGh(List.of(ghPath, "api", String.format("repos/%s/%s/pulls/%d", owner, repo, number)));
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> raw = objectMapper.readValue(stdout, new TypeReference<Map<String, Object>>() {});

@@ -232,7 +232,7 @@ class WorkflowExecutionServiceTest {
         var captor = ArgumentCaptor.forClass(SendSignalCommand.class);
         verify(port).signal(eq(WORKFLOW_ID), any());
         verify(auditRecorder)
-                .record(
+                .write(
                         eq(ACTOR),
                         eq(PROJECT),
                         eq(WORKFLOW_ID),
@@ -253,13 +253,7 @@ class WorkflowExecutionServiceTest {
         // A denied attempt is recorded (with a null runId — the port was never described) and the
         // control port is never touched, so an unauthorized caller learns nothing about the execution.
         verify(auditRecorder)
-                .record(
-                        eq("anonymous"),
-                        eq(PROJECT),
-                        eq(WORKFLOW_ID),
-                        eq(null),
-                        any(),
-                        eq(AuthorizationOutcome.DENIED));
+                .write(eq("anonymous"), eq(PROJECT), eq(WORKFLOW_ID), eq(null), any(), eq(AuthorizationOutcome.DENIED));
         verify(port, never()).describe(any());
         verify(port, never()).signal(any(), any());
     }
@@ -273,13 +267,7 @@ class WorkflowExecutionServiceTest {
                 .isInstanceOf(AuthorizationException.class);
 
         verify(auditRecorder)
-                .record(
-                        eq("anonymous"),
-                        eq(PROJECT),
-                        eq(WORKFLOW_ID),
-                        eq(null),
-                        any(),
-                        eq(AuthorizationOutcome.DENIED));
+                .write(eq("anonymous"), eq(PROJECT), eq(WORKFLOW_ID), eq(null), any(), eq(AuthorizationOutcome.DENIED));
         verify(port, never()).signal(any(), any());
     }
 

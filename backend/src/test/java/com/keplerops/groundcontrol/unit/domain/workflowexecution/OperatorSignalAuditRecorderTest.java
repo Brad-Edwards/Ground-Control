@@ -25,7 +25,7 @@ class OperatorSignalAuditRecorderTest {
         var command = new SendSignalCommand(
                 OperatorSignalType.REVIEW_CAP_DISPOSITION, null, null, Reviewer.CODEX, SignalDisposition.PROCEED);
 
-        recorder.record("actor-1", "proj", "gc-implement-proj-42", "run-9", command, AuthorizationOutcome.ALLOWED);
+        recorder.write("actor-1", "proj", "gc-implement-proj-42", "run-9", command, AuthorizationOutcome.ALLOWED);
 
         var captor = ArgumentCaptor.forClass(OperatorSignalAudit.class);
         verify(repository).save(captor.capture());
@@ -46,7 +46,7 @@ class OperatorSignalAuditRecorderTest {
         String longReason = "x".repeat(OperatorSignalAudit.MAX_REASON_LENGTH + 500);
         var command = new SendSignalCommand(OperatorSignalType.CANCEL, longReason, null, null, null);
 
-        recorder.record("actor-1", "proj", "gc-implement-proj-42", null, command, AuthorizationOutcome.DENIED);
+        recorder.write("actor-1", "proj", "gc-implement-proj-42", null, command, AuthorizationOutcome.DENIED);
 
         var captor = ArgumentCaptor.forClass(OperatorSignalAudit.class);
         verify(repository).save(captor.capture());

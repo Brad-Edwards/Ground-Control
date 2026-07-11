@@ -121,7 +121,7 @@ public class WorkflowExecutionService {
         // unauthorized caller cannot learn whether the execution exists or whether control is enabled.
         var actor = ActorHolder.get();
         if (!hasGateAuthority(actor)) {
-            auditRecorder.record(
+            auditRecorder.write(
                     actorForAudit(actor), projectIdentifier, workflowId, null, command, AuthorizationOutcome.DENIED);
             throw new AuthorizationException(
                     "Operator gate signals require an authenticated actor with gate authority");
@@ -145,7 +145,7 @@ public class WorkflowExecutionService {
         port.signal(workflowId, command);
         // Recorded only after the signal is delivered so an ALLOWED row reflects an authorized signal
         // that actually reached the workflow (a describe/signal race throws and is not recorded).
-        auditRecorder.record(actor, projectIdentifier, workflowId, view.runId(), command, AuthorizationOutcome.ALLOWED);
+        auditRecorder.write(actor, projectIdentifier, workflowId, view.runId(), command, AuthorizationOutcome.ALLOWED);
     }
 
     /**

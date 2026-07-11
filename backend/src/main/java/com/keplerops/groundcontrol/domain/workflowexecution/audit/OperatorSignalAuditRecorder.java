@@ -26,24 +26,14 @@ public class OperatorSignalAuditRecorder {
 
     /** Record one operator-signal attempt (allowed or denied) as an independent, committed audit row. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void record(
+    public void write(
             String actor,
             String project,
             String workflowId,
             String runId,
             SendSignalCommand command,
             AuthorizationOutcome outcome) {
-        repository.save(OperatorSignalAudit.record(
-                actor,
-                project,
-                workflowId,
-                runId,
-                command.type(),
-                OperatorSignalContract.VERSION,
-                outcome,
-                command.reason(),
-                command.retryFromPhase(),
-                command.reviewer(),
-                command.disposition()));
+        repository.save(OperatorSignalAudit.of(
+                actor, project, workflowId, runId, OperatorSignalContract.VERSION, outcome, command));
     }
 }
