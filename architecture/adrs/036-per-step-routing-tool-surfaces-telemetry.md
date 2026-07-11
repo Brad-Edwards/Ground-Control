@@ -310,6 +310,21 @@ list so future SKILL changes must keep it in sync.
 
 ## Amendments
 
+**2026-07-11 (issue #1280, ADR-028 LLM provider boundary).** The routing
+table in this ADR is agent-side: `gc_resolve_workflow_route` resolves which
+driver session (`agent: parent|subagent|cli`) runs a `/implement` skill step
+and which canonical model id it should report, for the CLI-driven orchestrator
+loop. Issue #1280 adds a distinct, server-side surface: a Temporal-worker
+`AnthropicLlmProvider` adapter (`infrastructure/llm/anthropic/`, ADR-028)
+invoked from inside a Temporal content activity (`authorPlan`), with its own
+credential and HTTP boundary—this is not the routing tier abstraction above
+and does not change the stage names, tier semantics, or telemetry record
+shape. The two surfaces share only the canonical provider-id vocabulary: the
+`.ground-control.yaml` routing parser (ADR-027 amendment, issue #1280) now
+accepts `anthropic` as the canonical provider id, normalizing the legacy
+`claude` label to it. `ROUTING_PROVIDERS` stays scoped to the agent-side
+parser; the Java backend never repeats or guesses the alias.
+
 **2026-05-19 (issue #931).** No change to the routing stage names, tier
 semantics, or telemetry record shape. The downstream deterministic tools
 (`gc_post_decision_record`, `gc_post_final_report`, `gc_render_pr_body`) gain

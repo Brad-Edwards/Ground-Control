@@ -35,7 +35,7 @@ class TemporalControlConfigurationTest {
                         .build());
 
         adapter.start(new StartWorkflowCommand(
-                "gc-implement-p-1", WorkflowType.IMPLEMENT, "p", 1, null, null, List.of(), null));
+                "gc-implement-p-1", WorkflowType.IMPLEMENT, "p", 1, null, null, List.of(), null, null));
         return optionsCaptor.getValue();
     }
 

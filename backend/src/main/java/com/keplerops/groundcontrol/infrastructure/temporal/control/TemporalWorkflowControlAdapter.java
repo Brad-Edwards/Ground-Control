@@ -20,6 +20,7 @@ import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.Ga
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementOutcome;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementPhase;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementWorkflowInput;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ResolvedLlmRoute;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.RetryFromSignal;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ReviewCapDispositionSignal;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ReviewerKind;
@@ -168,7 +169,27 @@ public class TemporalWorkflowControlAdapter implements WorkflowControlPort {
                 command.sonarProjectKey(),
                 command.reviewCap(),
                 command.requirementUids(),
-                command.pollIntervalSeconds());
+                command.pollIntervalSeconds(),
+                toContractRoute(command.route()));
+    }
+
+    /**
+     * Convert the domain {@link com.keplerops.groundcontrol.domain.llm.ResolvedLlmRoute} resolved by
+     * {@code WorkflowExecutionService} into the Temporal contract carrier bound to this execution's
+     * durable input (ADR-028). {@code null} when route resolution was unavailable/not applicable.
+     */
+    private static ResolvedLlmRoute toContractRoute(com.keplerops.groundcontrol.domain.llm.ResolvedLlmRoute route) {
+        if (route == null) {
+            return null;
+        }
+        return new ResolvedLlmRoute(
+                route.contractVersion(),
+                route.project(),
+                route.stage(),
+                route.tier(),
+                route.providerId(),
+                route.modelId(),
+                route.configDigest());
     }
 
     private static Map<String, Object> memoFor(StartWorkflowCommand command) {

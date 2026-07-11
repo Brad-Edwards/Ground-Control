@@ -1,0 +1,2032 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2026-07-11T20:33:45.777Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "ImplementWorkflow"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJwcm9qZWN0IjoicHJvaiIsImlzc3VlTnVtYmVyIjo0MiwiY29tcGxldGlvbkNvbW1hbmQiOiJtYWtlIGNoZWNrIiwic29uYXJQcm9qZWN0S2V5Ijoic29uYXIta2V5IiwicmV2aWV3Q2FwIjoxLCJyZXF1aXJlbWVudFVpZHMiOlsiR0MtTzAwOSJdLCJwb2xsSW50ZXJ2YWxTZWNvbmRzIjoxfQ\u003d\u003d"
+            }
+          ]
+        },
+        "workflowExecutionTimeout": "315360000s",
+        "workflowRunTimeout": "315360000s",
+        "workflowTaskTimeout": "10s",
+        "originalExecutionRunId": "ddb9a3fb-616d-4342-a6b6-d59a480e2e73",
+        "identity": "2902199@red-dragon",
+        "firstExecutionRunId": "ddb9a3fb-616d-4342-a6b6-d59a480e2e73",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {}
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2026-07-11T20:33:45.777Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2026-07-11T20:33:45.809Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "435"
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2026-07-11T20:33:46.090Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "langUsedFlags": [
+            1,
+            3
+          ],
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2026-07-11T20:33:46.090Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "69185c85-d74d-3aab-94f3-8703df8fe44b",
+        "activityType": {
+          "name": "ResolveRepositoryBinding"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJwcm9qZWN0IjoicHJvaiJ9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "300s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "3",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2026-07-11T20:33:46.093Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "5",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2026-07-11T20:33:46.116Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJvd25lciI6ImFjbWUiLCJyZXBvIjoicmVwbyIsImJhc2VCcmFuY2giOiJkZXYifQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "5",
+        "startedEventId": "6",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2026-07-11T20:33:46.116Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "9",
+      "eventTime": "2026-07-11T20:33:46.116Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "8",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "968"
+      }
+    },
+    {
+      "eventId": "10",
+      "eventTime": "2026-07-11T20:33:46.126Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "8",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "11",
+      "eventTime": "2026-07-11T20:33:46.126Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "a819bc7c-6e6a-3c41-b565-27f6538c6650",
+        "activityType": {
+          "name": "ResolveIssue"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJyZXBvc2l0b3J5Ijp7Im93bmVyIjoiYWNtZSIsInJlcG8iOiJyZXBvIiwiYmFzZUJyYW5jaCI6ImRldiJ9LCJpc3N1ZU51bWJlciI6NDIsInJlcXVpcmVtZW50VWlkcyI6WyJHQy1PMDA5Il19"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "300s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "9",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "12",
+      "eventTime": "2026-07-11T20:33:46.126Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "11",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "13",
+      "eventTime": "2026-07-11T20:33:46.132Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJpc3N1ZU51bWJlciI6NDIsImJyYW5jaCI6IjQyLXNsdWciLCJiYXNlQnJhbmNoIjoiZGV2IiwicmVxdWlyZW1lbnRVaWRzIjpbIkdDLU8wMDkiXX0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "11",
+        "startedEventId": "12",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "14",
+      "eventTime": "2026-07-11T20:33:46.132Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "15",
+      "eventTime": "2026-07-11T20:33:46.132Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "14",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "1617"
+      }
+    },
+    {
+      "eventId": "16",
+      "eventTime": "2026-07-11T20:33:46.140Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "14",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "17",
+      "eventTime": "2026-07-11T20:33:46.140Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "9c1c159b-2bc5-3bf4-ab70-d4c344593783",
+        "activityType": {
+          "name": "AuthorPlan"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJpc3N1ZU51bWJlciI6NDIsInJlcXVpcmVtZW50VWlkcyI6WyJHQy1PMDA5Il0sImlkZW1wb3RlbmN5S2V5IjoiZ2MtaW1wbC0yOWI3Zjc5Ni03NDgxLTQyNGUtOTJiYy01NzIxNGYwOTZmZWY6cGxhbiJ9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "3600s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "15",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "18",
+      "eventTime": "2026-07-11T20:33:46.140Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "17",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "19",
+      "eventTime": "2026-07-11T20:33:46.146Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJwb3N0ZWQiOnRydWUsImNvbW1lbnRJZCI6MX0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "17",
+        "startedEventId": "18",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "20",
+      "eventTime": "2026-07-11T20:33:46.146Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "21",
+      "eventTime": "2026-07-11T20:33:46.146Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "20",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "2212"
+      }
+    },
+    {
+      "eventId": "22",
+      "eventTime": "2026-07-11T20:33:46.154Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "20",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "23",
+      "eventTime": "2026-07-11T20:33:46.154Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "73b507ea-c64a-3c23-bb1f-f21656c896be",
+        "activityType": {
+          "name": "ImplementChange"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJpc3N1ZU51bWJlciI6NDIsInBsYW5Db21tZW50SWQiOm51bGwsImlkZW1wb3RlbmN5S2V5IjoiZ2MtaW1wbC0yOWI3Zjc5Ni03NDgxLTQyNGUtOTJiYy01NzIxNGYwOTZmZWY6Y2hhbmdlIn0\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "3600s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "21",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "24",
+      "eventTime": "2026-07-11T20:33:46.154Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "23",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "25",
+      "eventTime": "2026-07-11T20:33:46.161Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJmaWxlc0NoYW5nZWQiOjEsInRlc3RzQWRkZWQiOjEsImNoYW5nZWxvZ1VwZGF0ZWQiOnRydWUsImNsYXVzZU1hcHBpbmdDb21wbGV0ZSI6dHJ1ZX0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "23",
+        "startedEventId": "24",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "26",
+      "eventTime": "2026-07-11T20:33:46.161Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "27",
+      "eventTime": "2026-07-11T20:33:46.161Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "26",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "2863"
+      }
+    },
+    {
+      "eventId": "28",
+      "eventTime": "2026-07-11T20:33:46.170Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "26",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "29",
+      "eventTime": "2026-07-11T20:33:46.170Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "2fd69b6d-f096-383a-bad5-f294c19f3dcd",
+        "activityType": {
+          "name": "RunCompletionGate"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJjb21tYW5kIjoibWFrZSBjaGVjayJ9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "3600s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "27",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "30",
+      "eventTime": "2026-07-11T20:33:46.170Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "29",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "31",
+      "eventTime": "2026-07-11T20:33:46.175Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJwYXNzZWQiOnRydWUsImV4aXRDb2RlIjowLCJzdW1tYXJ5Ijoib2sifQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "29",
+        "startedEventId": "30",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "32",
+      "eventTime": "2026-07-11T20:33:46.175Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "33",
+      "eventTime": "2026-07-11T20:33:46.175Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "32",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "3384"
+      }
+    },
+    {
+      "eventId": "34",
+      "eventTime": "2026-07-11T20:33:46.182Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "32",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "35",
+      "eventTime": "2026-07-11T20:33:46.182Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "dc10bdc9-7ad7-3986-be79-bc96a8f9587a",
+        "activityType": {
+          "name": "EvaluateQualityGate"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJwcm9qZWN0IjoicHJvaiIsImJ1aWxkUGFzc2VkIjp0cnVlLCJjaGFuZ2Vsb2dVcGRhdGVkIjp0cnVlLCJjbGF1c2VNYXBwaW5nQ29tcGxldGUiOnRydWV9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "300s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "33",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "36",
+      "eventTime": "2026-07-11T20:33:46.182Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "35",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "37",
+      "eventTime": "2026-07-11T20:33:46.190Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJwYXNzZWQiOnRydWUsImZhaWxlZEdhdGVzIjpbXX0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "35",
+        "startedEventId": "36",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "38",
+      "eventTime": "2026-07-11T20:33:46.190Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "39",
+      "eventTime": "2026-07-11T20:33:46.190Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "38",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "3962"
+      }
+    },
+    {
+      "eventId": "40",
+      "eventTime": "2026-07-11T20:33:46.197Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "38",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "41",
+      "eventTime": "2026-07-11T20:33:46.197Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "99eafb48-d359-34d3-9902-2b76377ea758",
+        "activityType": {
+          "name": "StageCommitPush"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJicmFuY2giOiI0Mi1zbHVnIiwiY29tbWl0TWVzc2FnZSI6IkltcGxlbWVudCBpc3N1ZSAjNDIiLCJtYXhQcmVjb21taXRSZXRyaWVzIjpudWxsLCJpZGVtcG90ZW5jeUtleSI6ImdjLWltcGwtMjliN2Y3OTYtNzQ4MS00MjRlLTkyYmMtNTcyMTRmMDk2ZmVmOnB1c2gifQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "300s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "39",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "42",
+      "eventTime": "2026-07-11T20:33:46.197Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "41",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "43",
+      "eventTime": "2026-07-11T20:33:46.206Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJjb21taXRTaGEiOiJhYmMxMjM0IiwicHVzaGVkIjp0cnVlLCJwcmVjb21taXRBdHRlbXB0cyI6MX0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "41",
+        "startedEventId": "42",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "44",
+      "eventTime": "2026-07-11T20:33:46.206Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "45",
+      "eventTime": "2026-07-11T20:33:46.206Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "44",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "4630"
+      }
+    },
+    {
+      "eventId": "46",
+      "eventTime": "2026-07-11T20:33:46.214Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "44",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "47",
+      "eventTime": "2026-07-11T20:33:46.214Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "22414ceb-964f-391a-849a-736456e7c6e7",
+        "activityType": {
+          "name": "RunCodexReview"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJpc3N1ZU51bWJlciI6NDIsImNhcCI6MX0\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "3600s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "45",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "48",
+      "eventTime": "2026-07-11T20:33:46.215Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "47",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "49",
+      "eventTime": "2026-07-11T20:33:46.228Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ2ZXJkaWN0Ijoic2hpcCIsImJsb2NraW5nRmluZGluZ3MiOjAsImN5Y2xlc1J1biI6MX0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "47",
+        "startedEventId": "48",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "50",
+      "eventTime": "2026-07-11T20:33:46.228Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "51",
+      "eventTime": "2026-07-11T20:33:46.229Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "50",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "5160"
+      }
+    },
+    {
+      "eventId": "52",
+      "eventTime": "2026-07-11T20:33:46.242Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "50",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "53",
+      "eventTime": "2026-07-11T20:33:46.242Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "acebce91-a881-3f1c-b2de-a5526d162583",
+        "activityType": {
+          "name": "OpenPullRequest"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJyZXBvc2l0b3J5Ijp7Im93bmVyIjoiYWNtZSIsInJlcG8iOiJyZXBvIiwiYmFzZUJyYW5jaCI6ImRldiJ9LCJoZWFkQnJhbmNoIjoiNDItc2x1ZyIsInRpdGxlIjoiSW1wbGVtZW50IGlzc3VlICM0MiIsImlkZW1wb3RlbmN5S2V5IjoiZ2MtaW1wbC0yOWI3Zjc5Ni03NDgxLTQyNGUtOTJiYy01NzIxNGYwOTZmZWY6cHIifQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "300s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "51",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "54",
+      "eventTime": "2026-07-11T20:33:46.242Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "53",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "55",
+      "eventTime": "2026-07-11T20:33:46.247Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJwck51bWJlciI6MTAxLCJ1cmwiOiJodHRwczovL2V4YW1wbGUvcHIvMTAxIn0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "53",
+        "startedEventId": "54",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "56",
+      "eventTime": "2026-07-11T20:33:46.247Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "57",
+      "eventTime": "2026-07-11T20:33:46.248Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "56",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "5846"
+      }
+    },
+    {
+      "eventId": "58",
+      "eventTime": "2026-07-11T20:33:46.253Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "56",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "59",
+      "eventTime": "2026-07-11T20:33:46.253Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "9bea9ff0-e3f9-3d57-8a0b-ee61c855238d",
+        "activityType": {
+          "name": "ObserveCi"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJyZXBvc2l0b3J5Ijp7Im93bmVyIjoiYWNtZSIsInJlcG8iOiJyZXBvIiwiYmFzZUJyYW5jaCI6ImRldiJ9LCJwck51bWJlciI6MTAxfQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "300s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "57",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "60",
+      "eventTime": "2026-07-11T20:33:46.253Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "59",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "61",
+      "eventTime": "2026-07-11T20:33:46.260Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJzdGF0ZSI6IlNVQ0NFU1MiLCJmYWlsZWRDaGVja3MiOltdfQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "59",
+        "startedEventId": "60",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "62",
+      "eventTime": "2026-07-11T20:33:46.260Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "63",
+      "eventTime": "2026-07-11T20:33:46.260Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "62",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "6408"
+      }
+    },
+    {
+      "eventId": "64",
+      "eventTime": "2026-07-11T20:33:46.266Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "62",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "65",
+      "eventTime": "2026-07-11T20:33:46.266Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "5cacba86-55cf-3977-bf91-95dd8ca5d8ec",
+        "activityType": {
+          "name": "EvaluateSonarGate"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJwcm9qZWN0S2V5Ijoic29uYXIta2V5IiwicHJOdW1iZXIiOjEwMX0\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "300s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "63",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "66",
+      "eventTime": "2026-07-11T20:33:46.267Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "65",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "67",
+      "eventTime": "2026-07-11T20:33:46.273Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJzdGF0dXMiOiJPSyJ9"
+            }
+          ]
+        },
+        "scheduledEventId": "65",
+        "startedEventId": "66",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "68",
+      "eventTime": "2026-07-11T20:33:46.273Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "69",
+      "eventTime": "2026-07-11T20:33:46.273Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "68",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "6920"
+      }
+    },
+    {
+      "eventId": "70",
+      "eventTime": "2026-07-11T20:33:46.279Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "68",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "71",
+      "eventTime": "2026-07-11T20:33:46.279Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "203bcafc-d4df-3852-8f7e-4d4668694d59",
+        "activityType": {
+          "name": "RunTestQualityReview"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJpc3N1ZU51bWJlciI6NDIsImNhcCI6MX0\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "3600s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "69",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "72",
+      "eventTime": "2026-07-11T20:33:46.280Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "71",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "73",
+      "eventTime": "2026-07-11T20:33:46.284Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJjbGVhbiI6dHJ1ZSwiZmluZGluZ3MiOjAsImN5Y2xlc1J1biI6MX0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "71",
+        "startedEventId": "72",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "74",
+      "eventTime": "2026-07-11T20:33:46.284Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "75",
+      "eventTime": "2026-07-11T20:33:46.284Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "74",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "7450"
+      }
+    },
+    {
+      "eventId": "76",
+      "eventTime": "2026-07-11T20:33:46.290Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "74",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "77",
+      "eventTime": "2026-07-11T20:33:46.290Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "55223209-52df-3b16-b87c-994f04ca0702",
+        "activityType": {
+          "name": "PostReadinessRecord"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJpc3N1ZU51bWJlciI6NDIsInByTnVtYmVyIjoxMDEsImlkZW1wb3RlbmN5S2V5IjoiZ2MtaW1wbC0yOWI3Zjc5Ni03NDgxLTQyNGUtOTJiYy01NzIxNGYwOTZmZWY6cmVhZGluZXNzIn0\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "3600s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "75",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "78",
+      "eventTime": "2026-07-11T20:33:46.291Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "77",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "79",
+      "eventTime": "2026-07-11T20:33:46.295Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJwb3N0ZWQiOnRydWUsImNvbW1lbnRJZCI6MX0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "77",
+        "startedEventId": "78",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "80",
+      "eventTime": "2026-07-11T20:33:46.295Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "81",
+      "eventTime": "2026-07-11T20:33:46.295Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "80",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "8050"
+      }
+    },
+    {
+      "eventId": "82",
+      "eventTime": "2026-07-11T20:33:46.302Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "80",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "83",
+      "eventTime": "2026-07-11T20:33:46.302Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "7fed5da4-4971-3de5-9c1d-76e07e409a5e",
+        "activityType": {
+          "name": "ObserveMergeState"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJyZXBvc2l0b3J5Ijp7Im93bmVyIjoiYWNtZSIsInJlcG8iOiJyZXBvIiwiYmFzZUJyYW5jaCI6ImRldiJ9LCJwck51bWJlciI6MTAxfQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "300s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "81",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "84",
+      "eventTime": "2026-07-11T20:33:46.303Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "83",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "85",
+      "eventTime": "2026-07-11T20:33:46.308Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJtZXJnZWQiOnRydWUsInByU3RhdGUiOiJNRVJHRUQifQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "83",
+        "startedEventId": "84",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "86",
+      "eventTime": "2026-07-11T20:33:46.308Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "87",
+      "eventTime": "2026-07-11T20:33:46.308Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "86",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "8623"
+      }
+    },
+    {
+      "eventId": "88",
+      "eventTime": "2026-07-11T20:33:46.314Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "86",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "89",
+      "eventTime": "2026-07-11T20:33:46.314Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "7c65abf8-fb50-3993-b74e-3e839714d8a4",
+        "activityType": {
+          "name": "ObserveMergedArtifacts"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJyZXBvc2l0b3J5Ijp7Im93bmVyIjoiYWNtZSIsInJlcG8iOiJyZXBvIiwiYmFzZUJyYW5jaCI6ImRldiJ9LCJwck51bWJlciI6MTAxfQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "300s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "87",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "90",
+      "eventTime": "2026-07-11T20:33:46.314Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "89",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "91",
+      "eventTime": "2026-07-11T20:33:46.319Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJpbXBsZW1lbnRzQXJ0aWZhY3RzIjpbImJhY2tlbmQvc3JjL21haW4vamF2YS9BcHAuamF2YSJdLCJ0ZXN0c0FydGlmYWN0cyI6WyJiYWNrZW5kL3NyYy90ZXN0L2phdmEvQXBwVGVzdC5qYXZhIl19"
+            }
+          ]
+        },
+        "scheduledEventId": "89",
+        "startedEventId": "90",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "92",
+      "eventTime": "2026-07-11T20:33:46.319Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "93",
+      "eventTime": "2026-07-11T20:33:46.319Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "92",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "9284"
+      }
+    },
+    {
+      "eventId": "94",
+      "eventTime": "2026-07-11T20:33:46.325Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "92",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "95",
+      "eventTime": "2026-07-11T20:33:46.325Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "f4f53a78-fcee-3c68-a0e8-62d8438392c5",
+        "activityType": {
+          "name": "TransitionRequirementStatus"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ0YXJnZXRTdGF0dXMiOiJBQ1RJVkUiLCJwcm9qZWN0IjoicHJvaiIsInJlcXVpcmVtZW50VWlkIjoiR0MtTzAwOSJ9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "300s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "93",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "96",
+      "eventTime": "2026-07-11T20:33:46.326Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "95",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "97",
+      "eventTime": "2026-07-11T20:33:46.330Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJyZXF1aXJlbWVudFVpZCI6IkdDLU8wMDkiLCJuZXdTdGF0dXMiOiJBQ1RJVkUiLCJ0cmFuc2l0aW9uZWQiOnRydWV9"
+            }
+          ]
+        },
+        "scheduledEventId": "95",
+        "startedEventId": "96",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "98",
+      "eventTime": "2026-07-11T20:33:46.330Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "99",
+      "eventTime": "2026-07-11T20:33:46.330Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "98",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "9892"
+      }
+    },
+    {
+      "eventId": "100",
+      "eventTime": "2026-07-11T20:33:46.338Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "98",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "101",
+      "eventTime": "2026-07-11T20:33:46.338Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "d9d15ad5-7ad9-3cf5-8416-1b45372660b1",
+        "activityType": {
+          "name": "ReconcileTraceability"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJwcm9qZWN0IjoicHJvaiIsInJlcXVpcmVtZW50VWlkcyI6WyJHQy1PMDA5Il0sInByTnVtYmVyIjoxMDEsImltcGxlbWVudHNBcnRpZmFjdHMiOlsiYmFja2VuZC9zcmMvbWFpbi9qYXZhL0FwcC5qYXZhIl0sInRlc3RzQXJ0aWZhY3RzIjpbImJhY2tlbmQvc3JjL3Rlc3QvamF2YS9BcHBUZXN0LmphdmEiXSwiaWRlbXBvdGVuY3lLZXkiOiJnYy1pbXBsLTI5YjdmNzk2LTc0ODEtNDI0ZS05MmJjLTU3MjE0ZjA5NmZlZjpyZWNvbmNpbGUifQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "300s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "99",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "102",
+      "eventTime": "2026-07-11T20:33:46.338Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "101",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "103",
+      "eventTime": "2026-07-11T20:33:46.343Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJpbXBsZW1lbnRzTGlua3NDcmVhdGVkIjoxLCJ0ZXN0c0xpbmtzQ3JlYXRlZCI6MX0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "101",
+        "startedEventId": "102",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "104",
+      "eventTime": "2026-07-11T20:33:46.343Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "105",
+      "eventTime": "2026-07-11T20:33:46.344Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "104",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "10659"
+      }
+    },
+    {
+      "eventId": "106",
+      "eventTime": "2026-07-11T20:33:46.349Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "104",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "107",
+      "eventTime": "2026-07-11T20:33:46.349Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "bae8f919-528d-3242-9edb-b60ede40df64",
+        "activityType": {
+          "name": "PostFinalReport"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJpc3N1ZU51bWJlciI6NDIsInByTnVtYmVyIjoxMDEsInJlcXVpcmVtZW50VWlkcyI6WyJHQy1PMDA5Il0sImlkZW1wb3RlbmN5S2V5IjoiZ2MtaW1wbC0yOWI3Zjc5Ni03NDgxLTQyNGUtOTJiYy01NzIxNGYwOTZmZWY6ZmluYWwtcmVwb3J0In0\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "3600s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "105",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "108",
+      "eventTime": "2026-07-11T20:33:46.349Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "107",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "109",
+      "eventTime": "2026-07-11T20:33:46.354Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJwb3N0ZWQiOnRydWUsImNvbW1lbnRJZCI6MX0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "107",
+        "startedEventId": "108",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "110",
+      "eventTime": "2026-07-11T20:33:46.354Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "111",
+      "eventTime": "2026-07-11T20:33:46.355Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "110",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "11289"
+      }
+    },
+    {
+      "eventId": "112",
+      "eventTime": "2026-07-11T20:33:46.359Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "110",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "113",
+      "eventTime": "2026-07-11T20:33:46.359Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "808c47b5-9994-32db-bfdc-679c3e56315a",
+        "activityType": {
+          "name": "CloseIssue"
+        },
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJyZXBvc2l0b3J5Ijp7Im93bmVyIjoiYWNtZSIsInJlcG8iOiJyZXBvIiwiYmFzZUJyYW5jaCI6ImRldiJ9LCJpc3N1ZU51bWJlciI6NDIsInByTnVtYmVyIjoxMDEsImlkZW1wb3RlbmN5S2V5IjoiZ2MtaW1wbC0yOWI3Zjc5Ni03NDgxLTQyNGUtOTJiYy01NzIxNGYwOTZmZWY6Y2xvc2UifQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "300s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "111",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s",
+          "maximumAttempts": 5
+        }
+      }
+    },
+    {
+      "eventId": "114",
+      "eventTime": "2026-07-11T20:33:46.359Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "113",
+        "identity": "2902199@red-dragon",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "115",
+      "eventTime": "2026-07-11T20:33:46.364Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJjbG9zZWQiOnRydWUsImFscmVhZHlDbG9zZWQiOmZhbHNlfQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "113",
+        "startedEventId": "114",
+        "identity": "2902199@red-dragon"
+      }
+    },
+    {
+      "eventId": "116",
+      "eventTime": "2026-07-11T20:33:46.364Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "gc-implement-test"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "117",
+      "eventTime": "2026-07-11T20:33:46.364Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "116",
+        "identity": "2902199@red-dragon",
+        "historySizeBytes": "11948"
+      }
+    },
+    {
+      "eventId": "118",
+      "eventTime": "2026-07-11T20:33:46.376Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "116",
+        "identity": "2902199@red-dragon",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.36.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "119",
+      "eventTime": "2026-07-11T20:33:46.376Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "workflowExecutionCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJpc3N1ZU51bWJlciI6NDIsInRlcm1pbmFsUGhhc2UiOiJFX1BPU1RfTUVSR0VfUkVDT05DSUxFIiwib3V0Y29tZSI6Ik1FUkdFRCIsInByTnVtYmVyIjoxMDEsInJlY29uY2lsZWQiOnRydWV9"
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId": "117"
+      }
+    }
+  ]
+}

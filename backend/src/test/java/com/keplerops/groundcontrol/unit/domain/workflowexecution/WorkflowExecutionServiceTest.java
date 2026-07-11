@@ -15,6 +15,8 @@ import com.keplerops.groundcontrol.domain.exception.AuthorizationException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.exception.ServiceUnavailableException;
+import com.keplerops.groundcontrol.domain.llm.ResolvedLlmRoute;
+import com.keplerops.groundcontrol.domain.llm.TrustedRouteResolver;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.workflowexecution.OperatorSignalContract;
 import com.keplerops.groundcontrol.domain.workflowexecution.OperatorSignalType;
@@ -47,19 +49,27 @@ class WorkflowExecutionServiceTest {
     private static final String WORKFLOW_ID = "gc-implement-ground-control-1278";
     private static final String ACTOR = "operator-admin";
 
+    private static final String PLANNING_STAGE = "planning";
+
     private final ObjectProvider<WorkflowControlPort> portProvider = mock(ObjectProvider.class);
     private final WorkflowControlPort port = mock(WorkflowControlPort.class);
     private final ProjectService projectService = mock(ProjectService.class);
     private final OperatorSignalAuditRecorder auditRecorder = mock(OperatorSignalAuditRecorder.class);
+    private final TrustedRouteResolver trustedRouteResolver = mock(TrustedRouteResolver.class);
     private final WorkflowExecutionService service =
-            new WorkflowExecutionService(portProvider, projectService, auditRecorder);
+            new WorkflowExecutionService(portProvider, projectService, auditRecorder, trustedRouteResolver);
 
     @BeforeEach
     void setUp() {
         when(projectService.requireProjectIdentifier(any())).thenReturn(PROJECT);
         when(portProvider.getIfAvailable()).thenReturn(port);
+        when(trustedRouteResolver.resolve(any(), any())).thenReturn(sampleRoute());
         // Default to an authorized actor; individual authority tests override this.
         ActorHolder.set(ACTOR);
+    }
+
+    private static ResolvedLlmRoute sampleRoute() {
+        return new ResolvedLlmRoute("v2", PROJECT, PLANNING_STAGE, "high", "anthropic", "claude-opus-4-8", "digest-1");
     }
 
     @AfterEach
@@ -82,7 +92,39 @@ class WorkflowExecutionServiceTest {
         assertThat(command.project()).isEqualTo(PROJECT);
         assertThat(command.issueNumber()).isEqualTo(1278);
         assertThat(command.requirementUids()).containsExactly("GC-O009");
+        assertThat(command.route()).isEqualTo(sampleRoute());
         assertThat(ref.workflowId()).isEqualTo(WORKFLOW_ID);
+    }
+
+    @Test
+    void startResolvesTheRouteForThePlanningStageBeforeDelegatingToThePort() {
+        when(port.start(any()))
+                .thenReturn(new WorkflowExecutionRef(WORKFLOW_ID, "run-1", WorkflowType.IMPLEMENT, PROJECT));
+
+        service.start(PROJECT, new StartRequest(WorkflowType.IMPLEMENT, 1278, null, null, null, null));
+
+        verify(trustedRouteResolver).resolve(PROJECT, PLANNING_STAGE);
+    }
+
+    @Test
+    void startFailsClosedWhenRouteResolutionIsUnavailableAndNeverTouchesThePort() {
+        when(trustedRouteResolver.resolve(any(), any()))
+                .thenThrow(new ServiceUnavailableException("route resolution bridge unavailable"));
+
+        assertThatThrownBy(() ->
+                        service.start(PROJECT, new StartRequest(WorkflowType.IMPLEMENT, 1278, null, null, null, null)))
+                .isInstanceOf(ServiceUnavailableException.class);
+        verify(port, never()).start(any());
+    }
+
+    @Test
+    void startFailsClosedWhenRouteResolutionRejectsTheRouteAsInvalid() {
+        when(trustedRouteResolver.resolve(any(), any())).thenThrow(new DomainValidationException("unknown provider"));
+
+        assertThatThrownBy(() ->
+                        service.start(PROJECT, new StartRequest(WorkflowType.IMPLEMENT, 1278, null, null, null, null)))
+                .isInstanceOf(DomainValidationException.class);
+        verify(port, never()).start(any());
     }
 
     @Test
