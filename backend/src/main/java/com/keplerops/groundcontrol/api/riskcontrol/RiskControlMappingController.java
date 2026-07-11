@@ -41,13 +41,11 @@ public class RiskControlMappingController {
                 request.controlId(),
                 request.scopedImplementationId(),
                 request.riskScenarioId(),
-                request.riskRegisterRecordId(),
                 request.threatModelId(), // GC-H006
                 request.operationalAssetId(),
                 request.mappingObjective(),
                 request.controlRole(),
                 request.mappingScope(),
-                request.methodologyProfileId(),
                 request.methodologyInfluence())));
     }
 
@@ -77,7 +75,6 @@ public class RiskControlMappingController {
                 request.mappingObjective(),
                 request.controlRole(),
                 request.mappingScope(),
-                request.methodologyProfileId(),
                 request.methodologyInfluence())));
     }
 

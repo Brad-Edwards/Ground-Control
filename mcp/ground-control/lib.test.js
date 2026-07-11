@@ -20,13 +20,6 @@ import {
   checkPrBodyShape,
   runRenderPrBody,
   runPostImplementationPlan,
-  validateGrcDeliverablesPlanGate,
-  renderGrcDeliverablesRecord,
-  renderGrcDeliverablesScaffold,
-  parseGrcDeliverablesData,
-  GRC_DELIVERABLES_SCHEMA_VERSION,
-  GRC_DELIVERABLE_KINDS,
-  GRC_DISPOSITION_TYPES,
   runLogStepTelemetry,
   PR_BODY_CHANGE_CLASSES,
   PR_REQUIREMENT_RE,
@@ -145,8 +138,6 @@ import {
   INTEGRATION_MANAGER_MERGE_STRATEGIES,
   INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN,
   INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX,
-  isUmbrellaNextIssueCandidate,
-  selectNextIssueRecommendation,
   createWorkflowRun,
   recordWorkflowRunEvent,
   importWorkflowRunCost,
@@ -901,7 +892,7 @@ describe("parseGroundControlYaml", () => {
     assert.equal(result.value.sonarcloud, null);
     assert.equal(result.value.rules.plan_rules_path, null);
     assert.equal(result.value.knowledge, null);
-    assert.deepEqual(result.value.grc, { boundaries: [] });
+    assert.equal(result.value.grc, undefined);
   });
 
   it("parses a fully populated yaml", () => {
@@ -923,15 +914,6 @@ describe("parseGroundControlYaml", () => {
       "  dir: docs/knowledge",
       "  schema: docs/knowledge/SCHEMA.md",
       "  inbox: docs/knowledge/inbox",
-      "grc:",
-      "  boundaries:",
-      "    - key: policy-workflow",
-      "      name: Policy and workflow",
-      "      description: Repo policy and workflow guardrails",
-      "      paths:",
-      "        - tools/policy/**",
-      "        - .ground-control.yaml",
-      "      surfaces: [policy, architecture]",
       "",
     ]);
     assert.equal(result.ok, true);
@@ -946,15 +928,7 @@ describe("parseGroundControlYaml", () => {
       schema: "docs/knowledge/SCHEMA.md",
       inbox: "docs/knowledge/inbox",
     });
-    assert.deepEqual(result.value.grc.boundaries, [
-      {
-        key: "policy-workflow",
-        name: "Policy and workflow",
-        description: "Repo policy and workflow guardrails",
-        path_selectors: ["tools/policy/**", ".ground-control.yaml"],
-        surfaces: ["policy", "architecture"],
-      },
-    ]);
+    assert.equal(result.value.grc, undefined);
   });
 
   it("rejects invalid yaml text", () => {
@@ -1615,140 +1589,27 @@ describe("parseGroundControlYaml", () => {
   });
 
   // ---------------------------------------------------------------------
-  // grc.boundaries (GC-GRC-004)
+  // Legacy grc.* block (ADR-089 §4): tolerated and ignored, not validated,
+  // not returned. Formerly grc.boundaries (GC-GRC-004) / grc.data_classification
+  // (GC-GRC-006), both retired as active config surfaces by ADR-089.
   // ---------------------------------------------------------------------
 
-  it("parses declared GRC boundaries", () => {
+  it("tolerates a legacy grc block (any shape) without validating or returning it", () => {
     const result = parseYamlLines([
       "schema_version: 1",
       "project: x",
       "grc:",
       "  boundaries:",
-      "    - key: policy-workflow",
-      "      name: Policy and workflow",
-      "      description: Repo policy and workflow guardrails",
+      "    - key: Policy", // would have failed the retired key-pattern check
+      "      name: Policy",
       "      paths:",
-      "        - tools/policy/**",
-      "        - .ground-control.yaml",
-      "      surfaces:",
-      "        - policy",
-      "        - architecture",
+      "        - tools/*/policy", // would have failed the retired selector check
+      "  data_classification:",
+      "    labels: []", // would have failed the retired non-empty-list check
       "",
     ]);
     assert.equal(result.ok, true, JSON.stringify(result.errors));
-    assert.deepEqual(result.value.grc.boundaries, [
-      {
-        key: "policy-workflow",
-        name: "Policy and workflow",
-        description: "Repo policy and workflow guardrails",
-        path_selectors: ["tools/policy/**", ".ground-control.yaml"],
-        surfaces: ["policy", "architecture"],
-      },
-    ]);
-  });
-
-  it("rejects invalid declared GRC boundary shapes", () => {
-    expectYamlError([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  boundaries:",
-      "    - key: Policy",
-      "      name: Policy",
-      "      paths:",
-      "        - tools/policy/**",
-      "",
-    ], "grc.boundaries[0].key");
-    expectYamlError([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  boundaries:",
-      "    - key: policy",
-      "      name: Policy",
-      "      paths:",
-      "        - tools/*/policy",
-      "",
-    ], "only supports exact paths or trailing /** selectors");
-    expectYamlError([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  boundaries:",
-      "    - key: policy",
-      "      name: Policy",
-      "      paths: [tools/policy/**]",
-      "    - key: policy",
-      "      name: Duplicate policy",
-      "      paths: [.ground-control.yaml]",
-      "",
-    ], "duplicates an earlier boundary key");
-  });
-
-  // ---------------------------------------------------------------------
-  // grc.data_classification (GC-GRC-006)
-  // ---------------------------------------------------------------------
-
-  it("parses a declared GRC data classification lattice", () => {
-    const result = parseYamlLines([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  data_classification:",
-      "    labels:",
-      "      - key: PUBLIC",
-      "        display_name: Public",
-      "        rank: 0",
-      "      - key: SECRET",
-      "        display_name: Secret",
-      "        description: Secret material",
-      "        rank: 1",
-      "    permitted_flows:",
-      "      - from: PUBLIC",
-      "        to: SECRET",
-      "",
-    ]);
-    assert.equal(result.ok, true, JSON.stringify(result.errors));
-    assert.deepEqual(result.value.grc.data_classification, {
-      labels: [
-        { key: "PUBLIC", display_name: "Public", description: null, rank: 0 },
-        { key: "SECRET", display_name: "Secret", description: "Secret material", rank: 1 },
-      ],
-      permitted_flows: [{ from: "PUBLIC", to: "SECRET" }],
-    });
-  });
-
-  it("rejects invalid GRC data classification shapes", () => {
-    expectYamlError([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  data_classification:",
-      "    labels:",
-      "      - key: bad key!",
-      "        display_name: Bad",
-      "",
-    ], "grc.data_classification.labels[0].key");
-    expectYamlError([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  data_classification:",
-      "    labels:",
-      "      - key: PUBLIC",
-      "        display_name: Public",
-      "      - key: PUBLIC",
-      "        display_name: Duplicate",
-      "",
-    ], "duplicates an earlier label key");
-    expectYamlError([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  data_classification:",
-      "    labels: []",
-      "",
-    ], "grc.data_classification.labels must be a non-empty list");
+    assert.equal(result.value.grc, undefined, "grc must not be returned in the parsed config");
   });
 
   describe("short_code", () => {
@@ -1914,7 +1775,7 @@ describe("getRepoGroundControlContext", () => {
       assert.deepEqual(result.example_paths, { source: null, test: null });
       assert.deepEqual(result.requirements, { uid_examples: [] });
       assert.deepEqual(result.cross_cutting_concerns, { description: null });
-      assert.deepEqual(result.grc, { boundaries: [] });
+      assert.equal(result.grc, undefined);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1950,39 +1811,11 @@ describe("getRepoGroundControlContext", () => {
     }
   });
 
-  it("returns declared GRC boundaries from repo context", async () => {
-    const dir = makeTempRepo();
-    try {
-      writeYamlConfig(dir, [
-          "schema_version: 1",
-          "project: test-project",
-          "grc:",
-          "  boundaries:",
-          "    - key: policy-workflow",
-          "      name: Policy and workflow",
-          "      paths:",
-          "        - tools/policy/**",
-          "        - .ground-control.yaml",
-          "      surfaces: [policy]",
-          "",
-        ]);
-      const result = await getRepoGroundControlContext(dir);
-      assert.equal(result.status, "ok");
-      assert.deepEqual(result.grc.boundaries, [
-        {
-          key: "policy-workflow",
-          name: "Policy and workflow",
-          description: null,
-          path_selectors: ["tools/policy/**", ".ground-control.yaml"],
-          surfaces: ["policy"],
-        },
-      ]);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("rejects declared GRC boundary paths that escape the repo root", async () => {
+  // ADR-089 §4: a legacy grc.* block (including one whose boundary paths
+  // would have escaped the repo root under the retired GC-GRC-004 check) is
+  // tolerated — no path-containment validation runs over it, no error is
+  // raised, and it is never returned in the context.
+  it("tolerates a legacy grc block with escaping paths without validating or returning it", async () => {
     const dir = makeTempRepo();
     try {
       writeYamlConfig(dir, [
@@ -1997,9 +1830,8 @@ describe("getRepoGroundControlContext", () => {
           "",
         ]);
       const result = await getRepoGroundControlContext(dir);
-      assert.equal(result.status, "invalid_ground_control_yaml");
-      assert.ok(result.errors.some((e) => e.includes("grc.boundaries[0].paths[0]")));
-      assert.ok(result.errors.some((e) => e.includes("inside the repository root")));
+      assert.equal(result.status, "ok");
+      assert.equal(result.grc, undefined);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -6394,225 +6226,14 @@ process.exit(2);
 });
 
 // ---------------------------------------------------------------------------
-// GC-GRC-010: design-time GRC deliverables gate
+// ADR-089 §2: runPostImplementationPlan's phase prerequisite is now
+// requires:["preflight"] only — the grc_screening prerequisite and the
+// grc_deliverables gate (formerly GC-GRC-010 here) are retired.
 // ---------------------------------------------------------------------------
 
-describe("validateGrcDeliverablesPlanGate", () => {
-  const relevantRecord = {
-    schema: GRC_DELIVERABLES_SCHEMA_VERSION, // any; only *_verdict / sets matter
-    derived_verdict: "security_relevant",
-    gap_set: [{ surface: "mcp/ground-control/lib.js", reason: "no_threat_coverage" }],
-    stale_set: [{ type: "control", uid: "CTRL-1", reason: "linked_code_changed" }],
-    impact_set: [],
-  };
-
-  it("passes with no deliverables when the screening record is not security-relevant", () => {
-    const r = validateGrcDeliverablesPlanGate({
-      deliverables: null,
-      screeningRecord: { derived_verdict: "not_security_relevant" },
-    });
-    assert.equal(r.ok, true);
-    assert.equal(r.security_relevant, false);
-  });
-
-  it("passes when there is no readable screening record (reconcile is the backstop)", () => {
-    const r = validateGrcDeliverablesPlanGate({ deliverables: null, screeningRecord: null });
-    assert.equal(r.ok, true);
-    assert.equal(r.security_relevant, false);
-  });
-
-  it("refuses a security-relevant plan with no deliverables and reports the uncovered sets", () => {
-    const r = validateGrcDeliverablesPlanGate({ deliverables: [], screeningRecord: relevantRecord });
-    assert.equal(r.ok, false);
-    assert.equal(r.error, "grc_deliverables_missing");
-    assert.ok(r.uncovered.some((u) => u.kind === "gap" && u.surface === "mcp/ground-control/lib.js"));
-    assert.ok(r.uncovered.some((u) => u.kind === "stale" && u.uid === "CTRL-1"));
-  });
-
-  it("passes when every gap surface and stale entity is covered", () => {
-    const r = validateGrcDeliverablesPlanGate({
-      deliverables: [
-        { kind: "threat", target: "mcp/ground-control/lib.js", action: "Model threat TM-9 and select control." },
-        { kind: "stale_refresh", target: "CTRL-1", action: "Re-assess CTRL-1 effectiveness against changed code." },
-      ],
-      screeningRecord: relevantRecord,
-    });
-    assert.equal(r.ok, true);
-    assert.equal(r.deliverable_count, 2);
-  });
-
-  it("covers a gap surface via a boundary-directory target prefix", () => {
-    const r = validateGrcDeliverablesPlanGate({
-      deliverables: [
-        { kind: "control", target: "mcp/", action: "Add the plan gate control across the MCP boundary." },
-        { kind: "stale_refresh", target: "CTRL-1", action: "Refresh CTRL-1." },
-      ],
-      screeningRecord: relevantRecord,
-    });
-    assert.equal(r.ok, true);
-  });
-
-  it("refuses when a gap surface is left uncovered", () => {
-    const r = validateGrcDeliverablesPlanGate({
-      deliverables: [
-        { kind: "threat", target: "some/other/path.js", action: "Model unrelated threat." },
-        { kind: "stale_refresh", target: "CTRL-1", action: "Refresh CTRL-1." },
-      ],
-      screeningRecord: relevantRecord,
-    });
-    assert.equal(r.ok, false);
-    assert.equal(r.error, "grc_deliverables_incomplete");
-    assert.ok(r.uncovered.some((u) => u.kind === "gap" && u.surface === "mcp/ground-control/lib.js"));
-  });
-
-  it("refuses when a stale entity is left uncovered", () => {
-    const r = validateGrcDeliverablesPlanGate({
-      deliverables: [
-        { kind: "threat", target: "mcp/ground-control/lib.js", action: "Model threat." },
-      ],
-      screeningRecord: relevantRecord,
-    });
-    assert.equal(r.ok, false);
-    assert.equal(r.error, "grc_deliverables_incomplete");
-    assert.ok(r.uncovered.some((u) => u.kind === "stale" && u.uid === "CTRL-1"));
-  });
-
-  it("refuses deferral language in an action without an authorized disposition (no-defer)", () => {
-    const r = validateGrcDeliverablesPlanGate({
-      deliverables: [
-        { kind: "threat", target: "mcp/ground-control/lib.js", action: "Model this threat in a follow-up PR." },
-        { kind: "stale_refresh", target: "CTRL-1", action: "Refresh CTRL-1." },
-      ],
-      screeningRecord: relevantRecord,
-    });
-    assert.equal(r.ok, false);
-    assert.equal(r.error, "grc_deliverables_invalid");
-    assert.ok(r.invalid.some((m) => /defers GRC work/.test(m)));
-  });
-
-  it("accepts a dispositioned deliverable ONLY when dispositions are authorized (the no-defer relief valve)", () => {
-    const deliverables = [
-      {
-        kind: "threat",
-        target: "mcp/ground-control/lib.js",
-        disposition: { type: "accept", authorized_by: "@brad", rationale: "Accepted risk; register entry filed." },
-      },
-      { kind: "stale_refresh", target: "CTRL-1", action: "Refresh CTRL-1." },
-    ];
-    const authorized = validateGrcDeliverablesPlanGate({ deliverables, screeningRecord: relevantRecord, dispositionsAuthorized: true });
-    assert.equal(authorized.ok, true);
-  });
-
-  it("refuses a self-attested disposition when dispositions are not authorized (finding 2)", () => {
-    const r = validateGrcDeliverablesPlanGate({
-      deliverables: [
-        {
-          kind: "threat",
-          target: "mcp/ground-control/lib.js",
-          disposition: { type: "accept", authorized_by: "@attacker", rationale: "trust me" },
-        },
-        { kind: "stale_refresh", target: "CTRL-1", action: "Refresh CTRL-1." },
-      ],
-      screeningRecord: relevantRecord,
-      dispositionsAuthorized: false,
-    });
-    assert.equal(r.ok, false);
-    assert.equal(r.error, "grc_deliverables_invalid");
-    assert.ok(r.invalid.some((m) => /not authorized to disposition GRC work/.test(m)));
-  });
-
-  it("does not let a stale_refresh cover a gap surface (kind-aware coverage, finding 1)", () => {
-    const r = validateGrcDeliverablesPlanGate({
-      deliverables: [
-        { kind: "stale_refresh", target: "mcp/ground-control/lib.js", action: "Refresh (wrong kind for a gap)." },
-        { kind: "stale_refresh", target: "CTRL-1", action: "Refresh CTRL-1." },
-      ],
-      screeningRecord: relevantRecord,
-    });
-    assert.equal(r.ok, false);
-    assert.equal(r.error, "grc_deliverables_incomplete");
-    assert.ok(r.uncovered.some((u) => u.kind === "gap" && u.surface === "mcp/ground-control/lib.js"));
-  });
-
-  it("does not let a threat/control cover a stale entity (kind-aware coverage, finding 1)", () => {
-    const r = validateGrcDeliverablesPlanGate({
-      deliverables: [
-        { kind: "threat", target: "mcp/ground-control/lib.js", action: "Model threat." },
-        { kind: "control", target: "CTRL-1", action: "Wrong kind for a stale entity." },
-      ],
-      screeningRecord: relevantRecord,
-    });
-    assert.equal(r.ok, false);
-    assert.equal(r.error, "grc_deliverables_incomplete");
-    assert.ok(r.uncovered.some((u) => u.kind === "stale" && u.uid === "CTRL-1"));
-  });
-
-  it("rejects a malformed disposition", () => {
-    const r = validateGrcDeliverablesPlanGate({
-      deliverables: [
-        { kind: "threat", target: "mcp/ground-control/lib.js", disposition: { type: "bogus", authorized_by: "", rationale: "" } },
-        { kind: "stale_refresh", target: "CTRL-1", action: "Refresh CTRL-1." },
-      ],
-      screeningRecord: relevantRecord,
-    });
-    assert.equal(r.ok, false);
-    assert.equal(r.error, "grc_deliverables_invalid");
-    assert.ok(r.invalid.some((m) => /disposition\.type/.test(m)));
-  });
-
-  it("rejects an unknown deliverable kind", () => {
-    const r = validateGrcDeliverablesPlanGate({
-      deliverables: [
-        { kind: "mitigation", target: "mcp/ground-control/lib.js", action: "x" },
-        { kind: "stale_refresh", target: "CTRL-1", action: "Refresh CTRL-1." },
-      ],
-      screeningRecord: relevantRecord,
-    });
-    assert.equal(r.ok, false);
-    assert.equal(r.error, "grc_deliverables_invalid");
-    assert.ok(r.invalid.some((m) => /kind must be one of/.test(m)));
-  });
-
-  it("exports stable kind and disposition vocabularies", () => {
-    assert.deepEqual([...GRC_DELIVERABLE_KINDS], ["threat", "risk", "control", "stale_refresh"]);
-    assert.deepEqual([...GRC_DISPOSITION_TYPES], ["accept", "wontfix", "not_applicable"]);
-  });
-});
-
-describe("renderGrcDeliverablesRecord / parseGrcDeliverablesData / scaffold", () => {
-  it("round-trips the machine block through parseGrcDeliverablesData (latest wins)", () => {
-    const deliverables = [
-      { kind: "threat", target: "mcp/ground-control/lib.js", action: "Model threat." },
-      { kind: "control", target: "mcp/ground-control/index.js", disposition: { type: "accept", authorized_by: "@brad", rationale: "ok" } },
-    ];
-    const rendered = renderGrcDeliverablesRecord({
-      deliverables,
-      screeningRecord: { derived_verdict: "security_relevant" },
-    });
-    assert.ok(rendered.includes("## GRC Deliverables (design-time — GC-GRC-010)"));
-    assert.ok(rendered.includes("<!-- gc:grc-deliverables-data"));
-    const parsed = parseGrcDeliverablesData(["unrelated", rendered]);
-    assert.equal(parsed.schema, GRC_DELIVERABLES_SCHEMA_VERSION);
-    assert.equal(parsed.screening_verdict, "security_relevant");
-    assert.deepEqual(parsed.deliverables, deliverables);
-  });
-
-  it("scaffolds one deliverable per gap surface and stale entity", () => {
-    const scaffold = renderGrcDeliverablesScaffold({
-      gap_set: [{ surface: "mcp/ground-control/lib.js", reason: "no_threat_coverage" }],
-      stale_set: [{ type: "control", uid: "CTRL-1", reason: "linked_code_changed" }],
-      candidate_threats: [{ producing_rule_id: "R1" }],
-    });
-    assert.equal(scaffold.deliverables.length, 2);
-    assert.ok(scaffold.deliverables.some((d) => d.kind === "threat" && d.target === "mcp/ground-control/lib.js"));
-    assert.ok(scaffold.deliverables.some((d) => d.kind === "stale_refresh" && d.target === "CTRL-1"));
-    assert.equal(scaffold.candidate_threats.length, 1);
-  });
-});
-
-describe("runPostImplementationPlan grc deliverables gate", () => {
+describe("runPostImplementationPlan preflight prerequisite", () => {
   function makeShim({ nameWithOwner = "fake/repo", comments = [] }) {
-    const repoDir = mkdtempSync(join(tmpdir(), "gc-grc-plan-"));
+    const repoDir = mkdtempSync(join(tmpdir(), "gc-plan-prereq-"));
     execFileSync("git", ["-C", repoDir, "init", "-q"]);
     execFileSync("git", ["-C", repoDir, "config", "user.email", "t@example.com"]);
     execFileSync("git", ["-C", repoDir, "config", "user.name", "t"]);
@@ -6620,12 +6241,10 @@ describe("runPostImplementationPlan grc deliverables gate", () => {
     writeFileSync(join(repoDir, "README"), "x\n");
     execFileSync("git", ["-C", repoDir, "add", "."]);
     execFileSync("git", ["-C", repoDir, "commit", "-q", "-m", "init"]);
-    const binDir = mkdtempSync(join(tmpdir(), "gc-grc-plan-bin-"));
-    const capturePath = join(binDir, "capture.log");
+    const binDir = mkdtempSync(join(tmpdir(), "gc-plan-prereq-bin-"));
     // `gh api --method GET ... comments --paginate --slurp` returns array-of-arrays.
     const commentsSlurp = JSON.stringify([comments.map((body) => ({ body }))]);
     const ghShim = `#!/usr/bin/env node
-const fs = require("node:fs");
 const argv = process.argv.slice(2);
 function has(pre) { return pre.every((p, i) => argv[i] === p); }
 if (has(["repo", "view", "--json", "nameWithOwner"])) {
@@ -6637,7 +6256,6 @@ if (has(["api", "--method", "GET"])) {
   process.exit(0);
 }
 if (has(["api", "--method", "POST"])) {
-  fs.appendFileSync(${JSON.stringify(capturePath)}, JSON.stringify(argv) + "\\n");
   process.stdout.write(JSON.stringify({ html_url: "https://x/issues/1#c1", id: 1 }));
   process.exit(0);
 }
@@ -6648,12 +6266,6 @@ process.exit(2);
     return {
       repoDir,
       binDir,
-      capturedBodies() {
-        if (!existsSync(capturePath)) return [];
-        return readFileSync(capturePath, "utf8").trim().split("\n").filter(Boolean)
-          .map((l) => JSON.parse(l))
-          .map((a) => { const i = a.indexOf("-f"); return i >= 0 ? a[i + 1].replace(/^body=/, "") : ""; });
-      },
       cleanup() { rmSync(repoDir, { recursive: true, force: true }); rmSync(binDir, { recursive: true, force: true }); },
     };
   }
@@ -6664,125 +6276,12 @@ process.exit(2);
     try { return await fn(); } finally { process.env.PATH = old; }
   }
 
-  function screeningBodies(issueNumber, verdict, sets = {}) {
-    const payload = {
-      schema: "gc.implement.grc-screening/v2",
-      derived_verdict: verdict,
-      gap_set: sets.gap_set ?? [],
-      stale_set: sets.stale_set ?? [],
-      impact_set: sets.impact_set ?? [],
-    };
-    return [
-      `<!-- gc:grc-screening issue="${issueNumber}" schema="gc.implement.grc-screening/v2" verdict="${verdict}" -->\n<!-- gc:grc-screening-data ${JSON.stringify(payload)} -->`,
-    ];
-  }
-
-  it("refuses a security-relevant plan that omits deliverables (override isolates the gate)", async () => {
-    const shim = makeShim({});
-    try {
-      await withPath(shim.binDir, async () => {
-        const r = await runPostImplementationPlan({
-          repoPath: shim.repoDir,
-          issueNumber: 1123,
-          planBody: "## Plan\n\nWork.",
-          override: true,
-          overrideReason: "isolate the grc deliverables gate",
-          deps: { readCommentBodies: async () => screeningBodies(1123, "security_relevant", { gap_set: [{ surface: "mcp/ground-control/lib.js", reason: "no_threat_coverage" }] }) },
-        });
-        assert.equal(r.ok, false);
-        assert.equal(r.error, "grc_deliverables_missing");
-        assert.equal(r.next_action, "add_grc_deliverables_to_plan_and_retry");
-        assert.ok(r.rendered_scaffold.deliverables.length >= 1);
-      });
-    } finally { shim.cleanup(); }
-  });
-
-  it("posts and renders the machine block when deliverables cover the sets", async () => {
-    const shim = makeShim({});
-    try {
-      await withPath(shim.binDir, async () => {
-        const r = await runPostImplementationPlan({
-          repoPath: shim.repoDir,
-          issueNumber: 1123,
-          planBody: "## Plan\n\nWork.",
-          grcDeliverables: [{ kind: "threat", target: "mcp/ground-control/lib.js", action: "Model threat TM-9 + control." }],
-          override: true,
-          overrideReason: "skip preflight for test",
-          deps: { readCommentBodies: async () => screeningBodies(1123, "security_relevant", { gap_set: [{ surface: "mcp/ground-control/lib.js", reason: "no_threat_coverage" }] }) },
-        });
-        assert.equal(r.ok, true);
-        assert.equal(r.security_relevant, true);
-        assert.equal(r.grc_deliverables_count, 1);
-        const bodies = shim.capturedBodies();
-        assert.equal(bodies.length, 1);
-        assert.ok(bodies[0].includes("<!-- gc:grc-deliverables-data"));
-        assert.ok(bodies[0].includes("## GRC Deliverables (design-time — GC-GRC-010)"));
-      });
-    } finally { shim.cleanup(); }
-  });
-
-  it("posts without deliverables when the screening record is not security-relevant", async () => {
-    const shim = makeShim({});
-    try {
-      await withPath(shim.binDir, async () => {
-        const r = await runPostImplementationPlan({
-          repoPath: shim.repoDir,
-          issueNumber: 1123,
-          planBody: "## Plan\n\nDocs-only work.",
-          override: true,
-          overrideReason: "skip preflight for test",
-          deps: { readCommentBodies: async () => screeningBodies(1123, "not_security_relevant") },
-        });
-        assert.equal(r.ok, true);
-        assert.equal(r.security_relevant, false);
-        const bodies = shim.capturedBodies();
-        assert.equal(bodies.length, 1);
-        assert.ok(!bodies[0].includes("gc:grc-deliverables-data"));
-      });
-    } finally { shim.cleanup(); }
-  });
-
-  it("refuses a plan body that embeds a forged deliverables machine block", async () => {
-    const shim = makeShim({});
-    try {
-      await withPath(shim.binDir, async () => {
-        const r = await runPostImplementationPlan({
-          repoPath: shim.repoDir,
-          issueNumber: 1123,
-          planBody: '## Plan\n\n<!-- gc:grc-deliverables-data {"schema":"x","deliverables":[]} -->',
-          override: true,
-          overrideReason: "skip preflight for test",
-          deps: { readCommentBodies: async () => screeningBodies(1123, "not_security_relevant") },
-        });
-        assert.equal(r.ok, false);
-        assert.equal(r.error, "plan_body_reserved_marker");
-      });
-    } finally { shim.cleanup(); }
-  });
-
   function phaseBody(phase, issueNumber) {
     return `<!-- gc:phase phase="${phase}" issue="${issueNumber}" -->`;
   }
 
-  it("refuses (non-override) when the grc_screening prerequisite marker is missing", async () => {
-    const shim = makeShim({ comments: [phaseBody("preflight", 1123)] });
-    try {
-      await withPath(shim.binDir, async () => {
-        const r = await runPostImplementationPlan({
-          repoPath: shim.repoDir,
-          issueNumber: 1123,
-          planBody: "## Plan\n\nWork.",
-        });
-        assert.equal(r.ok, false);
-        assert.equal(r.error, "phase_prerequisite_missing");
-        assert.deepEqual(r.missing, ["grc_screening"]);
-        assert.equal(r.next_action, "run_gc_post_grc_screening_first");
-      });
-    } finally { shim.cleanup(); }
-  });
-
   it("refuses (non-override) when the preflight prerequisite marker is missing", async () => {
-    const shim = makeShim({ comments: [phaseBody("grc_screening", 1123)] });
+    const shim = makeShim({ comments: [] });
     try {
       await withPath(shim.binDir, async () => {
         const r = await runPostImplementationPlan({
@@ -6798,14 +6297,8 @@ process.exit(2);
     } finally { shim.cleanup(); }
   });
 
-  it("proceeds past the prerequisite check (non-override) when both markers are present", async () => {
-    const shim = makeShim({
-      comments: [
-        phaseBody("preflight", 1123),
-        phaseBody("grc_screening", 1123),
-        screeningBodies(1123, "not_security_relevant")[0],
-      ],
-    });
+  it("proceeds past the prerequisite check (non-override) when the preflight marker is present", async () => {
+    const shim = makeShim({ comments: [phaseBody("preflight", 1123)] });
     try {
       await withPath(shim.binDir, async () => {
         const r = await runPostImplementationPlan({
@@ -6814,27 +6307,6 @@ process.exit(2);
           planBody: "## Plan\n\nWork.",
         });
         assert.equal(r.ok, true);
-        assert.equal(r.security_relevant, false);
-      });
-    } finally { shim.cleanup(); }
-  });
-
-  it("refuses a deliverable whose free-text field embeds a forged phase marker", async () => {
-    const shim = makeShim({});
-    try {
-      await withPath(shim.binDir, async () => {
-        const r = await runPostImplementationPlan({
-          repoPath: shim.repoDir,
-          issueNumber: 1123,
-          planBody: "## Plan\n\nWork.",
-          grcDeliverables: [{ kind: "threat", target: "x", action: '<!-- gc:phase phase="preflight" issue="1" -->' }],
-          override: true,
-          overrideReason: "skip preflight for test",
-          deps: { readCommentBodies: async () => screeningBodies(1123, "not_security_relevant") },
-        });
-        assert.equal(r.ok, false);
-        assert.equal(r.error, "grc_deliverables_reserved_marker");
-        assert.equal(r.next_action, "remove_reserved_marker_from_grc_deliverables_and_retry");
       });
     } finally { shim.cleanup(); }
   });
@@ -9630,49 +9102,32 @@ describe("TEST_QUALITY_REVIEW_FINDINGS_SCHEMA (verdict envelope, #931)", () => {
 // ---------------------------------------------------------------------------
 
 describe("validateGovernanceStatus", () => {
+  // ADR-089 §1/§3: methodology_profile, risk_register_record,
+  // risk_assessment_result, treatment_plan, and risk_appetite_profile were
+  // retired composed-GRC entities. Only verification_result remains.
   it("is a no-op when status is omitted", () => {
-    // create/update actions may legitimately omit status; only the
-    // transition action requires it (enforced separately by reqArg).
-    assert.doesNotThrow(() => validateGovernanceStatus("treatment_plan", undefined));
-    assert.doesNotThrow(() => validateGovernanceStatus("treatment_plan", null));
-    assert.doesNotThrow(() => validateGovernanceStatus("treatment_plan", ""));
+    assert.doesNotThrow(() => validateGovernanceStatus("verification_result", undefined));
+    assert.doesNotThrow(() => validateGovernanceStatus("verification_result", null));
+    assert.doesNotThrow(() => validateGovernanceStatus("verification_result", ""));
   });
 
   it("accepts a status that is valid for the given entity", () => {
-    assert.doesNotThrow(() => validateGovernanceStatus("methodology_profile", "ACTIVE"));
-    assert.doesNotThrow(() => validateGovernanceStatus("risk_register_record", "ACCEPTED"));
-    assert.doesNotThrow(() => validateGovernanceStatus("treatment_plan", "PLANNED"));
     assert.doesNotThrow(() => validateGovernanceStatus("verification_result", "PROVEN"));
-  });
-
-  it("rejects a status that is valid for another entity but not this one", () => {
-    // The exact scenario issue #881 wants caught at MCP: ACCEPTED is a real
-    // risk_register_record status, but invalid for treatment_plan. The flat
-    // z.union the original PR shipped would have passed this through to the
-    // backend; the per-entity check rejects it locally.
-    assert.throws(
-      () => validateGovernanceStatus("treatment_plan", "ACCEPTED"),
-      (e) =>
-        /'status'='ACCEPTED' is not valid for entity='treatment_plan'/.test(e.message) &&
-        /Valid values: PLANNED, IN_PROGRESS, BLOCKED, COMPLETED, CANCELED/.test(e.message),
-    );
   });
 
   it("rejects a completely unknown status string with the valid-values hint", () => {
     assert.throws(
-      () => validateGovernanceStatus("treatment_plan", "PROPOSED"),
+      () => validateGovernanceStatus("verification_result", "BOGUS"),
       (e) =>
-        /'status'='PROPOSED' is not valid for entity='treatment_plan'/.test(e.message) &&
+        /'status'='BOGUS' is not valid for entity='verification_result'/.test(e.message) &&
         /Valid values: /.test(e.message),
     );
   });
 
-  it("rejects status on an entity that has no status field", () => {
-    // risk_assessment_result uses approval_state, not status. Any status
-    // value on that entity is structurally wrong and must be rejected.
+  it("rejects status on an entity that is not in GOVERNANCE_STATUS_ENUMS", () => {
     assert.throws(
-      () => validateGovernanceStatus("risk_assessment_result", "DRAFT"),
-      (e) => /'status' is not valid for entity='risk_assessment_result'/.test(e.message),
+      () => validateGovernanceStatus("risk_scenario", "DRAFT"),
+      (e) => /'status' is not valid for entity='risk_scenario'/.test(e.message),
     );
   });
 
@@ -9681,13 +9136,7 @@ describe("validateGovernanceStatus", () => {
     // status vocabulary cannot silently inherit the "no status" rejection.
     assert.deepEqual(
       Object.keys(GOVERNANCE_STATUS_ENUMS).sort(),
-      [
-        "methodology_profile",
-        "risk_appetite_profile",
-        "risk_register_record",
-        "treatment_plan",
-        "verification_result",
-      ],
+      ["verification_result"],
     );
   });
 });
@@ -14353,10 +13802,10 @@ describe("runPostFinalReport traceability_reconciled prerequisite (issue #1058)"
         });
         assert.equal(r.ok, false);
         assert.equal(r.error, "phase_prerequisite_missing");
-        // Both traceability_reconciled and grc_reconciled are now required
-        // (issue #1100 added grc_reconciled to the final-report prerequisite).
+        // ADR-089 §2: grc_reconciled is retired; traceability_reconciled is
+        // the sole final-report prerequisite.
         assert.ok(r.missing.includes("traceability_reconciled"), `expected traceability_reconciled in missing; got: ${JSON.stringify(r.missing)}`);
-        assert.ok(r.missing.includes("grc_reconciled"), `expected grc_reconciled in missing; got: ${JSON.stringify(r.missing)}`);
+        assert.ok(!r.missing.includes("grc_reconciled"), `grc_reconciled must not appear in missing; got: ${JSON.stringify(r.missing)}`);
       });
     } finally {
       shim.cleanup();
@@ -14539,47 +13988,22 @@ describe("runCloseIssueAfterMerge", () => {
           { argv_prefix: ["api", ISSUE_API_PATH], stdout: JSON.stringify({ number: 1058, state: "open" }) },
           // PATCH close.
           { argv_prefix: ["api", "--method", "PATCH"], stdout: JSON.stringify({ number: 1058, state: "closed" }) },
-          { argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/issues"], stdout: JSON.stringify([
-            { number: 1156, title: "Current issue", state: "open", labels: [] },
-            { number: 1157, title: "Blocked issue", state: "open", labels: [{ name: "blocked" }] },
-            { number: 1158, title: "Improve workflow follow-up", state: "open", labels: [{ name: "ready" }, { name: "priority:p1" }] },
-          ]) },
         ],
       },
     });
+    // ADR-089 §5: the close path performs ONLY linked-PR resolution,
+    // merge-state verification, and idempotent close — no issue listing, no
+    // ranking, and no recommendation field (not even null; a null field would
+    // still advertise the retired feature).
     await withCloseResult(shim, 1058, (r) => {
         assert.equal(r.ok, true);
         assert.equal(r.already_closed, false);
         assert.equal(r.pr_number, 42);
         assert.equal(r.pr_merged_at, PR_MERGED_AT);
-        assert.equal(r.next_issue_recommendation.issue_number, 1158);
-        assert.equal(r.next_issue_recommendation.title, "Improve workflow follow-up");
-        assert.match(r.next_issue_recommendation.reason, /ready/);
-        assert.match(r.next_issue_recommendation.source, /GitHub open issues/);
-    });
-  });
-
-  it("does not block closure when next-issue recommendation lookup fails", async () => {
-    const shim = makeShimRepo({
-      ghHandler: {
-        routes: [
-          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
-          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({
-            data: { repository: { issue: { timelineItems: { nodes: [
-              { __typename: "CrossReferencedEvent", source: { __typename: "PullRequest", number: 42, state: "MERGED", mergedAt: PR_MERGED_AT, url: LINKED_PR_URL } },
-            ] } } } },
-          }) },
-          { argv_prefix: ["api", ISSUE_API_PATH], stdout: JSON.stringify({ number: 1058, state: "open" }) },
-          { argv_prefix: ["api", "--method", "PATCH"], stdout: JSON.stringify({ number: 1058, state: "closed" }) },
-          { argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/issues"], exit_code: 2, stderr: "network unavailable" },
-        ],
-      },
-    });
-    await withCloseResult(shim, 1058, (r) => {
-        assert.equal(r.ok, true);
-        assert.equal(r.already_closed, false);
-        assert.equal(r.next_issue_recommendation, null);
-        assert.match(r.next_issue_recommendation_error, /network unavailable/);
+        assert.ok(!("next_issue_recommendation" in r), "next_issue_recommendation must not be present");
+        assert.ok(!("next_issue_recommendation_reason" in r), "next_issue_recommendation_reason must not be present");
+        assert.ok(!("next_issue_recommendation_source" in r), "next_issue_recommendation_source must not be present");
+        assert.ok(!("next_issue_recommendation_error" in r), "next_issue_recommendation_error must not be present");
     });
   });
 
@@ -14664,90 +14088,6 @@ describe("runCloseIssueAfterMerge", () => {
     } finally {
       shim.cleanup();
     }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Next-issue recommendation: umbrella / tracking issue exclusion
-// ---------------------------------------------------------------------------
-
-describe("isUmbrellaNextIssueCandidate", () => {
-  const issue = (over) => ({ number: 1, title: "Do a thing", labels: [], body: "", ...over });
-
-  it("flags a `Tracking:` title prefix", () => {
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "Tracking: production readiness" })), true);
-  });
-
-  it("flags `Epic:` and `Umbrella:` title prefixes case-insensitively", () => {
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "epic: graph rewrite" })), true);
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "UMBRELLA: wave 7" })), true);
-  });
-
-  it("flags a bracketed `[Epic]` / `[Meta]` tag at the title start", () => {
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "[Epic] big feature" })), true);
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "[meta] housekeeping" })), true);
-  });
-
-  it("flags a marker label (epic/umbrella/tracking/meta)", () => {
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ labels: [{ name: "Epic" }] })), true);
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ labels: [{ name: "tracking" }] })), true);
-  });
-
-  it("flags a GitHub-native sub-issue parent (sub_issues_summary.total > 0)", () => {
-    assert.equal(
-      isUmbrellaNextIssueCandidate(issue({ sub_issues_summary: { total: 4, completed: 1 } })),
-      true,
-    );
-  });
-
-  it("flags a body task list that checks off many child issues", () => {
-    const body = ["intro", ...Array.from({ length: 6 }, (_, i) => `- [ ] do thing ${i} — #${100 + i}`)].join("\n");
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ body })), true);
-  });
-
-  it("does NOT flag a leaf requirement with acceptance-criteria checkboxes and no issue refs", () => {
-    const body = [
-      "## Acceptance",
-      "- [ ] Incremental derivation reuses cache",
-      "- [ ] Provenance change invalidates affected facts",
-      "- [ ] Cost reported in telemetry",
-    ].join("\n");
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "GC-GRC-033: caching", body })), false);
-  });
-
-  it("does NOT flag an ordinary issue that mentions a couple of dependency issues", () => {
-    const body = ["- [ ] blocked by #12", "- [ ] depends on #34"].join("\n");
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "Fix the parser", body })), false);
-  });
-
-  it("does NOT flag a normal issue whose title merely contains the word tracking", () => {
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "Add request tracking header" })), false);
-  });
-});
-
-describe("selectNextIssueRecommendation", () => {
-  const umbrella = { number: 820, title: "Tracking: production readiness", labels: [], body: "", html_url: "u/820", updated_at: "2026-06-14T00:00:00Z" };
-  const leaf = { number: 689, title: "GC-Q003: Traceability Matrix", labels: [{ name: "wave-2" }], body: "", html_url: "u/689", updated_at: "2026-06-13T00:00:00Z" };
-
-  it("skips an umbrella issue even when it is the most recently updated candidate", () => {
-    const result = selectNextIssueRecommendation([umbrella, leaf], 1);
-    assert.equal(result.recommendation.issue_number, 689);
-  });
-
-  it("returns no recommendation when only umbrella/blocked issues remain", () => {
-    const blocked = { number: 5, title: "blocked thing", labels: [{ name: "blocked" }], body: "", html_url: "u/5" };
-    const result = selectNextIssueRecommendation([umbrella, blocked], 1);
-    assert.equal(result.recommendation, null);
-    assert.match(result.reason, /No credible next issue/);
-  });
-
-  it("still excludes the current issue, PRs, and untitled rows alongside umbrellas", () => {
-    const pr = { number: 700, title: "a PR", pull_request: {}, labels: [], body: "" };
-    const current = { number: 689, title: "GC-Q003", labels: [], body: "", html_url: "u/689" };
-    const untitled = { number: 12, title: "   ", labels: [], body: "", html_url: "u/12" };
-    const good = { number: 690, title: "Fix the parser", labels: [], body: "", html_url: "u/690" };
-    const result = selectNextIssueRecommendation([umbrella, pr, current, untitled, good], 689);
-    assert.equal(result.recommendation.issue_number, 690);
   });
 });
 
@@ -14951,7 +14291,6 @@ describe("scoreDisposition", () => {
         prior_auto_overrides: 1,
         diff: { files_changed: 2, lines_added: 10, lines_deleted: 5 },
         surfaces: [],
-        grc_verdict: "not_security_relevant",
         findings: { one_off_count: 0, class_count: 0, has_security_finding: false },
       },
       cfg,
@@ -14969,7 +14308,6 @@ describe("scoreDisposition", () => {
         prior_auto_overrides: 1,
         diff: { files_changed: 5, lines_added: 200, lines_deleted: 30 },
         surfaces: ["mcp_tool"],
-        grc_verdict: "security_relevant",
         findings: { one_off_count: 3, class_count: 1, has_security_finding: true },
       },
       cfg,
@@ -14986,7 +14324,6 @@ describe("scoreDisposition", () => {
         prior_auto_overrides: 0,
         diff: { files_changed: 4, lines_added: 120, lines_deleted: 10 },
         surfaces: ["config_parser"],
-        grc_verdict: "security_relevant",
         findings: { one_off_count: 2, class_count: 0, has_security_finding: false },
       },
       cfg,
@@ -15003,7 +14340,6 @@ describe("scoreDisposition", () => {
         prior_auto_overrides: 0,
         diff: { files_changed: 1, lines_added: 8, lines_deleted: 2 },
         surfaces: ["doc"],
-        grc_verdict: "not_security_relevant",
         findings: { one_off_count: 1, class_count: 0, has_security_finding: false },
       },
       cfg,
@@ -15019,7 +14355,6 @@ describe("scoreDisposition", () => {
         prior_auto_overrides: 0,
         diff: { files_changed: 6, lines_added: 140, lines_deleted: 60 },
         surfaces: ["user_visible"],
-        grc_verdict: "not_security_relevant",
         findings: { one_off_count: 4, class_count: 1, has_security_finding: false },
       },
       cfg,
@@ -15039,7 +14374,6 @@ describe("scoreDisposition", () => {
         prior_auto_overrides: 0,
         diff: { files_changed: 1, lines_added: 8, lines_deleted: 2 },
         surfaces: ["doc"],
-        grc_verdict: "not_security_relevant",
         findings: { one_off_count: 0, class_count: 0, has_security_finding: false, known: false },
       },
       cfg,
@@ -15066,7 +14400,6 @@ describe("collectDispositionSignals", () => {
       findingsSummary: { one_off_count: 0, class_count: 0, top_categories: [] },
       diffManifest: manifest,
       changedPaths: [],
-      grcVerdict: "not_security_relevant",
       priorAutoOverrides: 0,
       repoRoot: REPO,
     });
@@ -15081,25 +14414,11 @@ describe("collectDispositionSignals", () => {
       findingsSummary: {},
       diffManifest: "1\t0\tmcp/ground-control/lib.js",
       changedPaths: ["mcp/ground-control/lib.js", "mcp/ground-control/index.js"],
-      grcVerdict: "unknown",
       priorAutoOverrides: 0,
       repoRoot: REPO,
     });
     assert.ok(s.surfaces.includes("config_parser"), JSON.stringify(s.surfaces));
     assert.ok(s.surfaces.includes("mcp_tool"), JSON.stringify(s.surfaces));
-  });
-
-  it("defaults grc verdict to 'unknown' when null", () => {
-    const s = collectDispositionSignals({
-      reviewer: "codex",
-      findingsSummary: {},
-      diffManifest: "",
-      changedPaths: [],
-      grcVerdict: null,
-      priorAutoOverrides: 0,
-      repoRoot: REPO,
-    });
-    assert.equal(s.grc_verdict, "unknown");
   });
 
   it("derives has_security_finding from a security-shaped category", () => {
@@ -15108,7 +14427,6 @@ describe("collectDispositionSignals", () => {
       findingsSummary: { one_off_count: 0, class_count: 1, top_categories: [{ shape: "missing authz check" }] },
       diffManifest: "",
       changedPaths: [],
-      grcVerdict: "unknown",
       priorAutoOverrides: 0,
       repoRoot: REPO,
     });
@@ -15121,7 +14439,6 @@ describe("collectDispositionSignals", () => {
       findingsSummary: null,
       diffManifest: "1\t0\tsrc/a.js",
       changedPaths: [],
-      grcVerdict: "not_security_relevant",
       priorAutoOverrides: 0,
       repoRoot: REPO,
     });
@@ -15131,7 +14448,6 @@ describe("collectDispositionSignals", () => {
       findingsSummary: { one_off_count: 0, class_count: 0, top_categories: [] },
       diffManifest: "1\t0\tsrc/a.js",
       changedPaths: [],
-      grcVerdict: "not_security_relevant",
       priorAutoOverrides: 0,
       repoRoot: REPO,
     });

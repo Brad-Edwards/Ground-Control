@@ -18,14 +18,19 @@ import com.keplerops.groundcontrol.domain.controls.state.ControlFunction;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.riskcontrol.model.RiskControlMapping;
+import com.keplerops.groundcontrol.domain.riskcontrol.service.CreateRiskControlMappingCommand;
 import com.keplerops.groundcontrol.domain.riskcontrol.service.RiskControlMappingService;
+import com.keplerops.groundcontrol.domain.riskcontrol.service.UpdateRiskControlMappingCommand;
 import com.keplerops.groundcontrol.domain.riskcontrol.state.MappingControlRole;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -148,6 +153,98 @@ class RiskControlMappingControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id", is(MAPPING_ID.toString())))
                 .andExpect(jsonPath("$.controlRole", is("PREVENTIVE")));
+    }
+
+    @Test
+    void createRoundTripsMethodologyInfluence() throws Exception {
+        // C4: methodologyInfluence is retained as a free-form JSON payload, not schema-validated.
+        var mapping = makeMapping();
+        mapping.setMethodologyInfluence(Map.of("framework", "NIST-CSF", "weight", 2));
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(service.create(any())).thenReturn(mapping);
+
+        mockMvc.perform(
+                        post("/api/v1/risk-control-mappings")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "controlId": "00000000-0000-0000-0000-000000000500",
+                                  "riskScenarioId": "00000000-0000-0000-0000-000000000600",
+                                  "controlRole": "PREVENTIVE",
+                                  "methodologyInfluence": {"framework": "NIST-CSF", "weight": 2}
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.methodologyInfluence.framework", is("NIST-CSF")))
+                .andExpect(jsonPath("$.methodologyInfluence.weight", is(2)));
+
+        var captor = ArgumentCaptor.forClass(CreateRiskControlMappingCommand.class);
+        verify(service).create(captor.capture());
+        Assertions.assertEquals(
+                Map.of("framework", "NIST-CSF", "weight", 2), captor.getValue().methodologyInfluence());
+    }
+
+    @Test
+    void updateRoundTripsMethodologyInfluence() throws Exception {
+        var mapping = makeMapping();
+        mapping.setMethodologyInfluence(Map.of("framework", "ISO-27001"));
+        when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(service.update(any())).thenReturn(mapping);
+
+        mockMvc.perform(
+                        put("/api/v1/risk-control-mappings/{id}", MAPPING_ID)
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "controlRole": "PREVENTIVE",
+                                  "methodologyInfluence": {"framework": "ISO-27001"}
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.methodologyInfluence.framework", is("ISO-27001")));
+
+        var captor = ArgumentCaptor.forClass(UpdateRiskControlMappingCommand.class);
+        verify(service).update(captor.capture());
+        Assertions.assertEquals(
+                Map.of("framework", "ISO-27001"), captor.getValue().methodologyInfluence());
+    }
+
+    @Test
+    void createIgnoresRemovedForeignKeyFields() throws Exception {
+        // ADR-089: riskRegisterRecordId and methodologyProfileId were create-only FKs pointing
+        // at composed-GRC aggregates that no longer exist. RiskControlMappingRequest has no
+        // fields for them, so Spring Boot's default lenient Jackson config silently drops them
+        // from the request body rather than binding them or rejecting the request.
+        when(projectService.resolveProjectId("ground-control")).thenReturn(PROJECT_ID);
+        when(service.create(any())).thenReturn(makeMapping());
+
+        mockMvc.perform(
+                        post("/api/v1/risk-control-mappings")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "controlId": "00000000-0000-0000-0000-000000000500",
+                                  "riskScenarioId": "00000000-0000-0000-0000-000000000600",
+                                  "controlRole": "PREVENTIVE",
+                                  "riskRegisterRecordId": "00000000-0000-0000-0000-000000000999",
+                                  "methodologyProfileId": "00000000-0000-0000-0000-000000000998"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id", is(MAPPING_ID.toString())));
+
+        var captor = ArgumentCaptor.forClass(CreateRiskControlMappingCommand.class);
+        verify(service).create(captor.capture());
+        var command = captor.getValue();
+        Assertions.assertEquals(CONTROL_ID, command.controlId());
+        Assertions.assertEquals(SCENARIO_ID, command.riskScenarioId());
+        Assertions.assertEquals(MappingControlRole.PREVENTIVE, command.controlRole());
     }
 
     @Test

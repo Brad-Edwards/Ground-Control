@@ -5,8 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.keplerops.groundcontrol.domain.packregistry.model.PackDependency;
 import com.keplerops.groundcontrol.domain.packregistry.model.PackRegistryEntry;
-import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPackEntry;
-import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredThreatRule;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -112,8 +110,6 @@ public class PackIntegrityVerifier {
         putIfPresent(payload, "sourceUrl", entry.getSourceUrl());
         putIfPresent(payload, "compatibility", canonicalizeValue(entry.getCompatibility()));
         putIfPresent(payload, "dependencies", canonicalizeDependencies(entry.getDependencies()));
-        putIfPresent(payload, "controlPackEntries", canonicalizeControlPackEntries(entry.getControlPackEntries()));
-        putIfPresent(payload, "threatRuleEntries", canonicalizeThreatRuleEntries(entry.getThreatRuleEntries()));
         putIfPresent(payload, "provenance", canonicalizeValue(entry.getProvenance()));
         putIfPresent(payload, "registryMetadata", canonicalizeValue(entry.getRegistryMetadata()));
         return payload;
@@ -131,62 +127,6 @@ public class PackIntegrityVerifier {
                     return payload;
                 })
                 .toList();
-    }
-
-    private List<Map<String, Object>> canonicalizeControlPackEntries(List<RegisteredControlPackEntry> entries) {
-        if (entries == null || entries.isEmpty()) {
-            return null;
-        }
-
-        return entries.stream().map(this::canonicalizeControlPackEntry).toList();
-    }
-
-    private Map<String, Object> canonicalizeControlPackEntry(RegisteredControlPackEntry entry) {
-        var payload = new LinkedHashMap<String, Object>();
-        payload.put("uid", entry.uid());
-        payload.put("title", entry.title());
-        payload.put(
-                "controlFunction",
-                entry.controlFunction() != null ? entry.controlFunction().name() : null);
-        putIfPresent(payload, "description", entry.description());
-        putIfPresent(payload, "objective", entry.objective());
-        putIfPresent(payload, "owner", entry.owner());
-        putIfPresent(payload, "implementationScope", entry.implementationScope());
-        putIfPresent(payload, "methodologyFactors", canonicalizeValue(entry.methodologyFactors()));
-        putIfPresent(payload, "effectiveness", canonicalizeValue(entry.effectiveness()));
-        putIfPresent(payload, "category", entry.category());
-        putIfPresent(payload, "source", entry.source());
-        putIfPresent(payload, "implementationGuidance", entry.implementationGuidance());
-        putIfPresent(payload, "expectedEvidence", canonicalizeValue(entry.expectedEvidence()));
-        putIfPresent(payload, "frameworkMappings", canonicalizeValue(entry.frameworkMappings()));
-        return payload;
-    }
-
-    private List<Map<String, Object>> canonicalizeThreatRuleEntries(List<RegisteredThreatRule> entries) {
-        if (entries == null || entries.isEmpty()) {
-            return List.of();
-        }
-        return entries.stream().map(this::canonicalizeThreatRuleEntry).toList();
-    }
-
-    private Map<String, Object> canonicalizeThreatRuleEntry(RegisteredThreatRule entry) {
-        var payload = new LinkedHashMap<String, Object>();
-        payload.put("ruleId", entry.ruleId());
-        payload.put("title", entry.title());
-        payload.put("category", entry.category() != null ? entry.category().name() : null);
-        payload.put(
-                "strideCategory",
-                entry.strideCategory() != null ? entry.strideCategory().name() : null);
-        if (entry.targetElementKinds() != null && !entry.targetElementKinds().isEmpty()) {
-            payload.put(
-                    "targetElementKinds",
-                    entry.targetElementKinds().stream().map(Enum::name).sorted().toList());
-        }
-        payload.put("predicate", entry.predicate() != null ? entry.predicate().name() : null);
-        putIfPresent(payload, "metadataTagKey", entry.metadataTagKey());
-        putIfPresent(payload, "narrativeSkeleton", entry.narrativeSkeleton());
-        putIfPresent(payload, "rationale", entry.rationale());
-        return payload;
     }
 
     private Object canonicalizeValue(Object value) {

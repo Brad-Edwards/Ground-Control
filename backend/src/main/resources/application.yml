@@ -99,46 +99,6 @@ groundcontrol:
       # deliberately start executions on a different queue.
       task-queue: ${GROUNDCONTROL_TEMPORAL_CONTROL_TASK_QUEUE:}
       default-completion-command: ${GROUNDCONTROL_TEMPORAL_CONTROL_DEFAULT_COMPLETION_COMMAND:make check}
-  derivation:
-    boundary:
-      # Canonical boundary-model derivation input adapter (GC-GRC-004).
-      # Emits derived architectural boundary inputs from repo-local paths; declared boundaries
-      # are supplied through the validated .ground-control.yaml MCP context.
-      enabled: true
-      # repository-root defaults to Path.of(".") like the other derivation adapters.
-      # Override with GROUNDCONTROL_DERIVATION_BOUNDARY_REPOSITORY_ROOT when needed.
-      ruleset-version: "1.0.0"
-    iac:
-      # IaC and CI/CD pipeline derivation adapter (GC-GRC-003).
-      # enabled: toggle the adapter on/off without removing configuration.
-      enabled: true
-      # repository-root defaults to the working directory (Path.of(".")) via the
-      # @ConfigurationProperties field default; it is intentionally NOT set here because Spring's
-      # web-aware PathEditor cannot convert a bare "." to a Path in a ServletContext. Override with
-      # a file:-prefixed path via GROUNDCONTROL_DERIVATION_IAC_REPOSITORY_ROOT if a non-default root
-      # is required.
-      # max-file-bytes: per-file byte limit; files exceeding this emit a TOOL_EXECUTION_FAILED
-      # capture limit instead of being parsed (default 512 KB).
-      max-file-bytes: 524288
-      # max-files: total file scan cap per derivation run (default 1000).
-      max-files: 1000
-      # excluded-paths: directory names whose subtrees are never scanned.
-      excluded-paths:
-        - .git
-        - .gc
-        - .claude/worktrees
-        - node_modules
-        - dist
-        - target
-        - build
-      # enabled-surfaces: subset of supported surfaces to activate.
-      enabled-surfaces:
-        - github-actions
-        - dockerfile
-        - docker-compose
-        - terraform
-      # ruleset-version: version label embedded in fact provenance for traceability.
-      ruleset-version: "1.0.0"
 
 springdoc:
   api-docs:

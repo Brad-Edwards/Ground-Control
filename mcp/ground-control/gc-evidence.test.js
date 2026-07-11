@@ -13,7 +13,6 @@ import {
   gcEvidenceZodShape,
   gcEvidenceToolHandler,
 } from "./gc-evidence.js";
-import { getEvidenceStateWorkspace } from "./lib.js";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_BASE_URL = process.env.GC_BASE_URL;
@@ -188,48 +187,5 @@ describe("gcEvidenceToolHandler", () => {
       "derived_at",
       "sources",
     ]);
-  });
-});
-
-describe("getEvidenceStateWorkspace", () => {
-  it("GETs /evidence-state/workspace with camelCase query params", async () => {
-    const calls = makeFetchSpy({
-      status: 200,
-      body: { evidenceArtifacts: [], observations: [], counts: { currentlyValid: 0 } },
-    });
-
-    await getEvidenceStateWorkspace({
-      project: "ground-control",
-      assetId: "11111111-1111-1111-1111-111111111111",
-      controlId: "22222222-2222-2222-2222-222222222222",
-      asOf: "2026-06-01T12:00:00Z",
-      freshnessWindowDays: 45,
-      includeSuperseded: true,
-    });
-
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].method, "GET");
-    const url = new URL(calls[0].url);
-    assert.equal(url.pathname, "/api/v1/evidence-state/workspace");
-    assert.equal(url.searchParams.get("project"), "ground-control");
-    assert.equal(url.searchParams.get("assetId"), "11111111-1111-1111-1111-111111111111");
-    assert.equal(url.searchParams.get("controlId"), "22222222-2222-2222-2222-222222222222");
-    assert.equal(url.searchParams.get("asOf"), "2026-06-01T12:00:00Z");
-    assert.equal(url.searchParams.get("freshnessWindowDays"), "45");
-    assert.equal(url.searchParams.get("includeSuperseded"), "true");
-  });
-
-  it("omits undefined filters", async () => {
-    const calls = makeFetchSpy({ status: 200, body: {} });
-
-    await getEvidenceStateWorkspace({ project: "ground-control" });
-
-    const url = new URL(calls[0].url);
-    assert.equal(url.searchParams.get("project"), "ground-control");
-    assert.equal(url.searchParams.get("assetId"), null);
-    assert.equal(url.searchParams.get("controlId"), null);
-    assert.equal(url.searchParams.get("asOf"), null);
-    assert.equal(url.searchParams.get("freshnessWindowDays"), null);
-    assert.equal(url.searchParams.get("includeSuperseded"), null);
   });
 });

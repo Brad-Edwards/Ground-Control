@@ -1,15 +1,11 @@
 package com.keplerops.groundcontrol.domain.controls.service;
 
 import com.keplerops.groundcontrol.domain.controls.model.ControlTest;
-import com.keplerops.groundcontrol.domain.controls.repository.ControlEffectivenessAssessmentRepository;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlTestRepository;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
-import java.io.Serializable;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,17 +27,12 @@ public class ControlTestService {
     private static final Logger log = LoggerFactory.getLogger(ControlTestService.class);
 
     private final ControlTestRepository controlTestRepository;
-    private final ControlEffectivenessAssessmentRepository effectivenessAssessmentRepository;
     private final ControlService controlService;
     private final ProjectService projectService;
 
     public ControlTestService(
-            ControlTestRepository controlTestRepository,
-            ControlEffectivenessAssessmentRepository effectivenessAssessmentRepository,
-            ControlService controlService,
-            ProjectService projectService) {
+            ControlTestRepository controlTestRepository, ControlService controlService, ProjectService projectService) {
         this.controlTestRepository = controlTestRepository;
-        this.effectivenessAssessmentRepository = effectivenessAssessmentRepository;
         this.controlService = controlService;
         this.projectService = projectService;
     }
@@ -128,33 +119,6 @@ public class ControlTestService {
 
     public void delete(UUID projectId, UUID id) {
         var controlTest = findOrThrow(projectId, id);
-        // Reject deletion if any ControlEffectivenessAssessment still cites this test in its
-        // supportingTestIds. ControlEffectivenessAssessmentService.validateSupportingTestIds
-        // already constrains tests to the assessment's control, so the search scope is bounded
-        // by the test's parent control (small N — typically a handful of assessments per control).
-        // The JSON storage makes a SQL-level FK impossible; this guard keeps the contract anyway.
-        var controlId = controlTest.getControl().getId();
-        var testIdString = controlTest.getId().toString();
-        var referencingUids =
-                effectivenessAssessmentRepository
-                        .findByProjectIdAndControlIdOrderByAssessedAtDesc(projectId, controlId)
-                        .stream()
-                        .filter(a -> a.getSupportingTestIds() != null
-                                && a.getSupportingTestIds().contains(testIdString))
-                        .map(a -> a.getUid())
-                        .toList();
-        if (!referencingUids.isEmpty()) {
-            Map<String, Serializable> detail = new LinkedHashMap<>();
-            detail.put("controlTestUid", controlTest.getUid());
-            detail.put("referencingAssessmentUids", new java.util.ArrayList<>(referencingUids));
-            throw new ConflictException(
-                    "ControlTest " + controlTest.getUid()
-                            + " is referenced by effectiveness assessment(s) " + referencingUids
-                            + " as supporting evidence and cannot be deleted."
-                            + " Remove the references from the assessment(s) first.",
-                    "control_test_referenced",
-                    detail);
-        }
         controlTestRepository.delete(controlTest);
         log.info("control_test_deleted: uid={} id={}", controlTest.getUid(), id);
     }

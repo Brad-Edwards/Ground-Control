@@ -14,7 +14,6 @@ public record RiskControlMappingResponse(
         UUID scopedImplementationId,
         // Analysis-side
         UUID riskScenarioId,
-        UUID riskRegisterRecordId,
         UUID threatModelId,
         // C2
         UUID operationalAssetId,
@@ -23,7 +22,6 @@ public record RiskControlMappingResponse(
         MappingControlRole controlRole,
         String mappingScope,
         // C4
-        UUID methodologyProfileId,
         Map<String, Object> methodologyInfluence,
         Instant createdAt,
         Instant updatedAt) {
@@ -37,9 +35,6 @@ public record RiskControlMappingResponse(
                         ? mapping.getScopedImplementation().getId()
                         : null,
                 mapping.getRiskScenario() != null ? mapping.getRiskScenario().getId() : null,
-                mapping.getRiskRegisterRecord() != null
-                        ? mapping.getRiskRegisterRecord().getId()
-                        : null,
                 mapping.getThreatModel() != null ? mapping.getThreatModel().getId() : null,
                 mapping.getOperationalAsset() != null
                         ? mapping.getOperationalAsset().getId()
@@ -47,9 +42,6 @@ public record RiskControlMappingResponse(
                 mapping.getMappingObjective(),
                 mapping.getControlRole(),
                 mapping.getMappingScope(),
-                mapping.getMethodologyProfile() != null
-                        ? mapping.getMethodologyProfile().getId()
-                        : null,
                 mapping.getMethodologyInfluence(),
                 mapping.getCreatedAt(),
                 mapping.getUpdatedAt());

@@ -181,10 +181,6 @@ public class AssetGraphProjectionContributor implements GraphProjectionContribut
                 switch (targetType) {
                     case REQUIREMENT -> GraphEntityType.REQUIREMENT;
                     case RISK_SCENARIO -> GraphEntityType.RISK_SCENARIO;
-                    case RISK_REGISTER_RECORD -> GraphEntityType.RISK_REGISTER_RECORD;
-                    case RISK_ASSESSMENT_RESULT -> GraphEntityType.RISK_ASSESSMENT_RESULT;
-                    case TREATMENT_PLAN -> GraphEntityType.TREATMENT_PLAN;
-                    case METHODOLOGY_PROFILE -> GraphEntityType.METHODOLOGY_PROFILE;
                     case CONTROL -> GraphEntityType.CONTROL;
                         // Always emits an edge to the THREAT_MODEL node regardless of the
                         // threat model's status. ThreatModelGraphProjectionContributor
@@ -205,7 +201,17 @@ public class AssetGraphProjectionContributor implements GraphProjectionContribut
                         // evidence artifact (current and superseded) so this edge
                         // never dangles.
                     case EVIDENCE -> GraphEntityType.EVIDENCE_ARTIFACT;
-                    case ISSUE, CODE, CONFIGURATION, EXTERNAL -> null;
+                        // RISK_REGISTER_RECORD, RISK_ASSESSMENT_RESULT, TREATMENT_PLAN, and
+                        // METHODOLOGY_PROFILE are retired target types (ADR-089) with no backing
+                        // graph node; never emit an edge for them.
+                    case RISK_REGISTER_RECORD,
+                            RISK_ASSESSMENT_RESULT,
+                            TREATMENT_PLAN,
+                            METHODOLOGY_PROFILE,
+                            ISSUE,
+                            CODE,
+                            CONFIGURATION,
+                            EXTERNAL -> null;
                 };
         if (targetEntityType == null) {
             return null;

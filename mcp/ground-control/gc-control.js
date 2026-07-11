@@ -1,11 +1,10 @@
-// gc_control: entity- + action-discriminated MCP adapter for the control,
-// control test, and control effectiveness assessment REST surfaces.
+// gc_control: entity- + action-discriminated MCP adapter for the control and
+// control test REST surfaces.
 // Extracted from index.js so the handler logic is testable in isolation
 // (mirrors the gc-risk-governance.js extraction from #878). The original
 // gc_control surface (entity=control + create/update/delete/transition +
-// link_create/link_delete) is preserved unchanged; new entities (control_test
-// for GC-I012, control_effectiveness_assessment for GC-I013) are added under
-// the same tool per ADR-035's consolidated-surface mandate.
+// link_create/link_delete) is preserved unchanged; control_test (GC-I012) is
+// added under the same tool per ADR-035's consolidated-surface mandate.
 //
 // Reads (list, get, links_list) route through gc_query for every entity.
 
@@ -13,17 +12,15 @@ import { z } from "zod";
 import {
   pick, reqArg,
   CONTROL_STATUSES, CONTROL_FUNCTIONS, CONTROL_LINK_TARGET_TYPES, CONTROL_LINK_TYPES,
-  CONTROL_TEST_METHODOLOGIES, CONTROL_TEST_CONCLUSIONS, CONTROL_EFFECTIVENESS_RATINGS,
+  CONTROL_TEST_METHODOLOGIES, CONTROL_TEST_CONCLUSIONS,
   createControl, updateControl, deleteControl,
   transitionControlStatus, createControlLink, deleteControlLink,
   createControlTest, updateControlTest, deleteControlTest,
-  createControlEffectivenessAssessment, updateControlEffectivenessAssessment,
-  deleteControlEffectivenessAssessment,
 } from "./lib.js";
 import { linkCreateOptionalSharedZodFields, performLinkCreate } from "./link-create.js";
 
 export const GC_CONTROL_ENTITIES = [
-  "control", "control_test", "control_effectiveness_assessment",
+  "control", "control_test",
 ];
 
 // Per-entity action set. Backwards-compatible: the existing entity="control"
@@ -65,16 +62,6 @@ export const CONTROL_FIELDS = {
       "conclusion", "tester_identity", "test_date", "notes",
     ],
   },
-  control_effectiveness_assessment: {
-    create: [
-      "control_id", "uid", "design_effectiveness", "operating_effectiveness",
-      "assessed_at", "assessor", "rationale", "notes", "supporting_test_ids",
-    ],
-    update: [
-      "design_effectiveness", "operating_effectiveness", "assessed_at",
-      "assessor", "rationale", "notes", "supporting_test_ids",
-    ],
-  },
 };
 
 export const gcControlZodShape = {
@@ -111,19 +98,12 @@ export const gcControlZodShape = {
   conclusion: z.enum(CONTROL_TEST_CONCLUSIONS).optional(),
   tester_identity: z.string().optional(),
   test_date: z.string().optional(),
-  // ---- control_effectiveness_assessment (GC-I013) ----
-  design_effectiveness: z.enum(CONTROL_EFFECTIVENESS_RATINGS).optional(),
-  operating_effectiveness: z.enum(CONTROL_EFFECTIVENESS_RATINGS).optional(),
-  assessed_at: z.string().optional(),
-  assessor: z.string().optional(),
-  rationale: z.string().optional(),
-  supporting_test_ids: z.array(z.string().uuid()).optional(),
   // ---- shared ----
   notes: z.string().optional(),
 };
 
 export const GC_CONTROL_DESCRIPTION =
-  `Controls + control tests (GC-I012) + control effectiveness assessments (GC-I013) + their links. ` +
+  `Controls + control tests (GC-I012) + their links. ` +
   `Entity: ${GC_CONTROL_ENTITIES.join(", ")} (defaults to "control" for back-compat). ` +
   `Actions: ${GC_CONTROL_ACTIONS.join(", ")}. ` +
   `Sub-entity actions are limited to create/update/delete — no transition or link actions. ` +
@@ -131,13 +111,10 @@ export const GC_CONTROL_DESCRIPTION =
   `{uid,title,control_function,description,objective,owner,implementation_scope,methodology_factors,effectiveness,category,source}. ` +
   `control update drops uid; all remaining fields are optional. ` +
   `Per-sub-entity create fields: ` +
-  `control_test={control_id,uid,methodology,test_steps,expected_results,actual_results,conclusion,tester_identity,test_date,notes}; ` +
-  `control_effectiveness_assessment={control_id,uid,design_effectiveness,operating_effectiveness,assessed_at,assessor,rationale,notes,supporting_test_ids}. ` +
-  `supporting_test_ids is a list of ControlTest UUIDs that must belong to the same control as the assessment; ` +
-  `the backend emits SUPPORTED_BY graph edges from the assessment to each listed test. ` +
-  `Update DTOs drop create-only foreign keys (control_id, uid); a non-null supporting_test_ids replaces the list wholesale. ` +
+  `control_test={control_id,uid,methodology,test_steps,expected_results,actual_results,conclusion,tester_identity,test_date,notes}. ` +
+  `Update DTOs drop create-only foreign keys (control_id, uid). ` +
   `Reads (list, get, links_list) route through gc_query. ` +
-  `Required fields per action: control/create→{title}; */update/delete→{id}; control/transition→{id,status}; control/link_create→{control_id,target_type,link_type}; control/link_delete→{control_id,link_id}; control_test/create and control_effectiveness_assessment/create→{control_id,uid}.`;
+  `Required fields per action: control/create→{title}; */update/delete→{id}; control/transition→{id,status}; control/link_create→{control_id,target_type,link_type}; control/link_delete→{control_id,link_id}; control_test/create→{control_id,uid}.`;
 
 /**
  * Pure adapter handler for gc_control. Picks action-scoped body fields per
@@ -193,23 +170,6 @@ export async function gcControlToolHandler(args) {
           return null;
         default:
           throw new Error(`Action '${args.action}' not valid for control_test`);
-      }
-    }
-    case "control_effectiveness_assessment": {
-      switch (args.action) {
-        case "create":
-          reqArg(args, "control_id", "create");
-          reqArg(args, "uid", "create");
-          return createControlEffectivenessAssessment(data, args.project);
-        case "update":
-          reqArg(args, "id", "update");
-          return updateControlEffectivenessAssessment(args.id, data, args.project);
-        case "delete":
-          reqArg(args, "id", "delete");
-          await deleteControlEffectivenessAssessment(args.id, args.project);
-          return null;
-        default:
-          throw new Error(`Action '${args.action}' not valid for control_effectiveness_assessment`);
       }
     }
     default:

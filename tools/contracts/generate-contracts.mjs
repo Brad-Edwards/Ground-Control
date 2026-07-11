@@ -116,13 +116,10 @@ const optionalResponseProps = {
 const schemaDeclarationOverrides = {
   ImportError: "export type ImportError = string;",
   SyncError: "export type SyncError = string;",
-  WorkspaceAssessmentDto: "export type WorkspaceAssessmentDto = Record<string, any>;",
 };
 
 const exactPropertyTypes = {
   "TimelineEntryResponse.changeCategory": "ChangeCategory",
-  "WorkspaceControlDto.queueReasons": "ControlWorkspaceQueueReason[]",
-  "WorkspaceScenarioDto.reviewIndicator": "ScenarioReviewState",
   // gateState is null for bulk list entries and executions whose gate state cannot be queried
   // (GC-O009 (b), #1279). springdoc emits a bare $ref (non-null) for it; this override keeps the
   // generated client honest about the intentionally-nullable field.
@@ -192,8 +189,8 @@ const enumExports = [
   ["Status", "STATUSES", "RequirementResponse", "status"],
   ["RiskScenarioStatus", null, "RiskScenarioResponse", "status"],
   ["Priority", "PRIORITIES", "RequirementResponse", "priority"],
-  ["ControlFunction", "CONTROL_FUNCTIONS", "WorkspaceControlDto", "controlFunction"],
-  ["ControlStatus", "CONTROL_STATUSES", "WorkspaceControlDto", "status"],
+  ["ControlFunction", "CONTROL_FUNCTIONS", "ControlResponse", "controlFunction"],
+  ["ControlStatus", "CONTROL_STATUSES", "ControlResponse", "status"],
   ["RequirementType", "REQUIREMENT_TYPES", "RequirementResponse", "requirementType"],
   ["RelationType", "RELATION_TYPES", "RelationResponse", "relationType"],
   ["ArtifactType", "ARTIFACT_TYPES", "TraceabilityLinkResponse", "artifactType"],
@@ -206,7 +203,7 @@ const enumExports = [
   ["TestSuitePopulationMode", "TEST_SUITE_POPULATION_MODES", "TestSuiteResponse", "populationMode"],
   ["TestRunStatus", "TEST_RUN_STATUSES", "TestRunResponse", "status"],
   ["TestRunCaseResultStatus", "TEST_RUN_CASE_RESULT_STATUSES", "TestRunCaseResultResponse", "status"],
-  ["AssetType", null, "WorkspaceAssetDto", "assetType"],
+  ["AssetType", null, "AssetResponse", "assetType"],
   ["ChangeCategory", "CHANGE_CATEGORIES", "TimelineEntryResponse", "changeCategory"],
   ["StrideCategory", null, "ThreatModelResponse", "stride"],
   ["ThreatModelStatus", null, "ThreatModelResponse", "status"],
@@ -223,30 +220,8 @@ const enumExports = [
 const legacyAliases = [
   ["GraphNeighborhoodResponse", "GraphVisualizationResponse"],
   ["PackDependencyResponse", "PackDependency"],
-  ["RegisteredControlPackEntryResponse", "RegisteredControlPackEntry"],
   ["TestCaseTreeNode", "TestCaseTreeNodeResponse"],
   ["TestCaseTreeLeaf", "TestCaseLeaf"],
-  ["WorkspaceAsset", "WorkspaceAssetDto"],
-  ["WorkspaceFlow", "WorkspaceFlowDto"],
-  ["WorkspaceLink", "WorkspaceLinkDto"],
-  ["WorkspaceThreatEntry", "WorkspaceThreatEntryDto"],
-  ["EvidenceStateProvenanceSource", "ProvenanceSourceDto"],
-  ["EvidenceStateArtifact", "EvidenceArtifactDto"],
-  ["EvidenceStateObservation", "ObservationDto"],
-  ["ControlWorkspaceScopedImplementation", "WorkspaceScopedImplementationDto"],
-  ["ControlWorkspaceControlTest", "WorkspaceControlTestDto"],
-  ["ControlWorkspaceAssessment", "WorkspaceAssessmentDto"],
-  ["ControlWorkspaceEvidence", "WorkspaceEvidenceDto"],
-  ["ControlWorkspaceFinding", "WorkspaceFindingDto"],
-  ["ControlWorkspaceMappingEvidenceRef", "WorkspaceMappingEvidenceRefDto"],
-  ["ControlWorkspaceRiskMapping", "WorkspaceRiskMappingDto"],
-  ["ControlWorkspaceControl", "WorkspaceControlDto"],
-  ["ControlAssuranceWorkspaceResponse", "ControlWorkspaceResponse"],
-  ["MethodologyProfile", "MethodologyProfileResponse"],
-  ["WorkspaceAssessment", "WorkspaceAssessmentDto"],
-  ["WorkspaceTreatment", "WorkspaceTreatmentDto"],
-  ["WorkspaceRegisterRef", "WorkspaceRegisterRefDto"],
-  ["WorkspaceScenario", "WorkspaceScenarioDto"],
   ["WorkflowRunPhaseHotspot", "PhaseHotspotResponse"],
 ];
 
@@ -277,14 +252,6 @@ const broadLegacyTypes = [
   "EvidenceType",
   "EvidenceSourceKind",
   "ControlTestConclusion",
-  "ControlEffectivenessRating",
-  "ControlWorkspaceQueueReason",
-  "MethodologyFamily",
-  "RiskAssessmentApprovalStatus",
-  "TreatmentPlanStatus",
-  "TreatmentStrategy",
-  "RiskRegisterStatus",
-  "ScenarioReviewState",
   "TestCaseTreeNodeKind",
   "MappingControlRole",
 ];
@@ -311,21 +278,6 @@ const broadLegacyTypeValues = {
     "EXTERNAL",
   ],
   ControlTestConclusion: ["EFFECTIVE", "INEFFECTIVE", "NOT_TESTED"],
-  ControlEffectivenessRating: ["EFFECTIVE", "PARTIALLY_EFFECTIVE", "INEFFECTIVE"],
-  ControlWorkspaceQueueReason: [
-    "OWNER_MISSING",
-    "STATUS_DRAFT",
-    "TEST_EVIDENCE_MISSING",
-    "ASSESSMENT_MISSING",
-    "OPEN_EXCEPTION",
-    "EFFECTIVENESS_WEAK",
-    "CURRENT",
-  ],
-  RiskAssessmentApprovalStatus: ["DRAFT", "SUBMITTED", "APPROVED", "REJECTED"],
-  TreatmentPlanStatus: ["PLANNED", "IN_PROGRESS", "BLOCKED", "COMPLETED", "CANCELED"],
-  TreatmentStrategy: ["MITIGATE", "ACCEPT", "TRANSFER", "SHARE", "AVOID", "OTHER"],
-  RiskRegisterStatus: ["IDENTIFIED", "ANALYZING", "ASSESSED", "TREATING", "MONITORING", "ACCEPTED", "CLOSED"],
-  ScenarioReviewState: ["REASSESSMENT_REQUIRED", "REVIEW_DUE", "EVIDENCE_STALE", "CURRENT", "NO_SIGNAL"],
 };
 
 const broadLegacyConstants = {
@@ -407,10 +359,6 @@ const broadLegacyConstants = {
   AUDIT_LINK_TYPES: {
     type: "AuditLinkType",
     values: ["SCOPES", "ASSESSES", "EVIDENCED_BY", "FOLLOWS_UP_ON", "ASSOCIATED"],
-  },
-  METHODOLOGY_FAMILIES: {
-    type: "MethodologyFamily",
-    values: ["FAIR", "NIST_SP800_30_R1", "ISO_27005", "CUSTOM"],
   },
 };
 

@@ -21,9 +21,7 @@ import {
   AUDIT_STATUSES,
   AUDIT_TYPES,
   CHANGE_CATEGORIES,
-  CROSSWALK_VOCABULARY_SURFACES,
   LINK_TYPES,
-  NORMALIZED_CONCEPTS,
   PRIORITIES,
   RELATION_TYPES,
   REQUIREMENT_TYPES,
@@ -34,8 +32,6 @@ const STATE_DIR =
   "../../../backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state";
 const AUDIT_STATE_DIR =
   "../../../backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state";
-const RISK_ENUM_STATE_DIR =
-  "../../../backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state";
 
 function javaEnumConstantsIn(
   stateDir: string,
@@ -103,20 +99,6 @@ describe("GC-U001 audit enum constants match the backend Java source of truth", 
   it("AuditType — api.ts constant equals the Java enum constants (in order)", () => {
     expect([...AUDIT_TYPES]).toEqual(
       javaEnumConstantsIn(AUDIT_STATE_DIR, "AuditType"),
-    );
-  });
-});
-
-describe("GC-T012 crosswalk enum constants match the backend Java source of truth", () => {
-  it("NormalizedConcept — api.ts constant equals the Java enum constants (in order)", () => {
-    expect([...NORMALIZED_CONCEPTS]).toEqual(
-      javaEnumConstantsIn(RISK_ENUM_STATE_DIR, "NormalizedConcept"),
-    );
-  });
-
-  it("CrosswalkVocabularySurface — api.ts constant equals the Java enum constants (in order)", () => {
-    expect([...CROSSWALK_VOCABULARY_SURFACES]).toEqual(
-      javaEnumConstantsIn(RISK_ENUM_STATE_DIR, "CrosswalkVocabularySurface"),
     );
   });
 });

@@ -2,7 +2,6 @@ package com.keplerops.groundcontrol.api.packregistry;
 
 import com.keplerops.groundcontrol.domain.packregistry.model.PackDependency;
 import com.keplerops.groundcontrol.domain.packregistry.model.PackRegistryEntry;
-import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPackEntry;
 import com.keplerops.groundcontrol.domain.packregistry.state.CatalogStatus;
 import com.keplerops.groundcontrol.domain.packregistry.state.PackType;
 import java.time.Instant;
@@ -23,7 +22,6 @@ public record PackRegistryEntryResponse(
         Map<String, Object> signatureInfo,
         Map<String, Object> compatibility,
         List<PackDependency> dependencies,
-        List<RegisteredControlPackEntry> controlPackEntries,
         Map<String, Object> provenance,
         Map<String, Object> registryMetadata,
         CatalogStatus catalogStatus,
@@ -45,7 +43,6 @@ public record PackRegistryEntryResponse(
                 entry.getSignatureInfo(),
                 entry.getCompatibility(),
                 entry.getDependencies(),
-                entry.getControlPackEntries(),
                 entry.getProvenance(),
                 entry.getRegistryMetadata(),
                 entry.getCatalogStatus(),

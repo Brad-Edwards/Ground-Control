@@ -20,11 +20,6 @@ public interface RiskControlMappingRepository extends JpaRepository<RiskControlM
     List<RiskControlMapping> findByProjectIdAndRiskScenarioId(
             @Param("projectId") UUID projectId, @Param("scenarioId") UUID scenarioId);
 
-    @Query("SELECT m FROM RiskControlMapping m WHERE m.project.id = :projectId"
-            + " AND m.riskRegisterRecord.id = :recordId")
-    List<RiskControlMapping> findByProjectIdAndRiskRegisterRecordId(
-            @Param("projectId") UUID projectId, @Param("recordId") UUID recordId);
-
     @Query("SELECT m FROM RiskControlMapping m WHERE m.project.id = :projectId AND m.control.id = :controlId")
     List<RiskControlMapping> findByProjectIdAndControlId(
             @Param("projectId") UUID projectId, @Param("controlId") UUID controlId);
@@ -45,28 +40,12 @@ public interface RiskControlMappingRepository extends JpaRepository<RiskControlM
             @Param("controlId") UUID controlId, @Param("scenarioId") UUID scenarioId, @Param("assetId") UUID assetId);
 
     @Query("SELECT (COUNT(m) > 0) FROM RiskControlMapping m"
-            + " WHERE m.control.id = :controlId"
-            + " AND m.riskRegisterRecord.id = :recordId"
-            + " AND (:assetId IS NULL AND m.operationalAsset IS NULL"
-            + "      OR m.operationalAsset.id = :assetId)")
-    boolean existsByControlIdAndRiskRegisterRecordIdAndOperationalAssetId(
-            @Param("controlId") UUID controlId, @Param("recordId") UUID recordId, @Param("assetId") UUID assetId);
-
-    @Query("SELECT (COUNT(m) > 0) FROM RiskControlMapping m"
             + " WHERE m.scopedImplementation.id = :scopedId"
             + " AND m.riskScenario.id = :scenarioId"
             + " AND (:assetId IS NULL AND m.operationalAsset IS NULL"
             + "      OR m.operationalAsset.id = :assetId)")
     boolean existsByScopedImplementationIdAndRiskScenarioIdAndOperationalAssetId(
             @Param("scopedId") UUID scopedId, @Param("scenarioId") UUID scenarioId, @Param("assetId") UUID assetId);
-
-    @Query("SELECT (COUNT(m) > 0) FROM RiskControlMapping m"
-            + " WHERE m.scopedImplementation.id = :scopedId"
-            + " AND m.riskRegisterRecord.id = :recordId"
-            + " AND (:assetId IS NULL AND m.operationalAsset IS NULL"
-            + "      OR m.operationalAsset.id = :assetId)")
-    boolean existsByScopedImplementationIdAndRiskRegisterRecordIdAndOperationalAssetId(
-            @Param("scopedId") UUID scopedId, @Param("recordId") UUID recordId, @Param("assetId") UUID assetId);
 
     // ---- C1 threat-model reverse lookup ----
 
@@ -159,32 +138,11 @@ public interface RiskControlMappingRepository extends JpaRepository<RiskControlM
             """)
     List<UUID> findUnmappedScenarioIds(@Param("projectId") UUID projectId);
 
-    // ---- C5b: Records with no mapped controls (direct, no transitive) ----
-
-    /**
-     * Returns IDs of risk register records in the given project that have no direct
-     * RiskControlMapping row.
-     */
-    @Query(
-            """
-            SELECT r.id FROM RiskRegisterRecord r
-            WHERE r.project.id = :projectId
-              AND NOT EXISTS (
-                SELECT 1 FROM RiskControlMapping m
-                WHERE m.project.id = :projectId AND m.riskRegisterRecord.id = r.id
-              )
-            """)
-    List<UUID> findDirectlyUnmappedRecordIds(@Param("projectId") UUID projectId);
-
-    // ---- C6: Controls not mapped to any relevant scenario (transitive-through-record) ----
+    // ---- C6: Controls not mapped to any relevant scenario ----
 
     /**
      * Returns IDs of catalog controls in the given project that have no RiskControlMapping
-     * to a scenario (directly or via a register record that owns ≥1 scenario).
-     *
-     * <p>A control is "covered" if it has at least one mapping to a scenario, OR at least
-     * one mapping to a record that has ≥1 scenario in its riskScenarios set.
-     * A catalog control is also covered if any of its scoped implementations is covered.
+     * to a scenario (directly or via a scoped implementation).
      */
     @Query(
             """
@@ -194,13 +152,7 @@ public interface RiskControlMappingRepository extends JpaRepository<RiskControlM
                 SELECT 1 FROM RiskControlMapping m
                 WHERE m.project.id = :projectId
                   AND m.control.id = c.id
-                  AND (
-                    m.riskScenario IS NOT NULL
-                    OR (m.riskRegisterRecord IS NOT NULL AND EXISTS (
-                      SELECT 1 FROM RiskRegisterRecord r JOIN r.riskScenarios s
-                      WHERE r.id = m.riskRegisterRecord.id
-                    ))
-                  )
+                  AND m.riskScenario IS NOT NULL
               )
               AND NOT EXISTS (
                 SELECT 1 FROM ScopedControlImplementation sci
@@ -209,13 +161,7 @@ public interface RiskControlMappingRepository extends JpaRepository<RiskControlM
                     SELECT 1 FROM RiskControlMapping m2
                     WHERE m2.project.id = :projectId
                       AND m2.scopedImplementation.id = sci.id
-                      AND (
-                        m2.riskScenario IS NOT NULL
-                        OR (m2.riskRegisterRecord IS NOT NULL AND EXISTS (
-                          SELECT 1 FROM RiskRegisterRecord r2 JOIN r2.riskScenarios s2
-                          WHERE r2.id = m2.riskRegisterRecord.id
-                        ))
-                      )
+                      AND m2.riskScenario IS NOT NULL
                   )
               )
             """)

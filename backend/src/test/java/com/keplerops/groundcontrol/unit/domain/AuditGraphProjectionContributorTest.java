@@ -175,6 +175,8 @@ class AuditGraphProjectionContributorTest {
                 new AuditLink(audit, AuditLinkTargetType.RISK_SCENARIO, riskScenarioId, null, AuditLinkType.ASSESSES);
         setField(rsLink, "id", UUID.randomUUID());
 
+        // RISK_REGISTER_RECORD is a retired target type (ADR-089); it must never
+        // produce an edge even though the enum constant remains for historical rows.
         var riskRegisterId = UUID.randomUUID();
         var rrLink = new AuditLink(
                 audit, AuditLinkTargetType.RISK_REGISTER_RECORD, riskRegisterId, null, AuditLinkType.ASSESSES);
@@ -196,13 +198,11 @@ class AuditGraphProjectionContributorTest {
 
         var edges = contributor.contributeEdges(projectId);
 
-        assertThat(edges).hasSize(4);
+        // rrLink (RISK_REGISTER_RECORD) is a retired target type and produces no edge.
+        assertThat(edges).hasSize(3);
         assertThat(edges.stream().map(e -> e.targetEntityType()))
                 .containsExactlyInAnyOrder(
-                        GraphEntityType.RISK_SCENARIO,
-                        GraphEntityType.RISK_REGISTER_RECORD,
-                        GraphEntityType.EVIDENCE_ARTIFACT,
-                        GraphEntityType.FINDING);
+                        GraphEntityType.RISK_SCENARIO, GraphEntityType.EVIDENCE_ARTIFACT, GraphEntityType.FINDING);
     }
 
     @Test

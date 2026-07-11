@@ -259,7 +259,15 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "197",
                         // V198 (#1279, GC-O009 (b)): append-only operator-signal audit log (no Envers
                         // shadow — it IS the audit log).
-                        "198");
+                        "198",
+                        // V199 (#1346, ADR-089): retire the composed GRC product surface — drops the
+                        // tables owned by grc_assessment_run, derivation facts, boundary model,
+                        // architecture model, data classification lattice, evidence campaign, control
+                        // pack, risk appetite profile, control effectiveness assessment, and the
+                        // risk_assessment_result/treatment_plan/risk_register_record/methodology_profile
+                        // family, plus their audit shadows; deletes retired-type rows from the shared
+                        // pack_registry_entry table.
+                        "199");
     }
 
     @Test
@@ -327,52 +335,6 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         entityManager
                 .createNativeQuery("SELECT 1 FROM risk_scenario_link_audit LIMIT 1")
                 .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM methodology_profile LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM methodology_profile_audit LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM risk_register_record LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM risk_register_record_audit LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM risk_register_record_scenario LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM risk_register_record_scenario_audit LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM risk_assessment_result LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM risk_assessment_result_audit LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM risk_assessment_result_observation LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM risk_assessment_result_observation_audit LIMIT 1")
-                .getResultList();
-        entityManager.createNativeQuery("SELECT 1 FROM treatment_plan LIMIT 1").getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM treatment_plan_audit LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM risk_appetite_profile LIMIT 1")
-                .getResultList();
-        // Column-level probe on the Envers shadow (V141): the audit table is not covered by
-        // ddl-auto:validate, so a missing/renamed column would only surface on the first
-        // RiskAppetiteProfile mutation in production without this assertion (GC-T005).
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT appetite_key, name, version, methodology_family, appetite_statement,"
-                                + " tolerance_thresholds, status, effective_from, effective_to, created_at, updated_at"
-                                + " FROM risk_appetite_profile_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
         entityManager.createNativeQuery("SELECT 1 FROM control LIMIT 1").getResultList();
         entityManager.createNativeQuery("SELECT 1 FROM control_audit LIMIT 1").getResultList();
         entityManager.createNativeQuery("SELECT 1 FROM control_link LIMIT 1").getResultList();
@@ -388,22 +350,6 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .getResultList();
         entityManager
                 .createNativeQuery("SELECT 1 FROM registered_plugin LIMIT 1")
-                .getResultList();
-        entityManager.createNativeQuery("SELECT 1 FROM control_pack LIMIT 1").getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM control_pack_audit LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM control_pack_entry LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM control_pack_entry_audit LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM control_pack_override LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM control_pack_override_audit LIMIT 1")
                 .getResultList();
         // V053: pack registry tables
         entityManager
@@ -471,13 +417,6 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         entityManager.createNativeQuery("SELECT 1 FROM control_test LIMIT 1").getResultList();
         entityManager
                 .createNativeQuery("SELECT 1 FROM control_test_audit LIMIT 1")
-                .getResultList();
-        // V067-V068 control_effectiveness_assessment + audit (GC-I013 / ADR-039)
-        entityManager
-                .createNativeQuery("SELECT 1 FROM control_effectiveness_assessment LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM control_effectiveness_assessment_audit LIMIT 1")
                 .getResultList();
         // V071-V072 test_case + audit (TC-001 / ADR-040). The audit table is
         // not a Hibernate-managed entity, so ddl-auto: validate doesn't catch
@@ -1156,54 +1095,6 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                                 + " FROM mapping_evidence_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
-        // V124-V125: typed methodology-strategy binding (GC-T004 / C5, #861).
-        entityManager
-                .createNativeQuery("SELECT 1 FROM information_schema.columns"
-                        + " WHERE table_name = 'treatment_plan'"
-                        + " AND column_name = 'methodology_profile_id'")
-                .getSingleResult();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM information_schema.columns"
-                        + " WHERE table_name = 'treatment_plan'"
-                        + " AND column_name = 'methodology_strategy_key'")
-                .getSingleResult();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT methodology_profile_id, methodology_strategy_key"
-                                + " FROM treatment_plan_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM information_schema.columns"
-                        + " WHERE table_name = 'methodology_profile'"
-                        + " AND column_name = 'treatment_strategy_vocabulary'")
-                .getSingleResult();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery(
-                                "SELECT treatment_strategy_vocabulary" + " FROM methodology_profile_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        // V129-V130: crosswalk_entries column (GC-T012).
-        entityManager
-                .createNativeQuery("SELECT 1 FROM information_schema.columns"
-                        + " WHERE table_name = 'methodology_profile'"
-                        + " AND column_name = 'crosswalk_entries'")
-                .getSingleResult();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT crosswalk_entries FROM methodology_profile_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        // V138: primary-source alignment for seeded FAIR/NIST methodology profiles.
-        assertSeededMethodologyProfilesAligned();
-        // V126: reassessmentRequiredAt on risk_assessment_result and audit (GC-T004 / C8, #863).
-        entityManager
-                .createNativeQuery("SELECT 1 FROM information_schema.columns"
-                        + " WHERE table_name = 'risk_assessment_result'"
-                        + " AND column_name = 'reassessment_required_at'")
-                .getSingleResult();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT reassessment_required_at FROM risk_assessment_result_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
         // V131-V132: project.type + research_intake (ADR-056, #999). Pin the
         // type column on project, the live research_intake shape, and the
         // _audit shadow column set. Without explicit column probes a copy-paste
@@ -1237,45 +1128,12 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                                 + " FROM research_intake_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
-        // V133-V134: GC-GRC-001 derivation fact store. Pin the live tables and
-        // audit shadow columns so every normalized fact keeps reproducible
-        // provenance and every unsupported scope remains queryable as a
-        // machine-readable capture limit.
-        entityManager.createNativeQuery("SELECT 1 FROM derivation_run LIMIT 1").getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM system_model_fact LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM derivation_capture_limit LIMIT 1")
-                .getResultList();
         // V135: mcp_tool_event (issue #1104 / ADR-059). Append-only operational
         // telemetry; no _audit shadow (rows are never mutated).
         entityManager.createNativeQuery("SELECT 1 FROM mcp_tool_event LIMIT 1").getResultList();
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT tool, action, outcome, duration_ms, project, event_ts, created_at"
                                 + " FROM mcp_tool_event LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM derivation_run_audit LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM system_model_fact_audit LIMIT 1")
-                .getResultList();
-        entityManager
-                .createNativeQuery("SELECT 1 FROM derivation_capture_limit_audit LIMIT 1")
-                .getResultList();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT fact_kind, schema_version, fact_key, adapter_id,"
-                                + " tool_name, tool_version, ruleset_name, ruleset_version,"
-                                + " commit_sha, derived_at, created_at, updated_at"
-                                + " FROM system_model_fact_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT reason, language, surface, commit_sha, captured_at,"
-                                + " created_at, updated_at"
-                                + " FROM derivation_capture_limit_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
         // V137: threat_model_id on risk_control_mapping + audit shadow (GC-H006).
@@ -1511,120 +1369,6 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .doesNotThrowAnyException();
     }
 
-    @Test
-    @Transactional
-    void boundaryModelAuditTablesMatchEntities() {
-        // V150-V151: canonical boundary model snapshots, boundaries,
-        // assignments, and modeling gaps. Envers shadow tables are not covered
-        // by ddl-auto:validate, so pin the columns that carry the model.
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT derivation_run_id, schema_version, boundary_set_version,"
-                                + " architecture_model_version, commit_sha, declaration_digest,"
-                                + " boundary_count, assignment_count, gap_count, created_at, updated_at"
-                                + " FROM boundary_model_snapshot_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT snapshot_id, boundary_key, display_name, description,"
-                                + " source, path_selectors, surfaces, input_fact_keys, created_at, updated_at"
-                                + " FROM boundary_model_boundary_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT snapshot_id, boundary_id, source_fact_key, source_fact_kind,"
-                                + " source_path, strategy, created_at, updated_at"
-                                + " FROM boundary_model_assignment_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT snapshot_id, source_fact_key, source_fact_kind,"
-                                + " source_path, reason, detail, created_at, updated_at"
-                                + " FROM boundary_model_gap_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-    }
-
-    @Test
-    @Transactional
-    void architectureModelAuditTablesMatchEntities() {
-        // V166-V167: architecture model stable elements, versioned snapshots,
-        // snapshot-local DFD semantics, and Envers audit shadows (GC-GRC-005).
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT stable_key, element_kind, created_at, updated_at"
-                                + " FROM architecture_model_element LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT derivation_run_id, schema_version, model_version,"
-                                + " commit_sha, source, created_by, element_count, flow_count, created_at, updated_at"
-                                + " FROM architecture_model_snapshot LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT snapshot_id, element_id, stable_key, element_kind, label,"
-                                + " source_path, flow_source_stable_key, flow_target_stable_key, flow_direction,"
-                                + " provenance_source, provenance_key, commit_sha, metadata, created_at, updated_at"
-                                + " FROM architecture_model_element_state LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT stable_key, element_kind, created_at, updated_at"
-                                + " FROM architecture_model_element_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT derivation_run_id, schema_version, model_version,"
-                                + " commit_sha, source, created_by, element_count, flow_count, created_at, updated_at"
-                                + " FROM architecture_model_snapshot_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT snapshot_id, element_id, stable_key, element_kind, label,"
-                                + " source_path, flow_source_stable_key, flow_target_stable_key, flow_direction,"
-                                + " provenance_source, provenance_key, commit_sha, metadata, created_at, updated_at"
-                                + " FROM architecture_model_element_state_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-    }
-
-    @Test
-    @Transactional
-    void dataClassificationLatticeAuditTablesMatchEntities() {
-        // V169-V170: data classification lattice root, labels, permitted-flow rules, and their
-        // Envers audit shadows (GC-GRC-006). The column-by-column probe catches a migration that
-        // silently omits a column where a table-only `SELECT 1` would not.
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT schema_version, policy_version, source, label_count, edge_count,"
-                                + " created_at, updated_at FROM data_classification_lattice LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT lattice_id, label_key, display_name, description, rank,"
-                                + " created_at, updated_at FROM data_classification_label LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT lattice_id, from_label_key, to_label_key, created_at, updated_at"
-                                + " FROM data_classification_flow_rule LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT schema_version, policy_version, source, label_count, edge_count,"
-                                + " created_at, updated_at FROM data_classification_lattice_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT lattice_id, label_key, display_name, description, rank,"
-                                + " created_at, updated_at FROM data_classification_label_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
-                        .createNativeQuery("SELECT lattice_id, from_label_key, to_label_key, created_at, updated_at"
-                                + " FROM data_classification_flow_rule_audit LIMIT 1")
-                        .getResultList())
-                .doesNotThrowAnyException();
-    }
-
     /**
      * V142: workflow-run telemetry reporting tables (#859 / ADR-061). Append-only/operational
      * reporting read-model; no _audit shadow (cf. mcp_tool_event). ddl-auto:validate does not inspect
@@ -1708,42 +1452,5 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .as("age_graph_snapshot must CHECK non-negative node/edge counts")
                 .contains("node_count")
                 .contains("edge_count");
-    }
-
-    private void assertSeededMethodologyProfilesAligned() {
-        assertThat(entityManager
-                        .createNativeQuery("SELECT version FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
-                        .getSingleResult())
-                .isEqualTo("O-RT 3.0.1 / O-RA 2.0.1");
-        assertThat(entityManager
-                        .createNativeQuery("SELECT input_schema::jsonb #>>"
-                                + " '{properties,probability_of_action,properties,high,maximum}'"
-                                + " FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
-                        .getSingleResult())
-                .isEqualTo("1");
-        assertThat(entityManager
-                        .createNativeQuery("SELECT input_schema::jsonb #>>"
-                                + " '{properties,threat_capability,properties,high,maximum}'"
-                                + " FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
-                        .getSingleResult())
-                .isEqualTo("100");
-        assertThat(entityManager
-                        .createNativeQuery("SELECT input_schema::jsonb #>"
-                                + " '{properties,fair_cam}'"
-                                + " FROM methodology_profile WHERE profile_key = 'FAIR_V3_0'")
-                        .getSingleResult())
-                .isNull();
-        assertThat(entityManager
-                        .createNativeQuery("SELECT input_schema::jsonb #>>"
-                                + " '{properties,threat_event_relevance,description}'"
-                                + " FROM methodology_profile WHERE profile_key = 'NIST_SP800_30_R1'")
-                        .getSingleResult())
-                .isEqualTo("Threat event relevance per NIST SP 800-30 Rev. 1 Table E-4");
-        assertThat(entityManager
-                        .createNativeQuery("SELECT input_schema::jsonb #>>"
-                                + " '{properties,threat_source_relevance,deprecated}'"
-                                + " FROM methodology_profile WHERE profile_key = 'NIST_SP800_30_R1'")
-                        .getSingleResult())
-                .isEqualTo("true");
     }
 }

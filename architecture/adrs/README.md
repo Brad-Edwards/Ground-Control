@@ -74,8 +74,8 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [054](054-documentation-coverage-gate.md) | Documentation Coverage Gate | Accepted (amended 2026-06-14, #1102) |
 | [055](055-research-workflow-skills-and-citation-mcp.md) | Research Workflow Skills and Citation MCP | Accepted |
 | [056](056-research-project-type-and-intake.md) | Research Project Type and Intake Metadata | Accepted |
-| [057](057-per-run-grc-screening-gate.md) | Per-run GRC Screening Gate in /implement | Accepted (amended/superseded in part by ADR-058) |
-| [058](058-derivation-first-continuous-grc.md) | Derivation-First Continuous GRC | Accepted |
+| [057](057-per-run-grc-screening-gate.md) | Per-run GRC Screening Gate in /implement | Superseded by ADR-089 for active product and workflow behavior |
+| [058](058-derivation-first-continuous-grc.md) | Derivation-First Continuous GRC | Superseded by ADR-089 for active product and workflow behavior |
 | [059](059-mcp-usage-telemetry.md) | MCP Tool Usage Telemetry | Accepted |
 | [060](060-requirement-uid-identity.md) | Requirement UID identity | Accepted |
 | [061](061-workflow-run-telemetry-reporting.md) | Workflow-Run Telemetry & Economics Reporting Surface | Accepted |
@@ -105,5 +105,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [085](085-identity-model-users-groups-roles.md) | Identity Model - Users, Groups, and Roles as Data | Accepted |
 | [086](086-research-high-risk-operation-authorization.md) | Research High-Risk Operation Authorization | Accepted |
 | [087](087-contract-locked-development-methodology.md) | Contract-Locked Development Methodology | Accepted (amended 2026-07-04, #1293) |
+| [088](088-temporal-human-gates.md) | Temporal Human Gates (Merge Observation and Authorized Operator Signals) | Accepted |
+| [089](089-retire-grc-product-and-next-issue-recommendation.md) | Retire the GRC Product Surface and Next-Issue Recommendation | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.

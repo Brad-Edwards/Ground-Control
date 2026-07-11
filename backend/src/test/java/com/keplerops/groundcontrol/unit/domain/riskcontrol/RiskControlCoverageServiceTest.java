@@ -2,29 +2,18 @@ package com.keplerops.groundcontrol.unit.domain.riskcontrol;
 
 import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.controls.model.Control;
-import com.keplerops.groundcontrol.domain.controls.model.ControlEffectivenessAssessment;
-import com.keplerops.groundcontrol.domain.controls.repository.ControlEffectivenessAssessmentRepository;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlRepository;
-import com.keplerops.groundcontrol.domain.controls.state.ControlEffectivenessRating;
 import com.keplerops.groundcontrol.domain.controls.state.ControlFunction;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
-import com.keplerops.groundcontrol.domain.riskcontrol.model.RiskControlMapping;
 import com.keplerops.groundcontrol.domain.riskcontrol.repository.RiskControlMappingRepository;
 import com.keplerops.groundcontrol.domain.riskcontrol.service.RiskControlCoverageService;
-import com.keplerops.groundcontrol.domain.riskcontrol.state.MappingControlRole;
-import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
-import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskRegisterRecordRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
 import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel;
 import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelRepository;
-import java.time.LocalDate;
-import java.time.Month;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +24,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-/** Unit tests for C5a, C5b, and C6 coverage queries. */
+/** Unit tests for C5a and C6 coverage queries. */
 @ExtendWith(MockitoExtension.class)
 class RiskControlCoverageServiceTest {
 
@@ -46,16 +35,10 @@ class RiskControlCoverageServiceTest {
     private RiskScenarioRepository scenarioRepository;
 
     @Mock
-    private RiskRegisterRecordRepository recordRepository;
-
-    @Mock
     private ControlRepository controlRepository;
 
     @Mock
     private ThreatModelRepository threatModelRepository;
-
-    @Mock
-    private ControlEffectivenessAssessmentRepository effectivenessRepository;
 
     @InjectMocks
     private RiskControlCoverageService service;
@@ -91,99 +74,6 @@ class RiskControlCoverageServiceTest {
 
             var result = service.findUnmappedScenarios(projectId);
             assertThat(result).containsExactly(scenario);
-        }
-    }
-
-    @Nested
-    class C5b_UnmappedRecords {
-
-        @Test
-        void returnsEmptyWhenAllRecordsMapped() {
-            when(mappingRepository.findDirectlyUnmappedRecordIds(projectId)).thenReturn(List.of());
-            assertThat(service.findUnmappedRecords(projectId, false)).isEmpty();
-            assertThat(service.findUnmappedRecords(projectId, true)).isEmpty();
-        }
-
-        @Test
-        void directMode_returnsDirectlyUnmappedRecords() {
-            var recordId = UUID.randomUUID();
-            var riskRecord = makeRecord("RR-001");
-            setField(riskRecord, "id", recordId);
-
-            when(mappingRepository.findDirectlyUnmappedRecordIds(projectId)).thenReturn(List.of(recordId));
-            when(recordRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
-                    .thenReturn(List.of(riskRecord));
-
-            var result = service.findUnmappedRecords(projectId, false);
-            assertThat(result).containsExactly(riskRecord);
-        }
-
-        @Test
-        void directMode_excludesMappedRecordsPresentInRepoResult() {
-            // The stream filter `r -> directlyUnmappedIds.contains(r.getId())` must
-            // actually discriminate. This test places a mapped record (not in the
-            // unmapped-ID set) alongside an unmapped record so the filter is exercised
-            // against a non-matching item.
-            var unmappedId = UUID.randomUUID();
-            var unmappedRecord = makeRecord("RR-001");
-            setField(unmappedRecord, "id", unmappedId);
-
-            var mappedId = UUID.randomUUID();
-            var mappedRecord = makeRecord("RR-002");
-            setField(mappedRecord, "id", mappedId);
-
-            // Only the unmapped record's ID is in the directly-unmapped set.
-            when(mappingRepository.findDirectlyUnmappedRecordIds(projectId)).thenReturn(List.of(unmappedId));
-            // Repository returns both records; filter must keep only unmappedRecord.
-            when(recordRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
-                    .thenReturn(List.of(unmappedRecord, mappedRecord));
-
-            var result = service.findUnmappedRecords(projectId, false);
-            assertThat(result).containsExactly(unmappedRecord);
-        }
-
-        @Test
-        void transitiveMode_excludesRecordsWhoseAllScenariosAreMapped() {
-            // Record has one scenario, and that scenario IS mapped (not in unmappedScenarioIds)
-            var scenarioId = UUID.randomUUID();
-            var scenario = makeScenario("RS-001");
-            setField(scenario, "id", scenarioId);
-
-            var recordId = UUID.randomUUID();
-            var riskRecord = makeRecord("RR-001");
-            setField(riskRecord, "id", recordId);
-            riskRecord.replaceRiskScenarios(List.of(scenario));
-
-            when(mappingRepository.findDirectlyUnmappedRecordIds(projectId)).thenReturn(List.of(recordId));
-            when(recordRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
-                    .thenReturn(List.of(riskRecord));
-            // Scenario IS mapped — not in unmapped list
-            when(mappingRepository.findUnmappedScenarioIds(projectId)).thenReturn(List.of());
-
-            var result = service.findUnmappedRecords(projectId, true);
-            // Record is transitively covered because all its scenarios are mapped
-            assertThat(result).isEmpty();
-        }
-
-        @Test
-        void transitiveMode_includesRecordsWhoseSomeScenariosAreUnmapped() {
-            var scenarioId = UUID.randomUUID();
-            var scenario = makeScenario("RS-001");
-            setField(scenario, "id", scenarioId);
-
-            var recordId = UUID.randomUUID();
-            var riskRecord = makeRecord("RR-001");
-            setField(riskRecord, "id", recordId);
-            riskRecord.replaceRiskScenarios(List.of(scenario));
-
-            when(mappingRepository.findDirectlyUnmappedRecordIds(projectId)).thenReturn(List.of(recordId));
-            when(recordRepository.findByProjectIdWithScenariosOrderByCreatedAtDesc(projectId))
-                    .thenReturn(List.of(riskRecord));
-            // Scenario is NOT mapped — still in unmapped list
-            when(mappingRepository.findUnmappedScenarioIds(projectId)).thenReturn(List.of(scenarioId));
-
-            var result = service.findUnmappedRecords(projectId, true);
-            assertThat(result).containsExactly(riskRecord);
         }
     }
 
@@ -328,137 +218,13 @@ class RiskControlCoverageServiceTest {
         }
     }
 
-    @Nested
-    class ThreatsInsufficientEffectiveness {
-
-        @Test
-        void returnsEmptyWhenNoThreatMappingsExist() {
-            // No threat mappings → the method short-circuits before querying effectiveness assessments.
-            when(mappingRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
-                    .thenReturn(List.of());
-
-            var result = service.findThreatsWithInsufficientControlEffectiveness(projectId, null, null, null);
-            assertThat(result).isEmpty();
-        }
-
-        @Test
-        void flagsThreatWhenNoControlPassesBar() {
-            var threatModel = makeThreat("TM-001");
-            var threatId = UUID.randomUUID();
-            setField(threatModel, "id", threatId);
-
-            var ctrl = new Control(project, "CTRL-001", "Access Control", ControlFunction.PREVENTIVE);
-            var ctrlId = UUID.randomUUID();
-            setField(ctrl, "id", ctrlId);
-
-            var mapping =
-                    RiskControlMapping.forControlThreat(project, ctrl, threatModel, MappingControlRole.PREVENTIVE);
-            setField(mapping, "id", UUID.randomUUID());
-
-            var assessment =
-                    makeAssessment(ctrl, ControlEffectivenessRating.INEFFECTIVE, LocalDate.of(2026, Month.JUNE, 1));
-
-            when(effectivenessRepository.findByProjectIdAndAssessedAtLessThanEqualOrderByControlIdAscAssessedAtDesc(
-                            eq(projectId), any(LocalDate.class)))
-                    .thenReturn(List.of(assessment));
-            when(mappingRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
-                    .thenReturn(List.of(mapping));
-            when(threatModelRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
-                    .thenReturn(List.of(threatModel));
-
-            var result = service.findThreatsWithInsufficientControlEffectiveness(
-                    projectId, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2026, Month.JUNE, 20), 90);
-
-            assertThat(result).containsExactly(threatModel);
-        }
-
-        @Test
-        void doesNotFlagThreatWhenControlPassesBar() {
-            var threatModel = makeThreat("TM-001");
-            var threatId = UUID.randomUUID();
-            setField(threatModel, "id", threatId);
-
-            var ctrl = new Control(project, "CTRL-001", "Access Control", ControlFunction.PREVENTIVE);
-            var ctrlId = UUID.randomUUID();
-            setField(ctrl, "id", ctrlId);
-
-            var mapping =
-                    RiskControlMapping.forControlThreat(project, ctrl, threatModel, MappingControlRole.PREVENTIVE);
-            setField(mapping, "id", UUID.randomUUID());
-
-            var assessment =
-                    makeAssessment(ctrl, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2026, Month.JUNE, 1));
-
-            when(effectivenessRepository.findByProjectIdAndAssessedAtLessThanEqualOrderByControlIdAscAssessedAtDesc(
-                            eq(projectId), any(LocalDate.class)))
-                    .thenReturn(List.of(assessment));
-            when(mappingRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
-                    .thenReturn(List.of(mapping));
-
-            var result = service.findThreatsWithInsufficientControlEffectiveness(
-                    projectId, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2026, Month.JUNE, 20), 90);
-
-            assertThat(result).isEmpty();
-        }
-
-        @Test
-        void flagsThreatWhenOnlyPassingControlAssessmentIsStale() {
-            // A stale EFFECTIVE assessment (outside freshnessWindowDays before asOf) must NOT count
-            // as demonstrated coverage. Without the freshness filter the control's EFFECTIVE rating
-            // would wrongly exempt the threat; with it, the stale assessment is dropped and the
-            // threat is flagged. This exercises the freshness window directly.
-            var threatModel = makeThreat("TM-001");
-            setField(threatModel, "id", UUID.randomUUID());
-
-            var ctrl = new Control(project, "CTRL-001", "Access Control", ControlFunction.PREVENTIVE);
-            setField(ctrl, "id", UUID.randomUUID());
-
-            var mapping =
-                    RiskControlMapping.forControlThreat(project, ctrl, threatModel, MappingControlRole.PREVENTIVE);
-            setField(mapping, "id", UUID.randomUUID());
-
-            // EFFECTIVE, but assessed 2025-01-01 — well outside a 90-day window before 2026-06-20.
-            var staleAssessment =
-                    makeAssessment(ctrl, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2025, Month.JANUARY, 1));
-
-            when(effectivenessRepository.findByProjectIdAndAssessedAtLessThanEqualOrderByControlIdAscAssessedAtDesc(
-                            eq(projectId), any(LocalDate.class)))
-                    .thenReturn(List.of(staleAssessment));
-            when(mappingRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
-                    .thenReturn(List.of(mapping));
-            when(threatModelRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
-                    .thenReturn(List.of(threatModel));
-
-            var result = service.findThreatsWithInsufficientControlEffectiveness(
-                    projectId, ControlEffectivenessRating.EFFECTIVE, LocalDate.of(2026, Month.JUNE, 20), 90);
-
-            assertThat(result).containsExactly(threatModel);
-        }
-    }
-
     // ---- Helpers ----
 
     private RiskScenario makeScenario(String uid) {
         return new RiskScenario(project, uid, "Scenario " + uid, "Attacker", "Phishing", "User", "Data breach");
     }
 
-    private RiskRegisterRecord makeRecord(String uid) {
-        return new RiskRegisterRecord(project, uid, "Record " + uid);
-    }
-
     private ThreatModel makeThreat(String uid) {
         return new ThreatModel(project, uid, "Threat " + uid, "Attacker", "Attack", "Impact");
-    }
-
-    private ControlEffectivenessAssessment makeAssessment(
-            Control ctrl, ControlEffectivenessRating rating, LocalDate assessedAt) {
-        var assessment = new ControlEffectivenessAssessment(
-                project, ctrl, "CEA-" + uid(), rating, rating, assessedAt, "Test assessor");
-        setField(assessment, "id", UUID.randomUUID());
-        return assessment;
-    }
-
-    private static String uid() {
-        return UUID.randomUUID().toString().substring(0, 8);
     }
 }

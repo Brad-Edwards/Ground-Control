@@ -45,7 +45,7 @@ class TrustEvaluatorTest {
 
     private ResolvedPack makeResolvedPack(String publisher) {
         var project = makeProject();
-        var entry = new PackRegistryEntry(project, "test-pack", PackType.CONTROL_PACK, "1.0.0");
+        var entry = new PackRegistryEntry(project, "test-pack", PackType.CUSTOM, "1.0.0");
         entry.setPublisher(publisher);
         entry.setSourceUrl("https://registry.example.com/test-pack");
         entry.setChecksum("sha256:declared");

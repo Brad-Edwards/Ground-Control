@@ -140,11 +140,11 @@ public class EvidenceArtifactGraphProjectionContributor implements GraphProjecti
         return switch (kind) {
             case OBSERVATION -> GraphEntityType.OBSERVATION;
             case CONTROL_TEST -> GraphEntityType.CONTROL_TEST;
-            case CONTROL_EFFECTIVENESS_ASSESSMENT -> GraphEntityType.CONTROL_EFFECTIVENESS_ASSESSMENT;
             case VERIFICATION_RESULT -> GraphEntityType.VERIFICATION_RESULT;
-            case RISK_ASSESSMENT_RESULT -> GraphEntityType.RISK_ASSESSMENT_RESULT;
             case FINDING -> GraphEntityType.FINDING;
-            case ATTESTATION, EXTERNAL -> null;
+                // CONTROL_EFFECTIVENESS_ASSESSMENT and RISK_ASSESSMENT_RESULT are retired source
+                // kinds (ADR-089) with no backing graph node; never emit an edge for them.
+            case CONTROL_EFFECTIVENESS_ASSESSMENT, RISK_ASSESSMENT_RESULT, ATTESTATION, EXTERNAL -> null;
         };
     }
 }

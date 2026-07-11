@@ -68,9 +68,6 @@ routing:
     codebase_assessment:
       tier: medium
       model: claude-sonnet-5
-    grc_screening:
-      tier: medium
-      model: claude-sonnet-5
     planning:
       tier: high
       model: claude-opus-4-8
@@ -146,8 +143,6 @@ architecture:
         applies_to: write-path Service inputs; @Validated, immutable
       - name: WebMvcTest controller slice
         applies_to: controller unit tests that contribute to SonarCloud coverage (Testcontainers integration tests do not run in the sonar CI job)
-      - name: Derivation-backed GRC engine
-        applies_to: GRC screening, standalone assessment lane, architecture-model derivation, threat/control enumeration, and coverage enforcement
     canonical_helpers:
       - name: ErrorResponse + GlobalExceptionHandler
         path: backend/src/main/java/com/keplerops/groundcontrol/shared/web/ErrorResponse.java
@@ -177,10 +172,8 @@ architecture:
         one_liner: codex returns structured findings; the MCP server performs the GitHub writes
       - id: ADR-036
         one_liner: per-step routing + deterministic record-rendering tools + per-step telemetry, opt-in via routing.enabled / telemetry.enabled
-      - id: ADR-057
-        one_liner: Step 3.5 v1 posts a durable GRC screening record and companion reconciliation marker on the issue thread
-      - id: ADR-058
-        one_liner: continuous GRC target derives facts, computes impact_set/gap_set/stale_set, rejects passing no_baseline, and keeps DAST/runtime out of scope
+      - id: ADR-089
+        one_liner: retires the composed GRC product surface (screening, derivation, assessment, /assess) and the next-issue-recommendation close-path feature; retained aggregates (Control, ControlTest, EvidenceArtifact, Finding, Asset, RiskScenario, ThreatModel, risk-control mapping, traceability) are unaffected
     anti_recommendations:
       - Do not introduce new abstractions below 3 call-sites — three similar lines beat a premature abstraction
       - Prefer @WebMvcTest controller slices over @SpringBootTest integration tests when coverage matters — the Sonar CI job does not run Testcontainers
