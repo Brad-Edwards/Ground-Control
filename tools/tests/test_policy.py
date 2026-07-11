@@ -37,6 +37,7 @@ from tools.policy.checks import (
     run_deploy_compose_credential_passthrough,
     run_documentation_coverage_check,
     run_enum_contract_check,
+    run_gate_set_invariant_check,
     run_ghcr_namespace_drift,
     run_migration_policy,
     run_no_deferral_disposition_check,
@@ -285,6 +286,90 @@ class PolicyChecksTest(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return rel
+
+    def _write_gate_set_fixture(
+        self,
+        root: Path,
+        *,
+        enum_extra: str = "",
+        mcp_extra: str = "",
+        signal_methods: str | None = None,
+    ) -> None:
+        """Lay down a minimal, valid gate-set surface set; callers mutate one surface to force drift."""
+        self._write_file(
+            root,
+            "backend/src/main/java/com/keplerops/groundcontrol/domain/workflowexecution/OperatorSignalType.java",
+            "package x;\npublic enum OperatorSignalType {\n  CANCEL,\n  RETRY_FROM,\n  REVIEW_CAP_DISPOSITION" + enum_extra + "\n}\n",
+        )
+        methods = signal_methods if signal_methods is not None else (
+            "  @SignalMethod\n  void cancel(CancelSignal s);\n"
+            "  @SignalMethod\n  void retryFrom(RetryFromSignal s);\n"
+            "  @SignalMethod\n  void applyReviewCapDisposition(ReviewCapDispositionSignal s);\n"
+        )
+        self._write_file(
+            root,
+            "backend/src/main/java/com/keplerops/groundcontrol/infrastructure/temporal/implement/ImplementWorkflow.java",
+            "package x;\npublic interface ImplementWorkflow {\n" + methods + "}\n",
+        )
+        self._write_file(
+            root,
+            "mcp/ground-control/gc-workflow-execution.js",
+            'export const WORKFLOW_SIGNAL_TYPES = ["CANCEL", "RETRY_FROM", "REVIEW_CAP_DISPOSITION"' + mcp_extra + "];\n",
+        )
+        self._write_file(
+            root,
+            "contracts/schemas/workflow/implement-signals.v1.schema.json",
+            json.dumps(
+                {
+                    "$defs": {
+                        "CancelSignal": {"x-gc-record": "CancelSignal"},
+                        "RetryFromSignal": {"x-gc-record": "RetryFromSignal"},
+                        "ReviewCapDispositionSignal": {"x-gc-record": "ReviewCapDispositionSignal"},
+                    }
+                }
+            ),
+        )
+
+    def test_gate_set_invariant_passes_on_real_repo(self):
+        self.assertEqual(run_gate_set_invariant_check(), [])
+
+    def test_gate_set_invariant_clean_fixture_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_gate_set_fixture(root)
+            self.assertEqual(run_gate_set_invariant_check(root=root), [])
+
+    def test_gate_set_invariant_fails_on_added_enum_signal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_gate_set_fixture(root, enum_extra=",\n  MERGE_APPROVED")
+            codes = {v.code for v in run_gate_set_invariant_check(root=root)}
+            # A fourth signal drifts the enum from the closed catalog AND is a forbidden approval gate.
+            self.assertIn("gate-set-drift", codes)
+            self.assertIn("gate-set-forbidden-gate", codes)
+
+    def test_gate_set_invariant_fails_when_mcp_drifts_from_workflow(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_gate_set_fixture(root, mcp_extra=', "SOMETHING_NEW"')
+            codes = {v.code for v in run_gate_set_invariant_check(root=root)}
+            self.assertIn("gate-set-drift", codes)
+
+    def test_gate_set_invariant_fails_when_workflow_adds_signal_method(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_gate_set_fixture(
+                root,
+                signal_methods=(
+                    "  @SignalMethod\n  void cancel(CancelSignal s);\n"
+                    "  @SignalMethod\n  void retryFrom(RetryFromSignal s);\n"
+                    "  @SignalMethod\n  void applyReviewCapDisposition(ReviewCapDispositionSignal s);\n"
+                    "  @SignalMethod\n  void approveMerge(ApproveMergeSignal s);\n"
+                ),
+            )
+            codes = {v.code for v in run_gate_set_invariant_check(root=root)}
+            self.assertIn("gate-set-drift", codes)
+            self.assertIn("gate-set-forbidden-gate", codes)
 
     def test_controller_webmvctest_no_false_positive_on_same_name_collision(self):
         """A controller and its real companion (resolved by FQCN) satisfy the check

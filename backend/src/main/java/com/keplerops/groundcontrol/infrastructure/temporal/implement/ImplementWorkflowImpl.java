@@ -13,6 +13,7 @@ import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.Co
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.CompletionGateInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.CompletionGateResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.FinalReportInput;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.GateState;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.GitPublishInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementChangeInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementChangeResult;
@@ -410,5 +411,14 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
     @Override
     public ImplementOutcome currentOutcome() {
         return outcome;
+    }
+
+    @Override
+    public GateState gateState() {
+        // Derived from workflow state only (deterministic query). waitingForMerge is true exactly while
+        // the run is ready-for-review and blocked in awaitMerge on the single human gate; escalatedPhase/
+        // escalatedReviewer are non-null only while a gate is paused awaiting an operator signal.
+        boolean waitingForMerge = outcome == ImplementOutcome.READY_FOR_REVIEW;
+        return new GateState(phase, outcome, waitingForMerge, escalatedPhase, escalatedReviewer);
     }
 }

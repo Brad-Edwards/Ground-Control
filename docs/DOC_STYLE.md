@@ -363,3 +363,13 @@ deterministic `/implement` Temporal activity records map 1:1 to
 in an amendment to ADR-054, not a documentation edit; the documentation-coverage
 classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
 unchanged and no new DOC_STYLE.md style rule is established.
+
+The `run_gate_set_invariant_check` added to `tools/policy/checks.py`
+(GC-O009 (b) / ADR-029 / ADR-088, issue #1279) is a new policy-surface check
+that pins the `/implement` operator-gate set to the closed signal catalog across
+the workflow `@SignalMethod` contract, the `OperatorSignalType` enum, the
+`implement-signals.v1` schema, and the MCP `WORKFLOW_SIGNAL_TYPES` catalog, and
+fails if a plan/merge-approval gate is reintroduced. Per the convention above it
+is recorded in an amendment to ADR-054, not a documentation edit; the
+documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and
+`.vale.ini` are unchanged and no new DOC_STYLE.md style rule is established.

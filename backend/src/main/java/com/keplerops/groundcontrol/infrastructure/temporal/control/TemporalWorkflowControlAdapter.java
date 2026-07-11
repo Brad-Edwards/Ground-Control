@@ -10,11 +10,14 @@ import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionId;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionRef;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionStatus;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionView;
+import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowOutcome;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowType;
 import com.keplerops.groundcontrol.domain.workflowexecution.service.SendSignalCommand;
 import com.keplerops.groundcontrol.domain.workflowexecution.service.StartWorkflowCommand;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.CancelSignal;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.CapDisposition;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.GateState;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementOutcome;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementPhase;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementWorkflowInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.RetryFromSignal;
@@ -104,9 +107,27 @@ public class TemporalWorkflowControlAdapter implements WorkflowControlPort {
     public Optional<WorkflowExecutionView> describe(String workflowId) {
         WorkflowStub stub = workflowClient.newUntypedWorkflowStub(workflowId);
         try {
-            return Optional.of(toView(stub.describe()));
+            // Enrich the single-execution read model with the bounded gate state, queried from the
+            // workflow (GC-Q016). The list path deliberately omits it — querying every execution would
+            // be O(n) round-trips.
+            return Optional.of(toView(stub.describe(), queryGateState(stub)));
         } catch (WorkflowNotFoundException notFound) {
             return Optional.empty();
+        }
+    }
+
+    /**
+     * Query the workflow's bounded gate state, degrading to {@code null} when it cannot be answered.
+     * Querying requires a live worker and a query-capable (open) execution; a closed execution or an
+     * absent worker throws. Gate state is optional read-model enrichment, so a failed query must not
+     * fail the describe.
+     */
+    private WorkflowExecutionView.GateState queryGateState(WorkflowStub stub) {
+        try {
+            return mapGateState(stub.query("gateState", GateState.class));
+        } catch (RuntimeException queryFailure) {
+            log.debug("Gate-state query unavailable: {}", queryFailure.toString());
+            return null;
         }
     }
 
@@ -161,6 +182,10 @@ public class TemporalWorkflowControlAdapter implements WorkflowControlPort {
     }
 
     WorkflowExecutionView toView(WorkflowExecutionMetadata metadata) {
+        return toView(metadata, null);
+    }
+
+    WorkflowExecutionView toView(WorkflowExecutionMetadata metadata, WorkflowExecutionView.GateState gateState) {
         var execution = metadata.getExecution();
         return new WorkflowExecutionView(
                 execution.getWorkflowId(),
@@ -175,7 +200,55 @@ public class TemporalWorkflowControlAdapter implements WorkflowControlPort {
                 new WorkflowExecutionView.Correlation(
                         memoString(metadata, MEMO_PROJECT),
                         memoInteger(metadata, MEMO_ISSUE_NUMBER),
-                        memoStringList(metadata, MEMO_REQUIREMENT_UIDS)));
+                        memoStringList(metadata, MEMO_REQUIREMENT_UIDS)),
+                gateState);
+    }
+
+    static WorkflowExecutionView.GateState mapGateState(GateState state) {
+        if (state == null) {
+            return null;
+        }
+        return new WorkflowExecutionView.GateState(
+                fromImplementPhase(state.phase()),
+                toWorkflowOutcome(state.outcome()),
+                state.waitingForMerge(),
+                fromImplementPhase(state.escalatedPhase()),
+                fromReviewerKind(state.escalatedReviewer()));
+    }
+
+    static RetryPhase fromImplementPhase(ImplementPhase phase) {
+        if (phase == null) {
+            return null;
+        }
+        return switch (phase) {
+            case A_PLAN_IMPLEMENT -> RetryPhase.A_PLAN_IMPLEMENT;
+            case B_QUALITY_GATE -> RetryPhase.B_QUALITY_GATE;
+            case C_STAGE_COMMIT_PUSH -> RetryPhase.C_STAGE_COMMIT_PUSH;
+            case D_SHIP_PIPELINE -> RetryPhase.D_SHIP_PIPELINE;
+            case E_POST_MERGE_RECONCILE -> RetryPhase.E_POST_MERGE_RECONCILE;
+        };
+    }
+
+    static WorkflowOutcome toWorkflowOutcome(ImplementOutcome outcome) {
+        if (outcome == null) {
+            return null;
+        }
+        return switch (outcome) {
+            case READY_FOR_REVIEW -> WorkflowOutcome.READY_FOR_REVIEW;
+            case MERGED -> WorkflowOutcome.MERGED;
+            case ESCALATED -> WorkflowOutcome.ESCALATED;
+            case CANCELLED -> WorkflowOutcome.CANCELLED;
+        };
+    }
+
+    static Reviewer fromReviewerKind(ReviewerKind reviewer) {
+        if (reviewer == null) {
+            return null;
+        }
+        return switch (reviewer) {
+            case CODEX -> Reviewer.CODEX;
+            case TEST_QUALITY -> Reviewer.TEST_QUALITY;
+        };
     }
 
     private static String temporalTypeName(WorkflowType workflowType) {

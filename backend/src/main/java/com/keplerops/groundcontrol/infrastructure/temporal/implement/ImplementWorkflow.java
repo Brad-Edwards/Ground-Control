@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.infrastructure.temporal.implement;
 
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.CancelSignal;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.GateState;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementOutcome;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementPhase;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ImplementWorkflowInput;
@@ -46,4 +47,12 @@ public interface ImplementWorkflow {
     /** Terminal outcome, or {@code null} while the run is still in progress (query). */
     @QueryMethod
     ImplementOutcome currentOutcome();
+
+    /**
+     * Bounded gate-state read model (GC-O009 (c), GC-Q016): current phase, whether the run is blocked on
+     * the single human merge gate, and which gate — if any — is escalated awaiting an operator signal.
+     * The product read model derives from this query, not from raw Temporal history.
+     */
+    @QueryMethod
+    GateState gateState();
 }

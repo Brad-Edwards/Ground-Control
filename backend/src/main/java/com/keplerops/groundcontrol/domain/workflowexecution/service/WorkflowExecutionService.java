@@ -1,5 +1,7 @@
 package com.keplerops.groundcontrol.domain.workflowexecution.service;
 
+import com.keplerops.groundcontrol.domain.audit.ActorHolder;
+import com.keplerops.groundcontrol.domain.exception.AuthorizationException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.exception.ServiceUnavailableException;
@@ -11,6 +13,8 @@ import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionRef
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionStatus;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowExecutionView;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowType;
+import com.keplerops.groundcontrol.domain.workflowexecution.audit.AuthorizationOutcome;
+import com.keplerops.groundcontrol.domain.workflowexecution.audit.OperatorSignalAuditRecorder;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,14 +39,20 @@ public class WorkflowExecutionService {
     private static final Logger log = LoggerFactory.getLogger(WorkflowExecutionService.class);
     private static final int DEFAULT_LIST_LIMIT = 50;
     private static final int MAX_LIST_LIMIT = 200;
+    // Sentinel actor for an unauthenticated request (mirrors ActorFilter's default); never has gate authority.
+    private static final String ANONYMOUS_ACTOR = "anonymous";
 
     private final ObjectProvider<WorkflowControlPort> controlPortProvider;
     private final ProjectService projectService;
+    private final OperatorSignalAuditRecorder auditRecorder;
 
     public WorkflowExecutionService(
-            ObjectProvider<WorkflowControlPort> controlPortProvider, ProjectService projectService) {
+            ObjectProvider<WorkflowControlPort> controlPortProvider,
+            ProjectService projectService,
+            OperatorSignalAuditRecorder auditRecorder) {
         this.controlPortProvider = controlPortProvider;
         this.projectService = projectService;
+        this.auditRecorder = auditRecorder;
     }
 
     /** Start a workflow execution for {@code project}, returning its identity. */
@@ -88,12 +98,35 @@ public class WorkflowExecutionService {
         return port().describe(workflowId).orElseThrow(() -> notFound(workflowId));
     }
 
-    /** Send an operator signal to one execution owned by the caller project. */
-    @Transactional(readOnly = true)
+    /**
+     * Send an operator signal to one execution owned by the caller project (GC-O009 (b)). Requires an
+     * authenticated actor with gate authority and records an append-only audit row for every attempt —
+     * allowed or denied — so the gate-authority trail is queryable independently of Temporal history.
+     */
+    @Transactional
     public void signal(String project, String workflowId, SignalRequest request) {
         var projectIdentifier = projectService.requireProjectIdentifier(project);
+        // Cross-project / missing ids resolve to not-found before any gate-authority or audit detail,
+        // so a foreign caller cannot probe existence — and a denied attempt on a foreign id is not
+        // recorded (nothing to attribute it to in this project's trail).
         requireOwnedByProject(workflowId, projectIdentifier);
+        // A malformed signal is a 400 bad request, not a gate action: reject before the authority check
+        // so it is not recorded as a denied gate attempt.
         var command = validatedSignal(request);
+
+        // Gate authority: the actor is the authenticated principal resolved by ActorFilter, never a
+        // caller-supplied body field. The route is ROLE_ADMIN-gated (ApiPathMatrix); this is the
+        // domain-level authority check that owns the audit trail and is the seam GC-P024 replaces with
+        // project-scoped gate authority. The check runs before touching the control port so an
+        // unauthorized caller cannot learn whether the execution exists or whether control is enabled.
+        var actor = ActorHolder.get();
+        if (!hasGateAuthority(actor)) {
+            auditRecorder.write(
+                    actorForAudit(actor), projectIdentifier, workflowId, null, command, AuthorizationOutcome.DENIED);
+            throw new AuthorizationException(
+                    "Operator gate signals require an authenticated actor with gate authority");
+        }
+
         // Confirm the execution exists AND is in a signalable state before sending. Describe returns
         // the same 404 envelope for a missing/cross-project id (callers cannot probe existence across
         // projects), and a closed execution (completed/failed/canceled/terminated/timed-out) is
@@ -103,8 +136,30 @@ public class WorkflowExecutionService {
         var port = port();
         var view = port.describe(workflowId).orElseThrow(() -> notFound(workflowId));
         requireSignalable(view.status(), workflowId);
-        log.info("Sending {} signal project={} workflowId={}", command.type(), projectIdentifier, workflowId);
+        log.info(
+                "Sending {} signal project={} workflowId={} actor={}",
+                command.type(),
+                projectIdentifier,
+                workflowId,
+                actor);
         port.signal(workflowId, command);
+        // Recorded only after the signal is delivered so an ALLOWED row reflects an authorized signal
+        // that actually reached the workflow (a describe/signal race throws and is not recorded).
+        auditRecorder.write(actor, projectIdentifier, workflowId, view.runId(), command, AuthorizationOutcome.ALLOWED);
+    }
+
+    /**
+     * Interim gate authority (GC-O009 (b)): require a present, non-anonymous authenticated actor. The
+     * REST route is already ROLE_ADMIN-gated; GC-P024 replaces this with project-scoped role/group
+     * authority behind the same seam without changing signal names or the MCP tool shape.
+     */
+    private static boolean hasGateAuthority(String actor) {
+        return actor != null && !actor.isBlank() && !ANONYMOUS_ACTOR.equalsIgnoreCase(actor);
+    }
+
+    /** The actor label recorded on a denied attempt; a null/blank actor is normalized to "anonymous". */
+    private static String actorForAudit(String actor) {
+        return actor == null || actor.isBlank() ? ANONYMOUS_ACTOR : actor;
     }
 
     private static void requireSignalable(WorkflowExecutionStatus status, String workflowId) {

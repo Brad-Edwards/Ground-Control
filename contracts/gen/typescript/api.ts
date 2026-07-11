@@ -1716,6 +1716,15 @@ export interface GateResultResponse {
   "threshold": any;
 }
 
+export interface GateStateResponse {
+  [key: string]: any;
+  "escalatedPhase": any;
+  "escalatedReviewer": any;
+  "outcome": any;
+  "phase": any;
+  "waitingForMerge": any;
+}
+
 export interface GitHubIssueRequest {
   [key: string]: any;
   "extraBody"?: any;
@@ -4866,6 +4875,7 @@ export interface WorkOrderWaveResponse {
 export interface WorkflowExecutionResponse {
   [key: string]: any;
   "closeTime": any;
+  "gateState": GateStateResponse | null;
   "historyLength": any;
   "issueNumber": any;
   "project": any;
