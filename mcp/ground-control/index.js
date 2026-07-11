@@ -85,7 +85,7 @@ import {
   runPostImplementationPlan,
   runAssertTraceabilityReconciled, runAssertGrcReconciled, runAssertQualityGates, runCloseIssueAfterMerge,
   runAssertCompletion,
-  runPostDecisionRecord, runPostDesignAuthorityApproval, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
+  runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
   runComputeGrcScreening,
   runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
   runCodexReviewCycle, runTestQualityReviewCycle,
@@ -951,37 +951,6 @@ server.tool(
       return ok(JSON.stringify(await runPostDecisionRecord({
         repoPath: repo_path, issueNumber: issue_number, cycle, reviewer, findings,
         verdict, architectural_read, notes,
-      }), null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.tool(
-  "gc_post_design_authority_approval",
-  "Post a durable CLD design-authority approval marker to a PR thread for protected-path exceptions. Used by the protected-path policy gate when implementation files and protected contract/battery/policy/workflow paths change together, or when battery weakening is intentionally approved. Requires an out-of-band approval_token configured on the MCP server before using its GitHub write credential. The marker is schema-versioned, issue/PR scoped, bound to protected_paths, implementation_paths, weakening_findings, and the diff hash when base_ref is supplied, author-auditable via the GitHub comment author, sensitive-content checked, and posted through the MCP GitHub boundary.",
-  {
-    repo_path: z.string(),
-    issue_number: z.number().int().positive(),
-    pr_number: z.number().int().positive(),
-    protected_paths: z.array(z.string().min(1)).min(1).max(100),
-    implementation_paths: z.array(z.string().min(1)).max(100).optional(),
-    weakening_findings: z.array(z.string().min(1)).max(100).optional(),
-    base_ref: z.string().min(1).optional(),
-    approval_token: z.string().min(1).max(4096),
-    rationale: z.string().min(1).max(1200),
-  },
-  async ({ repo_path, issue_number, pr_number, protected_paths, implementation_paths, weakening_findings, base_ref, approval_token, rationale }) => {
-    try {
-      return ok(JSON.stringify(await runPostDesignAuthorityApproval({
-        repoPath: repo_path,
-        issueNumber: issue_number,
-        prNumber: pr_number,
-        protectedPaths: protected_paths,
-        implementationPaths: implementation_paths ?? [],
-        weakeningFindings: weakening_findings ?? [],
-        baseRef: base_ref ?? null,
-        approvalToken: approval_token,
-        rationale,
       }), null, 2));
     } catch (e) { return err(e); }
   },

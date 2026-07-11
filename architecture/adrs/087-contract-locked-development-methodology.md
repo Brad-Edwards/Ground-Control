@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Withdrawn (2026-07-10, issue #1296). Superseded by the decision to drop the
+Contract-Locked Development track as premature optimization. See the Amendments
+section.
 
 ## Date
 
@@ -289,6 +291,20 @@ CODEOWNERS design-authority review branch protection enforces; the policy check
 also asserts that protection remains wired. GRC
 architecture-model projection (GC-GRC-005) is designed for via the `projection`
 field but not implemented in this issue.
+
+**2026-07-10 (Contract-Locked Development track dropped, issue #1296).** The
+enforcement machinery built under this ADR has been removed: the oracle-battery
+toolkit (#1292), the mutation-testing gate and runner (#1293), the protected-path
+power-separation gate and the `gc_post_design_authority_approval` MCP tool (#1294),
+and the architecture-as-code registry with its `RegistryBoundaryArchitectureTest`
+(#1295). The remaining wave issues were closed as premature optimization: the pilot
+(#1296), the evaluation harness (#1297), workflow productization (#1298), and
+portfolio packaging (#1299). The reasoning: choosing model tiers and measuring
+implementer performance against contract batteries is premature before the Temporal
+`/implement` pipeline (milestone 17) runs end to end and emits real per-stage
+telemetry to optimize against. This ADR is therefore Withdrawn. The GC-CLD
+requirements remain DRAFT and unimplemented. Revive this ADR only if that telemetry
+later justifies the method's floor cost.
 
 ## Consequences
 
