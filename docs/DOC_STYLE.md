@@ -368,3 +368,13 @@ that parser are recorded in an amendment to ADR-054, not a documentation edit;
 the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`,
 and `.vale.ini` are unchanged and no new DOC_STYLE.md style rule is
 established.
+
+The `gc_admin` `create_project` `type` enum in `mcp/ground-control/index.js`
+and its `createProject` client-helper doc comment in `mcp/ground-control/lib.js`
+no longer offer `GRC` (issue #1385): the value is a legacy read-only project
+type per ADR-089 §4, rejected at creation by `ProjectService.create` and already
+documented as `SOFTWARE | RESEARCH` in `docs/API.md`. Per the convention above,
+tightening that tool-input enum is recorded in an amendment to ADR-054 and the
+changelog fragment, not a documentation edit; the documentation-coverage
+classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
+unchanged and no new DOC_STYLE.md style rule is established.

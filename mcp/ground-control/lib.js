@@ -1157,9 +1157,10 @@ export async function getProject(identifier) {
 /**
  * Create a project. {@code data} accepts {@code identifier}, {@code name},
  * {@code description}, and (since ADR-056 / issue #999) optional
- * {@code type} (SOFTWARE | GRC | RESEARCH; defaults to SOFTWARE backend-side)
- * and optional {@code researchIntake} nested object. The backend enforces
- * "researchIntake required iff type=RESEARCH" with a 422 if mismatched.
+ * {@code type} (SOFTWARE | RESEARCH; defaults to SOFTWARE backend-side; GRC is a
+ * legacy value per ADR-089 §4 - readable on existing projects but rejected for new
+ * creation with a 422) and optional {@code researchIntake} nested object. The backend
+ * enforces "researchIntake required iff type=RESEARCH" with a 422 if mismatched.
  */
 export async function createProject(data) {
   return request("POST", "/api/v1/projects", { body: data });
