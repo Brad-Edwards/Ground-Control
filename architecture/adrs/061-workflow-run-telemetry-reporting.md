@@ -113,8 +113,9 @@ still fall in a window.
 **Positive:**
 - Operators gain per-project and cross-project economics, gate health, and active
   run visibility over any window up to a year, from one read-model.
-- The provenance seam lets Temporal Visibility ingestion replace the issue-thread
-  bridge later with no schema change.
+- The provenance seam distinguishes bridge-sourced data from other origins without
+  a schema change (see the 2026-07-12 amendment: the originally anticipated
+  Temporal Visibility ingestion path did not materialize).
 - The closed, redacted field set plus reserved-marker rejection make leaking
   prompts/secrets into telemetry a deliberate, reviewable code change.
 
@@ -129,10 +130,26 @@ still fall in a window.
   signal, no SaaS tenant model, no dynamic plugin/activity loading, and no
   OpenTelemetry/Prometheus decision (those await a later requirement).
 
+## Amendment (issue #1359, 2026-07-12): Temporal transition retracted
+
+GC-O009's Temporal engine (ADR-028, ADR-081) is withdrawn; it will not
+eventually own `/implement` execution, and Temporal Visibility will not
+become this surface's authoritative source. Every "transition bridge" /
+"eventually" framing in the Context and Decision sections above no longer
+applies: `ISSUE_THREAD` bridge ingestion (via `gc_workflow_run_ingest`) is
+this surface's permanent, sole ingestion path, not a stopgap. This surface's
+own decisions - the reporting read-model that never drives execution, the
+closed redacted field set, project scoping, the three-surface (REST/MCP/UI)
+shape - are unaffected and continue exactly as decided. `TEMPORAL_VISIBILITY`
+remains a defined `provenance` value for historical data recorded before this
+amendment; no active ingestion path writes it going forward.
+
 ## Relationship to other ADRs
 
-- **ADR-028** (Temporal boundary): Temporal Visibility is the eventual source of
-  truth; this model is a projection, never the executor.
+- **ADR-028** (Temporal boundary, superseded #1359): originally specified
+  Temporal Visibility as the eventual source of truth; per the amendment
+  above, this model's `ISSUE_THREAD` provenance is now the permanent path,
+  not a projection of a Temporal system that was never built.
 - **ADR-029** (issue-thread gate model): issue-thread records remain the durable
   workflow/audit record during the bridge; this surface reads from them, it does not
   replace them.

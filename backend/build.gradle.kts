@@ -98,10 +98,6 @@ dependencies {
     val gherkinVersion = "39.1.0"
     implementation("io.cucumber:gherkin:$gherkinVersion")
 
-    // Temporal workflow orchestration adapter (GC-O009 / ADR-028).
-    val temporalVersion = "1.36.1"
-    implementation("io.temporal:temporal-sdk:$temporalVersion")
-
     // Error Prone
     errorprone("com.google.errorprone:error_prone_core:2.36.0")
 
@@ -124,8 +120,6 @@ dependencies {
     testImplementation("org.testcontainers:junit-jupiter:1.21.1")
     testImplementation("org.testcontainers:postgresql:1.21.1")
 
-    // Temporal test environment for worker crash/restart smoke coverage.
-    testImplementation("io.temporal:temporal-testing:$temporalVersion")
 }
 
 tasks.withType<JavaCompile>().configureEach {

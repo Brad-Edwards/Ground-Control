@@ -50,7 +50,3 @@ rules:
     method: "POST"
     path: "/api/v1/research-runs/*/operation-authorizations/*/consume"
     access: "ROLE_ADMIN"
-  - id: workflow-execution-signal
-    method: "POST"
-    path: "/api/v1/workflow-executions/*/signals"
-    access: "ROLE_ADMIN"

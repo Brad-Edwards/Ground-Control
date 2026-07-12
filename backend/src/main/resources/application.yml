@@ -85,34 +85,6 @@ groundcontrol:
     dimensions: ${GC_EMBEDDING_DIMENSIONS:1536}
     batch-size: ${GC_EMBEDDING_BATCH_SIZE:100}
     similarity-threshold: ${GC_EMBEDDING_SIMILARITY_THRESHOLD:0.85}
-  llm:
-    # GC-O009 phase 5 (#1280, ADR-028): operational adapter configuration for the anthropic canonical
-    # provider — deliberately separate from project routing policy (.ground-control.yaml's routing
-    # block, ADR-027). The credential is bound only to the temporal-worker container, never the web
-    # backend (see docker-compose.yml / deploy/docker/docker-compose.prod.yml).
-    anthropic:
-      enabled: ${GC_ANTHROPIC_ENABLED:false}
-      base-url: ${GC_ANTHROPIC_BASE_URL:https://api.anthropic.com}
-      api-key: ${GC_ANTHROPIC_API_KEY:}
-      connect-timeout: ${GC_ANTHROPIC_CONNECT_TIMEOUT:10s}
-      read-timeout: ${GC_ANTHROPIC_READ_TIMEOUT:120s}
-      max-output-tokens: ${GC_ANTHROPIC_MAX_OUTPUT_TOKENS:4096}
-      max-response-bytes: ${GC_ANTHROPIC_MAX_RESPONSE_BYTES:1000000}
-  temporal:
-    worker:
-      enabled: ${GROUNDCONTROL_TEMPORAL_WORKER_ENABLED:false}
-      target: ${GROUNDCONTROL_TEMPORAL_WORKER_TARGET:localhost:7233}
-      namespace: ${GROUNDCONTROL_TEMPORAL_WORKER_NAMESPACE:ground-control}
-      task-queue: ${GROUNDCONTROL_TEMPORAL_WORKER_TASK_QUEUE:ground-control-implement}
-    # GC-O009 #1278 workflow control surface (REST + MCP start/status/signal). Reuses the worker's
-    # WorkflowClient as the Temporal connection, so enabling control also requires worker.enabled=true.
-    control:
-      enabled: ${GROUNDCONTROL_TEMPORAL_CONTROL_ENABLED:false}
-      # Unset by default so the control surface shares the worker's task queue; override only to
-      # deliberately start executions on a different queue.
-      task-queue: ${GROUNDCONTROL_TEMPORAL_CONTROL_TASK_QUEUE:}
-      default-completion-command: ${GROUNDCONTROL_TEMPORAL_CONTROL_DEFAULT_COMPLETION_COMMAND:make check}
-
 springdoc:
   api-docs:
     path: /api/openapi.json

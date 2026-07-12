@@ -1,5 +1,7 @@
 # Documentation style
 
+> **Sync note for issue #1359 (2026-07-12, remove Temporal orchestration lane):** Removed the `/api/v1/workflow-executions**` REST surface and the `gc_workflow_execution` MCP tool (`start`/`get`/`list`/`signal`, handler `mcp/ground-control/gc-workflow-execution.js`) plus its API-client helpers and field mappings in `mcp/ground-control/lib.js`/`index.js`; removed `infrastructure/temporal/**`, `domain/workflowexecution/**`, `domain/llm`, and `infrastructure/llm` (including the Anthropic adapter), so the routing parser's canonical provider id is `claude` again with no `anthropic` alias; and dropped the `run_workflow_payload_contract_check`, `run_gate_set_invariant_check`, and `deploy-temporal-topology` policy checks from `tools/policy/checks.py` along with the `contracts/schemas/workflow/` activity-payload schemas. ADR-028, ADR-081, and ADR-088 are marked Superseded (issue #1359) in `architecture/adrs/README.md`; the run-economics surface (`workflow_run`, ADR-061 telemetry, `gc_workflow_run`/`gc_workflow_run_ingest`, ADR-036 per-step routing, ADR-029 issue-thread gates) is unaffected. This is a policy-surface, MCP tool-surface, and public-API removal: the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
+
 > **Sync note for issue #1346 (2026-07-11, ADR-089 GRC retirement):** `tools/policy/checks.py::run_traceability_reconciliation_gate_contract` dropped its `next_issue_recommendation` prose anchors (the field is retired from `gc_close_issue_after_merge`'s close envelope), and `ENUM_CONTRACT_INVENTORY` dropped the seven enum-contract entries owned by the retired composed GRC surface. This is a policy-surface removal, not a documentation-classifier change: the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
 
 > **Sync note for CLD track drop (issue #1296, 2026-07-10):** Removed the Contract-Locked Development enforcement gates from `tools/policy/checks.py` (`run_protected_path_authority_check`, `run_module_graph_boundary_check`, `run_mutation_gate_contract`, and their helpers), the CI `mutation` job, `tools/mutation/`, `architecture/registry/`, the backend `RegistryBoundaryArchitectureTest`, the oracle-battery scaffolds, and the `gc_post_design_authority_approval` MCP tool. The CLD milestone (#1296 through #1299) was dropped as premature optimization; the reviewer anti-gaming prompt checklist is retained. This is a policy-surface and tooling removal: the documentation-coverage classifier, outcome mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no `docs/DOC_STYLE.md` style rule changed.
@@ -358,29 +360,9 @@ endpoints documented in `docs/API.md`. The surface addition is recorded in the
 ADR-054 amendment and the changelog fragment; no new DOC_STYLE.md style rule is
 established.
 
-The `run_workflow_payload_contract_check` added to `tools/policy/checks.py`
-(GC-O009 / ADR-082, issue #1277) is a new policy-surface check that asserts the
-deterministic `/implement` Temporal activity records map 1:1 to
-`contracts/schemas/workflow/` schemas. Per the convention above it is recorded
-in an amendment to ADR-054, not a documentation edit; the documentation-coverage
-classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
-unchanged and no new DOC_STYLE.md style rule is established.
-
-The `run_gate_set_invariant_check` added to `tools/policy/checks.py`
-(GC-O009 (b) / ADR-029 / ADR-088, issue #1279) is a new policy-surface check
-that pins the `/implement` operator-gate set to the closed signal catalog across
-the workflow `@SignalMethod` contract, the `OperatorSignalType` enum, the
-`implement-signals.v1` schema, and the MCP `WORKFLOW_SIGNAL_TYPES` catalog, and
-fails if a plan/merge-approval gate is reintroduced. Per the convention above it
-is recorded in an amendment to ADR-054, not a documentation edit; the
-documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and
-`.vale.ini` are unchanged and no new DOC_STYLE.md style rule is established.
-
-The `mcp/ground-control/lib.js` routing-provider changes for issue #1280
-(GC-O009 phase 5, ADR-028/ADR-027) accept the canonical `anthropic` provider
-id and normalize the legacy `claude` label to it. They touch the
-`.ground-control.yaml` routing parser, not the documentation-coverage gate.
-Per the convention above this is recorded in an amendment to ADR-054, not a
-documentation edit; the documentation-coverage classifier, Vale rule set,
-`tools/install-vale.sh`, and `.vale.ini` are unchanged and no new
-DOC_STYLE.md style rule is established.
+The `.ground-control.yaml` routing parser in `mcp/ground-control/lib.js`
+accepts the single provider id `claude`. Per the convention above, changes to
+that parser are recorded in an amendment to ADR-054, not a documentation edit;
+the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`,
+and `.vale.ini` are unchanged and no new DOC_STYLE.md style rule is
+established.

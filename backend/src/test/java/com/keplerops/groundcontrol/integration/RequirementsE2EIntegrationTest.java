@@ -623,6 +623,7 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "196", // V196: create grc_assessment_run (GC-GRC-016, #1129)
                         "197", // V197: grc_assessment_run audit (GC-GRC-016 audit parity)
                         "198", // V198: operator_signal_audit append-only log (GC-O009 (b), #1279)
-                        "199"); // V199: retire GRC product surface (ADR-089, #1346)
+                        "199", // V199: retire GRC product surface (ADR-089, #1346)
+                        "200"); // V200: drops V198 with the Temporal orchestration lane (#1359)
     }
 }
