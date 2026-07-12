@@ -111,9 +111,9 @@ class WorkflowExecutionServiceTest {
         when(trustedRouteResolver.resolve(any(), any()))
                 .thenThrow(new ServiceUnavailableException("route resolution bridge unavailable"));
 
-        assertThatThrownBy(() ->
-                        service.start(PROJECT, new StartRequest(WorkflowType.IMPLEMENT, 1278, null, null, null, null)))
-                .isInstanceOf(ServiceUnavailableException.class);
+        var request = new StartRequest(WorkflowType.IMPLEMENT, 1278, null, null, null, null);
+
+        assertThatThrownBy(() -> service.start(PROJECT, request)).isInstanceOf(ServiceUnavailableException.class);
         verify(port, never()).start(any());
     }
 
@@ -121,9 +121,9 @@ class WorkflowExecutionServiceTest {
     void startFailsClosedWhenRouteResolutionRejectsTheRouteAsInvalid() {
         when(trustedRouteResolver.resolve(any(), any())).thenThrow(new DomainValidationException("unknown provider"));
 
-        assertThatThrownBy(() ->
-                        service.start(PROJECT, new StartRequest(WorkflowType.IMPLEMENT, 1278, null, null, null, null)))
-                .isInstanceOf(DomainValidationException.class);
+        var request = new StartRequest(WorkflowType.IMPLEMENT, 1278, null, null, null, null);
+
+        assertThatThrownBy(() -> service.start(PROJECT, request)).isInstanceOf(DomainValidationException.class);
         verify(port, never()).start(any());
     }
 

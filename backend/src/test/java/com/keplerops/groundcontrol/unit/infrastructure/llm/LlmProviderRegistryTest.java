@@ -45,7 +45,9 @@ class LlmProviderRegistryTest {
         var first = new FakeProvider("anthropic");
         var second = new FakeProvider("anthropic");
 
-        assertThatThrownBy(() -> new LlmProviderRegistry(List.of(first, second)))
+        List<LlmProvider> duplicates = List.of(first, second);
+
+        assertThatThrownBy(() -> new LlmProviderRegistry(duplicates))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("anthropic");
     }

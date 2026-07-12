@@ -18,7 +18,9 @@ class PlanPublicationRequestTest {
 
     @Test
     void rejectsNullCompletion() {
-        assertThatThrownBy(() -> new PlanPublicationRequest("gc", 1280, List.of("GC-O009"), "issue-1280:plan", null))
+        var uids = List.of("GC-O009");
+
+        assertThatThrownBy(() -> new PlanPublicationRequest("gc", 1280, uids, "issue-1280:plan", null))
                 .isInstanceOf(DomainValidationException.class);
     }
 

@@ -168,7 +168,9 @@ class AnthropicLlmProviderTest {
                                 .formatted(padding),
                         MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> provider.complete(new LlmCompletionRequest("claude-sonnet-5", SENTINEL_PROMPT, 512)))
+        var request = new LlmCompletionRequest("claude-sonnet-5", SENTINEL_PROMPT, 512);
+
+        assertThatThrownBy(() -> provider.complete(request))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("size bound");
     }
@@ -180,8 +182,9 @@ class AnthropicLlmProviderTest {
         server.expect(requestTo("https://api.anthropic.com/v1/messages"))
                 .andRespond(withSuccess("{\"content\": []}", MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> provider.complete(new LlmCompletionRequest("claude-sonnet-5", SENTINEL_PROMPT, 512)))
-                .isInstanceOf(ServiceUnavailableException.class);
+        var request = new LlmCompletionRequest("claude-sonnet-5", SENTINEL_PROMPT, 512);
+
+        assertThatThrownBy(() -> provider.complete(request)).isInstanceOf(ServiceUnavailableException.class);
     }
 
     /** A response carrying only non-text blocks decodes to no text: fail closed rather than publish nothing. */
@@ -192,8 +195,9 @@ class AnthropicLlmProviderTest {
                 .andRespond(withSuccess(
                         "{\"content\": [{\"type\": \"tool_use\", \"text\": null}]}", MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> provider.complete(new LlmCompletionRequest("claude-sonnet-5", SENTINEL_PROMPT, 512)))
-                .isInstanceOf(DomainValidationException.class);
+        var request = new LlmCompletionRequest("claude-sonnet-5", SENTINEL_PROMPT, 512);
+
+        assertThatThrownBy(() -> provider.complete(request)).isInstanceOf(DomainValidationException.class);
     }
 
     @Test
@@ -204,7 +208,9 @@ class AnthropicLlmProviderTest {
                         .body(SENTINEL_ERROR_BODY)
                         .contentType(MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> provider.complete(new LlmCompletionRequest("claude-sonnet-5", SENTINEL_PROMPT, 512)))
+        var request = new LlmCompletionRequest("claude-sonnet-5", SENTINEL_PROMPT, 512);
+
+        assertThatThrownBy(() -> provider.complete(request))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageNotContaining(SENTINEL_ERROR_BODY)
                 .hasMessageNotContaining(SENTINEL_KEY);
@@ -219,7 +225,9 @@ class AnthropicLlmProviderTest {
                         .body(SENTINEL_ERROR_BODY)
                         .contentType(MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> provider.complete(new LlmCompletionRequest("claude-sonnet-5", SENTINEL_PROMPT, 512)))
+        var request = new LlmCompletionRequest("claude-sonnet-5", SENTINEL_PROMPT, 512);
+
+        assertThatThrownBy(() -> provider.complete(request))
                 .isInstanceOf(ServiceUnavailableException.class)
                 .hasMessageNotContaining(SENTINEL_ERROR_BODY);
         assertNoSentinelInLogs();
@@ -233,7 +241,9 @@ class AnthropicLlmProviderTest {
                         .body(SENTINEL_ERROR_BODY)
                         .contentType(MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> provider.complete(new LlmCompletionRequest("claude-sonnet-5", SENTINEL_PROMPT, 512)))
+        var request = new LlmCompletionRequest("claude-sonnet-5", SENTINEL_PROMPT, 512);
+
+        assertThatThrownBy(() -> provider.complete(request))
                 .isInstanceOf(ServiceUnavailableException.class)
                 .hasMessageNotContaining(SENTINEL_ERROR_BODY);
         assertNoSentinelInLogs();

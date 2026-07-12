@@ -55,23 +55,27 @@ class ImplementContentActivitiesImplTest {
     void implementChangeFailsClosedUntilTheBridgeLands() {
         var activities = activitiesWith(fakeProvider(), fakePublisher(new PlanPublicationResult(true, 1)));
 
-        assertThatThrownBy(() -> activities.implementChange(new ImplementChangeInput(1280, null, "key")))
-                .isInstanceOf(ServiceUnavailableException.class);
+        var input = new ImplementChangeInput(1280, null, "key");
+
+        assertThatThrownBy(() -> activities.implementChange(input)).isInstanceOf(ServiceUnavailableException.class);
     }
 
     @Test
     void runCodexReviewFailsClosedUntilTheBridgeLands() {
         var activities = activitiesWith(fakeProvider(), fakePublisher(new PlanPublicationResult(true, 1)));
 
-        assertThatThrownBy(() -> activities.runCodexReview(new CodexReviewInput(1280, 1)))
-                .isInstanceOf(ServiceUnavailableException.class);
+        var input = new CodexReviewInput(1280, 1);
+
+        assertThatThrownBy(() -> activities.runCodexReview(input)).isInstanceOf(ServiceUnavailableException.class);
     }
 
     @Test
     void runTestQualityReviewFailsClosedUntilTheBridgeLands() {
         var activities = activitiesWith(fakeProvider(), fakePublisher(new PlanPublicationResult(true, 1)));
 
-        assertThatThrownBy(() -> activities.runTestQualityReview(new TestQualityReviewInput(1280, 1)))
+        var input = new TestQualityReviewInput(1280, 1);
+
+        assertThatThrownBy(() -> activities.runTestQualityReview(input))
                 .isInstanceOf(ServiceUnavailableException.class);
     }
 
@@ -79,16 +83,18 @@ class ImplementContentActivitiesImplTest {
     void postReadinessRecordFailsClosedUntilTheBridgeLands() {
         var activities = activitiesWith(fakeProvider(), fakePublisher(new PlanPublicationResult(true, 1)));
 
-        assertThatThrownBy(() -> activities.postReadinessRecord(new ReadinessRecordInput(1280, 1, "key")))
-                .isInstanceOf(ServiceUnavailableException.class);
+        var input = new ReadinessRecordInput(1280, 1, "key");
+
+        assertThatThrownBy(() -> activities.postReadinessRecord(input)).isInstanceOf(ServiceUnavailableException.class);
     }
 
     @Test
     void postFinalReportFailsClosedUntilTheBridgeLands() {
         var activities = activitiesWith(fakeProvider(), fakePublisher(new PlanPublicationResult(true, 1)));
 
-        assertThatThrownBy(() -> activities.postFinalReport(new FinalReportInput(1280, 1, List.of(), "key")))
-                .isInstanceOf(ServiceUnavailableException.class);
+        var input = new FinalReportInput(1280, 1, List.of(), "key");
+
+        assertThatThrownBy(() -> activities.postFinalReport(input)).isInstanceOf(ServiceUnavailableException.class);
     }
 
     private static LlmProvider fakeProvider() {

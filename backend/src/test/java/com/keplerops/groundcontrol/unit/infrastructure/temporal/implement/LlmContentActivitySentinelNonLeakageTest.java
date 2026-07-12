@@ -89,7 +89,9 @@ class LlmContentActivitySentinelNonLeakageTest {
             var workflowId = "gc-impl-sentinel-" + UUID.randomUUID();
             var workflow = registerAndStart(env, content, workflowId);
 
-            assertThatThrownBy(() -> workflow.run(input()))
+            var workflowInput = input();
+
+            assertThatThrownBy(() -> workflow.run(workflowInput))
                     .isInstanceOf(WorkflowFailedException.class)
                     .satisfies(ex -> assertThat(rootCauseChain(ex)).doesNotContain(SENTINEL_COMPLETION));
 
@@ -105,7 +107,9 @@ class LlmContentActivitySentinelNonLeakageTest {
             var workflowId = "gc-impl-sentinel-" + UUID.randomUUID();
             var workflow = registerAndStart(env, content, workflowId);
 
-            assertThatThrownBy(() -> workflow.run(input()))
+            var workflowInput = input();
+
+            assertThatThrownBy(() -> workflow.run(workflowInput))
                     .isInstanceOf(WorkflowFailedException.class)
                     .satisfies(ex -> assertThat(rootCauseChain(ex)).doesNotContain(SENTINEL_FAILURE_DETAIL));
 
