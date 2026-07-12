@@ -110,6 +110,10 @@ services:
       GROUNDCONTROL_TEMPORAL_WORKER_TARGET: temporal:7233
       GROUNDCONTROL_TEMPORAL_WORKER_NAMESPACE: ground-control
       GROUNDCONTROL_TEMPORAL_WORKER_TASK_QUEUE: ground-control-implement
+      # GC-O009 phase 5 (#1280, ADR-028): the Anthropic credential is bound only to the worker
+      # container, never the backend (`backend` above has no GC_ANTHROPIC_* entry).
+      GC_ANTHROPIC_ENABLED: ${GC_ANTHROPIC_ENABLED:-false}
+      GC_ANTHROPIC_API_KEY: ${GC_ANTHROPIC_API_KEY:-}
       SPRING_PROFILES_ACTIVE: dev
     depends_on:
       db:

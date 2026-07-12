@@ -5,6 +5,7 @@ import com.keplerops.groundcontrol.domain.exception.AuthorizationException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.exception.ServiceUnavailableException;
+import com.keplerops.groundcontrol.domain.llm.TrustedRouteResolver;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.workflowexecution.OperatorSignalType;
 import com.keplerops.groundcontrol.domain.workflowexecution.WorkflowControlPort;
@@ -41,21 +42,35 @@ public class WorkflowExecutionService {
     private static final int MAX_LIST_LIMIT = 200;
     // Sentinel actor for an unauthenticated request (mirrors ActorFilter's default); never has gate authority.
     private static final String ANONYMOUS_ACTOR = "anonymous";
+    // The first LLM-backed plan activity uses stage "planning" (ADR-036 vocabulary); activity method
+    // names are not a second stage catalog (architecture preflight).
+    private static final String PLANNING_STAGE = "planning";
 
     private final ObjectProvider<WorkflowControlPort> controlPortProvider;
     private final ProjectService projectService;
     private final OperatorSignalAuditRecorder auditRecorder;
+    private final TrustedRouteResolver trustedRouteResolver;
 
     public WorkflowExecutionService(
             ObjectProvider<WorkflowControlPort> controlPortProvider,
             ProjectService projectService,
-            OperatorSignalAuditRecorder auditRecorder) {
+            OperatorSignalAuditRecorder auditRecorder,
+            TrustedRouteResolver trustedRouteResolver) {
         this.controlPortProvider = controlPortProvider;
         this.projectService = projectService;
         this.auditRecorder = auditRecorder;
+        this.trustedRouteResolver = trustedRouteResolver;
     }
 
-    /** Start a workflow execution for {@code project}, returning its identity. */
+    /**
+     * Start a workflow execution for {@code project}, returning its identity. Resolves the LLM route
+     * for the {@code planning} stage synchronously before delegating to {@link WorkflowControlPort},
+     * so disabled routing, an unknown stage/provider, an unavailable adapter, a missing credential, or
+     * an invalid model returns the existing {@link DomainValidationException}/
+     * {@link ServiceUnavailableException} envelope rather than starting a workflow already known to be
+     * unrunnable (ADR-028 LLM provider boundary). The resolved route is bound to the execution's
+     * durable input; the content activity repeats the safe availability checks as defense in depth.
+     */
     @Transactional(readOnly = true)
     public WorkflowExecutionRef start(String project, StartRequest request) {
         var projectIdentifier = projectService.requireProjectIdentifier(project);
@@ -63,6 +78,7 @@ public class WorkflowExecutionService {
         if (request.issueNumber() < 1) {
             throw new DomainValidationException("issueNumber must be a positive integer");
         }
+        var route = trustedRouteResolver.resolve(projectIdentifier, PLANNING_STAGE);
         var workflowId = WorkflowExecutionId.forImplement(projectIdentifier, request.issueNumber());
         var command = new StartWorkflowCommand(
                 workflowId,
@@ -72,7 +88,8 @@ public class WorkflowExecutionService {
                 request.sonarProjectKey(),
                 request.reviewCap(),
                 request.requirementUids(),
-                request.pollIntervalSeconds());
+                request.pollIntervalSeconds(),
+                route);
         log.info(
                 "Starting workflow execution project={} type={} issue={} workflowId={}",
                 projectIdentifier,

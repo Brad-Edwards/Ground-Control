@@ -34,6 +34,7 @@ import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.Re
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ResolveIssueInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ResolveIssueResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ResolveRepositoryBindingInput;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ResolvedLlmRoute;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.RetryFromSignal;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ReviewCapDispositionSignal;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ReviewVerdict;
@@ -64,11 +65,40 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
     private static final int DEFAULT_REVIEW_CAP = 1;
     private static final int DEFAULT_POLL_SECONDS = 60;
 
+    /**
+     * Temporal change id for the ADR-028 LLM content seam (#1280). Before this change every content
+     * activity was scheduled through ONE stub with {@code ImplementActivityOptions.longRunning()}, and
+     * {@code AuthorPlanInput} carried no project/route — {@code implement-workflow.v1} still declares
+     * {@code route} optional, so an execution started by the previous worker legitimately has none.
+     *
+     * <p>Retro-applying the new stubs and the now-required route to those histories would change recorded
+     * activity scheduling attributes and fail an execution that was valid when it started. This guard keeps
+     * the historical command path intact for them and applies the new policy only to executions started
+     * after this change. {@code implementChange} and both reviews keep {@code longRunning()} in both
+     * versions, so they need no guard.
+     */
+    private static final String LLM_CONTENT_SEAM_CHANGE_ID = "llm-content-seam";
+
+    private static final int LLM_CONTENT_SEAM_V1 = 1;
+
     private final ImplementActivities activities =
             Workflow.newActivityStub(ImplementActivities.class, ImplementActivityOptions.standard());
     private final ImplementActivities buildActivities =
             Workflow.newActivityStub(ImplementActivities.class, ImplementActivityOptions.longRunning());
+    // A Temporal typed activity stub applies its ActivityOptions to EVERY method on the stub, and
+    // ImplementContentActivities is a deliberately mixed seam (one LLM-backed method, five deterministic
+    // ones). One stub would therefore impose the LLM cost/latency retry policy on record posting and the
+    // reviews too. Bind one stub per execution policy and route each call to the right one (ADR-028).
+    //
+    // authorPlan only: dedicated bounded LLM policy — inference has real cost, so its timeout, attempt
+    // ceiling, and retryable-status catalog are explicit rather than inherited.
+    private final ImplementContentActivities llmContent =
+            Workflow.newActivityStub(ImplementContentActivities.class, LlmActivityOptions.standard());
+    // Deterministic, quick issue-thread record posting.
     private final ImplementContentActivities content =
+            Workflow.newActivityStub(ImplementContentActivities.class, ImplementActivityOptions.standard());
+    // Deterministic but long-running: the TDD change and the two agent-driven reviews take minutes.
+    private final ImplementContentActivities longRunningContent =
             Workflow.newActivityStub(ImplementContentActivities.class, ImplementActivityOptions.longRunning());
 
     private ImplementPhase phase = ImplementPhase.A_PLAN_IMPLEMENT;
@@ -88,6 +118,37 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
         CANCELLED
     }
 
+    private boolean llmContentSeamActive() {
+        return Workflow.getVersion(LLM_CONTENT_SEAM_CHANGE_ID, Workflow.DEFAULT_VERSION, LLM_CONTENT_SEAM_V1)
+                != Workflow.DEFAULT_VERSION;
+    }
+
+    /**
+     * Schedules {@code authorPlan}. Pre-#1280 executions recorded this activity against the long-running
+     * content stub with an input that carried no project/route, and {@code implement-workflow.v1} still
+     * declares {@code route} optional — replaying them through the LLM stub would both rewrite the recorded
+     * scheduling attributes and hand {@code LlmPlanAuthor} a null route it is required to reject. Keep the
+     * historical command path for those; only executions started after this change take the LLM path.
+     */
+    private void authorPlan(RunContext ctx) {
+        if (!llmContentSeamActive()) {
+            longRunningContent.authorPlan(
+                    new AuthorPlanInput(null, null, ctx.issue(), ctx.requirementUids(), ctx.runKey() + ":plan"));
+            return;
+        }
+        llmContent.authorPlan(new AuthorPlanInput(
+                ctx.project(), ctx.route(), ctx.issue(), ctx.requirementUids(), ctx.runKey() + ":plan"));
+    }
+
+    /**
+     * The deterministic record-posting stub. These two activities moved from {@code longRunning()} to the
+     * quicker {@code standard()} options in #1280; pre-change histories recorded the long-running
+     * attributes, so they keep them.
+     */
+    private ImplementContentActivities recordStub() {
+        return llmContentSeamActive() ? content : longRunningContent;
+    }
+
     /** Immutable per-run parameters derived once from the workflow input. */
     private record RunContext(
             int issue,
@@ -99,7 +160,8 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
             String project,
             String completionCommand,
             String sonarProjectKey,
-            List<String> requirementUids) {
+            List<String> requirementUids,
+            ResolvedLlmRoute route) {
 
         static RunContext from(ImplementWorkflowInput input) {
             int issue = input.issueNumber();
@@ -116,7 +178,8 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
                     input.project(),
                     input.completionCommand(),
                     input.sonarProjectKey(),
-                    input.requirementUids());
+                    input.requirementUids(),
+                    input.route());
         }
     }
 
@@ -134,9 +197,9 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
                 activities.resolveRepositoryBinding(new ResolveRepositoryBindingInput(ctx.project()));
         ResolveIssueResult resolved =
                 activities.resolveIssue(new ResolveIssueInput(repository, ctx.issue(), ctx.requirementUids()));
-        content.authorPlan(new AuthorPlanInput(ctx.issue(), ctx.requirementUids(), ctx.runKey() + ":plan"));
-        ImplementChangeResult change =
-                content.implementChange(new ImplementChangeInput(ctx.issue(), null, ctx.runKey() + ":change"));
+        authorPlan(ctx);
+        ImplementChangeResult change = longRunningContent.implementChange(
+                new ImplementChangeInput(ctx.issue(), null, ctx.runKey() + ":change"));
         if (cancelled) {
             return terminal(ctx.issue(), null, ImplementOutcome.CANCELLED, false);
         }
@@ -168,7 +231,7 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
             return stopped.get();
         }
 
-        content.postReadinessRecord(new ReadinessRecordInput(ctx.issue(), prNumber, ctx.runKey() + ":readiness"));
+        recordStub().postReadinessRecord(new ReadinessRecordInput(ctx.issue(), prNumber, ctx.runKey() + ":readiness"));
         outcome = ImplementOutcome.READY_FOR_REVIEW; // Phase D terminal signal; now await the human merge gate.
         log.info("implement workflow ready-for-review issue={} pr={}", ctx.issue(), prNumber);
 
@@ -206,7 +269,7 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
         // escalates and awaits an operator PROCEED disposition or a retry (GC-O007 review gate).
         ReviewGateResolution decision = ReviewGateResolution.RETRY;
         while (decision == ReviewGateResolution.RETRY) {
-            CodexReviewResult review = content.runCodexReview(new CodexReviewInput(ctx.issue(), ctx.cap()));
+            CodexReviewResult review = longRunningContent.runCodexReview(new CodexReviewInput(ctx.issue(), ctx.cap()));
             boolean clean = review.verdict() == ReviewVerdict.SHIP && review.blockingFindings() == 0;
             decision = clean ? ReviewGateResolution.PROCEED : escalateReviewGate(ReviewerKind.CODEX);
         }
@@ -253,7 +316,8 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
     private Optional<ImplementWorkflowResult> runTestQualityGate(RunContext ctx, int prNumber) {
         ReviewGateResolution decision = ReviewGateResolution.RETRY;
         while (decision == ReviewGateResolution.RETRY) {
-            boolean clean = content.runTestQualityReview(new TestQualityReviewInput(ctx.issue(), ctx.cap()))
+            boolean clean = longRunningContent
+                    .runTestQualityReview(new TestQualityReviewInput(ctx.issue(), ctx.cap()))
                     .clean();
             decision = clean ? ReviewGateResolution.PROCEED : escalateReviewGate(ReviewerKind.TEST_QUALITY);
         }
@@ -297,8 +361,9 @@ public class ImplementWorkflowImpl implements ImplementWorkflow {
                 artifacts.implementsArtifacts(),
                 artifacts.testsArtifacts(),
                 ctx.runKey() + ":reconcile"));
-        content.postFinalReport(new FinalReportInput(
-                ctx.issue(), prNumber, resolved.requirementUids(), ctx.runKey() + ":final-report"));
+        recordStub()
+                .postFinalReport(new FinalReportInput(
+                        ctx.issue(), prNumber, resolved.requirementUids(), ctx.runKey() + ":final-report"));
         activities.closeIssue(new CloseIssueInput(repository, ctx.issue(), prNumber, ctx.runKey() + ":close"));
         Workflow.getLogger(ImplementWorkflowImpl.class)
                 .info("implement workflow merged+reconciled issue={} pr={}", ctx.issue(), prNumber);

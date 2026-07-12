@@ -335,13 +335,24 @@ Issue #1276 lands phase-1 infrastructure only: `docker-compose.yml` and
 The single namespace remains `ground-control`; projects are partitioned by
 workflow IDs and Search Attributes, not by namespace.
 
+Issue #1280 (phase 5, ADR-028 LLM provider boundary) adds the `temporal-worker`
+container's Anthropic adapter (`infrastructure/llm/anthropic/`; canonical
+provider id `anthropic`, credential bound only to `temporal-worker`, never
+`backend`; see `docker-compose.yml`) and the `ArchitectureLlmBoundaryTest`
+ArchUnit rule pinning the deterministic activity seam LLM-free. Route
+resolution and durable plan publication sit behind domain ports whose
+production implementations fail closed until the ADR-081 bridge (#1281)
+lands, so every `/implement` start currently returns the standard `503`
+envelope—a deliberate, tested, secure production posture, not a
+placeholder.
+
 ## Per-step routing, tool surfaces, and telemetry (ADR-036)
 
 Per ADR-036 the `/implement` skill carries three cost-side optimizations layered on top of the GC-O007 gate model (which is unchanged on the contract - one human touchpoint at PR merge, ADR-029's configurable pre-push Codex cap [default 1 cycle per #906; per-repo override via `workflow.codex_review.pre_push_cap`], zero deferral, four-phase structure).
 
 | Optimization | What it changes | Opt-in knob |
 |--------------|-----------------|-------------|
-| Per-step routing | Each step carries a provider-neutral tier (`low`, `medium`, `high`); `gc_resolve_workflow_route` resolves the stage/purpose from `.ground-control.yaml` to a concrete provider, agent, canonical model id, and fallback policy. Claude Code routes subagent stages to canonical model ids such as `claude-haiku-4-5` and `claude-sonnet-5`; parent-only high-tier stages use `claude-opus-4-8`. Codex drivers ignore delegation today unless they explicitly call the resolver and external runner. | `.ground-control.yaml` → `routing.enabled` (default `false`) plus optional `routing.stages.<stage>` overrides |
+| Per-step routing | Each step carries a provider-neutral tier (`low`, `medium`, `high`); `gc_resolve_workflow_route` resolves the stage/purpose from `.ground-control.yaml` to a concrete provider, agent, canonical model id, and fallback policy. Claude Code routes subagent stages to canonical model ids such as `claude-haiku-4-5` and `claude-sonnet-5`; parent-only high-tier stages use `claude-opus-4-8`. Codex drivers ignore delegation today unless they explicitly call the resolver and external runner. The canonical provider id is `anthropic` (issue #1280 amendment); the legacy label `claude` is still accepted and normalizes to it. This is the agent-side (MCP-tool-driven) routing resolution for the `/implement` skill lane—distinct from the server-side Temporal `AnthropicLlmProvider` adapter invoked from inside a content activity (ADR-028, issue #1280); the two share only the canonical provider-id vocabulary. | `.ground-control.yaml` → `routing.enabled` (default `false`) plus optional `routing.stages.<stage>` overrides |
 | Durable-record MCP tools | `gc_post_decision_record` (Step 6.5 cycle decisions), `gc_post_final_report` (Step 17 final report, invoked via `gc_assert_completion`), `gc_render_pr_body` (Step 9 PR body) replace agent free-prose with deterministic structured-input renderers. All three filter sensitive content, post under a structured marker family, and reject `decision: "defer"` server-side. `gc_post_final_report` also requires `/implement` callers to pass `plain_english_outcome`, which renders an Outcome section before the structured evidence. | Always available; SKILL calls them unconditionally once the tools are present |
 | Traceability + post-merge close gates (#1058/#1156/#1103) | `gc_assert_completion` (Step 17) sequences `gc_assert_traceability_reconciled` (posts `traceability_reconciled` marker), `gc_assert_grc_reconciled` (posts `grc_reconciled` marker), and `gc_post_final_report` in one deterministic call. The `traceability_reconciled` marker is posted by the traceability assertion within `gc_assert_completion`; `gc_post_final_report` refuses to publish without both markers, and `gc_assert_completion` uses `internalVerifiedPhases` to avoid a GitHub read-after-write race on the markers it just posted. `gc_close_issue_after_merge` (Step 20 / Phase E) verifies the linked PR's `merged_at` non-null AND state `MERGED` before closing the issue, idempotent on already-closed issues. After a successful close, the tool returns a best-effort `next_issue_recommendation` or an explicit no-recommendation/failure reason. The /quickfix lane is requirement-free and exempt from the traceability and outcome gate. | Always on for `/implement`; `lane: "quickfix"` opts out of the traceability and outcome prerequisites |
 | GRC reconciliation gate (#1100 v1; GC-GRC-009 v2; #1103) | `gc_assert_grc_reconciled` (called within `gc_assert_completion` at Step 17) reads the GRC screening record written by `gc_post_grc_screening` (Step 3.5) from the issue thread and verifies it server-side, branching on the record schema. For **v2** records it does not trust the stored sets: it **recomputes** the classification from the final diff (the record's recorded base commit to the current HEAD) against the live GRC graph and **blocks on the freshly computed `gap_set`** (`grc_not_reconciled`, enumerating each uncovered surface + reason), the structural replacement for the retired passing `no_baseline` that also closes the "screened early, trust the stale record" bypass; the `stale_set` is reported (per-surface control/efficacy teeth and stale-set addressing are GC-GRC-012's completion gate). For **v1** records it keeps the original verdict path: `security_relevant` resolves each entity + `CODE` link; `not_security_relevant` / `no_baseline` pass immediately. On success it posts the `grc_reconciled` phase marker. `gc_post_final_report` requires **both** `traceability_reconciled` **and** `grc_reconciled` markers before publishing. The /quickfix lane is exempt. | Always on for `/implement`; `lane: "quickfix"` opts out; a user-authorized skip is taken at the final-report phase override |
@@ -496,7 +507,12 @@ GitHub, never signaled. Every action is project-scoped; `signal` is `ROLE_ADMIN`
 at the backend (interim until GC-P024 gate authority). It is distinct from
 `gc_workflow_run` (ADR-061 run telemetry/economics), which never drives
 execution. The surface is enabled by `groundcontrol.temporal.control.enabled`;
-when off the REST endpoints return `503`.
+when off the REST endpoints return `503`. `start` additionally resolves the
+`planning`-stage LLM route before delegating to the control port (ADR-028,
+issue #1280); the caller-supplied request never carries a provider, model,
+endpoint, credential, prompt, or completion field. Until the ADR-081 bridge
+(#1281) lands, `start` also returns the standard `503` envelope because the
+route-resolution port fails closed.
 
 ## /integrate: Approved PR Integration Manager
 

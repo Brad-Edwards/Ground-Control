@@ -47,6 +47,7 @@ import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.Re
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ResolveIssueInput;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ResolveIssueResult;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ResolveRepositoryBindingInput;
+import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ResolvedLlmRoute;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.RetryFromSignal;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ReviewCapDispositionSignal;
 import com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ReviewVerdict;
@@ -87,8 +88,12 @@ class ImplementWorkflowReplayTest {
 
     private static final String TASK_QUEUE = "gc-implement-test";
 
+    private static final ResolvedLlmRoute SAMPLE_ROUTE =
+            new ResolvedLlmRoute("v2", "proj", "planning", "high", "anthropic", "claude-opus-4-8", "digest-1");
+
     private static ImplementWorkflowInput input() {
-        return new ImplementWorkflowInput("proj", 42, "make check", "sonar-key", 1, List.of("GC-O009"), 1);
+        return new ImplementWorkflowInput(
+                "proj", 42, "make check", "sonar-key", 1, List.of("GC-O009"), 1, SAMPLE_ROUTE);
     }
 
     private static WorkflowOptions options() {
