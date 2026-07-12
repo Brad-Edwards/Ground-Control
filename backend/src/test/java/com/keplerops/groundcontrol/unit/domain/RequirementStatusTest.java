@@ -44,7 +44,10 @@ class RequirementStatusTest {
     @Test
     void draftCannotTransitionStraightToArchived() {
         assertThat(Status.DRAFT.canTransitionTo(Status.ARCHIVED)).isFalse();
-        assertThatThrownBy(() -> draftRequirement().transitionStatus(Status.ARCHIVED))
+
+        var requirement = draftRequirement();
+
+        assertThatThrownBy(() -> requirement.transitionStatus(Status.ARCHIVED))
                 .isInstanceOf(DomainValidationException.class);
     }
 
