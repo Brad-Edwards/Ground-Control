@@ -36,7 +36,22 @@
           "items": { "type": "string", "minLength": 1, "maxLength": 100 },
           "maxItems": 100
         },
-        "pollIntervalSeconds": { "type": "integer", "minimum": 1, "maximum": 86400 }
+        "pollIntervalSeconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+        "route": {
+          "description": "The safe LLM route bound to this execution at start time (issue #1280, ADR-028); optional and additive so this stays a non-breaking v1 evolution. Same closed scalar set as content-activities.v2#/$defs/ResolvedLlmRoute, inlined here (not $ref'd across schema files) because this route is resolved once and bound to the whole execution, not just the content-activity seam.",
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["contractVersion", "project", "stage", "tier", "providerId", "modelId", "configDigest"],
+          "properties": {
+            "contractVersion": { "type": "string", "minLength": 1, "maxLength": 50 },
+            "project": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "stage": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "tier": { "type": "string", "minLength": 1, "maxLength": 20 },
+            "providerId": { "type": "string", "minLength": 1, "maxLength": 50 },
+            "modelId": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "configDigest": { "type": "string", "minLength": 1, "maxLength": 200 }
+          }
+        }
       }
     },
     "ImplementWorkflowResult": {

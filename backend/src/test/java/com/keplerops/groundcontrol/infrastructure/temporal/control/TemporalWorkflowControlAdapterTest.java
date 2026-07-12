@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
+import com.keplerops.groundcontrol.domain.llm.ResolvedLlmRoute;
 import com.keplerops.groundcontrol.domain.workflowexecution.OperatorSignalType;
 import com.keplerops.groundcontrol.domain.workflowexecution.RetryPhase;
 import com.keplerops.groundcontrol.domain.workflowexecution.Reviewer;
@@ -46,6 +47,8 @@ import org.mockito.ArgumentCaptor;
 class TemporalWorkflowControlAdapterTest {
 
     private static final String WORKFLOW_ID = "gc-implement-ground-control-1278";
+    private static final ResolvedLlmRoute SAMPLE_ROUTE = new ResolvedLlmRoute(
+            "v2", "ground-control", "planning", "high", "anthropic", "claude-opus-4-8", "digest-1");
 
     private final WorkflowClient client = mock(WorkflowClient.class);
     private final TemporalControlProperties properties =
@@ -69,7 +72,15 @@ class TemporalWorkflowControlAdapterTest {
         when(stub.start(inputCaptor.capture())).thenReturn(execution(WORKFLOW_ID, "run-1"));
 
         var command = new StartWorkflowCommand(
-                WORKFLOW_ID, WorkflowType.IMPLEMENT, "ground-control", 1278, "sonar-key", 3, List.of("GC-O009"), 300);
+                WORKFLOW_ID,
+                WorkflowType.IMPLEMENT,
+                "ground-control",
+                1278,
+                "sonar-key",
+                3,
+                List.of("GC-O009"),
+                300,
+                SAMPLE_ROUTE);
         var ref = adapter.start(command);
 
         assertThat(ref.workflowId()).isEqualTo(WORKFLOW_ID);
@@ -86,6 +97,24 @@ class TemporalWorkflowControlAdapterTest {
         assertThat(input.completionCommand()).isEqualTo("make check");
         assertThat(input.issueNumber()).isEqualTo(1278);
         assertThat(input.requirementUids()).containsExactly("GC-O009");
+        assertThat(input.route())
+                .isEqualTo(new com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ResolvedLlmRoute(
+                        "v2", "ground-control", "planning", "high", "anthropic", "claude-opus-4-8", "digest-1"));
+    }
+
+    @Test
+    void startMapsANullRouteToNull() {
+        WorkflowStub stub = mock(WorkflowStub.class);
+        when(client.newUntypedWorkflowStub(anyString(), any(WorkflowOptions.class)))
+                .thenReturn(stub);
+        var inputCaptor = ArgumentCaptor.forClass(ImplementWorkflowInput.class);
+        when(stub.start(inputCaptor.capture())).thenReturn(execution(WORKFLOW_ID, "run-1"));
+
+        var command = new StartWorkflowCommand(
+                WORKFLOW_ID, WorkflowType.IMPLEMENT, "ground-control", 1278, null, null, List.of(), null, null);
+        adapter.start(command);
+
+        assertThat(inputCaptor.getValue().route()).isNull();
     }
 
     @Test
@@ -98,7 +127,7 @@ class TemporalWorkflowControlAdapterTest {
                         execution(WORKFLOW_ID, "run-1"), "ImplementWorkflow", null));
 
         var command = new StartWorkflowCommand(
-                WORKFLOW_ID, WorkflowType.IMPLEMENT, "ground-control", 1278, null, null, List.of(), null);
+                WORKFLOW_ID, WorkflowType.IMPLEMENT, "ground-control", 1278, null, null, List.of(), null, null);
         assertThatThrownBy(() -> adapter.start(command)).isInstanceOf(ConflictException.class);
     }
 

@@ -177,6 +177,10 @@ services:
       - GROUNDCONTROL_TEMPORAL_WORKER_TARGET=temporal:7233
       - GROUNDCONTROL_TEMPORAL_WORKER_NAMESPACE=${TEMPORAL_NAMESPACE:-ground-control}
       - GROUNDCONTROL_TEMPORAL_WORKER_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-ground-control-implement}
+      # GC-O009 phase 5 (#1280, ADR-028): the Anthropic credential is bound only to the worker
+      # container, never the backend service block above.
+      - GC_ANTHROPIC_ENABLED=${GC_ANTHROPIC_ENABLED:-false}
+      - GC_ANTHROPIC_API_KEY=${GC_ANTHROPIC_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy

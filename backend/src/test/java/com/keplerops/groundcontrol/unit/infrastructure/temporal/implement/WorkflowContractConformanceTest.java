@@ -97,7 +97,7 @@ class WorkflowContractConformanceTest {
                 "/$defs/MergeObservationResult/properties/prState/enum");
         assertEnumMatchesSchema(
                 com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ReviewVerdict.class,
-                "content-activities.v1.schema.json",
+                "content-activities.v2.schema.json",
                 "/$defs/CodexReviewResult/properties/verdict/enum");
         assertEnumMatchesSchema(
                 com.keplerops.groundcontrol.infrastructure.temporal.implement.contract.ReviewerKind.class,

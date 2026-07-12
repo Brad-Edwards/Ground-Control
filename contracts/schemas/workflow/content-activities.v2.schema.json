@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "gc.workflow.content-activities.v1",
+  "$id": "gc.workflow.content-activities.v2",
   "title": "Content-activity seam input and output payloads",
-  "description": "Bounded I/O contracts for the /implement content/LLM/review activity seams (author-plan, implement-change, codex review, test-quality review, readiness record, final report). The workflow references these so the A-E graph is complete; their activity IMPLEMENTATIONS land in later program phases (#1280 LLM activities, #1281 bridge). Only bounded results (posted flags, ids, verdicts, counts) cross the Temporal boundary — never plan prose, code, review transcripts, prompts, or completions.",
+  "description": "Bounded I/O contracts for the /implement content/LLM/review activity seams (author-plan, implement-change, codex review, test-quality review, readiness record, final report). Only bounded results (posted flags, ids, verdicts, counts) cross the Temporal boundary — never plan prose, code, review transcripts, prompts, or completions. v2 (issue #1280, ADR-028 LLM provider boundary) retires v1: AuthorPlanInput gains required project/route fields so authorPlan can resolve a trusted, project-scoped LLM route without inferring project ownership from the issue number. See contracts/CHANGES.md for the breaking-change declaration.",
   "x-ground-control-invariants": [
     {
       "id": "gc.workflow.content-activities.record-schema-conformance",
@@ -13,12 +13,30 @@
     }
   ],
   "$defs": {
+    "ResolvedLlmRoute": {
+      "x-gc-record": "ResolvedLlmRoute",
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Closed safe scalar set produced by TrustedRouteResolver (ADR-028). No endpoint, credential, prompt, or provider options.",
+      "required": ["contractVersion", "project", "stage", "tier", "providerId", "modelId", "configDigest"],
+      "properties": {
+        "contractVersion": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "project": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "stage": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "tier": { "type": "string", "minLength": 1, "maxLength": 20 },
+        "providerId": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "modelId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "configDigest": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
     "AuthorPlanInput": {
       "x-gc-record": "AuthorPlanInput",
       "type": "object",
       "additionalProperties": false,
-      "required": ["issueNumber", "idempotencyKey"],
+      "required": ["project", "route", "issueNumber", "idempotencyKey"],
       "properties": {
+        "project": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "route": { "$ref": "#/$defs/ResolvedLlmRoute" },
         "issueNumber": { "type": "integer", "minimum": 1 },
         "requirementUids": {
           "type": "array",

@@ -375,3 +375,12 @@ fails if a plan/merge-approval gate is reintroduced. Per the convention above it
 is recorded in an amendment to ADR-054, not a documentation edit; the
 documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and
 `.vale.ini` are unchanged and no new DOC_STYLE.md style rule is established.
+
+The `mcp/ground-control/lib.js` routing-provider changes for issue #1280
+(GC-O009 phase 5, ADR-028/ADR-027) accept the canonical `anthropic` provider
+id and normalize the legacy `claude` label to it. They touch the
+`.ground-control.yaml` routing parser, not the documentation-coverage gate.
+Per the convention above this is recorded in an amendment to ADR-054, not a
+documentation edit; the documentation-coverage classifier, Vale rule set,
+`tools/install-vale.sh`, and `.vale.ini` are unchanged and no new
+DOC_STYLE.md style rule is established.

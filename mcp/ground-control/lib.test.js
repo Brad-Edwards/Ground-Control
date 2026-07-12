@@ -42,6 +42,7 @@ import {
   runResolveWorkflowRoute,
   CLAUDE_MODEL_BY_TIER,
   DEFAULT_IMPLEMENT_ROUTING_STAGES,
+  ROUTING_PROVIDERS,
   buildCodexArchitecturePreflightPrompt,
   buildCodexArchitectureExecArgs,
   buildCodexReviewCorePrompt,
@@ -8353,7 +8354,7 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
     assert.equal(r.ok, true);
     assert.deepEqual(r.value.routing, {
       enabled: false,
-      default_provider: "claude",
+      default_provider: "anthropic",
       default_fallback: "parent",
       stages: {},
     });
@@ -8372,7 +8373,7 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
     ].join("\n"));
     assert.equal(r.ok, true);
     assert.equal(r.value.routing.enabled, true);
-    assert.equal(r.value.routing.default_provider, "claude");
+    assert.equal(r.value.routing.default_provider, "anthropic");
     assert.equal(r.value.routing.default_fallback, "parent");
     assert.deepEqual(r.value.routing.stages, {});
     assert.equal(r.value.telemetry.enabled, true);
@@ -8396,11 +8397,70 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
     assert.equal(r.ok, true);
     assert.deepEqual(r.value.routing.stages.implementation, {
       tier: "medium",
-      provider: "claude",
+      provider: "anthropic",
       model: "claude-sonnet-4-6",
       agent: "cli",
       fallback: "parent",
     });
+  });
+
+  it("accepts the canonical anthropic provider id directly", () => {
+    const r = parseGroundControlYaml([
+      "schema_version: 1",
+      "project: gc",
+      "routing:",
+      "  enabled: true",
+      "  default_provider: anthropic",
+      "  stages:",
+      "    implementation:",
+      "      tier: medium",
+      "      provider: anthropic",
+      "      model: claude-sonnet-5",
+      "",
+    ].join("\n"));
+    assert.equal(r.ok, true);
+    assert.equal(r.value.routing.default_provider, "anthropic");
+    assert.equal(r.value.routing.stages.implementation.provider, "anthropic");
+  });
+
+  it("normalizes the legacy claude provider label to canonical anthropic output", () => {
+    const r = parseGroundControlYaml([
+      "schema_version: 1",
+      "project: gc",
+      "routing:",
+      "  enabled: true",
+      "  default_provider: claude",
+      "  stages:",
+      "    implementation:",
+      "      tier: medium",
+      "      provider: claude",
+      "      model: claude-sonnet-5",
+      "",
+    ].join("\n"));
+    assert.equal(r.ok, true);
+    assert.equal(r.value.routing.default_provider, "anthropic");
+    assert.equal(r.value.routing.stages.implementation.provider, "anthropic");
+  });
+
+  it("rejects an unknown provider id", () => {
+    const r = parseGroundControlYaml([
+      "schema_version: 1",
+      "project: gc",
+      "routing:",
+      "  enabled: true",
+      "  stages:",
+      "    implementation:",
+      "      tier: medium",
+      "      provider: openai",
+      "      model: gpt-5",
+      "",
+    ].join("\n"));
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => /routing\.stages\.implementation\.provider must be one of/.test(e)));
+  });
+
+  it("ROUTING_PROVIDERS exposes both the canonical id and the legacy alias", () => {
+    assert.deepEqual([...ROUTING_PROVIDERS].sort(), ["anthropic", "claude"]);
   });
 
   it("rejects unknown subkeys under routing/telemetry", () => {
@@ -8479,7 +8539,7 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
       "project: gc",
       "routing:",
       "  enabled: true",
-      "  default_provider: anthropic",
+      "  default_provider: openai",
       "  stages:",
       "    Implementation:",
       "      tier: fast",
@@ -8555,6 +8615,40 @@ describe("resolveWorkflowRouteFromConfig", () => {
     assert.equal(r.ok, true);
     assert.equal(r.source, "tier");
     assert.equal(r.model, "claude-sonnet-5");
+  });
+
+  it("normalizes the legacy claude provider label to canonical anthropic in the resolved route", () => {
+    const routing = { enabled: true, default_provider: "claude", default_fallback: "parent", stages: {} };
+    const r = resolveWorkflowRouteFromConfig({ routing, stage: "implementation" });
+    assert.equal(r.ok, true);
+    assert.equal(r.provider, "anthropic");
+  });
+
+  it("resolves the canonical anthropic provider id unchanged", () => {
+    const routing = { enabled: true, default_provider: "anthropic", default_fallback: "parent", stages: {} };
+    const r = resolveWorkflowRouteFromConfig({ routing, stage: "implementation" });
+    assert.equal(r.ok, true);
+    assert.equal(r.provider, "anthropic");
+  });
+
+  it("normalizes a stage-level claude provider override to anthropic", () => {
+    const routing = {
+      enabled: true,
+      default_provider: "anthropic",
+      default_fallback: "parent",
+      stages: {
+        implementation: {
+          tier: "low",
+          provider: "claude",
+          model: "claude-haiku-4-5",
+          agent: "cli",
+          fallback: "error",
+        },
+      },
+    };
+    const r = resolveWorkflowRouteFromConfig({ routing, stage: "implementation" });
+    assert.equal(r.ok, true);
+    assert.equal(r.provider, "anthropic");
   });
 });
 

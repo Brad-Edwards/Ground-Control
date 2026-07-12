@@ -15,7 +15,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.keplerops.groundcontrol.api.workflowexecution.WorkflowExecutionController;
 import com.keplerops.groundcontrol.domain.exception.AuthorizationException;
+import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
+import com.keplerops.groundcontrol.domain.exception.ServiceUnavailableException;
 import com.keplerops.groundcontrol.domain.workflowexecution.OperatorSignalType;
 import com.keplerops.groundcontrol.domain.workflowexecution.RetryPhase;
 import com.keplerops.groundcontrol.domain.workflowexecution.Reviewer;
@@ -85,6 +87,56 @@ class WorkflowExecutionControllerTest {
         assertThat(mapped.reviewCap()).isEqualTo(3);
         assertThat(mapped.requirementUids()).containsExactly("GC-O009");
         assertThat(mapped.pollIntervalSeconds()).isEqualTo(120);
+    }
+
+    /**
+     * ADR-028 LLM provider boundary (issue #1280): {@code WorkflowExecutionService.start} resolves the
+     * LLM route before delegating to the control port, and the production {@code TrustedRouteResolver}
+     * ({@code BridgePendingRouteResolver}) fails closed with {@link ServiceUnavailableException} until
+     * the ADR-081 bridge (#1281) lands. This proves that controlled, expected misconfiguration reaches
+     * the client only through the standard envelope — never a raw Spring/Temporal/provider exception,
+     * stack trace, or class name.
+     */
+    @Test
+    void startReturns503WithTheStandardEnvelopeWhenLlmRouteResolutionIsUnavailable() throws Exception {
+        when(service.start(any(), any()))
+                .thenThrow(new ServiceUnavailableException(
+                        "Trusted LLM route resolution is not available until the ADR-081 normalized-config bridge"
+                                + " (#1281) lands; code=llm_route_bridge_unavailable"));
+
+        mockMvc.perform(
+                        post("/api/v1/workflow-executions")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                { "workflowType": "IMPLEMENT", "issueNumber": 1278 }
+                                """))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error.code", is("service_unavailable")))
+                .andExpect(jsonPath(
+                        "$.error.message",
+                        is("Trusted LLM route resolution is not available until the ADR-081 normalized-config bridge"
+                                + " (#1281) lands; code=llm_route_bridge_unavailable")))
+                .andExpect(jsonPath("$.error.detail").doesNotExist());
+    }
+
+    @Test
+    void startReturns422WithTheStandardEnvelopeWhenLlmRouteIsInvalid() throws Exception {
+        when(service.start(any(), any()))
+                .thenThrow(new DomainValidationException("No LLM provider registered for id openai"));
+
+        mockMvc.perform(
+                        post("/api/v1/workflow-executions")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                { "workflowType": "IMPLEMENT", "issueNumber": 1278 }
+                                """))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code", is("validation_error")))
+                .andExpect(jsonPath("$.error.message", is("No LLM provider registered for id openai")));
     }
 
     @Test

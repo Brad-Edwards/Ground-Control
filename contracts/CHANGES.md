@@ -4,6 +4,31 @@ Current contract version: 0.3.0
 
 ## 0.3.0 - 2026-07-11
 
+LLM activities and provider boundary (GC-O009 phase 5, issue #1280, ADR-028).
+
+- **BREAKING**: `content-activities.v1` is retired and replaced by
+  `contracts/schemas/workflow/content-activities.v2.schema.json`
+  (`gc.workflow.content-activities.v2`). `AuthorPlanInput` gains two required
+  fields, `project` and `route` (the new `ResolvedLlmRoute` record—a closed
+  safe scalar set: contract version, project, stage, tier, canonical provider
+  id, canonical model id, config digest). This lets `authorPlan` resolve a
+  trusted, project-scoped LLM route instead of inferring project ownership
+  from the issue number, a local checkout, or the workflow id (preflight
+  requirement). Every other record in the schema (`AuthorPlanResult`,
+  `ImplementChangeInput/Result`, `CodexReviewInput/Result`,
+  `TestQualityReviewInput/Result`, `ReadinessRecordInput/Result`,
+  `FinalReportInput/Result`) is unchanged; `AuthorPlanResult(posted,
+  commentId)` in particular carries no route/model data. Migration: any future
+  caller building `AuthorPlanInput` must supply `project` and a resolved
+  `route`; there is no default.
+- Added `contracts/schemas/workflow/implement-workflow.v1.schema.json`
+  `ImplementWorkflowInput.route`—the same closed `ResolvedLlmRoute` scalar
+  set, optional and nullable. This is an additive, non-breaking evolution of
+  `implement-workflow.v1`: the field is not in `required`, so existing
+  producers/consumers are unaffected. `WorkflowExecutionService` resolves the
+  route and binds it to the execution before `WorkflowControlPort.start`, so
+  a normal start never creates a workflow already known to be unrunnable.
+
 BREAKING: Retirement of the composed GRC product surface and the
 next-issue-recommendation close-path field (ADR-089, issue #1346).
 
