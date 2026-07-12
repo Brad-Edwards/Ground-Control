@@ -37,14 +37,12 @@ from tools.policy.checks import (
     run_deploy_compose_credential_passthrough,
     run_documentation_coverage_check,
     run_enum_contract_check,
-    run_gate_set_invariant_check,
     run_ghcr_namespace_drift,
     run_migration_policy,
     run_no_deferral_disposition_check,
     run_pr_body_check,
     run_test_quality_decision_record_contract,
     run_traceability_reconciliation_gate_contract,
-    run_workflow_payload_contract_check,
     run_workflow_routing_contract,
 )
 
@@ -309,90 +307,6 @@ class PolicyChecksTest(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return rel
-
-    def _write_gate_set_fixture(
-        self,
-        root: Path,
-        *,
-        enum_extra: str = "",
-        mcp_extra: str = "",
-        signal_methods: str | None = None,
-    ) -> None:
-        """Lay down a minimal, valid gate-set surface set; callers mutate one surface to force drift."""
-        self._write_file(
-            root,
-            "backend/src/main/java/com/keplerops/groundcontrol/domain/workflowexecution/OperatorSignalType.java",
-            "package x;\npublic enum OperatorSignalType {\n  CANCEL,\n  RETRY_FROM,\n  REVIEW_CAP_DISPOSITION" + enum_extra + "\n}\n",
-        )
-        methods = signal_methods if signal_methods is not None else (
-            "  @SignalMethod\n  void cancel(CancelSignal s);\n"
-            "  @SignalMethod\n  void retryFrom(RetryFromSignal s);\n"
-            "  @SignalMethod\n  void applyReviewCapDisposition(ReviewCapDispositionSignal s);\n"
-        )
-        self._write_file(
-            root,
-            "backend/src/main/java/com/keplerops/groundcontrol/infrastructure/temporal/implement/ImplementWorkflow.java",
-            "package x;\npublic interface ImplementWorkflow {\n" + methods + "}\n",
-        )
-        self._write_file(
-            root,
-            "mcp/ground-control/gc-workflow-execution.js",
-            'export const WORKFLOW_SIGNAL_TYPES = ["CANCEL", "RETRY_FROM", "REVIEW_CAP_DISPOSITION"' + mcp_extra + "];\n",
-        )
-        self._write_file(
-            root,
-            "contracts/schemas/workflow/implement-signals.v1.schema.json",
-            json.dumps(
-                {
-                    "$defs": {
-                        "CancelSignal": {"x-gc-record": "CancelSignal"},
-                        "RetryFromSignal": {"x-gc-record": "RetryFromSignal"},
-                        "ReviewCapDispositionSignal": {"x-gc-record": "ReviewCapDispositionSignal"},
-                    }
-                }
-            ),
-        )
-
-    def test_gate_set_invariant_passes_on_real_repo(self):
-        self.assertEqual(run_gate_set_invariant_check(), [])
-
-    def test_gate_set_invariant_clean_fixture_passes(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            self._write_gate_set_fixture(root)
-            self.assertEqual(run_gate_set_invariant_check(root=root), [])
-
-    def test_gate_set_invariant_fails_on_added_enum_signal(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            self._write_gate_set_fixture(root, enum_extra=",\n  MERGE_APPROVED")
-            codes = {v.code for v in run_gate_set_invariant_check(root=root)}
-            # A fourth signal drifts the enum from the closed catalog AND is a forbidden approval gate.
-            self.assertIn("gate-set-drift", codes)
-            self.assertIn("gate-set-forbidden-gate", codes)
-
-    def test_gate_set_invariant_fails_when_mcp_drifts_from_workflow(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            self._write_gate_set_fixture(root, mcp_extra=', "SOMETHING_NEW"')
-            codes = {v.code for v in run_gate_set_invariant_check(root=root)}
-            self.assertIn("gate-set-drift", codes)
-
-    def test_gate_set_invariant_fails_when_workflow_adds_signal_method(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            self._write_gate_set_fixture(
-                root,
-                signal_methods=(
-                    "  @SignalMethod\n  void cancel(CancelSignal s);\n"
-                    "  @SignalMethod\n  void retryFrom(RetryFromSignal s);\n"
-                    "  @SignalMethod\n  void applyReviewCapDisposition(ReviewCapDispositionSignal s);\n"
-                    "  @SignalMethod\n  void approveMerge(ApproveMergeSignal s);\n"
-                ),
-            )
-            codes = {v.code for v in run_gate_set_invariant_check(root=root)}
-            self.assertIn("gate-set-drift", codes)
-            self.assertIn("gate-set-forbidden-gate", codes)
 
     def test_controller_webmvctest_no_false_positive_on_same_name_collision(self):
         """A controller and its real companion (resolved by FQCN) satisfy the check
@@ -787,55 +701,6 @@ class PolicyChecksTest(unittest.TestCase):
         violations = run_contract_surface_check(root=REPO_ROOT)
         self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
 
-    def test_workflow_payload_contract_passes_on_repo(self):
-        violations = run_workflow_payload_contract_check(root=REPO_ROOT)
-        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
-
-    def _workflow_contract_dirs(self, root):
-        record_dir = (
-            root
-            / "backend/src/main/java/com/keplerops/groundcontrol/infrastructure/temporal/implement/contract"
-        )
-        schema_dir = root / "contracts/schemas/workflow"
-        record_dir.mkdir(parents=True)
-        schema_dir.mkdir(parents=True)
-        return record_dir, schema_dir
-
-    def test_workflow_payload_contract_rejects_unmapped_record(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            record_dir, _schema_dir = self._workflow_contract_dirs(root)
-            (record_dir / "ResolveIssueInput.java").write_text(
-                "public record ResolveIssueInput(int issueNumber) {}\n", encoding="utf-8"
-            )
-            violations = run_workflow_payload_contract_check(root=root)
-        self.assertTrue(any(v.code == "workflow-payload-record-unmapped" for v in violations))
-
-    def test_workflow_payload_contract_rejects_orphan_schema_tag(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            _record_dir, schema_dir = self._workflow_contract_dirs(root)
-            (schema_dir / "sample.v1.schema.json").write_text(
-                json.dumps({"$defs": {"Ghost": {"x-gc-record": "GhostRecord"}}}),
-                encoding="utf-8",
-            )
-            violations = run_workflow_payload_contract_check(root=root)
-        self.assertTrue(any(v.code == "workflow-payload-schema-orphan" for v in violations))
-
-    def test_workflow_payload_contract_maps_record_to_schema_tag(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            record_dir, schema_dir = self._workflow_contract_dirs(root)
-            (record_dir / "ResolveIssueInput.java").write_text(
-                "public record ResolveIssueInput(int issueNumber) {}\n", encoding="utf-8"
-            )
-            (schema_dir / "resolve-issue.v1.schema.json").write_text(
-                json.dumps({"$defs": {"ResolveIssueInput": {"x-gc-record": "ResolveIssueInput"}}}),
-                encoding="utf-8",
-            )
-            violations = run_workflow_payload_contract_check(root=root)
-        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
-
     def test_contract_invariant_enforcement_rejects_missing_enforcement_file(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -1174,67 +1039,17 @@ class PolicyChecksTest(unittest.TestCase):
             "REQUIRED GC_IMAGE\n"
             "RELEASE_PIN GC_IMAGE\n"
             "REQUIRED GC_DATABASE_URL\n"
-            "REQUIRED TEMPORAL_POSTGRES_DB\n"
-            "REQUIRED TEMPORAL_POSTGRES_USER\n"
-            "REQUIRED TEMPORAL_POSTGRES_PASSWORD\n"
-            "REQUIRED TEMPORAL_VISIBILITY_DB\n"
-            "REQUIRED GC_BIND_IP\n"
-            "OPTIONAL TEMPORAL_NAMESPACE\n"
-            "OPTIONAL TEMPORAL_TASK_QUEUE\n",
+            "REQUIRED GC_BIND_IP\n",
             encoding="utf-8",
         )
         (ddir / "docker-compose.prod.yml").write_text(
             "services:\n"
-            "  temporal-db:\n"
-            "    image: apache/age:release_PG16_1.6.0\n"
-            "    environment:\n"
-            "      POSTGRES_DB: ${TEMPORAL_POSTGRES_DB}\n"
-            "      POSTGRES_USER: ${TEMPORAL_POSTGRES_USER}\n"
-            "      POSTGRES_PASSWORD: ${TEMPORAL_POSTGRES_PASSWORD}\n"
-            "    volumes:\n"
-            "      - /data/temporal-postgres:/var/lib/postgresql/data\n"
-            "    healthcheck:\n"
-            "      test: [\"CMD-SHELL\", \"pg_isready -U ${TEMPORAL_POSTGRES_USER} -d ${TEMPORAL_POSTGRES_DB}\"]\n"
-            "    mem_limit: 512m\n"
-            "    cpus: \"1.0\"\n"
-            "  temporal:\n"
-            "    image: temporalio/auto-setup:1.29.6\n"
-            "    environment:\n"
-            "      - DB=postgres12\n"
-            "      - DBNAME=${TEMPORAL_POSTGRES_DB}\n"
-            "      - VISIBILITY_DBNAME=${TEMPORAL_VISIBILITY_DB}\n"
-            "      - POSTGRES_USER=${TEMPORAL_POSTGRES_USER}\n"
-            "      - POSTGRES_PWD=${TEMPORAL_POSTGRES_PASSWORD}\n"
-            "      - POSTGRES_SEEDS=temporal-db\n"
-            "      - DEFAULT_NAMESPACE=${TEMPORAL_NAMESPACE:-ground-control}\n"
-            "    ports:\n"
-            "      - \"${GC_BIND_IP}:7233:7233\"\n"
-            "    depends_on:\n"
-            "      temporal-db:\n"
-            "        condition: service_healthy\n"
-            "    healthcheck:\n"
-            "      test: [\"CMD-SHELL\", \"tctl --address temporal:7233 cluster health | grep -q SERVING\"]\n"
-            "    mem_limit: 768m\n"
-            "    cpus: \"1.0\"\n"
             "  backend:\n"
             "    image: ${GC_IMAGE}\n"
             "    environment:\n"
             "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n"
-            "  temporal-worker:\n"
-            "    image: ${GC_IMAGE}\n"
-            "    environment:\n"
-            "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n"
-            "      - GROUNDCONTROL_TEMPORAL_WORKER_ENABLED=true\n"
-            "      - GROUNDCONTROL_TEMPORAL_WORKER_TARGET=temporal:7233\n"
-            "      - GROUNDCONTROL_TEMPORAL_WORKER_NAMESPACE=${TEMPORAL_NAMESPACE:-ground-control}\n"
-            "      - GROUNDCONTROL_TEMPORAL_WORKER_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-ground-control-implement}\n"
-            "    depends_on:\n"
-            "      temporal:\n"
-            "        condition: service_healthy\n"
-            "    healthcheck:\n"
-            "      test: [\"CMD-SHELL\", \"wget -q -O - http://localhost:8001/actuator/health | grep -q '\\\"UP\\\"'\"]\n"
-            "    mem_limit: 1024m\n"
-            "    cpus: \"1.0\"\n",
+            "    ports:\n"
+            "      - \"${GC_BIND_IP}:8000:8000\"\n",
             encoding="utf-8",
         )
         (ddir / "deploy.sh").write_text("#!/bin/bash\ndocker compose --env-file .env up -d\n", encoding="utf-8")
@@ -1304,58 +1119,6 @@ class PolicyChecksTest(unittest.TestCase):
             self.assertIn("deploy-env-schema-incomplete", codes)
             details = " ".join(d for v in violations for d in v.details)
             self.assertIn("GC_NEW_KNOB", details)
-
-    def test_deploy_artifact_consistency_flags_missing_temporal_services(self):
-        # GC-O009 phase 1 makes Temporal a first-class production topology
-        # surface: compose drift must fail before the deploy host sees it.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._write_valid_deploy_tree(root)
-            compose = root / "deploy/docker/docker-compose.prod.yml"
-            compose.write_text(
-                "services:\n"
-                "  backend:\n"
-                "    image: ${GC_IMAGE}\n"
-                "    environment:\n"
-                "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n",
-                encoding="utf-8",
-            )
-            self._rewrite_manifest(root)
-            violations = run_deploy_artifact_consistency(root=root)
-            codes = {v.code for v in violations}
-            self.assertIn("deploy-temporal-topology", codes)
-
-    def test_deploy_artifact_consistency_flags_unpinned_temporal_image(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._write_valid_deploy_tree(root)
-            compose = root / "deploy/docker/docker-compose.prod.yml"
-            compose.write_text(
-                compose.read_text(encoding="utf-8").replace(
-                    "temporalio/auto-setup:1.29.6", "temporalio/auto-setup:latest"
-                ),
-                encoding="utf-8",
-            )
-            self._rewrite_manifest(root)
-            violations = run_deploy_artifact_consistency(root=root)
-            codes = {v.code for v in violations}
-            self.assertIn("deploy-temporal-topology", codes)
-
-    def test_deploy_artifact_consistency_flags_temporal_without_tailnet_bind(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._write_valid_deploy_tree(root)
-            compose = root / "deploy/docker/docker-compose.prod.yml"
-            compose.write_text(
-                compose.read_text(encoding="utf-8").replace(
-                    '"${GC_BIND_IP}:7233:7233"', '"7233:7233"'
-                ),
-                encoding="utf-8",
-            )
-            self._rewrite_manifest(root)
-            violations = run_deploy_artifact_consistency(root=root)
-            codes = {v.code for v in violations}
-            self.assertIn("deploy-temporal-topology", codes)
 
     def test_deploy_artifact_consistency_flags_missing_release_pin(self):
         # Dropping RELEASE_PIN GC_IMAGE would let a floating branch tag (:main)

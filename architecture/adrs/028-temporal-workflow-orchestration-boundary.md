@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Superseded by the removal of the Temporal orchestration lane (2026-07-12,
+issue #1359). See the Amendment below.
 
 ## Date
 
@@ -282,9 +283,36 @@ GC-O009 phase 5 implements the "LLM Provider Boundary" section above concretely:
   is absent from the serialized Temporal execution history, the propagated
   workflow failure, and captured Logback events.
 
+## Amendment (issue #1359, 2026-07-12): Temporal orchestration lane removed
+
+GC-O009's Temporal lane is withdrawn in full: the Temporal server, SQL
+visibility persistence, and worker topology; `ImplementWorkflow` and its
+activity/contract package under `infrastructure/temporal/`; the LLM provider
+boundary and Anthropic adapter added by the #1280 amendment above
+(`domain/llm/`, `infrastructure/llm/`); the REST + MCP workflow-execution
+control surface; the operator-signal audit trail; and the
+`contracts/schemas/workflow/` activity payload schemas. The ADR-061 workflow
+run telemetry surface (`WorkflowRun`, `gc_workflow_run`) is unaffected - it
+measures completed runs after the fact and never depended on Temporal.
+
+Honest accounting of why: the lane never registered a single activity
+implementation in production. Its only test evidence ran against Temporal's
+`TestWorkflowEnvironment` - an in-memory, time-skipping test double that
+proves the workflow logic replays deterministically, not that a real Temporal
+server buys any durability Ground Control was actually using. In exchange for
+that unrealized durability, the lane introduced a real, ongoing cost: a
+replay/version-skew defect class (the `Workflow.getVersion` guards scattered
+through `ImplementWorkflowImpl` exist only to manage that risk) and a second
+orchestration substrate to operate, secure, and reason about. What the lane
+promised - human gates, an authoritative execution record, and a trust
+boundary around who can drive `/implement` - is already delivered by the
+operator gates, the issue-thread durable record (ADR-029), and the MCP trust
+boundary. Removing Temporal removes the risk and the operational surface
+without removing any capability actually in use.
+
 ## Related Requirements
 
-- GC-O009 Workflow Orchestration via Temporal
+- GC-O009 Workflow Orchestration via Temporal (superseded; see Amendment)
 - GC-O007 Gated Agentic Development Loop
 
 ## Related ADRs

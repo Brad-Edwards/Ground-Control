@@ -267,7 +267,9 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         // risk_assessment_result/treatment_plan/risk_register_record/methodology_profile
                         // family, plus their audit shadows; deletes retired-type rows from the shared
                         // pack_registry_entry table.
-                        "199");
+                        "199",
+                        // V200 (#1359): drops V198's operator-signal audit log with the Temporal lane.
+                        "200");
     }
 
     @Test

@@ -305,11 +305,6 @@ import {
   gcWorkflowRunIngestHandler,
   GC_WORKFLOW_RUN_INGEST_DESCRIPTION,
 } from "./gc-workflow-run-ingest.js";
-import {
-  gcWorkflowExecutionZodShape,
-  gcWorkflowExecutionToolHandler,
-  GC_WORKFLOW_EXECUTION_DESCRIPTION,
-} from "./gc-workflow-execution.js";
 import { installToolTelemetry } from "./telemetry.js";
 
 // Load .env from cwd before any auth header is composed.
@@ -3765,22 +3760,6 @@ server.tool(
   gcWorkflowRunIngestZodShape,
   async (args) => {
     try { return ok(JSON.stringify(await gcWorkflowRunIngestHandler(args), null, 2)); }
-    catch (e) { return err(e); }
-  },
-);
-
-// ============================================================================
-// GC_WORKFLOW_EXECUTION — workflow control surface start/status/signal (GC-O009 #1278)
-// ============================================================================
-
-server.tool(
-  "gc_workflow_execution",
-  GC_WORKFLOW_EXECUTION_DESCRIPTION,
-  gcWorkflowExecutionZodShape,
-  async (args) => {
-    // Product control surface for /implement Temporal executions. The backend enforces project
-    // scope on every action and ROLE_ADMIN on `signal`; this tool forwards only the closed field set.
-    try { return ok(JSON.stringify(await gcWorkflowExecutionToolHandler(args), null, 2)); }
     catch (e) { return err(e); }
   },
 );

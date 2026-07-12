@@ -22,53 +22,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  temporal-db:
-    image: apache/age:release_PG16_1.6.0
-    environment:
-      POSTGRES_DB: ${TEMPORAL_POSTGRES_DB}
-      POSTGRES_USER: ${TEMPORAL_POSTGRES_USER}
-      POSTGRES_PASSWORD: ${TEMPORAL_POSTGRES_PASSWORD}
-    volumes:
-      - /data/temporal-postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${TEMPORAL_POSTGRES_USER} -d ${TEMPORAL_POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    mem_limit: 512m
-    cpus: "1.0"
-    restart: unless-stopped
-
-  temporal:
-    image: temporalio/auto-setup:1.29.6
-    environment:
-      - DB=postgres12
-      - DB_PORT=5432
-      - DBNAME=${TEMPORAL_POSTGRES_DB}
-      - VISIBILITY_DBNAME=${TEMPORAL_VISIBILITY_DB}
-      - POSTGRES_USER=${TEMPORAL_POSTGRES_USER}
-      - POSTGRES_PWD=${TEMPORAL_POSTGRES_PASSWORD}
-      - POSTGRES_SEEDS=temporal-db
-      - DEFAULT_NAMESPACE=${TEMPORAL_NAMESPACE:-ground-control}
-      - DEFAULT_NAMESPACE_RETENTION=${TEMPORAL_NAMESPACE_RETENTION:-168h}
-      - TEMPORAL_ADDRESS=temporal:7233
-      - TEMPORAL_CLI_ADDRESS=temporal:7233
-    ports:
-      # Temporal gRPC has no application auth boundary; production requires
-      # GC_BIND_IP so docker-proxy listens only on the tailnet interface.
-      - "${GC_BIND_IP}:7233:7233"
-    depends_on:
-      temporal-db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "tctl --address temporal:7233 cluster health | grep -q SERVING"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-    mem_limit: 768m
-    cpus: "1.0"
-    restart: unless-stopped
-
   backend:
     image: ${GC_IMAGE}
     # List form is required for the ADR-026 indexed credential / IP-allowlist
@@ -133,64 +86,4 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    restart: unless-stopped
-
-  temporal-worker:
-    image: ${GC_IMAGE}
-    environment:
-      - GC_DATABASE_URL=${GC_DATABASE_URL}
-      - GC_DATABASE_USER=${GC_DATABASE_USER}
-      - GC_DATABASE_PASSWORD=${GC_DATABASE_PASSWORD}
-      - GC_SERVER_PORT=8001
-      - GC_CACHE_TYPE=none
-      - GC_EMBEDDING_PROVIDER=${GC_EMBEDDING_PROVIDER:-none}
-      - GC_EMBEDDING_API_KEY=${GC_EMBEDDING_API_KEY:-}
-      - GC_EMBEDDING_MODEL=${GC_EMBEDDING_MODEL:-text-embedding-3-small}
-      - GC_EMBEDDING_DIMENSIONS=${GC_EMBEDDING_DIMENSIONS:-1536}
-      - GC_EMBEDDING_SIMILARITY_THRESHOLD=${GC_EMBEDDING_SIMILARITY_THRESHOLD:-0.85}
-      - GC_SECURITY_ENABLED=${GC_SECURITY_ENABLED:-true}
-      - GC_SECURITY_OPENAPI_PUBLIC=${GC_SECURITY_OPENAPI_PUBLIC:-false}
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_0_PRINCIPAL_NAME
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKEN
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_0_ROLE
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_1_PRINCIPAL_NAME
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_1_TOKEN
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_1_ROLE
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_2_PRINCIPAL_NAME
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_2_TOKEN
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_2_ROLE
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_3_PRINCIPAL_NAME
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_3_TOKEN
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_3_ROLE
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_4_PRINCIPAL_NAME
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_4_TOKEN
-      - GROUNDCONTROL_SECURITY_CREDENTIALS_4_ROLE
-      - GROUNDCONTROL_SECURITY_IP_ALLOWLIST_0
-      - GROUNDCONTROL_SECURITY_IP_ALLOWLIST_1
-      - GROUNDCONTROL_SECURITY_IP_ALLOWLIST_2
-      - GROUNDCONTROL_SECURITY_IP_ALLOWLIST_3
-      - GROUNDCONTROL_SECURITY_IP_ALLOWLIST_4
-      - SPRING_APPLICATION_JSON=${SPRING_APPLICATION_JSON:-}
-      - JAVA_TOOL_OPTIONS=${JAVA_TOOL_OPTIONS}
-      - SPRING_PROFILES_ACTIVE=prod
-      - GROUNDCONTROL_TEMPORAL_WORKER_ENABLED=true
-      - GROUNDCONTROL_TEMPORAL_WORKER_TARGET=temporal:7233
-      - GROUNDCONTROL_TEMPORAL_WORKER_NAMESPACE=${TEMPORAL_NAMESPACE:-ground-control}
-      - GROUNDCONTROL_TEMPORAL_WORKER_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-ground-control-implement}
-      # GC-O009 phase 5 (#1280, ADR-028): the Anthropic credential is bound only to the worker
-      # container, never the backend service block above.
-      - GC_ANTHROPIC_ENABLED=${GC_ANTHROPIC_ENABLED:-false}
-      - GC_ANTHROPIC_API_KEY=${GC_ANTHROPIC_API_KEY:-}
-    depends_on:
-      db:
-        condition: service_healthy
-      temporal:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:8001/actuator/health | grep -q '\"UP\"'"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-    mem_limit: 1024m
-    cpus: "1.0"
     restart: unless-stopped

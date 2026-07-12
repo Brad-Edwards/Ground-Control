@@ -16,12 +16,12 @@ import java.util.Set;
 
 /**
  * One workflow run (issue #859): the run-level reporting projection for a single {@code /implement}
- * (or future Temporal-backed) execution against an issue/branch/PR/repo.
+ * execution against an issue/branch/PR/repo.
  *
- * <p>This is a correlation/projection surface, not the workflow engine (ADR-028): Temporal
- * Visibility becomes the source of truth once GC-O009 owns execution end to end. The row is mutable
- * because ingestion is idempotent — re-observing a run (a later phase marker, the merge outcome,
- * a manual cost import) updates the same row, keyed by {@code (project, repo, issueNumber, branch)}.
+ * <p>This is a correlation/projection surface, not a workflow engine: it measures completed runs
+ * after the fact and never drives execution. The row is mutable because ingestion is idempotent —
+ * re-observing a run (a later phase marker, the merge outcome, a manual cost import) updates the
+ * same row, keyed by {@code (project, repo, issueNumber, branch)}.
  *
  * <p>Closed, redacted field set: only safe correlation and economics scalars are stored. Prompts,
  * completions, bearer tokens, provider/GitHub keys, and raw reviewer payloads are never persisted.

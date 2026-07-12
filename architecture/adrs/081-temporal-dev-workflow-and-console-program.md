@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Superseded by the removal of the Temporal orchestration lane (2026-07-12,
+issue #1359). See the Amendment below.
 
 ## Date
 
@@ -258,9 +259,34 @@ authenticated principal - which the CLI-per-operator model cannot express.
 - Changing the GC-O007 gate semantics; this program preserves them and only
   relocates enforcement per the cutover model.
 
+## Amendment (issue #1359, 2026-07-12): Engine track withdrawn
+
+The engine track this program was built around (phases 1-7, #1276-#1281 and
+#1286) is withdrawn: the Temporal orchestration lane never registered a
+production activity implementation, its only test evidence was Temporal's
+in-memory `TestWorkflowEnvironment`, and it added a replay/version-skew defect
+class in exchange for durability guarantees Ground Control was not actually
+drawing on. What the engine was meant to deliver - a single human touchpoint
+at merge, an authoritative execution record, and console/API control over
+workflow runs - is already provided by the operator gates, the issue-thread
+durable record (ADR-029), and the MCP trust boundary, without a second
+orchestration substrate to operate and secure. The skill lane (ADR-021,
+ADR-027, ADR-029, ADR-036) remains the production workflow permanently, not
+as a transitional state pending cutover; the cutover model in §3 does not
+fire. ADR-028 is superseded on the same date and for the same reason.
+
+The parallel tracks this program coordinated are unaffected by the engine's
+removal and stand on their own authority: identity (GC-P024), console shell
+(GC-Q015), workflow operations console (GC-Q016, scoped to the ADR-061
+telemetry surface rather than Temporal run control), instrumentation
+(GC-P025), and the contract-first surface (GC-O014/ADR-082). Locked decisions
+1-3 and 5-7 above, and the amendment notes on ADR-021/ADR-027/ADR-036, are
+retracted along with the engine; locked decision 4 (identity lands without
+tenancy) stands independent of Temporal and is unaffected.
+
 ## Related Requirements
 
-- GC-O009 Workflow Orchestration via Temporal
+- GC-O009 Workflow Orchestration via Temporal (superseded; see Amendment)
 - GC-O014 Contract-First Development Surface
 - GC-P024 User, Group, and Role Administration
 - GC-P025 Runtime Metrics and Distributed Tracing

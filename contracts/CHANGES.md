@@ -1,6 +1,37 @@
 # Contract Changes
 
-Current contract version: 0.3.0
+Current contract version: 0.4.0
+
+## 0.4.0 - 2026-07-12
+
+Temporal orchestration lane removal (issue #1359; ADR-028, ADR-081, ADR-088
+all superseded).
+
+- **BREAKING**: the entire `contracts/schemas/workflow/` activity/workflow
+  payload contract surface is removed: `content-activities.v2` (which
+  retired `v1` in 0.3.0 below and never shipped past this repo),
+  `implement-workflow.v1`, `implement-signals.v1`, `resolve-issue.v1`,
+  `completion-gate.v1`, `quality-gate.v1`, `git-publish.v1`,
+  `open-pull-request.v1`, `ci-observation.v1`, `sonar-gate.v1`,
+  `merge-observation.v1`, `status-transition.v1`,
+  `traceability-reconcile.v1`, `close-issue.v1`, and the directory's
+  companion `README.md`. These schemas governed the Temporal `/implement`
+  engine's activity I/O; the engine never registered a production activity
+  implementation and is withdrawn in full (see the ADR-028 amendment for the
+  rationale). `contracts/schemas/workflow/workflow-run-record.v1.schema.json`
+  is unaffected - it is the ADR-061 telemetry surface, not an activity
+  payload, and was never part of this contract family's removal.
+- The generated OpenAPI document and TypeScript client no longer carry the
+  `/api/v1/workflow-executions` paths or their request/response schemas
+  (`StartWorkflowExecutionRequest`, `SendSignalRequest`,
+  `WorkflowExecutionResponse`, `WorkflowExecutionStartResponse`). Regenerated
+  via `make contracts`.
+- `contracts/authz/path-matrix.yaml` drops the `/api/v1/workflow-executions**`
+  rows.
+
+The 0.3.0 entry below is retained as a historical record; the
+`content-activities.v2` schema and `ResolvedLlmRoute` record it describes no
+longer exist in this repo.
 
 ## 0.3.0 - 2026-07-11
 
