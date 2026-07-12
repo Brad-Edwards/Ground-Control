@@ -910,15 +910,6 @@ export interface GateResultResponse {
   "threshold": any;
 }
 
-export interface GateStateResponse {
-  [key: string]: any;
-  "escalatedPhase": any;
-  "escalatedReviewer": any;
-  "outcome": any;
-  "phase": any;
-  "waitingForMerge": any;
-}
-
 export interface GitHubIssueRequest {
   [key: string]: any;
   "extraBody"?: any;
@@ -2238,15 +2229,6 @@ export interface SelectMethodologyRequest {
   "methodKey": any;
 }
 
-export interface SendSignalRequest {
-  [key: string]: any;
-  "disposition"?: any;
-  "reason"?: any;
-  "retryFromPhase"?: any;
-  "reviewer"?: any;
-  "signalType": any;
-}
-
 export interface SimilarityPairResponse {
   [key: string]: any;
   "score": any;
@@ -2292,16 +2274,6 @@ export interface SourceLinkResponse {
   "locator": any;
   "sourceId": any;
   "sourceRef": any;
-}
-
-export interface StartWorkflowExecutionRequest {
-  [key: string]: any;
-  "issueNumber": any;
-  "pollIntervalSeconds"?: any;
-  "requirementUids"?: string[];
-  "reviewCap"?: any;
-  "sonarProjectKey"?: any;
-  "workflowType": any;
 }
 
 export interface StatusDriftResponse {
@@ -3359,29 +3331,6 @@ export interface WorkOrderWaveResponse {
   "unblocked": any;
   "unconstrained": any;
   "wave": any;
-}
-
-export interface WorkflowExecutionResponse {
-  [key: string]: any;
-  "closeTime": any;
-  "gateState": GateStateResponse | null;
-  "historyLength": any;
-  "issueNumber": any;
-  "project": any;
-  "requirementUids": string[];
-  "runId": any;
-  "startTime": any;
-  "status": any;
-  "workflowId": any;
-  "workflowType": any;
-}
-
-export interface WorkflowExecutionStartResponse {
-  [key: string]: any;
-  "project": any;
-  "runId": any;
-  "workflowId": any;
-  "workflowType": any;
 }
 
 export interface WorkflowRunAggregateResponse {

@@ -4,13 +4,9 @@
 # Runs as the `gc-backup` system user via `gc-backup.timer` (03:00, 11:00,
 # 19:00 UTC, per the GC-P021 ≥ 3×/day floor). Three responsibilities:
 #
-#   1. Local logical dumps:
+#   1. Local logical dump:
 #      - application DB from `gc-db-1`
 #        → `/data/backups/gc-<UTC-timestamp>.dump`
-#      - Temporal core DB from `gc-temporal-db-1`
-#        → `/data/backups/gc-temporal-<UTC-timestamp>.dump`
-#      - Temporal visibility DB from `gc-temporal-db-1`
-#        → `/data/backups/gc-temporal-visibility-<UTC-timestamp>.dump`
 #   2. Off-box durability — rsync the dump to
 #      `gc-backup@aurora:/var/backups/groundcontrol/` over the tailnet
 #      via SSH (forced-command target on the aurora side: `rrsync
@@ -33,7 +29,6 @@ KEEP_DAYS=${GC_BACKUP_KEEP_DAYS:-30}
 RSYNC_TARGET=${GC_BACKUP_RSYNC_TARGET:-gc-backup@aurora:/var/backups/groundcontrol/}
 SSH_KEY=${GC_BACKUP_SSH_KEY:-/var/lib/gc-backup/.ssh/id_ed25519}
 CONTAINER=${GC_BACKUP_DB_CONTAINER:-gc-db-1}
-TEMPORAL_CONTAINER=${GC_BACKUP_TEMPORAL_DB_CONTAINER:-gc-temporal-db-1}
 
 # `POSTGRES_USER` and `POSTGRES_DB` are not secrets — they are the
 # database role and database name documented in DEPLOYMENT.md. The
@@ -43,28 +38,15 @@ TEMPORAL_CONTAINER=${GC_BACKUP_TEMPORAL_DB_CONTAINER:-gc-temporal-db-1}
 # as the postgres uid in the container, so no password is needed here.
 POSTGRES_USER=${POSTGRES_USER:-gc}
 POSTGRES_DB=${POSTGRES_DB:-ground_control}
-TEMPORAL_POSTGRES_USER=${TEMPORAL_POSTGRES_USER:-temporal}
-TEMPORAL_POSTGRES_DB=${TEMPORAL_POSTGRES_DB:-temporal}
-TEMPORAL_VISIBILITY_DB=${TEMPORAL_VISIBILITY_DB:-temporal_visibility}
 
 TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
 DUMP_FILE="${LOCAL_DIR}/gc-${TIMESTAMP}.dump"
-TEMPORAL_DUMP_FILE="${LOCAL_DIR}/gc-temporal-${TIMESTAMP}.dump"
-TEMPORAL_VISIBILITY_DUMP_FILE="${LOCAL_DIR}/gc-temporal-visibility-${TIMESTAMP}.dump"
 
 # Sanity-check the database container before dumping. Fast-fail keeps a
 # dead-container window from producing a zero-byte dump that overwrites
 # nothing yet still counts toward retention rotation later.
 if ! docker exec "${CONTAINER}" pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" >/dev/null 2>&1; then
   echo "ERROR: ${CONTAINER} not ready for ${POSTGRES_USER}/${POSTGRES_DB}" >&2
-  exit 1
-fi
-if ! docker exec "${TEMPORAL_CONTAINER}" pg_isready -U "${TEMPORAL_POSTGRES_USER}" -d "${TEMPORAL_POSTGRES_DB}" >/dev/null 2>&1; then
-  echo "ERROR: ${TEMPORAL_CONTAINER} not ready for ${TEMPORAL_POSTGRES_USER}/${TEMPORAL_POSTGRES_DB}" >&2
-  exit 1
-fi
-if ! docker exec "${TEMPORAL_CONTAINER}" pg_isready -U "${TEMPORAL_POSTGRES_USER}" -d "${TEMPORAL_VISIBILITY_DB}" >/dev/null 2>&1; then
-  echo "ERROR: ${TEMPORAL_CONTAINER} not ready for ${TEMPORAL_POSTGRES_USER}/${TEMPORAL_VISIBILITY_DB}" >&2
   exit 1
 fi
 
@@ -85,8 +67,6 @@ dump_database() {
 # directory is mode 750 with the operator group.
 umask 077
 dump_database "${CONTAINER}" "${POSTGRES_USER}" "${POSTGRES_DB}" "${DUMP_FILE}"
-dump_database "${TEMPORAL_CONTAINER}" "${TEMPORAL_POSTGRES_USER}" "${TEMPORAL_POSTGRES_DB}" "${TEMPORAL_DUMP_FILE}"
-dump_database "${TEMPORAL_CONTAINER}" "${TEMPORAL_POSTGRES_USER}" "${TEMPORAL_VISIBILITY_DB}" "${TEMPORAL_VISIBILITY_DUMP_FILE}"
 
 # Off-box: rsync to aurora via rrsync forced command. Best-effort.
 # `./` on the target is relative to rrsync's locked-in directory
@@ -95,7 +75,7 @@ dump_database "${TEMPORAL_CONTAINER}" "${TEMPORAL_POSTGRES_USER}" "${TEMPORAL_VI
 # slot indefinitely.
 if timeout 600 rsync -a --partial \
     -e "ssh -i ${SSH_KEY} -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
-    "${DUMP_FILE}" "${TEMPORAL_DUMP_FILE}" "${TEMPORAL_VISIBILITY_DUMP_FILE}" "${RSYNC_TARGET}"; then
+    "${DUMP_FILE}" "${RSYNC_TARGET}"; then
   echo "OK: off-box copy → ${RSYNC_TARGET}"
 else
   echo "WARN: rsync to ${RSYNC_TARGET} failed; local dump retained" >&2

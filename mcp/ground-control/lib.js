@@ -2702,10 +2702,7 @@ function normalizeCrossCuttingConcernsConfig(raw) {
 
 function normalizeRoutingConfig(raw) {
   if (raw == null) {
-    return {
-      ok: true,
-      value: { enabled: false, default_provider: "anthropic", default_fallback: "parent", stages: {} },
-    };
+    return { ok: true, value: { enabled: false, default_provider: "claude", default_fallback: "parent", stages: {} } };
   }
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["routing must be a mapping, not a list or scalar"] };
@@ -2725,12 +2722,12 @@ function normalizeRoutingConfig(raw) {
       enabled = raw.enabled;
     }
   }
-  let defaultProvider = "anthropic";
+  let defaultProvider = "claude";
   if (raw.default_provider != null) {
     if (!ROUTING_PROVIDERS.includes(raw.default_provider)) {
       errors.push(`routing.default_provider must be one of: ${ROUTING_PROVIDERS.join(", ")}`);
     } else {
-      defaultProvider = normalizeProviderId(raw.default_provider);
+      defaultProvider = raw.default_provider;
     }
   }
   let defaultFallback = "parent";
@@ -2779,11 +2776,10 @@ function normalizeRoutingStageConfig(stage, raw, { defaultProvider, defaultFallb
   if (!ROUTING_TIERS.includes(tier)) {
     errors.push(`${prefix}.tier must be one of: ${ROUTING_TIERS.join(", ")}`);
   }
-  const rawProvider = raw.provider ?? defaultProvider;
-  if (!ROUTING_PROVIDERS.includes(rawProvider)) {
+  const provider = raw.provider ?? defaultProvider;
+  if (!ROUTING_PROVIDERS.includes(provider)) {
     errors.push(`${prefix}.provider must be one of: ${ROUTING_PROVIDERS.join(", ")}`);
   }
-  const provider = normalizeProviderId(rawProvider);
   const fallback = raw.fallback ?? defaultFallback;
   if (!ROUTING_FALLBACKS.includes(fallback)) {
     errors.push(`${prefix}.fallback must be one of: ${ROUTING_FALLBACKS.join(", ")}`);
@@ -2793,14 +2789,7 @@ function normalizeRoutingStageConfig(stage, raw, { defaultProvider, defaultFallb
     errors.push(`${prefix}.agent must be one of: ${ROUTING_AGENTS.join(", ")}`);
   }
   const model = raw.model ?? CLAUDE_MODEL_BY_TIER[tier];
-  // Provider-aware model validation: the anthropic provider's model ids are the canonical Claude
-  // model family (e.g. claude-sonnet-5); any other provider gets only a generic non-empty check
-  // (there is no second provider's model catalog in this Anthropic-first slice, issue #1280).
-  if (
-    provider === "anthropic" &&
-    typeof model === "string" &&
-    !/^claude-(haiku|sonnet|opus)-[0-9]+(-[0-9]+)?$/.test(model)
-  ) {
+  if (provider === "claude" && typeof model === "string" && !/^claude-(haiku|sonnet|opus)-[0-9]+(-[0-9]+)?$/.test(model)) {
     errors.push(`${prefix}.model must be a canonical Claude model id like claude-sonnet-5`);
   } else if (typeof model !== "string" || model.trim() === "") {
     errors.push(`${prefix}.model must be a non-empty string`);
@@ -3418,7 +3407,7 @@ export function resolveWorkflowRouteFromConfig({ routing, stage, tier = null }) 
       stage: normalizedStage,
     };
   }
-  const provider = normalizeProviderId(configured?.provider ?? routing.default_provider ?? "anthropic");
+  const provider = configured?.provider ?? routing.default_provider ?? "claude";
   const fallback = configured?.fallback ?? defaultStage?.fallback ?? routing.default_fallback ?? "parent";
   const agent = configured?.agent ?? defaultStage?.agent ?? (resolvedTier === "high" ? "parent" : "subagent");
   const model = configured?.model ?? CLAUDE_MODEL_BY_TIER[resolvedTier];
@@ -16131,19 +16120,10 @@ export const TELEMETRY_SCHEMA_VERSION = "gc.implement.telemetry/v2";
 export const TELEMETRY_TIERS = Object.freeze(["low", "medium", "high"]);
 export const TELEMETRY_OUTCOMES = Object.freeze(["ok", "error", "skipped"]);
 export const ROUTING_TIERS = TELEMETRY_TIERS;
-// Canonical provider id is "anthropic" (issue #1280 / ADR-027 amendment). "claude" is retained only
-// as a legacy input alias — normalizeProviderId() below maps it to "anthropic" so every normalized
-// output (parseGroundControlYaml, resolveWorkflowRouteFromConfig) emits the canonical id only. This
-// is the ONE parser that owns that alias (ADR-027); Java must not repeat or guess it.
-export const ROUTING_PROVIDERS = Object.freeze(["anthropic", "claude"]);
-export const ROUTING_PROVIDER_ALIASES = Object.freeze({ claude: "anthropic" });
+export const ROUTING_PROVIDERS = Object.freeze(["claude"]);
 export const ROUTING_AGENTS = Object.freeze(["parent", "subagent", "cli"]);
 export const ROUTING_FALLBACKS = Object.freeze(["parent", "error", "skip"]);
 export const ROUTING_STAGE_NAME_RE = /^[a-z][a-z0-9_-]*$/;
-
-function normalizeProviderId(providerId) {
-  return ROUTING_PROVIDER_ALIASES[providerId] ?? providerId;
-}
 export const CLAUDE_MODEL_BY_TIER = Object.freeze({
   low: "claude-haiku-4-5",
   medium: "claude-sonnet-5",
@@ -17222,39 +17202,5 @@ export async function crossProjectAggregateWorkflowRuns({
 } = {}) {
   return request("GET", "/api/v1/workflow-runs/cross-project-aggregate", {
     params: { repo, runtime, requirement, workflowType, outcome, from, to },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Workflow control surface API functions (GC-O009 phase 3, issue #1278)
-//
-// Distinct from the workflow-run telemetry surface above: these drive live
-// Temporal executions (start / status / signal) through the product REST
-// boundary. The backend enforces project scope on every path and ROLE_ADMIN on
-// the signal route (ADR-028); this transport forwards only the closed field set.
-// ---------------------------------------------------------------------------
-
-/** POST /api/v1/workflow-executions?project=<id> — start an execution. */
-export async function startWorkflowExecution(data, project) {
-  return request("POST", "/api/v1/workflow-executions", { body: data, params: { project } });
-}
-
-/** GET /api/v1/workflow-executions?project=<id>&limit=<n> — list the project's executions. */
-export async function listWorkflowExecutions({ project, limit } = {}) {
-  return request("GET", "/api/v1/workflow-executions", { params: { project, limit } });
-}
-
-/** GET /api/v1/workflow-executions/{workflowId}?project=<id> — describe one execution. */
-export async function getWorkflowExecution(workflowId, project) {
-  return request("GET", `/api/v1/workflow-executions/${encodeURIComponent(workflowId)}`, {
-    params: { project },
-  });
-}
-
-/** POST /api/v1/workflow-executions/{workflowId}/signals?project=<id> — send an operator signal. */
-export async function signalWorkflowExecution(workflowId, data, project) {
-  return request("POST", `/api/v1/workflow-executions/${encodeURIComponent(workflowId)}/signals`, {
-    body: data,
-    params: { project },
   });
 }

@@ -44,7 +44,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [025](025-backup-policy.md) | Backup Policy (GC-P021) | Accepted |
 | [026](026-rest-api-access-control.md) | REST API Access Control (GC-P011) | Accepted |
 | [027](027-agent-neutral-implement-workflow-packaging.md) | Agent-Neutral Implement Workflow Packaging | Accepted (amended 2026-05-26, GC-O011/#989; 2026-07-03, ADR-081) |
-| [028](028-temporal-workflow-orchestration-boundary.md) | Temporal Workflow Orchestration Boundary | Accepted |
+| [028](028-temporal-workflow-orchestration-boundary.md) | Temporal Workflow Orchestration Boundary | Superseded (issue #1359) |
 | [029](029-issue-thread-gate-model.md) | Issue-Thread Gate Model | Accepted (amended 2026-05-26, GC-O011/#989) |
 | [030](030-on-prem-hetzner-deployment.md) | On-prem Hetzner Deployment | Accepted (extended by ADR-063) |
 | [031](031-codex-review-stopping-model.md) | Severity Rubric and Stopping Model for Pre-Push Codex Review | Proposed |
@@ -98,14 +98,14 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [078](078-research-methodology-catalog-reference-data.md) | Research Methodology Catalog as Backend Reference Data | Accepted |
 | [079](079-commit-time-pre-commit-hook-activation.md) | Commit-Time Pre-commit Hook Activation | Accepted |
 | [080](080-research-methodology-requirements-contract-artifact.md) | Research Methodology Requirements Contract Artifact | Accepted |
-| [081](081-temporal-dev-workflow-and-console-program.md) | Temporal Dev Workflow and Console Program | Accepted |
+| [081](081-temporal-dev-workflow-and-console-program.md) | Temporal Dev Workflow and Console Program | Superseded (issue #1359) |
 | [082](082-contract-surface-architecture.md) | Contract Surface Architecture and Enforcement Gates | Accepted |
 | [083](083-research-protocol-plan-artifact-and-method-outputs.md) | Research Protocol Plan Artifact and Method-Specific Outputs | Accepted |
 | [084](084-context-graph-concept-authority.md) | Context-Graph Concept Authority and Time Semantics | Accepted |
 | [085](085-identity-model-users-groups-roles.md) | Identity Model - Users, Groups, and Roles as Data | Accepted |
 | [086](086-research-high-risk-operation-authorization.md) | Research High-Risk Operation Authorization | Accepted |
 | [087](087-contract-locked-development-methodology.md) | Contract-Locked Development Methodology | Accepted (amended 2026-07-04, #1293) |
-| [088](088-temporal-human-gates.md) | Temporal Human Gates (Merge Observation and Authorized Operator Signals) | Accepted |
+| [088](088-temporal-human-gates.md) | Temporal Human Gates (Merge Observation and Authorized Operator Signals) | Superseded (issue #1359) |
 | [089](089-retire-grc-product-and-next-issue-recommendation.md) | Retire the GRC Product Surface and Next-Issue Recommendation | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.

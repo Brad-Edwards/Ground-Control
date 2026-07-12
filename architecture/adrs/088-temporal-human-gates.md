@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Superseded by the removal of the Temporal orchestration lane (2026-07-12,
+issue #1359). See the Amendment below.
 
 ## Date
 
@@ -88,10 +89,26 @@ guardrails this ADR records.
   the console UI remain out of scope for later GC-O009 and GC-Q016 slices; GC-P024
   gate authority supersedes the interim `ROLE_ADMIN` fallback when it lands.
 
+## Amendment (issue #1359, 2026-07-12): Withdrawn with the Temporal lane
+
+This ADR's gate machinery is withdrawn along with the Temporal lane it gated
+(ADR-028, ADR-081, same date, same reasoning): the `MergeObservationPort` /
+`GitHubMergeObservationAdapter` polling seam, the `operator_signal_audit`
+table, and the `run_gate_set_invariant_check` policy gate are all removed.
+What this ADR built was durable evidence that gate authorization decisions
+happened correctly against a workflow that turned out to have no production
+activity implementation behind it. The one-human-touchpoint contract (PR
+merge, ADR-029) and the operator-signal authorization model this ADR
+hardened are not lost - they continue to apply to the skill lane
+(ADR-021/ADR-027/ADR-029/ADR-036), which was never replaced and remains the
+production `/implement` workflow. The issue-thread durable record (ADR-029)
+is that lane's audit trail; a separate `operator_signal_audit` table is not
+needed without a Temporal signal surface to audit.
+
 ## References
 
 - GC-O009 (b), GC-P024, GC-Q016
-- ADR-028 (Temporal workflow and console program), ADR-029 (one human touchpoint,
-  issue-thread durable records), ADR-081 (workflow program ADR), ADR-082 (contract
-  surface), ADR-036 (per-step routing)
+- ADR-028 (Temporal workflow and console program, superseded), ADR-029 (one
+  human touchpoint, issue-thread durable records), ADR-081 (workflow program
+  ADR, superseded), ADR-082 (contract surface), ADR-036 (per-step routing)
 - `architecture/notes/temporal-human-gates-preflight.md`
