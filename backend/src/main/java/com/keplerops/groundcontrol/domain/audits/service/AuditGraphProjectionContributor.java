@@ -107,10 +107,11 @@ public class AuditGraphProjectionContributor implements GraphProjectionContribut
                     case ASSET -> GraphEntityType.OPERATIONAL_ASSET;
                     case CONTROL -> GraphEntityType.CONTROL;
                     case RISK_SCENARIO -> GraphEntityType.RISK_SCENARIO;
-                    case RISK_REGISTER_RECORD -> GraphEntityType.RISK_REGISTER_RECORD;
                     case EVIDENCE -> GraphEntityType.EVIDENCE_ARTIFACT;
                     case FINDING -> GraphEntityType.FINDING;
-                    case FRAMEWORK, EXTERNAL -> null;
+                        // RISK_REGISTER_RECORD is a retired target type (ADR-089) with no
+                        // backing graph node; never emit an edge for it.
+                    case RISK_REGISTER_RECORD, FRAMEWORK, EXTERNAL -> null;
                 };
         if (targetEntityType == null) {
             return null;

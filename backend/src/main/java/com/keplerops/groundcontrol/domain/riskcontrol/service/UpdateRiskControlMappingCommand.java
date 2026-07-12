@@ -11,5 +11,4 @@ public record UpdateRiskControlMappingCommand(
         String mappingObjective,
         MappingControlRole controlRole,
         String mappingScope,
-        UUID methodologyProfileId,
         Map<String, Object> methodologyInfluence) {}

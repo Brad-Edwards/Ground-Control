@@ -310,6 +310,21 @@ list so future SKILL changes must keep it in sync.
 
 ## Amendments
 
+**2026-07-11 (issue #1280, ADR-028 LLM provider boundary).** The routing
+table in this ADR is agent-side: `gc_resolve_workflow_route` resolves which
+driver session (`agent: parent|subagent|cli`) runs a `/implement` skill step
+and which canonical model id it should report, for the CLI-driven orchestrator
+loop. Issue #1280 adds a distinct, server-side surface: a Temporal-worker
+`AnthropicLlmProvider` adapter (`infrastructure/llm/anthropic/`, ADR-028)
+invoked from inside a Temporal content activity (`authorPlan`), with its own
+credential and HTTP boundary—this is not the routing tier abstraction above
+and does not change the stage names, tier semantics, or telemetry record
+shape. The two surfaces share only the canonical provider-id vocabulary: the
+`.ground-control.yaml` routing parser (ADR-027 amendment, issue #1280) now
+accepts `anthropic` as the canonical provider id, normalizing the legacy
+`claude` label to it. `ROUTING_PROVIDERS` stays scoped to the agent-side
+parser; the Java backend never repeats or guesses the alias.
+
 **2026-05-19 (issue #931).** No change to the routing stage names, tier
 semantics, or telemetry record shape. The downstream deterministic tools
 (`gc_post_decision_record`, `gc_post_final_report`, `gc_render_pr_body`) gain
@@ -478,3 +493,7 @@ The Phase D completion assertions and final report are consolidated into one det
 **2026-06-19 (issue #1189 Cursor CLI driver).** Cursor CLI is a third orchestrator driver for the `/implement` skill. Like Codex, it runs every step on the parent session and ignores Claude-model subagent delegation from `gc_resolve_workflow_route`; poll-loop stages (`architecture_preflight`, `review_cycle_1_consume`, `test_quality_review`) stay parent-only. No new routing provider, telemetry schema, or MCP tool is required. Skill discovery uses `bin/install-skills.sh` (hard-copy into `~/.cursor/skills/<name>`) plus the project wrapper at `.cursor/skills/implement/SKILL.md`; CLI permissions live in `.cursor/cli.json`.
 
 **2026-06-22 (issue #963 post-merge reconciliation ordering).** No routing stage is added or renamed: the `transition_reconcile` stage (Steps 15/16) and the `final_report` stage (Step 17) keep their tier/agent mappings. What changes is *which phase* those stages execute in - they move from Phase D (pre-merge) to the new Phase E (post-merge), after the user merges, so Ground Control state never runs ahead of shipped code (see ADR-021 / ADR-029 §2026-06-22). `gc_assert_completion` gains a `phase` parameter: `phase="post_merge"` (default) is merge-gated (refuses `completion_pr_not_merged` unless the PR is merged) and runs the reconciliation assertions + final report; `phase="pre_merge"` posts the Phase D readiness record (a `ready_for_review` marker, no `gc:final-report` marker, no reconciliation assertions). The composite-tool surface, `internalVerifiedPhases` race avoidance, and telemetry contract are otherwise unchanged.
+
+**2026-07-03 (issue #1271, ADR-081 program).** ADR-081 adopts the Temporal dev workflow and console program (milestone 17). This ADR's durable-record MCP tool surfaces (`gc_post_decision_record`, `gc_post_final_report`, `gc_render_pr_body`, and the later renderer/assertion family) were deliberately Temporal-shaped (deterministic, structured-input/output, no LLM call); under ADR-081's build order they become the implementations behind GC-O009 deterministic activities, with their input/output records published as versioned contracts under ADR-082's `contracts/schemas/` surface before the corresponding activity lands. The routing table (`gc_resolve_workflow_route`) and step-telemetry contract are unchanged; per-phase ownership transfer to Temporal follows ADR-081's cutover model and is recorded on ADR-021/ADR-029, not here.
+
+**2026-07-11 (issue #1346, ADR-089 reversal of the recommendation clause).** The 2026-06-13 (#1156) amendment above bundled two unrelated changes. Its `plain_english_outcome` requirement on the `final_report` renderer surface remains in force unchanged. Its `next_issue_recommendation` clause is reversed: the `close_issue_after_merge` stage envelope no longer includes `next_issue_recommendation` (advisory, `null`, or otherwise). `gc_close_issue_after_merge` performs only linked-PR resolution, merge-state verification, and idempotent close; no next-issue lookup runs. No routing stage or telemetry schema changes as a result. See ADR-089 for the full retirement decision.

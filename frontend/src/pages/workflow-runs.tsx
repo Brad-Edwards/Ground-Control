@@ -53,7 +53,7 @@ function percentage(value: number, total: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Shared UI primitives (mirror grc-portfolio patterns)
+// Shared UI primitives
 // ---------------------------------------------------------------------------
 
 function MetricCard({

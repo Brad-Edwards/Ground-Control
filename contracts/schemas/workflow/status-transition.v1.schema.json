@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gc.workflow.status-transition.v1",
+  "title": "Requirement status-transition activity input and output",
+  "description": "Phase E requirement DRAFT->ACTIVE transition. Backed by RequirementService; targetStatus mirrors the domain Status vocabulary.",
+  "x-ground-control-invariants": [
+    {
+      "id": "gc.workflow.status-transition.record-schema-conformance",
+      "description": "Status-transition records tagged x-gc-record serialize to documents valid against this schema.",
+      "enforcedBy": [
+        "backend/src/test/java/com/keplerops/groundcontrol/unit/infrastructure/temporal/implement/WorkflowContractConformanceTest.java::workflowPayloadRecordsConformToSchemas"
+      ]
+    }
+  ],
+  "$defs": {
+    "StatusTransitionInput": {
+      "x-gc-record": "StatusTransitionInput",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "requirementUid", "targetStatus"],
+      "properties": {
+        "project": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "requirementUid": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "targetStatus": {
+          "type": "string",
+          "enum": ["DRAFT", "ACTIVE", "DEPRECATED", "ARCHIVED"]
+        }
+      }
+    },
+    "StatusTransitionResult": {
+      "x-gc-record": "StatusTransitionResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirementUid", "newStatus", "transitioned"],
+      "properties": {
+        "requirementUid": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "newStatus": {
+          "type": "string",
+          "enum": ["DRAFT", "ACTIVE", "DEPRECATED", "ARCHIVED"]
+        },
+        "transitioned": { "type": "boolean" }
+      }
+    }
+  }
+}

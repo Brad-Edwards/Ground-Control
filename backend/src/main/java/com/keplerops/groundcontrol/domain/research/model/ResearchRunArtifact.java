@@ -47,6 +47,13 @@ public class ResearchRunArtifact extends BaseEntity {
     @Column(nullable = false, length = 20)
     private ResearchArtifactStatus status = ResearchArtifactStatus.ACTIVE;
 
+    // Optional privacy/access classification of the artifact's material
+    // (GC-RSCH-N006 / ADR-086 §2). Null = unclassified. An artifact's data class
+    // is the input the egress policy checks before any external disclosure.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "data_class", length = 20)
+    private ResearchDataClass dataClass;
+
     @Column(length = 500)
     private String locator;
 
@@ -119,6 +126,14 @@ public class ResearchRunArtifact extends BaseEntity {
 
     public ResearchArtifactStatus getStatus() {
         return status;
+    }
+
+    public ResearchDataClass getDataClass() {
+        return dataClass;
+    }
+
+    public void setDataClass(ResearchDataClass dataClass) {
+        this.dataClass = dataClass;
     }
 
     public String getLocator() {

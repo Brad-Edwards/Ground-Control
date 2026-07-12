@@ -51,7 +51,7 @@ http://localhost:8000/api/v1/
 | `identifier` | string (`[a-z0-9-]+`, ≤ 50) | yes | Unique, immutable |
 | `name` | string (≤ 255) | yes | |
 | `description` | string | no | TEXT |
-| `type` | enum `SOFTWARE` \| `GRC` \| `RESEARCH` | no | Defaults to `SOFTWARE` |
+| `type` | enum `SOFTWARE` \| `RESEARCH` | no | Defaults to `SOFTWARE`. `GRC` is a legacy value readable on existing projects created before ADR-089 (issue #1346) and is not offered for new project creation. |
 | `researchIntake` | `ResearchIntakeRequest` | required iff `type=RESEARCH` | 422 if mismatched |
 
 `ResearchIntakeRequest` fields (issue #999):
@@ -294,157 +294,6 @@ band across its `evidence`. Status drift is also surfaced inside
   ]
 }
 ```
-
-### GRC Analysis (GC-L007)
-
-GRC-specific analyses live under `/analysis/grc/*` and ride on existing
-substrates: `EvidenceArtifact` (derivedAt / supersededByArtifactId / sources),
-`Observation` (observedAt / expiresAt), `ControlTest` (testDate), and
-`OperationalAsset` (filtered by `AssetType.THIRD_PARTY` for vendor analyses).
-Every response is methodology-attributed and structured for agent
-consumption: `analysisKind`, `project`, `asOf`, `derivationMethod`,
-`inputs`/`outputs`/`limitations` sections, per
-`architecture/notes/mcp-grc-analysis-tools-preflight.md`. No generic
-`risk_score`; NIST SP 800-30 Rev. 1 ships under GC-T014 / #721 as the
-`nist-sp-800-30` endpoint and Open FAIR quantitative analysis ships under
-GC-T011 / #723 as the `fair-quantitative` endpoint.
-
-| Method | Path | Body | Status | Purpose |
-|--------|------|------|--------|---------|
-| GET | `/analysis/grc/evidence-freshness` | - | 200 | Per-evidence / per-observation / per-control-test freshness state given an `asOf` and `freshnessWindowDays`. |
-| GET | `/analysis/grc/observation-projection?mode=ASSET_EXPOSURE\|CONTROL_STATE` | - | 200 | Current-state projection from observations; ASSET_EXPOSURE flags assets with active observations; CONTROL_STATE joins through `ControlEffectivenessAssessment`. |
-| GET | `/analysis/grc/vendor-risk` | - | 200 | Aggregation over `OperationalAsset` of `AssetType.THIRD_PARTY` (findings, observations, evidence freshness, mapped controls). |
-| GET | `/analysis/grc/nist-sp-800-30` | - | 200 | NIST SP 800-30 Rev. 1 methodology-attributed view over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `NIST_SP800_30_R1`. Decodes inputs into threat source, threat event (`ADVERSARIAL` / `NON_ADVERSARIAL`), vulnerabilities, predisposing conditions, threat-event relevance, multi-dimensional likelihood, impact level, and assessment timeframe; computes overall likelihood (analyst-supplied or derived per Table G-5) and risk level (per Table I-2) as ordinal bands with explicit `scale`/`units` and a matrix cell label. |
-| GET | `/analysis/grc/fair-quantitative` | - | 200 | Open FAIR quantitative risk analysis over `RiskAssessmentResult` rows bound to a `MethodologyProfile` whose family is `FAIR`, aligned to O-RT 3.0.1 and O-RA 2.0.1. Derives Threat Event Frequency when needed (TEF = CF × PoA), Loss Event Frequency (LEF = TEF × Vulnerability), expected Loss Magnitude (LM = PLM + SLEF × SLM), and Annualized Loss Expectancy (ALE = LEF × LM) via three-point estimates with optional persisted Monte Carlo percentiles. Returns a methodology-attributed envelope with `scale: "continuous"`, `units: "monetary"`, and per-item limitations for missing factors or absent percentiles. |
-| GET | `/analysis/grc/compliance-monitoring` | - | 200 | Continuous compliance monitoring (GC-I004): composes evidence expiration (`staleSet`), control modifications within the lookback window, and `reassessmentRequiredAt` posture signals (`impactSet`) using ADR-058 vocabulary. |
-| GET | `/analysis/grc/appetite-evaluation` | - | 200 | Risk appetite/tolerance evaluation (GC-T005): read-only, methodology-attributed comparison of residual risk metrics from `RiskAssessmentResult.computedOutputs` against a `RiskAppetiteProfile`'s tolerance ceilings. Residuals exceeding a ceiling breach appetite and are flagged for escalation; currency/unit/scale mismatches and non-derivable metrics surface as limitations rather than silent passes. Never mutates risk assessments or register records. |
-| GET | `/analysis/grc/fair-cam-control-analytics` | - | 200 | FAIR-CAM control analytics (GC-I017): derives control-level analytics in the FAIR-CAM framework from `RiskControlMapping`, `ControlEffectivenessAssessment`, and `ControlTest` rows. Returns per-control domain attribution (`loss_event_control`, `variance_management_control`, `decision_support_control`), capability (design effectiveness), coverage (distinct analysis endpoints), operational performance (operating effectiveness + fresh test count), and effect-dimension entries. All values carry `scale`/`units`/`basis` and explicit `limitations`. |
-
-`GET /analysis/grc/evidence-freshness` accepts:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `project` | string | auto-resolved | Project identifier |
-| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp; freshness is computed against this |
-| `freshnessWindowDays` | int (positive) | 90 | Items older than this are flagged `STALE`. Non-positive values return `400`. |
-| `includeSuperseded` | boolean | false | If true, `SUPERSEDED` artifacts are still surfaced (state-labeled) |
-| `assetId` | UUID | - | Narrow to evidence/observations attached to this asset. Must belong to the resolved project or `404` is returned. |
-| `controlId` | UUID | - | Narrow to evidence/observations/tests for this control. When supplied without `assetId`, observations are not joinable from controls today; the response surfaces an empty `observations` list and a `limitations` entry explaining the carve-out. When supplied with `assetId`, sections are intersected. |
-
-`GET /analysis/grc/observation-projection` accepts:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `project` | string | auto-resolved | Project identifier |
-| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp; expired observations are flagged `EXPIRED` |
-| `mode` | enum (`ASSET_EXPOSURE` \| `CONTROL_STATE`) | required | Which projection to run |
-| `assetId` | UUID | - | Narrow to observations on this asset |
-| `controlId` | UUID | - | Narrow `CONTROL_STATE` to this control (ignored for `ASSET_EXPOSURE`) |
-
-`GET /analysis/grc/vendor-risk` accepts:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `project` | string | auto-resolved | Project identifier |
-| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp; freshness is computed against this |
-| `freshnessWindowDays` | int (positive) | 90 | Window used to label vendor-attached evidence as `STALE`/`FRESH`. Non-positive values return `400`. |
-| `vendorAssetId` | UUID | - | Narrow to a single third-party asset (otherwise rolls up every `AssetType.THIRD_PARTY` row). Must belong to the resolved project or `404`. |
-
-`GET /analysis/grc/nist-sp-800-30` accepts:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `project` | string | auto-resolved | Project identifier |
-| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the response envelope |
-| `riskAssessmentResultId` | UUID | - | Filter to a single `RiskAssessmentResult`; returns `404` if missing, `422` if the row is not bound to a `NIST_SP800_30_R1` `MethodologyProfile` |
-| `riskScenarioId` | UUID | - | Narrow to assessments under one `RiskScenario` |
-
-Response shape for `GET /analysis/grc/nist-sp-800-30`: top-level `analysisKind: "nist_assessment"`, `project`,
-`asOf`, `derivationMethod` (`"nist-sp800-30-rev1-5x5-matrix-v1"`), `scale`
-(`"ordinal"`), `units` (`"qualitative ordinal levels"`),
-`matrixConversionRule` (Table I-2 attribution), an `assessments` array, a
-`counts` summary (`total`, `byRiskLevel`, `withLimitations`), and a
-top-level `limitations` array. Each assessment item carries
-`assessmentId` / `riskScenarioId` / `methodologyProfileId` / `profileKey`
-(`NIST_SP800_30_R1`) / `family` / `version` / `assessmentAt` /
-`timeHorizon` / `analystIdentity` / `approvalState`, structured `inputs`
-(`threatSource`, `threatEvent`, `threatEventKind`, `vulnerabilities`,
-`predisposingConditions`, `threatEventRelevance`, legacy alias
-`threatSourceRelevance`, `likelihoodInitiation`, `likelihoodAdverseImpact`,
-`likelihoodOverall`, `impactLevel`, `assessmentTimeframe`), structured `outputs` (`overallLikelihood`,
-`impactLevel`, `riskLevel`, `matrixCell` (for example `L3-I4`), `derivation`),
-`evidenceRefs`, and per-row `limitations`. Adversarial-only fields
-(`threat_source_characteristics.capability` / `intent` / `targeting`) are
-preserved verbatim from inputs but a `limitations` entry is emitted when
-they appear on a non-adversarial event. Ordinal bands MUST NOT be
-normalized into a cross-methodology numeric score without an explicit
-method label and conversion rule.
-
-`GET /analysis/grc/fair-quantitative` accepts:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `project` | string | auto-resolved | Project identifier |
-| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp echoed in the response envelope |
-| `riskAssessmentResultId` | UUID | - | Filter to a single `RiskAssessmentResult`; returns `404` if missing, `422` if the row is not bound to a `FAIR` `MethodologyProfile` |
-| `riskScenarioId` | UUID | - | Narrow to assessments under one `RiskScenario` |
-
-Response shape for `GET /analysis/grc/fair-quantitative`: top-level `analysisKind: "fair_quantitative"`, `project`,
-`asOf`, `derivationMethod` (`"open-fair-o-rt3.0.1-o-ra2.0.1-three-point-v1"`), `scale` (`"continuous"`), `units` (`"monetary"`),
-`currency` (from `primary_loss_magnitude.currency`, default `"USD"`), an `assessments` array, a
-`counts` summary (`total`, `byRiskLevel`, `withLimitations`), and a top-level `limitations` array.
-Each assessment item carries standard identity fields plus structured `inputs` (all FAIR factor maps as
-opaque pass-through: `threatEventFrequency`, `contactFrequency`, `probabilityOfAction`, `vulnerability`,
-`threatCapability`, `resistanceStrength`, `lossEventFrequency`, `primaryLossMagnitude`,
-`secondaryLossEventFrequency`, `secondaryLossMagnitude`, `uncertaintyMetadata`)
-and structured `outputs` (`lossEventFrequency`, `lossMagnitude`, `annualizedLossExpectancy` as three-point
-records with `low`/`likely`/`high`, plus `currency`, `percentiles` (from persisted Monte Carlo outputs),
-`riskLevel` (pass-through from `computedOutputs.risk_level`), and `derivation`). Derivation precedence:
-persisted `computedOutputs` wins over analyst-supplied `loss_event_frequency` input, which wins over
-derived `TEF × Vulnerability`; TEF itself may be supplied directly or derived from `contact_frequency ×
-probability_of_action`. When ALE is not persisted, a `limitations` entry notes absent Monte Carlo
-percentiles. Direct TEF and direct Vulnerability estimates are valid higher-abstraction FAIR estimates;
-limitations are emitted for partial lower-level factor pairs or when TCap/RS are present without a
-distribution calculation for `P(TCap > RS)`.
-
-`GET /analysis/grc/fair-cam-control-analytics` accepts:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `project` | string | auto-resolved | Project identifier |
-| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp; assessments and tests after this date are excluded |
-| `freshnessWindowDays` | int (positive) | 90 | Controls how many days back from `asOf` a `PASS` test counts as fresh for operational performance. Non-positive values return `400`. |
-| `controlId` | UUID | - | Narrow to mappings for a single catalog control |
-| `scopedImplementationId` | UUID | - | Narrow to mappings for a single scoped control implementation |
-| `riskScenarioId` | UUID | - | Narrow to mappings on a single risk scenario |
-| `riskRegisterRecordId` | UUID | - | Narrow to mappings on a single risk register record |
-| `threatModelId` | UUID | - | Narrow to mappings on a single threat model |
-| `methodologyProfileId` | UUID | - | Narrow to mappings bound to a single methodology profile |
-| `domain` | enum (`LOSS_EVENT_CONTROL` \| `VARIANCE_MANAGEMENT_CONTROL` \| `DECISION_SUPPORT_CONTROL`) | - | Filter results to one FAIR-CAM domain |
-
-All scope filters compose as an intersection: supplying `controlId` and `riskScenarioId` together returns only the mappings of that control to that scenario, not every mapping of the control.
-
-Response shape for `GET /analysis/grc/fair-cam-control-analytics`: top-level `analysisKind: "fair_cam_control_analytics"`, `project`, `asOf`, `derivationMethod` (`"fair-cam-control-analytics-v1"`), a `controls` array, a `counts` summary (`total`, `byDomain`, `withLimitations`), and a top-level `limitations` array. Each control item carries `endpointType` (`CONTROL` or `SCOPED_IMPLEMENTATION`), `endpointId`, `controlId` or `scopedImplementationId`, `controlUid`, `controlName`, `domainAttributions` (list of `{domain, source, analysisEndpoint}` where `source` is `"methodology_influence"` or `"mapping_control_role"` and `analysisEndpoint` identifies the mapping the attribution is contextual to, for example `RISK_SCENARIO:<uuid>`), `capability` (design effectiveness as `{scale, units, value, basis}`), `coverage` (count of distinct analysis endpoints as `{scale: "count", units: "endpoints", value, basis}`), `operationalPerformance` (operating effectiveness with fresh-test count in `basis`), `effects` (list of `{dimension, value, analysisEndpoint}` for FAIR-CAM dimension keys found in `methodologyInfluence`), `evidenceRefs`, and per-item `limitations`. Domain attribution and effects are derived per-mapping across every mapping in a control-endpoint group (not just the first), so a control mapped into multiple FAIR-CAM domains surfaces each one and `byDomain` counts every distinct domain. Domain attribution precedence: `fair_cam_domain` key in `methodologyInfluence` wins; fallback derives from `MappingControlRole` (PREVENTIVE / DETECTIVE / DETERRENT → `loss_event_control`; CORRECTIVE / RECOVERY / COMPENSATING → `variance_management_control`; DIRECTIVE → `decision_support_control`). Fallback attribution emits a `limitations` entry.
-
-`GET /analysis/grc/appetite-evaluation` accepts:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `project` | string | auto-resolved | Project identifier |
-| `asOf` | ISO-8601 instant | `now()` | Evaluation timestamp; also selects the appetite version in force when resolving by `appetiteKey` |
-| `profileId` | UUID | - | Evaluate against a specific appetite profile version; `404` if missing |
-| `appetiteKey` | string | - | Resolve the `ACTIVE` appetite profile for this key whose effective window covers `asOf`; `404` if none. One of `profileId` or `appetiteKey` is required (`422` if neither) |
-| `riskRegisterRecordId` | UUID | - | Scope evaluated assessments to one risk register record |
-| `riskScenarioId` | UUID | - | Scope evaluated assessments to one risk scenario |
-
-Response shape for `GET /analysis/grc/appetite-evaluation`: top-level `analysisKind: "appetite_evaluation"`, `project` (`projectIdentifier`), `asOf`, `derivationMethod` (`"risk-appetite-tolerance-evaluation-v1"`), a `profile` summary (`id`, `appetiteKey`, `version`, `methodologyFamily`, `status`, `effectiveFrom`, `effectiveTo`), an `evaluations` array, a `summary` (`evaluated`, `breached`, `escalations`, `notDerivable`), and a top-level `limitations` array. Only assessments whose methodology family matches the profile are evaluated; the rest are skipped with a top-level limitation. Each evaluation item carries `riskAssessmentResultId`, `riskScenarioId`, `riskScenarioUid`, `riskRegisterRecordId`, `riskCategory`, `metricPath`, `residualValue`, `thresholdValue`, `units`, `withinAppetite` (`null` when not derivable), `breached`, `escalate` (equals `breached`), and per-item `limitations` (currency/scale mismatch, missing or non-numeric metric).
-
-Every response carries a `limitations` array. For the vendor-risk endpoint
-that array always includes a note that vendors are modeled as
-`OperationalAsset` rows of `AssetType.THIRD_PARTY` rather than a first-class
-vendor aggregate (per the GC-L009 carve-out from GC-L006). When external
-framework identifiers, missing evidence, or unvalidated methodology schemas
-are involved, additional `limitations` entries are emitted.
 
 ### Embeddings
 
@@ -1199,317 +1048,64 @@ in its allowlist; the cross-project rollup and all POST paths are excluded. Brid
 ingestion (`gc_workflow_run_ingest`) seeds the read-model from canonical issue-thread
 `gc:` markers with `provenance=ISSUE_THREAD`.
 
-### Derivations (GC-GRC-001)
+### Workflow Control Surface: start / status / signal (GC-O009 / ADR-028, issues #1278, #1279)
 
 | Method | Path | Body | Status | Purpose |
 |--------|------|------|--------|---------|
-| POST | `/derivations/runs` | DerivationRunRequest | 201 | Run server-side derivation for a repository scope |
-| GET | `/derivations/runs` | - | 200 | List derivation runs |
-| GET | `/derivations/runs/{id}` | - | 200 | Get one derivation run |
-| GET | `/derivations/runs/{id}/boundary-model` | - | 200 | Get the canonical boundary-model snapshot for one derivation run |
-| GET | `/derivations/facts` | - | 200 | List normalized system-model facts |
-| GET | `/derivations/capture-limits` | - | 200 | List capture-limit records |
+| POST | `/workflow-executions` | StartWorkflowExecutionRequest | 201 | Start a workflow execution |
+| GET | `/workflow-executions` | - | 200 | List the project's executions |
+| GET | `/workflow-executions/{workflowId}` | - | 200 (404 if unknown/cross-project) | Describe one execution |
+| POST | `/workflow-executions/{workflowId}/signals` | SendSignalRequest | 202 (ROLE_ADMIN; 403 otherwise) | Send an operator signal |
 
-All endpoints accept an optional `project` query parameter. Facts and capture
-limits are persisted server-side. The API does not accept caller-supplied fact
-payloads.
+This is the product control surface for `/implement` Temporal workflows - an
+execution engine surface, distinct from the ADR-061 `/workflow-runs` reporting
+projection. Status reads come from Temporal Visibility plus non-secret Memo
+correlation data; there is **no** mirrored Postgres execution state machine
+(ADR-028). Every path is project-scoped: pass `project` (query parameter,
+resolved via `ProjectService`). Executions are addressed by the slash-free,
+project-partitioned id `gc-implement-<project>-<issue>`; a cross-project or
+unknown id returns **404** without revealing whether it exists elsewhere. Signal
+routes require **ROLE_ADMIN** (`ApiPathMatrix`, interim until GC-P024 gate
+authority); start and reads are authenticated. When
+`groundcontrol.temporal.control.enabled` is off the endpoints return **503**
+(`service_unavailable`).
 
-**Filters:**
-- `runId` (UUID) filters facts or capture limits by derivation run.
-- `factKind` filters facts by `COMPONENT`, `TRUST_BOUNDARY`, `DATA_FLOW`,
-  `ENTRY_POINT`, `TAINT_PATH`, `SECRET_USAGE`, `EXTERNAL_INTERACTION`, or
-  `DATA_CLASSIFICATION_HINT`.
-- `reason` filters capture limits by `UNSUPPORTED_LANGUAGE`,
-  `UNSUPPORTED_SURFACE`, `DISABLED_ADAPTER`, `TOOL_UNAVAILABLE`,
-  `SCOPE_UNSUPPORTED`, or `TOOL_EXECUTION_FAILED`.
+**StartWorkflowExecutionRequest fields:** `workflowType` (required: `IMPLEMENT`),
+`issueNumber` (required, positive), and the optional `sonarProjectKey`, `reviewCap`
+(1-10), `requirementUids` (string array), `pollIntervalSeconds` (1-86400). The
+workflow completion command the worker executes is **not** a request field - it is
+derived from server-side configuration only, so the control API cannot become an
+arbitrary-command-execution primitive. Response: `{workflowId, runId, workflowType,
+project}`. A duplicate id already running returns **409**.
 
-**DerivationRunRequest fields:** `scopeMode` (required: `FULL_REPO`,
-`PATH_SET`, or `DIFF`), `commitSha` (required, 7 to 64 lowercase hex
-characters), `baseCommitSha` (required for `DIFF` only), `paths` (required
-for `PATH_SET`, forbidden for `FULL_REPO`), `languages` (required string
-set), `surfaces` (required string set), and optional `declaredBoundaries`.
-Each declared boundary carries `key`, `name`, optional `description`,
-`pathSelectors`, and `surfaces`; declarations complement derived
-`TRUST_BOUNDARY` facts and are merged into the canonical boundary snapshot.
+**SendSignalRequest fields:** `signalType` (required: `CANCEL` | `RETRY_FROM` |
+`REVIEW_CAP_DISPOSITION`), plus the fields the type requires - `CANCEL` needs
+`reason` (max 500); `RETRY_FROM` needs `retryFromPhase` (`A_PLAN_IMPLEMENT` |
+`B_QUALITY_GATE` | `C_STAGE_COMMIT_PUSH` | `D_SHIP_PIPELINE` |
+`E_POST_MERGE_RECONCILE`); `REVIEW_CAP_DISPOSITION` needs `reviewer` (`CODEX` |
+`TEST_QUALITY`) and `disposition` (`PROCEED` | `ONE_MORE_CYCLE` |
+`ESCALATE_TO_HUMAN`). A missing required field returns 422. PR merge is observed
+from GitHub and is **not** a signal.
 
-**SystemModelFact fields:** `id`, `derivationRunId`, `projectIdentifier`,
-`factKind`, `schemaVersion`, `factKey`, `label`, `summary`, `sourcePath`,
-`payload`, `provenance`, `createdAt`, and `updatedAt`. `provenance` carries
-`adapterId`, `toolName`, `toolVersion`, `rulesetName`, `rulesetVersion`,
-`commitSha`, and `derivedAt`. Payloads are normalized metadata. Raw source
-content, raw analyzer output, raw diffs, stderr, and secret values are
-rejected.
+**Signal authorization and audit (GC-O009 (b), #1279):** beyond the `ROLE_ADMIN`
+route gate, the service requires an authenticated actor with gate authority
+(resolved from the request principal, never a body field); an anonymous/absent
+actor returns **403** (`authorization_error`). Every attempt, allowed or denied,
+is written to an append-only `operator_signal_audit` record (actor, project,
+workflow/run id, signal type, contract version, authorization outcome, bounded
+reason/fields), so the gate-authority trail survives independently of Temporal
+history. The gate set is pinned by a `make policy` check (`gate-set-invariant`):
+the operator catalog is closed and no plan or merge-approval gate may be
+reintroduced.
 
-**CaptureLimit fields:** `id`, `derivationRunId`, `projectIdentifier`,
-`adapterId`, `reason`, `language`, `surface`, `detail`, `commitSha`,
-`capturedAt`, `createdAt`, and `updatedAt`.
-
-**BoundaryModelSnapshot fields:** `id`, `derivationRunId`,
-`projectIdentifier`, `schemaVersion`, `boundarySetVersion`,
-`architectureModelVersion`, `commitSha`, `declarationDigest`, counts for
-boundaries, assignments, and gaps, plus `boundaries`, `assignments`, `gaps`,
-`createdAt`, and `updatedAt`. Boundaries include `boundaryKey`, `displayName`,
-`description`, `source` (`DERIVED`, `DECLARED`, or `MERGED`), `pathSelectors`,
-`surfaces`, and contributing `inputFactKeys`. Assignments map assignable facts
-to exactly one boundary. Gaps are modeling gaps such as missing source paths,
-unassigned facts, or ambiguous boundary matches; they are separate from
-capture-limit records.
-
-MCP surface: `gc_derivation` with actions `run`, `list_runs`, `get_run`,
-`get_boundary_model`, `list_facts`, and `list_capture_limits`. `run` requires
-`scope_mode`, `commit_sha`, `languages`, and `surfaces`; `base_commit_sha` is
-required when `scope_mode=DIFF`; `paths` is required when
-`scope_mode=PATH_SET`. It accepts `declared_boundaries` directly or `repo_path`
-to read `grc.boundaries` from `.ground-control.yaml`. Readback actions map
-`run_id`, `fact_kind`, and `reason` to the REST filters above.
-
-### Architecture Models (GC-GRC-005)
-
-| Method | Path | Body | Status | Purpose |
-|--------|------|------|--------|---------|
-| POST | `/architecture-models/snapshots` | ArchitectureModelSnapshotRequest | 201 | Persist a versioned architecture-model snapshot |
-| GET | `/architecture-models/snapshots` | - | 200 | List snapshot summaries (metadata + counts, no element payloads) for a project |
-| GET | `/architecture-models/snapshots/{id}` | - | 200 | Get one snapshot with full element states |
-| GET | `/architecture-models/elements` | - | 200 | List latest architecture-model elements |
-| GET | `/architecture-models/elements/{id}` | - | 200 | Get one stable architecture-model element |
-| GET | `/architecture-models/diff?fromSnapshotId=&toSnapshotId=` | - | 200 | Compare two snapshots |
-
-All endpoints accept an optional `project` query parameter. Multi-project
-deployments must pass it; single-project deployments can resolve it
-automatically.
-
-**ArchitectureModelSnapshotRequest fields:** `modelVersion`, `commitSha`,
-`source`, optional `createdBy`, and non-empty `elements`. Each element carries
-`stableKey`, `elementKind` (`COMPONENT`, `PROCESS`, `DATA_STORE`,
-`EXTERNAL_ENTITY`, `DATA_FLOW`, `TRUST_BOUNDARY`, `DATA_CLASSIFICATION`),
-`label`, optional summary/source/classification/boundary fields, provenance
-fields (`provenanceSource`, `provenanceKey`, adapter/tool/ruleset fields,
-optional `derivationRunId`), `commitSha`, and opaque `metadata`. `DATA_FLOW`
-elements must include `flowSourceStableKey` and `flowTargetStableKey`, and both
-endpoints must exist in the same snapshot.
-
-**ArchitectureModelSnapshotResponse fields** (POST and GET `/snapshots/{id}`):
-`id`, `derivationRunId`, `projectIdentifier`, `schemaVersion`, `modelVersion`,
-`commitSha`, `source`, `createdBy`, `elementCount`, `flowCount`, `elements`,
-`createdAt`, and `updatedAt`. Each element response includes `id`, `graphNodeId`,
-`stableKey`, current snapshot state, DFD semantics, provenance, metadata, and
-timestamps.
-
-**ArchitectureModelSnapshotSummaryResponse fields** (list `GET /snapshots`):
-the same snapshot metadata (`id`, `derivationRunId`, `projectIdentifier`,
-`schemaVersion`, `modelVersion`, `commitSha`, `source`, `createdBy`,
-`elementCount`, `flowCount`, `createdAt`, `updatedAt`) but **without** the
-`elements` payload. A snapshot can hold up to 10,000 elements and history is
-unbounded, so the list endpoint returns summaries; fetch a single snapshot via
-`GET /snapshots/{id}` for full element state.
-
-**Diff response:** `fromSnapshotId`, `toSnapshotId`, and `entries` with
-`stableKey`, `status` (`ADDED`, `REMOVED`, `CHANGED`, `UNCHANGED`, or
-`PROVENANCE_ONLY_CHANGED`), and `summary`.
-
-MCP surface: `gc_architecture_model` with actions `create_snapshot`,
-`list_snapshots`, `get_snapshot`, `list_elements`, `get_element`, and
-`diff_snapshots`. `create_snapshot` accepts snake_case equivalents of the REST
-request fields; `diff_snapshots` requires `from_snapshot_id` and
-`to_snapshot_id`. `gc_query` allowlists read-only `/api/v1/architecture-models`
-paths.
-
-### Evidence Campaigns (GC-S005)
-
-| Method | Path | Body | Status | Purpose |
-|--------|------|------|--------|---------|
-| POST | `/evidence-campaigns` | EvidenceCampaignRequest | 201 | Schedule a recurring evidence-collection campaign (ROLE_ADMIN) |
-| GET | `/evidence-campaigns` | - | 200 | List campaigns for a project (newest first) |
-| GET | `/evidence-campaigns/{id}` | - | 200 | Get one campaign |
-| PUT | `/evidence-campaigns/{id}` | EvidenceCampaignUpdateRequest | 200 | Partially update a campaign (ROLE_ADMIN) |
-| POST | `/evidence-campaigns/{id}/pause` | - | 200 | Pause scheduling (skipped by the sweep) (ROLE_ADMIN) |
-| POST | `/evidence-campaigns/{id}/resume` | - | 200 | Resume scheduling (ROLE_ADMIN) |
-| POST | `/evidence-campaigns/{id}/trigger` | - | 201 | Run now; returns the resulting run (ROLE_ADMIN) |
-| GET | `/evidence-campaigns/{id}/runs` | - | 200 | List prior runs (newest window first) |
-
-All endpoints accept an optional `project` query parameter. Multi-project
-deployments must pass it; single-project deployments can resolve it
-automatically.
-
-Writes (POST/PUT, including pause/resume/trigger) require **ROLE_ADMIN**,
-enforced centrally in `ApiPathMatrix`: a campaign is a stored directive to make a
-credentialed outbound call and ingest the result as evidence, so configuring or
-enabling one is an administrative act. Reads (list, get, runs) are available to
-any authenticated project member. `connectionEndpoint` is additionally validated
-against an SSRF policy at create/update **and re-validated at execution time**:
-the scheme must be http/https, and the host is resolved and rejected if any
-resolved address is loopback, link-local (including the `169.254.169.254`
-cloud-metadata address), private/RFC1918, IPv6 unique-local, wildcard, or
-multicast. The execution-time check pins the validated address so a rebinding
-hostname cannot redirect the credentialed call. `sanitizedError` on a run is a
-redacted, length-bounded category/summary - never raw provider or exception text.
-
-**EvidenceCampaignRequest fields:** required `uid`, `name`, `frequency`
-(`DAILY`, `WEEKLY`, `MONTHLY`, `QUARTERLY`), `adapterName`, `scopeType`,
-`connectionProfileId`, `connectionEndpoint`, `credentialRef`; optional
-`schemaId`, `scopeCriteria` (JSON map), `targetControlIds` (UUID list),
-`retentionDays` (positive), and `firstRunAt` (defaults to now). `credentialRef`
-is an indirection key only - never a raw secret. `EvidenceCampaignUpdateRequest`
-accepts the same fields except `uid`/`adapterName` (identity-bearing) and only
-applies the non-null ones.
-
-**EvidenceCampaignResponse fields:** `id`, `projectIdentifier`, `uid`, `name`,
-`frequency`, `status` (`ACTIVE`/`PAUSED`), `adapterName`, `scopeType`,
-`schemaId`, `connectionProfileId`, `connectionEndpoint`, `credentialRef`,
-`scopeCriteria`, `targetControlIds`, `retentionDays`, `nextRunAt`, `lastRunAt`,
-`createdAt`, `updatedAt`.
-
-**EvidenceCampaignRunResponse fields:** `id`, `campaignId`, `projectIdentifier`,
-`status` (`PENDING`/`RUNNING`/`COMPLETED`/`PARTIAL`/`FAILED`), `windowStart`,
-`windowEnd`, `startedAt`, `finishedAt`, `artifactCount`, `errorCount`,
-`sanitizedError`, `producedArtifactIds`, `createdAt`, `updatedAt`.
-
-Each run invokes the campaign's collection adapter, stores results as evidence
-artifacts (ADR-045) linked to the target controls with an `EVIDENCED_BY` control
-link, and is aged out per `retentionDays`. The scheduler is opt-in via
-`groundcontrol.evidence.campaign.enabled=true`. MCP surface:
-`gc_evidence_campaign` with write actions `create`, `update`, `pause`,
-`resume`, `trigger`; reads (list, get, runs) route through `gc_query`.
-
-### Data Classification Lattice (GC-GRC-006)
-
-| Method | Path | Body | Status | Purpose |
-|--------|------|------|--------|---------|
-| GET | `/data-classification/lattice` | - | 200 | Get the project's active lattice (custom policy, or the shipped default) |
-| PUT | `/data-classification/lattice` | DataClassificationLatticeRequest | 200 | Replace the project's lattice (ROLE_ADMIN) |
-| DELETE | `/data-classification/lattice` | - | 200 | Revert the project to the default lattice (ROLE_ADMIN) |
-| GET | `/data-classification/evaluation?snapshotId=` | - | 200 | Evaluate a snapshot's flows against the active lattice (latest snapshot when `snapshotId` omitted) |
-
-All endpoints accept an optional `project` query parameter. Writes (`PUT`,
-`DELETE`) are restricted to ROLE_ADMIN in `ApiPathMatrix`: tampering with the
-taxonomy or permitted-flow relation would silently defeat the deterministic
-leak detector (GC-TM-010). Reads and evaluation are available to any
-authenticated project caller.
-
-**DataClassificationLatticeRequest fields:** non-empty `labels` (each with
-`key` matching `^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$`, `displayName`, optional
-`description`/`rank`) and optional `permittedFlows` (each `{from, to}`). A
-permitted-flow edge means data labeled `from` may flow to a sink labeled `to`;
-the service validates lattice soundness (no dangling edges, no
-antisymmetry-breaking cycles between distinct labels) and stores the
-reflexive-transitive closure so the allow decision is total. `rank` is a
-display hint only, never the authoritative ordering.
-
-**DataClassificationLatticeResponse fields:** `projectIdentifier`,
-`schemaVersion`, `source` (`DEFAULT` | `CUSTOM`), `policyVersion` (content
-digest), `labelCount`, `edgeCount`, `labels`, and `permittedFlows`.
-
-**DataClassificationEvaluationResponse fields:** `projectIdentifier`,
-`schemaVersion`, `policyVersion`, `source`, `modelVersion`, `snapshotId`,
-`evaluatedFlowCount`, `violationCount`, `limitationCount`, `violations`, and
-`limitations`. Each finding carries `flowStableKey`, `sourceStableKey`,
-`sinkStableKey`, `sourceLabelKey`, `sinkLabelKey`, `reason`, and `detail`.
-Violations use reason `LABEL_FLOW_NOT_PERMITTED`; limitations use
-`MISSING_SOURCE_LABEL`, `MISSING_SINK_LABEL`, `UNKNOWN_SOURCE_LABEL`,
-`UNKNOWN_SINK_LABEL`, or `DANGLING_FLOW_ENDPOINT`. Label assignments are read
-from `data_classification_key` on the architecture-model element states, so they
-version with the snapshot.
-
-MCP surface: `gc_data_classification` with actions `get_lattice`, `set_lattice`,
-`reset_lattice`, and `evaluate`. `set_lattice` accepts snake_case
-`labels[].{key,display_name,description,rank}` and `permitted_flows[].{from,to}`.
-`gc_query` allowlists read-only `/api/v1/data-classification` paths.
-
-### Threat Enumeration (GC-GRC-007)
-
-| Method | Path | Body | Status | Purpose |
-|--------|------|------|--------|---------|
-| GET | `/threat-enumeration?project=&packId=&version=&snapshotId=` | - | 200 | Enumerate candidate threats for a project using a registered threat rule pack |
-
-`packId` is required. `version` is optional and pins a specific semantic version of
-the rule pack; when omitted, the latest registered version resolves. `snapshotId`
-is optional; when omitted, the endpoint targets the latest persisted
-architecture-model snapshot for the project. `project` is optional in
-single-project deployments.
-
-Enumeration is **deterministic**: given the same architecture-model snapshot and
-the same pinned rule pack version, the engine produces identical candidate sets
-with no LLM involvement. Rule packs of type `THREAT_RULE_PACK` are registered,
-versioned, and pinned through the admin pack-registry surface
-(`/api/v1/pack-registry/**`, `ROLE_ADMIN`). To register one, `POST` to
-`/api/v1/pack-registry` with `packType: "THREAT_RULE_PACK"` and a
-`threatRuleEntries` array; each entry's per-rule invariants are validated at
-registration time, so a malformed pack is rejected before it is stored rather
-than failing later during enumeration. The enumeration endpoint itself is a
-read-only operation restricted to authenticated callers under the
-`/api/v1/**` authenticated rule.
-
-**ThreatEnumerationResponse fields:** `schemaVersion`, `packId`,
-`resolvedVersion`, `checksum`, `snapshotId`, `modelVersion`, `candidates[]`, and
-`limitations[]`.
-
-Each `candidate` carries: `producingRuleId`, `category` (`ThreatRuleCategory`
-value: `STRIDE_BASELINE`, `DEPLOYMENT_PIPELINE`, `AUTHN_AUTHZ`,
-`SECRET_HANDLING`, `UNTRUSTED_INPUT`, `DATA_EGRESS`, or `CRYPTO`),
-`strideCategory`, `elementStableKey`, `elementKind`, `matchedFacts{}`, and
-`narrative`.
-
-Each `limitation` carries: `reason` (`ThreatEnumerationLimitationReason` value:
-`NO_RULE_PACK_RESOLVED`, `NO_SNAPSHOT`, `UNKNOWN_ELEMENT_KIND`,
-`MISSING_STABLE_KEY`, or `DANGLING_FLOW_ENDPOINT`), `detail`, and
-`elementStableKey`.
-
-MCP surface: `gc_threat_enumeration` (dedicated tool). Parameters: `project`
-(optional), `packId` (required), `version` (optional), `snapshotId` (optional).
-
-### Control Identification (GC-GRC-008)
-
-| Method | Path | Body | Status | Purpose |
-|--------|------|------|--------|---------|
-| GET | `/control-identification?project=&threatPackId=&version=&snapshotId=` | - | 200 | Identify candidate controls (and control-design gaps) for a project's enumerated threats |
-| GET | `/control-identification/coverage?project=&threatModelId=` | - | 200 | List the controls recorded as covering a threat |
-| POST | `/control-identification/confirmations?project=` | ConfirmControlMappingRequest | 200 | Confirm a candidate control as a threat mitigation |
-
-Identification is **deterministic**: threats enumerated for the project (GC-GRC-007)
-are mapped `threat category → control objective → candidate controls` by a built-in
-rule set, drawing candidate controls from installed control packs (OSCAL catalogs
-such as NIST SP 800-53/800-218) and the project's existing controls. No LLM is
-involved. `threatPackId` is required and names the `THREAT_RULE_PACK` used to
-enumerate; `version` and `snapshotId` are optional (latest when omitted). `project`
-is optional in single-project deployments. All routes are authenticated under the
-`/api/v1/**` rule; the confirmation write records through the same canonical
-aggregates (and at the same authorization level) as the existing
-risk-control-mapping and threat-model-link write surfaces.
-
-**ControlIdentificationResponse fields:** `projectIdentifier`, `schemaVersion`,
-`ruleSetId`, `ruleSetVersion`, `candidateCount`, `gapCount`, `candidates[]`, and
-`gaps[]`.
-
-Each `candidate` carries: `producingRuleId`, `ruleSetId`, `ruleSetVersion`,
-`threatCategory`, `strideCategory`, `objectiveKey`, `threatRef`, `controlId`,
-`controlUid`, `source` (`ControlCandidateSource`: `CONTROL_PACK` or
-`PROJECT_CONTROL`), `packId`, `packVersion`, `packChecksum`,
-`implementationGuidance`, `matchedFacts{}` (matched framework selectors and
-identifiers), and `rationale`.
-
-Each `gap` carries: `threatCategory`, `strideCategory`, `objectiveKey`,
-`producingRuleId`, `threatRef`, `reason` (`ControlIdentificationGapReason`:
-`NO_MATCHING_CONTROL` or `NO_CONTROLS_AVAILABLE`), and `description`.
-
-`ConfirmControlMappingRequest`: `threatModelId` (required), `controlId` (required),
-`controlRole` (optional `MappingControlRole`; defaults to `PREVENTIVE`),
-`mappingObjective` (optional), `mappingScope` (optional). The control must be one the
-deterministic mapping engine selects for the threat (re-derived server-side from the
-threat's STRIDE category), so only framework-derived mitigations, not LLM-invented or
-forged ones, are recorded through this route. A non-derived control is rejected `422`.
-The derived control objective is carried onto the recorded mapping as provenance when
-`mappingObjective` is omitted. Confirmation records the relationship through **both** the
-`RiskControlMapping` coverage edge and the `ThreatModelLink MITIGATED_BY` to `CONTROL`
-traversal edge, and is idempotent: re-confirming an already-recorded pair returns the
-existing edge ids. Response: `riskControlMappingId`, `threatModelLinkId`,
-`mappingCreated`, `linkCreated`.
-
-MCP surface: `gc_control_identification` (dedicated read tool). Parameters:
-`action` (`identify` default, or `coverage`), `project` (optional), `threatPackId`
-(required for `identify`), `version` (optional), `snapshotId` (optional),
-`threatModelId` (required for `coverage`). Confirmation is a write, performed via
-the REST `/confirmations` route or the existing `gc_threat_model` /
-`gc_risk_control_mapping` write tools.
+**Execution read shape:** `{workflowId, runId, workflowType, status
+(RUNNING/COMPLETED/FAILED/CANCELED/TERMINATED/CONTINUED_AS_NEW/TIMED_OUT/PAUSED/UNKNOWN),
+startTime, closeTime, historyLength, project, issueNumber, requirementUids, gateState}`.
+`gateState` is a bounded read model for the GC-Q016 console (`{phase, outcome,
+waitingForMerge, escalatedPhase, escalatedReviewer}`, queried from the workflow):
+present on single-execution `get` and **null** on bulk `list` (and when a closed
+execution or absent worker cannot answer the query). The MCP tool
+`gc_workflow_execution` (`start`/`get`/`list`/`signal`) mirrors this surface.
 
 ### Plugins
 
@@ -1531,33 +1127,6 @@ All endpoints accept an optional `project` query parameter.
 `type` (required, PluginType enum), `description` (optional), `capabilities` (optional, string set),
 `metadata` (optional, JSON object).
 
-### Control Packs
-
-| Method | Path | Body | Status | Purpose |
-|--------|------|------|--------|---------|
-| GET | `/control-packs` | - | 200 | List installed packs |
-| GET | `/control-packs/{packId}` | - | 200 | Get pack by identifier |
-| PUT | `/control-packs/{packId}/deprecate` | - | 200 | Deprecate a pack |
-| DELETE | `/control-packs/{packId}` | - | 204 | Remove a pack |
-| GET | `/control-packs/{packId}/entries` | - | 200 | List pack entries |
-| GET | `/control-packs/{packId}/entries/{entryUid}` | - | 200 | Get a pack entry |
-| POST | `/control-packs/{packId}/entries/{entryUid}/overrides` | CreateControlPackOverrideRequest | 201 | Create field override |
-| GET | `/control-packs/{packId}/entries/{entryUid}/overrides` | - | 200 | List overrides |
-| DELETE | `/control-packs/{packId}/entries/{entryUid}/overrides/{id}` | - | 204 | Delete override |
-
-All endpoints accept an optional `project` query parameter.
-
-Control-pack installation and upgrade are registry-backed operations only. Register
-or import a `CONTROL_PACK` in `/pack-registry`, then use `/pack-install-records/install`
-or `/pack-install-records/upgrade` so resolution, trust evaluation, and audit recording
-cannot be bypassed.
-
-**CreateControlPackOverrideRequest fields:** `fieldName` (required - title, description, objective,
-controlFunction, owner, implementationScope, or category), `overrideValue` (optional; title
-must be non-blank), `reason` (optional, max 500).
-
-**Lifecycle states:** INSTALLED → UPGRADED → DEPRECATED → REMOVED.
-
 ### Threat Models
 
 | Method | Path | Body | Status | Purpose |
@@ -1571,7 +1140,6 @@ must be non-blank), `reason` (optional, max 500).
 | PUT | `/threat-models/{id}/status` | `{"status": "ACTIVE"}` | 200 | Transition lifecycle status |
 | GET | `/threat-models/{id}/requirements` | - | 200 | List requirements linked to a threat model |
 | GET | `/threat-models/{id}/trace` | - | 200 | End-to-end security trace: assets, controls, requirements, and per-requirement implementing artifacts |
-| GET | `/threat-models/workspace` | - | 200 | Read-only workspace: scoped assets, flows, threat entries with linked controls/requirements and staleness indicators (GC-Q010) |
 | POST | `/threat-models/{id}/links` | ThreatModelLinkRequest | 201 | Create threat-model link |
 | GET | `/threat-models/{id}/links` | - | 200 | List links for a threat model |
 | DELETE | `/threat-models/{id}/links/{linkId}` | - | 204 | Delete threat-model link |
@@ -1650,7 +1218,6 @@ association).
 | PUT | `/risk-scenarios/{id}/status` | `{"status": "ACTIVE"}` | 200 | Transition lifecycle status |
 | GET | `/risk-scenarios/{id}/requirements` | - | 200 | List requirements linked to a risk scenario |
 | GET | `/risk-scenarios/{id}/trace` | - | 200 | End-to-end security trace: assets, controls, requirements, and per-requirement implementing artifacts |
-| GET | `/risk-scenarios/workspace` | - | 200 | Read-only workspace: risk scenarios with linked assets, controls, findings, evidence, assessments, treatments, and register memberships; explicit-signal review indicator (GC-Q009) |
 | POST | `/risk-scenarios/{id}/links` | RiskScenarioLinkRequest | 201 | Create risk-scenario link |
 | GET | `/risk-scenarios/{id}/links` | - | 200 | List links for a risk scenario |
 | DELETE | `/risk-scenarios/{id}/links/{linkId}` | - | 204 | Delete risk-scenario link |
@@ -1669,94 +1236,6 @@ All endpoints accept an optional `project` query parameter (required in multi-pr
 issues, and controls). Unknown `id` → 404 `not_found`.
 
 **Lifecycle states:** DRAFT → ACTIVE → ARCHIVED (and DRAFT → ARCHIVED directly).
-
-### Methodology Profiles
-
-| Method | Path | Body | Status | Purpose |
-|--------|------|------|--------|---------|
-| POST | `/methodology-profiles` | MethodologyProfileRequest | 201 | Create methodology profile |
-| GET | `/methodology-profiles` | - | 200 | List methodology profiles for a project (auto-seeds defaults on first read) |
-| GET | `/methodology-profiles/{id}` | - | 200 | Get methodology profile by UUID |
-| PUT | `/methodology-profiles/{id}` | UpdateMethodologyProfileRequest | 200 | Update mutable fields |
-| DELETE | `/methodology-profiles/{id}` | - | 204 | Delete methodology profile |
-
-All endpoints accept an optional `project` query parameter (required in multi-project deployments).
-
-**MethodologyProfileRequest fields:** `profileKey` (required, max 100), `name` (required, max 200), `version` (required, max 50), `family` (required, enum: FAIR, NIST_SP800_30_R1, ISO_27005, CUSTOM), `description` (optional), `inputSchema` (optional JSON object: methodology assessment input vocabulary), `outputSchema` (optional JSON object: methodology assessment output vocabulary), `treatmentStrategyVocabulary` (optional JSON object; strategy vocabulary keyed by stable strategy key, with the value object profile or pack defined and carrying display labels, semantics, or other metadata), `status` (optional, enum: ACTIVE, DEPRECATED; defaults to ACTIVE), `crosswalkEntries` (optional list of `CrosswalkEntry` objects; see below).
-
-`UpdateMethodologyProfileRequest` carries the same field set minus `profileKey`; null fields are left unchanged. A null `crosswalkEntries` leaves the existing list intact; an empty list clears it; a non-null list replaces it in full.
-
-**CrosswalkEntry fields (GC-T012):** `normalizedConcept` (required, enum: `THREAT_SOURCE`, `THREAT_EVENT`, `VULNERABILITY_OR_EXPOSURE`, `ASSET`, `PROCESS_OR_OBJECTIVE`, `CONSEQUENCE_OR_EFFECT`, `CONTROL`, `LIKELIHOOD_OR_FREQUENCY`, `IMPACT_OR_LOSS_MAGNITUDE`, `TREATMENT`), `vocabularySurface` (required, enum: `INPUT_SCHEMA`, `OUTPUT_SCHEMA`, `TREATMENT_STRATEGY_VOCABULARY`), `sourceFieldPath` (required, max 400; dotted path into the named surface's schema properties), `sourceTermLabel` (optional, max 200), `sourceTermDefinition` (optional, max 2000), `scale` (optional, max 100), `units` (optional, max 100), `conversionRule` (optional, max 400; requires `scale` or `units` to be set), `limitations` (optional, max 400).
-
-Semantic validation: duplicate `(normalizedConcept, vocabularySurface, sourceFieldPath)` tuples within the same profile → 422 `duplicate_crosswalk_entry`; surface referenced but corresponding schema is null → 422 `crosswalk_surface_not_present`; `sourceFieldPath` not found in the surface schema's properties → 422 `crosswalk_unknown_field_path`; `conversionRule` set with both `scale` and `units` null → 422 `crosswalk_conversion_rule_missing_scale_or_units`.
-
-**Example `crosswalkEntries` payload:**
-```json
-[
-  {
-    "normalizedConcept": "LIKELIHOOD_OR_FREQUENCY",
-    "vocabularySurface": "INPUT_SCHEMA",
-    "sourceFieldPath": "loss_event_frequency",
-    "sourceTermLabel": "Loss Event Frequency",
-    "scale": "continuous",
-    "units": "annual events",
-    "conversionRule": "LEF = TEF × Vulnerability"
-  },
-  {
-    "normalizedConcept": "IMPACT_OR_LOSS_MAGNITUDE",
-    "vocabularySurface": "INPUT_SCHEMA",
-    "sourceFieldPath": "primary_loss_magnitude",
-    "sourceTermLabel": "Primary Loss Magnitude",
-    "scale": "continuous",
-    "units": "monetary"
-  }
-]
-```
-
-The seeded profiles (`FAIR_V3_0`, `NIST_SP800_30_R1`, `ISO_27005_V2022`) ship with starter crosswalk entries pre-populated on first project list.
-
-`(project_id, profile_key, version)` is unique. Conflict on duplicate create returns 409 `conflict`.
-
-### Risk Appetite Profiles
-
-| Method | Path | Body | Status | Purpose |
-|--------|------|------|--------|---------|
-| POST | `/risk-appetite-profiles` | RiskAppetiteProfileRequest | 201 | Create risk appetite profile (ROLE_ADMIN) |
-| GET | `/risk-appetite-profiles` | - | 200 | List risk appetite profiles for a project |
-| GET | `/risk-appetite-profiles/{id}` | - | 200 | Get risk appetite profile by UUID |
-| PUT | `/risk-appetite-profiles/{id}` | UpdateRiskAppetiteProfileRequest | 200 | Update mutable fields (ROLE_ADMIN) |
-| DELETE | `/risk-appetite-profiles/{id}` | - | 204 | Delete risk appetite profile (ROLE_ADMIN) |
-
-All endpoints accept an optional `project` query parameter (required in multi-project deployments). Writes (POST/PUT/DELETE) require ROLE_ADMIN because appetite/tolerance governs org-wide escalation policy (GC-T005); reads are available to any authenticated caller. The authority matrix is enforced centrally in `ApiPathMatrix`.
-
-**RiskAppetiteProfileRequest fields (GC-T005):** `appetiteKey` (required, max 100; stable identity across versions), `name` (required, max 200), `version` (required, max 50), `methodologyFamily` (required, enum: FAIR, NIST_SP800_30_R1, ISO_27005, CUSTOM; the semantics the thresholds are expressed in), `appetiteStatement` (optional; qualitative narrative), `toleranceThresholds` (optional list of `ToleranceThreshold`; see below), `status` (optional, enum: DRAFT, ACTIVE, RETIRED; defaults to DRAFT), `effectiveFrom` (required, ISO-8601 instant), `effectiveTo` (optional, ISO-8601 instant; null = open-ended).
-
-`UpdateRiskAppetiteProfileRequest` carries the same field set minus `appetiteKey` (immutable); null fields are left unchanged.
-
-**ToleranceThreshold fields:** `metricPath` (required, max 200; dotted path into a `RiskAssessmentResult.computedOutputs` map, for example `annualized_loss_expectancy.likely` for FAIR, `risk_value` for ISO, `risk_level` for NIST), `riskCategory` (optional, max 100; when set, applies only to assessments whose risk register record carries this category tag), and **exactly one** of two ceiling forms. The quantitative form sets `maxQuantitativeValue` (number; breach when residual exceeds it) plus optional `units` (for example `USD`, `events/year`, `probability`) and `currency`. The ordinal form sets `maxOrdinalValue` (max 100) plus an ascending `orderedScale` (list of band names that must contain `maxOrdinalValue`). `label` is optional (max 200).
-
-Validation: a threshold setting both or neither ceiling → 422; an ordinal threshold whose `maxOrdinalValue` is absent from `orderedScale`, or a `probability`-unit value outside `[0,1]`, or a negative quantitative value → 422. `(project_id, appetite_key, version)` is unique (409 on duplicate). Two `ACTIVE` versions of the same `appetiteKey` may not have overlapping effective windows (409 `conflict`).
-
-### Treatment Plans
-
-| Method | Path | Body | Status | Purpose |
-|--------|------|------|--------|---------|
-| POST | `/treatment-plans` | TreatmentPlanRequest | 201 | Create treatment plan |
-| GET | `/treatment-plans` | - | 200 | List treatment plans for a project (optional `riskRegisterRecordId` filter) |
-| GET | `/treatment-plans/{id}` | - | 200 | Get treatment plan by UUID |
-| PUT | `/treatment-plans/{id}` | UpdateTreatmentPlanRequest | 200 | Update mutable fields |
-| PUT | `/treatment-plans/{id}/status` | `{"status": "IN_PROGRESS"}` | 200 | Transition lifecycle status |
-| DELETE | `/treatment-plans/{id}` | - | 204 | Delete treatment plan |
-
-All endpoints accept an optional `project` query parameter (required in multi-project deployments).
-
-**TreatmentPlanRequest fields:** `uid` (required, max 50, unique per project), `title` (required, max 200), `riskRegisterRecordId` (required, UUID), `riskScenarioId` (optional, UUID; must belong to the linked register record's scenarios), `strategy` (required, enum: MITIGATE, ACCEPT, TRANSFER, SHARE, AVOID, OTHER), `methodologyProfileId` (optional, UUID; required when `strategy = OTHER`), `methodologyStrategyKey` (optional, max 100; required when `strategy = OTHER`, must exist in the resolved profile's `treatmentStrategyVocabulary`), `owner` (optional, max 200), `rationale` (optional), `dueDate` (optional, ISO-8601 instant), `status` (optional, defaults to PLANNED), `actionItems` (optional list of typed action items: each requires `owner` [max 200], `dueDate` [ISO-8601 instant], `status` [enum PLANNED/IN_PROGRESS/BLOCKED/DONE/CANCELED]; optional `assignee` [max 200] and `description` [max 4000]), `reassessmentTriggers` (optional list of strings).
-
-`UpdateTreatmentPlanRequest` carries the mutable subset; null fields are left unchanged.
-
-**Methodology binding (GC-T004 / C5):** when the resulting `strategy` is `OTHER`, the request must resolve a `methodologyProfileId` (same-project lookup; cross-project or non-existent → 404 `not_found`) and a `methodologyStrategyKey` that exists in that profile's `treatmentStrategyVocabulary` (missing/blank/non-member → 400 `validation_error`). When the resulting strategy is one of the canonical five, the service silently clears any stored profile/key pair - supplied methodology fields are ignored rather than rejected.
-
-**Lifecycle states:** PLANNED → IN_PROGRESS → {BLOCKED, COMPLETED, CANCELED}; BLOCKED → IN_PROGRESS or CANCELED; PLANNED → CANCELED. COMPLETED and CANCELED are terminal.
 
 ### Findings
 
@@ -1889,28 +1368,6 @@ entity), EVIDENCED_BY (audit is evidenced by the linked artifact), FOLLOWS_UP_ON
 `FINAL_REPORT` can transition back to `DRAFT_REPORT` for rework. `CLOSED` is
 terminal.
 
-### Controls and Assurance Workspace (GC-Q011)
-
-| Method | Path | Body | Status | Purpose |
-|--------|------|------|--------|---------|
-| GET | `/controls/workspace` | - | 200 | Read-only Control and Assurance Workspace: catalog controls, scoped implementations, tests, evidence summaries, effectiveness assessments, exceptions, risk mappings, and owner queue reasons |
-
-`GET /controls/workspace` accepts optional `project`, `status`
-(`ControlStatus`: DRAFT, PROPOSED, IMPLEMENTED, OPERATIONAL, DEPRECATED,
-RETIRED), `controlFunction` (`ControlFunction`: PREVENTIVE, DETECTIVE,
-CORRECTIVE, COMPENSATING), `owner` (case-insensitive substring), `queue`
-(`OWNER_MISSING`, `STATUS_DRAFT`, `TEST_EVIDENCE_MISSING`,
-`ASSESSMENT_MISSING`, `OPEN_EXCEPTION`, `EFFECTIVENESS_WEAK`, `CURRENT`),
-`asOf` (ISO-8601 instant), and `freshnessWindowDays` (default 90, positive)
-query parameters.
-
-The response is a read-only composition over existing aggregates. Each control
-includes bounded previews for catalog text, scoped implementations, control
-tests, control-effectiveness assessments, `EvidenceArtifact` summaries sourced
-from tests or assessments, linked findings/exceptions, risk-control mappings
-with mapping-owned `evidenceRefs` summaries, and computed owner queue reasons.
-It does not return raw evidence payloads or persist a second assurance state.
-
 ### Control Tests (GC-I012)
 
 | Method | Path | Body | Status | Purpose |
@@ -1938,42 +1395,6 @@ TEXT), `expectedResults` (required TEXT), `actualResults` (required TEXT), `conc
 `actualResults`, `conclusion`, `testerIdentity`, `testDate`, `notes` - all optional; only
 fields present in the request body are updated. `controlId` and `uid` are create-only
 (updates ignore them).
-
-### Control Effectiveness Assessments (GC-I013)
-
-| Method | Path | Body | Status | Purpose |
-|--------|------|------|--------|---------|
-| POST | `/control-effectiveness-assessments` | ControlEffectivenessAssessmentRequest | 201 | Create an effectiveness rating row |
-| GET | `/control-effectiveness-assessments` | - | 200 | List assessments for a project (optional `controlId` filter) |
-| GET | `/control-effectiveness-assessments/{id}` | - | 200 | Get assessment by UUID |
-| PUT | `/control-effectiveness-assessments/{id}` | UpdateControlEffectivenessAssessmentRequest | 200 | Update mutable fields |
-| DELETE | `/control-effectiveness-assessments/{id}` | - | 204 | Delete the assessment row |
-
-The assessment is the durable rating record. Design and operating effectiveness are stored
-as separate fields because a control can be well-designed but poorly operated, or vice versa
-(SOC 2 Type II / SOX testing convention). `operatingEffectiveness` is the stable, audited
-read target that future GC-T003 risk-scoring code consumes; this PR does not perform the
-residual-risk computation itself. See ADR-039.
-
-**ControlEffectivenessAssessmentRequest fields:** `controlId` (required UUID, same project),
-`uid` (required, max 50), `designEffectiveness` (required, ControlEffectivenessRating enum:
-EFFECTIVE, PARTIALLY_EFFECTIVE, INEFFECTIVE), `operatingEffectiveness` (required, same enum),
-`assessedAt` (required LocalDate, `@PastOrPresent`), `assessor` (required, max 200 - domain
-provenance), `rationale` (optional TEXT), `notes` (optional TEXT), `supportingTestIds` (optional
-list of `ControlTest` UUIDs that support this assessment's operating-effectiveness judgment;
-every ID must resolve to a `ControlTest` belonging to the same control as the assessment;
-duplicates are de-duplicated; null elements rejected with 422).
-
-**UpdateControlEffectivenessAssessmentRequest fields:** `designEffectiveness`,
-`operatingEffectiveness`, `assessedAt`, `assessor`, `rationale`, `notes`, `supportingTestIds`
- - all optional; `controlId` and `uid` are create-only. A non-null `supportingTestIds` replaces
-the existing list wholesale; pass `null` to leave it unchanged or an empty list to clear it.
-
-**Response includes `supportingTestIds`** as a `List<UUID>`. The graph projection emits one
-`SUPPORTED_BY` edge from the assessment to each `ControlTest` listed (plus the standard
-`OF_CONTROL` edge to the parent control); edges pointing at non-resolving tests are skipped to
-keep AGE materialization safe. `ControlTest` deletion is rejected with HTTP 409
-`control_test_referenced` while any assessment still references the test.
 
 ### Risk-Control Mapping (GC-T003 / ADR-052)
 
@@ -2017,12 +1438,11 @@ Bidirectional many-to-many link between controls (catalog `Control` or `ScopedCo
 | GET | `/analysis/risk-control/unmapped-scenarios` | - | 200 | C5a - Scenarios with no mapped controls |
 | GET | `/analysis/risk-control/unmapped-records` | - | 200 | C5b - Register records with no mapped controls (add `?transitive=true` for transitive form) |
 | GET | `/analysis/risk-control/unmapped-controls` | - | 200 | C6 - Controls not mapped to any relevant scenario (transitive-through-record) |
-| GET | `/analysis/risk-control/assessment-feed/{assessmentResultId}` | - | 200 | C7/C8 - Feed of effectiveness inputs and observation/evidence provenance for a risk assessment result |
 | GET | `/analysis/risk-control/unmapped-threats` | - | 200 | GC-H006 - Threat model entries with no mapped controls |
 | GET | `/analysis/risk-control/threat-unmapped-controls` | - | 200 | GC-H006 - Controls not mapped to any threat model entry |
 | GET | `/analysis/risk-control/threats-insufficient-effectiveness` | - | 200 | GC-H006 - Threat model entries whose mapped controls have insufficient operating effectiveness |
 
-The `unmapped-records` endpoint accepts `transitive` (boolean, default `true`). In transitive mode, a record is considered covered if all its linked scenarios have at least one mapped control; records with zero scenarios always appear in the result. The `assessment-feed` endpoint requires `?project=<slug>` and the assessment-result UUID in the path.
+The `unmapped-records` endpoint accepts `transitive` (boolean, default `true`). In transitive mode, a record is considered covered if all its linked scenarios have at least one mapped control; records with zero scenarios always appear in the result.
 
 The `threats-insufficient-effectiveness` endpoint accepts optional query parameters: `minEffectiveness` (`ControlEffectivenessRating` enum: `EFFECTIVE`, `PARTIALLY_EFFECTIVE`, `INEFFECTIVE`; default `EFFECTIVE`), `asOf` (ISO 8601 date, default today UTC), `freshnessWindowDays` (positive integer, default 90). A threat is flagged when it has ≥1 mapped control and none of them has a fresh assessment meeting the effectiveness bar.
 
@@ -2034,7 +1454,6 @@ The `threats-insufficient-effectiveness` endpoint accepts optional query paramet
 | GET | `/evidence-artifacts` | - | 200 | List artifacts (optional `evidenceType`, `includeSuperseded` filters) |
 | GET | `/evidence-artifacts/{id}` | - | 200 | Get an artifact by UUID |
 | POST | `/evidence-artifacts/{id}/supersede` | EvidenceArtifactRequest | 201 | Create a new artifact and link the prior one as superseded |
-| GET | `/evidence-state/workspace` | - | 200 | Evidence and State Explorer workspace: artifacts, observations, freshness, provenance, affected assets, controls, assessments, and findings |
 
 The aggregate is append-only: there is no PUT and no DELETE. The only post-create
 mutation is `/supersede`, which writes the prior artifact's
@@ -2065,14 +1484,6 @@ The list endpoint excludes superseded artifacts by default; pass
 `HAS_SOURCE` edge per internal-kind source pointing at the existing graph node
 for the source entity, and a `SUPERSEDED_BY` edge from a prior artifact to its
 replacement once supersede has run.
-
-`GET /evidence-state/workspace` accepts optional `project`, `assetId`,
-`controlId`, `asOf`, `freshnessWindowDays` (default 90), and
-`includeSuperseded` (default false) query parameters. The response is a
-read-only composition for GC-Q012 with bounded evidence summaries, observation
-previews, freshness counts from `EvidenceFreshnessAnalysisService`, provenance
-source refs, affected assets, linked controls, downstream risk assessments, and
-linked findings. It does not return raw evidence payloads or storage paths.
 
 ### Test Cases (TC-001 / ADR-040)
 
@@ -2528,12 +1939,21 @@ Response wraps results in a Spring Page object with `content`, `totalElements`,
 | POST | `/research-runs/{id}/disclosure` | CreateDisclosureRequest | 201 | Create the final-manuscript AI-use and uncertainty disclosure for a run (GC-RSCH-N013, ADR-068 §4) |
 | GET | `/research-runs/{id}/disclosure` | - | 200 | Get the current disclosure for a run (GC-RSCH-N013, ADR-068 §4) |
 | POST | `/research-runs/{id}/disclosure/{disclosureId}/entries` | AddDisclosureEntryRequest | 201 | Add one disclosed item (AI-generated portion or unresolved uncertainty) to a disclosure (GC-RSCH-N013, ADR-068 §4) |
+| POST | `/research-runs/{runId}/operation-authorizations` | OperationAuthorizationRequest | 201 | Propose a high-risk operation authorization (GC-RSCH-R005, ADR-086 §3). Lands `PROPOSED` with a default-deny policy basis computed from the run's snapshotted egress policy + allowed-tool inventory; never auto-approved. Idempotent on `sourceActionId`. |
+| GET | `/research-runs/{runId}/operation-authorizations` | - | 200 | List the run's operation authorizations (ordered by `createdAt ASC`) |
+| GET | `/research-runs/{runId}/operation-authorizations/{authorizationId}` | - | 200 | Get one operation authorization |
+| POST | `/research-runs/{runId}/operation-authorizations/{authorizationId}/decision` | OperationAuthorizationDecisionRequest | 200 | **Admin-only** (ADR-086 §3). Approve/deny a proposed authorization; approval requires the run's egress policy to permit the `(dataClass, destinationClass, requestedForm)` tuple and an authenticated actor (an `AUTONOMOUS` run cannot self-approve) |
+| POST | `/research-runs/{runId}/operation-authorizations/{authorizationId}/consume` | - | 200 | **Admin-only** (ADR-086 §3). Spend a one-time-use `APPROVED` authorization (trusted executor/operator boundary); expired approvals are rejected |
 | GET    | `/research-runs/methodology/catalog`                | -                              | 200 | List the backend-owned methodology catalog: every method profile with its required primary sources (GC-RSCH-F006 / ADR-078). Global reference data - no project/run scope. `MethodologyCatalogResponse`: `catalogVersion`, `methods[]` (`methodKey`, `label`, `profileVersion`, `catalogVersion`, `requiredSources[]` with `ref` + `title`). |
 | POST   | `/research-runs/{id}/methodology/selection`         | SelectMethodologyRequest       | 201 | Select (or re-select) the active methodology for a run (GC-RSCH-F006 / ADR-078). `SelectMethodologyRequest` fields: `methodKey` (required, max 200). The method label, profile/catalog version, and the required-source set are derived server-side from the backend methodology catalog - an unknown `methodKey` is rejected (`research_run_methodology_unknown_method`), and the resolved profile's required primary sources are snapshotted as immutable `required=true` rows at selection time. Idempotent when the same method is re-selected and the snapshot still matches the catalog; selecting a different method supersedes the prior active selection and re-snapshots. |
 | GET    | `/research-runs/{id}/methodology/selection`         | -                              | 200 | Get the active methodology selection for a run |
 | POST   | `/research-runs/{id}/methodology/sources`           | RecordMethodologySourceRequest | 201 | Record an additional (optional) methodology source on the active selection (GC-RSCH-F006). Required sources are derived from the selected method's catalog profile at selection; sources recorded here are always optional. `RecordMethodologySourceRequest` fields: `sourceRef` (required, max 500), `sourceLabel` (optional, max 500). |
 | PATCH  | `/research-runs/{id}/methodology/sources/{sid}`     | UpdateMethodologySourceStateRequest | 200 | Update the state of a methodology source (GC-RSCH-F006) |
 | GET    | `/research-runs/{id}/methodology/sources`           | -                              | 200 | List methodology sources for the active selection |
+| POST   | `/research-runs/{id}/methodology/requirements-contract` | RecordMethodologyRequirementsContractRequest | 201 | Record the structured phase-1 methodology requirements contract behind the active `METHODOLOGY_REQUIREMENTS` artifact attempt (GC-RSCH-F007 / ADR-080). `RecordMethodologyRequirementsContractRequest` fields: `entries` (required, non-empty; each `{kind, entryKey (max 200), statement (max 2000), sourceLinks[{sourceId, locator (max 500)}], referencesEntryKey (max 200)}`) and `rejectedAlternatives` (optional; each `{methodKey (max 200), profileVersion (max 100), rationaleEntryId, external}`). `REQUIREMENT`/`METHOD_LIMIT`/`NON_CLAIM` entries require ≥1 source link to a `READ` source of the active selection; `OPEN_PROTOCOL_QUESTION` may instead reference another entry by key. Requires an active selection with complete required-source coverage and an active `METHODOLOGY_REQUIREMENTS` artifact; a second contract for the same artifact attempt is rejected (`research_run_methodology_contract_exists`). The chosen method, artifact id, and attempt are resolved server-side. |
+| GET    | `/research-runs/{id}/methodology/requirements-contract` | -                          | 200 | Get the active methodology requirements contract (entries, source links, rejected alternatives) - the surface protocol planning consumes as its contract (GC-RSCH-F008). |
+| POST   | `/research-runs/{id}/protocol-plan`                 | RecordProtocolPlanRequest      | 201 | Record the structured phase-2 protocol plan behind the active `PROTOCOL_PLAN` artifact attempt (GC-RSCH-F008 / GC-RSCH-F009 / ADR-083). `RecordProtocolPlanRequest` fields: `protocolSchemaVersion` (required, max 40), `coverages` (required, non-empty; each `{contractEntryKey (max 200), disposition, answerSummary (max 2000), answerProvenance, rationale (max 2000), deferredToStage, decisionReference (max 200)}` - which fields are required depends on `disposition`), `sections` (required, non-empty; each `{sectionKey (max 200), sectionKind, sourceRole, contentSummary (required, max 2000)}` - `sourceRole` is legal only for taxonomy source-role sections). The method key, method profile version, methodology contract id/attempt, and artifact attempt are resolved server-side from the run's active selection and active artifacts; a plan with any `BLOCKING_DECISION_REQUIRED` coverage disposition blocks the `SOURCE_SEARCH` stage from starting. |
+| GET    | `/research-runs/{id}/protocol-plan`                 | -                              | 200 | Get the active protocol plan (coverage dispositions, method-specific output sections) - the surface source search consumes as its plan (GC-RSCH-F008 / GC-RSCH-F009). |
 | POST | `/research-runs/{id}/stop` | - | 200 | Stop an active run (resumable) |
 | POST | `/research-runs/{id}/fail` | FailRunRequest | 200 | Fail a run with a bounded failure observation |
 | POST | `/research-runs/{id}/resume` | - | 200 | Resume a stopped/failed run from its last completed stage without duplicating work |

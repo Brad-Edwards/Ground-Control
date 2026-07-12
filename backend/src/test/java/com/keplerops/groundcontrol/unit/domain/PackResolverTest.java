@@ -58,7 +58,7 @@ class PackResolverTest {
         @Test
         void selectsExactVersion() {
             var project = makeProject();
-            var entry = new PackRegistryEntry(project, "nist-800-53", PackType.CONTROL_PACK, "1.0.0");
+            var entry = new PackRegistryEntry(project, "nist-800-53", PackType.CUSTOM, "1.0.0");
             when(registryRepository.findByProjectIdAndPackIdAndCatalogStatusOrderByRegisteredAtDesc(
                             PROJECT_ID, "nist-800-53", CatalogStatus.AVAILABLE))
                     .thenReturn(List.of(entry));
@@ -71,8 +71,8 @@ class PackResolverTest {
         @Test
         void selectsLatestWhenNoConstraint() {
             var project = makeProject();
-            var v1 = new PackRegistryEntry(project, "nist-800-53", PackType.CONTROL_PACK, "1.0.0");
-            var v2 = new PackRegistryEntry(project, "nist-800-53", PackType.CONTROL_PACK, "2.0.0");
+            var v1 = new PackRegistryEntry(project, "nist-800-53", PackType.CUSTOM, "1.0.0");
+            var v2 = new PackRegistryEntry(project, "nist-800-53", PackType.CUSTOM, "2.0.0");
             when(registryRepository.findByProjectIdAndPackIdAndCatalogStatusOrderByRegisteredAtDesc(
                             PROJECT_ID, "nist-800-53", CatalogStatus.AVAILABLE))
                     .thenReturn(List.of(v2, v1));
@@ -94,7 +94,7 @@ class PackResolverTest {
         @Test
         void throwsNotFoundWhenNoVersionMatchesConstraint() {
             var project = makeProject();
-            var entry = new PackRegistryEntry(project, "nist-800-53", PackType.CONTROL_PACK, "1.0.0");
+            var entry = new PackRegistryEntry(project, "nist-800-53", PackType.CUSTOM, "1.0.0");
             when(registryRepository.findByProjectIdAndPackIdAndCatalogStatusOrderByRegisteredAtDesc(
                             PROJECT_ID, "nist-800-53", CatalogStatus.AVAILABLE))
                     .thenReturn(List.of(entry));
@@ -106,9 +106,9 @@ class PackResolverTest {
         @Test
         void resolvesWithCaretConstraint() {
             var project = makeProject();
-            var v100 = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "1.0.0");
-            var v110 = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "1.1.0");
-            var v200 = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "2.0.0");
+            var v100 = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "1.0.0");
+            var v110 = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "1.1.0");
+            var v200 = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "2.0.0");
             when(registryRepository.findByProjectIdAndPackIdAndCatalogStatusOrderByRegisteredAtDesc(
                             PROJECT_ID, "pack", CatalogStatus.AVAILABLE))
                     .thenReturn(List.of(v200, v110, v100));
@@ -120,9 +120,9 @@ class PackResolverTest {
         @Test
         void resolvesWithTildeConstraint() {
             var project = makeProject();
-            var v100 = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "1.0.0");
-            var v101 = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "1.0.1");
-            var v110 = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "1.1.0");
+            var v100 = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "1.0.0");
+            var v101 = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "1.0.1");
+            var v110 = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "1.1.0");
             when(registryRepository.findByProjectIdAndPackIdAndCatalogStatusOrderByRegisteredAtDesc(
                             PROJECT_ID, "pack", CatalogStatus.AVAILABLE))
                     .thenReturn(List.of(v110, v101, v100));
@@ -138,7 +138,7 @@ class PackResolverTest {
         @Test
         void returnsTrueWhenNoConstraints() {
             var project = makeProject();
-            var entry = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "1.0.0");
+            var entry = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "1.0.0");
             var resolved = new com.keplerops.groundcontrol.domain.packregistry.service.ResolvedPack(
                     entry, "1.0.0", null, null, List.of());
 
@@ -148,7 +148,7 @@ class PackResolverTest {
         @Test
         void returnsTrueWhenCompatible() {
             var project = makeProject();
-            var entry = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "1.0.0");
+            var entry = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "1.0.0");
             entry.setCompatibility(Map.of("minVersion", "0.0.1", "maxVersion", "99.0.0"));
             var resolved = new com.keplerops.groundcontrol.domain.packregistry.service.ResolvedPack(
                     entry, "1.0.0", null, null, List.of());
@@ -159,7 +159,7 @@ class PackResolverTest {
         @Test
         void returnsFalseWhenIncompatible() {
             var project = makeProject();
-            var entry = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "1.0.0");
+            var entry = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "1.0.0");
             entry.setCompatibility(Map.of("minVersion", "99.0.0"));
             var resolved = new com.keplerops.groundcontrol.domain.packregistry.service.ResolvedPack(
                     entry, "1.0.0", null, null, List.of());
@@ -170,8 +170,8 @@ class PackResolverTest {
         @Test
         void returnsFalseWhenDependencyIsIncompatible() {
             var project = makeProject();
-            var entry = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "1.0.0");
-            var dependency = new PackRegistryEntry(project, "dep", PackType.CONTROL_PACK, "1.0.0");
+            var entry = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "1.0.0");
+            var dependency = new PackRegistryEntry(project, "dep", PackType.CUSTOM, "1.0.0");
             dependency.setCompatibility(Map.of("minVersion", "99.0.0"));
             var resolvedDependency = new com.keplerops.groundcontrol.domain.packregistry.service.ResolvedPack(
                     dependency, "1.0.0", null, null, List.of());
@@ -188,8 +188,8 @@ class PackResolverTest {
         @Test
         void resolvesWithGreaterThanOrEqualConstraint() {
             var project = makeProject();
-            var v100 = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "1.0.0");
-            var v200 = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "2.0.0");
+            var v100 = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "1.0.0");
+            var v200 = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "2.0.0");
             when(registryRepository.findByProjectIdAndPackIdAndCatalogStatusOrderByRegisteredAtDesc(
                             PROJECT_ID, "pack", CatalogStatus.AVAILABLE))
                     .thenReturn(List.of(v200, v100));
@@ -201,8 +201,8 @@ class PackResolverTest {
         @Test
         void resolvesWithLessThanOrEqualConstraint() {
             var project = makeProject();
-            var v100 = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "1.0.0");
-            var v200 = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "2.0.0");
+            var v100 = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "1.0.0");
+            var v200 = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "2.0.0");
             when(registryRepository.findByProjectIdAndPackIdAndCatalogStatusOrderByRegisteredAtDesc(
                             PROJECT_ID, "pack", CatalogStatus.AVAILABLE))
                     .thenReturn(List.of(v200, v100));
@@ -218,9 +218,9 @@ class PackResolverTest {
         @Test
         void resolvesDependencies() {
             var project = makeProject();
-            var main = new PackRegistryEntry(project, "main-pack", PackType.CONTROL_PACK, "1.0.0");
+            var main = new PackRegistryEntry(project, "main-pack", PackType.CUSTOM, "1.0.0");
             main.setDependencies(List.of(dependency("dep-pack", "1.0.0")));
-            var dep = new PackRegistryEntry(project, "dep-pack", PackType.CONTROL_PACK, "1.0.0");
+            var dep = new PackRegistryEntry(project, "dep-pack", PackType.CUSTOM, "1.0.0");
 
             when(registryRepository.findByProjectIdAndPackIdAndCatalogStatusOrderByRegisteredAtDesc(
                             PROJECT_ID, "main-pack", CatalogStatus.AVAILABLE))
@@ -238,9 +238,9 @@ class PackResolverTest {
         @Test
         void detectsCircularDependency() {
             var project = makeProject();
-            var packA = new PackRegistryEntry(project, "pack-a", PackType.CONTROL_PACK, "1.0.0");
+            var packA = new PackRegistryEntry(project, "pack-a", PackType.CUSTOM, "1.0.0");
             packA.setDependencies(List.of(dependency("pack-b")));
-            var packB = new PackRegistryEntry(project, "pack-b", PackType.CONTROL_PACK, "1.0.0");
+            var packB = new PackRegistryEntry(project, "pack-b", PackType.CUSTOM, "1.0.0");
             packB.setDependencies(List.of(dependency("pack-a")));
 
             when(registryRepository.findByProjectIdAndPackIdAndCatalogStatusOrderByRegisteredAtDesc(
@@ -258,7 +258,7 @@ class PackResolverTest {
         @Test
         void noDependenciesReturnsEmpty() {
             var project = makeProject();
-            var entry = new PackRegistryEntry(project, "no-deps", PackType.CONTROL_PACK, "1.0.0");
+            var entry = new PackRegistryEntry(project, "no-deps", PackType.CUSTOM, "1.0.0");
 
             when(registryRepository.findByProjectIdAndPackIdAndCatalogStatusOrderByRegisteredAtDesc(
                             PROJECT_ID, "no-deps", CatalogStatus.AVAILABLE))
@@ -271,13 +271,13 @@ class PackResolverTest {
         @Test
         void allowsSharedTransitiveDependenciesAcrossSiblingBranches() {
             var project = makeProject();
-            var packA = new PackRegistryEntry(project, "pack-a", PackType.CONTROL_PACK, "1.0.0");
+            var packA = new PackRegistryEntry(project, "pack-a", PackType.CUSTOM, "1.0.0");
             packA.setDependencies(List.of(dependency("pack-b"), dependency("pack-c")));
-            var packB = new PackRegistryEntry(project, "pack-b", PackType.CONTROL_PACK, "1.0.0");
+            var packB = new PackRegistryEntry(project, "pack-b", PackType.CUSTOM, "1.0.0");
             packB.setDependencies(List.of(dependency("pack-d")));
-            var packC = new PackRegistryEntry(project, "pack-c", PackType.CONTROL_PACK, "1.0.0");
+            var packC = new PackRegistryEntry(project, "pack-c", PackType.CUSTOM, "1.0.0");
             packC.setDependencies(List.of(dependency("pack-d")));
-            var packD = new PackRegistryEntry(project, "pack-d", PackType.CONTROL_PACK, "1.0.0");
+            var packD = new PackRegistryEntry(project, "pack-d", PackType.CUSTOM, "1.0.0");
 
             when(registryRepository.findByProjectIdAndPackIdAndCatalogStatusOrderByRegisteredAtDesc(
                             PROJECT_ID, "pack-a", CatalogStatus.AVAILABLE))
@@ -308,8 +308,8 @@ class PackResolverTest {
         @Test
         void prefersStableReleaseOverPrerelease() {
             var project = makeProject();
-            var prerelease = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "1.0.0-rc.1");
-            var stable = new PackRegistryEntry(project, "pack", PackType.CONTROL_PACK, "1.0.0");
+            var prerelease = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "1.0.0-rc.1");
+            var stable = new PackRegistryEntry(project, "pack", PackType.CUSTOM, "1.0.0");
             when(registryRepository.findByProjectIdAndPackIdAndCatalogStatusOrderByRegisteredAtDesc(
                             PROJECT_ID, "pack", CatalogStatus.AVAILABLE))
                     .thenReturn(List.of(prerelease, stable));

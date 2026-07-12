@@ -255,6 +255,25 @@ public class GitHubCliClient implements GitHubClient {
         return allPrs;
     }
 
+    @Override
+    public GitHubPullRequestData fetchPullRequest(String owner, String repo, int number) {
+        validateOwnerRepo(owner, repo);
+        if (number < 1) {
+            throw new GroundControlException("Pull request number must be a positive integer", "invalid_pr_number");
+        }
+        String stdout = execGh(List.of(ghPath, "api", String.format("repos/%s/%s/pulls/%d", owner, repo, number)));
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> raw = objectMapper.readValue(stdout, new TypeReference<Map<String, Object>>() {});
+            // Reuse the list parser so the single-PR shape and the list shape decode identically; the
+            // single-PR endpoint carries the same number/state/merged_at/base/head fields.
+            return parsePullRequests(List.of(raw)).get(0);
+        } catch (IOException e) {
+            throw new GroundControlException(
+                    "Failed to parse gh CLI PR output: " + e.getMessage(), "github_parse_error");
+        }
+    }
+
     protected PrPage fetchPrPage(String owner, String repo, int page) {
         String stdout = execGh(List.of(
                 ghPath,

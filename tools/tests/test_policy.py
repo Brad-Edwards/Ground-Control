@@ -1,5 +1,6 @@
 import hashlib
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,22 +29,28 @@ from tools.policy.checks import (
     run_adr_guard,
     run_changelog_fragment_check,
     run_ci_strictness_contract,
+    run_authz_matrix_sync_check,
+    run_contract_invariant_enforcement_check,
+    run_contract_surface_check,
     run_controller_contracts,
     run_deploy_artifact_consistency,
     run_deploy_compose_credential_passthrough,
     run_documentation_coverage_check,
     run_enum_contract_check,
+    run_gate_set_invariant_check,
     run_ghcr_namespace_drift,
     run_migration_policy,
     run_no_deferral_disposition_check,
     run_pr_body_check,
     run_test_quality_decision_record_contract,
     run_traceability_reconciliation_gate_contract,
+    run_workflow_payload_contract_check,
     run_workflow_routing_contract,
 )
 
 
 class PolicyChecksTest(unittest.TestCase):
+
     def test_adr_guard_requires_workflow_docs(self):
         violations = run_adr_guard([".claude/skills/implement/SKILL.md"])
         self.assertTrue(any(item.code == "workflow-guardrail-sync" for item in violations))
@@ -161,22 +168,114 @@ class PolicyChecksTest(unittest.TestCase):
             "ADR-036 must be in workflow-guardrail-sync.requireAll",
         )
 
+
+
+
+
+
+
+    def _module_graph_registry(self, *, edges=None):
+        modules = [
+            {
+                "id": "mcp-tools",
+                "name": "MCP tools",
+                "surface": "mcp",
+                "owner": "@Brad-Edwards",
+                "lock_level": "guarded",
+                "risk_score": 2,
+                "selectors": ["mcp/ground-control/gc-*.js"],
+            },
+            {
+                "id": "mcp-lib",
+                "name": "MCP lib",
+                "surface": "mcp",
+                "owner": "@Brad-Edwards",
+                "lock_level": "locked",
+                "risk_score": 4,
+                "selectors": ["mcp/ground-control/lib.js"],
+            },
+        ]
+        return {
+            "schema_version": 1,
+            "risk_model": "cld-v1",
+            "modules": modules,
+            "allowed_edges": edges if edges is not None else [{"from": "mcp-tools", "to": "mcp-lib"}],
+        }
+
+    def _write_module_graph_fixture(self, root, *, registry=None, protect=True):
+        self._write_file(
+            root, "architecture/registry/module-graph.json", json.dumps(registry or self._module_graph_registry())
+        )
+        if protect:
+            protected = {
+                "schema_version": 1,
+                "categories": [
+                    {
+                        "id": "architecture-registry",
+                        "name": "Architecture registry",
+                        "selectors": ["architecture/registry/**"],
+                        "approval_mode": "design_authority",
+                        "codeowners": ["@Brad-Edwards"],
+                        "weakening_detectors": [],
+                        "freeze_inputs": ["architecture/registry/**"],
+                    }
+                ],
+            }
+            self._write_file(root, "architecture/registry/protected-paths.json", json.dumps(protected))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     def test_controller_contracts_require_docs_mcp_and_webmvctest(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
+            controller = "backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java"
+            controller_file = root / controller
+            controller_file.parent.mkdir(parents=True, exist_ok=True)
+            controller_file.write_text(
+                "package com.keplerops.groundcontrol.api.foo;\nclass FooController {}\n",
+                encoding="utf-8",
+            )
             test_file = root / "backend/src/test/java/com/keplerops/groundcontrol/unit/api/FooControllerTest.java"
             test_file.parent.mkdir(parents=True, exist_ok=True)
             test_file.write_text(
                 "@WebMvcTest(FooController.class)\nclass FooControllerTest {}\n",
                 encoding="utf-8",
             )
-            violations = run_controller_contracts(
-                ["backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java"],
-                root=root,
-            )
+            violations = run_controller_contracts([controller], root=root)
             codes = {item.code for item in violations}
             self.assertIn("controller-parity", codes)
             self.assertIn("controller-webmvctest-update", codes)
+
+    def test_controller_contracts_skip_deleted_controllers(self):
+        """A controller deleted in the diff has no mapping left to slice-test.
+
+        Its @WebMvcTest companion is deleted with it, so demanding one would make
+        route removal (e.g. the ADR-089 GRC retirement) unshippable.
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            violations = run_controller_contracts(
+                [
+                    "backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java",
+                    "docs/API.md",
+                    "mcp/ground-control/lib.js",
+                    "mcp/ground-control/index.js",
+                ],
+                root=root,
+            )
+            self.assertEqual([], violations)
 
     def test_controller_contracts_accept_gc_risk_governance_as_mcp_adapter(self):
         """gc-risk-governance.js satisfies the MCP-adapter companion (in lieu of index.js)."""
@@ -210,6 +309,90 @@ class PolicyChecksTest(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return rel
+
+    def _write_gate_set_fixture(
+        self,
+        root: Path,
+        *,
+        enum_extra: str = "",
+        mcp_extra: str = "",
+        signal_methods: str | None = None,
+    ) -> None:
+        """Lay down a minimal, valid gate-set surface set; callers mutate one surface to force drift."""
+        self._write_file(
+            root,
+            "backend/src/main/java/com/keplerops/groundcontrol/domain/workflowexecution/OperatorSignalType.java",
+            "package x;\npublic enum OperatorSignalType {\n  CANCEL,\n  RETRY_FROM,\n  REVIEW_CAP_DISPOSITION" + enum_extra + "\n}\n",
+        )
+        methods = signal_methods if signal_methods is not None else (
+            "  @SignalMethod\n  void cancel(CancelSignal s);\n"
+            "  @SignalMethod\n  void retryFrom(RetryFromSignal s);\n"
+            "  @SignalMethod\n  void applyReviewCapDisposition(ReviewCapDispositionSignal s);\n"
+        )
+        self._write_file(
+            root,
+            "backend/src/main/java/com/keplerops/groundcontrol/infrastructure/temporal/implement/ImplementWorkflow.java",
+            "package x;\npublic interface ImplementWorkflow {\n" + methods + "}\n",
+        )
+        self._write_file(
+            root,
+            "mcp/ground-control/gc-workflow-execution.js",
+            'export const WORKFLOW_SIGNAL_TYPES = ["CANCEL", "RETRY_FROM", "REVIEW_CAP_DISPOSITION"' + mcp_extra + "];\n",
+        )
+        self._write_file(
+            root,
+            "contracts/schemas/workflow/implement-signals.v1.schema.json",
+            json.dumps(
+                {
+                    "$defs": {
+                        "CancelSignal": {"x-gc-record": "CancelSignal"},
+                        "RetryFromSignal": {"x-gc-record": "RetryFromSignal"},
+                        "ReviewCapDispositionSignal": {"x-gc-record": "ReviewCapDispositionSignal"},
+                    }
+                }
+            ),
+        )
+
+    def test_gate_set_invariant_passes_on_real_repo(self):
+        self.assertEqual(run_gate_set_invariant_check(), [])
+
+    def test_gate_set_invariant_clean_fixture_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_gate_set_fixture(root)
+            self.assertEqual(run_gate_set_invariant_check(root=root), [])
+
+    def test_gate_set_invariant_fails_on_added_enum_signal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_gate_set_fixture(root, enum_extra=",\n  MERGE_APPROVED")
+            codes = {v.code for v in run_gate_set_invariant_check(root=root)}
+            # A fourth signal drifts the enum from the closed catalog AND is a forbidden approval gate.
+            self.assertIn("gate-set-drift", codes)
+            self.assertIn("gate-set-forbidden-gate", codes)
+
+    def test_gate_set_invariant_fails_when_mcp_drifts_from_workflow(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_gate_set_fixture(root, mcp_extra=', "SOMETHING_NEW"')
+            codes = {v.code for v in run_gate_set_invariant_check(root=root)}
+            self.assertIn("gate-set-drift", codes)
+
+    def test_gate_set_invariant_fails_when_workflow_adds_signal_method(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_gate_set_fixture(
+                root,
+                signal_methods=(
+                    "  @SignalMethod\n  void cancel(CancelSignal s);\n"
+                    "  @SignalMethod\n  void retryFrom(RetryFromSignal s);\n"
+                    "  @SignalMethod\n  void applyReviewCapDisposition(ReviewCapDispositionSignal s);\n"
+                    "  @SignalMethod\n  void approveMerge(ApproveMergeSignal s);\n"
+                ),
+            )
+            codes = {v.code for v in run_gate_set_invariant_check(root=root)}
+            self.assertIn("gate-set-drift", codes)
+            self.assertIn("gate-set-forbidden-gate", codes)
 
     def test_controller_webmvctest_no_false_positive_on_same_name_collision(self):
         """A controller and its real companion (resolved by FQCN) satisfy the check
@@ -504,6 +687,22 @@ class PolicyChecksTest(unittest.TestCase):
             self.assertIn("ci-strictness-branch-protection-strict", codes)
             self.assertIn("ci-strictness-branch-protection-contexts", codes)
 
+
+    @staticmethod
+    def _copy_mutation_gate_contract_fixture(root: Path) -> None:
+        for rel in [
+            ".github/workflows/ci.yml",
+            ".github/branch-protection-baseline.json",
+            "architecture/registry/mutation-boundaries.json",
+            "tools/mutation/run_boundary_mutation.py",
+        ]:
+            src = REPO_ROOT / rel
+            dst = root / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+
     def test_poll_loop_routing_stages_are_the_async_poll_steps(self):
         self.assertEqual(
             POLL_LOOP_ROUTING_STAGES,
@@ -583,6 +782,198 @@ class PolicyChecksTest(unittest.TestCase):
             violations = run_workflow_routing_contract(root=Path(tmp_dir))
             codes = {item.code for item in violations}
             self.assertIn("workflow-routing-config-missing", codes)
+
+    def test_contract_surface_check_passes_on_repo(self):
+        violations = run_contract_surface_check(root=REPO_ROOT)
+        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
+
+    def test_workflow_payload_contract_passes_on_repo(self):
+        violations = run_workflow_payload_contract_check(root=REPO_ROOT)
+        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
+
+    def _workflow_contract_dirs(self, root):
+        record_dir = (
+            root
+            / "backend/src/main/java/com/keplerops/groundcontrol/infrastructure/temporal/implement/contract"
+        )
+        schema_dir = root / "contracts/schemas/workflow"
+        record_dir.mkdir(parents=True)
+        schema_dir.mkdir(parents=True)
+        return record_dir, schema_dir
+
+    def test_workflow_payload_contract_rejects_unmapped_record(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            record_dir, _schema_dir = self._workflow_contract_dirs(root)
+            (record_dir / "ResolveIssueInput.java").write_text(
+                "public record ResolveIssueInput(int issueNumber) {}\n", encoding="utf-8"
+            )
+            violations = run_workflow_payload_contract_check(root=root)
+        self.assertTrue(any(v.code == "workflow-payload-record-unmapped" for v in violations))
+
+    def test_workflow_payload_contract_rejects_orphan_schema_tag(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            _record_dir, schema_dir = self._workflow_contract_dirs(root)
+            (schema_dir / "sample.v1.schema.json").write_text(
+                json.dumps({"$defs": {"Ghost": {"x-gc-record": "GhostRecord"}}}),
+                encoding="utf-8",
+            )
+            violations = run_workflow_payload_contract_check(root=root)
+        self.assertTrue(any(v.code == "workflow-payload-schema-orphan" for v in violations))
+
+    def test_workflow_payload_contract_maps_record_to_schema_tag(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            record_dir, schema_dir = self._workflow_contract_dirs(root)
+            (record_dir / "ResolveIssueInput.java").write_text(
+                "public record ResolveIssueInput(int issueNumber) {}\n", encoding="utf-8"
+            )
+            (schema_dir / "resolve-issue.v1.schema.json").write_text(
+                json.dumps({"$defs": {"ResolveIssueInput": {"x-gc-record": "ResolveIssueInput"}}}),
+                encoding="utf-8",
+            )
+            violations = run_workflow_payload_contract_check(root=root)
+        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
+
+    def test_contract_invariant_enforcement_rejects_missing_enforcement_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            schema_dir = root / "contracts" / "schemas" / "records"
+            schema_dir.mkdir(parents=True)
+            (schema_dir / "sample.schema.json").write_text(
+                json.dumps(
+                    {
+                        "$id": "gc.test.sample.v1",
+                        "type": "object",
+                        "x-ground-control-invariants": [
+                            {"id": "gc.test.sample.required", "enforcedBy": ["missing/Test.java::testRequired"]}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            violations = run_contract_invariant_enforcement_check(root=root)
+        self.assertTrue(any(v.code == "contract-invariant-enforcement-missing-file" for v in violations))
+
+    def test_contract_invariant_enforcement_rejects_file_only_target(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            schema_dir = root / "contracts" / "schemas" / "records"
+            schema_dir.mkdir(parents=True)
+            test_file = root / "tools" / "tests" / "test_policy.py"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text("def test_sample(): pass\n", encoding="utf-8")
+            (schema_dir / "sample.schema.json").write_text(
+                json.dumps(
+                    {
+                        "$id": "gc.test.sample.v1",
+                        "type": "object",
+                        "x-ground-control-invariants": [
+                            {"id": "gc.test.sample.required", "enforcedBy": ["tools/tests/test_policy.py"]}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            violations = run_contract_invariant_enforcement_check(root=root)
+
+        self.assertTrue(any(v.code == "contract-invariant-enforcement-anchor-missing" for v in violations))
+
+    def test_contract_invariant_enforcement_rejects_missing_anchor(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            schema_dir = root / "contracts" / "schemas" / "records"
+            schema_dir.mkdir(parents=True)
+            test_file = root / "tools" / "tests" / "test_policy.py"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text("def test_sample(): pass\n", encoding="utf-8")
+            (schema_dir / "sample.schema.json").write_text(
+                json.dumps(
+                    {
+                        "$id": "gc.test.sample.v1",
+                        "type": "object",
+                        "x-ground-control-invariants": [
+                            {
+                                "id": "gc.test.sample.required",
+                                "enforcedBy": ["tools/tests/test_policy.py::test_missing"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            violations = run_contract_invariant_enforcement_check(root=root)
+
+        self.assertTrue(any(v.code == "contract-invariant-enforcement-anchor-missing-file" for v in violations))
+
+    def test_implement_final_report_schema_requires_review_evidence_invariant(self):
+        schema = json.loads(
+            (REPO_ROOT / "contracts/schemas/records/implement-final-report.v1.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        invariant_ids = {entry["id"] for entry in schema["x-ground-control-invariants"]}
+
+        self.assertIn("gc.implement.final-report.review-evidence-present", invariant_ids)
+        self.assertIn("reviews", schema["required"])
+        self.assertEqual(schema["properties"]["reviews"]["type"], "array")
+        self.assertEqual(schema["properties"]["reviews"]["items"]["minLength"], 1)
+
+    def test_workflow_run_record_schema_has_closed_state_vocabulary_invariant(self):
+        schema = json.loads(
+            (REPO_ROOT / "contracts/schemas/workflow/workflow-run-record.v1.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        invariant_ids = {entry["id"] for entry in schema["x-ground-control-invariants"]}
+
+        self.assertIn("gc.workflow.run-record.phase-state-closed-set", invariant_ids)
+        self.assertEqual(
+            schema["properties"]["finalState"]["enum"],
+            ["RUNNING", "READY_FOR_REVIEW", "MERGED", "CLOSED", "ESCALATED", "ABANDONED", "SUPERSEDED"],
+        )
+        self.assertEqual(schema["properties"]["provenance"]["enum"], ["ISSUE_THREAD", "TEMPORAL_VISIBILITY", "MANUAL_IMPORT"])
+
+    def test_authz_matrix_sync_detects_missing_contract_row(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            matrix = root / "contracts" / "authz" / "path-matrix.yaml"
+            matrix.parent.mkdir(parents=True)
+            matrix.write_text(
+                "rules:\n"
+                '  - id: admin\n'
+                '    method: "*"\n'
+                '    path: "/api/v1/admin/**"\n'
+                '    access: "ROLE_ADMIN"\n',
+                encoding="utf-8",
+            )
+            java = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "com"
+                / "keplerops"
+                / "groundcontrol"
+                / "shared"
+                / "security"
+                / "ApiPathMatrix.java"
+            )
+            java.parent.mkdir(parents=True)
+            java.write_text(
+                'final class ApiPathMatrix { private static final String ROLE_ADMIN = "ADMIN"; '
+                'void apply(Object auth) { auth.requestMatchers("/api/v1/admin/**").hasRole(ROLE_ADMIN)'
+                '.requestMatchers("/api/v1/pack-registry/**").hasRole(ROLE_ADMIN); }}',
+                encoding="utf-8",
+            )
+            violations = run_authz_matrix_sync_check(root=root)
+        self.assertTrue(any(v.code == "authz-matrix-drift" for v in violations))
 
     def test_deploy_compose_credential_passthrough_passes_on_committed_file(self):
         # The committed deploy/docker/docker-compose.prod.yml must enumerate the
@@ -780,15 +1171,70 @@ class PolicyChecksTest(unittest.TestCase):
             "GC_IMAGE=ghcr.io/autarchy-ai/ground-control:main\n", encoding="utf-8"
         )
         (ddir / "env.schema").write_text(
-            "REQUIRED GC_IMAGE\nRELEASE_PIN GC_IMAGE\nREQUIRED GC_DATABASE_URL\n",
+            "REQUIRED GC_IMAGE\n"
+            "RELEASE_PIN GC_IMAGE\n"
+            "REQUIRED GC_DATABASE_URL\n"
+            "REQUIRED TEMPORAL_POSTGRES_DB\n"
+            "REQUIRED TEMPORAL_POSTGRES_USER\n"
+            "REQUIRED TEMPORAL_POSTGRES_PASSWORD\n"
+            "REQUIRED TEMPORAL_VISIBILITY_DB\n"
+            "REQUIRED GC_BIND_IP\n"
+            "OPTIONAL TEMPORAL_NAMESPACE\n"
+            "OPTIONAL TEMPORAL_TASK_QUEUE\n",
             encoding="utf-8",
         )
         (ddir / "docker-compose.prod.yml").write_text(
             "services:\n"
+            "  temporal-db:\n"
+            "    image: apache/age:release_PG16_1.6.0\n"
+            "    environment:\n"
+            "      POSTGRES_DB: ${TEMPORAL_POSTGRES_DB}\n"
+            "      POSTGRES_USER: ${TEMPORAL_POSTGRES_USER}\n"
+            "      POSTGRES_PASSWORD: ${TEMPORAL_POSTGRES_PASSWORD}\n"
+            "    volumes:\n"
+            "      - /data/temporal-postgres:/var/lib/postgresql/data\n"
+            "    healthcheck:\n"
+            "      test: [\"CMD-SHELL\", \"pg_isready -U ${TEMPORAL_POSTGRES_USER} -d ${TEMPORAL_POSTGRES_DB}\"]\n"
+            "    mem_limit: 512m\n"
+            "    cpus: \"1.0\"\n"
+            "  temporal:\n"
+            "    image: temporalio/auto-setup:1.29.6\n"
+            "    environment:\n"
+            "      - DB=postgres12\n"
+            "      - DBNAME=${TEMPORAL_POSTGRES_DB}\n"
+            "      - VISIBILITY_DBNAME=${TEMPORAL_VISIBILITY_DB}\n"
+            "      - POSTGRES_USER=${TEMPORAL_POSTGRES_USER}\n"
+            "      - POSTGRES_PWD=${TEMPORAL_POSTGRES_PASSWORD}\n"
+            "      - POSTGRES_SEEDS=temporal-db\n"
+            "      - DEFAULT_NAMESPACE=${TEMPORAL_NAMESPACE:-ground-control}\n"
+            "    ports:\n"
+            "      - \"${GC_BIND_IP}:7233:7233\"\n"
+            "    depends_on:\n"
+            "      temporal-db:\n"
+            "        condition: service_healthy\n"
+            "    healthcheck:\n"
+            "      test: [\"CMD-SHELL\", \"tctl --address temporal:7233 cluster health | grep -q SERVING\"]\n"
+            "    mem_limit: 768m\n"
+            "    cpus: \"1.0\"\n"
             "  backend:\n"
             "    image: ${GC_IMAGE}\n"
             "    environment:\n"
-            "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n",
+            "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n"
+            "  temporal-worker:\n"
+            "    image: ${GC_IMAGE}\n"
+            "    environment:\n"
+            "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n"
+            "      - GROUNDCONTROL_TEMPORAL_WORKER_ENABLED=true\n"
+            "      - GROUNDCONTROL_TEMPORAL_WORKER_TARGET=temporal:7233\n"
+            "      - GROUNDCONTROL_TEMPORAL_WORKER_NAMESPACE=${TEMPORAL_NAMESPACE:-ground-control}\n"
+            "      - GROUNDCONTROL_TEMPORAL_WORKER_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-ground-control-implement}\n"
+            "    depends_on:\n"
+            "      temporal:\n"
+            "        condition: service_healthy\n"
+            "    healthcheck:\n"
+            "      test: [\"CMD-SHELL\", \"wget -q -O - http://localhost:8001/actuator/health | grep -q '\\\"UP\\\"'\"]\n"
+            "    mem_limit: 1024m\n"
+            "    cpus: \"1.0\"\n",
             encoding="utf-8",
         )
         (ddir / "deploy.sh").write_text("#!/bin/bash\ndocker compose --env-file .env up -d\n", encoding="utf-8")
@@ -858,6 +1304,58 @@ class PolicyChecksTest(unittest.TestCase):
             self.assertIn("deploy-env-schema-incomplete", codes)
             details = " ".join(d for v in violations for d in v.details)
             self.assertIn("GC_NEW_KNOB", details)
+
+    def test_deploy_artifact_consistency_flags_missing_temporal_services(self):
+        # GC-O009 phase 1 makes Temporal a first-class production topology
+        # surface: compose drift must fail before the deploy host sees it.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                "services:\n"
+                "  backend:\n"
+                "    image: ${GC_IMAGE}\n"
+                "    environment:\n"
+                "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n",
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-temporal-topology", codes)
+
+    def test_deploy_artifact_consistency_flags_unpinned_temporal_image(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                compose.read_text(encoding="utf-8").replace(
+                    "temporalio/auto-setup:1.29.6", "temporalio/auto-setup:latest"
+                ),
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-temporal-topology", codes)
+
+    def test_deploy_artifact_consistency_flags_temporal_without_tailnet_bind(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                compose.read_text(encoding="utf-8").replace(
+                    '"${GC_BIND_IP}:7233:7233"', '"7233:7233"'
+                ),
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-temporal-topology", codes)
 
     def test_deploy_artifact_consistency_flags_missing_release_pin(self):
         # Dropping RELEASE_PIN GC_IMAGE would let a floating branch tag (:main)
@@ -1024,6 +1522,13 @@ class PolicyChecksTest(unittest.TestCase):
         )
 
     def test_enum_contract_inventory_shape(self):
+        # ThreatEventKind, ThreatSourceRelevance, NistLikelihoodBand,
+        # NistImpactBand, NormalizedConcept, CrosswalkVocabularySurface, and
+        # MethodologyFamily were retired with the composed GRC product
+        # surface (ADR-089, issue #1346); their backend enums are deleted, so
+        # they must not remain in the inventory. VerificationStatus and
+        # AssuranceLevel are unaffected (domain/verification/state, not part
+        # of the retired GRC surface) and stay.
         labels = {c.label for c in ENUM_CONTRACT_INVENTORY}
         self.assertEqual(
             labels,
@@ -1038,15 +1543,8 @@ class PolicyChecksTest(unittest.TestCase):
                 "ChangeCategory",
                 "AuditType",
                 "AuditStatus",
-                "ThreatEventKind",
-                "ThreatSourceRelevance",
-                "NistLikelihoodBand",
-                "NistImpactBand",
-                "NormalizedConcept",
-                "CrosswalkVocabularySurface",
                 "VerificationStatus",
                 "AssuranceLevel",
-                "MethodologyFamily",
             },
         )
         for contract in ENUM_CONTRACT_INVENTORY:
@@ -1076,8 +1574,8 @@ class PolicyChecksTest(unittest.TestCase):
             api_ts = root / FRONTEND_API_TYPES_PATH
             text = api_ts.read_text(encoding="utf-8")
             # Drop PULL_REQUEST from both the union and the constant array.
-            text = text.replace('  | "PULL_REQUEST"\n', "")
-            text = text.replace('  "PULL_REQUEST",\n', "")
+            text = text.replace('"PULL_REQUEST" | ', "")
+            text = text.replace('"PULL_REQUEST",', "")
             api_ts.write_text(text, encoding="utf-8")
             violations = run_enum_contract_check(root=root)
             codes = {v.code for v in violations}
@@ -1093,8 +1591,8 @@ class PolicyChecksTest(unittest.TestCase):
             api_ts = root / FRONTEND_API_TYPES_PATH
             text = api_ts.read_text(encoding="utf-8")
             text = text.replace(
-                'export const LINK_TYPES: LinkType[] = [\n',
-                'export const LINK_TYPES: LinkType[] = [\n  "BOGUS",\n',
+                "export const LINK_TYPES: LinkType[] = [",
+                'export const LINK_TYPES: LinkType[] = ["BOGUS",',
             )
             api_ts.write_text(text, encoding="utf-8")
             violations = run_enum_contract_check(root=root)
@@ -1126,52 +1624,6 @@ class PolicyChecksTest(unittest.TestCase):
             violations = run_enum_contract_check(root=root)
             codes = {v.code for v in violations}
             self.assertIn("enum-contract-source-missing", codes)
-
-    def test_enum_contract_normalized_concept_positive(self) -> None:
-        # GC-T012: NORMALIZED_CONCEPTS in api.ts and lib.js must match NormalizedConcept.java
-        violations = run_enum_contract_check(root=REPO_ROOT)
-        labels = {v.details[0] if v.details else "" for v in violations}
-        self.assertNotIn("NormalizedConcept", " ".join(labels))
-
-    def test_enum_contract_normalized_concept_drift(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._copy_enum_sources(root)
-            api_ts = root / FRONTEND_API_TYPES_PATH
-            text = api_ts.read_text(encoding="utf-8")
-            # Remove TREATMENT from both the union and the constant array.
-            text = text.replace('  | "TREATMENT"\n', "")
-            text = text.replace('  "TREATMENT",\n', "")
-            api_ts.write_text(text, encoding="utf-8")
-            violations = run_enum_contract_check(root=root)
-            codes = {v.code for v in violations}
-            self.assertIn("enum-contract-drift", codes)
-            details = " ".join(d for v in violations for d in v.details)
-            self.assertIn("NormalizedConcept", details)
-            self.assertIn("TREATMENT", details)
-
-    def test_enum_contract_crosswalk_vocabulary_surface_positive(self) -> None:
-        # GC-T012: CROSSWALK_VOCABULARY_SURFACES in api.ts and lib.js must match CrosswalkVocabularySurface.java
-        violations = run_enum_contract_check(root=REPO_ROOT)
-        labels = {v.details[0] if v.details else "" for v in violations}
-        self.assertNotIn("CrosswalkVocabularySurface", " ".join(labels))
-
-    def test_enum_contract_crosswalk_vocabulary_surface_drift(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._copy_enum_sources(root)
-            api_ts = root / FRONTEND_API_TYPES_PATH
-            text = api_ts.read_text(encoding="utf-8")
-            # Remove OUTPUT_SCHEMA from the constant array.
-            text = text.replace('  "OUTPUT_SCHEMA",\n', "")
-            text = text.replace('  | "OUTPUT_SCHEMA"\n', "")
-            api_ts.write_text(text, encoding="utf-8")
-            violations = run_enum_contract_check(root=root)
-            codes = {v.code for v in violations}
-            self.assertIn("enum-contract-drift", codes)
-            details = " ".join(d for v in violations for d in v.details)
-            self.assertIn("CrosswalkVocabularySurface", details)
-            self.assertIn("OUTPUT_SCHEMA", details)
 
     def test_deferral_classifier_matches_golden_cases(self):
         # The shared golden-case file is the single source of truth for what
@@ -1231,6 +1683,14 @@ class PolicyChecksTest(unittest.TestCase):
     def test_parse_args_accepts_pr_number(self):
         args = parse_args(["--pr-number", "790"])
         self.assertEqual(args.pr_number, 790)
+        self.assertIsNone(parse_args([]).pr_number)
+
+    def test_parse_args_accepts_pr_comments_json(self):
+        args = parse_args(["--pr-comments-json", "/tmp/pr-comments.jsonl"])
+        self.assertEqual(args.pr_comments_json, "/tmp/pr-comments.jsonl")
+
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -2356,7 +2816,6 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
         "skills/implement/SKILL.md": (
             "## Phase boundaries\n\nPhase E is the post-merge close phase.\n"
             "Phase E calls `gc_close_issue_after_merge` after the user merges.\n"
-            "The close envelope includes `next_issue_recommendation` when available.\n"
         ),
         "skills/implement/steps/step-17-completion.md": (
             "# Step 17: Phase D Completion\n\n"
@@ -2365,7 +2824,6 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
         "skills/implement/steps/step-20-close-issue-on-merge.md": (
             "# Step 20: Close the Issue (Phase E, Post-Merge)\n\n"
             "Calls `gc_close_issue_after_merge` to verify merged_at and close.\n"
-            "The returned `next_issue_recommendation` names a follow-up issue when available.\n"
         ),
     }
 
@@ -2426,7 +2884,10 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-step20-missing", codes)
 
-    def test_check_flags_step20_missing_recommendation_anchor(self) -> None:
+    def test_check_passes_step20_with_only_close_tool_mention(self) -> None:
+        # ADR-089 (issue #1346): the close-path gate no longer requires a
+        # next_issue_recommendation anchor — the feature is retired, and the
+        # gate must not demand prose for a removed field.
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
@@ -2434,9 +2895,7 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
                     "# Step 20: Close the Issue\n\nCalls `gc_close_issue_after_merge` only.\n",
             })
             violations = run_traceability_reconciliation_gate_contract(root=root)
-            self.assertTrue(violations)
-            codes = {v.code for v in violations}
-            self.assertIn("traceability-gate-step20-missing", codes)
+            self.assertEqual(violations, [])
 
     def test_check_flags_skill_missing_phase_e(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2462,7 +2921,10 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-skill-missing", codes)
 
-    def test_check_flags_skill_missing_recommendation_only(self) -> None:
+    def test_check_passes_skill_with_only_phase_e_and_close_tool(self) -> None:
+        # ADR-089 (issue #1346): SKILL.md no longer needs to mention
+        # next_issue_recommendation — Phase E + the close tool name are
+        # sufficient now that the recommendation feature is retired.
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
@@ -2471,9 +2933,7 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
                     "Phase E runs after merge; call `gc_close_issue_after_merge`.\n",
             })
             violations = run_traceability_reconciliation_gate_contract(root=root)
-            self.assertTrue(violations)
-            codes = {v.code for v in violations}
-            self.assertIn("traceability-gate-skill-missing", codes)
+            self.assertEqual(violations, [])
 
 
 # ---------------------------------------------------------------------------

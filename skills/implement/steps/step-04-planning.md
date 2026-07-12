@@ -30,7 +30,7 @@ This step runs in the **parent** agent (`agent: parent` in the routing config). 
    - `issue_number`: the issue number from Step 1
    - `plan_body`: the full plan as a Markdown string
 
-   The tool refuses unless a `preflight` phase marker exists for this issue (per #794 MVP-2 - `gc_codex_architecture_preflight` writes that marker on success). If you skipped Step 2.5, this gate will refuse the plan post and instruct you to run preflight first; do not work around the refusal by `gh issue comment` directly. If `cfg.workflow.dev_start_gate.enabled` is `true`, the tool also refuses a missing or invalid `## Dev-Start Gate` section and returns `next_action: add_valid_dev_start_gate_to_plan_and_retry`. The tool also writes a `plan` phase marker so downstream tools can confirm planning happened.
+   The tool refuses unless a `preflight` phase marker exists for this issue. If you skipped Step 2.5, the gate refuses and instructs you to run the missing step first; do not work around the refusal by `gh issue comment` directly. If `cfg.workflow.dev_start_gate.enabled` is `true`, the tool also refuses a missing or invalid `## Dev-Start Gate` section and returns `next_action: add_valid_dev_start_gate_to_plan_and_retry`. The tool also writes a `plan` phase marker so downstream tools can confirm planning happened.
 
    Cache the returned comment URL for the final report (Step 19).
 

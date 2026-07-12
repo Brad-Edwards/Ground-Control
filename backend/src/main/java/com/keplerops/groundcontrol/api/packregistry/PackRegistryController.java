@@ -1,17 +1,11 @@
 package com.keplerops.groundcontrol.api.packregistry;
 
-import com.keplerops.groundcontrol.api.controlpacks.ControlPackEntryDefinitionRequest;
-import com.keplerops.groundcontrol.domain.controlpacks.service.ControlPackEntryDefinition;
-import com.keplerops.groundcontrol.domain.packregistry.service.ControlPackRegistrationContent;
 import com.keplerops.groundcontrol.domain.packregistry.service.EmptyPackRegistrationContent;
-import com.keplerops.groundcontrol.domain.packregistry.service.PackRegistrationContent;
 import com.keplerops.groundcontrol.domain.packregistry.service.PackRegistryImportOptions;
 import com.keplerops.groundcontrol.domain.packregistry.service.PackRegistryImportService;
 import com.keplerops.groundcontrol.domain.packregistry.service.PackRegistryService;
 import com.keplerops.groundcontrol.domain.packregistry.service.PackResolver;
 import com.keplerops.groundcontrol.domain.packregistry.service.RegisterPackCommand;
-import com.keplerops.groundcontrol.domain.packregistry.service.ThreatRuleEntryDefinition;
-import com.keplerops.groundcontrol.domain.packregistry.service.ThreatRulePackRegistrationContent;
 import com.keplerops.groundcontrol.domain.packregistry.service.UpdatePackRegistryEntryCommand;
 import com.keplerops.groundcontrol.domain.packregistry.state.PackType;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
@@ -74,7 +68,7 @@ public class PackRegistryController {
                 request.signatureInfo(),
                 request.compatibility(),
                 PackDependencyRequest.toDomainList(request.dependencies()),
-                selectRegistrationContent(request),
+                EmptyPackRegistrationContent.INSTANCE,
                 request.provenance(),
                 request.registryMetadata()));
         return PackRegistryEntryResponse.from(result);
@@ -89,15 +83,13 @@ public class PackRegistryController {
         accessGuard.requireAdminActor();
         var projectId = projectService.resolveProjectId(project);
         var bytes = readFileBytes(file);
-        var filename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "import.json";
         var result = importService.importEntry(
                 projectId,
-                filename,
                 bytes,
                 request != null
                         ? request.toOptions()
                         : new PackRegistryImportOptions(
-                                null, null, null, null, null, null, null, null, null, null, null, null, null));
+                                null, null, null, null, null, null, null, null, null, null, null, null));
         return PackRegistryEntryResponse.from(result);
     }
 
@@ -150,7 +142,7 @@ public class PackRegistryController {
                         request.signatureInfo(),
                         request.compatibility(),
                         PackDependencyRequest.toDomainList(request.dependencies()),
-                        selectUpdateRegistrationContent(request),
+                        null,
                         request.provenance(),
                         request.registryMetadata()));
         return PackRegistryEntryResponse.from(result);
@@ -191,80 +183,6 @@ public class PackRegistryController {
         var resolved = packResolver.resolve(projectId, request.packId(), request.versionConstraint());
         var compatible = packResolver.checkCompatibility(resolved);
         return new CompatibilityCheckResponse(request.packId(), resolved.resolvedVersion(), compatible);
-    }
-
-    private static ControlPackEntryDefinition toControlPackEntryDefinition(ControlPackEntryDefinitionRequest request) {
-        return new ControlPackEntryDefinition(
-                request.uid(),
-                request.title(),
-                request.description(),
-                request.objective(),
-                request.controlFunction(),
-                request.owner(),
-                request.implementationScope(),
-                request.methodologyFactors(),
-                request.effectiveness(),
-                request.category(),
-                request.source(),
-                request.implementationGuidance(),
-                request.expectedEvidence(),
-                request.frameworkMappings());
-    }
-
-    private static PackRegistrationContent toRegistrationContent(List<ControlPackEntryDefinitionRequest> requests) {
-        if (requests == null) {
-            return EmptyPackRegistrationContent.INSTANCE;
-        }
-        return new ControlPackRegistrationContent(requests.stream()
-                .map(PackRegistryController::toControlPackEntryDefinition)
-                .toList());
-    }
-
-    /**
-     * Select the typed registration content for a create. THREAT_RULE_PACK entries carry their
-     * rules in {@code threatRuleEntries}; every other pack type carries {@code controlPackEntries}
-     * (or none). This is what wires the admin registration JSON into the THREAT_RULE_PACK write
-     * boundary so enumeration has a registered, version-pinned pack to resolve (GC-GRC-007).
-     */
-    private static PackRegistrationContent selectRegistrationContent(RegisterPackRequest request) {
-        if (request.packType() == PackType.THREAT_RULE_PACK) {
-            return toThreatRuleRegistrationContent(request.threatRuleEntries());
-        }
-        return toRegistrationContent(request.controlPackEntries());
-    }
-
-    /** Select typed content for an update; the present entry list determines the pack family. */
-    private static PackRegistrationContent selectUpdateRegistrationContent(UpdatePackRegistryEntryRequest request) {
-        if (request.threatRuleEntries() != null) {
-            return toThreatRuleRegistrationContent(request.threatRuleEntries());
-        }
-        if (request.controlPackEntries() != null) {
-            return toRegistrationContent(request.controlPackEntries());
-        }
-        return null;
-    }
-
-    private static PackRegistrationContent toThreatRuleRegistrationContent(
-            List<ThreatRuleEntryDefinitionRequest> requests) {
-        if (requests == null) {
-            return EmptyPackRegistrationContent.INSTANCE;
-        }
-        return new ThreatRulePackRegistrationContent(requests.stream()
-                .map(PackRegistryController::toThreatRuleEntryDefinition)
-                .toList());
-    }
-
-    private static ThreatRuleEntryDefinition toThreatRuleEntryDefinition(ThreatRuleEntryDefinitionRequest request) {
-        return new ThreatRuleEntryDefinition(
-                request.ruleId(),
-                request.title(),
-                request.category(),
-                request.strideCategory(),
-                request.targetElementKinds(),
-                request.predicate(),
-                request.metadataTagKey(),
-                request.narrativeSkeleton(),
-                request.rationale());
     }
 
     private static byte[] readFileBytes(MultipartFile file) {

@@ -1,5 +1,35 @@
 # Documentation style
 
+> **Sync note for issue #1346 (2026-07-11, ADR-089 GRC retirement):** `tools/policy/checks.py::run_traceability_reconciliation_gate_contract` dropped its `next_issue_recommendation` prose anchors (the field is retired from `gc_close_issue_after_merge`'s close envelope), and `ENUM_CONTRACT_INVENTORY` dropped the seven enum-contract entries owned by the retired composed GRC surface. This is a policy-surface removal, not a documentation-classifier change: the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
+
+> **Sync note for CLD track drop (issue #1296, 2026-07-10):** Removed the Contract-Locked Development enforcement gates from `tools/policy/checks.py` (`run_protected_path_authority_check`, `run_module_graph_boundary_check`, `run_mutation_gate_contract`, and their helpers), the CI `mutation` job, `tools/mutation/`, `architecture/registry/`, the backend `RegistryBoundaryArchitectureTest`, the oracle-battery scaffolds, and the `gc_post_design_authority_approval` MCP tool. The CLD milestone (#1296 through #1299) was dropped as premature optimization; the reviewer anti-gaming prompt checklist is retained. This is a policy-surface and tooling removal: the documentation-coverage classifier, outcome mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no `docs/DOC_STYLE.md` style rule changed.
+
+> **Sync note for issue #1278 / GC-O009 (2026-07-08):** Registered the `gc_workflow_execution` MCP tool (handler `mcp/ground-control/gc-workflow-execution.js`; actions `start` / `get` / `list` / `signal`) plus workflow-control API-client helpers in `mcp/ground-control/lib.js` and `index.js`, backed by the new `/api/v1/workflow-executions**` REST surface for the GC-O009 phase-3 workflow control surface (start `/implement` Temporal executions, read execution state from Temporal Visibility, send the closed operator-signal catalog). Documentation lives in `docs/API.md`, `docs/DEVELOPMENT_WORKFLOW.md`, `docs/architecture/ARCHITECTURE.md`, the `index.js` tool description, and the ADR-054 amendment below. This is a new `mcp_tool` / `public_api` surface covered by the existing classifier path logic; the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
+
+> **Sync note for issue #1124 / GC-GRC-011 (2026-07-08):** Fixed `reconcileGrcScreeningV2` in `mcp/ground-control/lib.js` to resolve the project from `.ground-control.yaml` when the caller omits it (so the GRC reconciliation graph fetch is project-scoped and does not spuriously fail `grc_not_reconciled`), with a regression test in `mcp/ground-control/gc-grc-reconciled.test.js`, plus a Step 4.5 re-screen instruction in `skills/implement/steps/step-04.5-clause-mapping.md`. These are policy/workflow-tooling correctness fixes, not documentation-classifier changes: the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
+
+> **Sync note for issue #1334 (2026-07-06):** Fixed `load_pr_issue_comments` in `tools/policy/checks.py` so `make policy` no longer fails `pr-comments-json-invalid` on a PR with exactly one comment (the lone bare JSON object `gh api --jq` emits is now accepted; the multi-object fallback uses `JSONDecoder.raw_decode`). This is a policy-tooling correctness fix, not a documentation-classifier change: the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
+
+> **Sync note for issue #1330 (2026-07-05):** `tools/policy/checks.py::main` now downgrades the protected-path / battery approval-missing results to non-blocking warnings (TEMP, pending the #1330 redesign) because the design-authority approval marker is currently unsatisfiable (`gc_post_design_authority_approval` requires an out-of-band token configured on no MCP server). Detection is unchanged; only the blocking exit is suppressed. This is a policy-gate exit-behavior change, not a documentation-classifier change: the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
+
+> **Sync note for issue #1294 (2026-07-05 GC-CLD-5):** Added protected-path authority policy in `tools/policy/checks.py`, the `architecture/registry/protected-paths.json` registry, and the scope-bound `gc_post_design_authority_approval` MCP marker surface in `mcp/ground-control/index.js` and `mcp/ground-control/lib.js`. Documentation lives in `docs/DEVELOPMENT_WORKFLOW.md`, ADR-087, and the ADR-054 sync note; the change is a policy/workflow-gate surface update, not a documentation style update. No style rule changed.
+
+> **Sync note for issue #1276 (2026-07-05 GC-O009):** Extended `tools/policy/checks.py::run_deploy_artifact_consistency` with the `deploy-temporal-topology` guard for the required Temporal production compose services, pinned images, SQL visibility database wiring, Tailscale-bound gRPC port, health checks, and resource limits. Documentation lives in `deploy/docker/README.md`, `docs/deployment/DEPLOYMENT.md`, `docs/operations/backup-restore.md`, and `docs/DEVELOPMENT_WORKFLOW.md`; ADR-054 records the policy-surface amendment. No style rule changed.
+
+> **Sync note for issue #1293 (2026-07-04 GC-CLD-4):** Added `tools/policy/checks.py::run_mutation_gate_contract` so `make policy` verifies the CLD mutation gate runner, registry schema, CI mutation job, pull-request base-ref scoping, report artifact, and branch-protection context. Documentation lives in `docs/DEVELOPMENT_WORKFLOW.md`, ADR-087, and the mutation registry README; the surface change is recorded in the ADR-054 amendment. No style rule changed.
+
+> **Sync note for issue #1275 (2026-07-04 GC-O014):** Added contract-surface policy checks in `tools/policy/checks.py` for the committed `contracts/` artifact set, generated frontend API type shim, JSON Schema invariant enforcement metadata, and authorization path-matrix synchronization. The contract-surface documentation lives in ADR-082, `docs/DEVELOPMENT_WORKFLOW.md`, and `docs/architecture/ARCHITECTURE.md`; ADR-054 records the policy-surface amendment. No style rule changed.
+
+> **Sync note for issue #1129 (2026-07-04 GC-GRC-016):** Registered the `gc_grc_assess` MCP tool (handler `mcp/ground-control/gc-grc-assess.js`; actions `run` / `review` / `get` / `list`) plus GRC assessment run API-client helpers in `mcp/ground-control/lib.js` and `index.js`, backed by the new `/api/v1/grc-assessment-runs` REST surface for durable on-demand assessment runs. The `/api/v1/grc-assessment-runs` read prefix was added to the `gc_query` allowlist (`gc-query.js`, `mcp/ground-control/README.md`, ADR-035). Documentation lives in `docs/API.md`, `docs/DEVELOPMENT_WORKFLOW.md`, `mcp/ground-control/README.md`, and `skills/assess/SKILL.md`; the surface addition is recorded in the ADR-054 amendment. No style rule changed.
+
+> **Sync note for issue #1008 / ADR-086 (2026-07-03 research privacy/security controls):** Registered the `gc_research_operation_authorization` MCP tool (handler `mcp/ground-control/gc-research-operation-authorization.js`; actions `request` / `decide` / `consume` / `list` / `get`) plus research egress-policy enum constants and API-client helpers in `mcp/ground-control/lib.js` and `index.js`, backed by the new `/api/v1/research-runs/{runId}/operation-authorizations/**` REST surface for research high-risk operation authorization. New request/response schemas are documented under the research-runs section of `docs/API.md` per the "Adding a new MCP tool" rule; the surface change is recorded in the ADR-054 amendment, `docs/architecture/ARCHITECTURE.md`, and `docs/research/RESEARCH_WORKFLOW.md`. No style rule changed.
+
+> **Sync note for issue #1007 / ADR-083 (2026-07-03 protocol plan):** The `gc_research_run` MCP tool gained `record_protocol_plan` and `get_protocol_plan` actions (`POST`/`GET /api/v1/research-runs/{id}/protocol-plan`) in `mcp/ground-control/index.js` + `lib.js` for the structured phase-2 protocol plan, mirroring the ADR-080 methodology-requirements-contract action pair (`#1006`). The surface change is recorded in the ADR-054 amendment, `docs/API.md`, `docs/architecture/ARCHITECTURE.md`, and `docs/research/RESEARCH_WORKFLOW.md`; no style rule changed.
+
+> **Sync note for issue #1123 (2026-07-03 GC-GRC-010):** Added the design-time GRC deliverables gate to the existing `gc_post_implementation_plan` MCP tool in `mcp/ground-control/index.js` and `mcp/ground-control/lib.js` (new `validateGrcDeliverablesPlanGate` / `renderGrcDeliverablesRecord` / `parseGrcDeliverablesData` helpers, a `grc_deliverables` param, and a `grc_screening` prerequisite marker). A `security_relevant` change must enumerate structured deliverables covering every screening gap surface and stale entity or record an authorized disposition (no-defer, GC-GRC-015); the tool renders an authoritative `gc:grc-deliverables-data` machine block into the plan comment. This is a change to an existing `mcp_tool` / `workflow` surface covered by the existing classifier path logic; documentation lives in the `index.js` tool description, `docs/DEVELOPMENT_WORKFLOW.md`, `skills/implement/steps/step-04-planning.md`, `skills/implement/steps/step-03.5-grc-screening.md`, `.gc/plan-rules.md`, `mcp/ground-control/README.md`, and the ADR-058 §5 realization. No new `gc_query` allowlist path and no style rule changed.
+
+> **Sync note for issue #1122 (2026-07-02 GC-GRC-009):** Reworked the `/implement` Step 3.5 GRC screening tool `gc_post_grc_screening` in `mcp/ground-control/index.js` and `mcp/ground-control/lib.js` to a derivation-backed v2 contract (`gc.implement.grc-screening/v2`): the tool now computes `impact_set` / `gap_set` / `stale_set` from the diff, the GRC CODE-link graph, and derived facts (agent no longer asserts a verdict), and `gc_assert_grc_reconciled` branches on record schema and blocks on a non-empty `gap_set`. Documentation lives in the `index.js` tool descriptions, `docs/DEVELOPMENT_WORKFLOW.md`, `docs/WORKFLOW.md`, `skills/implement/steps/step-03.5-grc-screening.md`, and the ADR-057 v2 amendment (target contract ADR-058). This is a change to an existing `mcp_tool` surface covered by the existing classifier path logic; no new `gc_query` allowlist path and no style rule changed.
+
 > **Sync note for issue #1121 (2026-07-01 GC-GRC-008):** Registered the `gc_control_identification` MCP tool (handler `mcp/ground-control/gc-control-identification.js`; read actions `identify` / `coverage`) and the `controlIdentification` / `controlCoverage` API-client helpers in `mcp/ground-control/lib.js`, backed by the new `GET /api/v1/control-identification` REST surface for GC-GRC-008 deterministic control identification and mapping. Documentation lives in `docs/API.md` (`### Control Identification (GC-GRC-008)`), the `index.js` tool description, and the ADR-054 amendment below. The confirmation write is REST-only (records through existing `RiskControlMapping` / `ThreatModelLink` aggregates); the read tool does not touch the `gc_query` allowlist. No style rule changed.
 
 > **Sync note for issue #214 (2026-06-30 GC-S005):** Registered the project-scoped `gc_evidence_campaign` MCP tool (actions: create / list / get / update / pause / resume / trigger / runs_list) in `mcp/ground-control/index.js`, `mcp/ground-control/lib.js`, and `mcp/ground-control/gc-evidence-campaign.js`, backed by the new `/api/v1/evidence-campaigns**` REST surface for scheduled evidence collection. Documentation lives in `docs/API.md`, `docs/architecture/ARCHITECTURE.md`, and `architecture/adrs/074-scheduled-evidence-collection.md`; the surface addition is recorded in the ADR-054 amendment below. New request/response schemas are documented under the relevant `docs/API.md` service section per the "Adding a new MCP tool" rule. No style rule changed.
@@ -60,6 +90,10 @@
 > **Sync note for issue #1005 (2026-06-29):** The `gc_research_run` MCP tool's `record_methodology_source` action lost `source_required` (boolean) and `select_methodology` gained `required_source_refs` (optional string array, max 500 chars per element) in `mcp/ground-control/index.js`. Required sources are now snapshotted immutably at selection time; callers cannot inject a required flag via the record-source endpoint. The surface change is recorded in the ADR-054 amendment; no style rule changed.
 
 > **Sync note for issue #1005 / ADR-078 (2026-06-30):** The methodology catalog became backend-owned, validated-on-load reference data, and the required-source set is now derived from it rather than supplied by the caller. The `gc_research_run` MCP tool's `select_methodology` action was reduced to `{id, method_key}` (dropping `method_label`, `profile_version`, `catalog_version`, `required_source_refs`), and a new global read action `list_methodology_catalog` (`GET /api/v1/research-runs/methodology/catalog`) was added in `mcp/ground-control/index.js` + `lib.js`. The surface change is recorded in the ADR-054 amendment and `docs/API.md`; no style rule changed.
+
+> **Sync note for issue #1006 / ADR-080 (2026-07-01):** The `gc_research_run` MCP tool gained `record_methodology_requirements_contract` and `get_methodology_requirements_contract` actions (`POST`/`GET /api/v1/research-runs/{id}/methodology/requirements-contract`) in `mcp/ground-control/index.js` + `lib.js` for the structured phase-1 methodology requirements contract. The surface change is recorded in the ADR-054 amendment, `docs/API.md`, and `docs/research/RESEARCH_WORKFLOW.md`; no style rule changed.
+
+> **Sync note for issue #1124 / GC-GRC-011 (2026-07-05):** The `gc_test_quality_review` rubric in `mcp/ground-control/lib.js` (`buildTestQualityReviewPrompt`) gained a critical category flagging control efficacy tests that only prove existence rather than detecting control removal, with a matching key-phrase assertion in `lib.test.js`. This is a workflow-record-tool prompt-contract change, not a documentation-classifier change: the documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new DOC_STYLE.md style rule is established.
 
 ## Rules
 
@@ -179,7 +213,13 @@ removing fields, and the changelog fragment in `changelog.d/` carries the
 temporal record. Similarly, updates to `tools/policy/checks.py` that extend
 the list of recognized adapter files (for example, adding `gc-risk-scenario.js`
 to the controller-parity check) are policy-surface changes recorded in
-amendments to ADR-054, not documentation edits.
+amendments to ADR-054, not documentation edits. A new repo-native policy
+check added to `tools/policy/checks.py` (for example,
+`run_module_graph_boundary_check` for the CLD architecture registry in
+GC-CLD-2 / #1295) is the same kind of policy-surface change: its user-facing
+reference lives in `architecture/registry/README.md` and
+`docs/DEVELOPMENT_WORKFLOW.md`, and the surface addition is recorded in an
+ADR-054 amendment, not as a new style rule here.
 
 New `gc_analyze` kinds backed by a fixed REST endpoint follow the same
 convention: a new kind value in `ANALYZE_KINDS` (for example
@@ -317,3 +357,30 @@ and ten new Zod enum mirrors in `mcp/ground-control/lib.js`, mirroring the new
 endpoints documented in `docs/API.md`. The surface addition is recorded in the
 ADR-054 amendment and the changelog fragment; no new DOC_STYLE.md style rule is
 established.
+
+The `run_workflow_payload_contract_check` added to `tools/policy/checks.py`
+(GC-O009 / ADR-082, issue #1277) is a new policy-surface check that asserts the
+deterministic `/implement` Temporal activity records map 1:1 to
+`contracts/schemas/workflow/` schemas. Per the convention above it is recorded
+in an amendment to ADR-054, not a documentation edit; the documentation-coverage
+classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
+unchanged and no new DOC_STYLE.md style rule is established.
+
+The `run_gate_set_invariant_check` added to `tools/policy/checks.py`
+(GC-O009 (b) / ADR-029 / ADR-088, issue #1279) is a new policy-surface check
+that pins the `/implement` operator-gate set to the closed signal catalog across
+the workflow `@SignalMethod` contract, the `OperatorSignalType` enum, the
+`implement-signals.v1` schema, and the MCP `WORKFLOW_SIGNAL_TYPES` catalog, and
+fails if a plan/merge-approval gate is reintroduced. Per the convention above it
+is recorded in an amendment to ADR-054, not a documentation edit; the
+documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and
+`.vale.ini` are unchanged and no new DOC_STYLE.md style rule is established.
+
+The `mcp/ground-control/lib.js` routing-provider changes for issue #1280
+(GC-O009 phase 5, ADR-028/ADR-027) accept the canonical `anthropic` provider
+id and normalize the legacy `claude` label to it. They touch the
+`.ground-control.yaml` routing parser, not the documentation-coverage gate.
+Per the convention above this is recorded in an amendment to ADR-054, not a
+documentation edit; the documentation-coverage classifier, Vale rule set,
+`tools/install-vale.sh`, and `.vale.ini` are unchanged and no new
+DOC_STYLE.md style rule is established.

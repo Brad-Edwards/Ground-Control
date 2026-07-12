@@ -5,20 +5,69 @@ import fnmatch
 import hashlib
 import json
 import os
+import posixpath
 import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ADR_POLICY_PATH = REPO_ROOT / "architecture" / "policies" / "adr-policy.json"
 BRANCH_PROTECTION_BASELINE_PATH = Path(".github/branch-protection-baseline.json")
+CODEOWNERS_PATH = Path(".github/CODEOWNERS")
 CI_WORKFLOW_PATH = Path(".github/workflows/ci.yml")
 PRE_COMMIT_CONFIG_PATH = Path(".pre-commit-config.yaml")
 SONAR_NEW_ISSUE_GATE_PATH = Path("tools/sonar/assert_no_new_issues.py")
+MODULE_GRAPH_LOCK_LEVELS = frozenset({"locked", "guarded", "fluid"})
+MODULE_GRAPH_SURFACES = frozenset({"backend", "frontend", "mcp"})
+# Surfaces enforced by the in-process import scanner below. The backend surface
+# is enforced against the same registry by RegistryBoundaryArchitectureTest
+# (ArchUnit reads compiled bytecode, which a source import scan cannot match).
+MODULE_GRAPH_SCANNED_SURFACES = frozenset({"frontend", "mcp"})
+MODULE_GRAPH_MODULE_KEYS = frozenset(
+    {"id", "name", "surface", "owner", "lock_level", "risk_score", "selectors", "package", "projection"}
+)
+MODULE_GRAPH_REQUIRED_MODULE_KEYS = frozenset(
+    {"id", "name", "surface", "owner", "lock_level", "risk_score", "selectors"}
+)
+MODULE_GRAPH_EDGE_KEYS = frozenset({"from", "to"})
+MODULE_GRAPH_MAX_RISK_SCORE = 5
+MODULE_GRAPH_SCAN_GLOBS = (
+    "frontend/src/**/*.ts",
+    "frontend/src/**/*.tsx",
+    "frontend/src/**/*.js",
+    "frontend/src/**/*.jsx",
+    "mcp/ground-control/*.js",
+)
+# ESM/TS import specifier after `from`, bare `import`, dynamic `import(`, or `require(`.
+MODULE_GRAPH_IMPORT_RE = re.compile(
+    r"""(?:\bfrom\s+|\bimport\s+|\bimport\s*\(\s*|\brequire\s*\(\s*)['"]([^'"\n]+)['"]"""
+)
+DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION = "gc.cld.design-authority-approval/v1"
+DESIGN_AUTHORITY_APPROVAL_MARKER_PREFIX = "<!-- gc:design-authority-approval"
+DESIGN_AUTHORITY_APPROVAL_MARKER_RE = re.compile(
+    r"<!--\s*gc:design-authority-approval\s+([^>]*)-->", re.IGNORECASE
+)
+DESIGN_AUTHORITY_APPROVAL_DATA_RE = re.compile(
+    r"<!--\s*gc:design-authority-approval-data\s+({.*?})\s*-->",
+    re.IGNORECASE | re.DOTALL,
+)
+HTML_ATTR_RE = re.compile(r"([a-zA-Z_][a-zA-Z0-9_-]*)=\"([^\"]*)\"")
+
+IMPLEMENTATION_PATH_SELECTORS = (
+    "backend/src/main/**",
+    "backend/src/test/**",
+    "frontend/src/**",
+    "mcp/**",
+    "tools/**",
+)
+SKIPPED_TEST_ADDITION_RE = re.compile(
+    r"^\+(?!\+\+).*(?:@Disabled\b|\.skip\s*\(|\b(?:describe|it|test)\.skip\s*\(|\b(?:xdescribe|xit|xtest)\s*\(|@pytest\.mark\.skip\b)",
+    re.IGNORECASE,
+)
 CONTROLLER_PATH_RE = re.compile(
     r"^backend/src/main/java/com/keplerops/groundcontrol/api/.+Controller\.java$"
 )
@@ -31,6 +80,7 @@ CI_STRICTNESS_REQUIRED_CONTEXTS = frozenset(
         "SonarCloud Code Analysis",
         "build",
         "integration",
+        "mutation",
         "osv-scanner",
         "policy",
         "sonar",
@@ -49,6 +99,25 @@ CI_PRE_COMMIT_HOOKS = (
     "detect-private-key",
     "gitleaks",
 )
+CONTRACT_REQUIRED_PATHS = (
+    "contracts/openapi/openapi.json",
+    "contracts/gen/typescript/api.ts",
+    "contracts/schemas/records/implement-final-report.v1.schema.json",
+    "contracts/schemas/workflow/workflow-run-record.v1.schema.json",
+    "contracts/authz/path-matrix.yaml",
+    "contracts/CHANGES.md",
+)
+FRONTEND_CONTRACT_SHIM_PATH = Path("frontend/src/types/api.ts")
+GENERATED_CONTRACT_EXPORT = 'export * from "../../../contracts/gen/typescript/api";'
+
+
+class RefUnreadableError(RuntimeError):
+    """Raised when a caller supplied a base ref that cannot be resolved."""
+
+    def __init__(self, base: str, detail: str):
+        super().__init__(detail)
+        self.base = base
+        self.detail = detail
 
 GROUND_CONTROL_YAML_PATH = Path(".ground-control.yaml")
 # /implement routing stages whose step drives a gc_codex_job async poll loop
@@ -336,6 +405,82 @@ def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def get_repo_relative_files(root: Path, glob_pattern: str) -> list[str]:
     return sorted(
         normalize_path(str(path.relative_to(root)))
@@ -491,6 +636,11 @@ def run_controller_contracts(changed_files: list[str], root: Path = REPO_ROOT) -
         return test_covers_controller(content, fqcn)
 
     for controller in controllers:
+        # A controller deleted in this diff has no request mapping left to slice-test,
+        # and its @WebMvcTest companion is deleted along with it. Demanding a companion
+        # for a file that no longer exists would make route removal unshippable.
+        if not (root / controller).exists():
+            continue
         fqcn = controller_fully_qualified_name(controller)
         if fqcn is None:
             continue
@@ -1087,6 +1237,39 @@ def run_ci_strictness_contract(root: Path = REPO_ROOT) -> list[Violation]:
         return violations
 
     workflow_text = workflow_path.read_text(encoding="utf-8")
+    repo_policy_step = re.search(
+        r"(?ms)^\s{6}- name: Repo policy checks\n(?P<body>.*?)(?=^\s{6}- name: |\Z)",
+        workflow_text,
+    )
+    if repo_policy_step is None:
+        violations.append(
+            Violation(
+                code="ci-strictness-repo-policy-step-missing",
+                message="CI policy job must run repo policy checks for pull requests.",
+                details=[f"missing Repo policy checks step in {CI_WORKFLOW_PATH.as_posix()}"],
+            )
+        )
+    else:
+        repo_policy_body = repo_policy_step.group("body")
+        if "GH_TOKEN" in repo_policy_body:
+            violations.append(
+                Violation(
+                    code="ci-strictness-policy-token-exposure",
+                    message="PR-head repo policy code must not receive the GitHub token.",
+                    details=[
+                        "remove GH_TOKEN from the Repo policy checks step",
+                        "fetch sanitized PR comments in a separate shell step and pass --pr-comments-json instead",
+                    ],
+                )
+            )
+        if "--pr-comments-json" not in repo_policy_body:
+            violations.append(
+                Violation(
+                    code="ci-strictness-policy-comments-json",
+                    message="CI repo policy checks must consume sanitized PR comments from a file.",
+                    details=["expected --pr-comments-json in the Repo policy checks step"],
+                )
+            )
     if "python3 -m pip install --user pre-commit" not in workflow_text:
         violations.append(
             Violation(
@@ -1225,6 +1408,12 @@ def run_ci_strictness_contract(root: Path = REPO_ROOT) -> list[Violation]:
             )
 
     return violations
+
+
+
+
+
+
 
 
 def run_deploy_compose_credential_passthrough(root: Path = REPO_ROOT) -> list[Violation]:
@@ -1409,6 +1598,9 @@ DEPLOY_CANONICAL_ARTIFACTS: tuple[str, ...] = (
     "validate-env.sh",
     "env.schema",
 )
+TEMPORAL_COMPOSE_SERVICE_RE_TEMPLATE = (
+    r"(?ms)^  {service}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|^[A-Za-z0-9_-]+:\n|\Z)"
+)
 COMPOSE_VAR_REF_RE = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)(:-[^}]*)?\}")
 
 
@@ -1431,6 +1623,74 @@ def _parse_env_schema(text: str) -> dict[str, set[str]]:
             continue
         directives.setdefault(parts[1], set()).add(parts[0])
     return directives
+
+
+def _extract_compose_service_block(compose_text: str, service: str) -> str:
+    pattern = TEMPORAL_COMPOSE_SERVICE_RE_TEMPLATE.format(service=re.escape(service))
+    match = re.search(pattern, compose_text)
+    return match.group("body") if match else ""
+
+
+def _temporal_topology_violations(compose_text: str) -> list[str]:
+    """Return GC-O009 production Temporal topology drift details.
+
+    This intentionally stays structural and stdlib-only like the surrounding
+    deploy policy gates. It does not try to be a full Compose parser; it pins
+    the canonical service names and load-bearing tokens that make deploy,
+    rollback, health, tailnet binding, and backup policy line up.
+    """
+    details: list[str] = []
+    temporal_db = _extract_compose_service_block(compose_text, "temporal-db")
+    temporal = _extract_compose_service_block(compose_text, "temporal")
+    temporal_worker = _extract_compose_service_block(compose_text, "temporal-worker")
+
+    if not temporal_db:
+        details.append("missing service: temporal-db")
+    else:
+        for token, label in (
+            ("image: apache/age:release_PG16_1.6.0", "temporal-db must use the pinned Postgres/AGE image"),
+            ("/data/temporal-postgres:/var/lib/postgresql/data", "temporal-db must bind persistence under /data/temporal-postgres"),
+            ("healthcheck:", "temporal-db must have a healthcheck"),
+            ("mem_limit:", "temporal-db must declare a memory bound"),
+            ("cpus:", "temporal-db must declare a CPU bound"),
+        ):
+            if token not in temporal_db:
+                details.append(label)
+
+    if not temporal:
+        details.append("missing service: temporal")
+    else:
+        for token, label in (
+            ("image: temporalio/auto-setup:1.29.6", "temporal must use pinned temporalio/auto-setup:1.29.6"),
+            ("DB=postgres12", "temporal must use the PostgreSQL 12+ driver"),
+            ("VISIBILITY_DBNAME=${TEMPORAL_VISIBILITY_DB}", "temporal must wire the SQL visibility database"),
+            ("POSTGRES_SEEDS=temporal-db", "temporal must use temporal-db as its persistence seed"),
+            ("DEFAULT_NAMESPACE=${TEMPORAL_NAMESPACE:-ground-control}", "temporal must default to one ground-control namespace"),
+            ('"${GC_BIND_IP}:7233:7233"', "temporal gRPC must require the GC_BIND_IP tailnet bind posture"),
+            ("healthcheck:", "temporal must have a healthcheck"),
+            ("mem_limit:", "temporal must declare a memory bound"),
+            ("cpus:", "temporal must declare a CPU bound"),
+        ):
+            if token not in temporal:
+                details.append(label)
+
+    if not temporal_worker:
+        details.append("missing service: temporal-worker")
+    else:
+        for token, label in (
+            ("image: ${GC_IMAGE}", "temporal-worker must run the promoted backend image"),
+            ("GROUNDCONTROL_TEMPORAL_WORKER_ENABLED=true", "temporal-worker must enable the worker explicitly"),
+            ("GROUNDCONTROL_TEMPORAL_WORKER_TARGET=temporal:7233", "temporal-worker must target the compose Temporal frontend"),
+            ("GROUNDCONTROL_TEMPORAL_WORKER_NAMESPACE=${TEMPORAL_NAMESPACE:-ground-control}", "temporal-worker must share the single namespace"),
+            ("GROUNDCONTROL_TEMPORAL_WORKER_TASK_QUEUE=${TEMPORAL_TASK_QUEUE:-ground-control-implement}", "temporal-worker must expose a configurable task queue"),
+            ("healthcheck:", "temporal-worker must have a healthcheck"),
+            ("mem_limit:", "temporal-worker must declare a memory bound"),
+            ("cpus:", "temporal-worker must declare a CPU bound"),
+        ):
+            if token not in temporal_worker:
+                details.append(label)
+
+    return details
 
 
 def run_deploy_artifact_consistency(root: Path = REPO_ROOT) -> list[Violation]:
@@ -1534,6 +1794,20 @@ def run_deploy_artifact_consistency(root: Path = REPO_ROOT) -> list[Violation]:
                         "env.schema does not mark them REQUIRED (GC-P023)."
                     ),
                     details=sorted(not_required),
+                )
+            )
+
+        temporal_details = _temporal_topology_violations(compose_text)
+        if temporal_details:
+            violations.append(
+                Violation(
+                    code="deploy-temporal-topology",
+                    message=(
+                        "Production compose must include the GC-O009 Temporal "
+                        "server, visibility persistence, worker, health, resource, "
+                        "and tailnet-bind topology."
+                    ),
+                    details=temporal_details,
                 )
             )
 
@@ -1773,11 +2047,10 @@ def run_methodology_catalog_drift(root: Path = REPO_ROOT) -> list[Violation]:
 # gate, because the frontend test suite does not run in PR CI today.)
 # ---------------------------------------------------------------------------
 
-FRONTEND_API_TYPES_PATH = "frontend/src/types/api.ts"
+FRONTEND_API_TYPES_PATH = "contracts/gen/typescript/api.ts"
 MCP_LIB_PATH = "mcp/ground-control/lib.js"
 _ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state"
 _AUDIT_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state"
-_RISK_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state"
 _VERIFICATION_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/verification/state"
 
 # Java enum body: from the opening `{` to whichever comes first — the `;` that
@@ -1836,59 +2109,14 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
     # by UI and exposed by the MCP gc_audit tool.
     EnumContract("AuditType", f"{_AUDIT_ENUM_STATE_DIR}/AuditType.java", "AuditType", "AUDIT_TYPES", "AUDIT_TYPES"),
     EnumContract("AuditStatus", f"{_AUDIT_ENUM_STATE_DIR}/AuditStatus.java", "AuditStatus", "AUDIT_STATUSES", "AUDIT_STATUSES"),
-    # GC-T014 NIST SP 800-30 Rev. 1 enums. Mirrored at the
-    # /api/v1/analysis/grc/nist-sp-800-30 boundary (NistAssessmentResponse) and
-    # in the MCP gc_analyze nist_assessment kind payload. ADR-034.
-    EnumContract(
-        "ThreatEventKind",
-        f"{_RISK_ENUM_STATE_DIR}/ThreatEventKind.java",
-        "ThreatEventKind",
-        "THREAT_EVENT_KINDS",
-        "THREAT_EVENT_KINDS",
-    ),
-    EnumContract(
-        "ThreatSourceRelevance",
-        f"{_RISK_ENUM_STATE_DIR}/ThreatSourceRelevance.java",
-        "ThreatSourceRelevance",
-        "THREAT_SOURCE_RELEVANCES",
-        "THREAT_SOURCE_RELEVANCES",
-    ),
-    EnumContract(
-        "NistLikelihoodBand",
-        f"{_RISK_ENUM_STATE_DIR}/NistLikelihoodBand.java",
-        "NistLikelihoodBand",
-        "NIST_LIKELIHOOD_BANDS",
-        "NIST_LIKELIHOOD_BANDS",
-    ),
-    EnumContract(
-        "NistImpactBand",
-        f"{_RISK_ENUM_STATE_DIR}/NistImpactBand.java",
-        "NistImpactBand",
-        "NIST_IMPACT_BANDS",
-        "NIST_IMPACT_BANDS",
-    ),
-    # GC-T012 crosswalk vocabulary enums. Mirrored at the
-    # /api/v1/methodology-profiles boundary and in the MCP gc_risk_governance
-    # methodology_profile handler Zod shape. ADR-034.
-    EnumContract(
-        "NormalizedConcept",
-        f"{_RISK_ENUM_STATE_DIR}/NormalizedConcept.java",
-        "NormalizedConcept",
-        "NORMALIZED_CONCEPTS",
-        "NORMALIZED_CONCEPTS",
-    ),
-    EnumContract(
-        "CrosswalkVocabularySurface",
-        f"{_RISK_ENUM_STATE_DIR}/CrosswalkVocabularySurface.java",
-        "CrosswalkVocabularySurface",
-        "CROSSWALK_VOCABULARY_SURFACES",
-        "CROSSWALK_VOCABULARY_SURFACES",
-    ),
-    # GC-GRC: Verification and Assurance Enums. VerificationStatus and
-    # AssuranceLevel are domain/verification/state enums used in evidence/control
-    # verification workflows; MethodologyFamily is a domain/riskscenarios/state
-    # enum used in methodology-profile selection. All three are mirrored at the
-    # frontend TypeScript boundary and MCP surfaces. ADR-034.
+    # Verification and Assurance enums. VerificationStatus and AssuranceLevel
+    # are domain/verification/state enums used in evidence/control verification
+    # workflows; both are mirrored at the frontend TypeScript boundary and MCP
+    # surfaces. ADR-034. (The domain/riskscenarios/state NIST/crosswalk/
+    # methodology enums this comment used to describe — ThreatEventKind,
+    # ThreatSourceRelevance, NistLikelihoodBand, NistImpactBand,
+    # NormalizedConcept, CrosswalkVocabularySurface, MethodologyFamily — were
+    # retired with the composed GRC product surface; ADR-089, issue #1346.)
     EnumContract(
         "VerificationStatus",
         f"{_VERIFICATION_ENUM_STATE_DIR}/VerificationStatus.java",
@@ -1903,14 +2131,6 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
         "ASSURANCE_LEVELS",
         "ASSURANCE_LEVELS",
     ),
-    EnumContract(
-        "MethodologyFamily",
-        f"{_RISK_ENUM_STATE_DIR}/MethodologyFamily.java",
-        "MethodologyFamily",
-        "METHODOLOGY_FAMILIES",
-        "METHODOLOGY_FAMILIES",
-    ),
-
 )
 
 
@@ -2094,6 +2314,515 @@ def _drift_violation(label: str, layer: str, expected: list[str], actual: list[s
         message=f"{label} enum drift between backend and {layer} (issue #433 / ADR-034).",
         details=details,
     )
+
+
+# ---------------------------------------------------------------------------
+# Contract surface foundation (GC-O014 / ADR-082).
+#
+# The contract surface is intentionally artifact-backed: backend-generated
+# OpenAPI, generated TypeScript, durable-record/workflow schemas, the authz
+# path matrix, and the breaking-change ledger live under contracts/. These
+# checks are lightweight static policy checks; the heavier regenerate-and-diff
+# gate runs through `make contracts-check`.
+# ---------------------------------------------------------------------------
+
+
+def run_contract_surface_check(root: Path = REPO_ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    for rel in CONTRACT_REQUIRED_PATHS:
+        if not (root / rel).exists():
+            violations.append(
+                Violation(
+                    code="contract-surface-missing",
+                    message=f"Required contract artifact is missing: {rel}.",
+                    details=["Run `make contracts` and commit the generated contract surface."],
+                )
+            )
+
+    shim = root / FRONTEND_CONTRACT_SHIM_PATH
+    if shim.exists():
+        text = shim.read_text(encoding="utf-8")
+        if GENERATED_CONTRACT_EXPORT not in text:
+            violations.append(
+                Violation(
+                    code="contract-frontend-shim",
+                    message="frontend/src/types/api.ts must re-export the generated contract types.",
+                    details=[f"expected line: {GENERATED_CONTRACT_EXPORT}"],
+                )
+            )
+        hand_mirror = re.search(r"^\s*export\s+(interface|type|const)\s+", text, re.MULTILINE)
+        if hand_mirror:
+            violations.append(
+                Violation(
+                    code="contract-frontend-hand-mirror",
+                    message="frontend/src/types/api.ts must not contain hand-mirrored DTOs or enum constants.",
+                    details=["Keep compatibility aliases in contracts/gen/typescript/api.ts via the generator inventory."],
+                )
+            )
+
+    return violations
+
+
+def run_contract_invariant_enforcement_check(root: Path = REPO_ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    schemas_dir = root / "contracts" / "schemas"
+    if not schemas_dir.exists():
+        return [
+            Violation(
+                code="contract-schema-dir-missing",
+                message="contracts/schemas/ is missing; GC-O014 schema invariant coverage cannot be checked.",
+            )
+        ]
+
+    for schema_path in sorted(schemas_dir.rglob("*.schema.json")):
+        rel = schema_path.relative_to(root).as_posix()
+        try:
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            violations.append(
+                Violation(
+                    code="contract-schema-json-invalid",
+                    message=f"{rel} is not valid JSON.",
+                    details=[str(exc)],
+                )
+            )
+            continue
+
+        invariants = schema.get("x-ground-control-invariants")
+        if invariants is None:
+            violations.append(
+                Violation(
+                    code="contract-invariant-inventory-missing",
+                    message=f"{rel} must declare x-ground-control-invariants.",
+                    details=["Use [{\"id\":\"none\", \"rationale\":\"...\"}] only when the schema has no declared invariant."],
+                )
+            )
+            continue
+        if not isinstance(invariants, list) or len(invariants) == 0:
+            violations.append(
+                Violation(
+                    code="contract-invariant-inventory-invalid",
+                    message=f"{rel} has an empty or non-list x-ground-control-invariants value.",
+                )
+            )
+            continue
+
+        for entry in invariants:
+            if not isinstance(entry, dict) or not entry.get("id"):
+                violations.append(
+                    Violation(
+                        code="contract-invariant-entry-invalid",
+                        message=f"{rel} has an invariant entry without an id.",
+                    )
+                )
+                continue
+            if entry["id"] == "none":
+                if not entry.get("rationale"):
+                    violations.append(
+                        Violation(
+                            code="contract-invariant-none-rationale-missing",
+                            message=f"{rel} declares no invariants but omits a rationale.",
+                        )
+                    )
+                continue
+            enforced_by = entry.get("enforcedBy")
+            if not isinstance(enforced_by, list) or len(enforced_by) == 0:
+                violations.append(
+                    Violation(
+                        code="contract-invariant-enforcement-missing",
+                        message=f"{rel} invariant {entry['id']} must name at least one enforcing test or spec file.",
+                    )
+                )
+                continue
+            for target in enforced_by:
+                if not isinstance(target, str):
+                    violations.append(
+                        Violation(
+                            code="contract-invariant-enforcement-invalid",
+                            message=f"{rel} invariant {entry['id']} has an invalid enforcement path.",
+                            details=[str(target)],
+                        )
+                    )
+                    continue
+
+                target_path_text, separator, target_anchor = target.partition("::")
+                target_path = Path(target_path_text)
+                if not separator or not target_anchor:
+                    violations.append(
+                        Violation(
+                            code="contract-invariant-enforcement-anchor-missing",
+                            message=f"{rel} invariant {entry['id']} must name a specific test/spec anchor.",
+                            details=[f"use '<repo-path>::<test-or-rule-id>', got {target}"],
+                        )
+                    )
+                    continue
+                if target_path_text.startswith("/") or ".." in target_path.parts:
+                    violations.append(
+                        Violation(
+                            code="contract-invariant-enforcement-invalid",
+                            message=f"{rel} invariant {entry['id']} has an invalid enforcement path.",
+                            details=[target],
+                        )
+                    )
+                    continue
+
+                resolved = root / target_path
+                if not resolved.exists():
+                    violations.append(
+                        Violation(
+                            code="contract-invariant-enforcement-missing-file",
+                            message=f"{rel} invariant {entry['id']} references a missing enforcement file.",
+                            details=[target_path_text],
+                        )
+                    )
+                elif target_anchor not in resolved.read_text(encoding="utf-8"):
+                    violations.append(
+                        Violation(
+                            code="contract-invariant-enforcement-anchor-missing-file",
+                            message=f"{rel} invariant {entry['id']} references an enforcement anchor that is not present.",
+                            details=[target],
+                        )
+                    )
+
+    return violations
+
+
+# Deterministic /implement Temporal workflow payload contract (ADR-082 table, owned by issue #1277).
+WORKFLOW_CONTRACT_RECORD_DIR = (
+    "backend/src/main/java/com/keplerops/groundcontrol/infrastructure/temporal/implement/contract"
+)
+WORKFLOW_SCHEMA_DIR = "contracts/schemas/workflow"
+# The ADR-061 telemetry correlation/projection record is not an activity payload.
+WORKFLOW_SCHEMA_NON_PAYLOAD_PREFIXES = ("workflow-run-record",)
+_JAVA_RECORD_RE = re.compile(r"public\s+record\s+(\w+)\s*\(")
+
+
+def _collect_x_gc_records(node: object) -> list[str]:
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "x-gc-record" and isinstance(value, str):
+                found.append(value)
+            else:
+                found.extend(_collect_x_gc_records(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_collect_x_gc_records(item))
+    return found
+
+
+def run_workflow_payload_contract_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert every Temporal activity I/O record maps to a workflow payload schema (ADR-082/#1277).
+
+    Enforces a 1:1 bijection between the Java records under the deterministic ``/implement`` contract
+    package and the ``x-gc-record`` tags in ``contracts/schemas/workflow/``: no record ships without a
+    committed schema (contract-first, ADR-028), and no schema tag dangles without a record.
+    """
+    violations: list[Violation] = []
+    contract_dir = root / WORKFLOW_CONTRACT_RECORD_DIR
+    schema_dir = root / WORKFLOW_SCHEMA_DIR
+    if not contract_dir.exists():
+        # The engine core is not present in this tree; nothing to gate.
+        return violations
+    if not schema_dir.exists():
+        return [
+            Violation(
+                code="workflow-payload-schema-dir-missing",
+                message=f"{WORKFLOW_SCHEMA_DIR} is missing; workflow activity payload contracts cannot be checked.",
+                details=[],
+            )
+        ]
+
+    record_names: set[str] = set()
+    for java_path in sorted(contract_dir.glob("*.java")):
+        match = _JAVA_RECORD_RE.search(java_path.read_text(encoding="utf-8"))
+        if match:
+            record_names.add(match.group(1))
+
+    tagged: dict[str, list[str]] = {}
+    for schema_path in sorted(schema_dir.glob("*.schema.json")):
+        if schema_path.name.startswith(WORKFLOW_SCHEMA_NON_PAYLOAD_PREFIXES):
+            continue
+        try:
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            violations.append(
+                Violation(
+                    code="workflow-payload-schema-json-invalid",
+                    message=f"{schema_path.relative_to(root).as_posix()} is not valid JSON.",
+                    details=[str(exc)],
+                )
+            )
+            continue
+        for tag in _collect_x_gc_records(schema):
+            tagged.setdefault(tag, []).append(schema_path.name)
+
+    tagged_names = set(tagged)
+    for name in sorted(record_names - tagged_names):
+        violations.append(
+            Violation(
+                code="workflow-payload-record-unmapped",
+                message=f"Temporal activity payload record {name} has no x-gc-record mapping under {WORKFLOW_SCHEMA_DIR}.",
+                details=["Publish the schema $def (contract-first) before the record ships (ADR-082)."],
+            )
+        )
+    for name in sorted(tagged_names - record_names):
+        violations.append(
+            Violation(
+                code="workflow-payload-schema-orphan",
+                message=f"{WORKFLOW_SCHEMA_DIR} declares x-gc-record {name} with no matching record class.",
+                details=[],
+            )
+        )
+    for name, files in sorted(tagged.items()):
+        if len(files) > 1:
+            violations.append(
+                Violation(
+                    code="workflow-payload-record-duplicate",
+                    message=f"x-gc-record {name} is declared by multiple workflow schemas: {', '.join(files)}.",
+                    details=[],
+                )
+            )
+    return violations
+
+
+# GC-O009 (b) / ADR-029 human-gate invariant. The closed operator-signal catalog is exactly these
+# three; PR merge is observed from GitHub, never signaled, and no plan-approval gate exists. The
+# workflow contract (ImplementWorkflow @SignalMethod set) is the source of truth; the backend enum,
+# the JSON schema, and the MCP tool must mirror it 1:1. Adding a fourth signal — or any plan/merge
+# approval gate — must fail this check.
+_GATE_SET_SIGNAL_TYPES = ("CANCEL", "RETRY_FROM", "REVIEW_CAP_DISPOSITION")
+_GATE_SET_SIGNAL_METHODS = ("applyReviewCapDisposition", "cancel", "retryFrom")
+_GATE_SET_SIGNAL_RECORDS = ("CancelSignal", "ReviewCapDispositionSignal", "RetryFromSignal")
+# Tokens that would signal a reintroduced synchronous gate (ADR-029 forbids these). Scanned across the
+# operator-signal enum, the workflow contract, and the MCP surface. "merge" alone is intentionally NOT
+# forbidden — those files legitimately describe the observed merge gate.
+_GATE_SET_FORBIDDEN_TOKENS = (
+    "PLAN_APPROVAL",
+    "PLAN_APPROVED",
+    "APPROVE_PLAN",
+    "MERGE_APPROVED",
+    "MERGE_APPROVAL",
+    "APPROVE_MERGE",
+    "CONTINUE_AFTER_MERGE",
+    "approveMerge",
+    "approvePlan",
+    "mergeApproved",
+    "planApproved",
+    "continueAfterMerge",
+)
+_OPERATOR_SIGNAL_TYPE_PATH = (
+    "backend/src/main/java/com/keplerops/groundcontrol/domain/workflowexecution/OperatorSignalType.java"
+)
+_IMPLEMENT_WORKFLOW_PATH = (
+    "backend/src/main/java/com/keplerops/groundcontrol/infrastructure/temporal/implement/ImplementWorkflow.java"
+)
+_WORKFLOW_MCP_PATH = "mcp/ground-control/gc-workflow-execution.js"
+_IMPLEMENT_SIGNALS_SCHEMA_PATH = "contracts/schemas/workflow/implement-signals.v1.schema.json"
+_SIGNAL_METHOD_RE = re.compile(r"@SignalMethod\s+\w[\w<>\[\]]*\s+(\w+)\s*\(")
+
+
+def run_gate_set_invariant_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert the operator-gate set equals the workflow contract's, on every surface (GC-O009 (b)).
+
+    A static post-condition (independent of ``changed_files``): the closed operator-signal catalog is
+    exactly ``cancel`` / ``retryFrom`` / ``applyReviewCapDisposition`` and nothing else, mirrored 1:1
+    across the workflow ``@SignalMethod`` contract, the ``OperatorSignalType`` enum, the
+    ``implement-signals.v1`` schema, and the MCP ``WORKFLOW_SIGNAL_TYPES`` catalog. PR merge is observed,
+    never signaled; no plan-approval gate exists (ADR-029). Any surface that adds, drops, or renames a
+    gate — or reintroduces a plan/merge-approval gate — fails ``make policy``. Emits:
+      ``gate-set-source-missing`` — a required source file is absent.
+      ``gate-set-parse-error``    — a file exists but the gate set could not be parsed out of it.
+      ``gate-set-drift``          — a surface does not equal the canonical closed set.
+      ``gate-set-forbidden-gate`` — a plan/merge-approval token appears on a gate surface.
+    """
+    violations: list[Violation] = []
+
+    enum_path = root / _OPERATOR_SIGNAL_TYPE_PATH
+    workflow_path = root / _IMPLEMENT_WORKFLOW_PATH
+    mcp_path = root / _WORKFLOW_MCP_PATH
+    schema_path = root / _IMPLEMENT_SIGNALS_SCHEMA_PATH
+
+    if not enum_path.exists():
+        # The control surface is not present in this tree; nothing to gate.
+        return violations
+    for path, rel in ((workflow_path, _IMPLEMENT_WORKFLOW_PATH), (mcp_path, _WORKFLOW_MCP_PATH), (schema_path, _IMPLEMENT_SIGNALS_SCHEMA_PATH)):
+        if not path.exists():
+            violations.append(
+                Violation(
+                    code="gate-set-source-missing",
+                    message=f"{rel} is missing; the gate-set invariant cannot be verified.",
+                    details=[],
+                )
+            )
+    if violations:
+        return violations
+
+    enum_text = enum_path.read_text(encoding="utf-8")
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    mcp_text = mcp_path.read_text(encoding="utf-8")
+
+    canonical_types = set(_GATE_SET_SIGNAL_TYPES)
+    canonical_methods = set(_GATE_SET_SIGNAL_METHODS)
+    canonical_records = set(_GATE_SET_SIGNAL_RECORDS)
+
+    # 1. Workflow contract @SignalMethod set (the source of truth).
+    signal_methods = set(_SIGNAL_METHOD_RE.findall(workflow_text))
+    if not signal_methods:
+        violations.append(
+            Violation(
+                code="gate-set-parse-error",
+                message=f"No @SignalMethod declarations parsed from {_IMPLEMENT_WORKFLOW_PATH}.",
+                details=[],
+            )
+        )
+    else:
+        _gate_set_diff(violations, "ImplementWorkflow @SignalMethod", signal_methods, canonical_methods)
+
+    # 2. Backend OperatorSignalType enum.
+    enum_constants = set(parse_java_enum_constants(enum_text))
+    if not enum_constants:
+        violations.append(
+            Violation(
+                code="gate-set-parse-error",
+                message=f"No enum constants parsed from {_OPERATOR_SIGNAL_TYPE_PATH}.",
+                details=[],
+            )
+        )
+    else:
+        _gate_set_diff(violations, "OperatorSignalType enum", enum_constants, canonical_types)
+
+    # 3. MCP WORKFLOW_SIGNAL_TYPES catalog.
+    mcp_types = parse_const_string_array(mcp_text, "WORKFLOW_SIGNAL_TYPES")
+    if mcp_types is None:
+        violations.append(
+            Violation(
+                code="gate-set-parse-error",
+                message=f"WORKFLOW_SIGNAL_TYPES not found in {_WORKFLOW_MCP_PATH}.",
+                details=[],
+            )
+        )
+    else:
+        _gate_set_diff(violations, "MCP WORKFLOW_SIGNAL_TYPES", set(mcp_types), canonical_types)
+
+    # 4. implement-signals.v1 schema signal records.
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        violations.append(
+            Violation(
+                code="gate-set-parse-error",
+                message=f"{_IMPLEMENT_SIGNALS_SCHEMA_PATH} is not valid JSON.",
+                details=[str(exc)],
+            )
+        )
+    else:
+        schema_records = set(_collect_x_gc_records(schema))
+        _gate_set_diff(violations, "implement-signals.v1 schema", schema_records, canonical_records)
+
+    # 5. Forbidden plan/merge-approval tokens on any gate surface.
+    for rel, text in (
+        (_OPERATOR_SIGNAL_TYPE_PATH, enum_text),
+        (_IMPLEMENT_WORKFLOW_PATH, workflow_text),
+        (_WORKFLOW_MCP_PATH, mcp_text),
+    ):
+        present = sorted(token for token in _GATE_SET_FORBIDDEN_TOKENS if token in text)
+        if present:
+            violations.append(
+                Violation(
+                    code="gate-set-forbidden-gate",
+                    message=f"{rel} reintroduces a forbidden synchronous gate (ADR-029): PR merge is observed, never signaled; no plan-approval gate.",
+                    details=present,
+                )
+            )
+    return violations
+
+
+def _gate_set_diff(violations: list[Violation], surface: str, actual: set[str], canonical: set[str]) -> None:
+    if actual == canonical:
+        return
+    added = sorted(actual - canonical)
+    removed = sorted(canonical - actual)
+    details = []
+    if added:
+        details.append(f"outside the closed catalog: {', '.join(added)}")
+    if removed:
+        details.append(f"missing from the surface: {', '.join(removed)}")
+    violations.append(
+        Violation(
+            code="gate-set-drift",
+            message=f"{surface} does not equal the closed operator-gate set (the workflow contract's).",
+            details=details,
+        )
+    )
+
+
+def _parse_authz_contract_rows(text: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("- id:"):
+            if current:
+                rows.append(current)
+            current = {"id": line.split(":", 1)[1].strip().strip('"')}
+        elif current and ":" in line:
+            key, value = line.split(":", 1)
+            current[key.strip()] = value.strip().strip('"')
+    if current:
+        rows.append(current)
+    return rows
+
+
+def _java_admin_matrix_paths(java_text: str) -> set[str]:
+    constants = {
+        name: value
+        for name, value in re.findall(r'private\s+static\s+final\s+String\s+(\w+)\s*=\s*"([^"]+)"', java_text)
+    }
+    paths: set[str] = set()
+    for match in re.finditer(r"\.requestMatchers\((.*?)\)\s*\.hasRole\(ROLE_ADMIN\)", java_text, re.DOTALL):
+        block = match.group(1)
+        paths.update(value for value in re.findall(r'"(/api/v1/[^"]+)"', block))
+        for token in re.findall(r"\b[A-Z][A-Z0-9_]+\b", block):
+            if token in constants and constants[token].startswith("/api/v1/"):
+                paths.add(constants[token])
+    return paths
+
+
+def run_authz_matrix_sync_check(root: Path = REPO_ROOT) -> list[Violation]:
+    matrix_path = root / "contracts" / "authz" / "path-matrix.yaml"
+    java_path = root / "backend" / "src" / "main" / "java" / "com" / "keplerops" / "groundcontrol" / "shared" / "security" / "ApiPathMatrix.java"
+    if not matrix_path.exists() or not java_path.exists():
+        return [
+            Violation(
+                code="authz-matrix-source-missing",
+                message="Authz matrix sync check needs contracts/authz/path-matrix.yaml and ApiPathMatrix.java.",
+            )
+        ]
+
+    rows = _parse_authz_contract_rows(matrix_path.read_text(encoding="utf-8"))
+    contract_admin_paths = {row.get("path", "") for row in rows if row.get("access") == "ROLE_ADMIN"}
+    contract_admin_paths.discard("")
+    java_admin_paths = _java_admin_matrix_paths(java_path.read_text(encoding="utf-8"))
+
+    violations: list[Violation] = []
+    missing_from_contract = sorted(java_admin_paths - contract_admin_paths)
+    missing_from_java = sorted(contract_admin_paths - java_admin_paths)
+    if missing_from_contract or missing_from_java:
+        details: list[str] = []
+        if missing_from_contract:
+            details.append(f"admin paths in ApiPathMatrix.java but not contracts/authz/path-matrix.yaml: {missing_from_contract}")
+        if missing_from_java:
+            details.append(f"admin paths in contracts/authz/path-matrix.yaml but not ApiPathMatrix.java: {missing_from_java}")
+        violations.append(
+            Violation(
+                code="authz-matrix-drift",
+                message="contracts/authz/path-matrix.yaml drifted from ApiPathMatrix.java.",
+                details=details,
+            )
+        )
+    return violations
 
 
 def run_pr_body_check(event_path: Path) -> list[Violation]:
@@ -2565,17 +3294,18 @@ def run_test_quality_decision_record_contract(
 
 
 # ---------------------------------------------------------------------------
-# Traceability-reconciliation gate contract (issues #1058, #1103)
+# Traceability-reconciliation gate contract (issues #1058, #1103; ADR-089/#1346)
 #
 # Asserts the /implement workflow's traceability + post-merge close gate
 # is wired across all prose surfaces. The MCP-tool layer enforces:
 #   - Step 17 calls gc_assert_completion, which sequences
-#     gc_assert_traceability_reconciled (posting traceability_reconciled),
-#     gc_assert_grc_reconciled (posting grc_reconciled), and
+#     gc_assert_traceability_reconciled (posting traceability_reconciled) and
 #     gc_post_final_report in one deterministic call. plain_english_outcome
 #     is required for the user-facing closeout.
 #   - Step 20 (Phase E) calls gc_close_issue_after_merge after PR merge and
-#     surfaces a next_issue_recommendation envelope when one is available.
+#     performs only linked-PR resolution, merge-state verification, and
+#     idempotent closure — no GRC assertion and no next-issue recommendation
+#     (both retired by ADR-089).
 #   - SKILL.md documents Phase E and gc_close_issue_after_merge as the
 #     canonical close path.
 #
@@ -2597,12 +3327,12 @@ def run_traceability_reconciliation_gate_contract(
 
     The gate has two MCP-tool surfaces and three prose anchors:
 
-      step-17-completion.md   must mention `gc_assert_completion`,
-                              `traceability_reconciled`, and `plain_english_outcome`
-      step-20-close-issue-on-merge.md must exist AND mention `gc_close_issue_after_merge`
-                              and `next_issue_recommendation`
-      SKILL.md                must mention `Phase E`, `gc_close_issue_after_merge`,
-                              and `next_issue_recommendation`
+      step-17-completion.md   must mention `gc_assert_completion` and
+                              `traceability_reconciled` and `plain_english_outcome`
+      step-20-close-issue-on-merge.md must exist AND mention
+                              `gc_close_issue_after_merge`
+      SKILL.md                must mention `Phase E` and
+                              `gc_close_issue_after_merge`
 
     Emits one violation per missing anchor with a stable code so CI surfaces
     the specific gap. A repo whose policy-tests file isn't yet up to date
@@ -2620,15 +3350,15 @@ def run_traceability_reconciliation_gate_contract(
         ),
         (
             IMPLEMENT_STEP_20_PATH,
-            ("gc_close_issue_after_merge", "next_issue_recommendation"),
+            ("gc_close_issue_after_merge",),
             "traceability-gate-step20-missing",
-            "Step 20 (Phase E post-merge close) must exist and mention gc_close_issue_after_merge plus next_issue_recommendation (issues #1058/#1156).",
+            "Step 20 (Phase E post-merge close) must exist and mention gc_close_issue_after_merge (issue #1058).",
         ),
         (
             IMPLEMENT_SKILL_PATH,
-            ("Phase E", "gc_close_issue_after_merge", "next_issue_recommendation"),
+            ("Phase E", "gc_close_issue_after_merge"),
             "traceability-gate-skill-missing",
-            "SKILL.md must document Phase E, the gc_close_issue_after_merge close path, and next_issue_recommendation (issues #1058/#1156).",
+            "SKILL.md must document Phase E and the gc_close_issue_after_merge close path (issue #1058).",
         ),
     )
 
@@ -2699,7 +3429,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             "`gh pr view <n> --json body`."
         ),
     )
+    parser.add_argument(
+        "--pr-comments-json",
+        help=(
+            "Path to sanitized PR issue comments as a JSON array or JSONL "
+            "objects with body and author fields. CI uses this so PR-head "
+            "policy code does not receive a GitHub token."
+        ),
+    )
     return parser.parse_args(argv)
+
+
 
 
 def render_and_exit(violations: list[Violation]) -> int:
@@ -2834,6 +3574,11 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_deploy_artifact_consistency())
     violations.extend(run_methodology_catalog_drift())
     violations.extend(run_enum_contract_check())
+    violations.extend(run_contract_surface_check())
+    violations.extend(run_contract_invariant_enforcement_check())
+    violations.extend(run_workflow_payload_contract_check())
+    violations.extend(run_gate_set_invariant_check())
+    violations.extend(run_authz_matrix_sync_check())
     violations.extend(run_workflow_routing_contract())
     violations.extend(run_test_quality_decision_record_contract())
     violations.extend(run_traceability_reconciliation_gate_contract())
@@ -2862,13 +3607,18 @@ def _resolve_pr_body(args: argparse.Namespace) -> str | None:
     """Resolve the PR body string from CLI args / environment, in priority order.
 
     1. ``--pr-body-file`` — local pre-push hook driver.
-    2. ``--pr-number`` — fetched via ``gh pr view <n> --json body``.
-    3. ``--event-path`` or ``GITHUB_EVENT_PATH`` — CI driver.
+    2. ``--event-path`` or ``GITHUB_EVENT_PATH`` — CI driver.
+    3. ``--pr-number`` — fetched via ``gh pr view <n> --json body``.
 
     Returns ``None`` when no source is configured (the check is skipped).
     """
     if args.pr_body_file:
         return Path(args.pr_body_file).read_text(encoding="utf-8")
+    event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
+    if event_path:
+        event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        pull_request = event.get("pull_request") or {}
+        return pull_request.get("body") or ""
     if args.pr_number is not None:
         result = subprocess.run(
             ["gh", "pr", "view", str(args.pr_number), "--json", "body", "--jq", ".body"],
@@ -2877,11 +3627,6 @@ def _resolve_pr_body(args: argparse.Namespace) -> str | None:
             text=True,
         )
         return result.stdout
-    event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
-    if event_path:
-        event = json.loads(Path(event_path).read_text(encoding="utf-8"))
-        pull_request = event.get("pull_request") or {}
-        return pull_request.get("body") or ""
     return None
 
 
@@ -2895,11 +3640,21 @@ RELEASE_PR_HEAD = "dev"
 def _resolve_pr_refs(args: argparse.Namespace) -> tuple[str | None, str | None]:
     """Best-effort ``(base_ref, head_ref)`` for the PR under check.
 
-    Sourced from ``--pr-number`` (``gh pr view``) or the GitHub event payload,
+    Sourced from the GitHub event payload or ``--pr-number`` (``gh pr view``),
     mirroring ``_resolve_pr_body``. Returns ``(None, None)`` when the refs cannot
     be determined (e.g. the local pre-push driver), so the body contract applies
     by default — only a positively-identified release PR is exempted.
     """
+    event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
+    if event_path:
+        try:
+            event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None, None
+        pull_request = event.get("pull_request") or {}
+        base = (pull_request.get("base") or {}).get("ref")
+        head = (pull_request.get("head") or {}).get("ref")
+        return base, head
     if args.pr_number is not None:
         try:
             result = subprocess.run(
@@ -2912,16 +3667,6 @@ def _resolve_pr_refs(args: argparse.Namespace) -> tuple[str | None, str | None]:
             return data.get("baseRefName"), data.get("headRefName")
         except (subprocess.CalledProcessError, json.JSONDecodeError):
             return None, None
-    event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
-    if event_path:
-        try:
-            event = json.loads(Path(event_path).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None, None
-        pull_request = event.get("pull_request") or {}
-        base = (pull_request.get("base") or {}).get("ref")
-        head = (pull_request.get("head") or {}).get("ref")
-        return base, head
     return None, None
 
 

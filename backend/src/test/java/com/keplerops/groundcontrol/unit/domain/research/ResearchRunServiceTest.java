@@ -3,7 +3,9 @@ package com.keplerops.groundcontrol.unit.domain.research;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -125,7 +127,22 @@ class ResearchRunServiceTest {
                 projectService,
                 selectionRepository,
                 sourceRepository,
-                methodologyCatalog);
+                methodologyCatalog,
+                mock(
+                        com.keplerops.groundcontrol.domain.research.repository.MethodologyRequirementsContractRepository
+                                .class),
+                mock(
+                        com.keplerops.groundcontrol.domain.research.repository
+                                .MethodologyRequirementsContractEntryRepository.class),
+                mock(
+                        com.keplerops.groundcontrol.domain.research.repository
+                                .MethodologyRequirementsContractEntrySourceLinkRepository.class),
+                mock(
+                        com.keplerops.groundcontrol.domain.research.repository
+                                .MethodologyRequirementsContractRejectedAlternativeRepository.class),
+                mock(com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanRepository.class),
+                mock(com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanCoverageRepository.class),
+                mock(com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanSectionRepository.class));
         project = new Project("research-p", "Research Project", ProjectType.RESEARCH);
         TestUtil.setField(project, "id", PROJECT_ID);
         when(projectService.getById(PROJECT_ID)).thenReturn(project);
@@ -216,9 +233,37 @@ class ResearchRunServiceTest {
         assertThat(run.getBudgetTokens()).isEqualTo(1000L);
 
         var captor = ArgumentCaptor.forClass(ResearchRunGate.class);
-        verify(gateRepository, org.mockito.Mockito.times(5)).save(captor.capture());
+        verify(gateRepository, times(5)).save(captor.capture());
         assertThat(captor.getAllValues()).hasSize(5).allSatisfy(g -> assertThat(g.getBehavior())
                 .isEqualTo(ResearchGateBehavior.REQUIRE_HUMAN));
+    }
+
+    @Test
+    void start_snapshotsAllowedToolsPrivacyAndEgressPolicy() {
+        var intake = new com.keplerops.groundcontrol.domain.research.model.ResearchIntake(
+                project,
+                "goal",
+                com.keplerops.groundcontrol.domain.research.model.ContributionType.REVIEW,
+                IntendedOutput.SCOPING_REVIEW,
+                AutonomyLevel.COPILOT,
+                List.of("scholarly-search"));
+        intake.setPrivacyConstraints("no external providers");
+        intake.setEgressPolicy(List.of(new com.keplerops.groundcontrol.domain.research.model.ResearchEgressAllowance(
+                com.keplerops.groundcontrol.domain.research.model.ResearchDataClass.PUBLIC,
+                com.keplerops.groundcontrol.domain.research.model.ResearchDestinationClass.CITATION_PROVIDER,
+                com.keplerops.groundcontrol.domain.research.model.ResearchDataForm.DERIVED_METADATA,
+                null)));
+        when(intakeRepository.findByProjectId(PROJECT_ID)).thenReturn(Optional.of(intake));
+        when(runRepository.existsByProjectIdAndUid(PROJECT_ID, "RUN-1")).thenReturn(false);
+
+        var run = service.start(new StartCmd("RUN-1", null, null).toCommand());
+
+        assertThat(run.getAllowedTools()).containsExactly("scholarly-search");
+        assertThat(run.getPrivacyConstraints()).isEqualTo("no external providers");
+        assertThat(run.getEgressPolicy()).hasSize(1);
+        assertThat(run.getEgressPolicy().get(0).destinationClass())
+                .isEqualTo(
+                        com.keplerops.groundcontrol.domain.research.model.ResearchDestinationClass.CITATION_PROVIDER);
     }
 
     @Test
@@ -229,7 +274,7 @@ class ResearchRunServiceTest {
         service.start(new StartCmd("RUN-1", AutonomyLevel.AUTONOMOUS, null).toCommand());
 
         var captor = ArgumentCaptor.forClass(ResearchRunGate.class);
-        verify(gateRepository, org.mockito.Mockito.times(5)).save(captor.capture());
+        verify(gateRepository, times(5)).save(captor.capture());
         assertThat(captor.getAllValues())
                 .allSatisfy(g -> assertThat(g.getBehavior()).isEqualTo(ResearchGateBehavior.AUTONOMOUS_DEFAULT));
     }

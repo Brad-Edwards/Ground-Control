@@ -49,11 +49,13 @@ const REQUIRED_FIELD_REGISTRY = {
     "control_id", "uid", "title", "status",
     "target_type", "link_type", "link_id",
   ],
+  // ADR-089 §1/§3 retired methodology_profile, risk_register_record,
+  // risk_assessment_result, treatment_plan, and risk_appetite_profile from
+  // gc_risk_governance; only verification_result remains. gc_grc_assess
+  // (the standalone GRC assessment lane tool) was removed entirely.
   gc_risk_governance: [
-    "uid", "title",
-    "risk_scenario_id", "methodology_profile_id",
-    "risk_register_record_id", "strategy",
-    "approval_state", "status",
+    "target_id", "requirement_id", "prover", "property",
+    "result", "assurance_level", "evidence", "verified_at", "expires_at",
   ],
   gc_requirement: ["uid", "title", "statement", "source_uid", "new_uid"],
   gc_baseline: ["name", "baseline_a", "baseline_b"],

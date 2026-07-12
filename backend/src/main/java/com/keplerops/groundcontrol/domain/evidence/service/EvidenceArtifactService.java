@@ -2,7 +2,6 @@ package com.keplerops.groundcontrol.domain.evidence.service;
 
 import com.keplerops.groundcontrol.domain.assets.repository.ObservationRepository;
 import com.keplerops.groundcontrol.domain.audit.ActorHolder;
-import com.keplerops.groundcontrol.domain.controls.repository.ControlEffectivenessAssessmentRepository;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlTestRepository;
 import com.keplerops.groundcontrol.domain.evidence.model.EvidenceArtifact;
 import com.keplerops.groundcontrol.domain.evidence.model.EvidenceSourceRef;
@@ -14,7 +13,6 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.findings.repository.FindingRepository;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
-import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
 import com.keplerops.groundcontrol.domain.verification.repository.VerificationResultRepository;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -64,9 +62,7 @@ public class EvidenceArtifactService {
     private final ProjectService projectService;
     private final ObservationRepository observationRepository;
     private final ControlTestRepository controlTestRepository;
-    private final ControlEffectivenessAssessmentRepository controlEffectivenessAssessmentRepository;
     private final VerificationResultRepository verificationResultRepository;
-    private final RiskAssessmentResultRepository riskAssessmentResultRepository;
     private final FindingRepository findingRepository;
 
     public EvidenceArtifactService(
@@ -74,17 +70,13 @@ public class EvidenceArtifactService {
             ProjectService projectService,
             ObservationRepository observationRepository,
             ControlTestRepository controlTestRepository,
-            ControlEffectivenessAssessmentRepository controlEffectivenessAssessmentRepository,
             VerificationResultRepository verificationResultRepository,
-            RiskAssessmentResultRepository riskAssessmentResultRepository,
             FindingRepository findingRepository) {
         this.repository = repository;
         this.projectService = projectService;
         this.observationRepository = observationRepository;
         this.controlTestRepository = controlTestRepository;
-        this.controlEffectivenessAssessmentRepository = controlEffectivenessAssessmentRepository;
         this.verificationResultRepository = verificationResultRepository;
-        this.riskAssessmentResultRepository = riskAssessmentResultRepository;
         this.findingRepository = findingRepository;
     }
 
@@ -271,13 +263,13 @@ public class EvidenceArtifactService {
             case CONTROL_TEST -> controlTestRepository
                     .findByIdAndProjectId(entityId, projectId)
                     .isPresent();
-            case CONTROL_EFFECTIVENESS_ASSESSMENT -> controlEffectivenessAssessmentRepository
-                    .findByIdAndProjectId(entityId, projectId)
-                    .isPresent();
             case VERIFICATION_RESULT -> verificationResultRepository.existsByIdAndProjectId(entityId, projectId);
-            case RISK_ASSESSMENT_RESULT -> riskAssessmentResultRepository.existsByIdAndProjectId(entityId, projectId);
             case FINDING -> findingRepository.existsByIdAndProjectId(entityId, projectId);
-            case ATTESTATION, EXTERNAL -> false;
+                // CONTROL_EFFECTIVENESS_ASSESSMENT and RISK_ASSESSMENT_RESULT are retired source
+                // kinds (ADR-089): their backing aggregates are gone, so no new source can resolve
+                // against them. The enum constants remain so historical EvidenceArtifact.sources
+                // JSON stays deserializable.
+            case CONTROL_EFFECTIVENESS_ASSESSMENT, RISK_ASSESSMENT_RESULT, ATTESTATION, EXTERNAL -> false;
         };
     }
 }

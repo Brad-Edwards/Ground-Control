@@ -6,9 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.keplerops.groundcontrol.api.GlobalExceptionHandler;
+import com.keplerops.groundcontrol.domain.controls.state.ControlTestConclusion;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
-import com.keplerops.groundcontrol.domain.riskscenarios.state.TreatmentPlanStatus;
 import com.keplerops.groundcontrol.shared.web.ErrorResponse;
 import java.io.Serializable;
 import java.util.LinkedHashMap;
@@ -45,7 +45,7 @@ class GlobalExceptionHandlerTest {
         var mapper = new ObjectMapper();
         var cause = assertThrows(
                 InvalidFormatException.class,
-                () -> mapper.readValue("{\"status\":\"PROPOSED\"}", TreatmentPlanStatusRequest.class));
+                () -> mapper.readValue("{\"status\":\"PROPOSED\"}", ControlTestConclusionRequest.class));
         var ex = new HttpMessageNotReadableException("bad enum", cause);
 
         var response = handler.handleHttpMessageNotReadable(ex);
@@ -57,7 +57,7 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody().error().detail()).containsEntry("field", "status");
         assertThat(response.getBody().error().detail().get("validValues"))
                 .asList()
-                .contains("PLANNED", "IN_PROGRESS", "BLOCKED", "COMPLETED", "CANCELED");
+                .contains("EFFECTIVE", "INEFFECTIVE", "NOT_TESTED");
     }
 
     @Test
@@ -69,7 +69,7 @@ class GlobalExceptionHandlerTest {
         var cause = assertThrows(
                 InvalidFormatException.class,
                 () -> mapper.readValue(
-                        "{\"outer\":{\"status\":\"PROPOSED\"}}", NestedTreatmentPlanStatusRequest.class));
+                        "{\"outer\":{\"status\":\"PROPOSED\"}}", NestedControlTestConclusionRequest.class));
         var ex = new HttpMessageNotReadableException("bad nested enum", cause);
 
         var response = handler.handleHttpMessageNotReadable(ex);
@@ -254,7 +254,7 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody().error().message()).doesNotContain("constraint");
     }
 
-    private record TreatmentPlanStatusRequest(TreatmentPlanStatus status) {}
+    private record ControlTestConclusionRequest(ControlTestConclusion status) {}
 
-    private record NestedTreatmentPlanStatusRequest(TreatmentPlanStatusRequest outer) {}
+    private record NestedControlTestConclusionRequest(ControlTestConclusionRequest outer) {}
 }

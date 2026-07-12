@@ -19,11 +19,10 @@ import org.springframework.security.config.annotation.web.configurers.AuthorizeH
 final class ApiPathMatrix {
 
     private static final String ROLE_ADMIN = "ADMIN";
-    private static final String RISK_APPETITE_PROFILES = "/api/v1/risk-appetite-profiles";
-    private static final String RISK_APPETITE_PROFILES_WILDCARD = "/api/v1/risk-appetite-profiles/**";
-    private static final String EVIDENCE_CAMPAIGNS = "/api/v1/evidence-campaigns";
-    private static final String EVIDENCE_CAMPAIGNS_WILDCARD = "/api/v1/evidence-campaigns/**";
-    private static final String DATA_CLASSIFICATION_LATTICE = "/api/v1/data-classification/lattice";
+    private static final String RESEARCH_OPERATION_AUTHORIZATION_DECISION =
+            "/api/v1/research-runs/*/operation-authorizations/*/decision";
+    private static final String RESEARCH_OPERATION_AUTHORIZATION_CONSUME =
+            "/api/v1/research-runs/*/operation-authorizations/*/consume";
 
     private ApiPathMatrix() {
         // utility
@@ -88,37 +87,27 @@ final class ApiPathMatrix {
                         "/api/v1/workflow-runs/cross-project-aggregate",
                         "/api/v1/workflow-runs/cross-project-aggregate/**")
                 .hasRole(ROLE_ADMIN)
-                // GC-T005: risk appetite/tolerance governs org-wide escalation policy, so writes are
-                // admin-only (tampering would suppress escalations across every risk). Reads fall
-                // through to authenticated() so any project member can query the posture.
-                .requestMatchers(HttpMethod.POST, RISK_APPETITE_PROFILES, RISK_APPETITE_PROFILES_WILDCARD)
+                // GC-RSCH-R005 / ADR-086 §3: approving a research high-risk operation (generated code
+                // execution, browser activity, lab/hardware action, external write) is an
+                // admin/operator decision — an AUTONOMOUS run may propose but must never approve its
+                // own operations. Gate only the decision route to ROLE_ADMIN; propose (POST),
+                // list/get (GET), and consume fall through to the authenticated() rule so any project
+                // member may propose or read an authorization. The consume route spends a one-time-use
+                // APPROVED authorization, so it is the trusted executor/operator boundary — gate it to
+                // ROLE_ADMIN too, otherwise any authenticated project member who can read an
+                // authorization id (via list/get) could burn an approved high-risk-operation grant.
+                .requestMatchers(
+                        HttpMethod.POST,
+                        RESEARCH_OPERATION_AUTHORIZATION_DECISION,
+                        RESEARCH_OPERATION_AUTHORIZATION_CONSUME)
                 .hasRole(ROLE_ADMIN)
-                .requestMatchers(HttpMethod.PUT, RISK_APPETITE_PROFILES_WILDCARD)
-                .hasRole(ROLE_ADMIN)
-                .requestMatchers(HttpMethod.DELETE, RISK_APPETITE_PROFILES_WILDCARD)
-                .hasRole(ROLE_ADMIN)
-                // GC-S005: a campaign is a stored directive to reach out to an external system with the
-                // campaign's credential reference and ingest the result as evidence. Every write that
-                // configures or enables that outbound collection is therefore admin-only: create (an
-                // ACTIVE campaign defaults firstRunAt to now), update (can change connectionEndpoint or
-                // credentialRef), pause/resume (gates whether the sweep executes), and the on-demand
-                // trigger (forces an immediate collection). Admin-gating only the trigger left the other
-                // writes at the generic authenticated() rule, so a non-admin could create or re-point an
-                // ACTIVE campaign and let the scheduled sweep perform the credentialed call. Gate POST
-                // (create + the /{id}/{action} routes) and PUT across the whole surface; the GET reads
-                // (list, get, runs) fall through to authenticated() so any project member can query.
-                .requestMatchers(HttpMethod.POST, EVIDENCE_CAMPAIGNS, EVIDENCE_CAMPAIGNS_WILDCARD)
-                .hasRole(ROLE_ADMIN)
-                .requestMatchers(HttpMethod.PUT, EVIDENCE_CAMPAIGNS_WILDCARD)
-                .hasRole(ROLE_ADMIN)
-                // GC-GRC-006: the data classification lattice is the information-flow policy that the
-                // deterministic leak detector evaluates against. Tampering with the taxonomy or
-                // permitted-flow relation would silently suppress real PII/secret-leak findings
-                // (GC-TM-010), so writes are admin-only. The lattice read and the read-only evaluation
-                // resolve through ProjectService and fall through to the authenticated() rule below.
-                .requestMatchers(HttpMethod.PUT, DATA_CLASSIFICATION_LATTICE)
-                .hasRole(ROLE_ADMIN)
-                .requestMatchers(HttpMethod.DELETE, DATA_CLASSIFICATION_LATTICE)
+                // GC-O009 #1278: sending an operator signal (cancel, retry-from, review-cap
+                // disposition) to a workflow execution is a privileged control action, so it is
+                // admin-only until GC-P024 project-scoped gate authority lands (ADR-085 §54). The
+                // project-scoped start (POST /workflow-executions) and status reads (GET
+                // /workflow-executions, GET /workflow-executions/{id}) resolve through ProjectService
+                // and fall through to the authenticated() rule below.
+                .requestMatchers(HttpMethod.POST, "/api/v1/workflow-executions/*/signals")
                 .hasRole(ROLE_ADMIN)
                 .requestMatchers("/api/v1/**")
                 .authenticated()

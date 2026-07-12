@@ -1,6 +1,5 @@
 package com.keplerops.groundcontrol.domain.graph.service;
 
-import com.keplerops.groundcontrol.domain.architecturemodel.repository.ArchitectureModelElementRepository;
 import com.keplerops.groundcontrol.domain.assets.repository.ObservationRepository;
 import com.keplerops.groundcontrol.domain.assets.repository.OperationalAssetRepository;
 import com.keplerops.groundcontrol.domain.assets.state.AssetLinkTargetType;
@@ -14,12 +13,7 @@ import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.findings.repository.FindingRepository;
 import com.keplerops.groundcontrol.domain.findings.state.FindingLinkTargetType;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
-import com.keplerops.groundcontrol.domain.riskscenarios.repository.MethodologyProfileRepository;
-import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
-import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskRegisterRecordRepository;
 import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioRepository;
-import com.keplerops.groundcontrol.domain.riskscenarios.repository.TreatmentPlanRepository;
-import com.keplerops.groundcontrol.domain.riskscenarios.state.ReassessmentTriggerTargetType;
 import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkTargetType;
 import com.keplerops.groundcontrol.domain.threatmodels.repository.ThreatModelRepository;
 import com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelLinkTargetType;
@@ -40,10 +34,6 @@ public class GraphTargetResolverService {
     private static final String LABEL_ASSET = "Asset";
     private static final String LABEL_OBSERVATION = "Observation";
     private static final String LABEL_RISK_SCENARIO = "Risk scenario";
-    private static final String LABEL_RISK_REGISTER_RECORD = "Risk register record";
-    private static final String LABEL_RISK_ASSESSMENT_RESULT = "Risk assessment result";
-    private static final String LABEL_TREATMENT_PLAN = "Treatment plan";
-    private static final String LABEL_METHODOLOGY_PROFILE = "Methodology profile";
     private static final String LABEL_CONTROL = "Control";
     private static final String LABEL_THREAT_MODEL = "Threat model";
     private static final String LABEL_VERIFICATION_RESULT = "Verification result";
@@ -51,16 +41,11 @@ public class GraphTargetResolverService {
     private static final String LABEL_AUDIT = "Audit";
     private static final String LABEL_EVIDENCE = "Evidence";
     private static final String LABEL_DOCUMENT = "Document";
-    private static final String LABEL_ARCHITECTURE_MODEL_ELEMENT = "Architecture model element";
 
     private final RequirementRepository requirementRepository;
     private final OperationalAssetRepository assetRepository;
     private final ObservationRepository observationRepository;
     private final RiskScenarioRepository riskScenarioRepository;
-    private final RiskRegisterRecordRepository riskRegisterRecordRepository;
-    private final RiskAssessmentResultRepository riskAssessmentResultRepository;
-    private final TreatmentPlanRepository treatmentPlanRepository;
-    private final MethodologyProfileRepository methodologyProfileRepository;
     private final ControlRepository controlRepository;
     private final ThreatModelRepository threatModelRepository;
     private final VerificationResultRepository verificationResultRepository;
@@ -68,33 +53,23 @@ public class GraphTargetResolverService {
     private final AuditRepository auditRepository;
     private final EvidenceArtifactRepository evidenceArtifactRepository;
     private final DocumentRepository documentRepository;
-    private final ArchitectureModelElementRepository architectureModelElementRepository;
 
     public GraphTargetResolverService(
             RequirementRepository requirementRepository,
             OperationalAssetRepository assetRepository,
             ObservationRepository observationRepository,
             RiskScenarioRepository riskScenarioRepository,
-            RiskRegisterRecordRepository riskRegisterRecordRepository,
-            RiskAssessmentResultRepository riskAssessmentResultRepository,
-            TreatmentPlanRepository treatmentPlanRepository,
-            MethodologyProfileRepository methodologyProfileRepository,
             ControlRepository controlRepository,
             ThreatModelRepository threatModelRepository,
             VerificationResultRepository verificationResultRepository,
             FindingRepository findingRepository,
             AuditRepository auditRepository,
             EvidenceArtifactRepository evidenceArtifactRepository,
-            DocumentRepository documentRepository,
-            ArchitectureModelElementRepository architectureModelElementRepository) {
+            DocumentRepository documentRepository) {
         this.requirementRepository = requirementRepository;
         this.assetRepository = assetRepository;
         this.observationRepository = observationRepository;
         this.riskScenarioRepository = riskScenarioRepository;
-        this.riskRegisterRecordRepository = riskRegisterRecordRepository;
-        this.riskAssessmentResultRepository = riskAssessmentResultRepository;
-        this.treatmentPlanRepository = treatmentPlanRepository;
-        this.methodologyProfileRepository = methodologyProfileRepository;
         this.controlRepository = controlRepository;
         this.threatModelRepository = threatModelRepository;
         this.verificationResultRepository = verificationResultRepository;
@@ -102,7 +77,6 @@ public class GraphTargetResolverService {
         this.auditRepository = auditRepository;
         this.evidenceArtifactRepository = evidenceArtifactRepository;
         this.documentRepository = documentRepository;
-        this.architectureModelElementRepository = architectureModelElementRepository;
     }
 
     public ValidatedTarget validateAssetTarget(
@@ -116,30 +90,8 @@ public class GraphTargetResolverService {
                     targetEntityId,
                     riskScenarioRepository.existsByIdAndProjectId(targetEntityId, projectId),
                     LABEL_RISK_SCENARIO);
-            case RISK_REGISTER_RECORD -> internalTarget(
-                    targetEntityId,
-                    riskRegisterRecordRepository
-                            .findByIdAndProjectIdWithScenarios(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_RISK_REGISTER_RECORD);
-            case RISK_ASSESSMENT_RESULT -> internalTarget(
-                    targetEntityId,
-                    riskAssessmentResultRepository
-                            .findByIdAndProjectIdWithObservations(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_RISK_ASSESSMENT_RESULT);
-            case TREATMENT_PLAN -> internalTarget(
-                    targetEntityId,
-                    treatmentPlanRepository
-                            .findByIdAndProjectId(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_TREATMENT_PLAN);
-            case METHODOLOGY_PROFILE -> internalTarget(
-                    targetEntityId,
-                    methodologyProfileRepository
-                            .findByIdAndProjectId(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_METHODOLOGY_PROFILE);
+            case RISK_REGISTER_RECORD, RISK_ASSESSMENT_RESULT, TREATMENT_PLAN, METHODOLOGY_PROFILE -> retiredTarget(
+                    targetType);
             case CONTROL -> internalTarget(
                     targetEntityId, controlRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_CONTROL);
             case THREAT_MODEL_ENTRY -> internalTarget(
@@ -175,30 +127,8 @@ public class GraphTargetResolverService {
                     targetEntityId,
                     requirementRepository.existsByIdAndProjectId(targetEntityId, projectId),
                     LABEL_REQUIREMENT);
-            case RISK_REGISTER_RECORD -> internalTarget(
-                    targetEntityId,
-                    riskRegisterRecordRepository
-                            .findByIdAndProjectIdWithScenarios(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_RISK_REGISTER_RECORD);
-            case RISK_ASSESSMENT_RESULT -> internalTarget(
-                    targetEntityId,
-                    riskAssessmentResultRepository
-                            .findByIdAndProjectIdWithObservations(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_RISK_ASSESSMENT_RESULT);
-            case TREATMENT_PLAN -> internalTarget(
-                    targetEntityId,
-                    treatmentPlanRepository
-                            .findByIdAndProjectId(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_TREATMENT_PLAN);
-            case METHODOLOGY_PROFILE -> internalTarget(
-                    targetEntityId,
-                    methodologyProfileRepository
-                            .findByIdAndProjectId(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_METHODOLOGY_PROFILE);
+            case RISK_REGISTER_RECORD, RISK_ASSESSMENT_RESULT, TREATMENT_PLAN, METHODOLOGY_PROFILE -> retiredTarget(
+                    targetType);
             case CONTROL -> internalTarget(
                     targetEntityId, controlRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_CONTROL);
             case THREAT_MODEL -> internalTarget(
@@ -232,30 +162,8 @@ public class GraphTargetResolverService {
                     targetEntityId,
                     riskScenarioRepository.existsByIdAndProjectId(targetEntityId, projectId),
                     LABEL_RISK_SCENARIO);
-            case RISK_REGISTER_RECORD -> internalTarget(
-                    targetEntityId,
-                    riskRegisterRecordRepository
-                            .findByIdAndProjectIdWithScenarios(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_RISK_REGISTER_RECORD);
-            case RISK_ASSESSMENT_RESULT -> internalTarget(
-                    targetEntityId,
-                    riskAssessmentResultRepository
-                            .findByIdAndProjectIdWithObservations(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_RISK_ASSESSMENT_RESULT);
-            case TREATMENT_PLAN -> internalTarget(
-                    targetEntityId,
-                    treatmentPlanRepository
-                            .findByIdAndProjectId(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_TREATMENT_PLAN);
-            case METHODOLOGY_PROFILE -> internalTarget(
-                    targetEntityId,
-                    methodologyProfileRepository
-                            .findByIdAndProjectId(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_METHODOLOGY_PROFILE);
+            case RISK_REGISTER_RECORD, RISK_ASSESSMENT_RESULT, TREATMENT_PLAN, METHODOLOGY_PROFILE -> retiredTarget(
+                    targetType);
             case OBSERVATION -> internalTarget(
                     targetEntityId,
                     observationRepository
@@ -295,12 +203,7 @@ public class GraphTargetResolverService {
                             .findByIdWithAssetAndProjectId(targetEntityId, projectId)
                             .isPresent(),
                     LABEL_OBSERVATION);
-            case RISK_ASSESSMENT_RESULT -> internalTarget(
-                    targetEntityId,
-                    riskAssessmentResultRepository
-                            .findByIdAndProjectIdWithObservations(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_RISK_ASSESSMENT_RESULT);
+            case RISK_ASSESSMENT_RESULT, ARCHITECTURE_MODEL -> retiredTarget(targetType);
             case VERIFICATION_RESULT -> internalTarget(
                     targetEntityId,
                     verificationResultRepository.existsByIdAndProjectId(targetEntityId, projectId),
@@ -313,10 +216,6 @@ public class GraphTargetResolverService {
                             .findByIdAndProjectId(targetEntityId, projectId)
                             .isPresent(),
                     LABEL_EVIDENCE);
-            case ARCHITECTURE_MODEL -> internalTarget(
-                    targetEntityId,
-                    architectureModelElementRepository.existsByIdAndProjectId(targetEntityId, projectId),
-                    LABEL_ARCHITECTURE_MODEL_ELEMENT);
             case CODE, ISSUE, EXTERNAL -> externalTarget(targetIdentifier);
         };
     }
@@ -361,12 +260,7 @@ public class GraphTargetResolverService {
                     targetEntityId,
                     riskScenarioRepository.existsByIdAndProjectId(targetEntityId, projectId),
                     LABEL_RISK_SCENARIO);
-            case RISK_REGISTER_RECORD -> internalTarget(
-                    targetEntityId,
-                    riskRegisterRecordRepository
-                            .findByIdAndProjectIdWithScenarios(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_RISK_REGISTER_RECORD);
+            case RISK_REGISTER_RECORD -> retiredTarget(targetType);
             case EVIDENCE -> internalTarget(
                     targetEntityId,
                     evidenceArtifactRepository
@@ -376,39 +270,6 @@ public class GraphTargetResolverService {
             case FINDING -> internalTarget(
                     targetEntityId, findingRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_FINDING);
             case FRAMEWORK, EXTERNAL -> externalTarget(targetIdentifier);
-        };
-    }
-
-    public ValidatedTarget validateReassessmentTriggerTarget(
-            UUID projectId, ReassessmentTriggerTargetType targetType, UUID targetEntityId, String targetIdentifier) {
-        return switch (targetType) {
-            case ASSET -> internalTarget(
-                    targetEntityId, assetRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_ASSET);
-            case CONTROL -> internalTarget(
-                    targetEntityId, controlRepository.existsByIdAndProjectId(targetEntityId, projectId), LABEL_CONTROL);
-            case RISK_SCENARIO -> internalTarget(
-                    targetEntityId,
-                    riskScenarioRepository.existsByIdAndProjectId(targetEntityId, projectId),
-                    LABEL_RISK_SCENARIO);
-            case RISK_REGISTER_RECORD -> internalTarget(
-                    targetEntityId,
-                    riskRegisterRecordRepository
-                            .findByIdAndProjectIdWithScenarios(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_RISK_REGISTER_RECORD);
-            case RISK_ASSESSMENT_RESULT -> internalTarget(
-                    targetEntityId,
-                    riskAssessmentResultRepository
-                            .findByIdAndProjectIdWithObservations(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_RISK_ASSESSMENT_RESULT);
-            case TREATMENT_PLAN -> internalTarget(
-                    targetEntityId,
-                    treatmentPlanRepository
-                            .findByIdAndProjectId(targetEntityId, projectId)
-                            .isPresent(),
-                    LABEL_TREATMENT_PLAN);
-            case EXTERNAL -> externalTarget(targetIdentifier);
         };
     }
 
@@ -435,5 +296,15 @@ public class GraphTargetResolverService {
             throw new DomainValidationException("External or unmodeled links require targetIdentifier");
         }
         return new ValidatedTarget(null, targetIdentifier, false);
+    }
+
+    /**
+     * The GRC product surface that owned this target type has been retired (ADR-089). The
+     * enum constant is kept so historical rows referencing it remain readable, but no new
+     * link may be created against it.
+     */
+    private ValidatedTarget retiredTarget(Object targetType) {
+        throw new DomainValidationException(
+                "Target type " + targetType + " is retired and no longer accepts new links");
     }
 }

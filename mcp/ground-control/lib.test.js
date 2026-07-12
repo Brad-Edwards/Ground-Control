@@ -42,6 +42,7 @@ import {
   runResolveWorkflowRoute,
   CLAUDE_MODEL_BY_TIER,
   DEFAULT_IMPLEMENT_ROUTING_STAGES,
+  ROUTING_PROVIDERS,
   buildCodexArchitecturePreflightPrompt,
   buildCodexArchitectureExecArgs,
   buildCodexReviewCorePrompt,
@@ -138,8 +139,6 @@ import {
   INTEGRATION_MANAGER_MERGE_STRATEGIES,
   INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN,
   INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX,
-  isUmbrellaNextIssueCandidate,
-  selectNextIssueRecommendation,
   createWorkflowRun,
   recordWorkflowRunEvent,
   importWorkflowRunCost,
@@ -894,7 +893,7 @@ describe("parseGroundControlYaml", () => {
     assert.equal(result.value.sonarcloud, null);
     assert.equal(result.value.rules.plan_rules_path, null);
     assert.equal(result.value.knowledge, null);
-    assert.deepEqual(result.value.grc, { boundaries: [] });
+    assert.equal(result.value.grc, undefined);
   });
 
   it("parses a fully populated yaml", () => {
@@ -916,15 +915,6 @@ describe("parseGroundControlYaml", () => {
       "  dir: docs/knowledge",
       "  schema: docs/knowledge/SCHEMA.md",
       "  inbox: docs/knowledge/inbox",
-      "grc:",
-      "  boundaries:",
-      "    - key: policy-workflow",
-      "      name: Policy and workflow",
-      "      description: Repo policy and workflow guardrails",
-      "      paths:",
-      "        - tools/policy/**",
-      "        - .ground-control.yaml",
-      "      surfaces: [policy, architecture]",
       "",
     ]);
     assert.equal(result.ok, true);
@@ -939,15 +929,7 @@ describe("parseGroundControlYaml", () => {
       schema: "docs/knowledge/SCHEMA.md",
       inbox: "docs/knowledge/inbox",
     });
-    assert.deepEqual(result.value.grc.boundaries, [
-      {
-        key: "policy-workflow",
-        name: "Policy and workflow",
-        description: "Repo policy and workflow guardrails",
-        path_selectors: ["tools/policy/**", ".ground-control.yaml"],
-        surfaces: ["policy", "architecture"],
-      },
-    ]);
+    assert.equal(result.value.grc, undefined);
   });
 
   it("rejects invalid yaml text", () => {
@@ -1608,140 +1590,27 @@ describe("parseGroundControlYaml", () => {
   });
 
   // ---------------------------------------------------------------------
-  // grc.boundaries (GC-GRC-004)
+  // Legacy grc.* block (ADR-089 §4): tolerated and ignored, not validated,
+  // not returned. Formerly grc.boundaries (GC-GRC-004) / grc.data_classification
+  // (GC-GRC-006), both retired as active config surfaces by ADR-089.
   // ---------------------------------------------------------------------
 
-  it("parses declared GRC boundaries", () => {
+  it("tolerates a legacy grc block (any shape) without validating or returning it", () => {
     const result = parseYamlLines([
       "schema_version: 1",
       "project: x",
       "grc:",
       "  boundaries:",
-      "    - key: policy-workflow",
-      "      name: Policy and workflow",
-      "      description: Repo policy and workflow guardrails",
+      "    - key: Policy", // would have failed the retired key-pattern check
+      "      name: Policy",
       "      paths:",
-      "        - tools/policy/**",
-      "        - .ground-control.yaml",
-      "      surfaces:",
-      "        - policy",
-      "        - architecture",
+      "        - tools/*/policy", // would have failed the retired selector check
+      "  data_classification:",
+      "    labels: []", // would have failed the retired non-empty-list check
       "",
     ]);
     assert.equal(result.ok, true, JSON.stringify(result.errors));
-    assert.deepEqual(result.value.grc.boundaries, [
-      {
-        key: "policy-workflow",
-        name: "Policy and workflow",
-        description: "Repo policy and workflow guardrails",
-        path_selectors: ["tools/policy/**", ".ground-control.yaml"],
-        surfaces: ["policy", "architecture"],
-      },
-    ]);
-  });
-
-  it("rejects invalid declared GRC boundary shapes", () => {
-    expectYamlError([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  boundaries:",
-      "    - key: Policy",
-      "      name: Policy",
-      "      paths:",
-      "        - tools/policy/**",
-      "",
-    ], "grc.boundaries[0].key");
-    expectYamlError([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  boundaries:",
-      "    - key: policy",
-      "      name: Policy",
-      "      paths:",
-      "        - tools/*/policy",
-      "",
-    ], "only supports exact paths or trailing /** selectors");
-    expectYamlError([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  boundaries:",
-      "    - key: policy",
-      "      name: Policy",
-      "      paths: [tools/policy/**]",
-      "    - key: policy",
-      "      name: Duplicate policy",
-      "      paths: [.ground-control.yaml]",
-      "",
-    ], "duplicates an earlier boundary key");
-  });
-
-  // ---------------------------------------------------------------------
-  // grc.data_classification (GC-GRC-006)
-  // ---------------------------------------------------------------------
-
-  it("parses a declared GRC data classification lattice", () => {
-    const result = parseYamlLines([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  data_classification:",
-      "    labels:",
-      "      - key: PUBLIC",
-      "        display_name: Public",
-      "        rank: 0",
-      "      - key: SECRET",
-      "        display_name: Secret",
-      "        description: Secret material",
-      "        rank: 1",
-      "    permitted_flows:",
-      "      - from: PUBLIC",
-      "        to: SECRET",
-      "",
-    ]);
-    assert.equal(result.ok, true, JSON.stringify(result.errors));
-    assert.deepEqual(result.value.grc.data_classification, {
-      labels: [
-        { key: "PUBLIC", display_name: "Public", description: null, rank: 0 },
-        { key: "SECRET", display_name: "Secret", description: "Secret material", rank: 1 },
-      ],
-      permitted_flows: [{ from: "PUBLIC", to: "SECRET" }],
-    });
-  });
-
-  it("rejects invalid GRC data classification shapes", () => {
-    expectYamlError([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  data_classification:",
-      "    labels:",
-      "      - key: bad key!",
-      "        display_name: Bad",
-      "",
-    ], "grc.data_classification.labels[0].key");
-    expectYamlError([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  data_classification:",
-      "    labels:",
-      "      - key: PUBLIC",
-      "        display_name: Public",
-      "      - key: PUBLIC",
-      "        display_name: Duplicate",
-      "",
-    ], "duplicates an earlier label key");
-    expectYamlError([
-      "schema_version: 1",
-      "project: x",
-      "grc:",
-      "  data_classification:",
-      "    labels: []",
-      "",
-    ], "grc.data_classification.labels must be a non-empty list");
+    assert.equal(result.value.grc, undefined, "grc must not be returned in the parsed config");
   });
 
   describe("short_code", () => {
@@ -1907,7 +1776,7 @@ describe("getRepoGroundControlContext", () => {
       assert.deepEqual(result.example_paths, { source: null, test: null });
       assert.deepEqual(result.requirements, { uid_examples: [] });
       assert.deepEqual(result.cross_cutting_concerns, { description: null });
-      assert.deepEqual(result.grc, { boundaries: [] });
+      assert.equal(result.grc, undefined);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1943,39 +1812,11 @@ describe("getRepoGroundControlContext", () => {
     }
   });
 
-  it("returns declared GRC boundaries from repo context", async () => {
-    const dir = makeTempRepo();
-    try {
-      writeYamlConfig(dir, [
-          "schema_version: 1",
-          "project: test-project",
-          "grc:",
-          "  boundaries:",
-          "    - key: policy-workflow",
-          "      name: Policy and workflow",
-          "      paths:",
-          "        - tools/policy/**",
-          "        - .ground-control.yaml",
-          "      surfaces: [policy]",
-          "",
-        ]);
-      const result = await getRepoGroundControlContext(dir);
-      assert.equal(result.status, "ok");
-      assert.deepEqual(result.grc.boundaries, [
-        {
-          key: "policy-workflow",
-          name: "Policy and workflow",
-          description: null,
-          path_selectors: ["tools/policy/**", ".ground-control.yaml"],
-          surfaces: ["policy"],
-        },
-      ]);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("rejects declared GRC boundary paths that escape the repo root", async () => {
+  // ADR-089 §4: a legacy grc.* block (including one whose boundary paths
+  // would have escaped the repo root under the retired GC-GRC-004 check) is
+  // tolerated — no path-containment validation runs over it, no error is
+  // raised, and it is never returned in the context.
+  it("tolerates a legacy grc block with escaping paths without validating or returning it", async () => {
     const dir = makeTempRepo();
     try {
       writeYamlConfig(dir, [
@@ -1990,9 +1831,8 @@ describe("getRepoGroundControlContext", () => {
           "",
         ]);
       const result = await getRepoGroundControlContext(dir);
-      assert.equal(result.status, "invalid_ground_control_yaml");
-      assert.ok(result.errors.some((e) => e.includes("grc.boundaries[0].paths[0]")));
-      assert.ok(result.errors.some((e) => e.includes("inside the repository root")));
+      assert.equal(result.status, "ok");
+      assert.equal(result.grc, undefined);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -2634,6 +2474,9 @@ describe("buildCodexReviewCorePrompt", () => {
     assert.ok(prompt.includes("`instances`"));
     // #931: sweep_evidence required on one-off claims.
     assert.ok(prompt.includes("sweep_evidence"));
+    // #1294: residual CLD anti-gaming channels are part of the reviewer prompt.
+    assert.ok(prompt.includes("test-visible implementation special-casing"));
+    assert.ok(prompt.includes("fixture or oracle edits"));
   });
 
   it("tells codex not to re-derive the diff and embeds it inside delimiters", () => {
@@ -6384,6 +6227,93 @@ process.exit(2);
 });
 
 // ---------------------------------------------------------------------------
+// ADR-089 §2: runPostImplementationPlan's phase prerequisite is now
+// requires:["preflight"] only — the grc_screening prerequisite and the
+// grc_deliverables gate (formerly GC-GRC-010 here) are retired.
+// ---------------------------------------------------------------------------
+
+describe("runPostImplementationPlan preflight prerequisite", () => {
+  function makeShim({ nameWithOwner = "fake/repo", comments = [] }) {
+    const repoDir = mkdtempSync(join(tmpdir(), "gc-plan-prereq-"));
+    execFileSync("git", ["-C", repoDir, "init", "-q"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.email", "t@example.com"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.name", "t"]);
+    writeFileSync(join(repoDir, ".ground-control.yaml"), "schema_version: 1\nproject: x\n");
+    writeFileSync(join(repoDir, "README"), "x\n");
+    execFileSync("git", ["-C", repoDir, "add", "."]);
+    execFileSync("git", ["-C", repoDir, "commit", "-q", "-m", "init"]);
+    const binDir = mkdtempSync(join(tmpdir(), "gc-plan-prereq-bin-"));
+    // `gh api --method GET ... comments --paginate --slurp` returns array-of-arrays.
+    const commentsSlurp = JSON.stringify([comments.map((body) => ({ body }))]);
+    const ghShim = `#!/usr/bin/env node
+const argv = process.argv.slice(2);
+function has(pre) { return pre.every((p, i) => argv[i] === p); }
+if (has(["repo", "view", "--json", "nameWithOwner"])) {
+  process.stdout.write(${JSON.stringify(JSON.stringify({ nameWithOwner }))});
+  process.exit(0);
+}
+if (has(["api", "--method", "GET"])) {
+  process.stdout.write(${JSON.stringify(commentsSlurp)});
+  process.exit(0);
+}
+if (has(["api", "--method", "POST"])) {
+  process.stdout.write(JSON.stringify({ html_url: "https://x/issues/1#c1", id: 1 }));
+  process.exit(0);
+}
+process.stderr.write("gh shim: unhandled argv: " + JSON.stringify(argv) + "\\n");
+process.exit(2);
+`;
+    writeFileSync(join(binDir, "gh"), ghShim, { mode: 0o755 });
+    return {
+      repoDir,
+      binDir,
+      cleanup() { rmSync(repoDir, { recursive: true, force: true }); rmSync(binDir, { recursive: true, force: true }); },
+    };
+  }
+
+  async function withPath(binDir, fn) {
+    const old = process.env.PATH;
+    process.env.PATH = `${binDir}:${old}`;
+    try { return await fn(); } finally { process.env.PATH = old; }
+  }
+
+  function phaseBody(phase, issueNumber) {
+    return `<!-- gc:phase phase="${phase}" issue="${issueNumber}" -->`;
+  }
+
+  it("refuses (non-override) when the preflight prerequisite marker is missing", async () => {
+    const shim = makeShim({ comments: [] });
+    try {
+      await withPath(shim.binDir, async () => {
+        const r = await runPostImplementationPlan({
+          repoPath: shim.repoDir,
+          issueNumber: 1123,
+          planBody: "## Plan\n\nWork.",
+        });
+        assert.equal(r.ok, false);
+        assert.equal(r.error, "phase_prerequisite_missing");
+        assert.deepEqual(r.missing, ["preflight"]);
+        assert.equal(r.next_action, "run_gc_codex_architecture_preflight_first");
+      });
+    } finally { shim.cleanup(); }
+  });
+
+  it("proceeds past the prerequisite check (non-override) when the preflight marker is present", async () => {
+    const shim = makeShim({ comments: [phaseBody("preflight", 1123)] });
+    try {
+      await withPath(shim.binDir, async () => {
+        const r = await runPostImplementationPlan({
+          repoPath: shim.repoDir,
+          issueNumber: 1123,
+          planBody: "## Plan\n\nWork.",
+        });
+        assert.equal(r.ok, true);
+      });
+    } finally { shim.cleanup(); }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
@@ -8424,7 +8354,7 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
     assert.equal(r.ok, true);
     assert.deepEqual(r.value.routing, {
       enabled: false,
-      default_provider: "claude",
+      default_provider: "anthropic",
       default_fallback: "parent",
       stages: {},
     });
@@ -8443,7 +8373,7 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
     ].join("\n"));
     assert.equal(r.ok, true);
     assert.equal(r.value.routing.enabled, true);
-    assert.equal(r.value.routing.default_provider, "claude");
+    assert.equal(r.value.routing.default_provider, "anthropic");
     assert.equal(r.value.routing.default_fallback, "parent");
     assert.deepEqual(r.value.routing.stages, {});
     assert.equal(r.value.telemetry.enabled, true);
@@ -8467,11 +8397,70 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
     assert.equal(r.ok, true);
     assert.deepEqual(r.value.routing.stages.implementation, {
       tier: "medium",
-      provider: "claude",
+      provider: "anthropic",
       model: "claude-sonnet-4-6",
       agent: "cli",
       fallback: "parent",
     });
+  });
+
+  it("accepts the canonical anthropic provider id directly", () => {
+    const r = parseGroundControlYaml([
+      "schema_version: 1",
+      "project: gc",
+      "routing:",
+      "  enabled: true",
+      "  default_provider: anthropic",
+      "  stages:",
+      "    implementation:",
+      "      tier: medium",
+      "      provider: anthropic",
+      "      model: claude-sonnet-5",
+      "",
+    ].join("\n"));
+    assert.equal(r.ok, true);
+    assert.equal(r.value.routing.default_provider, "anthropic");
+    assert.equal(r.value.routing.stages.implementation.provider, "anthropic");
+  });
+
+  it("normalizes the legacy claude provider label to canonical anthropic output", () => {
+    const r = parseGroundControlYaml([
+      "schema_version: 1",
+      "project: gc",
+      "routing:",
+      "  enabled: true",
+      "  default_provider: claude",
+      "  stages:",
+      "    implementation:",
+      "      tier: medium",
+      "      provider: claude",
+      "      model: claude-sonnet-5",
+      "",
+    ].join("\n"));
+    assert.equal(r.ok, true);
+    assert.equal(r.value.routing.default_provider, "anthropic");
+    assert.equal(r.value.routing.stages.implementation.provider, "anthropic");
+  });
+
+  it("rejects an unknown provider id", () => {
+    const r = parseGroundControlYaml([
+      "schema_version: 1",
+      "project: gc",
+      "routing:",
+      "  enabled: true",
+      "  stages:",
+      "    implementation:",
+      "      tier: medium",
+      "      provider: openai",
+      "      model: gpt-5",
+      "",
+    ].join("\n"));
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => /routing\.stages\.implementation\.provider must be one of/.test(e)));
+  });
+
+  it("ROUTING_PROVIDERS exposes both the canonical id and the legacy alias", () => {
+    assert.deepEqual([...ROUTING_PROVIDERS].sort(), ["anthropic", "claude"]);
   });
 
   it("rejects unknown subkeys under routing/telemetry", () => {
@@ -8550,7 +8539,7 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
       "project: gc",
       "routing:",
       "  enabled: true",
-      "  default_provider: anthropic",
+      "  default_provider: openai",
       "  stages:",
       "    Implementation:",
       "      tier: fast",
@@ -8626,6 +8615,40 @@ describe("resolveWorkflowRouteFromConfig", () => {
     assert.equal(r.ok, true);
     assert.equal(r.source, "tier");
     assert.equal(r.model, "claude-sonnet-5");
+  });
+
+  it("normalizes the legacy claude provider label to canonical anthropic in the resolved route", () => {
+    const routing = { enabled: true, default_provider: "claude", default_fallback: "parent", stages: {} };
+    const r = resolveWorkflowRouteFromConfig({ routing, stage: "implementation" });
+    assert.equal(r.ok, true);
+    assert.equal(r.provider, "anthropic");
+  });
+
+  it("resolves the canonical anthropic provider id unchanged", () => {
+    const routing = { enabled: true, default_provider: "anthropic", default_fallback: "parent", stages: {} };
+    const r = resolveWorkflowRouteFromConfig({ routing, stage: "implementation" });
+    assert.equal(r.ok, true);
+    assert.equal(r.provider, "anthropic");
+  });
+
+  it("normalizes a stage-level claude provider override to anthropic", () => {
+    const routing = {
+      enabled: true,
+      default_provider: "anthropic",
+      default_fallback: "parent",
+      stages: {
+        implementation: {
+          tier: "low",
+          provider: "claude",
+          model: "claude-haiku-4-5",
+          agent: "cli",
+          fallback: "error",
+        },
+      },
+    };
+    const r = resolveWorkflowRouteFromConfig({ routing, stage: "implementation" });
+    assert.equal(r.ok, true);
+    assert.equal(r.provider, "anthropic");
   });
 });
 
@@ -8923,6 +8946,18 @@ describe("buildTestQualityReviewPrompt", () => {
     assert.match(prompt, /No negative test cases/);
   });
 
+  it("flags control efficacy tests that only prove existence (GC-GRC-011)", () => {
+    const prompt = buildTestQualityReviewPrompt({
+      baseBranch: "dev",
+      changedTestFiles: ["ControlServiceTest.java"],
+    });
+    assert.match(prompt, /Control efficacy tests that only prove existence/);
+    assert.match(prompt, /GC-GRC-011/);
+    // The rubric must direct the reviewer at the protected behavior, not the row.
+    assert.match(prompt, /removed, bypassed, or materially weakened/);
+    assert.match(prompt, /if I deleted the control, would this test still pass/);
+  });
+
   it("instructs verdict-envelope output (#931)", () => {
     const prompt = buildTestQualityReviewPrompt({
       baseBranch: "main",
@@ -8938,6 +8973,8 @@ describe("buildTestQualityReviewPrompt", () => {
     assert.match(prompt, /location/);
     assert.match(prompt, /classification/);
     assert.match(prompt, /sweep_evidence/);
+    assert.match(prompt, /test-visible implementation special-casing/);
+    assert.match(prompt, /fixture or oracle edits/);
   });
 
   it("throws on empty changedTestFiles", () => {
@@ -9159,49 +9196,32 @@ describe("TEST_QUALITY_REVIEW_FINDINGS_SCHEMA (verdict envelope, #931)", () => {
 // ---------------------------------------------------------------------------
 
 describe("validateGovernanceStatus", () => {
+  // ADR-089 §1/§3: methodology_profile, risk_register_record,
+  // risk_assessment_result, treatment_plan, and risk_appetite_profile were
+  // retired composed-GRC entities. Only verification_result remains.
   it("is a no-op when status is omitted", () => {
-    // create/update actions may legitimately omit status; only the
-    // transition action requires it (enforced separately by reqArg).
-    assert.doesNotThrow(() => validateGovernanceStatus("treatment_plan", undefined));
-    assert.doesNotThrow(() => validateGovernanceStatus("treatment_plan", null));
-    assert.doesNotThrow(() => validateGovernanceStatus("treatment_plan", ""));
+    assert.doesNotThrow(() => validateGovernanceStatus("verification_result", undefined));
+    assert.doesNotThrow(() => validateGovernanceStatus("verification_result", null));
+    assert.doesNotThrow(() => validateGovernanceStatus("verification_result", ""));
   });
 
   it("accepts a status that is valid for the given entity", () => {
-    assert.doesNotThrow(() => validateGovernanceStatus("methodology_profile", "ACTIVE"));
-    assert.doesNotThrow(() => validateGovernanceStatus("risk_register_record", "ACCEPTED"));
-    assert.doesNotThrow(() => validateGovernanceStatus("treatment_plan", "PLANNED"));
     assert.doesNotThrow(() => validateGovernanceStatus("verification_result", "PROVEN"));
-  });
-
-  it("rejects a status that is valid for another entity but not this one", () => {
-    // The exact scenario issue #881 wants caught at MCP: ACCEPTED is a real
-    // risk_register_record status, but invalid for treatment_plan. The flat
-    // z.union the original PR shipped would have passed this through to the
-    // backend; the per-entity check rejects it locally.
-    assert.throws(
-      () => validateGovernanceStatus("treatment_plan", "ACCEPTED"),
-      (e) =>
-        /'status'='ACCEPTED' is not valid for entity='treatment_plan'/.test(e.message) &&
-        /Valid values: PLANNED, IN_PROGRESS, BLOCKED, COMPLETED, CANCELED/.test(e.message),
-    );
   });
 
   it("rejects a completely unknown status string with the valid-values hint", () => {
     assert.throws(
-      () => validateGovernanceStatus("treatment_plan", "PROPOSED"),
+      () => validateGovernanceStatus("verification_result", "BOGUS"),
       (e) =>
-        /'status'='PROPOSED' is not valid for entity='treatment_plan'/.test(e.message) &&
+        /'status'='BOGUS' is not valid for entity='verification_result'/.test(e.message) &&
         /Valid values: /.test(e.message),
     );
   });
 
-  it("rejects status on an entity that has no status field", () => {
-    // risk_assessment_result uses approval_state, not status. Any status
-    // value on that entity is structurally wrong and must be rejected.
+  it("rejects status on an entity that is not in GOVERNANCE_STATUS_ENUMS", () => {
     assert.throws(
-      () => validateGovernanceStatus("risk_assessment_result", "DRAFT"),
-      (e) => /'status' is not valid for entity='risk_assessment_result'/.test(e.message),
+      () => validateGovernanceStatus("risk_scenario", "DRAFT"),
+      (e) => /'status' is not valid for entity='risk_scenario'/.test(e.message),
     );
   });
 
@@ -9210,13 +9230,7 @@ describe("validateGovernanceStatus", () => {
     // status vocabulary cannot silently inherit the "no status" rejection.
     assert.deepEqual(
       Object.keys(GOVERNANCE_STATUS_ENUMS).sort(),
-      [
-        "methodology_profile",
-        "risk_appetite_profile",
-        "risk_register_record",
-        "treatment_plan",
-        "verification_result",
-      ],
+      ["verification_result"],
     );
   });
 });
@@ -13882,10 +13896,10 @@ describe("runPostFinalReport traceability_reconciled prerequisite (issue #1058)"
         });
         assert.equal(r.ok, false);
         assert.equal(r.error, "phase_prerequisite_missing");
-        // Both traceability_reconciled and grc_reconciled are now required
-        // (issue #1100 added grc_reconciled to the final-report prerequisite).
+        // ADR-089 §2: grc_reconciled is retired; traceability_reconciled is
+        // the sole final-report prerequisite.
         assert.ok(r.missing.includes("traceability_reconciled"), `expected traceability_reconciled in missing; got: ${JSON.stringify(r.missing)}`);
-        assert.ok(r.missing.includes("grc_reconciled"), `expected grc_reconciled in missing; got: ${JSON.stringify(r.missing)}`);
+        assert.ok(!r.missing.includes("grc_reconciled"), `grc_reconciled must not appear in missing; got: ${JSON.stringify(r.missing)}`);
       });
     } finally {
       shim.cleanup();
@@ -14068,47 +14082,22 @@ describe("runCloseIssueAfterMerge", () => {
           { argv_prefix: ["api", ISSUE_API_PATH], stdout: JSON.stringify({ number: 1058, state: "open" }) },
           // PATCH close.
           { argv_prefix: ["api", "--method", "PATCH"], stdout: JSON.stringify({ number: 1058, state: "closed" }) },
-          { argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/issues"], stdout: JSON.stringify([
-            { number: 1156, title: "Current issue", state: "open", labels: [] },
-            { number: 1157, title: "Blocked issue", state: "open", labels: [{ name: "blocked" }] },
-            { number: 1158, title: "Improve workflow follow-up", state: "open", labels: [{ name: "ready" }, { name: "priority:p1" }] },
-          ]) },
         ],
       },
     });
+    // ADR-089 §5: the close path performs ONLY linked-PR resolution,
+    // merge-state verification, and idempotent close — no issue listing, no
+    // ranking, and no recommendation field (not even null; a null field would
+    // still advertise the retired feature).
     await withCloseResult(shim, 1058, (r) => {
         assert.equal(r.ok, true);
         assert.equal(r.already_closed, false);
         assert.equal(r.pr_number, 42);
         assert.equal(r.pr_merged_at, PR_MERGED_AT);
-        assert.equal(r.next_issue_recommendation.issue_number, 1158);
-        assert.equal(r.next_issue_recommendation.title, "Improve workflow follow-up");
-        assert.match(r.next_issue_recommendation.reason, /ready/);
-        assert.match(r.next_issue_recommendation.source, /GitHub open issues/);
-    });
-  });
-
-  it("does not block closure when next-issue recommendation lookup fails", async () => {
-    const shim = makeShimRepo({
-      ghHandler: {
-        routes: [
-          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
-          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({
-            data: { repository: { issue: { timelineItems: { nodes: [
-              { __typename: "CrossReferencedEvent", source: { __typename: "PullRequest", number: 42, state: "MERGED", mergedAt: PR_MERGED_AT, url: LINKED_PR_URL } },
-            ] } } } },
-          }) },
-          { argv_prefix: ["api", ISSUE_API_PATH], stdout: JSON.stringify({ number: 1058, state: "open" }) },
-          { argv_prefix: ["api", "--method", "PATCH"], stdout: JSON.stringify({ number: 1058, state: "closed" }) },
-          { argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/issues"], exit_code: 2, stderr: "network unavailable" },
-        ],
-      },
-    });
-    await withCloseResult(shim, 1058, (r) => {
-        assert.equal(r.ok, true);
-        assert.equal(r.already_closed, false);
-        assert.equal(r.next_issue_recommendation, null);
-        assert.match(r.next_issue_recommendation_error, /network unavailable/);
+        assert.ok(!("next_issue_recommendation" in r), "next_issue_recommendation must not be present");
+        assert.ok(!("next_issue_recommendation_reason" in r), "next_issue_recommendation_reason must not be present");
+        assert.ok(!("next_issue_recommendation_source" in r), "next_issue_recommendation_source must not be present");
+        assert.ok(!("next_issue_recommendation_error" in r), "next_issue_recommendation_error must not be present");
     });
   });
 
@@ -14193,90 +14182,6 @@ describe("runCloseIssueAfterMerge", () => {
     } finally {
       shim.cleanup();
     }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Next-issue recommendation: umbrella / tracking issue exclusion
-// ---------------------------------------------------------------------------
-
-describe("isUmbrellaNextIssueCandidate", () => {
-  const issue = (over) => ({ number: 1, title: "Do a thing", labels: [], body: "", ...over });
-
-  it("flags a `Tracking:` title prefix", () => {
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "Tracking: production readiness" })), true);
-  });
-
-  it("flags `Epic:` and `Umbrella:` title prefixes case-insensitively", () => {
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "epic: graph rewrite" })), true);
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "UMBRELLA: wave 7" })), true);
-  });
-
-  it("flags a bracketed `[Epic]` / `[Meta]` tag at the title start", () => {
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "[Epic] big feature" })), true);
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "[meta] housekeeping" })), true);
-  });
-
-  it("flags a marker label (epic/umbrella/tracking/meta)", () => {
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ labels: [{ name: "Epic" }] })), true);
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ labels: [{ name: "tracking" }] })), true);
-  });
-
-  it("flags a GitHub-native sub-issue parent (sub_issues_summary.total > 0)", () => {
-    assert.equal(
-      isUmbrellaNextIssueCandidate(issue({ sub_issues_summary: { total: 4, completed: 1 } })),
-      true,
-    );
-  });
-
-  it("flags a body task list that checks off many child issues", () => {
-    const body = ["intro", ...Array.from({ length: 6 }, (_, i) => `- [ ] do thing ${i} — #${100 + i}`)].join("\n");
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ body })), true);
-  });
-
-  it("does NOT flag a leaf requirement with acceptance-criteria checkboxes and no issue refs", () => {
-    const body = [
-      "## Acceptance",
-      "- [ ] Incremental derivation reuses cache",
-      "- [ ] Provenance change invalidates affected facts",
-      "- [ ] Cost reported in telemetry",
-    ].join("\n");
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "GC-GRC-033: caching", body })), false);
-  });
-
-  it("does NOT flag an ordinary issue that mentions a couple of dependency issues", () => {
-    const body = ["- [ ] blocked by #12", "- [ ] depends on #34"].join("\n");
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "Fix the parser", body })), false);
-  });
-
-  it("does NOT flag a normal issue whose title merely contains the word tracking", () => {
-    assert.equal(isUmbrellaNextIssueCandidate(issue({ title: "Add request tracking header" })), false);
-  });
-});
-
-describe("selectNextIssueRecommendation", () => {
-  const umbrella = { number: 820, title: "Tracking: production readiness", labels: [], body: "", html_url: "u/820", updated_at: "2026-06-14T00:00:00Z" };
-  const leaf = { number: 689, title: "GC-Q003: Traceability Matrix", labels: [{ name: "wave-2" }], body: "", html_url: "u/689", updated_at: "2026-06-13T00:00:00Z" };
-
-  it("skips an umbrella issue even when it is the most recently updated candidate", () => {
-    const result = selectNextIssueRecommendation([umbrella, leaf], 1);
-    assert.equal(result.recommendation.issue_number, 689);
-  });
-
-  it("returns no recommendation when only umbrella/blocked issues remain", () => {
-    const blocked = { number: 5, title: "blocked thing", labels: [{ name: "blocked" }], body: "", html_url: "u/5" };
-    const result = selectNextIssueRecommendation([umbrella, blocked], 1);
-    assert.equal(result.recommendation, null);
-    assert.match(result.reason, /No credible next issue/);
-  });
-
-  it("still excludes the current issue, PRs, and untitled rows alongside umbrellas", () => {
-    const pr = { number: 700, title: "a PR", pull_request: {}, labels: [], body: "" };
-    const current = { number: 689, title: "GC-Q003", labels: [], body: "", html_url: "u/689" };
-    const untitled = { number: 12, title: "   ", labels: [], body: "", html_url: "u/12" };
-    const good = { number: 690, title: "Fix the parser", labels: [], body: "", html_url: "u/690" };
-    const result = selectNextIssueRecommendation([umbrella, pr, current, untitled, good], 689);
-    assert.equal(result.recommendation.issue_number, 690);
   });
 });
 
@@ -14480,7 +14385,6 @@ describe("scoreDisposition", () => {
         prior_auto_overrides: 1,
         diff: { files_changed: 2, lines_added: 10, lines_deleted: 5 },
         surfaces: [],
-        grc_verdict: "not_security_relevant",
         findings: { one_off_count: 0, class_count: 0, has_security_finding: false },
       },
       cfg,
@@ -14498,7 +14402,6 @@ describe("scoreDisposition", () => {
         prior_auto_overrides: 1,
         diff: { files_changed: 5, lines_added: 200, lines_deleted: 30 },
         surfaces: ["mcp_tool"],
-        grc_verdict: "security_relevant",
         findings: { one_off_count: 3, class_count: 1, has_security_finding: true },
       },
       cfg,
@@ -14515,7 +14418,6 @@ describe("scoreDisposition", () => {
         prior_auto_overrides: 0,
         diff: { files_changed: 4, lines_added: 120, lines_deleted: 10 },
         surfaces: ["config_parser"],
-        grc_verdict: "security_relevant",
         findings: { one_off_count: 2, class_count: 0, has_security_finding: false },
       },
       cfg,
@@ -14532,7 +14434,6 @@ describe("scoreDisposition", () => {
         prior_auto_overrides: 0,
         diff: { files_changed: 1, lines_added: 8, lines_deleted: 2 },
         surfaces: ["doc"],
-        grc_verdict: "not_security_relevant",
         findings: { one_off_count: 1, class_count: 0, has_security_finding: false },
       },
       cfg,
@@ -14548,7 +14449,6 @@ describe("scoreDisposition", () => {
         prior_auto_overrides: 0,
         diff: { files_changed: 6, lines_added: 140, lines_deleted: 60 },
         surfaces: ["user_visible"],
-        grc_verdict: "not_security_relevant",
         findings: { one_off_count: 4, class_count: 1, has_security_finding: false },
       },
       cfg,
@@ -14568,7 +14468,6 @@ describe("scoreDisposition", () => {
         prior_auto_overrides: 0,
         diff: { files_changed: 1, lines_added: 8, lines_deleted: 2 },
         surfaces: ["doc"],
-        grc_verdict: "not_security_relevant",
         findings: { one_off_count: 0, class_count: 0, has_security_finding: false, known: false },
       },
       cfg,
@@ -14595,7 +14494,6 @@ describe("collectDispositionSignals", () => {
       findingsSummary: { one_off_count: 0, class_count: 0, top_categories: [] },
       diffManifest: manifest,
       changedPaths: [],
-      grcVerdict: "not_security_relevant",
       priorAutoOverrides: 0,
       repoRoot: REPO,
     });
@@ -14610,25 +14508,11 @@ describe("collectDispositionSignals", () => {
       findingsSummary: {},
       diffManifest: "1\t0\tmcp/ground-control/lib.js",
       changedPaths: ["mcp/ground-control/lib.js", "mcp/ground-control/index.js"],
-      grcVerdict: "unknown",
       priorAutoOverrides: 0,
       repoRoot: REPO,
     });
     assert.ok(s.surfaces.includes("config_parser"), JSON.stringify(s.surfaces));
     assert.ok(s.surfaces.includes("mcp_tool"), JSON.stringify(s.surfaces));
-  });
-
-  it("defaults grc verdict to 'unknown' when null", () => {
-    const s = collectDispositionSignals({
-      reviewer: "codex",
-      findingsSummary: {},
-      diffManifest: "",
-      changedPaths: [],
-      grcVerdict: null,
-      priorAutoOverrides: 0,
-      repoRoot: REPO,
-    });
-    assert.equal(s.grc_verdict, "unknown");
   });
 
   it("derives has_security_finding from a security-shaped category", () => {
@@ -14637,7 +14521,6 @@ describe("collectDispositionSignals", () => {
       findingsSummary: { one_off_count: 0, class_count: 1, top_categories: [{ shape: "missing authz check" }] },
       diffManifest: "",
       changedPaths: [],
-      grcVerdict: "unknown",
       priorAutoOverrides: 0,
       repoRoot: REPO,
     });
@@ -14650,7 +14533,6 @@ describe("collectDispositionSignals", () => {
       findingsSummary: null,
       diffManifest: "1\t0\tsrc/a.js",
       changedPaths: [],
-      grcVerdict: "not_security_relevant",
       priorAutoOverrides: 0,
       repoRoot: REPO,
     });
@@ -14660,7 +14542,6 @@ describe("collectDispositionSignals", () => {
       findingsSummary: { one_off_count: 0, class_count: 0, top_categories: [] },
       diffManifest: "1\t0\tsrc/a.js",
       changedPaths: [],
-      grcVerdict: "not_security_relevant",
       priorAutoOverrides: 0,
       repoRoot: REPO,
     });

@@ -1,6 +1,5 @@
 package com.keplerops.groundcontrol.api.packregistry;
 
-import com.keplerops.groundcontrol.domain.controls.state.ControlFunction;
 import com.keplerops.groundcontrol.domain.packregistry.service.PackRegistryImportFormat;
 import com.keplerops.groundcontrol.domain.packregistry.service.PackRegistryImportOptions;
 import jakarta.validation.Valid;
@@ -20,8 +19,7 @@ public record PackRegistryImportRequest(
         Map<String, Object> compatibility,
         @Valid List<PackDependencyRequest> dependencies,
         Map<String, Object> provenance,
-        Map<String, Object> registryMetadata,
-        ControlFunction defaultControlFunction) {
+        Map<String, Object> registryMetadata) {
 
     public PackRegistryImportOptions toOptions() {
         return new PackRegistryImportOptions(
@@ -36,7 +34,6 @@ public record PackRegistryImportRequest(
                 compatibility,
                 PackDependencyRequest.toDomainList(dependencies),
                 provenance,
-                registryMetadata,
-                defaultControlFunction);
+                registryMetadata);
     }
 }

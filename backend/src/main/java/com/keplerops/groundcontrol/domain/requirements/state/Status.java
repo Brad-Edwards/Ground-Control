@@ -8,7 +8,8 @@ import java.util.Set;
  *
  * <pre>
  * DRAFT ──► ACTIVE ──► DEPRECATED ──► ARCHIVED
- *                  └──────────────────►
+ *   │              └──────────────────►
+ *   └──► DEPRECATED
  * </pre>
  */
 @SuppressWarnings("java:S125") // JML contract annotations are intentional, not dead code
@@ -21,7 +22,12 @@ public enum Status {
     /*@ ensures \result != null; @*/
     public /*@ pure @*/ Set<Status> validTargets() {
         return switch (this) {
-            case DRAFT -> Set.of(ACTIVE);
+                // DRAFT -> DEPRECATED withdraws a requirement that was never implemented. Without it
+                // DRAFT has no terminal state, so the only way to retire an unbuilt requirement is to
+                // promote it through ACTIVE first — stamping a false "this shipped" event on something
+                // that never did. Withdrawal is not the same claim as deprecation-after-delivery, and
+                // the audit history has to be able to tell them apart.
+            case DRAFT -> Set.of(ACTIVE, DEPRECATED);
             case ACTIVE -> Set.of(DEPRECATED, ARCHIVED);
             case DEPRECATED -> Set.of(ARCHIVED);
             case ARCHIVED -> Set.of();

@@ -2,11 +2,13 @@
 
 ## Status
 
-accepted
+Superseded by ADR-089
 
 ## Date
 
 2026-06-10
+
+> **Superseded by ADR-089 (2026-07-11, issue #1346):** The Step 3.5 GRC screening gate this ADR defines is retired from the active `/implement` workflow as part of the composed GRC product retirement. This ADR's text is preserved as historical record; it is no longer active product or workflow behavior. See ADR-089.
 
 > **Amended and superseded in part by ADR-058 (2026-06-12):** This ADR remains
 > the v1 screening-record decision and the historical basis for Step 3.5, but
@@ -53,3 +55,63 @@ Introduce a dedicated screening step (Step 3.5, stage id `grc_screening`) in the
 - The step adds one MCP tool call per run (two for `security_relevant` runs that need GRC writes). The cost is acceptable for the assurance gain, and the stage is routed at tier medium.
 - `no_baseline` is intentionally a distinct verdict from `not_security_relevant` so missing baselines are surfaced rather than silently treated as clean.
 - The June 6 revert lesson is operationalized: the gate is enforced at the tool layer, not by prose instruction alone.
+
+## Amendment: v2 derivation-backed screening (GC-GRC-009, 2026-07-02)
+
+GC-GRC-009 implements the ADR-058 §5 target contract for Step 3.5. The v1
+functions above remain for reading historical/in-flight records; new screening
+posts use the v2 path.
+
+**Computed classification, not agent assertion.** `gc_post_grc_screening` no
+longer accepts a caller `verdict` / `entities_*` / `code_links`, and the touched
+surface is never caller-supplied (there is no `paths` override, so a caller
+cannot narrow or forge it). It computes the touched surface from the git diff
+(base defaults to merge-base with the repo base branch; the only caller scope
+inputs are verifiable `*_commit_sha` refs and a `derivation_run_id`), reads the
+existing GRC `targetType=CODE` link graph and the latest/pinned derivation run
+plus architecture-model snapshot, and computes the classification via a pure,
+unit-tested `classifyGrcScreening`.
+
+**Three sets.** `impact_set` (existing entities whose CODE links overlap touched
+paths), `gap_set` (touched security-relevant surfaces with no coverage), and
+`stale_set` (ACTIVE linked entities whose linked code changed; DRAFT entities
+are not yet a baseline, so they are impacted but not stale).
+
+**`no_derivation_coverage` replaces the `no_baseline` pass.** A touched source
+surface with no derivation coverage (including the empty/absent-baseline case)
+is a `gap_set` entry with reason `no_derivation_coverage`, recorded alongside a
+capture limit. Adapter absence is never silent, and there is no passing
+`no_baseline` verdict.
+
+**Source/non-source boundary reuses the repo's own path policy.** Security
+relevance is never inferred from a filename. Non-source classes (docs, ADRs,
+notes, skills/workflow prose, changelog fragments, repo metadata, tests, and the
+policy/test tool paths), the same classes `tools/policy/checks.py` treats as
+non-application-source, are excluded from the touched surface. Every remaining
+application-source path is classified by coverage.
+
+**Schema-versioned, reproducible record.** The record carries
+`schema: gc.implement.grc-screening/v2`, the three sets, deterministic GC-GRC-007
+candidate threats and GC-GRC-008 candidate controls (when a snapshot exists to
+enumerate against), and a `provenance` block (base/head SHAs, derivation run and
+snapshot ids, pack ids/versions/checksums, capture limits) from which the
+classification is reproducible. Only stable keys, UIDs, repo-relative paths, ids,
+versions/checksums, and rule ids are rendered, never raw diffs, secrets, or
+tool output. The reserved-marker/HTML-delimiter guard, sensitive-content filter,
+and body-size cap run before posting, shared with the v1 poster.
+
+**Reconciliation branches on record schema and recomputes from the final diff.**
+`gc_assert_grc_reconciled` reads the parsed record's schema: v1 records keep the
+original verify-what-was-claimed verdict path. For v2 records it does NOT trust
+the stored sets (which may have been computed early, before the final diff
+existed): it recomputes the classification from the final diff (the record's
+recorded base commit to the current HEAD) against the live GRC graph and derived
+facts, and **blocks on the freshly computed `gap_set`** (`grc_not_reconciled`,
+with each gap surface + reason enumerated in the failure envelope). This kills
+the free pass at reconciliation and closes the freshness hole: source added
+after screening ran is compared back to the model, so final code cannot bypass
+`gap_set`. The `stale_set` is reported but not independently blocking here;
+per-surface coverage teeth (ACTIVE threat + IMPLEMENTED control + efficacy test,
+and stale-set addressing) are **GC-GRC-012**'s completion gate, not GC-GRC-009.
+The only authorized bypass of a gap_set remains `gc_post_final_report`'s
+`phaseOverride` (an audited disposition); no per-tool override is added.

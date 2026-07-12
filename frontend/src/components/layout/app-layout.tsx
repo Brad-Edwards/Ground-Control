@@ -104,7 +104,6 @@ export function AppLayout() {
                 <NavItem to={`${base}/`} end>
                   Dashboard
                 </NavItem>
-                <NavItem to={`${base}/portfolio`}>Portfolio</NavItem>
                 <NavItem to={`${base}/requirements`}>Requirements</NavItem>
                 <NavItem to={`${base}/traceability-matrix`}>
                   Traceability Matrix
@@ -112,12 +111,6 @@ export function AppLayout() {
                 <NavItem to={`${base}/test-runs`}>Test Runs</NavItem>
                 <NavItem to={`${base}/graph`}>Graph</NavItem>
                 <NavItem to={`${base}/analysis`}>Analysis</NavItem>
-                <NavItem to={`${base}/control-assurance`}>Controls</NavItem>
-                <NavItem to={`${base}/evidence-state`}>Evidence</NavItem>
-                <NavItem to={`${base}/threat-modeling`}>
-                  Threat Modeling
-                </NavItem>
-                <NavItem to={`${base}/risk-scenarios`}>Risk Scenarios</NavItem>
                 <NavItem to={`${base}/workflow-runs`}>Workflow Runs</NavItem>
               </>
             )}

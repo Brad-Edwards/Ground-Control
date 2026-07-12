@@ -40,10 +40,6 @@ class ControlTestServiceTest {
     private ControlTestRepository controlTestRepository;
 
     @Mock
-    private com.keplerops.groundcontrol.domain.controls.repository.ControlEffectivenessAssessmentRepository
-            effectivenessAssessmentRepository;
-
-    @Mock
     private ControlService controlService;
 
     @Mock
@@ -222,34 +218,10 @@ class ControlTestServiceTest {
         var existing = existingControlTest();
         when(controlTestRepository.findByIdAndProjectId(existing.getId(), projectId))
                 .thenReturn(Optional.of(existing));
-        when(effectivenessAssessmentRepository.findByProjectIdAndControlIdOrderByAssessedAtDesc(projectId, controlId))
-                .thenReturn(java.util.List.of());
 
         service.delete(projectId, existing.getId());
 
         verify(controlTestRepository).delete(existing);
-    }
-
-    @Test
-    void deleteRejectsWhenAssessmentReferencesIt() {
-        var existing = existingControlTest();
-        var assessment = new com.keplerops.groundcontrol.domain.controls.model.ControlEffectivenessAssessment(
-                project,
-                control,
-                "CEA-001",
-                com.keplerops.groundcontrol.domain.controls.state.ControlEffectivenessRating.EFFECTIVE,
-                com.keplerops.groundcontrol.domain.controls.state.ControlEffectivenessRating.EFFECTIVE,
-                LocalDate.of(2026, 5, 1),
-                "auditor");
-        assessment.setSupportingTestIds(java.util.List.of(existing.getId().toString()));
-        when(controlTestRepository.findByIdAndProjectId(existing.getId(), projectId))
-                .thenReturn(Optional.of(existing));
-        when(effectivenessAssessmentRepository.findByProjectIdAndControlIdOrderByAssessedAtDesc(projectId, controlId))
-                .thenReturn(java.util.List.of(assessment));
-
-        assertThatThrownBy(() -> service.delete(projectId, existing.getId()))
-                .isInstanceOf(com.keplerops.groundcontrol.domain.exception.ConflictException.class)
-                .hasMessageContaining("CEA-001");
     }
 
     private ControlTest existingControlTest() {

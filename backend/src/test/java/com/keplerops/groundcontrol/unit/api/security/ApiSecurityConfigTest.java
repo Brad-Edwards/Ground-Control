@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.unit.api.security;
 
+import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -13,7 +14,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -103,6 +103,47 @@ class ApiSecurityConfigTest {
         @GetMapping("/api/v1/derivations/echo")
         String derivationsEcho() {
             return "derivations-ok";
+        }
+
+        // Workflow control surface (GC-O009 #1278): sending an operator signal is admin-only; starting
+        // and reading executions are authenticated + project-scoped and fall through to authenticated().
+        // Real path shapes so the single-segment wildcard signal matcher applies.
+        @PostMapping("/api/v1/workflow-executions/gc-implement-ground-control-1278/signals")
+        String workflowExecutionSignal() {
+            return "workflow-signal-ok";
+        }
+
+        // Fake "/echo" path (matched by the authenticated() fall-through, same as the real
+        // POST /api/v1/workflow-executions start) so the stub does not collide with the real
+        // WorkflowExecutionController mapping when the full context loads.
+        @PostMapping("/api/v1/workflow-executions/echo")
+        String workflowExecutionStart() {
+            return "workflow-start-ok";
+        }
+
+        @GetMapping("/api/v1/workflow-executions/echo")
+        String workflowExecutionRead() {
+            return "workflow-exec-read-ok";
+        }
+
+        // Research high-risk operation authorization (issue #1008 / ADR-086): the decision and
+        // consume routes are admin-only; propose/list/get fall through to authenticated(). Real
+        // path shapes so the single-segment wildcard matcher applies.
+        @PostMapping(
+                "/api/v1/research-runs/00000000-0000-0000-0000-000000000010/operation-authorizations/00000000-0000-0000-0000-000000000100/decision")
+        String researchOpAuthDecision() {
+            return "op-auth-decision-ok";
+        }
+
+        @PostMapping(
+                "/api/v1/research-runs/00000000-0000-0000-0000-000000000010/operation-authorizations/00000000-0000-0000-0000-000000000100/consume")
+        String researchOpAuthConsume() {
+            return "op-auth-consume-ok";
+        }
+
+        @PostMapping("/api/v1/research-runs/00000000-0000-0000-0000-000000000010/operation-authorizations")
+        String researchOpAuthPropose() {
+            return "op-auth-propose-ok";
         }
 
         @GetMapping("/")
@@ -222,6 +263,86 @@ class ApiSecurityConfigTest {
             mockMvc.perform(get("/api/v1/derivations/echo")).andExpect(status().isUnauthorized());
         }
 
+        private static final String WORKFLOW_SIGNAL =
+                "/api/v1/workflow-executions/gc-implement-ground-control-1278/signals";
+
+        @Test
+        void userTokenOnWorkflowSignal_returns403() throws Exception {
+            // GC-O009 #1278: operator signals are admin-only until GC-P024 gate authority lands.
+            mockMvc.perform(post(WORKFLOW_SIGNAL).header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void adminTokenOnWorkflowSignal_returns200() throws Exception {
+            mockMvc.perform(post(WORKFLOW_SIGNAL).header("Authorization", "Bearer admin-token-bbb"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("workflow-signal-ok"));
+        }
+
+        @Test
+        void anonymousOnWorkflowSignal_returns401() throws Exception {
+            mockMvc.perform(post(WORKFLOW_SIGNAL)).andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        void userTokenOnWorkflowStart_returns200() throws Exception {
+            // Starting an execution is authenticated-tier, not admin-gated (project-scoped in the service).
+            mockMvc.perform(post("/api/v1/workflow-executions/echo").header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("workflow-start-ok"));
+        }
+
+        @Test
+        void userTokenOnWorkflowExecutionRead_returns200() throws Exception {
+            mockMvc.perform(get("/api/v1/workflow-executions/echo").header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("workflow-exec-read-ok"));
+        }
+
+        private static final String OP_AUTH_DECISION =
+                "/api/v1/research-runs/00000000-0000-0000-0000-000000000010/operation-authorizations/00000000-0000-0000-0000-000000000100/decision";
+        private static final String OP_AUTH_CONSUME =
+                "/api/v1/research-runs/00000000-0000-0000-0000-000000000010/operation-authorizations/00000000-0000-0000-0000-000000000100/consume";
+        private static final String OP_AUTH_PROPOSE =
+                "/api/v1/research-runs/00000000-0000-0000-0000-000000000010/operation-authorizations";
+
+        @Test
+        void userTokenOnResearchOpAuthDecision_returns403() throws Exception {
+            // ADR-086 §3: an AUTONOMOUS run (or ordinary member) cannot approve a high-risk operation.
+            mockMvc.perform(post(OP_AUTH_DECISION).header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void adminTokenOnResearchOpAuthDecision_returns200() throws Exception {
+            mockMvc.perform(post(OP_AUTH_DECISION).header("Authorization", "Bearer admin-token-bbb"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("op-auth-decision-ok"));
+        }
+
+        @Test
+        void userTokenOnResearchOpAuthConsume_returns403() throws Exception {
+            // ADR-086 §3: spending a one-time-use approval is the trusted executor/operator boundary.
+            mockMvc.perform(post(OP_AUTH_CONSUME).header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void adminTokenOnResearchOpAuthConsume_returns200() throws Exception {
+            mockMvc.perform(post(OP_AUTH_CONSUME).header("Authorization", "Bearer admin-token-bbb"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("op-auth-consume-ok"));
+        }
+
+        @Test
+        void userTokenOnResearchOpAuthPropose_returns200() throws Exception {
+            // Proposing/reading an authorization is authenticated-tier, not admin-gated.
+            mockMvc.perform(post(OP_AUTH_PROPOSE).header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("op-auth-propose-ok"));
+        }
+
         @Test
         void anonymousSpaShell_redirectsToLogin() throws Exception {
             // ADR-037 §2: the SPA shell is no longer anonymously served. An unauthenticated
@@ -315,17 +436,17 @@ class ApiSecurityConfigTest {
 
         @Bean
         DataSource dataSourceStub() {
-            return Mockito.mock(DataSource.class);
+            return mock(DataSource.class);
         }
 
         @Bean
         JdbcUserDetailsManager userDetailsManagerStub() {
-            return Mockito.mock(JdbcUserDetailsManager.class);
+            return mock(JdbcUserDetailsManager.class);
         }
 
         @Bean
         JdbcTemplate jdbcTemplateStub() {
-            return Mockito.mock(JdbcTemplate.class);
+            return mock(JdbcTemplate.class);
         }
     }
 }

@@ -104,10 +104,6 @@ class ControlGraphProjectionContributorTest {
                 Arguments.of(ControlLinkTargetType.ASSET, GraphEntityType.OPERATIONAL_ASSET),
                 Arguments.of(ControlLinkTargetType.REQUIREMENT, GraphEntityType.REQUIREMENT),
                 Arguments.of(ControlLinkTargetType.RISK_SCENARIO, GraphEntityType.RISK_SCENARIO),
-                Arguments.of(ControlLinkTargetType.RISK_REGISTER_RECORD, GraphEntityType.RISK_REGISTER_RECORD),
-                Arguments.of(ControlLinkTargetType.RISK_ASSESSMENT_RESULT, GraphEntityType.RISK_ASSESSMENT_RESULT),
-                Arguments.of(ControlLinkTargetType.TREATMENT_PLAN, GraphEntityType.TREATMENT_PLAN),
-                Arguments.of(ControlLinkTargetType.METHODOLOGY_PROFILE, GraphEntityType.METHODOLOGY_PROFILE),
                 Arguments.of(ControlLinkTargetType.OBSERVATION, GraphEntityType.OBSERVATION),
                 Arguments.of(ControlLinkTargetType.FINDING, GraphEntityType.FINDING),
                 Arguments.of(ControlLinkTargetType.EVIDENCE, GraphEntityType.EVIDENCE_ARTIFACT));
@@ -149,6 +145,31 @@ class ControlGraphProjectionContributorTest {
         setField(control, "id", UUID.randomUUID());
 
         var link = new ControlLink(control, targetType, null, "ext-ref", ControlLinkType.ASSOCIATED);
+        setField(link, "id", UUID.randomUUID());
+
+        when(controlLinkRepository.findByProjectId(projectId)).thenReturn(List.of(link));
+
+        var edges = contributor.contributeEdges(projectId);
+
+        assertThat(edges).isEmpty();
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = ControlLinkTargetType.class,
+            names = {"RISK_REGISTER_RECORD", "RISK_ASSESSMENT_RESULT", "TREATMENT_PLAN", "METHODOLOGY_PROFILE"})
+    void retiredTargetTypesProduceNoEdge(ControlLinkTargetType targetType) {
+        // ADR-089: these target types are retired — the enum constants remain (so historical
+        // ControlLink rows stay deserializable) but no graph node backs them, so no edge is ever
+        // emitted for them.
+        var project = new Project("ground-control", "Ground Control");
+        var projectId = UUID.randomUUID();
+        setField(project, "id", projectId);
+
+        var control = new Control(project, "CTL-001", "Test Control", ControlFunction.PREVENTIVE);
+        setField(control, "id", UUID.randomUUID());
+
+        var link = new ControlLink(control, targetType, UUID.randomUUID(), null, ControlLinkType.ASSOCIATED);
         setField(link, "id", UUID.randomUUID());
 
         when(controlLinkRepository.findByProjectId(projectId)).thenReturn(List.of(link));

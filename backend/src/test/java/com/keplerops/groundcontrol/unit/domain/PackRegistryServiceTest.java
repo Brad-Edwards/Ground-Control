@@ -7,19 +7,15 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.keplerops.groundcontrol.domain.controlpacks.service.ControlPackEntryDefinition;
-import com.keplerops.groundcontrol.domain.controlpacks.service.ControlPackService;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.packregistry.model.PackRegistryEntry;
-import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPackEntry;
 import com.keplerops.groundcontrol.domain.packregistry.repository.PackRegistryEntryRepository;
-import com.keplerops.groundcontrol.domain.packregistry.service.ControlPackRegistrationContent;
-import com.keplerops.groundcontrol.domain.packregistry.service.ControlPackTypeHandler;
 import com.keplerops.groundcontrol.domain.packregistry.service.CustomPackTypeHandler;
 import com.keplerops.groundcontrol.domain.packregistry.service.EmptyPackRegistrationContent;
 import com.keplerops.groundcontrol.domain.packregistry.service.PackIntegrityVerifier;
+import com.keplerops.groundcontrol.domain.packregistry.service.PackRegistrationContent;
 import com.keplerops.groundcontrol.domain.packregistry.service.PackRegistrySecurityProperties;
 import com.keplerops.groundcontrol.domain.packregistry.service.PackRegistryService;
 import com.keplerops.groundcontrol.domain.packregistry.service.PackTypeHandlerRegistry;
@@ -44,14 +40,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class PackRegistryServiceTest {
 
+    /** A non-empty content marker used only to exercise a metadata-only handler's rejection path. */
+    private record NonEmptyContent() implements PackRegistrationContent {}
+
     @Mock
     private PackRegistryEntryRepository registryRepository;
 
     @Mock
     private ProjectService projectService;
-
-    @Mock
-    private ControlPackService controlPackService;
 
     private PackRegistryService service;
 
@@ -63,34 +59,13 @@ class PackRegistryServiceTest {
         return project;
     }
 
-    private List<ControlPackEntryDefinition> makeControlPackEntries() {
-        return List.of(new ControlPackEntryDefinition(
-                "AC-1",
-                "Access Control Policy",
-                null,
-                null,
-                com.keplerops.groundcontrol.domain.controls.state.ControlFunction.PREVENTIVE,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null));
-    }
-
     @BeforeEach
     void setUp() {
         service = new PackRegistryService(
                 registryRepository,
                 projectService,
                 new PackIntegrityVerifier(new PackRegistrySecurityProperties()),
-                new PackTypeHandlerRegistry(List.of(
-                        new ControlPackTypeHandler(controlPackService),
-                        new RequirementsPackTypeHandler(),
-                        new CustomPackTypeHandler())));
+                new PackTypeHandlerRegistry(List.of(new RequirementsPackTypeHandler(), new CustomPackTypeHandler())));
     }
 
     @Nested
@@ -100,30 +75,30 @@ class PackRegistryServiceTest {
         void registersNewEntry() {
             var project = makeProject();
             when(projectService.getById(PROJECT_ID)).thenReturn(project);
-            when(registryRepository.existsByProjectIdAndPackIdAndVersion(PROJECT_ID, "nist-800-53", "1.0.0"))
+            when(registryRepository.existsByProjectIdAndPackIdAndVersion(PROJECT_ID, "requirements-pack", "1.0.0"))
                     .thenReturn(false);
             when(registryRepository.save(any(PackRegistryEntry.class))).thenAnswer(inv -> inv.getArgument(0));
 
             var command = new RegisterPackCommand(
                     PROJECT_ID,
-                    "nist-800-53",
-                    PackType.CONTROL_PACK,
+                    "requirements-pack",
+                    PackType.REQUIREMENTS_PACK,
                     "1.0.0",
-                    "NIST",
-                    "NIST controls",
+                    "Acme",
+                    "Requirements catalog",
                     null,
                     null,
                     null,
                     null,
                     null,
-                    new ControlPackRegistrationContent(makeControlPackEntries()),
+                    EmptyPackRegistrationContent.INSTANCE,
                     null,
                     null);
 
             var result = service.registerEntry(command);
-            assertThat(result.getPackId()).isEqualTo("nist-800-53");
+            assertThat(result.getPackId()).isEqualTo("requirements-pack");
             assertThat(result.getVersion()).isEqualTo("1.0.0");
-            assertThat(result.getPackType()).isEqualTo(PackType.CONTROL_PACK);
+            assertThat(result.getPackType()).isEqualTo(PackType.REQUIREMENTS_PACK);
             assertThat(result.getCatalogStatus()).isEqualTo(CatalogStatus.AVAILABLE);
             assertThat(result.getChecksum()).isNull();
             verify(registryRepository).save(any(PackRegistryEntry.class));
@@ -133,13 +108,13 @@ class PackRegistryServiceTest {
         void rejectsDuplicateVersion() {
             var project = makeProject();
             when(projectService.getById(PROJECT_ID)).thenReturn(project);
-            when(registryRepository.existsByProjectIdAndPackIdAndVersion(PROJECT_ID, "nist-800-53", "1.0.0"))
+            when(registryRepository.existsByProjectIdAndPackIdAndVersion(PROJECT_ID, "requirements-pack", "1.0.0"))
                     .thenReturn(true);
 
             var command = new RegisterPackCommand(
                     PROJECT_ID,
-                    "nist-800-53",
-                    PackType.CONTROL_PACK,
+                    "requirements-pack",
+                    PackType.REQUIREMENTS_PACK,
                     "1.0.0",
                     null,
                     null,
@@ -148,7 +123,7 @@ class PackRegistryServiceTest {
                     null,
                     null,
                     null,
-                    new ControlPackRegistrationContent(makeControlPackEntries()),
+                    EmptyPackRegistrationContent.INSTANCE,
                     null,
                     null);
 
@@ -181,29 +156,28 @@ class PackRegistryServiceTest {
 
             var result = service.registerEntry(command);
             assertThat(result.getPackType()).isEqualTo(PackType.CUSTOM);
-            assertThat(result.getControlPackEntries()).isNull();
         }
 
         @Test
-        void rejectsControlPackWithoutTypedEntries() {
+        void rejectsMetadataOnlyPackTypeWithTypedContent() {
             var project = makeProject();
             when(projectService.getById(PROJECT_ID)).thenReturn(project);
-            when(registryRepository.existsByProjectIdAndPackIdAndVersion(PROJECT_ID, "nist-800-53", "1.0.0"))
+            when(registryRepository.existsByProjectIdAndPackIdAndVersion(PROJECT_ID, "requirements-pack", "1.0.0"))
                     .thenReturn(false);
 
             var command = new RegisterPackCommand(
                     PROJECT_ID,
-                    "nist-800-53",
-                    PackType.CONTROL_PACK,
+                    "requirements-pack",
+                    PackType.REQUIREMENTS_PACK,
                     "1.0.0",
-                    "NIST",
-                    "NIST controls",
+                    "Acme",
+                    "Requirements catalog",
                     null,
                     null,
                     null,
                     null,
                     null,
-                    EmptyPackRegistrationContent.INSTANCE,
+                    new NonEmptyContent(),
                     null,
                     null);
 
@@ -214,22 +188,22 @@ class PackRegistryServiceTest {
         void rejectsStaleChecksum() {
             var project = makeProject();
             when(projectService.getById(PROJECT_ID)).thenReturn(project);
-            when(registryRepository.existsByProjectIdAndPackIdAndVersion(PROJECT_ID, "nist-800-53", "1.0.0"))
+            when(registryRepository.existsByProjectIdAndPackIdAndVersion(PROJECT_ID, "requirements-pack", "1.0.0"))
                     .thenReturn(false);
 
             var command = new RegisterPackCommand(
                     PROJECT_ID,
-                    "nist-800-53",
-                    PackType.CONTROL_PACK,
+                    "requirements-pack",
+                    PackType.REQUIREMENTS_PACK,
                     "1.0.0",
-                    "NIST",
-                    "NIST controls",
+                    "Acme",
+                    "Requirements catalog",
                     null,
                     "sha256:0000000000000000000000000000000000000000000000000000000000000000",
                     null,
                     null,
                     null,
-                    new ControlPackRegistrationContent(makeControlPackEntries()),
+                    EmptyPackRegistrationContent.INSTANCE,
                     null,
                     null);
 
@@ -242,30 +216,30 @@ class PackRegistryServiceTest {
         void normalizesDeclaredChecksumWhenItMatches() {
             var project = makeProject();
             when(projectService.getById(PROJECT_ID)).thenReturn(project);
-            when(registryRepository.existsByProjectIdAndPackIdAndVersion(PROJECT_ID, "nist-800-53", "1.0.0"))
+            when(registryRepository.existsByProjectIdAndPackIdAndVersion(PROJECT_ID, "requirements-pack", "1.0.0"))
                     .thenReturn(false);
             when(registryRepository.save(any(PackRegistryEntry.class))).thenAnswer(inv -> inv.getArgument(0));
 
             var verifier = new PackIntegrityVerifier(new PackRegistrySecurityProperties());
-            var checksumEntry = new PackRegistryEntry(project, "nist-800-53", PackType.CONTROL_PACK, "1.0.0");
-            checksumEntry.setPublisher("NIST");
-            checksumEntry.setDescription("NIST controls");
-            checksumEntry.setControlPackEntries(serviceTestEntries());
+            var checksumEntry =
+                    new PackRegistryEntry(project, "requirements-pack", PackType.REQUIREMENTS_PACK, "1.0.0");
+            checksumEntry.setPublisher("Acme");
+            checksumEntry.setDescription("Requirements catalog");
             var expectedChecksum = verifier.verify(checksumEntry).verifiedChecksum();
 
             var command = new RegisterPackCommand(
                     PROJECT_ID,
-                    "nist-800-53",
-                    PackType.CONTROL_PACK,
+                    "requirements-pack",
+                    PackType.REQUIREMENTS_PACK,
                     "1.0.0",
-                    "NIST",
-                    "NIST controls",
+                    "Acme",
+                    "Requirements catalog",
                     null,
                     expectedChecksum.toUpperCase(Locale.ROOT),
                     null,
                     null,
                     null,
-                    new ControlPackRegistrationContent(makeControlPackEntries()),
+                    EmptyPackRegistrationContent.INSTANCE,
                     null,
                     null);
 
@@ -280,13 +254,13 @@ class PackRegistryServiceTest {
         @Test
         void withdrawsEntry() {
             var project = makeProject();
-            var entry = new PackRegistryEntry(project, "nist-800-53", PackType.CONTROL_PACK, "1.0.0");
+            var entry = new PackRegistryEntry(project, "requirements-pack", PackType.REQUIREMENTS_PACK, "1.0.0");
             setField(entry, "id", UUID.randomUUID());
-            when(registryRepository.findByProjectIdAndPackIdAndVersion(PROJECT_ID, "nist-800-53", "1.0.0"))
+            when(registryRepository.findByProjectIdAndPackIdAndVersion(PROJECT_ID, "requirements-pack", "1.0.0"))
                     .thenReturn(Optional.of(entry));
             when(registryRepository.save(any(PackRegistryEntry.class))).thenAnswer(inv -> inv.getArgument(0));
 
-            var result = service.withdrawEntry(PROJECT_ID, "nist-800-53", "1.0.0");
+            var result = service.withdrawEntry(PROJECT_ID, "requirements-pack", "1.0.0");
             assertThat(result.getCatalogStatus()).isEqualTo(CatalogStatus.WITHDRAWN);
         }
     }
@@ -297,12 +271,12 @@ class PackRegistryServiceTest {
         @Test
         void findsExistingEntry() {
             var project = makeProject();
-            var entry = new PackRegistryEntry(project, "nist-800-53", PackType.CONTROL_PACK, "1.0.0");
-            when(registryRepository.findByProjectIdAndPackIdAndVersion(PROJECT_ID, "nist-800-53", "1.0.0"))
+            var entry = new PackRegistryEntry(project, "requirements-pack", PackType.REQUIREMENTS_PACK, "1.0.0");
+            when(registryRepository.findByProjectIdAndPackIdAndVersion(PROJECT_ID, "requirements-pack", "1.0.0"))
                     .thenReturn(Optional.of(entry));
 
-            var result = service.findEntry(PROJECT_ID, "nist-800-53", "1.0.0");
-            assertThat(result.getPackId()).isEqualTo("nist-800-53");
+            var result = service.findEntry(PROJECT_ID, "requirements-pack", "1.0.0");
+            assertThat(result.getPackId()).isEqualTo("requirements-pack");
         }
 
         @Test
@@ -321,7 +295,7 @@ class PackRegistryServiceTest {
         @Test
         void listsAllEntriesForProject() {
             var project = makeProject();
-            var entry = new PackRegistryEntry(project, "nist-800-53", PackType.CONTROL_PACK, "1.0.0");
+            var entry = new PackRegistryEntry(project, "requirements-pack", PackType.REQUIREMENTS_PACK, "1.0.0");
             when(registryRepository.findByProjectIdOrderByRegisteredAtDesc(PROJECT_ID))
                     .thenReturn(List.of(entry));
 
@@ -332,12 +306,12 @@ class PackRegistryServiceTest {
         @Test
         void listsEntriesByType() {
             var project = makeProject();
-            var entry = new PackRegistryEntry(project, "nist-800-53", PackType.CONTROL_PACK, "1.0.0");
+            var entry = new PackRegistryEntry(project, "requirements-pack", PackType.REQUIREMENTS_PACK, "1.0.0");
             when(registryRepository.findByProjectIdAndPackTypeOrderByRegisteredAtDesc(
-                            PROJECT_ID, PackType.CONTROL_PACK))
+                            PROJECT_ID, PackType.REQUIREMENTS_PACK))
                     .thenReturn(List.of(entry));
 
-            var results = service.listEntries(PROJECT_ID, PackType.CONTROL_PACK);
+            var results = service.listEntries(PROJECT_ID, PackType.REQUIREMENTS_PACK);
             assertThat(results).hasSize(1);
         }
     }
@@ -348,7 +322,7 @@ class PackRegistryServiceTest {
         @Test
         void updatesExistingEntry() {
             var project = makeProject();
-            var entry = new PackRegistryEntry(project, "nist-800-53", PackType.CONTROL_PACK, "1.0.0");
+            var entry = new PackRegistryEntry(project, "requirements-pack", PackType.REQUIREMENTS_PACK, "1.0.0");
             var entryId = UUID.randomUUID();
             setField(entry, "id", entryId);
             when(registryRepository.findById(entryId)).thenReturn(Optional.of(entry));
@@ -361,23 +335,5 @@ class PackRegistryServiceTest {
             assertThat(result.getPublisher()).isEqualTo("Updated Publisher");
             assertThat(result.getDescription()).isEqualTo("New description");
         }
-    }
-
-    private List<RegisteredControlPackEntry> serviceTestEntries() {
-        return List.of(new RegisteredControlPackEntry(
-                "AC-1",
-                "Access Control Policy",
-                com.keplerops.groundcontrol.domain.controls.state.ControlFunction.PREVENTIVE,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null));
     }
 }

@@ -4,7 +4,6 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -90,31 +89,15 @@ class ApiSecurityIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void userTokenCreatingCampaign_returns403() throws Exception {
-        // GC-S005: campaign writes configure/enable credentialed outbound collection and are admin-only.
-        // Authz runs before the controller, so the empty body never reaches validation — the gate denies
-        // the non-admin first.
-        mockMvc.perform(post("/api/v1/evidence-campaigns")
-                        .param("project", "ground-control")
-                        .contentType("application/json")
-                        .content("{}")
-                        .header("Authorization", USER_TOKEN))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.error.code", is("access_denied")));
-    }
-
-    @Test
-    void userTokenListingCampaigns_passesAuthLayer() throws Exception {
-        // Reads stay open to any authenticated project member — must not be 401 or 403.
+    void retiredEvidenceCampaignPath_returns404NotAuthzDenial() throws Exception {
+        // ADR-089: the evidence-campaign product surface is retired. The mapping is absent, so
+        // the request must fail closed with the ordinary NoResourceFoundException -> 404
+        // ErrorResponse shape — never a GRC-specific error envelope or a 401/403 that would imply
+        // the route (and its admin-only write gate) still exists.
         mockMvc.perform(get("/api/v1/evidence-campaigns")
                         .param("project", "ground-control")
                         .header("Authorization", USER_TOKEN))
-                .andExpect(result -> {
-                    int status = result.getResponse().getStatus();
-                    if (status == 401 || status == 403) {
-                        throw new AssertionError("User token rejected reading campaigns; status=" + status);
-                    }
-                });
+                .andExpect(status().isNotFound());
     }
 
     @Test

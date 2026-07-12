@@ -3,7 +3,10 @@ package com.keplerops.groundcontrol.unit.domain.research;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -124,7 +127,22 @@ class ResearchRunMethodologyServiceTest {
                 projectService,
                 selectionRepository,
                 sourceRepository,
-                methodologyCatalog);
+                methodologyCatalog,
+                mock(
+                        com.keplerops.groundcontrol.domain.research.repository.MethodologyRequirementsContractRepository
+                                .class),
+                mock(
+                        com.keplerops.groundcontrol.domain.research.repository
+                                .MethodologyRequirementsContractEntryRepository.class),
+                mock(
+                        com.keplerops.groundcontrol.domain.research.repository
+                                .MethodologyRequirementsContractEntrySourceLinkRepository.class),
+                mock(
+                        com.keplerops.groundcontrol.domain.research.repository
+                                .MethodologyRequirementsContractRejectedAlternativeRepository.class),
+                mock(com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanRepository.class),
+                mock(com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanCoverageRepository.class),
+                mock(com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanSectionRepository.class));
         project = new Project("research-p", "Research Project", ProjectType.RESEARCH);
         TestUtil.setField(project, "id", PROJECT_ID);
         when(selectionRepository.save(any())).thenAnswer(inv -> {
@@ -215,7 +233,7 @@ class ResearchRunMethodologyServiceTest {
         // The catalog "systematic" profile declares two required sources; both are
         // snapshotted as required=true rows in ATTEMPTED state.
         var captor = ArgumentCaptor.forClass(ResearchRunMethodologySource.class);
-        verify(sourceRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+        verify(sourceRepository, times(2)).save(captor.capture());
         assertThat(captor.getAllValues())
                 .allSatisfy(s -> {
                     assertThat(s.isRequired()).isTrue();
@@ -277,13 +295,13 @@ class ResearchRunMethodologyServiceTest {
         verify(selectionRepository).save(existing);
         ArgumentCaptor<ResearchRunMethodologySelection> captor =
                 ArgumentCaptor.forClass(ResearchRunMethodologySelection.class);
-        verify(selectionRepository, org.mockito.Mockito.atLeast(2)).save(captor.capture());
+        verify(selectionRepository, atLeast(2)).save(captor.capture());
         var newSel = captor.getAllValues().stream()
                 .filter(s -> s.getMethodKey().equals("scoping"))
                 .findFirst();
         assertThat(newSel).isPresent();
         // The new selection re-snapshots the catalog "scoping" profile's 3 required sources.
-        verify(sourceRepository, org.mockito.Mockito.times(3)).save(any());
+        verify(sourceRepository, times(3)).save(any());
     }
 
     @Test

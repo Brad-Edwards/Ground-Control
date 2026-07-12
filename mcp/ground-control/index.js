@@ -31,7 +31,7 @@
 //   Consolidated entity tools (one per entity, action-discriminated):
 //     gc_requirement, gc_relation, gc_adr, gc_document, gc_section,
 //     gc_asset, gc_observation, gc_risk_scenario, gc_threat_model,
-//     gc_control, gc_derivation, gc_risk_governance, gc_risk_control_mapping, gc_analyze, gc_graph, gc_baseline,
+//     gc_control, gc_risk_governance, gc_risk_control_mapping, gc_analyze, gc_graph, gc_baseline,
 //     gc_quality_gate, gc_admin, gc_pack
 //
 // Pure GETs (history, timeline, exports, list-by-X) are NOT registered as
@@ -58,17 +58,6 @@ import {
   crossWaveValidation, detectConsistencyViolations, analyzeCompleteness,
   analyzeStatusDrift, analyzeSemanticSimilarity, getWorkOrder,
   getDashboardStats,
-  // ---- GC-L007 GRC analysis ----
-  analyzeEvidenceFreshness, analyzeObservationProjection, aggregateVendorRisk,
-  // ---- GC-T014 NIST SP 800-30 Rev. 1 assessment ----
-  analyzeNistAssessment,
-  // ---- GC-T011 Open FAIR quantitative risk analysis ----
-  analyzeFairQuantitative,
-  analyzeComplianceMonitoring,
-  // ---- GC-I017 FAIR-CAM control analytics ----
-  analyzeFairCamControlAnalytics,
-  // ---- GC-T005 risk appetite/tolerance evaluation ----
-  analyzeRiskAppetiteEvaluation,
   // ---- history / exports (kept for completeness even though tools route to gc_query) ----
   getRequirementHistory, getRelationHistory, getTraceabilityLinkHistory,
   getRequirementTimeline, getRequirementDiff, getProjectTimeline,
@@ -83,17 +72,15 @@ import {
   runCodexArchitecturePreflight, runCodexReview, runCodexVerifyFinding,
   runTestQualityReview, TEST_QUALITY_REVIEW_HARD_CAP,
   runPostImplementationPlan,
-  runAssertTraceabilityReconciled, runAssertGrcReconciled, runAssertQualityGates, runCloseIssueAfterMerge,
+  runAssertTraceabilityReconciled, runAssertQualityGates, runCloseIssueAfterMerge,
   runAssertCompletion,
   runPostDecisionRecord, runPostFinalReport, runRenderPrBody, runLogStepTelemetry,
-  runPostGrcScreening,
   runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
   runCodexReviewCycle, runTestQualityReviewCycle,
   runReviewCapDisposition,
   startReviewJob, pollReviewJob, cancelReviewJob,
   runResolveWorkflowRoute,
   DECISION_RECORD_REVIEWERS, DECISION_RECORD_DECISIONS, DECISION_RECORD_CLASSIFICATIONS,
-  GRC_SCREENING_VERDICTS,
   PR_BODY_CHANGE_CLASSES, PR_REQUIREMENT_RE, EXACT_REQUIREMENT_UID_RE,
   TELEMETRY_TIERS, TELEMETRY_OUTCOMES,
   buildCodexReviewToolDescription, buildCodexReviewOverrideCapDescription,
@@ -129,25 +116,12 @@ import {
   // ---- risk domain ----
   createObservation, listObservations, getObservation, updateObservation,
   deleteObservation, listLatestObservations,
-  getEvidenceStateWorkspace,
-  getControlAssuranceWorkspace, CONTROL_STATUSES, CONTROL_FUNCTIONS, CONTROL_WORKSPACE_QUEUE_REASONS,
   createRiskScenario, listRiskScenarios, getRiskScenario, updateRiskScenario,
   deleteRiskScenario, transitionRiskScenarioStatus, getRiskScenarioRequirements,
-  getRiskScenarioWorkspace,
   createRiskScenarioLink, listRiskScenarioLinks, deleteRiskScenarioLink,
   createThreatModel, listThreatModels, getThreatModel, updateThreatModel,
   deleteThreatModel, transitionThreatModelStatus, getThreatModelLinkedRequirements,
-  getThreatModelWorkspace,
   createThreatModelLink, listThreatModelLinks, deleteThreatModelLink,
-  createMethodologyProfile, listMethodologyProfiles, getMethodologyProfile,
-  updateMethodologyProfile, deleteMethodologyProfile,
-  createRiskRegisterRecord, listRiskRegisterRecords, getRiskRegisterRecord,
-  updateRiskRegisterRecord, transitionRiskRegisterRecordStatus, deleteRiskRegisterRecord,
-  createRiskAssessmentResult, listRiskAssessmentResults, getRiskAssessmentResult,
-  updateRiskAssessmentResult, transitionRiskAssessmentApprovalState,
-  deleteRiskAssessmentResult,
-  createTreatmentPlan, listTreatmentPlans, getTreatmentPlan, updateTreatmentPlan,
-  transitionTreatmentPlanStatus, deleteTreatmentPlan,
   // ---- risk-control mapping (GC-T003 / ADR-052) ----
   createScopedControlImplementation, listScopedControlImplementations,
   getScopedControlImplementation, updateScopedControlImplementation,
@@ -162,9 +136,6 @@ import {
   updateVerificationResult, deleteVerificationResult,
   // ---- packs + plugins ----
   listPlugins, getPlugin, registerPlugin, unregisterPlugin,
-  listControlPacks, getControlPack, deprecateControlPack, removeControlPack,
-  listControlPackEntries, getControlPackEntry,
-  createControlPackOverride, listControlPackOverrides, deleteControlPackOverride,
   registerPackRegistryEntry, importPackRegistryEntry, listPackRegistryEntries,
   listPackVersions, getPackRegistryEntry, updatePackRegistryEntry,
   withdrawPackRegistryEntry, deletePackRegistryEntry, resolvePack,
@@ -213,7 +184,11 @@ import {
   createResearchRunDisclosure, getResearchRunDisclosure, addResearchRunDisclosureEntry,
   selectMethodology, getMethodologySelection, recordMethodologySource,
   updateMethodologySourceState, listMethodologySources, listMethodologyCatalog,
-  METHODOLOGY_SOURCE_STATES,
+  recordMethodologyRequirementsContract, getMethodologyRequirementsContract,
+  recordProtocolPlan, getProtocolPlan,
+  METHODOLOGY_SOURCE_STATES, CONTRACT_ENTRY_KINDS,
+  PROTOCOL_COVERAGE_DISPOSITIONS, PROTOCOL_ANSWER_PROVENANCES,
+  PROTOCOL_SECTION_KINDS, PROTOCOL_SOURCE_ROLES,
   RESEARCH_RUN_AUTONOMY_LEVELS, RESEARCH_RUN_INTENDED_OUTPUTS,
   RESEARCH_RUN_STAGES, RESEARCH_ARTIFACT_TYPES, RESEARCH_GATE_POINTS,
   RESEARCH_GATE_BEHAVIORS, RESEARCH_GATE_DECISION_OUTCOMES,
@@ -228,15 +203,11 @@ import {
   ASSET_TYPES, ASSET_RELATION_TYPES, ASSET_LINK_TARGET_TYPES, ASSET_LINK_TYPES,
   ASSET_CRITICALITIES, ASSET_ENVIRONMENTS, ASSET_SCOPES, KNOWLEDGE_STATES,
   OBSERVATION_CATEGORIES, RISK_SCENARIO_STATUSES,
-  METHODOLOGY_FAMILIES, METHODOLOGY_PROFILE_STATUSES,
-  RISK_REGISTER_STATUSES, RISK_ASSESSMENT_APPROVAL_STATUSES,
-  TREATMENT_PLAN_STATUSES, TREATMENT_STRATEGIES,
   RISK_SCENARIO_LINK_TARGET_TYPES, RISK_SCENARIO_LINK_TYPES,
   THREAT_MODEL_STATUSES, STRIDE_CATEGORIES,
   THREAT_MODEL_LINK_TARGET_TYPES, THREAT_MODEL_LINK_TYPES,
   VERIFICATION_STATUSES, ASSURANCE_LEVELS,
   PLUGIN_TYPES, PLUGIN_LIFECYCLE_STATES,
-  CONTROL_PACK_LIFECYCLE_STATES, CONTROL_PACK_ENTRY_STATUSES,
   PACK_TYPES, PACK_IMPORT_FORMATS, CATALOG_STATUSES,
   TRUST_OUTCOMES, INSTALL_OUTCOMES,
   TRUST_POLICY_FIELDS, TRUST_POLICY_RULE_OPERATORS,
@@ -276,40 +247,15 @@ import {
   GC_EVIDENCE_DESCRIPTION,
 } from "./gc-evidence.js";
 import {
-  gcEvidenceCampaignZodShape,
-  gcEvidenceCampaignToolHandler,
-  GC_EVIDENCE_CAMPAIGN_DESCRIPTION,
-} from "./gc-evidence-campaign.js";
-import {
   gcResearchProvenanceZodShape,
   gcResearchProvenanceToolHandler,
   GC_RESEARCH_PROVENANCE_DESCRIPTION,
 } from "./gc-research-provenance.js";
 import {
-  gcDerivationZodShape,
-  gcDerivationToolHandler,
-  GC_DERIVATION_DESCRIPTION,
-} from "./gc-derivation.js";
-import {
-  gcArchitectureModelZodShape,
-  gcArchitectureModelToolHandler,
-  GC_ARCHITECTURE_MODEL_DESCRIPTION,
-} from "./gc-architecture-model.js";
-import {
-  gcDataClassificationZodShape,
-  gcDataClassificationToolHandler,
-  GC_DATA_CLASSIFICATION_DESCRIPTION,
-} from "./gc-data-classification.js";
-import {
-  gcThreatEnumerationZodShape,
-  gcThreatEnumerationToolHandler,
-  GC_THREAT_ENUMERATION_DESCRIPTION,
-} from "./gc-threat-enumeration.js";
-import {
-  gcControlIdentificationZodShape,
-  gcControlIdentificationToolHandler,
-  GC_CONTROL_IDENTIFICATION_DESCRIPTION,
-} from "./gc-control-identification.js";
+  gcResearchOperationAuthorizationZodShape,
+  gcResearchOperationAuthorizationToolHandler,
+  GC_RESEARCH_OPERATION_AUTHORIZATION_DESCRIPTION,
+} from "./gc-research-operation-authorization.js";
 import {
   gcAuditZodShape,
   gcAuditToolHandler,
@@ -359,6 +305,11 @@ import {
   gcWorkflowRunIngestHandler,
   GC_WORKFLOW_RUN_INGEST_DESCRIPTION,
 } from "./gc-workflow-run-ingest.js";
+import {
+  gcWorkflowExecutionZodShape,
+  gcWorkflowExecutionToolHandler,
+  GC_WORKFLOW_EXECUTION_DESCRIPTION,
+} from "./gc-workflow-execution.js";
 import { installToolTelemetry } from "./telemetry.js";
 
 // Load .env from cwd before any auth header is composed.
@@ -550,7 +501,7 @@ server.tool(
 
 server.tool(
   "gc_transition_status",
-  "Transition a requirement's status. Valid: DRAFT->ACTIVE, ACTIVE->DEPRECATED, ACTIVE->ARCHIVED, DEPRECATED->ARCHIVED.",
+  "Transition a requirement's status. Valid: DRAFT->ACTIVE, DRAFT->DEPRECATED (withdraw work that was never implemented), ACTIVE->DEPRECATED, ACTIVE->ARCHIVED, DEPRECATED->ARCHIVED.",
   {
     id: z.string().uuid(),
     status: z.enum(STATUSES),
@@ -676,7 +627,7 @@ server.tool(
 
 server.tool(
   "gc_post_implementation_plan",
-  "Post the implementation plan as a comment on the GitHub issue. Refuses unless a 'preflight' phase marker exists for the issue. Writes a 'plan' phase marker on success.",
+  "Post the implementation plan as a comment on the GitHub issue. Refuses unless a 'preflight' phase marker exists for the issue. Scrubs sensitive content, rejects forged machine blocks / reserved markers, and caps body size. On success writes a 'plan' phase marker.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -725,33 +676,6 @@ server.tool(
 );
 
 server.tool(
-  "gc_assert_grc_reconciled",
-  "Assert that GRC reconciliation has landed for the issue and post a 'grc_reconciled' phase marker. " +
-  "Reads the GRC screening record posted by gc_post_grc_screening (Step 3.5) from the issue thread. " +
-  "For 'security_relevant' verdicts: resolves each entity ref (threat_model → getThreatModelByUid, " +
-  "risk_scenario → getRiskScenarioByUid, control → getControlByUid) and verifies that each claimed " +
-  "CODE link exists on the owner entity (listThreatModelLinks / listRiskScenarioLinks / listControlLinks " +
-  "filtered to target_type=CODE). Any gap → refuses with ok:false, error:'grc_not_reconciled', missing[]. " +
-  "For 'not_security_relevant' / 'no_baseline' verdicts: passes immediately (no entity or link checks). " +
-  "There is no tool-level override: a free-text reason is not a server-verifiable authorization, so the single audited skip for the completion-gate prerequisite is gc_post_final_report's phase override, which bypasses both markers together. " +
-  "Downstream: gc_post_final_report refuses unless both traceability_reconciled AND grc_reconciled markers exist.",
-  {
-    repo_path: z.string(),
-    issue_number: z.number().int().positive(),
-    project: z.string().optional(),
-  },
-  async ({ repo_path, issue_number, project }) => {
-    try {
-      return ok(JSON.stringify(await runAssertGrcReconciled({
-        repoPath: repo_path,
-        issueNumber: issue_number,
-        project: project ?? null,
-      }), null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.tool(
   "gc_assert_quality_gates",
   "Assert that the project's enabled quality gates pass. Calls the server-side QualityGateService.evaluate contract (POST /api/v1/quality-gates/evaluate) and refuses (ok:false) when any enabled gate fails, returning failing_gates[] — ONLY the failing gates, each as {name, metric_type, threshold, actual} (plus operator) — so the fix is obvious from the error alone. Callers must pass requirements[]; use [] only as an explicit no-in-scope-requirements declaration. When the active DOCUMENTS coverage gate exists, also verifies every in-scope requirement has a DOCUMENTS traceability link regardless of status; missing links return error='in_scope_documentation_coverage_failed'. Used by the /implement completion gate (Step 6) to block a run on failing project gates or PR-scoped documentation coverage. Enforced metric types: COVERAGE (over IMPLEMENTS / TESTS / DOCUMENTS link coverage), ORPHAN_COUNT, COMPLETENESS.",
   {
@@ -773,7 +697,7 @@ server.tool(
 
 server.tool(
   "gc_close_issue_after_merge",
-  "Canonical post-merge close path for the /implement workflow's Phase E (Step 20). Verifies the issue's linked PR is merged (merged_at non-null AND state=MERGED) before running `gh issue close`; refuses otherwise. Idempotent — re-running on an already-closed issue returns ok with already_closed=true. The PR body's `Closes #<n>` keyword remains the GitHub cross-link for sidebar / timeline purposes, but this tool is the gate-enforcing close path. pr_number is optional; when omitted the tool resolves the merged PR for the issue via the GitHub timeline.",
+  "Canonical post-merge close path for the /implement workflow's Phase E (Step 20). Verifies the issue's linked PR is merged (merged_at non-null AND state=MERGED) before running `gh issue close`; refuses otherwise. Idempotent — re-running on an already-closed issue returns ok with already_closed=true. The PR body's `Closes #<n>` keyword remains the GitHub cross-link for sidebar / timeline purposes, but this tool is the gate-enforcing close path. pr_number is optional; when omitted the tool resolves the merged PR for the issue via the GitHub timeline. This tool performs ONLY linked-PR resolution, merge-state verification, and idempotent issue closure — it does not list open issues, rank next-work candidates, or return any recommendation field (ADR-089 §5).",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -928,48 +852,6 @@ server.tool(
 );
 
 server.tool(
-  "gc_post_grc_screening",
-  "Post the canonical Step 3.5 GRC screening record as a comment on the GitHub issue. Accepts one of three verdicts: 'security_relevant' (threat-model entries, risk scenarios, controls, and CODE links were created/updated/confirmed during this run — entities_created/updated/confirmed and code_links required), 'not_security_relevant' (change does not touch a security-relevant surface — rationale required, entity/link arrays empty), 'no_baseline' (project has no threat-model baseline — explicit declination, not a clean verdict). Renders a schema-versioned 'gc.implement.grc-screening/v1' record with machine-parseable marker family 'gc:grc-screening'; runs the sensitive-content filter and body-size cap before posting; writes the grc_screening phase marker on success. Rejects caller-controlled fields carrying reserved '<!-- gc:' marker sequences. Returns {ok, verdict, comment_url, comment_id, phase_marker_posted}.",
-  {
-    repo_path: z.string(),
-    issue_number: z.number().int().positive(),
-    verdict: z.enum(GRC_SCREENING_VERDICTS),
-    rationale: z.string().min(1),
-    entities_created: z.array(z.object({
-      type: z.string().min(1).optional(),
-      uid: z.string().min(1),
-    })).optional().default([]),
-    entities_updated: z.array(z.object({
-      type: z.string().min(1).optional(),
-      uid: z.string().min(1),
-    })).optional().default([]),
-    entities_confirmed: z.array(z.object({
-      type: z.string().min(1).optional(),
-      uid: z.string().min(1),
-    })).optional().default([]),
-    code_links: z.array(z.object({
-      owner_type: z.string().min(1).optional(),
-      owner_uid: z.string().min(1).optional(),
-      target_identifier: z.string().min(1),
-    })).optional().default([]),
-  },
-  async ({ repo_path, issue_number, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links }) => {
-    try {
-      return ok(JSON.stringify(await runPostGrcScreening({
-        repoPath: repo_path,
-        issueNumber: issue_number,
-        verdict,
-        rationale,
-        entities_created: entities_created ?? [],
-        entities_updated: entities_updated ?? [],
-        entities_confirmed: entities_confirmed ?? [],
-        code_links: code_links ?? [],
-      }), null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.tool(
   "gc_post_final_report",
   "Post the canonical /implement Step 19 final report (or the /quickfix Step Q19 slim close comment) as a comment on the GitHub issue. Renders structured input (plain_english_outcome, in-scope requirements, files-by-change-kind, reviews, traceability reconciliation, CI/SonarCloud status) into the standard final-report Markdown layout. `plain_english_outcome` is required for /implement and renders the short product/operator outcome section; lane='quickfix' keeps the slim payload where AI reviews and the outcome field are optional. Every gate (CI green, Sonar pass-or-legit-skipped, sensitive-content / no-defer / reserved-marker scrubs) still applies. Replaces free-prose Step 19 comments. Returns the posted comment's URL and id. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
   {
@@ -1038,17 +920,16 @@ server.tool(
 
 server.tool(
   "gc_assert_completion",
-  "Run the completion assertions (traceability reconciliation + GRC reconciliation) then post the final report in one deterministic call. " +
+  "Run the completion assertions (traceability reconciliation) then post the final report in one deterministic call. " +
   "phase='post_merge' (default) is the Phase E completion: it is MERGE-GATED — it refuses with error='completion_pr_not_merged' unless the linked PR is merged (merged_at non-null AND state='MERGED'), so the ACTIVE transition, IMPLEMENTS/TESTS links, and the durable final report never land ahead of shipped code (issue #963, mirrors gc_close_issue_after_merge). " +
-  "phase='pre_merge' is the Phase D terminal readiness record: it asserts the Step 3.5 GRC screening record exists (refusing readiness if missing), skips the traceability assertion and the merge gate, posts a 'Ready for review' comment carrying a `ready_for_review` phase marker (no `gc:final-report` marker), and returns {ok, phase:'pre_merge', readiness_report, assertions:[grc_reconciled]}; all input gates (CI green, Sonar pass/skip, codex review present, scrubs) still run. " +
-  "Composes gc_assert_traceability_reconciled, gc_assert_grc_reconciled, and gc_post_final_report. " +
+  "phase='pre_merge' is the Phase D terminal readiness record: it skips the traceability assertion and the merge gate, posts a 'Ready for review' comment carrying a `ready_for_review` phase marker (no `gc:final-report` marker), and returns {ok, phase:'pre_merge', readiness_report}; all input gates (CI green, Sonar pass/skip, codex review present, scrubs) still run. " +
+  "Composes gc_assert_traceability_reconciled and gc_post_final_report. " +
   "Fail-fast: validates the final-report input before any side effects. " +
   "Returns assertions[] (one entry per assertion: {name, ok, comment_url, comment_id}) plus final_report {comment_url, comment_id}. " +
   "Gates inherited from the composed runners: traceability reconciliation (ACTIVE requirements must have IMPLEMENTS links + TESTS links on executable surfaces), " +
-  "GRC reconciliation (security_relevant screening records must have entity refs + CODE links resolved), " +
   "CI green, Sonar pass-or-skipped, sensitive-content/no-defer/reserved-marker scrubs, reviews present, body size. " +
   "The in-progress label removal is optional best-effort and is NOT a gate here. " +
-  "Do NOT remove or call the individual gc_assert_traceability_reconciled / gc_assert_grc_reconciled / gc_post_final_report tools separately when using this composite tool.",
+  "Do NOT remove or call the individual gc_assert_traceability_reconciled / gc_post_final_report tools separately when using this composite tool.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -1336,7 +1217,7 @@ server.tool(
 
 server.tool(
   "gc_review_cap_disposition",
-  "Optional, config-gated auto-disposition of the pre-push review cap (workflow.review_disposition; disabled by default — when disabled this returns {ok:true,skipped:true,disposition:null} and does nothing else). Scores the change with a deterministic risk model (diff size, changed-surface class, GRC verdict, finding shape, prior auto-overrides) and returns one of disposition='proceed' | 'one_more_cycle' | 'escalate_to_human' with a next_action directive. Cap/cycle authority is derived SERVER-SIDE (the effective reviewer cap from config, the over-cap count from durable cycle markers); the passed cycle/cap are advisory display only, and the call is refused (disposition_before_cap_boundary) before the cap boundary is reached. In mode='shadow' (default) the returned next_action is clamped to escalation — the disposition is recorded for agreement data but never drives control flow. A one_more_cycle disposition records a durable over-cap auto-grant (carrying its issuance mode + server-derived cap boundary) that gc_codex_review_cycle / gc_test_quality_review_cycle verify (via auto_grant=true) before running an over-cap cycle — honored only when posted by the trusted MCP identity, issued under authoritative mode, bound to the current cap, and not already spent. The hard ceiling (max_auto_overrides) is enforced in the scorer and re-clamped after any judge so the auto path can never grant a 2nd over-cap cycle. Returns {ok, disposition, next_action, mode, effective_cap, rationale, decided_by, risk_score, signals_snapshot, over_cap_grant_number, decision_record_url}.",
+  "Optional, config-gated auto-disposition of the pre-push review cap (workflow.review_disposition; disabled by default — when disabled this returns {ok:true,skipped:true,disposition:null} and does nothing else). Scores the change with a deterministic risk model (diff size, changed-surface class, security-finding shape, prior auto-overrides) and returns one of disposition='proceed' | 'one_more_cycle' | 'escalate_to_human' with a next_action directive. Cap/cycle authority is derived SERVER-SIDE (the effective reviewer cap from config, the over-cap count from durable cycle markers); the passed cycle/cap are advisory display only, and the call is refused (disposition_before_cap_boundary) before the cap boundary is reached. In mode='shadow' (default) the returned next_action is clamped to escalation — the disposition is recorded for agreement data but never drives control flow. A one_more_cycle disposition records a durable over-cap auto-grant (carrying its issuance mode + server-derived cap boundary) that gc_codex_review_cycle / gc_test_quality_review_cycle verify (via auto_grant=true) before running an over-cap cycle — honored only when posted by the trusted MCP identity, issued under authoritative mode, bound to the current cap, and not already spent. The hard ceiling (max_auto_overrides) is enforced in the scorer and re-clamped after any judge so the auto path can never grant a 2nd over-cap cycle. Returns {ok, disposition, next_action, mode, effective_cap, rationale, decided_by, risk_score, signals_snapshot, over_cap_grant_number, decision_record_url}.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -1775,36 +1656,12 @@ server.tool(
 const ANALYZE_KINDS = [
   "cycles", "orphans", "coverage_gaps", "impact", "cross_wave",
   "consistency", "completeness", "status_drift", "similarity", "work_order",
-  // GC-L007 — GRC analyses on existing substrates. Methodology-execution
-  // engines (Open FAIR / control analytics) and compliance-framework analyses are tracked
-  // separately and ship their own kinds when those engines land.
-  "evidence_freshness", "observation_exposure", "control_state", "vendor_risk_aggregation",
-  // GC-T014 — NIST SP 800-30 Rev. 1 risk-assessment view (methodology-attributed
-  // envelope from /api/v1/analysis/grc/nist-sp-800-30).
-  "nist_assessment",
-  // GC-T011 — Open FAIR quantitative risk analysis (methodology-attributed envelope from /api/v1/analysis/grc/fair-quantitative)
-  "fair_quantitative",
-  // GC-I004 — continuous compliance monitoring (ADR-058 impact/stale sets)
-  "continuous_compliance_monitoring",
-  // GC-I017 — FAIR-CAM control analytics (domain attribution, capability, coverage, operational performance)
-  "fair_cam_control_analytics",
-  // GC-T005 — risk appetite/tolerance evaluation (residual vs tolerance ceilings, escalation flags)
-  "appetite_evaluation",
 ];
 
 server.tool(
   "gc_analyze",
   `Compute-heavy analysis operations. Kinds: ${ANALYZE_KINDS.join(", ")}. ` +
     `Required fields per kind: coverage_gaps→{link_type}; impact→{id}; status_drift→{minimum_confidence?}; similarity→{threshold?}; ` +
-    `evidence_freshness→{project?, as_of?, freshness_window_days?, include_superseded?, asset_id?, control_id?}; ` +
-    `observation_exposure→{project?, as_of?, asset_id?}; ` +
-    `control_state→{project?, as_of?, asset_id?, control_id?}; ` +
-    `vendor_risk_aggregation→{project?, as_of?, freshness_window_days?, vendor_asset_id?}; ` +
-    `nist_assessment→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
-    `fair_quantitative→{project?, as_of?, risk_assessment_result_id?, risk_scenario_id?}. ` +
-    `continuous_compliance_monitoring→{project?, as_of?, freshness_window_days?}. ` +
-    `fair_cam_control_analytics→{project?, as_of?, freshness_window_days?, control_id?, scoped_implementation_id?, risk_scenario_id?, risk_register_record_id?, threat_model_id?, methodology_profile_id?, domain?} (scope filters compose as an intersection). ` +
-    `appetite_evaluation→{project?, as_of?, appetite_profile_id? | appetite_key?, risk_register_record_id?, risk_scenario_id?} (one of appetite_profile_id or appetite_key required). ` +
     `Others take {project?}.`,
   {
     kind: z.enum(ANALYZE_KINDS),
@@ -1813,25 +1670,6 @@ server.tool(
     link_type: z.enum(LINK_TYPES).optional(),
     minimum_confidence: z.enum(CONFIDENCE_LEVELS).optional(),
     threshold: z.number().optional(),
-    // GC-L007 GRC analysis params
-    as_of: z.string().datetime().optional(),
-    freshness_window_days: z.number().int().positive().optional(),
-    include_superseded: z.boolean().optional(),
-    asset_id: z.string().uuid().optional(),
-    control_id: z.string().uuid().optional(),
-    vendor_asset_id: z.string().uuid().optional(),
-    // GC-T014 NIST assessment params
-    risk_assessment_result_id: z.string().uuid().optional(),
-    risk_scenario_id: z.string().uuid().optional(),
-    // GC-I017 FAIR-CAM control analytics params
-    scoped_implementation_id: z.string().uuid().optional(),
-    risk_register_record_id: z.string().uuid().optional(),
-    threat_model_id: z.string().uuid().optional(),
-    methodology_profile_id: z.string().uuid().optional(),
-    domain: z.enum(["LOSS_EVENT_CONTROL", "VARIANCE_MANAGEMENT_CONTROL", "DECISION_SUPPORT_CONTROL"]).optional(),
-    // GC-T005 appetite-evaluation params
-    appetite_profile_id: z.string().uuid().optional(),
-    appetite_key: z.string().optional(),
   },
   async (args) => {
     try {
@@ -1852,79 +1690,6 @@ server.tool(
         case "status_drift": return ok(JSON.stringify(await analyzeStatusDrift({ project: args.project, minimumConfidence: args.minimum_confidence }), null, 2));
         case "similarity": return ok(JSON.stringify(await analyzeSemanticSimilarity({ project: args.project, threshold: args.threshold }), null, 2));
         case "work_order": return ok(JSON.stringify(await getWorkOrder(args.project), null, 2));
-        case "evidence_freshness":
-          return ok(JSON.stringify(await analyzeEvidenceFreshness({
-            project: args.project,
-            asOf: args.as_of,
-            freshnessWindowDays: args.freshness_window_days,
-            includeSuperseded: args.include_superseded,
-            assetId: args.asset_id,
-            controlId: args.control_id,
-          }), null, 2));
-        case "observation_exposure":
-          return ok(JSON.stringify(await analyzeObservationProjection({
-            project: args.project,
-            asOf: args.as_of,
-            mode: "ASSET_EXPOSURE",
-            assetId: args.asset_id,
-          }), null, 2));
-        case "control_state":
-          return ok(JSON.stringify(await analyzeObservationProjection({
-            project: args.project,
-            asOf: args.as_of,
-            mode: "CONTROL_STATE",
-            assetId: args.asset_id,
-            controlId: args.control_id,
-          }), null, 2));
-        case "vendor_risk_aggregation":
-          return ok(JSON.stringify(await aggregateVendorRisk({
-            project: args.project,
-            asOf: args.as_of,
-            freshnessWindowDays: args.freshness_window_days,
-            vendorAssetId: args.vendor_asset_id,
-          }), null, 2));
-        case "nist_assessment":
-          return ok(JSON.stringify(await analyzeNistAssessment({
-            project: args.project,
-            asOf: args.as_of,
-            riskAssessmentResultId: args.risk_assessment_result_id,
-            riskScenarioId: args.risk_scenario_id,
-          }), null, 2));
-        case "fair_quantitative":
-          return ok(JSON.stringify(await analyzeFairQuantitative({
-            project: args.project,
-            asOf: args.as_of,
-            riskAssessmentResultId: args.risk_assessment_result_id,
-            riskScenarioId: args.risk_scenario_id,
-          }), null, 2));
-        case "continuous_compliance_monitoring":
-          return ok(JSON.stringify(await analyzeComplianceMonitoring({
-            project: args.project,
-            asOf: args.as_of,
-            freshnessWindowDays: args.freshness_window_days,
-          }), null, 2));
-        case "fair_cam_control_analytics":
-          return ok(JSON.stringify(await analyzeFairCamControlAnalytics({
-            project: args.project,
-            asOf: args.as_of,
-            freshnessWindowDays: args.freshness_window_days,
-            controlId: args.control_id,
-            scopedImplementationId: args.scoped_implementation_id,
-            riskScenarioId: args.risk_scenario_id,
-            riskRegisterRecordId: args.risk_register_record_id,
-            threatModelId: args.threat_model_id,
-            methodologyProfileId: args.methodology_profile_id,
-            domain: args.domain,
-          }), null, 2));
-        case "appetite_evaluation":
-          return ok(JSON.stringify(await analyzeRiskAppetiteEvaluation({
-            project: args.project,
-            asOf: args.as_of,
-            profileId: args.appetite_profile_id,
-            appetiteKey: args.appetite_key,
-            riskRegisterRecordId: args.risk_register_record_id,
-            riskScenarioId: args.risk_scenario_id,
-          }), null, 2));
         default: return err(new Error(`Unknown kind: ${args.kind}`));
       }
     } catch (e) { return err(e); }
@@ -2128,65 +1893,6 @@ server.tool(
   },
 );
 
-// gc_risk_scenario_workspace: GC-Q009. Read-only composition endpoint returning
-// risk scenarios with linked assets, controls, findings, evidence, assessments,
-// treatments, and register memberships. Review indicator uses only explicit signals.
-server.tool(
-  "gc_risk_scenario_workspace",
-  "Read-only Risk Scenario Workspace (GC-Q009). Returns scoped risk scenarios with " +
-    "linked operational assets, controls, findings, evidence, requirements, assessments " +
-    "(methodologyProfileName, approvalState, hasComputedOutputs, reassessmentRequiredAt), " +
-    "treatment plans, and risk register memberships. Review indicator is an explicit-signal " +
-    "rollup: REASSESSMENT_REQUIRED > REVIEW_DUE > EVIDENCE_STALE > CURRENT > NO_SIGNAL. " +
-    "Optional filters: assetId (UUID), status (RiskScenarioStatus), methodologyProfileId (UUID), " +
-    "approvalState (RiskAssessmentApprovalStatus), treatmentStatus (TreatmentPlanStatus), " +
-    "asOf (ISO-8601 instant), freshnessWindowDays (default 90), compare (array of ≤10 UUIDs).",
-  {
-    project: z.string().optional(),
-    assetId: z.string().uuid().optional(),
-    status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
-    methodologyProfileId: z.string().uuid().optional(),
-    approvalState: z.enum(["DRAFT", "SUBMITTED", "APPROVED", "REJECTED"]).optional(),
-    treatmentStatus: z.enum(["PLANNED", "IN_PROGRESS", "BLOCKED", "COMPLETED", "CANCELED"]).optional(),
-    asOf: z.string().optional(),
-    freshnessWindowDays: z.number().int().positive().optional(),
-    compare: z.array(z.string().uuid()).max(10).optional(),
-  },
-  async ({ project, assetId, status, methodologyProfileId, approvalState, treatmentStatus, asOf, freshnessWindowDays, compare }) => {
-    try {
-      const result = await getRiskScenarioWorkspace({ project, assetId, status, methodologyProfileId, approvalState, treatmentStatus, asOf, freshnessWindowDays, compare });
-      return ok(JSON.stringify(result, null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-// gc_threat_model_workspace: GC-Q010. Read-only composition endpoint returning
-// scoped assets (with boundary distinction), active flows, and threat entries
-// with linked controls, requirements, and evidence-freshness staleness indicators.
-server.tool(
-  "gc_threat_model_workspace",
-  "Read-only Threat Modeling Workspace (GC-Q010). Returns scoped operational assets, " +
-    "trust boundaries, active flows, and threat entries with linked controls, " +
-    "requirements, and per-entry evidence-freshness staleness indicators. " +
-    "Optional filters: assetId (UUID), stride (StrideCategory enum), " +
-    "status (ThreatModelStatus enum), asOf (ISO-8601 instant), " +
-    "freshnessWindowDays (default 90).",
-  {
-    project: z.string().optional(),
-    assetId: z.string().uuid().optional(),
-    stride: z.enum(["SPOOFING", "TAMPERING", "REPUDIATION", "INFORMATION_DISCLOSURE", "DENIAL_OF_SERVICE", "ELEVATION_OF_PRIVILEGE"]).optional(),
-    status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
-    asOf: z.string().optional(),
-    freshnessWindowDays: z.number().int().positive().optional(),
-  },
-  async ({ project, assetId, stride, status, asOf, freshnessWindowDays }) => {
-    try {
-      const result = await getThreatModelWorkspace({ project, assetId, stride, status, asOf, freshnessWindowDays });
-      return ok(JSON.stringify(result, null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
 server.tool(
   "gc_finding",
   GC_FINDING_DESCRIPTION,
@@ -2226,84 +1932,6 @@ server.tool(
   },
 );
 
-// gc_evidence_campaign: GC-S005. Scheduled evidence-collection campaigns.
-// Writes only (create / update / pause / resume / trigger); reads (list, get,
-// runs) route through gc_query at /api/v1/evidence-campaigns.
-server.tool(
-  "gc_evidence_campaign",
-  GC_EVIDENCE_CAMPAIGN_DESCRIPTION,
-  gcEvidenceCampaignZodShape,
-  async (args) => {
-    try {
-      const result = await gcEvidenceCampaignToolHandler(args);
-      return ok(JSON.stringify(result, null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-// gc_evidence_state_workspace: GC-Q012. Read-only composition endpoint returning
-// evidence artifacts, observations, freshness, provenance, and downstream impact.
-server.tool(
-  "gc_evidence_state_workspace",
-  "Read-only Evidence and State Explorer (GC-Q012). Returns project-scoped " +
-    "evidence artifacts, observations, freshness counts, provenance source refs, " +
-    "affected assets, linked controls, downstream assessments, and linked findings. " +
-    "Responses contain bounded summaries and links, not raw evidence payloads. " +
-    "Optional filters: assetId (UUID), controlId (UUID), asOf (ISO-8601 instant), " +
-    "freshnessWindowDays (default 90), includeSuperseded (default false).",
-  {
-    project: z.string().optional(),
-    assetId: z.string().uuid().optional(),
-    controlId: z.string().uuid().optional(),
-    asOf: z.string().optional(),
-    freshnessWindowDays: z.number().int().positive().optional(),
-    includeSuperseded: z.boolean().optional(),
-  },
-  async ({ project, assetId, controlId, asOf, freshnessWindowDays, includeSuperseded }) => {
-    try {
-      const result = await getEvidenceStateWorkspace({ project, assetId, controlId, asOf, freshnessWindowDays, includeSuperseded });
-      return ok(JSON.stringify(result, null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-// gc_control_assurance_workspace: GC-Q011. Read-only composition endpoint
-// returning controls with implementations, tests, evidence, findings, risk
-// mappings, assessments, and owner work-queue reasons.
-server.tool(
-  "gc_control_assurance_workspace",
-  "Read-only Control and Assurance Workspace (GC-Q011). Returns project-scoped " +
-    "control catalog entries with scoped implementations, control tests, " +
-    "effectiveness assessments, observation-backed evidence summaries, linked " +
-    "findings/exceptions, risk mappings, and owner queue reasons. Responses " +
-    "contain bounded summaries and links, not raw evidence payloads. Optional " +
-    "filters: status (ControlStatus), controlFunction (ControlFunction), owner " +
-    "substring, queue (owner queue reason), asOf (ISO-8601 instant), " +
-    "freshnessWindowDays (default 90).",
-  {
-    project: z.string().optional(),
-    status: z.enum(CONTROL_STATUSES).optional(),
-    controlFunction: z.enum(CONTROL_FUNCTIONS).optional(),
-    owner: z.string().optional(),
-    queue: z.enum(CONTROL_WORKSPACE_QUEUE_REASONS).optional(),
-    asOf: z.string().optional(),
-    freshnessWindowDays: z.number().int().positive().optional(),
-  },
-  async ({ project, status, controlFunction, owner, queue, asOf, freshnessWindowDays }) => {
-    try {
-      const result = await getControlAssuranceWorkspace({
-        project,
-        status,
-        controlFunction,
-        owner,
-        queue,
-        asOf,
-        freshnessWindowDays,
-      });
-      return ok(JSON.stringify(result, null, 2));
-    } catch (e) { return err(e); }
-  },
-);
 
 // gc_traceability_matrix: GC-Q003. Read-only matrix composition. Also routes
 // through gc_query against /api/v1/requirements/matrix. Returns a paged list of
@@ -2333,87 +1961,11 @@ server.tool(
   },
 );
 
-// gc_derivation: GC-GRC-001 normalized system-model facts and capture limits,
-// plus GC-GRC-004 boundary-model snapshot readback.
-server.tool(
-  "gc_derivation",
-  GC_DERIVATION_DESCRIPTION,
-  gcDerivationZodShape,
-  async (args) => {
-    try {
-      const result = await gcDerivationToolHandler(args);
-      return ok(JSON.stringify(result, null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-// gc_architecture_model: GC-GRC-005 canonical architecture-model snapshots.
-// list_snapshots returns summaries (counts, no element payloads); get_snapshot
-// returns one snapshot with its full element state.
-server.tool(
-  "gc_architecture_model",
-  GC_ARCHITECTURE_MODEL_DESCRIPTION,
-  gcArchitectureModelZodShape,
-  async (args) => {
-    try {
-      const result = await gcArchitectureModelToolHandler(args);
-      return ok(JSON.stringify(result, null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-// gc_data_classification: GC-GRC-006 project-scoped data classification lattice.
-// Lattice writes (set_lattice / reset_lattice) are ROLE_ADMIN on the backend;
-// get_lattice and evaluate are project-scoped reads. evaluate is deterministic
-// (no LLM): it reports flows whose source/sink labels violate the permitted-flow
-// relation. Reads also route through gc_query.
-server.tool(
-  "gc_data_classification",
-  GC_DATA_CLASSIFICATION_DESCRIPTION,
-  gcDataClassificationZodShape,
-  async (args) => {
-    try {
-      const result = await gcDataClassificationToolHandler(args);
-      return ok(JSON.stringify(result, null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-// gc_threat_enumeration: GC-GRC-007 deterministic threat enumeration.
-// Read-only: enumerates candidate threats from an architecture-model snapshot
-// against a registered THREAT_RULE_PACK using a closed predicate model (no LLM).
-server.tool(
-  "gc_threat_enumeration",
-  GC_THREAT_ENUMERATION_DESCRIPTION,
-  gcThreatEnumerationZodShape,
-  async (args) => {
-    try {
-      const result = await gcThreatEnumerationToolHandler(args);
-      return ok(JSON.stringify(result, null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-// gc_control_identification: GC-GRC-008 deterministic control identification.
-// Read-only: maps enumerated threats to candidate controls (action=identify) or
-// returns the controls covering a threat (action=coverage). No LLM judgment.
-server.tool(
-  "gc_control_identification",
-  GC_CONTROL_IDENTIFICATION_DESCRIPTION,
-  gcControlIdentificationZodShape,
-  async (args) => {
-    try {
-      const result = await gcControlIdentificationToolHandler(args);
-      return ok(JSON.stringify(result, null, 2));
-    } catch (e) { return err(e); }
-  },
-);
-
-// gc_control: control + control_test (GC-I012) + control_effectiveness_assessment
-// (GC-I013). Handler logic (Zod shape, per-entity per-action allowlist dispatch
-// via lib.js CONTROL_FIELDS) lives in gc-control.js so the adapter is testable
-// in isolation. The entity discriminator defaults to "control" so callers from
-// before the GC-I012/GC-I013 split keep working unchanged.
+// gc_control: control + control_test (GC-I012). Handler logic (Zod shape,
+// per-entity per-action allowlist dispatch via lib.js CONTROL_FIELDS) lives
+// in gc-control.js so the adapter is testable in isolation. The entity
+// discriminator defaults to "control" so callers from before the GC-I012
+// split keep working unchanged.
 server.tool(
   "gc_control",
   GC_CONTROL_DESCRIPTION,
@@ -3191,6 +2743,10 @@ const RESEARCH_RUN_ACTIONS = [
   "record_methodology_source",
   "update_methodology_source_state",
   "list_methodology_sources",
+  "record_methodology_requirements_contract",
+  "get_methodology_requirements_contract",
+  "record_protocol_plan",
+  "get_protocol_plan",
   "stop",
   "fail",
   "resume",
@@ -3202,8 +2758,8 @@ server.tool(
   "gc_research_run",
   `Research run lifecycle operations (GC-RSCH-R001/R003/F003/F006/F034/F036/N007/N011/N012/N013, ADR-064 / ADR-065 / ADR-066 / ADR-067 / ADR-068). ` +
     `Actions: ${RESEARCH_RUN_ACTIONS.join(", ")}. ` +
-    `Reads (list, get, get_by_uid, snapshot, list_artifacts, list_gates, list_gate_decision_log, list_review_comments, list_rationale, get_disclosure, list_methodology_catalog, get_methodology_selection, list_methodology_sources) also route through gc_query. ` +
-    `Required fields per action: start→{uid}; get/snapshot/list_artifacts/list_gates/stop/resume/complete→{id}; get_by_uid→{uid}; record_artifact→{id,artifact_type}; advance→{id,target_stage}; gate_decision→{id,gate_point,outcome}; list_gate_decision_log→{id}; add_review_comment→{id,target_type,body,provenance}; list_review_comments→{id}; resolve_review_comment→{id,comment_id}; add_rationale→{id,stage,kind,evidence_basis,provenance,subject_key,rationale_summary}; list_rationale→{id}; create_disclosure→{id,final_artifact_id,final_attempt_no}; get_disclosure→{id}; add_disclosure_entry→{id,disclosure_id,family,summary}; list_methodology_catalog→{} (global; no run id — lists every catalog method profile with its required primary sources); select_methodology→{id,method_key} (method label, profile/catalog version, and the required-source set are derived server-side from the backend methodology catalog and snapshotted as required=true rows); get_methodology_selection→{id}; record_methodology_source→{id,source_ref} (always optional/additional); update_methodology_source_state→{id,source_id,source_state}; list_methodology_sources→{id}; fail→{id}; record_usage→{id,tokens,cost_usd_micros}. ` +
+    `Reads (list, get, get_by_uid, snapshot, list_artifacts, list_gates, list_gate_decision_log, list_review_comments, list_rationale, get_disclosure, list_methodology_catalog, get_methodology_selection, list_methodology_sources, get_methodology_requirements_contract, get_protocol_plan) also route through gc_query. ` +
+    `Required fields per action: start→{uid}; get/snapshot/list_artifacts/list_gates/stop/resume/complete→{id}; get_by_uid→{uid}; record_artifact→{id,artifact_type}; advance→{id,target_stage}; gate_decision→{id,gate_point,outcome}; list_gate_decision_log→{id}; add_review_comment→{id,target_type,body,provenance}; list_review_comments→{id}; resolve_review_comment→{id,comment_id}; add_rationale→{id,stage,kind,evidence_basis,provenance,subject_key,rationale_summary}; list_rationale→{id}; create_disclosure→{id,final_artifact_id,final_attempt_no}; get_disclosure→{id}; add_disclosure_entry→{id,disclosure_id,family,summary}; list_methodology_catalog→{} (global; no run id — lists every catalog method profile with its required primary sources); select_methodology→{id,method_key} (method label, profile/catalog version, and the required-source set are derived server-side from the backend methodology catalog and snapshotted as required=true rows); get_methodology_selection→{id}; record_methodology_source→{id,source_ref} (always optional/additional); update_methodology_source_state→{id,source_id,source_state}; list_methodology_sources→{id}; record_methodology_requirements_contract→{id,entries} (each entry {kind,entry_key,statement,source_links?,references_entry_key?}; REQUIREMENT/METHOD_LIMIT/NON_CLAIM need ≥1 READ source_link); get_methodology_requirements_contract→{id}; record_protocol_plan→{id,protocol_schema_version,coverages,sections} (method key, profile version, methodology contract id/attempt, and artifact attempt are resolved server-side; each coverage {contract_entry_key,disposition,answer_summary?,answer_provenance?,rationale?,deferred_to_stage?,decision_reference?}; each section {section_key,section_kind,source_role?,content_summary}); get_protocol_plan→{id}; fail→{id}; record_usage→{id,tokens,cost_usd_micros}. ` +
     `Bounded metadata only — never pass prompts, manuscript bodies, secrets, or absolute paths. Actor is always from server context (ADR-026).`,
   {
     action: z.enum(RESEARCH_RUN_ACTIONS),
@@ -3289,6 +2845,59 @@ server.tool(
     source_label: z.string().optional(),
     source_state: z.enum(METHODOLOGY_SOURCE_STATES).optional(),
     source_id: z.string().uuid().optional(),
+    // methodology requirements contract (GC-RSCH-F007 / ADR-080). No domain-answer
+    // fields; chosen method, artifact id, and attempt are resolved server-side.
+    entries: z
+      .array(
+        z.object({
+          kind: z.enum(CONTRACT_ENTRY_KINDS),
+          entry_key: z.string(),
+          statement: z.string(),
+          source_links: z
+            .array(z.object({ source_id: z.string().uuid(), locator: z.string().optional() }))
+            .optional(),
+          references_entry_key: z.string().optional(),
+        }),
+      )
+      .optional(),
+    rejected_alternatives: z
+      .array(
+        z.object({
+          method_key: z.string(),
+          profile_version: z.string().optional(),
+          rationale_entry_id: z.string().uuid().optional(),
+          external: z.boolean().optional(),
+        }),
+      )
+      .optional(),
+    // protocol plan (GC-RSCH-F008 / GC-RSCH-F009 / ADR-083). Method key, profile
+    // version, methodology contract id/attempt, and artifact attempt are resolved
+    // server-side from the run's active selection and active artifacts, never
+    // passed here.
+    protocol_schema_version: z.string().optional(),
+    coverages: z
+      .array(
+        z.object({
+          contract_entry_key: z.string(),
+          disposition: z.enum(PROTOCOL_COVERAGE_DISPOSITIONS),
+          answer_summary: z.string().optional(),
+          answer_provenance: z.enum(PROTOCOL_ANSWER_PROVENANCES).optional(),
+          rationale: z.string().optional(),
+          deferred_to_stage: z.enum(RESEARCH_RUN_STAGES).optional(),
+          decision_reference: z.string().optional(),
+        }),
+      )
+      .optional(),
+    sections: z
+      .array(
+        z.object({
+          section_key: z.string(),
+          section_kind: z.enum(PROTOCOL_SECTION_KINDS),
+          source_role: z.enum(PROTOCOL_SOURCE_ROLES).optional(),
+          content_summary: z.string(),
+        }),
+      )
+      .optional(),
   },
   async (args) => {
     try {
@@ -3565,6 +3174,74 @@ server.tool(
           reqArg(args, "id", "list_methodology_sources");
           return ok(JSON.stringify(await listMethodologySources(args.id, args.project), null, 2));
         }
+        case "record_methodology_requirements_contract": {
+          reqArg(args, "id", "record_methodology_requirements_contract");
+          reqArg(args, "entries", "record_methodology_requirements_contract");
+          const contractBody = {
+            entries: (args.entries || []).map((e) => ({
+              kind: e.kind,
+              entryKey: e.entry_key,
+              statement: e.statement,
+              sourceLinks: (e.source_links || []).map((s) => ({
+                sourceId: s.source_id,
+                locator: s.locator,
+              })),
+              referencesEntryKey: e.references_entry_key,
+            })),
+            rejectedAlternatives: (args.rejected_alternatives || []).map((r) => ({
+              methodKey: r.method_key,
+              profileVersion: r.profile_version,
+              rationaleEntryId: r.rationale_entry_id,
+              external: r.external ?? false,
+            })),
+          };
+          return ok(JSON.stringify(
+            await recordMethodologyRequirementsContract(args.id, contractBody, args.project),
+            null,
+            2,
+          ));
+        }
+        case "get_methodology_requirements_contract": {
+          reqArg(args, "id", "get_methodology_requirements_contract");
+          return ok(JSON.stringify(
+            await getMethodologyRequirementsContract(args.id, args.project),
+            null,
+            2,
+          ));
+        }
+        case "record_protocol_plan": {
+          reqArg(args, "id", "record_protocol_plan");
+          reqArg(args, "protocol_schema_version", "record_protocol_plan");
+          reqArg(args, "coverages", "record_protocol_plan");
+          reqArg(args, "sections", "record_protocol_plan");
+          const protocolPlanBody = {
+            protocolSchemaVersion: args.protocol_schema_version,
+            coverages: (args.coverages || []).map((c) => ({
+              contractEntryKey: c.contract_entry_key,
+              disposition: c.disposition,
+              answerSummary: c.answer_summary,
+              answerProvenance: c.answer_provenance,
+              rationale: c.rationale,
+              deferredToStage: c.deferred_to_stage,
+              decisionReference: c.decision_reference,
+            })),
+            sections: (args.sections || []).map((s) => ({
+              sectionKey: s.section_key,
+              sectionKind: s.section_kind,
+              sourceRole: s.source_role,
+              contentSummary: s.content_summary,
+            })),
+          };
+          return ok(JSON.stringify(
+            await recordProtocolPlan(args.id, protocolPlanBody, args.project),
+            null,
+            2,
+          ));
+        }
+        case "get_protocol_plan": {
+          reqArg(args, "id", "get_protocol_plan");
+          return ok(JSON.stringify(await getProtocolPlan(args.id, args.project), null, 2));
+        }
         default: return err(new Error(`Unknown action: ${args.action}`));
       }
     } catch (e) { return err(e); }
@@ -3582,6 +3259,24 @@ server.tool(
   async (args) => {
     try {
       const result = await gcResearchProvenanceToolHandler(args);
+      return ok(JSON.stringify(result, null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+// gc_research_operation_authorization: GC-RSCH-R005 / GC-RSCH-N005 / GC-RSCH-N006,
+// ADR-086. Run-scoped, default-deny authorization records for research high-risk
+// operations. Curated writes (request/decide/consume) mirror REST (gc_query is
+// read-only); reads (list/get) also route through gc_query under the
+// /api/v1/research-runs allow-list. Handler lives in
+// gc-research-operation-authorization.js.
+server.tool(
+  "gc_research_operation_authorization",
+  GC_RESEARCH_OPERATION_AUTHORIZATION_DESCRIPTION,
+  gcResearchOperationAuthorizationZodShape,
+  async (args) => {
+    try {
+      const result = await gcResearchOperationAuthorizationToolHandler(args);
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },
@@ -3902,14 +3597,10 @@ if (ADMIN_TOOLS_ENABLED) {
   );
 }
 
-const PACK_SUBSYSTEMS = ["plugin", "control_pack", "registry", "trust_policy", "install"];
+const PACK_SUBSYSTEMS = ["plugin", "registry", "trust_policy", "install"];
 const PACK_ACTIONS = [
   // plugin
   "register", "unregister", "list_plugins", "get_plugin",
-  // control_pack
-  "deprecate", "remove", "list_control_packs", "get_control_pack",
-  "list_control_pack_entries", "get_control_pack_entry",
-  "override_create", "override_delete", "list_control_pack_overrides",
   // registry
   "registry_register", "import", "registry_update", "withdraw",
   "registry_delete", "resolve", "check_compatibility",
@@ -3924,7 +3615,6 @@ const PACK_ACTIONS = [
 // Per-subsystem field allowlists for create/update DTOs.
 const PACK_FIELDS = {
   plugin: ["name", "plugin_type", "version", "endpoint_url", "config", "metadata"],
-  control_pack_override: ["status", "rationale", "metadata"],
   registry: ["pack_id", "pack_type", "version", "description", "metadata", "signature", "source_url"],
   trust_policy: ["name", "field", "operator", "value", "outcome", "priority", "metadata"],
   install: ["pack_id", "version", "scope", "config", "metadata"],
@@ -3933,7 +3623,7 @@ const PACK_FIELDS = {
 if (ADMIN_TOOLS_ENABLED) {
   server.tool(
     "gc_pack",
-    `Pack ecosystem: plugins, control packs, pack registry, trust policies, install records. ` +
+    `Pack ecosystem: plugins, pack registry, trust policies, install records. ` +
       `Registered only when GC_MCP_ADMIN=1 (these endpoints are ROLE_ADMIN per ADR-026 and denylisted by gc_query). ` +
       `Subsystem: ${PACK_SUBSYSTEMS.join(", ")}. Actions: ${PACK_ACTIONS.join(", ")}.`,
     {
@@ -3948,13 +3638,8 @@ if (ADMIN_TOOLS_ENABLED) {
       endpoint_url: z.string().optional(),
       config: z.record(z.any()).optional(),
       metadata: z.record(z.any()).optional(),
-      // control_pack
-      pack_id: z.string().uuid().optional(),
-      entry_uid: z.string().optional(),
-      override_id: z.string().uuid().optional(),
-      status: z.enum(CONTROL_PACK_ENTRY_STATUSES).optional(),
-      rationale: z.string().optional(),
       // registry
+      pack_id: z.string().uuid().optional(),
       pack_type: z.enum(PACK_TYPES).optional(),
       file_path: z.string().optional(),
       description: z.string().optional(),
@@ -3982,21 +3667,6 @@ if (ADMIN_TOOLS_ENABLED) {
               case "list_plugins": return ok(JSON.stringify(await listPlugins(pick(args, ["plugin_type", "capability", "project"])), null, 2));
               case "get_plugin": reqArg(args, "name", "get_plugin"); return ok(JSON.stringify(await getPlugin(args.name), null, 2));
               default: return err(new Error(`Action '${args.action}' not valid for plugin`));
-            }
-          }
-          case "control_pack": {
-            const overrideData = pick(args, PACK_FIELDS.control_pack_override);
-            switch (args.action) {
-              case "deprecate": reqArg(args, "pack_id", "deprecate"); return ok(JSON.stringify(await deprecateControlPack(args.pack_id, args.project), null, 2));
-              case "remove": reqArg(args, "pack_id", "remove"); await removeControlPack(args.pack_id, args.project); return ok("Removed");
-              case "list_control_packs": return ok(JSON.stringify(await listControlPacks(args.project), null, 2));
-              case "get_control_pack": reqArg(args, "pack_id", "get_control_pack"); return ok(JSON.stringify(await getControlPack(args.pack_id, args.project), null, 2));
-              case "list_control_pack_entries": reqArg(args, "pack_id", "list_control_pack_entries"); return ok(JSON.stringify(await listControlPackEntries(args.pack_id, args.project), null, 2));
-              case "get_control_pack_entry": reqArg(args, "pack_id", "get_control_pack_entry"); reqArg(args, "entry_uid", "get_control_pack_entry"); return ok(JSON.stringify(await getControlPackEntry(args.pack_id, args.entry_uid, args.project), null, 2));
-              case "override_create": reqArg(args, "pack_id", "override_create"); reqArg(args, "entry_uid", "override_create"); return ok(JSON.stringify(await createControlPackOverride(args.pack_id, args.entry_uid, overrideData, args.project), null, 2));
-              case "override_delete": reqArg(args, "pack_id", "override_delete"); reqArg(args, "entry_uid", "override_delete"); reqArg(args, "override_id", "override_delete"); await deleteControlPackOverride(args.pack_id, args.entry_uid, args.override_id, args.project); return ok("Deleted");
-              case "list_control_pack_overrides": reqArg(args, "pack_id", "list_control_pack_overrides"); reqArg(args, "entry_uid", "list_control_pack_overrides"); return ok(JSON.stringify(await listControlPackOverrides(args.pack_id, args.entry_uid, args.project), null, 2));
-              default: return err(new Error(`Action '${args.action}' not valid for control_pack`));
             }
           }
           case "registry": {
@@ -4095,6 +3765,22 @@ server.tool(
   gcWorkflowRunIngestZodShape,
   async (args) => {
     try { return ok(JSON.stringify(await gcWorkflowRunIngestHandler(args), null, 2)); }
+    catch (e) { return err(e); }
+  },
+);
+
+// ============================================================================
+// GC_WORKFLOW_EXECUTION — workflow control surface start/status/signal (GC-O009 #1278)
+// ============================================================================
+
+server.tool(
+  "gc_workflow_execution",
+  GC_WORKFLOW_EXECUTION_DESCRIPTION,
+  gcWorkflowExecutionZodShape,
+  async (args) => {
+    // Product control surface for /implement Temporal executions. The backend enforces project
+    // scope on every action and ROLE_ADMIN on `signal`; this tool forwards only the closed field set.
+    try { return ok(JSON.stringify(await gcWorkflowExecutionToolHandler(args), null, 2)); }
     catch (e) { return err(e); }
   },
 );

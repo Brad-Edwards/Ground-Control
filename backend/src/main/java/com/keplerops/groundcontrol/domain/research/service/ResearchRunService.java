@@ -7,9 +7,21 @@ import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.ProjectType;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.research.model.AutonomyLevel;
+import com.keplerops.groundcontrol.domain.research.model.ContractEntryKind;
 import com.keplerops.groundcontrol.domain.research.model.DisclosureEntryFamily;
 import com.keplerops.groundcontrol.domain.research.model.DisclosureStatus;
+import com.keplerops.groundcontrol.domain.research.model.MethodologyRequirementsContract;
+import com.keplerops.groundcontrol.domain.research.model.MethodologyRequirementsContractEntry;
+import com.keplerops.groundcontrol.domain.research.model.MethodologyRequirementsContractEntrySourceLink;
+import com.keplerops.groundcontrol.domain.research.model.MethodologyRequirementsContractRejectedAlternative;
 import com.keplerops.groundcontrol.domain.research.model.MethodologySourceState;
+import com.keplerops.groundcontrol.domain.research.model.ProtocolCoverageDisposition;
+import com.keplerops.groundcontrol.domain.research.model.ProtocolPlan;
+import com.keplerops.groundcontrol.domain.research.model.ProtocolPlanCoverage;
+import com.keplerops.groundcontrol.domain.research.model.ProtocolPlanSection;
+import com.keplerops.groundcontrol.domain.research.model.ProtocolSectionKind;
+import com.keplerops.groundcontrol.domain.research.model.ProtocolSourceRole;
+import com.keplerops.groundcontrol.domain.research.model.RationaleEntryKind;
 import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactReadiness;
 import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactStatus;
 import com.keplerops.groundcontrol.domain.research.model.ResearchArtifactType;
@@ -27,8 +39,16 @@ import com.keplerops.groundcontrol.domain.research.model.ResearchRunMethodologyS
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunMethodologySource;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunRationaleEntry;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunReviewComment;
+import com.keplerops.groundcontrol.domain.research.model.ResearchRunStage;
 import com.keplerops.groundcontrol.domain.research.model.ResearchRunStatus;
 import com.keplerops.groundcontrol.domain.research.model.ReviewCommentTarget;
+import com.keplerops.groundcontrol.domain.research.repository.MethodologyRequirementsContractEntryRepository;
+import com.keplerops.groundcontrol.domain.research.repository.MethodologyRequirementsContractEntrySourceLinkRepository;
+import com.keplerops.groundcontrol.domain.research.repository.MethodologyRequirementsContractRejectedAlternativeRepository;
+import com.keplerops.groundcontrol.domain.research.repository.MethodologyRequirementsContractRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanCoverageRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanRepository;
+import com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanSectionRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchIntakeRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunArtifactRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunDisclosureEntryRepository;
@@ -42,9 +62,13 @@ import com.keplerops.groundcontrol.domain.research.repository.ResearchRunReposit
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunReviewCommentRepository;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,6 +116,23 @@ public class ResearchRunService {
     private static final int METHOD_KEY_MAX = 200;
     private static final int SOURCE_REF_MAX = 500;
     private static final int SOURCE_LABEL_MAX = 500;
+    private static final int ENTRY_KEY_MAX = 200;
+    private static final int STATEMENT_MAX = 2000;
+    private static final int PROFILE_VERSION_MAX = 100;
+    private static final String CONTRACT_SCHEMA_VERSION = "1";
+    private static final String CONTRACT_ENTRY_KEY_FIELD = "entryKey";
+    private static final String LOCATOR_FIELD = "locator";
+    private static final String METHOD_KEY_FIELD = "methodKey";
+    private static final String REFERENCES_ENTRY_KEY_FIELD = "references_entry_key";
+    private static final String SOURCE_ID_FIELD = "source_id";
+    private static final int PROTOCOL_SCHEMA_VERSION_MAX = 40;
+    private static final int ANSWER_SUMMARY_MAX = 2000;
+    private static final int PROTOCOL_RATIONALE_MAX = 2000;
+    private static final int DECISION_REFERENCE_MAX = 200;
+    private static final String CONTRACT_ENTRY_KEY_JSON_FIELD = "contractEntryKey";
+    private static final String DISPOSITION_FIELD = "disposition";
+    private static final String SECTION_KEY_JSON_FIELD = "sectionKey";
+    private static final String SECTION_KIND_FIELD = "sectionKind";
 
     private static final String AUTONOMOUS_DEFAULT_BASIS = "AUTONOMOUS_DEFAULT";
 
@@ -118,6 +159,13 @@ public class ResearchRunService {
     private final ResearchRunMethodologySelectionRepository methodologySelectionRepository;
     private final ResearchRunMethodologySourceRepository methodologySourceRepository;
     private final MethodologyCatalog methodologyCatalog;
+    private final MethodologyRequirementsContractRepository contractRepository;
+    private final MethodologyRequirementsContractEntryRepository contractEntryRepository;
+    private final MethodologyRequirementsContractEntrySourceLinkRepository contractEntrySourceLinkRepository;
+    private final MethodologyRequirementsContractRejectedAlternativeRepository contractRejectedAlternativeRepository;
+    private final ProtocolPlanRepository protocolPlanRepository;
+    private final ProtocolPlanCoverageRepository protocolPlanCoverageRepository;
+    private final ProtocolPlanSectionRepository protocolPlanSectionRepository;
 
     public ResearchRunService(
             ResearchRunRepository runRepository,
@@ -132,7 +180,14 @@ public class ResearchRunService {
             ProjectService projectService,
             ResearchRunMethodologySelectionRepository methodologySelectionRepository,
             ResearchRunMethodologySourceRepository methodologySourceRepository,
-            MethodologyCatalog methodologyCatalog) {
+            MethodologyCatalog methodologyCatalog,
+            MethodologyRequirementsContractRepository contractRepository,
+            MethodologyRequirementsContractEntryRepository contractEntryRepository,
+            MethodologyRequirementsContractEntrySourceLinkRepository contractEntrySourceLinkRepository,
+            MethodologyRequirementsContractRejectedAlternativeRepository contractRejectedAlternativeRepository,
+            ProtocolPlanRepository protocolPlanRepository,
+            ProtocolPlanCoverageRepository protocolPlanCoverageRepository,
+            ProtocolPlanSectionRepository protocolPlanSectionRepository) {
         this.runRepository = runRepository;
         this.artifactRepository = artifactRepository;
         this.gateRepository = gateRepository;
@@ -146,6 +201,13 @@ public class ResearchRunService {
         this.methodologySelectionRepository = methodologySelectionRepository;
         this.methodologySourceRepository = methodologySourceRepository;
         this.methodologyCatalog = methodologyCatalog;
+        this.contractRepository = contractRepository;
+        this.contractEntryRepository = contractEntryRepository;
+        this.contractEntrySourceLinkRepository = contractEntrySourceLinkRepository;
+        this.contractRejectedAlternativeRepository = contractRejectedAlternativeRepository;
+        this.protocolPlanRepository = protocolPlanRepository;
+        this.protocolPlanCoverageRepository = protocolPlanCoverageRepository;
+        this.protocolPlanSectionRepository = protocolPlanSectionRepository;
     }
 
     // ------------------------------------------------------------------
@@ -189,6 +251,11 @@ public class ResearchRunService {
             run.setBudgetTokens(i.getBudgetTokens());
             run.setBudgetWallClockMinutes(i.getBudgetWallClockMinutes());
             run.setBudgetCostUsdMicros(i.getBudgetCostUsdMicros());
+            // Snapshot the high-risk operation policy at start so later intake
+            // edits never re-authorize an active run (GC-RSCH-R005 / ADR-086 §2).
+            run.setAllowedTools(i.getAllowedTools());
+            run.setPrivacyConstraints(i.getPrivacyConstraints());
+            run.setEgressPolicy(i.getEgressPolicy());
         });
         var saved = runRepository.save(run);
 
@@ -260,7 +327,7 @@ public class ResearchRunService {
                 return existing.get(); // idempotent replay — no duplicate, no rework
             }
         }
-        requireUnder(command.locator(), LOCATOR_MAX, "locator");
+        requireUnder(command.locator(), LOCATOR_MAX, LOCATOR_FIELD);
         requireUnder(command.contentHash(), HASH_MAX, "contentHash");
 
         var activeExisting = artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
@@ -281,6 +348,7 @@ public class ResearchRunService {
         artifact.setLocator(emptyToNull(command.locator()));
         artifact.setContentHash(emptyToNull(command.contentHash()));
         artifact.setIdempotencyKey(key);
+        artifact.setDataClass(command.dataClass());
         artifact.setActor(currentActor());
         var saved = artifactRepository.save(artifact);
 
@@ -380,6 +448,14 @@ public class ResearchRunService {
                             + run.getCurrentStage() + " is missing",
                     "research_run_stage_blocked",
                     Map.of(CURRENT_STAGE, run.getCurrentStage().name(), "missing_artifact", requiredArtifact.name()));
+        }
+
+        // GC-RSCH-F008 / ADR-083 §2 — the SOURCE_SEARCH durable gate: an active
+        // PROTOCOL_PLAN artifact is not enough on its own. The structured protocol
+        // plan behind it must exist and have no unresolved BLOCKING_DECISION_REQUIRED
+        // coverage, or search execution stays blocked regardless of caller.
+        if (run.getCurrentStage() == ResearchRunStage.PROTOCOL_PLANNING) {
+            requireProtocolPlanNotBlocking(active.get());
         }
 
         ResearchGatePoint.forStageExit(run.getCurrentStage()).ifPresent(point -> {
@@ -744,8 +820,8 @@ public class ResearchRunService {
             throw new DomainValidationException("summary must not be blank", INVALID_CODE, Map.of(FIELD, "summary"));
         }
         requireUnder(command.summary(), SUMMARY_MAX, "summary");
-        requireUnder(command.sectionKey(), SECTION_KEY_MAX, "sectionKey");
-        requireUnder(command.locator(), LOCATOR_MAX, "locator");
+        requireUnder(command.sectionKey(), SECTION_KEY_MAX, SECTION_KEY_JSON_FIELD);
+        requireUnder(command.locator(), LOCATOR_MAX, LOCATOR_FIELD);
         requireUnder(command.modelLabel(), MODEL_LABEL_MAX, "modelLabel");
         requireSameRunReference(
                 command.rationaleEntryId(), runId, rationaleRepository::existsByIdAndResearchRunId, "rationaleEntryId");
@@ -1064,10 +1140,10 @@ public class ResearchRunService {
         requireActive(run);
         if (cmd == null || cmd.methodKey() == null || cmd.methodKey().isBlank()) {
             throw new DomainValidationException(
-                    "methodKey must not be blank", INVALID_CODE, Map.of(FIELD, "methodKey"));
+                    "methodKey must not be blank", INVALID_CODE, Map.of(FIELD, METHOD_KEY_FIELD));
         }
         var methodKey = cmd.methodKey().trim();
-        requireUnder(methodKey, METHOD_KEY_MAX, "methodKey");
+        requireUnder(methodKey, METHOD_KEY_MAX, METHOD_KEY_FIELD);
         var profile = methodologyCatalog.requireProfile(methodKey);
 
         var existing = methodologySelectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(runId);
@@ -1317,6 +1393,803 @@ public class ResearchRunService {
                             String.valueOf(notReadSources.size()),
                             "first_blocked_ref",
                             notReadSources.get(0).getSourceRef()));
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Methodology requirements contract (GC-RSCH-F007 / ADR-080)
+    // ------------------------------------------------------------------
+
+    /**
+     * GC-RSCH-F007 / GC-RSCH-R002 / ADR-080 — record the structured phase-1
+     * methodology requirements contract behind the run's ACTIVE {@code
+     * METHODOLOGY_REQUIREMENTS} artifact attempt. The chosen method (active
+     * selection), artifact id, and attempt are resolved server-side. Exactly one
+     * contract exists per artifact attempt; a rework records a new artifact
+     * attempt first.
+     *
+     * <p>Every {@code REQUIREMENT} / {@code METHOD_LIMIT} / {@code NON_CLAIM}
+     * entry must link at least one methodology source that belongs to the active
+     * selection and is {@code READ} — a claim with no READ source link is never
+     * accepted (no model memory as scientific evidence). An {@code
+     * OPEN_PROTOCOL_QUESTION} may instead reference another entry in the same
+     * contract. Rejected alternatives may point at a {@code METHODOLOGY_CHOICE}
+     * rationale entry for the same run.
+     */
+    public MethodologyRequirementsContractAggregate recordMethodologyRequirementsContract(
+            UUID projectId, UUID runId, RecordMethodologyRequirementsContractCommand command) {
+        var run = requireRun(projectId, runId);
+        requireActive(run);
+        if (command == null) {
+            throw new DomainValidationException("Contract command must not be null", INVALID_CODE, Map.of());
+        }
+
+        // The contract sits behind the ACTIVE METHODOLOGY_REQUIREMENTS artifact.
+        var artifact = artifactRepository
+                .findByResearchRunIdAndArtifactTypeAndStatus(
+                        runId, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE)
+                .orElseThrow(() -> new DomainValidationException(
+                        "No ACTIVE METHODOLOGY_REQUIREMENTS artifact exists for this run; record the artifact first",
+                        "research_run_methodology_artifact_missing",
+                        Map.of()));
+
+        // Required methodology sources must be READ before the contract is accepted
+        // (ADR-080 §3) — the same gate the artifact recording enforced.
+        requireMethodologySourceCoverageComplete(runId);
+        var selection = methodologySelectionRepository
+                .findFirstByResearchRunIdAndSupersededAtIsNull(runId)
+                .orElseThrow(() -> new NotFoundException(NO_ACTIVE_METHODOLOGY_SELECTION + runId));
+
+        // One contract per artifact attempt.
+        if (contractRepository.existsByArtifactId(artifact.getId())) {
+            throw new ConflictException(
+                    "A methodology requirements contract already exists for this artifact attempt",
+                    "research_run_methodology_contract_exists",
+                    Map.of("artifact_id", artifact.getId().toString()));
+        }
+
+        var entryCommands = command.entries();
+        if (entryCommands == null || entryCommands.isEmpty()) {
+            throw new DomainValidationException(
+                    "A methodology requirements contract must have at least one entry",
+                    INVALID_CODE,
+                    Map.of(FIELD, "entries"));
+        }
+
+        // Sources of the active selection, keyed by id, for membership + READ checks.
+        var selectionSources = new HashMap<UUID, ResearchRunMethodologySource>();
+        for (var s : methodologySourceRepository.findBySelectionId(selection.getId())) {
+            selectionSources.put(s.getId(), s);
+        }
+
+        var kindByKey = validateContractEntryShape(entryCommands);
+        validateContractEntryGrounding(entryCommands, kindByKey, selectionSources);
+        var rejectedCommands = command.rejectedAlternatives();
+        validateRejectedAlternatives(rejectedCommands, runId);
+
+        return persistContract(run, selection, artifact, entryCommands, rejectedCommands, selectionSources);
+    }
+
+    /**
+     * First pass over the entries: validates shape (kind/entryKey/statement) and
+     * returns the kind-by-key map needed to resolve {@code OPEN_PROTOCOL_QUESTION}
+     * references in {@link #validateContractEntryGrounding}.
+     */
+    private Map<String, ContractEntryKind> validateContractEntryShape(
+            List<RecordMethodologyRequirementsContractCommand.EntryCommand> entryCommands) {
+        var entryKeys = new HashSet<String>();
+        var kindByKey = new HashMap<String, ContractEntryKind>();
+        for (var e : entryCommands) {
+            if (e == null || e.kind() == null) {
+                throw new DomainValidationException("entry kind must not be null", INVALID_CODE, Map.of(FIELD, "kind"));
+            }
+            var key = emptyToNull(e.entryKey());
+            if (key == null) {
+                throw new DomainValidationException(
+                        "entryKey must not be blank", INVALID_CODE, Map.of(FIELD, CONTRACT_ENTRY_KEY_FIELD));
+            }
+            requireUnder(key, ENTRY_KEY_MAX, CONTRACT_ENTRY_KEY_FIELD);
+            if (!entryKeys.add(key)) {
+                throw new DomainValidationException(
+                        "Duplicate entryKey in contract: " + key,
+                        "research_run_methodology_contract_duplicate_entry_key",
+                        Map.of(CONTRACT_ENTRY_KEY_FIELD, key));
+            }
+            kindByKey.put(key, e.kind());
+            if (emptyToNull(e.statement()) == null) {
+                throw new DomainValidationException(
+                        "statement must not be blank", INVALID_CODE, Map.of(FIELD, "statement"));
+            }
+            requireUnder(e.statement(), STATEMENT_MAX, "statement");
+        }
+        return kindByKey;
+    }
+
+    /** Second pass over the entries: validates grounding (source links / references). */
+    private void validateContractEntryGrounding(
+            List<RecordMethodologyRequirementsContractCommand.EntryCommand> entryCommands,
+            Map<String, ContractEntryKind> kindByKey,
+            Map<UUID, ResearchRunMethodologySource> selectionSources) {
+        for (var e : entryCommands) {
+            var links = e.sourceLinks();
+            var hasLinks = links != null && !links.isEmpty();
+            var reference = emptyToNull(e.referencesEntryKey());
+            requireEntryGroundingPresent(e, hasLinks, reference);
+            if (reference != null) {
+                validateEntryReference(e, reference, kindByKey);
+            }
+            if (hasLinks) {
+                validateEntrySourceLinks(e, links, selectionSources);
+            }
+        }
+    }
+
+    private void requireEntryGroundingPresent(
+            RecordMethodologyRequirementsContractCommand.EntryCommand e, boolean hasLinks, String reference) {
+        if (e.kind().requiresSourceGrounding()) {
+            if (!hasLinks) {
+                throw new DomainValidationException(
+                        e.kind() + " entry '" + key(e) + "' must link at least one methodology source",
+                        "research_run_methodology_contract_entry_ungrounded",
+                        Map.of(
+                                CONTRACT_ENTRY_KEY_FIELD,
+                                key(e),
+                                "kind",
+                                e.kind().name()));
+            }
+        } else if (!hasLinks && reference == null) {
+            throw new DomainValidationException(
+                    "OPEN_PROTOCOL_QUESTION entry '" + key(e) + "' must link a source or reference another entry",
+                    "research_run_methodology_contract_open_question_unlinked",
+                    Map.of(CONTRACT_ENTRY_KEY_FIELD, key(e)));
+        }
+    }
+
+    private void validateEntryReference(
+            RecordMethodologyRequirementsContractCommand.EntryCommand e,
+            String reference,
+            Map<String, ContractEntryKind> kindByKey) {
+        if (reference.equals(key(e))) {
+            throw new DomainValidationException(
+                    "entry '" + key(e) + "' may not reference itself",
+                    "research_run_methodology_contract_self_reference",
+                    Map.of(REFERENCES_ENTRY_KEY_FIELD, reference));
+        }
+        var referencedKind = kindByKey.get(reference);
+        if (referencedKind == null) {
+            throw new DomainValidationException(
+                    "referencesEntryKey '" + reference + "' does not match any entry in this contract",
+                    "research_run_methodology_contract_bad_reference",
+                    Map.of(REFERENCES_ENTRY_KEY_FIELD, reference));
+        }
+        // ADR-080 §3: a reference must resolve to a source-grounded entry
+        // (REQUIREMENT / METHOD_LIMIT / NON_CLAIM), never to another
+        // OPEN_PROTOCOL_QUESTION — otherwise an unlinked question could chain
+        // to another question and enter phase 2 with no source grounding.
+        if (!referencedKind.requiresSourceGrounding()) {
+            throw new DomainValidationException(
+                    "referencesEntryKey '" + reference
+                            + "' must target a source-grounded entry (REQUIREMENT, METHOD_LIMIT, or NON_CLAIM)",
+                    "research_run_methodology_contract_reference_not_grounded",
+                    Map.of(REFERENCES_ENTRY_KEY_FIELD, reference, "referenced_kind", referencedKind.name()));
+        }
+    }
+
+    private void validateEntrySourceLinks(
+            RecordMethodologyRequirementsContractCommand.EntryCommand e,
+            List<RecordMethodologyRequirementsContractCommand.SourceLinkCommand> links,
+            Map<UUID, ResearchRunMethodologySource> selectionSources) {
+        var seenSources = new HashSet<UUID>();
+        for (var link : links) {
+            if (link == null || link.sourceId() == null) {
+                throw new DomainValidationException(
+                        "source link sourceId must not be null", INVALID_CODE, Map.of(FIELD, "sourceId"));
+            }
+            if (!seenSources.add(link.sourceId())) {
+                throw new DomainValidationException(
+                        "Duplicate source link within entry '" + key(e) + "'",
+                        "research_run_methodology_contract_duplicate_source_link",
+                        Map.of(SOURCE_ID_FIELD, link.sourceId().toString()));
+            }
+            var source = selectionSources.get(link.sourceId());
+            if (source == null) {
+                throw new DomainValidationException(
+                        "Source link target is not a source of the active methodology selection",
+                        "research_run_methodology_contract_source_not_in_selection",
+                        Map.of(SOURCE_ID_FIELD, link.sourceId().toString()));
+            }
+            if (source.getState() != MethodologySourceState.READ) {
+                throw new DomainValidationException(
+                        "Source link target must be READ before it can ground a contract entry",
+                        "research_run_methodology_contract_source_not_read",
+                        Map.of(
+                                SOURCE_ID_FIELD,
+                                link.sourceId().toString(),
+                                "state",
+                                source.getState().name()));
+            }
+            requireUnder(link.locator(), LOCATOR_MAX, LOCATOR_FIELD);
+        }
+    }
+
+    /** Validates rejected alternatives: shape, catalog membership, and rationale linkage. */
+    private void validateRejectedAlternatives(
+            List<RecordMethodologyRequirementsContractCommand.RejectedAlternativeCommand> rejectedCommands,
+            UUID runId) {
+        if (rejectedCommands == null) {
+            return;
+        }
+        for (var r : rejectedCommands) {
+            if (r == null || emptyToNull(r.methodKey()) == null) {
+                throw new DomainValidationException(
+                        "rejected alternative methodKey must not be blank",
+                        INVALID_CODE,
+                        Map.of(FIELD, METHOD_KEY_FIELD));
+            }
+            requireUnder(r.methodKey(), METHOD_KEY_MAX, METHOD_KEY_FIELD);
+            requireUnder(r.profileVersion(), PROFILE_VERSION_MAX, "profileVersion");
+            // ADR-080 §2: a non-external rejected alternative claims a catalog
+            // method and must resolve against the backend MethodologyCatalog. An
+            // unknown method must instead be recorded through the external/manual path.
+            if (!r.external()
+                    && methodologyCatalog.findProfile(r.methodKey().trim()).isEmpty()) {
+                throw new DomainValidationException(
+                        "rejected alternative method '" + r.methodKey().trim()
+                                + "' is not in the methodology catalog; unknown methods must be recorded as external",
+                        "research_run_methodology_contract_rejected_alternative_unknown_method",
+                        Map.of("method_key", r.methodKey().trim()));
+            }
+            if (r.rationaleEntryId() != null) {
+                requireRejectedAlternativeRationale(r, runId);
+            }
+        }
+    }
+
+    private void requireRejectedAlternativeRationale(
+            RecordMethodologyRequirementsContractCommand.RejectedAlternativeCommand r, UUID runId) {
+        var rationale = rationaleRepository
+                .findById(r.rationaleEntryId())
+                .filter(entry -> entry.getResearchRun().getId().equals(runId))
+                .orElseThrow(() -> new DomainValidationException(
+                        "rejected alternative rationale entry not found for this run",
+                        "research_run_methodology_contract_rationale_not_found",
+                        Map.of("rationale_entry_id", r.rationaleEntryId().toString())));
+        if (rationale.getKind() != RationaleEntryKind.METHODOLOGY_CHOICE) {
+            throw new DomainValidationException(
+                    "rejected alternative rationale entry must be of kind METHODOLOGY_CHOICE",
+                    "research_run_methodology_contract_rationale_wrong_kind",
+                    Map.of("kind", rationale.getKind().name()));
+        }
+    }
+
+    /** Persists the contract aggregate (contract, entries, source links, rejected alternatives). */
+    private MethodologyRequirementsContractAggregate persistContract(
+            ResearchRun run,
+            ResearchRunMethodologySelection selection,
+            ResearchRunArtifact artifact,
+            List<RecordMethodologyRequirementsContractCommand.EntryCommand> entryCommands,
+            List<RecordMethodologyRequirementsContractCommand.RejectedAlternativeCommand> rejectedCommands,
+            Map<UUID, ResearchRunMethodologySource> selectionSources) {
+        var actor = currentActor();
+        var contract = new MethodologyRequirementsContract(
+                run, selection, artifact.getId(), artifact.getAttemptNo(), CONTRACT_SCHEMA_VERSION, actor);
+        var savedContract = contractRepository.save(contract);
+
+        var savedEntries = new ArrayList<MethodologyRequirementsContractEntry>();
+        var savedLinks = new ArrayList<MethodologyRequirementsContractEntrySourceLink>();
+        for (var e : entryCommands) {
+            var entry = new MethodologyRequirementsContractEntry(
+                    savedContract, e.kind(), key(e), e.statement().trim(), emptyToNull(e.referencesEntryKey()), actor);
+            var savedEntry = contractEntryRepository.save(entry);
+            savedEntries.add(savedEntry);
+            if (e.sourceLinks() != null) {
+                for (var link : e.sourceLinks()) {
+                    var source = selectionSources.get(link.sourceId());
+                    savedLinks.add(
+                            contractEntrySourceLinkRepository.save(new MethodologyRequirementsContractEntrySourceLink(
+                                    savedEntry, source, emptyToNull(link.locator()))));
+                }
+            }
+        }
+
+        var savedRejected = new ArrayList<MethodologyRequirementsContractRejectedAlternative>();
+        if (rejectedCommands != null) {
+            for (var r : rejectedCommands) {
+                savedRejected.add(contractRejectedAlternativeRepository.save(
+                        new MethodologyRequirementsContractRejectedAlternative(
+                                savedContract,
+                                r.rationaleEntryId(),
+                                r.methodKey().trim(),
+                                emptyToNull(r.profileVersion()),
+                                r.external())));
+            }
+        }
+
+        log.info(
+                "research_run_methodology_contract_recorded: project={} run={} artifact={} attempt={} entries={} links={} rejected={}",
+                run.getProject().getIdentifier(),
+                run.getId(),
+                artifact.getId(),
+                artifact.getAttemptNo(),
+                savedEntries.size(),
+                savedLinks.size(),
+                savedRejected.size());
+
+        return new MethodologyRequirementsContractAggregate(savedContract, savedEntries, savedLinks, savedRejected);
+    }
+
+    /**
+     * GC-RSCH-F008 / ADR-080 §5 — read the active methodology requirements
+     * contract (the surface protocol planning consumes as its contract). Resolves
+     * the ACTIVE {@code METHODOLOGY_REQUIREMENTS} artifact, then the contract tied
+     * to that attempt, and bundles its entries, source links, and rejected
+     * alternatives. {@link NotFoundException} when no contract has been recorded.
+     */
+    @Transactional(readOnly = true)
+    public MethodologyRequirementsContractAggregate getMethodologyRequirementsContract(UUID projectId, UUID runId) {
+        requireRun(projectId, runId);
+        var artifact = artifactRepository
+                .findByResearchRunIdAndArtifactTypeAndStatus(
+                        runId, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE)
+                .orElseThrow(() -> new NotFoundException("No methodology requirements contract for run " + runId));
+        var contract = contractRepository
+                .findByArtifactId(artifact.getId())
+                .orElseThrow(() -> new NotFoundException("No methodology requirements contract for run " + runId));
+        var entries = contractEntryRepository.findByContractIdOrderByCreatedAtAsc(contract.getId());
+        var links = contractEntrySourceLinkRepository.findByEntryContractIdOrderByCreatedAtAsc(contract.getId());
+        var rejected = contractRejectedAlternativeRepository.findByContractIdOrderByCreatedAtAsc(contract.getId());
+        return new MethodologyRequirementsContractAggregate(contract, entries, links, rejected);
+    }
+
+    private static String key(RecordMethodologyRequirementsContractCommand.EntryCommand e) {
+        return e.entryKey().trim();
+    }
+
+    // ------------------------------------------------------------------
+    // Protocol plan (GC-RSCH-F008 / GC-RSCH-F009 / ADR-083)
+    // ------------------------------------------------------------------
+
+    /**
+     * GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 — record the structured protocol
+     * plan behind the run's ACTIVE {@code PROTOCOL_PLAN} artifact attempt,
+     * answering the run's one active ADR-080 methodology requirements contract.
+     * Every current {@code REQUIREMENT} / {@code OPEN_PROTOCOL_QUESTION}
+     * contract entry must have exactly one coverage disposition; {@code
+     * METHOD_LIMIT} / {@code NON_CLAIM} entries are constraints the plan
+     * carries forward, not coverable answers (ADR-083 §2). The plan must also
+     * include every section kind the selected method profile requires ({@link
+     * ProtocolMethodShape}); a source role may only be assigned on a {@code
+     * SOURCE_ROLES} section of the taxonomy-development method (ADR-083 §3).
+     */
+    public ProtocolPlanAggregate recordProtocolPlan(UUID projectId, UUID runId, RecordProtocolPlanCommand command) {
+        var run = requireRun(projectId, runId);
+        requireActive(run);
+        if (command == null) {
+            throw new DomainValidationException("Protocol plan command must not be null", INVALID_CODE, Map.of());
+        }
+        var schemaVersion = emptyToNull(command.protocolSchemaVersion());
+        if (schemaVersion == null) {
+            throw new DomainValidationException(
+                    "protocolSchemaVersion must not be blank", INVALID_CODE, Map.of(FIELD, "protocolSchemaVersion"));
+        }
+        requireUnder(schemaVersion, PROTOCOL_SCHEMA_VERSION_MAX, "protocolSchemaVersion");
+
+        // The plan sits behind the ACTIVE PROTOCOL_PLAN artifact.
+        var artifact = artifactRepository
+                .findByResearchRunIdAndArtifactTypeAndStatus(
+                        runId, ResearchArtifactType.PROTOCOL_PLAN, ResearchArtifactStatus.ACTIVE)
+                .orElseThrow(() -> new DomainValidationException(
+                        "No ACTIVE PROTOCOL_PLAN artifact exists for this run; record the artifact first",
+                        "research_run_protocol_plan_artifact_missing",
+                        Map.of()));
+
+        // One plan per artifact attempt.
+        if (protocolPlanRepository.existsByArtifactId(artifact.getId())) {
+            throw new ConflictException(
+                    "A protocol plan already exists for this artifact attempt",
+                    "research_run_protocol_plan_exists",
+                    Map.of("artifact_id", artifact.getId().toString()));
+        }
+
+        // The plan answers the run's one active ADR-080 methodology requirements contract.
+        var methodologyArtifact = artifactRepository
+                .findByResearchRunIdAndArtifactTypeAndStatus(
+                        runId, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE)
+                .orElseThrow(() -> new DomainValidationException(
+                        "No ACTIVE METHODOLOGY_REQUIREMENTS artifact exists for this run",
+                        "research_run_methodology_artifact_missing",
+                        Map.of()));
+        var contract = contractRepository
+                .findByArtifactId(methodologyArtifact.getId())
+                .orElseThrow(() -> new DomainValidationException(
+                        "No methodology requirements contract has been recorded for this run; record it first",
+                        "research_run_protocol_plan_contract_missing",
+                        Map.of()));
+        var contractEntries = contractEntryRepository.findByContractIdOrderByCreatedAtAsc(contract.getId());
+
+        var selection = methodologySelectionRepository
+                .findFirstByResearchRunIdAndSupersededAtIsNull(runId)
+                .orElseThrow(() -> new NotFoundException(NO_ACTIVE_METHODOLOGY_SELECTION + runId));
+
+        validateProtocolPlanCoverage(command.coverages(), contractEntries);
+        validateProtocolPlanSections(command.sections(), selection.getMethodKey());
+
+        return persistProtocolPlan(run, contract, artifact, selection, schemaVersion, command);
+    }
+
+    /**
+     * First validation pass: every {@code REQUIREMENT} / {@code
+     * OPEN_PROTOCOL_QUESTION} contract entry has exactly one coverage, no
+     * unknown/duplicate {@code contractEntryKey} is present, and no coverage
+     * targets a {@code METHOD_LIMIT} / {@code NON_CLAIM} entry.
+     */
+    private void validateProtocolPlanCoverage(
+            List<RecordProtocolPlanCommand.CoverageCommand> coverageCommands,
+            List<MethodologyRequirementsContractEntry> contractEntries) {
+        var kindByKey = new HashMap<String, ContractEntryKind>();
+        var coverableKeys = new HashSet<String>();
+        for (var entry : contractEntries) {
+            kindByKey.put(entry.getEntryKey(), entry.getKind());
+            if (entry.getKind() == ContractEntryKind.REQUIREMENT
+                    || entry.getKind() == ContractEntryKind.OPEN_PROTOCOL_QUESTION) {
+                coverableKeys.add(entry.getEntryKey());
+            }
+        }
+        var seenKeys = new HashSet<String>();
+        var commands =
+                coverageCommands == null ? List.<RecordProtocolPlanCommand.CoverageCommand>of() : coverageCommands;
+        for (var c : commands) {
+            validateCoverageEntry(c, kindByKey, seenKeys);
+        }
+        if (!seenKeys.containsAll(coverableKeys)) {
+            var missing = new HashSet<>(coverableKeys);
+            missing.removeAll(seenKeys);
+            throw new DomainValidationException(
+                    "Protocol plan coverage is missing entries: " + missing,
+                    "research_run_protocol_plan_coverage_incomplete",
+                    Map.of("missing_entry_keys", String.join(",", missing)));
+        }
+    }
+
+    /**
+     * Validates one coverage command: shape (blank/duplicate/unknown {@code
+     * contractEntryKey}), that the targeted entry is coverable (not a {@code
+     * METHOD_LIMIT}/{@code NON_CLAIM} constraint), that a disposition is present,
+     * and — via {@link #validateCoverageDispositionFields} — that the
+     * disposition's required fields are present and bounded.
+     */
+    private void validateCoverageEntry(
+            RecordProtocolPlanCommand.CoverageCommand c,
+            Map<String, ContractEntryKind> kindByKey,
+            Set<String> seenKeys) {
+        if (c == null || emptyToNull(c.contractEntryKey()) == null) {
+            throw new DomainValidationException(
+                    "contractEntryKey must not be blank", INVALID_CODE, Map.of(FIELD, CONTRACT_ENTRY_KEY_JSON_FIELD));
+        }
+        var key = c.contractEntryKey().trim();
+        requireUnder(key, ENTRY_KEY_MAX, CONTRACT_ENTRY_KEY_JSON_FIELD);
+        if (!seenKeys.add(key)) {
+            throw new DomainValidationException(
+                    "Duplicate protocol plan coverage for contract entry: " + key,
+                    "research_run_protocol_plan_duplicate_coverage",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
+        }
+        var kind = kindByKey.get(key);
+        if (kind == null) {
+            throw new DomainValidationException(
+                    "contractEntryKey '" + key
+                            + "' does not match any entry in the active methodology requirements contract",
+                    "research_run_protocol_plan_unknown_contract_entry",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
+        }
+        if (kind == ContractEntryKind.METHOD_LIMIT || kind == ContractEntryKind.NON_CLAIM) {
+            throw new DomainValidationException(
+                    "contractEntryKey '" + key + "' is a " + kind
+                            + "; it is a constraint the plan carries forward, not a coverable answer",
+                    "research_run_protocol_plan_entry_not_coverable",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key, "kind", kind.name()));
+        }
+        if (c.disposition() == null) {
+            throw new DomainValidationException(
+                    "disposition must not be null", INVALID_CODE, Map.of(FIELD, DISPOSITION_FIELD));
+        }
+        validateCoverageDispositionFields(c, key);
+    }
+
+    /**
+     * Second validation pass: the fields a disposition requires are present and
+     * bounded (ADR-083 §2). Each disposition's own completeness rule lives in a
+     * dedicated {@code requireXxxComplete} method so this dispatcher never holds
+     * conditional logic itself (S6916) — {@code switch} on a plain enum constant
+     * cannot carry a {@code when} guard (JLS 14.11.1 restricts guards to pattern
+     * case labels), so the per-branch condition is pushed into the callee instead.
+     */
+    private void validateCoverageDispositionFields(RecordProtocolPlanCommand.CoverageCommand c, String key) {
+        requireUnder(c.answerSummary(), ANSWER_SUMMARY_MAX, "answerSummary");
+        requireUnder(c.rationale(), PROTOCOL_RATIONALE_MAX, "rationale");
+        requireUnder(c.decisionReference(), DECISION_REFERENCE_MAX, "decisionReference");
+        switch (c.disposition()) {
+            case FILLED -> requireFilledComplete(c, key);
+            case DEFERRED_NON_BLOCKING -> requireDeferredNonBlockingComplete(c, key);
+            case NOT_APPLICABLE_WITH_RATIONALE -> requireNotApplicableWithRationaleComplete(c, key);
+            case RESOLVED_BY_USER_DECISION -> requireResolvedByUserDecisionComplete(c, key);
+            case BLOCKING_DECISION_REQUIRED -> requireBlockingDecisionRequiredComplete(c, key);
+            default -> {
+                // Unreachable: every ProtocolCoverageDisposition constant is handled above.
+                // Checkstyle's MissingSwitchDefault still requires this clause.
+            }
+        }
+    }
+
+    private void requireFilledComplete(RecordProtocolPlanCommand.CoverageCommand c, String key) {
+        if (c.answerProvenance() == null || emptyToNull(c.answerSummary()) == null) {
+            throw new DomainValidationException(
+                    "FILLED coverage for '" + key + "' requires answerProvenance and answerSummary",
+                    "research_run_protocol_plan_filled_incomplete",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
+        }
+    }
+
+    private void requireDeferredNonBlockingComplete(RecordProtocolPlanCommand.CoverageCommand c, String key) {
+        if (c.deferredToStage() == null || emptyToNull(c.rationale()) == null) {
+            throw new DomainValidationException(
+                    "DEFERRED_NON_BLOCKING coverage for '" + key + "' requires deferredToStage and rationale",
+                    "research_run_protocol_plan_deferred_incomplete",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
+        }
+    }
+
+    private void requireNotApplicableWithRationaleComplete(RecordProtocolPlanCommand.CoverageCommand c, String key) {
+        if (emptyToNull(c.rationale()) == null) {
+            throw new DomainValidationException(
+                    "NOT_APPLICABLE_WITH_RATIONALE coverage for '" + key + "' requires rationale",
+                    "research_run_protocol_plan_not_applicable_incomplete",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
+        }
+    }
+
+    private void requireResolvedByUserDecisionComplete(RecordProtocolPlanCommand.CoverageCommand c, String key) {
+        if (emptyToNull(c.decisionReference()) == null && emptyToNull(c.rationale()) == null) {
+            throw new DomainValidationException(
+                    "RESOLVED_BY_USER_DECISION coverage for '" + key + "' requires decisionReference or rationale",
+                    "research_run_protocol_plan_resolved_incomplete",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
+        }
+    }
+
+    private void requireBlockingDecisionRequiredComplete(RecordProtocolPlanCommand.CoverageCommand c, String key) {
+        if (emptyToNull(c.rationale()) == null) {
+            throw new DomainValidationException(
+                    "BLOCKING_DECISION_REQUIRED coverage for '" + key + "' requires rationale",
+                    "research_run_protocol_plan_blocking_incomplete",
+                    Map.of(CONTRACT_ENTRY_KEY_JSON_FIELD, key));
+        }
+    }
+
+    /**
+     * Third validation pass: every section kind the selected method profile
+     * requires is present ({@link ProtocolMethodShape}), section keys are
+     * unique, and {@code sourceRole} is only assigned on a {@code
+     * SOURCE_ROLES} section of the taxonomy-development method (ADR-083 §3).
+     */
+    private void validateProtocolPlanSections(
+            List<RecordProtocolPlanCommand.SectionCommand> sectionCommands, String methodKey) {
+        if (sectionCommands == null || sectionCommands.isEmpty()) {
+            throw new DomainValidationException(
+                    "Protocol plan must include at least one section", INVALID_CODE, Map.of(FIELD, "sections"));
+        }
+        var seenKeys = new HashSet<String>();
+        var presentKinds = EnumSet.noneOf(ProtocolSectionKind.class);
+        var isTaxonomy = ProtocolMethodShape.isTaxonomyDevelopment(methodKey);
+        var taxonomySourceRoles = EnumSet.noneOf(ProtocolSourceRole.class);
+        for (var s : sectionCommands) {
+            presentKinds.add(validateSectionEntry(s, seenKeys, isTaxonomy, taxonomySourceRoles, methodKey));
+        }
+        var required = ProtocolMethodShape.requiredSections(methodKey);
+        if (!presentKinds.containsAll(required)) {
+            var missing = EnumSet.copyOf(required);
+            missing.removeAll(presentKinds);
+            throw new DomainValidationException(
+                    "Protocol plan is missing required sections for method '" + methodKey + "': " + missing,
+                    "research_run_protocol_plan_section_missing",
+                    Map.of(
+                            METHOD_KEY_FIELD,
+                            methodKey == null ? "" : methodKey,
+                            "missing_section_kinds",
+                            missing.toString()));
+        }
+        if (isTaxonomy) {
+            requireTaxonomySourceRolesComplete(taxonomySourceRoles, methodKey);
+        }
+    }
+
+    /**
+     * Validates one section command (blank/duplicate {@code sectionKey}, presence
+     * of {@code sectionKind}/{@code contentSummary}, and the {@code sourceRole}
+     * constraints of ADR-083 §3), recording its taxonomy source role — if any —
+     * into {@code taxonomySourceRoles}, and returns its section kind for the
+     * caller's required-sections check.
+     */
+    private ProtocolSectionKind validateSectionEntry(
+            RecordProtocolPlanCommand.SectionCommand s,
+            Set<String> seenKeys,
+            boolean isTaxonomy,
+            EnumSet<ProtocolSourceRole> taxonomySourceRoles,
+            String methodKey) {
+        if (s == null || emptyToNull(s.sectionKey()) == null) {
+            throw new DomainValidationException(
+                    "sectionKey must not be blank", INVALID_CODE, Map.of(FIELD, SECTION_KEY_JSON_FIELD));
+        }
+        var key = s.sectionKey().trim();
+        requireUnder(key, SECTION_KEY_MAX, SECTION_KEY_JSON_FIELD);
+        if (!seenKeys.add(key)) {
+            throw new DomainValidationException(
+                    "Duplicate protocol plan sectionKey: " + key,
+                    "research_run_protocol_plan_duplicate_section_key",
+                    Map.of(SECTION_KEY_JSON_FIELD, key));
+        }
+        if (s.sectionKind() == null) {
+            throw new DomainValidationException(
+                    "sectionKind must not be null", INVALID_CODE, Map.of(FIELD, SECTION_KIND_FIELD));
+        }
+        if (emptyToNull(s.contentSummary()) == null) {
+            throw new DomainValidationException(
+                    "contentSummary must not be blank", INVALID_CODE, Map.of(FIELD, "contentSummary"));
+        }
+        requireUnder(s.contentSummary(), SUMMARY_MAX, "contentSummary");
+        var isTaxonomySourceRoleSection = isTaxonomy && s.sectionKind() == ProtocolSectionKind.SOURCE_ROLES;
+        if (s.sourceRole() != null && !isTaxonomySourceRoleSection) {
+            throw new DomainValidationException(
+                    "sourceRole is only permitted on SOURCE_ROLES sections of the taxonomy-development method",
+                    "research_run_protocol_plan_source_role_not_allowed",
+                    Map.of(SECTION_KEY_JSON_FIELD, key, METHOD_KEY_FIELD, methodKey == null ? "" : methodKey));
+        }
+        // ADR-083 §3 — taxonomy source-role separation is the hard boundary case: a
+        // SOURCE_ROLES section must name the role it carries so background/framing,
+        // methodology, and validation material cannot collapse into the taxonomy corpus.
+        if (isTaxonomySourceRoleSection) {
+            if (s.sourceRole() == null) {
+                throw new DomainValidationException(
+                        "A taxonomy-development SOURCE_ROLES section must declare a sourceRole",
+                        "research_run_protocol_plan_source_role_required",
+                        Map.of(SECTION_KEY_JSON_FIELD, key));
+            }
+            taxonomySourceRoles.add(s.sourceRole());
+        }
+        return s.sectionKind();
+    }
+
+    /**
+     * ADR-083 §3 — the accepted taxonomy plan must actually carry every distinct
+     * source role, not merely permit them; otherwise later stages cannot rely on the
+     * plan to keep background sources from supporting taxonomy claims.
+     */
+    private void requireTaxonomySourceRolesComplete(EnumSet<ProtocolSourceRole> taxonomySourceRoles, String methodKey) {
+        var requiredRoles = EnumSet.allOf(ProtocolSourceRole.class);
+        if (!taxonomySourceRoles.containsAll(requiredRoles)) {
+            var missingRoles = EnumSet.copyOf(requiredRoles);
+            missingRoles.removeAll(taxonomySourceRoles);
+            throw new DomainValidationException(
+                    "Taxonomy-development protocol plan must separate all source roles across SOURCE_ROLES"
+                            + " sections; missing: " + missingRoles,
+                    "research_run_protocol_plan_source_roles_incomplete",
+                    Map.of(
+                            METHOD_KEY_FIELD,
+                            methodKey == null ? "" : methodKey,
+                            "missing_source_roles",
+                            missingRoles.toString()));
+        }
+    }
+
+    /** Persists the plan aggregate (plan, coverage rows, section rows) in one transaction. */
+    private ProtocolPlanAggregate persistProtocolPlan(
+            ResearchRun run,
+            MethodologyRequirementsContract contract,
+            ResearchRunArtifact artifact,
+            ResearchRunMethodologySelection selection,
+            String schemaVersion,
+            RecordProtocolPlanCommand command) {
+        var actor = currentActor();
+        var plan = new ProtocolPlan(
+                run,
+                contract,
+                artifact.getId(),
+                artifact.getAttemptNo(),
+                schemaVersion,
+                selection.getMethodKey(),
+                selection.getProfileVersion(),
+                actor);
+        var savedPlan = protocolPlanRepository.save(plan);
+
+        var savedCoverages = new ArrayList<ProtocolPlanCoverage>();
+        if (command.coverages() != null) {
+            for (var c : command.coverages()) {
+                savedCoverages.add(protocolPlanCoverageRepository.save(new ProtocolPlanCoverage(
+                        savedPlan,
+                        c.contractEntryKey().trim(),
+                        c.disposition(),
+                        emptyToNull(c.answerSummary()),
+                        c.answerProvenance(),
+                        emptyToNull(c.rationale()),
+                        c.deferredToStage(),
+                        emptyToNull(c.decisionReference()),
+                        actor)));
+            }
+        }
+
+        var savedSections = new ArrayList<ProtocolPlanSection>();
+        for (var s : command.sections()) {
+            savedSections.add(protocolPlanSectionRepository.save(new ProtocolPlanSection(
+                    savedPlan,
+                    s.sectionKey().trim(),
+                    s.sectionKind(),
+                    s.sourceRole(),
+                    s.contentSummary().trim(),
+                    actor)));
+        }
+
+        log.info(
+                "research_run_protocol_plan_recorded: project={} run={} artifact={} attempt={} coverages={} sections={}",
+                run.getProject().getIdentifier(),
+                run.getId(),
+                artifact.getId(),
+                artifact.getAttemptNo(),
+                savedCoverages.size(),
+                savedSections.size());
+
+        return new ProtocolPlanAggregate(savedPlan, savedCoverages, savedSections);
+    }
+
+    /**
+     * GC-RSCH-F008 — read the active protocol plan (the surface source search
+     * and later stages consume). Resolves the ACTIVE {@code PROTOCOL_PLAN}
+     * artifact, then the plan tied to that attempt, and bundles its coverage
+     * and section rows. {@link NotFoundException} when no plan has been
+     * recorded.
+     */
+    @Transactional(readOnly = true)
+    public ProtocolPlanAggregate getProtocolPlan(UUID projectId, UUID runId) {
+        requireRun(projectId, runId);
+        var artifact = artifactRepository
+                .findByResearchRunIdAndArtifactTypeAndStatus(
+                        runId, ResearchArtifactType.PROTOCOL_PLAN, ResearchArtifactStatus.ACTIVE)
+                .orElseThrow(() -> new NotFoundException("No protocol plan for run " + runId));
+        var plan = protocolPlanRepository
+                .findByArtifactId(artifact.getId())
+                .orElseThrow(() -> new NotFoundException("No protocol plan for run " + runId));
+        var coverages = protocolPlanCoverageRepository.findByProtocolPlanId(plan.getId());
+        var sections = protocolPlanSectionRepository.findByProtocolPlanId(plan.getId());
+        return new ProtocolPlanAggregate(plan, coverages, sections);
+    }
+
+    /**
+     * GC-RSCH-F008 / ADR-083 §2 — the {@code SOURCE_SEARCH} durable gate: an
+     * active {@code PROTOCOL_PLAN} artifact is not enough on its own. The
+     * structured protocol plan behind it must exist and carry no unresolved
+     * {@code BLOCKING_DECISION_REQUIRED} coverage, or advancing past {@code
+     * PROTOCOL_PLANNING} is rejected regardless of caller (closes the bypass a
+     * caller could otherwise reach by invoking a lower-level action directly).
+     */
+    private void requireProtocolPlanNotBlocking(ResearchRunArtifact protocolPlanArtifact) {
+        var plan = protocolPlanRepository.findByArtifactId(protocolPlanArtifact.getId());
+        if (plan.isEmpty()) {
+            throw new DomainValidationException(
+                    "Cannot start SOURCE_SEARCH: no protocol plan has been recorded for the active PROTOCOL_PLAN"
+                            + " artifact",
+                    "research_run_protocol_plan_blocking",
+                    Map.of());
+        }
+        var blocking = protocolPlanCoverageRepository
+                .findByProtocolPlanId(plan.get().getId())
+                .stream()
+                .filter(c -> c.getDisposition() == ProtocolCoverageDisposition.BLOCKING_DECISION_REQUIRED)
+                .map(ProtocolPlanCoverage::getContractEntryKey)
+                .toList();
+        if (!blocking.isEmpty()) {
+            throw new DomainValidationException(
+                    "Cannot start SOURCE_SEARCH: protocol plan has unresolved BLOCKING_DECISION_REQUIRED coverage",
+                    "research_run_protocol_plan_blocking",
+                    Map.of("blocking_entry_keys", String.join(",", blocking)));
         }
     }
 

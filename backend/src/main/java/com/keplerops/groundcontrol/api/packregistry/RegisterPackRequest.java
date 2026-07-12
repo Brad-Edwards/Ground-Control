@@ -1,6 +1,5 @@
 package com.keplerops.groundcontrol.api.packregistry;
 
-import com.keplerops.groundcontrol.api.controlpacks.ControlPackEntryDefinitionRequest;
 import com.keplerops.groundcontrol.domain.packregistry.state.PackType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -20,7 +19,5 @@ public record RegisterPackRequest(
         Map<String, Object> signatureInfo,
         Map<String, Object> compatibility,
         @Valid List<PackDependencyRequest> dependencies,
-        @Valid List<ControlPackEntryDefinitionRequest> controlPackEntries,
-        @Valid List<ThreatRuleEntryDefinitionRequest> threatRuleEntries,
         Map<String, Object> provenance,
         Map<String, Object> registryMetadata) {}

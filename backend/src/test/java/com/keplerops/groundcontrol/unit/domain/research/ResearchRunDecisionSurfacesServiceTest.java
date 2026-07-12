@@ -3,6 +3,7 @@ package com.keplerops.groundcontrol.unit.domain.research;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -147,7 +148,22 @@ class ResearchRunDecisionSurfacesServiceTest {
                 projectService,
                 selectionRepository,
                 sourceRepository,
-                methodologyCatalog);
+                methodologyCatalog,
+                mock(
+                        com.keplerops.groundcontrol.domain.research.repository.MethodologyRequirementsContractRepository
+                                .class),
+                mock(
+                        com.keplerops.groundcontrol.domain.research.repository
+                                .MethodologyRequirementsContractEntryRepository.class),
+                mock(
+                        com.keplerops.groundcontrol.domain.research.repository
+                                .MethodologyRequirementsContractEntrySourceLinkRepository.class),
+                mock(
+                        com.keplerops.groundcontrol.domain.research.repository
+                                .MethodologyRequirementsContractRejectedAlternativeRepository.class),
+                mock(com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanRepository.class),
+                mock(com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanCoverageRepository.class),
+                mock(com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanSectionRepository.class));
         project = new Project("research-p", "Research Project", ProjectType.RESEARCH);
         TestUtil.setField(project, "id", PROJECT_ID);
         when(projectService.getById(PROJECT_ID)).thenReturn(project);

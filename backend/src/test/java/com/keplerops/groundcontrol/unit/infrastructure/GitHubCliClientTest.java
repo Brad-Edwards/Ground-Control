@@ -259,6 +259,14 @@ class GitHubCliClientTest {
         }
 
         @Test
+        void fetchPullRequestRejectsNonPositiveNumberBeforeAnyGhCall() {
+            var client = new GitHubCliClient(new ObjectMapper(), "gh");
+            assertThatThrownBy(() -> client.fetchPullRequest("acme", "repo", 0))
+                    .isInstanceOf(GroundControlException.class)
+                    .hasMessageContaining("positive");
+        }
+
+        @Test
         void acceptsValidRepoSlug() {
             GitHubCliClient.validateRepoSlug("KeplerOps/Ground-Control");
         }

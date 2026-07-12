@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gc.workflow.close-issue.v1",
+  "title": "Close-issue activity input and output",
+  "description": "Phase E merge-gated issue close. Backed by the GitHub workflow port; idempotent on an already-closed issue.",
+  "x-ground-control-invariants": [
+    {
+      "id": "gc.workflow.close-issue.record-schema-conformance",
+      "description": "Close-issue records tagged x-gc-record serialize to documents valid against this schema.",
+      "enforcedBy": [
+        "backend/src/test/java/com/keplerops/groundcontrol/unit/infrastructure/temporal/implement/WorkflowContractConformanceTest.java::workflowPayloadRecordsConformToSchemas"
+      ]
+    }
+  ],
+  "$defs": {
+    "CloseIssueInput": {
+      "x-gc-record": "CloseIssueInput",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "issueNumber", "prNumber", "idempotencyKey"],
+      "properties": {
+        "repository": { "type": "object" },
+        "issueNumber": { "type": "integer", "minimum": 1 },
+        "prNumber": { "type": "integer", "minimum": 1 },
+        "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "CloseIssueResult": {
+      "x-gc-record": "CloseIssueResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["closed", "alreadyClosed"],
+      "properties": {
+        "closed": { "type": "boolean" },
+        "alreadyClosed": { "type": "boolean" }
+      }
+    }
+  }
+}

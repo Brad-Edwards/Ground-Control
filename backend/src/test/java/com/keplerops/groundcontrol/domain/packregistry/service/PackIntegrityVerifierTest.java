@@ -4,10 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.keplerops.groundcontrol.domain.controls.state.ControlFunction;
 import com.keplerops.groundcontrol.domain.packregistry.model.PackDependency;
 import com.keplerops.groundcontrol.domain.packregistry.model.PackRegistryEntry;
-import com.keplerops.groundcontrol.domain.packregistry.model.RegisteredControlPackEntry;
 import com.keplerops.groundcontrol.domain.packregistry.state.PackType;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import java.nio.charset.StandardCharsets;
@@ -203,39 +201,19 @@ class PackIntegrityVerifierTest {
         entry.setPublisher("   ");
         entry.setDescription("");
         entry.setDependencies(List.of());
-        entry.setControlPackEntries(List.of(new RegisteredControlPackEntry(
-                "AC-1",
-                "Access Control Policy",
-                ControlFunction.DETECTIVE,
-                "Policy definition",
-                "Define baseline policy",
-                "Security",
-                "Global",
-                Map.of("nested", Map.of("b", 2, "a", 1)),
-                Map.of("states", List.of(ControlFunction.PREVENTIVE, ControlFunction.DETECTIVE)),
-                "Access Control",
-                "NIST",
-                null,
-                List.of(),
-                List.of())));
+        entry.setCompatibility(Map.of("nested", Map.of("b", 2, "a", 1)));
         entry.setRegistryMetadata(Map.of());
 
         var payload = new String(verifier.canonicalPayloadBytes(entry), StandardCharsets.UTF_8);
         @SuppressWarnings("unchecked")
         var root = (Map<String, Object>) OBJECT_MAPPER.readValue(payload, Map.class);
         @SuppressWarnings("unchecked")
-        var controlEntries = (List<Map<String, Object>>) root.get("controlPackEntries");
+        var compatibility = (Map<String, Object>) root.get("compatibility");
         @SuppressWarnings("unchecked")
-        var nestedFactors = (Map<String, Object>) controlEntries.getFirst().get("methodologyFactors");
-        @SuppressWarnings("unchecked")
-        var nestedMap = (Map<String, Object>) nestedFactors.get("nested");
-        @SuppressWarnings("unchecked")
-        var effectiveness = (Map<String, Object>) controlEntries.getFirst().get("effectiveness");
+        var nestedMap = (Map<String, Object>) compatibility.get("nested");
 
         assertThat(root).doesNotContainKeys("publisher", "description", "dependencies", "registryMetadata");
-        assertThat(controlEntries.getFirst()).containsEntry("controlFunction", "DETECTIVE");
         assertThat(nestedMap).containsEntry("a", 1).containsEntry("b", 2);
-        assertThat(effectiveness).containsEntry("states", List.of("PREVENTIVE", "DETECTIVE"));
     }
 
     @Test
@@ -327,27 +305,12 @@ class PackIntegrityVerifierTest {
 
     private PackRegistryEntry makeEntry(String packId) {
         var project = new Project("ground-control", "Ground Control");
-        var entry = new PackRegistryEntry(project, packId, PackType.CONTROL_PACK, "1.0.0");
+        var entry = new PackRegistryEntry(project, packId, PackType.CUSTOM, "1.0.0");
         entry.setPublisher("NIST");
         entry.setDescription("NIST controls");
         entry.setSourceUrl("https://registry.example.com/" + packId);
         entry.setCompatibility(Map.of("minVersion", "0.1.0"));
         entry.setDependencies(List.of(new PackDependency("foundation-pack", "^1.0.0")));
-        entry.setControlPackEntries(List.of(new RegisteredControlPackEntry(
-                "AC-1",
-                "Access Control Policy",
-                ControlFunction.PREVENTIVE,
-                "Policy definition",
-                "Define baseline policy",
-                "Security",
-                "Global",
-                null,
-                null,
-                "Access Control",
-                "NIST",
-                null,
-                null,
-                null)));
         entry.setRegistryMetadata(Map.of("channel", "stable"));
         return entry;
     }

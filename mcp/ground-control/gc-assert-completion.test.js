@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import {
-  buildGrcScreeningRecord,
   runPostFinalReport,
   runAssertCompletion,
   validateFinalReportInput,
@@ -258,68 +257,14 @@ describe("runAssertCompletion — traceability assertion fails", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test 2: GRC assertion fails → ok:false, traceability marker posted, no report
-// ---------------------------------------------------------------------------
-
-describe("runAssertCompletion — GRC assertion fails", () => {
-  it("returns ok:false, traceability ok:true in assertions, grc ok:false, no report", async () => {
-    // Empty requirements so traceability passes (no REST calls needed for empty reqs).
-    // But no GRC screening record exists on the issue thread → GRC fails.
-    const shim = makeCompletionShimRepo({ comments: [] });
-    // For empty requirements, traceability calls the orphan check via
-    // getTraceabilityByArtifact("/api/v1/requirements/traceability/by-artifact").
-    // Mock it to return empty (no orphaned IMPLEMENTS links).
-    const restore = mockFetchForGrc([
-      ["/api/v1/requirements/traceability/by-artifact", async () => ({ body: [] })],
-    ]);
-    try {
-      const r = await withShimPath(shim.binDir, () =>
-        runAssertCompletion({
-          repoPath: shim.repoDir,
-          issueNumber: 1103,
-          prNumber: 42,
-          requirements: [],
-          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
-          ciStatus: "green",
-          sonarStatus: "skipped",
-          plainEnglishOutcome: "Consolidates Phase D completion into a single tool call.",
-        }),
-      );
-      assert.equal(r.ok, false);
-      assert.equal(r.final_report, null);
-      assert.ok(Array.isArray(r.assertions));
-      // Traceability should have run and (possibly) passed
-      const traceEntry = r.assertions.find((a) => a.name === "traceability_reconciled");
-      assert.ok(traceEntry, `expected traceability_reconciled in assertions; got: ${JSON.stringify(r.assertions)}`);
-      // GRC should have run and failed
-      const grcEntry = r.assertions.find((a) => a.name === "grc_reconciled");
-      assert.ok(grcEntry, `expected grc_reconciled in assertions; got: ${JSON.stringify(r.assertions)}`);
-      assert.equal(grcEntry.ok, false);
-    } finally {
-      restore();
-      shim.cleanup();
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Test 3: happy path — no in-scope requirements, not_security_relevant verdict,
-// ci green/sonar skipped, codex review present → ok:true
+// Test 3: happy path — no in-scope requirements, ci green/sonar skipped,
+// codex review present → ok:true (ADR-089 §2: no GRC assertion remains)
 // ---------------------------------------------------------------------------
 
 describe("runAssertCompletion — happy path", () => {
-  it("returns ok:true, 2 assertions both ok, final_report with comment_url", async () => {
-    const screeningBody = buildGrcScreeningRecord({
-      issueNumber: 1103,
-      verdict: "not_security_relevant",
-      rationale: "Doc-only change.",
-      entities_created: [],
-      entities_updated: [],
-      entities_confirmed: [],
-      code_links: [],
-    });
+  it("returns ok:true, 1 assertion ok, final_report with comment_url", async () => {
     const shim = makeCompletionShimRepo({
-      comments: [{ body: screeningBody }],
+      comments: [],
       commentIdSeq: [9500, 9501, 9502],
     });
     // For empty requirements, traceability calls the orphan check via
@@ -343,11 +288,9 @@ describe("runAssertCompletion — happy path", () => {
       );
       assert.equal(r.ok, true, `expected ok:true; got: ${JSON.stringify(r)}`);
       assert.ok(Array.isArray(r.assertions));
-      assert.equal(r.assertions.length, 2);
+      assert.equal(r.assertions.length, 1);
       assert.equal(r.assertions[0].name, "traceability_reconciled");
       assert.equal(r.assertions[0].ok, true);
-      assert.equal(r.assertions[1].name, "grc_reconciled");
-      assert.equal(r.assertions[1].ok, true);
       assert.ok(r.final_report != null);
       assert.ok(typeof r.final_report.comment_url === "string");
     } finally {
@@ -392,7 +335,7 @@ describe("runPostFinalReport — internalVerifiedPhases union", () => {
           ciStatus: "green",
           sonarStatus: "skipped",
           plainEnglishOutcome: "Consolidates Phase D completion into a single tool call.",
-          internalVerifiedPhases: ["traceability_reconciled", "grc_reconciled"],
+          internalVerifiedPhases: ["traceability_reconciled"],
         }),
       );
       assert.equal(r.ok, true, `expected ok:true with internalVerifiedPhases; got: ${JSON.stringify(r)}`);
@@ -494,17 +437,8 @@ describe("runPostFinalReport — no internalVerifiedPhases refuses when markers 
 
 describe("runAssertCompletion — post_merge refuses when PR not merged", () => {
   it("returns ok:false completion_pr_not_merged, empty assertions, final_report null", async () => {
-    const screeningBody = buildGrcScreeningRecord({
-      issueNumber: 963,
-      verdict: "not_security_relevant",
-      rationale: "Doc-only change.",
-      entities_created: [],
-      entities_updated: [],
-      entities_confirmed: [],
-      code_links: [],
-    });
     // PR #42 is linked but NOT merged (state OPEN, mergedAt null).
-    const shim = makeCompletionShimRepo({ comments: [{ body: screeningBody }], prMerged: false });
+    const shim = makeCompletionShimRepo({ comments: [], prMerged: false });
     try {
       const r = await withShimPath(shim.binDir, () =>
         runAssertCompletion({
@@ -535,25 +469,15 @@ describe("runAssertCompletion — post_merge refuses when PR not merged", () => 
 
 // ---------------------------------------------------------------------------
 // Test 8: pre_merge readiness — posts ready-for-review record, no merge gate,
-// no reconciliation assertions (issue #963)
+// no reconciliation assertions (issue #963; ADR-089 §2 removed the GRC
+// pre-merge assertion, so pre_merge now runs zero assertions).
 // ---------------------------------------------------------------------------
 
 describe("runAssertCompletion — pre_merge readiness report", () => {
-  it("returns ok:true phase:pre_merge with readiness_report; asserts GRC screening but NOT traceability; no merge gate", async () => {
-    // GRC screening record present (so the pre-merge GRC assertion passes), no
-    // traceability markers, and an UNMERGED PR. pre_merge must succeed: it skips
-    // the merge gate and the traceability assertion, but DOES prove the screening
-    // record exists (issue #963 codex cycle-1 one-off finding).
-    const screeningBody = buildGrcScreeningRecord({
-      issueNumber: 963,
-      verdict: "not_security_relevant",
-      rationale: "Workflow-ordering change; no security surface.",
-      entities_created: [],
-      entities_updated: [],
-      entities_confirmed: [],
-      code_links: [],
-    });
-    const shim = makeCompletionShimRepo({ comments: [{ body: screeningBody }], prMerged: false });
+  it("returns ok:true phase:pre_merge with readiness_report; no assertions run; no merge gate", async () => {
+    // No traceability markers and an UNMERGED PR. pre_merge must still succeed:
+    // it skips the merge gate and every reconciliation assertion.
+    const shim = makeCompletionShimRepo({ comments: [], prMerged: false });
     try {
       const r = await withShimPath(shim.binDir, () =>
         runAssertCompletion({
@@ -571,42 +495,10 @@ describe("runAssertCompletion — pre_merge readiness report", () => {
       assert.equal(r.ok, true, `expected ok:true; got: ${JSON.stringify(r)}`);
       assert.equal(r.phase, "pre_merge");
       assert.ok(Array.isArray(r.assertions));
-      // Exactly the GRC assertion runs pre-merge; traceability does not.
-      assert.equal(r.assertions.length, 1);
-      assert.equal(r.assertions[0].name, "grc_reconciled");
-      assert.equal(r.assertions[0].ok, true);
-      assert.ok(!r.assertions.some((a) => a.name === "traceability_reconciled"));
+      assert.equal(r.assertions.length, 0, "pre_merge runs no reconciliation assertions");
       assert.equal(r.final_report, null);
       assert.ok(r.readiness_report != null);
       assert.ok(typeof r.readiness_report.comment_url === "string");
-    } finally {
-      shim.cleanup();
-    }
-  });
-
-  it("refuses readiness when the Step 3.5 GRC screening record is missing", async () => {
-    // No screening record on the thread → the pre-merge GRC assertion fails, so
-    // readiness must NOT be posted (issue #963 codex cycle-1 one-off finding).
-    const shim = makeCompletionShimRepo({ comments: [], prMerged: false });
-    try {
-      const r = await withShimPath(shim.binDir, () =>
-        runAssertCompletion({
-          repoPath: shim.repoDir,
-          issueNumber: 963,
-          prNumber: 42,
-          requirements: [],
-          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
-          ciStatus: "green",
-          sonarStatus: "skipped",
-          plainEnglishOutcome: "Ready for review; reconciliation runs on merge.",
-          phase: "pre_merge",
-        }),
-      );
-      assert.equal(r.ok, false);
-      assert.equal(r.final_report, null);
-      const grcEntry = r.assertions.find((a) => a.name === "grc_reconciled");
-      assert.ok(grcEntry, `expected grc_reconciled assertion; got ${JSON.stringify(r.assertions)}`);
-      assert.equal(grcEntry.ok, false);
     } finally {
       shim.cleanup();
     }
@@ -619,17 +511,7 @@ describe("runAssertCompletion — pre_merge readiness report", () => {
 
 describe("runAssertCompletion — pre_merge enforces CI-green gate", () => {
   it("returns ok:false final_report_ci_not_green when CI is red", async () => {
-    // Screening record present so the GRC assertion passes and CI is the failure.
-    const screeningBody = buildGrcScreeningRecord({
-      issueNumber: 963,
-      verdict: "not_security_relevant",
-      rationale: "Workflow-ordering change; no security surface.",
-      entities_created: [],
-      entities_updated: [],
-      entities_confirmed: [],
-      code_links: [],
-    });
-    const shim = makeCompletionShimRepo({ comments: [{ body: screeningBody }] });
+    const shim = makeCompletionShimRepo({ comments: [] });
     try {
       const r = await withShimPath(shim.binDir, () =>
         runAssertCompletion({

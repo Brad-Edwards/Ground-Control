@@ -104,6 +104,11 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                 }
 
                 @Override
+                public GitHubPullRequestData fetchPullRequest(String owner, String repo, int number) {
+                    throw new UnsupportedOperationException("Not used in requirements E2E tests");
+                }
+
+                @Override
                 public GitHubIssueData createIssue(String repo, String title, String body, List<String> labels) {
                     throw new UnsupportedOperationException("Not used in E2E tests");
                 }
@@ -597,6 +602,27 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "175", // V175: create research_run_methodology_selection (#1005, GC-RSCH-F006)
                         "176", // V176: create research_run_methodology_selection_audit (#1005 audit parity)
                         "177", // V177: create research_run_methodology_source (#1005, GC-RSCH-F006)
-                        "178"); // V178: create research_run_methodology_source_audit (#1005 audit parity)
+                        "178", // V178: create research_run_methodology_source_audit (#1005 audit parity)
+                        "179", // V179: create methodology_requirements_contract (#1006, ADR-080)
+                        "180", // V180: create methodology_requirements_contract_audit (#1006 audit parity)
+                        "181", // V181: create methodology_requirements_contract_entry (#1006, ADR-080)
+                        "182", // V182: create methodology_requirements_contract_entry_source_link (#1006)
+                        "183", // V183: create methodology_requirements_contract_rejected_alternative (#1006)
+                        "184", // V184: create protocol_plan (#1007, ADR-083)
+                        "185", // V185: create protocol_plan_audit (#1007 audit parity)
+                        "186", // V186: create protocol_plan_coverage (#1007, ADR-083)
+                        "187", // V187: create protocol_plan_section (#1007, ADR-083)
+                        "188", // V188: research_run operation policy snapshot (#1008, ADR-086)
+                        "189", // V189: research_run policy snapshot audit (#1008 audit parity)
+                        "190", // V190: research_intake egress policy (#1008, ADR-086)
+                        "191", // V191: research_intake egress policy audit (#1008 audit parity)
+                        "192", // V192: research_run_artifact data class (#1008, ADR-086)
+                        "193", // V193: research_run_artifact data class audit (#1008 audit parity)
+                        "194", // V194: create research_run_operation_authorization (#1008, ADR-086)
+                        "195", // V195: research_run_operation_authorization audit (#1008 audit parity)
+                        "196", // V196: create grc_assessment_run (GC-GRC-016, #1129)
+                        "197", // V197: grc_assessment_run audit (GC-GRC-016 audit parity)
+                        "198", // V198: operator_signal_audit append-only log (GC-O009 (b), #1279)
+                        "199"); // V199: retire GRC product surface (ADR-089, #1346)
     }
 }

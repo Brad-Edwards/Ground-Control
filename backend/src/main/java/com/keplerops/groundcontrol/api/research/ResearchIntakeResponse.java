@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.keplerops.groundcontrol.domain.research.model.AutonomyLevel;
 import com.keplerops.groundcontrol.domain.research.model.ContributionType;
 import com.keplerops.groundcontrol.domain.research.model.IntendedOutput;
+import com.keplerops.groundcontrol.domain.research.model.ResearchEgressAllowance;
 import com.keplerops.groundcontrol.domain.research.model.ResearchIntake;
 import java.time.Instant;
 import java.util.List;
@@ -24,6 +25,7 @@ public record ResearchIntakeResponse(
         AutonomyLevel autonomyLevel,
         List<String> allowedTools,
         String privacyConstraints,
+        List<ResearchEgressAllowance> egressPolicy,
         Long budgetTokens,
         Integer budgetWallClockMinutes,
         Long budgetCostUsdMicros,
@@ -40,6 +42,7 @@ public record ResearchIntakeResponse(
                 intake.getAutonomyLevel(),
                 List.copyOf(intake.getAllowedTools()),
                 intake.getPrivacyConstraints(),
+                List.copyOf(intake.getEgressPolicy()),
                 intake.getBudgetTokens(),
                 intake.getBudgetWallClockMinutes(),
                 intake.getBudgetCostUsdMicros(),

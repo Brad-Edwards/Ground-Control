@@ -222,6 +222,66 @@ enforce the `api/ -> domain/ <- infrastructure/` dependency boundary.
   existing `/api/v1/**` error/security contract.
 - Treating Temporal Web as the Ground Control workflow UI.
 
+## Amendment (issue #1280, 2026-07-11): LLM activities and provider boundary implemented
+
+GC-O009 phase 5 implements the "LLM Provider Boundary" section above concretely:
+
+- `domain/llm/` is the Temporal-neutral, provider-neutral port: `LlmProvider`
+  (`complete(LlmCompletionRequest)`, `providerId()`), `LlmCompletionRequest`/
+  `LlmCompletion` (redacted `toString()`—the generated record form would
+  print prompts/completions), `ResolvedLlmRoute` (the closed safe scalar set:
+  contract version, project, stage, tier, canonical provider id, canonical
+  model id, config digest—the only LLM-related shape allowed into Temporal
+  history), `TrustedRouteResolver`, and `PlanPublicationPort`. It reuses
+  `EmbeddingProvider`'s port/adapter direction only, not its API shape (no
+  `isAvailable()` fail-open probe, no un-redacted secret-bearing properties).
+- `infrastructure/llm/` is the adapter side: `LlmProviderRegistry` (a
+  classpath registry keyed by canonical provider id, modeled on
+  `PackTypeHandlerRegistry`—duplicate registration fails fast at
+  construction, an unknown id fails closed with `DomainValidationException`)
+  and `infrastructure/llm/anthropic/AnthropicLlmProvider` (canonical provider
+  id `anthropic`; Spring `RestClient` over an operator-configured HTTPS
+  endpoint, `x-api-key`/`anthropic-version` headers only, bounded
+  connect/read timeouts and output-token/response-size ceilings; never logs
+  or propagates a raw `RestClientResponseException`, provider error body, or
+  header—every failure maps to the existing `DomainValidationException`
+  (non-retryable: 4xx except 429) / `ServiceUnavailableException` (retryable:
+  timeout, connection failure, 429, 5xx) categories, not a parallel hierarchy).
+- Route resolution and plan publication sit behind `TrustedRouteResolver` /
+  `PlanPublicationPort`, whose only production implementations
+  (`BridgePendingRouteResolver`, `BridgePendingPlanPublisher`) fail closed
+  with `ServiceUnavailableException` until the ADR-081 bridge (#1281) adapts
+  the normalized-config handoff and `gc_post_implementation_plan` semantics
+  for Java callers. `WorkflowExecutionService` resolves the `planning`-stage
+  route before `WorkflowControlPort.start`, so every `/implement` start is
+  fail-closed today—a deliberate, tested, secure production posture, not a
+  placeholder.
+- `ImplementContentActivitiesImpl` composes collaborators so the provider
+  dependency reaches only `authorPlan` (via `LlmPlanAuthor`, which resolves
+  the provider for the already-bound route, builds the prompt inside the
+  activity process, and hands the completion to `PlanPublicationPort`,
+  returning only `(posted, commentId)`); the other content-activity seams
+  fail closed with the same stable `ServiceUnavailableException` posture
+  pending #1281. `ArchitectureLlmBoundaryTest` proves `ImplementActivities`/
+  `ImplementActivitiesImpl` cannot reach `domain.llm`/`infrastructure.llm`,
+  and that no class outside `infrastructure.llm.anthropic` calls
+  `AnthropicLlmProvider` directly. A dedicated `LlmActivityOptions` (not
+  `ImplementActivityOptions.standard()`/`longRunning()`) bounds the seam's
+  timeout/retry policy and marks `DomainValidationException` non-retryable.
+- `contracts/schemas/workflow/content-activities.v2.schema.json` retires
+  `v1`: `AuthorPlanInput` gains required `project`/`route` fields (see
+  `contracts/CHANGES.md` 0.3.0); `AuthorPlanResult(posted, commentId)` is
+  unchanged. `ImplementWorkflowInput.route` is an additive, optional field on
+  `implement-workflow.v1`, bound once at start time.
+- Non-leak evidence runs in the normal unit/Sonar lane (no Testcontainers):
+  `AnthropicLlmProviderTest` proves sentinel prompt/completion/key/error-body
+  values never appear in thrown messages or captured logs;
+  `LlmContentActivitySentinelNonLeakageTest` runs the real
+  `ImplementContentActivitiesImpl` against a fake provider/publisher and
+  proves a sentinel completion (and a simulated redacted provider failure)
+  is absent from the serialized Temporal execution history, the propagated
+  workflow failure, and captured Logback events.
+
 ## Related Requirements
 
 - GC-O009 Workflow Orchestration via Temporal

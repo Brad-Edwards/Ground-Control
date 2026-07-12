@@ -196,7 +196,32 @@ engine.
 
 ## Amendments
 
+**2026-07-11 (issue #1280, ADR-028 LLM provider boundary): canonical `anthropic` provider id.**
+`routing.*` and `routing.stages.*.provider` now accept the canonical LLM
+provider id `anthropic` alongside the legacy label `claude`; the parser
+(`normalizeRoutingConfig`/`normalizeRoutingStageConfig`/
+`resolveWorkflowRouteFromConfig` in `mcp/ground-control/lib.js`) normalizes
+`claude` to `anthropic` in every output (`ROUTING_PROVIDERS`,
+`ROUTING_PROVIDER_ALIASES`, `normalizeProviderId`), so this remains the one
+parser that owns the alias (ADR-027's canonical-source rule) and the Java
+backend never repeats or guesses it. Provider and model stay distinct
+concepts: the provider is `anthropic`; `claude-*` are model ids validated the
+same way regardless of which label selected the provider. This does not
+change stage/tier vocabulary, `agent`/`fallback` semantics, or strict
+unknown-key rejection.
+
 **2026-05-26 (issue #989).** The `workflow.integration_manager` block is now a recognized member of the `workflow.*` schema. Keys: `approval_label` (string, default `approved-for-integration`), `ordering` (enum `pr_number_asc` / `pr_number_desc` / `approved_at_asc`, default `pr_number_asc`), `max_queue_size` (int [1, 100], default 20). The parser (`normalizeIntegrationManagerConfig` in `mcp/ground-control/lib.js`) enforces the same strict-unknown-key rule as the rest of the workflow config. See GC-O011.
+
+**2026-07-03 (issue #1271, ADR-081 program).** ADR-081 confirms this packaging
+as the interim distribution model for the duration of the Temporal transition
+and locks the configuration boundary for the engine: the GC-O009 Temporal
+workflow consumes the `.ground-control.yaml` shape through the existing
+`gc_get_repo_ground_control_context` parser boundary, and no second workflow
+DSL or parallel configuration schema may be introduced (restating ADR-028).
+The "Relation to GC-O009" section stands; per-phase ownership transfer from
+the skill lane to Temporal follows ADR-081's cutover model, and this ADR's
+canonical-source and gate-semantics rules apply unchanged until a phase's
+transfer is recorded.
 
 **2026-05-19 (issue #931): `architecture.vocabulary` schema extension.** The
 `.ground-control.yaml` schema gains an optional top-level `architecture` block

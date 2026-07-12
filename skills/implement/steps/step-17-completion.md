@@ -8,8 +8,8 @@ tier: medium
 
 This step calls `gc_assert_completion`, and it is invoked **twice across the run** with a different `phase` (issue #963):
 
-- **Phase D terminal - `phase="pre_merge"`.** Runs after Step 11 (SonarCloud) once all automated gates are green. It posts a **readiness record** (a "Ready for review" comment carrying a `ready_for_review` phase marker - *not* a `gc:final-report` marker). It **does** assert the Step 3.5 GRC screening record exists and reconciles (a Phase A fact, independent of merge), but it does **not** run the traceability assertion, because the requirement transition and traceability reconciliation have not happened yet. Then the run **STOPS** for the user to review and merge the PR. This is the single human touchpoint.
-- **Phase E completion - `phase="post_merge"` (default).** Runs after the user merges, following Step 15 (transition) and Step 16 (reconcile). It is **merge-gated**: it refuses with `completion_pr_not_merged` unless the linked PR is merged, then runs the traceability + GRC assertions and posts the reconciled final report. Steps 17–19 from the original workflow are collapsed into this single tool call per issue #1103.
+- **Phase D terminal - `phase="pre_merge"`.** Runs after Step 11 (SonarCloud) once all automated gates are green. It posts a **readiness record** (a "Ready for review" comment carrying a `ready_for_review` phase marker - *not* a `gc:final-report` marker). It does **not** run the traceability assertion, because the requirement transition and traceability reconciliation have not happened yet. Then the run **STOPS** for the user to review and merge the PR. This is the single human touchpoint.
+- **Phase E completion - `phase="post_merge"` (default).** Runs after the user merges, following Step 15 (transition) and Step 16 (reconcile). It is **merge-gated**: it refuses with `completion_pr_not_merged` unless the linked PR is merged, then runs the traceability assertion and posts the reconciled final report. Steps 17–19 from the original workflow are collapsed into this single tool call per issue #1103.
 
 The pre-merge/post-merge split (issue #963) exists so the requirement `DRAFT→ACTIVE` transition, traceability links, and the durable final report never land ahead of shipped code - the same coherence the #1058 post-merge close already enforces.
 
@@ -23,9 +23,7 @@ Call `gc_assert_completion` with `phase="post_merge"` (the default) once Step 15
 
 1. **Traceability assertion** (`gc_assert_traceability_reconciled`): re-fetches each in-scope requirement and its IMPLEMENTS/TESTS links from the Ground Control REST API. Posts the `traceability_reconciled` phase marker on success. Returns `ok:false` with `error: "traceability_not_reconciled"` on failure - loop back to Step 16 to fix.
 
-2. **GRC reconciliation assertion** (`gc_assert_grc_reconciled`): reads the GRC screening record written by `gc_post_grc_screening` (Step 3.5) from the issue thread and verifies it server-side. For `security_relevant` verdicts, every entity ref and CODE link must resolve. Posts the `grc_reconciled` phase marker on success. On failure: if `error: "grc_screening_record_missing"`, loop back to Step 3.5; if `error: "grc_not_reconciled"`, fix the entity/link registrations in Ground Control.
-
-3. **Final report** (`gc_post_final_report`): renders the structured final-report Markdown and posts it as a comment. The `internalVerifiedPhases` union avoids a GitHub read-after-write race on the markers just posted.
+2. **Final report** (`gc_post_final_report`): renders the structured final-report Markdown and posts it as a comment. The `internalVerifiedPhases` union avoids a GitHub read-after-write race on the marker just posted.
 
 The tool returns `{ok, assertions[], final_report}`. The `assertions` array contains one entry per assertion: `{name, ok, comment_url, comment_id}`.
 
@@ -49,7 +47,7 @@ Pass to `gc_assert_completion`:
 
 ## The pre-merge readiness call (`phase="pre_merge"`)
 
-At the end of Phase D (after Step 11), call `gc_assert_completion` with `phase="pre_merge"` and the same inputs as above **except** there is no reconciliation yet - pass `requirements` (their current `DRAFT`/`ACTIVE` status), `files`, `reviews`, `ci_status`, `sonar_status`, `plan_comment_url`, and `plain_english_outcome`. The tool asserts the GRC screening record (refusing readiness if Step 3.5's record is missing or unreconciled), skips the traceability assertion and the merge gate, still enforces every input gate (CI green, Sonar pass/legit-skip, codex review present, sensitive/reserved/defer scrubs, body size), and posts the readiness record. It returns `{ok, phase:"pre_merge", readiness_report:{comment_url, comment_id}, assertions:[{name:"grc_reconciled", ok:true, ...}]}`. **Then STOP** - the run is paused for the user to review and merge. Do not run Steps 15/16/20 in this invocation.
+At the end of Phase D (after Step 11), call `gc_assert_completion` with `phase="pre_merge"` and the same inputs as above **except** there is no reconciliation yet - pass `requirements` (their current `DRAFT`/`ACTIVE` status), `files`, `reviews`, `ci_status`, `sonar_status`, `plan_comment_url`, and `plain_english_outcome`. The tool skips the traceability assertion and the merge gate, still enforces every input gate (CI green, Sonar pass/legit-skip, codex review present, sensitive/reserved/defer scrubs, body size), and posts the readiness record. It returns `{ok, phase:"pre_merge", readiness_report:{comment_url, comment_id}, assertions:[]}`. **Then STOP** - the run is paused for the user to review and merge. Do not run Steps 15/16/20 in this invocation.
 
 ## Label removal (optional best-effort)
 
@@ -68,8 +66,7 @@ If this fails, skip it - do not block on it. The label lifecycle is operational-
   "status": "ok",
   "cached_for_next_step": {
     "assertions": [
-      {"name": "traceability_reconciled", "ok": true, "comment_url": "<URL>"},
-      {"name": "grc_reconciled", "ok": true, "comment_url": "<URL>"}
+      {"name": "traceability_reconciled", "ok": true, "comment_url": "<URL>"}
     ],
     "final_report": {
       "comment_url": "<URL>",

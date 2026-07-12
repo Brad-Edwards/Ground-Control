@@ -271,6 +271,45 @@ public class ResearchRunController {
                 .toList();
     }
 
+    // GC-RSCH-F007 / GC-RSCH-F008 / ADR-080 — structured methodology requirements
+    // contract behind the METHODOLOGY_REQUIREMENTS artifact.
+    @PostMapping("/{id}/methodology/requirements-contract")
+    @ResponseStatus(HttpStatus.CREATED)
+    public MethodologyRequirementsContractResponse recordMethodologyRequirementsContract(
+            @PathVariable UUID id,
+            @Valid @RequestBody RecordMethodologyRequirementsContractRequest request,
+            @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return MethodologyRequirementsContractResponse.from(
+                researchRunService.recordMethodologyRequirementsContract(projectId, id, request.toCommand()));
+    }
+
+    @GetMapping("/{id}/methodology/requirements-contract")
+    public MethodologyRequirementsContractResponse getMethodologyRequirementsContract(
+            @PathVariable UUID id, @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return MethodologyRequirementsContractResponse.from(
+                researchRunService.getMethodologyRequirementsContract(projectId, id));
+    }
+
+    // GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 — structured protocol plan behind
+    // the PROTOCOL_PLAN artifact.
+    @PostMapping("/{id}/protocol-plan")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ProtocolPlanResponse recordProtocolPlan(
+            @PathVariable UUID id,
+            @Valid @RequestBody RecordProtocolPlanRequest request,
+            @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return ProtocolPlanResponse.from(researchRunService.recordProtocolPlan(projectId, id, request.toCommand()));
+    }
+
+    @GetMapping("/{id}/protocol-plan")
+    public ProtocolPlanResponse getProtocolPlan(@PathVariable UUID id, @RequestParam(required = false) String project) {
+        var projectId = projectService.requireProjectId(project);
+        return ProtocolPlanResponse.from(researchRunService.getProtocolPlan(projectId, id));
+    }
+
     @PostMapping("/{id}/stop")
     public ResearchRunResponse stop(@PathVariable UUID id, @RequestParam(required = false) String project) {
         var projectId = projectService.requireProjectId(project);

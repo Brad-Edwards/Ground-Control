@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gc.workflow.git-publish.v1",
+  "title": "Stage/commit/push activity input and output",
+  "description": "Phase C git publish with the pre-commit retry loop (max 5 iterations, GC-O007). Backed by the workspace port; the commit message is bounded, never a secret.",
+  "x-ground-control-invariants": [
+    {
+      "id": "gc.workflow.git-publish.record-schema-conformance",
+      "description": "Git-publish records tagged x-gc-record serialize to documents valid against this schema.",
+      "enforcedBy": [
+        "backend/src/test/java/com/keplerops/groundcontrol/unit/infrastructure/temporal/implement/WorkflowContractConformanceTest.java::workflowPayloadRecordsConformToSchemas"
+      ]
+    }
+  ],
+  "$defs": {
+    "GitPublishInput": {
+      "x-gc-record": "GitPublishInput",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch", "commitMessage", "idempotencyKey"],
+      "properties": {
+        "branch": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "commitMessage": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "maxPrecommitRetries": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "GitPublishResult": {
+      "x-gc-record": "GitPublishResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commitSha", "pushed", "precommitAttempts"],
+      "properties": {
+        "commitSha": { "type": "string", "minLength": 7, "maxLength": 64 },
+        "pushed": { "type": "boolean" },
+        "precommitAttempts": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    }
+  }
+}

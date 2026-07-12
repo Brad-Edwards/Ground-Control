@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gc.workflow.merged-artifacts.v1",
+  "title": "Merged-artifacts observation activity input and output",
+  "description": "Phase E observation of the merged PR's changed files, classified into IMPLEMENTS (code) and TESTS artifacts so traceability reconciliation runs against the merged diff (GC-O007). Backed by the GitHub workflow port; only bounded file paths cross the boundary.",
+  "x-ground-control-invariants": [
+    {
+      "id": "gc.workflow.merged-artifacts.record-schema-conformance",
+      "description": "Merged-artifacts records tagged x-gc-record serialize to documents valid against this schema.",
+      "enforcedBy": [
+        "backend/src/test/java/com/keplerops/groundcontrol/unit/infrastructure/temporal/implement/WorkflowContractConformanceTest.java::workflowPayloadRecordsConformToSchemas"
+      ]
+    }
+  ],
+  "$defs": {
+    "MergedArtifactsInput": {
+      "x-gc-record": "MergedArtifactsInput",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "prNumber"],
+      "properties": {
+        "repository": { "type": "object" },
+        "prNumber": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "MergedArtifactsResult": {
+      "x-gc-record": "MergedArtifactsResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["implementsArtifacts", "testsArtifacts"],
+      "properties": {
+        "implementsArtifacts": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "maxItems": 1000
+        },
+        "testsArtifacts": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "maxItems": 1000
+        }
+      }
+    }
+  }
+}

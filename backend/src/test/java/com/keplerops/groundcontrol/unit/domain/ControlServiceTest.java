@@ -4,7 +4,10 @@ import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.controls.model.Control;
@@ -42,10 +45,6 @@ class ControlServiceTest {
     private com.keplerops.groundcontrol.domain.controls.repository.ControlTestRepository controlTestRepository;
 
     @Mock
-    private com.keplerops.groundcontrol.domain.controls.repository.ControlEffectivenessAssessmentRepository
-            effectivenessAssessmentRepository;
-
-    @Mock
     private com.keplerops.groundcontrol.domain.findings.repository.FindingLinkRepository findingLinkRepository;
 
     @Mock
@@ -53,9 +52,6 @@ class ControlServiceTest {
 
     @Mock
     private ProjectService projectService;
-
-    @Mock
-    private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private ControlService controlService;
@@ -152,6 +148,14 @@ class ControlServiceTest {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // ADR-089: the GC-GRC-011 implementation-evidence precondition on
+    // transitionStatus is retired. The ordinary ControlStatus transition graph
+    // is authoritative again — a shape-valid hop succeeds with no dependency on
+    // ControlLink/ControlTest evidence, and an impossible hop still fails with
+    // the structural invalid_status_transition error.
+    // -------------------------------------------------------------------------
+
     @Nested
     class TransitionStatus {
 
@@ -165,6 +169,41 @@ class ControlServiceTest {
             var result = controlService.transitionStatus(projectId, control.getId(), ControlStatus.PROPOSED);
 
             assertThat(result.getStatus()).isEqualTo(ControlStatus.PROPOSED);
+        }
+
+        @Test
+        void transitionsToImplementedWithNoEvidenceRequired() {
+            // Previously blocked by GC-GRC-011 without a CODE/IMPLEMENTS link and an
+            // efficacy test. That precondition is retired (ADR-089); the ordinary
+            // shape-valid PROPOSED -> IMPLEMENTED hop now succeeds with no evidence
+            // repository interaction at all.
+            var control = makeControl();
+            setField(control, "status", ControlStatus.PROPOSED);
+            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
+                    .thenReturn(Optional.of(control));
+            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = controlService.transitionStatus(projectId, control.getId(), ControlStatus.IMPLEMENTED);
+
+            assertThat(result.getStatus()).isEqualTo(ControlStatus.IMPLEMENTED);
+            verifyNoInteractions(controlLinkRepository, controlTestRepository);
+        }
+
+        @Test
+        void invalidShapeStillThrowsShapeError() {
+            // A transition from DRAFT straight to IMPLEMENTED is structurally invalid
+            // regardless of the retired evidence gate; the ordinary transition graph
+            // still rejects it.
+            var control = makeControl(); // starts in DRAFT
+            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
+                    .thenReturn(Optional.of(control));
+
+            var controlId = control.getId();
+            assertThatThrownBy(() -> controlService.transitionStatus(projectId, controlId, ControlStatus.IMPLEMENTED))
+                    .isInstanceOf(com.keplerops.groundcontrol.domain.exception.DomainValidationException.class)
+                    .extracting("errorCode")
+                    .isEqualTo("invalid_status_transition");
+            verifyNoInteractions(controlLinkRepository, controlTestRepository);
         }
     }
 
@@ -220,8 +259,6 @@ class ControlServiceTest {
                     .thenReturn(java.util.List.of());
             when(controlTestRepository.countByProjectIdAndControlId(projectId, control.getId()))
                     .thenReturn(0L);
-            when(effectivenessAssessmentRepository.countByProjectIdAndControlId(projectId, control.getId()))
-                    .thenReturn(0L);
             when(controlLinkRepository.findByControlId(control.getId())).thenReturn(java.util.List.of());
 
             controlService.delete(projectId, control.getId());
@@ -247,8 +284,6 @@ class ControlServiceTest {
                     .thenReturn(java.util.List.of());
             when(controlTestRepository.countByProjectIdAndControlId(projectId, control.getId()))
                     .thenReturn(0L);
-            when(effectivenessAssessmentRepository.countByProjectIdAndControlId(projectId, control.getId()))
-                    .thenReturn(0L);
             when(controlLinkRepository.findByControlId(control.getId())).thenReturn(outboundLinks);
 
             controlService.delete(projectId, control.getId());
@@ -257,7 +292,7 @@ class ControlServiceTest {
             // delete. Driving outbound link deletes through the repository before
             // deleting the parent closes the parent-delete audit-history gap
             // (cycle-2 pre-push codex review on issue #279).
-            var inOrder = org.mockito.Mockito.inOrder(controlLinkRepository, controlRepository);
+            var inOrder = inOrder(controlLinkRepository, controlRepository);
             inOrder.verify(controlLinkRepository).deleteAll(outboundLinks);
             inOrder.verify(controlRepository).delete(control);
         }
@@ -288,9 +323,8 @@ class ControlServiceTest {
                     .extracting("errorCode")
                     .isEqualTo("control_referenced");
             assertThat(thrown.getDetail()).containsEntry("auditCount", 1);
-            org.mockito.Mockito.verifyNoInteractions(controlLinkRepository);
-            org.mockito.Mockito.verify(controlRepository, org.mockito.Mockito.never())
-                    .delete(control);
+            verifyNoInteractions(controlLinkRepository);
+            verify(controlRepository, never()).delete(control);
         }
 
         @Test
@@ -320,9 +354,8 @@ class ControlServiceTest {
                     .containsEntry("findingCount", 1)
                     .containsEntry("findingUids", (java.io.Serializable) java.util.List.of("FIND-001"));
             // Parent + outbound-link cleanup must be skipped when the guard fires.
-            org.mockito.Mockito.verifyNoInteractions(controlLinkRepository);
-            org.mockito.Mockito.verify(controlRepository, org.mockito.Mockito.never())
-                    .delete(control);
+            verifyNoInteractions(controlLinkRepository);
+            verify(controlRepository, never()).delete(control);
         }
 
         @Test
@@ -330,7 +363,7 @@ class ControlServiceTest {
             // ADR-039: ControlTest rows are audited evidence; cascading them on parent delete
             // would destroy provenance silently, and a raw FK violation would surface as 500.
             // The service uses count-only existence checks (no full-row hydration) and returns
-            // a clean 409 with the dependent counts so the caller can act.
+            // a clean 409 with the dependent count so the caller can act.
             var control = makeControl();
             when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
                     .thenReturn(Optional.of(control));
@@ -345,90 +378,6 @@ class ControlServiceTest {
             assertThatThrownBy(() -> controlService.delete(projectId, control.getId()))
                     .isInstanceOf(com.keplerops.groundcontrol.domain.exception.ConflictException.class)
                     .hasMessageContaining("dependent audit evidence");
-        }
-
-        @Test
-        void rejectsWhenDependentEffectivenessAssessmentsExist() {
-            var control = makeControl();
-            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
-                    .thenReturn(Optional.of(control));
-            when(findingLinkRepository.findFindingUidsByTargetTypeAndTargetEntityIdAndProjectId(
-                            com.keplerops.groundcontrol.domain.findings.state.FindingLinkTargetType.CONTROL,
-                            control.getId(),
-                            projectId))
-                    .thenReturn(java.util.List.of());
-            when(controlTestRepository.countByProjectIdAndControlId(projectId, control.getId()))
-                    .thenReturn(0L);
-            when(effectivenessAssessmentRepository.countByProjectIdAndControlId(projectId, control.getId()))
-                    .thenReturn(2L);
-
-            assertThatThrownBy(() -> controlService.delete(projectId, control.getId()))
-                    .isInstanceOf(com.keplerops.groundcontrol.domain.exception.ConflictException.class)
-                    .hasMessageContaining("dependent audit evidence");
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // GC-T004 / C8 (#863): reassessment publisher coverage
-    // -------------------------------------------------------------------------
-
-    @Nested
-    class ReassessmentEvents {
-
-        @Test
-        void transitionStatusPublishesControlStateChangedEvent() {
-            var control = makeControl();
-            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
-                    .thenReturn(Optional.of(control));
-            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            // DRAFT → PROPOSED is the only valid first hop from the default ControlStatus.
-            var result = controlService.transitionStatus(projectId, control.getId(), ControlStatus.PROPOSED);
-
-            // Assert the state change actually happened (test-quality cycle 1): a
-            // broken implementation that fires the event but fails to apply the
-            // transition would otherwise pass.
-            assertThat(result.getStatus()).isEqualTo(ControlStatus.PROPOSED);
-            verify(eventPublisher)
-                    .publishEvent(any(
-                            com.keplerops.groundcontrol.domain.riskscenarios.events.ControlStateChangedEvent.class));
-        }
-
-        @Test
-        void updateWithEffectivenessChangePublishes() {
-            var control = makeControl();
-            control.setEffectiveness(java.util.Map.of("rating", "LOW"));
-            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
-                    .thenReturn(Optional.of(control));
-            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            var command = new UpdateControlCommand(
-                    null, null, null, null, null, null, null, java.util.Map.of("rating", "HIGH"), null, null);
-            var result = controlService.update(projectId, control.getId(), command);
-
-            // Capture-and-assert the state change (test-quality cycle 1): a broken
-            // implementation that fires the event but fails to set effectiveness
-            // would otherwise pass this and the integration test.
-            assertThat(result.getEffectiveness()).containsEntry("rating", "HIGH");
-            verify(eventPublisher)
-                    .publishEvent(any(
-                            com.keplerops.groundcontrol.domain.riskscenarios.events.ControlStateChangedEvent.class));
-        }
-
-        @Test
-        void updateWithoutEffectivenessChangeDoesNotPublish() {
-            var control = makeControl();
-            control.setEffectiveness(java.util.Map.of("rating", "HIGH"));
-            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
-                    .thenReturn(Optional.of(control));
-            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            // Description-only update — effectiveness unchanged, no event.
-            var command = new UpdateControlCommand(
-                    null, null, "Updated description", null, null, null, null, null, null, null);
-            controlService.update(projectId, control.getId(), command);
-
-            org.mockito.Mockito.verifyNoInteractions(eventPublisher);
         }
     }
 }
