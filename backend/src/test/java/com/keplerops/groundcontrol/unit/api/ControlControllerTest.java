@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -19,10 +20,15 @@ import com.keplerops.groundcontrol.domain.controls.model.Control;
 import com.keplerops.groundcontrol.domain.controls.service.ControlService;
 import com.keplerops.groundcontrol.domain.controls.state.ControlFunction;
 import com.keplerops.groundcontrol.domain.controls.state.ControlStatus;
+import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import java.io.Serializable;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -158,32 +164,28 @@ class ControlControllerTest {
     }
 
     @Test
-    void transitionStatusReturns409WhenImplementationEvidenceMissing() throws Exception {
-        // GC-GRC-011: the service's evidence gate throws ConflictException; the controller
-        // propagates it through GlobalExceptionHandler as a 409 with the stable envelope.
+    void deleteReturns409WhenControlStillReferenced() throws Exception {
+        // ControlService.delete rejects a control with inbound FindingLink / AuditLink rows or
+        // dependent ControlTest evidence. This is the controller's only reachable 409: assert it
+        // propagates through GlobalExceptionHandler as the stable ErrorResponse envelope.
         when(projectService.requireProjectId("ground-control")).thenReturn(PROJECT_ID);
-        java.util.Map<String, java.io.Serializable> detail = new java.util.LinkedHashMap<>();
+        Map<String, Serializable> detail = new LinkedHashMap<>();
         detail.put("controlUid", "CTRL-001");
-        detail.put("targetStatus", "IMPLEMENTED");
-        detail.put("missingCodeLink", true);
-        detail.put("missingEfficacyTest", false);
-        when(controlService.transitionStatus(PROJECT_ID, CONTROL_ID, ControlStatus.IMPLEMENTED))
-                .thenThrow(new com.keplerops.groundcontrol.domain.exception.ConflictException(
-                        "Control CTRL-001 cannot transition to IMPLEMENTED without a CODE implementation"
-                                + " link and an efficacy test (GC-GRC-011).",
-                        "control_missing_implementation_evidence",
-                        detail));
+        detail.put("findingCount", 2);
+        detail.put("findingUids", new ArrayList<>(List.of("FND-001", "FND-002")));
+        doThrow(new ConflictException(
+                        "Control CTRL-001 cannot be deleted while inbound FindingLink references exist."
+                                + " Remove the FindingLink references first, then retry.",
+                        "control_referenced",
+                        detail))
+                .when(controlService)
+                .delete(PROJECT_ID, CONTROL_ID);
 
-        mockMvc.perform(
-                        put("/api/v1/controls/{id}/status", CONTROL_ID)
-                                .param("project", "ground-control")
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(
-                                        """
-                                {"status":"IMPLEMENTED"}
-                                """))
+        mockMvc.perform(delete("/api/v1/controls/{id}", CONTROL_ID).param("project", "ground-control"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code", is("control_missing_implementation_evidence")))
-                .andExpect(jsonPath("$.error.detail.missingCodeLink", is(true)));
+                .andExpect(jsonPath("$.error.code", is("control_referenced")))
+                .andExpect(jsonPath("$.error.detail.controlUid", is("CTRL-001")))
+                .andExpect(jsonPath("$.error.detail.findingCount", is(2)))
+                .andExpect(jsonPath("$.error.detail.findingUids", hasSize(2)));
     }
 }
