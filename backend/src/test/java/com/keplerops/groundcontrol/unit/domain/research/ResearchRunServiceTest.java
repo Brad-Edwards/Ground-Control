@@ -3,7 +3,9 @@ package com.keplerops.groundcontrol.unit.domain.research;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -126,24 +128,21 @@ class ResearchRunServiceTest {
                 selectionRepository,
                 sourceRepository,
                 methodologyCatalog,
-                org.mockito.Mockito.mock(
+                mock(
                         com.keplerops.groundcontrol.domain.research.repository.MethodologyRequirementsContractRepository
                                 .class),
-                org.mockito.Mockito.mock(
+                mock(
                         com.keplerops.groundcontrol.domain.research.repository
                                 .MethodologyRequirementsContractEntryRepository.class),
-                org.mockito.Mockito.mock(
+                mock(
                         com.keplerops.groundcontrol.domain.research.repository
                                 .MethodologyRequirementsContractEntrySourceLinkRepository.class),
-                org.mockito.Mockito.mock(
+                mock(
                         com.keplerops.groundcontrol.domain.research.repository
                                 .MethodologyRequirementsContractRejectedAlternativeRepository.class),
-                org.mockito.Mockito.mock(
-                        com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanRepository.class),
-                org.mockito.Mockito.mock(
-                        com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanCoverageRepository.class),
-                org.mockito.Mockito.mock(
-                        com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanSectionRepository.class));
+                mock(com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanRepository.class),
+                mock(com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanCoverageRepository.class),
+                mock(com.keplerops.groundcontrol.domain.research.repository.ProtocolPlanSectionRepository.class));
         project = new Project("research-p", "Research Project", ProjectType.RESEARCH);
         TestUtil.setField(project, "id", PROJECT_ID);
         when(projectService.getById(PROJECT_ID)).thenReturn(project);
@@ -234,7 +233,7 @@ class ResearchRunServiceTest {
         assertThat(run.getBudgetTokens()).isEqualTo(1000L);
 
         var captor = ArgumentCaptor.forClass(ResearchRunGate.class);
-        verify(gateRepository, org.mockito.Mockito.times(5)).save(captor.capture());
+        verify(gateRepository, times(5)).save(captor.capture());
         assertThat(captor.getAllValues()).hasSize(5).allSatisfy(g -> assertThat(g.getBehavior())
                 .isEqualTo(ResearchGateBehavior.REQUIRE_HUMAN));
     }
@@ -275,7 +274,7 @@ class ResearchRunServiceTest {
         service.start(new StartCmd("RUN-1", AutonomyLevel.AUTONOMOUS, null).toCommand());
 
         var captor = ArgumentCaptor.forClass(ResearchRunGate.class);
-        verify(gateRepository, org.mockito.Mockito.times(5)).save(captor.capture());
+        verify(gateRepository, times(5)).save(captor.capture());
         assertThat(captor.getAllValues())
                 .allSatisfy(g -> assertThat(g.getBehavior()).isEqualTo(ResearchGateBehavior.AUTONOMOUS_DEFAULT));
     }

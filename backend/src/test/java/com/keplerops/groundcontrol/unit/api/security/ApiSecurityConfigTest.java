@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.unit.api.security;
 
+import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -13,7 +14,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -436,17 +436,17 @@ class ApiSecurityConfigTest {
 
         @Bean
         DataSource dataSourceStub() {
-            return Mockito.mock(DataSource.class);
+            return mock(DataSource.class);
         }
 
         @Bean
         JdbcUserDetailsManager userDetailsManagerStub() {
-            return Mockito.mock(JdbcUserDetailsManager.class);
+            return mock(JdbcUserDetailsManager.class);
         }
 
         @Bean
         JdbcTemplate jdbcTemplateStub() {
-            return Mockito.mock(JdbcTemplate.class);
+            return mock(JdbcTemplate.class);
         }
     }
 }
