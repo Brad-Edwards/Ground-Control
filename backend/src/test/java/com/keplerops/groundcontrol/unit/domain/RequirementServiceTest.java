@@ -3,6 +3,8 @@ package com.keplerops.groundcontrol.unit.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -169,7 +171,7 @@ class RequirementServiceTest {
 
             var result = service.create(cmd);
             assertThat(result.getUid()).isEqualTo("PLAT-001");
-            org.mockito.Mockito.verify(uidAllocator).allocate(PROJECT_ID, "PLAT");
+            verify(uidAllocator).allocate(PROJECT_ID, "PLAT");
         }
     }
 
@@ -694,7 +696,7 @@ class RequirementServiceTest {
             assertThat(result.getRequirementType()).isEqualTo(RequirementType.CONSTRAINT);
             assertThat(result.getWave()).isEqualTo(2);
 
-            org.mockito.Mockito.verify(relationRepository).save(any(RequirementRelation.class));
+            verify(relationRepository).save(any(RequirementRelation.class));
         }
 
         @Test
@@ -727,8 +729,7 @@ class RequirementServiceTest {
             assertThat(result.getRequirementType()).isEqualTo(RequirementType.CONSTRAINT);
             assertThat(result.getWave()).isEqualTo(2);
 
-            org.mockito.Mockito.verify(relationRepository, org.mockito.Mockito.never())
-                    .findBySourceIdWithEntities(any());
+            verify(relationRepository, never()).findBySourceIdWithEntities(any());
         }
 
         @Test
@@ -801,7 +802,7 @@ class RequirementServiceTest {
             when(relationRepository.findById(relationId)).thenReturn(Optional.of(relation));
 
             service.deleteRelation(reqId, relationId);
-            org.mockito.Mockito.verify(relationRepository).delete(relation);
+            verify(relationRepository).delete(relation);
         }
 
         @Test
@@ -818,7 +819,7 @@ class RequirementServiceTest {
             when(relationRepository.findById(relationId)).thenReturn(Optional.of(relation));
 
             service.deleteRelation(reqId, relationId);
-            org.mockito.Mockito.verify(relationRepository).delete(relation);
+            verify(relationRepository).delete(relation);
         }
 
         @Test
