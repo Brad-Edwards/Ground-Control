@@ -501,7 +501,7 @@ server.tool(
 
 server.tool(
   "gc_transition_status",
-  "Transition a requirement's status. Valid: DRAFT->ACTIVE, ACTIVE->DEPRECATED, ACTIVE->ARCHIVED, DEPRECATED->ARCHIVED.",
+  "Transition a requirement's status. Valid: DRAFT->ACTIVE, DRAFT->DEPRECATED (withdraw work that was never implemented), ACTIVE->DEPRECATED, ACTIVE->ARCHIVED, DEPRECATED->ARCHIVED.",
   {
     id: z.string().uuid(),
     status: z.enum(STATUSES),

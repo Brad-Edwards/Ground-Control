@@ -57,9 +57,10 @@ Requirements start in DRAFT status. The lifecycle is forward-only:
 
 ```
 DRAFT → ACTIVE → DEPRECATED → ARCHIVED
+  └───────────────►
 ```
 
-Transition to ACTIVE when the requirement is reviewed and approved. Every transition is recorded in the audit trail with timestamp, actor, and optional reason.
+Transition to ACTIVE when the requirement is reviewed and approved. `DRAFT → DEPRECATED` withdraws a requirement that was never implemented, so retiring unbuilt work does not require promoting it through ACTIVE first and claiming it shipped. Every transition is recorded in the audit trail with timestamp, actor, and optional reason.
 
 ### Import Existing Specs
 
