@@ -8852,16 +8852,20 @@ describe("buildTestQualityReviewPrompt", () => {
     assert.match(prompt, /No negative test cases/);
   });
 
-  it("flags control efficacy tests that only prove existence (GC-GRC-011)", () => {
+  it("flags security-enforcing behavior tested only by existence", () => {
     const prompt = buildTestQualityReviewPrompt({
       baseBranch: "dev",
-      changedTestFiles: ["ControlServiceTest.java"],
+      changedTestFiles: ["AuthorizationFilterTest.java"],
     });
-    assert.match(prompt, /Control efficacy tests that only prove existence/);
-    assert.match(prompt, /GC-GRC-011/);
-    // The rubric must direct the reviewer at the protected behavior, not the row.
+    assert.match(prompt, /Security-enforcing behavior tested only by existence/);
+    // The rubric must direct the reviewer at the protected behavior, not the bookkeeping.
     assert.match(prompt, /removed, bypassed, or materially weakened/);
-    assert.match(prompt, /if I deleted the control, would this test still pass/);
+    assert.match(prompt, /if I removed the enforcement, would this test still pass/);
+    // ADR-089 retired the GRC screening surface: the rule must key off the diff, never
+    // off a screening record, a control row/link/status, or a GC-GRC disposition route.
+    assert.doesNotMatch(prompt, /GC-GRC-/);
+    assert.doesNotMatch(prompt, /ControlTest|ControlLink/);
+    assert.doesNotMatch(prompt, /IMPLEMENTED\/OPERATIONAL/);
   });
 
   it("instructs verdict-envelope output (#931)", () => {

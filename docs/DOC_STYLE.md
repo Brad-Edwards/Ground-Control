@@ -97,6 +97,8 @@
 
 > **Sync note for issue #1124 / GC-GRC-011 (2026-07-05):** The `gc_test_quality_review` rubric in `mcp/ground-control/lib.js` (`buildTestQualityReviewPrompt`) gained a critical category flagging control efficacy tests that only prove existence rather than detecting control removal, with a matching key-phrase assertion in `lib.test.js`. This is a workflow-record-tool prompt-contract change, not a documentation-classifier change: the documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new DOC_STYLE.md style rule is established.
 
+> **Sync note for issue #1364 (2026-07-12):** The `gc_test_quality_review` rubric category added by #1124 above is rewritten in a screening-independent form. ADR-089 retired the machinery it depended on, so it conditioned on a security control "identified for" the change (identification was the now-tombstoned Step 3.5) and routed to a GC-GRC-015 disposition that no longer exists. The category now keys off the diff: production logic enforcing a protection must ship a test that fails when the enforcement is removed, bypassed, or materially weakened. The prompt-contract assertion in `lib.test.js` and the implementer-facing rule in `skills/implement/steps/step-04.4-tdd.md` are updated in lockstep. This is a workflow-record-tool prompt-contract change, not a documentation-classifier change: the documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new DOC_STYLE.md style rule is established.
+
 ## Rules
 
 Docs describe the system as it ships on the current commit. Write in present
