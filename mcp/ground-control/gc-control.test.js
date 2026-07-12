@@ -1,10 +1,9 @@
 // Adapter-level tests for the gc_control MCP handler. Drives the full path
 // raw args → Zod parse → gcControlToolHandler → lib.js → mocked fetch so the
-// CONTROL_FIELDS per-entity allowlist (control_test for GC-I012,
-// control_effectiveness_assessment for GC-I013) is the gate being exercised —
-// not a test-side pre-filter. Also locks in the entity discriminator's
-// back-compat default ("control") so existing callers that omit `entity` keep
-// hitting the original control surface.
+// CONTROL_FIELDS per-entity allowlist (control_test for GC-I012) is the gate
+// being exercised — not a test-side pre-filter. Also locks in the entity
+// discriminator's back-compat default ("control") so existing callers that
+// omit `entity` keep hitting the original control surface.
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -16,7 +15,6 @@ import {
   gcControlToolHandler,
   CONTROL_FIELDS,
 } from "./gc-control.js";
-import { getControlAssuranceWorkspace } from "./lib.js";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_BASE_URL = process.env.GC_BASE_URL;
@@ -83,10 +81,10 @@ describe("GC_CONTROL_ACTIONS", () => {
 });
 
 describe("GC_CONTROL_ENTITIES", () => {
-  it("contains exactly control + the two GC-I012/GC-I013 entities", () => {
+  it("contains exactly control + the GC-I012 entity", () => {
     assert.deepEqual(
       [...GC_CONTROL_ENTITIES].sort(),
-      ["control", "control_effectiveness_assessment", "control_test"],
+      ["control", "control_test"],
     );
   });
 });
@@ -284,170 +282,5 @@ describe("control_test rejects non-supported actions", () => {
           }),
       /not valid for control_test/,
     );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// control_effectiveness_assessment (GC-I013)
-// ---------------------------------------------------------------------------
-
-describe("control_effectiveness_assessment create (GC-I013)", () => {
-  const list = () => CONTROL_FIELDS.control_effectiveness_assessment.create;
-
-  it("contains every backend ControlEffectivenessAssessmentRequest field", () => {
-    for (const f of [
-      "control_id", "uid", "design_effectiveness", "operating_effectiveness",
-      "assessed_at", "assessor", "rationale", "notes",
-    ]) {
-      assert.ok(list().includes(f), `${f} missing from control_effectiveness_assessment.create`);
-    }
-  });
-
-  it("does NOT contain stale fields", () => {
-    for (const f of [
-      "title", "description", "methodology", "test_steps", "expected_results",
-      "actual_results", "conclusion", "tester_identity", "test_date",
-      "status", "control_function",
-    ]) {
-      assert.ok(!list().includes(f), `${f} should not be on control_effectiveness_assessment.create`);
-    }
-  });
-
-  it("POSTs to /api/v1/control-effectiveness-assessments with both ratings", async () => {
-    const calls = makeFetchSpy({ body: { id: "cea-1" } });
-    await callHandler({
-      entity: "control_effectiveness_assessment",
-      action: "create",
-      control_id: "00000000-0000-0000-0000-000000000500",
-      uid: "CEA-001",
-      design_effectiveness: "EFFECTIVE",
-      operating_effectiveness: "PARTIALLY_EFFECTIVE",
-      assessed_at: "2026-05-01",
-      assessor: "auditor@example.com",
-      rationale: "Design solid; one operating gap.",
-      // Stale fields valid in the shared Zod shape but NOT on the assessment's
-      // create allowlist — pick() must drop them before the POST.
-      methodology: "INSPECTION",
-      conclusion: "EFFECTIVE",
-      test_steps: "should be dropped",
-    });
-    assert.equal(calls.length, 1);
-    assert.match(calls[0].url, /\/api\/v1\/control-effectiveness-assessments/);
-    assert.equal(calls[0].method, "POST");
-    assert.equal(calls[0].body.uid, "CEA-001");
-    // Backend DTOs are camelCase; assert the converted forms.
-    assert.equal(calls[0].body.controlId, "00000000-0000-0000-0000-000000000500");
-    assert.equal(calls[0].body.designEffectiveness, "EFFECTIVE");
-    assert.equal(calls[0].body.operatingEffectiveness, "PARTIALLY_EFFECTIVE");
-    assert.equal(calls[0].body.assessedAt, "2026-05-01");
-    // Stale fields dropped by pick():
-    assert.equal(calls[0].body.methodology, undefined);
-    assert.equal(calls[0].body.conclusion, undefined);
-    assert.equal(calls[0].body.testSteps, undefined);
-    // Snake-case names must NOT leak:
-    assert.equal(calls[0].body.design_effectiveness, undefined);
-    assert.equal(calls[0].body.operating_effectiveness, undefined);
-    assert.equal(calls[0].body.assessed_at, undefined);
-  });
-
-  it("rejects an unknown effectiveness rating at Zod parse", () => {
-    assert.throws(
-      () =>
-          SCHEMA.parse({
-            entity: "control_effectiveness_assessment",
-            action: "create",
-            control_id: "00000000-0000-0000-0000-000000000500",
-            uid: "CEA-001",
-            design_effectiveness: "MAYBE",
-            operating_effectiveness: "EFFECTIVE",
-            assessed_at: "2026-05-01",
-            assessor: "auditor",
-          }),
-    );
-  });
-});
-
-describe("control_effectiveness_assessment update (GC-I013)", () => {
-  it("PUTs to /api/v1/control-effectiveness-assessments/{id} and drops control_id/uid", async () => {
-    const calls = makeFetchSpy({ body: { id: "cea-1" } });
-    await callHandler({
-      entity: "control_effectiveness_assessment",
-      action: "update",
-      id: "00000000-0000-0000-0000-000000000700",
-      operating_effectiveness: "INEFFECTIVE",
-      rationale: "Operating effectiveness regressed.",
-      // not on the update allowlist:
-      control_id: "00000000-0000-0000-0000-000000000500",
-      uid: "CEA-001",
-    });
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].method, "PUT");
-    // Converted to camelCase by request() / TO_CAMEL — Spring DTOs are camelCase.
-    assert.equal(calls[0].body.operatingEffectiveness, "INEFFECTIVE");
-    assert.equal(calls[0].body.rationale, "Operating effectiveness regressed.");
-    assert.equal(calls[0].body.control_id, undefined);
-    assert.equal(calls[0].body.controlId, undefined);
-    assert.equal(calls[0].body.uid, undefined);
-    assert.equal(calls[0].body.operating_effectiveness, undefined);
-  });
-});
-
-describe("control_effectiveness_assessment delete (GC-I013)", () => {
-  it("DELETEs /api/v1/control-effectiveness-assessments/{id}", async () => {
-    const calls = makeFetchSpy({ status: 204, body: null });
-    const result = await callHandler({
-      entity: "control_effectiveness_assessment",
-      action: "delete",
-      id: "00000000-0000-0000-0000-000000000700",
-    });
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].method, "DELETE");
-    assert.equal(result, null);
-  });
-});
-
-describe("getControlAssuranceWorkspace", () => {
-  it("GETs /controls/workspace with camelCase query params", async () => {
-    const calls = makeFetchSpy({
-      status: 200,
-      body: { controls: [], controlCount: 0 },
-    });
-
-    await getControlAssuranceWorkspace({
-      project: "ground-control",
-      status: "OPERATIONAL",
-      controlFunction: "PREVENTIVE",
-      owner: "alice",
-      queue: "CURRENT",
-      asOf: "2026-06-01T12:00:00Z",
-      freshnessWindowDays: 30,
-    });
-
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].method, "GET");
-    const url = new URL(calls[0].url);
-    assert.equal(url.pathname, "/api/v1/controls/workspace");
-    assert.equal(url.searchParams.get("project"), "ground-control");
-    assert.equal(url.searchParams.get("status"), "OPERATIONAL");
-    assert.equal(url.searchParams.get("controlFunction"), "PREVENTIVE");
-    assert.equal(url.searchParams.get("owner"), "alice");
-    assert.equal(url.searchParams.get("queue"), "CURRENT");
-    assert.equal(url.searchParams.get("asOf"), "2026-06-01T12:00:00Z");
-    assert.equal(url.searchParams.get("freshnessWindowDays"), "30");
-  });
-
-  it("omits undefined filters", async () => {
-    const calls = makeFetchSpy({ status: 200, body: { controls: [], controlCount: 0 } });
-
-    await getControlAssuranceWorkspace({ project: "ground-control" });
-
-    const url = new URL(calls[0].url);
-    assert.equal(url.searchParams.get("project"), "ground-control");
-    assert.equal(url.searchParams.get("status"), null);
-    assert.equal(url.searchParams.get("controlFunction"), null);
-    assert.equal(url.searchParams.get("owner"), null);
-    assert.equal(url.searchParams.get("queue"), null);
-    assert.equal(url.searchParams.get("asOf"), null);
-    assert.equal(url.searchParams.get("freshnessWindowDays"), null);
   });
 });

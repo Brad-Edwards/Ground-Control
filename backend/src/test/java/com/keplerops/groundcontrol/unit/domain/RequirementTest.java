@@ -115,15 +115,24 @@ class RequirementTest {
         }
 
         @Test
+        void draftToDeprecatedWithdrawsWithoutPassingThroughActive() {
+            var req = createRequirement("REQ-001");
+
+            req.transitionStatus(Status.DEPRECATED);
+
+            assertThat(req.getStatus()).isEqualTo(Status.DEPRECATED);
+        }
+
+        @Test
         void invalidTransitionContainsErrorCodeAndDetail() {
             var req = createRequirement("REQ-001");
-            assertThatThrownBy(() -> req.transitionStatus(Status.DEPRECATED))
+            assertThatThrownBy(() -> req.transitionStatus(Status.ARCHIVED))
                     .isInstanceOf(DomainValidationException.class)
                     .satisfies(ex -> {
                         var dve = (DomainValidationException) ex;
                         assertThat(dve.getErrorCode()).isEqualTo("invalid_status_transition");
                         assertThat(dve.getDetail()).containsEntry("current_status", "DRAFT");
-                        assertThat(dve.getDetail()).containsEntry("target_status", "DEPRECATED");
+                        assertThat(dve.getDetail()).containsEntry("target_status", "ARCHIVED");
                     });
         }
     }

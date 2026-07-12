@@ -42,26 +42,6 @@ rules:
     method: "GET"
     path: "/api/v1/workflow-runs/cross-project-aggregate/**"
     access: "ROLE_ADMIN"
-  - id: risk-appetite-create
-    method: "POST"
-    path: "/api/v1/risk-appetite-profiles"
-    access: "ROLE_ADMIN"
-  - id: risk-appetite-write-prefix
-    method: "POST|PUT|DELETE"
-    path: "/api/v1/risk-appetite-profiles/**"
-    access: "ROLE_ADMIN"
-  - id: evidence-campaign-create
-    method: "POST"
-    path: "/api/v1/evidence-campaigns"
-    access: "ROLE_ADMIN"
-  - id: evidence-campaign-write-prefix
-    method: "POST|PUT"
-    path: "/api/v1/evidence-campaigns/**"
-    access: "ROLE_ADMIN"
-  - id: data-classification-lattice-write
-    method: "PUT|DELETE"
-    path: "/api/v1/data-classification/lattice"
-    access: "ROLE_ADMIN"
   - id: research-operation-authorization-decision
     method: "POST"
     path: "/api/v1/research-runs/*/operation-authorizations/*/decision"

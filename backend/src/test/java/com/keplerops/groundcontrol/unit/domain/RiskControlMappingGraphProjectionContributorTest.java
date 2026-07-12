@@ -19,7 +19,6 @@ import com.keplerops.groundcontrol.domain.riskcontrol.model.ScopedControlImpleme
 import com.keplerops.groundcontrol.domain.riskcontrol.repository.RiskControlMappingRepository;
 import com.keplerops.groundcontrol.domain.riskcontrol.repository.ScopedControlImplementationRepository;
 import com.keplerops.groundcontrol.domain.riskcontrol.state.MappingControlRole;
-import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import java.time.Instant;
 import java.util.List;
@@ -126,16 +125,16 @@ class RiskControlMappingGraphProjectionContributorTest {
     }
 
     @Test
-    void contributeEdges_mapsScopedImplToRecord() {
-        var riskRecord = new RiskRegisterRecord(project, "RR-001", "Risk Entry");
-        var recordId = UUID.randomUUID();
-        setField(riskRecord, "id", recordId);
+    void contributeEdges_mapsScopedImplToScenario() {
+        var scenario = new RiskScenario(project, "RS-001", "Phishing", "A", "B", "C", "D");
+        var scenarioId = UUID.randomUUID();
+        setField(scenario, "id", scenarioId);
 
         var sci = new ScopedControlImplementation(project, "SCI-001", control, "Email Gateway");
         var sciId = UUID.randomUUID();
         setField(sci, "id", sciId);
 
-        var mapping = RiskControlMapping.forScopedRecord(project, sci, riskRecord, MappingControlRole.DETECTIVE);
+        var mapping = RiskControlMapping.forScopedScenario(project, sci, scenario, MappingControlRole.DETECTIVE);
         var mappingId = UUID.randomUUID();
         setField(mapping, "id", mappingId);
 
@@ -145,7 +144,7 @@ class RiskControlMappingGraphProjectionContributorTest {
         var edges = contributor.contributeEdges(projectId);
 
         var edgeTypes = edges.stream().map(GraphEdge::edgeType).toList();
-        assertThat(edgeTypes).contains("MAPS_SCOPED_IMPL", "MAPS_RECORD", "SCOPED_IMPL_OF");
+        assertThat(edgeTypes).contains("MAPS_SCOPED_IMPL", "MAPS_SCENARIO", "SCOPED_IMPL_OF");
     }
 
     @Test

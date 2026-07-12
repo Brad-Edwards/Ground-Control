@@ -21,7 +21,7 @@ import org.springframework.stereotype.Component;
  * <p>Edges emitted:
  * <ul>
  *   <li>RiskControlMapping → Control (MAPS_CONTROL or MAPS_SCOPED_IMPL)
- *   <li>RiskControlMapping → RiskScenario or RiskRegisterRecord (MAPS_SCENARIO / MAPS_RECORD)
+ *   <li>RiskControlMapping → RiskScenario (MAPS_SCENARIO)
  *   <li>RiskControlMapping → OperationalAsset (IN_ASSET_CONTEXT) when set
  *   <li>RiskControlMapping → Observation (HAS_OBSERVATION) for C8 provenance
  *   <li>ScopedControlImplementation → Control (SCOPED_IMPL_OF)
@@ -34,7 +34,6 @@ public class RiskControlMappingGraphProjectionContributor implements GraphProjec
     private static final String EDGE_MAPS_CONTROL = "MAPS_CONTROL";
     private static final String EDGE_MAPS_SCOPED_IMPL = "MAPS_SCOPED_IMPL";
     private static final String EDGE_MAPS_SCENARIO = "MAPS_SCENARIO";
-    private static final String EDGE_MAPS_RECORD = "MAPS_RECORD";
     private static final String EDGE_MAPS_THREAT_MODEL = "MAPS_THREAT_MODEL";
     private static final String EDGE_IN_ASSET_CONTEXT = "IN_ASSET_CONTEXT";
     private static final String EDGE_HAS_OBSERVATION = "HAS_OBSERVATION";
@@ -132,17 +131,6 @@ public class RiskControlMappingGraphProjectionContributor implements GraphProjec
                                 mapping.getRiskScenario().getId()),
                         GraphEntityType.RISK_CONTROL_MAPPING,
                         GraphEntityType.RISK_SCENARIO,
-                        Map.of()));
-            } else if (mapping.getRiskRegisterRecord() != null) {
-                edges.add(new GraphEdge(
-                        mapping.getId() + ":record",
-                        EDGE_MAPS_RECORD,
-                        mappingNodeId,
-                        GraphIds.nodeId(
-                                GraphEntityType.RISK_REGISTER_RECORD,
-                                mapping.getRiskRegisterRecord().getId()),
-                        GraphEntityType.RISK_CONTROL_MAPPING,
-                        GraphEntityType.RISK_REGISTER_RECORD,
                         Map.of()));
             } else if (mapping.getThreatModel() != null) {
                 edges.add(new GraphEdge(

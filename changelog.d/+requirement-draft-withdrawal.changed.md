@@ -1,0 +1,1 @@
+Requirements can now transition `DRAFT → DEPRECATED`. Previously `DRAFT` had no terminal state: a requirement that was never implemented could only be retired by first promoting it to `ACTIVE`, which stamped a false "this shipped" event on it. Withdrawal and deprecation-after-delivery are different claims, and the audit history now distinguishes them.

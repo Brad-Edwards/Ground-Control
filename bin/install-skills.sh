@@ -36,6 +36,16 @@
 #
 # Per ADR-027: the canonical workflow lives at skills/<name>/SKILL.md in this
 # repo. Host-local files are install targets, not the source of truth.
+#
+# Retired skills (ADR-089, issue #1346): deleting a skill's source directory
+# from this repo is NOT sufficient to remove it from a host, because this
+# script hard-copies (Cursor, always; everything else, with --copy) or
+# symlinks (the default elsewhere) the skill into host directories that
+# outlive the repo source. Every run prunes RETIRED_SKILLS (see below) from
+# every host target this script manages. A pruned symlink is always safe to
+# remove — only this script creates them. A pruned hard copy cannot be
+# verified against a deleted repo source, so it is never deleted silently;
+# the run reports it and asks the operator to remove it by hand.
 
 set -euo pipefail
 
@@ -138,6 +148,46 @@ install_target() {
   printf '%-7s %-8s %s -> %s\n' "${effective_mode}" "${label}" "${dst}" "${src}"
 }
 
+# Skills retired from skills/ in this repo but that a prior run may have
+# installed onto this host. New installs never create these targets again
+# (they're absent from skills_root, so the install loops below simply skip
+# them); this list exists so an upgrade actively prunes the leftover host
+# copy instead of leaving it silently callable. Add a name here (and nowhere
+# else) the day its skills/<name>/ directory is deleted.
+RETIRED_SKILLS=(assess)
+
+# Remove a retired skill's target at ${dst} if this script owns it, or report
+# it for manual cleanup otherwise. A symlink is always ours to remove: only
+# this script creates one, so its presence — even dangling, now that the repo
+# source is gone — is proof of a prior managed install. A non-symlink (a hard
+# copy, or a host directory a developer edited in place) cannot be verified
+# against a deleted source, so it is reported rather than deleted: silently
+# deleting an unknown or locally-edited host directory is exactly the failure
+# mode this function exists to avoid.
+prune_retired_target() {
+  local dst="$1" label="$2"
+  if [[ -L "${dst}" ]]; then
+    run rm -f -- "${dst}"
+    printf 'pruned  %-8s %s (retired skill symlink removed)\n' "${label}" "${dst}"
+  elif [[ -e "${dst}" ]]; then
+    echo "MANUAL CLEANUP REQUIRED: ${label} ${dst} is a retired skill's install target that is not a managed symlink (a hard copy or a locally-edited directory). Remove it by hand." >&2
+  fi
+}
+
+prune_retired_skills() {
+  local name
+  for name in "${RETIRED_SKILLS[@]}"; do
+    prune_retired_target "${claude_dir}/${name}" "claude"
+    if [[ "${install_codex}" -eq 1 ]]; then
+      prune_retired_target "${codex_dir}/${name}" "codex"
+      prune_retired_target "${codex_prompts_dir}/${name}.md" "codex prompt alias"
+    fi
+    if [[ "${install_cursor}" -eq 1 ]]; then
+      prune_retired_target "${cursor_dir}/${name}" "cursor"
+    fi
+  done
+}
+
 # Install Claude Code skills: each subdir of skills/ becomes ~/.claude/skills/<name>
 run mkdir -p "${claude_dir}"
 for skill_dir in "${skills_root}"/*/; do
@@ -178,5 +228,8 @@ if [[ "${install_cursor}" -eq 1 ]]; then
 else
   echo "Skipping Cursor install (--no-cursor set)."
 fi
+
+# Prune retired skills (ADR-089) from every host target this run touched.
+prune_retired_skills
 
 echo "Done."

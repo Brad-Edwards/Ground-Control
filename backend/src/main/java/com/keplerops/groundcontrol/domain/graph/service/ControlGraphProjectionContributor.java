@@ -74,10 +74,6 @@ public class ControlGraphProjectionContributor implements GraphProjectionContrib
                     case ASSET -> GraphEntityType.OPERATIONAL_ASSET;
                     case REQUIREMENT -> GraphEntityType.REQUIREMENT;
                     case RISK_SCENARIO -> GraphEntityType.RISK_SCENARIO;
-                    case RISK_REGISTER_RECORD -> GraphEntityType.RISK_REGISTER_RECORD;
-                    case RISK_ASSESSMENT_RESULT -> GraphEntityType.RISK_ASSESSMENT_RESULT;
-                    case TREATMENT_PLAN -> GraphEntityType.TREATMENT_PLAN;
-                    case METHODOLOGY_PROFILE -> GraphEntityType.METHODOLOGY_PROFILE;
                     case OBSERVATION -> GraphEntityType.OBSERVATION;
                     case FINDING -> GraphEntityType.FINDING;
                         // Always emits an edge to the EVIDENCE_ARTIFACT node.
@@ -85,7 +81,17 @@ public class ControlGraphProjectionContributor implements GraphProjectionContrib
                         // evidence artifact (current and superseded) so this edge
                         // never dangles.
                     case EVIDENCE -> GraphEntityType.EVIDENCE_ARTIFACT;
-                    case CODE, CONFIGURATION, OPERATIONAL_ARTIFACT, EXTERNAL -> null;
+                        // RISK_REGISTER_RECORD, RISK_ASSESSMENT_RESULT, TREATMENT_PLAN, and
+                        // METHODOLOGY_PROFILE are retired target types (ADR-089) with no backing
+                        // graph node; never emit an edge for them.
+                    case RISK_REGISTER_RECORD,
+                            RISK_ASSESSMENT_RESULT,
+                            TREATMENT_PLAN,
+                            METHODOLOGY_PROFILE,
+                            CODE,
+                            CONFIGURATION,
+                            OPERATIONAL_ARTIFACT,
+                            EXTERNAL -> null;
                 };
         if (targetEntityType == null) {
             return null;

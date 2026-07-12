@@ -45,10 +45,6 @@ class ControlServiceTest {
     private com.keplerops.groundcontrol.domain.controls.repository.ControlTestRepository controlTestRepository;
 
     @Mock
-    private com.keplerops.groundcontrol.domain.controls.repository.ControlEffectivenessAssessmentRepository
-            effectivenessAssessmentRepository;
-
-    @Mock
     private com.keplerops.groundcontrol.domain.findings.repository.FindingLinkRepository findingLinkRepository;
 
     @Mock
@@ -56,9 +52,6 @@ class ControlServiceTest {
 
     @Mock
     private ProjectService projectService;
-
-    @Mock
-    private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private ControlService controlService;
@@ -155,6 +148,14 @@ class ControlServiceTest {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // ADR-089: the GC-GRC-011 implementation-evidence precondition on
+    // transitionStatus is retired. The ordinary ControlStatus transition graph
+    // is authoritative again — a shape-valid hop succeeds with no dependency on
+    // ControlLink/ControlTest evidence, and an impossible hop still fails with
+    // the structural invalid_status_transition error.
+    // -------------------------------------------------------------------------
+
     @Nested
     class TransitionStatus {
 
@@ -169,119 +170,30 @@ class ControlServiceTest {
 
             assertThat(result.getStatus()).isEqualTo(ControlStatus.PROPOSED);
         }
-    }
 
-    // -------------------------------------------------------------------------
-    // GC-GRC-011 (#1124): in-loop control implementation evidence gate.
-    // A control may only enter IMPLEMENTED/OPERATIONAL when it carries both a
-    // CODE/IMPLEMENTS ControlLink and at least one ControlTest (efficacy evidence).
-    // Each test below goes red if the guard is removed — they are efficacy tests
-    // for the guard, not existence tests.
-    // -------------------------------------------------------------------------
-
-    @Nested
-    class ImplementationEvidenceGate {
-
-        private Control proposedControl() {
+        @Test
+        void transitionsToImplementedWithNoEvidenceRequired() {
+            // Previously blocked by GC-GRC-011 without a CODE/IMPLEMENTS link and an
+            // efficacy test. That precondition is retired (ADR-089); the ordinary
+            // shape-valid PROPOSED -> IMPLEMENTED hop now succeeds with no evidence
+            // repository interaction at all.
             var control = makeControl();
             setField(control, "status", ControlStatus.PROPOSED);
-            return control;
-        }
-
-        private void stubEvidence(Control control, boolean hasCodeLink, boolean hasEfficacyTest) {
             when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
                     .thenReturn(Optional.of(control));
-            when(controlLinkRepository.existsByControlIdAndTargetTypeAndLinkType(
-                            control.getId(),
-                            com.keplerops.groundcontrol.domain.controls.state.ControlLinkTargetType.CODE,
-                            com.keplerops.groundcontrol.domain.controls.state.ControlLinkType.IMPLEMENTS))
-                    .thenReturn(hasCodeLink);
-            when(controlTestRepository.countByProjectIdAndControlId(projectId, control.getId()))
-                    .thenReturn(hasEfficacyTest ? 1L : 0L);
-        }
-
-        @Test
-        void blocksImplementedWhenCodeLinkMissing() {
-            var control = proposedControl();
-            stubEvidence(control, false, true);
-
-            var controlId = control.getId();
-            var thrown = org.assertj.core.api.Assertions.catchThrowableOfType(
-                    ConflictException.class,
-                    () -> controlService.transitionStatus(projectId, controlId, ControlStatus.IMPLEMENTED));
-            assertThat(thrown).isNotNull().extracting("errorCode").isEqualTo("control_missing_implementation_evidence");
-            assertThat(thrown.getDetail())
-                    .containsEntry("missingCodeLink", true)
-                    .containsEntry("missingEfficacyTest", false);
-            // The transition must not be persisted when evidence is missing.
-            assertThat(control.getStatus()).isEqualTo(ControlStatus.PROPOSED);
-            verify(controlRepository, never()).save(any(Control.class));
-        }
-
-        @Test
-        void blocksImplementedWhenEfficacyTestMissing() {
-            var control = proposedControl();
-            stubEvidence(control, true, false);
-
-            var controlId = control.getId();
-            var thrown = org.assertj.core.api.Assertions.catchThrowableOfType(
-                    ConflictException.class,
-                    () -> controlService.transitionStatus(projectId, controlId, ControlStatus.IMPLEMENTED));
-            assertThat(thrown).isNotNull().extracting("errorCode").isEqualTo("control_missing_implementation_evidence");
-            assertThat(thrown.getDetail())
-                    .containsEntry("missingCodeLink", false)
-                    .containsEntry("missingEfficacyTest", true);
-            assertThat(control.getStatus()).isEqualTo(ControlStatus.PROPOSED);
-        }
-
-        @Test
-        void allowsImplementedWhenBothEvidenceKindsPresent() {
-            var control = proposedControl();
-            stubEvidence(control, true, true);
             when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
 
             var result = controlService.transitionStatus(projectId, control.getId(), ControlStatus.IMPLEMENTED);
 
             assertThat(result.getStatus()).isEqualTo(ControlStatus.IMPLEMENTED);
+            verifyNoInteractions(controlLinkRepository, controlTestRepository);
         }
 
         @Test
-        void gatesReentryToOperationalFromDeprecated() {
-            // A transition from DEPRECATED back to OPERATIONAL is a valid shape hop that
-            // re-enters an active status, so the evidence gate applies there too (clause c).
-            var control = makeControl();
-            setField(control, "status", ControlStatus.DEPRECATED);
-            stubEvidence(control, false, false);
-
-            var controlId = control.getId();
-            assertThatThrownBy(() -> controlService.transitionStatus(projectId, controlId, ControlStatus.OPERATIONAL))
-                    .isInstanceOf(ConflictException.class)
-                    .extracting("errorCode")
-                    .isEqualTo("control_missing_implementation_evidence");
-        }
-
-        @Test
-        void doesNotGateNonImplementingTransitions() {
-            // Transitions such as DRAFT to PROPOSED, or IMPLEMENTED to DEPRECATED, require
-            // no evidence; the guard must not touch the evidence repositories for them
-            // (strict stubs would fail if it did).
-            var control = makeControl();
-            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
-                    .thenReturn(Optional.of(control));
-            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            var result = controlService.transitionStatus(projectId, control.getId(), ControlStatus.PROPOSED);
-
-            assertThat(result.getStatus()).isEqualTo(ControlStatus.PROPOSED);
-            verifyNoInteractions(controlLinkRepository);
-        }
-
-        @Test
-        void invalidShapeStillThrowsShapeErrorNotEvidenceError() {
-            // A transition from DRAFT straight to IMPLEMENTED is structurally invalid. The
-            // pre-existing shape error must win so the evidence gate never masks an
-            // impossible move; the guard is skipped entirely (no evidence repository
-            // interaction).
+        void invalidShapeStillThrowsShapeError() {
+            // A transition from DRAFT straight to IMPLEMENTED is structurally invalid
+            // regardless of the retired evidence gate; the ordinary transition graph
+            // still rejects it.
             var control = makeControl(); // starts in DRAFT
             when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
                     .thenReturn(Optional.of(control));
@@ -291,7 +203,7 @@ class ControlServiceTest {
                     .isInstanceOf(com.keplerops.groundcontrol.domain.exception.DomainValidationException.class)
                     .extracting("errorCode")
                     .isEqualTo("invalid_status_transition");
-            verifyNoInteractions(controlLinkRepository);
+            verifyNoInteractions(controlLinkRepository, controlTestRepository);
         }
     }
 
@@ -347,8 +259,6 @@ class ControlServiceTest {
                     .thenReturn(java.util.List.of());
             when(controlTestRepository.countByProjectIdAndControlId(projectId, control.getId()))
                     .thenReturn(0L);
-            when(effectivenessAssessmentRepository.countByProjectIdAndControlId(projectId, control.getId()))
-                    .thenReturn(0L);
             when(controlLinkRepository.findByControlId(control.getId())).thenReturn(java.util.List.of());
 
             controlService.delete(projectId, control.getId());
@@ -373,8 +283,6 @@ class ControlServiceTest {
                             projectId))
                     .thenReturn(java.util.List.of());
             when(controlTestRepository.countByProjectIdAndControlId(projectId, control.getId()))
-                    .thenReturn(0L);
-            when(effectivenessAssessmentRepository.countByProjectIdAndControlId(projectId, control.getId()))
                     .thenReturn(0L);
             when(controlLinkRepository.findByControlId(control.getId())).thenReturn(outboundLinks);
 
@@ -455,7 +363,7 @@ class ControlServiceTest {
             // ADR-039: ControlTest rows are audited evidence; cascading them on parent delete
             // would destroy provenance silently, and a raw FK violation would surface as 500.
             // The service uses count-only existence checks (no full-row hydration) and returns
-            // a clean 409 with the dependent counts so the caller can act.
+            // a clean 409 with the dependent count so the caller can act.
             var control = makeControl();
             when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
                     .thenReturn(Optional.of(control));
@@ -470,90 +378,6 @@ class ControlServiceTest {
             assertThatThrownBy(() -> controlService.delete(projectId, control.getId()))
                     .isInstanceOf(com.keplerops.groundcontrol.domain.exception.ConflictException.class)
                     .hasMessageContaining("dependent audit evidence");
-        }
-
-        @Test
-        void rejectsWhenDependentEffectivenessAssessmentsExist() {
-            var control = makeControl();
-            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
-                    .thenReturn(Optional.of(control));
-            when(findingLinkRepository.findFindingUidsByTargetTypeAndTargetEntityIdAndProjectId(
-                            com.keplerops.groundcontrol.domain.findings.state.FindingLinkTargetType.CONTROL,
-                            control.getId(),
-                            projectId))
-                    .thenReturn(java.util.List.of());
-            when(controlTestRepository.countByProjectIdAndControlId(projectId, control.getId()))
-                    .thenReturn(0L);
-            when(effectivenessAssessmentRepository.countByProjectIdAndControlId(projectId, control.getId()))
-                    .thenReturn(2L);
-
-            assertThatThrownBy(() -> controlService.delete(projectId, control.getId()))
-                    .isInstanceOf(com.keplerops.groundcontrol.domain.exception.ConflictException.class)
-                    .hasMessageContaining("dependent audit evidence");
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // GC-T004 / C8 (#863): reassessment publisher coverage
-    // -------------------------------------------------------------------------
-
-    @Nested
-    class ReassessmentEvents {
-
-        @Test
-        void transitionStatusPublishesControlStateChangedEvent() {
-            var control = makeControl();
-            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
-                    .thenReturn(Optional.of(control));
-            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            // DRAFT → PROPOSED is the only valid first hop from the default ControlStatus.
-            var result = controlService.transitionStatus(projectId, control.getId(), ControlStatus.PROPOSED);
-
-            // Assert the state change actually happened (test-quality cycle 1): a
-            // broken implementation that fires the event but fails to apply the
-            // transition would otherwise pass.
-            assertThat(result.getStatus()).isEqualTo(ControlStatus.PROPOSED);
-            verify(eventPublisher)
-                    .publishEvent(any(
-                            com.keplerops.groundcontrol.domain.riskscenarios.events.ControlStateChangedEvent.class));
-        }
-
-        @Test
-        void updateWithEffectivenessChangePublishes() {
-            var control = makeControl();
-            control.setEffectiveness(java.util.Map.of("rating", "LOW"));
-            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
-                    .thenReturn(Optional.of(control));
-            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            var command = new UpdateControlCommand(
-                    null, null, null, null, null, null, null, java.util.Map.of("rating", "HIGH"), null, null);
-            var result = controlService.update(projectId, control.getId(), command);
-
-            // Capture-and-assert the state change (test-quality cycle 1): a broken
-            // implementation that fires the event but fails to set effectiveness
-            // would otherwise pass this and the integration test.
-            assertThat(result.getEffectiveness()).containsEntry("rating", "HIGH");
-            verify(eventPublisher)
-                    .publishEvent(any(
-                            com.keplerops.groundcontrol.domain.riskscenarios.events.ControlStateChangedEvent.class));
-        }
-
-        @Test
-        void updateWithoutEffectivenessChangeDoesNotPublish() {
-            var control = makeControl();
-            control.setEffectiveness(java.util.Map.of("rating", "HIGH"));
-            when(controlRepository.findByIdAndProjectId(control.getId(), projectId))
-                    .thenReturn(Optional.of(control));
-            when(controlRepository.save(any(Control.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            // Description-only update — effectiveness unchanged, no event.
-            var command = new UpdateControlCommand(
-                    null, null, "Updated description", null, null, null, null, null, null, null);
-            controlService.update(projectId, control.getId(), command);
-
-            verifyNoInteractions(eventPublisher);
         }
     }
 }

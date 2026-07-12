@@ -61,7 +61,7 @@ class PackInstallRecordControllerTest {
     private PackInstallRecord makeRecord() {
         var project = makeProject();
         var record = new PackInstallRecord(
-                project, "nist-800-53", PackType.CONTROL_PACK, TrustOutcome.TRUSTED, InstallOutcome.INSTALLED);
+                project, "nist-800-53", PackType.CUSTOM, TrustOutcome.TRUSTED, InstallOutcome.INSTALLED);
         setField(record, "id", RECORD_ID);
         setField(record, "createdAt", Instant.now());
         setField(record, "updatedAt", Instant.now());

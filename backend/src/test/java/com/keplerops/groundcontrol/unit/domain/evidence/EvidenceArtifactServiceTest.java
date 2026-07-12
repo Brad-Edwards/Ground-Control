@@ -10,7 +10,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.assets.repository.ObservationRepository;
-import com.keplerops.groundcontrol.domain.controls.repository.ControlEffectivenessAssessmentRepository;
 import com.keplerops.groundcontrol.domain.controls.repository.ControlTestRepository;
 import com.keplerops.groundcontrol.domain.evidence.model.EvidenceArtifact;
 import com.keplerops.groundcontrol.domain.evidence.model.EvidenceSourceRef;
@@ -25,7 +24,6 @@ import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.findings.repository.FindingRepository;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
-import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskAssessmentResultRepository;
 import com.keplerops.groundcontrol.domain.verification.repository.VerificationResultRepository;
 import com.keplerops.groundcontrol.domain.verification.state.AssuranceLevel;
 import java.time.Instant;
@@ -56,13 +54,7 @@ class EvidenceArtifactServiceTest {
     private ControlTestRepository controlTestRepository;
 
     @Mock
-    private ControlEffectivenessAssessmentRepository controlEffectivenessAssessmentRepository;
-
-    @Mock
     private VerificationResultRepository verificationResultRepository;
-
-    @Mock
-    private RiskAssessmentResultRepository riskAssessmentResultRepository;
 
     @Mock
     private FindingRepository findingRepository;
@@ -228,36 +220,26 @@ class EvidenceArtifactServiceTest {
         @Test
         void resolvesMixedInternalKinds() {
             var ctrlTestId = UUID.randomUUID();
-            var assessmentId = UUID.randomUUID();
             var verificationId = UUID.randomUUID();
-            var rarId = UUID.randomUUID();
             var findingId = UUID.randomUUID();
             when(projectService.getById(projectId)).thenReturn(project);
             when(repository.existsByProjectIdAndUid(projectId, "EVD-0001")).thenReturn(false);
             when(controlTestRepository.findByIdAndProjectId(ctrlTestId, projectId))
                     .thenReturn(Optional.of(mock(com.keplerops.groundcontrol.domain.controls.model.ControlTest.class)));
-            when(controlEffectivenessAssessmentRepository.findByIdAndProjectId(assessmentId, projectId))
-                    .thenReturn(Optional.of(mock(
-                            com.keplerops.groundcontrol.domain.controls.model.ControlEffectivenessAssessment.class)));
             when(verificationResultRepository.existsByIdAndProjectId(verificationId, projectId))
-                    .thenReturn(true);
-            when(riskAssessmentResultRepository.existsByIdAndProjectId(rarId, projectId))
                     .thenReturn(true);
             when(findingRepository.existsByIdAndProjectId(findingId, projectId)).thenReturn(true);
             when(repository.save(any(EvidenceArtifact.class))).thenAnswer(inv -> inv.getArgument(0));
 
             var sources = List.of(
                     new EvidenceSourceRef(EvidenceSourceKind.CONTROL_TEST, ctrlTestId, null, null),
-                    new EvidenceSourceRef(
-                            EvidenceSourceKind.CONTROL_EFFECTIVENESS_ASSESSMENT, assessmentId, null, null),
                     new EvidenceSourceRef(EvidenceSourceKind.VERIFICATION_RESULT, verificationId, null, null),
-                    new EvidenceSourceRef(EvidenceSourceKind.RISK_ASSESSMENT_RESULT, rarId, null, null),
                     new EvidenceSourceRef(EvidenceSourceKind.FINDING, findingId, null, null),
                     new EvidenceSourceRef(EvidenceSourceKind.EXTERNAL, null, "external-id-123", null));
 
             var result = service.create(happyCommandWithSources(sources));
 
-            assertThat(result.getSources()).hasSize(6);
+            assertThat(result.getSources()).hasSize(4);
             // Per-source identity assertions so a regression in validateSources
             // that mismaps kinds or scrambles list order is caught directly
             // (rather than passing on size alone).
@@ -265,18 +247,31 @@ class EvidenceArtifactServiceTest {
                     .extracting(EvidenceSourceRef::sourceKind)
                     .containsExactly(
                             EvidenceSourceKind.CONTROL_TEST,
-                            EvidenceSourceKind.CONTROL_EFFECTIVENESS_ASSESSMENT,
                             EvidenceSourceKind.VERIFICATION_RESULT,
-                            EvidenceSourceKind.RISK_ASSESSMENT_RESULT,
                             EvidenceSourceKind.FINDING,
                             EvidenceSourceKind.EXTERNAL);
             assertThat(result.getSources().get(0).sourceEntityId()).isEqualTo(ctrlTestId);
-            assertThat(result.getSources().get(5).sourceIdentifier()).isEqualTo("external-id-123");
+            assertThat(result.getSources().get(3).sourceIdentifier()).isEqualTo("external-id-123");
             verify(controlTestRepository).findByIdAndProjectId(ctrlTestId, projectId);
-            verify(controlEffectivenessAssessmentRepository).findByIdAndProjectId(assessmentId, projectId);
             verify(verificationResultRepository).existsByIdAndProjectId(verificationId, projectId);
-            verify(riskAssessmentResultRepository).existsByIdAndProjectId(rarId, projectId);
             verify(findingRepository).existsByIdAndProjectId(findingId, projectId);
+        }
+
+        @Test
+        void rejectsRetiredSourceKinds() {
+            // ADR-089: CONTROL_EFFECTIVENESS_ASSESSMENT and RISK_ASSESSMENT_RESULT are retired
+            // source kinds — their backing aggregates are gone, so no new source can resolve
+            // against them even though the enum constants remain for historical JSON reads.
+            when(projectService.getById(projectId)).thenReturn(project);
+            when(repository.existsByProjectIdAndUid(projectId, "EVD-0001")).thenReturn(false);
+
+            var entityId = UUID.randomUUID();
+            var sources = List.of(
+                    new EvidenceSourceRef(EvidenceSourceKind.CONTROL_EFFECTIVENESS_ASSESSMENT, entityId, null, null));
+            var command = happyCommandWithSources(sources);
+            assertThatThrownBy(() -> service.create(command))
+                    .isInstanceOf(DomainValidationException.class)
+                    .hasMessageContaining("CONTROL_EFFECTIVENESS_ASSESSMENT/" + entityId);
         }
     }
 

@@ -636,6 +636,11 @@ def run_controller_contracts(changed_files: list[str], root: Path = REPO_ROOT) -
         return test_covers_controller(content, fqcn)
 
     for controller in controllers:
+        # A controller deleted in this diff has no request mapping left to slice-test,
+        # and its @WebMvcTest companion is deleted along with it. Demanding a companion
+        # for a file that no longer exists would make route removal unshippable.
+        if not (root / controller).exists():
+            continue
         fqcn = controller_fully_qualified_name(controller)
         if fqcn is None:
             continue
@@ -2046,7 +2051,6 @@ FRONTEND_API_TYPES_PATH = "contracts/gen/typescript/api.ts"
 MCP_LIB_PATH = "mcp/ground-control/lib.js"
 _ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state"
 _AUDIT_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state"
-_RISK_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state"
 _VERIFICATION_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/verification/state"
 
 # Java enum body: from the opening `{` to whichever comes first — the `;` that
@@ -2105,59 +2109,14 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
     # by UI and exposed by the MCP gc_audit tool.
     EnumContract("AuditType", f"{_AUDIT_ENUM_STATE_DIR}/AuditType.java", "AuditType", "AUDIT_TYPES", "AUDIT_TYPES"),
     EnumContract("AuditStatus", f"{_AUDIT_ENUM_STATE_DIR}/AuditStatus.java", "AuditStatus", "AUDIT_STATUSES", "AUDIT_STATUSES"),
-    # GC-T014 NIST SP 800-30 Rev. 1 enums. Mirrored at the
-    # /api/v1/analysis/grc/nist-sp-800-30 boundary (NistAssessmentResponse) and
-    # in the MCP gc_analyze nist_assessment kind payload. ADR-034.
-    EnumContract(
-        "ThreatEventKind",
-        f"{_RISK_ENUM_STATE_DIR}/ThreatEventKind.java",
-        "ThreatEventKind",
-        "THREAT_EVENT_KINDS",
-        "THREAT_EVENT_KINDS",
-    ),
-    EnumContract(
-        "ThreatSourceRelevance",
-        f"{_RISK_ENUM_STATE_DIR}/ThreatSourceRelevance.java",
-        "ThreatSourceRelevance",
-        "THREAT_SOURCE_RELEVANCES",
-        "THREAT_SOURCE_RELEVANCES",
-    ),
-    EnumContract(
-        "NistLikelihoodBand",
-        f"{_RISK_ENUM_STATE_DIR}/NistLikelihoodBand.java",
-        "NistLikelihoodBand",
-        "NIST_LIKELIHOOD_BANDS",
-        "NIST_LIKELIHOOD_BANDS",
-    ),
-    EnumContract(
-        "NistImpactBand",
-        f"{_RISK_ENUM_STATE_DIR}/NistImpactBand.java",
-        "NistImpactBand",
-        "NIST_IMPACT_BANDS",
-        "NIST_IMPACT_BANDS",
-    ),
-    # GC-T012 crosswalk vocabulary enums. Mirrored at the
-    # /api/v1/methodology-profiles boundary and in the MCP gc_risk_governance
-    # methodology_profile handler Zod shape. ADR-034.
-    EnumContract(
-        "NormalizedConcept",
-        f"{_RISK_ENUM_STATE_DIR}/NormalizedConcept.java",
-        "NormalizedConcept",
-        "NORMALIZED_CONCEPTS",
-        "NORMALIZED_CONCEPTS",
-    ),
-    EnumContract(
-        "CrosswalkVocabularySurface",
-        f"{_RISK_ENUM_STATE_DIR}/CrosswalkVocabularySurface.java",
-        "CrosswalkVocabularySurface",
-        "CROSSWALK_VOCABULARY_SURFACES",
-        "CROSSWALK_VOCABULARY_SURFACES",
-    ),
-    # GC-GRC: Verification and Assurance Enums. VerificationStatus and
-    # AssuranceLevel are domain/verification/state enums used in evidence/control
-    # verification workflows; MethodologyFamily is a domain/riskscenarios/state
-    # enum used in methodology-profile selection. All three are mirrored at the
-    # frontend TypeScript boundary and MCP surfaces. ADR-034.
+    # Verification and Assurance enums. VerificationStatus and AssuranceLevel
+    # are domain/verification/state enums used in evidence/control verification
+    # workflows; both are mirrored at the frontend TypeScript boundary and MCP
+    # surfaces. ADR-034. (The domain/riskscenarios/state NIST/crosswalk/
+    # methodology enums this comment used to describe — ThreatEventKind,
+    # ThreatSourceRelevance, NistLikelihoodBand, NistImpactBand,
+    # NormalizedConcept, CrosswalkVocabularySurface, MethodologyFamily — were
+    # retired with the composed GRC product surface; ADR-089, issue #1346.)
     EnumContract(
         "VerificationStatus",
         f"{_VERIFICATION_ENUM_STATE_DIR}/VerificationStatus.java",
@@ -2172,14 +2131,6 @@ ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
         "ASSURANCE_LEVELS",
         "ASSURANCE_LEVELS",
     ),
-    EnumContract(
-        "MethodologyFamily",
-        f"{_RISK_ENUM_STATE_DIR}/MethodologyFamily.java",
-        "MethodologyFamily",
-        "METHODOLOGY_FAMILIES",
-        "METHODOLOGY_FAMILIES",
-    ),
-
 )
 
 
@@ -3343,17 +3294,18 @@ def run_test_quality_decision_record_contract(
 
 
 # ---------------------------------------------------------------------------
-# Traceability-reconciliation gate contract (issues #1058, #1103)
+# Traceability-reconciliation gate contract (issues #1058, #1103; ADR-089/#1346)
 #
 # Asserts the /implement workflow's traceability + post-merge close gate
 # is wired across all prose surfaces. The MCP-tool layer enforces:
 #   - Step 17 calls gc_assert_completion, which sequences
-#     gc_assert_traceability_reconciled (posting traceability_reconciled),
-#     gc_assert_grc_reconciled (posting grc_reconciled), and
+#     gc_assert_traceability_reconciled (posting traceability_reconciled) and
 #     gc_post_final_report in one deterministic call. plain_english_outcome
 #     is required for the user-facing closeout.
 #   - Step 20 (Phase E) calls gc_close_issue_after_merge after PR merge and
-#     surfaces a next_issue_recommendation envelope when one is available.
+#     performs only linked-PR resolution, merge-state verification, and
+#     idempotent closure — no GRC assertion and no next-issue recommendation
+#     (both retired by ADR-089).
 #   - SKILL.md documents Phase E and gc_close_issue_after_merge as the
 #     canonical close path.
 #
@@ -3375,12 +3327,12 @@ def run_traceability_reconciliation_gate_contract(
 
     The gate has two MCP-tool surfaces and three prose anchors:
 
-      step-17-completion.md   must mention `gc_assert_completion`,
-                              `traceability_reconciled`, and `plain_english_outcome`
-      step-20-close-issue-on-merge.md must exist AND mention `gc_close_issue_after_merge`
-                              and `next_issue_recommendation`
-      SKILL.md                must mention `Phase E`, `gc_close_issue_after_merge`,
-                              and `next_issue_recommendation`
+      step-17-completion.md   must mention `gc_assert_completion` and
+                              `traceability_reconciled` and `plain_english_outcome`
+      step-20-close-issue-on-merge.md must exist AND mention
+                              `gc_close_issue_after_merge`
+      SKILL.md                must mention `Phase E` and
+                              `gc_close_issue_after_merge`
 
     Emits one violation per missing anchor with a stable code so CI surfaces
     the specific gap. A repo whose policy-tests file isn't yet up to date
@@ -3398,15 +3350,15 @@ def run_traceability_reconciliation_gate_contract(
         ),
         (
             IMPLEMENT_STEP_20_PATH,
-            ("gc_close_issue_after_merge", "next_issue_recommendation"),
+            ("gc_close_issue_after_merge",),
             "traceability-gate-step20-missing",
-            "Step 20 (Phase E post-merge close) must exist and mention gc_close_issue_after_merge plus next_issue_recommendation (issues #1058/#1156).",
+            "Step 20 (Phase E post-merge close) must exist and mention gc_close_issue_after_merge (issue #1058).",
         ),
         (
             IMPLEMENT_SKILL_PATH,
-            ("Phase E", "gc_close_issue_after_merge", "next_issue_recommendation"),
+            ("Phase E", "gc_close_issue_after_merge"),
             "traceability-gate-skill-missing",
-            "SKILL.md must document Phase E, the gc_close_issue_after_merge close path, and next_issue_recommendation (issues #1058/#1156).",
+            "SKILL.md must document Phase E and the gc_close_issue_after_merge close path (issue #1058).",
         ),
     )
 

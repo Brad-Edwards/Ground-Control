@@ -26,12 +26,6 @@ import {
   CONTROL_FUNCTIONS,
   CONTROL_TEST_METHODOLOGIES,
   CONTROL_TEST_CONCLUSIONS,
-  CONTROL_EFFECTIVENESS_RATINGS,
-  METHODOLOGY_FAMILIES,
-  METHODOLOGY_PROFILE_STATUSES,
-  RISK_APPETITE_PROFILE_STATUSES,
-  TREATMENT_PLAN_STATUSES,
-  TREATMENT_STRATEGIES,
   VERIFICATION_STATUSES,
   ASSURANCE_LEVELS,
   FINDING_TYPES,
@@ -44,9 +38,6 @@ import {
   ASSET_CRITICALITIES,
   ASSET_SCOPES,
   KNOWLEDGE_STATES,
-  ARCHITECTURE_FLOW_DIRECTIONS,
-  ARCHITECTURE_MODEL_ELEMENT_KINDS,
-  ARCHITECTURE_MODEL_PROVENANCE_SOURCES,
   // Research run decision surfaces (GC-RSCH-F004/F034/N012/N013, ADR-066/067/068)
   RESEARCH_GATE_POINTS,
   RESEARCH_GATE_DECISION_OUTCOMES,
@@ -106,11 +97,6 @@ import {
 } from "./gc-asset.js";
 
 import { LINK_CREATE_BODY_FIELDS } from "./link-create.js";
-
-import {
-  GC_ARCHITECTURE_MODEL_CREATE_SNAPSHOT_FIELDS,
-  GC_ARCHITECTURE_MODEL_ELEMENT_FIELDS,
-} from "./gc-architecture-model.js";
 
 // GOVERNANCE_FIELDS lives in lib.js and is now exported.
 // Import it directly to stay consistent with the contract test's reliance on
@@ -627,40 +613,6 @@ describe("MCP–OpenAPI write-contract", () => {
   });
 
   // -------------------------------------------------------------------------
-  // gc_control — control_effectiveness_assessment entity
-  // -------------------------------------------------------------------------
-
-  describe("gc_control/control_effectiveness_assessment create → ControlEffectivenessAssessmentRequest", () => {
-    assertRow({
-      label: "gc_control/control_effectiveness_assessment/create",
-      mcpFields: CONTROL_FIELDS.control_effectiveness_assessment.create,
-      openapiSchema: "ControlEffectivenessAssessmentRequest",
-      mcpOnly: {
-        ...MCP_CONTROL_ARGS,
-      },
-      enums: {
-        designEffectiveness: CONTROL_EFFECTIVENESS_RATINGS,
-        operatingEffectiveness: CONTROL_EFFECTIVENESS_RATINGS,
-      },
-    });
-  });
-
-  describe("gc_control/control_effectiveness_assessment update → UpdateControlEffectivenessAssessmentRequest", () => {
-    assertRow({
-      label: "gc_control/control_effectiveness_assessment/update",
-      mcpFields: CONTROL_FIELDS.control_effectiveness_assessment.update,
-      openapiSchema: "UpdateControlEffectivenessAssessmentRequest",
-      mcpOnly: {
-        ...MCP_CONTROL_ARGS,
-      },
-      enums: {
-        designEffectiveness: CONTROL_EFFECTIVENESS_RATINGS,
-        operatingEffectiveness: CONTROL_EFFECTIVENESS_RATINGS,
-      },
-    });
-  });
-
-  // -------------------------------------------------------------------------
   // gc_evidence — create / supersede share the same body fields
   // -------------------------------------------------------------------------
 
@@ -808,163 +760,10 @@ describe("MCP–OpenAPI write-contract", () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // gc_architecture_model — snapshot aggregate with nested element requests
-  // -------------------------------------------------------------------------
-
-  describe("gc_architecture_model create_snapshot → ArchitectureModelSnapshotRequest", () => {
-    assertRow({
-      label: "gc_architecture_model/create_snapshot",
-      mcpFields: GC_ARCHITECTURE_MODEL_CREATE_SNAPSHOT_FIELDS,
-      openapiSchema: "ArchitectureModelSnapshotRequest",
-      mcpOnly: {
-        ...MCP_CONTROL_ARGS,
-      },
-    });
-  });
-
-  describe("gc_architecture_model create_snapshot elements → ArchitectureModelElementRequest", () => {
-    assertRow({
-      label: "gc_architecture_model/create_snapshot/elements",
-      mcpFields: GC_ARCHITECTURE_MODEL_ELEMENT_FIELDS,
-      openapiSchema: "ArchitectureModelElementRequest",
-      enums: {
-        elementKind: ARCHITECTURE_MODEL_ELEMENT_KINDS,
-        flowDirection: ARCHITECTURE_FLOW_DIRECTIONS,
-        provenanceSource: ARCHITECTURE_MODEL_PROVENANCE_SOURCES,
-      },
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // gc_risk_governance — methodology_profile
-  // -------------------------------------------------------------------------
-
-  describe("gc_risk_governance/methodology_profile create → MethodologyProfileRequest", () => {
-    assertRow({
-      label: "gc_risk_governance/methodology_profile/create",
-      mcpFields: GOVERNANCE_FIELDS.methodology_profile.create,
-      openapiSchema: "MethodologyProfileRequest",
-      mcpOnly: {
-        ...MCP_CONTROL_ARGS,
-      },
-      enums: {
-        family: METHODOLOGY_FAMILIES,
-        status: METHODOLOGY_PROFILE_STATUSES,
-      },
-    });
-  });
-
-  describe("gc_risk_governance/methodology_profile update → UpdateMethodologyProfileRequest", () => {
-    assertRow({
-      label: "gc_risk_governance/methodology_profile/update",
-      mcpFields: GOVERNANCE_FIELDS.methodology_profile.update,
-      openapiSchema: "UpdateMethodologyProfileRequest",
-      mcpOnly: {
-        ...MCP_CONTROL_ARGS,
-      },
-      enums: {
-        family: METHODOLOGY_FAMILIES,
-        status: METHODOLOGY_PROFILE_STATUSES,
-      },
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // gc_risk_governance — risk_register_record
-  // -------------------------------------------------------------------------
-
-  describe("gc_risk_governance/risk_register_record create → RiskRegisterRecordRequest", () => {
-    assertRow({
-      label: "gc_risk_governance/risk_register_record/create",
-      mcpFields: GOVERNANCE_FIELDS.risk_register_record.create,
-      openapiSchema: "RiskRegisterRecordRequest",
-      mcpOnly: {
-        ...MCP_CONTROL_ARGS,
-      },
-    });
-  });
-
-  describe("gc_risk_governance/risk_register_record update → UpdateRiskRegisterRecordRequest", () => {
-    assertRow({
-      label: "gc_risk_governance/risk_register_record/update",
-      mcpFields: GOVERNANCE_FIELDS.risk_register_record.update,
-      openapiSchema: "UpdateRiskRegisterRecordRequest",
-      mcpOnly: {
-        ...MCP_CONTROL_ARGS,
-      },
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // gc_risk_governance — risk_assessment_result
-  // -------------------------------------------------------------------------
-
-  describe("gc_risk_governance/risk_assessment_result create → RiskAssessmentResultRequest", () => {
-    assertRow({
-      label: "gc_risk_governance/risk_assessment_result/create",
-      mcpFields: GOVERNANCE_FIELDS.risk_assessment_result.create,
-      openapiSchema: "RiskAssessmentResultRequest",
-      mcpOnly: {
-        ...MCP_CONTROL_ARGS,
-      },
-    });
-  });
-
-  describe("gc_risk_governance/risk_assessment_result update → UpdateRiskAssessmentResultRequest", () => {
-    assertRow({
-      label: "gc_risk_governance/risk_assessment_result/update",
-      mcpFields: GOVERNANCE_FIELDS.risk_assessment_result.update,
-      openapiSchema: "UpdateRiskAssessmentResultRequest",
-      mcpOnly: {
-        ...MCP_CONTROL_ARGS,
-        // risk_scenario_id is in the update MCP allowlist but is absent from
-        // UpdateRiskAssessmentResultRequest (create-only FK). It is forwarded
-        // on update but the backend ignores it.
-        riskScenarioId:
-          "create-only FK in RiskAssessmentResultRequest — UpdateRiskAssessmentResultRequest has no riskScenarioId; MCP update allowlist retains it for symmetry but backend ignores it",
-      },
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // gc_risk_governance — treatment_plan
-  // -------------------------------------------------------------------------
-
-  describe("gc_risk_governance/treatment_plan create → TreatmentPlanRequest", () => {
-    assertRow({
-      label: "gc_risk_governance/treatment_plan/create",
-      mcpFields: GOVERNANCE_FIELDS.treatment_plan.create,
-      openapiSchema: "TreatmentPlanRequest",
-      mcpOnly: {
-        ...MCP_CONTROL_ARGS,
-      },
-      enums: {
-        strategy: TREATMENT_STRATEGIES,
-        status: TREATMENT_PLAN_STATUSES,
-      },
-    });
-  });
-
-  describe("gc_risk_governance/treatment_plan update → UpdateTreatmentPlanRequest", () => {
-    assertRow({
-      label: "gc_risk_governance/treatment_plan/update",
-      mcpFields: GOVERNANCE_FIELDS.treatment_plan.update,
-      openapiSchema: "UpdateTreatmentPlanRequest",
-      mcpOnly: {
-        ...MCP_CONTROL_ARGS,
-        // riskRegisterRecordId is in the update MCP allowlist (from create) but
-        // is absent from UpdateTreatmentPlanRequest — treatment plans are owned
-        // by their register record for life; the FK is create-only.
-        riskRegisterRecordId:
-          "create-only required FK — UpdateTreatmentPlanRequest has no riskRegisterRecordId; MCP update allowlist retains it but backend ignores it",
-      },
-      enums: {
-        strategy: TREATMENT_STRATEGIES,
-        // status is absent from UpdateTreatmentPlanRequest; no enum check needed.
-      },
-    });
-  });
+  // ADR-089 §1/§3: gc_architecture_model was removed entirely, and
+  // gc_risk_governance's methodology_profile, risk_register_record,
+  // risk_assessment_result, treatment_plan, and risk_appetite_profile
+  // entities were retired. Only verification_result remains below.
 
   // -------------------------------------------------------------------------
   // gc_risk_governance — verification_result
@@ -1015,40 +814,6 @@ describe("MCP–OpenAPI write-contract", () => {
         evidence:
           "Map<String,Object> protected via rawBody path in createVerificationResult/updateVerificationResult " +
           "to avoid OPAQUE_VALUE_KEYS name collision with analysis-response evidence arrays.",
-      },
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // gc_risk_governance — risk_appetite_profile (GC-T005)
-  // -------------------------------------------------------------------------
-
-  describe("gc_risk_governance/risk_appetite_profile create → RiskAppetiteProfileRequest", () => {
-    assertRow({
-      label: "gc_risk_governance/risk_appetite_profile/create",
-      mcpFields: GOVERNANCE_FIELDS.risk_appetite_profile.create,
-      openapiSchema: "RiskAppetiteProfileRequest",
-      mcpOnly: {
-        ...MCP_CONTROL_ARGS,
-      },
-      enums: {
-        methodologyFamily: METHODOLOGY_FAMILIES,
-        status: RISK_APPETITE_PROFILE_STATUSES,
-      },
-    });
-  });
-
-  describe("gc_risk_governance/risk_appetite_profile update → UpdateRiskAppetiteProfileRequest", () => {
-    assertRow({
-      label: "gc_risk_governance/risk_appetite_profile/update",
-      mcpFields: GOVERNANCE_FIELDS.risk_appetite_profile.update,
-      openapiSchema: "UpdateRiskAppetiteProfileRequest",
-      mcpOnly: {
-        ...MCP_CONTROL_ARGS,
-      },
-      enums: {
-        methodologyFamily: METHODOLOGY_FAMILIES,
-        status: RISK_APPETITE_PROFILE_STATUSES,
       },
     });
   });

@@ -2,11 +2,13 @@
 
 ## Status
 
-accepted
+Superseded by ADR-089
 
 ## Date
 
 2026-06-12
+
+> **Superseded by ADR-089 (2026-07-11, issue #1346):** The derivation-backed continuous GRC program this ADR defines is retired as an active, supported product. This ADR's text is preserved as historical record; it is no longer active product or workflow behavior. See ADR-089.
 
 ## Context
 

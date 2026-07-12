@@ -11,20 +11,6 @@ Mandatory constraints the `/implement` skill applies during plan phase.
 - Plans that add API endpoints MUST include `@WebMvcTest` controller
   unit tests (not just integration tests). The sonar CI job does not run
   Testcontainers, so only unit tests contribute to SonarCloud coverage.
-- Plans for a `security_relevant` change (per the Step 3.5 screening
-  record) MUST enumerate the change's GRC deliverables as structured
-  `grc_deliverables` on `gc_post_implementation_plan` (GC-GRC-010):
-  threats to model/update, risks to assess, controls to select and
-  implement, and stale entities to refresh. Coverage is kind-aware: a
-  gap surface must be covered by a `threat` / `risk` / `control`
-  deliverable and a stale entity by a `stale_refresh` deliverable.
-  In-scope GRC work MUST NOT be deferred to a follow-up issue. A
-  disposition (`accept` / `wontfix` / `not_applicable` with
-  `authorized_by` + `rationale`) is the only relief valve and is honored
-  only when the run is authorized via `override=true` + `override_reason`
-  quoting the user's authorization (GC-GRC-015 adds graph-verified
-  dispositions). Controls are selected at plan time so they ship with the
-  change (secure by design), not retrofitted.
 - Plans whose diff touches application source (`backend/src/main/**`,
   `backend/src/test/**`, `frontend/src/**`, `mcp/**`, or `tools/**`
   outside `tools/policy/` and `tools/tests/`) MUST drop a changelog

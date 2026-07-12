@@ -147,18 +147,6 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#     anti_recommendations:",
     "#       - Do not introduce new abstractions below 3 call-sites",
     "",
-    "# Canonical boundary model declarations (GC-GRC-004). Optional.",
-    "# Use these for repository boundaries that cannot be derived from code alone.",
-    "# grc:",
-    "#   boundaries:",
-    "#     - key: policy-workflow",
-    "#       name: Policy and workflow",
-    "#       description: Repo policy, workflow rules, and agent guardrails",
-    "#       paths:",
-    "#         - tools/policy/" + "**",
-    "#         - .ground-control.yaml",
-    "#       surfaces: [policy, architecture]",
-    "",
   ].join("\n");
 }
 
@@ -351,21 +339,6 @@ export const OBSERVATION_CATEGORIES = [
   "OTHER",
 ];
 export const RISK_SCENARIO_STATUSES = ["DRAFT", "ACTIVE", "ARCHIVED"];
-export const METHODOLOGY_FAMILIES = ["FAIR", "NIST_SP800_30_R1", "ISO_27005", "CUSTOM"];
-export const METHODOLOGY_PROFILE_STATUSES = ["ACTIVE", "DEPRECATED"];
-export const RISK_APPETITE_PROFILE_STATUSES = ["DRAFT", "ACTIVE", "RETIRED"];
-export const RISK_REGISTER_STATUSES = [
-  "IDENTIFIED",
-  "ANALYZING",
-  "ASSESSED",
-  "TREATING",
-  "MONITORING",
-  "ACCEPTED",
-  "CLOSED",
-];
-export const RISK_ASSESSMENT_APPROVAL_STATUSES = ["DRAFT", "SUBMITTED", "APPROVED", "REJECTED"];
-export const TREATMENT_PLAN_STATUSES = ["PLANNED", "IN_PROGRESS", "BLOCKED", "COMPLETED", "CANCELED"];
-export const TREATMENT_STRATEGIES = ["MITIGATE", "ACCEPT", "TRANSFER", "SHARE", "AVOID", "OTHER"];
 export const RISK_SCENARIO_LINK_TARGET_TYPES = [
   "THREAT_MODEL",
   "VULNERABILITY",
@@ -754,16 +727,12 @@ export const TO_CAMEL = {
   control_function: "controlFunction",
   control_id: "controlId",
   control_uid: "controlUid",
-  // ControlTest / ControlEffectivenessAssessment fields (ADR-038)
+  // ControlTest fields (ADR-038)
   test_steps: "testSteps",
   expected_results: "expectedResults",
   actual_results: "actualResults",
   tester_identity: "testerIdentity",
   test_date: "testDate",
-  design_effectiveness: "designEffectiveness",
-  operating_effectiveness: "operatingEffectiveness",
-  assessed_at: "assessedAt",
-  supporting_test_ids: "supportingTestIds",
   implementation_scope: "implementationScope",
   methodology_factors: "methodologyFactors",
   methodology_influence: "methodologyInfluence",
@@ -1346,145 +1315,6 @@ export async function getDashboardStats(project) {
 
 export async function getWorkOrder(project) {
   return request("GET", "/api/v1/analysis/work-order", { params: { project } });
-}
-
-// GC-L007 — GRC analysis helpers. Backend service: domain/grcanalysis.
-// Controller path: /api/v1/analysis/grc/*. Param names match the controller
-// (camelCase via Spring's @RequestParam binding). Adapter tests in
-// gc-analyze.test.js lock the URL + params shape.
-
-export async function analyzeEvidenceFreshness({
-  project,
-  asOf,
-  freshnessWindowDays,
-  includeSuperseded,
-  assetId,
-  controlId,
-} = {}) {
-  return request("GET", "/api/v1/analysis/grc/evidence-freshness", {
-    params: { project, asOf, freshnessWindowDays, includeSuperseded, assetId, controlId },
-  });
-}
-
-export async function analyzeObservationProjection({
-  project,
-  asOf,
-  mode,
-  assetId,
-  controlId,
-} = {}) {
-  return request("GET", "/api/v1/analysis/grc/observation-projection", {
-    params: { project, asOf, mode, assetId, controlId },
-  });
-}
-
-export async function aggregateVendorRisk({
-  project,
-  asOf,
-  freshnessWindowDays,
-  vendorAssetId,
-} = {}) {
-  return request("GET", "/api/v1/analysis/grc/vendor-risk", {
-    params: { project, asOf, freshnessWindowDays, vendorAssetId },
-  });
-}
-
-// GC-T014 — NIST SP 800-30 Rev. 1 risk-assessment analysis helper. Returns
-// the methodology-attributed envelope from /api/v1/analysis/grc/nist-sp-800-30
-// verbatim; methodology-defined input/output map keys (threat_event_relevance,
-// legacy threat_source_relevance, likelihood_initiation,
-// likelihood_adverse_impact, etc.) must NOT be camel/snake-rewritten, so the
-// relevant outer keys are guarded by
-// OPAQUE_VALUE_KEYS above.
-export async function analyzeNistAssessment({
-  project,
-  asOf,
-  riskAssessmentResultId,
-  riskScenarioId,
-} = {}) {
-  return request("GET", "/api/v1/analysis/grc/nist-sp-800-30", {
-    params: { project, asOf, riskAssessmentResultId, riskScenarioId },
-  });
-}
-
-// GC-T011 — Open FAIR quantitative risk analysis helper. Returns the
-// methodology-attributed envelope from /api/v1/analysis/grc/fair-quantitative
-// verbatim; FAIR factor map keys (threat_event_frequency, primary_loss_magnitude,
-// etc.) must NOT be camel/snake-rewritten, so the relevant outer keys are guarded
-// by OPAQUE_VALUE_KEYS above.
-export async function analyzeFairQuantitative({
-  project,
-  asOf,
-  riskAssessmentResultId,
-  riskScenarioId,
-} = {}) {
-  return request("GET", "/api/v1/analysis/grc/fair-quantitative", {
-    params: { project, asOf, riskAssessmentResultId, riskScenarioId },
-  });
-}
-
-// GC-T005 — risk appetite/tolerance evaluation. Compares residual risk metrics
-// from RiskAssessmentResult.computedOutputs against an appetite profile's
-// tolerance ceilings and flags breaches for escalation. Read-only; resolves the
-// profile by profileId or by appetiteKey active as of `asOf`.
-export async function analyzeRiskAppetiteEvaluation({
-  project,
-  asOf,
-  profileId,
-  appetiteKey,
-  riskRegisterRecordId,
-  riskScenarioId,
-} = {}) {
-  return request("GET", "/api/v1/analysis/grc/appetite-evaluation", {
-    params: { project, asOf, profileId, appetiteKey, riskRegisterRecordId, riskScenarioId },
-  });
-}
-
-// GC-I004 — continuous compliance monitoring. Composes evidence freshness,
-// control modification timestamps, and reassessmentRequiredAt signals.
-export async function analyzeComplianceMonitoring({
-  project,
-  asOf,
-  freshnessWindowDays,
-} = {}) {
-  return request("GET", "/api/v1/analysis/grc/compliance-monitoring", {
-    params: { project, asOf, freshnessWindowDays },
-  });
-}
-
-// GC-I017 — FAIR-CAM control analytics. Derives control-level domain
-// attribution (loss_event_control / variance_management_control /
-// decision_support_control), capability, coverage, operational performance,
-// and effect-dimension entries from RiskControlMapping,
-// ControlEffectivenessAssessment, and ControlTest rows. Domain/effect
-// attribution is per-mapping; the scope filters (including methodologyProfileId)
-// compose as an intersection over the candidate mappings.
-export async function analyzeFairCamControlAnalytics({
-  project,
-  asOf,
-  freshnessWindowDays,
-  controlId,
-  scopedImplementationId,
-  riskScenarioId,
-  riskRegisterRecordId,
-  threatModelId,
-  methodologyProfileId,
-  domain,
-} = {}) {
-  return request("GET", "/api/v1/analysis/grc/fair-cam-control-analytics", {
-    params: {
-      project,
-      asOf,
-      freshnessWindowDays,
-      controlId,
-      scopedImplementationId,
-      riskScenarioId,
-      riskRegisterRecordId,
-      threatModelId,
-      methodologyProfileId,
-      domain,
-    },
-  });
 }
 
 // Strict containment predicate. Both arguments MUST already be canonical
@@ -3041,190 +2871,6 @@ function normalizeKnowledgeConfig(raw) {
 }
 
 // ---------------------------------------------------------------------------
-// grc.boundaries (GC-GRC-004)
-//
-// Declared boundary inputs for the canonical boundary model. These complement
-// derived TRUST_BOUNDARY facts; they are not themselves the canonical output.
-// Path containment is finalized in getRepoGroundControlContext where the repo
-// root is known.
-// ---------------------------------------------------------------------------
-
-const GRC_TOP_KEYS = ["boundaries", "data_classification"];
-const GRC_BOUNDARY_KEYS = ["key", "name", "description", "paths", "surfaces"];
-const GRC_BOUNDARY_KEY_RE = /^[a-z0-9][a-z0-9_.-]{0,119}$/;
-// GC-GRC-006: data classification lattice config surface (GC-GRC-023). Validated
-// here and forwarded to the backend, which remains the semantic authority.
-const GRC_LABEL_KEYS = ["key", "display_name", "description", "rank"];
-const GRC_FLOW_KEYS = ["from", "to"];
-const GRC_LABEL_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/;
-
-function emptyGrcConfig() {
-  return { boundaries: [] };
-}
-
-function normalizeGrcConfig(raw) {
-  if (raw == null) return { ok: true, value: emptyGrcConfig() };
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    return { ok: false, errors: ["grc must be a mapping, not a list or scalar"] };
-  }
-  const errors = [];
-  for (const key of Object.keys(raw)) {
-    if (!GRC_TOP_KEYS.includes(key)) {
-      errors.push(`grc has unknown key '${key}'`);
-    }
-  }
-  const value = emptyGrcConfig();
-  if (raw.boundaries != null) {
-    if (!Array.isArray(raw.boundaries)) {
-      errors.push("grc.boundaries must be a list when set");
-    } else {
-      const seenKeys = new Set();
-      raw.boundaries.forEach((entry, i) => {
-        const prefix = `grc.boundaries[${i}]`;
-        const before = errors.length;
-        if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
-          errors.push(`${prefix} must be a mapping`);
-          return;
-        }
-        for (const key of Object.keys(entry)) {
-          if (!GRC_BOUNDARY_KEYS.includes(key)) {
-            errors.push(`${prefix} has unknown key '${key}'`);
-          }
-        }
-        if (typeof entry.key !== "string" || !GRC_BOUNDARY_KEY_RE.test(entry.key)) {
-          errors.push(`${prefix}.key must match ${GRC_BOUNDARY_KEY_RE.source}`);
-        } else if (seenKeys.has(entry.key)) {
-          errors.push(`${prefix}.key duplicates an earlier boundary key '${entry.key}'`);
-        }
-        if (typeof entry.name !== "string" || entry.name.trim() === "") {
-          errors.push(`${prefix}.name must be a non-empty string`);
-        }
-        if (entry.description != null && (typeof entry.description !== "string" || entry.description.trim() === "")) {
-          errors.push(`${prefix}.description must be a non-empty string when set`);
-        }
-        if (!Array.isArray(entry.paths) || entry.paths.length === 0) {
-          errors.push(`${prefix}.paths must be a non-empty list of repo-relative selectors`);
-        } else {
-          entry.paths.forEach((path, pathIndex) => {
-            const field = `${prefix}.paths[${pathIndex}]`;
-            if (typeof path !== "string" || path.trim() === "") {
-              errors.push(`${field} must be a non-empty string`);
-              return;
-            }
-            const trimmed = path.trim();
-            const selectorPrefix = trimmed.endsWith("/**") ? trimmed.slice(0, -3) : trimmed;
-            if (selectorPrefix.includes("*") || (trimmed.includes("*") && !trimmed.endsWith("/**"))) {
-              errors.push(`${field} only supports exact paths or trailing /** selectors`);
-            } else if (trimmed.endsWith("/**") && trimmed.length <= 3) {
-              errors.push(`${field} must include a path prefix before /**`);
-            }
-          });
-        }
-        if (entry.surfaces != null) {
-          if (!Array.isArray(entry.surfaces)) {
-            errors.push(`${prefix}.surfaces must be a list when set`);
-          } else {
-            entry.surfaces.forEach((surface, surfaceIndex) => {
-              if (typeof surface !== "string" || surface.trim() === "") {
-                errors.push(`${prefix}.surfaces[${surfaceIndex}] must be a non-empty string`);
-              }
-            });
-          }
-        }
-        if (errors.length === before) {
-          seenKeys.add(entry.key);
-          value.boundaries.push({
-            key: entry.key,
-            name: entry.name,
-            description: entry.description ?? null,
-            path_selectors: entry.paths.map((path) => path.trim()),
-            surfaces: entry.surfaces == null ? [] : entry.surfaces.map((surface) => surface.trim()),
-          });
-        }
-      });
-    }
-  }
-  if (raw.data_classification != null) {
-    const dc = raw.data_classification;
-    const prefix = "grc.data_classification";
-    if (typeof dc !== "object" || Array.isArray(dc)) {
-      errors.push(`${prefix} must be a mapping`);
-    } else {
-      for (const key of Object.keys(dc)) {
-        if (key !== "labels" && key !== "permitted_flows") {
-          errors.push(`${prefix} has unknown key '${key}'`);
-        }
-      }
-      const labels = [];
-      const seenLabels = new Set();
-      if (!Array.isArray(dc.labels) || dc.labels.length === 0) {
-        errors.push(`${prefix}.labels must be a non-empty list`);
-      } else {
-        dc.labels.forEach((entry, i) => {
-          const lp = `${prefix}.labels[${i}]`;
-          if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
-            errors.push(`${lp} must be a mapping`);
-            return;
-          }
-          for (const key of Object.keys(entry)) {
-            if (!GRC_LABEL_KEYS.includes(key)) errors.push(`${lp} has unknown key '${key}'`);
-          }
-          if (typeof entry.key !== "string" || !GRC_LABEL_KEY_RE.test(entry.key)) {
-            errors.push(`${lp}.key must match ${GRC_LABEL_KEY_RE.source}`);
-          } else if (seenLabels.has(entry.key)) {
-            errors.push(`${lp}.key duplicates an earlier label key '${entry.key}'`);
-          } else {
-            seenLabels.add(entry.key);
-          }
-          if (typeof entry.display_name !== "string" || entry.display_name.trim() === "") {
-            errors.push(`${lp}.display_name must be a non-empty string`);
-          }
-          if (entry.description != null && (typeof entry.description !== "string" || entry.description.trim() === "")) {
-            errors.push(`${lp}.description must be a non-empty string when set`);
-          }
-          if (entry.rank != null && !Number.isInteger(entry.rank)) {
-            errors.push(`${lp}.rank must be an integer when set`);
-          }
-          labels.push({
-            key: entry.key,
-            display_name: entry.display_name,
-            description: entry.description ?? null,
-            rank: entry.rank ?? null,
-          });
-        });
-      }
-      const flows = [];
-      if (dc.permitted_flows != null) {
-        if (!Array.isArray(dc.permitted_flows)) {
-          errors.push(`${prefix}.permitted_flows must be a list when set`);
-        } else {
-          dc.permitted_flows.forEach((entry, i) => {
-            const fp = `${prefix}.permitted_flows[${i}]`;
-            if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
-              errors.push(`${fp} must be a mapping`);
-              return;
-            }
-            for (const key of Object.keys(entry)) {
-              if (!GRC_FLOW_KEYS.includes(key)) errors.push(`${fp} has unknown key '${key}'`);
-            }
-            if (typeof entry.from !== "string" || entry.from.trim() === "") {
-              errors.push(`${fp}.from must be a non-empty string`);
-            }
-            if (typeof entry.to !== "string" || entry.to.trim() === "") {
-              errors.push(`${fp}.to must be a non-empty string`);
-            }
-            flows.push({ from: entry.from, to: entry.to });
-          });
-        }
-      }
-      value.data_classification = { labels, permitted_flows: flows };
-    }
-  }
-  if (errors.length) return { ok: false, errors };
-  return { ok: true, value };
-}
-
-// ---------------------------------------------------------------------------
 // architecture.vocabulary (#931)
 //
 // Optional per-repo block declaring the design vocabulary the codex preflight
@@ -3450,10 +3096,17 @@ export function parseGroundControlYaml(yamlText) {
     "routing",
     "telemetry",
     "architecture",
-    "grc",
     "short_code",
   ];
+  // `grc` is intentionally NOT in allowedTop's rejection path: a legacy
+  // `grc.*` block from a consumer repo's .ground-control.yaml (ADR-057/058,
+  // retired by ADR-089) is tolerated and ignored rather than rejected, so an
+  // otherwise-valid repo config does not break. Its content is never
+  // validated, parsed, or included in the returned context — this is a
+  // read-and-discard compatibility allowance, not a second active config
+  // surface.
   for (const key of Object.keys(parsed)) {
+    if (key === "grc") continue;
     if (!allowedTop.includes(key)) {
       errors.push(`unknown top-level key '${key}'`);
     }
@@ -3531,9 +3184,6 @@ export function parseGroundControlYaml(yamlText) {
   const architectureResult = normalizeArchitectureConfig(parsed.architecture);
   if (!architectureResult.ok) errors.push(...architectureResult.errors);
 
-  const grcResult = normalizeGrcConfig(parsed.grc);
-  if (!grcResult.ok) errors.push(...grcResult.errors);
-
   if (errors.length) return { ok: false, errors };
 
   return {
@@ -3555,7 +3205,6 @@ export function parseGroundControlYaml(yamlText) {
       routing: routingResult.value,
       telemetry: telemetryResult.value,
       architecture: architectureResult.value,
-      grc: grcResult.value,
     },
   };
 }
@@ -3700,15 +3349,6 @@ export async function getRepoGroundControlContext(repoPath) {
       if (!real.ok) docsPathErrors.push(real.error);
     });
   }
-  const grc = parseResult.value.grc;
-  (grc.boundaries || []).forEach((boundary, i) => {
-    (boundary.path_selectors || []).forEach((selector, pathIndex) => {
-      const field = `grc.boundaries[${i}].paths[${pathIndex}]`;
-      const path = selector.endsWith("/**") ? selector.slice(0, -3) : selector;
-      const r = resolveRepoRelativePath(repoRoot, path, field);
-      if (!r.ok) docsPathErrors.push(r.error);
-    });
-  });
   if (docsPathErrors.length) {
     return {
       repo_path: repoRoot,
@@ -3741,7 +3381,6 @@ export async function getRepoGroundControlContext(repoPath) {
     routing: parseResult.value.routing,
     telemetry: parseResult.value.telemetry,
     architecture: parseResult.value.architecture,
-    grc: parseResult.value.grc,
     errors: [],
   };
 }
@@ -4281,10 +3920,8 @@ export async function runPostImplementationPlan({
   repoPath,
   issueNumber,
   planBody,
-  grcDeliverables = null,
   override = false,
   overrideReason = null,
-  deps = {},
 }) {
   if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
     throw new Error("gc_post_implementation_plan requires a positive integer issue_number");
@@ -4295,7 +3932,6 @@ export async function runPostImplementationPlan({
 
   const repoRoot = await ensureGitRepo(repoPath);
   const { owner, name } = await getOwnerRepo(repoRoot);
-  const readCommentBodies = deps.readCommentBodies ?? readIssueCommentBodies;
 
   // Prerequisite check: preflight must have run for this issue. Override is
   // available for the same reason as the codex-review cap override — the user
@@ -4317,10 +3953,7 @@ export async function runPostImplementationPlan({
     const decision = evaluatePhasePrerequisite({
       completed,
       nextPhase: "plan",
-      // GC-GRC-010: screening must precede planning so the deliverables gate has
-      // sets to derive from — a plan cannot enumerate GRC deliverables "derived
-      // from the screening sets" if screening never ran.
-      requires: ["preflight", "grc_screening"],
+      requires: ["preflight"],
       issueNumber,
     });
     if (!decision.ok) {
@@ -4332,9 +3965,7 @@ export async function runPostImplementationPlan({
         message: decision.message,
         missing: decision.missing,
         completed: decision.completed,
-        next_action: Array.isArray(decision.missing) && decision.missing.includes("grc_screening")
-          ? "run_gc_post_grc_screening_first"
-          : "run_gc_codex_architecture_preflight_first",
+        next_action: "run_gc_codex_architecture_preflight_first",
       };
     }
   }
@@ -4362,97 +3993,7 @@ export async function runPostImplementationPlan({
     };
   }
 
-  // GC-GRC-010: design-time GRC deliverables gate. Read the Step 3.5 screening
-  // record; when the change is security-relevant the plan must enumerate
-  // structured deliverables covering every gap surface and stale entity (no-defer
-  // without an authorized disposition). Runs regardless of `override` — override
-  // authorizes skipping the preflight/screening prerequisites, not shipping a
-  // security-relevant change with no security design; the disposition markers are
-  // the deliberate relief valve, and the post-merge reconcile is the backstop.
-  let screeningRecord = null;
-  try {
-    const bodies = await readCommentBodies(repoRoot, owner, name, issueNumber);
-    screeningRecord = parseGrcScreeningData(bodies, issueNumber);
-  } catch {
-    screeningRecord = null;
-  }
-  const deliverablesGate = validateGrcDeliverablesPlanGate({
-    deliverables: grcDeliverables,
-    screeningRecord,
-    // A disposition is honored only under the audited override escalation (which
-    // requires a non-empty override_reason, validated above) — never as a silent
-    // caller-asserted skip (codex security cycle 1).
-    dispositionsAuthorized: override === true,
-  });
-  if (!deliverablesGate.ok) {
-    return {
-      repo_path: repoRoot,
-      issue_number: issueNumber,
-      ok: false,
-      error: deliverablesGate.error,
-      message: buildGrcDeliverablesFailureMessage(deliverablesGate),
-      security_relevant: true,
-      invalid: deliverablesGate.invalid ?? [],
-      uncovered: deliverablesGate.uncovered ?? [],
-      rendered_scaffold: renderGrcDeliverablesScaffold(screeningRecord),
-      next_action: "add_grc_deliverables_to_plan_and_retry",
-    };
-  }
-
-  // Publish-safety guards on the caller-controlled plan body (the same argv-based
-  // `gh` post used for every screening/decision record): reject a hand-forged
-  // deliverables machine block, scrub sensitive content, cap body size. The
-  // reserved-marker prefix guard is intentionally NOT applied to the whole plan
-  // body — a plan legitimately discusses gc: marker families in prose.
-  const forgedBlock = rejectForgedDeliverablesBlock(planBody, "plan_body");
-  if (forgedBlock) {
-    return {
-      repo_path: repoRoot,
-      issue_number: issueNumber,
-      ok: false,
-      error: "plan_body_reserved_marker",
-      message: forgedBlock,
-      next_action: "remove_gc_grc_deliverables_data_block_from_plan_body_and_retry",
-    };
-  }
-
-  const hasDeliverables = Array.isArray(grcDeliverables) && grcDeliverables.length > 0;
-
-  // Deliverable free-text fields are short structured input rendered into the
-  // published comment, so the strict reserved-marker prefix guard applies here
-  // (unlike the long plan-body prose): a forged `<!-- gc:phase ... -->` in an
-  // action string would otherwise mint a phase marker on post.
-  if (hasDeliverables) {
-    for (let i = 0; i < grcDeliverables.length; i++) {
-      const d = grcDeliverables[i];
-      const fields = [
-        [d?.target, `grc_deliverables[${i}].target`],
-        [d?.action, `grc_deliverables[${i}].action`],
-        [d?.disposition?.authorized_by, `grc_deliverables[${i}].disposition.authorized_by`],
-        [d?.disposition?.rationale, `grc_deliverables[${i}].disposition.rationale`],
-      ];
-      for (const [value, fieldName] of fields) {
-        const markerErr = rejectReservedMarkerSequence(value, fieldName);
-        if (markerErr) {
-          return {
-            repo_path: repoRoot,
-            issue_number: issueNumber,
-            ok: false,
-            error: "grc_deliverables_reserved_marker",
-            message: markerErr,
-            next_action: "remove_reserved_marker_from_grc_deliverables_and_retry",
-          };
-        }
-      }
-    }
-  }
-
-  // When deliverables are supplied, append the server-rendered deliverables record
-  // (authoritative machine block + human section) after the plan prose so
-  // downstream latest-wins parsing reads the validated data, not caller prose.
-  const combinedBody = hasDeliverables
-    ? `${planBody.trimEnd()}\n\n${renderGrcDeliverablesRecord({ deliverables: grcDeliverables, screeningRecord })}`
-    : planBody;
+  const combinedBody = planBody;
 
   const sensitiveError = detectSensitiveBodyContent(combinedBody);
   if (sensitiveError) {
@@ -4487,8 +4028,6 @@ export async function runPostImplementationPlan({
     phase_marker: { phase: "plan", issue_number: issueNumber },
     override: override === true ? true : false,
     override_reason: override === true ? overrideReason.trim() : null,
-    security_relevant: deliverablesGate.security_relevant === true,
-    grc_deliverables_count: hasDeliverables ? grcDeliverables.length : 0,
     comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
     comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
   };
@@ -5495,6 +5034,49 @@ export function parsePhaseMarkers(commentBodies, issueNumber) {
     }
   }
   return phases;
+}
+
+// ---------------------------------------------------------------------------
+// Legacy gc:grc-screening data block — READ-ONLY compatibility parser.
+// ---------------------------------------------------------------------------
+// ADR-089 §4: the composed GRC screening/deliverables/reconciliation engine
+// (Step 3.5, ADR-057/058) is retired — no new code path writes a
+// gc:grc-screening or gc:grc-screening-data block. This parser is kept ONLY so
+// old issue threads and workflow-run ingestion can still recognize markers a
+// prior workflow run already posted; it must never be reattached to a write,
+// gate, or enforcement path. gc-workflow-run-ingest.js is the sole consumer,
+// and only for a boolean presence check (has_grc_screening).
+const GRC_SCREENING_MARKER_RE = /<!--\s*gc:grc-screening(?!-data)\s+issue="(\d+)"[^]*?-->/g;
+const GRC_SCREENING_DATA_RE = /<!--\s*gc:grc-screening-data\s+(\{[^]*?\})\s*-->/g;
+
+// Scan an array of comment bodies for a legacy GRC screening data block.
+// Returns the payload object from the LATEST block whose accompanying marker
+// has issue="<issueNumber>", or null if no such block is found. Tolerates
+// malformed JSON (skip, continue scanning).
+export function parseGrcScreeningData(commentBodies, issueNumber) {
+  if (!Array.isArray(commentBodies)) return null;
+  let latest = null;
+  for (const body of commentBodies) {
+    if (typeof body !== "string") continue;
+    let hasMarkerForIssue = false;
+    GRC_SCREENING_MARKER_RE.lastIndex = 0;
+    for (const m of body.matchAll(GRC_SCREENING_MARKER_RE)) {
+      if (Number.parseInt(m[1], 10) === issueNumber) {
+        hasMarkerForIssue = true;
+        break;
+      }
+    }
+    if (!hasMarkerForIssue) continue;
+    GRC_SCREENING_DATA_RE.lastIndex = 0;
+    for (const dm of body.matchAll(GRC_SCREENING_DATA_RE)) {
+      try {
+        latest = JSON.parse(dm[1]); // last match wins within a body
+      } catch {
+        // malformed JSON — skip this block
+      }
+    }
+  }
+  return latest;
 }
 
 // Pure: given the set of completed phases, decide whether the requested
@@ -10122,46 +9704,6 @@ export async function deleteRiskScenarioLink(riskScenarioId, linkId, project) {
   );
 }
 
-/**
- * GET /api/v1/risk-scenarios/workspace — read-only workspace composition per
- * GC-Q009. Returns scoped risk scenarios with linked assets, controls, findings,
- * evidence, assessments, treatments, and register memberships.
- *
- * @param {object} params
- * @param {string} [params.project] - project identifier or UUID
- * @param {string} [params.assetId] - filter scenarios to those linked to this asset UUID
- * @param {string} [params.status] - filter by status (RiskScenarioStatus enum)
- * @param {string} [params.methodologyProfileId] - filter by methodology profile UUID
- * @param {string} [params.approvalState] - filter by assessment approval state (RiskAssessmentApprovalStatus enum)
- * @param {string} [params.treatmentStatus] - filter by treatment status (TreatmentPlanStatus enum)
- * @param {string} [params.asOf] - ISO-8601 instant for freshness reference
- * @param {number} [params.freshnessWindowDays] - freshness window in days (default 90)
- * @param {string} [params.compare] - comma-separated scenario UUIDs for comparison (max 10)
- */
-export async function getRiskScenarioWorkspace({
-  project,
-  assetId,
-  status,
-  methodologyProfileId,
-  approvalState,
-  treatmentStatus,
-  asOf,
-  freshnessWindowDays,
-  compare,
-} = {}) {
-  const params = {};
-  if (project != null) params.project = project;
-  if (assetId != null) params.assetId = assetId;
-  if (status != null) params.status = status;
-  if (methodologyProfileId != null) params.methodologyProfileId = methodologyProfileId;
-  if (approvalState != null) params.approvalState = approvalState;
-  if (treatmentStatus != null) params.treatmentStatus = treatmentStatus;
-  if (asOf != null) params.asOf = asOf;
-  if (freshnessWindowDays != null) params.freshnessWindowDays = String(freshnessWindowDays);
-  if (compare != null && compare.length > 0) params.compare = Array.isArray(compare) ? compare.join(",") : compare;
-  return request("GET", "/api/v1/risk-scenarios/workspace", { params });
-}
-
 // ---------------------------------------------------------------------------
 // Threat Model API functions (GC-H001)
 //
@@ -10231,37 +9773,6 @@ export async function deleteThreatModelLink(threatModelId, linkId, project) {
     `/api/v1/threat-models/${encodeURIComponent(threatModelId)}/links/${encodeURIComponent(linkId)}`,
     { params: { project } },
   );
-}
-
-/**
- * GET /api/v1/threat-models/workspace — read-only workspace composition per
- * GC-Q010. Returns scoped assets, flows, and threat entries with staleness
- * indicators.
- *
- * @param {object} params
- * @param {string} [params.project] - project identifier or UUID
- * @param {string} [params.assetId] - filter entries to those linked to this asset UUID
- * @param {string} [params.stride] - filter by STRIDE category (StrideCategory enum)
- * @param {string} [params.status] - filter by status (ThreatModelStatus enum)
- * @param {string} [params.asOf] - ISO-8601 instant for freshness reference
- * @param {number} [params.freshnessWindowDays] - freshness window in days (default 90)
- */
-export async function getThreatModelWorkspace({
-  project,
-  assetId,
-  stride,
-  status,
-  asOf,
-  freshnessWindowDays,
-} = {}) {
-  const params = {};
-  if (project != null) params.project = project;
-  if (assetId != null) params.assetId = assetId;
-  if (stride != null) params.stride = stride;
-  if (status != null) params.status = status;
-  if (asOf != null) params.asOf = asOf;
-  if (freshnessWindowDays != null) params.freshnessWindowDays = String(freshnessWindowDays);
-  return request("GET", "/api/v1/threat-models/workspace", { params });
 }
 
 // ---------------------------------------------------------------------------
@@ -10388,267 +9899,6 @@ export async function supersedeEvidenceArtifact(id, data, project) {
   });
 }
 
-/**
- * GET /api/v1/evidence-state/workspace — read-only workspace composition per
- * GC-Q012. Returns scoped evidence artifacts, observations, freshness counts,
- * provenance source refs, affected assets, controls, assessments, and findings.
- *
- * @param {object} params
- * @param {string} [params.project] - project identifier or UUID
- * @param {string} [params.assetId] - filter evidence to this asset UUID
- * @param {string} [params.controlId] - filter evidence to this control UUID
- * @param {string} [params.asOf] - ISO-8601 instant for freshness reference
- * @param {number} [params.freshnessWindowDays] - freshness window in days (default 90)
- * @param {boolean} [params.includeSuperseded] - include superseded artifacts
- */
-export async function getEvidenceStateWorkspace({
-  project,
-  assetId,
-  controlId,
-  asOf,
-  freshnessWindowDays,
-  includeSuperseded,
-} = {}) {
-  const params = {};
-  if (project != null) params.project = project;
-  if (assetId != null) params.assetId = assetId;
-  if (controlId != null) params.controlId = controlId;
-  if (asOf != null) params.asOf = asOf;
-  if (freshnessWindowDays != null) params.freshnessWindowDays = String(freshnessWindowDays);
-  if (includeSuperseded != null) params.includeSuperseded = String(includeSuperseded);
-  return request("GET", "/api/v1/evidence-state/workspace", { params });
-}
-
-// ---------------------------------------------------------------------------
-// Derivation API functions (GC-GRC-001)
-// ---------------------------------------------------------------------------
-
-export const DERIVATION_SCOPE_MODES = ["FULL_REPO", "DIFF", "PATH_SET"];
-export const SYSTEM_MODEL_FACT_KINDS = [
-  "COMPONENT",
-  "TRUST_BOUNDARY",
-  "DATA_FLOW",
-  "ENTRY_POINT",
-  "TAINT_PATH",
-  "SECRET_USAGE",
-  "EXTERNAL_INTERACTION",
-  "DATA_CLASSIFICATION_HINT",
-];
-export const CAPTURE_LIMIT_REASONS = [
-  "UNSUPPORTED_LANGUAGE",
-  "UNSUPPORTED_SURFACE",
-  "DISABLED_ADAPTER",
-  "TOOL_UNAVAILABLE",
-  "SCOPE_UNSUPPORTED",
-  "TOOL_EXECUTION_FAILED",
-];
-
-export async function runDerivation(data, project) {
-  return request("POST", "/api/v1/derivations/runs", { body: data, params: { project } });
-}
-
-export async function listDerivationRuns({ project } = {}) {
-  return request("GET", "/api/v1/derivations/runs", { params: { project } });
-}
-
-export async function getDerivationRun(id, project) {
-  return request("GET", `/api/v1/derivations/runs/${encodeURIComponent(id)}`, { params: { project } });
-}
-
-export async function getDerivationBoundaryModel(id, project) {
-  return request("GET", `/api/v1/derivations/runs/${encodeURIComponent(id)}/boundary-model`, { params: { project } });
-}
-
-export async function listDerivationFacts({ project, runId, factKind } = {}) {
-  return request("GET", "/api/v1/derivations/facts", { params: { project, runId, factKind } });
-}
-
-export async function listDerivationCaptureLimits({ project, runId, reason } = {}) {
-  return request("GET", "/api/v1/derivations/capture-limits", { params: { project, runId, reason } });
-}
-
-// ---------------------------------------------------------------------------
-// Architecture Model API functions (GC-GRC-005)
-// ---------------------------------------------------------------------------
-
-export const ARCHITECTURE_MODEL_ELEMENT_KINDS = [
-  "COMPONENT",
-  "PROCESS",
-  "DATA_STORE",
-  "EXTERNAL_ENTITY",
-  "DATA_FLOW",
-  "TRUST_BOUNDARY",
-  "DATA_CLASSIFICATION",
-];
-export const ARCHITECTURE_MODEL_PROVENANCE_SOURCES = ["ADAPTER", "DECLARATION"];
-export const ARCHITECTURE_FLOW_DIRECTIONS = ["UNIDIRECTIONAL", "BIDIRECTIONAL"];
-
-export async function createArchitectureModelSnapshot(data, project) {
-  return request("POST", "/api/v1/architecture-models/snapshots", { body: data, params: { project } });
-}
-
-// Returns snapshot summaries (metadata + element/flow counts) without the element
-// payload; use getArchitectureModelSnapshot for a single snapshot's full element state.
-export async function listArchitectureModelSnapshots({ project } = {}) {
-  return request("GET", "/api/v1/architecture-models/snapshots", { params: { project } });
-}
-
-export async function getArchitectureModelSnapshot(id, project) {
-  return request("GET", `/api/v1/architecture-models/snapshots/${encodeURIComponent(id)}`, {
-    params: { project },
-  });
-}
-
-export async function listArchitectureModelElements({ project } = {}) {
-  return request("GET", "/api/v1/architecture-models/elements", { params: { project } });
-}
-
-export async function getArchitectureModelElement(id, project) {
-  return request("GET", `/api/v1/architecture-models/elements/${encodeURIComponent(id)}`, {
-    params: { project },
-  });
-}
-
-export async function diffArchitectureModelSnapshots({ project, fromSnapshotId, toSnapshotId } = {}) {
-  return request("GET", "/api/v1/architecture-models/diff", {
-    params: { project, fromSnapshotId, toSnapshotId },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// GC-S005: scheduled evidence-collection campaigns.
-// ---------------------------------------------------------------------------
-
-export const EVIDENCE_CAMPAIGN_FREQUENCIES = ["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY"];
-
-export async function createEvidenceCampaign(data, project) {
-  return request("POST", "/api/v1/evidence-campaigns", { body: data, params: { project } });
-}
-
-export async function updateEvidenceCampaign(id, data, project) {
-  return request("PUT", `/api/v1/evidence-campaigns/${encodeURIComponent(id)}`, {
-    body: data,
-    params: { project },
-  });
-}
-
-export async function pauseEvidenceCampaign(id, project) {
-  return request("POST", `/api/v1/evidence-campaigns/${encodeURIComponent(id)}/pause`, { params: { project } });
-}
-
-export async function resumeEvidenceCampaign(id, project) {
-  return request("POST", `/api/v1/evidence-campaigns/${encodeURIComponent(id)}/resume`, { params: { project } });
-}
-
-export async function triggerEvidenceCampaign(id, project) {
-  return request("POST", `/api/v1/evidence-campaigns/${encodeURIComponent(id)}/trigger`, { params: { project } });
-}
-
-// ---------------------------------------------------------------------------
-// Data classification lattice (GC-GRC-006). Lattice writes are admin-only on the
-// backend; reads + evaluation are project-scoped.
-// ---------------------------------------------------------------------------
-
-export async function getDataClassificationLattice({ project } = {}) {
-  return request("GET", "/api/v1/data-classification/lattice", { params: { project } });
-}
-
-export async function putDataClassificationLattice(data, project) {
-  return request("PUT", "/api/v1/data-classification/lattice", { body: data, params: { project } });
-}
-
-export async function resetDataClassificationLattice({ project } = {}) {
-  return request("DELETE", "/api/v1/data-classification/lattice", { params: { project } });
-}
-
-export async function evaluateDataClassification({ project, snapshotId } = {}) {
-  return request("GET", "/api/v1/data-classification/evaluation", { params: { project, snapshotId } });
-}
-
-// ---------------------------------------------------------------------------
-// Threat enumeration (GC-GRC-007). Read-only deterministic enumeration of
-// candidate threats from an architecture-model snapshot against a registered
-// threat rule pack.
-// ---------------------------------------------------------------------------
-
-export async function threatEnumeration({ project, packId, version, snapshotId } = {}) {
-  return request("GET", "/api/v1/threat-enumeration", { params: { project, packId, version, snapshotId } });
-}
-
-// ---------------------------------------------------------------------------
-// Control identification (GC-GRC-008): deterministic mapping of enumerated
-// threats to candidate controls, and the confirmed-coverage read.
-// ---------------------------------------------------------------------------
-
-export async function controlIdentification({ project, threatPackId, version, snapshotId } = {}) {
-  return request("GET", "/api/v1/control-identification", {
-    params: { project, threatPackId, version, snapshotId },
-  });
-}
-
-export async function controlCoverage({ project, threatModelId } = {}) {
-  return request("GET", "/api/v1/control-identification/coverage", {
-    params: { project, threatModelId },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// On-demand GRC assessment lane (GC-GRC-016)
-// ---------------------------------------------------------------------------
-
-export async function createGrcAssessmentRun(data, project) {
-  return request("POST", "/api/v1/grc-assessment-runs", { body: data, params: { project } });
-}
-
-export async function reviewGrcAssessmentRun(id, data, project) {
-  return request("POST", `/api/v1/grc-assessment-runs/${encodeURIComponent(id)}/review`, {
-    body: data,
-    params: { project },
-  });
-}
-
-export async function getGrcAssessmentRun(id, project) {
-  return request("GET", `/api/v1/grc-assessment-runs/${encodeURIComponent(id)}`, { params: { project } });
-}
-
-export async function listGrcAssessmentRuns({ project, limit } = {}) {
-  return request("GET", "/api/v1/grc-assessment-runs", { params: { project, limit } });
-}
-
-// ---------------------------------------------------------------------------
-// NIST SP 800-30 Rev. 1 enums (GC-T014, ADR-034 mirror policy)
-// ---------------------------------------------------------------------------
-
-export const THREAT_EVENT_KINDS = ["ADVERSARIAL", "NON_ADVERSARIAL"];
-export const THREAT_SOURCE_RELEVANCES = [
-  "CONFIRMED", "EXPECTED", "ANTICIPATED", "PREDICTED", "POSSIBLE", "NOT_APPLICABLE",
-];
-export const NIST_LIKELIHOOD_BANDS = ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"];
-export const NIST_IMPACT_BANDS = ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH"];
-
-// GC-T012: normalized cross-methodology risk concept vocabulary (ADR-034 mirror).
-// Declaration order matches NormalizedConcept.java exactly.
-export const NORMALIZED_CONCEPTS = [
-  "THREAT_SOURCE",
-  "THREAT_EVENT",
-  "VULNERABILITY_OR_EXPOSURE",
-  "ASSET",
-  "PROCESS_OR_OBJECTIVE",
-  "CONSEQUENCE_OR_EFFECT",
-  "CONTROL",
-  "LIKELIHOOD_OR_FREQUENCY",
-  "IMPACT_OR_LOSS_MAGNITUDE",
-  "TREATMENT",
-];
-
-// GC-T012: vocabulary surfaces a crosswalk entry can target (ADR-034 mirror).
-// Declaration order matches CrosswalkVocabularySurface.java exactly.
-export const CROSSWALK_VOCABULARY_SURFACES = [
-  "INPUT_SCHEMA",
-  "OUTPUT_SCHEMA",
-  "TREATMENT_STRATEGY_VOCABULARY",
-];
-
 // ---------------------------------------------------------------------------
 // Audit API functions (GC-U001 / ADR-047)
 // ---------------------------------------------------------------------------
@@ -10720,15 +9970,6 @@ export async function deleteAuditLink(auditId, linkId, project) {
 
 export const CONTROL_STATUSES = ["DRAFT", "PROPOSED", "IMPLEMENTED", "OPERATIONAL", "DEPRECATED", "RETIRED"];
 export const CONTROL_FUNCTIONS = ["PREVENTIVE", "DETECTIVE", "CORRECTIVE", "COMPENSATING"];
-export const CONTROL_WORKSPACE_QUEUE_REASONS = [
-  "OWNER_MISSING",
-  "STATUS_DRAFT",
-  "TEST_EVIDENCE_MISSING",
-  "ASSESSMENT_MISSING",
-  "OPEN_EXCEPTION",
-  "EFFECTIVENESS_WEAK",
-  "CURRENT",
-];
 export const CONTROL_LINK_TARGET_TYPES = [
   "ASSET", "RISK_SCENARIO", "RISK_REGISTER_RECORD", "RISK_ASSESSMENT_RESULT",
   "TREATMENT_PLAN", "METHODOLOGY_PROFILE", "OBSERVATION", "REQUIREMENT",
@@ -11631,41 +10872,6 @@ export async function getControlByUid(uid, project) {
   return request("GET", `/api/v1/controls/uid/${encodeURIComponent(uid)}`, { params: { project } });
 }
 
-/**
- * GET /api/v1/controls/workspace — read-only Control and Assurance Workspace
- * per GC-Q011. Returns catalog controls with scoped implementations, tests,
- * effectiveness assessments, observation-backed evidence summaries, findings,
- * risk mappings, and owner queue reasons.
- *
- * @param {object} params
- * @param {string} [params.project] - project identifier or UUID
- * @param {string} [params.status] - filter by status (ControlStatus enum)
- * @param {string} [params.controlFunction] - filter by control function enum
- * @param {string} [params.owner] - case-insensitive owner substring
- * @param {string} [params.queue] - filter by owner queue reason
- * @param {string} [params.asOf] - ISO-8601 instant for as-of assurance state
- * @param {number} [params.freshnessWindowDays] - freshness window in days (default 90)
- */
-export async function getControlAssuranceWorkspace({
-  project,
-  status,
-  controlFunction,
-  owner,
-  queue,
-  asOf,
-  freshnessWindowDays,
-} = {}) {
-  const params = {};
-  if (project != null) params.project = project;
-  if (status != null) params.status = status;
-  if (controlFunction != null) params.controlFunction = controlFunction;
-  if (owner != null) params.owner = owner;
-  if (queue != null) params.queue = queue;
-  if (asOf != null) params.asOf = asOf;
-  if (freshnessWindowDays != null) params.freshnessWindowDays = String(freshnessWindowDays);
-  return request("GET", "/api/v1/controls/workspace", { params });
-}
-
 export async function updateControl(id, data, project) {
   return request("PUT", `/api/v1/controls/${encodeURIComponent(id)}`, { body: data, params: { project } });
 }
@@ -11722,187 +10928,6 @@ export async function updateControlTest(id, data, project) {
 
 export async function deleteControlTest(id, project) {
   await request("DELETE", `/api/v1/control-tests/${encodeURIComponent(id)}`, { params: { project } });
-}
-
-// ---------------------------------------------------------------------------
-// Control Effectiveness Assessment API functions (GC-I013)
-// ---------------------------------------------------------------------------
-
-export const CONTROL_EFFECTIVENESS_RATINGS = ["EFFECTIVE", "PARTIALLY_EFFECTIVE", "INEFFECTIVE"];
-
-export async function createControlEffectivenessAssessment(data, project) {
-  return request("POST", "/api/v1/control-effectiveness-assessments", { body: data, params: { project } });
-}
-
-export async function updateControlEffectivenessAssessment(id, data, project) {
-  return request("PUT", `/api/v1/control-effectiveness-assessments/${encodeURIComponent(id)}`, {
-    body: data,
-    params: { project },
-  });
-}
-
-export async function deleteControlEffectivenessAssessment(id, project) {
-  await request("DELETE", `/api/v1/control-effectiveness-assessments/${encodeURIComponent(id)}`, {
-    params: { project },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Methodology Profile API functions
-// ---------------------------------------------------------------------------
-
-export async function createMethodologyProfile(data, project) {
-  return request("POST", "/api/v1/methodology-profiles", { body: data, params: { project } });
-}
-
-export async function listMethodologyProfiles(project) {
-  return request("GET", "/api/v1/methodology-profiles", { params: { project } });
-}
-
-export async function getMethodologyProfile(id, project) {
-  return request("GET", `/api/v1/methodology-profiles/${encodeURIComponent(id)}`, { params: { project } });
-}
-
-export async function updateMethodologyProfile(id, data, project) {
-  return request("PUT", `/api/v1/methodology-profiles/${encodeURIComponent(id)}`, {
-    body: data,
-    params: { project },
-  });
-}
-
-export async function deleteMethodologyProfile(id, project) {
-  await request("DELETE", `/api/v1/methodology-profiles/${encodeURIComponent(id)}`, { params: { project } });
-}
-
-// ---------------------------------------------------------------------------
-// Risk Appetite Profile API functions (GC-T005)
-// ---------------------------------------------------------------------------
-
-export async function createRiskAppetiteProfile(data, project) {
-  return request("POST", "/api/v1/risk-appetite-profiles", { body: data, params: { project } });
-}
-
-export async function listRiskAppetiteProfiles(project) {
-  return request("GET", "/api/v1/risk-appetite-profiles", { params: { project } });
-}
-
-export async function getRiskAppetiteProfile(id, project) {
-  return request("GET", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, { params: { project } });
-}
-
-export async function updateRiskAppetiteProfile(id, data, project) {
-  return request("PUT", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, {
-    body: data,
-    params: { project },
-  });
-}
-
-export async function deleteRiskAppetiteProfile(id, project) {
-  await request("DELETE", `/api/v1/risk-appetite-profiles/${encodeURIComponent(id)}`, { params: { project } });
-}
-
-// ---------------------------------------------------------------------------
-// Risk Register Record API functions
-// ---------------------------------------------------------------------------
-
-export async function createRiskRegisterRecord(data, project) {
-  return request("POST", "/api/v1/risk-register-records", { body: data, params: { project } });
-}
-
-export async function listRiskRegisterRecords(project) {
-  return request("GET", "/api/v1/risk-register-records", { params: { project } });
-}
-
-export async function getRiskRegisterRecord(id, project) {
-  return request("GET", `/api/v1/risk-register-records/${encodeURIComponent(id)}`, { params: { project } });
-}
-
-export async function updateRiskRegisterRecord(id, data, project) {
-  return request("PUT", `/api/v1/risk-register-records/${encodeURIComponent(id)}`, {
-    body: data,
-    params: { project },
-  });
-}
-
-export async function transitionRiskRegisterRecordStatus(id, status, project) {
-  return request("PUT", `/api/v1/risk-register-records/${encodeURIComponent(id)}/status`, {
-    body: { status },
-    params: { project },
-  });
-}
-
-export async function deleteRiskRegisterRecord(id, project) {
-  await request("DELETE", `/api/v1/risk-register-records/${encodeURIComponent(id)}`, { params: { project } });
-}
-
-// ---------------------------------------------------------------------------
-// Risk Assessment Result API functions
-// ---------------------------------------------------------------------------
-
-export async function createRiskAssessmentResult(data, project) {
-  return request("POST", "/api/v1/risk-assessment-results", { body: data, params: { project } });
-}
-
-export async function listRiskAssessmentResults({ riskScenarioId, riskRegisterRecordId, project } = {}) {
-  return request("GET", "/api/v1/risk-assessment-results", {
-    params: { riskScenarioId, riskRegisterRecordId, project },
-  });
-}
-
-export async function getRiskAssessmentResult(id, project) {
-  return request("GET", `/api/v1/risk-assessment-results/${encodeURIComponent(id)}`, { params: { project } });
-}
-
-export async function updateRiskAssessmentResult(id, data, project) {
-  return request("PUT", `/api/v1/risk-assessment-results/${encodeURIComponent(id)}`, {
-    body: data,
-    params: { project },
-  });
-}
-
-export async function transitionRiskAssessmentApprovalState(id, approvalState, project) {
-  return request("PUT", `/api/v1/risk-assessment-results/${encodeURIComponent(id)}/approval-state`, {
-    body: { approval_state: approvalState },
-    params: { project },
-  });
-}
-
-export async function deleteRiskAssessmentResult(id, project) {
-  await request("DELETE", `/api/v1/risk-assessment-results/${encodeURIComponent(id)}`, { params: { project } });
-}
-
-// ---------------------------------------------------------------------------
-// Treatment Plan API functions
-// ---------------------------------------------------------------------------
-
-export async function createTreatmentPlan(data, project) {
-  return request("POST", "/api/v1/treatment-plans", { body: data, params: { project } });
-}
-
-export async function listTreatmentPlans({ riskRegisterRecordId, project } = {}) {
-  return request("GET", "/api/v1/treatment-plans", { params: { riskRegisterRecordId, project } });
-}
-
-export async function getTreatmentPlan(id, project) {
-  return request("GET", `/api/v1/treatment-plans/${encodeURIComponent(id)}`, { params: { project } });
-}
-
-export async function updateTreatmentPlan(id, data, project) {
-  return request("PUT", `/api/v1/treatment-plans/${encodeURIComponent(id)}`, {
-    body: data,
-    params: { project },
-  });
-}
-
-export async function transitionTreatmentPlanStatus(id, status, project) {
-  return request("PUT", `/api/v1/treatment-plans/${encodeURIComponent(id)}/status`, {
-    body: { status },
-    params: { project },
-  });
-}
-
-export async function deleteTreatmentPlan(id, project) {
-  await request("DELETE", `/api/v1/treatment-plans/${encodeURIComponent(id)}`, { params: { project } });
 }
 
 // ---------------------------------------------------------------------------
@@ -12096,51 +11121,6 @@ export async function registerPlugin(data, project) {
 
 export async function unregisterPlugin(name, project) {
   await request("DELETE", `/api/v1/plugins/${encodeURIComponent(name)}`, { params: { project } });
-}
-
-// ---------------------------------------------------------------------------
-// Control Pack API functions
-// ---------------------------------------------------------------------------
-
-export const CONTROL_PACK_LIFECYCLE_STATES = ["INSTALLED", "UPGRADED", "DEPRECATED", "REMOVED"];
-export const CONTROL_PACK_ENTRY_STATUSES = ["ACTIVE", "DEPRECATED", "REMOVED"];
-
-export async function listControlPacks(project) {
-  return request("GET", "/api/v1/control-packs", { params: { project } });
-}
-
-export async function getControlPack(packId, project) {
-  return request("GET", `/api/v1/control-packs/${encodeURIComponent(packId)}`, { params: { project } });
-}
-
-export async function deprecateControlPack(packId, project) {
-  return request("PUT", `/api/v1/control-packs/${encodeURIComponent(packId)}/deprecate`, { params: { project } });
-}
-
-export async function removeControlPack(packId, project) {
-  await request("DELETE", `/api/v1/control-packs/${encodeURIComponent(packId)}`, {
-    params: { project },
-  });
-}
-
-export async function listControlPackEntries(packId, project) {
-  return request("GET", `/api/v1/control-packs/${encodeURIComponent(packId)}/entries`, { params: { project } });
-}
-
-export async function getControlPackEntry(packId, entryUid, project) {
-  return request("GET", `/api/v1/control-packs/${encodeURIComponent(packId)}/entries/${encodeURIComponent(entryUid)}`, { params: { project } });
-}
-
-export async function createControlPackOverride(packId, entryUid, data, project) {
-  return request("POST", `/api/v1/control-packs/${encodeURIComponent(packId)}/entries/${encodeURIComponent(entryUid)}/overrides`, { body: data, params: { project } });
-}
-
-export async function listControlPackOverrides(packId, entryUid, project) {
-  return request("GET", `/api/v1/control-packs/${encodeURIComponent(packId)}/entries/${encodeURIComponent(entryUid)}/overrides`, { params: { project } });
-}
-
-export async function deleteControlPackOverride(packId, entryUid, overrideId, project) {
-  await request("DELETE", `/api/v1/control-packs/${encodeURIComponent(packId)}/entries/${encodeURIComponent(entryUid)}/overrides/${encodeURIComponent(overrideId)}`, { params: { project } });
 }
 
 // ---------------------------------------------------------------------------
@@ -12696,1264 +11676,6 @@ export async function runPostDecisionRecord({ repoPath, issueNumber, cycle, revi
     finding_count: findings.length,
     comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
     comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// GRC screening renderer (gc_post_grc_screening)
-// ---------------------------------------------------------------------------
-//
-// Step 3.5 of /implement gates the run on a threat/risk screening verdict.
-// The agent reads the existing threat/risk workspaces, classifies the planned
-// change surface, and posts one of three deterministic verdicts:
-//   - security_relevant: threat-model entries, risk scenarios, controls, and
-//     CODE links were created/updated/confirmed during the run.
-//   - not_security_relevant: one-line rationale; no silent skip.
-//   - no_baseline: explicit declination when the project has no baseline.
-//
-// The issue-thread record is the durable workflow state per ADR-029. The
-// marker family is `gc:grc-screening` — distinct from `gc:phase`,
-// `gc:decision-record`, and `gc:final-report` so downstream sweeps can
-// detect screening records without confusing them with other markers.
-
-export const GRC_SCREENING_VERDICTS = Object.freeze([
-  "security_relevant",
-  "not_security_relevant",
-  "no_baseline",
-]);
-
-// Byte cap for the rationale field. Reject-not-truncate: the tool returns a
-// structured error so the caller can tighten the prose.
-export const GRC_SCREENING_RATIONALE_MAX = 800;
-
-const GRC_SCREENING_SCHEMA_VERSION = "gc.implement.grc-screening/v1";
-
-// Canonical GRC entity types recognized by the workflow. Used to reject
-// unknown type values in security_relevant verdicts at the tool boundary.
-export const GRC_ENTITY_TYPES = Object.freeze(["threat_model", "risk_scenario", "control"]);
-
-// Normalize a caller-supplied entity type string to match GRC_ENTITY_TYPES:
-// lowercase, replace dashes and spaces with underscores.
-function normalizeEntityType(type) {
-  if (typeof type !== "string") return type;
-  return type.toLowerCase().replace(/[-\s]/g, "_");
-}
-
-// ---------------------------------------------------------------------------
-// Structured data block: serialize / parse
-// ---------------------------------------------------------------------------
-// A machine-parseable HTML comment emitted by buildGrcScreeningRecord and
-// consumed by parseGrcScreeningData. This lets runAssertGrcReconciled read
-// back the verdict + entity/link arrays without re-parsing the Markdown prose.
-// The format is: <!-- gc:grc-screening-data {compact-JSON} -->
-// "gc:grc-screening-data" is distinct from "gc:grc-screening" (the marker
-// family); the regex below does NOT match the main marker.
-
-export function serializeGrcScreeningData({ schema, verdict, entities_created, entities_updated, entities_confirmed, code_links }) {
-  const payload = { schema, verdict, entities_created, entities_updated, entities_confirmed, code_links };
-  return `<!-- gc:grc-screening-data ${JSON.stringify(payload)} -->`;
-}
-
-// Regex for the main marker (does NOT match the -data variant).
-// Uses a negative lookahead so gc:grc-screening-data bodies are ignored here.
-const GRC_SCREENING_MARKER_RE = /<!--\s*gc:grc-screening(?!-data)\s+issue="(\d+)"[^]*?-->/g;
-const GRC_SCREENING_DATA_RE = /<!--\s*gc:grc-screening-data\s+(\{[^]*?\})\s*-->/g;
-
-// Scan an array of comment bodies for GRC screening data blocks. Returns the
-// payload object from the LATEST block whose accompanying marker has
-// issue="<issueNumber>", or null if no such block is found. Tolerates
-// malformed JSON (skip, continue scanning).
-export function parseGrcScreeningData(commentBodies, issueNumber) {
-  if (!Array.isArray(commentBodies)) return null;
-  let latest = null;
-  for (const body of commentBodies) {
-    if (typeof body !== "string") continue;
-    // Check if this body contains a screening marker for the right issue
-    let hasMarkerForIssue = false;
-    GRC_SCREENING_MARKER_RE.lastIndex = 0;
-    for (const m of body.matchAll(GRC_SCREENING_MARKER_RE)) {
-      if (Number.parseInt(m[1], 10) === issueNumber) {
-        hasMarkerForIssue = true;
-        break;
-      }
-    }
-    if (!hasMarkerForIssue) continue;
-    // Extract the latest data block from this body
-    GRC_SCREENING_DATA_RE.lastIndex = 0;
-    for (const dm of body.matchAll(GRC_SCREENING_DATA_RE)) {
-      try {
-        const parsed = JSON.parse(dm[1]);
-        latest = parsed; // last match wins within a body
-      } catch {
-        // malformed JSON — skip this block
-      }
-    }
-  }
-  return latest;
-}
-
-export function buildGrcScreeningMarker({ issueNumber, verdict, schema }) {
-  const schemaAttr = schema ? ` schema="${schema}"` : "";
-  const verdictAttr = verdict ? ` verdict="${verdict}"` : "";
-  return `<!-- gc:grc-screening issue="${issueNumber}"${schemaAttr}${verdictAttr} -->`;
-}
-
-export function validateGrcScreeningInput(input) {
-  const errors = [];
-  if (input == null || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, errors: ["input must be an object"] };
-  }
-  const { issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links } = input;
-
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-    errors.push("issueNumber must be a positive integer");
-  }
-
-  if (typeof verdict !== "string" || !GRC_SCREENING_VERDICTS.includes(verdict)) {
-    errors.push(`verdict must be one of: ${GRC_SCREENING_VERDICTS.join(", ")}`);
-  }
-
-  if (typeof rationale !== "string" || rationale.trim() === "") {
-    errors.push("rationale must be a non-empty string");
-  } else if (Buffer.byteLength(rationale, "utf8") > GRC_SCREENING_RATIONALE_MAX) {
-    errors.push(`rationale exceeds ${GRC_SCREENING_RATIONALE_MAX}-byte cap`);
-  }
-  // Reserved-marker injection checks are done in the runner (runPostGrcScreening),
-  // not here, so the runner can return a distinct grc_screening_reserved_marker
-  // error code instead of conflating it with input validation failures. This
-  // mirrors the runPostDecisionRecord pattern.
-
-  // Validate entity ref arrays
-  for (const [arrayName, arr] of [
-    ["entities_created", entities_created],
-    ["entities_updated", entities_updated],
-    ["entities_confirmed", entities_confirmed],
-  ]) {
-    if (!Array.isArray(arr)) {
-      errors.push(`${arrayName} must be an array`);
-    } else {
-      arr.forEach((ref, i) => {
-        if (ref == null || typeof ref !== "object") {
-          errors.push(`${arrayName}[${i}] must be an object`);
-          return;
-        }
-        if (typeof ref.uid !== "string" || ref.uid.trim() === "") {
-          errors.push(`${arrayName}[${i}].uid must be a non-empty string`);
-        }
-        // For security_relevant, reject entity types that don't normalize to
-        // a canonical GRC entity type. type is optional for other verdicts.
-        if (verdict === "security_relevant" && typeof ref.type === "string" && ref.type !== "") {
-          const normalized = normalizeEntityType(ref.type);
-          if (!GRC_ENTITY_TYPES.includes(normalized)) {
-            errors.push(`${arrayName}[${i}].type "${ref.type}" is not a canonical GRC entity type (must be one of: ${GRC_ENTITY_TYPES.join(", ")})`);
-          }
-        }
-      });
-    }
-  }
-
-  // Validate code_links array
-  if (!Array.isArray(code_links)) {
-    errors.push("code_links must be an array");
-  } else {
-    code_links.forEach((link, i) => {
-      if (link == null || typeof link !== "object") {
-        errors.push(`code_links[${i}] must be an object`);
-        return;
-      }
-      if (typeof link.target_identifier !== "string" || link.target_identifier.trim() === "") {
-        errors.push(`code_links[${i}].target_identifier must be a non-empty string`);
-      }
-      // For security_relevant, reject owner_type values that don't normalize
-      // to a canonical GRC entity type. owner_type is optional for other verdicts.
-      if (verdict === "security_relevant" && typeof link.owner_type === "string" && link.owner_type !== "") {
-        const normalized = normalizeEntityType(link.owner_type);
-        if (!GRC_ENTITY_TYPES.includes(normalized)) {
-          errors.push(`code_links[${i}].owner_type "${link.owner_type}" is not a canonical GRC entity type (must be one of: ${GRC_ENTITY_TYPES.join(", ")})`);
-        }
-      }
-    });
-  }
-
-  // security_relevant requires at least one entity and at least one code_link
-  if (errors.length === 0 && verdict === "security_relevant") {
-    const totalEntities = (entities_created?.length ?? 0) + (entities_updated?.length ?? 0) + (entities_confirmed?.length ?? 0);
-    if (totalEntities === 0) {
-      errors.push("security_relevant verdict requires at least one entity in entities_created, entities_updated, or entities_confirmed");
-    }
-    if ((code_links?.length ?? 0) === 0) {
-      errors.push("security_relevant verdict requires at least one entry in code_links");
-    }
-  }
-
-  if (errors.length) return { ok: false, errors };
-  return { ok: true };
-}
-
-export function buildGrcScreeningRecord({ issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links }) {
-  const validation = validateGrcScreeningInput({ issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links });
-  if (!validation.ok) {
-    throw new Error(`buildGrcScreeningRecord input invalid: ${validation.errors.join("; ")}`);
-  }
-  const lines = [];
-  lines.push(buildGrcScreeningMarker({ issueNumber, verdict, schema: GRC_SCREENING_SCHEMA_VERSION }));
-  // Machine-parseable data block — emitted for ALL verdicts so the companion
-  // gc_assert_grc_reconciled can recover the structured payload without
-  // re-parsing the Markdown prose. Entity arrays are empty for non-security
-  // verdicts by definition (validateGrcScreeningInput already enforced this).
-  lines.push(serializeGrcScreeningData({
-    schema: GRC_SCREENING_SCHEMA_VERSION,
-    verdict,
-    entities_created,
-    entities_updated,
-    entities_confirmed,
-    code_links,
-  }));
-  lines.push("");
-  lines.push(`## GRC screening record — issue #${issueNumber}`);
-  lines.push("");
-  lines.push(`**Schema:** \`${GRC_SCREENING_SCHEMA_VERSION}\`  `);
-  lines.push(`**Verdict:** \`${verdict}\`  `);
-  lines.push("");
-  lines.push(`**Rationale:** ${rationale}`);
-
-  if (verdict === "security_relevant") {
-    lines.push("");
-    lines.push("**Entities created:**");
-    if (entities_created.length === 0) {
-      lines.push("- _(none)_");
-    } else {
-      for (const e of entities_created) lines.push(`- \`${e.uid}\` (${e.type ?? "unknown"})`);
-    }
-    lines.push("");
-    lines.push("**Entities updated:**");
-    if (entities_updated.length === 0) {
-      lines.push("- _(none)_");
-    } else {
-      for (const e of entities_updated) lines.push(`- \`${e.uid}\` (${e.type ?? "unknown"})`);
-    }
-    lines.push("");
-    lines.push("**Entities confirmed:**");
-    if (entities_confirmed.length === 0) {
-      lines.push("- _(none)_");
-    } else {
-      for (const e of entities_confirmed) lines.push(`- \`${e.uid}\` (${e.type ?? "unknown"})`);
-    }
-    lines.push("");
-    lines.push("**Code links (targetType=CODE):**");
-    for (const link of code_links) {
-      lines.push(`- \`${link.target_identifier}\` (owner: ${link.owner_type ?? "unknown"} \`${link.owner_uid ?? ""}\`)`);
-    }
-  }
-
-  return lines.join("\n");
-}
-
-// Runner: validate → render → sensitive-content filter → body-size cap →
-// argv-based gh api post → write grc_screening phase marker via postPhaseMarker.
-// Returns a structured envelope; failures are refused before any network I/O.
-export async function runPostGrcScreening({ repoPath, issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links }) {
-  const validation = validateGrcScreeningInput({ issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links });
-  if (!validation.ok) {
-    return {
-      ok: false,
-      error: "grc_screening_input_invalid",
-      message: validation.errors.join("; "),
-      issue_number: issueNumber ?? null,
-    };
-  }
-
-  // Reject reserved marker sequences in ALL caller-controlled string fields
-  // that are rendered into the durable comment body. This covers every field
-  // that reaches buildGrcScreeningRecord — rationale, entity uid and type,
-  // and code_link target_identifier, owner_type, and owner_uid. Adding a new
-  // rendered field means adding it here too; that is the single enforcement
-  // point for the reserved-marker trust boundary (ADR-057).
-  const fieldsToCheck = [
-    ["rationale", rationale],
-  ];
-  for (const [arrayName, arr] of [
-    ["entities_created", entities_created],
-    ["entities_updated", entities_updated],
-    ["entities_confirmed", entities_confirmed],
-  ]) {
-    if (Array.isArray(arr)) {
-      arr.forEach((ref, i) => {
-        if (ref) {
-          if (typeof ref.uid === "string") {
-            fieldsToCheck.push([`${arrayName}[${i}].uid`, ref.uid]);
-          }
-          if (typeof ref.type === "string") {
-            fieldsToCheck.push([`${arrayName}[${i}].type`, ref.type]);
-          }
-        }
-      });
-    }
-  }
-  if (Array.isArray(code_links)) {
-    code_links.forEach((link, i) => {
-      if (link) {
-        if (typeof link.target_identifier === "string") {
-          fieldsToCheck.push([`code_links[${i}].target_identifier`, link.target_identifier]);
-        }
-        if (typeof link.owner_type === "string") {
-          fieldsToCheck.push([`code_links[${i}].owner_type`, link.owner_type]);
-        }
-        if (typeof link.owner_uid === "string") {
-          fieldsToCheck.push([`code_links[${i}].owner_uid`, link.owner_uid]);
-        }
-      }
-    });
-  }
-  for (const [fieldName, value] of fieldsToCheck) {
-    const err = rejectReservedMarkerSequence(value, fieldName);
-    if (err) {
-      return {
-        ok: false,
-        error: "grc_screening_reserved_marker",
-        message: err,
-        issue_number: issueNumber,
-        next_action: "remove_reserved_marker_prefix_and_retry",
-      };
-    }
-    // Also reject bare HTML comment delimiters (<!-- without gc: prefix, and -->)
-    // to prevent any comment breakout from the data block.
-    if (typeof value === "string" && (value.includes("<!--") || value.includes("-->"))) {
-      return {
-        ok: false,
-        error: "grc_screening_reserved_marker",
-        message: `${fieldName}: caller-controlled text carries an HTML comment delimiter (<!-- or -->); refused to prevent comment breakout`,
-        issue_number: issueNumber,
-        next_action: "remove_html_comment_delimiter_and_retry",
-      };
-    }
-  }
-
-  const body = buildGrcScreeningRecord({ issueNumber, verdict, rationale, entities_created, entities_updated, entities_confirmed, code_links });
-
-  const sensitiveError = detectSensitiveBodyContent(body);
-  if (sensitiveError) {
-    return {
-      ok: false,
-      error: "grc_screening_body_rejected",
-      message: sensitiveError,
-      issue_number: issueNumber,
-      next_action: "scrub_secrets_from_fields_and_retry",
-    };
-  }
-
-  if (Buffer.byteLength(body, "utf8") > GITHUB_ISSUE_COMMENT_BODY_MAX) {
-    return {
-      ok: false,
-      error: "grc_screening_body_too_large",
-      message: `rendered body is ${Buffer.byteLength(body, "utf8")} bytes; GitHub's issue-comment body cap is ${GITHUB_ISSUE_COMMENT_BODY_MAX} bytes`,
-      issue_number: issueNumber,
-      next_action: "reduce_rationale_or_entity_count_and_retry",
-    };
-  }
-
-  const repoRoot = await ensureGitRepo(repoPath);
-  const { owner, name } = await getOwnerRepo(repoRoot);
-
-  let apiResponse = null;
-  try {
-    const { stdout } = await execFile(
-      "gh",
-      [
-        "api",
-        "--method",
-        "POST",
-        `/repos/${owner}/${name}/issues/${issueNumber}/comments`,
-        "-f",
-        `body=${body}`,
-      ],
-      { cwd: repoRoot },
-    );
-    try {
-      apiResponse = JSON.parse(stdout);
-    } catch {
-      apiResponse = null;
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      error: "grc_screening_post_failed",
-      message: extractGhErrorMessage(error),
-      issue_number: issueNumber,
-      next_action: "retry_after_resolving_gh_failure",
-    };
-  }
-
-  // Write the grc_screening phase marker so the workflow can detect the
-  // gate has run. The marker is written after the record is posted so
-  // the phase marker only lands on successful post.
-  try {
-    await postPhaseMarker(repoRoot, owner, name, issueNumber, "grc_screening");
-  } catch {
-    // Phase marker failure is non-fatal — the screening record is already
-    // posted. Return success with a note so the caller can re-run the marker
-    // if needed rather than losing the posted record.
-    return {
-      ok: true,
-      repo_path: repoRoot,
-      issue_number: issueNumber,
-      verdict,
-      comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
-      comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
-      phase_marker_posted: false,
-    };
-  }
-
-  return {
-    ok: true,
-    repo_path: repoRoot,
-    issue_number: issueNumber,
-    verdict,
-    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
-    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
-    phase_marker_posted: true,
-  };
-}
-
-// ===========================================================================
-// GC-GRC-009 — derivation-backed change screening (v2)
-// ===========================================================================
-//
-// v1 (above) records an agent-asserted verdict. v2 removes agent assertion:
-// the tool computes the classification from the change itself (ADR-058 §5).
-// It derives three sets from the diff, the existing GRC CODE-link graph, and
-// (when present) derived facts:
-//   - impact_set: existing GRC entities whose CODE links overlap touched paths.
-//   - gap_set:    touched security-relevant surfaces with no coverage.
-//   - stale_set:  ACTIVE linked entities whose underlying code changed.
-// There is no passing `no_baseline` verdict: an empty/absent baseline yields a
-// gap_set over the touched security-relevant surface (never a silent pass).
-//
-// v1 record functions above are retained so historical/in-flight v1 records
-// still render and parse; new screening posts use the v2 path. Reconciliation
-// (runAssertGrcReconciled) branches on the parsed record's schema.
-
-export const GRC_SCREENING_SCHEMA_VERSION_V2 = "gc.implement.grc-screening/v2";
-
-// Why a touched security-relevant surface has no coverage. `no_derivation_coverage`
-// is the structural replacement for the retired `no_baseline` pass: an absent
-// baseline makes every uncovered source surface a gap, not a free pass.
-export const GRC_SCREENING_GAP_REASONS = Object.freeze([
-  "no_derivation_coverage",
-  "no_model_coverage",
-  "no_threat_coverage",
-  "no_control_coverage",
-]);
-
-// Why a linked GRC entity may be stale and need reassessment.
-export const GRC_SCREENING_STALE_REASONS = Object.freeze([
-  "linked_code_changed",
-  "pack_version_changed",
-  "snapshot_changed",
-  "boundary_changed",
-]);
-
-// Path classes that are NOT a security-relevant *surface* for screening. This
-// reuses the repository's own source/non-source boundary — the same doc/metadata
-// classes tools/policy/checks.py treats as non-application-source, plus test
-// files — rather than inventing a filename-based security taxonomy (which
-// ADR-058 forbids as a relevance signal). Tests exercise security surfaces; they
-// do not introduce one. Everything else under an application-source path is a
-// security-relevant surface whose classification must come from coverage, never
-// from its filename.
-const NON_SECURITY_SURFACE_PATTERNS = [
-  /^docs\//,
-  /^architecture\//,
-  /^\.gc\//,
-  /^skills\//,
-  /^changelog\.d\//,
-  /(^|\/)README(\.md)?$/,
-  /(^|\/)CONTRIBUTING\.md$/,
-  /(^|\/)CHANGELOG\.md$/,
-  /\.md$/,
-  /^tools\/policy\//,
-  /^tools\/tests\//,
-  /(^|\/)src\/test\//,
-  /\.test\.[cm]?[jt]sx?$/,
-  /(^|\/)__tests__\//,
-];
-
-export function isNonSecuritySurfacePath(path) {
-  if (typeof path !== "string" || path.trim() === "") return true;
-  return NON_SECURITY_SURFACE_PATTERNS.some((re) => re.test(path));
-}
-
-// Match a CODE-link target against the touched-path set. Exact match, or
-// directory-prefix match when the link target names a directory (bare or
-// trailing-slash), so a boundary-level link like `mcp/` covers a touched file
-// under it. Returns the touched paths that matched.
-function codeLinkMatchesTouched(linkTarget, touchedPaths) {
-  if (typeof linkTarget !== "string" || linkTarget === "") return [];
-  const target = linkTarget.replace(/^\.\/+/, "");
-  const asDirPrefix = target.endsWith("/") ? target : `${target}/`;
-  const matched = [];
-  for (const tp of touchedPaths) {
-    if (tp === target || tp.startsWith(asDirPrefix)) matched.push(tp);
-  }
-  return matched;
-}
-
-// Pure classification: given the touched paths, the GRC CODE-link graph, and
-// optional derivation coverage, compute impact/gap/stale sets and a derived
-// verdict. No network, no agent assertion — deterministic and unit-testable.
-//   entities: [{ type, uid, status, codeLinks: [target_identifier] }]
-//   derivation: { coveredPaths: [path] } | null
-export function classifyGrcScreening({ touchedPaths = [], entities = [], derivation = null } = {}) {
-  const touched = (Array.isArray(touchedPaths) ? touchedPaths : []).filter(
-    (p) => typeof p === "string" && p !== "",
-  );
-  const sourcePaths = touched.filter((p) => !isNonSecuritySurfacePath(p));
-
-  const impact_set = [];
-  const stale_set = [];
-  const coveredSource = new Set();
-
-  for (const entity of Array.isArray(entities) ? entities : []) {
-    const links = Array.isArray(entity?.codeLinks) ? entity.codeLinks : [];
-    const matched = new Set();
-    for (const link of links) {
-      for (const m of codeLinkMatchesTouched(link, touched)) matched.add(m);
-    }
-    if (matched.size === 0) continue;
-    const matched_paths = [...matched].sort();
-    const type = normalizeEntityType(entity.type);
-    impact_set.push({ type, uid: entity.uid, matched_paths });
-    for (const m of matched_paths) {
-      if (!isNonSecuritySurfacePath(m)) coveredSource.add(m);
-    }
-    // An ACTIVE modeled entity whose linked code changed is now potentially
-    // stale and needs reassessment. A DRAFT entity is not yet an accepted
-    // baseline, so a code change does not make it "stale".
-    if (String(entity.status).toUpperCase() === "ACTIVE") {
-      stale_set.push({ type, uid: entity.uid, reason: "linked_code_changed", changed_paths: matched_paths });
-    }
-  }
-
-  const derivationCovered = new Set(
-    derivation && Array.isArray(derivation.coveredPaths) ? derivation.coveredPaths : [],
-  );
-
-  const gap_set = [];
-  for (const sp of sourcePaths) {
-    if (coveredSource.has(sp)) continue;
-    // Modeled by derivation but no GRC threat/control coverage → a coverage gap.
-    // Not modeled at all (including the empty/absent-baseline case) → a
-    // derivation-coverage gap. Either way it is a gap, never a pass.
-    const reason = derivationCovered.has(sp) ? "no_threat_coverage" : "no_derivation_coverage";
-    gap_set.push({ surface: sp, reason, boundary: null });
-  }
-
-  const derived_verdict =
-    impact_set.length === 0 && gap_set.length === 0 ? "not_security_relevant" : "security_relevant";
-
-  return { impact_set, gap_set, stale_set, derived_verdict };
-}
-
-export function serializeGrcScreeningDataV2(payload) {
-  return `<!-- gc:grc-screening-data ${JSON.stringify(payload)} -->`;
-}
-
-// Render the durable v2 screening record: main marker (schema + derived
-// verdict) + machine-parseable data block (reproducible from provenance) +
-// human-readable Markdown view over the computed sets. Only stable keys, UIDs,
-// repo-relative paths, run/snapshot ids, pack versions/checksums, and rule ids
-// are rendered — never raw diffs, secrets, or tool output.
-export function buildGrcScreeningRecordV2({
-  issueNumber,
-  rationale = null,
-  classification,
-  candidate_threats = [],
-  candidate_controls = [],
-  provenance,
-}) {
-  const { impact_set = [], gap_set = [], stale_set = [], derived_verdict } = classification || {};
-  const prov = provenance || { capture_limits: [] };
-  const lines = [];
-  lines.push(buildGrcScreeningMarker({ issueNumber, verdict: derived_verdict, schema: GRC_SCREENING_SCHEMA_VERSION_V2 }));
-  lines.push(
-    serializeGrcScreeningDataV2({
-      schema: GRC_SCREENING_SCHEMA_VERSION_V2,
-      derived_verdict,
-      impact_set,
-      gap_set,
-      stale_set,
-      candidate_threats,
-      candidate_controls,
-      provenance: prov,
-    }),
-  );
-  lines.push("");
-  lines.push(`## GRC screening record — issue #${issueNumber}`);
-  lines.push("");
-  lines.push(`**Schema:** \`${GRC_SCREENING_SCHEMA_VERSION_V2}\`  `);
-  lines.push(
-    `**Derived verdict:** \`${derived_verdict}\` _(computed from derived facts + the GRC coverage graph — not agent-asserted)_  `,
-  );
-  lines.push("");
-  if (rationale) {
-    lines.push(`**Rationale:** ${rationale}`);
-    lines.push("");
-  }
-
-  lines.push("**Provenance:**");
-  lines.push(`- base \`${prov.base_commit_sha ?? "?"}\` → head \`${prov.commit_sha ?? "?"}\``);
-  lines.push(
-    `- derivation run: \`${prov.derivation_run_id ?? "none"}\` · architecture snapshot: \`${prov.architecture_model_snapshot_id ?? "none"}\``,
-  );
-  if (prov.threat_pack_id) {
-    lines.push(`- threat pack: \`${prov.threat_pack_id}@${prov.threat_pack_version ?? "latest"}\``);
-  }
-  if (prov.control_ruleset_version) {
-    lines.push(`- control rule-set: \`${prov.control_ruleset_version}\``);
-  }
-  const captureLimits = Array.isArray(prov.capture_limits) ? prov.capture_limits : [];
-  if (captureLimits.length > 0) {
-    lines.push("");
-    lines.push("**Capture limits:**");
-    for (const cl of captureLimits) {
-      lines.push(`- \`${cl.reason ?? "unknown"}\`${cl.surface ? ` — \`${cl.surface}\`` : ""}${cl.detail ? `: ${cl.detail}` : ""}`);
-    }
-  }
-
-  lines.push("");
-  lines.push(`**Impact set** (existing coverage the change touches) — ${impact_set.length}:`);
-  if (impact_set.length === 0) lines.push("- _(none)_");
-  else for (const e of impact_set) lines.push(`- \`${e.uid}\` (${e.type}) → ${e.matched_paths.map((p) => `\`${p}\``).join(", ")}`);
-
-  lines.push("");
-  lines.push(`**Gap set** (touched security-relevant surface with no coverage — must be modeled, controlled, or dispositioned before completion) — ${gap_set.length}:`);
-  if (gap_set.length === 0) lines.push("- _(none)_");
-  else for (const g of gap_set) lines.push(`- \`${g.surface}\` — ${g.reason}${g.boundary ? ` (boundary \`${g.boundary}\`)` : ""}`);
-
-  lines.push("");
-  lines.push(`**Stale set** (linked entities whose underlying code changed) — ${stale_set.length}:`);
-  if (stale_set.length === 0) lines.push("- _(none)_");
-  else for (const s of stale_set) lines.push(`- \`${s.uid}\` (${s.type}) — ${s.reason}`);
-
-  lines.push("");
-  lines.push(`**Candidate threats** (GC-GRC-007, deterministic) — ${candidate_threats.length}:`);
-  if (candidate_threats.length === 0) lines.push("- _(none — no architecture-model snapshot to enumerate against)_");
-  else for (const c of candidate_threats) lines.push(`- \`${c.producing_rule_id ?? "?"}\` ${c.stride_category ?? ""} → \`${c.element_stable_key ?? "?"}\``);
-
-  lines.push("");
-  lines.push(`**Candidate controls** (GC-GRC-008, deterministic) — ${candidate_controls.length}:`);
-  if (candidate_controls.length === 0) lines.push("- _(none)_");
-  else for (const c of candidate_controls) lines.push(`- \`${c.control_uid ?? c.objective_key ?? "?"}\`${c.threat_ref ? ` for \`${c.threat_ref}\`` : ""} (${c.source ?? "?"})`);
-
-  return lines.join("\n");
-}
-
-// ---------------------------------------------------------------------------
-// GC-GRC-010: design-time GRC deliverables gate (gc_post_implementation_plan)
-//
-// A security-relevant change must enumerate its GRC deliverables as first-class,
-// structured plan items derived from the Step 3.5 screening sets — threats to
-// model/update, risks to assess, controls to select/implement, stale entities
-// to refresh. Enforcement is mechanical at the plan-post boundary (ADR-058):
-//   1. the deliverables are a STRUCTURED param (kind + source-set target),
-//      never scraped from plan prose, so GC-GRC-012 can later verify
-//      planned -> implemented -> completed against the rendered machine block;
-//   2. every screening gap surface and stale entity must be covered by a
-//      matching deliverable or an authorized disposition (GC-GRC-015) — the
-//      no-defer rule, with the disposition as its single relief valve.
-// The candidate threats/controls from the screening record (GC-GRC-007/008) are
-// deterministic SUGGESTIONS surfaced in the failure scaffold; they are never
-// auto-counted as selected/implemented controls.
-// ---------------------------------------------------------------------------
-
-export const GRC_DELIVERABLES_SCHEMA_VERSION = "gc.implement.grc-deliverables/v1";
-export const GRC_DELIVERABLE_KINDS = Object.freeze(["threat", "risk", "control", "stale_refresh"]);
-export const GRC_DISPOSITION_TYPES = Object.freeze(["accept", "wontfix", "not_applicable"]);
-
-const GRC_DELIVERABLE_KIND_LABELS = Object.freeze({
-  threat: "Threats to model/update",
-  risk: "Risks to assess",
-  control: "Controls to select/implement",
-  stale_refresh: "Stale entities to refresh",
-});
-
-// Deferral language in a deliverable's action is forbidden UNLESS the deliverable
-// carries an authorized disposition (GC-GRC-015). This is the mechanical half of
-// the no-defer rule: "we'll do the threat model in a follow-up PR" is exactly the
-// retrofit the requirement exists to prevent.
-const GRC_DEFER_LANGUAGE_RE =
-  /\b(?:defer(?:red|ral)?|follow[-\s]?ups?|out[-\s]of[-\s]scope|(?:separate|subsequent|later|future|another)\s+(?:pr|issue|ticket|change))\b/i;
-
-// Parser for the server-rendered machine block. Distinct family from
-// gc:grc-screening-data. Downstream (GC-GRC-012) reads the planned deliverables
-// from this block without scraping plan prose.
-const GRC_DELIVERABLES_DATA_RE = /<!--\s*gc:grc-deliverables-data\s+(\{[^]*?\})\s*-->/g;
-
-function isScreeningSecurityRelevant(record) {
-  if (record == null || typeof record !== "object") return false;
-  // v2 records carry derived_verdict; v1 records carry verdict.
-  const verdict = record.derived_verdict ?? record.verdict;
-  return verdict === "security_relevant";
-}
-
-function validateGrcDisposition(disposition, label) {
-  const errs = [];
-  if (disposition == null || typeof disposition !== "object" || Array.isArray(disposition)) {
-    errs.push(`${label} must be an object`);
-    return errs;
-  }
-  if (!GRC_DISPOSITION_TYPES.includes(disposition.type)) {
-    errs.push(`${label}.type must be one of: ${GRC_DISPOSITION_TYPES.join(", ")}`);
-  }
-  if (typeof disposition.authorized_by !== "string" || disposition.authorized_by.trim() === "") {
-    errs.push(`${label}.authorized_by must name the authorizing user`);
-  }
-  if (typeof disposition.rationale !== "string" || disposition.rationale.trim() === "") {
-    errs.push(`${label}.rationale must be a non-empty string`);
-  }
-  return errs;
-}
-
-// A deliverable's `target` covers a gap surface when it names the surface exactly
-// or a boundary directory containing it (so one boundary-level deliverable can
-// cover many touched files under it). Mirrors codeLinkMatchesTouched's
-// directory-prefix semantics.
-function deliverableCoversSurface(target, surface) {
-  if (typeof target !== "string" || typeof surface !== "string") return false;
-  const t = target.trim().replace(/^\.\/+/, "").replace(/\/+$/, "");
-  if (t === "") return false;
-  return surface === t || surface.startsWith(`${t}/`);
-}
-
-// Kinds that can cover a screening GAP surface (the security work that closes a
-// gap is a threat/risk/control, never a stale-entity refresh).
-const GRC_GAP_COVERING_KINDS = Object.freeze(["threat", "risk", "control"]);
-
-// Coverage is KIND-AWARE: a gap surface is closed only by a threat/risk/control
-// deliverable (or an authorized disposition), and a stale entity only by a
-// stale_refresh deliverable (or an authorized disposition). A disposition covers
-// EITHER, but only when the run is authorized to disposition GRC work
-// (dispositionsAuthorized) — a caller-supplied authorized_by is recorded metadata,
-// not a server-verifiable authorization, so it cannot silently satisfy coverage.
-function deliverableCoversGap(d, surface, dispositionsAuthorized) {
-  if (!deliverableCoversSurface(d?.target, surface)) return false;
-  if (d?.disposition != null) return dispositionsAuthorized === true;
-  return GRC_GAP_COVERING_KINDS.includes(d?.kind);
-}
-
-function deliverableCoversStale(d, uid, dispositionsAuthorized) {
-  if (typeof d?.target !== "string" || d.target.trim() !== uid) return false;
-  if (d?.disposition != null) return dispositionsAuthorized === true;
-  return d?.kind === "stale_refresh";
-}
-
-function computeUncoveredGrcDeliverables(deliverables, record, dispositionsAuthorized) {
-  const list = Array.isArray(deliverables) ? deliverables : [];
-  const uncovered = [];
-  const gaps = Array.isArray(record?.gap_set) ? record.gap_set : [];
-  const stale = Array.isArray(record?.stale_set) ? record.stale_set : [];
-  for (const g of gaps) {
-    const surface = g?.surface;
-    if (typeof surface !== "string" || surface === "") continue;
-    const covered = list.some((d) => deliverableCoversGap(d, surface, dispositionsAuthorized));
-    if (!covered) uncovered.push({ kind: "gap", surface, reason: g.reason ?? null });
-  }
-  for (const s of stale) {
-    const uid = s?.uid;
-    if (typeof uid !== "string" || uid === "") continue;
-    const covered = list.some((d) => deliverableCoversStale(d, uid, dispositionsAuthorized));
-    if (!covered) uncovered.push({ kind: "stale", uid, entity_type: s.type ?? null });
-  }
-  return uncovered;
-}
-
-// Pure plan-gate validator. Mirrors validateDevStartPlanGate's shape so the
-// runPostImplementationPlan wiring is uniform. Returns
-//   { ok, checked, security_relevant, error?, invalid?, uncovered?, deliverable_count? }.
-export function validateGrcDeliverablesPlanGate({ deliverables, screeningRecord, dispositionsAuthorized = false } = {}) {
-  if (!isScreeningSecurityRelevant(screeningRecord)) {
-    // Not security-relevant (or no readable screening record): no deliverables
-    // required. The post-merge reconcile recompute (gc_assert_grc_reconciled)
-    // remains the backstop if the final diff turns out security-relevant.
-    return { ok: true, checked: true, security_relevant: false };
-  }
-
-  const list = Array.isArray(deliverables) ? deliverables : null;
-  if (list == null || list.length === 0) {
-    return {
-      ok: false,
-      checked: true,
-      security_relevant: true,
-      error: "grc_deliverables_missing",
-      invalid: [],
-      uncovered: computeUncoveredGrcDeliverables([], screeningRecord, dispositionsAuthorized),
-    };
-  }
-
-  const invalid = [];
-  list.forEach((d, i) => {
-    const label = `deliverables[${i}]`;
-    if (d == null || typeof d !== "object" || Array.isArray(d)) {
-      invalid.push(`${label} must be an object`);
-      return;
-    }
-    if (!GRC_DELIVERABLE_KINDS.includes(d.kind)) {
-      invalid.push(`${label}.kind must be one of: ${GRC_DELIVERABLE_KINDS.join(", ")}`);
-    }
-    if (typeof d.target !== "string" || d.target.trim() === "") {
-      invalid.push(`${label}.target must be a non-empty string`);
-    }
-    if (d.disposition != null) {
-      invalid.push(...validateGrcDisposition(d.disposition, `${label}.disposition`));
-      // A disposition is an authorization to decline in-scope GRC work. The
-      // caller-supplied authorized_by is recorded metadata, NOT a server-
-      // verifiable authorization (this MCP has a single identity, GC-TM-001), so
-      // a disposition is honored only when the run carries the audited
-      // override=true + override_reason escalation that the agent sources from the
-      // user (the same authorization channel every other workflow gate uses).
-      // GC-GRC-015 will replace this with graph-verified, drift-aware per-entity
-      // dispositions (risk-register record + ACCEPT treatment plan + owner).
-      if (dispositionsAuthorized !== true) {
-        invalid.push(
-          `${label}.disposition is present but the run is not authorized to disposition GRC work; re-run with override=true and override_reason quoting the user's authorization (a caller-supplied authorized_by is not a server-verifiable authorization; server-verified per-entity dispositions arrive with GC-GRC-015)`,
-        );
-      }
-    } else if (typeof d.action !== "string" || d.action.trim() === "") {
-      invalid.push(`${label}.action must be a non-empty string (or provide an authorized disposition)`);
-    } else if (GRC_DEFER_LANGUAGE_RE.test(d.action)) {
-      invalid.push(
-        `${label}.action defers GRC work without an authorized disposition (GC-GRC-015): "${d.action.trim().slice(0, 80)}"`,
-      );
-    }
-  });
-
-  const uncovered = computeUncoveredGrcDeliverables(list, screeningRecord, dispositionsAuthorized);
-
-  if (invalid.length > 0 || uncovered.length > 0) {
-    return {
-      ok: false,
-      checked: true,
-      security_relevant: true,
-      error: invalid.length > 0 ? "grc_deliverables_invalid" : "grc_deliverables_incomplete",
-      invalid,
-      uncovered,
-    };
-  }
-
-  return { ok: true, checked: true, security_relevant: true, deliverable_count: list.length };
-}
-
-// Build the suggested deliverables array from the screening sets — one item per
-// gap surface and stale entity, so the failure envelope shows the caller exactly
-// what to enumerate (mirrors the quality-gate "fix obvious from the error" shape).
-export function renderGrcDeliverablesScaffold(screeningRecord) {
-  const out = [];
-  const gaps = Array.isArray(screeningRecord?.gap_set) ? screeningRecord.gap_set : [];
-  const stale = Array.isArray(screeningRecord?.stale_set) ? screeningRecord.stale_set : [];
-  const candidateThreats = Array.isArray(screeningRecord?.candidate_threats) ? screeningRecord.candidate_threats : [];
-  const candidateControls = Array.isArray(screeningRecord?.candidate_controls) ? screeningRecord.candidate_controls : [];
-  for (const g of gaps) {
-    if (typeof g?.surface !== "string" || g.surface === "") continue;
-    out.push({
-      kind: "threat",
-      target: g.surface,
-      action: `Model or confirm a threat covering ${g.surface} (screening gap: ${g.reason ?? "uncovered"}) and select an implementing control, or record an authorized disposition.`,
-    });
-  }
-  for (const s of stale) {
-    if (typeof s?.uid !== "string" || s.uid === "") continue;
-    out.push({
-      kind: "stale_refresh",
-      target: s.uid,
-      action: `Refresh ${s.type ?? "entity"} ${s.uid} whose linked code changed (${s.reason ?? "stale"}), or record an authorized disposition.`,
-    });
-  }
-  return {
-    deliverables: out,
-    candidate_threats: candidateThreats,
-    candidate_controls: candidateControls,
-  };
-}
-
-export function serializeGrcDeliverablesData(payload) {
-  return `<!-- gc:grc-deliverables-data ${JSON.stringify(payload)} -->`;
-}
-
-// Render the durable deliverables record appended to the plan comment: a
-// machine-parseable data block (authoritative, read by GC-GRC-012) followed by a
-// human-readable section grouped by kind.
-export function renderGrcDeliverablesRecord({ deliverables, screeningRecord }) {
-  const list = Array.isArray(deliverables) ? deliverables : [];
-  const verdict = screeningRecord?.derived_verdict ?? screeningRecord?.verdict ?? null;
-  const lines = [];
-  lines.push(
-    serializeGrcDeliverablesData({
-      schema: GRC_DELIVERABLES_SCHEMA_VERSION,
-      screening_verdict: verdict,
-      deliverables: list,
-    }),
-  );
-  lines.push("");
-  lines.push("## GRC Deliverables (design-time — GC-GRC-010)");
-  lines.push("");
-  lines.push(
-    `_Derived from the Step 3.5 screening record (verdict: \`${verdict ?? "unknown"}\`). Each item ships with this change or carries an authorized disposition (GC-GRC-015)._`,
-  );
-  const other = [];
-  for (const kind of GRC_DELIVERABLE_KINDS) {
-    const items = list.filter((d) => d?.kind === kind);
-    if (items.length === 0) continue;
-    lines.push("");
-    lines.push(`**${GRC_DELIVERABLE_KIND_LABELS[kind]}:**`);
-    for (const d of items) lines.push(renderDeliverableBullet(d));
-  }
-  for (const d of list) {
-    if (!GRC_DELIVERABLE_KINDS.includes(d?.kind)) other.push(d);
-  }
-  if (other.length > 0) {
-    lines.push("");
-    lines.push("**Other:**");
-    for (const d of other) lines.push(renderDeliverableBullet(d));
-  }
-  return lines.join("\n");
-}
-
-function renderDeliverableBullet(d) {
-  const target = typeof d?.target === "string" ? d.target : "(unspecified)";
-  if (d?.disposition != null && typeof d.disposition === "object") {
-    return `- \`${target}\` — _disposition ${d.disposition.type}_ (authorized by ${d.disposition.authorized_by}): ${d.disposition.rationale}`;
-  }
-  return `- \`${target}\` — ${typeof d?.action === "string" ? d.action : ""}`;
-}
-
-// Read the latest planned GRC deliverables from an array of issue-comment bodies.
-// Latest-block-wins, so the server-appended record (rendered last, after any
-// caller prose) is authoritative. Tolerates malformed JSON (skip). This is the
-// plan -> completion trace GC-GRC-012 will consume.
-export function parseGrcDeliverablesData(commentBodies) {
-  if (!Array.isArray(commentBodies)) return null;
-  let latest = null;
-  for (const body of commentBodies) {
-    if (typeof body !== "string") continue;
-    GRC_DELIVERABLES_DATA_RE.lastIndex = 0;
-    for (const m of body.matchAll(GRC_DELIVERABLES_DATA_RE)) {
-      try {
-        latest = JSON.parse(m[1]);
-      } catch {
-        // malformed — skip
-      }
-    }
-  }
-  return latest;
-}
-
-// Reject a caller-supplied plan body that embeds a WELL-FORMED deliverables data
-// block: the server renders the authoritative block from the validated param, so
-// a hand-forged block in the plan prose could otherwise be mistaken for it. Only
-// the parseable form (with a JSON payload) is rejected — the plan may still
-// discuss the marker family in prose, which keeps the workflow self-documenting.
-function rejectForgedDeliverablesBlock(text, fieldName) {
-  if (typeof text !== "string" || text === "") return null;
-  GRC_DELIVERABLES_DATA_RE.lastIndex = 0;
-  if (GRC_DELIVERABLES_DATA_RE.test(text)) {
-    return `${fieldName}: carries a machine-parseable gc:grc-deliverables-data block; that block is server-rendered from the validated grc_deliverables param and may not be hand-authored`;
-  }
-  return null;
-}
-
-function buildGrcDeliverablesFailureMessage(gate) {
-  if (gate.error === "grc_deliverables_missing") {
-    return "This is a security-relevant change (per Step 3.5 screening) but the plan enumerates no GRC deliverables. Pass grc_deliverables covering every screening gap and stale entity (GC-GRC-010).";
-  }
-  if (gate.error === "grc_deliverables_invalid") {
-    return `The plan's GRC deliverables are structurally invalid: ${(gate.invalid ?? []).join("; ")}`;
-  }
-  const uncovered = (gate.uncovered ?? [])
-    .map((u) => (u.kind === "gap" ? `gap:${u.surface}` : `stale:${u.uid}`))
-    .join(", ");
-  return `The plan's GRC deliverables do not cover every screening gap/stale item: ${uncovered}. Add a covering deliverable or an authorized disposition (GC-GRC-015).`;
-}
-
-// Default data-gathering seams for the v2 runner. Each is injectable via `deps`
-// so runComputeGrcScreening is unit-testable without network or a live repo.
-
-async function defaultComputeTouchedPaths(repoRoot, baseCommitSha, commitSha, baseBranch) {
-  const head = commitSha || "HEAD";
-  let base = baseCommitSha;
-  if (!base) {
-    try {
-      const { stdout } = await execFile("git", ["merge-base", baseBranch || "dev", head], { cwd: repoRoot });
-      base = stdout.trim();
-    } catch {
-      base = null;
-    }
-  }
-  const range = base ? `${base}...${head}` : head;
-  const args = ["-C", repoRoot, "diff", "--name-only", range];
-  const { stdout } = await execFile("git", args.slice(0, 1).concat(args.slice(1)), { cwd: repoRoot });
-  const paths = stdout.split("\n").map((s) => s.trim()).filter(Boolean);
-  return { touchedPaths: paths, base, head };
-}
-
-async function defaultFetchGrcGraph(project) {
-  const entities = [];
-  const collect = async (list, type, linkFn) => {
-    let rows;
-    try {
-      rows = await list(project);
-    } catch {
-      return;
-    }
-    for (const row of Array.isArray(rows) ? rows : []) {
-      if (!row?.id || !row?.uid) continue;
-      let links = [];
-      try {
-        links = await linkFn(row.id);
-      } catch {
-        links = [];
-      }
-      const codeLinks = (Array.isArray(links) ? links : [])
-        .filter((l) => l?.target_type === "CODE" && typeof l?.target_identifier === "string")
-        .map((l) => l.target_identifier);
-      entities.push({ type, uid: row.uid, status: row.status, id: row.id, codeLinks });
-    }
-  };
-  await collect(listThreatModels, "threat_model", (id) => listThreatModelLinks(id, project));
-  await collect(listRiskScenarios, "risk_scenario", (id) => listRiskScenarioLinks(id, { targetType: "CODE", project }));
-  await collect(listControls, "control", (id) => listControlLinks(id, { targetType: "CODE", project }));
-  return entities;
-}
-
-async function defaultFetchDerivationState(project, derivationRunId) {
-  let runs;
-  try {
-    runs = await listDerivationRuns({ project });
-  } catch {
-    return null;
-  }
-  const list = Array.isArray(runs) ? runs : [];
-  if (list.length === 0) return null;
-  const run = derivationRunId ? list.find((r) => r?.id === derivationRunId) : list[0];
-  if (!run?.id) return null;
-  let facts = [];
-  try {
-    facts = await listDerivationFacts({ project, runId: run.id });
-  } catch {
-    facts = [];
-  }
-  const coveredPaths = [
-    ...new Set(
-      (Array.isArray(facts) ? facts : [])
-        .map((f) => f?.source_path ?? f?.sourcePath ?? f?.path)
-        .filter((p) => typeof p === "string" && p !== ""),
-    ),
-  ];
-  return {
-    runId: run.id,
-    snapshotId: run.architecture_model_snapshot_id ?? run.snapshot_id ?? null,
-    coveredPaths,
-  };
-}
-
-async function defaultEnumerateCandidates(project, snapshotId, threatPackId, threatPackVersion) {
-  if (!snapshotId || !threatPackId) return { candidate_threats: [], candidate_controls: [], control_ruleset_version: null, pack_checksums: {} };
-  let threats = [];
-  let controls = [];
-  try {
-    const te = await threatEnumeration({ project, packId: threatPackId, version: threatPackVersion, snapshotId });
-    threats = Array.isArray(te?.candidates) ? te.candidates : [];
-  } catch {
-    threats = [];
-  }
-  try {
-    const ci = await controlIdentification({ project, threatPackId, version: threatPackVersion, snapshotId });
-    controls = Array.isArray(ci?.candidates) ? ci.candidates : [];
-  } catch {
-    controls = [];
-  }
-  return {
-    candidate_threats: threats.map((c) => ({
-      producing_rule_id: c.producingRuleId ?? null,
-      category: c.category ?? null,
-      stride_category: c.strideCategory ?? null,
-      element_stable_key: c.elementStableKey ?? null,
-    })),
-    candidate_controls: controls.map((c) => ({
-      producing_rule_id: c.producingRuleId ?? null,
-      objective_key: c.objectiveKey ?? null,
-      control_uid: c.controlUid ?? null,
-      threat_ref: c.threatRef ?? null,
-      source: c.source ?? null,
-    })),
-    control_ruleset_version: null,
-    pack_checksums: {},
-  };
-}
-
-// Shared post tail for screening records: reserved-marker + HTML-delimiter
-// guard on the rendered body, sensitive-content filter, body-size cap, argv
-// gh post, and grc_screening phase marker. Reused by v1 and v2 runners so the
-// trust-boundary checks live in one place.
-async function postGrcScreeningComment({ repoRoot, owner, name, issueNumber, body }) {
-  const sensitiveError = detectSensitiveBodyContent(body);
-  if (sensitiveError) {
-    return { ok: false, error: "grc_screening_body_rejected", message: sensitiveError, issue_number: issueNumber, next_action: "scrub_secrets_from_fields_and_retry" };
-  }
-  if (Buffer.byteLength(body, "utf8") > GITHUB_ISSUE_COMMENT_BODY_MAX) {
-    return { ok: false, error: "grc_screening_body_too_large", message: `rendered body is ${Buffer.byteLength(body, "utf8")} bytes; GitHub's issue-comment body cap is ${GITHUB_ISSUE_COMMENT_BODY_MAX} bytes`, issue_number: issueNumber, next_action: "reduce_scope_and_retry" };
-  }
-  let apiResponse = null;
-  try {
-    const { stdout } = await execFile(
-      "gh",
-      ["api", "--method", "POST", `/repos/${owner}/${name}/issues/${issueNumber}/comments`, "-f", `body=${body}`],
-      { cwd: repoRoot },
-    );
-    try { apiResponse = JSON.parse(stdout); } catch { apiResponse = null; }
-  } catch (error) {
-    return { ok: false, error: "grc_screening_post_failed", message: extractGhErrorMessage(error), issue_number: issueNumber, next_action: "retry_after_resolving_gh_failure" };
-  }
-  let phase_marker_posted = true;
-  try {
-    await postPhaseMarker(repoRoot, owner, name, issueNumber, "grc_screening");
-  } catch {
-    phase_marker_posted = false;
-  }
-  return {
-    ok: true,
-    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
-    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
-    phase_marker_posted,
-  };
-}
-
-// v2 runner: compute the classification from the change and post the record.
-// The agent supplies scope inputs only; verdict/entities/links are computed.
-export async function runComputeGrcScreening({
-  repoPath,
-  issueNumber,
-  project = null,
-  baseCommitSha = null,
-  commitSha = null,
-  threatPackId = null,
-  threatPackVersion = null,
-  derivationRunId = null,
-  rationale = null,
-  deps = {},
-}) {
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-    return { ok: false, error: "grc_screening_input_invalid", message: "issueNumber must be a positive integer", issue_number: issueNumber ?? null };
-  }
-  // Reserved-marker / HTML-delimiter guard on the only caller-controlled
-  // free-text field rendered into the durable body (rationale), BEFORE any
-  // network I/O. This is the v2 marker-injection trust boundary. The touched
-  // surface is NOT caller-supplied — it is always computed from the git diff
-  // (there is no `paths` override), so a caller cannot narrow or forge the
-  // classified surface and turn the computed gate back into an assertion.
-  const callerFields = [["rationale", rationale]];
-  for (const [fieldName, value] of callerFields) {
-    if (value == null) continue;
-    const err = rejectReservedMarkerSequence(value, fieldName);
-    if (err) {
-      return { ok: false, error: "grc_screening_reserved_marker", message: err, issue_number: issueNumber, next_action: "remove_reserved_marker_prefix_and_retry" };
-    }
-    if (typeof value === "string" && (value.includes("<!--") || value.includes("-->"))) {
-      return { ok: false, error: "grc_screening_reserved_marker", message: `${fieldName}: caller-controlled text carries an HTML comment delimiter (<!-- or -->); refused to prevent comment breakout`, issue_number: issueNumber, next_action: "remove_html_comment_delimiter_and_retry" };
-    }
-  }
-
-  const computeTouchedPaths = deps.computeTouchedPaths ?? defaultComputeTouchedPaths;
-  const fetchGrcGraph = deps.fetchGrcGraph ?? defaultFetchGrcGraph;
-  const fetchDerivationState = deps.fetchDerivationState ?? defaultFetchDerivationState;
-  const enumerateCandidates = deps.enumerateCandidates ?? defaultEnumerateCandidates;
-  const postComment = deps.postComment ?? postGrcScreeningComment;
-
-  const repoRoot = await ensureGitRepo(repoPath);
-  const { owner, name } = await getOwnerRepo(repoRoot);
-
-  // Resolve project + base branch from .ground-control.yaml when not supplied.
-  let resolvedProject = project;
-  let baseBranch = "dev";
-  try {
-    const ctx = await getRepoGroundControlContext(repoRoot);
-    if (ctx?.status === "ok") {
-      resolvedProject = resolvedProject ?? ctx.project;
-      baseBranch = ctx.workflow?.base_branch ?? baseBranch;
-    }
-  } catch {
-    // fall through with defaults
-  }
-
-  // 1. Touched surface — always computed from the git diff. base/head are the
-  // only caller-supplied scope inputs and are verifiable git refs (validated as
-  // commit SHAs at the tool boundary), not an arbitrary path list.
-  const diff = await computeTouchedPaths(repoRoot, baseCommitSha, commitSha, baseBranch);
-  const touchedPaths = diff.touchedPaths;
-  const base = diff.base;
-  const head = diff.head;
-
-  // 2. Derived facts (latest run or pinned) — absence handled as gaps below.
-  const derivation = await fetchDerivationState(resolvedProject, derivationRunId);
-  // 3. Existing GRC CODE-link graph.
-  const entities = await fetchGrcGraph(resolvedProject);
-  // 4. Deterministic candidates (only when a snapshot exists to enumerate).
-  const enumerated = await enumerateCandidates(
-    resolvedProject,
-    derivation?.snapshotId ?? null,
-    threatPackId,
-    threatPackVersion,
-  );
-
-  // 5. Classify.
-  const classification = classifyGrcScreening({
-    touchedPaths,
-    entities,
-    derivation: derivation ? { coveredPaths: derivation.coveredPaths } : null,
-  });
-
-  // Record a capture limit when derivation coverage was unavailable for a
-  // touched security-relevant surface — adapter absence is never silent.
-  const capture_limits = [];
-  if (!derivation && classification.gap_set.some((g) => g.reason === "no_derivation_coverage")) {
-    capture_limits.push({ reason: "no_derivation_run", detail: "no derivation run for project; touched surface unclassified by adapters", surface: null });
-  }
-
-  const provenance = {
-    base_commit_sha: base,
-    commit_sha: head,
-    derivation_run_id: derivation?.runId ?? null,
-    architecture_model_snapshot_id: derivation?.snapshotId ?? null,
-    threat_pack_id: threatPackId,
-    threat_pack_version: threatPackVersion,
-    control_ruleset_version: enumerated.control_ruleset_version ?? null,
-    pack_checksums: enumerated.pack_checksums ?? {},
-    capture_limits,
-  };
-
-  const body = buildGrcScreeningRecordV2({
-    issueNumber,
-    rationale,
-    classification,
-    candidate_threats: enumerated.candidate_threats ?? [],
-    candidate_controls: enumerated.candidate_controls ?? [],
-    provenance,
-  });
-
-  const posted = await postComment({ repoRoot, owner, name, issueNumber, body });
-  if (!posted.ok) return posted;
-
-  return {
-    ok: true,
-    repo_path: repoRoot,
-    issue_number: issueNumber,
-    schema: GRC_SCREENING_SCHEMA_VERSION_V2,
-    derived_verdict: classification.derived_verdict,
-    impact_count: classification.impact_set.length,
-    gap_count: classification.gap_set.length,
-    stale_count: classification.stale_set.length,
-    comment_url: posted.comment_url,
-    comment_id: posted.comment_id,
-    phase_marker_posted: posted.phase_marker_posted,
   };
 }
 
@@ -14701,10 +12423,9 @@ export async function runPostFinalReport(input) {
   // path lets the user authorize a skip with a quoted rationale (the
   // input-shape validation for that override is done earlier).
   // The pre-merge readiness report (phase="pre_merge", issue #963) is posted
-  // BEFORE Phase E reconciliation runs, so the traceability_reconciled /
-  // grc_reconciled markers legitimately do not exist yet. Skip the prerequisite
-  // gate for it; the reconciled `gc:final-report` (phase="post_merge") still
-  // requires both markers.
+  // BEFORE Phase E reconciliation runs, so the traceability_reconciled marker
+  // legitimately does not exist yet. Skip the prerequisite gate for it; the
+  // reconciled `gc:final-report` (phase="post_merge") still requires it.
   if (rest.lane !== "quickfix" && !phaseOverride && rest.phase !== "pre_merge") {
     const completed = await readCompletedPhases(repoRoot, owner, name, rest.issueNumber);
     // In-process-only union: used by runAssertCompletion to avoid a GitHub
@@ -14719,7 +12440,7 @@ export async function runPostFinalReport(input) {
     const decision = evaluatePhasePrerequisite({
       completed,
       nextPhase: "final_report",
-      requires: ["traceability_reconciled", "grc_reconciled"],
+      requires: ["traceability_reconciled"],
       issueNumber: rest.issueNumber,
     });
     if (!decision.ok) {
@@ -14731,7 +12452,7 @@ export async function runPostFinalReport(input) {
         message: decision.message,
         missing: decision.missing,
         completed: decision.completed,
-        next_action: "run_gc_assert_traceability_reconciled_and_gc_assert_grc_reconciled_first",
+        next_action: "run_gc_assert_traceability_reconciled_first",
       };
     }
   }
@@ -15206,383 +12927,6 @@ export async function runAssertQualityGates({ project, requirements }) {
 }
 
 // ---------------------------------------------------------------------------
-// gc_assert_grc_reconciled (issue #1100)
-//
-// Server-side GRC reconciliation gate. Reads the GRC screening record from
-// the issue thread (written by gc_post_grc_screening at Step 3.5) and for
-// security_relevant verdicts verifies that every claimed entity and CODE link
-// actually exists in the Ground Control REST API. On success, posts a
-// `grc_reconciled` phase marker so gc_post_final_report can enforce the gate.
-//
-// Verdict routing:
-//   not_security_relevant / no_baseline → pass immediately, echo verdict, post marker.
-//   security_relevant → resolve each entity ref; for each code_link, list links
-//     for the owner entity and verify target_identifier is present. Any gap → refuse.
-//   override=true + non-empty override_reason → skip checks, post marker with reason.
-// ---------------------------------------------------------------------------
-
-// Map entity type → REST getter function (returns entity or throws on 404/error).
-function getEntityGetter(type) {
-  const normalized = normalizeEntityType(type);
-  if (normalized === "threat_model") return (uid, project) => getThreatModelByUid(uid, project);
-  if (normalized === "risk_scenario") return (uid, project) => getRiskScenarioByUid(uid, project);
-  if (normalized === "control") return (uid, project) => getControlByUid(uid, project);
-  return null;
-}
-
-// Map entity type → function that lists CODE links for an entity id.
-// Returns an array of link objects; each has target_type, target_identifier.
-async function fetchCodeLinksForOwner(type, ownerId, project) {
-  const normalized = normalizeEntityType(type);
-  if (normalized === "threat_model") {
-    // listThreatModelLinks is positional (ownerId, project); no targetType filter —
-    // filter CODE client-side.
-    const links = await listThreatModelLinks(ownerId, project);
-    return Array.isArray(links) ? links.filter((l) => l?.target_type === "CODE") : [];
-  }
-  if (normalized === "risk_scenario") {
-    const links = await listRiskScenarioLinks(ownerId, { targetType: "CODE", project });
-    return Array.isArray(links) ? links : [];
-  }
-  if (normalized === "control") {
-    const links = await listControlLinks(ownerId, { targetType: "CODE", project });
-    return Array.isArray(links) ? links : [];
-  }
-  return null; // unknown type
-}
-
-// Composite cache key for a resolved GRC entity: normalized type + uid. Keying
-// by uid alone would conflate entities of different types that share a uid and
-// could verify a CODE link against the wrong aggregate (codex cycle-1 finding).
-function grcEntityKey(type, uid) {
-  return `${normalizeEntityType(type)}::${uid}`;
-}
-
-// Reconcile a v2 (derivation-backed) screening record. Rather than trusting the
-// stored record's sets (which may have been computed early, before the final
-// diff existed — the "screened on an empty/floating diff" bypass), this
-// RECOMPUTES the classification from the FINAL diff (the record's recorded base
-// commit to the current HEAD) against the live GRC CODE-link graph and derived
-// facts, and BLOCKS on the freshly-computed gap_set. This is the structural
-// replacement for the retired passing `no_baseline` verdict and closes the
-// stale-record freshness hole: source added after screening is compared back to
-// the model, so final code cannot bypass gap_set. The stale_set is reported but
-// not independently blocking here; per-surface control/efficacy teeth and
-// stale-set addressing are GC-GRC-012's completion-coverage gate. The only
-// authorized bypass of a gap_set is gc_post_final_report's phaseOverride (an
-// audited disposition). Data-gathering seams are injectable via `deps` for tests.
-export async function reconcileGrcScreeningV2({ record, repoRoot, owner, name, issueNumber, project, deps = {} }) {
-  const computeTouchedPaths = deps.computeTouchedPaths ?? defaultComputeTouchedPaths;
-  const fetchGrcGraph = deps.fetchGrcGraph ?? defaultFetchGrcGraph;
-  const fetchDerivationState = deps.fetchDerivationState ?? defaultFetchDerivationState;
-  const getContext = deps.getRepoGroundControlContext ?? getRepoGroundControlContext;
-  const postMarker = deps.postPhaseMarker ?? postPhaseMarker;
-
-  // Resolve the base branch (for merge-base fallback) AND the project from
-  // .ground-control.yaml. The project must be resolved the same way the screening
-  // runner does (runPostGrcScreening): without it, fetchGrcGraph(null) runs
-  // unscoped and returns no project entities, so every touched source surface
-  // reads as uncovered and the gate spuriously fails grc_not_reconciled even
-  // though the modeled controls/threat-models cover it. A caller that omits
-  // `project` (e.g. gc_assert_completion) must still reconcile against the repo's
-  // own project graph.
-  let baseBranch = "dev";
-  let resolvedProject = project;
-  try {
-    const ctx = await getContext(repoRoot);
-    if (ctx?.status === "ok") {
-      baseBranch = ctx.workflow?.base_branch ?? baseBranch;
-      resolvedProject = resolvedProject ?? ctx.project;
-    }
-  } catch {
-    // fall through with defaults
-  }
-
-  // Recompute the FINAL touched surface: from the record's recorded base commit
-  // (or merge-base with the base branch) to the current HEAD — this captures
-  // any source changed after screening ran.
-  const recordedBase =
-    record.provenance && typeof record.provenance.base_commit_sha === "string"
-      ? record.provenance.base_commit_sha
-      : null;
-  let touchedPaths;
-  try {
-    const diff = await computeTouchedPaths(repoRoot, recordedBase, null, baseBranch);
-    touchedPaths = diff.touchedPaths;
-  } catch (error) {
-    return { ok: false, error: "grc_diff_recompute_failed", message: `Failed to recompute the final diff for reconciliation: ${error.message}`, issue_number: issueNumber };
-  }
-
-  let entities;
-  try {
-    entities = await fetchGrcGraph(resolvedProject);
-  } catch (error) {
-    return { ok: false, error: "grc_graph_lookup_failed", message: `Failed to read the GRC graph for reconciliation: ${error.message}`, issue_number: issueNumber };
-  }
-  const derivation = await fetchDerivationState(resolvedProject, record.provenance?.derivation_run_id ?? null);
-
-  const recomputed = classifyGrcScreening({
-    touchedPaths,
-    entities,
-    derivation: derivation ? { coveredPaths: derivation.coveredPaths } : null,
-  });
-
-  // Block on the FRESHLY-computed gap_set — not the stored one.
-  const missing = recomputed.gap_set.map((g) => ({ kind: "gap", surface: g.surface, reason: g.reason, boundary: g.boundary ?? null }));
-
-  if (missing.length > 0) {
-    return {
-      ok: false,
-      error: "grc_not_reconciled",
-      schema: record.schema,
-      missing,
-      checked: recomputed.impact_set.length + recomputed.gap_set.length,
-      stale_set: recomputed.stale_set,
-      recomputed_from_final_diff: true,
-      issue_number: issueNumber,
-      next_action: "model_control_or_disposition_gap_set_and_refresh_impact_links",
-    };
-  }
-
-  const summary = `_GRC screening \`${record.schema}\` reconciled against the final diff — ${recomputed.impact_set.length} impacted, 0 gaps, ${recomputed.stale_set.length} stale (reassessment tracked by GC-GRC-012)._`;
-  const apiResponse = await postMarker(repoRoot, owner, name, issueNumber, "grc_reconciled", { commentBody: summary });
-  return {
-    ok: true,
-    repo_path: repoRoot,
-    issue_number: issueNumber,
-    schema: record.schema,
-    derived_verdict: recomputed.derived_verdict,
-    missing: [],
-    checked: recomputed.impact_set.length + recomputed.gap_set.length,
-    impact_set: recomputed.impact_set,
-    stale_set: recomputed.stale_set,
-    recomputed_from_final_diff: true,
-    phase_marker: { phase: "grc_reconciled", issue_number: issueNumber },
-    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
-    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
-  };
-}
-
-export async function runAssertGrcReconciled({
-  repoPath,
-  issueNumber,
-  project = null,
-  deps = {},
-}) {
-  if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
-    throw new Error("gc_assert_grc_reconciled requires a positive integer issue_number");
-  }
-
-  // No tool-level override exists by design (codex cycle-1 security finding): a
-  // free-text "reason" is not a server-verifiable authorization, so an
-  // unconditional skip here would let any caller mint the grc_reconciled marker
-  // and bypass the security_relevant entity/link checks. The single audited skip
-  // path for the completion-gate prerequisite is gc_post_final_report's
-  // phaseOverride, which bypasses BOTH traceability_reconciled and
-  // grc_reconciled together rather than adding a second per-tool bypass.
-  const repoRoot = await ensureGitRepo(repoPath);
-  const { owner, name } = await getOwnerRepo(repoRoot);
-
-  // Read issue comment bodies and parse the screening record.
-  const bodies = await readIssueCommentBodies(repoRoot, owner, name, issueNumber);
-  const record = parseGrcScreeningData(bodies, issueNumber);
-
-  if (!record) {
-    return {
-      ok: false,
-      error: "grc_screening_record_missing",
-      issue_number: issueNumber,
-      next_action: "run_step_3.5_grc_screening_first",
-    };
-  }
-
-  // v2 records (GC-GRC-009) carry computed impact/gap/stale sets; reconcile via
-  // the set-based path. v1 records (agent-asserted verdict) keep the original
-  // verify-what-was-claimed path below so in-flight runs and historical records
-  // still reconcile (ADR-058: existing v1 records remain historical).
-  if (record.schema === GRC_SCREENING_SCHEMA_VERSION_V2 || Array.isArray(record.gap_set) || Array.isArray(record.impact_set)) {
-    return await reconcileGrcScreeningV2({ record, repoRoot, owner, name, issueNumber, project, deps });
-  }
-
-  const { verdict, entities_created = [], entities_updated = [], entities_confirmed = [], code_links = [] } = record;
-
-  // For non-security verdicts the gate passes immediately — echo verdict.
-  if (verdict !== "security_relevant") {
-    const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "grc_reconciled", {
-      commentBody: `_GRC verdict: \`${verdict}\` — no entity or code-link verification required._`,
-    });
-    return {
-      ok: true,
-      repo_path: repoRoot,
-      issue_number: issueNumber,
-      verdict,
-      missing: [],
-      checked: 0,
-      phase_marker: { phase: "grc_reconciled", issue_number: issueNumber },
-      comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
-      comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
-    };
-  }
-
-  // security_relevant: verify all entity refs and code links.
-  const missing = [];
-  let checked = 0;
-
-  // Collect all entity refs across created/updated/confirmed.
-  const allEntityRefs = [
-    ...entities_created.map((e) => ({ ...e, _source: "entities_created" })),
-    ...entities_updated.map((e) => ({ ...e, _source: "entities_updated" })),
-    ...entities_confirmed.map((e) => ({ ...e, _source: "entities_confirmed" })),
-  ];
-
-  // Resolve each entity. The maps are keyed by normalized-type + uid (NOT uid
-  // alone) so a threat_model and a risk_scenario that happen to share a UID are
-  // never conflated — keying by uid alone could resolve a CODE link against the
-  // wrong aggregate type (codex cycle-1 core finding). entityIdByKey maps the
-  // composite key → fetched entity id (used by the code_link pass);
-  // missingEntityKeys records keys that failed to resolve so the code_link pass
-  // can distinguish "owner already flagged missing" from "owner never listed as
-  // an entity" (the latter is resolved directly, not skipped).
-  const entityIdByKey = new Map();
-  const missingEntityKeys = new Set();
-
-  for (const ref of allEntityRefs) {
-    const { type, uid } = ref;
-    const key = grcEntityKey(type, uid);
-    const getter = getEntityGetter(type);
-    if (!getter) {
-      missing.push({ kind: "entity", type, uid, reason: "unknown_entity_type" });
-      missingEntityKeys.add(key);
-      checked++;
-      continue;
-    }
-    let entity;
-    try {
-      entity = await getter(uid, project);
-    } catch (error) {
-      // 404 → entity genuinely absent; add to missing[] and continue.
-      // Any other status → unexpected backend error; abort with structured error.
-      if (error && error.status === 404) {
-        missing.push({ kind: "entity", type, uid, reason: "entity_missing" });
-        missingEntityKeys.add(key);
-        checked++;
-        continue;
-      }
-      return {
-        ok: false,
-        error: "grc_entity_lookup_failed",
-        message: `Failed to look up ${type} entity ${uid}: ${error.message}`,
-        issue_number: issueNumber,
-      };
-    }
-    if (!entity || !entity.id) {
-      missing.push({ kind: "entity", type, uid, reason: "entity_missing" });
-      missingEntityKeys.add(key);
-      checked++;
-      continue;
-    }
-    entityIdByKey.set(key, entity.id);
-    checked++;
-  }
-
-  // Verify each code_link.
-  for (const link of code_links) {
-    const { owner_type, owner_uid, target_identifier } = link;
-    const ownerNormalized = normalizeEntityType(owner_type);
-    if (!GRC_ENTITY_TYPES.includes(ownerNormalized)) {
-      missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "unknown_owner_type" });
-      checked++;
-      continue;
-    }
-    const ownerKey = grcEntityKey(owner_type, owner_uid);
-    let ownerId = entityIdByKey.get(ownerKey);
-    if (ownerId === undefined) {
-      if (missingEntityKeys.has(ownerKey)) {
-        // Owner was listed as an entity (same type + uid) but failed to resolve
-        // above; the gate already fails on that entity. Nothing more to verify.
-        checked++;
-        continue;
-      }
-      // Owner is not among the listed entities. Resolve it directly so an
-      // unlisted owner cannot slip an unverified code_link past the gate.
-      const ownerGetter = getEntityGetter(owner_type); // non-null: owner_type validated above
-      try {
-        const ownerEntity = await ownerGetter(owner_uid, project);
-        if (!ownerEntity || !ownerEntity.id) {
-          missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "owner_missing" });
-          checked++;
-          continue;
-        }
-        ownerId = ownerEntity.id;
-      } catch (error) {
-        if (error && error.status === 404) {
-          missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "owner_missing" });
-          checked++;
-          continue;
-        }
-        return {
-          ok: false,
-          error: "grc_entity_lookup_failed",
-          message: `Failed to look up ${owner_type} owner ${owner_uid}: ${error.message}`,
-          issue_number: issueNumber,
-        };
-      }
-    }
-    let codeLinks;
-    try {
-      codeLinks = await fetchCodeLinksForOwner(owner_type, ownerId, project);
-    } catch (error) {
-      return {
-        ok: false,
-        error: "grc_links_lookup_failed",
-        message: `Failed to list CODE links for ${owner_type} ${owner_uid}: ${error.message}`,
-        issue_number: issueNumber,
-      };
-    }
-    if (codeLinks === null) {
-      missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "unknown_owner_type" });
-      checked++;
-      continue;
-    }
-    const found = codeLinks.some((l) => l?.target_identifier === target_identifier);
-    if (!found) {
-      missing.push({ kind: "code_link", owner_type, owner_uid, target_identifier, target_type: "CODE", reason: "code_link_missing" });
-    }
-    checked++;
-  }
-
-  if (missing.length > 0) {
-    return {
-      ok: false,
-      error: "grc_not_reconciled",
-      verdict,
-      missing,
-      checked,
-      issue_number: issueNumber,
-      next_action: "create_missing_grc_links_and_retry",
-    };
-  }
-
-  // All checks passed — post the grc_reconciled phase marker.
-  const summaryLines = [`_GRC verdict: \`${verdict}\` — ${checked} entity/link check(s) passed._`];
-  const apiResponse = await postPhaseMarker(repoRoot, owner, name, issueNumber, "grc_reconciled", {
-    commentBody: summaryLines.join("\n"),
-  });
-
-  return {
-    ok: true,
-    repo_path: repoRoot,
-    issue_number: issueNumber,
-    verdict,
-    missing: [],
-    checked,
-    phase_marker: { phase: "grc_reconciled", issue_number: issueNumber },
-    comment_url: apiResponse && typeof apiResponse.html_url === "string" ? apiResponse.html_url : null,
-    comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // gc_close_issue_after_merge (issue #1058)
 //
 // The canonical post-merge close path. The `Closes #<issue-number>` keyword
@@ -15737,189 +13081,6 @@ async function resolvePrForClose({ repoRoot, owner, name, issueNumber, prNumber 
   return { pr: matched };
 }
 
-const NEXT_ISSUE_RECOMMENDATION_SOURCE =
-  "GitHub open issues (/issues?state=open&sort=updated&direction=desc, first 50)";
-const NEXT_ISSUE_BLOCKED_LABELS = new Set([
-  "blocked",
-  "in-progress",
-  "needs-info",
-  "needs info",
-  "needs-user",
-  "needs user",
-  "wontfix",
-  "duplicate",
-  "invalid",
-]);
-const NEXT_ISSUE_READY_LABELS = new Set(["ready", "actionable", "help wanted", "good first issue"]);
-// Umbrella / tracking / epic issues coordinate a basket of child issues; they
-// are not a single actionable unit of work, so /implement must never hand one
-// back as the next thing to pick up. We detect them three independent ways
-// (any one is sufficient) so the signal survives whichever convention an issue
-// uses: a marker label, a marker title prefix, or a body task list that
-// enumerates child issues.
-const NEXT_ISSUE_UMBRELLA_LABELS = new Set(["epic", "umbrella", "tracking", "meta"]);
-const NEXT_ISSUE_UMBRELLA_TITLE_RE =
-  /^(?:tracking|epic|umbrella)\s*:|^\[\s*(?:tracking|epic|umbrella|meta)\s*\]/i;
-// A body task list that checks off this many or more child issues (checkbox
-// lines that reference another issue) reads as an umbrella even without a
-// marker label or title prefix. Leaf requirement issues carry only a handful of
-// acceptance-criteria checkboxes and reference zero issues, so the threshold
-// cleanly separates the two without catching an issue that merely mentions a
-// dependency or two in passing.
-const NEXT_ISSUE_UMBRELLA_TASKLIST_THRESHOLD = 5;
-
-function issueLabelNames(issue) {
-  if (!Array.isArray(issue?.labels)) return [];
-  return issue.labels
-    .map((label) => (typeof label?.name === "string" ? label.name.trim() : ""))
-    .filter((label) => label.length > 0);
-}
-
-function normalizedIssueLabels(issue) {
-  return issueLabelNames(issue).map((label) => label.toLowerCase());
-}
-
-function isBlockedNextIssueCandidate(labels) {
-  return labels.some((label) => NEXT_ISSUE_BLOCKED_LABELS.has(label));
-}
-
-function countIssueReferencingChecklistItems(body) {
-  if (typeof body !== "string" || body === "") return 0;
-  let count = 0;
-  for (const line of body.split("\n")) {
-    if (/^\s*[-*]\s+\[[ xX]\]/.test(line) && /#\d+/.test(line)) count += 1;
-  }
-  return count;
-}
-
-export function isUmbrellaNextIssueCandidate(issue) {
-  // GitHub-native sub-issue parent (works even when the body uses no task list).
-  const subIssueTotal = issue?.sub_issues_summary?.total;
-  if (typeof subIssueTotal === "number" && subIssueTotal > 0) return true;
-
-  const labels = normalizedIssueLabels(issue);
-  if (labels.some((label) => NEXT_ISSUE_UMBRELLA_LABELS.has(label))) return true;
-
-  const title = typeof issue?.title === "string" ? issue.title.trim() : "";
-  // Strip leading markdown emphasis/quote markers before matching the prefix.
-  const normalizedTitle = title.replace(/^[>*_#\s]+/, "");
-  if (NEXT_ISSUE_UMBRELLA_TITLE_RE.test(normalizedTitle)) return true;
-
-  return (
-    countIssueReferencingChecklistItems(issue?.body) >= NEXT_ISSUE_UMBRELLA_TASKLIST_THRESHOLD
-  );
-}
-
-function nextIssuePriorityScore(labels) {
-  let score = 0;
-  for (const label of labels) {
-    if (label === "priority:p0" || label === "p0" || label === "critical") score += 30;
-    else if (label === "priority:p1" || label === "p1" || label === "high-priority") score += 24;
-    else if (label === "priority:p2" || label === "p2") score += 18;
-    else if (label.startsWith("priority:")) score += 10;
-  }
-  return score;
-}
-
-function scoreNextIssueCandidate(issue, index) {
-  const labels = normalizedIssueLabels(issue);
-  let score = nextIssuePriorityScore(labels);
-  for (const label of labels) {
-    if (NEXT_ISSUE_READY_LABELS.has(label)) score += 20;
-  }
-  if (typeof issue?.milestone?.title === "string" && issue.milestone.title.trim() !== "") score += 4;
-  if (typeof issue?.updated_at === "string" && issue.updated_at.trim() !== "") score += 1;
-  return { issue, score, index };
-}
-
-function buildNextIssueReason(issue) {
-  const labels = normalizedIssueLabels(issue);
-  const namedSignals = [];
-  for (const label of labels) {
-    if (NEXT_ISSUE_READY_LABELS.has(label) || label.startsWith("priority:") || ["p0", "p1", "p2", "critical", "high-priority"].includes(label)) {
-      namedSignals.push(label);
-    }
-  }
-  if (namedSignals.length > 0) {
-    return `It is open, not blocked or in progress, and labeled ${namedSignals.slice(0, 3).join(", ")}.`;
-  }
-  return "It is the most recently updated open issue that is not blocked or in progress.";
-}
-
-export function selectNextIssueRecommendation(issues, issueNumber) {
-  const candidates = Array.isArray(issues)
-    ? issues
-      .filter((issue) => issue && typeof issue === "object")
-      .filter((issue) => !issue.pull_request)
-      .filter((issue) => issue.number !== issueNumber)
-      .filter((issue) => typeof issue.title === "string" && issue.title.trim() !== "")
-      .filter((issue) => !isBlockedNextIssueCandidate(normalizedIssueLabels(issue)))
-      .filter((issue) => !isUmbrellaNextIssueCandidate(issue))
-      .map(scoreNextIssueCandidate)
-    : [];
-
-  if (candidates.length === 0) {
-    return {
-      recommendation: null,
-      reason: "No credible next issue was available from the open GitHub issue list.",
-    };
-  }
-  candidates.sort((a, b) => (b.score - a.score) || (a.index - b.index));
-  const best = candidates[0].issue;
-  return {
-    recommendation: {
-      issue_number: best.number,
-      title: best.title.trim(),
-      url: typeof best.html_url === "string" ? best.html_url : null,
-      reason: buildNextIssueReason(best),
-      source: NEXT_ISSUE_RECOMMENDATION_SOURCE,
-    },
-    reason: null,
-  };
-}
-
-async function findNextIssueRecommendation({ repoRoot, owner, name, issueNumber }) {
-  const { stdout } = await execFile(
-    "gh",
-    [
-      "api", "--method", "GET",
-      `/repos/${owner}/${name}/issues`,
-      "-F", "state=open",
-      "-F", "per_page=50",
-      "-F", "sort=updated",
-      "-F", "direction=desc",
-    ],
-    { cwd: repoRoot },
-  );
-  let issues;
-  try {
-    issues = JSON.parse(stdout);
-  } catch {
-    throw new Error("GitHub issue list response was not valid JSON");
-  }
-  return selectNextIssueRecommendation(issues, issueNumber);
-}
-
-async function attachNextIssueRecommendation({ closeResult, repoRoot, owner, name, issueNumber }) {
-  try {
-    const result = await findNextIssueRecommendation({ repoRoot, owner, name, issueNumber });
-    return {
-      ...closeResult,
-      next_issue_recommendation: result.recommendation,
-      next_issue_recommendation_reason: result.reason,
-      next_issue_recommendation_source: NEXT_ISSUE_RECOMMENDATION_SOURCE,
-    };
-  } catch (error) {
-    return {
-      ...closeResult,
-      next_issue_recommendation: null,
-      next_issue_recommendation_reason: "Recommendation lookup failed after the issue close succeeded.",
-      next_issue_recommendation_error: extractGhErrorMessage(error),
-      next_issue_recommendation_source: NEXT_ISSUE_RECOMMENDATION_SOURCE,
-    };
-  }
-}
-
 export async function runCloseIssueAfterMerge({ repoPath, issueNumber, prNumber = null }) {
   if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
     throw new Error("gc_close_issue_after_merge requires a positive integer issue_number");
@@ -15950,9 +13111,7 @@ export async function runCloseIssueAfterMerge({ repoPath, issueNumber, prNumber 
     };
   }
 
-  const closeResult = await closeIssueIdempotently({ repoRoot, owner, name, issueNumber, pr });
-  if (!closeResult.ok) return closeResult;
-  return attachNextIssueRecommendation({ closeResult, repoRoot, owner, name, issueNumber });
+  return closeIssueIdempotently({ repoRoot, owner, name, issueNumber, pr });
 }
 
 // Close the issue idempotently once the merge gate has passed. Reads the
@@ -18081,7 +15240,6 @@ function _isHighRiskSnapshot(snapshot) {
   const findings = s.findings && typeof s.findings === "object" ? s.findings : {};
   const surfaces = Array.isArray(s.surfaces) ? s.surfaces : [];
   return (
-    s.grc_verdict === "security_relevant" ||
     findings.has_security_finding === true ||
     surfaces.some((c) => REVIEW_DISPOSITION_HIGH_RISK_SURFACES.includes(c))
   );
@@ -18097,6 +15255,19 @@ function _isHighRiskSnapshot(snapshot) {
 //      no class findings => proceed.
 //   3. Otherwise judge_needed — caller decides (judge or safe default); the
 //      provisional safe value returned here is escalate_to_human.
+//
+// ADR-089 §2: this model no longer reads or emits a GRC-derived verdict. The
+// two remaining signals — an actual reviewer-identified security finding, and
+// the structural changed-surface classification — are the only inputs to
+// `highRisk` and `risk_score` now. Both were recalibrated (weights raised,
+// and the tiny-diff auto-proceed fast-path tightened below) specifically so
+// that removing the GRC input does not silently relabel a formerly high-risk
+// case as low-risk: a case that used to reach `highRisk` ONLY via the GRC
+// verdict (no security finding, no high-risk surface) previously could not
+// fast-path to `proceed` either, because `highRisk` blocked it; the tightened
+// tiny-diff bounds and higher per-signal weights keep that same conservative
+// bias without reintroducing the retired classifier's noise (ADR-089 context:
+// a 40% clean-set false-positive rate).
 export function scoreDisposition(signalsSnapshot, config) {
   const s = signalsSnapshot && typeof signalsSnapshot === "object" ? signalsSnapshot : {};
   const cfg = config && typeof config === "object" ? config : {};
@@ -18115,17 +15286,20 @@ export function scoreDisposition(signalsSnapshot, config) {
   // findings signal (the MCP path with no findings_summary) is treated as
   // unknown-risk, which forecloses the proceed fast-path below.
   const findingsKnown = findings.known !== false;
-  const grcVerdict = typeof s.grc_verdict === "string" ? s.grc_verdict : "unknown";
   const reviewer = s.reviewer;
 
   const hasHighRiskSurface = surfaces.some((c) => REVIEW_DISPOSITION_HIGH_RISK_SURFACES.includes(c));
-  const highRisk = grcVerdict === "security_relevant" || hasSecurityFinding || hasHighRiskSurface;
+  const highRisk = hasSecurityFinding || hasHighRiskSurface;
 
+  // Weights recalibrated (ADR-089 §2): with the GRC-derived 0.5 contribution
+  // gone, the two remaining boolean signals are up-weighted (0.3->0.55,
+  // 0.2->0.4) and the diff-size cap is raised (0.2->0.25) so a change with
+  // both signals plus a non-trivial diff still saturates risk_score at 1, the
+  // same ceiling a GRC-flagged change used to reach.
   let riskScore = 0;
-  if (grcVerdict === "security_relevant") riskScore += 0.5;
-  if (hasSecurityFinding) riskScore += 0.3;
-  if (hasHighRiskSurface) riskScore += 0.2;
-  riskScore += Math.min(0.2, (linesAdded + linesDeleted) / 1000);
+  if (hasSecurityFinding) riskScore += 0.55;
+  if (hasHighRiskSurface) riskScore += 0.4;
+  riskScore += Math.min(0.25, (linesAdded + linesDeleted) / 1000);
   riskScore += Math.min(0.2, classCount * 0.1);
   riskScore = Math.min(1, Math.round(riskScore * 1000) / 1000);
 
@@ -18149,8 +15323,12 @@ export function scoreDisposition(signalsSnapshot, config) {
   if (reviewer === "codex" && highRisk) {
     return mk("one_more_cycle", "fast_path", "codex review on a high-risk surface warrants one more cycle");
   }
-  const tinyDiff = linesAdded + linesDeleted <= 40 && filesChanged <= 3;
-  if (tinyDiff && !highRisk && findingsKnown && classCount === 0 && oneOff <= 2) {
+  // Tiny-diff auto-proceed bounds tightened (ADR-089 §2: lines 40->25,
+  // files 3->2, allowed one-offs 2->1) to compensate for the removed GRC
+  // signal — fewer independent risk inputs means the automatic-proceed fast
+  // path must demand more confidence before firing.
+  const tinyDiff = linesAdded + linesDeleted <= 25 && filesChanged <= 2;
+  if (tinyDiff && !highRisk && findingsKnown && classCount === 0 && oneOff <= 1) {
     return mk("proceed", "fast_path", "small low-risk diff with no class findings; proceeding");
   }
 
@@ -18164,14 +15342,14 @@ export function scoreDisposition(signalsSnapshot, config) {
   return mk("escalate_to_human", "judge_needed", "gray-zone change; judge or human decision required");
 }
 
-// Assemble a signals snapshot from raw review/diff/GRC inputs. Pure aside from
+// Assemble a signals snapshot from raw review/diff inputs. Pure aside from
 // the classifyChangedSurface call (lexical path classification, no I/O).
+// ADR-089 §2: no GRC-derived verdict is read or emitted here.
 export function collectDispositionSignals({
   reviewer,
   findingsSummary,
   diffManifest,
   changedPaths,
-  grcVerdict,
   priorAutoOverrides,
   repoRoot,
 }) {
@@ -18181,13 +15359,11 @@ export function collectDispositionSignals({
     const { classifications } = classifyChangedSurface(changedPaths, repoRoot);
     surfaces = [...new Set(classifications.map((c) => c.surface_class))];
   }
-  const verdict = typeof grcVerdict === "string" && grcVerdict.trim() !== "" ? grcVerdict : "unknown";
   return {
     reviewer: reviewer ?? null,
     prior_auto_overrides: Number.isInteger(priorAutoOverrides) ? priorAutoOverrides : 0,
     diff,
     surfaces,
-    grc_verdict: verdict,
     findings: summarizeFindingsForDisposition(findingsSummary),
   };
 }
@@ -18484,15 +15660,12 @@ export async function runReviewCapDisposition({
 
   const diff = await computeReviewDiff(repoRoot, baseBranch ?? "dev", uncommitted);
   const changedPaths = parseChangedPathsFromManifest(diff.manifest);
-  const grcData = parseGrcScreeningData(commentBodies, issueNumber);
-  const grcVerdict = grcData && typeof grcData.verdict === "string" ? grcData.verdict : "unknown";
 
   const signalsSnapshot = collectDispositionSignals({
     reviewer,
     findingsSummary,
     diffManifest: diff.manifest,
     changedPaths,
-    grcVerdict,
     priorAutoOverrides,
     repoRoot,
   });
@@ -18981,7 +16154,6 @@ export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
   read_issue_context: { tier: "low" },
   architecture_preflight: { tier: "low" },
   codebase_assessment: { tier: "medium" },
-  grc_screening: { tier: "medium" },
   planning: { tier: "high", agent: "parent", fallback: "error" },
   implementation: { tier: "medium" },
   clause_mapping: { tier: "medium" },
@@ -19227,81 +16399,20 @@ export async function deleteAdminUser(username) {
 // recommendation. risk_assessment_result has no `status` (it uses
 // `approval_state`), so it is intentionally absent from the map.
 
+// ADR-089 §1/§3: methodology_profile, risk_register_record,
+// risk_assessment_result, treatment_plan, and risk_appetite_profile were
+// retired composed-GRC surfaces; only verification_result (an independently
+// owned aggregate) remains behind gc_risk_governance.
 export const GOVERNANCE_STATUS_ENUMS = {
-  methodology_profile: METHODOLOGY_PROFILE_STATUSES,
-  risk_register_record: RISK_REGISTER_STATUSES,
-  treatment_plan: TREATMENT_PLAN_STATUSES,
   verification_result: VERIFICATION_STATUSES,
-  risk_appetite_profile: RISK_APPETITE_PROFILE_STATUSES,
 };
 
 // gc_risk_governance per-entity, per-action body allowlist. Mirrors the
-// backend Request records under
+// backend Request record under
 // backend/src/main/java/com/keplerops/groundcontrol/api/riskscenarios/.
-// Create and update DTOs differ — Update DTOs drop create-only foreign keys
-// (uid, riskRegisterRecordId for treatment plans, riskScenarioId for
-// assessment results) and exclude status fields whose changes go through a
-// dedicated transition endpoint. Snake_case field names round-trip through
-// the shared TO_CAMEL map in this file. Issues #878/#879/#880.
+// Snake_case field names round-trip through the shared TO_CAMEL map in this
+// file. Issues #878/#879/#880.
 export const GOVERNANCE_FIELDS = {
-  methodology_profile: {
-    // Mirrors MethodologyProfileRequest: profileKey (required), name (required),
-    // version (required), family (required), description, inputSchema, outputSchema,
-    // status, treatmentStrategyVocabulary, crosswalkEntries.
-    // metadata is not a MethodologyProfileRequest field and was removed (#1106).
-    create: [
-      "profile_key", "name", "version", "family", "description",
-      "input_schema", "output_schema", "status",
-      "treatment_strategy_vocabulary", "crosswalk_entries",
-    ],
-    // Mirrors UpdateMethodologyProfileRequest: same minus profileKey (immutable).
-    update: [
-      "name", "version", "family", "description",
-      "input_schema", "output_schema", "status",
-      "treatment_strategy_vocabulary", "crosswalk_entries",
-    ],
-  },
-  risk_register_record: {
-    create: [
-      "uid", "title", "owner", "review_cadence", "next_review_at",
-      "category_tags", "decision_metadata", "asset_scope_summary",
-      "risk_scenario_ids",
-    ],
-    update: [
-      "title", "owner", "review_cadence", "next_review_at",
-      "category_tags", "decision_metadata", "asset_scope_summary",
-      "risk_scenario_ids",
-    ],
-  },
-  risk_assessment_result: {
-    create: [
-      "risk_scenario_id", "risk_register_record_id", "methodology_profile_id",
-      "analyst_identity", "assumptions", "input_factors",
-      "observation_date", "assessment_at", "time_horizon", "confidence",
-      "uncertainty_metadata", "computed_outputs",
-      "evidence_refs", "notes", "observation_ids",
-    ],
-    update: [
-      "risk_register_record_id", "methodology_profile_id",
-      "analyst_identity", "assumptions", "input_factors",
-      "observation_date", "assessment_at", "time_horizon", "confidence",
-      "uncertainty_metadata", "computed_outputs",
-      "evidence_refs", "notes", "observation_ids",
-    ],
-  },
-  treatment_plan: {
-    create: [
-      "uid", "title", "risk_scenario_id", "risk_register_record_id",
-      "strategy", "owner", "rationale", "due_date", "status",
-      "action_items", "reassessment_triggers",
-      "methodology_profile_id", "methodology_strategy_key",
-    ],
-    update: [
-      "title", "risk_scenario_id", "strategy", "owner",
-      "rationale", "due_date", "action_items", "reassessment_triggers",
-      "methodology_profile_id", "methodology_strategy_key",
-    ],
-  },
   verification_result: {
     // Mirrors VerificationResultRequest: targetId (optional UUID), requirementId
     // (optional UUID), prover (@NotBlank), property (optional), result (@NotNull
@@ -19317,22 +16428,6 @@ export const GOVERNANCE_FIELDS = {
     update: [
       "target_id", "requirement_id", "prover", "property",
       "result", "assurance_level", "evidence", "verified_at", "expires_at",
-    ],
-  },
-  risk_appetite_profile: {
-    // Mirrors RiskAppetiteProfileRequest (GC-T005): appetiteKey (required),
-    // name (required), version (required), methodologyFamily (required),
-    // appetiteStatement, toleranceThresholds, status, effectiveFrom (required),
-    // effectiveTo.
-    create: [
-      "appetite_key", "name", "version", "methodology_family",
-      "appetite_statement", "tolerance_thresholds", "status",
-      "effective_from", "effective_to",
-    ],
-    // Mirrors UpdateRiskAppetiteProfileRequest: same minus appetiteKey (immutable).
-    update: [
-      "name", "version", "methodology_family", "appetite_statement",
-      "tolerance_thresholds", "status", "effective_from", "effective_to",
     ],
   },
 };
@@ -19829,8 +16924,8 @@ export async function acquireIntegrationLock(repoRoot, { retries = 0 } = {}) {
 // ---------------------------------------------------------------------------
 // gc_assert_completion (issue #1103)
 //
-// Composes runAssertTraceabilityReconciled + runAssertGrcReconciled +
-// runPostFinalReport into a single deterministic call for Phase D completion.
+// Composes runAssertTraceabilityReconciled + runPostFinalReport into a single
+// deterministic call for Phase D completion.
 // Fail-fast: validates the final-report input before any side effects.
 // Returns {ok, assertions[], final_report} on success or
 // {ok:false, error, message, assertions[], final_report:null} on failure.
@@ -19896,38 +16991,15 @@ export async function runAssertCompletion(input) {
   }
 
   // Phase D terminal (phase="pre_merge", issue #963): post the ready-for-review
-  // record only. The requirement-status transition and traceability/GRC
+  // record only. The requirement-status transition and traceability
   // reconciliation have NOT run yet — they are Phase E work that lands after the
-  // PR merges — so this path skips both assertions and posts no `gc:final-report`
+  // PR merges — so this path skips that assertion and posts no `gc:final-report`
   // marker. Every input gate (CI green, Sonar pass/legit-skip, codex review
   // present, sensitive/reserved/defer scrubs) still runs inside runPostFinalReport.
+  // Traceability reconciliation is deliberately NOT asserted here — it depends
+  // on the post-merge DRAFT→ACTIVE transition and is verified by the
+  // phase="post_merge" completion.
   if (phase === "pre_merge") {
-    // The readiness record is the user-facing "ready to merge" signal, so it must
-    // still prove the Step 3.5 GRC screening record exists and reconciles before
-    // claiming readiness (issue #963 codex cycle-1 one-off finding). The screening
-    // entities/links are Phase A facts, independent of merge, so this assertion is
-    // legitimately pre-merge. Traceability reconciliation is deliberately NOT
-    // asserted here — it depends on the post-merge DRAFT→ACTIVE transition and is
-    // verified by the phase="post_merge" completion.
-    const grc = await runAssertGrcReconciled({ repoPath, issueNumber, project });
-    assertions.push({
-      name: "grc_reconciled",
-      ok: grc.ok,
-      verdict: grc.verdict ?? null,
-      comment_url: grc.comment_url ?? null,
-      comment_id: grc.comment_id ?? null,
-    });
-    if (!grc.ok) {
-      return {
-        ok: false,
-        error: grc.error,
-        message: grc.message,
-        issue_number: issueNumber,
-        assertions,
-        final_report: null,
-        next_action: grc.next_action ?? null,
-      };
-    }
     const readiness = await runPostFinalReport({
       ...subInput,
       repoPath,
@@ -20038,34 +17110,13 @@ export async function runAssertCompletion(input) {
     };
   }
 
-  // Step 2: GRC assertion
-  const grc = await runAssertGrcReconciled({ repoPath, issueNumber, project });
-  assertions.push({
-    name: "grc_reconciled",
-    ok: grc.ok,
-    verdict: grc.verdict ?? null,
-    comment_url: grc.comment_url ?? null,
-    comment_id: grc.comment_id ?? null,
-  });
-  if (!grc.ok) {
-    return {
-      ok: false,
-      error: grc.error,
-      message: grc.message,
-      issue_number: issueNumber,
-      assertions,
-      final_report: null,
-      next_action: grc.next_action ?? null,
-    };
-  }
-
-  // Step 3: final report (use internalVerifiedPhases to avoid read-after-write race)
+  // Step 2: final report (use internalVerifiedPhases to avoid read-after-write race)
   const report = await runPostFinalReport({
     ...subInput,
     repoPath,
     issueNumber,
     prNumber,
-    internalVerifiedPhases: ["traceability_reconciled", "grc_reconciled"],
+    internalVerifiedPhases: ["traceability_reconciled"],
   });
   if (!report.ok) {
     return {

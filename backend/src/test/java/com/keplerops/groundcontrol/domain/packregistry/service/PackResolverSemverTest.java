@@ -144,7 +144,6 @@ class PackResolverSemverTest {
     }
 
     private PackRegistryEntry entry(String packId, String version) {
-        return new PackRegistryEntry(
-                new Project("ground-control", "Ground Control"), packId, PackType.CONTROL_PACK, version);
+        return new PackRegistryEntry(new Project("ground-control", "Ground Control"), packId, PackType.CUSTOM, version);
     }
 }

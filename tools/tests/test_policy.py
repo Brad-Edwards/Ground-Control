@@ -240,19 +240,42 @@ class PolicyChecksTest(unittest.TestCase):
     def test_controller_contracts_require_docs_mcp_and_webmvctest(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
+            controller = "backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java"
+            controller_file = root / controller
+            controller_file.parent.mkdir(parents=True, exist_ok=True)
+            controller_file.write_text(
+                "package com.keplerops.groundcontrol.api.foo;\nclass FooController {}\n",
+                encoding="utf-8",
+            )
             test_file = root / "backend/src/test/java/com/keplerops/groundcontrol/unit/api/FooControllerTest.java"
             test_file.parent.mkdir(parents=True, exist_ok=True)
             test_file.write_text(
                 "@WebMvcTest(FooController.class)\nclass FooControllerTest {}\n",
                 encoding="utf-8",
             )
-            violations = run_controller_contracts(
-                ["backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java"],
-                root=root,
-            )
+            violations = run_controller_contracts([controller], root=root)
             codes = {item.code for item in violations}
             self.assertIn("controller-parity", codes)
             self.assertIn("controller-webmvctest-update", codes)
+
+    def test_controller_contracts_skip_deleted_controllers(self):
+        """A controller deleted in the diff has no mapping left to slice-test.
+
+        Its @WebMvcTest companion is deleted with it, so demanding one would make
+        route removal (e.g. the ADR-089 GRC retirement) unshippable.
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            violations = run_controller_contracts(
+                [
+                    "backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java",
+                    "docs/API.md",
+                    "mcp/ground-control/lib.js",
+                    "mcp/ground-control/index.js",
+                ],
+                root=root,
+            )
+            self.assertEqual([], violations)
 
     def test_controller_contracts_accept_gc_risk_governance_as_mcp_adapter(self):
         """gc-risk-governance.js satisfies the MCP-adapter companion (in lieu of index.js)."""
@@ -1499,6 +1522,13 @@ class PolicyChecksTest(unittest.TestCase):
         )
 
     def test_enum_contract_inventory_shape(self):
+        # ThreatEventKind, ThreatSourceRelevance, NistLikelihoodBand,
+        # NistImpactBand, NormalizedConcept, CrosswalkVocabularySurface, and
+        # MethodologyFamily were retired with the composed GRC product
+        # surface (ADR-089, issue #1346); their backend enums are deleted, so
+        # they must not remain in the inventory. VerificationStatus and
+        # AssuranceLevel are unaffected (domain/verification/state, not part
+        # of the retired GRC surface) and stay.
         labels = {c.label for c in ENUM_CONTRACT_INVENTORY}
         self.assertEqual(
             labels,
@@ -1513,15 +1543,8 @@ class PolicyChecksTest(unittest.TestCase):
                 "ChangeCategory",
                 "AuditType",
                 "AuditStatus",
-                "ThreatEventKind",
-                "ThreatSourceRelevance",
-                "NistLikelihoodBand",
-                "NistImpactBand",
-                "NormalizedConcept",
-                "CrosswalkVocabularySurface",
                 "VerificationStatus",
                 "AssuranceLevel",
-                "MethodologyFamily",
             },
         )
         for contract in ENUM_CONTRACT_INVENTORY:
@@ -1601,52 +1624,6 @@ class PolicyChecksTest(unittest.TestCase):
             violations = run_enum_contract_check(root=root)
             codes = {v.code for v in violations}
             self.assertIn("enum-contract-source-missing", codes)
-
-    def test_enum_contract_normalized_concept_positive(self) -> None:
-        # GC-T012: NORMALIZED_CONCEPTS in api.ts and lib.js must match NormalizedConcept.java
-        violations = run_enum_contract_check(root=REPO_ROOT)
-        labels = {v.details[0] if v.details else "" for v in violations}
-        self.assertNotIn("NormalizedConcept", " ".join(labels))
-
-    def test_enum_contract_normalized_concept_drift(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._copy_enum_sources(root)
-            api_ts = root / FRONTEND_API_TYPES_PATH
-            text = api_ts.read_text(encoding="utf-8")
-            # Remove TREATMENT from both the union and the constant array.
-            text = text.replace(' | "TREATMENT"', "")
-            text = text.replace(',"TREATMENT"', "")
-            api_ts.write_text(text, encoding="utf-8")
-            violations = run_enum_contract_check(root=root)
-            codes = {v.code for v in violations}
-            self.assertIn("enum-contract-drift", codes)
-            details = " ".join(d for v in violations for d in v.details)
-            self.assertIn("NormalizedConcept", details)
-            self.assertIn("TREATMENT", details)
-
-    def test_enum_contract_crosswalk_vocabulary_surface_positive(self) -> None:
-        # GC-T012: CROSSWALK_VOCABULARY_SURFACES in api.ts and lib.js must match CrosswalkVocabularySurface.java
-        violations = run_enum_contract_check(root=REPO_ROOT)
-        labels = {v.details[0] if v.details else "" for v in violations}
-        self.assertNotIn("CrosswalkVocabularySurface", " ".join(labels))
-
-    def test_enum_contract_crosswalk_vocabulary_surface_drift(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._copy_enum_sources(root)
-            api_ts = root / FRONTEND_API_TYPES_PATH
-            text = api_ts.read_text(encoding="utf-8")
-            # Remove OUTPUT_SCHEMA from the constant array.
-            text = text.replace('"OUTPUT_SCHEMA" | ', "")
-            text = text.replace('"OUTPUT_SCHEMA",', "")
-            api_ts.write_text(text, encoding="utf-8")
-            violations = run_enum_contract_check(root=root)
-            codes = {v.code for v in violations}
-            self.assertIn("enum-contract-drift", codes)
-            details = " ".join(d for v in violations for d in v.details)
-            self.assertIn("CrosswalkVocabularySurface", details)
-            self.assertIn("OUTPUT_SCHEMA", details)
 
     def test_deferral_classifier_matches_golden_cases(self):
         # The shared golden-case file is the single source of truth for what
@@ -2839,7 +2816,6 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
         "skills/implement/SKILL.md": (
             "## Phase boundaries\n\nPhase E is the post-merge close phase.\n"
             "Phase E calls `gc_close_issue_after_merge` after the user merges.\n"
-            "The close envelope includes `next_issue_recommendation` when available.\n"
         ),
         "skills/implement/steps/step-17-completion.md": (
             "# Step 17: Phase D Completion\n\n"
@@ -2848,7 +2824,6 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
         "skills/implement/steps/step-20-close-issue-on-merge.md": (
             "# Step 20: Close the Issue (Phase E, Post-Merge)\n\n"
             "Calls `gc_close_issue_after_merge` to verify merged_at and close.\n"
-            "The returned `next_issue_recommendation` names a follow-up issue when available.\n"
         ),
     }
 
@@ -2909,7 +2884,10 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-step20-missing", codes)
 
-    def test_check_flags_step20_missing_recommendation_anchor(self) -> None:
+    def test_check_passes_step20_with_only_close_tool_mention(self) -> None:
+        # ADR-089 (issue #1346): the close-path gate no longer requires a
+        # next_issue_recommendation anchor — the feature is retired, and the
+        # gate must not demand prose for a removed field.
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
@@ -2917,9 +2895,7 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
                     "# Step 20: Close the Issue\n\nCalls `gc_close_issue_after_merge` only.\n",
             })
             violations = run_traceability_reconciliation_gate_contract(root=root)
-            self.assertTrue(violations)
-            codes = {v.code for v in violations}
-            self.assertIn("traceability-gate-step20-missing", codes)
+            self.assertEqual(violations, [])
 
     def test_check_flags_skill_missing_phase_e(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2945,7 +2921,10 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
             codes = {v.code for v in violations}
             self.assertIn("traceability-gate-skill-missing", codes)
 
-    def test_check_flags_skill_missing_recommendation_only(self) -> None:
+    def test_check_passes_skill_with_only_phase_e_and_close_tool(self) -> None:
+        # ADR-089 (issue #1346): SKILL.md no longer needs to mention
+        # next_issue_recommendation — Phase E + the close tool name are
+        # sufficient now that the recommendation feature is retired.
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._populate(root, overrides={
@@ -2954,9 +2933,7 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
                     "Phase E runs after merge; call `gc_close_issue_after_merge`.\n",
             })
             violations = run_traceability_reconciliation_gate_contract(root=root)
-            self.assertTrue(violations)
-            codes = {v.code for v in violations}
-            self.assertIn("traceability-gate-skill-missing", codes)
+            self.assertEqual(violations, [])
 
 
 # ---------------------------------------------------------------------------

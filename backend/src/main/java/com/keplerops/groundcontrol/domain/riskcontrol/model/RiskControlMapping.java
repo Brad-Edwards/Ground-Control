@@ -6,8 +6,6 @@ import com.keplerops.groundcontrol.domain.assets.model.OperationalAsset;
 import com.keplerops.groundcontrol.domain.controls.model.Control;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.riskcontrol.state.MappingControlRole;
-import com.keplerops.groundcontrol.domain.riskscenarios.model.MethodologyProfile;
-import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskRegisterRecord;
 import com.keplerops.groundcontrol.domain.riskscenarios.model.RiskScenario;
 import com.keplerops.groundcontrol.domain.threatmodels.model.ThreatModel;
 import com.keplerops.groundcontrol.shared.persistence.JacksonTextCollectionConverters;
@@ -34,12 +32,12 @@ import org.hibernate.envers.NotAudited;
 
 /**
  * Canonical mapping owner for GC-T003 Risk Scenario-Control Mapping, extended by GC-H006
- * to accept a {@link ThreatModel} as a third analysis-side endpoint.
+ * to accept a {@link ThreatModel} as a second analysis-side endpoint.
  *
  * <p>Models a many-to-many relationship between a control endpoint (a catalog {@link Control}
  * OR a {@link ScopedControlImplementation}) and an analysis endpoint ({@link RiskScenario} OR
- * {@link RiskRegisterRecord} OR {@link ThreatModel}), with optional asset/boundary context (C2),
- * mapping-specific objective/role/scope fields (C3), methodology-specific influence (C4), and
+ * {@link ThreatModel}), with optional asset/boundary context (C2), mapping-specific
+ * objective/role/scope fields (C3), a free-form methodology-influence payload (C4), and
  * mapping-owned observations/evidence provenance (C8).
  *
  * <p>Exactly-one constraint on each side is enforced by DB CHECK constraints (see migration)
@@ -75,7 +73,7 @@ public class RiskControlMapping extends BaseEntity {
     @JoinColumn(name = "scoped_implementation_id")
     private ScopedControlImplementation scopedImplementation;
 
-    // ---- Analysis-side endpoint (exactly one of threatModel/riskScenario/riskRegisterRecord) ----
+    // ---- Analysis-side endpoint (exactly one of threatModel/riskScenario) ----
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "threat_model_id")
@@ -84,10 +82,6 @@ public class RiskControlMapping extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "risk_scenario_id")
     private RiskScenario riskScenario;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "risk_register_record_id")
-    private RiskRegisterRecord riskRegisterRecord;
 
     // ---- C2: Asset/operational-boundary context ----
 
@@ -108,12 +102,7 @@ public class RiskControlMapping extends BaseEntity {
     @Column(name = "mapping_scope", columnDefinition = "TEXT")
     private String mappingScope;
 
-    // ---- C4: Methodology-specific influence ----
-
-    @NotAudited
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "methodology_profile_id")
-    private MethodologyProfile methodologyProfile;
+    // ---- C4: Methodology-specific influence (free-form; no longer schema-validated) ----
 
     @Convert(converter = JacksonTextCollectionConverters.StringObjectMapConverter.class)
     @Column(name = "methodology_influence", columnDefinition = "TEXT")
@@ -150,17 +139,6 @@ public class RiskControlMapping extends BaseEntity {
         return m;
     }
 
-    /** Creates a mapping with a catalog control and a risk register record. */
-    public static RiskControlMapping forControlRecord(
-            Project project, Control control, RiskRegisterRecord riskRegisterRecord, MappingControlRole controlRole) {
-        RiskControlMapping m = new RiskControlMapping();
-        m.project = project;
-        m.control = control;
-        m.riskRegisterRecord = riskRegisterRecord;
-        m.controlRole = controlRole;
-        return m;
-    }
-
     /** Creates a mapping with a scoped implementation and a risk scenario. */
     public static RiskControlMapping forScopedScenario(
             Project project,
@@ -171,20 +149,6 @@ public class RiskControlMapping extends BaseEntity {
         m.project = project;
         m.scopedImplementation = scopedImplementation;
         m.riskScenario = riskScenario;
-        m.controlRole = controlRole;
-        return m;
-    }
-
-    /** Creates a mapping with a scoped implementation and a risk register record. */
-    public static RiskControlMapping forScopedRecord(
-            Project project,
-            ScopedControlImplementation scopedImplementation,
-            RiskRegisterRecord riskRegisterRecord,
-            MappingControlRole controlRole) {
-        RiskControlMapping m = new RiskControlMapping();
-        m.project = project;
-        m.scopedImplementation = scopedImplementation;
-        m.riskRegisterRecord = riskRegisterRecord;
         m.controlRole = controlRole;
         return m;
     }
@@ -234,10 +198,6 @@ public class RiskControlMapping extends BaseEntity {
         return riskScenario != null;
     }
 
-    public boolean isRegisterRecordSide() {
-        return riskRegisterRecord != null;
-    }
-
     // ---- Getters ----
 
     public Project getProject() {
@@ -258,10 +218,6 @@ public class RiskControlMapping extends BaseEntity {
 
     public RiskScenario getRiskScenario() {
         return riskScenario;
-    }
-
-    public RiskRegisterRecord getRiskRegisterRecord() {
-        return riskRegisterRecord;
     }
 
     public OperationalAsset getOperationalAsset() {
@@ -294,14 +250,6 @@ public class RiskControlMapping extends BaseEntity {
 
     public void setMappingScope(String mappingScope) {
         this.mappingScope = mappingScope;
-    }
-
-    public MethodologyProfile getMethodologyProfile() {
-        return methodologyProfile;
-    }
-
-    public void setMethodologyProfile(MethodologyProfile methodologyProfile) {
-        this.methodologyProfile = methodologyProfile;
     }
 
     public Map<String, Object> getMethodologyInfluence() {

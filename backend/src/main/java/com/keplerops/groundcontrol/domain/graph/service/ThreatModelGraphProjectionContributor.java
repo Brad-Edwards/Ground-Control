@@ -128,7 +128,6 @@ public class ThreatModelGraphProjectionContributor implements GraphProjectionCon
                     case CONTROL -> GraphEntityType.CONTROL;
                     case RISK_SCENARIO -> GraphEntityType.RISK_SCENARIO;
                     case OBSERVATION -> GraphEntityType.OBSERVATION;
-                    case RISK_ASSESSMENT_RESULT -> GraphEntityType.RISK_ASSESSMENT_RESULT;
                     case VERIFICATION_RESULT -> GraphEntityType.VERIFICATION_RESULT;
                     case FINDING -> GraphEntityType.FINDING;
                         // Always emits an edge to the EVIDENCE_ARTIFACT node.
@@ -136,8 +135,9 @@ public class ThreatModelGraphProjectionContributor implements GraphProjectionCon
                         // evidence artifact (current and superseded) so this edge
                         // never dangles.
                     case EVIDENCE -> GraphEntityType.EVIDENCE_ARTIFACT;
-                    case ARCHITECTURE_MODEL -> GraphEntityType.ARCHITECTURE_MODEL_ELEMENT;
-                    case CODE, ISSUE, EXTERNAL -> null;
+                        // RISK_ASSESSMENT_RESULT and ARCHITECTURE_MODEL are retired target types
+                        // (ADR-089) with no backing graph node; never emit an edge for them.
+                    case RISK_ASSESSMENT_RESULT, ARCHITECTURE_MODEL, CODE, ISSUE, EXTERNAL -> null;
                 };
         if (targetEntityType == null) {
             return null;

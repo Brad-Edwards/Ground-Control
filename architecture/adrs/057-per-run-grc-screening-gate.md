@@ -2,11 +2,13 @@
 
 ## Status
 
-accepted
+Superseded by ADR-089
 
 ## Date
 
 2026-06-10
+
+> **Superseded by ADR-089 (2026-07-11, issue #1346):** The Step 3.5 GRC screening gate this ADR defines is retired from the active `/implement` workflow as part of the composed GRC product retirement. This ADR's text is preserved as historical record; it is no longer active product or workflow behavior. See ADR-089.
 
 > **Amended and superseded in part by ADR-058 (2026-06-12):** This ADR remains
 > the v1 screening-record decision and the historical basis for Step 3.5, but

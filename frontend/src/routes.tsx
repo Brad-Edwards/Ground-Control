@@ -13,21 +13,6 @@ const Analysis = lazy(() =>
 const Dashboard = lazy(() =>
   import("@/pages/dashboard").then((m) => ({ default: m.Dashboard })),
 );
-const EvidenceStateExplorer = lazy(() =>
-  import("@/pages/evidence-state-explorer").then((m) => ({
-    default: m.EvidenceStateExplorer,
-  })),
-);
-const GrcPortfolio = lazy(() =>
-  import("@/pages/grc-portfolio").then((m) => ({
-    default: m.GrcPortfolio,
-  })),
-);
-const ControlAssuranceWorkspace = lazy(() =>
-  import("@/pages/control-assurance-workspace").then((m) => ({
-    default: m.ControlAssuranceWorkspace,
-  })),
-);
 const Graph = lazy(() =>
   import("@/pages/graph").then((m) => ({ default: m.Graph })),
 );
@@ -52,16 +37,6 @@ const TraceabilityMatrix = lazy(() =>
 );
 const TestRunRunner = lazy(() =>
   import("@/pages/test-run-runner").then((m) => ({ default: m.TestRunRunner })),
-);
-const ThreatModelingWorkspace = lazy(() =>
-  import("@/pages/threat-modeling-workspace").then((m) => ({
-    default: m.ThreatModelingWorkspace,
-  })),
-);
-const RiskScenarioWorkspace = lazy(() =>
-  import("@/pages/risk-scenario-workspace").then((m) => ({
-    default: m.RiskScenarioWorkspace,
-  })),
 );
 const WorkflowRuns = lazy(() =>
   import("@/pages/workflow-runs").then((m) => ({
@@ -124,7 +99,6 @@ export function AppRoutes() {
           }
         >
           <Route index element={<Dashboard />} />
-          <Route path="portfolio" element={<GrcPortfolio />} />
           <Route path="requirements" element={<Requirements />} />
           <Route path="requirements/:id" element={<RequirementDetail />} />
           <Route path="traceability-matrix" element={<TraceabilityMatrix />} />
@@ -132,13 +106,6 @@ export function AppRoutes() {
           <Route path="test-runs/:runId/run" element={<TestRunRunner />} />
           <Route path="graph" element={<Graph />} />
           <Route path="analysis" element={<Analysis />} />
-          <Route
-            path="control-assurance"
-            element={<ControlAssuranceWorkspace />}
-          />
-          <Route path="evidence-state" element={<EvidenceStateExplorer />} />
-          <Route path="threat-modeling" element={<ThreatModelingWorkspace />} />
-          <Route path="risk-scenarios" element={<RiskScenarioWorkspace />} />
           <Route path="workflow-runs" element={<WorkflowRuns />} />
           <Route path="admin" element={<Admin />} />
           <Route path="*" element={<NotFound />} />
