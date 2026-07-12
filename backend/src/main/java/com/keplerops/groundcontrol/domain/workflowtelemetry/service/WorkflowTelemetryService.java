@@ -61,8 +61,8 @@ public class WorkflowTelemetryService {
 
     /**
      * Record (upsert) one workflow run. Re-observing the same {@code (project, repo, issueNumber,
-     * branch)} merges the non-null fields of {@code command} onto the existing row, so bridge
-     * ingestion and Temporal Visibility can both refine a run without creating duplicates.
+     * branch)} merges the non-null fields of {@code command} onto the existing row, so repeated
+     * bridge ingestion refines a run without creating duplicates.
      */
     @Transactional
     public WorkflowRun recordRun(RecordWorkflowRunCommand command) {

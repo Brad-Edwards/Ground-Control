@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -185,7 +186,7 @@ class RequirementControllerTest {
                     .andExpect(jsonPath("$.uid", is("PLAT-001")));
 
             var captor = org.mockito.ArgumentCaptor.forClass(CreateRequirementCommand.class);
-            org.mockito.Mockito.verify(requirementService).create(captor.capture());
+            verify(requirementService).create(captor.capture());
             var cmd = captor.getValue();
             assertThat(cmd.uidPrefix()).isEqualTo("PLAT");
             assertThat(cmd.uid()).isNull();
@@ -618,7 +619,7 @@ class RequirementControllerTest {
                     .andExpect(jsonPath("$[0].artifactType", is("GITHUB_ISSUE")));
 
             // verify the controller resolved the project slug and passed the UUID to the service
-            org.mockito.Mockito.verify(traceabilityService).findByArtifact(ArtifactType.GITHUB_ISSUE, "42", PROJECT_ID);
+            verify(traceabilityService).findByArtifact(ArtifactType.GITHUB_ISSUE, "42", PROJECT_ID);
         }
     }
 

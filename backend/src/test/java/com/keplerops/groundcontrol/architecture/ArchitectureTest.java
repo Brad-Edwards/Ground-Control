@@ -28,14 +28,6 @@ class ArchitectureTest {
             .resideInAPackage("..infrastructure..");
 
     @ArchTest
-    static final ArchRule domain_should_not_import_temporal_sdk = noClasses()
-            .that()
-            .resideInAPackage("..domain..")
-            .should()
-            .dependOnClassesThat()
-            .resideInAnyPackage("io.temporal..");
-
-    @ArchTest
     static final ArchRule api_should_not_depend_on_infrastructure = noClasses()
             .that()
             .resideInAPackage("..api..")

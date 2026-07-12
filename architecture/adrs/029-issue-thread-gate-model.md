@@ -428,14 +428,15 @@ unchanged by this amendment.
 ## Related Requirements
 
 - GC-O007 Gated Agentic Development Loop (statement amended)
-- GC-O009 Workflow Orchestration via Temporal (the durable end state)
+- GC-O009 Workflow Orchestration via Temporal (superseded; see ADR-028)
 
 ## Related ADRs
 
 - ADR-021 Gated Agentic Development Loop (amended)
 - ADR-027 Agent-Neutral Implement Workflow Packaging (companion ADR; same PR)
-- ADR-028 Temporal Workflow Orchestration Boundary (forward-looking for
-  GC-O009)
+- ADR-028 Temporal Workflow Orchestration Boundary (superseded #1359; this
+  ADR's issue-thread gate model is the permanent implementation, not a
+  bridge to it)
 
 **Amendment: renderer summary byte caps (#964).** `gc_render_pr_body` and `gc_post_final_report` now enforce reject-not-truncate byte caps on their caller-controlled summary fields (PR-body `summary`, final-report `summary`, final-report `plain_english_outcome`, and final-report `reviews[].summary`). `gc_post_decision_record`'s schema is unchanged. The canonical succinctness rule lives in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)` and applies to every issue-thread durable record. `buildFinalReport` no longer emits placeholder sections for empty requirements or reviews.
 

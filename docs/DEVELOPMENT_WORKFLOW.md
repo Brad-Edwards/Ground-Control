@@ -239,61 +239,18 @@ The legacy `Skill("review-tests")` path was removed in #884 v2. Existing host in
 
 Claude does NOT merge. The user reviews the PR and merges.
 
-## Temporal Dev Workflow and Console Program (ADR-081)
-
-ADR-081 defines the program that moves workflow execution from the agent-side
-skill lane onto the GC-O009 Temporal engine, operated through the Ground
-Control web console (milestone 17). The engine build order is contract-first:
-each phase publishes its REST/MCP and workflow/activity payload contracts
-under the ADR-082 `contracts/` surface (drift + breaking gates green) before
-its implementation merges.
-
-Load-bearing constraints, locked in ADR-081:
-
-- **The gate model does not change.** One human touchpoint (PR merge,
-  ADR-029), observed from GitHub as the authoritative event - never a
-  Temporal signal. Console gate actions are limited to the workflow
-  contract's explicit operator signal set.
-- **Skill-lane cutover is per-phase and evidence-gated.** The `/implement`
-  lane stays authoritative for a phase until the parity harness is green and
-  the transfer is recorded as a dated amendment on ADR-021/ADR-029. The
-  bridge holds no counters, phase state, or gate rules of its own (ADR-028).
-- **Identity before console gate actions.** Users/groups/roles-as-data
-  (GC-P024) authorize operator signals; project scoping stays distinct from
-  tenancy, which remains milestone-5 work behind its own ADR.
-- **Temporal Web is infrastructure, never the product UI** (ADR-028); the
-  console consumes only the product workflow control surface.
-
-Issue #1276 lands phase-1 infrastructure only: `docker-compose.yml` and
-`deploy/docker/docker-compose.prod.yml` run `temporal-db`, `temporal`, and
-`temporal-worker`; the Java worker skeleton is under `infrastructure/`; and
-`make policy` covers deploy topology plus Temporal backup/restore evidence.
-The single namespace remains `ground-control`; projects are partitioned by
-workflow IDs and Search Attributes, not by namespace.
-
-Issue #1280 (phase 5, ADR-028 LLM provider boundary) adds the `temporal-worker`
-container's Anthropic adapter (`infrastructure/llm/anthropic/`; canonical
-provider id `anthropic`, credential bound only to `temporal-worker`, never
-`backend`; see `docker-compose.yml`) and the `ArchitectureLlmBoundaryTest`
-ArchUnit rule pinning the deterministic activity seam LLM-free. Route
-resolution and durable plan publication sit behind domain ports whose
-production implementations fail closed until the ADR-081 bridge (#1281)
-lands, so every `/implement` start currently returns the standard `503`
-envelope—a deliberate, tested, secure production posture, not a
-placeholder.
-
 ## Per-step routing, tool surfaces, and telemetry (ADR-036)
 
 Per ADR-036 the `/implement` skill carries three cost-side optimizations layered on top of the GC-O007 gate model (which is unchanged on the contract - one human touchpoint at PR merge, ADR-029's configurable pre-push Codex cap [default 1 cycle per #906; per-repo override via `workflow.codex_review.pre_push_cap`], zero deferral, four-phase structure).
 
 | Optimization | What it changes | Opt-in knob |
 |--------------|-----------------|-------------|
-| Per-step routing | Each step carries a provider-neutral tier (`low`, `medium`, `high`); `gc_resolve_workflow_route` resolves the stage/purpose from `.ground-control.yaml` to a concrete provider, agent, canonical model id, and fallback policy. Claude Code routes subagent stages to canonical model ids such as `claude-haiku-4-5` and `claude-sonnet-5`; parent-only high-tier stages use `claude-opus-4-8`. Codex drivers ignore delegation today unless they explicitly call the resolver and external runner. The canonical provider id is `anthropic` (issue #1280 amendment); the legacy label `claude` is still accepted and normalizes to it. This is the agent-side (MCP-tool-driven) routing resolution for the `/implement` skill lane—distinct from the server-side Temporal `AnthropicLlmProvider` adapter invoked from inside a content activity (ADR-028, issue #1280); the two share only the canonical provider-id vocabulary. | `.ground-control.yaml` → `routing.enabled` (default `false`) plus optional `routing.stages.<stage>` overrides |
+| Per-step routing | Each step carries a provider-neutral tier (`low`, `medium`, `high`); `gc_resolve_workflow_route` resolves the stage/purpose from `.ground-control.yaml` to a concrete provider, agent, canonical model id, and fallback policy. Claude Code routes subagent stages to canonical model ids such as `claude-haiku-4-5` and `claude-sonnet-5`; parent-only high-tier stages use `claude-opus-4-8`. Codex drivers ignore delegation today unless they explicitly call the resolver and external runner. The provider id is `claude`; this is the agent-side (MCP-tool-driven) routing resolution for the `/implement` skill lane. | `.ground-control.yaml` → `routing.enabled` (default `false`) plus optional `routing.stages.<stage>` overrides |
 | Durable-record MCP tools | `gc_post_decision_record` (Step 6.5 cycle decisions), `gc_post_final_report` (Step 17 final report, invoked via `gc_assert_completion`), `gc_render_pr_body` (Step 9 PR body) replace agent free-prose with deterministic structured-input renderers. All three filter sensitive content, post under a structured marker family, and reject `decision: "defer"` server-side. `gc_post_final_report` also requires `/implement` callers to pass `plain_english_outcome`, which renders an Outcome section before the structured evidence. | Always available; SKILL calls them unconditionally once the tools are present |
 | Traceability + post-merge close gates (#1058/#1156/#1103) | `gc_assert_completion` (Step 17) sequences `gc_assert_traceability_reconciled` (posts `traceability_reconciled` marker) and `gc_post_final_report` in one deterministic call. The `traceability_reconciled` marker is posted by the traceability assertion within `gc_assert_completion`; `gc_post_final_report` refuses to publish without it, and `gc_assert_completion` uses `internalVerifiedPhases` to avoid a GitHub read-after-write race on the marker it just posted. `gc_close_issue_after_merge` (Step 20 / Phase E) verifies the linked PR's `merged_at` non-null AND state `MERGED` before closing the issue, idempotent on already-closed issues, and performs only linked-PR resolution, merge-state verification, and closure - no next-issue recommendation (ADR-089). The /quickfix lane is requirement-free and exempt from the traceability and outcome gate. | Always on for `/implement`; `lane: "quickfix"` opts out of the traceability and outcome prerequisites |
 | Per-step telemetry | `gc_log_step_telemetry` writes one JSONL line per routed step to `.gc/telemetry/<issue>-<sanitized-branch>.jsonl` (gitignored, repo-relative, containment-validated). Operational measurement only - never workflow state. The tool refuses with `telemetry_disabled` when the opt-in knob is off; the agent prose is not the gate. Summarizer reports wall time + token counts (when present) per step and per model; dollar-cost translation is future work. Target: `make implement-cost-summary`. | `.ground-control.yaml` → `telemetry.enabled` (default `false`) |
 
-Each new tool is Temporal-shaped (deterministic, structured-input/output, no LLM call) so GC-O009 inherits them as activities when the Temporal workflow lands.
+Each new tool is deterministic and structured-input/output, with no LLM call in the tool itself.
 
 ## Review Pipeline
 
@@ -426,24 +383,6 @@ Initial coverage is the domain write tools (`gc_risk_governance`, `gc_threat_mod
 next write tool is one inventory row** in `openapi-contract.test.js` (plus an
 exported field array if the adapter lacks one), never a new checker. Anchored by
 requirement GC-O013.
-
-### Workflow Control Surface: `gc_workflow_execution` (GC-O009 / ADR-028)
-
-`gc_workflow_execution` is the action-discriminated MCP mirror of the
-`/api/v1/workflow-executions` control surface (issue #1278): `start` an
-`/implement` Temporal execution, `get`/`list` executions (read from Temporal
-Visibility plus Memo correlation data), and `signal` the closed operator catalog
-(`CANCEL`, `RETRY_FROM`, `REVIEW_CAP_DISPOSITION`). PR merge is observed from
-GitHub, never signaled. Every action is project-scoped; `signal` is `ROLE_ADMIN`
-at the backend (interim until GC-P024 gate authority). It is distinct from
-`gc_workflow_run` (ADR-061 run telemetry/economics), which never drives
-execution. The surface is enabled by `groundcontrol.temporal.control.enabled`;
-when off the REST endpoints return `503`. `start` additionally resolves the
-`planning`-stage LLM route before delegating to the control port (ADR-028,
-issue #1280); the caller-supplied request never carries a provider, model,
-endpoint, credential, prompt, or completion field. Until the ADR-081 bridge
-(#1281) lands, `start` also returns the standard `503` envelope because the
-route-resolution port fails closed.
 
 ## /integrate: Approved PR Integration Manager
 

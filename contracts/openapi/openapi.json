@@ -3465,50 +3465,6 @@
         },
         "type": "object"
       },
-      "GateStateResponse": {
-        "properties": {
-          "escalatedPhase": {
-            "enum": [
-              "A_PLAN_IMPLEMENT",
-              "B_QUALITY_GATE",
-              "C_STAGE_COMMIT_PUSH",
-              "D_SHIP_PIPELINE",
-              "E_POST_MERGE_RECONCILE"
-            ],
-            "type": "string"
-          },
-          "escalatedReviewer": {
-            "enum": [
-              "CODEX",
-              "TEST_QUALITY"
-            ],
-            "type": "string"
-          },
-          "outcome": {
-            "enum": [
-              "READY_FOR_REVIEW",
-              "MERGED",
-              "ESCALATED",
-              "CANCELLED"
-            ],
-            "type": "string"
-          },
-          "phase": {
-            "enum": [
-              "A_PLAN_IMPLEMENT",
-              "B_QUALITY_GATE",
-              "C_STAGE_COMMIT_PUSH",
-              "D_SHIP_PIPELINE",
-              "E_POST_MERGE_RECONCILE"
-            ],
-            "type": "string"
-          },
-          "waitingForMerge": {
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
       "GitHubIssueRequest": {
         "properties": {
           "extraBody": {
@@ -8449,52 +8405,6 @@
         ],
         "type": "object"
       },
-      "SendSignalRequest": {
-        "properties": {
-          "disposition": {
-            "enum": [
-              "PROCEED",
-              "ONE_MORE_CYCLE",
-              "ESCALATE_TO_HUMAN"
-            ],
-            "type": "string"
-          },
-          "reason": {
-            "maxLength": 500,
-            "minLength": 0,
-            "type": "string"
-          },
-          "retryFromPhase": {
-            "enum": [
-              "A_PLAN_IMPLEMENT",
-              "B_QUALITY_GATE",
-              "C_STAGE_COMMIT_PUSH",
-              "D_SHIP_PIPELINE",
-              "E_POST_MERGE_RECONCILE"
-            ],
-            "type": "string"
-          },
-          "reviewer": {
-            "enum": [
-              "CODEX",
-              "TEST_QUALITY"
-            ],
-            "type": "string"
-          },
-          "signalType": {
-            "enum": [
-              "CANCEL",
-              "RETRY_FROM",
-              "REVIEW_CAP_DISPOSITION"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "signalType"
-        ],
-        "type": "object"
-      },
       "SimilarityPairResponse": {
         "properties": {
           "score": {
@@ -8612,50 +8522,6 @@
             "type": "string"
           }
         },
-        "type": "object"
-      },
-      "StartWorkflowExecutionRequest": {
-        "properties": {
-          "issueNumber": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "pollIntervalSeconds": {
-            "format": "int32",
-            "maximum": 86400,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "requirementUids": {
-            "items": {
-              "maxLength": 100,
-              "minLength": 0,
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "reviewCap": {
-            "format": "int32",
-            "maximum": 10,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "sonarProjectKey": {
-            "maxLength": 200,
-            "minLength": 0,
-            "type": "string"
-          },
-          "workflowType": {
-            "enum": [
-              "IMPLEMENT"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "issueNumber",
-          "workflowType"
-        ],
         "type": "object"
       },
       "StatusDriftResponse": {
@@ -12397,85 +12263,6 @@
         },
         "type": "object"
       },
-      "WorkflowExecutionResponse": {
-        "properties": {
-          "closeTime": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "gateState": {
-            "$ref": "#/components/schemas/GateStateResponse"
-          },
-          "historyLength": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "issueNumber": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "project": {
-            "type": "string"
-          },
-          "requirementUids": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "runId": {
-            "type": "string"
-          },
-          "startTime": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "RUNNING",
-              "COMPLETED",
-              "FAILED",
-              "CANCELED",
-              "TERMINATED",
-              "CONTINUED_AS_NEW",
-              "TIMED_OUT",
-              "PAUSED",
-              "UNKNOWN"
-            ],
-            "type": "string"
-          },
-          "workflowId": {
-            "type": "string"
-          },
-          "workflowType": {
-            "enum": [
-              "IMPLEMENT"
-            ],
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "WorkflowExecutionStartResponse": {
-        "properties": {
-          "project": {
-            "type": "string"
-          },
-          "runId": {
-            "type": "string"
-          },
-          "workflowId": {
-            "type": "string"
-          },
-          "workflowType": {
-            "enum": [
-              "IMPLEMENT"
-            ],
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
       "WorkflowRunAggregateResponse": {
         "properties": {
           "abandonedRuns": {
@@ -13043,7 +12830,7 @@
     },
     "/api/v1/admin/users": {
       "get": {
-        "operationId": "list_38",
+        "operationId": "list_37",
         "responses": {
           "200": {
             "content": {
@@ -13197,7 +12984,7 @@
     },
     "/api/v1/adrs": {
       "get": {
-        "operationId": "list_37",
+        "operationId": "list_36",
         "parameters": [
           {
             "in": "query",
@@ -14052,7 +13839,7 @@
     },
     "/api/v1/assets": {
       "get": {
-        "operationId": "list_34",
+        "operationId": "list_33",
         "parameters": [
           {
             "in": "query",
@@ -14227,7 +14014,7 @@
     },
     "/api/v1/assets/{assetId}/observations": {
       "get": {
-        "operationId": "list_35",
+        "operationId": "list_34",
         "parameters": [
           {
             "in": "path",
@@ -15384,7 +15171,7 @@
     },
     "/api/v1/assets/subtype-schemas": {
       "get": {
-        "operationId": "list_36",
+        "operationId": "list_35",
         "parameters": [
           {
             "in": "query",
@@ -15958,7 +15745,7 @@
     },
     "/api/v1/audits": {
       "get": {
-        "operationId": "list_32",
+        "operationId": "list_31",
         "parameters": [
           {
             "in": "query",
@@ -16029,7 +15816,7 @@
     },
     "/api/v1/audits/{auditId}/links": {
       "get": {
-        "operationId": "list_33",
+        "operationId": "list_32",
         "parameters": [
           {
             "in": "path",
@@ -16362,7 +16149,7 @@
     },
     "/api/v1/baselines": {
       "get": {
-        "operationId": "list_31",
+        "operationId": "list_30",
         "parameters": [
           {
             "in": "query",
@@ -16557,7 +16344,7 @@
     },
     "/api/v1/control-tests": {
       "get": {
-        "operationId": "list_30",
+        "operationId": "list_29",
         "parameters": [
           {
             "in": "query",
@@ -16753,7 +16540,7 @@
     },
     "/api/v1/controls": {
       "get": {
-        "operationId": "list_28",
+        "operationId": "list_27",
         "parameters": [
           {
             "in": "query",
@@ -16824,7 +16611,7 @@
     },
     "/api/v1/controls/{controlId}/links": {
       "get": {
-        "operationId": "list_29",
+        "operationId": "list_28",
         "parameters": [
           {
             "in": "path",
@@ -17201,7 +16988,7 @@
     },
     "/api/v1/documents": {
       "get": {
-        "operationId": "list_26",
+        "operationId": "list_25",
         "parameters": [
           {
             "in": "query",
@@ -17272,7 +17059,7 @@
     },
     "/api/v1/documents/{documentId}/sections": {
       "get": {
-        "operationId": "list_27",
+        "operationId": "list_26",
         "parameters": [
           {
             "in": "path",
@@ -17757,7 +17544,7 @@
     },
     "/api/v1/evidence-artifacts": {
       "get": {
-        "operationId": "list_25",
+        "operationId": "list_24",
         "parameters": [
           {
             "in": "query",
@@ -18062,7 +17849,7 @@
     },
     "/api/v1/findings": {
       "get": {
-        "operationId": "list_23",
+        "operationId": "list_22",
         "parameters": [
           {
             "in": "query",
@@ -18133,7 +17920,7 @@
     },
     "/api/v1/findings/{findingId}/links": {
       "get": {
-        "operationId": "list_24",
+        "operationId": "list_23",
         "parameters": [
           {
             "in": "path",
@@ -18731,7 +18518,7 @@
     },
     "/api/v1/pack-install-records": {
       "get": {
-        "operationId": "list_39",
+        "operationId": "list_38",
         "parameters": [
           {
             "in": "query",
@@ -18772,7 +18559,7 @@
     },
     "/api/v1/pack-install-records/{id}": {
       "get": {
-        "operationId": "get_3",
+        "operationId": "get_2",
         "parameters": [
           {
             "in": "path",
@@ -18903,7 +18690,7 @@
     },
     "/api/v1/pack-registry": {
       "get": {
-        "operationId": "list_22",
+        "operationId": "list_21",
         "parameters": [
           {
             "in": "query",
@@ -19362,7 +19149,7 @@
     },
     "/api/v1/plugins": {
       "get": {
-        "operationId": "list_21",
+        "operationId": "list_20",
         "parameters": [
           {
             "in": "query",
@@ -19519,7 +19306,7 @@
     },
     "/api/v1/projects": {
       "get": {
-        "operationId": "list_20",
+        "operationId": "list_19",
         "responses": {
           "200": {
             "content": {
@@ -19678,7 +19465,7 @@
     },
     "/api/v1/quality-gates": {
       "get": {
-        "operationId": "list_19",
+        "operationId": "list_18",
         "parameters": [
           {
             "in": "query",
@@ -19871,7 +19658,7 @@
     },
     "/api/v1/requirements": {
       "get": {
-        "operationId": "list_18",
+        "operationId": "list_17",
         "parameters": [
           {
             "in": "query",
@@ -21075,7 +20862,7 @@
     },
     "/api/v1/research-runs": {
       "get": {
-        "operationId": "list_16",
+        "operationId": "list_15",
         "parameters": [
           {
             "in": "query",
@@ -21106,7 +20893,7 @@
         ]
       },
       "post": {
-        "operationId": "start_1",
+        "operationId": "start",
         "parameters": [
           {
             "in": "query",
@@ -22495,7 +22282,7 @@
     },
     "/api/v1/research-runs/{runId}/operation-authorizations": {
       "get": {
-        "operationId": "list_17",
+        "operationId": "list_16",
         "parameters": [
           {
             "in": "path",
@@ -22584,7 +22371,7 @@
     },
     "/api/v1/research-runs/{runId}/operation-authorizations/{authorizationId}": {
       "get": {
-        "operationId": "get_2",
+        "operationId": "get_1",
         "parameters": [
           {
             "in": "path",
@@ -23091,7 +22878,7 @@
     },
     "/api/v1/risk-control-mappings": {
       "get": {
-        "operationId": "list_15",
+        "operationId": "list_14",
         "parameters": [
           {
             "in": "query",
@@ -23424,7 +23211,7 @@
     },
     "/api/v1/risk-scenarios": {
       "get": {
-        "operationId": "list_13",
+        "operationId": "list_12",
         "parameters": [
           {
             "in": "query",
@@ -23741,7 +23528,7 @@
     },
     "/api/v1/risk-scenarios/{riskScenarioId}/links": {
       "get": {
-        "operationId": "list_14",
+        "operationId": "list_13",
         "parameters": [
           {
             "in": "path",
@@ -23933,7 +23720,7 @@
     },
     "/api/v1/scoped-control-implementations": {
       "get": {
-        "operationId": "list_12",
+        "operationId": "list_11",
         "parameters": [
           {
             "in": "query",
@@ -24357,7 +24144,7 @@
     },
     "/api/v1/test-cases": {
       "get": {
-        "operationId": "list_9",
+        "operationId": "list_8",
         "parameters": [
           {
             "in": "query",
@@ -24854,7 +24641,7 @@
     },
     "/api/v1/test-cases/{testCaseId}/steps": {
       "get": {
-        "operationId": "list_10",
+        "operationId": "list_9",
         "parameters": [
           {
             "in": "path",
@@ -25086,7 +24873,7 @@
     },
     "/api/v1/test-cases/folders": {
       "get": {
-        "operationId": "list_11",
+        "operationId": "list_10",
         "parameters": [
           {
             "in": "query",
@@ -25459,7 +25246,7 @@
     },
     "/api/v1/test-plans": {
       "get": {
-        "operationId": "list_8",
+        "operationId": "list_7",
         "parameters": [
           {
             "in": "query",
@@ -25733,7 +25520,7 @@
     },
     "/api/v1/test-runs": {
       "get": {
-        "operationId": "list_7",
+        "operationId": "list_6",
         "parameters": [
           {
             "in": "query",
@@ -26403,7 +26190,7 @@
     },
     "/api/v1/test-suites": {
       "get": {
-        "operationId": "list_6",
+        "operationId": "list_5",
         "parameters": [
           {
             "in": "query",
@@ -26982,7 +26769,7 @@
     },
     "/api/v1/threat-models": {
       "get": {
-        "operationId": "list_4",
+        "operationId": "list_3",
         "parameters": [
           {
             "in": "query",
@@ -27299,7 +27086,7 @@
     },
     "/api/v1/threat-models/{threatModelId}/links": {
       "get": {
-        "operationId": "list_5",
+        "operationId": "list_4",
         "parameters": [
           {
             "in": "path",
@@ -27467,7 +27254,7 @@
     },
     "/api/v1/trust-policies": {
       "get": {
-        "operationId": "list_3",
+        "operationId": "list_2",
         "parameters": [
           {
             "in": "query",
@@ -27650,7 +27437,7 @@
     },
     "/api/v1/verification-results": {
       "get": {
-        "operationId": "list_2",
+        "operationId": "list_1",
         "parameters": [
           {
             "in": "query",
@@ -27864,223 +27651,6 @@
         },
         "tags": [
           "verification-result-controller"
-        ]
-      }
-    },
-    "/api/v1/workflow-executions": {
-      "get": {
-        "operationId": "list_1",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "project",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "format": "int32",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "*/*": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/WorkflowExecutionResponse"
-                  },
-                  "type": "array"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        },
-        "tags": [
-          "workflow-execution-controller"
-        ]
-      },
-      "post": {
-        "operationId": "start",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "project",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StartWorkflowExecutionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkflowExecutionStartResponse"
-                }
-              }
-            },
-            "description": "Created"
-          }
-        },
-        "tags": [
-          "workflow-execution-controller"
-        ]
-      }
-    },
-    "/api/v1/workflow-executions/{workflowId}": {
-      "get": {
-        "operationId": "get_1",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workflowId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "project",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkflowExecutionResponse"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        },
-        "tags": [
-          "workflow-execution-controller"
-        ]
-      }
-    },
-    "/api/v1/workflow-executions/{workflowId}/signals": {
-      "post": {
-        "operationId": "signal",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workflowId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "project",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SendSignalRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "description": "Accepted"
-          }
-        },
-        "tags": [
-          "workflow-execution-controller"
-        ]
-      }
-    },
-    "/api/v1/workflow-executions/echo": {
-      "get": {
-        "operationId": "workflowExecutionRead",
-        "responses": {
-          "200": {
-            "content": {
-              "*/*": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        },
-        "tags": [
-          "stub-controller"
-        ]
-      },
-      "post": {
-        "operationId": "workflowExecutionStart",
-        "responses": {
-          "200": {
-            "content": {
-              "*/*": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        },
-        "tags": [
-          "stub-controller"
-        ]
-      }
-    },
-    "/api/v1/workflow-executions/gc-implement-ground-control-1278/signals": {
-      "post": {
-        "operationId": "workflowExecutionSignal",
-        "responses": {
-          "200": {
-            "content": {
-              "*/*": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        },
-        "tags": [
-          "stub-controller"
         ]
       }
     },

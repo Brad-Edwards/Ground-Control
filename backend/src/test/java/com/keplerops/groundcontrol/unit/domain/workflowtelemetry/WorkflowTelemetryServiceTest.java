@@ -3,6 +3,7 @@ package com.keplerops.groundcontrol.unit.domain.workflowtelemetry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
@@ -67,7 +68,7 @@ class WorkflowTelemetryServiceTest {
         var saved = service.recordRun(command);
 
         var captor = ArgumentCaptor.forClass(WorkflowRun.class);
-        org.mockito.Mockito.verify(runRepository).saveAndFlush(captor.capture());
+        verify(runRepository).saveAndFlush(captor.capture());
         WorkflowRun run = captor.getValue();
         assertThat(run.getProject()).isEqualTo("ground-control");
         assertThat(run.getIssueNumber()).isEqualTo(859);
@@ -198,7 +199,7 @@ class WorkflowTelemetryServiceTest {
                 TelemetryProvenance.ISSUE_THREAD));
 
         var captor = ArgumentCaptor.forClass(WorkflowPhaseEvent.class);
-        org.mockito.Mockito.verify(phaseEventRepository).save(captor.capture());
+        verify(phaseEventRepository).save(captor.capture());
         WorkflowPhaseEvent event = captor.getValue();
         assertThat(event.getProject()).isEqualTo("ground-control");
         assertThat(event.getPhase()).isEqualTo("codex_review");

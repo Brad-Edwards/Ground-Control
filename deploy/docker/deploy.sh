@@ -161,38 +161,20 @@ if [ -n "${running_rev}" ] && [ "${pulled_rev}" = "${running_rev}" ]; then
 fi
 # ---------------------------------------------------------------------------
 
-service_configured() {
-  docker compose --env-file .env config --services 2>/dev/null | grep -qx "$1"
-}
-
 backend_health_ok() {
   docker compose --env-file .env exec -T backend \
     wget -q -O - http://localhost:8000/actuator/health 2>/dev/null \
     | grep -q '"UP"'
 }
 
-temporal_health_ok() {
-  service_configured temporal || return 0
-  docker compose --env-file .env exec -T temporal \
-    tctl --address temporal:7233 cluster health 2>/dev/null \
-    | grep -q 'SERVING'
-}
-
-temporal_worker_health_ok() {
-  service_configured temporal-worker || return 0
-  docker compose --env-file .env exec -T temporal-worker \
-    wget -q -O - http://localhost:8001/actuator/health 2>/dev/null \
-    | grep -q '"UP"'
-}
-
-# Poll health from INSIDE the containers (host binds are tailnet-restricted,
-# #828). Returns 0 once every configured service is healthy, 1 after the window
-# (default 30 tries x 2s = ~60s; GC_HEALTH_RETRIES / GC_HEALTH_INTERVAL let an
+# Poll health from INSIDE the container (host binds are tailnet-restricted,
+# #828). Returns 0 once the backend is healthy, 1 after the window (default
+# 30 tries x 2s = ~60s; GC_HEALTH_RETRIES / GC_HEALTH_INTERVAL let an
 # integration test shrink the window).
 health_ok() {
   local i
   for i in $(seq 1 "${GC_HEALTH_RETRIES:-30}"); do
-    if backend_health_ok && temporal_health_ok && temporal_worker_health_ok; then
+    if backend_health_ok; then
       return 0
     fi
     sleep "${GC_HEALTH_INTERVAL:-2}"
@@ -237,7 +219,6 @@ fi
 # --- Rollback (GC-P023) ----------------------------------------------------
 echo "ERROR: candidate image failed health check within 60s."
 docker compose --env-file .env logs --tail=50 backend || true
-docker compose --env-file .env logs --tail=50 temporal temporal-worker 2>/dev/null || true
 
 if [ -n "${previous_digest}" ]; then
   echo "Rolling back to previous image: ${previous_digest}"

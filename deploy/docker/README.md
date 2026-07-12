@@ -23,22 +23,6 @@ every merge, so `:main` continues to track current `main`.
 
 The operator wrapper that drives a deploy is `scripts/deploy.sh` at the repo root (invoked by `make deploy`); it syncs the artifacts above into `/opt/gc/` and publishes the deploy outcome to GitHub Deployments.
 
-## Temporal topology
-
-GC-O009 phase 1 adds Temporal as production infrastructure in this compose
-stack:
-
-| Service | Purpose |
-|---|---|
-| `temporal-db` | Dedicated PostgreSQL/AGE container for Temporal core and SQL visibility databases, persisted at `/data/temporal-postgres`. |
-| `temporal` | `temporalio/auto-setup:1.29.6`, using `DB=postgres12`, one namespace (`TEMPORAL_NAMESPACE`, default `ground-control`), and SQL visibility (`TEMPORAL_VISIBILITY_DB`). |
-| `temporal-worker` | Ground Control backend image with `GROUNDCONTROL_TEMPORAL_WORKER_ENABLED=true`, connected to `temporal:7233` and the configured task queue. |
-
-Temporal gRPC is infrastructure and has no application auth boundary. The
-production port binding uses `${GC_BIND_IP}:7233:7233`; `GC_BIND_IP` is
-required and must be the host's tailnet address. Temporal Web is not part of
-this phase and must not be exposed as the Ground Control product UI.
-
 ## Image resolution
 
 `GC_IMAGE` in `/opt/gc/.env` MUST be an immutable versioned release tag like
@@ -63,10 +47,6 @@ the backend container via `docker compose exec` + `wget` (the JRE Alpine
 base image ships `wget` but not `curl`). Inside the container the
 listener is on all interfaces of its own network namespace, so `wget
 http://localhost:8000` works regardless of the host bind.
-
-When the Temporal services are present, `deploy.sh` also checks Temporal
-cluster health from inside the `temporal` container and the worker actuator
-health from inside `temporal-worker`. Rollback uses the same health gate.
 
 ## Env validation, rollback, and deploy state (GC-P023)
 

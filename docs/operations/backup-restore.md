@@ -18,19 +18,13 @@ Ground Control runs on a single docker-compose stack on `red-dragon` (per ADR-03
 | Layer | What | Where | Cadence | Retention |
 |-------|------|-------|---------|-----------|
 | Local logical dump | `pg_dump -Fc` of the `ground_control` database, written from inside the `gc-db-1` container | `/data/backups/gc-<UTC-timestamp>.dump` on red-dragon | 03:00, 11:00, 19:00 UTC (`gc-backup.timer`) | 30 days (`GC_BACKUP_KEEP_DAYS`) |
-| Temporal core dump | `pg_dump -Fc` of the `temporal` database, written from inside `gc-temporal-db-1` | `/data/backups/gc-temporal-<UTC-timestamp>.dump` on red-dragon | same timer slot | same retention |
-| Temporal visibility dump | `pg_dump -Fc` of the `temporal_visibility` database, written from inside `gc-temporal-db-1` | `/data/backups/gc-temporal-visibility-<UTC-timestamp>.dump` on red-dragon | same timer slot | same retention |
-| Off-box copy | Same dumps, rsync'd over the tailnet | `gc-backup@aurora:/var/backups/groundcontrol/` (via `rrsync` forced command) | After each local dump | per-aurora retention |
+| Off-box copy | Same dump, rsync'd over the tailnet | `gc-backup@aurora:/var/backups/groundcontrol/` (via `rrsync` forced command) | After each local dump | per-aurora retention |
 
 The relational tables are the authoritative source of truth. The Apache AGE graph stored in `ag_catalog` is derivative; it is rebuilt from the relational tables by `POST /api/v1/admin/graph/materialize` (code: `AgeGraphService.materializeGraph()`).
 
-Temporal owns its internal SQL schema. Ground Control backs up the Temporal
-core and SQL visibility databases as opaque logical dumps and restores them
-through PostgreSQL; application Flyway migrations do not manage those tables.
-
 The off-box copy is best-effort within a given timer slot: if aurora is unreachable the local dump still succeeds and the script logs `WARN`. Repeated `WARN` lines across multiple slots are the signal that aurora-side access has drifted and must be reinvestigated; without the off-box copy the GC-P021 durability clause is not satisfied.
 
-A second timer, `gc-restore-test.timer`, proves the dumps are actually restorable. Daily at 05:00 UTC it runs `/opt/gc/test-restore.sh`, which selects the newest app dump and restores the Temporal core and Temporal visibility dumps with the same UTC timestamp into throwaway databases (never the live `gc-db-1` or `gc-temporal-db-1`). It asserts the existing Ground Control sentinels plus Temporal core tables (`executions`, `current_executions`, `namespaces`, `schema_version`) and visibility tables (`executions_visibility`, `schema_version`). The sentinels are the gate, so a partial or truncated dump fails even if `pg_restore` accepted it with warnings. Any failure exits the service non-zero; that journal entry is the paging signal. This is the GC-P021 "verified on a recurring basis" clause. The test needs no secret (the throwaway container uses a container-local password), so it runs under the same `gc-backup` identity as the backup itself.
+A second timer, `gc-restore-test.timer`, proves the dump is actually restorable. Daily at 05:00 UTC it runs `/opt/gc/test-restore.sh`, which selects the newest app dump and restores it into a throwaway database (never the live `gc-db-1`). It asserts six operational-readiness sentinels: the public schema has tables, `flyway_schema_history` has recorded migrations including V010 (create_age_graph), the AGE extension is loaded, the core Ground Control tables are present, and `create_graph()` succeeds against the restored catalog. The sentinels are the gate, so a partial or truncated dump fails even if `pg_restore` accepted it with warnings. Any failure exits the service non-zero; that journal entry is the paging signal. This is the GC-P021 "verified on a recurring basis" clause. The test needs no secret (the throwaway container uses a container-local password), so it runs under the same `gc-backup` identity as the backup itself.
 
 Secrets live in `/opt/gc/.env` on red-dragon (mode 600, owned by `gc-deploy`). They are not in the backups; treat them as out-of-band operator-managed material and store a copy alongside the operator's other host secrets.
 
@@ -43,7 +37,7 @@ ssh red-dragon 'systemctl list-timers gc-backup.timer gc-restore-test.timer'
 # Most recent restore-test run (the recurring GC-P021 verification).
 ssh red-dragon 'sudo journalctl -u gc-restore-test.service --since "2 days ago" --no-pager | tail -40'
 
-# The most recent dumps on red-dragon, including Temporal core / visibility.
+# The most recent dumps on red-dragon.
 ssh red-dragon 'sudo ls -lht /data/backups/ | head'
 
 # The most recent off-box copies on aurora.
