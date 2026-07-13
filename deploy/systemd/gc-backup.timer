@@ -1,6 +1,6 @@
 [Unit]
 Description=Ground Control DB backup timer (GC-P021: ≥ 3×/day)
-Documentation=https://github.com/Brad-Edwards/Ground-Control/blob/main/docs/operations/backup-restore.md
+Documentation=https://github.com/autarchy-ai/Ground-Control/blob/main/docs/operations/backup-restore.md
 
 [Timer]
 # 03:00, 11:00, 19:00 UTC — the GC-P021 ≥ 3×/day cadence. Persistent=true

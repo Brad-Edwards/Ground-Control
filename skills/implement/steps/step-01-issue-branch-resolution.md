@@ -40,7 +40,7 @@ tier: low
    1. Use `gc_get_requirement` with the UID and `cfg.project`. If the requirement does not exist, stop and report it.
    2. Use `gc_get_traceability` with the requirement's UUID. Look for a link with `artifact_type: GITHUB_ISSUE`.
    3. If such a link exists, note the issue number from its `artifact_identifier`.
-   4. If no link exists, use `gc_create_github_issue` with the UID and `cfg.project` to create an issue and auto-link it. Note the new issue number.
+   4. If no link exists, use `gc_create_github_issue` with the UID, `cfg.project`, and `repo_path` (the absolute repository root from sub-step 1) to create an issue and auto-link it. `repo_path` is required: the issue is created at the repository derived from that checkout's `origin` remote (GC-P026), never a `GH_REPO` default. Note the new issue number.
    - From this point forward, treat the resolved issue number as the authoritative input. The requirement UID becomes a single entry in the `in_scope_requirements[]` list computed below.
 
 7. **Fetch the issue** via `gc_get_issue_thread` (issue #934) with `repo_path` and `issue_number`. The first call returns the full body + comments + a content hash. Cache the hash; the orchestrator will pass it forward so downstream steps short-circuit when the thread hasn't changed.

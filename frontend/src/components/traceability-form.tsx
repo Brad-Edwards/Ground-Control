@@ -77,7 +77,7 @@ export function TraceabilityForm({
           className={inputClass}
           value={artifactIdentifier}
           onChange={(e) => setArtifactIdentifier(e.target.value)}
-          placeholder="e.g. KeplerOps/Ground-Control#42"
+          placeholder="e.g. autarchy-ai/Ground-Control#42"
           required
         />
       </FormField>

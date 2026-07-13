@@ -12,7 +12,7 @@
 
 ```bash
 # 1. Clone and branch
-git clone https://github.com/KeplerOps/Ground-Control.git
+git clone https://github.com/autarchy-ai/Ground-Control.git
 cd Ground-Control
 git checkout -b feature/your-feature dev
 

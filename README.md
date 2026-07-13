@@ -1,6 +1,6 @@
 # Ground Control
 
-[![CI](https://github.com/KeplerOps/Ground-Control/actions/workflows/ci.yml/badge.svg)](https://github.com/KeplerOps/Ground-Control/actions/workflows/ci.yml)
+[![CI](https://github.com/autarchy-ai/Ground-Control/actions/workflows/ci.yml/badge.svg)](https://github.com/autarchy-ai/Ground-Control/actions/workflows/ci.yml)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=autarchy-ai_Ground-Control&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=autarchy-ai_Ground-Control)
 
 An automated software factory that connects requirements, code, controls, and
@@ -23,7 +23,7 @@ MCP-driven AI workflows. The rest of the factory is coming.
 > `Secure`-flagged (browsers refuse it over plain HTTP, login loops forever),
 > the form post is plaintext, and there's no rate limit, MFA, SSO, or audit of
 > failed attempts. Track issue
-> [#983](https://github.com/KeplerOps/Ground-Control/issues/983) for the proper
+> [#983](https://github.com/autarchy-ai/Ground-Control/issues/983) for the proper
 > internet-exposed auth surface. See `docs/deployment/DEPLOYMENT.md` for the
 > full constraint.
 
@@ -60,7 +60,7 @@ MCP-driven AI workflows. The rest of the factory is coming.
 **Prerequisites:** Java 21, Docker, Node.js 20+, `gh` CLI (for GitHub features)
 
 ```bash
-git clone https://github.com/KeplerOps/Ground-Control.git
+git clone https://github.com/autarchy-ai/Ground-Control.git
 cd Ground-Control
 cp .env.example .env
 

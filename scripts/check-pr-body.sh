@@ -24,16 +24,28 @@ if [ -z "${branch}" ]; then
   exit 0
 fi
 
+# Pin every gh call to the checkout's origin remote (GC-P026): git ignores
+# GH_REPO, so this cannot be redirected at the wrong repo the way bare gh calls
+# (which honor GH_REPO) can. Skip silently when no github.com origin resolves,
+# matching this hook's other no-op paths. The checkout-to-slug parser is shared
+# with the other shell entry points for one consistent remote-format contract.
+# shellcheck source=scripts/lib/gh-repo-slug.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/gh-repo-slug.sh"
+slug="$(resolve_repo_slug)"
+if [ -z "${slug}" ]; then
+  exit 0
+fi
+
 # `gh pr view --head <branch>` is broken in older versions, but `gh pr list`
 # is reliable. Look for an open PR with this branch as the head ref.
-pr_number="$(gh pr list --head "${branch}" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
+pr_number="$(gh pr list --head "${branch}" --state open --repo "${slug}" --json number --jq '.[0].number // empty' 2>/dev/null || true)"
 if [ -z "${pr_number}" ]; then
   exit 0
 fi
 
 tmp_body="$(mktemp -t gc-pr-body.XXXXXX)"
 trap 'rm -f "${tmp_body}"' EXIT
-gh pr view "${pr_number}" --json body --jq '.body' > "${tmp_body}"
+gh pr view "${pr_number}" --repo "${slug}" --json body --jq '.body' > "${tmp_body}"
 
 repo_root="$(git rev-parse --show-toplevel)"
 exec python3 "${repo_root}/bin/policy" --pr-body-file "${tmp_body}"

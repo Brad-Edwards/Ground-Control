@@ -38,6 +38,7 @@ from tools.policy.checks import (
     run_documentation_coverage_check,
     run_enum_contract_check,
     run_ghcr_namespace_drift,
+    run_repo_identity_drift,
     run_migration_policy,
     run_no_deferral_disposition_check,
     run_pr_body_check,
@@ -1019,6 +1020,115 @@ class PolicyChecksTest(unittest.TestCase):
             self.assertEqual(
                 violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}"
             )
+
+    # ------------------------------------------------------------------
+    # Repository identity drift check (issue #1383, GC-P026)
+    # ------------------------------------------------------------------
+
+    def test_repo_identity_drift_passes_on_committed_files(self):
+        # After #1383 every inventoried active surface must name the single
+        # canonical owner. Run against the live repo as the post-condition
+        # assertion — a leftover KeplerOps/Brad-Edwards slug in an active
+        # config/workflow/script/doc is exactly the stale identity that routed
+        # defaulted operations at an inaccessible repository.
+        violations = run_repo_identity_drift(root=REPO_ROOT)
+        self.assertEqual(
+            violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}"
+        )
+
+    def test_repo_identity_drift_fires_on_noncanonical_owner(self):
+        # A non-canonical owner in any inventoried file must fail loudly, naming
+        # the file, line, and offending owner so the fix is unambiguous.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cfg = root / ".ground-control.yaml"
+            cfg.write_text("github_repo: KeplerOps/Ground-Control\n", encoding="utf-8")
+            violations = run_repo_identity_drift(root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("repo-identity-drift", codes)
+            details = " ".join(detail for v in violations for detail in v.details)
+            self.assertIn("KeplerOps", details)
+            self.assertIn(".ground-control.yaml", details)
+
+    def test_repo_identity_drift_fires_on_noncanonical_url(self):
+        # The URL form (badges, clone URLs, raw-content URLs) is caught too.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            wf = root / ".github/workflows/pack-registry-sync.yml"
+            wf.parent.mkdir(parents=True, exist_ok=True)
+            wf.write_text(
+                'RAW_BASE_URL="https://raw.githubusercontent.com/Brad-Edwards/Ground-Control/x"\n',
+                encoding="utf-8",
+            )
+            violations = run_repo_identity_drift(root=root)
+            self.assertIn("repo-identity-drift", {v.code for v in violations})
+            details = " ".join(detail for v in violations for detail in v.details)
+            self.assertIn("Brad-Edwards", details)
+
+    def test_repo_identity_drift_accepts_canonical_owner(self):
+        # The canonical owner must not trip the gate, and files outside the
+        # inventory (and absent files) are simply skipped.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cfg = root / ".ground-control.yaml"
+            cfg.write_text("github_repo: autarchy-ai/Ground-Control\n", encoding="utf-8")
+            violations = run_repo_identity_drift(root=root)
+            self.assertEqual(
+                violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}"
+            )
+
+    def test_repo_identity_drift_ignores_filesystem_paths(self):
+        # A local checkout path like `/home/user/src/Ground-Control/...` is NOT
+        # a repository-identity slug; the negative lookbehind must exclude it so
+        # .mcp.json's node args path does not read as owner 'src'.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            mcp = root / ".mcp.json"
+            mcp.write_text(
+                '{"args": ["/home/user/src/Ground-Control/mcp/ground-control/index.js"]}\n',
+                encoding="utf-8",
+            )
+            violations = run_repo_identity_drift(root=root)
+            self.assertEqual(
+                violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}"
+            )
+
+    def test_pack_registry_workflow_raw_urls_use_runtime_repo(self):
+        # The pack-registry workflow must build raw-content URLs from the trusted
+        # runtime repository + exact SHA, never a hardcoded owner (#1383).
+        wf = REPO_ROOT / ".github/workflows/pack-registry-sync.yml"
+        text = wf.read_text(encoding="utf-8")
+        raw_lines = [ln for ln in text.splitlines() if "RAW_BASE_URL=" in ln]
+        self.assertTrue(raw_lines, msg="expected RAW_BASE_URL assignments in the workflow")
+        for ln in raw_lines:
+            self.assertIn("GITHUB_REPOSITORY", ln, msg=f"raw URL not runtime-derived: {ln}")
+            self.assertIn("GITHUB_SHA", ln, msg=f"raw URL not SHA-pinned: {ln}")
+
+    def test_repo_identity_drift_fires_on_wrong_repo_name(self):
+        # A well-formed but wrong repository NAME (correct owner, wrong repo) in
+        # an identity-declaration field must fail too — not just a wrong owner.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cfg = root / ".ground-control.yaml"
+            cfg.write_text("github_repo: autarchy-ai/Other\n", encoding="utf-8")
+            violations = run_repo_identity_drift(root=root)
+            self.assertIn("repo-identity-drift", {v.code for v in violations})
+            details = " ".join(detail for v in violations for detail in v.details)
+            self.assertIn("autarchy-ai/Other", details)
+
+    def test_repo_identity_drift_fires_on_stale_owner_in_admin_surface(self):
+        # The admin console owner placeholder carries only the owner, not a full
+        # owner/repo slug; a regression to a stale owner literal must still fail.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            admin = root / "frontend/src/pages/admin.tsx"
+            admin.parent.mkdir(parents=True, exist_ok=True)
+            admin.write_text('<input placeholder="KeplerOps" />\n', encoding="utf-8")
+            violations = run_repo_identity_drift(root=root)
+            self.assertIn("repo-identity-drift", {v.code for v in violations})
+            details = " ".join(detail for v in violations for detail in v.details)
+            self.assertIn("KeplerOps", details)
+            self.assertIn("frontend/src/pages/admin.tsx", details)
 
     # ------------------------------------------------------------------
     # Deploy artifact consistency check (issue #855, GC-P023)

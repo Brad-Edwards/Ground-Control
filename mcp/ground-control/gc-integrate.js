@@ -348,6 +348,20 @@ async function buildIntegrationQueue(args, deps) {
     );
   }
 
+  // ── Validate configured identity against the checkout (GC-P026) ────────────
+  // .ground-control.yaml::github_repo is an assertion, not an alternate
+  // destination: if it disagrees with the checkout's origin remote, refuse
+  // before any discovery or mutation rather than act on a stale or mistyped
+  // identity. Compared case-insensitively (GitHub owner/repo are case-folding).
+  const configuredRepo = parseResult.value.github_repo;
+  if (configuredRepo && configuredRepo.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) {
+    return errorEnvelope(
+      "github_identity_mismatch",
+      `.ground-control.yaml github_repo '${configuredRepo}' does not match the checkout's origin remote '${owner}/${repo}'`,
+      "fix_ground_control_yaml",
+    );
+  }
+
   // ── Paginated PR discovery (cap at MAX_DISCOVERY_PAGES pages) ─────────────
   const allPrs = [];
   let hitPageCap = false;
