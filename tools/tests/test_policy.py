@@ -1167,6 +1167,415 @@ class PolicyChecksTest(unittest.TestCase):
         (ddir / "MANIFEST.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     # ------------------------------------------------------------------
+    # Env-template orphan-key check (issue #1384, GC-P023)
+    # ------------------------------------------------------------------
+
+    def test_env_template_orphan_key_flags_key_with_no_consumer(self):
+        # The #1359 residue: a template advertising a worker/namespace/task-queue
+        # for a service that no longer exists. Nothing reads it, so an operator
+        # setting it gets silence — the exact drift #1384 exists to stop.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8")
+                + "TEMPORAL_TASK_QUEUE=ground-control-implement\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("TEMPORAL_TASK_QUEUE", details)
+
+    def test_env_template_orphan_key_rejects_compose_literal_as_consumer(self):
+        # `- GC_SERVER_PORT=8000` PINS the value; it does not read the operator's.
+        # Counting it as a consumer would let the template advertise control the
+        # operator does not have — a quieter version of the same lie.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                compose.read_text(encoding="utf-8") + "      - GC_SERVER_PORT=8000\n",
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "GC_SERVER_PORT=9000\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_SERVER_PORT", details)
+
+    def test_env_template_orphan_key_accepts_compose_interpolation_and_inherit(self):
+        # The two forms that DO read the operator's value: ${VAR} interpolation
+        # and list-form inherit (`- VAR`, which forwards only when set). Both must
+        # sit inside the `environment:` block to count.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                "services:\n"
+                "  backend:\n"
+                "    image: ${GC_IMAGE}\n"
+                "    environment:\n"
+                "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n"
+                "      - GC_INTERPOLATED=${GC_INTERPOLATED}\n"
+                "      - GC_INHERITED\n"
+                "    ports:\n"
+                '      - "${GC_BIND_IP}:8000:8000"\n',
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8")
+                + "GC_INTERPOLATED=a\nGC_INHERITED=b\n",
+                encoding="utf-8",
+            )
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertNotIn("deploy-env-template-orphan-key", codes)
+
+    def test_env_template_orphan_key_flags_commented_assignment(self):
+        # A commented `# KEY=...` still advertises the key — uncommenting it is
+        # the documented way to use it — so a dead one misleads just as much.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "# GC_DEAD_KNOB=somevalue\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_DEAD_KNOB", details)
+
+    def test_env_template_orphan_key_rejects_env_schema_declaration_as_consumer(self):
+        # env.schema says a key must be PRESENT and well-formed; it never reads
+        # it. If a schema declaration counted as consumption, a key left stale in
+        # BOTH the template and the schema would certify itself — a false negative
+        # exactly where drift hides.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            schema = root / "deploy/docker/env.schema"
+            schema.write_text(
+                schema.read_text(encoding="utf-8") + "REQUIRED GC_SCHEMA_ONLY\n",
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "GC_SCHEMA_ONLY=x\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_SCHEMA_ONLY", details)
+
+    def test_env_template_orphan_key_rejects_mention_in_comment_or_message(self):
+        # A key named in a comment or an error-message string is a mention, not a
+        # read. Matching bare textual occurrence would let any script that merely
+        # *talks about* a dead key certify it as live.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            validator = root / "deploy/docker/validate-env.sh"
+            validator.write_text(
+                "#!/bin/bash\n"
+                "# GC_MENTIONED is validated elsewhere\n"
+                'echo "please set GC_MENTIONED before deploying"\n',
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "GC_MENTIONED=x\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_MENTIONED", details)
+
+    def test_env_template_orphan_key_accepts_real_shell_read(self):
+        # The reads that DO count: $VAR / ${VAR} expansion and the ENV_VALUES[VAR]
+        # associative lookup validate-env.sh uses on the parsed env file.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            validator = root / "deploy/docker/validate-env.sh"
+            validator.write_text(
+                '#!/bin/bash\necho "${GC_EXPANDED}"\n'
+                'if [ "${ENV_VALUES[GC_LOOKED_UP]:-}" = "1" ]; then :; fi\n',
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8")
+                + "GC_EXPANDED=a\nGC_LOOKED_UP=1\n",
+                encoding="utf-8",
+            )
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertNotIn("deploy-env-template-orphan-key", codes)
+
+    def test_env_template_orphan_key_rejects_bare_list_item_outside_environment(self):
+        # `- FOO` only forwards a variable inside an `environment:` block. In a
+        # ports/volumes/command list it is an ordinary list entry, and counting it
+        # would bless a key nothing reads.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                compose.read_text(encoding="utf-8")
+                + "    command:\n      - GC_NOT_A_VAR\n",
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "GC_NOT_A_VAR=x\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_NOT_A_VAR", details)
+
+    def _write_spring_properties(self, root: Path) -> None:
+        # Mirrors the real SecurityProperties: the indexed credential slots bind
+        # through a nested POJO, so the fixture must carry that POJO's leaf
+        # fields — the binding path is resolved to the leaf, not to `credentials`.
+        props = root / "backend/src/main/java/com/example/SecurityProperties.java"
+        props.parent.mkdir(parents=True, exist_ok=True)
+        props.write_text(
+            '@ConfigurationProperties(prefix = "groundcontrol.security", '
+            "ignoreUnknownFields = false)\n"
+            "public class SecurityProperties {\n"
+            "    private boolean enabled = true;\n"
+            "    private List<ApiCredential> credentials = new ArrayList<>();\n"
+            "    private List<String> ipAllowlist = new ArrayList<>();\n"
+            "\n"
+            "    public static class ApiCredential {\n"
+            "        private String principalName;\n"
+            "        private String token;\n"
+            "        private Role role;\n"
+            "    }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+
+    def test_env_template_orphan_key_accepts_spring_relaxed_binding(self):
+        # The dev template's indexed slots bind via Spring relaxed binding and
+        # appear literally in no yaml: GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKEN
+        # -> groundcontrol.security.credentials[0].token. Resolving that
+        # structurally is what keeps the check free of per-key exceptions.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            self._write_spring_properties(root)
+            (root / ".env.example").write_text(
+                "GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKEN=x\n"
+                "GROUNDCONTROL_SECURITY_IP_ALLOWLIST_0=10.0.0.0/8\n",
+                encoding="utf-8",
+            )
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertNotIn("deploy-env-template-orphan-key", codes)
+
+    def test_env_template_orphan_key_rejects_unknown_spring_child(self):
+        # Binding resolves to a DECLARED field, not merely the prefix. A key under
+        # a real prefix that maps to no property binds to nothing — prefix-only
+        # matching would bless every unknown child of a live prefix.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            self._write_spring_properties(root)
+            (root / ".env.example").write_text(
+                "GROUNDCONTROL_SECURITY_BOGUS_KNOB=x\n", encoding="utf-8"
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GROUNDCONTROL_SECURITY_BOGUS_KNOB", details)
+
+    def test_env_template_orphan_key_accepts_spring_placeholder_default_syntax(self):
+        # Spring defaults with a single colon (${GC_SERVER_PORT:8000}), unlike
+        # compose's ${VAR:-default}. Reusing the compose pattern here would miss
+        # every defaulted placeholder and flag live keys as orphans.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            app_yml = root / "backend/src/main/resources/application.yml"
+            app_yml.parent.mkdir(parents=True, exist_ok=True)
+            app_yml.write_text(
+                "server:\n  port: ${GC_SERVER_PORT:8000}\n"
+                "spring:\n  datasource:\n    url: ${GC_DATABASE_URL}\n",
+                encoding="utf-8",
+            )
+            (root / ".env.example").write_text(
+                "GC_SERVER_PORT=8000\nGC_DATABASE_URL=jdbc:postgresql://localhost/x\n",
+                encoding="utf-8",
+            )
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertNotIn("deploy-env-template-orphan-key", codes)
+
+    def test_env_template_orphan_key_rejects_typo_in_spring_leaf_property(self):
+        # Binding is resolved through the nested POJO to its leaf: CREDENTIALS is a
+        # List<ApiCredential>, so `_0_TOKEN` binds but `_0_TOKNE` binds to nothing.
+        # Accepting any tail under a known field would certify a misspelled key
+        # that Spring itself would never bind.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            self._write_spring_properties(root)
+            (root / ".env.example").write_text(
+                "GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKNE=x\n", encoding="utf-8"
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKNE", details)
+
+    def test_env_template_orphan_key_rejects_node_mention_in_comment_or_string(self):
+        # `// process.env.GC_DEAD` and `"process.env.GC_DEAD"` are mentions. Only
+        # an executing read counts, or any commented-out reference would keep a
+        # dead key alive forever.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            mcp = root / "mcp/ground-control/index.js"
+            mcp.parent.mkdir(parents=True, exist_ok=True)
+            mcp.write_text(
+                "// process.env.GC_COMMENTED is no longer read\n"
+                'const doc = "process.env.GC_STRINGED";\n',
+                encoding="utf-8",
+            )
+            (root / ".env.example").write_text(
+                "GC_COMMENTED=a\nGC_STRINGED=b\n", encoding="utf-8"
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_COMMENTED", details)
+            self.assertIn("GC_STRINGED", details)
+
+    def test_env_template_orphan_key_rejects_trailing_comment_mention(self):
+        # A key named in a compose or shell TRAILING comment is not a read either.
+        # Only whole-line comments were dropped before; `- FOO  # ${GC_DEAD}` would
+        # otherwise certify GC_DEAD.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                compose.read_text(encoding="utf-8").replace(
+                    "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n",
+                    "      - GC_DATABASE_URL=${GC_DATABASE_URL}  # was ${GC_TRAILING}\n",
+                ),
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "GC_TRAILING=x\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_TRAILING", details)
+
+    def test_env_template_orphan_key_rejects_single_quoted_shell_mention(self):
+        # The shell does not expand inside single quotes, so '$GC_DEAD' is literal
+        # text, not a read.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            validator = root / "deploy/docker/validate-env.sh"
+            validator.write_text("#!/bin/bash\necho 'set $GC_QUOTED first'\n", encoding="utf-8")
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "GC_QUOTED=x\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_QUOTED", details)
+
+    def test_env_template_orphan_key_accepts_node_bracket_read(self):
+        # process.env["VAR"] keeps its key inside a string legitimately, so the
+        # string-strip that kills mentions must not kill this real read.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            mcp = root / "mcp/ground-control/index.js"
+            mcp.parent.mkdir(parents=True, exist_ok=True)
+            mcp.write_text('const t = process.env["GC_BRACKET"];\n', encoding="utf-8")
+            (root / ".env.example").write_text("GC_BRACKET=x\n", encoding="utf-8")
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertNotIn("deploy-env-template-orphan-key", codes)
+
+    def test_env_template_orphan_key_accepts_node_process_env_read(self):
+        # The MCP client reads its bearer token from the repo-root .env via
+        # process.env; that is a real consumer of a key no compose forwards.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            mcp = root / "mcp/ground-control/index.js"
+            mcp.parent.mkdir(parents=True, exist_ok=True)
+            mcp.write_text(
+                "const token = process.env.GROUND_CONTROL_API_TOKEN;\n", encoding="utf-8"
+            )
+            (root / ".env.example").write_text(
+                "GROUND_CONTROL_API_TOKEN=x\n", encoding="utf-8"
+            )
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertNotIn("deploy-env-template-orphan-key", codes)
+
+    def test_env_template_orphan_key_ignores_docs_and_tests_as_consumers(self):
+        # History is not an input. A key mentioned only in a doc, a test, or a
+        # superseded ADR has no runtime consumer and must still be flagged.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            adr = root / "architecture/adrs/028-retired.md"
+            adr.parent.mkdir(parents=True, exist_ok=True)
+            adr.write_text("Superseded. Once read TEMPORAL_NAMESPACE.\n", encoding="utf-8")
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "TEMPORAL_NAMESPACE=ground-control\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("TEMPORAL_NAMESPACE", details)
+
+    # ------------------------------------------------------------------
     # Enum contract check (issue #433)
     # ------------------------------------------------------------------
 
