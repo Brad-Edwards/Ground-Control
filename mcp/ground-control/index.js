@@ -3473,8 +3473,9 @@ if (ADMIN_TOOLS_ENABLED) {
       format: z.string().optional(),
       from: z.string().optional(),
       to: z.string().optional(),
-      // Project type + research intake (ADR-056, issue #999).
-      type: z.enum(["SOFTWARE", "GRC", "RESEARCH"]).optional(),
+      // Project type + research intake (ADR-056, issue #999). GRC is a legacy value
+      // (ADR-089 §4): readable on existing projects but not offered for new creation.
+      type: z.enum(["SOFTWARE", "RESEARCH"]).optional(),
       research_intake: z.object({
         goal: z.string(),
         paperContext: z.string().optional(),

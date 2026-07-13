@@ -152,6 +152,22 @@ class ProjectServiceTest {
                     .hasMessageContaining("researchIntake");
             verify(researchIntakeService, never()).create(any(), any());
         }
+
+        @Test
+        void grcType_onCreate_throwsValidationAndDoesNotPersist() {
+            // ADR-089 §4: GRC is not offered for new creation. The service must reject it
+            // before persisting, so a caller can never create a brand-new GRC project.
+            var command = new CreateProjectCommand("grc-project", "GRC Project", null, ProjectType.GRC, null);
+            when(projectRepository.existsByIdentifier("grc-project")).thenReturn(false);
+
+            assertThatThrownBy(() -> service.create(command))
+                    .isInstanceOf(DomainValidationException.class)
+                    .hasMessageContaining("GRC")
+                    .extracting("errorCode")
+                    .isEqualTo("project_type_grc_not_creatable");
+            verify(projectRepository, never()).save(any(Project.class));
+            verify(researchIntakeService, never()).create(any(), any());
+        }
     }
 
     @Nested
@@ -191,6 +207,18 @@ class ProjectServiceTest {
             when(projectRepository.findByIdentifier("missing")).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> service.getByIdentifier("missing")).isInstanceOf(NotFoundException.class);
+        }
+
+        @Test
+        void persistedGrcProject_readsBackWithGrcType() {
+            // ADR-089 §4: create is closed to GRC, but rows persisted before the guard
+            // (legacy GRC projects) must remain readable with their original type.
+            var project = new Project("legacy-grc", "Legacy GRC", ProjectType.GRC);
+            TestUtil.setField(project, "id", UUID.randomUUID());
+            when(projectRepository.findByIdentifier("legacy-grc")).thenReturn(Optional.of(project));
+
+            var result = service.getByIdentifier("legacy-grc");
+            assertThat(result.getType()).isEqualTo(ProjectType.GRC);
         }
     }
 
