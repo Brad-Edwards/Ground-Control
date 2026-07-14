@@ -8,6 +8,16 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #1307 (2026-07-14, ontology binding gate):** Added
+> `tools/policy/checks.py::run_ontology_binding_check` to validate the three
+> ADR-084 ontology contracts and compare their surface-qualified bindings with
+> an independently discovered Java graph-vocabulary inventory. The policy
+> surface is documented in ADR-084, `docs/DEVELOPMENT_WORKFLOW.md`, and
+> `contracts/CHANGES.md`. The documentation-coverage classifier,
+> `outcome_required` mapping, Vale rules, `tools/install-vale.sh`, `.vale.ini`,
+> and this ADR's coverage model are unchanged; no new `docs/DOC_STYLE.md` style
+> rule is established.
+
 > **Sync note for issue #1359 (2026-07-12, remove Temporal orchestration lane):** Deleted the `/api/v1/workflow-executions**` REST surface (`WorkflowExecutionController`/`WorkflowExecutionService`/`WorkflowControlPort`/`TemporalWorkflowControlAdapter`) and the `gc_workflow_execution` MCP tool (`start`/`get`/`list`/`signal`, handler `mcp/ground-control/gc-workflow-execution.js`) together with its API-client helpers and field mappings in `mcp/ground-control/lib.js`/`index.js`; removed `infrastructure/temporal/**` (worker config, control adapter, `/implement` workflow and activities, activity-payload contract records) and `domain/workflowexecution/**`; removed `domain/llm`/`infrastructure/llm` including the Anthropic adapter, so `ROUTING_PROVIDERS` reverts to `["claude"]` and the canonical `anthropic` provider id and `claude`→`anthropic` normalization are gone; and dropped the `run_workflow_payload_contract_check`, `run_gate_set_invariant_check`, and `deploy-temporal-topology` policy checks from `tools/policy/checks.py` along with the `contracts/schemas/workflow/` activity-payload schemas (the ADR-061 `workflow-run-record.v1.schema.json` telemetry schema is unaffected). ADR-028, ADR-081, and ADR-088 are marked Superseded (issue #1359) in `architecture/adrs/README.md`; the run-economics surface this issue does not touch (`workflow_run`, ADR-061 telemetry, `gc_workflow_run`/`gc_workflow_run_ingest`, ADR-036 per-step routing, ADR-029 issue-thread gates) is unchanged. This is a policy-surface, MCP tool-surface, public-API, and infrastructure removal: the documentation-coverage classifier, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style rule is established.
 >
 > **Sync note for issue #1280 (2026-07-11 GC-O009 phase 5 LLM provider boundary):** Changed `ROUTING_PROVIDERS`, added `ROUTING_PROVIDER_ALIASES`/`normalizeProviderId`, and updated `normalizeRoutingConfig`/`normalizeRoutingStageConfig`/`resolveWorkflowRouteFromConfig` in `mcp/ground-control/lib.js` so the canonical LLM provider id `anthropic` is accepted and the legacy label `claude` normalizes to it in every output (ADR-027 amendment). This is the `.ground-control.yaml` routing parser, not the documentation-coverage gate; the documentation-coverage classifier, outcome mapping, Vale rule set, `tools/install-vale.sh`, `.vale.ini`, and `docs/DOC_STYLE.md` style rules are unchanged.
