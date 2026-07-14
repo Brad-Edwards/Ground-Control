@@ -1758,6 +1758,412 @@ def _parse_env_schema(text: str) -> dict[str, set[str]]:
     return directives
 
 
+# ---------------------------------------------------------------------------
+# Env-template orphan-key check (issue #1384, GC-P023 (a)/(e)).
+#
+# run_deploy_artifact_consistency already proves one direction: every ${VAR} the
+# production compose dereferences is declared in env.schema. Nothing proved the
+# reverse, so a key could outlive the service that read it. The Temporal removal
+# (#1359) left exactly that residue: the templates went on advertising a worker
+# target, a namespace, a task queue, and a database password for a service that
+# no longer exists, and an operator reading the template could not tell.
+#
+# The invariant: a key an active template advertises must have an *executable*
+# consumer - something that, at runtime, reads the value the operator set. Tests,
+# docs, superseded ADRs, and historical migrations are not consumers: they are
+# history, and history is not an input.
+#
+# "Executable consumer" is a strict bar, and every loosening of it re-admits the
+# exact dead config the check exists to catch. Four rules carry that weight:
+#
+#   1. A compose LITERAL is not a consumer. `- GC_SERVER_PORT=8000` pins the
+#      value; it does not read the operator's. A template advertising a key that
+#      compose pins is advertising control the operator does not have - the same
+#      lie in a quieter voice. Only ${VAR} interpolation and list-form inherit
+#      count, and inherit only inside an `environment:` block (a bare `- FOO`
+#      elsewhere in the yaml is a list item, not a variable).
+#   2. A DECLARATION is not a consumer. env.schema says a key must be present and
+#      well-formed; it never reads it. Treating schema membership as consumption
+#      would certify any key left stale in BOTH the template and the schema -
+#      a false negative precisely where drift hides. env.schema is therefore not
+#      a consumer surface here; the production compose is what forwards an
+#      operator's value into the container, and that is what must prove it.
+#   3. A MENTION is not a consumer. A key named in a comment, an error message,
+#      or any other string is not a read. Each surface is matched on its actual
+#      read syntax - `${VAR}` in yaml, `process.env.VAR` in the MCP client,
+#      `$VAR` / `ENV_VALUES[VAR]` in the deploy shell - and never on bare
+#      textual occurrence.
+#   4. The production template does NOT get the backend-application surface. An
+#      application.yml placeholder is irrelevant to /opt/gc/.env unless compose
+#      forwards the value into the container.
+#
+# Spring relaxed binding is resolved against the declared @ConfigurationProperties
+# FIELDS, not merely the prefix: GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKEN binds
+# because SecurityProperties declares `credentials`, while a hypothetical
+# GROUNDCONTROL_SECURITY_BOGUS binds to nothing and is still an orphan. Prefix
+# matching alone would bless every unknown child of a real prefix.
+#
+# The seam is the inventory below: a new template or service is one row, never a
+# per-key exception. A per-key allowlist would just re-bless dead config quietly.
+# ---------------------------------------------------------------------------
+
+ENV_TEMPLATE_ASSIGNMENT_RE = re.compile(r"^\s*(?:#\s*)?(?:export\s+)?([A-Z][A-Z0-9_]*)=")
+COMPOSE_INHERIT_RE = re.compile(r"^(\s*)-\s*([A-Z][A-Z0-9_]*)\s*$")
+COMPOSE_ENVIRONMENT_KEY_RE = re.compile(r"^(\s*)environment:\s*$")
+# Spring placeholders default with a single colon (${VAR:default}), unlike
+# compose's ${VAR:-default}, so the compose pattern would miss every defaulted one.
+SPRING_PLACEHOLDER_RE = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)[:}]")
+SHELL_EXPANSION_RE = re.compile(r"\$\{?([A-Z][A-Z0-9_]*)\b")
+SHELL_ENV_LOOKUP_RE = re.compile(r"ENV_VALUES\[\s*[\"']?([A-Z][A-Z0-9_]*)[\"']?\s*\]")
+SPRING_PREFIX_RE = re.compile(r"@ConfigurationProperties\s*\(\s*prefix\s*=\s*\"([^\"]+)\"")
+SPRING_FIELD_RE = re.compile(
+    r"^[ \t]*private\s+(?:final\s+)?(.+?)\s+([a-z]\w*)\s*[=;]", re.MULTILINE
+)
+SPRING_CLASS_RE = re.compile(r"\b(?:class|record)\s+(\w+)")
+SPRING_COLLECTION_RE = re.compile(r"^(?:List|Set|Collection|Iterable)\s*<\s*(.+?)\s*>$")
+BACKEND_JAVA_GLOB = "backend/src/main/java/**/*.java"
+# JS line/block comments, then string literals. A key named in either is a
+# mention, not a read - but the bracket read form (process.env["VAR"]) keeps its
+# key inside a string legitimately, so comments and strings are stripped in two
+# stages rather than one.
+JS_COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
+JS_STRING_RE = re.compile(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`", re.DOTALL)
+# A yaml comment runs from an unquoted ` #` (or a line-leading #) to end of line.
+YAML_TRAILING_COMMENT_RE = re.compile(r"(?:^|\s)#.*$")
+# Single-quoted shell text is literal - no expansion happens inside it.
+SHELL_SINGLE_QUOTED_RE = re.compile(r"'[^']*'")
+SHELL_INLINE_COMMENT_RE = re.compile(r"(?:^|\s)#.*$")
+
+
+@dataclass(frozen=True)
+class EnvTemplateContract:
+    """One active env template and the surfaces allowed to consume its keys.
+
+    Each glob group is matched on that surface's real read syntax; see the
+    module comment above for why a declaration or a mention is not a consumer.
+    """
+
+    template: str
+    compose_globs: tuple[str, ...] = ()
+    yaml_placeholder_globs: tuple[str, ...] = ()
+    node_env_globs: tuple[str, ...] = ()
+    shell_globs: tuple[str, ...] = ()
+    spring_binding: bool = False
+
+
+ENV_TEMPLATE_CONTRACTS: tuple[EnvTemplateContract, ...] = (
+    # Local dev + the MCP client's startup .env (mcp/ground-control/index.js).
+    # The backend runs from source here (bootRun), so an application.yml
+    # placeholder IS an effective consumer - unlike the production case, where
+    # compose has to forward the value into the container first.
+    EnvTemplateContract(
+        template=".env.example",
+        compose_globs=("docker-compose.yml",),
+        yaml_placeholder_globs=("backend/src/main/resources/application*.yml",),
+        node_env_globs=("mcp/ground-control/*.js",),
+        spring_binding=True,
+    ),
+    # The operator's /opt/gc/.env contract. A value here reaches the backend only
+    # if the production compose interpolates or inherits it; the deploy scripts
+    # are the only other executable reader.
+    EnvTemplateContract(
+        template="deploy/docker/.env.example",
+        compose_globs=("deploy/docker/docker-compose.prod.yml",),
+        shell_globs=("deploy/docker/validate-env.sh", "deploy/docker/deploy.sh"),
+    ),
+)
+
+
+def _code_lines(text: str, strip_comment: re.Pattern[str] | None = None) -> list[str]:
+    """Lines with comments removed - a mention in a comment is not a read.
+
+    Drops whole-line comments, and (when ``strip_comment`` is given) the trailing
+    comment on an otherwise executable line, so ``- FOO   # GC_DEAD is gone``
+    cannot certify GC_DEAD.
+    """
+    lines: list[str] = []
+    for line in text.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        lines.append(strip_comment.sub("", line) if strip_comment else line)
+    return lines
+
+
+def _env_template_keys(text: str) -> list[str]:
+    """Every key an env template advertises, commented assignments included.
+
+    A commented `# GC_EMBEDDING_MODEL=...` still tells an operator the key is
+    supported - uncommenting it is the documented way to use it - so a dead one
+    misleads exactly as much as a live one.
+    """
+    keys: list[str] = []
+    for line in text.splitlines():
+        match = ENV_TEMPLATE_ASSIGNMENT_RE.match(line)
+        if match and match.group(1) not in keys:
+            keys.append(match.group(1))
+    return keys
+
+
+def _compose_consumed_names(text: str) -> set[str]:
+    """Names a compose file actually reads from the env file.
+
+    Two forms read the operator's value: interpolation (``${VAR}``,
+    ``${VAR:-default}``) anywhere, and list-form inherit (``- VAR``) inside an
+    ``environment:`` block, which forwards the variable only when it is set.
+
+    A literal assignment (``- VAR=8000``) is excluded - it overrides the env file
+    rather than reading it - and a bare ``- item`` outside an ``environment:``
+    block is a list entry, not a variable.
+    """
+    consumed: set[str] = set()
+    env_block_indent: int | None = None
+    for line in _code_lines(text, YAML_TRAILING_COMMENT_RE):
+        env_key = COMPOSE_ENVIRONMENT_KEY_RE.match(line)
+        if env_key:
+            env_block_indent = len(env_key.group(1))
+            continue
+        consumed.update(match.group(1) for match in COMPOSE_VAR_REF_RE.finditer(line))
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        if env_block_indent is not None and indent <= env_block_indent:
+            env_block_indent = None
+        inherit = COMPOSE_INHERIT_RE.match(line)
+        if inherit and env_block_indent is not None:
+            consumed.add(inherit.group(2))
+    return consumed
+
+
+def _yaml_placeholder_consumed_names(text: str) -> set[str]:
+    """Names an application*.yml dereferences as a ``${VAR}`` placeholder.
+
+    Spring's default syntax is a single colon (``${GC_SERVER_PORT:8000}``), not
+    compose's ``:-``, so this cannot reuse COMPOSE_VAR_REF_RE.
+    """
+    consumed: set[str] = set()
+    for line in _code_lines(text, YAML_TRAILING_COMMENT_RE):
+        consumed.update(match.group(1) for match in SPRING_PLACEHOLDER_RE.finditer(line))
+    return consumed
+
+
+def _node_env_consumed_names(text: str) -> set[str]:
+    """Names a Node source reads via ``process.env.VAR`` / ``process.env["VAR"]``.
+
+    Comments are stripped from both forms: ``// process.env.GC_DEAD`` is a
+    mention, not a read. String literals are then stripped for the dotted form
+    only, so a quoted ``"process.env.GC_DEAD"`` cannot certify a key while the
+    bracket form - whose key legitimately lives inside a string - still can.
+    """
+    code = JS_COMMENT_RE.sub(" ", text)
+    bracket_re = re.compile(r"process\.env\[\s*['\"]([A-Z][A-Z0-9_]*)['\"]\s*\]")
+    consumed: set[str] = {match.group(1) for match in bracket_re.finditer(code)}
+    dotted_re = re.compile(r"process\.env\.([A-Z][A-Z0-9_]*)")
+    consumed.update(match.group(1) for match in dotted_re.finditer(JS_STRING_RE.sub(" ", code)))
+    return consumed
+
+
+def _shell_consumed_names(text: str) -> set[str]:
+    """Names a shell script actually expands or looks up.
+
+    ``$VAR`` / ``${VAR...}`` expansion, and the ``ENV_VALUES[VAR]`` associative
+    lookup validate-env.sh uses to read the parsed env file. A key named only in
+    an error-message string or a comment is a mention, not a read.
+
+    The two patterns are applied independently because they nest: in
+    ``${ENV_VALUES[GC_FOO]:-}`` a single alternation would match ``${ENV_VALUES``
+    and consume the very lookup whose key we need.
+
+    Inline comments and single-quoted text are dropped first - the shell does not
+    expand either, so a key appearing there is a mention, not a read.
+    """
+    consumed: set[str] = set()
+    for line in _code_lines(text, SHELL_INLINE_COMMENT_RE):
+        executable = SHELL_SINGLE_QUOTED_RE.sub(" ", line)
+        consumed.update(match.group(1) for match in SHELL_EXPANSION_RE.finditer(executable))
+        consumed.update(match.group(1) for match in SHELL_ENV_LOOKUP_RE.finditer(executable))
+    consumed.discard("ENV_VALUES")  # the array's own name is not an env key
+    return consumed
+
+
+def _camel_to_env(name: str) -> str:
+    """``ipAllowlist`` -> ``IP_ALLOWLIST`` (Spring's relaxed-binding env form)."""
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).upper()
+
+
+@dataclass(frozen=True)
+class SpringField:
+    """One bindable property: its env-form name, whether it is indexed, its type."""
+
+    env_name: str
+    element_type: str
+    is_collection: bool
+
+
+@dataclass(frozen=True)
+class SpringBindingIndex:
+    """@ConfigurationProperties roots plus the declared fields of every POJO."""
+
+    roots: dict[str, str]  # env-form prefix -> declaring class
+    fields: dict[str, tuple[SpringField, ...]]  # class -> its declared fields
+
+
+def _spring_binding_index(root: Path) -> SpringBindingIndex:
+    """Index the backend's @ConfigurationProperties roots and their POJO fields.
+
+    Fields are attributed to their nearest enclosing class declaration, so the
+    nested ``SecurityProperties.ApiCredential`` is indexed separately from its
+    outer class - which is what lets a binding path be validated to its leaf
+    rather than merely to its top-level field.
+    """
+    roots: dict[str, str] = {}
+    fields: dict[str, list[SpringField]] = {}
+    for source in root.glob(BACKEND_JAVA_GLOB):
+        try:
+            text = source.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        classes = [(m.start(), m.group(1)) for m in SPRING_CLASS_RE.finditer(text)]
+        if not classes:
+            continue
+        prefix_match = SPRING_PREFIX_RE.search(text)
+        if prefix_match:
+            # The root POJO is the first class declared after the annotation.
+            after = [name for pos, name in classes if pos > prefix_match.start()]
+            if after:
+                prefix_env = prefix_match.group(1).replace("-", "").replace(".", "_").upper()
+                roots[prefix_env] = after[0]
+        for field_match in SPRING_FIELD_RE.finditer(text):
+            enclosing = [name for pos, name in classes if pos < field_match.start()]
+            if not enclosing:
+                continue
+            declared_type = field_match.group(1).strip()
+            collection = SPRING_COLLECTION_RE.match(declared_type)
+            if collection:
+                element, is_collection = collection.group(1), True
+            elif declared_type.endswith("[]"):
+                element, is_collection = declared_type[:-2].strip(), True
+            else:
+                element, is_collection = declared_type, False
+            element = element.split("<")[0].split(".")[-1].strip()
+            fields.setdefault(enclosing[-1], []).append(
+                SpringField(_camel_to_env(field_match.group(2)), element, is_collection)
+            )
+    return SpringBindingIndex(
+        roots=roots, fields={cls: tuple(fs) for cls, fs in fields.items()}
+    )
+
+
+def _binds_within(cls: str, tail: str, index: SpringBindingIndex, depth: int = 0) -> bool:
+    """Walk a relaxed-binding tail through ``cls``'s declared fields.
+
+    ``CREDENTIALS_0_TOKEN`` against SecurityProperties resolves field
+    ``credentials`` (a List<ApiCredential>), consumes the ``0`` index, then
+    requires ``TOKEN`` to be a declared field of ApiCredential. A misspelled
+    ``CREDENTIALS_0_TOKNE`` binds to nothing and stays an orphan - which is the
+    whole point of resolving the path instead of matching its prefix.
+    """
+    if not tail:
+        return True
+    if depth > 8:  # cyclic type graph; refuse rather than recurse forever
+        return False
+    for field in index.fields.get(cls, ()):
+        if tail == field.env_name:
+            return True
+        if not tail.startswith(f"{field.env_name}_"):
+            continue
+        rest = tail[len(field.env_name) + 1 :]
+        if field.is_collection:
+            head, _, remainder = rest.partition("_")
+            if not head.isdigit():
+                continue  # an indexed property needs an index
+            if not remainder:
+                return True  # scalar element, e.g. IP_ALLOWLIST_0
+            return _binds_within(field.element_type, remainder, index, depth + 1)
+        if field.element_type in index.fields:
+            return _binds_within(field.element_type, rest, index, depth + 1)
+        continue  # a scalar with a trailing path binds to nothing
+    return False
+
+
+def _spring_binds(key: str, index: SpringBindingIndex) -> bool:
+    """True when ``key`` binds to a real property under a @ConfigurationProperties root.
+
+    Spring's relaxed binding maps ``GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKEN``
+    onto ``groundcontrol.security.credentials[0].token``, so the indexed ADR-026
+    credential slots have a real consumer without appearing literally in any yaml.
+    Resolving the whole path - not just the prefix - is what keeps an unknown
+    child of a live prefix from certifying itself.
+    """
+    for prefix_env, cls in index.roots.items():
+        if key == prefix_env:
+            continue  # the prefix alone is not a property
+        if key.startswith(f"{prefix_env}_") and _binds_within(
+            cls, key[len(prefix_env) + 1 :], index
+        ):
+            return True
+    return False
+
+
+def _run_env_template_consumer_check(root: Path) -> list[Violation]:
+    """Assert every key an active env template advertises has a live consumer."""
+    violations: list[Violation] = []
+    spring_index: SpringBindingIndex | None = None
+
+    def _scan(globs: Iterable[str], extract) -> set[str]:
+        found: set[str] = set()
+        for glob in globs:
+            for source in root.glob(glob):
+                try:
+                    found |= extract(source.read_text(encoding="utf-8"))
+                except OSError:
+                    continue
+        return found
+
+    for contract in ENV_TEMPLATE_CONTRACTS:
+        template_path = root / contract.template
+        if not template_path.exists():
+            # Absence of the canonical prod template is already reported as
+            # deploy-env-template-missing; the dev template is optional.
+            continue
+        keys = _env_template_keys(template_path.read_text(encoding="utf-8"))
+        if not keys:
+            continue
+
+        consumed = _scan(contract.compose_globs, _compose_consumed_names)
+        consumed |= _scan(contract.yaml_placeholder_globs, _yaml_placeholder_consumed_names)
+        consumed |= _scan(contract.node_env_globs, _node_env_consumed_names)
+        consumed |= _scan(contract.shell_globs, _shell_consumed_names)
+
+        if contract.spring_binding:
+            if spring_index is None:
+                spring_index = _spring_binding_index(root)
+            consumed.update(key for key in keys if _spring_binds(key, spring_index))
+
+        orphans = [key for key in keys if key not in consumed]
+        if orphans:
+            surfaces = ", ".join(
+                contract.compose_globs
+                + contract.yaml_placeholder_globs
+                + contract.node_env_globs
+                + contract.shell_globs
+            )
+            violations.append(
+                Violation(
+                    code="deploy-env-template-orphan-key",
+                    message=(
+                        f"{contract.template} advertises configuration keys that nothing "
+                        "reads. An operator setting them gets silence, not behavior. "
+                        "Delete the key, or wire the consumer that honors it "
+                        "(GC-P023 / #1384). A compose literal (KEY=value) pins the value "
+                        "and is not a consumer of the operator's; an env.schema "
+                        "declaration or a mention in a comment or message is not a read."
+                    ),
+                    details=sorted(orphans) + [f"consumer surfaces searched: {surfaces}"],
+                )
+            )
+    return violations
+
+
 def run_deploy_artifact_consistency(root: Path = REPO_ROOT) -> list[Violation]:
     """Assert the operator-driven deploy artifacts have a single source of truth."""
     violations: list[Violation] = []
@@ -1958,6 +2364,9 @@ def run_deploy_artifact_consistency(root: Path = REPO_ROOT) -> list[Violation]:
                     details=[],
                 )
             )
+
+    # 7. Active templates advertise only keys something actually reads (#1384).
+    violations.extend(_run_env_template_consumer_check(root))
 
     return violations
 
