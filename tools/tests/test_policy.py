@@ -1,9 +1,11 @@
 import hashlib
 import json
+import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.policy.checks import (
     CHANGELOG_FRAGMENT_TYPES,
@@ -41,6 +43,7 @@ from tools.policy.checks import (
     run_repo_identity_drift,
     run_migration_policy,
     run_no_deferral_disposition_check,
+    run_ontology_binding_check,
     run_pr_body_check,
     run_test_quality_decision_record_contract,
     run_traceability_reconciliation_gate_contract,
@@ -1906,6 +1909,573 @@ class PolicyChecksTest(unittest.TestCase):
             violations = run_enum_contract_check(root=root)
             codes = {v.code for v in violations}
             self.assertIn("enum-contract-source-missing", codes)
+
+    def _write_minimal_ontology_fixture(self, root: Path) -> None:
+        java_root = root / "backend" / "src" / "main" / "java" / "example"
+        java_root.mkdir(parents=True)
+        (java_root / "GraphEntityType.java").write_text(
+            "package example; public enum GraphEntityType { REQUIREMENT }\n",
+            encoding="utf-8",
+        )
+        (java_root / "RequirementGraphProjectionContributor.java").write_text(
+            """package example;
+public class RequirementGraphProjectionContributor implements GraphProjectionContributor {
+    Object edge() { return new GraphEdge("id", "RELATES", null, null, null, null, null); }
+}
+""",
+            encoding="utf-8",
+        )
+        ontology = root / "contracts" / "ontology"
+        ontology.mkdir(parents=True)
+        (ontology / "gc-concept-families-v1.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "gc-concept-families/v1",
+                    "owners": ["ground-control"],
+                    "families": {
+                        "requirements-and-traceability": {
+                            "title": "Requirements and traceability",
+                            "description": "Requirement identity and relationships.",
+                            "provenance": "native",
+                            "owner": "ground-control",
+                            "extension_scope": "Requirement and traceability concepts.",
+                            "relation_rules": ["Relations preserve declared direction."],
+                            "non_ambiguity_constraints": ["Requirements are not evidence artifacts."],
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (ontology / "gc-controlled-vocabularies-v1.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "gc-controlled-vocabularies/v1",
+                    "terms": {
+                        "node.requirement": {
+                            "kind": "classification",
+                            "title": "Requirement",
+                            "description": "A governed requirement.",
+                            "family": "requirements-and-traceability",
+                            "owner": "ground-control",
+                        },
+                        "edge.relates": {
+                            "kind": "edge",
+                            "title": "Relates",
+                            "description": "A directed relation.",
+                            "family": "requirements-and-traceability",
+                            "owner": "ground-control",
+                            "direction": "source-to-target",
+                            "source_roles": ["source"],
+                            "target_roles": ["target"],
+                        },
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (ontology / "gc-artifact-bindings-v1.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "gc-artifact-bindings/v1",
+                    "surfaces": [
+                        {
+                            "id": "example.GraphEntityType",
+                            "kind": "java-enum",
+                            "path": "backend/src/main/java/example/GraphEntityType.java",
+                            "bindings": [{"local_value": "REQUIREMENT", "term": "node.requirement"}],
+                        },
+                        {
+                            "id": "example.RequirementGraphProjectionContributor",
+                            "kind": "graph-contributor",
+                            "path": "backend/src/main/java/example/RequirementGraphProjectionContributor.java",
+                            "bindings": [{"local_value": "RELATES", "term": "edge.relates"}],
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def _read_ontology_fixture_json(self, root: Path, filename: str) -> tuple[Path, dict]:
+        path = root / "contracts" / "ontology" / filename
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_ontology_binding_check_covers_contract_and_vocabulary_validation_branches(self):
+        cases = (
+            ("missing-contract", "ontology-contract-missing"),
+            ("non-object-contract", "ontology-contract-shape-invalid"),
+            ("unsupported-version", "ontology-contract-version-invalid"),
+            ("unknown-owner", "ontology-owner-invalid"),
+            ("invalid-family", "ontology-family-invalid"),
+            ("invalid-provenance", "ontology-provenance-invalid"),
+            ("missing-native-rules", "ontology-native-family-rules-missing"),
+            ("invalid-term", "ontology-term-invalid"),
+            ("invalid-term-kind", "ontology-term-kind-invalid"),
+            ("unknown-family", "ontology-family-reference-missing"),
+            ("invalid-edge-semantics", "ontology-edge-semantics-invalid"),
+        )
+        for case, expected_code in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp_dir:
+                root = Path(tmp_dir)
+                self._write_minimal_ontology_fixture(root)
+                families_path, families = self._read_ontology_fixture_json(
+                    root, "gc-concept-families-v1.json"
+                )
+                terms_path, terms = self._read_ontology_fixture_json(
+                    root, "gc-controlled-vocabularies-v1.json"
+                )
+                if case == "missing-contract":
+                    families_path.unlink()
+                elif case == "non-object-contract":
+                    families_path.write_text("[]", encoding="utf-8")
+                elif case == "unsupported-version":
+                    families["schema_version"] = "gc-concept-families/v2"
+                    families_path.write_text(json.dumps(families), encoding="utf-8")
+                elif case == "unknown-owner":
+                    families["owners"] = ["unknown-owner"]
+                    families_path.write_text(json.dumps(families), encoding="utf-8")
+                elif case == "invalid-family":
+                    family = families["families"].pop("requirements-and-traceability")
+                    families["families"][""] = family
+                    families_path.write_text(json.dumps(families), encoding="utf-8")
+                elif case == "invalid-provenance":
+                    families["families"]["requirements-and-traceability"]["provenance"] = "invented"
+                    families_path.write_text(json.dumps(families), encoding="utf-8")
+                elif case == "missing-native-rules":
+                    families["families"]["requirements-and-traceability"].pop("extension_scope")
+                    families_path.write_text(json.dumps(families), encoding="utf-8")
+                elif case == "invalid-term":
+                    terms["terms"]["node.requirement"]["title"] = ""
+                    terms_path.write_text(json.dumps(terms), encoding="utf-8")
+                elif case == "invalid-term-kind":
+                    terms["terms"]["node.requirement"]["kind"] = "unknown"
+                    terms_path.write_text(json.dumps(terms), encoding="utf-8")
+                elif case == "unknown-family":
+                    terms["terms"]["node.requirement"]["family"] = "missing-family"
+                    terms_path.write_text(json.dumps(terms), encoding="utf-8")
+                elif case == "invalid-edge-semantics":
+                    terms["terms"]["edge.relates"]["direction"] = "backward"
+                    terms_path.write_text(json.dumps(terms), encoding="utf-8")
+                violations = run_ontology_binding_check(root=root)
+                self.assertIn(expected_code, {violation.code for violation in violations})
+
+    def test_ontology_binding_check_covers_source_surface_and_binding_validation_branches(self):
+        cases = (
+            ("missing-source-root", "ontology-source-root-missing"),
+            ("unparseable-enum", "ontology-source-parse-error"),
+            ("duplicate-surface", "ontology-surface-duplicate"),
+            ("invalid-surface", "ontology-surface-invalid"),
+            ("surface-kind-mismatch", "ontology-surface-kind-mismatch"),
+            ("surface-path-mismatch", "ontology-surface-path-mismatch"),
+            ("missing-surface", "ontology-surface-missing"),
+            ("stale-surface", "ontology-surface-stale"),
+            ("invalid-binding", "ontology-binding-invalid"),
+            ("binding-kind-mismatch", "ontology-binding-kind-mismatch"),
+            ("invalid-enum-source-shape", "ontology-edge-enum-source-invalid"),
+            ("stale-enum-source", "ontology-edge-enum-source-stale"),
+        )
+        for case, expected_code in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp_dir:
+                root = Path(tmp_dir)
+                self._write_minimal_ontology_fixture(root)
+                bindings_path, bindings = self._read_ontology_fixture_json(
+                    root, "gc-artifact-bindings-v1.json"
+                )
+                java_root = root / "backend" / "src" / "main" / "java"
+                graph_enum = java_root / "example" / "GraphEntityType.java"
+                if case == "missing-source-root":
+                    shutil.rmtree(java_root)
+                elif case == "unparseable-enum":
+                    graph_enum.write_text(
+                        "package example; public enum GraphEntityType {}\n", encoding="utf-8"
+                    )
+                elif case == "duplicate-surface":
+                    bindings["surfaces"].append(dict(bindings["surfaces"][0]))
+                elif case == "invalid-surface":
+                    bindings["surfaces"][0]["bindings"] = None
+                elif case == "surface-kind-mismatch":
+                    bindings["surfaces"][0]["kind"] = "graph-contributor"
+                elif case == "surface-path-mismatch":
+                    bindings["surfaces"][0]["path"] = bindings["surfaces"][1]["path"]
+                elif case == "missing-surface":
+                    bindings["surfaces"].pop()
+                elif case == "stale-surface":
+                    bindings["surfaces"].append(
+                        {
+                            "id": "example.VanishedGraphProjectionContributor",
+                            "kind": "graph-contributor",
+                            "path": "backend/src/main/java/example/VanishedGraphProjectionContributor.java",
+                            "bindings": [],
+                        }
+                    )
+                elif case == "invalid-binding":
+                    bindings["surfaces"][0]["bindings"] = [None]
+                elif case == "binding-kind-mismatch":
+                    bindings["surfaces"][0]["bindings"][0]["term"] = "edge.relates"
+                elif case == "invalid-enum-source-shape":
+                    bindings["surfaces"][1]["edge_enum_sources"] = []
+                elif case == "stale-enum-source":
+                    bindings["surfaces"][1]["edge_enum_sources"] = {
+                        "getLinkType": "example.GraphEntityType"
+                    }
+                if case not in {"missing-source-root", "unparseable-enum"}:
+                    bindings_path.write_text(json.dumps(bindings), encoding="utf-8")
+                violations = run_ontology_binding_check(root=root)
+                self.assertIn(expected_code, {violation.code for violation in violations})
+
+    def test_ontology_binding_check_reports_unreadable_discovered_source(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            unreadable = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            original_read_text = Path.read_text
+
+            def read_text_or_fail(path: Path, *args, **kwargs):
+                if path == unreadable:
+                    raise OSError("fixture source is unreadable")
+                return original_read_text(path, *args, **kwargs)
+
+            with patch.object(Path, "read_text", read_text_or_fail):
+                violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-source-unreadable", {violation.code for violation in violations})
+
+    def test_ontology_binding_check_passes_minimal_complete_inventory(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            violations = run_ontology_binding_check(root=root)
+        self.assertEqual(violations, [], msg=[v.render() for v in violations])
+
+    def test_ontology_binding_check_detects_unbound_source_value(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            path = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["surfaces"][1]["bindings"] = []
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-binding-missing", {v.code for v in violations})
+
+    def test_ontology_binding_check_detects_binding_to_vanished_value(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            path = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["surfaces"][0]["bindings"].append(
+                {"local_value": "VANISHED", "term": "node.requirement"}
+            )
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-binding-stale", {v.code for v in violations})
+
+    def test_ontology_binding_check_fails_closed_on_malformed_json(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            path = root / "contracts" / "ontology" / "gc-concept-families-v1.json"
+            path.write_text("{", encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contract-invalid-json", {v.code for v in violations})
+
+    def test_ontology_binding_check_rejects_duplicate_json_keys(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            path = root / "contracts" / "ontology" / "gc-controlled-vocabularies-v1.json"
+            payload = path.read_text(encoding="utf-8")
+            duplicate = payload.replace(
+                '"terms": {',
+                '"terms": {"node.requirement": {"kind": "classification"},',
+                1,
+            )
+            path.write_text(duplicate, encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contract-invalid-json", {v.code for v in violations})
+
+    def test_ontology_binding_check_rejects_unsafe_surface_path_and_kind(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            path = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["surfaces"][0]["path"] = "../outside.java"
+            payload["surfaces"][1]["kind"] = "shell-command"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        codes = {v.code for v in violations}
+        self.assertIn("ontology-surface-path-invalid", codes)
+        self.assertIn("ontology-surface-kind-invalid", codes)
+
+    def test_ontology_binding_check_rejects_unresolved_contributor_edge_expression(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace('"RELATES"', "computeEdgeType()"),
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contributor-edge-unresolved", {v.code for v in violations})
+
+    def test_ontology_binding_check_does_not_accept_unrelated_enum_forwarding(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                """package example;
+public class RequirementGraphProjectionContributor implements GraphProjectionContributor {
+    String unrelated(Link link) { return link.getLinkType().name(); }
+    Object edge(String edgeType) {
+        return new GraphEdge("id", edgeType, null, null, null, null, null);
+    }
+    Object use() { return edge(computeEdgeType()); }
+}
+""",
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contributor-edge-unresolved", {v.code for v in violations})
+
+    def test_ontology_binding_check_rejects_unknown_name_expression(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace(
+                    '"RELATES"', "computeRelation().name()"
+                ),
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contributor-edge-unresolved", {v.code for v in violations})
+
+    def test_ontology_binding_check_rejects_unsupported_contributor_declaration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            candidate = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "OddGraphProjectionContributor.java"
+            )
+            candidate.write_text(
+                """package example;
+public class OddGraphProjectionContributor extends ContributorBase {
+    Object edge() { return new GraphEdge("id", "ODD", null, null, null, null, null); }
+}
+""",
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contributor-declaration-unresolved", {v.code for v in violations})
+
+    def test_ontology_binding_check_parses_spaced_graph_edge_constructor(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace("new GraphEdge(", "new GraphEdge ("),
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertEqual(violations, [], msg=[v.render() for v in violations])
+
+    def test_ontology_binding_check_rejects_graph_edge_factory_form(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace("new GraphEdge(", "GraphEdge.of("),
+                encoding="utf-8",
+            )
+            bindings = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(bindings.read_text(encoding="utf-8"))
+            payload["surfaces"][1]["bindings"] = []
+            bindings.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contributor-edge-unresolved", {v.code for v in violations})
+
+    def test_ontology_binding_check_requires_discovered_enum_for_direct_name_expression(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace(
+                    '"RELATES"', "link.getLinkType().name()"
+                ),
+                encoding="utf-8",
+            )
+            bindings = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(bindings.read_text(encoding="utf-8"))
+            payload["surfaces"][1]["bindings"] = []
+            bindings.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-edge-enum-source-missing", {v.code for v in violations})
+
+    def test_ontology_binding_check_requires_discovered_enum_for_forwarded_name_expression(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                """package example;
+public class RequirementGraphProjectionContributor implements GraphProjectionContributor {
+    Object edge(String edgeType) {
+        return new GraphEdge("id", edgeType, null, null, null, null, null);
+    }
+    Object use(Link link) { return edge(link.getLinkType().name()); }
+}
+""",
+                encoding="utf-8",
+            )
+            bindings = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(bindings.read_text(encoding="utf-8"))
+            payload["surfaces"][1]["bindings"] = []
+            bindings.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-edge-enum-source-missing", {v.code for v in violations})
+
+    def test_ontology_binding_check_supports_record_contributor_declaration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace(
+                    "public class RequirementGraphProjectionContributor",
+                    "public record RequirementGraphProjectionContributor()",
+                ),
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertEqual(violations, [], msg=[v.render() for v in violations])
+
+    def test_ontology_binding_check_identifies_contributor_after_helper_type(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace(
+                    "public class RequirementGraphProjectionContributor",
+                    "class Helper {}\npublic class RequirementGraphProjectionContributor",
+                ),
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertEqual(violations, [], msg=[v.render() for v in violations])
+
+    def test_ontology_binding_check_rejects_duplicate_and_unresolved_contract_references(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            path = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["surfaces"][0]["bindings"].append(
+                {"local_value": "REQUIREMENT", "term": "node.missing"}
+            )
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        codes = {v.code for v in violations}
+        self.assertIn("ontology-binding-duplicate", codes)
+        self.assertIn("ontology-term-reference-missing", codes)
+
+    def test_ontology_binding_check_passes_on_repo(self):
+        violations = run_ontology_binding_check(root=REPO_ROOT)
+        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
 
     def test_deferral_classifier_matches_golden_cases(self):
         # The shared golden-case file is the single source of truth for what

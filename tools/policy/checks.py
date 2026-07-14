@@ -102,6 +102,9 @@ CI_PRE_COMMIT_HOOKS = (
 CONTRACT_REQUIRED_PATHS = (
     "contracts/openapi/openapi.json",
     "contracts/gen/typescript/api.ts",
+    "contracts/ontology/gc-concept-families-v1.json",
+    "contracts/ontology/gc-controlled-vocabularies-v1.json",
+    "contracts/ontology/gc-artifact-bindings-v1.json",
     "contracts/schemas/records/implement-final-report.v1.schema.json",
     "contracts/schemas/workflow/workflow-run-record.v1.schema.json",
     "contracts/authz/path-matrix.yaml",
@@ -401,8 +404,19 @@ def filter_matches(paths: Iterable[str], patterns: Iterable[str]) -> list[str]:
     return sorted({path for path in paths if matches_any(path, patterns)})
 
 
-def load_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+def load_json(path: Path, *, reject_duplicate_keys: bool = False) -> dict:
+    object_pairs_hook = None
+    if reject_duplicate_keys:
+        def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+            result: dict[str, Any] = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError(f"duplicate JSON key: {key}")
+                result[key] = value
+            return result
+
+        object_pairs_hook = reject_duplicates
+    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=object_pairs_hook)
 
 
 
@@ -2777,6 +2791,724 @@ def _drift_violation(label: str, layer: str, expected: list[str], actual: list[s
 
 
 # ---------------------------------------------------------------------------
+# Context-graph ontology bindings (ADR-084 / issue #1307).
+#
+# The inventory is discovered from Java source independently of the binding
+# artifact.  This is intentionally separate from ENUM_CONTRACT_INVENTORY:
+# that inventory governs API mirror parity, while this check governs graph
+# concept identity and must also see package-local contributors.
+# ---------------------------------------------------------------------------
+
+ONTOLOGY_CONTRACT_PATHS = {
+    "families": Path("contracts/ontology/gc-concept-families-v1.json"),
+    "terms": Path("contracts/ontology/gc-controlled-vocabularies-v1.json"),
+    "bindings": Path("contracts/ontology/gc-artifact-bindings-v1.json"),
+}
+ONTOLOGY_SCHEMA_VERSIONS = {
+    "families": "gc-concept-families/v1",
+    "terms": "gc-controlled-vocabularies/v1",
+    "bindings": "gc-artifact-bindings/v1",
+}
+ONTOLOGY_PROVENANCE = frozenset({"adopted", "adapted", "native"})
+ONTOLOGY_OWNERS = frozenset({"ground-control"})
+ONTOLOGY_TERM_KINDS = frozenset({"edge", "classification"})
+ONTOLOGY_SURFACE_KINDS = frozenset({"java-enum", "graph-contributor"})
+ONTOLOGY_SOURCE_ROOT = Path("backend/src/main/java")
+
+
+def _ontology_violation(code: str, message: str, *details: str) -> Violation:
+    return Violation(code=code, message=message, details=list(details))
+
+
+def _load_ontology_contracts(root: Path) -> tuple[dict[str, dict[str, Any]], list[Violation]]:
+    payloads: dict[str, dict[str, Any]] = {}
+    violations: list[Violation] = []
+    for label, rel in ONTOLOGY_CONTRACT_PATHS.items():
+        path = root / rel
+        if not path.is_file():
+            violations.append(
+                _ontology_violation(
+                    "ontology-contract-missing",
+                    f"Required ontology contract is missing: {rel.as_posix()}.",
+                )
+            )
+            continue
+        try:
+            payload = load_json(path, reject_duplicate_keys=True)
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            violations.append(
+                _ontology_violation(
+                    "ontology-contract-invalid-json",
+                    f"Ontology contract is not readable JSON: {rel.as_posix()}.",
+                    str(exc),
+                )
+            )
+            continue
+        if not isinstance(payload, dict):
+            violations.append(
+                _ontology_violation(
+                    "ontology-contract-shape-invalid",
+                    f"Ontology contract must contain a JSON object: {rel.as_posix()}.",
+                )
+            )
+            continue
+        payloads[label] = payload
+        actual_version = payload.get("schema_version")
+        if actual_version != ONTOLOGY_SCHEMA_VERSIONS[label]:
+            violations.append(
+                _ontology_violation(
+                    "ontology-contract-version-invalid",
+                    f"Ontology contract has an unsupported schema version: {rel.as_posix()}.",
+                    f"expected {ONTOLOGY_SCHEMA_VERSIONS[label]}, got {actual_version!r}",
+                )
+            )
+    return payloads, violations
+
+
+def _nonempty_string_list(value: Any) -> bool:
+    return isinstance(value, list) and bool(value) and all(isinstance(item, str) and item.strip() for item in value)
+
+
+def _validate_ontology_families(payload: dict[str, Any]) -> tuple[set[str], list[Violation]]:
+    violations: list[Violation] = []
+    owners = payload.get("owners")
+    if not _nonempty_string_list(owners) or not set(owners).issubset(ONTOLOGY_OWNERS):
+        violations.append(
+            _ontology_violation(
+                "ontology-owner-invalid",
+                "Ontology family owners must use the closed owner vocabulary.",
+                f"allowed: {sorted(ONTOLOGY_OWNERS)}",
+            )
+        )
+    families = payload.get("families")
+    if not isinstance(families, dict) or not families:
+        return set(), violations + [
+            _ontology_violation(
+                "ontology-contract-shape-invalid",
+                "gc-concept-families-v1.json must declare a non-empty families object.",
+            )
+        ]
+    family_ids: set[str] = set()
+    for family_id, family in families.items():
+        if not isinstance(family_id, str) or not family_id or not isinstance(family, dict):
+            violations.append(
+                _ontology_violation("ontology-family-invalid", "Every ontology family must be a named object.")
+            )
+            continue
+        family_ids.add(family_id)
+        provenance = family.get("provenance")
+        if provenance not in ONTOLOGY_PROVENANCE:
+            violations.append(
+                _ontology_violation(
+                    "ontology-provenance-invalid",
+                    f"Family {family_id} has invalid provenance {provenance!r}.",
+                    f"allowed: {sorted(ONTOLOGY_PROVENANCE)}",
+                )
+            )
+        if family.get("owner") not in ONTOLOGY_OWNERS:
+            violations.append(
+                _ontology_violation("ontology-owner-invalid", f"Family {family_id} has an unknown owner.")
+            )
+        for field in ("title", "description"):
+            if not isinstance(family.get(field), str) or not family[field].strip():
+                violations.append(
+                    _ontology_violation(
+                        "ontology-family-invalid",
+                        f"Family {family_id} must declare non-empty {field}.",
+                    )
+                )
+        if provenance == "native":
+            if not isinstance(family.get("extension_scope"), str) or not family["extension_scope"].strip():
+                violations.append(
+                    _ontology_violation(
+                        "ontology-native-family-rules-missing",
+                        f"Native family {family_id} must declare extension_scope.",
+                    )
+                )
+            for field in ("relation_rules", "non_ambiguity_constraints"):
+                if not _nonempty_string_list(family.get(field)):
+                    violations.append(
+                        _ontology_violation(
+                            "ontology-native-family-rules-missing",
+                            f"Native family {family_id} must declare non-empty {field}.",
+                        )
+                    )
+    return family_ids, violations
+
+
+def _validate_ontology_terms(
+    payload: dict[str, Any], family_ids: set[str]
+) -> tuple[dict[str, dict[str, Any]], list[Violation]]:
+    violations: list[Violation] = []
+    terms = payload.get("terms")
+    if not isinstance(terms, dict) or not terms:
+        return {}, [
+            _ontology_violation(
+                "ontology-contract-shape-invalid",
+                "gc-controlled-vocabularies-v1.json must declare a non-empty terms object.",
+            )
+        ]
+    valid_terms: dict[str, dict[str, Any]] = {}
+    for term_id, term in terms.items():
+        if not isinstance(term_id, str) or not term_id or not isinstance(term, dict):
+            violations.append(_ontology_violation("ontology-term-invalid", "Every ontology term must be a named object."))
+            continue
+        valid_terms[term_id] = term
+        kind = term.get("kind")
+        if kind not in ONTOLOGY_TERM_KINDS:
+            violations.append(
+                _ontology_violation(
+                    "ontology-term-kind-invalid",
+                    f"Term {term_id} has invalid kind {kind!r}.",
+                    f"allowed: {sorted(ONTOLOGY_TERM_KINDS)}",
+                )
+            )
+        if term.get("family") not in family_ids:
+            violations.append(
+                _ontology_violation(
+                    "ontology-family-reference-missing",
+                    f"Term {term_id} references unknown family {term.get('family')!r}.",
+                )
+            )
+        if term.get("owner") not in ONTOLOGY_OWNERS:
+            violations.append(_ontology_violation("ontology-owner-invalid", f"Term {term_id} has an unknown owner."))
+        for field in ("title", "description"):
+            if not isinstance(term.get(field), str) or not term[field].strip():
+                violations.append(
+                    _ontology_violation("ontology-term-invalid", f"Term {term_id} must declare non-empty {field}.")
+                )
+        if kind == "edge":
+            if term.get("direction") not in {"source-to-target", "symmetric"}:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-edge-semantics-invalid",
+                        f"Edge term {term_id} must declare a closed direction.",
+                    )
+                )
+            if not _nonempty_string_list(term.get("source_roles")) or not _nonempty_string_list(
+                term.get("target_roles")
+            ):
+                violations.append(
+                    _ontology_violation(
+                        "ontology-edge-semantics-invalid",
+                        f"Edge term {term_id} must declare source_roles and target_roles.",
+                    )
+                )
+    return valid_terms, violations
+
+
+def _java_type_identity(text: str) -> tuple[str, str] | None:
+    without_comments = _strip_comments(text)
+    type_match = re.search(r"\b(?:class|enum)\s+(\w+)", without_comments)
+    if not type_match:
+        return None
+    package_match = re.search(r"\bpackage\s+([\w.]+)\s*;", without_comments)
+    name = type_match.group(1)
+    package = package_match.group(1) if package_match else ""
+    return (f"{package}.{name}" if package else name, name)
+
+
+def _is_ontology_enum(name: str) -> bool:
+    return (
+        name == "GraphEntityType"
+        or (name.endswith("LinkType") and not name.endswith("LinkTargetType"))
+        or name.endswith("RelationType")
+        or name == "ProvenanceEdgeRelation"
+    )
+
+
+def _split_java_arguments(body: str) -> list[str]:
+    args: list[str] = []
+    start = 0
+    depth = 0
+    in_string = False
+    escaped = False
+    for index, char in enumerate(body):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif char == "," and depth == 0:
+            args.append(body[start:index].strip())
+            start = index + 1
+    args.append(body[start:].strip())
+    return args
+
+
+def _java_call_argument_lists(text: str, marker: str) -> list[tuple[int, list[str]]]:
+    calls: list[tuple[int, list[str]]] = []
+    cursor = 0
+    while True:
+        start = text.find(marker, cursor)
+        if start < 0:
+            return calls
+        body_start = start + len(marker)
+        depth = 1
+        in_string = False
+        escaped = False
+        index = body_start
+        while index < len(text) and depth:
+            char = text[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+            elif char == '"':
+                in_string = True
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            index += 1
+        if depth:
+            calls.append((start, []))
+            return calls
+        calls.append((start, _split_java_arguments(text[body_start : index - 1])))
+        cursor = index
+
+
+def _graph_edge_argument_lists(text: str) -> list[list[str]]:
+    calls: list[list[str]] = []
+    constructor_pattern = re.compile(r"\bnew\s+(?:[\w.]+\.)?GraphEdge\s*\(")
+    for constructor in constructor_pattern.finditer(text):
+        body_start = constructor.end()
+        depth = 1
+        in_string = False
+        escaped = False
+        index = body_start
+        while index < len(text) and depth:
+            char = text[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+            elif char == '"':
+                in_string = True
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            index += 1
+        if depth:
+            calls.append([])
+        else:
+            calls.append(_split_java_arguments(text[body_start : index - 1]))
+    return calls
+
+
+def _edge_enum_selector(expression: str) -> str | None:
+    match = re.search(
+        r"\.(getLinkType|getRelationType|getRelation)\(\)\.name\(\)\s*$",
+        expression,
+    )
+    return match.group(1) if match else None
+
+
+def _is_enum_forwarded_parameter(text: str, parameter_name: str) -> set[str]:
+    method_pattern = re.compile(
+        r"^[ \t]*(?:(?:public|protected|private)\s+)?(?:static\s+)?[\w<>,?.\[\]]+\s+(\w+)\s*\((.*?)\)\s*(?:throws\s+[^\{]+)?\{",
+        re.DOTALL | re.MULTILINE,
+    )
+    for declaration in method_pattern.finditer(text):
+        parameters = _split_java_arguments(declaration.group(2))
+        parameter_index = next(
+            (
+                index
+                for index, parameter in enumerate(parameters)
+                if re.search(rf"\bString\s+{re.escape(parameter_name)}\b", parameter)
+            ),
+            None,
+        )
+        if parameter_index is None:
+            continue
+        method_name = declaration.group(1)
+        forwarded_arguments: list[str] = []
+        for call_start, call_args in _java_call_argument_lists(text, f"{method_name}("):
+            if declaration.start() <= call_start < declaration.end():
+                continue
+            if parameter_index >= len(call_args):
+                return set()
+            forwarded_arguments.append(call_args[parameter_index])
+        selectors = {_edge_enum_selector(argument) for argument in forwarded_arguments}
+        if forwarded_arguments and None not in selectors:
+            return {selector for selector in selectors if selector is not None}
+    return set()
+
+
+def _contributor_edge_values(text: str) -> tuple[set[str], set[str], list[str]]:
+    without_comments = _strip_comments(text)
+    constants = {
+        name: value
+        for name, value in re.findall(
+            r"\b(?:public|protected|private)?\s*static\s+final\s+String\s+([A-Z][A-Z0-9_]*)\s*=\s*\"([A-Z][A-Z0-9_]*)\"\s*;",
+            without_comments,
+        )
+    }
+    values: set[str] = set()
+    enum_selectors: set[str] = set()
+    unresolved: list[str] = []
+    for factory in re.finditer(r"\bGraphEdge\s*\.\s*([A-Za-z_$][\w$]*)\s*\(", without_comments):
+        unresolved.append(f"GraphEdge.{factory.group(1)}(...) factory form")
+    constructor_tokens = len(re.findall(r"\bnew\s+(?:[\w.]+\.)?GraphEdge\b", without_comments))
+    argument_lists = _graph_edge_argument_lists(without_comments)
+    if constructor_tokens != len(argument_lists):
+        unresolved.append("unsupported GraphEdge constructor form")
+    for args in argument_lists:
+        if len(args) < 2:
+            unresolved.append("unparseable GraphEdge constructor")
+            continue
+        expression = args[1].strip()
+        literal = re.fullmatch(r'"([A-Z][A-Z0-9_]*)"', expression)
+        if literal:
+            values.add(literal.group(1))
+            continue
+        if expression in constants:
+            values.add(constants[expression])
+            continue
+        selector = _edge_enum_selector(expression)
+        if selector is not None:
+            enum_selectors.add(selector)
+            continue
+        if re.fullmatch(r"[A-Za-z_$][\w$]*", expression):
+            forwarded_selectors = _is_enum_forwarded_parameter(without_comments, expression)
+            if forwarded_selectors:
+                enum_selectors.update(forwarded_selectors)
+                continue
+        unresolved.append(expression)
+    return values, enum_selectors, unresolved
+
+
+def _contributor_type_identity(text: str) -> tuple[str, str] | None:
+    without_comments = _strip_comments(text)
+    declaration = re.search(
+        r"\b(?:class|record)\s+(\w+)\b[^;\{]*\bimplements\s+[^\{;]*\bGraphProjectionContributor\b",
+        without_comments,
+    )
+    if declaration is None:
+        return None
+    package_match = re.search(r"\bpackage\s+([\w.]+)\s*;", without_comments)
+    name = declaration.group(1)
+    package = package_match.group(1) if package_match else ""
+    return (f"{package}.{name}" if package else name, name)
+
+
+def _discover_ontology_surfaces(
+    root: Path,
+) -> tuple[dict[str, tuple[str, str, set[str]]], dict[str, set[str]], list[Violation]]:
+    java_root = root / ONTOLOGY_SOURCE_ROOT
+    discovered: dict[str, tuple[str, str, set[str]]] = {}
+    dynamic_enum_selectors: dict[str, set[str]] = {}
+    violations: list[Violation] = []
+    if not java_root.is_dir():
+        violations.append(
+            _ontology_violation(
+                "ontology-source-root-missing",
+                f"Ontology Java source root is missing: {ONTOLOGY_SOURCE_ROOT.as_posix()}.",
+            )
+        )
+        return discovered, dynamic_enum_selectors, violations
+    for path in sorted(java_root.rglob("*.java")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            violations.append(
+                _ontology_violation("ontology-source-unreadable", f"Cannot read ontology source {path}.", str(exc))
+            )
+            continue
+        without_comments = _strip_comments(text)
+        contributor_identity = _contributor_type_identity(text)
+        named_contributor_candidate = (
+            path.name.endswith("GraphProjectionContributor.java")
+            and path.name != "GraphProjectionContributor.java"
+        )
+        if named_contributor_candidate and contributor_identity is None:
+            violations.append(
+                _ontology_violation(
+                    "ontology-contributor-declaration-unresolved",
+                    "Graph contributor candidate does not directly declare GraphProjectionContributor.",
+                    f"file: {path.relative_to(root).as_posix()}",
+                )
+            )
+            continue
+        identity = contributor_identity or _java_type_identity(text)
+        if identity is None:
+            continue
+        surface_id, type_name = identity
+        rel = path.relative_to(root).as_posix()
+        if contributor_identity is not None:
+            values, enum_selectors, unresolved = _contributor_edge_values(text)
+            discovered[surface_id] = ("graph-contributor", rel, values)
+            dynamic_enum_selectors[surface_id] = enum_selectors
+            for expression in unresolved:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-contributor-edge-unresolved",
+                        f"Contributor {surface_id} has an edge expression the ontology inventory cannot resolve.",
+                        f"file: {rel}",
+                        f"expression: {expression}",
+                    )
+                )
+            continue
+        enum_match = re.search(r"\benum\s+(\w+)", _strip_comments(text))
+        if enum_match and _is_ontology_enum(enum_match.group(1)):
+            values = set(parse_java_enum_constants(text))
+            if not values:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-source-parse-error",
+                        f"Could not parse ontology enum values from {rel}.",
+                    )
+                )
+            discovered[surface_id] = ("java-enum", rel, values)
+    return discovered, dynamic_enum_selectors, violations
+
+
+def _safe_ontology_source_path(root: Path, raw_path: Any) -> bool:
+    if not isinstance(raw_path, str) or not raw_path:
+        return False
+    rel = Path(raw_path)
+    if rel.is_absolute() or ".." in rel.parts or rel.as_posix() != raw_path:
+        return False
+    if not rel.is_relative_to(ONTOLOGY_SOURCE_ROOT):
+        return False
+    try:
+        (root / rel).resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def run_ontology_binding_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """Validate ontology artifacts and their bidirectional Java-source bindings."""
+
+    payloads, violations = _load_ontology_contracts(root)
+    if set(payloads) != set(ONTOLOGY_CONTRACT_PATHS):
+        return violations
+
+    family_ids, family_violations = _validate_ontology_families(payloads["families"])
+    terms, term_violations = _validate_ontology_terms(payloads["terms"], family_ids)
+    violations.extend(family_violations)
+    violations.extend(term_violations)
+
+    discovered, dynamic_enum_selectors, discovery_violations = _discover_ontology_surfaces(root)
+    violations.extend(discovery_violations)
+
+    surfaces = payloads["bindings"].get("surfaces")
+    if not isinstance(surfaces, list):
+        violations.append(
+            _ontology_violation(
+                "ontology-contract-shape-invalid",
+                "gc-artifact-bindings-v1.json must declare a surfaces array.",
+            )
+        )
+        return violations
+
+    declared_surfaces: set[str] = set()
+    declared_keys: set[tuple[str, str]] = set()
+    for surface in surfaces:
+        if not isinstance(surface, dict):
+            violations.append(_ontology_violation("ontology-surface-invalid", "Every ontology surface must be an object."))
+            continue
+        surface_id = surface.get("id")
+        kind = surface.get("kind")
+        raw_path = surface.get("path")
+        if not isinstance(surface_id, str) or not surface_id:
+            violations.append(_ontology_violation("ontology-surface-invalid", "Every ontology surface must have an id."))
+            continue
+        if surface_id in declared_surfaces:
+            violations.append(
+                _ontology_violation("ontology-surface-duplicate", f"Ontology surface {surface_id} is declared more than once.")
+            )
+        declared_surfaces.add(surface_id)
+        if kind not in ONTOLOGY_SURFACE_KINDS:
+            violations.append(
+                _ontology_violation(
+                    "ontology-surface-kind-invalid",
+                    f"Ontology surface {surface_id} has unknown kind {kind!r}.",
+                )
+            )
+        if not _safe_ontology_source_path(root, raw_path):
+            violations.append(
+                _ontology_violation(
+                    "ontology-surface-path-invalid",
+                    f"Ontology surface {surface_id} has an unsafe or non-source path {raw_path!r}.",
+                )
+            )
+        actual = discovered.get(surface_id)
+        if actual is not None:
+            actual_kind, actual_path, _ = actual
+            if kind != actual_kind:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-surface-kind-mismatch",
+                        f"Ontology surface {surface_id} is {actual_kind}, not {kind!r}.",
+                    )
+                )
+            if raw_path != actual_path:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-surface-path-mismatch",
+                        f"Ontology surface {surface_id} path does not match discovered source.",
+                        f"declared: {raw_path}",
+                        f"discovered: {actual_path}",
+                    )
+                )
+        configured_enum_sources = surface.get("edge_enum_sources", {})
+        if not isinstance(configured_enum_sources, dict):
+            violations.append(
+                _ontology_violation(
+                    "ontology-edge-enum-source-invalid",
+                    f"Ontology surface {surface_id} must declare edge_enum_sources as an object.",
+                )
+            )
+            configured_enum_sources = {}
+        expected_selectors = dynamic_enum_selectors.get(surface_id, set())
+        configured_selectors = set(configured_enum_sources)
+        for selector in sorted(expected_selectors - configured_selectors):
+            violations.append(
+                _ontology_violation(
+                    "ontology-edge-enum-source-missing",
+                    f"Dynamic edge selector {surface_id}:{selector} has no declared enum source.",
+                )
+            )
+        for selector in sorted(configured_selectors - expected_selectors):
+            violations.append(
+                _ontology_violation(
+                    "ontology-edge-enum-source-stale",
+                    f"Declared edge enum selector {surface_id}:{selector} no longer appears in source.",
+                )
+            )
+        for selector, enum_surface_id in configured_enum_sources.items():
+            enum_surface = discovered.get(enum_surface_id) if isinstance(enum_surface_id, str) else None
+            if enum_surface is None or enum_surface[0] != "java-enum":
+                violations.append(
+                    _ontology_violation(
+                        "ontology-edge-enum-source-missing",
+                        f"Dynamic edge selector {surface_id}:{selector} does not resolve to a discovered enum surface.",
+                        f"declared source: {enum_surface_id!r}",
+                    )
+                )
+                continue
+            enum_name = enum_surface_id.rsplit(".", 1)[-1]
+            selector_matches = (
+                (selector == "getLinkType" and enum_name.endswith("LinkType") and not enum_name.endswith("LinkTargetType"))
+                or (selector == "getRelationType" and enum_name.endswith("RelationType"))
+                or (selector == "getRelation" and enum_name == "ProvenanceEdgeRelation")
+            )
+            if not selector_matches:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-edge-enum-source-invalid",
+                        f"Dynamic edge selector {surface_id}:{selector} is incompatible with {enum_surface_id}.",
+                    )
+                )
+        bindings = surface.get("bindings")
+        if not isinstance(bindings, list):
+            violations.append(
+                _ontology_violation("ontology-surface-invalid", f"Ontology surface {surface_id} must declare bindings.")
+            )
+            continue
+        for binding in bindings:
+            if not isinstance(binding, dict):
+                violations.append(
+                    _ontology_violation("ontology-binding-invalid", f"Surface {surface_id} has a non-object binding.")
+                )
+                continue
+            local_value = binding.get("local_value")
+            term_id = binding.get("term")
+            if not isinstance(local_value, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", local_value):
+                violations.append(
+                    _ontology_violation(
+                        "ontology-binding-invalid",
+                        f"Surface {surface_id} has invalid local_value {local_value!r}.",
+                    )
+                )
+                continue
+            key = (surface_id, local_value)
+            if key in declared_keys:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-binding-duplicate",
+                        f"Ontology binding {surface_id}:{local_value} is declared more than once.",
+                    )
+                )
+            declared_keys.add(key)
+            term = terms.get(term_id) if isinstance(term_id, str) else None
+            if term is None:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-term-reference-missing",
+                        f"Binding {surface_id}:{local_value} references unknown term {term_id!r}.",
+                    )
+                )
+            elif actual is not None:
+                expected_term_kind = "classification" if surface_id.endswith(".GraphEntityType") else "edge"
+                if term.get("kind") != expected_term_kind:
+                    violations.append(
+                        _ontology_violation(
+                            "ontology-binding-kind-mismatch",
+                            f"Binding {surface_id}:{local_value} must target a {expected_term_kind} term.",
+                            f"term {term_id} is {term.get('kind')!r}",
+                        )
+                    )
+
+    discovered_surfaces = set(discovered)
+    for surface_id in sorted(discovered_surfaces - declared_surfaces):
+        kind, path, _ = discovered[surface_id]
+        violations.append(
+            _ontology_violation(
+                "ontology-surface-missing",
+                f"Discovered {kind} surface {surface_id} has no ontology surface declaration.",
+                f"file: {path}",
+            )
+        )
+    for surface_id in sorted(declared_surfaces - discovered_surfaces):
+        violations.append(
+            _ontology_violation(
+                "ontology-surface-stale",
+                f"Ontology surface {surface_id} no longer exists in source inventory.",
+            )
+        )
+
+    discovered_keys = {
+        (surface_id, local_value)
+        for surface_id, (_, _, values) in discovered.items()
+        for local_value in values
+    }
+    for surface_id, local_value in sorted(discovered_keys - declared_keys):
+        violations.append(
+            _ontology_violation(
+                "ontology-binding-missing",
+                f"Source vocabulary is unbound: {surface_id}:{local_value}.",
+            )
+        )
+    for surface_id, local_value in sorted(declared_keys - discovered_keys):
+        violations.append(
+            _ontology_violation(
+                "ontology-binding-stale",
+                f"Ontology binding points to a vanished source value: {surface_id}:{local_value}.",
+            )
+        )
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Contract surface foundation (GC-O014 / ADR-082).
 #
 # The contract surface is intentionally artifact-backed: backend-generated
@@ -3765,6 +4497,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_deploy_artifact_consistency())
     violations.extend(run_methodology_catalog_drift())
     violations.extend(run_enum_contract_check())
+    violations.extend(run_ontology_binding_check())
     violations.extend(run_contract_surface_check())
     violations.extend(run_contract_invariant_enforcement_check())
     violations.extend(run_authz_matrix_sync_check())
