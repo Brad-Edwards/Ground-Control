@@ -2923,6 +2923,54 @@ class ChangelogFragmentChecksTest(unittest.TestCase):
                 "changelog fragment.",
             )
 
+    def test_read_changed_files_base_uses_merge_base_not_two_dot(self):
+        # Regression: `git diff <base>` is a two-dot comparison, so commits
+        # `base` gains AFTER the branch forks get mis-attributed to the
+        # branch. On a busy repo where dev advances while a PR is open, that
+        # spuriously trips the diff-scoped gates (documentation coverage,
+        # changelog fragments) on files the branch never touched.
+        # read_changed_files(base=...) must diff from the merge base so it
+        # reports only what the branch itself changed.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir).resolve()
+            import subprocess
+
+            def git(*args: str) -> str:
+                return subprocess.run(
+                    ["git", "-c", "user.email=t@e", "-c", "user.name=t", *args],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout
+
+            git("init", "-q", "-b", "dev")
+            (root / "seed.txt").write_text("seed\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", "seed")
+            # Fork a feature branch from this point.
+            git("switch", "-q", "-c", "feature")
+            (root / "feature_only.txt").write_text("f\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", "feature change")
+            # dev advances AFTER the fork with an unrelated file.
+            git("switch", "-q", "dev")
+            (root / "dev_only.txt").write_text("d\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", "dev advances")
+            # Back on the feature branch, diff against the advanced dev tip.
+            git("switch", "-q", "feature")
+
+            paths = read_changed_files(base="dev", root=root)
+            self.assertIn("feature_only.txt", paths)
+            self.assertNotIn(
+                "dev_only.txt",
+                paths,
+                "read_changed_files(base=...) must diff from the merge base; a "
+                "commit dev gained after the branch forked must not be "
+                "attributed to the branch.",
+            )
+
     def test_changelog_signal_flags_pure_deletion_of_source(self):
         # The fragment gate must apply even when the entire diff is a
         # deletion of application source — the user-visible behavior

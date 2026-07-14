@@ -1,5 +1,15 @@
 # Documentation style
 
+> **Sync note (2026-07-14, policy diff-base merge-base fix):** Fixed the `base`
+> arm of `read_changed_files` in `tools/policy/checks.py` to scope the diff to
+> `merge-base(base, HEAD)` instead of the two-dot `git diff <base> --`, so a PR
+> branch that trails `dev` is no longer charged with `dev`'s later commits by
+> the diff-scoped gates (observed on PR #1393, where an unrelated 2-file change
+> tripped `doc-coverage-outcome-missing` on `dev`'s own docs). This is a
+> policy-tooling correctness fix, not a documentation-classifier change: the
+> documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`,
+> and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
+
 > **Sync note for issue #1307 (2026-07-14, ontology binding gate):** Added
 > `tools/policy/checks.py::run_ontology_binding_check` for the ADR-084 ontology
 > contracts and their independently discovered Java vocabulary inventory.
