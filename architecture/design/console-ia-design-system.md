@@ -4,19 +4,33 @@
 
 Design reference for issue #1274. This document is the construction input for
 GC-Q015 / issue #1283 (console shell and design system) and GC-Q016 / issue
-#1284 (workflow operations and agent interaction console).
+#1284 (workflow operations console).
 
-It is not an implementation plan for new routes, controllers, migrations, or
-workflow signals. ADR-081, ADR-085, and the phase-3/4 workflow-control
-contracts decide those executable surfaces.
+**Re-scoped 2026-07-13 (issue #1384).** This document was written against the
+Temporal orchestration lane, which issue #1359 removed: no worker, namespace,
+task queue, operator-signal API, or workflow-execution control surface exists,
+and ADR-028, ADR-081, and ADR-088 are superseded. A forward-looking design
+reference is a construction input, not a historical record, so the sections
+that assumed that machinery are not preserved for posterity - they are
+corrected. What survives is a **read and reporting** console: the GitHub issue
+thread as the durable workflow record (ADR-029) and the ADR-061 workflow-run
+telemetry model as the queryable projection over it.
+
+It is not an implementation plan for new routes, controllers, or migrations.
+ADR-085 and any future workflow-control contract decide those executable
+surfaces; none exists today.
 
 ## Binding Inputs
 
 - ADR-017: the frontend is a React / TypeScript SPA consuming the REST API.
 - ADR-037: browser users authenticate through the session-cookie and CSRF
   model; the login bundle stays separate from the authenticated SPA shell.
-- ADR-081: the console program preserves the one-human-touchpoint workflow
-  contract and never exposes Temporal Web as the product UI.
+- ADR-029: the GitHub issue thread is the durable workflow record. The console
+  reads and links to it; it is not a second record of authority.
+- ADR-061: workflow-run telemetry is a read-model - a correlation/projection
+  surface over runs, phase events, and economics. It explicitly never drives
+  execution, retries, signals, or gate completion, and the console must not
+  turn it into a control plane by rendering it as one.
 - ADR-085: identity administration is a domain model for users, groups, roles,
   project access, and gate authority; it is not SaaS tenancy.
 - `architecture/notes/console-ia-design-system-preflight.md`: guardrails for
@@ -33,8 +47,9 @@ contracts decide those executable surfaces.
    creating page-local UI patterns.
 3. Specify authenticated-session UX inside the product shell while preserving
    ADR-037's standalone login bundle and backend security contracts.
-4. Define gate-action and live-run interaction patterns for GC-Q016 without
-   inventing workflow signals before their product-control contracts exist.
+4. Define run-observation and durable-record reading patterns for GC-Q016
+   against the telemetry read-model that exists, without inventing a workflow
+   control surface that does not.
 5. Keep project scoping, identity administration, workflow operations, and
    future tenancy as separate concepts.
 
@@ -49,10 +64,9 @@ The shell has two scopes:
 | Global/operator | `/projects`, future `/operations`, future `/identity` | Work that spans projects or administers principals and access. |
 | Project | `/p/:projectId/...` | Work inside one Ground Control project. |
 
-`Project` is the current product scope. It is not a tenant, organization, or
-Temporal namespace. Future tenant/workspace surfaces may add a higher scope,
-but GC-Q015 and GC-Q016 must not imply that `Project` already provides SaaS
-isolation.
+`Project` is the current product scope. It is not a tenant or organization.
+Future tenant/workspace surfaces may add a higher scope, but GC-Q015 and
+GC-Q016 must not imply that `Project` already provides SaaS isolation.
 
 ### Navigation Groups
 
@@ -101,7 +115,7 @@ both are "admin."
 | Threat Modeling | Project Assurance. |
 | Risk Scenarios | Project Assurance. |
 | Workflow Runs | Project Workflow telemetry and historical reporting. |
-| Workflow Operations | Global/operator and project Workflow control surface once contracts land. |
+| Workflow Operations | Global/operator and project Cross-project run observation over the same telemetry read-model. |
 | Current Admin | Project Administration. |
 | Identity Administration | Global/operator Administration. |
 
@@ -220,9 +234,8 @@ real call sites. The target library should include:
 | EmptyState | Meaningful absence with optional action | page-local empty paragraphs |
 | ErrorPanel | API and authorization error display | `WorkspaceError` and page-local panels |
 | LoadingState | Skeletons and spinners sized to their container | `PageSkeleton`, `WorkspaceLoading` |
-| DurableRecordViewer | Plans, screening records, review findings, decision records, final reports | new for GC-Q016 |
-| RunTimeline | Workflow phases, activities, retries, failures, gates | new for GC-Q016 |
-| GateActionPanel | Pending gate state, authority, confirmation, audit result | new for GC-Q016 |
+| DurableRecordViewer | Plans, review findings, decision records, final reports - rendered read-only from the issue thread | new for GC-Q016 |
+| RunTimeline | Recorded phase history, outcome, and timing from the telemetry read-model | new for GC-Q016 |
 
 Component APIs should accept typed domain state and render display labels at the
 edge. CSS class maps are display details, not the source of truth for workflow,
@@ -298,8 +311,22 @@ or examples.
 
 ## Workflow Operations UX
 
-Workflow operations are built on the product control surface, not ADR-061
-telemetry alone and not direct Temporal Web access.
+Workflow operations are **observation and reporting**. They are built on the
+ADR-061 telemetry read-model and the ADR-029 issue thread, which are the only
+workflow surfaces that exist. There is no execution-control surface to build
+on: issue #1359 removed the orchestrator, its worker, and its signal API.
+
+This boundary is easy to erode by accident. The read-model records that a run
+reached a phase; it does not run the phase. `Running` is an **observed
+ingestion state** - the last thing an agent reported - never proof of a live
+executor the console can steer. A console that renders that state as though it
+were a live handle on a process is a control plane with the controls painted
+on, which is worse than no console at all. Rendering must therefore stay
+honest about latency and staleness rather than implying liveness.
+
+If a workflow control surface is ever reintroduced, it arrives with its own
+ADR and its own product decision, and this section is rewritten then - not
+anticipated now.
 
 ### Run List
 
@@ -310,7 +337,7 @@ The run list should support:
 - filters for project, repository, issue, requirement, workflow type, runtime,
   final state, outcome, date range, and actor where the backend exposes it;
 - status grouping for running, waiting, ready for review, escalated, failed,
-  merged, closed, and superseded runs;
+  merged, closed, and superseded runs, as last reported by the agent;
 - links to the GitHub issue, PR, and durable records where available.
 
 ### Run Detail
@@ -318,35 +345,31 @@ The run list should support:
 Run detail should show:
 
 - run identity and scope: project, repo, issue, branch, PR, workflow type;
-- phase timeline and current phase;
-- activity list with retries, failures, elapsed time, and bounded error
-  summaries;
-- gates and pending operator decisions;
-- durable records: plan, GRC screening, review findings, decision records,
-  readiness report, final report;
+- recorded phase history and last reported phase, with the time it was reported
+  so a stale run reads as stale rather than as active;
+- failures and bounded error summaries as reported;
+- durable records: plan, review findings, decision records, readiness report,
+  final report - rendered read-only, with the issue thread linked as the record
+  of authority;
 - telemetry and cost summaries where GC-P025/ADR-061 expose them.
 
 Do not display raw prompts, completions, tokens, provider keys, session ids, or
 unbounded review bodies. If a durable record is too large, link to the record
 of authority and render a bounded summary.
 
-### Gate Actions
+### Human Touchpoints
 
-Gate actions are available only where the workflow contract defines an
-operator signal. The UI pattern is:
+PR merge remains the single mandatory human touchpoint, it happens on GitHub,
+and the console **observes** it - it does not host it. The console has no gate
+actions, no operator signals, and no run start, cancel, or retry, because no
+contract or API backs any of them.
 
-1. Show gate name, run state, eligible actions, required authority, and reason.
-2. Disable actions when the user lacks authority or the run state is
-   ineligible, and show the disabled reason.
-3. Confirm the action with exact target, effect, and audit consequence.
-4. Submit through the product control surface with idempotency where the
-   contract requires it.
-5. Render accepted, denied, or no-op outcome from the server.
-6. Show the audit/event record once persisted.
-
-PR merge remains the single mandatory human touchpoint and is observed from
-GitHub. The console must not reintroduce plan approval or model PR merge as a
-Temporal/operator signal.
+Where a run is waiting on a human, the console's job is to make that legible
+and to route the operator to the surface that owns the decision: the GitHub
+issue thread or the PR. Linking out to the record of authority is the feature,
+not a placeholder for a button that should exist later. An in-console action
+that merely re-posts to GitHub would be a second, weaker record of the same
+decision.
 
 ## Identity Administration UX
 
@@ -363,8 +386,8 @@ GC-P024 lands:
 
 The current `ROLE_USER` / `ROLE_ADMIN` projection can appear during migration,
 but new UX should be shaped around ADR-085's domain concepts. Tenant
-organizations, invitations, subscriptions, and tenant-to-Temporal namespace
-mapping stay future work unless their own ADR lands.
+organizations, invitations, and subscriptions stay future work unless their own
+ADR lands.
 
 ## Migration Guidance
 
@@ -378,29 +401,32 @@ GC-Q015 should proceed in this order:
    type mirrors.
 6. Add component tests for reusable shell/design-system components.
 
-GC-Q016 should proceed after the workflow control contracts needed for start,
-status, signal, cancel, and retry exist. Until then, the current Workflow Runs
-page remains telemetry and reporting.
+GC-Q016 is scoped to observation and record-reading over the ADR-061 telemetry
+model, so it can proceed on the surfaces that exist today; it does not wait on
+a control contract. It must not grow one by implication - a run-control feature
+needs a product decision and an ADR first.
 
 ## Accessibility and Quality Gates
 
 - Keyboard navigation for shell, nav groups, project switcher, menus, modals,
-  tables, and gate actions.
+  and tables.
 - Visible focus states with AA contrast.
 - Semantic headings and landmarks per route.
 - `aria-sort` for sortable columns and accessible names for icon-only actions.
 - No hover-only critical actions.
 - Component tests for reusable components.
-- Playwright coverage for the GC-Q016 observe -> gate action -> resume path
-  once the product control surface exists.
+- Playwright coverage for the GC-Q016 observe -> read durable record -> follow
+  through to the issue or PR path.
 
 ## Non-Goals
 
 - No new authentication model, SSO, MFA, password reset, or signup flow.
-- No tenant organization/workspace model or Temporal namespace mapping.
-- No direct Temporal Web or gRPC exposure as product UI.
+- No tenant organization/workspace model.
+- No workflow control surface: no run start, cancel, retry, gate action, or
+  operator signal. None of these exist to call (#1359), and reintroducing one
+  is a product decision with its own ADR, not a console feature.
 - No new workflow DSL, dynamic activity/plugin model, or second workflow state
-  machine.
+  machine. The telemetry read-model must not become an executor (ADR-061).
 - No route hiding as authorization.
 - No request-body actor fields or frontend-supplied audit actors.
 - No backend schema, controller, route, migration, generated client, or
