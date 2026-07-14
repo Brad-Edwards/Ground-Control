@@ -90,6 +90,42 @@ code-level surface no longer exists. Adding vocabulary is a one-row
 registration, not a new checker. Schema evolution follows ADR-082's
 declared-breaking-change gate; the artifacts are versioned in-name.
 
+The initial binding gate (issue #1307) has the following guardrails:
+
+- A binding is identified by **surface plus local value**, never by the
+  local string alone. Repeated spellings such as `IMPLEMENTS` or
+  `EVIDENCED_BY` may bind to one controlled term only after their direction,
+  endpoint roles, and domain meaning are shown to coincide. Multiple local
+  bindings may point to that one term; the binding artifact must not repeat
+  the term's definition or mint an artifact-local synonym.
+- The code inventory is discovered independently of the binding rows and the
+  two sets are compared in both directions. Discovery covers
+  `GraphEntityType`, every edge/link/relation enum surface, and every
+  `GraphProjectionContributor` implementation regardless of package. A
+  contributor edge expression that the static checker cannot resolve to a
+  literal, a declared constant, or a bound enum surface is a policy failure,
+  not an ignored value. Endpoint-target enums and incidental uppercase
+  strings (property keys, identifiers, and edge IDs) are not edge terms.
+- Artifact structure is fail-closed: version/provenance/owner vocabularies are
+  closed; family, term, surface, and binding identities are unique; every
+  reference resolves; native families carry non-empty extension scope,
+  relation rules, and non-ambiguity constraints; malformed JSON and unknown
+  surface kinds fail policy. Repository paths used to locate a surface are
+  normalized, repository-relative, and constrained to the declared source
+  roots.
+- These files are static governance contracts, not runtime application
+  configuration. Backend aggregates remain authoritative and contributors
+  continue to emit their existing strings. The policy runner reads tracked
+  source and contract files in-process, performs no network or subprocess
+  lookup for ontology data, and reports stable policy violations rather than
+  introducing an application exception or error-envelope hierarchy.
+
+The consolidation map is therefore the set of surface-qualified bindings that
+point at a shared controlled term. It is not a fourth registry and does not
+authorize an emission rename. Any later emission change must preserve graph
+consumer compatibility and land only after the old and new surfaces can be
+validated against the controlled vocabulary.
+
 ### 3. Repairs mandated by the census
 
 1. **Traceability enters the graph.** `TraceabilityLink` edges

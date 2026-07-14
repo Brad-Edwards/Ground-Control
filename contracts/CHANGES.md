@@ -1,6 +1,21 @@
 # Contract Changes
 
-Current contract version: 0.4.0
+Current contract version: 0.5.0
+
+## 0.5.0 - 2026-07-14
+
+Context-graph ontology authority (GC-O014, issue #1307, ADR-084).
+
+- Added the versioned concept-family, controlled-vocabulary, and
+  artifact-binding contracts under `contracts/ontology/`.
+- Added a bidirectional policy gate between those bindings and the live Java
+  vocabulary inventory: `GraphEntityType`, graph link/relation enums,
+  `ProvenanceEdgeRelation`, every `GraphProjectionContributor`, and literal
+  contributor edge terms. This publication does not rename emitted graph
+  values or change runtime graph behavior.
+- This initial publication is additive. A later breaking ontology change must
+  use a versioned filename and carry a declaration here; the current OpenAPI
+  breaking-change script does not compare ontology semantics.
 
 ## 0.4.0 - 2026-07-12
 
