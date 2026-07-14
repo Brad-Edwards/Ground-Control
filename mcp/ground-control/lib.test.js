@@ -619,6 +619,18 @@ process.exit(0);
     };
   }
 
+  // createGitHubIssue now derives the target slug from the checkout's git
+  // origin remote (GC-P026, #1383) and fails closed without one. Give each
+  // test a real throwaway git repo whose origin is https://github.com/<slug>.git
+  // so the derived slug matches the asserted `repo` and the existing
+  // `--repo <slug>` argv assertions stay valid.
+  function makeGitRepoWithOrigin(slug) {
+    const dir = mkdtempSync(join(tmpdir(), "gc-cgi-repo-"));
+    execFileSync("git", ["-C", dir, "init", "-q"]);
+    execFileSync("git", ["-C", dir, "remote", "add", "origin", `https://github.com/${slug}.git`]);
+    return dir;
+  }
+
   function makeFetchMock({ requirement, requirementStatus = 200, traceabilityFails = false }) {
     const calls = [];
     const fn = async (url, opts = {}) => {
@@ -676,6 +688,7 @@ process.exit(0);
 
   it("renders a real title and body and creates an IMPLEMENTS link for an ACTIVE requirement", async () => {
     const shim = makeGhShim(431);
+    const repoDir = makeGitRepoWithOrigin("o/r");
     const mock = makeFetchMock({ requirement: ACTIVE_REQ });
     try {
       const result = await withEnv(shim.binDir, mock.fn, () =>
@@ -683,6 +696,7 @@ process.exit(0);
           uid: "AGT-001",
           project: "aptl",
           repo: "o/r",
+          repoRoot: repoDir,
           labels: ["requirement", "wave-1"],
           extraBody: "## Notes\n\nextra context",
         }),
@@ -718,6 +732,7 @@ process.exit(0);
       assert.ok(linkCall.url.includes(`/requirements/${ACTIVE_REQ.id}/traceability`));
     } finally {
       shim.cleanup();
+      rmSync(repoDir, { recursive: true, force: true });
     }
   });
 
@@ -740,10 +755,11 @@ process.exit(0);
       statement: "The system shall remember.",
     };
     const shim = makeGhShim(512);
+    const repoDir = makeGitRepoWithOrigin("o/r");
     const mock = makeFetchMock({ requirement: API_REQ });
     try {
       const result = await withEnv(shim.binDir, mock.fn, () =>
-        createGitHubIssueFromRequirement({ uid: "AGT-002", project: "aptl", repo: "o/r" }),
+        createGitHubIssueFromRequirement({ uid: "AGT-002", project: "aptl", repo: "o/r", repoRoot: repoDir }),
       );
       assert.equal(result.number, 512);
       const argv = shim.ghArgv();
@@ -754,23 +770,26 @@ process.exit(0);
       assert.ok(body.includes("- AGT-002 — Memory Subsystem"));
     } finally {
       shim.cleanup();
+      rmSync(repoDir, { recursive: true, force: true });
     }
   });
 
   it("uses a DOCUMENTS link for a non-ACTIVE (DRAFT) requirement", async () => {
     const shim = makeGhShim(99);
+    const repoDir = makeGitRepoWithOrigin("o/r");
     const mock = makeFetchMock({
       requirement: { ...ACTIVE_REQ, status: "DRAFT" },
     });
     try {
       const result = await withEnv(shim.binDir, mock.fn, () =>
-        createGitHubIssueFromRequirement({ uid: "AGT-001", project: "aptl", repo: "o/r" }),
+        createGitHubIssueFromRequirement({ uid: "AGT-001", project: "aptl", repo: "o/r", repoRoot: repoDir }),
       );
       assert.equal(result.link_type, "DOCUMENTS");
       const linkBody = JSON.parse(mock.calls.find((c) => c.url.includes("/traceability")).body);
       assert.equal(linkBody.linkType, "DOCUMENTS");
     } finally {
       shim.cleanup();
+      rmSync(repoDir, { recursive: true, force: true });
     }
   });
 
@@ -808,10 +827,11 @@ process.exit(0);
 
   it("surfaces a traceability failure without discarding the created issue", async () => {
     const shim = makeGhShim(777);
+    const repoDir = makeGitRepoWithOrigin("o/r");
     const mock = makeFetchMock({ requirement: ACTIVE_REQ, traceabilityFails: true });
     try {
       const result = await withEnv(shim.binDir, mock.fn, () =>
-        createGitHubIssueFromRequirement({ uid: "AGT-001", project: "aptl", repo: "o/r" }),
+        createGitHubIssueFromRequirement({ uid: "AGT-001", project: "aptl", repo: "o/r", repoRoot: repoDir }),
       );
       // Issue still returned; link failure is visible, not swallowed.
       assert.equal(result.number, 777);
@@ -820,7 +840,248 @@ process.exit(0);
       assert.ok(result.traceability_error, "traceability_error must be set on link failure");
     } finally {
       shim.cleanup();
+      rmSync(repoDir, { recursive: true, force: true });
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Repository identity resolution (GC-P026 / #1383)
+// ---------------------------------------------------------------------------
+
+describe("repository identity resolution (GC-P026 / #1383)", () => {
+  // Repo-bound reads and mutations derive the target slug from the checkout's
+  // git origin remote and never honor process.env.GH_REPO — closing the
+  // env-hijack class. git ignores GH_REPO, so a real throwaway repo pins the
+  // derivation deterministically.
+
+  function gitRepoWithOrigin(slug) {
+    const dir = mkdtempSync(join(tmpdir(), "gc-p026-repo-"));
+    execFileSync("git", ["-C", dir, "init", "-q"]);
+    execFileSync("git", ["-C", dir, "remote", "add", "origin", `https://github.com/${slug}.git`]);
+    return dir;
+  }
+
+  function gitRepoNoOrigin() {
+    const dir = mkdtempSync(join(tmpdir(), "gc-p026-noorigin-"));
+    execFileSync("git", ["-C", dir, "init", "-q"]);
+    return dir;
+  }
+
+  function nonGitDir() {
+    return mkdtempSync(join(tmpdir(), "gc-p026-nogit-"));
+  }
+
+  // A PATH-shim `gh` that records its argv to a file and prints `stdout`.
+  function ghShim(stdout) {
+    const binDir = mkdtempSync(join(tmpdir(), "gc-p026-bin-"));
+    const argvLog = join(binDir, "argv.json");
+    const script = `#!/usr/bin/env node
+const fs = require("node:fs");
+fs.writeFileSync(${JSON.stringify(argvLog)}, JSON.stringify(process.argv.slice(2)));
+process.stdout.write(${JSON.stringify(stdout)});
+process.exit(0);
+`;
+    writeFileSync(join(binDir, "gh"), script, { mode: 0o755 });
+    return {
+      binDir,
+      called() { return existsSync(argvLog); },
+      argv() { return JSON.parse(readFileSync(argvLog, "utf8")); },
+      cleanup() { rmSync(binDir, { recursive: true, force: true }); },
+    };
+  }
+
+  // Run `fn` with `binDir` prepended to PATH and (optionally) GH_REPO set,
+  // restoring both afterward.
+  async function withEnv(binDir, fn, { ghRepo } = {}) {
+    const oldPath = process.env.PATH;
+    const oldGhRepo = process.env.GH_REPO;
+    if (binDir) process.env.PATH = `${binDir}:${oldPath}`;
+    if (ghRepo !== undefined) process.env.GH_REPO = ghRepo;
+    try {
+      return await fn();
+    } finally {
+      process.env.PATH = oldPath;
+      if (oldGhRepo === undefined) delete process.env.GH_REPO;
+      else process.env.GH_REPO = oldGhRepo;
+    }
+  }
+
+  it("createGitHubIssue throws 'Invalid GitHub repo format' for a malformed repo assertion", async () => {
+    const { createGitHubIssue } = await import("./lib.js");
+    const shim = ghShim("https://github.com/good/repo/issues/1\n");
+    const repoDir = gitRepoWithOrigin("good/repo");
+    try {
+      await withEnv(shim.binDir, () =>
+        assert.rejects(
+          () => createGitHubIssue({ title: "t", body: "b", repo: "not-a-slug", repoRoot: repoDir }),
+          /Invalid GitHub repo format/,
+        ),
+      );
+      assert.equal(shim.called(), false, "gh must not be called when the repo assertion is malformed");
+    } finally {
+      shim.cleanup();
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("createGitHubIssue throws 'does not match' when repo is a valid but different slug", async () => {
+    const { createGitHubIssue } = await import("./lib.js");
+    const shim = ghShim("https://github.com/good/repo/issues/1\n");
+    const repoDir = gitRepoWithOrigin("good/repo");
+    try {
+      await withEnv(shim.binDir, () =>
+        assert.rejects(
+          () => createGitHubIssue({ title: "t", body: "b", repo: "other/repo", repoRoot: repoDir }),
+          /does not match/,
+        ),
+      );
+      assert.equal(shim.called(), false, "gh must not be called on an identity mismatch");
+    } finally {
+      shim.cleanup();
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("createGitHubIssue throws 'cannot resolve' when the checkout has no github origin", async () => {
+    const { createGitHubIssue } = await import("./lib.js");
+    const shim = ghShim("https://github.com/good/repo/issues/1\n");
+    const noGit = nonGitDir();
+    const noOrigin = gitRepoNoOrigin();
+    try {
+      await withEnv(shim.binDir, async () => {
+        await assert.rejects(
+          () => createGitHubIssue({ title: "t", body: "b", repoRoot: noGit }),
+          /cannot resolve/,
+        );
+        await assert.rejects(
+          () => createGitHubIssue({ title: "t", body: "b", repoRoot: noOrigin }),
+          /cannot resolve/,
+        );
+      });
+      assert.equal(shim.called(), false, "gh must not be called when identity cannot be resolved");
+    } finally {
+      shim.cleanup();
+      rmSync(noGit, { recursive: true, force: true });
+      rmSync(noOrigin, { recursive: true, force: true });
+    }
+  });
+
+  it("createGitHubIssue ignores a stale process.env.GH_REPO and pins --repo to the checkout origin", async () => {
+    const { createGitHubIssue } = await import("./lib.js");
+    const shim = ghShim("https://github.com/good/repo/issues/1\n");
+    const repoDir = gitRepoWithOrigin("good/repo");
+    try {
+      const result = await withEnv(
+        shim.binDir,
+        () => createGitHubIssue({ title: "t", body: "b", repoRoot: repoDir }),
+        { ghRepo: "evil/evil" },
+      );
+      assert.equal(result.number, 1);
+      assert.ok(shim.called(), "gh should have been invoked");
+      const argv = shim.argv();
+      const repoIdx = argv.indexOf("--repo");
+      assert.ok(repoIdx >= 0, "gh argv must contain --repo");
+      assert.equal(argv[repoIdx + 1], "good/repo", "--repo must be the checkout-derived slug");
+      assert.doesNotMatch(argv.join(" "), /evil\/evil/, "GH_REPO must never leak into the gh argv");
+    } finally {
+      shim.cleanup();
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("getOwnerRepo(dir, {allowGhFallback:false}) rejects for a git repo with no origin remote", async () => {
+    const { getOwnerRepo } = await import("./lib.js");
+    const noOrigin = gitRepoNoOrigin();
+    try {
+      await assert.rejects(
+        () => getOwnerRepo(noOrigin, { allowGhFallback: false }),
+        /refusing to fall back/,
+      );
+    } finally {
+      rmSync(noOrigin, { recursive: true, force: true });
+    }
+  });
+
+  it("getIssueContext returns a warning (never throws) when cwd is omitted", async () => {
+    const { getIssueContext } = await import("./lib.js");
+    const result = await getIssueContext(5, undefined);
+    assert.equal(result.number, 5);
+    assert.match(result.warning, /no checkout path/);
+  });
+
+  it("getIssueContext returns a warning when the repo assertion is malformed", async () => {
+    const { getIssueContext } = await import("./lib.js");
+    const shim = ghShim('{"number":5}');
+    const repoDir = gitRepoWithOrigin("good/repo");
+    try {
+      const result = await withEnv(shim.binDir, () =>
+        getIssueContext(5, "not-a-slug", { cwd: repoDir }),
+      );
+      assert.equal(result.number, 5);
+      assert.match(result.warning, /Invalid GitHub repo format/);
+      assert.equal(shim.called(), false, "gh must not be called on a malformed repo assertion");
+    } finally {
+      shim.cleanup();
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("getIssueContext returns a warning when the repo assertion mismatches the checkout", async () => {
+    const { getIssueContext } = await import("./lib.js");
+    const shim = ghShim('{"number":5}');
+    const repoDir = gitRepoWithOrigin("good/repo");
+    try {
+      const result = await withEnv(shim.binDir, () =>
+        getIssueContext(5, "other/repo", { cwd: repoDir }),
+      );
+      assert.equal(result.number, 5);
+      assert.match(result.warning, /does not match/);
+      assert.equal(shim.called(), false, "gh must not be called on an identity mismatch");
+    } finally {
+      shim.cleanup();
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("getIssueContext returns parsed gh JSON and pins --repo to the checkout, ignoring GH_REPO", async () => {
+    const { getIssueContext } = await import("./lib.js");
+    const shim = ghShim('{"number":5,"title":"x","body":"y"}');
+    const repoDir = gitRepoWithOrigin("good/repo");
+    try {
+      const result = await withEnv(
+        shim.binDir,
+        () => getIssueContext(5, undefined, { cwd: repoDir }),
+        { ghRepo: "evil/evil" },
+      );
+      assert.deepEqual(result, { number: 5, title: "x", body: "y" });
+      assert.ok(shim.called(), "gh should have been invoked");
+      const argv = shim.argv();
+      const repoIdx = argv.indexOf("--repo");
+      assert.ok(repoIdx >= 0, "gh argv must contain --repo");
+      assert.equal(argv[repoIdx + 1], "good/repo", "--repo must be the checkout-derived slug");
+      assert.doesNotMatch(argv.join(" "), /evil\/evil/, "GH_REPO must never leak into the gh argv");
+    } finally {
+      shim.cleanup();
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("parseGroundControlYaml rejects a malformed github_repo", async () => {
+    const { parseGroundControlYaml: parse } = await import("./lib.js");
+    const result = parse("schema_version: 1\nproject: x\ngithub_repo: not-a-slug\n");
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.errors.some((e) => e.includes("github_repo")),
+      `expected a github_repo error, got: ${JSON.stringify(result.errors)}`,
+    );
+  });
+
+  it("parseGroundControlYaml accepts a well-formed github_repo", async () => {
+    const { parseGroundControlYaml: parse } = await import("./lib.js");
+    const result = parse("schema_version: 1\nproject: x\ngithub_repo: autarchy-ai/Ground-Control\n");
+    assert.equal(result.ok, true, `expected ok, got: ${JSON.stringify(result)}`);
+    assert.equal(result.value.github_repo, "autarchy-ai/Ground-Control");
   });
 });
 

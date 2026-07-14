@@ -401,6 +401,60 @@ describe("gc_integration_manager — config errors", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 5b. Plan action — github identity assertion (GC-P026 / #1383)
+// ---------------------------------------------------------------------------
+
+describe("gc_integration_manager — github identity assertion (GC-P026)", () => {
+  // .ground-control.yaml::github_repo is a validated identity assertion, not an
+  // alternate destination: buildIntegrationQueue refuses when it disagrees with
+  // the checkout's resolved owner/repo (case-insensitively), before any
+  // discovery or mutation.
+
+  it("configured github_repo mismatching the checkout → error:github_identity_mismatch", async () => {
+    const yaml = "schema_version: 1\nproject: test-project\ngithub_repo: someone-else/other\n";
+    const deps = happyDeps({ yaml, owner: "acme", repo: "myrepo", prs: [] });
+    const result = await runIntegrationManager(
+      { action: "plan", repo_path: "/some/repo" },
+      deps,
+    );
+    assertErrorEnvelope(result, "github_identity_mismatch");
+  });
+
+  it("configured github_repo matching the checkout → no identity mismatch", async () => {
+    const yaml = "schema_version: 1\nproject: test-project\ngithub_repo: acme/myrepo\n";
+    const deps = happyDeps({ yaml, owner: "acme", repo: "myrepo", prs: [] });
+    const result = await runIntegrationManager(
+      { action: "plan", repo_path: "/some/repo" },
+      deps,
+    );
+    assert.notEqual(result.error, "github_identity_mismatch");
+    assert.equal(result.ok, true);
+  });
+
+  it("matching github_repo is compared case-insensitively", async () => {
+    const yaml = "schema_version: 1\nproject: test-project\ngithub_repo: ACME/MyRepo\n";
+    const deps = happyDeps({ yaml, owner: "acme", repo: "myrepo", prs: [] });
+    const result = await runIntegrationManager(
+      { action: "plan", repo_path: "/some/repo" },
+      deps,
+    );
+    assert.notEqual(result.error, "github_identity_mismatch");
+    assert.equal(result.ok, true);
+  });
+
+  it("absent github_repo → no identity mismatch", async () => {
+    // validYaml() carries no github_repo key.
+    const deps = happyDeps({ owner: "acme", repo: "myrepo", prs: [] });
+    const result = await runIntegrationManager(
+      { action: "plan", repo_path: "/some/repo" },
+      deps,
+    );
+    assert.notEqual(result.error, "github_identity_mismatch");
+    assert.equal(result.ok, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 6. Plan action — ordering
 // ---------------------------------------------------------------------------
 

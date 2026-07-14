@@ -109,7 +109,7 @@ Each repo's `.ground-control.yaml` gains a `knowledge` section:
 
 ```yaml
 project: ground-control
-github_repo: KeplerOps/Ground-Control
+github_repo: autarchy-ai/Ground-Control
 # ... existing workflow + sonarcloud sections ...
 knowledge:
   dir: docs/knowledge               # relative to repo root, required when this section is present

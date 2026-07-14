@@ -1,7 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
-REPO="KeplerOps/Ground-Control"
+# Derive the default repository from the checkout's origin remote (GC-P026) so
+# the script dispatches against the repo it lives in rather than a hardcoded
+# owner. `--repo` remains a validated override, never an unrestricted selector.
+# The checkout-to-slug parser is shared with the other shell entry points so
+# every one supports the same set of github.com remote URL forms.
+# shellcheck source=scripts/lib/gh-repo-slug.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/gh-repo-slug.sh"
+
+REPO="$(resolve_repo_slug)"
 WORKFLOW="pack-registry-sync.yml"
 REF="$(git rev-parse --abbrev-ref HEAD)"
 PROJECT="ground-control"
@@ -15,7 +23,7 @@ Options:
   --project <id>      Ground Control project identifier (default: ground-control)
   --pack-ids <csv>    Optional comma-separated pack IDs to sync
   --ref <branch>      Git ref to dispatch from (default: current branch)
-  --repo <owner/name> Override GitHub repository (default: KeplerOps/Ground-Control)
+  --repo <owner/name> Override GitHub repository (default: the checkout's origin remote)
   --help              Show this help text
 
 Examples:
@@ -41,6 +49,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --repo)
             REPO="${2:?missing value for --repo}"
+            if [[ ! "${REPO}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+                echo "Invalid --repo '${REPO}': expected owner/name." >&2
+                exit 1
+            fi
             shift 2
             ;;
         --help|-h)
@@ -54,6 +66,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ -z "${REPO}" ]]; then
+    echo "Could not resolve a GitHub repository from the checkout's origin remote; pass --repo owner/name." >&2
+    exit 1
+fi
 
 if ! command -v gh >/dev/null 2>&1; then
     echo "gh CLI is required." >&2

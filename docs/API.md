@@ -256,7 +256,7 @@ requirements or creates links). Query parameters:
           "artifactType": "GITHUB_ISSUE",
           "artifactIdentifier": "826",
           "artifactTitle": "GC-T010: Risk Assessment Result Entity",
-          "artifactUrl": "https://github.com/KeplerOps/Ground-Control/issues/826",
+          "artifactUrl": "https://github.com/autarchy-ai/Ground-Control/issues/826",
           "detail": "IMPLEMENTS link on a DRAFT requirement"
         }
       ]

@@ -1,6 +1,6 @@
 [Unit]
 Description=Ground Control restore test (GC-P021: verify backups on a recurring basis)
-Documentation=https://github.com/Brad-Edwards/Ground-Control/blob/main/docs/operations/backup-restore.md
+Documentation=https://github.com/autarchy-ai/Ground-Control/blob/main/docs/operations/backup-restore.md
 After=docker.service
 Requires=docker.service
 # AssertPathExists (not ConditionPathExists): a Condition* that fails makes

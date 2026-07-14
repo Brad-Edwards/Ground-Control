@@ -380,3 +380,14 @@ tightening that tool-input enum is recorded in an amendment to ADR-054 and the
 changelog fragment, not a documentation edit; the documentation-coverage
 classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
 unchanged and no new DOC_STYLE.md style rule is established.
+
+Repository identity (`<owner>/Ground-Control`) is derived from the checkout's
+git `origin` remote by the MCP server (`mcp/ground-control/lib.js`, `index.js`,
+`gc-integrate.js`), with `.ground-control.yaml` `github_repo` and any caller
+`repo` treated as validated assertions, and is pinned across active surfaces by
+the `run_repo_identity_drift` policy gate in `tools/policy/checks.py` (issue
+#1383, GC-P026). Per the convention above, those MCP-behavior and policy-gate
+changes are recorded in an amendment to ADR-054 and the changelog fragment, not
+a documentation edit; the documentation-coverage classifier, Vale rule set,
+`tools/install-vale.sh`, and `.vale.ini` are unchanged and no new DOC_STYLE.md
+style rule is established.

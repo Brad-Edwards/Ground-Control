@@ -1,6 +1,6 @@
 [Unit]
 Description=Ground Control restore-test timer (GC-P021: verify restores ≥ 1×/day)
-Documentation=https://github.com/Brad-Edwards/Ground-Control/blob/main/docs/operations/backup-restore.md
+Documentation=https://github.com/autarchy-ai/Ground-Control/blob/main/docs/operations/backup-restore.md
 
 [Timer]
 # 05:00 UTC daily — the GC-P021 recurring-verification cadence, staggered

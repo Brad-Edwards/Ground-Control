@@ -1,6 +1,6 @@
 schema_version: 1
 project: ground-control
-github_repo: KeplerOps/Ground-Control
+github_repo: autarchy-ai/Ground-Control
 workflow:
   test_command: cd backend && ./gradlew test -Pquick
   completion_command: make check

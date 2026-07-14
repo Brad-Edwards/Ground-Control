@@ -1816,15 +1816,29 @@ export function formatIssueBody(req, extraBody) {
 
 const GITHUB_REPO_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
-export async function createGitHubIssue({ title, body, labels, repo }) {
-  const targetRepo = repo || process.env.GH_REPO;
-  if (targetRepo && !GITHUB_REPO_RE.test(targetRepo)) {
-    throw new Error(`Invalid GitHub repo format: expected 'owner/repo', got '${targetRepo}'`);
+export async function createGitHubIssue({ title, body, labels, repo, repoRoot }) {
+  // Issue creation is a mutation. Derive identity from the checkout's git
+  // remote and fail closed (allowGhFallback:false) rather than honor GH_REPO
+  // or `gh repo view` — routing a *write* at a GH_REPO-supplied repo is the
+  // exact hijack GC-P026 closes. A caller-supplied `repo` is a validated
+  // assertion that must agree (case-insensitively) with the checkout, never an
+  // alternate destination.
+  let slug;
+  try {
+    const { owner, name } = await getOwnerRepo(repoRoot, { allowGhFallback: false });
+    slug = `${owner}/${name}`;
+  } catch (error) {
+    throw new Error(`createGitHubIssue: cannot resolve the checkout's GitHub repository; refusing to create an issue: ${error.message}`);
   }
-  const args = ["issue", "create", "--title", title, "--body", body];
-  if (targetRepo) {
-    args.push("--repo", targetRepo);
+  if (repo) {
+    if (!GITHUB_REPO_RE.test(repo)) {
+      throw new Error(`Invalid GitHub repo format: expected 'owner/repo', got '${repo}'`);
+    }
+    if (repo.toLowerCase() !== slug.toLowerCase()) {
+      throw new Error(`Supplied repo '${repo}' does not match the checkout's origin remote '${slug}'; refusing to create the issue at a mismatched repository.`);
+    }
   }
+  const args = ["issue", "create", "--title", title, "--body", body, "--repo", slug];
   if (labels && labels.length > 0) {
     args.push("--label", labels.join(","));
   }
@@ -1849,7 +1863,7 @@ export async function createGitHubIssue({ title, body, labels, repo }) {
 // function is the missing wiring: it reuses the existing helpers rather than
 // duplicating their logic, and keeps the privileged `gh` side effect inside the
 // MCP server boundary (ADR-027/ADR-031).
-export async function createGitHubIssueFromRequirement({ uid, project, repo, labels, extraBody }) {
+export async function createGitHubIssueFromRequirement({ uid, project, repo, repoRoot, labels, extraBody }) {
   if (typeof uid !== "string" || uid.trim() === "") {
     throw new Error("createGitHubIssueFromRequirement: 'uid' is required");
   }
@@ -1871,7 +1885,7 @@ export async function createGitHubIssueFromRequirement({ uid, project, repo, lab
   const title = titleText ? `${req.uid} — ${titleText}` : req.uid;
   const body = formatIssueBody(req, extraBody);
 
-  const { url, number } = await createGitHubIssue({ title, body, labels, repo });
+  const { url, number } = await createGitHubIssue({ title, body, labels, repo, repoRoot });
 
   // Auto-link the new issue back to the requirement. ACTIVE requirements are
   // being implemented (IMPLEMENTS); everything else is being tracked/documented
@@ -3120,10 +3134,13 @@ export function parseGroundControlYaml(yamlText) {
 
   let githubRepo = null;
   if (parsed.github_repo != null) {
-    if (typeof parsed.github_repo !== "string" || parsed.github_repo.trim() === "") {
-      errors.push("github_repo must be a non-empty string when set");
+    if (typeof parsed.github_repo !== "string" || !GITHUB_REPO_RE.test(parsed.github_repo.trim())) {
+      // github_repo is a validated identity assertion (GC-P026): require the
+      // 'owner/repo' shape, not merely non-empty, so a malformed value is
+      // rejected at parse time rather than flowing into a `gh --repo` argument.
+      errors.push("github_repo must be a non-empty 'owner/repo' string when set");
     } else {
-      githubRepo = parsed.github_repo;
+      githubRepo = parsed.github_repo.trim();
     }
   }
 
@@ -3589,23 +3606,50 @@ export async function ensureGitRepo(repoPath) {
   }
 }
 
-async function getIssueContext(issueNumber, repo, { cwd } = {}) {
+export async function getIssueContext(issueNumber, repo, { cwd } = {}) {
   if (issueNumber == null) return null;
 
-  const args = ["issue", "view", String(issueNumber), "--json", "number,title,body"];
-  const targetRepo = repo || process.env.GH_REPO;
-  if (targetRepo) {
-    args.push("--repo", targetRepo);
+  // Repo-bound reads derive identity from the checkout's git remote (GC-P026)
+  // and never consult process.env.GH_REPO: git ignores GH_REPO, so this path
+  // is immune to the env-hijack class. A caller-supplied `repo` is a validated
+  // assertion, not an alternate destination — it must agree (case-insensitively)
+  // with the checkout. allowGhFallback:false keeps a failed derivation from
+  // sliding into the GH_REPO-honoring `gh repo view` path.
+  if (!cwd) {
+    return {
+      number: issueNumber,
+      warning: "Failed to resolve repository identity for issue context: no checkout path (cwd) supplied",
+    };
+  }
+  let slug;
+  try {
+    const { owner, name } = await getOwnerRepo(cwd, { allowGhFallback: false });
+    slug = `${owner}/${name}`;
+  } catch (error) {
+    return {
+      number: issueNumber,
+      warning: `Failed to resolve repository identity for issue context: ${error.message}`,
+    };
+  }
+  if (repo) {
+    if (!GITHUB_REPO_RE.test(repo)) {
+      return {
+        number: issueNumber,
+        warning: `Invalid GitHub repo format: expected 'owner/repo', got '${repo}'`,
+      };
+    }
+    if (repo.toLowerCase() !== slug.toLowerCase()) {
+      return {
+        number: issueNumber,
+        warning: `Supplied repo '${repo}' does not match the checkout's origin remote '${slug}'`,
+      };
+    }
   }
 
-  // Binding cwd to the target repository lets `gh` auto-detect the repo from
-  // git config when no explicit `--repo` was supplied, and prevents the
-  // lookup from picking up a neighboring checkout's remotes when the MCP
-  // server is running from a different working directory.
-  const execOptions = cwd ? { cwd } : {};
+  const args = ["issue", "view", String(issueNumber), "--json", "number,title,body", "--repo", slug];
 
   try {
-    const { stdout } = await execFile("gh", args, execOptions);
+    const { stdout } = await execFile("gh", args, { cwd });
     return JSON.parse(stdout);
   } catch (error) {
     return {
@@ -6194,7 +6238,7 @@ export function parseOwnerRepoFromRemoteUrl(url) {
   return null;
 }
 
-export async function getOwnerRepo(repoRoot) {
+export async function getOwnerRepo(repoRoot, { allowGhFallback = true } = {}) {
   // Primary path: read the git remote URL directly. git ignores GH_REPO,
   // so this path is immune to env-var hijack and is the source of truth
   // for every real /implement run (real repos always have an origin
@@ -6213,6 +6257,18 @@ export async function getOwnerRepo(repoRoot) {
     // No origin remote (typical only in test fixtures that init a bare
     // repo without setting origin, or in an emergency detached state).
     // Fall through.
+  }
+  if (!allowGhFallback) {
+    // Mutating / identity-sensitive callers (issue creation, issue-context
+    // reads) pass allowGhFallback:false so a failed git-remote derivation
+    // fails closed instead of falling through to the GH_REPO-honoring
+    // `gh repo view` path — that fallback is the env-hijack class (GC-P026,
+    // issue #934 lineage) and must never route a repo-bound operation at an
+    // attacker- or misconfiguration-supplied repository.
+    throw new Error(
+      "Unable to resolve a GitHub owner/repo from the checkout's git 'origin' remote; " +
+        "refusing to fall back to GH_REPO-sensitive resolution.",
+    );
   }
   // Fallback: `gh repo view --json nameWithOwner`. This path honors
   // GH_REPO and is therefore vulnerable to env hijack — but it only
