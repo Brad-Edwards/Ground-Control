@@ -241,6 +241,10 @@ archive/
 
 .claude/scheduled_tasks.lock
 
+# Per-developer Claude Code overrides (machine-specific paths, MCP server
+# choices). settings.json is the shared file; settings.local.json is local-only.
+.claude/settings.local.json
+
 # Integration manager lockfile (gc_integration_manager, GC-O011). Placed at
 # the repo root by acquireIntegrationLock; operational only, never committed.
 .gc-integration-lock
