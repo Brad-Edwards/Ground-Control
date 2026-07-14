@@ -370,6 +370,40 @@ def run_git(args: list[str], root: Path = REPO_ROOT) -> str:
     return result.stdout
 
 
+def merge_base_or(base: str, ref: str = "HEAD", root: Path = REPO_ROOT) -> str:
+    """Resolve the point from which ``ref`` diverged from ``base``.
+
+    ``git diff <base> --`` is a two-dot comparison: it reports every path that
+    differs between the tip of ``base`` and the working tree, so any commit
+    ``base`` gained AFTER the branch forked is wrongly attributed to the branch.
+    On a busy repo where ``dev`` advances while a PR is open, that mis-attributes
+    ``dev``'s own later changes to the PR — spuriously tripping the diff-scoped
+    gates (documentation coverage, changelog fragments) on files the branch
+    never touched.
+
+    Diffing from ``merge-base(base, ref)`` instead yields only what the branch
+    itself changed, matching what GitHub shows as the PR diff. Comparing that
+    merge base against the working tree (rather than ``base...ref``) preserves
+    the caller's intent of catching still-uncommitted changes in the local /
+    pre-push path.
+
+    Falls back to ``base`` when no common ancestor exists (unrelated histories)
+    or ``git merge-base`` fails, so the check degrades to the prior behavior
+    instead of raising.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "merge-base", base, ref],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError:
+        return base
+    return result.stdout.strip() or base
+
+
 def read_changed_files(
     *,
     files: Iterable[str] | None = None,
@@ -384,7 +418,10 @@ def read_changed_files(
         raw = os.getenv(env_var, "")
         return sorted({normalize_path(path) for path in raw.splitlines() if path.strip()})
     if base:
-        output = run_git(["diff", "--name-only", "--diff-filter=ACDMRTUXB", base, "--"], root=root)
+        diff_base = merge_base_or(base, root=root)
+        output = run_git(
+            ["diff", "--name-only", "--diff-filter=ACDMRTUXB", diff_base, "--"], root=root
+        )
         return sorted({normalize_path(path) for path in output.splitlines() if path.strip()})
     if staged:
         output = run_git(["diff", "--cached", "--name-only", "--diff-filter=ACDMRTUXB", "--"], root=root)

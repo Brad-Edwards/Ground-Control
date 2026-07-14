@@ -8,6 +8,23 @@ accepted
 
 2026-05-23
 
+> **Sync note (2026-07-14, policy diff-base merge-base fix):** Fixed the `base`
+> arm of `read_changed_files` in `tools/policy/checks.py` to scope the diff to
+> `merge-base(base, HEAD)` (new `merge_base_or` helper) instead of the two-dot
+> `git diff <base> --`. Two-dot compares the tip of `base` against the working
+> tree, so any commit `base` gains after a branch forks is attributed to the
+> branch. On a busy repo where `dev` advances mid-PR, the diff-scoped gates
+> (this documentation-coverage gate, the changelog-fragment gate, and
+> enum/controller parity) fire on files the branch never touched (observed on
+> PR #1393). The merge-base scope matches GitHub's own PR diff. The working-tree
+> comparison is preserved so the local and pre-push path still catches
+> uncommitted changes, and the helper falls back to `base` when no common
+> ancestor exists. This is a
+> policy-tooling correctness fix, not a documentation-classifier change: the
+> documentation-coverage classifier, `outcome_required` mapping, Vale rule set,
+> `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new
+> `docs/DOC_STYLE.md` style rule is established.
+
 > **Sync note for issue #1307 (2026-07-14, ontology binding gate):** Added
 > `tools/policy/checks.py::run_ontology_binding_check` to validate the three
 > ADR-084 ontology contracts and compare their surface-qualified bindings with
