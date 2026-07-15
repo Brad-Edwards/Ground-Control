@@ -43,11 +43,10 @@ class ServiceVersionPropertyTest {
                 .isNotNull();
         String version = value.toString();
         assertThat(version)
-                .as("processResources must replace the @projectVersion@ token at build time")
-                .doesNotContain("@");
-        assertThat(version)
-                .as("the product version must not fall back to the logback 'unknown' default")
-                .isNotEqualTo("unknown");
-        assertThat(version).as("info.app.version must be a semantic version").matches("\\d+\\.\\d+\\.\\d+.*");
+                .as("info.app.version must resolve to a real product version: processResources replaces the"
+                        + " @projectVersion@ token and it is not the logback 'unknown' fallback")
+                .doesNotContain("@")
+                .isNotEqualTo("unknown")
+                .matches("\\d+\\.\\d+\\.\\d+.*");
     }
 }
