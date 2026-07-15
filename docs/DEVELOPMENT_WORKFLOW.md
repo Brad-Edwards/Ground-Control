@@ -350,6 +350,11 @@ re-export only; hand-mirrored DTOs and enum constants belong in the generator
 inventory, not in frontend source. `make contracts-check` reruns generation and
 fails on `git diff` across `contracts/` and that frontend shim.
 
+API-visible enums, including `GraphEntityType`, are registered in the existing
+ADR-034 inventory. Contract generation emits both the TypeScript union and its
+iterable constant (for example, `GRAPH_ENTITY_TYPES`); frontend colors, filters,
+and coverage tests consume that constant instead of maintaining a second list.
+
 `make mcp-openapi-contract` (CI job `mcp-contract`) extends the same flow for
 MCP write-tool parity. It is **separate from `make policy`** because OpenAPI is
 generated from the current backend build, which requires booting the full Spring

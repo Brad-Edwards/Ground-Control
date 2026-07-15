@@ -72,6 +72,26 @@ class MixedGraphServiceTest {
     }
 
     @Test
+    void extractSubgraphTraversesRequirementToArtifactReference() {
+        var requirement = node("REQUIREMENT:req-1", GraphEntityType.REQUIREMENT, "REQ-1");
+        var artifact = node("ARTIFACT_REFERENCE:artifact-1", GraphEntityType.ARTIFACT_REFERENCE, "src/main/App.java");
+        var implementsEdge = edge(
+                "trace-1",
+                "IMPLEMENTS",
+                requirement.id(),
+                artifact.id(),
+                requirement.entityType(),
+                artifact.entityType());
+        when(mixedGraphClient.getVisualization(eq(projectId), any()))
+                .thenReturn(new GraphProjection(List.of(requirement, artifact), List.of(implementsEdge)));
+
+        var subgraph = mixedGraphService.extractSubgraph(projectId, List.of(requirement.id()), 1, null);
+
+        assertThat(subgraph.nodes()).containsExactlyInAnyOrder(requirement, artifact);
+        assertThat(subgraph.edges()).containsExactly(implementsEdge);
+    }
+
+    @Test
     void traverseThrowsWhenRootNodeIsMissing() {
         when(mixedGraphClient.getVisualization(eq(projectId), any()))
                 .thenReturn(new GraphProjection(List.of(), List.of()));

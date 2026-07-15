@@ -1811,13 +1811,16 @@ class PolicyChecksTest(unittest.TestCase):
         # NistImpactBand, NormalizedConcept, CrosswalkVocabularySurface, and
         # MethodologyFamily were retired with the composed GRC product
         # surface (ADR-089, issue #1346); their backend enums are deleted, so
-        # they must not remain in the inventory. VerificationStatus and
+        # they must not remain in the inventory. GraphEntityType joins the
+        # inventory under ADR-034/#1308 so generated graph UI mirrors cannot
+        # drift. VerificationStatus and
         # AssuranceLevel are unaffected (domain/verification/state, not part
         # of the retired GRC surface) and stay.
         labels = {c.label for c in ENUM_CONTRACT_INVENTORY}
         self.assertEqual(
             labels,
             {
+                "GraphEntityType",
                 "RequirementType",
                 "RelationType",
                 "ArtifactType",

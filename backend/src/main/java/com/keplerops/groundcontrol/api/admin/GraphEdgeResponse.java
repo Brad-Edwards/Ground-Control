@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.api.admin;
 
 import com.keplerops.groundcontrol.domain.graph.model.GraphEdge;
+import com.keplerops.groundcontrol.domain.graph.model.GraphEntityType;
 import java.util.Map;
 
 public record GraphEdgeResponse(
@@ -8,8 +9,8 @@ public record GraphEdgeResponse(
         String edgeType,
         String sourceId,
         String targetId,
-        String sourceEntityType,
-        String targetEntityType,
+        GraphEntityType sourceEntityType,
+        GraphEntityType targetEntityType,
         Map<String, Object> properties) {
 
     public static GraphEdgeResponse from(GraphEdge edge) {
@@ -18,8 +19,8 @@ public record GraphEdgeResponse(
                 edge.edgeType(),
                 edge.sourceId(),
                 edge.targetId(),
-                edge.sourceEntityType().name(),
-                edge.targetEntityType().name(),
+                edge.sourceEntityType(),
+                edge.targetEntityType(),
                 edge.properties());
     }
 }

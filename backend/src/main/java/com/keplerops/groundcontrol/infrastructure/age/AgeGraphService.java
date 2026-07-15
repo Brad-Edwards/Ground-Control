@@ -160,6 +160,7 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
             "createdBy",
             "sourceUid",
             "targetUid",
+            "artifactIdentifier",
             // Asset projection.
             "name",
             "description",

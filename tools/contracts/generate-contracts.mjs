@@ -120,6 +120,9 @@ const schemaDeclarationOverrides = {
 
 const exactPropertyTypes = {
   "TimelineEntryResponse.changeCategory": "ChangeCategory",
+  "GraphVisualizationNodeResponse.entityType": "GraphEntityType",
+  "GraphEdgeResponse.sourceEntityType": "GraphEntityType",
+  "GraphEdgeResponse.targetEntityType": "GraphEntityType",
   // gateState is null for bulk list entries and executions whose gate state cannot be queried
   // (GC-O009 (b), #1279). springdoc emits a bare $ref (non-null) for it; this override keeps the
   // generated client honest about the intentionally-nullable field.
@@ -186,6 +189,7 @@ function enumValues(spec, schemaName, propertyName) {
 }
 
 const enumExports = [
+  ["GraphEntityType", "GRAPH_ENTITY_TYPES", "GraphVisualizationNodeResponse", "entityType"],
   ["Status", "STATUSES", "RequirementResponse", "status"],
   ["RiskScenarioStatus", null, "RiskScenarioResponse", "status"],
   ["Priority", "PRIORITIES", "RequirementResponse", "priority"],
@@ -231,7 +235,6 @@ const broadLegacyTypes = [
   "PackType",
   "CatalogStatus",
   "PackRegistryImportFormat",
-  "GraphEntityType",
   "AssetCriticality",
   "AssetEnvironment",
   "AssetScope",
@@ -410,9 +413,10 @@ function emitGeneratedTypes(spec) {
   lines.push("");
 
   for (const [typeName, constName, schemaName, propertyName] of enumExports) {
-    if (schemas[typeName]) continue;
     const values = enumValues(spec, schemaName, propertyName);
-    lines.push(`export type ${typeName} = ${unionFromValues(values)};`);
+    if (!schemas[typeName]) {
+      lines.push(`export type ${typeName} = ${unionFromValues(values)};`);
+    }
     if (constName) {
       lines.push(`export const ${constName}: ${typeName}[] = ${JSON.stringify(values)};`);
     }
