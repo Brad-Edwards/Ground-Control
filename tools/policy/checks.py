@@ -2563,6 +2563,7 @@ MCP_LIB_PATH = "mcp/ground-control/lib.js"
 _ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state"
 _AUDIT_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state"
 _VERIFICATION_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/verification/state"
+_GRAPH_MODEL_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/model"
 
 # Java enum body: from the opening `{` to whichever comes first — the `;` that
 # terminates the constant list (present when the enum has methods/fields, e.g.
@@ -2607,6 +2608,13 @@ class EnumContract:
 
 
 ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
+    EnumContract(
+        "GraphEntityType",
+        f"{_GRAPH_MODEL_DIR}/GraphEntityType.java",
+        "GraphEntityType",
+        "GRAPH_ENTITY_TYPES",
+        None,
+    ),
     EnumContract("RequirementType", f"{_ENUM_STATE_DIR}/RequirementType.java", "RequirementType", "REQUIREMENT_TYPES", "REQUIREMENT_TYPES"),
     EnumContract("RelationType", f"{_ENUM_STATE_DIR}/RelationType.java", "RelationType", "RELATION_TYPES", "RELATION_TYPES"),
     EnumContract("ArtifactType", f"{_ENUM_STATE_DIR}/ArtifactType.java", "ArtifactType", "ARTIFACT_TYPES", "ARTIFACT_TYPES"),

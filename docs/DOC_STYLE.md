@@ -1,5 +1,13 @@
 # Documentation style
 
+> **Sync note for issue #1308 (2026-07-15, graph enum contract):** Added
+> `GraphEntityType` to the existing ADR-034 enum-contract policy inventory and
+> generated `GRAPH_ENTITY_TYPES` for frontend graph colors and tooltip coverage.
+> Documentation lives in ADR-034, ADR-084, `docs/DEVELOPMENT_WORKFLOW.md`, and
+> `docs/architecture/ARCHITECTURE.md`; ADR-054 records the policy-surface sync.
+> The documentation-coverage classifier, `outcome_required` mapping, Vale rules,
+> `tools/install-vale.sh`, `.vale.ini`, and this file's style rules are unchanged.
+
 > **Sync note (2026-07-14, policy diff-base merge-base fix):** Fixed the `base`
 > arm of `read_changed_files` in `tools/policy/checks.py` to scope the diff to
 > `merge-base(base, HEAD)` instead of the two-dot `git diff <base> --`, so a PR

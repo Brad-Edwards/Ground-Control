@@ -1,6 +1,20 @@
 # Contract Changes
 
-Current contract version: 0.5.0
+Current contract version: 0.6.0
+
+## 0.6.0 - 2026-07-15
+
+Traceability context-graph projection (issue #1308, ADR-084).
+
+- **BREAKING**: removed the never-emitted `CONTROL_LINK` and `AUDIT_LINK`
+  values from `GraphEntityType`; links remain graph edges. The previously
+  retired `RISK_APPETITE_PROFILE` value remains absent.
+- Added `ARTIFACT_REFERENCE` for project-qualified, identifier-addressed
+  traceability endpoints and projected all five requirement traceability edge
+  kinds into the mixed graph.
+- Graph response entity fields now publish the closed `GraphEntityType` enum in
+  OpenAPI. Generated TypeScript exports `GRAPH_ENTITY_TYPES` for iterable UI
+  coverage while preserving the existing JSON string values.
 
 ## 0.5.0 - 2026-07-14
 

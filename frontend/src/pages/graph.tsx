@@ -123,9 +123,6 @@ function getNodeDescription(node: GraphNodeData): string {
   if (entityType === "RISK_SCENARIO") {
     return getStringProperty(node, "effect");
   }
-  if (entityType === "RISK_REGISTER_RECORD") {
-    return getStringProperty(node, "assetScopeSummary");
-  }
   return "";
 }
 
@@ -166,26 +163,6 @@ const TOOLTIP_FIELDS_BY_ENTITY_TYPE: Record<
     { label: "Threat", key: "threat" },
     { label: "Method", key: "method" },
   ],
-  RISK_REGISTER_RECORD: [
-    { label: "Status", key: "status" },
-    { label: "Owner", key: "owner" },
-    { label: "Cadence", key: "reviewCadence" },
-  ],
-  RISK_ASSESSMENT_RESULT: [
-    { label: "Approval", key: "approvalState" },
-    { label: "Confidence", key: "confidence" },
-    { label: "Analyst", key: "analystIdentity" },
-  ],
-  TREATMENT_PLAN: [
-    { label: "Strategy", key: "strategy" },
-    { label: "Status", key: "status" },
-    { label: "Owner", key: "owner" },
-  ],
-  METHODOLOGY_PROFILE: [
-    { label: "Family", key: "family" },
-    { label: "Version", key: "version" },
-    { label: "Status", key: "status" },
-  ],
   CONTROL: [
     { label: "Status", key: "status" },
     { label: "Owner", key: "owner" },
@@ -196,11 +173,6 @@ const TOOLTIP_FIELDS_BY_ENTITY_TYPE: Record<
     { label: "Methodology", key: "methodology" },
     { label: "Conclusion", key: "conclusion" },
     { label: "Tester", key: "testerIdentity" },
-  ],
-  CONTROL_EFFECTIVENESS_ASSESSMENT: [
-    { label: "Design", key: "designEffectiveness" },
-    { label: "Operating", key: "operatingEffectiveness" },
-    { label: "Assessor", key: "assessor" },
   ],
   VERIFICATION_RESULT: [
     { label: "Prover", key: "prover" },
@@ -255,6 +227,10 @@ const TOOLTIP_FIELDS_BY_ENTITY_TYPE: Record<
     { label: "Kind", key: "kind" },
     { label: "Status", key: "status" },
     { label: "External ID", key: "externalIdentifier" },
+  ],
+  ARTIFACT_REFERENCE: [
+    { label: "Type", key: "artifactType" },
+    { label: "Identifier", key: "artifactIdentifier" },
   ],
 };
 
@@ -604,11 +580,7 @@ export function Graph() {
           owner: getStringProperty(node, "owner"),
           source: getStringProperty(node, "source"),
           confidence: getStringProperty(node, "confidence"),
-          reviewCadence: getStringProperty(node, "reviewCadence"),
-          strategy: getStringProperty(node, "strategy"),
-          approvalState: getStringProperty(node, "approvalState"),
-          analystIdentity: getStringProperty(node, "analystIdentity"),
-          family: getStringProperty(node, "family"),
+          name: getStringProperty(node, "name"),
           version: getStringProperty(node, "version"),
           threat: getStringProperty(node, "threat"),
           threatSource: getStringProperty(node, "threatSource"),
@@ -616,18 +588,12 @@ export function Graph() {
           method: getStringProperty(node, "method"),
           effect: getStringProperty(node, "effect"),
           observationValue: getStringProperty(node, "observationValue"),
-          // CONTROL / CONTROL_TEST / CONTROL_EFFECTIVENESS_ASSESSMENT
+          // CONTROL / CONTROL_TEST
           controlFunction: getStringProperty(node, "controlFunction"),
           methodology: getStringProperty(node, "methodology"),
           conclusion: getStringProperty(node, "conclusion"),
           testerIdentity: getStringProperty(node, "testerIdentity"),
           controlUid: getStringProperty(node, "controlUid"),
-          designEffectiveness: getStringProperty(node, "designEffectiveness"),
-          operatingEffectiveness: getStringProperty(
-            node,
-            "operatingEffectiveness",
-          ),
-          assessor: getStringProperty(node, "assessor"),
           // VERIFICATION_RESULT
           prover: getStringProperty(node, "prover"),
           result: getStringProperty(node, "result"),
@@ -648,6 +614,14 @@ export function Graph() {
           mappingObjective: getStringProperty(node, "mappingObjective"),
           // DOCUMENT
           updatedAt: getStringProperty(node, "updatedAt"),
+          // RESEARCH / ARTIFACT_REFERENCE
+          currentStage: getStringProperty(node, "currentStage"),
+          autonomyLevel: getStringProperty(node, "autonomyLevel"),
+          artifactType: getStringProperty(node, "artifactType"),
+          artifactIdentifier: getStringProperty(node, "artifactIdentifier"),
+          stage: getStringProperty(node, "stage"),
+          kind: getStringProperty(node, "kind"),
+          externalIdentifier: getStringProperty(node, "externalIdentifier"),
           color: getNodeColor(
             {
               entityType: getNodeEntityType(node),
@@ -864,7 +838,7 @@ export function Graph() {
           {
             id: String(n.id()),
             domainId: String(n.data("domainId") ?? ""),
-            entityType: String(n.data("entityType") ?? ""),
+            entityType: n.data("entityType") as GraphNodeData["entityType"],
             projectIdentifier: "",
             uid: n.data("uid") ? String(n.data("uid")) : null,
             label: String(n.data("label") ?? ""),
