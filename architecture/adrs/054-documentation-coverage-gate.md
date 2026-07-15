@@ -8,6 +8,16 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #1308 (2026-07-15, graph enum contract):** Added
+> `GraphEntityType` to the existing ADR-034 `ENUM_CONTRACT_INVENTORY`, so
+> `make policy` checks the backend enum against the generated TypeScript union
+> and `GRAPH_ENTITY_TYPES` constant. The graph contract and consumer guidance
+> lives in ADR-034, ADR-084, `docs/DEVELOPMENT_WORKFLOW.md`, and
+> `docs/architecture/ARCHITECTURE.md`. The documentation-coverage classifier,
+> `outcome_required` mapping, Vale rules, `tools/install-vale.sh`, `.vale.ini`,
+> and this ADR's coverage model are unchanged; no new `docs/DOC_STYLE.md` style
+> rule is established.
+
 > **Sync note (2026-07-14, policy diff-base merge-base fix):** Fixed the `base`
 > arm of `read_changed_files` in `tools/policy/checks.py` to scope the diff to
 > `merge-base(base, HEAD)` (new `merge_base_or` helper) instead of the two-dot

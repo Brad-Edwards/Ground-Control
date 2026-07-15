@@ -931,9 +931,9 @@ export interface GraphEdgeResponse {
   "edgeType": any;
   "id": any;
   "properties": Record<string, any>;
-  "sourceEntityType": any;
+  "sourceEntityType": GraphEntityType;
   "sourceId": any;
-  "targetEntityType": any;
+  "targetEntityType": GraphEntityType;
   "targetId": any;
 }
 
@@ -961,7 +961,7 @@ export interface GraphPathsQueryRequest {
 export interface GraphVisualizationNodeResponse {
   [key: string]: any;
   "domainId": any;
-  "entityType": any;
+  "entityType": GraphEntityType;
   "id": any;
   "label": any;
   "projectIdentifier": any;
@@ -3408,7 +3408,6 @@ export type WorkflowRunPhaseHotspot = PhaseHotspotResponse;
 export type RevisionType = string;
 export type PackType = string;
 export type CatalogStatus = string;
-export type GraphEntityType = string;
 export type AssetRelationType = string;
 export type TestCaseTreeNodeKind = string;
 
@@ -3418,6 +3417,8 @@ export type EvidenceType = "OBSERVATION_SUMMARY" | "CONTROL_TEST_SUMMARY" | "ASS
 export type EvidenceSourceKind = "OBSERVATION" | "CONTROL_TEST" | "CONTROL_EFFECTIVENESS_ASSESSMENT" | "VERIFICATION_RESULT" | "RISK_ASSESSMENT_RESULT" | "FINDING" | "ATTESTATION" | "EXTERNAL";
 export type ControlTestConclusion = "EFFECTIVE" | "INEFFECTIVE" | "NOT_TESTED";
 
+export type GraphEntityType = "REQUIREMENT" | "OPERATIONAL_ASSET" | "OBSERVATION" | "RISK_SCENARIO" | "CONTROL" | "CONTROL_TEST" | "VERIFICATION_RESULT" | "THREAT_MODEL" | "FINDING" | "EVIDENCE_ARTIFACT" | "AUDIT" | "RISK_CONTROL_MAPPING" | "SCOPED_CONTROL_IMPLEMENTATION" | "DOCUMENT" | "RESEARCH_RUN" | "RESEARCH_ARTIFACT" | "RESEARCH_PROVENANCE_NODE" | "ARTIFACT_REFERENCE";
+export const GRAPH_ENTITY_TYPES: GraphEntityType[] = ["REQUIREMENT","OPERATIONAL_ASSET","OBSERVATION","RISK_SCENARIO","CONTROL","CONTROL_TEST","VERIFICATION_RESULT","THREAT_MODEL","FINDING","EVIDENCE_ARTIFACT","AUDIT","RISK_CONTROL_MAPPING","SCOPED_CONTROL_IMPLEMENTATION","DOCUMENT","RESEARCH_RUN","RESEARCH_ARTIFACT","RESEARCH_PROVENANCE_NODE","ARTIFACT_REFERENCE"];
 export type Status = "DRAFT" | "ACTIVE" | "DEPRECATED" | "ARCHIVED";
 export const STATUSES: Status[] = ["DRAFT","ACTIVE","DEPRECATED","ARCHIVED"];
 export type RiskScenarioStatus = "DRAFT" | "ACTIVE" | "ARCHIVED";

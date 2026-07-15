@@ -3527,12 +3527,52 @@
             "type": "object"
           },
           "sourceEntityType": {
+            "enum": [
+              "REQUIREMENT",
+              "OPERATIONAL_ASSET",
+              "OBSERVATION",
+              "RISK_SCENARIO",
+              "CONTROL",
+              "CONTROL_TEST",
+              "VERIFICATION_RESULT",
+              "THREAT_MODEL",
+              "FINDING",
+              "EVIDENCE_ARTIFACT",
+              "AUDIT",
+              "RISK_CONTROL_MAPPING",
+              "SCOPED_CONTROL_IMPLEMENTATION",
+              "DOCUMENT",
+              "RESEARCH_RUN",
+              "RESEARCH_ARTIFACT",
+              "RESEARCH_PROVENANCE_NODE",
+              "ARTIFACT_REFERENCE"
+            ],
             "type": "string"
           },
           "sourceId": {
             "type": "string"
           },
           "targetEntityType": {
+            "enum": [
+              "REQUIREMENT",
+              "OPERATIONAL_ASSET",
+              "OBSERVATION",
+              "RISK_SCENARIO",
+              "CONTROL",
+              "CONTROL_TEST",
+              "VERIFICATION_RESULT",
+              "THREAT_MODEL",
+              "FINDING",
+              "EVIDENCE_ARTIFACT",
+              "AUDIT",
+              "RISK_CONTROL_MAPPING",
+              "SCOPED_CONTROL_IMPLEMENTATION",
+              "DOCUMENT",
+              "RESEARCH_RUN",
+              "RESEARCH_ARTIFACT",
+              "RESEARCH_PROVENANCE_NODE",
+              "ARTIFACT_REFERENCE"
+            ],
             "type": "string"
           },
           "targetId": {
@@ -3633,6 +3673,26 @@
             "type": "string"
           },
           "entityType": {
+            "enum": [
+              "REQUIREMENT",
+              "OPERATIONAL_ASSET",
+              "OBSERVATION",
+              "RISK_SCENARIO",
+              "CONTROL",
+              "CONTROL_TEST",
+              "VERIFICATION_RESULT",
+              "THREAT_MODEL",
+              "FINDING",
+              "EVIDENCE_ARTIFACT",
+              "AUDIT",
+              "RISK_CONTROL_MAPPING",
+              "SCOPED_CONTROL_IMPLEMENTATION",
+              "DOCUMENT",
+              "RESEARCH_RUN",
+              "RESEARCH_ARTIFACT",
+              "RESEARCH_PROVENANCE_NODE",
+              "ARTIFACT_REFERENCE"
+            ],
             "type": "string"
           },
           "id": {

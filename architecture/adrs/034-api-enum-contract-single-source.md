@@ -154,6 +154,16 @@ contract. The architecture rationale captured during preflight lives in
   leaving it unchecked. Mitigated by documenting the inventory as the extension
   point here and in the preflight note; not mechanically prevented.
 
+## Amendment 2026-07-15: Generated Graph-Entity Vocabulary
+
+Issue #1308 adds `GraphEntityType` to `ENUM_CONTRACT_INVENTORY`. The typed
+graph response fields make Springdoc publish the enum values, and the ADR-082
+generator now emits both the `GraphEntityType` union and the iterable
+`GRAPH_ENTITY_TYPES` constant. Frontend graph colors and tooltip coverage
+consume that generated constant, removing their hand-maintained enum lists.
+The inventory gate therefore catches backend, generated-contract, and frontend
+drift in the same way as the original requirement vocabularies.
+
 ## Amendment 2026-06-15: MCP Write-Tool DTO Drift Gate
 
 Issue #1106 extends this contract from selected enum mirrors to MCP write-tool

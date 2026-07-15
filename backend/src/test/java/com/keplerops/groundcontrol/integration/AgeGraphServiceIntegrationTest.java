@@ -9,10 +9,15 @@ import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import com.keplerops.groundcontrol.domain.requirements.model.RequirementRelation;
+import com.keplerops.groundcontrol.domain.requirements.model.TraceabilityLink;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRelationRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
+import com.keplerops.groundcontrol.domain.requirements.repository.TraceabilityLinkRepository;
 import com.keplerops.groundcontrol.domain.requirements.service.GraphClient;
+import com.keplerops.groundcontrol.domain.requirements.state.ArtifactType;
+import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
 import com.keplerops.groundcontrol.domain.requirements.state.RelationType;
+import com.keplerops.groundcontrol.domain.requirements.state.Status;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +38,9 @@ class AgeGraphServiceIntegrationTest extends BaseAgeIntegrationTest {
 
     @Autowired
     private RequirementRelationRepository relationRepository;
+
+    @Autowired
+    private TraceabilityLinkRepository traceabilityLinkRepository;
 
     @Autowired
     private ProjectRepository projectRepository;
@@ -157,6 +165,57 @@ class AgeGraphServiceIntegrationTest extends BaseAgeIntegrationTest {
         var reloaded = requirementRepository.findById(req.getId()).orElseThrow();
         assertThat(reloaded.getTitle()).isEqualTo(adversarialTitle);
         assertThat(reloaded.getStatement()).isEqualTo(adversarialStatement);
+    }
+
+    @Test
+    void materializeGraphProjectsTraceabilityEdgeToBoundArtifactReference() {
+        String adversarialIdentifier = "src/$gc$/'quoted'/}::vertex/Trace.java";
+        var requirement = requirementRepository.save(
+                new Requirement(testProject, "AGE-TRACE", "Traceability", "Traceability must be traversable"));
+        var link = traceabilityLinkRepository.save(
+                new TraceabilityLink(requirement, ArtifactType.CODE_FILE, adversarialIdentifier, LinkType.IMPLEMENTS));
+
+        graphClient.materializeGraph();
+
+        var projection = mixedGraphClient.getVisualization(testProject.getId(), java.util.Set.of());
+        var requirementNode = projection.nodes().stream()
+                .filter(node -> "AGE-TRACE".equals(node.uid()))
+                .findFirst()
+                .orElseThrow();
+        var artifactNode = projection.nodes().stream()
+                .filter(node -> adversarialIdentifier.equals(node.uid()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(artifactNode.entityType().name()).isEqualTo("ARTIFACT_REFERENCE");
+        assertThat(artifactNode.properties())
+                .containsEntry("artifactType", "CODE_FILE")
+                .containsEntry("artifactIdentifier", adversarialIdentifier);
+        assertThat(projection.edges())
+                .filteredOn(edge -> edge.id().equals(link.getId().toString()))
+                .singleElement()
+                .satisfies(edge -> {
+                    assertThat(edge.edgeType()).isEqualTo("IMPLEMENTS");
+                    assertThat(edge.sourceId()).isEqualTo(requirementNode.id());
+                    assertThat(edge.targetId()).isEqualTo(artifactNode.id());
+                });
+    }
+
+    @Test
+    void materializeGraphOmitsArchivedRequirementTraceability() {
+        var requirement = requirementRepository.save(
+                new Requirement(testProject, "AGE-TRACE-OLD", "Archived trace", "Archived requirements stay out"));
+        var link = traceabilityLinkRepository.save(
+                new TraceabilityLink(requirement, ArtifactType.CODE_FILE, "src/retired.java", LinkType.IMPLEMENTS));
+        requirement.transitionStatus(Status.DEPRECATED);
+        requirement.archive();
+        requirementRepository.save(requirement);
+
+        graphClient.materializeGraph();
+
+        var projection = mixedGraphClient.getVisualization(testProject.getId(), java.util.Set.of());
+        assertThat(projection.nodes()).noneMatch(node -> "AGE-TRACE-OLD".equals(node.uid()));
+        assertThat(projection.edges())
+                .noneMatch(edge -> edge.id().equals(link.getId().toString()));
     }
 
     @Test
