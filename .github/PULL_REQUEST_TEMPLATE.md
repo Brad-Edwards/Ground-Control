@@ -43,5 +43,5 @@
 - [ ] No business logic in API layer
 - [ ] Domain layer has no framework imports
 - [ ] Envers `@Audited` on new entities if applicable
-- [ ] Changelog fragment added under `changelog.d/<issue>.<type>.md` (or `+<slug>.<type>.md`), or no fragment needed (CI-only / docs-only change - refactors under application source still file a fragment). See `changelog.d/README.md`.
+- [ ] PR title is a Conventional Commit (`type(optional-scope): subject`, lowercase-leading subject) - enforced by CI (`.github/workflows/pr-title.yml`). Release Please owns `CHANGELOG.md` and the version bump from this history; do not hand-edit `CHANGELOG.md` or add a `changelog.d/` fragment.
 - [ ] Architectural docs updated if stack, package structure, or key behaviors changed (`docs/architecture/ARCHITECTURE.md`, `docs/CODING_STANDARDS.md`, relevant ADRs)

@@ -263,9 +263,9 @@ Returns all transitively affected requirements: everything upstream and downstre
 
 ## Phase 5: Release & Audit
 
-### Release Notes via Changelog Fragments
+### Release Notes via Release Please
 
-Per-PR release notes ship as fragments under `changelog.d/<issue>.<type>.md` (or `+<slug>.<type>.md` for issue-free entries), where `<type>` is one of `security`, `added`, `changed`, `deprecated`, `removed`, `fixed`. The convention exists so concurrent PRs never conflict on the same `CHANGELOG.md` line range, and it is enforced by `tools/policy/checks.py::run_changelog_fragment_check` plus the `verify-implementation.sh` Stop hook. Source-changing diffs MUST file a fragment (refactors under application source included); CI-only and docs-only diffs may ship without one. Direct `CHANGELOG.md` edits are reserved for release-collation commits. At release time the maintainer runs `uvx towncrier build --version <X.Y.Z> --date <YYYY-MM-DD> --yes`; towncrier collates the fragments into `CHANGELOG.md` immediately after the `<!-- towncrier release notes start -->` marker and removes the fragments it consumed. See [`changelog.d/README.md`](../changelog.d/README.md) for the full convention.
+`CHANGELOG.md` and the product SemVer are owned by Release Please (GC-P027, issue #1399), not by a per-PR fragment convention - feature PRs neither edit `CHANGELOG.md` nor file a `changelog.d/` fragment; that convention is retired. CI enforces a Conventional Commit PR title (`.github/workflows/pr-title.yml`); Release Please parses the resulting commit history on `main` and maintains a `chore(main): release X.Y.Z` PR that regenerates `CHANGELOG.md` and bumps the product-version mirrors. A maintainer cuts the release by merging that PR - never by hand-tagging or hand-editing `CHANGELOG.md`. See `docs/DEVELOPMENT_WORKFLOW.md § Release model` for the full mechanics.
 
 ### Create a Baseline
 

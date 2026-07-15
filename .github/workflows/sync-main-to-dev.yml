@@ -1,0 +1,68 @@
+name: Sync main -> dev
+
+# Keep `dev` in sync with `main` after a release (GC-P027, ADR-063 "2026-07-15 Amendment").
+#
+# Release Please cuts releases on `main`: when its `chore(main): release ...` PR merges,
+# the version bump + CHANGELOG commit lives ONLY on `main`. This workflow opens a
+# back-merge PR (main -> dev) so `dev` catches up automatically — a human just merges it.
+#
+# Why `push: main` and not `release: published`: Release Please creates the GitHub Release
+# with GITHUB_TOKEN, and GITHUB_TOKEN-created events do not trigger other workflows — a
+# release trigger would never fire. The human merging the release PR pushes `main`, which
+# triggers reliably. `workflow_dispatch` allows a manual resync with the same ref guard.
+#
+# Why it opens a PR instead of auto-merging: a bot-opened PR does not trigger `dev`'s
+# required status checks (GITHUB_TOKEN limitation), so auto-merge would stall. Opening the
+# PR for a one-click/admin merge behaves the same before and after required checks are
+# added — no silent stalls, and the human merge gate is preserved.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # force-update the dedicated automation branch (never main/dev)
+  pull-requests: write # open/maintain the back-merge PR
+
+concurrency:
+  group: sync-main-to-dev
+  cancel-in-progress: false
+
+jobs:
+  backmerge:
+    name: Open main -> dev back-merge PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - name: Open or update the back-merge PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin main dev
+
+          # Compare committed TREES, not commit counts: after a normal dev -> main
+          # promotion the histories differ while the content is identical, and there is
+          # nothing to back-merge.
+          if git diff --quiet origin/dev origin/main; then
+            echo "dev and main content already match; nothing to sync."
+            exit 0
+          fi
+
+          # One dedicated, disposable automation branch. Force-updating it from current
+          # main is safe (it is owned by this workflow); main and dev are never
+          # force-pushed. Reuse the PR by head+base, never by title.
+          branch="sync/main-to-dev"
+          git push --force origin "origin/main:refs/heads/${branch}"
+
+          existing="$(gh pr list --head "${branch}" --base dev --state open \
+            --json number --jq '.[0].number // empty')"
+          if [ -n "${existing}" ]; then
+            echo "Back-merge PR #${existing} already open; its branch now points at latest main."
+          else
+            gh pr create --base dev --head "${branch}" \
+              --title "chore: sync main -> dev" \
+              --body "Automated back-merge (GC-P027, ADR-063): brings release commit(s) from \`main\` into \`dev\` so the branches stay in sync. \`main\` is ahead of \`dev\` only by the release commit. \`dev\`'s required checks do not run on this bot-opened PR — an admin/one-click merge is expected; this is a real PR with normal conflict handling, never an auto-merge around branch protection."
+          fi

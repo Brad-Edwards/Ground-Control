@@ -1,1 +1,0 @@
-### Changed - Internal refactor of GC-M011 asset subtype/metadata code to clear SonarCloud findings: extract repeated string constants, split AssetSubtypeValidator.validateSchemaBody into smaller helpers, replace deprecated AssetService self-invocations with private helpers, suppress S107 on JPA query repository signatures, parameterize present-null schema-keyword tests.

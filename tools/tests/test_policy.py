@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tools.policy.checks import (
-    CHANGELOG_FRAGMENT_TYPES,
     DEFERRAL_CASES_PATH,
     ENUM_CONTRACT_INVENTORY,
     FRONTEND_API_TYPES_PATH,
@@ -16,6 +15,7 @@ from tools.policy.checks import (
     POLL_LOOP_ROUTING_STAGES,
     REPO_ROOT,
     _is_release_pr,
+    _jsonpath_keys,
     _resolve_pr_refs,
     check_pr_body,
     classify_deferral_language,
@@ -23,13 +23,11 @@ from tools.policy.checks import (
     main,
     parse_args,
     parse_const_string_array,
-    parse_fragment_filename,
     parse_java_enum_constants,
     parse_routing_agents,
     parse_ts_union_literals,
     read_changed_files,
     run_adr_guard,
-    run_changelog_fragment_check,
     run_ci_strictness_contract,
     run_authz_matrix_sync_check,
     run_contract_invariant_enforcement_check,
@@ -47,6 +45,7 @@ from tools.policy.checks import (
     run_pr_body_check,
     run_test_quality_decision_record_contract,
     run_traceability_reconciliation_gate_contract,
+    run_version_mirror_consistency_check,
     run_workflow_routing_contract,
 )
 
@@ -511,9 +510,12 @@ class PolicyChecksTest(unittest.TestCase):
             self.assertFalse(any(item.code == "migration-immutability" for item in violations))
 
     def test_is_release_pr(self):
-        self.assertTrue(_is_release_pr("main", "dev"))
+        self.assertTrue(_is_release_pr("main", "dev"))  # dev -> main promotion
+        self.assertTrue(_is_release_pr("main", "release-please--branches--main"))  # release PR
+        self.assertTrue(_is_release_pr("dev", "sync/main-to-dev"))  # main -> dev back-merge
         self.assertFalse(_is_release_pr("dev", "feature-x"))  # feature -> dev
         self.assertFalse(_is_release_pr("main", "hotfix"))  # direct hotfix -> main
+        self.assertFalse(_is_release_pr("main", "sync/main-to-dev"))  # sync only targets dev
         self.assertFalse(_is_release_pr(None, None))  # refs unknown (local run)
 
     def test_resolve_pr_refs_from_event_payload(self):
@@ -2549,658 +2551,144 @@ public class RequirementGraphProjectionContributor implements GraphProjectionCon
 
 
 # ---------------------------------------------------------------------------
-# Changelog-fragment workflow (issue #848).
+# Version-mirror consistency (issue #1399, GC-P027).
 #
-# Ground-Control adopts towncrier-style fragments under `changelog.d/` to
-# eliminate per-PR `CHANGELOG.md` rebase storms. Two structural gates back
-# the convention:
-#
-#   1. Fragment-filename parser — closed Keep-a-Changelog type vocabulary,
-#      `<digits>.<type>.md` (issue-anchored) or `+<slug>.<type>.md`
-#      (issue-free). Substring tests against fragment prose are not gates;
-#      the parser over a fixed vocabulary is.
-#   2. Source-changing diff MUST carry a valid fragment under
-#      `changelog.d/`. A direct `CHANGELOG.md` edit does NOT substitute
-#      for a source diff — that would re-open the rebase-storm pathology
-#      the convention exists to prevent. Direct edits are reserved for
-#      release-collation commits, which by definition have no source
-#      changes and fall through the source predicate. CI-only and
-#      docs-only diffs are also outside the predicate and need no
-#      signal; there is no "pure refactor" carve-out because the
-#      enforcement is path-based.
-#
-# The same vocabulary AND source predicate are encoded in
-# `.claude/hooks/verify-implementation.sh` (host-local Stop hook) so both
-# enforcement layers agree.
+# Release Please owns the product version; `.release-please-manifest.json` records
+# it and `release-please-config.json` extra-files bump the mirrors on the release
+# PR. `run_version_mirror_consistency_check` fails when a mirror drifts from the
+# manifest, driven by the config's extra-files as the declarative inventory (not a
+# second hard-coded list). These tests exercise the JSON updater (including the
+# empty-root-package-key package-lock path) and the generic annotation updater
+# (build.gradle.kts), and assert the real repo is self-consistent.
 # ---------------------------------------------------------------------------
 
 
-class ChangelogFragmentChecksTest(unittest.TestCase):
-    # --- parse_fragment_filename ---------------------------------------------
+class VersionMirrorConsistencyChecksTest(unittest.TestCase):
+    def _write(self, root: Path, rel: str, text: str) -> Path:
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+        return p
 
-    def test_fragment_filename_accepts_issue_form(self):
-        # Each row runs as an independent subTest so a regression that
-        # breaks two inputs surfaces both, not just the first.
-        cases = [
-            ("848.added.md", ("848", "added")),
-            ("123.security.md", ("123", "security")),
-            ("42.fixed.md", ("42", "fixed")),
-            ("7.removed.md", ("7", "removed")),
-            ("999.deprecated.md", ("999", "deprecated")),
-            ("1.changed.md", ("1", "changed")),
-        ]
-        for name, expected in cases:
-            with self.subTest(name=name):
-                self.assertEqual(parse_fragment_filename(name), expected)
+    def _canonical_repo(self, root: Path, version: str = "1.0.1") -> None:
+        self._write(root, ".release-please-manifest.json", json.dumps({".": version}) + "\n")
+        self._write(
+            root,
+            "release-please-config.json",
+            json.dumps(
+                {
+                    "include-component-in-tag": False,
+                    "packages": {
+                        ".": {
+                            "release-type": "simple",
+                            "extra-files": [
+                                {"type": "json", "path": "frontend/package.json", "jsonpath": "$.version"},
+                                {"type": "json", "path": "frontend/package-lock.json", "jsonpath": "$.version"},
+                                {
+                                    "type": "json",
+                                    "path": "frontend/package-lock.json",
+                                    "jsonpath": "$.packages[''].version",
+                                },
+                                "backend/build.gradle.kts",
+                            ],
+                        }
+                    },
+                }
+            )
+            + "\n",
+        )
+        self._write(root, "frontend/package.json", json.dumps({"name": "x", "version": version}) + "\n")
+        self._write(
+            root,
+            "frontend/package-lock.json",
+            json.dumps(
+                {"name": "x", "version": version, "packages": {"": {"name": "x", "version": version}}}
+            )
+            + "\n",
+        )
+        self._write(
+            root,
+            "backend/build.gradle.kts",
+            f'group = "com.keplerops"\nversion = "{version}" // x-release-please-version\n',
+        )
 
-    def test_fragment_filename_accepts_slug_form(self):
-        cases = [
-            ("+towncrier-adoption.added.md", ("+towncrier-adoption", "added")),
-            ("+release-notes.changed.md", ("+release-notes", "changed")),
-        ]
-        for name, expected in cases:
-            with self.subTest(name=name):
-                self.assertEqual(parse_fragment_filename(name), expected)
+    def test_noop_when_no_release_please(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(run_version_mirror_consistency_check(root=Path(tmp)), [])
 
-    def test_fragment_filename_rejects_unknown_type(self):
-        for name in ("848.bogus.md", "848.misc.md", "+slug.unknown.md"):
-            with self.subTest(name=name):
-                self.assertIsNone(parse_fragment_filename(name))
+    def test_passes_when_all_mirrors_match_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._canonical_repo(root, "1.0.1")
+            self.assertEqual([v.code for v in run_version_mirror_consistency_check(root=root)], [])
 
-    def test_fragment_filename_rejects_missing_type(self):
-        for name in (
-            "848.md",
-            "848.added",
-            "README.md",
-            "_template.md.jinja",
-        ):
-            with self.subTest(name=name):
-                self.assertIsNone(parse_fragment_filename(name))
+    def test_drift_when_json_mirror_diverges(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._canonical_repo(root, "1.0.1")
+            self._write(root, "frontend/package.json", json.dumps({"name": "x", "version": "0.76.0"}) + "\n")
+            codes = {v.code for v in run_version_mirror_consistency_check(root=root)}
+            self.assertIn("version-mirror-drift", codes)
 
-    def test_fragment_filename_rejects_wrong_extension(self):
-        for name in ("848.added.txt", "848.added.rst"):
-            with self.subTest(name=name):
-                self.assertIsNone(parse_fragment_filename(name))
+    def test_drift_when_lockfile_root_package_key_diverges(self):
+        # Exercises the empty-root-package-key jsonpath $.packages[''].version.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._canonical_repo(root, "1.0.1")
+            self._write(
+                root,
+                "frontend/package-lock.json",
+                json.dumps(
+                    {"name": "x", "version": "1.0.1", "packages": {"": {"name": "x", "version": "0.76.0"}}}
+                )
+                + "\n",
+            )
+            codes = {v.code for v in run_version_mirror_consistency_check(root=root)}
+            self.assertIn("version-mirror-drift", codes)
 
-    def test_fragment_filename_rejects_empty_stem(self):
-        for name in (".added.md", "+.added.md"):
-            with self.subTest(name=name):
-                self.assertIsNone(parse_fragment_filename(name))
+    def test_drift_when_generic_gradle_mirror_diverges(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._canonical_repo(root, "1.0.1")
+            self._write(root, "backend/build.gradle.kts", 'version = "0.20.1" // x-release-please-version\n')
+            codes = {v.code for v in run_version_mirror_consistency_check(root=root)}
+            self.assertIn("version-mirror-drift", codes)
 
-    def test_fragment_filename_rejects_non_numeric_issue_stem(self):
-        # Issue-anchored fragments must be plain digits; slug fragments must
-        # carry the explicit `+` prefix.
-        for name in ("issue848.added.md", "abc.added.md"):
-            with self.subTest(name=name):
-                self.assertIsNone(parse_fragment_filename(name))
+    def test_drift_when_mirror_file_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._canonical_repo(root, "1.0.1")
+            (root / "backend" / "build.gradle.kts").unlink()
+            codes = {v.code for v in run_version_mirror_consistency_check(root=root)}
+            self.assertIn("version-mirror-drift", codes)
 
-    def test_fragment_types_vocabulary_is_keep_a_changelog_set(self):
+    def test_config_missing_when_only_manifest_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root, ".release-please-manifest.json", json.dumps({".": "1.0.1"}) + "\n")
+            codes = {v.code for v in run_version_mirror_consistency_check(root=root)}
+            self.assertIn("version-mirror-config-missing", codes)
+
+    def test_config_invalid_when_manifest_has_no_root_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._canonical_repo(root, "1.0.1")
+            self._write(root, ".release-please-manifest.json", json.dumps({"other": "1.0.1"}) + "\n")
+            codes = {v.code for v in run_version_mirror_consistency_check(root=root)}
+            self.assertIn("version-mirror-config-invalid", codes)
+
+    def test_jsonpath_keys_supports_empty_root_package_key(self):
+        self.assertEqual(_jsonpath_keys("$.version"), ["version"])
+        self.assertEqual(_jsonpath_keys("$.packages[''].version"), ["packages", "", "version"])
+        self.assertEqual(_jsonpath_keys('$.packages[""].version'), ["packages", "", "version"])
+
+    def test_repo_release_please_mirrors_are_consistent(self):
+        # The real repo must be self-consistent: manifest version == every mirror.
+        violations = run_version_mirror_consistency_check(root=REPO_ROOT)
         self.assertEqual(
-            set(CHANGELOG_FRAGMENT_TYPES),
-            {"security", "added", "changed", "deprecated", "removed", "fixed"},
-        )
-
-    # --- together-ness: the canonical infrastructure files ship together ----
-
-    def _make_temp_repo(self, tmp_dir: str) -> Path:
-        root = Path(tmp_dir)
-        return root
-
-    def _write_canonical_fragment_infrastructure(self, root: Path) -> None:
-        (root / "changelog.d").mkdir(parents=True, exist_ok=True)
-        (root / "changelog.d" / "_template.md.jinja").write_text("template\n", encoding="utf-8")
-        (root / "changelog.d" / "README.md").write_text("docs\n", encoding="utf-8")
-        (root / "towncrier.toml").write_text(
-            '[tool.towncrier]\ndirectory = "changelog.d"\n', encoding="utf-8"
-        )
-
-    def test_fragment_infrastructure_passes_with_canonical_layout(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            violations = run_changelog_fragment_check(changed_files=[], root=root)
-            codes = {v.code for v in violations}
-            self.assertNotIn("changelog-fragment-infrastructure", codes)
-
-    def test_fragment_infrastructure_violation_when_template_missing(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            (root / "changelog.d").mkdir()
-            (root / "changelog.d" / "README.md").write_text("docs\n", encoding="utf-8")
-            (root / "towncrier.toml").write_text(
-                '[tool.towncrier]\ndirectory = "changelog.d"\n', encoding="utf-8"
-            )
-            violations = run_changelog_fragment_check(changed_files=[], root=root)
-            codes = {v.code for v in violations}
-            self.assertIn("changelog-fragment-infrastructure", codes)
-
-    def test_fragment_infrastructure_violation_when_towncrier_toml_missing(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            (root / "changelog.d").mkdir()
-            (root / "changelog.d" / "_template.md.jinja").write_text("t\n", encoding="utf-8")
-            (root / "changelog.d" / "README.md").write_text("d\n", encoding="utf-8")
-            violations = run_changelog_fragment_check(changed_files=[], root=root)
-            codes = {v.code for v in violations}
-            self.assertIn("changelog-fragment-infrastructure", codes)
-
-    def test_fragment_infrastructure_silent_when_no_changelog_d(self):
-        # Repos that haven't adopted fragments yet must not get a violation
-        # merely for the absence of `changelog.d/`.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            violations = run_changelog_fragment_check(changed_files=[], root=root)
-            codes = {v.code for v in violations}
-            self.assertNotIn("changelog-fragment-infrastructure", codes)
-
-    # --- diff-signal: source-changing diff must have fragment OR CHANGELOG ---
-
-    def test_changelog_signal_missing_when_source_changed_and_no_fragment(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            violations = run_changelog_fragment_check(
-                changed_files=[
-                    "backend/src/main/java/com/keplerops/groundcontrol/api/Foo.java"
-                ],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertIn("changelog-signal-missing", codes)
-
-    def test_changelog_signal_accepts_fragment(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            (root / "changelog.d" / "848.added.md").write_text("note\n", encoding="utf-8")
-            violations = run_changelog_fragment_check(
-                changed_files=[
-                    "backend/src/main/java/com/keplerops/groundcontrol/api/Foo.java",
-                    "changelog.d/848.added.md",
-                ],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertNotIn("changelog-signal-missing", codes)
-
-    def test_changelog_signal_accepts_slug_fragment(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            (root / "changelog.d" / "+towncrier-adoption.added.md").write_text(
-                "note\n", encoding="utf-8"
-            )
-            violations = run_changelog_fragment_check(
-                changed_files=[
-                    "frontend/src/components/Foo.tsx",
-                    "changelog.d/+towncrier-adoption.added.md",
-                ],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertNotIn("changelog-signal-missing", codes)
-
-    def test_changelog_signal_does_not_accept_deleted_fragment_for_source_diff(self):
-        # Codex cycle 3 finding #1 (class): a source-changing diff whose
-        # only changelog.d/ entry is a DELETION (e.g. release-collation
-        # is consuming an old fragment) must still require a freshly-added
-        # fragment that names the change. The signal predicate is
-        # "fragment file exists in the working tree after the diff", not
-        # "any valid-looking fragment path is named anywhere in the diff".
-        # The fixture creates no file at the candidate path — that
-        # represents the deletion case.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            violations = run_changelog_fragment_check(
-                changed_files=[
-                    "backend/src/main/java/com/keplerops/groundcontrol/api/Foo.java",
-                    "changelog.d/848.added.md",  # listed but NOT on disk
-                ],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertIn("changelog-signal-missing", codes)
-
-    def test_changelog_signal_accepts_mixed_added_and_deleted_fragments(self):
-        # If the diff DELETES one fragment (release collation) but ADDS
-        # another (the new PR's note), the added one should satisfy the
-        # signal.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            (root / "changelog.d" / "848.added.md").write_text("note\n", encoding="utf-8")
-            # 123.fixed.md is "deleted" — not on disk.
-            violations = run_changelog_fragment_check(
-                changed_files=[
-                    "backend/src/main/java/com/keplerops/groundcontrol/api/Foo.java",
-                    "changelog.d/123.fixed.md",
-                    "changelog.d/848.added.md",
-                ],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertNotIn("changelog-signal-missing", codes)
-
-    def test_changelog_signal_rejects_direct_changelog_edit_for_source_diff(self):
-        # Codex review finding #1 (class): if `CHANGELOG.md` alone counts as a
-        # signal for a source-changing diff, the rebase-storm pathology this
-        # change exists to prevent is still reachable — every normal source PR
-        # can hand-edit `CHANGELOG.md` and conflict with every other one. Direct
-        # `CHANGELOG.md` edits are reserved for release-collation commits, which
-        # by definition have no source changes.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            violations = run_changelog_fragment_check(
-                changed_files=[
-                    "backend/src/main/java/com/keplerops/groundcontrol/api/Foo.java",
-                    "CHANGELOG.md",
-                ],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertIn("changelog-signal-missing", codes)
-
-    def test_changelog_signal_accepts_changelog_edit_for_release_collation(self):
-        # A release-collation commit modifies `CHANGELOG.md` and deletes the
-        # fragments it consumed — neither path is application source, so the
-        # source predicate is false and no signal is required. This branch
-        # MUST stay green for `towncrier build` to land cleanly.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            violations = run_changelog_fragment_check(
-                changed_files=[
-                    "CHANGELOG.md",
-                    "changelog.d/848.added.md",
-                ],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertNotIn("changelog-signal-missing", codes)
-
-    def test_changelog_signal_skips_docs_only(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            violations = run_changelog_fragment_check(
-                changed_files=[
-                    "docs/DEVELOPMENT_WORKFLOW.md",
-                    "README.md",
-                    "architecture/adrs/021-gated-agentic-development-loop.md",
-                ],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertNotIn("changelog-signal-missing", codes)
-
-    def test_changelog_signal_skips_ci_only_diff(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            violations = run_changelog_fragment_check(
-                changed_files=[".github/workflows/quality.yml"],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertNotIn("changelog-signal-missing", codes)
-
-    def test_changelog_signal_skips_skills_only_diff(self):
-        # Skill prose edits with no application source change are doc-only
-        # for the purposes of the changelog gate.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            violations = run_changelog_fragment_check(
-                changed_files=["skills/implement/SKILL.md"],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertNotIn("changelog-signal-missing", codes)
-
-    def test_changelog_signal_flags_invalid_fragment_filename(self):
-        # A fragment that lands in `changelog.d/` but doesn't match the
-        # convention must be flagged so reviewers don't ship a fragment that
-        # towncrier will silently ignore.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            violations = run_changelog_fragment_check(
-                changed_files=[
-                    "backend/src/main/java/com/keplerops/groundcontrol/api/Foo.java",
-                    "changelog.d/848.bogus.md",
-                ],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertIn("changelog-fragment-invalid-name", codes)
-
-    def test_read_changed_files_default_walks_full_working_tree(self):
-        # Codex cycle 2 finding #1: Step 6 runs before staging/commit, so
-        # the changelog gate MUST see staged, unstaged, untracked, AND
-        # committed paths. Build a real git repo and exercise every
-        # branch; deletions count too, since deleting source IS a change
-        # that requires a release-notes signal.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir).resolve()
-            import subprocess
-
-            def git(*args: str) -> str:
-                return subprocess.run(
-                    ["git", "-c", "user.email=t@e", "-c", "user.name=t", *args],
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                ).stdout
-
-            git("init", "-q")
-            git("commit", "--allow-empty", "-m", "init")
-            # Modified path: commit v1, then leave an unstaged edit.
-            (root / "modified.txt").write_text("v1\n")
-            git("add", "modified.txt")
-            git("commit", "-m", "add modified.txt")
-            (root / "modified.txt").write_text("v2\n")
-            # Deleted path: commit, then remove from working tree.
-            (root / "deleted.txt").write_text("d\n")
-            git("add", "deleted.txt")
-            git("commit", "-m", "add deleted.txt")
-            (root / "deleted.txt").unlink()
-            # Staged-only path: add AFTER the last commit so it stays
-            # in the index but not in HEAD.
-            (root / "staged.txt").write_text("s\n")
-            git("add", "staged.txt")
-            # Untracked path: never staged.
-            (root / "untracked.txt").write_text("u\n")
-
-            paths = read_changed_files(root=root)
-            self.assertIn("modified.txt", paths)
-            self.assertIn("staged.txt", paths)
-            self.assertIn("untracked.txt", paths)
-            self.assertIn(
-                "deleted.txt",
-                paths,
-                "read_changed_files must include deleted files; deleting an "
-                "application-source file is still a change that requires a "
-                "changelog fragment.",
-            )
-
-    def test_read_changed_files_base_uses_merge_base_not_two_dot(self):
-        # Regression: `git diff <base>` is a two-dot comparison, so commits
-        # `base` gains AFTER the branch forks get mis-attributed to the
-        # branch. On a busy repo where dev advances while a PR is open, that
-        # spuriously trips the diff-scoped gates (documentation coverage,
-        # changelog fragments) on files the branch never touched.
-        # read_changed_files(base=...) must diff from the merge base so it
-        # reports only what the branch itself changed.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir).resolve()
-            import subprocess
-
-            def git(*args: str) -> str:
-                return subprocess.run(
-                    ["git", "-c", "user.email=t@e", "-c", "user.name=t", *args],
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                ).stdout
-
-            git("init", "-q", "-b", "dev")
-            (root / "seed.txt").write_text("seed\n")
-            git("add", "-A")
-            git("commit", "-q", "-m", "seed")
-            # Fork a feature branch from this point.
-            git("switch", "-q", "-c", "feature")
-            (root / "feature_only.txt").write_text("f\n")
-            git("add", "-A")
-            git("commit", "-q", "-m", "feature change")
-            # dev advances AFTER the fork with an unrelated file.
-            git("switch", "-q", "dev")
-            (root / "dev_only.txt").write_text("d\n")
-            git("add", "-A")
-            git("commit", "-q", "-m", "dev advances")
-            # Back on the feature branch, diff against the advanced dev tip.
-            git("switch", "-q", "feature")
-
-            paths = read_changed_files(base="dev", root=root)
-            self.assertIn("feature_only.txt", paths)
-            self.assertNotIn(
-                "dev_only.txt",
-                paths,
-                "read_changed_files(base=...) must diff from the merge base; a "
-                "commit dev gained after the branch forked must not be "
-                "attributed to the branch.",
-            )
-
-    def test_changelog_signal_flags_pure_deletion_of_source(self):
-        # The fragment gate must apply even when the entire diff is a
-        # deletion of application source — the user-visible behavior
-        # changed even if no new code was added.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            violations = run_changelog_fragment_check(
-                changed_files=[
-                    "backend/src/main/java/com/keplerops/groundcontrol/api/RemovedController.java",
-                ],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertIn("changelog-signal-missing", codes)
-
-    def test_hook_walks_full_working_tree(self):
-        # Codex cycle 2 finding #1 (hook side): the Stop hook ran only
-        # `git diff ${BASE}...HEAD` (committed work). Step 6 runs BEFORE
-        # `git commit`, so the hook must also see staged, unstaged, and
-        # untracked changes to enforce the same contract as the policy.
-        # Substring tests on operative verbs/flags — order and other flags
-        # may legitimately vary.
-        hook_path = REPO_ROOT / ".claude" / "hooks" / "verify-implementation.sh"
-        text = hook_path.read_text(encoding="utf-8")
-        # Committed work against the base branch.
-        self.assertIn("${BASE}...HEAD", text)
-        # Unstaged working-tree changes — `git diff ... HEAD` (no triple-dot).
-        self.assertRegex(
-            text,
-            r"git diff[^\n]*\bHEAD\b(?![./])",
-            "Hook must walk unstaged working-tree changes via `git diff HEAD`.",
-        )
-        # Staged-but-uncommitted changes.
-        self.assertIn("--cached", text)
-        # Untracked-but-not-ignored paths.
-        self.assertIn("ls-files --others --exclude-standard", text)
-        # Deletions must be included — application-source deletions are
-        # changes that still require a fragment.
-        self.assertIn("ACDMRTUXB", text)
-
-    def test_hook_handles_pipefail_safely(self):
-        # Codex cycle 2 finding #2: under `set -euo pipefail`, a plain
-        # `grep -E` returns 1 when no match, which aborts the pipeline
-        # before the hook can reach its "no source, no fragment needed"
-        # path. Use `grep -c ... || true` (count form with guard) or
-        # `awk` so a no-match diff cannot kill the hook. Asserting the
-        # vocabulary keeps the pattern from regressing to a raw grep
-        # pipeline.
-        hook_path = REPO_ROOT / ".claude" / "hooks" / "verify-implementation.sh"
-        text = hook_path.read_text(encoding="utf-8")
-        # The hook still runs under pipefail (don't relax that).
-        self.assertIn("set -euo pipefail", text)
-        # And every pipeline that might match zero lines is guarded.
-        # Either `grep -c ... || true` or `awk` is acceptable. The forbidden
-        # form is a bare `grep -E ... | wc -l` chain with no `|| true`.
-        self.assertNotRegex(
-            text,
-            r"\|\s*grep\s+-E\b[^|\n]*\|\s*wc\s+-l[^|\n]*\)",
-            "Stop hook contains a bare `grep -E ... | wc -l` chain — under "
-            "pipefail this aborts on no-match diffs. Use `grep -c ... || true` "
-            "or `awk`.",
-        )
-
-    def test_changelog_signal_flags_nested_fragment_path(self):
-        # Codex review finding #4 (one-off): a path like
-        # `changelog.d/foo/848.added.md` must be flagged as invalid, not
-        # silently skipped — towncrier will not consume nested paths, and a
-        # contributor would think they had filed a fragment that never makes
-        # it into the changelog.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            violations = run_changelog_fragment_check(
-                changed_files=[
-                    "backend/src/main/java/com/keplerops/groundcontrol/api/Foo.java",
-                    "changelog.d/foo/848.added.md",
-                ],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertIn("changelog-fragment-invalid-name", codes)
-            # And the nested path must not count as a signal.
-            self.assertIn("changelog-signal-missing", codes)
-
-    def test_changelog_signal_ignores_changelog_d_readme_and_template(self):
-        # `changelog.d/README.md` and `changelog.d/_template.md.jinja` are
-        # infrastructure, not fragments — they must not be parsed as
-        # fragments and must not satisfy the signal alone.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = self._make_temp_repo(tmp_dir)
-            self._write_canonical_fragment_infrastructure(root)
-            violations = run_changelog_fragment_check(
-                changed_files=[
-                    "backend/src/main/java/com/keplerops/groundcontrol/api/Foo.java",
-                    "changelog.d/README.md",
-                ],
-                root=root,
-            )
-            codes = {v.code for v in violations}
-            self.assertIn("changelog-signal-missing", codes)
-            self.assertNotIn("changelog-fragment-invalid-name", codes)
-
-    # --- the canonical Ground-Control repo passes its own check --------------
-
-    def test_hook_checks_fragment_existence(self):
-        # Codex cycle 3 finding #1 (hook side): the host-local Stop hook
-        # must apply the same "fragment file exists on disk" predicate as
-        # the Python check — otherwise a release-collation diff that
-        # deletes an old fragment counts as a signal for an unrelated
-        # source change happening in the same PR. Look for the fragment-
-        # specific existence check (the SKILL_LOG check uses `[ -f` too,
-        # so we anchor on the `changelog.d` / `REPO_ROOT` context the
-        # fragment check must establish).
-        hook_path = REPO_ROOT / ".claude" / "hooks" / "verify-implementation.sh"
-        text = hook_path.read_text(encoding="utf-8")
-        self.assertRegex(
-            text,
-            r"\[\s*-f\s+\"\$REPO_ROOT/\$",
-            "Stop hook must verify each candidate fragment exists in the "
-            "working tree (e.g. `[ -f \"$REPO_ROOT/$fragment\" ]`) — "
-            "otherwise a deleted fragment path counts as a signal.",
-        )
-
-    def test_towncrier_uses_repo_local_name_not_python_package(self):
-        # Codex cycle 3 finding #2 (one-off): the `package` key puts
-        # towncrier into Python-package metadata-discovery mode, which
-        # this repo (a Java/Spring backend + React frontend) does not
-        # satisfy. `name` is the non-Python-project equivalent.
-        import tomllib
-
-        with (REPO_ROOT / "towncrier.toml").open("rb") as handle:
-            data = tomllib.load(handle)
-        tc = data.get("tool", {}).get("towncrier", {})
-        self.assertNotIn(
-            "package",
-            tc,
-            "towncrier.toml must not declare `package` — this is a "
-            "non-Python project; use `name` instead.",
-        )
-
-    def test_towncrier_toml_in_repo_loads_and_has_required_keys(self):
-        # tomllib is stdlib on 3.11+.
-        import tomllib
-
-        toml_path = REPO_ROOT / "towncrier.toml"
-        self.assertTrue(toml_path.exists(), "towncrier.toml must exist at repo root")
-        with toml_path.open("rb") as handle:
-            data = tomllib.load(handle)
-
-        tool = data.get("tool", {})
-        towncrier_section = tool.get("towncrier", {})
-        self.assertEqual(towncrier_section.get("directory"), "changelog.d")
-        self.assertEqual(towncrier_section.get("filename"), "CHANGELOG.md")
-        self.assertEqual(
-            towncrier_section.get("template"), "changelog.d/_template.md.jinja"
-        )
-        self.assertIn("towncrier", str(towncrier_section.get("start_string", "")))
-        # Issue format must produce GitHub-style `(#NNN)` so collated entries
-        # link back to issues consistently with prior `[0.116.x]` history.
-        self.assertEqual(towncrier_section.get("issue_format"), "(#{issue})")
-
-        type_section = towncrier_section.get("type", [])
-        type_names = {entry.get("name", "").lower() for entry in type_section}
-        expected = {"security", "added", "changed", "deprecated", "removed", "fixed"}
-        self.assertTrue(
-            expected.issubset(type_names),
-            f"towncrier.toml [tool.towncrier.type] missing required names: {expected - type_names}",
-        )
-
-    def test_changelog_marker_present_in_repo_changelog(self):
-        changelog_text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        self.assertIn("<!-- towncrier release notes start -->", changelog_text)
-
-    def test_gitattributes_contains_changelog_union_merge(self):
-        path = REPO_ROOT / ".gitattributes"
-        self.assertTrue(path.exists(), ".gitattributes must exist at repo root")
-        contents = path.read_text(encoding="utf-8")
-        self.assertIn("CHANGELOG.md", contents)
-        self.assertIn("merge=union", contents)
-
-    def test_hook_gates_on_application_source_predicate(self):
-        # Codex review finding #2 (class): the host-local Stop hook must
-        # apply the same `_diff_touches_application_source` predicate the
-        # repo-native policy uses — otherwise it blocks docs-only / CI-only
-        # / metadata diffs that the policy explicitly permits.
-        hook_path = REPO_ROOT / ".claude" / "hooks" / "verify-implementation.sh"
-        text = hook_path.read_text(encoding="utf-8")
-        # The hook must reference every source path prefix the policy
-        # gates on. If a prefix is added to the policy, this test forces
-        # the hook to learn about it too.
-        for prefix in (
-            "backend/src/main/",
-            "backend/src/test/",
-            "frontend/src/",
-            "mcp/",
-        ):
-            self.assertIn(
-                prefix,
-                text,
-                f"Stop hook missing source prefix '{prefix}' — drifted from "
-                "tools/policy/checks.py::_SOURCE_PATH_PREFIXES.",
-            )
-        # `tools/` is application source EXCEPT for `tools/policy/` and
-        # `tools/tests/`; the hook must encode the same carve-out.
-        self.assertIn("tools/policy/", text)
-        self.assertIn("tools/tests/", text)
-
-    def test_hook_regex_matches_policy_vocabulary(self):
-        # `.claude/hooks/verify-implementation.sh` and the Python policy
-        # check are two enforcement layers for the same convention — the
-        # vocabulary MUST stay in sync, or one layer would accept a
-        # fragment the other rejects.
-        hook_path = REPO_ROOT / ".claude" / "hooks" / "verify-implementation.sh"
-        self.assertTrue(hook_path.exists(), "Stop hook must exist")
-        text = hook_path.read_text(encoding="utf-8")
-        for ftype in CHANGELOG_FRAGMENT_TYPES:
-            self.assertIn(
-                ftype,
-                text,
-                f"Stop hook regex missing fragment type '{ftype}' — drifted from "
-                f"tools/policy/checks.py::CHANGELOG_FRAGMENT_TYPES.",
-            )
-        self.assertIn(
-            r"^changelog\.d/",
-            text,
-            "Stop hook regex must anchor fragment paths under changelog.d/.",
+            [v.code for v in violations],
+            [],
+            msg=f"real-repo version mirrors drifted: {[v.message for v in violations]}",
         )
 
 
@@ -3223,9 +2711,8 @@ class ChangelogFragmentChecksTest(unittest.TestCase):
 # a snapshot of specific prose — the section must reference the canonical
 # tool, the test-quality reviewer enum, the empty-findings clean cycle case,
 # and a continuation signal.
-# Following the same "parser-over-fixed-grammar" pattern the changelog
-# fragment check uses for its doc-only carve-out justification at
-# `checks.py::run_changelog_fragment_check`.
+# Following the same "parser-over-fixed-grammar" structural-gate pattern as
+# `checks.py::run_version_mirror_consistency_check`.
 # ---------------------------------------------------------------------------
 
 

@@ -101,11 +101,12 @@ Enforced by ArchUnit tests in `ArchitectureTest.java`.
 ## Commit Messages
 
 - Imperative mood: `Add risk scoring engine` not `Added risk scoring engine`
-- Source-changing commits add a fragment under `changelog.d/<issue>.<type>.md` (or `+<slug>.<type>.md` for issue-free entries); release-time `towncrier build` collates fragments into `CHANGELOG.md`. CI-only and docs-only changes may ship without a fragment; refactors under application source still file a fragment. Do not edit `CHANGELOG.md` directly. See [`changelog.d/README.md`](changelog.d/README.md).
+- Do not edit `CHANGELOG.md` directly. Release Please owns it (GC-P027): it derives the version bump and the changelog entries from Conventional Commit history on `main` and opens a release PR that regenerates `CHANGELOG.md` mechanically. Feature PRs do not file a fragment - the old `changelog.d/` / Towncrier convention is retired.
 
 ## Pull Requests
 
 - Target `dev`, not `main`
+- **PR title must be a Conventional Commit** (`type(optional-scope): subject`, lowercase-leading subject) - enforced by CI (`.github/workflows/pr-title.yml`, `amannn/action-semantic-pull-request`). Release Please parses merged commit history to compute the next version and `CHANGELOG.md` entries, so the title is load-bearing, not cosmetic.
 - PRs require passing CI (build + tests + static analysis + ArchUnit)
 - No coverage regression
 - Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md)

@@ -7362,6 +7362,21 @@ describe("validatePrBodyInput", () => {
     }
   });
 
+  it("release-please mode: accepts source-class without a changelog fragment (#1336)", () => {
+    const r = validatePrBodyInput(baseInput({ changelogMode: "release-please", changelogFragment: null }));
+    assert.equal(r.ok, true, `errors=${r.errors?.join(";")}`);
+  });
+  it("release-please mode: rejects a changelog fragment (Release Please owns CHANGELOG.md)", () => {
+    const r = validatePrBodyInput(baseInput({ changelogMode: "release-please", changelogFragment: "changelog.d/868.changed.md" }));
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => /not accepted when changelogMode is 'release-please'/.test(e)));
+  });
+  it("rejects an unknown changelogMode", () => {
+    const r = validatePrBodyInput(baseInput({ changelogMode: "bogus", changelogFragment: null }));
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => /changelogMode/.test(e)));
+  });
+
   assertSummaryByteCap(validatePrBodyInput, PR_BODY_SUMMARY_MAX, baseInput);
 });
 
@@ -7437,6 +7452,12 @@ describe("buildPrBody", () => {
     const body = buildPrBody(baseInput({ changeClass: "source+migration" }));
     assert.match(body, /MigrationSmokeTest\.java/);
     assert.match(body, /RequirementsE2EIntegrationTest\.java/);
+  });
+
+  it("release-please mode: emits the Release Please changelog line, not a fragment line (#1336)", () => {
+    const body = buildPrBody(baseInput({ changelogMode: "release-please", changelogFragment: null }));
+    assert.match(body, /Changelog: owned by Release Please/);
+    assert.ok(!/Changelog fragment added at/.test(body), "must not emit a fragment line in release-please mode");
   });
 
   it("requirement-free runs render an explicit '(none ...)' line — no synthetic UID injected", () => {

@@ -1,1 +1,0 @@
-The `/implement` next-issue recommendation no longer suggests umbrella/tracking issues. Issues marked by an `epic`/`umbrella`/`tracking`/`meta` label, a `Tracking:`/`Epic:`/`Umbrella:` (or bracketed) title prefix, GitHub-native sub-issues, or a body task list enumerating child issues are now skipped when picking the next issue after a merge-verified close.
