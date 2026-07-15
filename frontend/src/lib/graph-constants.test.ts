@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GRAPH_ENTITY_TYPES } from "@/types/api";
 import {
   ENTITY_TYPE_COLORS,
   PRIORITY_COLORS,
@@ -70,36 +71,7 @@ describe("ENTITY_TYPE_COLORS", () => {
   // GC-G007: every backend GraphEntityType value must have an entry in
   // ENTITY_TYPE_COLORS so the graph visualization never silently falls
   // through to the generic grey fallback for a shipped entity type.
-  const backendEntityTypes = [
-    "REQUIREMENT",
-    "OPERATIONAL_ASSET",
-    "OBSERVATION",
-    "RISK_SCENARIO",
-    "RISK_REGISTER_RECORD",
-    "RISK_ASSESSMENT_RESULT",
-    "TREATMENT_PLAN",
-    "METHODOLOGY_PROFILE",
-    "EVIDENCE_ARTIFACT",
-    "CONTROL",
-    "CONTROL_LINK",
-    "CONTROL_TEST",
-    "CONTROL_EFFECTIVENESS_ASSESSMENT",
-    "VERIFICATION_RESULT",
-    "THREAT_MODEL",
-    "FINDING",
-    "ARCHITECTURE_MODEL_ELEMENT",
-    "AUDIT",
-    "AUDIT_LINK",
-    "RISK_CONTROL_MAPPING",
-    "SCOPED_CONTROL_IMPLEMENTATION",
-    "RISK_APPETITE_PROFILE",
-    "DOCUMENT",
-    "RESEARCH_RUN",
-    "RESEARCH_ARTIFACT",
-    "RESEARCH_PROVENANCE_NODE",
-  ] as const;
-
-  it.each(backendEntityTypes)("has a color entry for %s", (entityType) => {
+  it.each(GRAPH_ENTITY_TYPES)("has a color entry for %s", (entityType) => {
     expect(ENTITY_TYPE_COLORS[entityType]).toBeDefined();
     expect(typeof ENTITY_TYPE_COLORS[entityType]).toBe("string");
   });

@@ -31,6 +31,11 @@ if [ "$#" -gt 0 ]; then
   exit 2
 fi
 
+# Shared checkout-to-owner/repo resolver (GC-P026) — same github.com remote-URL
+# contract as the other shell entry points and the MCP server.
+# shellcheck source=scripts/lib/gh-repo-slug.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/gh-repo-slug.sh"
+
 DEPLOY_HOST="${GC_DEPLOY_HOST:-red-dragon}"
 DEPLOY_SSH_USER="${GC_DEPLOY_SSH_USER:-gc-deploy}"
 DEPLOY_REMOTE_DIR="${GC_DEPLOY_REMOTE_DIR:-/opt/gc}"
@@ -106,8 +111,12 @@ publish_deployment() {
   outcome="$(printf '%s' "${state_json}" | sed -n 's/.*"outcome":"\([^"]*\)".*/\1/p')"
   digest="$(printf '%s' "${state_json}" | sed -n 's/.*"active_digest":"\([^"]*\)".*/\1/p')"
   [ -n "${revision}" ] || { echo "NOTE: deploy state carried no revision SHA; skipping publish."; return 0; }
-  repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
-  [ -n "${repo}" ] || { echo "NOTE: could not resolve GitHub repo; skipping publish."; return 0; }
+  # Derive identity from the checkout's origin remote (GC-P026): git ignores
+  # GH_REPO, so this cannot be redirected at the wrong repo the way
+  # `gh repo view` (which honors GH_REPO) can. Shared resolver keeps the
+  # supported remote-URL forms consistent across all shell entry points.
+  repo="$(resolve_repo_slug "${REPO_ROOT}")"
+  [ -n "${repo}" ] || { echo "NOTE: could not resolve GitHub repo from origin remote; skipping publish."; return 0; }
   case "${outcome}" in
     deployed) state="success" ;;
     rolled_back|failed) state="failure" ;;

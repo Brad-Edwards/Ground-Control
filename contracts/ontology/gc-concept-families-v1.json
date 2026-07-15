@@ -1,0 +1,113 @@
+{
+  "schema_version": "gc-concept-families/v1",
+  "owners": [
+    "ground-control"
+  ],
+  "families": {
+    "requirements-and-traceability": {
+      "title": "Requirements and Traceability",
+      "description": "Requirements, their refinement structure, and typed links to delivery artifacts.",
+      "provenance": "native",
+      "owner": "ground-control",
+      "extension_scope": "Requirement identity, requirement-to-requirement relations, and traceability from requirements to external artifacts.",
+      "relation_rules": [
+        "Requirement relations preserve the source and target roles declared by the owning aggregate.",
+        "Traceability terms run from a requirement to an artifact and remain distinct from inverse graph-projection terms."
+      ],
+      "non_ambiguity_constraints": [
+        "A requirement is not an implementation artifact, test result, evidence artifact, or document.",
+        "Lexically equal terms with opposite endpoint roles do not share a canonical term."
+      ]
+    },
+    "architecture-and-boundaries": {
+      "title": "Architecture and Boundaries",
+      "description": "Operational assets, documents, structural containment, communication, trust, and access boundaries.",
+      "provenance": "native",
+      "owner": "ground-control",
+      "extension_scope": "Architecture participants and structural relations that describe deployment or operational context.",
+      "relation_rules": [
+        "Structural relations describe the directed role of one architecture participant relative to another.",
+        "Boundary relations do not redefine risk, control, evidence, or traceability semantics."
+      ],
+      "non_ambiguity_constraints": [
+        "An operational asset is not an observation or evidence record about that asset.",
+        "Containment, access, communication, dependency, and data flow remain distinct relation meanings."
+      ]
+    },
+    "threats-risks-and-controls": {
+      "title": "Threats, Risks, and Controls",
+      "description": "Risk scenarios, threat models, controls, findings, audits, verification, and risk-control mappings.",
+      "provenance": "native",
+      "owner": "ground-control",
+      "extension_scope": "Risk analysis, control implementation and testing, findings, audit scope, and verification outcomes.",
+      "relation_rules": [
+        "Risk and control relations preserve whether the source mitigates, is mitigated by, assesses, protects, or maps another participant.",
+        "Structural mapping edges remain distinct from direct domain relationships."
+      ],
+      "non_ambiguity_constraints": [
+        "A mapping node or scoped implementation is not interchangeable with the control or risk participant it references.",
+        "Verification-result-to-requirement VERIFIES is distinct from requirement-to-artifact traceability VERIFIES."
+      ]
+    },
+    "evidence-and-observation": {
+      "title": "Evidence and Observation",
+      "description": "Evidence artifacts, observations, source provenance, supersession, and evidence-bearing relations.",
+      "provenance": "native",
+      "owner": "ground-control",
+      "extension_scope": "Recorded observations and durable evidence that support governance and assurance conclusions.",
+      "relation_rules": [
+        "Evidence relations point from the governed subject to the evidence that supports it unless a term explicitly declares the inverse.",
+        "Supersession preserves direction and must not be collapsed with its inverse."
+      ],
+      "non_ambiguity_constraints": [
+        "The subject of evidence is not itself evidence.",
+        "OBSERVED_ON and OBSERVED_IN retain their distinct endpoint roles."
+      ]
+    },
+    "workflow-and-process": {
+      "title": "Workflow and Process",
+      "description": "Execution, lifecycle, and process concepts that coordinate engineering work.",
+      "provenance": "native",
+      "owner": "ground-control",
+      "extension_scope": "Workflow participants, lifecycle records, and process relations not owned by a narrower domain family.",
+      "relation_rules": [
+        "Process concepts may organize domain artifacts without redefining the artifacts' native meaning.",
+        "Lifecycle relations preserve the declared before, after, and dependency roles."
+      ],
+      "non_ambiguity_constraints": [
+        "Workflow state is not evidence, requirement status, or research provenance.",
+        "Process association does not imply implementation, verification, or control effectiveness."
+      ]
+    },
+    "contracts-and-invariants": {
+      "title": "Contracts and Invariants",
+      "description": "Published contracts, invariant declarations, and governed conformance concepts.",
+      "provenance": "native",
+      "owner": "ground-control",
+      "extension_scope": "Machine-readable contracts and invariants that govern externally consumed or workflow-critical surfaces.",
+      "relation_rules": [
+        "Contract concepts constrain another family without taking ownership of that family's domain vocabulary.",
+        "Conformance relations identify the contract and the subject being constrained."
+      ],
+      "non_ambiguity_constraints": [
+        "A contract declaration is not the runtime implementation it constrains.",
+        "An invariant is not treated as enforced unless a named structural gate proves it."
+      ]
+    },
+    "research-and-provenance": {
+      "title": "Research and Provenance",
+      "description": "Research runs, research artifacts, provenance nodes, and upstream-to-downstream provenance relations.",
+      "provenance": "native",
+      "owner": "ground-control",
+      "extension_scope": "Research workflow records and the evidence lineage connecting sources, intermediate artifacts, claims, and prose.",
+      "relation_rules": [
+        "Provenance edges run from upstream input to downstream output as declared by ADR-069.",
+        "Research artifacts and provenance records remain distinct from the content they identify."
+      ],
+      "non_ambiguity_constraints": [
+        "Research provenance SUPPORTS is not the same relation as one operational asset supporting another.",
+        "CITATION, derivation, selection, and contribution remain separate provenance meanings."
+      ]
+    }
+  }
+}

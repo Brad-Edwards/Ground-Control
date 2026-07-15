@@ -6,7 +6,7 @@ import os
 
 import httpx
 
-USER_AGENT = "Citation-MCP/0.1 (+https://github.com/KeplerOps/Ground-Control; mailto:{mailto})"
+USER_AGENT = "Citation-MCP/0.1 (+https://github.com/autarchy-ai/Ground-Control; mailto:{mailto})"
 DEFAULT_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 
 

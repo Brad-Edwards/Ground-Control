@@ -102,6 +102,9 @@ CI_PRE_COMMIT_HOOKS = (
 CONTRACT_REQUIRED_PATHS = (
     "contracts/openapi/openapi.json",
     "contracts/gen/typescript/api.ts",
+    "contracts/ontology/gc-concept-families-v1.json",
+    "contracts/ontology/gc-controlled-vocabularies-v1.json",
+    "contracts/ontology/gc-artifact-bindings-v1.json",
     "contracts/schemas/records/implement-final-report.v1.schema.json",
     "contracts/schemas/workflow/workflow-run-record.v1.schema.json",
     "contracts/authz/path-matrix.yaml",
@@ -367,6 +370,40 @@ def run_git(args: list[str], root: Path = REPO_ROOT) -> str:
     return result.stdout
 
 
+def merge_base_or(base: str, ref: str = "HEAD", root: Path = REPO_ROOT) -> str:
+    """Resolve the point from which ``ref`` diverged from ``base``.
+
+    ``git diff <base> --`` is a two-dot comparison: it reports every path that
+    differs between the tip of ``base`` and the working tree, so any commit
+    ``base`` gained AFTER the branch forked is wrongly attributed to the branch.
+    On a busy repo where ``dev`` advances while a PR is open, that mis-attributes
+    ``dev``'s own later changes to the PR — spuriously tripping the diff-scoped
+    gates (documentation coverage, changelog fragments) on files the branch
+    never touched.
+
+    Diffing from ``merge-base(base, ref)`` instead yields only what the branch
+    itself changed, matching what GitHub shows as the PR diff. Comparing that
+    merge base against the working tree (rather than ``base...ref``) preserves
+    the caller's intent of catching still-uncommitted changes in the local /
+    pre-push path.
+
+    Falls back to ``base`` when no common ancestor exists (unrelated histories)
+    or ``git merge-base`` fails, so the check degrades to the prior behavior
+    instead of raising.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "merge-base", base, ref],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError:
+        return base
+    return result.stdout.strip() or base
+
+
 def read_changed_files(
     *,
     files: Iterable[str] | None = None,
@@ -381,7 +418,10 @@ def read_changed_files(
         raw = os.getenv(env_var, "")
         return sorted({normalize_path(path) for path in raw.splitlines() if path.strip()})
     if base:
-        output = run_git(["diff", "--name-only", "--diff-filter=ACDMRTUXB", base, "--"], root=root)
+        diff_base = merge_base_or(base, root=root)
+        output = run_git(
+            ["diff", "--name-only", "--diff-filter=ACDMRTUXB", diff_base, "--"], root=root
+        )
         return sorted({normalize_path(path) for path in output.splitlines() if path.strip()})
     if staged:
         output = run_git(["diff", "--cached", "--name-only", "--diff-filter=ACDMRTUXB", "--"], root=root)
@@ -401,8 +441,19 @@ def filter_matches(paths: Iterable[str], patterns: Iterable[str]) -> list[str]:
     return sorted({path for path in paths if matches_any(path, patterns)})
 
 
-def load_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+def load_json(path: Path, *, reject_duplicate_keys: bool = False) -> dict:
+    object_pairs_hook = None
+    if reject_duplicate_keys:
+        def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+            result: dict[str, Any] = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError(f"duplicate JSON key: {key}")
+                result[key] = value
+            return result
+
+        object_pairs_hook = reject_duplicates
+    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=object_pairs_hook)
 
 
 
@@ -1563,6 +1614,142 @@ def run_ghcr_namespace_drift(root: Path = REPO_ROOT) -> list[Violation]:
     ]
 
 
+# Repository identity drift check (GC-P026 / issue #1383).
+#
+# After the GitHub owner move to autarchy-ai/Ground-Control, several active
+# surfaces still named the stale KeplerOps/Ground-Control owner, and defaulted
+# repo-bound operations could target an inaccessible repository. This static
+# post-condition pins every ACTIVE repository-identity surface (config,
+# workflows, scripts, docs, deploy units, frontend placeholders) to the single
+# canonical owner, so a re-introduced stale slug — or the next owner move — fails
+# `make policy`. Adding a new active surface that names the repo is one inventory
+# row.
+#
+# Historical records are intentionally EXCLUDED (not in the inventory): ADRs and
+# CHANGELOG.md / changelog.d/** record the owner that was current at the time and
+# must NOT be rewritten. Test files are excluded too — their generic URL-parsing
+# and negative-case fixtures legitimately carry arbitrary owners. The Java
+# package `com.keplerops.groundcontrol`, the SonarCloud org/project, and the GHCR
+# image namespace are separate concepts, not repository-identity slugs.
+CANONICAL_REPO_OWNER = "autarchy-ai"
+CANONICAL_REPO_SLUG = "autarchy-ai/Ground-Control"
+# Prior owners this issue eradicates (KeplerOps -> Brad-Edwards -> autarchy-ai).
+# A bare-owner reference (e.g. a UI placeholder that carries only the owner, not
+# a full owner/repo slug) cannot be validated against the canonical slug, so
+# active surfaces are also guarded against these specific stale-owner literals.
+STALE_REPO_OWNERS = ("KeplerOps", "Brad-Edwards")
+# owner/Ground-Control inside a GitHub URL or git@ remote (badges, clone URLs,
+# raw-content URLs, issue links). Anchored on the canonical repo NAME so links
+# to unrelated third-party repos are not flagged; only the owner is validated.
+_REPO_IDENTITY_URL_RE = re.compile(
+    r"(?:github\.com[/:]|githubusercontent\.com/)([A-Za-z0-9][A-Za-z0-9-]*)/Ground-Control\b"
+)
+# Bare owner/Ground-Control config slug (github_repo:, --repo, etc.). The
+# negative lookbehind excludes filesystem paths like `src/Ground-Control`, so a
+# local checkout path (e.g. in .mcp.json args) is not mistaken for an identity
+# slug.
+_REPO_IDENTITY_SLUG_RE = re.compile(
+    r"(?<![\w./-])([A-Za-z0-9][A-Za-z0-9-]*)/Ground-Control\b"
+)
+# Identity-declaration assignments (`github_repo:` / `GH_REPO`) carry the FULL
+# owner/repo of *this* repository, so BOTH segments are validated against the
+# canonical slug — a well-formed drift to a wrong repo NAME (e.g.
+# `autarchy-ai/Other`) must fail too, not just a wrong owner. Tolerates the
+# YAML `key: value` and JSON/shell `"KEY": "value"` / `KEY=value` forms.
+_REPO_IDENTITY_ASSIGN_RE = re.compile(
+    r"(?:github_repo|GH_REPO)\b['\"]?\s*[:=]\s*['\"]?"
+    r"([A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9][A-Za-z0-9._-]*)"
+)
+# Bare stale-owner literals (UI placeholders, prose) in active surfaces.
+_STALE_OWNER_RE = re.compile(
+    r"\b(" + "|".join(re.escape(owner) for owner in STALE_REPO_OWNERS) + r")\b"
+)
+# The full-slug assignment matcher runs ONLY on real config declarations, where
+# `github_repo:` / `GH_REPO` carry this repo's live identity. Docs legitimately
+# show a generic `github_repo: owner/repo` format example that is not a drift.
+_REPO_IDENTITY_CONFIG_FILES = frozenset({".ground-control.yaml", ".mcp.json"})
+REPO_IDENTITY_INVENTORY: tuple[Path, ...] = (
+    Path(".ground-control.yaml"),
+    Path(".mcp.json"),
+    Path(".github/workflows/pack-registry-sync.yml"),
+    Path("scripts/pack-sync.sh"),
+    Path("scripts/deploy.sh"),
+    Path("scripts/check-pr-body.sh"),
+    Path("README.md"),
+    Path("CONTRIBUTING.md"),
+    Path("docs/DEVELOPMENT_WORKFLOW.md"),
+    Path("docs/API.md"),
+    Path("docs/deployment/DEPLOYMENT.md"),
+    Path("docs/operations/backup-restore.md"),
+    Path("docs/notes/agent-knowledge-system-design.md"),
+    Path("mcp/citation/citation_mcp/http.py"),
+    Path("frontend/src/components/traceability-form.tsx"),
+    Path("frontend/src/pages/admin.tsx"),
+    Path("deploy/systemd/gc-backup.service"),
+    Path("deploy/systemd/gc-backup.timer"),
+    Path("deploy/systemd/gc-restore-test.service"),
+    Path("deploy/systemd/gc-restore-test.timer"),
+)
+
+
+def run_repo_identity_drift(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert every inventoried active surface names the canonical repo identity.
+
+    Three matchers run per line: a canonical-name URL/slug matcher (owner drift
+    on `<owner>/Ground-Control` references), a `github_repo`/`GH_REPO` assignment
+    matcher (the full `owner/repo` is validated, so a wrong repo NAME fails too),
+    and a stale-owner literal matcher (bare prior-owner tokens such as a UI
+    placeholder). A drifted reference in any inventoried config/workflow/script/
+    doc/deploy artifact is the stale identity that routed defaulted operations at
+    an inaccessible repository (#1383). Absent inventory files are skipped.
+    """
+    offenders: list[str] = []
+    for rel_path in REPO_IDENTITY_INVENTORY:
+        file_path = root / rel_path
+        if not file_path.exists():
+            continue
+        text = file_path.read_text(encoding="utf-8")
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            findings: list[tuple[str, str]] = []
+            for pattern in (_REPO_IDENTITY_URL_RE, _REPO_IDENTITY_SLUG_RE):
+                for match in pattern.finditer(line):
+                    owner = match.group(1)
+                    if owner != CANONICAL_REPO_OWNER:
+                        findings.append(
+                            (f"{owner}/Ground-Control", "non-canonical repository owner")
+                        )
+            if rel_path.as_posix() in _REPO_IDENTITY_CONFIG_FILES:
+                for match in _REPO_IDENTITY_ASSIGN_RE.finditer(line):
+                    slug = match.group(1)
+                    if slug.lower() != CANONICAL_REPO_SLUG.lower():
+                        findings.append((slug, "non-canonical repository identity"))
+            for match in _STALE_OWNER_RE.finditer(line):
+                findings.append((match.group(1), "stale repository owner literal"))
+            seen: set[tuple[str, str]] = set()
+            for token, why in findings:
+                if (token, why) in seen:
+                    continue
+                seen.add((token, why))
+                offenders.append(
+                    f"{rel_path.as_posix()}:{line_number} {why}: '{token}' "
+                    f"(expected '{CANONICAL_REPO_SLUG}')"
+                )
+    if not offenders:
+        return []
+    return [
+        Violation(
+            code="repo-identity-drift",
+            message=(
+                "Active repository-identity surfaces must name the single "
+                f"canonical '{CANONICAL_REPO_SLUG}' (GC-P026 / #1383). "
+                "Historical ADR/changelog references and test fixtures are "
+                "exempt (not inventoried)."
+            ),
+            details=offenders,
+        )
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Deploy artifact consistency check (issue #855, GC-P023).
 #
@@ -1620,6 +1807,412 @@ def _parse_env_schema(text: str) -> dict[str, set[str]]:
             continue
         directives.setdefault(parts[1], set()).add(parts[0])
     return directives
+
+
+# ---------------------------------------------------------------------------
+# Env-template orphan-key check (issue #1384, GC-P023 (a)/(e)).
+#
+# run_deploy_artifact_consistency already proves one direction: every ${VAR} the
+# production compose dereferences is declared in env.schema. Nothing proved the
+# reverse, so a key could outlive the service that read it. The Temporal removal
+# (#1359) left exactly that residue: the templates went on advertising a worker
+# target, a namespace, a task queue, and a database password for a service that
+# no longer exists, and an operator reading the template could not tell.
+#
+# The invariant: a key an active template advertises must have an *executable*
+# consumer - something that, at runtime, reads the value the operator set. Tests,
+# docs, superseded ADRs, and historical migrations are not consumers: they are
+# history, and history is not an input.
+#
+# "Executable consumer" is a strict bar, and every loosening of it re-admits the
+# exact dead config the check exists to catch. Four rules carry that weight:
+#
+#   1. A compose LITERAL is not a consumer. `- GC_SERVER_PORT=8000` pins the
+#      value; it does not read the operator's. A template advertising a key that
+#      compose pins is advertising control the operator does not have - the same
+#      lie in a quieter voice. Only ${VAR} interpolation and list-form inherit
+#      count, and inherit only inside an `environment:` block (a bare `- FOO`
+#      elsewhere in the yaml is a list item, not a variable).
+#   2. A DECLARATION is not a consumer. env.schema says a key must be present and
+#      well-formed; it never reads it. Treating schema membership as consumption
+#      would certify any key left stale in BOTH the template and the schema -
+#      a false negative precisely where drift hides. env.schema is therefore not
+#      a consumer surface here; the production compose is what forwards an
+#      operator's value into the container, and that is what must prove it.
+#   3. A MENTION is not a consumer. A key named in a comment, an error message,
+#      or any other string is not a read. Each surface is matched on its actual
+#      read syntax - `${VAR}` in yaml, `process.env.VAR` in the MCP client,
+#      `$VAR` / `ENV_VALUES[VAR]` in the deploy shell - and never on bare
+#      textual occurrence.
+#   4. The production template does NOT get the backend-application surface. An
+#      application.yml placeholder is irrelevant to /opt/gc/.env unless compose
+#      forwards the value into the container.
+#
+# Spring relaxed binding is resolved against the declared @ConfigurationProperties
+# FIELDS, not merely the prefix: GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKEN binds
+# because SecurityProperties declares `credentials`, while a hypothetical
+# GROUNDCONTROL_SECURITY_BOGUS binds to nothing and is still an orphan. Prefix
+# matching alone would bless every unknown child of a real prefix.
+#
+# The seam is the inventory below: a new template or service is one row, never a
+# per-key exception. A per-key allowlist would just re-bless dead config quietly.
+# ---------------------------------------------------------------------------
+
+ENV_TEMPLATE_ASSIGNMENT_RE = re.compile(r"^\s*(?:#\s*)?(?:export\s+)?([A-Z][A-Z0-9_]*)=")
+COMPOSE_INHERIT_RE = re.compile(r"^(\s*)-\s*([A-Z][A-Z0-9_]*)\s*$")
+COMPOSE_ENVIRONMENT_KEY_RE = re.compile(r"^(\s*)environment:\s*$")
+# Spring placeholders default with a single colon (${VAR:default}), unlike
+# compose's ${VAR:-default}, so the compose pattern would miss every defaulted one.
+SPRING_PLACEHOLDER_RE = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)[:}]")
+SHELL_EXPANSION_RE = re.compile(r"\$\{?([A-Z][A-Z0-9_]*)\b")
+SHELL_ENV_LOOKUP_RE = re.compile(r"ENV_VALUES\[\s*[\"']?([A-Z][A-Z0-9_]*)[\"']?\s*\]")
+SPRING_PREFIX_RE = re.compile(r"@ConfigurationProperties\s*\(\s*prefix\s*=\s*\"([^\"]+)\"")
+SPRING_FIELD_RE = re.compile(
+    r"^[ \t]*private\s+(?:final\s+)?(.+?)\s+([a-z]\w*)\s*[=;]", re.MULTILINE
+)
+SPRING_CLASS_RE = re.compile(r"\b(?:class|record)\s+(\w+)")
+SPRING_COLLECTION_RE = re.compile(r"^(?:List|Set|Collection|Iterable)\s*<\s*(.+?)\s*>$")
+BACKEND_JAVA_GLOB = "backend/src/main/java/**/*.java"
+# JS line/block comments, then string literals. A key named in either is a
+# mention, not a read - but the bracket read form (process.env["VAR"]) keeps its
+# key inside a string legitimately, so comments and strings are stripped in two
+# stages rather than one.
+JS_COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
+JS_STRING_RE = re.compile(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`", re.DOTALL)
+# A yaml comment runs from an unquoted ` #` (or a line-leading #) to end of line.
+YAML_TRAILING_COMMENT_RE = re.compile(r"(?:^|\s)#.*$")
+# Single-quoted shell text is literal - no expansion happens inside it.
+SHELL_SINGLE_QUOTED_RE = re.compile(r"'[^']*'")
+SHELL_INLINE_COMMENT_RE = re.compile(r"(?:^|\s)#.*$")
+
+
+@dataclass(frozen=True)
+class EnvTemplateContract:
+    """One active env template and the surfaces allowed to consume its keys.
+
+    Each glob group is matched on that surface's real read syntax; see the
+    module comment above for why a declaration or a mention is not a consumer.
+    """
+
+    template: str
+    compose_globs: tuple[str, ...] = ()
+    yaml_placeholder_globs: tuple[str, ...] = ()
+    node_env_globs: tuple[str, ...] = ()
+    shell_globs: tuple[str, ...] = ()
+    spring_binding: bool = False
+
+
+ENV_TEMPLATE_CONTRACTS: tuple[EnvTemplateContract, ...] = (
+    # Local dev + the MCP client's startup .env (mcp/ground-control/index.js).
+    # The backend runs from source here (bootRun), so an application.yml
+    # placeholder IS an effective consumer - unlike the production case, where
+    # compose has to forward the value into the container first.
+    EnvTemplateContract(
+        template=".env.example",
+        compose_globs=("docker-compose.yml",),
+        yaml_placeholder_globs=("backend/src/main/resources/application*.yml",),
+        node_env_globs=("mcp/ground-control/*.js",),
+        spring_binding=True,
+    ),
+    # The operator's /opt/gc/.env contract. A value here reaches the backend only
+    # if the production compose interpolates or inherits it; the deploy scripts
+    # are the only other executable reader.
+    EnvTemplateContract(
+        template="deploy/docker/.env.example",
+        compose_globs=("deploy/docker/docker-compose.prod.yml",),
+        shell_globs=("deploy/docker/validate-env.sh", "deploy/docker/deploy.sh"),
+    ),
+)
+
+
+def _code_lines(text: str, strip_comment: re.Pattern[str] | None = None) -> list[str]:
+    """Lines with comments removed - a mention in a comment is not a read.
+
+    Drops whole-line comments, and (when ``strip_comment`` is given) the trailing
+    comment on an otherwise executable line, so ``- FOO   # GC_DEAD is gone``
+    cannot certify GC_DEAD.
+    """
+    lines: list[str] = []
+    for line in text.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        lines.append(strip_comment.sub("", line) if strip_comment else line)
+    return lines
+
+
+def _env_template_keys(text: str) -> list[str]:
+    """Every key an env template advertises, commented assignments included.
+
+    A commented `# GC_EMBEDDING_MODEL=...` still tells an operator the key is
+    supported - uncommenting it is the documented way to use it - so a dead one
+    misleads exactly as much as a live one.
+    """
+    keys: list[str] = []
+    for line in text.splitlines():
+        match = ENV_TEMPLATE_ASSIGNMENT_RE.match(line)
+        if match and match.group(1) not in keys:
+            keys.append(match.group(1))
+    return keys
+
+
+def _compose_consumed_names(text: str) -> set[str]:
+    """Names a compose file actually reads from the env file.
+
+    Two forms read the operator's value: interpolation (``${VAR}``,
+    ``${VAR:-default}``) anywhere, and list-form inherit (``- VAR``) inside an
+    ``environment:`` block, which forwards the variable only when it is set.
+
+    A literal assignment (``- VAR=8000``) is excluded - it overrides the env file
+    rather than reading it - and a bare ``- item`` outside an ``environment:``
+    block is a list entry, not a variable.
+    """
+    consumed: set[str] = set()
+    env_block_indent: int | None = None
+    for line in _code_lines(text, YAML_TRAILING_COMMENT_RE):
+        env_key = COMPOSE_ENVIRONMENT_KEY_RE.match(line)
+        if env_key:
+            env_block_indent = len(env_key.group(1))
+            continue
+        consumed.update(match.group(1) for match in COMPOSE_VAR_REF_RE.finditer(line))
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        if env_block_indent is not None and indent <= env_block_indent:
+            env_block_indent = None
+        inherit = COMPOSE_INHERIT_RE.match(line)
+        if inherit and env_block_indent is not None:
+            consumed.add(inherit.group(2))
+    return consumed
+
+
+def _yaml_placeholder_consumed_names(text: str) -> set[str]:
+    """Names an application*.yml dereferences as a ``${VAR}`` placeholder.
+
+    Spring's default syntax is a single colon (``${GC_SERVER_PORT:8000}``), not
+    compose's ``:-``, so this cannot reuse COMPOSE_VAR_REF_RE.
+    """
+    consumed: set[str] = set()
+    for line in _code_lines(text, YAML_TRAILING_COMMENT_RE):
+        consumed.update(match.group(1) for match in SPRING_PLACEHOLDER_RE.finditer(line))
+    return consumed
+
+
+def _node_env_consumed_names(text: str) -> set[str]:
+    """Names a Node source reads via ``process.env.VAR`` / ``process.env["VAR"]``.
+
+    Comments are stripped from both forms: ``// process.env.GC_DEAD`` is a
+    mention, not a read. String literals are then stripped for the dotted form
+    only, so a quoted ``"process.env.GC_DEAD"`` cannot certify a key while the
+    bracket form - whose key legitimately lives inside a string - still can.
+    """
+    code = JS_COMMENT_RE.sub(" ", text)
+    bracket_re = re.compile(r"process\.env\[\s*['\"]([A-Z][A-Z0-9_]*)['\"]\s*\]")
+    consumed: set[str] = {match.group(1) for match in bracket_re.finditer(code)}
+    dotted_re = re.compile(r"process\.env\.([A-Z][A-Z0-9_]*)")
+    consumed.update(match.group(1) for match in dotted_re.finditer(JS_STRING_RE.sub(" ", code)))
+    return consumed
+
+
+def _shell_consumed_names(text: str) -> set[str]:
+    """Names a shell script actually expands or looks up.
+
+    ``$VAR`` / ``${VAR...}`` expansion, and the ``ENV_VALUES[VAR]`` associative
+    lookup validate-env.sh uses to read the parsed env file. A key named only in
+    an error-message string or a comment is a mention, not a read.
+
+    The two patterns are applied independently because they nest: in
+    ``${ENV_VALUES[GC_FOO]:-}`` a single alternation would match ``${ENV_VALUES``
+    and consume the very lookup whose key we need.
+
+    Inline comments and single-quoted text are dropped first - the shell does not
+    expand either, so a key appearing there is a mention, not a read.
+    """
+    consumed: set[str] = set()
+    for line in _code_lines(text, SHELL_INLINE_COMMENT_RE):
+        executable = SHELL_SINGLE_QUOTED_RE.sub(" ", line)
+        consumed.update(match.group(1) for match in SHELL_EXPANSION_RE.finditer(executable))
+        consumed.update(match.group(1) for match in SHELL_ENV_LOOKUP_RE.finditer(executable))
+    consumed.discard("ENV_VALUES")  # the array's own name is not an env key
+    return consumed
+
+
+def _camel_to_env(name: str) -> str:
+    """``ipAllowlist`` -> ``IP_ALLOWLIST`` (Spring's relaxed-binding env form)."""
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).upper()
+
+
+@dataclass(frozen=True)
+class SpringField:
+    """One bindable property: its env-form name, whether it is indexed, its type."""
+
+    env_name: str
+    element_type: str
+    is_collection: bool
+
+
+@dataclass(frozen=True)
+class SpringBindingIndex:
+    """@ConfigurationProperties roots plus the declared fields of every POJO."""
+
+    roots: dict[str, str]  # env-form prefix -> declaring class
+    fields: dict[str, tuple[SpringField, ...]]  # class -> its declared fields
+
+
+def _spring_binding_index(root: Path) -> SpringBindingIndex:
+    """Index the backend's @ConfigurationProperties roots and their POJO fields.
+
+    Fields are attributed to their nearest enclosing class declaration, so the
+    nested ``SecurityProperties.ApiCredential`` is indexed separately from its
+    outer class - which is what lets a binding path be validated to its leaf
+    rather than merely to its top-level field.
+    """
+    roots: dict[str, str] = {}
+    fields: dict[str, list[SpringField]] = {}
+    for source in root.glob(BACKEND_JAVA_GLOB):
+        try:
+            text = source.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        classes = [(m.start(), m.group(1)) for m in SPRING_CLASS_RE.finditer(text)]
+        if not classes:
+            continue
+        prefix_match = SPRING_PREFIX_RE.search(text)
+        if prefix_match:
+            # The root POJO is the first class declared after the annotation.
+            after = [name for pos, name in classes if pos > prefix_match.start()]
+            if after:
+                prefix_env = prefix_match.group(1).replace("-", "").replace(".", "_").upper()
+                roots[prefix_env] = after[0]
+        for field_match in SPRING_FIELD_RE.finditer(text):
+            enclosing = [name for pos, name in classes if pos < field_match.start()]
+            if not enclosing:
+                continue
+            declared_type = field_match.group(1).strip()
+            collection = SPRING_COLLECTION_RE.match(declared_type)
+            if collection:
+                element, is_collection = collection.group(1), True
+            elif declared_type.endswith("[]"):
+                element, is_collection = declared_type[:-2].strip(), True
+            else:
+                element, is_collection = declared_type, False
+            element = element.split("<")[0].split(".")[-1].strip()
+            fields.setdefault(enclosing[-1], []).append(
+                SpringField(_camel_to_env(field_match.group(2)), element, is_collection)
+            )
+    return SpringBindingIndex(
+        roots=roots, fields={cls: tuple(fs) for cls, fs in fields.items()}
+    )
+
+
+def _binds_within(cls: str, tail: str, index: SpringBindingIndex, depth: int = 0) -> bool:
+    """Walk a relaxed-binding tail through ``cls``'s declared fields.
+
+    ``CREDENTIALS_0_TOKEN`` against SecurityProperties resolves field
+    ``credentials`` (a List<ApiCredential>), consumes the ``0`` index, then
+    requires ``TOKEN`` to be a declared field of ApiCredential. A misspelled
+    ``CREDENTIALS_0_TOKNE`` binds to nothing and stays an orphan - which is the
+    whole point of resolving the path instead of matching its prefix.
+    """
+    if not tail:
+        return True
+    if depth > 8:  # cyclic type graph; refuse rather than recurse forever
+        return False
+    for field in index.fields.get(cls, ()):
+        if tail == field.env_name:
+            return True
+        if not tail.startswith(f"{field.env_name}_"):
+            continue
+        rest = tail[len(field.env_name) + 1 :]
+        if field.is_collection:
+            head, _, remainder = rest.partition("_")
+            if not head.isdigit():
+                continue  # an indexed property needs an index
+            if not remainder:
+                return True  # scalar element, e.g. IP_ALLOWLIST_0
+            return _binds_within(field.element_type, remainder, index, depth + 1)
+        if field.element_type in index.fields:
+            return _binds_within(field.element_type, rest, index, depth + 1)
+        continue  # a scalar with a trailing path binds to nothing
+    return False
+
+
+def _spring_binds(key: str, index: SpringBindingIndex) -> bool:
+    """True when ``key`` binds to a real property under a @ConfigurationProperties root.
+
+    Spring's relaxed binding maps ``GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKEN``
+    onto ``groundcontrol.security.credentials[0].token``, so the indexed ADR-026
+    credential slots have a real consumer without appearing literally in any yaml.
+    Resolving the whole path - not just the prefix - is what keeps an unknown
+    child of a live prefix from certifying itself.
+    """
+    for prefix_env, cls in index.roots.items():
+        if key == prefix_env:
+            continue  # the prefix alone is not a property
+        if key.startswith(f"{prefix_env}_") and _binds_within(
+            cls, key[len(prefix_env) + 1 :], index
+        ):
+            return True
+    return False
+
+
+def _run_env_template_consumer_check(root: Path) -> list[Violation]:
+    """Assert every key an active env template advertises has a live consumer."""
+    violations: list[Violation] = []
+    spring_index: SpringBindingIndex | None = None
+
+    def _scan(globs: Iterable[str], extract) -> set[str]:
+        found: set[str] = set()
+        for glob in globs:
+            for source in root.glob(glob):
+                try:
+                    found |= extract(source.read_text(encoding="utf-8"))
+                except OSError:
+                    continue
+        return found
+
+    for contract in ENV_TEMPLATE_CONTRACTS:
+        template_path = root / contract.template
+        if not template_path.exists():
+            # Absence of the canonical prod template is already reported as
+            # deploy-env-template-missing; the dev template is optional.
+            continue
+        keys = _env_template_keys(template_path.read_text(encoding="utf-8"))
+        if not keys:
+            continue
+
+        consumed = _scan(contract.compose_globs, _compose_consumed_names)
+        consumed |= _scan(contract.yaml_placeholder_globs, _yaml_placeholder_consumed_names)
+        consumed |= _scan(contract.node_env_globs, _node_env_consumed_names)
+        consumed |= _scan(contract.shell_globs, _shell_consumed_names)
+
+        if contract.spring_binding:
+            if spring_index is None:
+                spring_index = _spring_binding_index(root)
+            consumed.update(key for key in keys if _spring_binds(key, spring_index))
+
+        orphans = [key for key in keys if key not in consumed]
+        if orphans:
+            surfaces = ", ".join(
+                contract.compose_globs
+                + contract.yaml_placeholder_globs
+                + contract.node_env_globs
+                + contract.shell_globs
+            )
+            violations.append(
+                Violation(
+                    code="deploy-env-template-orphan-key",
+                    message=(
+                        f"{contract.template} advertises configuration keys that nothing "
+                        "reads. An operator setting them gets silence, not behavior. "
+                        "Delete the key, or wire the consumer that honors it "
+                        "(GC-P023 / #1384). A compose literal (KEY=value) pins the value "
+                        "and is not a consumer of the operator's; an env.schema "
+                        "declaration or a mention in a comment or message is not a read."
+                    ),
+                    details=sorted(orphans) + [f"consumer surfaces searched: {surfaces}"],
+                )
+            )
+    return violations
 
 
 def run_deploy_artifact_consistency(root: Path = REPO_ROOT) -> list[Violation]:
@@ -1823,6 +2416,9 @@ def run_deploy_artifact_consistency(root: Path = REPO_ROOT) -> list[Violation]:
                 )
             )
 
+    # 7. Active templates advertise only keys something actually reads (#1384).
+    violations.extend(_run_env_template_consumer_check(root))
+
     return violations
 
 
@@ -1967,6 +2563,7 @@ MCP_LIB_PATH = "mcp/ground-control/lib.js"
 _ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state"
 _AUDIT_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state"
 _VERIFICATION_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/verification/state"
+_GRAPH_MODEL_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/model"
 
 # Java enum body: from the opening `{` to whichever comes first — the `;` that
 # terminates the constant list (present when the enum has methods/fields, e.g.
@@ -2011,6 +2608,13 @@ class EnumContract:
 
 
 ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
+    EnumContract(
+        "GraphEntityType",
+        f"{_GRAPH_MODEL_DIR}/GraphEntityType.java",
+        "GraphEntityType",
+        "GRAPH_ENTITY_TYPES",
+        None,
+    ),
     EnumContract("RequirementType", f"{_ENUM_STATE_DIR}/RequirementType.java", "RequirementType", "REQUIREMENT_TYPES", "REQUIREMENT_TYPES"),
     EnumContract("RelationType", f"{_ENUM_STATE_DIR}/RelationType.java", "RelationType", "RELATION_TYPES", "RELATION_TYPES"),
     EnumContract("ArtifactType", f"{_ENUM_STATE_DIR}/ArtifactType.java", "ArtifactType", "ARTIFACT_TYPES", "ARTIFACT_TYPES"),
@@ -2229,6 +2833,724 @@ def _drift_violation(label: str, layer: str, expected: list[str], actual: list[s
         message=f"{label} enum drift between backend and {layer} (issue #433 / ADR-034).",
         details=details,
     )
+
+
+# ---------------------------------------------------------------------------
+# Context-graph ontology bindings (ADR-084 / issue #1307).
+#
+# The inventory is discovered from Java source independently of the binding
+# artifact.  This is intentionally separate from ENUM_CONTRACT_INVENTORY:
+# that inventory governs API mirror parity, while this check governs graph
+# concept identity and must also see package-local contributors.
+# ---------------------------------------------------------------------------
+
+ONTOLOGY_CONTRACT_PATHS = {
+    "families": Path("contracts/ontology/gc-concept-families-v1.json"),
+    "terms": Path("contracts/ontology/gc-controlled-vocabularies-v1.json"),
+    "bindings": Path("contracts/ontology/gc-artifact-bindings-v1.json"),
+}
+ONTOLOGY_SCHEMA_VERSIONS = {
+    "families": "gc-concept-families/v1",
+    "terms": "gc-controlled-vocabularies/v1",
+    "bindings": "gc-artifact-bindings/v1",
+}
+ONTOLOGY_PROVENANCE = frozenset({"adopted", "adapted", "native"})
+ONTOLOGY_OWNERS = frozenset({"ground-control"})
+ONTOLOGY_TERM_KINDS = frozenset({"edge", "classification"})
+ONTOLOGY_SURFACE_KINDS = frozenset({"java-enum", "graph-contributor"})
+ONTOLOGY_SOURCE_ROOT = Path("backend/src/main/java")
+
+
+def _ontology_violation(code: str, message: str, *details: str) -> Violation:
+    return Violation(code=code, message=message, details=list(details))
+
+
+def _load_ontology_contracts(root: Path) -> tuple[dict[str, dict[str, Any]], list[Violation]]:
+    payloads: dict[str, dict[str, Any]] = {}
+    violations: list[Violation] = []
+    for label, rel in ONTOLOGY_CONTRACT_PATHS.items():
+        path = root / rel
+        if not path.is_file():
+            violations.append(
+                _ontology_violation(
+                    "ontology-contract-missing",
+                    f"Required ontology contract is missing: {rel.as_posix()}.",
+                )
+            )
+            continue
+        try:
+            payload = load_json(path, reject_duplicate_keys=True)
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            violations.append(
+                _ontology_violation(
+                    "ontology-contract-invalid-json",
+                    f"Ontology contract is not readable JSON: {rel.as_posix()}.",
+                    str(exc),
+                )
+            )
+            continue
+        if not isinstance(payload, dict):
+            violations.append(
+                _ontology_violation(
+                    "ontology-contract-shape-invalid",
+                    f"Ontology contract must contain a JSON object: {rel.as_posix()}.",
+                )
+            )
+            continue
+        payloads[label] = payload
+        actual_version = payload.get("schema_version")
+        if actual_version != ONTOLOGY_SCHEMA_VERSIONS[label]:
+            violations.append(
+                _ontology_violation(
+                    "ontology-contract-version-invalid",
+                    f"Ontology contract has an unsupported schema version: {rel.as_posix()}.",
+                    f"expected {ONTOLOGY_SCHEMA_VERSIONS[label]}, got {actual_version!r}",
+                )
+            )
+    return payloads, violations
+
+
+def _nonempty_string_list(value: Any) -> bool:
+    return isinstance(value, list) and bool(value) and all(isinstance(item, str) and item.strip() for item in value)
+
+
+def _validate_ontology_families(payload: dict[str, Any]) -> tuple[set[str], list[Violation]]:
+    violations: list[Violation] = []
+    owners = payload.get("owners")
+    if not _nonempty_string_list(owners) or not set(owners).issubset(ONTOLOGY_OWNERS):
+        violations.append(
+            _ontology_violation(
+                "ontology-owner-invalid",
+                "Ontology family owners must use the closed owner vocabulary.",
+                f"allowed: {sorted(ONTOLOGY_OWNERS)}",
+            )
+        )
+    families = payload.get("families")
+    if not isinstance(families, dict) or not families:
+        return set(), violations + [
+            _ontology_violation(
+                "ontology-contract-shape-invalid",
+                "gc-concept-families-v1.json must declare a non-empty families object.",
+            )
+        ]
+    family_ids: set[str] = set()
+    for family_id, family in families.items():
+        if not isinstance(family_id, str) or not family_id or not isinstance(family, dict):
+            violations.append(
+                _ontology_violation("ontology-family-invalid", "Every ontology family must be a named object.")
+            )
+            continue
+        family_ids.add(family_id)
+        provenance = family.get("provenance")
+        if provenance not in ONTOLOGY_PROVENANCE:
+            violations.append(
+                _ontology_violation(
+                    "ontology-provenance-invalid",
+                    f"Family {family_id} has invalid provenance {provenance!r}.",
+                    f"allowed: {sorted(ONTOLOGY_PROVENANCE)}",
+                )
+            )
+        if family.get("owner") not in ONTOLOGY_OWNERS:
+            violations.append(
+                _ontology_violation("ontology-owner-invalid", f"Family {family_id} has an unknown owner.")
+            )
+        for field in ("title", "description"):
+            if not isinstance(family.get(field), str) or not family[field].strip():
+                violations.append(
+                    _ontology_violation(
+                        "ontology-family-invalid",
+                        f"Family {family_id} must declare non-empty {field}.",
+                    )
+                )
+        if provenance == "native":
+            if not isinstance(family.get("extension_scope"), str) or not family["extension_scope"].strip():
+                violations.append(
+                    _ontology_violation(
+                        "ontology-native-family-rules-missing",
+                        f"Native family {family_id} must declare extension_scope.",
+                    )
+                )
+            for field in ("relation_rules", "non_ambiguity_constraints"):
+                if not _nonempty_string_list(family.get(field)):
+                    violations.append(
+                        _ontology_violation(
+                            "ontology-native-family-rules-missing",
+                            f"Native family {family_id} must declare non-empty {field}.",
+                        )
+                    )
+    return family_ids, violations
+
+
+def _validate_ontology_terms(
+    payload: dict[str, Any], family_ids: set[str]
+) -> tuple[dict[str, dict[str, Any]], list[Violation]]:
+    violations: list[Violation] = []
+    terms = payload.get("terms")
+    if not isinstance(terms, dict) or not terms:
+        return {}, [
+            _ontology_violation(
+                "ontology-contract-shape-invalid",
+                "gc-controlled-vocabularies-v1.json must declare a non-empty terms object.",
+            )
+        ]
+    valid_terms: dict[str, dict[str, Any]] = {}
+    for term_id, term in terms.items():
+        if not isinstance(term_id, str) or not term_id or not isinstance(term, dict):
+            violations.append(_ontology_violation("ontology-term-invalid", "Every ontology term must be a named object."))
+            continue
+        valid_terms[term_id] = term
+        kind = term.get("kind")
+        if kind not in ONTOLOGY_TERM_KINDS:
+            violations.append(
+                _ontology_violation(
+                    "ontology-term-kind-invalid",
+                    f"Term {term_id} has invalid kind {kind!r}.",
+                    f"allowed: {sorted(ONTOLOGY_TERM_KINDS)}",
+                )
+            )
+        if term.get("family") not in family_ids:
+            violations.append(
+                _ontology_violation(
+                    "ontology-family-reference-missing",
+                    f"Term {term_id} references unknown family {term.get('family')!r}.",
+                )
+            )
+        if term.get("owner") not in ONTOLOGY_OWNERS:
+            violations.append(_ontology_violation("ontology-owner-invalid", f"Term {term_id} has an unknown owner."))
+        for field in ("title", "description"):
+            if not isinstance(term.get(field), str) or not term[field].strip():
+                violations.append(
+                    _ontology_violation("ontology-term-invalid", f"Term {term_id} must declare non-empty {field}.")
+                )
+        if kind == "edge":
+            if term.get("direction") not in {"source-to-target", "symmetric"}:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-edge-semantics-invalid",
+                        f"Edge term {term_id} must declare a closed direction.",
+                    )
+                )
+            if not _nonempty_string_list(term.get("source_roles")) or not _nonempty_string_list(
+                term.get("target_roles")
+            ):
+                violations.append(
+                    _ontology_violation(
+                        "ontology-edge-semantics-invalid",
+                        f"Edge term {term_id} must declare source_roles and target_roles.",
+                    )
+                )
+    return valid_terms, violations
+
+
+def _java_type_identity(text: str) -> tuple[str, str] | None:
+    without_comments = _strip_comments(text)
+    type_match = re.search(r"\b(?:class|enum)\s+(\w+)", without_comments)
+    if not type_match:
+        return None
+    package_match = re.search(r"\bpackage\s+([\w.]+)\s*;", without_comments)
+    name = type_match.group(1)
+    package = package_match.group(1) if package_match else ""
+    return (f"{package}.{name}" if package else name, name)
+
+
+def _is_ontology_enum(name: str) -> bool:
+    return (
+        name == "GraphEntityType"
+        or (name.endswith("LinkType") and not name.endswith("LinkTargetType"))
+        or name.endswith("RelationType")
+        or name == "ProvenanceEdgeRelation"
+    )
+
+
+def _split_java_arguments(body: str) -> list[str]:
+    args: list[str] = []
+    start = 0
+    depth = 0
+    in_string = False
+    escaped = False
+    for index, char in enumerate(body):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif char == "," and depth == 0:
+            args.append(body[start:index].strip())
+            start = index + 1
+    args.append(body[start:].strip())
+    return args
+
+
+def _java_call_argument_lists(text: str, marker: str) -> list[tuple[int, list[str]]]:
+    calls: list[tuple[int, list[str]]] = []
+    cursor = 0
+    while True:
+        start = text.find(marker, cursor)
+        if start < 0:
+            return calls
+        body_start = start + len(marker)
+        depth = 1
+        in_string = False
+        escaped = False
+        index = body_start
+        while index < len(text) and depth:
+            char = text[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+            elif char == '"':
+                in_string = True
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            index += 1
+        if depth:
+            calls.append((start, []))
+            return calls
+        calls.append((start, _split_java_arguments(text[body_start : index - 1])))
+        cursor = index
+
+
+def _graph_edge_argument_lists(text: str) -> list[list[str]]:
+    calls: list[list[str]] = []
+    constructor_pattern = re.compile(r"\bnew\s+(?:[\w.]+\.)?GraphEdge\s*\(")
+    for constructor in constructor_pattern.finditer(text):
+        body_start = constructor.end()
+        depth = 1
+        in_string = False
+        escaped = False
+        index = body_start
+        while index < len(text) and depth:
+            char = text[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+            elif char == '"':
+                in_string = True
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            index += 1
+        if depth:
+            calls.append([])
+        else:
+            calls.append(_split_java_arguments(text[body_start : index - 1]))
+    return calls
+
+
+def _edge_enum_selector(expression: str) -> str | None:
+    match = re.search(
+        r"\.(getLinkType|getRelationType|getRelation)\(\)\.name\(\)\s*$",
+        expression,
+    )
+    return match.group(1) if match else None
+
+
+def _is_enum_forwarded_parameter(text: str, parameter_name: str) -> set[str]:
+    method_pattern = re.compile(
+        r"^[ \t]*(?:(?:public|protected|private)\s+)?(?:static\s+)?[\w<>,?.\[\]]+\s+(\w+)\s*\((.*?)\)\s*(?:throws\s+[^\{]+)?\{",
+        re.DOTALL | re.MULTILINE,
+    )
+    for declaration in method_pattern.finditer(text):
+        parameters = _split_java_arguments(declaration.group(2))
+        parameter_index = next(
+            (
+                index
+                for index, parameter in enumerate(parameters)
+                if re.search(rf"\bString\s+{re.escape(parameter_name)}\b", parameter)
+            ),
+            None,
+        )
+        if parameter_index is None:
+            continue
+        method_name = declaration.group(1)
+        forwarded_arguments: list[str] = []
+        for call_start, call_args in _java_call_argument_lists(text, f"{method_name}("):
+            if declaration.start() <= call_start < declaration.end():
+                continue
+            if parameter_index >= len(call_args):
+                return set()
+            forwarded_arguments.append(call_args[parameter_index])
+        selectors = {_edge_enum_selector(argument) for argument in forwarded_arguments}
+        if forwarded_arguments and None not in selectors:
+            return {selector for selector in selectors if selector is not None}
+    return set()
+
+
+def _contributor_edge_values(text: str) -> tuple[set[str], set[str], list[str]]:
+    without_comments = _strip_comments(text)
+    constants = {
+        name: value
+        for name, value in re.findall(
+            r"\b(?:public|protected|private)?\s*static\s+final\s+String\s+([A-Z][A-Z0-9_]*)\s*=\s*\"([A-Z][A-Z0-9_]*)\"\s*;",
+            without_comments,
+        )
+    }
+    values: set[str] = set()
+    enum_selectors: set[str] = set()
+    unresolved: list[str] = []
+    for factory in re.finditer(r"\bGraphEdge\s*\.\s*([A-Za-z_$][\w$]*)\s*\(", without_comments):
+        unresolved.append(f"GraphEdge.{factory.group(1)}(...) factory form")
+    constructor_tokens = len(re.findall(r"\bnew\s+(?:[\w.]+\.)?GraphEdge\b", without_comments))
+    argument_lists = _graph_edge_argument_lists(without_comments)
+    if constructor_tokens != len(argument_lists):
+        unresolved.append("unsupported GraphEdge constructor form")
+    for args in argument_lists:
+        if len(args) < 2:
+            unresolved.append("unparseable GraphEdge constructor")
+            continue
+        expression = args[1].strip()
+        literal = re.fullmatch(r'"([A-Z][A-Z0-9_]*)"', expression)
+        if literal:
+            values.add(literal.group(1))
+            continue
+        if expression in constants:
+            values.add(constants[expression])
+            continue
+        selector = _edge_enum_selector(expression)
+        if selector is not None:
+            enum_selectors.add(selector)
+            continue
+        if re.fullmatch(r"[A-Za-z_$][\w$]*", expression):
+            forwarded_selectors = _is_enum_forwarded_parameter(without_comments, expression)
+            if forwarded_selectors:
+                enum_selectors.update(forwarded_selectors)
+                continue
+        unresolved.append(expression)
+    return values, enum_selectors, unresolved
+
+
+def _contributor_type_identity(text: str) -> tuple[str, str] | None:
+    without_comments = _strip_comments(text)
+    declaration = re.search(
+        r"\b(?:class|record)\s+(\w+)\b[^;\{]*\bimplements\s+[^\{;]*\bGraphProjectionContributor\b",
+        without_comments,
+    )
+    if declaration is None:
+        return None
+    package_match = re.search(r"\bpackage\s+([\w.]+)\s*;", without_comments)
+    name = declaration.group(1)
+    package = package_match.group(1) if package_match else ""
+    return (f"{package}.{name}" if package else name, name)
+
+
+def _discover_ontology_surfaces(
+    root: Path,
+) -> tuple[dict[str, tuple[str, str, set[str]]], dict[str, set[str]], list[Violation]]:
+    java_root = root / ONTOLOGY_SOURCE_ROOT
+    discovered: dict[str, tuple[str, str, set[str]]] = {}
+    dynamic_enum_selectors: dict[str, set[str]] = {}
+    violations: list[Violation] = []
+    if not java_root.is_dir():
+        violations.append(
+            _ontology_violation(
+                "ontology-source-root-missing",
+                f"Ontology Java source root is missing: {ONTOLOGY_SOURCE_ROOT.as_posix()}.",
+            )
+        )
+        return discovered, dynamic_enum_selectors, violations
+    for path in sorted(java_root.rglob("*.java")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            violations.append(
+                _ontology_violation("ontology-source-unreadable", f"Cannot read ontology source {path}.", str(exc))
+            )
+            continue
+        without_comments = _strip_comments(text)
+        contributor_identity = _contributor_type_identity(text)
+        named_contributor_candidate = (
+            path.name.endswith("GraphProjectionContributor.java")
+            and path.name != "GraphProjectionContributor.java"
+        )
+        if named_contributor_candidate and contributor_identity is None:
+            violations.append(
+                _ontology_violation(
+                    "ontology-contributor-declaration-unresolved",
+                    "Graph contributor candidate does not directly declare GraphProjectionContributor.",
+                    f"file: {path.relative_to(root).as_posix()}",
+                )
+            )
+            continue
+        identity = contributor_identity or _java_type_identity(text)
+        if identity is None:
+            continue
+        surface_id, type_name = identity
+        rel = path.relative_to(root).as_posix()
+        if contributor_identity is not None:
+            values, enum_selectors, unresolved = _contributor_edge_values(text)
+            discovered[surface_id] = ("graph-contributor", rel, values)
+            dynamic_enum_selectors[surface_id] = enum_selectors
+            for expression in unresolved:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-contributor-edge-unresolved",
+                        f"Contributor {surface_id} has an edge expression the ontology inventory cannot resolve.",
+                        f"file: {rel}",
+                        f"expression: {expression}",
+                    )
+                )
+            continue
+        enum_match = re.search(r"\benum\s+(\w+)", _strip_comments(text))
+        if enum_match and _is_ontology_enum(enum_match.group(1)):
+            values = set(parse_java_enum_constants(text))
+            if not values:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-source-parse-error",
+                        f"Could not parse ontology enum values from {rel}.",
+                    )
+                )
+            discovered[surface_id] = ("java-enum", rel, values)
+    return discovered, dynamic_enum_selectors, violations
+
+
+def _safe_ontology_source_path(root: Path, raw_path: Any) -> bool:
+    if not isinstance(raw_path, str) or not raw_path:
+        return False
+    rel = Path(raw_path)
+    if rel.is_absolute() or ".." in rel.parts or rel.as_posix() != raw_path:
+        return False
+    if not rel.is_relative_to(ONTOLOGY_SOURCE_ROOT):
+        return False
+    try:
+        (root / rel).resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def run_ontology_binding_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """Validate ontology artifacts and their bidirectional Java-source bindings."""
+
+    payloads, violations = _load_ontology_contracts(root)
+    if set(payloads) != set(ONTOLOGY_CONTRACT_PATHS):
+        return violations
+
+    family_ids, family_violations = _validate_ontology_families(payloads["families"])
+    terms, term_violations = _validate_ontology_terms(payloads["terms"], family_ids)
+    violations.extend(family_violations)
+    violations.extend(term_violations)
+
+    discovered, dynamic_enum_selectors, discovery_violations = _discover_ontology_surfaces(root)
+    violations.extend(discovery_violations)
+
+    surfaces = payloads["bindings"].get("surfaces")
+    if not isinstance(surfaces, list):
+        violations.append(
+            _ontology_violation(
+                "ontology-contract-shape-invalid",
+                "gc-artifact-bindings-v1.json must declare a surfaces array.",
+            )
+        )
+        return violations
+
+    declared_surfaces: set[str] = set()
+    declared_keys: set[tuple[str, str]] = set()
+    for surface in surfaces:
+        if not isinstance(surface, dict):
+            violations.append(_ontology_violation("ontology-surface-invalid", "Every ontology surface must be an object."))
+            continue
+        surface_id = surface.get("id")
+        kind = surface.get("kind")
+        raw_path = surface.get("path")
+        if not isinstance(surface_id, str) or not surface_id:
+            violations.append(_ontology_violation("ontology-surface-invalid", "Every ontology surface must have an id."))
+            continue
+        if surface_id in declared_surfaces:
+            violations.append(
+                _ontology_violation("ontology-surface-duplicate", f"Ontology surface {surface_id} is declared more than once.")
+            )
+        declared_surfaces.add(surface_id)
+        if kind not in ONTOLOGY_SURFACE_KINDS:
+            violations.append(
+                _ontology_violation(
+                    "ontology-surface-kind-invalid",
+                    f"Ontology surface {surface_id} has unknown kind {kind!r}.",
+                )
+            )
+        if not _safe_ontology_source_path(root, raw_path):
+            violations.append(
+                _ontology_violation(
+                    "ontology-surface-path-invalid",
+                    f"Ontology surface {surface_id} has an unsafe or non-source path {raw_path!r}.",
+                )
+            )
+        actual = discovered.get(surface_id)
+        if actual is not None:
+            actual_kind, actual_path, _ = actual
+            if kind != actual_kind:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-surface-kind-mismatch",
+                        f"Ontology surface {surface_id} is {actual_kind}, not {kind!r}.",
+                    )
+                )
+            if raw_path != actual_path:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-surface-path-mismatch",
+                        f"Ontology surface {surface_id} path does not match discovered source.",
+                        f"declared: {raw_path}",
+                        f"discovered: {actual_path}",
+                    )
+                )
+        configured_enum_sources = surface.get("edge_enum_sources", {})
+        if not isinstance(configured_enum_sources, dict):
+            violations.append(
+                _ontology_violation(
+                    "ontology-edge-enum-source-invalid",
+                    f"Ontology surface {surface_id} must declare edge_enum_sources as an object.",
+                )
+            )
+            configured_enum_sources = {}
+        expected_selectors = dynamic_enum_selectors.get(surface_id, set())
+        configured_selectors = set(configured_enum_sources)
+        for selector in sorted(expected_selectors - configured_selectors):
+            violations.append(
+                _ontology_violation(
+                    "ontology-edge-enum-source-missing",
+                    f"Dynamic edge selector {surface_id}:{selector} has no declared enum source.",
+                )
+            )
+        for selector in sorted(configured_selectors - expected_selectors):
+            violations.append(
+                _ontology_violation(
+                    "ontology-edge-enum-source-stale",
+                    f"Declared edge enum selector {surface_id}:{selector} no longer appears in source.",
+                )
+            )
+        for selector, enum_surface_id in configured_enum_sources.items():
+            enum_surface = discovered.get(enum_surface_id) if isinstance(enum_surface_id, str) else None
+            if enum_surface is None or enum_surface[0] != "java-enum":
+                violations.append(
+                    _ontology_violation(
+                        "ontology-edge-enum-source-missing",
+                        f"Dynamic edge selector {surface_id}:{selector} does not resolve to a discovered enum surface.",
+                        f"declared source: {enum_surface_id!r}",
+                    )
+                )
+                continue
+            enum_name = enum_surface_id.rsplit(".", 1)[-1]
+            selector_matches = (
+                (selector == "getLinkType" and enum_name.endswith("LinkType") and not enum_name.endswith("LinkTargetType"))
+                or (selector == "getRelationType" and enum_name.endswith("RelationType"))
+                or (selector == "getRelation" and enum_name == "ProvenanceEdgeRelation")
+            )
+            if not selector_matches:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-edge-enum-source-invalid",
+                        f"Dynamic edge selector {surface_id}:{selector} is incompatible with {enum_surface_id}.",
+                    )
+                )
+        bindings = surface.get("bindings")
+        if not isinstance(bindings, list):
+            violations.append(
+                _ontology_violation("ontology-surface-invalid", f"Ontology surface {surface_id} must declare bindings.")
+            )
+            continue
+        for binding in bindings:
+            if not isinstance(binding, dict):
+                violations.append(
+                    _ontology_violation("ontology-binding-invalid", f"Surface {surface_id} has a non-object binding.")
+                )
+                continue
+            local_value = binding.get("local_value")
+            term_id = binding.get("term")
+            if not isinstance(local_value, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", local_value):
+                violations.append(
+                    _ontology_violation(
+                        "ontology-binding-invalid",
+                        f"Surface {surface_id} has invalid local_value {local_value!r}.",
+                    )
+                )
+                continue
+            key = (surface_id, local_value)
+            if key in declared_keys:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-binding-duplicate",
+                        f"Ontology binding {surface_id}:{local_value} is declared more than once.",
+                    )
+                )
+            declared_keys.add(key)
+            term = terms.get(term_id) if isinstance(term_id, str) else None
+            if term is None:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-term-reference-missing",
+                        f"Binding {surface_id}:{local_value} references unknown term {term_id!r}.",
+                    )
+                )
+            elif actual is not None:
+                expected_term_kind = "classification" if surface_id.endswith(".GraphEntityType") else "edge"
+                if term.get("kind") != expected_term_kind:
+                    violations.append(
+                        _ontology_violation(
+                            "ontology-binding-kind-mismatch",
+                            f"Binding {surface_id}:{local_value} must target a {expected_term_kind} term.",
+                            f"term {term_id} is {term.get('kind')!r}",
+                        )
+                    )
+
+    discovered_surfaces = set(discovered)
+    for surface_id in sorted(discovered_surfaces - declared_surfaces):
+        kind, path, _ = discovered[surface_id]
+        violations.append(
+            _ontology_violation(
+                "ontology-surface-missing",
+                f"Discovered {kind} surface {surface_id} has no ontology surface declaration.",
+                f"file: {path}",
+            )
+        )
+    for surface_id in sorted(declared_surfaces - discovered_surfaces):
+        violations.append(
+            _ontology_violation(
+                "ontology-surface-stale",
+                f"Ontology surface {surface_id} no longer exists in source inventory.",
+            )
+        )
+
+    discovered_keys = {
+        (surface_id, local_value)
+        for surface_id, (_, _, values) in discovered.items()
+        for local_value in values
+    }
+    for surface_id, local_value in sorted(discovered_keys - declared_keys):
+        violations.append(
+            _ontology_violation(
+                "ontology-binding-missing",
+                f"Source vocabulary is unbound: {surface_id}:{local_value}.",
+            )
+        )
+    for surface_id, local_value in sorted(declared_keys - discovered_keys):
+        violations.append(
+            _ontology_violation(
+                "ontology-binding-stale",
+                f"Ontology binding points to a vanished source value: {surface_id}:{local_value}.",
+            )
+        )
+    return violations
 
 
 # ---------------------------------------------------------------------------
@@ -3216,9 +4538,11 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_ci_strictness_contract())
     violations.extend(run_deploy_compose_credential_passthrough())
     violations.extend(run_ghcr_namespace_drift())
+    violations.extend(run_repo_identity_drift())
     violations.extend(run_deploy_artifact_consistency())
     violations.extend(run_methodology_catalog_drift())
     violations.extend(run_enum_contract_check())
+    violations.extend(run_ontology_binding_check())
     violations.extend(run_contract_surface_check())
     violations.extend(run_contract_invariant_enforcement_check())
     violations.extend(run_authz_matrix_sync_check())

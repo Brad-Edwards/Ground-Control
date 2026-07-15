@@ -347,7 +347,7 @@ function GitHubSync() {
               className={inputClass}
               value={owner}
               onChange={(e) => setOwner(e.target.value)}
-              placeholder="KeplerOps"
+              placeholder="autarchy-ai"
               required
             />
           </FormField>

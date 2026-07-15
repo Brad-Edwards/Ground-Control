@@ -18,7 +18,7 @@ internet because:
   check.
 - The deployment template assumes a single operator on a trusted internal
   network. Multi-tenant, federated, or internet-exposed deployments need the
-  larger auth surface tracked in issue [#983](https://github.com/Brad-Edwards/Ground-Control/issues/983).
+  larger auth surface tracked in issue [#983](https://github.com/autarchy-ai/Ground-Control/issues/983).
 
 If you need to expose Ground Control beyond Tailscale today, terminate TLS in
 front of it (Caddy / Traefik / nginx) AND understand that the auth controls
@@ -36,7 +36,7 @@ for the proper auth surface.
 ### Setup
 
 ```bash
-git clone https://github.com/Brad-Edwards/Ground-Control.git
+git clone https://github.com/autarchy-ai/Ground-Control.git
 cd Ground-Control
 cp .env.example .env
 make up                            # Start PostgreSQL + AGE

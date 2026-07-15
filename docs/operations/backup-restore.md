@@ -182,7 +182,7 @@ The dump itself does **not** carry the password; restoring from a dump does not 
 
 ## 8. Escalation
 
-- Repository: <https://github.com/Brad-Edwards/Ground-Control>
+- Repository: <https://github.com/autarchy-ai/Ground-Control>
 - File issues with the `ops` label if this runbook is wrong or incomplete.
 
 ## Appendix A. Where the tooling lives

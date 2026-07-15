@@ -31,7 +31,7 @@ public class GitHubCliClient implements GitHubClient {
     /** GitHub owner and repo names: alphanumeric, hyphens, dots, underscores; starts with alphanumeric. */
     private static final Pattern GITHUB_NAME_RE = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$");
 
-    /** GitHub owner/repo combined format (e.g. "KeplerOps/Ground-Control"). */
+    /** GitHub owner/repo combined format (e.g. "autarchy-ai/Ground-Control"). */
     private static final Pattern GITHUB_REPO_RE =
             Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}/[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$");
 

@@ -20,6 +20,8 @@ public interface RiskScenarioRepository extends JpaRepository<RiskScenario, UUID
 
     Optional<RiskScenario> findByProjectIdAndUid(UUID projectId, String uid);
 
+    List<RiskScenario> findByProjectIdAndUidIn(UUID projectId, Collection<String> uids);
+
     List<RiskScenario> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
 
     List<RiskScenario> findByIdInAndProjectId(Collection<UUID> ids, UUID projectId);

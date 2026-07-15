@@ -1,5 +1,34 @@
 # Documentation style
 
+> **Sync note for issue #1308 (2026-07-15, graph enum contract):** Added
+> `GraphEntityType` to the existing ADR-034 enum-contract policy inventory and
+> generated `GRAPH_ENTITY_TYPES` for frontend graph colors and tooltip coverage.
+> Documentation lives in ADR-034, ADR-084, `docs/DEVELOPMENT_WORKFLOW.md`, and
+> `docs/architecture/ARCHITECTURE.md`; ADR-054 records the policy-surface sync.
+> The documentation-coverage classifier, `outcome_required` mapping, Vale rules,
+> `tools/install-vale.sh`, `.vale.ini`, and this file's style rules are unchanged.
+
+> **Sync note (2026-07-14, policy diff-base merge-base fix):** Fixed the `base`
+> arm of `read_changed_files` in `tools/policy/checks.py` to scope the diff to
+> `merge-base(base, HEAD)` instead of the two-dot `git diff <base> --`, so a PR
+> branch that trails `dev` is no longer charged with `dev`'s later commits by
+> the diff-scoped gates (observed on PR #1393, where an unrelated 2-file change
+> tripped `doc-coverage-outcome-missing` on `dev`'s own docs). This is a
+> policy-tooling correctness fix, not a documentation-classifier change: the
+> documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`,
+> and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
+
+> **Sync note for issue #1307 (2026-07-14, ontology binding gate):** Added
+> `tools/policy/checks.py::run_ontology_binding_check` for the ADR-084 ontology
+> contracts and their independently discovered Java vocabulary inventory.
+> Documentation lives in ADR-084, `docs/DEVELOPMENT_WORKFLOW.md`, and
+> `contracts/CHANGES.md`; ADR-054 records the policy-surface amendment. The
+> documentation-coverage classifier, `outcome_required` mapping, Vale rules,
+> `tools/install-vale.sh`, `.vale.ini`, and this file's style rules are
+> unchanged.
+
+> **Sync note for issue #1384 (2026-07-13, retired orchestration config and console assumptions):** Extended `tools/policy/checks.py::run_deploy_artifact_consistency` with the `deploy-env-template-orphan-key` guard: an active env template may advertise only keys some executable surface actually reads, with the legitimate consumer surfaces declared per template in `ENV_TEMPLATE_CONTRACTS` (compose interpolation and list-form inherit, `env.schema` directives with the ADR-026 credential/allowlist slots expanded, the deploy validator and script, `application*.yml` placeholders, the MCP client's `process.env` reads, and Spring relaxed binding onto a declared `@ConfigurationProperties` prefix). A compose literal (`- KEY=value`) pins the value and is not a consumer of the operator's; tests, docs, superseded ADRs, and historical migrations are not consumers. Removed the `TEMPORAL_*` / `GROUNDCONTROL_TEMPORAL_WORKER_*` keys the #1359 lane left behind in `.env.example` and `deploy/docker/.env.example` (plus `GC_SERVER_PORT` / `GC_CACHE_TYPE`, which the production compose pins as literals and never read from the operator's env file). Re-scoped `architecture/design/console-ia-design-system.md` and its preflight note onto the surviving read/reporting model (ADR-029 issue thread + ADR-061 telemetry projection), removing gate actions, operator signals, and run start/cancel/retry as product surfaces; requirement GC-Q016 is superseded by a stack-agnostic statement. This is a policy-surface and design-reference update: the documentation-coverage classifier, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
+
 > **Sync note for issue #1359 (2026-07-12, remove Temporal orchestration lane):** Removed the `/api/v1/workflow-executions**` REST surface and the `gc_workflow_execution` MCP tool (`start`/`get`/`list`/`signal`, handler `mcp/ground-control/gc-workflow-execution.js`) plus its API-client helpers and field mappings in `mcp/ground-control/lib.js`/`index.js`; removed `infrastructure/temporal/**`, `domain/workflowexecution/**`, `domain/llm`, and `infrastructure/llm` (including the Anthropic adapter), so the routing parser's canonical provider id is `claude` again with no `anthropic` alias; and dropped the `run_workflow_payload_contract_check`, `run_gate_set_invariant_check`, and `deploy-temporal-topology` policy checks from `tools/policy/checks.py` along with the `contracts/schemas/workflow/` activity-payload schemas. ADR-028, ADR-081, and ADR-088 are marked Superseded (issue #1359) in `architecture/adrs/README.md`; the run-economics surface (`workflow_run`, ADR-061 telemetry, `gc_workflow_run`/`gc_workflow_run_ingest`, ADR-036 per-step routing, ADR-029 issue-thread gates) is unaffected. This is a policy-surface, MCP tool-surface, and public-API removal: the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
 
 > **Sync note for issue #1346 (2026-07-11, ADR-089 GRC retirement):** `tools/policy/checks.py::run_traceability_reconciliation_gate_contract` dropped its `next_issue_recommendation` prose anchors (the field is retired from `gc_close_issue_after_merge`'s close envelope), and `ENUM_CONTRACT_INVENTORY` dropped the seven enum-contract entries owned by the retired composed GRC surface. This is a policy-surface removal, not a documentation-classifier change: the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no DOC_STYLE.md style rule changed.
@@ -96,6 +125,8 @@
 > **Sync note for issue #1006 / ADR-080 (2026-07-01):** The `gc_research_run` MCP tool gained `record_methodology_requirements_contract` and `get_methodology_requirements_contract` actions (`POST`/`GET /api/v1/research-runs/{id}/methodology/requirements-contract`) in `mcp/ground-control/index.js` + `lib.js` for the structured phase-1 methodology requirements contract. The surface change is recorded in the ADR-054 amendment, `docs/API.md`, and `docs/research/RESEARCH_WORKFLOW.md`; no style rule changed.
 
 > **Sync note for issue #1124 / GC-GRC-011 (2026-07-05):** The `gc_test_quality_review` rubric in `mcp/ground-control/lib.js` (`buildTestQualityReviewPrompt`) gained a critical category flagging control efficacy tests that only prove existence rather than detecting control removal, with a matching key-phrase assertion in `lib.test.js`. This is a workflow-record-tool prompt-contract change, not a documentation-classifier change: the documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new DOC_STYLE.md style rule is established.
+
+> **Sync note for issue #1364 (2026-07-12):** The `gc_test_quality_review` rubric category added by #1124 above is rewritten in a screening-independent form. ADR-089 retired the machinery it depended on, so it conditioned on a security control "identified for" the change (identification was the now-tombstoned Step 3.5) and routed to a GC-GRC-015 disposition that no longer exists. The category now keys off the diff: production logic enforcing a protection must ship a test that fails when the enforcement is removed, bypassed, or materially weakened. The prompt-contract assertion in `lib.test.js` and the implementer-facing rule in `skills/implement/steps/step-04.4-tdd.md` are updated in lockstep. This is a workflow-record-tool prompt-contract change, not a documentation-classifier change: the documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new DOC_STYLE.md style rule is established.
 
 ## Rules
 
@@ -366,3 +397,24 @@ that parser are recorded in an amendment to ADR-054, not a documentation edit;
 the documentation-coverage classifier, Vale rule set, `tools/install-vale.sh`,
 and `.vale.ini` are unchanged and no new DOC_STYLE.md style rule is
 established.
+
+The `gc_admin` `create_project` `type` enum in `mcp/ground-control/index.js`
+and its `createProject` client-helper doc comment in `mcp/ground-control/lib.js`
+no longer offer `GRC` (issue #1385): the value is a legacy read-only project
+type per ADR-089 §4, rejected at creation by `ProjectService.create` and already
+documented as `SOFTWARE | RESEARCH` in `docs/API.md`. Per the convention above,
+tightening that tool-input enum is recorded in an amendment to ADR-054 and the
+changelog fragment, not a documentation edit; the documentation-coverage
+classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
+unchanged and no new DOC_STYLE.md style rule is established.
+
+Repository identity (`<owner>/Ground-Control`) is derived from the checkout's
+git `origin` remote by the MCP server (`mcp/ground-control/lib.js`, `index.js`,
+`gc-integrate.js`), with `.ground-control.yaml` `github_repo` and any caller
+`repo` treated as validated assertions, and is pinned across active surfaces by
+the `run_repo_identity_drift` policy gate in `tools/policy/checks.py` (issue
+#1383, GC-P026). Per the convention above, those MCP-behavior and policy-gate
+changes are recorded in an amendment to ADR-054 and the changelog fragment, not
+a documentation edit; the documentation-coverage classifier, Vale rule set,
+`tools/install-vale.sh`, and `.vale.ini` are unchanged and no new DOC_STYLE.md
+style rule is established.

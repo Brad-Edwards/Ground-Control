@@ -1,9 +1,11 @@
 import hashlib
 import json
+import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.policy.checks import (
     CHANGELOG_FRAGMENT_TYPES,
@@ -38,8 +40,10 @@ from tools.policy.checks import (
     run_documentation_coverage_check,
     run_enum_contract_check,
     run_ghcr_namespace_drift,
+    run_repo_identity_drift,
     run_migration_policy,
     run_no_deferral_disposition_check,
+    run_ontology_binding_check,
     run_pr_body_check,
     run_test_quality_decision_record_contract,
     run_traceability_reconciliation_gate_contract,
@@ -1021,6 +1025,115 @@ class PolicyChecksTest(unittest.TestCase):
             )
 
     # ------------------------------------------------------------------
+    # Repository identity drift check (issue #1383, GC-P026)
+    # ------------------------------------------------------------------
+
+    def test_repo_identity_drift_passes_on_committed_files(self):
+        # After #1383 every inventoried active surface must name the single
+        # canonical owner. Run against the live repo as the post-condition
+        # assertion — a leftover KeplerOps/Brad-Edwards slug in an active
+        # config/workflow/script/doc is exactly the stale identity that routed
+        # defaulted operations at an inaccessible repository.
+        violations = run_repo_identity_drift(root=REPO_ROOT)
+        self.assertEqual(
+            violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}"
+        )
+
+    def test_repo_identity_drift_fires_on_noncanonical_owner(self):
+        # A non-canonical owner in any inventoried file must fail loudly, naming
+        # the file, line, and offending owner so the fix is unambiguous.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cfg = root / ".ground-control.yaml"
+            cfg.write_text("github_repo: KeplerOps/Ground-Control\n", encoding="utf-8")
+            violations = run_repo_identity_drift(root=root)
+            codes = {item.code for item in violations}
+            self.assertIn("repo-identity-drift", codes)
+            details = " ".join(detail for v in violations for detail in v.details)
+            self.assertIn("KeplerOps", details)
+            self.assertIn(".ground-control.yaml", details)
+
+    def test_repo_identity_drift_fires_on_noncanonical_url(self):
+        # The URL form (badges, clone URLs, raw-content URLs) is caught too.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            wf = root / ".github/workflows/pack-registry-sync.yml"
+            wf.parent.mkdir(parents=True, exist_ok=True)
+            wf.write_text(
+                'RAW_BASE_URL="https://raw.githubusercontent.com/Brad-Edwards/Ground-Control/x"\n',
+                encoding="utf-8",
+            )
+            violations = run_repo_identity_drift(root=root)
+            self.assertIn("repo-identity-drift", {v.code for v in violations})
+            details = " ".join(detail for v in violations for detail in v.details)
+            self.assertIn("Brad-Edwards", details)
+
+    def test_repo_identity_drift_accepts_canonical_owner(self):
+        # The canonical owner must not trip the gate, and files outside the
+        # inventory (and absent files) are simply skipped.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cfg = root / ".ground-control.yaml"
+            cfg.write_text("github_repo: autarchy-ai/Ground-Control\n", encoding="utf-8")
+            violations = run_repo_identity_drift(root=root)
+            self.assertEqual(
+                violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}"
+            )
+
+    def test_repo_identity_drift_ignores_filesystem_paths(self):
+        # A local checkout path like `/home/user/src/Ground-Control/...` is NOT
+        # a repository-identity slug; the negative lookbehind must exclude it so
+        # .mcp.json's node args path does not read as owner 'src'.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            mcp = root / ".mcp.json"
+            mcp.write_text(
+                '{"args": ["/home/user/src/Ground-Control/mcp/ground-control/index.js"]}\n',
+                encoding="utf-8",
+            )
+            violations = run_repo_identity_drift(root=root)
+            self.assertEqual(
+                violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}"
+            )
+
+    def test_pack_registry_workflow_raw_urls_use_runtime_repo(self):
+        # The pack-registry workflow must build raw-content URLs from the trusted
+        # runtime repository + exact SHA, never a hardcoded owner (#1383).
+        wf = REPO_ROOT / ".github/workflows/pack-registry-sync.yml"
+        text = wf.read_text(encoding="utf-8")
+        raw_lines = [ln for ln in text.splitlines() if "RAW_BASE_URL=" in ln]
+        self.assertTrue(raw_lines, msg="expected RAW_BASE_URL assignments in the workflow")
+        for ln in raw_lines:
+            self.assertIn("GITHUB_REPOSITORY", ln, msg=f"raw URL not runtime-derived: {ln}")
+            self.assertIn("GITHUB_SHA", ln, msg=f"raw URL not SHA-pinned: {ln}")
+
+    def test_repo_identity_drift_fires_on_wrong_repo_name(self):
+        # A well-formed but wrong repository NAME (correct owner, wrong repo) in
+        # an identity-declaration field must fail too — not just a wrong owner.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cfg = root / ".ground-control.yaml"
+            cfg.write_text("github_repo: autarchy-ai/Other\n", encoding="utf-8")
+            violations = run_repo_identity_drift(root=root)
+            self.assertIn("repo-identity-drift", {v.code for v in violations})
+            details = " ".join(detail for v in violations for detail in v.details)
+            self.assertIn("autarchy-ai/Other", details)
+
+    def test_repo_identity_drift_fires_on_stale_owner_in_admin_surface(self):
+        # The admin console owner placeholder carries only the owner, not a full
+        # owner/repo slug; a regression to a stale owner literal must still fail.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            admin = root / "frontend/src/pages/admin.tsx"
+            admin.parent.mkdir(parents=True, exist_ok=True)
+            admin.write_text('<input placeholder="KeplerOps" />\n', encoding="utf-8")
+            violations = run_repo_identity_drift(root=root)
+            self.assertIn("repo-identity-drift", {v.code for v in violations})
+            details = " ".join(detail for v in violations for detail in v.details)
+            self.assertIn("KeplerOps", details)
+            self.assertIn("frontend/src/pages/admin.tsx", details)
+
+    # ------------------------------------------------------------------
     # Deploy artifact consistency check (issue #855, GC-P023)
     # ------------------------------------------------------------------
 
@@ -1167,6 +1280,415 @@ class PolicyChecksTest(unittest.TestCase):
         (ddir / "MANIFEST.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     # ------------------------------------------------------------------
+    # Env-template orphan-key check (issue #1384, GC-P023)
+    # ------------------------------------------------------------------
+
+    def test_env_template_orphan_key_flags_key_with_no_consumer(self):
+        # The #1359 residue: a template advertising a worker/namespace/task-queue
+        # for a service that no longer exists. Nothing reads it, so an operator
+        # setting it gets silence — the exact drift #1384 exists to stop.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8")
+                + "TEMPORAL_TASK_QUEUE=ground-control-implement\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("TEMPORAL_TASK_QUEUE", details)
+
+    def test_env_template_orphan_key_rejects_compose_literal_as_consumer(self):
+        # `- GC_SERVER_PORT=8000` PINS the value; it does not read the operator's.
+        # Counting it as a consumer would let the template advertise control the
+        # operator does not have — a quieter version of the same lie.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                compose.read_text(encoding="utf-8") + "      - GC_SERVER_PORT=8000\n",
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "GC_SERVER_PORT=9000\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_SERVER_PORT", details)
+
+    def test_env_template_orphan_key_accepts_compose_interpolation_and_inherit(self):
+        # The two forms that DO read the operator's value: ${VAR} interpolation
+        # and list-form inherit (`- VAR`, which forwards only when set). Both must
+        # sit inside the `environment:` block to count.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                "services:\n"
+                "  backend:\n"
+                "    image: ${GC_IMAGE}\n"
+                "    environment:\n"
+                "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n"
+                "      - GC_INTERPOLATED=${GC_INTERPOLATED}\n"
+                "      - GC_INHERITED\n"
+                "    ports:\n"
+                '      - "${GC_BIND_IP}:8000:8000"\n',
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8")
+                + "GC_INTERPOLATED=a\nGC_INHERITED=b\n",
+                encoding="utf-8",
+            )
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertNotIn("deploy-env-template-orphan-key", codes)
+
+    def test_env_template_orphan_key_flags_commented_assignment(self):
+        # A commented `# KEY=...` still advertises the key — uncommenting it is
+        # the documented way to use it — so a dead one misleads just as much.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "# GC_DEAD_KNOB=somevalue\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_DEAD_KNOB", details)
+
+    def test_env_template_orphan_key_rejects_env_schema_declaration_as_consumer(self):
+        # env.schema says a key must be PRESENT and well-formed; it never reads
+        # it. If a schema declaration counted as consumption, a key left stale in
+        # BOTH the template and the schema would certify itself — a false negative
+        # exactly where drift hides.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            schema = root / "deploy/docker/env.schema"
+            schema.write_text(
+                schema.read_text(encoding="utf-8") + "REQUIRED GC_SCHEMA_ONLY\n",
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "GC_SCHEMA_ONLY=x\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_SCHEMA_ONLY", details)
+
+    def test_env_template_orphan_key_rejects_mention_in_comment_or_message(self):
+        # A key named in a comment or an error-message string is a mention, not a
+        # read. Matching bare textual occurrence would let any script that merely
+        # *talks about* a dead key certify it as live.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            validator = root / "deploy/docker/validate-env.sh"
+            validator.write_text(
+                "#!/bin/bash\n"
+                "# GC_MENTIONED is validated elsewhere\n"
+                'echo "please set GC_MENTIONED before deploying"\n',
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "GC_MENTIONED=x\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_MENTIONED", details)
+
+    def test_env_template_orphan_key_accepts_real_shell_read(self):
+        # The reads that DO count: $VAR / ${VAR} expansion and the ENV_VALUES[VAR]
+        # associative lookup validate-env.sh uses on the parsed env file.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            validator = root / "deploy/docker/validate-env.sh"
+            validator.write_text(
+                '#!/bin/bash\necho "${GC_EXPANDED}"\n'
+                'if [ "${ENV_VALUES[GC_LOOKED_UP]:-}" = "1" ]; then :; fi\n',
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8")
+                + "GC_EXPANDED=a\nGC_LOOKED_UP=1\n",
+                encoding="utf-8",
+            )
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertNotIn("deploy-env-template-orphan-key", codes)
+
+    def test_env_template_orphan_key_rejects_bare_list_item_outside_environment(self):
+        # `- FOO` only forwards a variable inside an `environment:` block. In a
+        # ports/volumes/command list it is an ordinary list entry, and counting it
+        # would bless a key nothing reads.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                compose.read_text(encoding="utf-8")
+                + "    command:\n      - GC_NOT_A_VAR\n",
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "GC_NOT_A_VAR=x\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_NOT_A_VAR", details)
+
+    def _write_spring_properties(self, root: Path) -> None:
+        # Mirrors the real SecurityProperties: the indexed credential slots bind
+        # through a nested POJO, so the fixture must carry that POJO's leaf
+        # fields — the binding path is resolved to the leaf, not to `credentials`.
+        props = root / "backend/src/main/java/com/example/SecurityProperties.java"
+        props.parent.mkdir(parents=True, exist_ok=True)
+        props.write_text(
+            '@ConfigurationProperties(prefix = "groundcontrol.security", '
+            "ignoreUnknownFields = false)\n"
+            "public class SecurityProperties {\n"
+            "    private boolean enabled = true;\n"
+            "    private List<ApiCredential> credentials = new ArrayList<>();\n"
+            "    private List<String> ipAllowlist = new ArrayList<>();\n"
+            "\n"
+            "    public static class ApiCredential {\n"
+            "        private String principalName;\n"
+            "        private String token;\n"
+            "        private Role role;\n"
+            "    }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+
+    def test_env_template_orphan_key_accepts_spring_relaxed_binding(self):
+        # The dev template's indexed slots bind via Spring relaxed binding and
+        # appear literally in no yaml: GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKEN
+        # -> groundcontrol.security.credentials[0].token. Resolving that
+        # structurally is what keeps the check free of per-key exceptions.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            self._write_spring_properties(root)
+            (root / ".env.example").write_text(
+                "GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKEN=x\n"
+                "GROUNDCONTROL_SECURITY_IP_ALLOWLIST_0=10.0.0.0/8\n",
+                encoding="utf-8",
+            )
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertNotIn("deploy-env-template-orphan-key", codes)
+
+    def test_env_template_orphan_key_rejects_unknown_spring_child(self):
+        # Binding resolves to a DECLARED field, not merely the prefix. A key under
+        # a real prefix that maps to no property binds to nothing — prefix-only
+        # matching would bless every unknown child of a live prefix.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            self._write_spring_properties(root)
+            (root / ".env.example").write_text(
+                "GROUNDCONTROL_SECURITY_BOGUS_KNOB=x\n", encoding="utf-8"
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GROUNDCONTROL_SECURITY_BOGUS_KNOB", details)
+
+    def test_env_template_orphan_key_accepts_spring_placeholder_default_syntax(self):
+        # Spring defaults with a single colon (${GC_SERVER_PORT:8000}), unlike
+        # compose's ${VAR:-default}. Reusing the compose pattern here would miss
+        # every defaulted placeholder and flag live keys as orphans.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            app_yml = root / "backend/src/main/resources/application.yml"
+            app_yml.parent.mkdir(parents=True, exist_ok=True)
+            app_yml.write_text(
+                "server:\n  port: ${GC_SERVER_PORT:8000}\n"
+                "spring:\n  datasource:\n    url: ${GC_DATABASE_URL}\n",
+                encoding="utf-8",
+            )
+            (root / ".env.example").write_text(
+                "GC_SERVER_PORT=8000\nGC_DATABASE_URL=jdbc:postgresql://localhost/x\n",
+                encoding="utf-8",
+            )
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertNotIn("deploy-env-template-orphan-key", codes)
+
+    def test_env_template_orphan_key_rejects_typo_in_spring_leaf_property(self):
+        # Binding is resolved through the nested POJO to its leaf: CREDENTIALS is a
+        # List<ApiCredential>, so `_0_TOKEN` binds but `_0_TOKNE` binds to nothing.
+        # Accepting any tail under a known field would certify a misspelled key
+        # that Spring itself would never bind.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            self._write_spring_properties(root)
+            (root / ".env.example").write_text(
+                "GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKNE=x\n", encoding="utf-8"
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKNE", details)
+
+    def test_env_template_orphan_key_rejects_node_mention_in_comment_or_string(self):
+        # `// process.env.GC_DEAD` and `"process.env.GC_DEAD"` are mentions. Only
+        # an executing read counts, or any commented-out reference would keep a
+        # dead key alive forever.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            mcp = root / "mcp/ground-control/index.js"
+            mcp.parent.mkdir(parents=True, exist_ok=True)
+            mcp.write_text(
+                "// process.env.GC_COMMENTED is no longer read\n"
+                'const doc = "process.env.GC_STRINGED";\n',
+                encoding="utf-8",
+            )
+            (root / ".env.example").write_text(
+                "GC_COMMENTED=a\nGC_STRINGED=b\n", encoding="utf-8"
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_COMMENTED", details)
+            self.assertIn("GC_STRINGED", details)
+
+    def test_env_template_orphan_key_rejects_trailing_comment_mention(self):
+        # A key named in a compose or shell TRAILING comment is not a read either.
+        # Only whole-line comments were dropped before; `- FOO  # ${GC_DEAD}` would
+        # otherwise certify GC_DEAD.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            compose = root / "deploy/docker/docker-compose.prod.yml"
+            compose.write_text(
+                compose.read_text(encoding="utf-8").replace(
+                    "      - GC_DATABASE_URL=${GC_DATABASE_URL}\n",
+                    "      - GC_DATABASE_URL=${GC_DATABASE_URL}  # was ${GC_TRAILING}\n",
+                ),
+                encoding="utf-8",
+            )
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "GC_TRAILING=x\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_TRAILING", details)
+
+    def test_env_template_orphan_key_rejects_single_quoted_shell_mention(self):
+        # The shell does not expand inside single quotes, so '$GC_DEAD' is literal
+        # text, not a read.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            validator = root / "deploy/docker/validate-env.sh"
+            validator.write_text("#!/bin/bash\necho 'set $GC_QUOTED first'\n", encoding="utf-8")
+            self._rewrite_manifest(root)
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "GC_QUOTED=x\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("GC_QUOTED", details)
+
+    def test_env_template_orphan_key_accepts_node_bracket_read(self):
+        # process.env["VAR"] keeps its key inside a string legitimately, so the
+        # string-strip that kills mentions must not kill this real read.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            mcp = root / "mcp/ground-control/index.js"
+            mcp.parent.mkdir(parents=True, exist_ok=True)
+            mcp.write_text('const t = process.env["GC_BRACKET"];\n', encoding="utf-8")
+            (root / ".env.example").write_text("GC_BRACKET=x\n", encoding="utf-8")
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertNotIn("deploy-env-template-orphan-key", codes)
+
+    def test_env_template_orphan_key_accepts_node_process_env_read(self):
+        # The MCP client reads its bearer token from the repo-root .env via
+        # process.env; that is a real consumer of a key no compose forwards.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            mcp = root / "mcp/ground-control/index.js"
+            mcp.parent.mkdir(parents=True, exist_ok=True)
+            mcp.write_text(
+                "const token = process.env.GROUND_CONTROL_API_TOKEN;\n", encoding="utf-8"
+            )
+            (root / ".env.example").write_text(
+                "GROUND_CONTROL_API_TOKEN=x\n", encoding="utf-8"
+            )
+            codes = {v.code for v in run_deploy_artifact_consistency(root=root)}
+            self.assertNotIn("deploy-env-template-orphan-key", codes)
+
+    def test_env_template_orphan_key_ignores_docs_and_tests_as_consumers(self):
+        # History is not an input. A key mentioned only in a doc, a test, or a
+        # superseded ADR has no runtime consumer and must still be flagged.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_valid_deploy_tree(root)
+            adr = root / "architecture/adrs/028-retired.md"
+            adr.parent.mkdir(parents=True, exist_ok=True)
+            adr.write_text("Superseded. Once read TEMPORAL_NAMESPACE.\n", encoding="utf-8")
+            env_example = root / "deploy/docker/.env.example"
+            env_example.write_text(
+                env_example.read_text(encoding="utf-8") + "TEMPORAL_NAMESPACE=ground-control\n",
+                encoding="utf-8",
+            )
+            violations = run_deploy_artifact_consistency(root=root)
+            codes = {v.code for v in violations}
+            self.assertIn("deploy-env-template-orphan-key", codes)
+            details = " ".join(d for v in violations for d in v.details)
+            self.assertIn("TEMPORAL_NAMESPACE", details)
+
+    # ------------------------------------------------------------------
     # Enum contract check (issue #433)
     # ------------------------------------------------------------------
 
@@ -1289,13 +1811,16 @@ class PolicyChecksTest(unittest.TestCase):
         # NistImpactBand, NormalizedConcept, CrosswalkVocabularySurface, and
         # MethodologyFamily were retired with the composed GRC product
         # surface (ADR-089, issue #1346); their backend enums are deleted, so
-        # they must not remain in the inventory. VerificationStatus and
+        # they must not remain in the inventory. GraphEntityType joins the
+        # inventory under ADR-034/#1308 so generated graph UI mirrors cannot
+        # drift. VerificationStatus and
         # AssuranceLevel are unaffected (domain/verification/state, not part
         # of the retired GRC surface) and stay.
         labels = {c.label for c in ENUM_CONTRACT_INVENTORY}
         self.assertEqual(
             labels,
             {
+                "GraphEntityType",
                 "RequirementType",
                 "RelationType",
                 "ArtifactType",
@@ -1387,6 +1912,573 @@ class PolicyChecksTest(unittest.TestCase):
             violations = run_enum_contract_check(root=root)
             codes = {v.code for v in violations}
             self.assertIn("enum-contract-source-missing", codes)
+
+    def _write_minimal_ontology_fixture(self, root: Path) -> None:
+        java_root = root / "backend" / "src" / "main" / "java" / "example"
+        java_root.mkdir(parents=True)
+        (java_root / "GraphEntityType.java").write_text(
+            "package example; public enum GraphEntityType { REQUIREMENT }\n",
+            encoding="utf-8",
+        )
+        (java_root / "RequirementGraphProjectionContributor.java").write_text(
+            """package example;
+public class RequirementGraphProjectionContributor implements GraphProjectionContributor {
+    Object edge() { return new GraphEdge("id", "RELATES", null, null, null, null, null); }
+}
+""",
+            encoding="utf-8",
+        )
+        ontology = root / "contracts" / "ontology"
+        ontology.mkdir(parents=True)
+        (ontology / "gc-concept-families-v1.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "gc-concept-families/v1",
+                    "owners": ["ground-control"],
+                    "families": {
+                        "requirements-and-traceability": {
+                            "title": "Requirements and traceability",
+                            "description": "Requirement identity and relationships.",
+                            "provenance": "native",
+                            "owner": "ground-control",
+                            "extension_scope": "Requirement and traceability concepts.",
+                            "relation_rules": ["Relations preserve declared direction."],
+                            "non_ambiguity_constraints": ["Requirements are not evidence artifacts."],
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (ontology / "gc-controlled-vocabularies-v1.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "gc-controlled-vocabularies/v1",
+                    "terms": {
+                        "node.requirement": {
+                            "kind": "classification",
+                            "title": "Requirement",
+                            "description": "A governed requirement.",
+                            "family": "requirements-and-traceability",
+                            "owner": "ground-control",
+                        },
+                        "edge.relates": {
+                            "kind": "edge",
+                            "title": "Relates",
+                            "description": "A directed relation.",
+                            "family": "requirements-and-traceability",
+                            "owner": "ground-control",
+                            "direction": "source-to-target",
+                            "source_roles": ["source"],
+                            "target_roles": ["target"],
+                        },
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (ontology / "gc-artifact-bindings-v1.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "gc-artifact-bindings/v1",
+                    "surfaces": [
+                        {
+                            "id": "example.GraphEntityType",
+                            "kind": "java-enum",
+                            "path": "backend/src/main/java/example/GraphEntityType.java",
+                            "bindings": [{"local_value": "REQUIREMENT", "term": "node.requirement"}],
+                        },
+                        {
+                            "id": "example.RequirementGraphProjectionContributor",
+                            "kind": "graph-contributor",
+                            "path": "backend/src/main/java/example/RequirementGraphProjectionContributor.java",
+                            "bindings": [{"local_value": "RELATES", "term": "edge.relates"}],
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def _read_ontology_fixture_json(self, root: Path, filename: str) -> tuple[Path, dict]:
+        path = root / "contracts" / "ontology" / filename
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_ontology_binding_check_covers_contract_and_vocabulary_validation_branches(self):
+        cases = (
+            ("missing-contract", "ontology-contract-missing"),
+            ("non-object-contract", "ontology-contract-shape-invalid"),
+            ("unsupported-version", "ontology-contract-version-invalid"),
+            ("unknown-owner", "ontology-owner-invalid"),
+            ("invalid-family", "ontology-family-invalid"),
+            ("invalid-provenance", "ontology-provenance-invalid"),
+            ("missing-native-rules", "ontology-native-family-rules-missing"),
+            ("invalid-term", "ontology-term-invalid"),
+            ("invalid-term-kind", "ontology-term-kind-invalid"),
+            ("unknown-family", "ontology-family-reference-missing"),
+            ("invalid-edge-semantics", "ontology-edge-semantics-invalid"),
+        )
+        for case, expected_code in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp_dir:
+                root = Path(tmp_dir)
+                self._write_minimal_ontology_fixture(root)
+                families_path, families = self._read_ontology_fixture_json(
+                    root, "gc-concept-families-v1.json"
+                )
+                terms_path, terms = self._read_ontology_fixture_json(
+                    root, "gc-controlled-vocabularies-v1.json"
+                )
+                if case == "missing-contract":
+                    families_path.unlink()
+                elif case == "non-object-contract":
+                    families_path.write_text("[]", encoding="utf-8")
+                elif case == "unsupported-version":
+                    families["schema_version"] = "gc-concept-families/v2"
+                    families_path.write_text(json.dumps(families), encoding="utf-8")
+                elif case == "unknown-owner":
+                    families["owners"] = ["unknown-owner"]
+                    families_path.write_text(json.dumps(families), encoding="utf-8")
+                elif case == "invalid-family":
+                    family = families["families"].pop("requirements-and-traceability")
+                    families["families"][""] = family
+                    families_path.write_text(json.dumps(families), encoding="utf-8")
+                elif case == "invalid-provenance":
+                    families["families"]["requirements-and-traceability"]["provenance"] = "invented"
+                    families_path.write_text(json.dumps(families), encoding="utf-8")
+                elif case == "missing-native-rules":
+                    families["families"]["requirements-and-traceability"].pop("extension_scope")
+                    families_path.write_text(json.dumps(families), encoding="utf-8")
+                elif case == "invalid-term":
+                    terms["terms"]["node.requirement"]["title"] = ""
+                    terms_path.write_text(json.dumps(terms), encoding="utf-8")
+                elif case == "invalid-term-kind":
+                    terms["terms"]["node.requirement"]["kind"] = "unknown"
+                    terms_path.write_text(json.dumps(terms), encoding="utf-8")
+                elif case == "unknown-family":
+                    terms["terms"]["node.requirement"]["family"] = "missing-family"
+                    terms_path.write_text(json.dumps(terms), encoding="utf-8")
+                elif case == "invalid-edge-semantics":
+                    terms["terms"]["edge.relates"]["direction"] = "backward"
+                    terms_path.write_text(json.dumps(terms), encoding="utf-8")
+                violations = run_ontology_binding_check(root=root)
+                self.assertIn(expected_code, {violation.code for violation in violations})
+
+    def test_ontology_binding_check_covers_source_surface_and_binding_validation_branches(self):
+        cases = (
+            ("missing-source-root", "ontology-source-root-missing"),
+            ("unparseable-enum", "ontology-source-parse-error"),
+            ("duplicate-surface", "ontology-surface-duplicate"),
+            ("invalid-surface", "ontology-surface-invalid"),
+            ("surface-kind-mismatch", "ontology-surface-kind-mismatch"),
+            ("surface-path-mismatch", "ontology-surface-path-mismatch"),
+            ("missing-surface", "ontology-surface-missing"),
+            ("stale-surface", "ontology-surface-stale"),
+            ("invalid-binding", "ontology-binding-invalid"),
+            ("binding-kind-mismatch", "ontology-binding-kind-mismatch"),
+            ("invalid-enum-source-shape", "ontology-edge-enum-source-invalid"),
+            ("stale-enum-source", "ontology-edge-enum-source-stale"),
+        )
+        for case, expected_code in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp_dir:
+                root = Path(tmp_dir)
+                self._write_minimal_ontology_fixture(root)
+                bindings_path, bindings = self._read_ontology_fixture_json(
+                    root, "gc-artifact-bindings-v1.json"
+                )
+                java_root = root / "backend" / "src" / "main" / "java"
+                graph_enum = java_root / "example" / "GraphEntityType.java"
+                if case == "missing-source-root":
+                    shutil.rmtree(java_root)
+                elif case == "unparseable-enum":
+                    graph_enum.write_text(
+                        "package example; public enum GraphEntityType {}\n", encoding="utf-8"
+                    )
+                elif case == "duplicate-surface":
+                    bindings["surfaces"].append(dict(bindings["surfaces"][0]))
+                elif case == "invalid-surface":
+                    bindings["surfaces"][0]["bindings"] = None
+                elif case == "surface-kind-mismatch":
+                    bindings["surfaces"][0]["kind"] = "graph-contributor"
+                elif case == "surface-path-mismatch":
+                    bindings["surfaces"][0]["path"] = bindings["surfaces"][1]["path"]
+                elif case == "missing-surface":
+                    bindings["surfaces"].pop()
+                elif case == "stale-surface":
+                    bindings["surfaces"].append(
+                        {
+                            "id": "example.VanishedGraphProjectionContributor",
+                            "kind": "graph-contributor",
+                            "path": "backend/src/main/java/example/VanishedGraphProjectionContributor.java",
+                            "bindings": [],
+                        }
+                    )
+                elif case == "invalid-binding":
+                    bindings["surfaces"][0]["bindings"] = [None]
+                elif case == "binding-kind-mismatch":
+                    bindings["surfaces"][0]["bindings"][0]["term"] = "edge.relates"
+                elif case == "invalid-enum-source-shape":
+                    bindings["surfaces"][1]["edge_enum_sources"] = []
+                elif case == "stale-enum-source":
+                    bindings["surfaces"][1]["edge_enum_sources"] = {
+                        "getLinkType": "example.GraphEntityType"
+                    }
+                if case not in {"missing-source-root", "unparseable-enum"}:
+                    bindings_path.write_text(json.dumps(bindings), encoding="utf-8")
+                violations = run_ontology_binding_check(root=root)
+                self.assertIn(expected_code, {violation.code for violation in violations})
+
+    def test_ontology_binding_check_reports_unreadable_discovered_source(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            unreadable = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            original_read_text = Path.read_text
+
+            def read_text_or_fail(path: Path, *args, **kwargs):
+                if path == unreadable:
+                    raise OSError("fixture source is unreadable")
+                return original_read_text(path, *args, **kwargs)
+
+            with patch.object(Path, "read_text", read_text_or_fail):
+                violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-source-unreadable", {violation.code for violation in violations})
+
+    def test_ontology_binding_check_passes_minimal_complete_inventory(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            violations = run_ontology_binding_check(root=root)
+        self.assertEqual(violations, [], msg=[v.render() for v in violations])
+
+    def test_ontology_binding_check_detects_unbound_source_value(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            path = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["surfaces"][1]["bindings"] = []
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-binding-missing", {v.code for v in violations})
+
+    def test_ontology_binding_check_detects_binding_to_vanished_value(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            path = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["surfaces"][0]["bindings"].append(
+                {"local_value": "VANISHED", "term": "node.requirement"}
+            )
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-binding-stale", {v.code for v in violations})
+
+    def test_ontology_binding_check_fails_closed_on_malformed_json(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            path = root / "contracts" / "ontology" / "gc-concept-families-v1.json"
+            path.write_text("{", encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contract-invalid-json", {v.code for v in violations})
+
+    def test_ontology_binding_check_rejects_duplicate_json_keys(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            path = root / "contracts" / "ontology" / "gc-controlled-vocabularies-v1.json"
+            payload = path.read_text(encoding="utf-8")
+            duplicate = payload.replace(
+                '"terms": {',
+                '"terms": {"node.requirement": {"kind": "classification"},',
+                1,
+            )
+            path.write_text(duplicate, encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contract-invalid-json", {v.code for v in violations})
+
+    def test_ontology_binding_check_rejects_unsafe_surface_path_and_kind(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            path = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["surfaces"][0]["path"] = "../outside.java"
+            payload["surfaces"][1]["kind"] = "shell-command"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        codes = {v.code for v in violations}
+        self.assertIn("ontology-surface-path-invalid", codes)
+        self.assertIn("ontology-surface-kind-invalid", codes)
+
+    def test_ontology_binding_check_rejects_unresolved_contributor_edge_expression(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace('"RELATES"', "computeEdgeType()"),
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contributor-edge-unresolved", {v.code for v in violations})
+
+    def test_ontology_binding_check_does_not_accept_unrelated_enum_forwarding(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                """package example;
+public class RequirementGraphProjectionContributor implements GraphProjectionContributor {
+    String unrelated(Link link) { return link.getLinkType().name(); }
+    Object edge(String edgeType) {
+        return new GraphEdge("id", edgeType, null, null, null, null, null);
+    }
+    Object use() { return edge(computeEdgeType()); }
+}
+""",
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contributor-edge-unresolved", {v.code for v in violations})
+
+    def test_ontology_binding_check_rejects_unknown_name_expression(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace(
+                    '"RELATES"', "computeRelation().name()"
+                ),
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contributor-edge-unresolved", {v.code for v in violations})
+
+    def test_ontology_binding_check_rejects_unsupported_contributor_declaration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            candidate = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "OddGraphProjectionContributor.java"
+            )
+            candidate.write_text(
+                """package example;
+public class OddGraphProjectionContributor extends ContributorBase {
+    Object edge() { return new GraphEdge("id", "ODD", null, null, null, null, null); }
+}
+""",
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contributor-declaration-unresolved", {v.code for v in violations})
+
+    def test_ontology_binding_check_parses_spaced_graph_edge_constructor(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace("new GraphEdge(", "new GraphEdge ("),
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertEqual(violations, [], msg=[v.render() for v in violations])
+
+    def test_ontology_binding_check_rejects_graph_edge_factory_form(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace("new GraphEdge(", "GraphEdge.of("),
+                encoding="utf-8",
+            )
+            bindings = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(bindings.read_text(encoding="utf-8"))
+            payload["surfaces"][1]["bindings"] = []
+            bindings.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-contributor-edge-unresolved", {v.code for v in violations})
+
+    def test_ontology_binding_check_requires_discovered_enum_for_direct_name_expression(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace(
+                    '"RELATES"', "link.getLinkType().name()"
+                ),
+                encoding="utf-8",
+            )
+            bindings = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(bindings.read_text(encoding="utf-8"))
+            payload["surfaces"][1]["bindings"] = []
+            bindings.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-edge-enum-source-missing", {v.code for v in violations})
+
+    def test_ontology_binding_check_requires_discovered_enum_for_forwarded_name_expression(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                """package example;
+public class RequirementGraphProjectionContributor implements GraphProjectionContributor {
+    Object edge(String edgeType) {
+        return new GraphEdge("id", edgeType, null, null, null, null, null);
+    }
+    Object use(Link link) { return edge(link.getLinkType().name()); }
+}
+""",
+                encoding="utf-8",
+            )
+            bindings = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(bindings.read_text(encoding="utf-8"))
+            payload["surfaces"][1]["bindings"] = []
+            bindings.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        self.assertIn("ontology-edge-enum-source-missing", {v.code for v in violations})
+
+    def test_ontology_binding_check_supports_record_contributor_declaration(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace(
+                    "public class RequirementGraphProjectionContributor",
+                    "public record RequirementGraphProjectionContributor()",
+                ),
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertEqual(violations, [], msg=[v.render() for v in violations])
+
+    def test_ontology_binding_check_identifies_contributor_after_helper_type(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            contributor = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "example"
+                / "RequirementGraphProjectionContributor.java"
+            )
+            contributor.write_text(
+                contributor.read_text(encoding="utf-8").replace(
+                    "public class RequirementGraphProjectionContributor",
+                    "class Helper {}\npublic class RequirementGraphProjectionContributor",
+                ),
+                encoding="utf-8",
+            )
+            violations = run_ontology_binding_check(root=root)
+        self.assertEqual(violations, [], msg=[v.render() for v in violations])
+
+    def test_ontology_binding_check_rejects_duplicate_and_unresolved_contract_references(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self._write_minimal_ontology_fixture(root)
+            path = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["surfaces"][0]["bindings"].append(
+                {"local_value": "REQUIREMENT", "term": "node.missing"}
+            )
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            violations = run_ontology_binding_check(root=root)
+        codes = {v.code for v in violations}
+        self.assertIn("ontology-binding-duplicate", codes)
+        self.assertIn("ontology-term-reference-missing", codes)
+
+    def test_ontology_binding_check_passes_on_repo(self):
+        violations = run_ontology_binding_check(root=REPO_ROOT)
+        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
 
     def test_deferral_classifier_matches_golden_cases(self):
         # The shared golden-case file is the single source of truth for what
@@ -1832,6 +2924,54 @@ class ChangelogFragmentChecksTest(unittest.TestCase):
                 "read_changed_files must include deleted files; deleting an "
                 "application-source file is still a change that requires a "
                 "changelog fragment.",
+            )
+
+    def test_read_changed_files_base_uses_merge_base_not_two_dot(self):
+        # Regression: `git diff <base>` is a two-dot comparison, so commits
+        # `base` gains AFTER the branch forks get mis-attributed to the
+        # branch. On a busy repo where dev advances while a PR is open, that
+        # spuriously trips the diff-scoped gates (documentation coverage,
+        # changelog fragments) on files the branch never touched.
+        # read_changed_files(base=...) must diff from the merge base so it
+        # reports only what the branch itself changed.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir).resolve()
+            import subprocess
+
+            def git(*args: str) -> str:
+                return subprocess.run(
+                    ["git", "-c", "user.email=t@e", "-c", "user.name=t", *args],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout
+
+            git("init", "-q", "-b", "dev")
+            (root / "seed.txt").write_text("seed\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", "seed")
+            # Fork a feature branch from this point.
+            git("switch", "-q", "-c", "feature")
+            (root / "feature_only.txt").write_text("f\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", "feature change")
+            # dev advances AFTER the fork with an unrelated file.
+            git("switch", "-q", "dev")
+            (root / "dev_only.txt").write_text("d\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", "dev advances")
+            # Back on the feature branch, diff against the advanced dev tip.
+            git("switch", "-q", "feature")
+
+            paths = read_changed_files(base="dev", root=root)
+            self.assertIn("feature_only.txt", paths)
+            self.assertNotIn(
+                "dev_only.txt",
+                paths,
+                "read_changed_files(base=...) must diff from the merge base; a "
+                "commit dev gained after the branch forked must not be "
+                "attributed to the branch.",
             )
 
     def test_changelog_signal_flags_pure_deletion_of_source(self):

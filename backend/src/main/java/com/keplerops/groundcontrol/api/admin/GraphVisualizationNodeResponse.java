@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.api.admin;
 
+import com.keplerops.groundcontrol.domain.graph.model.GraphEntityType;
 import com.keplerops.groundcontrol.domain.graph.model.GraphNode;
 import com.keplerops.groundcontrol.domain.graph.model.GraphProjection;
 import java.util.List;
@@ -8,7 +9,7 @@ import java.util.Map;
 public record GraphVisualizationNodeResponse(
         String id,
         String domainId,
-        String entityType,
+        GraphEntityType entityType,
         String projectIdentifier,
         String uid,
         String label,
@@ -18,7 +19,7 @@ public record GraphVisualizationNodeResponse(
         return new GraphVisualizationNodeResponse(
                 node.id(),
                 node.domainId(),
-                node.entityType().name(),
+                node.entityType(),
                 node.projectIdentifier(),
                 node.uid(),
                 node.label(),

@@ -350,11 +350,33 @@ re-export only; hand-mirrored DTOs and enum constants belong in the generator
 inventory, not in frontend source. `make contracts-check` reruns generation and
 fails on `git diff` across `contracts/` and that frontend shim.
 
+API-visible enums, including `GraphEntityType`, are registered in the existing
+ADR-034 inventory. Contract generation emits both the TypeScript union and its
+iterable constant (for example, `GRAPH_ENTITY_TYPES`); frontend colors, filters,
+and coverage tests consume that constant instead of maintaining a second list.
+
 `make mcp-openapi-contract` (CI job `mcp-contract`) extends the same flow for
 MCP write-tool parity. It is **separate from `make policy`** because OpenAPI is
 generated from the current backend build, which requires booting the full Spring
 context (Testcontainers Postgres + AGE), while the Python-only `policy` job
-cannot do that. The CI flow is:
+cannot do that.
+
+The context-graph ontology is a separate, static contract family under
+`contracts/ontology/` (ADR-084). `make policy` discovers `GraphEntityType`,
+graph link/relation enums, `ProvenanceEdgeRelation`, and every
+`GraphProjectionContributor` directly from Java source, then compares the
+result with `gc-artifact-bindings-v1.json` in both directions. A source value
+without a binding, a binding whose source vanished, an unknown contributor
+edge expression, or a malformed/unresolved ontology reference fails policy.
+Shared meanings are declared once in `gc-controlled-vocabularies-v1.json` and
+many surface-qualified bindings may point to them; identical spelling alone
+does not establish semantic equivalence. Ordinary vocabulary growth adds a
+controlled term and binding row. A new source shape requires a checker
+extraction strategy, tests, and a registered surface kind. Ontology contracts
+are governance data only: they do not rename graph emissions or load at
+runtime.
+
+The generated-contract CI flow is:
 
 1. `generateContractOpenApi` (Gradle, `McpOpenApiContractSpecTest`) boots the app
    via Testcontainers, captures `/api/openapi.json`, and writes both

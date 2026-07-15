@@ -34,6 +34,7 @@ public class ProjectService {
             throw new ConflictException("Project with identifier '" + command.identifier() + "' already exists");
         }
         var resolvedType = command.type() == null ? ProjectType.SOFTWARE : command.type();
+        rejectRetiredTypeForCreation(resolvedType);
         validateIntakeAgainstType(resolvedType, command.researchIntake());
         var project = new Project(command.identifier(), command.name(), resolvedType);
         if (command.description() != null) {
@@ -45,6 +46,19 @@ public class ProjectService {
             researchIntakeService.create(saved, command.researchIntake());
         }
         return saved;
+    }
+
+    private void rejectRetiredTypeForCreation(ProjectType type) {
+        // ADR-089 §4: GRC persists as a legacy value and stays readable, but is not offered
+        // for new project creation. Reject at the service boundary so both the REST API and
+        // MCP bypass writes hit the same guard (the enum still accepts GRC when reading rows).
+        if (type == ProjectType.GRC) {
+            throw new DomainValidationException(
+                    "type=GRC is a legacy value and cannot be used for new project creation (ADR-089 §4);"
+                            + " existing GRC projects remain readable",
+                    "project_type_grc_not_creatable",
+                    Map.of("type", type.name()));
+        }
     }
 
     private void validateIntakeAgainstType(

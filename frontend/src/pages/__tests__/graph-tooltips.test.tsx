@@ -5,6 +5,7 @@
  * member so that the graph tooltip has full entity coverage.
  */
 import { describe, expect, it } from "vitest";
+import { GRAPH_ENTITY_TYPES } from "@/types/api";
 import { getTooltipTags } from "../graph";
 
 type TooltipData = Parameters<typeof getTooltipTags>[0];
@@ -43,43 +44,12 @@ function expectTagsIncluding(data: TooltipData, substrings: string[]) {
   }
 }
 
-// All 26 GraphEntityType values (mirrors backend GraphEntityType enum and
-// frontend api.ts GraphEntityType union — ADR-034 enum contract).
-const ALL_ENTITY_TYPES = [
-  "REQUIREMENT",
-  "OPERATIONAL_ASSET",
-  "OBSERVATION",
-  "RISK_SCENARIO",
-  "RISK_REGISTER_RECORD",
-  "RISK_ASSESSMENT_RESULT",
-  "TREATMENT_PLAN",
-  "METHODOLOGY_PROFILE",
-  "EVIDENCE_ARTIFACT",
-  "CONTROL",
-  "CONTROL_LINK",
-  "CONTROL_TEST",
-  "CONTROL_EFFECTIVENESS_ASSESSMENT",
-  "VERIFICATION_RESULT",
-  "THREAT_MODEL",
-  "FINDING",
-  "ARCHITECTURE_MODEL_ELEMENT",
-  "AUDIT",
-  "AUDIT_LINK",
-  "RISK_CONTROL_MAPPING",
-  "SCOPED_CONTROL_IMPLEMENTATION",
-  "RISK_APPETITE_PROFILE",
-  "DOCUMENT",
-  "RESEARCH_RUN",
-  "RESEARCH_ARTIFACT",
-  "RESEARCH_PROVENANCE_NODE",
-] as const;
-
 // Shared status enum value reused across multiple per-type fixtures and their
 // expected-tag assertions (S1192 — avoid duplicating this literal).
 const STATUS_ACTIVE = "ACTIVE";
 
 describe("getTooltipTags — does not throw for any GraphEntityType", () => {
-  it.each(ALL_ENTITY_TYPES)(
+  it.each(GRAPH_ENTITY_TYPES)(
     "does not throw for entity type %s",
     (entityType) => {
       // The type tag is prepended by populateTooltip, not by getTooltipTags.
@@ -154,61 +124,6 @@ describe("getTooltipTags — RISK_SCENARIO node", () => {
   });
 });
 
-describe("getTooltipTags — RISK_REGISTER_RECORD node", () => {
-  it("returns status, owner, and cadence tags", () => {
-    expectExactTags(
-      {
-        entityType: "RISK_REGISTER_RECORD",
-        status: "OPEN",
-        owner: "risk-team",
-        reviewCadence: "QUARTERLY",
-      },
-      ["Status: OPEN", "Owner: risk-team", "Cadence: QUARTERLY"],
-    );
-  });
-});
-
-describe("getTooltipTags — RISK_ASSESSMENT_RESULT node", () => {
-  it("returns approval, confidence, and analyst tags", () => {
-    expectExactTags(
-      {
-        entityType: "RISK_ASSESSMENT_RESULT",
-        approvalState: "APPROVED",
-        confidence: "HIGH",
-        analystIdentity: "alice",
-      },
-      ["Approval: APPROVED", "Confidence: HIGH", "Analyst: alice"],
-    );
-  });
-});
-
-describe("getTooltipTags — TREATMENT_PLAN node", () => {
-  it("returns strategy, status, and owner tags", () => {
-    expectExactTags(
-      {
-        entityType: "TREATMENT_PLAN",
-        strategy: "MITIGATE",
-        status: "IN_PROGRESS",
-        owner: "platform-team",
-      },
-      ["Strategy: MITIGATE", "Status: IN_PROGRESS", "Owner: platform-team"],
-    );
-  });
-});
-
-describe("getTooltipTags — METHODOLOGY_PROFILE node", () => {
-  it("returns family, version, and status tags", () => {
-    expectExactTags(
-      {
-        entityType: "METHODOLOGY_PROFILE",
-        family: "NIST",
-        version: "1.2.3",
-        status: STATUS_ACTIVE,
-      },
-      ["Family: NIST", "Version: 1.2.3", "Status: ACTIVE"],
-    );
-  });
-});
 
 describe("getTooltipTags — FINDING node with representative properties", () => {
   it("returns severity, findingType, and status tags", () => {
@@ -355,23 +270,15 @@ describe("getTooltipTags — SCOPED_CONTROL_IMPLEMENTATION node", () => {
   });
 });
 
-describe("getTooltipTags — CONTROL_EFFECTIVENESS_ASSESSMENT node", () => {
-  it("returns designEffectiveness, operatingEffectiveness, and assessor tags", () => {
-    // Use non-overlapping values so each assertion is unambiguously tied to
-    // its mapped field; previously both fields included the substring
-    // "EFFECTIVE" so the design-effectiveness mapping could regress silently.
+describe("getTooltipTags — ARTIFACT_REFERENCE node", () => {
+  it("returns artifact type and exact identifier tags", () => {
     expectExactTags(
       {
-        entityType: "CONTROL_EFFECTIVENESS_ASSESSMENT",
-        designEffectiveness: "FULLY_EFFECTIVE",
-        operatingEffectiveness: "PARTIALLY_EFFECTIVE",
-        assessor: "eve",
+        entityType: "ARTIFACT_REFERENCE",
+        artifactType: "CODE_FILE",
+        artifactIdentifier: "src/main/java/Exact Case.java",
       },
-      [
-        "Design: FULLY_EFFECTIVE",
-        "Operating: PARTIALLY_EFFECTIVE",
-        "Assessor: eve",
-      ],
+      ["Type: CODE_FILE", "Identifier: src/main/java/Exact Case.java"],
     );
   });
 });

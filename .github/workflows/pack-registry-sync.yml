@@ -77,7 +77,7 @@ jobs:
         env:
           INSTANCE_ID: ${{ steps.ec2.outputs.instance_id }}
         run: |
-          RAW_BASE_URL="https://raw.githubusercontent.com/KeplerOps/Ground-Control/${GITHUB_SHA}"
+          RAW_BASE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}"
           PARAMS_FILE="$(mktemp)"
           jq -nc \
             --arg cmd1 "curl -fsSL ${RAW_BASE_URL}/deploy/scripts/enable_pack_registry_auth.sh -o /tmp/enable_pack_registry_auth.sh" \
@@ -134,7 +134,7 @@ jobs:
         env:
           INSTANCE_ID: ${{ steps.ec2.outputs.instance_id }}
         run: |
-          RAW_BASE_URL="https://raw.githubusercontent.com/KeplerOps/Ground-Control/${GITHUB_SHA}"
+          RAW_BASE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}"
           PARAMS_FILE="$(mktemp)"
           jq -nc \
             --arg cmd1 "curl -fsSL ${RAW_BASE_URL}/deploy/scripts/sync_pack_catalog.sh -o /tmp/sync_pack_catalog.sh" \

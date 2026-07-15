@@ -5,6 +5,16 @@ produce the console information architecture and design-system foundations, but
 the construction reference has to bind to the repository's existing contracts
 instead of inventing a second console model.
 
+**Re-scoped 2026-07-13 (issue #1384).** Issue #1359 removed the Temporal
+orchestration lane, so the gate-action / operator-signal / live-run-control
+guidance below is void: there is no control surface to parameterize against,
+and ADR-028, ADR-081, and ADR-088 are superseded. This note is corrected rather
+than left standing, because it is read as construction guidance alongside
+`architecture/design/console-ia-design-system.md` - leaving one of the two
+stale would just relocate the contradiction. The surviving console is read and
+reporting: the ADR-029 issue thread as the durable record, the ADR-061
+telemetry model as the projection over it.
+
 ## Boundary Decisions
 
 - The deliverable should be a design/reference document, not executable console
@@ -17,9 +27,10 @@ instead of inventing a second console model.
   `Admin` page is project-admin tooling. Identity administration is global
   product administration and must not be mixed with project import/sync/graph
   tools just because both sound like "admin."
-- The current workflow-runs page is ADR-061 telemetry. Gate actions and live-run
-  control belong to the ADR-081 phase-3/4 product control surface once those
-  contracts exist. Do not drive operator actions from the telemetry projection.
+- The current workflow-runs page is ADR-061 telemetry, and that is the whole of
+  the workflow surface. There are no gate actions and no live-run control to
+  design against. Do not drive operator actions from the telemetry projection,
+  and do not treat the projection as a control plane in waiting.
 - The authenticated session UX is ADR-037 browser-session UX: standalone login
   bundle, `GC_SESSION` cookie, `XSRF-TOKEN` / `X-XSRF-TOKEN`, `/logout`, and
   `/api/v1/**` JSON 401 handling. Do not introduce bearer-token storage in the
@@ -60,7 +71,7 @@ new ones:
   for display, but it must not define a second server-error envelope.
 - Actor provenance stays `SecurityContext` -> `ActorFilter` -> `ActorHolder` /
   MDC / Envers. No request body, route param, or frontend state may supply an
-  actor for identity administration or workflow gate actions.
+  actor for identity administration or workflow operations.
 
 ## Security Layers In Scope
 
@@ -93,11 +104,11 @@ new ones:
 - Workspace state vocabulary should come from typed API contracts and domain
   enums, with display labels and color tokens layered on top. CSS class maps
   are not the source of truth for workflow, identity, or GRC state.
-- Gate-action affordances should be parameterized by the workflow contract's
-  explicit operator signal catalog: signal type, eligible run state, required
-  authority, confirmation copy, idempotency key, audit outcome, and disabled
-  reason. The design can show the pattern before the backend exists, but it
-  must label non-existent signals as future contract slots.
+- Durable-record affordances should be parameterized by record type (plan,
+  review findings, decision record, readiness report, final report) with the
+  issue thread linked as the record of authority, so a new record type is a
+  registry entry rather than a new page. There is no operator-signal catalog to
+  parameterize against; do not scaffold one speculatively.
 - Identity UX should be ready for ADR-085 data roles and project-access grants,
   while the current implementation still projects `ROLE_USER` / `ROLE_ADMIN`.
   Do not make tenant/workspace isolation claims in this slice.
@@ -106,9 +117,10 @@ new ones:
 
 - Do not create a second project/tenant/workspace hierarchy. `Project` scoping
   is product scoping today; SaaS tenancy is explicitly future work.
-- Do not make Temporal Web, Temporal gRPC, local workflow state files, or
-  GitHub issue comments the console authorization boundary. Product UI reads
-  product REST/MCP contracts only.
+- Do not make local workflow state files or GitHub issue comments the console
+  authorization boundary. Product UI reads product REST/MCP contracts only; the
+  issue thread is the record of authority for workflow decisions, not an
+  authorization surface.
 - Do not add route-hiding as authorization. Frontend permission hints are UX;
   `ApiPathMatrix` and service-level project/gate checks are enforcement.
 - Do not model PR merge as a console signal or reintroduce plan approval. ADR-029
@@ -122,8 +134,9 @@ new ones:
 ## Non-Goals For The Design Issue
 
 - No new authentication model, SSO/MFA/password-reset design, SaaS tenant
-  lifecycle, Temporal namespace model, workflow DSL, or dynamic activity/plugin
-  execution model.
+  lifecycle, workflow DSL, or dynamic activity/plugin execution model.
+- No workflow control surface: no run start, cancel, retry, gate action, or
+  operator signal. Reintroducing one is a product decision with its own ADR.
 - No backend schema, migration, controller, or route implementation as part of
   this design reference.
 - No replacement of existing GRC, requirements, graph, or workflow telemetry

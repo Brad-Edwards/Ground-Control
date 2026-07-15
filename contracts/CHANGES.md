@@ -1,6 +1,35 @@
 # Contract Changes
 
-Current contract version: 0.4.0
+Current contract version: 0.6.0
+
+## 0.6.0 - 2026-07-15
+
+Traceability context-graph projection (issue #1308, ADR-084).
+
+- **BREAKING**: removed the never-emitted `CONTROL_LINK` and `AUDIT_LINK`
+  values from `GraphEntityType`; links remain graph edges. The previously
+  retired `RISK_APPETITE_PROFILE` value remains absent.
+- Added `ARTIFACT_REFERENCE` for project-qualified, identifier-addressed
+  traceability endpoints and projected all five requirement traceability edge
+  kinds into the mixed graph.
+- Graph response entity fields now publish the closed `GraphEntityType` enum in
+  OpenAPI. Generated TypeScript exports `GRAPH_ENTITY_TYPES` for iterable UI
+  coverage while preserving the existing JSON string values.
+
+## 0.5.0 - 2026-07-14
+
+Context-graph ontology authority (GC-O014, issue #1307, ADR-084).
+
+- Added the versioned concept-family, controlled-vocabulary, and
+  artifact-binding contracts under `contracts/ontology/`.
+- Added a bidirectional policy gate between those bindings and the live Java
+  vocabulary inventory: `GraphEntityType`, graph link/relation enums,
+  `ProvenanceEdgeRelation`, every `GraphProjectionContributor`, and literal
+  contributor edge terms. This publication does not rename emitted graph
+  values or change runtime graph behavior.
+- This initial publication is additive. A later breaking ontology change must
+  use a versioned filename and carry a declaration here; the current OpenAPI
+  breaking-change script does not compare ontology semantics.
 
 ## 0.4.0 - 2026-07-12
 

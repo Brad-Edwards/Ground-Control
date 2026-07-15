@@ -1,0 +1,291 @@
+{
+  "schema_version": "gc-artifact-bindings/v1",
+  "surfaces": [
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.model.GraphEntityType",
+      "kind": "java-enum",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/model/GraphEntityType.java",
+      "bindings": [
+        {"local_value": "REQUIREMENT", "term": "node.requirement"},
+        {"local_value": "OPERATIONAL_ASSET", "term": "node.operational-asset"},
+        {"local_value": "OBSERVATION", "term": "node.observation"},
+        {"local_value": "RISK_SCENARIO", "term": "node.risk-scenario"},
+        {"local_value": "CONTROL", "term": "node.control"},
+        {"local_value": "CONTROL_TEST", "term": "node.control-test"},
+        {"local_value": "VERIFICATION_RESULT", "term": "node.verification-result"},
+        {"local_value": "THREAT_MODEL", "term": "node.threat-model"},
+        {"local_value": "FINDING", "term": "node.finding"},
+        {"local_value": "EVIDENCE_ARTIFACT", "term": "node.evidence-artifact"},
+        {"local_value": "AUDIT", "term": "node.audit"},
+        {"local_value": "RISK_CONTROL_MAPPING", "term": "node.risk-control-mapping"},
+        {"local_value": "SCOPED_CONTROL_IMPLEMENTATION", "term": "node.scoped-control-implementation"},
+        {"local_value": "DOCUMENT", "term": "node.document"},
+        {"local_value": "RESEARCH_RUN", "term": "node.research-run"},
+        {"local_value": "RESEARCH_ARTIFACT", "term": "node.research-artifact"},
+        {"local_value": "RESEARCH_PROVENANCE_NODE", "term": "node.research-provenance"},
+        {"local_value": "ARTIFACT_REFERENCE", "term": "node.artifact-reference"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.requirements.state.RelationType",
+      "kind": "java-enum",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state/RelationType.java",
+      "bindings": [
+        {"local_value": "PARENT", "term": "edge.requirement-parent"},
+        {"local_value": "DEPENDS_ON", "term": "edge.depends-on"},
+        {"local_value": "CONFLICTS_WITH", "term": "edge.requirement-conflicts"},
+        {"local_value": "REFINES", "term": "edge.requirement-refines"},
+        {"local_value": "SUPERSEDES", "term": "edge.requirement-supersedes"},
+        {"local_value": "RELATED", "term": "edge.requirement-related"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.requirements.state.LinkType",
+      "kind": "java-enum",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state/LinkType.java",
+      "bindings": [
+        {"local_value": "IMPLEMENTS", "term": "edge.traceability-implements"},
+        {"local_value": "TESTS", "term": "edge.traceability-tests"},
+        {"local_value": "DOCUMENTS", "term": "edge.traceability-documents"},
+        {"local_value": "CONSTRAINS", "term": "edge.traceability-constrains"},
+        {"local_value": "VERIFIES", "term": "edge.traceability-verifies"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.assets.state.AssetRelationType",
+      "kind": "java-enum",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/assets/state/AssetRelationType.java",
+      "bindings": [
+        {"local_value": "CONTAINS", "term": "edge.contains"},
+        {"local_value": "DEPENDS_ON", "term": "edge.depends-on"},
+        {"local_value": "COMMUNICATES_WITH", "term": "edge.communicates-with"},
+        {"local_value": "TRUST_BOUNDARY", "term": "edge.trust-boundary"},
+        {"local_value": "SUPPORTS", "term": "edge.asset-supports"},
+        {"local_value": "ACCESSES", "term": "edge.accesses"},
+        {"local_value": "DATA_FLOW", "term": "edge.data-flow"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.assets.state.AssetLinkType",
+      "kind": "java-enum",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/assets/state/AssetLinkType.java",
+      "bindings": [
+        {"local_value": "IMPLEMENTS", "term": "edge.implements-requirement"},
+        {"local_value": "MITIGATES", "term": "edge.mitigates"},
+        {"local_value": "SUBJECT_OF", "term": "edge.subject-of"},
+        {"local_value": "EVIDENCED_BY", "term": "edge.evidenced-by"},
+        {"local_value": "GOVERNED_BY", "term": "edge.governed-by"},
+        {"local_value": "DEPENDS_ON", "term": "edge.depends-on"},
+        {"local_value": "ASSOCIATED", "term": "edge.associated"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.controls.state.ControlLinkType",
+      "kind": "java-enum",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/controls/state/ControlLinkType.java",
+      "bindings": [
+        {"local_value": "PROTECTS", "term": "edge.protects"},
+        {"local_value": "IMPLEMENTS", "term": "edge.implements-requirement"},
+        {"local_value": "EVIDENCED_BY", "term": "edge.evidenced-by"},
+        {"local_value": "OBSERVED_IN", "term": "edge.observed-in"},
+        {"local_value": "MITIGATES", "term": "edge.mitigates"},
+        {"local_value": "MAPS_TO", "term": "edge.maps-to"},
+        {"local_value": "ASSOCIATED", "term": "edge.associated"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.findings.state.FindingLinkType",
+      "kind": "java-enum",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/findings/state/FindingLinkType.java",
+      "bindings": [
+        {"local_value": "AFFECTS", "term": "edge.affects"},
+        {"local_value": "CAUSED_BY", "term": "edge.caused-by"},
+        {"local_value": "MITIGATED_BY", "term": "edge.mitigated-by"},
+        {"local_value": "EVIDENCED_BY", "term": "edge.evidenced-by"},
+        {"local_value": "OBSERVED_IN", "term": "edge.observed-in"},
+        {"local_value": "REMEDIATED_BY", "term": "edge.remediated-by"},
+        {"local_value": "ASSOCIATED", "term": "edge.associated"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkType",
+      "kind": "java-enum",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state/RiskScenarioLinkType.java",
+      "bindings": [
+        {"local_value": "MITIGATED_BY", "term": "edge.mitigated-by"},
+        {"local_value": "EXPLOITS", "term": "edge.exploits"},
+        {"local_value": "AFFECTS", "term": "edge.affects"},
+        {"local_value": "EVIDENCED_BY", "term": "edge.evidenced-by"},
+        {"local_value": "GOVERNED_BY", "term": "edge.governed-by"},
+        {"local_value": "ASSESSED_IN", "term": "edge.assessed-in"},
+        {"local_value": "REGISTERED_IN", "term": "edge.registered-in"},
+        {"local_value": "OBSERVED_IN", "term": "edge.observed-in"},
+        {"local_value": "ASSOCIATED", "term": "edge.associated"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelLinkType",
+      "kind": "java-enum",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/threatmodels/state/ThreatModelLinkType.java",
+      "bindings": [
+        {"local_value": "AFFECTS", "term": "edge.affects"},
+        {"local_value": "EXPLOITS", "term": "edge.exploits"},
+        {"local_value": "MITIGATED_BY", "term": "edge.mitigated-by"},
+        {"local_value": "ASSESSED_IN", "term": "edge.assessed-in"},
+        {"local_value": "OBSERVED_IN", "term": "edge.observed-in"},
+        {"local_value": "DOCUMENTED_IN", "term": "edge.documented-in"},
+        {"local_value": "ASSOCIATED", "term": "edge.associated"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.audits.state.AuditLinkType",
+      "kind": "java-enum",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state/AuditLinkType.java",
+      "bindings": [
+        {"local_value": "SCOPES", "term": "edge.audit-scopes"},
+        {"local_value": "ASSESSES", "term": "edge.audit-assesses"},
+        {"local_value": "EVIDENCED_BY", "term": "edge.evidenced-by"},
+        {"local_value": "FOLLOWS_UP_ON", "term": "edge.audit-follows-up"},
+        {"local_value": "ASSOCIATED", "term": "edge.associated"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.research.model.ProvenanceEdgeRelation",
+      "kind": "java-enum",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/research/model/ProvenanceEdgeRelation.java",
+      "bindings": [
+        {"local_value": "DERIVED_FROM", "term": "edge.provenance-derived-from"},
+        {"local_value": "SUPPORTS", "term": "edge.provenance-supports"},
+        {"local_value": "SELECTED", "term": "edge.provenance-selected"},
+        {"local_value": "CITED", "term": "edge.provenance-cited"},
+        {"local_value": "CONTRIBUTED_TO", "term": "edge.provenance-contributed-to"}
+      ]
+    },
+
+    {
+      "id": "com.keplerops.groundcontrol.domain.audits.service.AuditGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/audits/service/AuditGraphProjectionContributor.java",
+      "edge_enum_sources": {
+        "getLinkType": "com.keplerops.groundcontrol.domain.audits.state.AuditLinkType"
+      },
+      "bindings": []
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.service.AssetGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/AssetGraphProjectionContributor.java",
+      "edge_enum_sources": {
+        "getLinkType": "com.keplerops.groundcontrol.domain.assets.state.AssetLinkType",
+        "getRelationType": "com.keplerops.groundcontrol.domain.assets.state.AssetRelationType"
+      },
+      "bindings": [
+        {"local_value": "OBSERVED_ON", "term": "edge.observed-on"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.service.ControlGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/ControlGraphProjectionContributor.java",
+      "edge_enum_sources": {
+        "getLinkType": "com.keplerops.groundcontrol.domain.controls.state.ControlLinkType"
+      },
+      "bindings": []
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.service.ControlTestGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/ControlTestGraphProjectionContributor.java",
+      "bindings": [
+        {"local_value": "OF_CONTROL", "term": "edge.of-control"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.service.DocumentGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/DocumentGraphProjectionContributor.java",
+      "bindings": []
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.service.EvidenceArtifactGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/EvidenceArtifactGraphProjectionContributor.java",
+      "bindings": [
+        {"local_value": "HAS_SOURCE", "term": "edge.has-source"},
+        {"local_value": "SUPERSEDED_BY", "term": "edge.superseded-by"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.service.FindingGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/FindingGraphProjectionContributor.java",
+      "edge_enum_sources": {
+        "getLinkType": "com.keplerops.groundcontrol.domain.findings.state.FindingLinkType"
+      },
+      "bindings": []
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.service.RequirementGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/RequirementGraphProjectionContributor.java",
+      "edge_enum_sources": {
+        "getRelationType": "com.keplerops.groundcontrol.domain.requirements.state.RelationType",
+        "getLinkType": "com.keplerops.groundcontrol.domain.requirements.state.LinkType"
+      },
+      "bindings": []
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.service.ResearchGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/ResearchGraphProjectionContributor.java",
+      "edge_enum_sources": {
+        "getRelation": "com.keplerops.groundcontrol.domain.research.model.ProvenanceEdgeRelation"
+      },
+      "bindings": [
+        {"local_value": "HAS_RESEARCH_ARTIFACT", "term": "edge.has-research-artifact"},
+        {"local_value": "ARTIFACT_HAS_PROVENANCE", "term": "edge.artifact-has-provenance"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.service.RiskControlMappingGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/RiskControlMappingGraphProjectionContributor.java",
+      "bindings": [
+        {"local_value": "MAPS_CONTROL", "term": "edge.maps-control"},
+        {"local_value": "MAPS_SCOPED_IMPL", "term": "edge.maps-scoped-implementation"},
+        {"local_value": "MAPS_SCENARIO", "term": "edge.maps-risk-scenario"},
+        {"local_value": "MAPS_THREAT_MODEL", "term": "edge.maps-threat-model"},
+        {"local_value": "IN_ASSET_CONTEXT", "term": "edge.in-asset-context"},
+        {"local_value": "HAS_OBSERVATION", "term": "edge.has-observation"},
+        {"local_value": "SCOPED_IMPL_OF", "term": "edge.scoped-implementation-of"},
+        {"local_value": "SCOPED_TO_ASSET", "term": "edge.scoped-to-asset"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.service.RiskGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/RiskGraphProjectionContributor.java",
+      "edge_enum_sources": {
+        "getLinkType": "com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkType"
+      },
+      "bindings": []
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.service.ThreatModelGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/ThreatModelGraphProjectionContributor.java",
+      "edge_enum_sources": {
+        "getLinkType": "com.keplerops.groundcontrol.domain.threatmodels.state.ThreatModelLinkType"
+      },
+      "bindings": []
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.service.VerificationResultGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/VerificationResultGraphProjectionContributor.java",
+      "bindings": [
+        {"local_value": "VERIFIES", "term": "edge.verifies-requirement"}
+      ]
+    }
+  ]
+}

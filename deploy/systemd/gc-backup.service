@@ -1,6 +1,6 @@
 [Unit]
 Description=Ground Control DB backup (GC-P021)
-Documentation=https://github.com/Brad-Edwards/Ground-Control/blob/main/docs/operations/backup-restore.md
+Documentation=https://github.com/autarchy-ai/Ground-Control/blob/main/docs/operations/backup-restore.md
 After=docker.service network-online.target
 Wants=network-online.target
 # AssertPathExists (not ConditionPathExists): a failed Condition* skips the

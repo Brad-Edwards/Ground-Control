@@ -528,7 +528,8 @@ server.tool(
   {
     uid: z.string(),
     project: z.string().optional(),
-    repo: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/).optional(),
+    repo_path: z.string().describe("Absolute path to the target Git repository; its origin remote is the authoritative repository identity (GC-P026)"),
+    repo: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/).optional().describe("Optional owner/repo assertion; validated against the checkout remote and rejected on mismatch, never used as an alternate destination"),
     labels: z.array(z.string()).optional(),
     extra_body: z.string().optional(),
   },
@@ -538,6 +539,7 @@ server.tool(
         uid: args.uid,
         project: args.project,
         repo: args.repo,
+        repoRoot: args.repo_path,
         labels: args.labels,
         extraBody: args.extra_body,
       }), null, 2));
@@ -3473,8 +3475,9 @@ if (ADMIN_TOOLS_ENABLED) {
       format: z.string().optional(),
       from: z.string().optional(),
       to: z.string().optional(),
-      // Project type + research intake (ADR-056, issue #999).
-      type: z.enum(["SOFTWARE", "GRC", "RESEARCH"]).optional(),
+      // Project type + research intake (ADR-056, issue #999). GRC is a legacy value
+      // (ADR-089 §4): readable on existing projects but not offered for new creation.
+      type: z.enum(["SOFTWARE", "RESEARCH"]).optional(),
       research_intake: z.object({
         goal: z.string(),
         paperContext: z.string().optional(),
