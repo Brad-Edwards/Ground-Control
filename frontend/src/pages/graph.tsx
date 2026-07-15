@@ -838,7 +838,7 @@ export function Graph() {
           {
             id: String(n.id()),
             domainId: String(n.data("domainId") ?? ""),
-            entityType: String(n.data("entityType") ?? ""),
+            entityType: n.data("entityType") as GraphNodeData["entityType"],
             projectIdentifier: "",
             uid: n.data("uid") ? String(n.data("uid")) : null,
             label: String(n.data("label") ?? ""),
