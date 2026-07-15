@@ -273,10 +273,15 @@ All preflight/review stages operate under the same rule: **fix everything, defer
 
 ## Guardrails
 
-### Deny Rules (`~/.claude/settings.json`)
-- `Bash(gh pr merge*)` - Claude cannot merge PRs
-- `Bash(gh api */merge*)` - Claude cannot merge via API
-- `Bash(git merge *)` - Claude cannot merge branches
+### Merge guardrails (`git-merge-guard.py` PreToolUse hook)
+
+Agent merges are gated by the `.claude/hooks/git-merge-guard.py` PreToolUse hook (see **Git Merge Guard** below), registered on the `Bash` matcher in both `.claude/settings.json` (this repo) and `~/.claude/settings.json` (host). There is **no** `Bash(git merge *)` / `Bash(gh pr merge*)` permission deny in `~/.claude/settings.json`; the hook is the sole decision point, so there is no settings-permission migration to perform.
+
+- `gh pr merge` - blocked; the user (or the `gc_integration_manager` MCP carve-out) owns all pull-request merges
+- `git merge` - conditionally gated: the base-to-feature maintenance merge (`origin/dev` into a non-protected feature branch) is allowed; protected-branch destinations and all other sources/shapes are blocked
+- `git reset --hard` and plain `git push --force` / `-f` - blocked
+
+**Activation.** A change to the hook takes effect in this repo's sessions immediately (the project registration points at `.claude/hooks/`), but is not active for other repos/sessions on the host until `scripts/bootstrap-claude-workflow.sh` re-copies it to `~/.claude/hooks/` (see **Workflow Hooks** below). Run that resync after merging a hook change.
 
 ### Attribution (`~/.claude/settings.json`)
 ```json
@@ -309,7 +314,9 @@ The hook no longer enforces `/review` and `/security-review` - those were remove
 PostToolUse hook on `Skill` - writes JSONL to `/tmp/claude-skill-log/<PID>.jsonl` (per-session, not per-branch). The Stop hook previously read this log to verify `/review` and `/security-review` were actually invoked; it's still wired up for forward compat in case we reintroduce skill-based checks. Stale logs (>24 h) are auto-pruned.
 
 #### Git Merge Guard - `git-merge-guard.py`
-PreToolUse hook on `Bash`. The user owns every actual merge. Blocked unconditionally: `git merge`, `gh pr merge`, `git reset --hard`, and a plain `git push --force` / `git push -f`. A `git push --force-with-lease` to a *feature* branch is allowed (that's the rebase-feature-branch-onto-base-then-update-the-PR flow), but a force-push of any kind to a ref named `main` or `dev` is blocked.
+PreToolUse hook on `Bash`. The user owns every protected-branch merge and every pull-request merge. Blocked unconditionally: `gh pr merge`, `git reset --hard`, and a plain `git push --force` / `git push -f`. A `git push --force-with-lease` to a *feature* branch is allowed (that's the rebase-feature-branch-onto-base-then-update-the-PR flow), but a force-push of any kind to a ref named `main` or `dev` is blocked.
+
+`git merge` is conditionally allowed (issue #1382): one narrow base-to-feature maintenance merge - incorporating the integration branch (`origin/dev`) into the current non-protected feature branch so an open PR stays current, then completed with real conflict resolution plus an ordinary `git commit` - is permitted. It is allowed only as a single, directly inspectable `git merge` (no shell operators; no shell expansion or substitution - `$`, backtick, `<`, `>`, which stay active even inside a double-quoted `-m` value and would otherwise run arbitrary shell after the hook returns; no `env`/`sudo`/`VAR=` wrapper; no git global options), carrying only the closed base-update option set (`--no-edit`, `--no-ff`, `--ff`, `--ff-only`, `-m`/`--message`), with no `branch.<dest>.mergeOptions` configured, naming exactly one source that resolves to the `refs/remotes/origin/dev` ref, while checked out on a branch that is NOT in the hardcoded protected set (`main`, `dev`). The current branch is read from the full symbolic ref so a colliding tag can't disguise a protected destination, and the protected set is a hardcoded constant rather than an agent-writable ref or working-tree file (both `refs/remotes/origin/*` and the working tree are writable with a single command). Everything else fails closed: protected-branch destinations; non-`origin/dev` sources (local `dev`, tags, SHAs, same-OID aliases, names merely containing `dev`); unsupported merge modes (`--squash`, `-s`/`-X`, `--allow-unrelated-histories`, `--no-verify`, `--continue`/`--abort`/`--quit`); a configured `branch.<dest>.mergeOptions`; chained / wrapped / global-option / expansion shapes; and detached HEAD.
 
 ### Repo-Native Policy Layer
 
