@@ -1,1 +1,0 @@
-Internal refactor: extract entity-name labels in `GraphTargetResolverService` into named constants (Sonar S1192) and tighten the `ControlLinkService.create` comment block that triggered S125. No behavior change.

@@ -1,1 +1,0 @@
-Use static imports for Mockito `verify`/`never` in the workflow-telemetry and requirement unit tests, clearing the 5 SonarCloud `java:S8924` findings that were failing the new-issue gate on `main` and blocking the production image build. Mechanical; no behaviour or test semantics change.

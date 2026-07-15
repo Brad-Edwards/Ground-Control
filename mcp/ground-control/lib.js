@@ -13388,6 +13388,10 @@ export function validatePrBodyInput(input) {
     return { ok: false, errors: ["input must be an object"] };
   }
   const { issueNumber, changeClass, requirementUids, adrRefs, summary, changes, traceability, changelogFragment, testNotes } = input;
+  const changelogMode = input.changelogMode == null ? "fragments" : input.changelogMode;
+  if (changelogMode !== "fragments" && changelogMode !== "release-please") {
+    errors.push('changelogMode must be "fragments" or "release-please" when set');
+  }
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
     errors.push("issueNumber must be a positive integer");
   }
@@ -13442,16 +13446,30 @@ export function validatePrBodyInput(input) {
   // Mirrors tools/policy/checks.py::run_changelog_fragment_check's filename
   // predicate so a body that claims "Changelog fragment added at <path>"
   // can't get rendered with a non-fragment path (codex cycle-4 F4).
-  if (changelogFragment != null) {
-    if (typeof changelogFragment !== "string" || changelogFragment.trim() === "") {
-      errors.push("changelogFragment must be a non-empty string when set");
-    } else if (!/^changelog\.d\/(?:[A-Za-z0-9._-]+|\+[A-Za-z0-9._-]+)\.(?:security|added|changed|deprecated|removed|fixed)\.md$/.test(changelogFragment)) {
-      errors.push(`changelogFragment must match changelog.d/<issue>.<type>.md or changelog.d/+<slug>.<type>.md where <type> ∈ {security,added,changed,deprecated,removed,fixed}; got: ${changelogFragment}`);
+  if (changelogMode === "release-please") {
+    // Release Please repos (#1399 / #1336, GC-P027): Release Please owns
+    // CHANGELOG.md, generated from the Conventional Commit PR title, so there is
+    // no per-PR changelog.d fragment. Reject a stray fragment and never require one.
+    if (changelogFragment != null) {
+      errors.push(
+        "changelogFragment is not accepted when changelogMode is 'release-please' (Release Please owns CHANGELOG.md; there is no changelog.d fragment)",
+      );
     }
-  }
-  if (changeClass === "source" || changeClass === "source+migration") {
-    if (changelogFragment == null) {
-      errors.push(`changeClass='${changeClass}' requires a changelogFragment (path under changelog.d/)`);
+  } else {
+    // Towncrier fragment mode (default). Mirrors the historical filename predicate
+    // so a body claiming "Changelog fragment added at <path>" cannot render a
+    // non-fragment path.
+    if (changelogFragment != null) {
+      if (typeof changelogFragment !== "string" || changelogFragment.trim() === "") {
+        errors.push("changelogFragment must be a non-empty string when set");
+      } else if (!/^changelog\.d\/(?:[A-Za-z0-9._-]+|\+[A-Za-z0-9._-]+)\.(?:security|added|changed|deprecated|removed|fixed)\.md$/.test(changelogFragment)) {
+        errors.push(`changelogFragment must match changelog.d/<issue>.<type>.md or changelog.d/+<slug>.<type>.md where <type> ∈ {security,added,changed,deprecated,removed,fixed}; got: ${changelogFragment}`);
+      }
+    }
+    if (changeClass === "source" || changeClass === "source+migration") {
+      if (changelogFragment == null) {
+        errors.push(`changeClass='${changeClass}' requires a changelogFragment (path under changelog.d/)`);
+      }
     }
   }
   if (testNotes != null && typeof testNotes !== "string") {
@@ -13486,6 +13504,7 @@ export function buildPrBody(input) {
     throw new Error(`buildPrBody input invalid: ${validation.errors.join("; ")}`);
   }
   const { issueNumber, changeClass, requirementUids, adrRefs, summary, changes, traceability, changelogFragment, testNotes, devStartGate } = input;
+  const changelogMode = input.changelogMode == null ? "fragments" : input.changelogMode;
   const lines = [];
   lines.push("## Summary");
   lines.push("");
@@ -13578,7 +13597,9 @@ export function buildPrBody(input) {
   lines.push("- [x] No business logic in API layer");
   lines.push("- [x] Domain layer has no framework imports");
   lines.push("- [x] Envers `@Audited` on new entities if applicable");
-  if (changeClass === "doc-only") {
+  if (changelogMode === "release-please") {
+    lines.push("- [x] Changelog: owned by Release Please (generated from the Conventional Commit PR title; no per-PR fragment)");
+  } else if (changeClass === "doc-only") {
     lines.push("- Changelog fragment: N/A — docs-only change");
   } else {
     lines.push(`- [x] Changelog fragment added at \`${changelogFragment}\``);
