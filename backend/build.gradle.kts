@@ -1,4 +1,5 @@
 import net.ltgt.gradle.errorprone.errorprone
+import org.apache.tools.ant.filters.ReplaceTokens
 
 plugins {
     java
@@ -20,7 +21,7 @@ plugins {
 }
 
 group = "com.keplerops"
-version = "0.20.1"
+version = "1.0.1" // x-release-please-version
 
 sonar {
     properties {
@@ -133,9 +134,23 @@ if (quick) {
     tasks.named("checkstyleMain") { enabled = false }
 }
 
-// Generate META-INF/build-info.properties so logback can read the version dynamically
+// Generate META-INF/build-info.properties so BuildProperties / actuator info can read the
+// build version. NOTE: build-info is a BuildProperties bean, not a Spring Environment
+// property source, so logback's <springProperty> cannot read build.version directly.
+// logback resolves the product version from the filtered `info.app.version` property
+// (see processResources below); this generation still feeds /actuator/info.
 springBoot {
     buildInfo()
+}
+
+// Filter application.yml so `info.app.version` resolves to the Release Please-managed
+// product version at build time (GC-P027 / #1399). The `@projectVersion@` token avoids
+// clashing with the many Spring `${...}` placeholders in the same file; logback-spring.xml
+// reads this property as SERVICE_VERSION (else it falls back to the literal "unknown").
+tasks.processResources {
+    filesMatching("application.yml") {
+        filter(mapOf("tokens" to mapOf("projectVersion" to project.version.toString())), ReplaceTokens::class.java)
+    }
 }
 
 tasks.register("rapid") {

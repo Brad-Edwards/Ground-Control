@@ -15,7 +15,8 @@ tier: low
    - `summary`: one paragraph. Update length follows the canonical succinctness rule in `skills/implement/steps/_review-loop-rules.md`.
    - `changes`: array of bullet strings describing each change.
    - `traceability`: `{ implements: [...], tests: [...] }` strings - typically `<UID> ← <file path>` shape; the tool emits the IMPLEMENTS / TESTS markers `check_pr_body` requires.
-   - `changelog_fragment`: path under `changelog.d/` (required for `source` / `source+migration`; omit for `doc-only`).
+   - `changelog_mode` (optional): pass `"release-please"` when the repo ships a `release-please-config.json` at its root (GC-P027, issue #1399) - Release Please owns `CHANGELOG.md`, so no per-PR fragment is required or accepted; **omit `changelog_fragment` entirely** in this mode. Default (or `"fragments"`) preserves the legacy per-PR `changelog.d/` fragment requirement for repos that have not adopted Release Please.
+   - `changelog_fragment`: path under `changelog.d/` (required for `source` / `source+migration` when `changelog_mode` is `fragments` or omitted; omit for `doc-only` and for `changelog_mode: "release-please"`).
    - `test_notes` (optional): extra prose under the Test Plan section.
    - `dev_start_gate` (optional): full Markdown `## Dev-Start Gate` section when the repo's PR template or metadata policy requires it. Reuse the plan's gate fields, adjusted to describe the PR diff.
 

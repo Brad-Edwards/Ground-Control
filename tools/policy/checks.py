@@ -921,232 +921,222 @@ def _extract_compose_backend_env_entries(text: str) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Changelog-fragment workflow (issue #848, ADR-021 Phase B amendment).
+# Version-mirror consistency (issue #1399, GC-P027).
 #
-# Ground-Control routes per-PR changelog entries through towncrier-style
-# fragments under `changelog.d/` instead of direct `CHANGELOG.md` edits so
-# concurrent PRs cannot conflict on the same line range. Two structural
-# gates back the convention here:
+# Release Please owns the product version: `.release-please-manifest.json` records
+# the last released version and `release-please-config.json`'s `extra-files`
+# mechanically bump each product-version mirror on the release PR. This gate fails
+# when a mirror drifts from the manifest. The inventory is the release-please config
+# itself (its `extra-files` for the root package), NOT a second hard-coded list —
+# adding a legitimate product mirror is one `extra-files` row. Repos with no
+# release-please config/manifest are a no-op, so the check stays generic.
 #
-#   1. `parse_fragment_filename` — parses a fragment file's basename against
-#      a closed vocabulary. Accepts `<digits>.<type>.md` (issue-anchored) or
-#      `+<slug>.<type>.md` (issue-free), where `<type>` is one of the six
-#      Keep-a-Changelog categories. Anything else returns ``None``. This is
-#      not a substring test against fragment prose — it is a parser over a
-#      fixed grammar, which is the kind of structural gate the documentation
-#      carve-out at SKILL Step 4.4 requires when the diff is otherwise doc.
-#
-#   2. `run_changelog_fragment_check` — completion-gate enforcement. Two
-#      independent rules:
-#        - Together-ness: if `changelog.d/` exists in the repo, the
-#          canonical infrastructure files (`towncrier.toml`,
-#          `changelog.d/_template.md.jinja`, `changelog.d/README.md`) must
-#          all exist. A repo that ships `changelog.d/` without those is
-#          broken (towncrier won't run).
-#        - Diff signal: if a diff touches application source, it MUST carry
-#          a valid fragment under `changelog.d/`. Direct `CHANGELOG.md`
-#          edits do NOT satisfy a source-changing diff — accepting them
-#          would re-open the rebase-storm pathology this convention exists
-#          to prevent (codex review finding, issue #848). Release-collation
-#          commits (`towncrier build`) touch `CHANGELOG.md` and delete the
-#          fragments they consumed, neither of which is application source,
-#          so they fall through the predicate naturally. CI-only and
-#          docs-only diffs likewise carry no source paths and require no
-#          signal.
-#
-# The same vocabulary is mirrored in
-# `.claude/hooks/verify-implementation.sh` (host-local Stop hook) so the
-# repo-native check and the user-level hook agree on what counts.
+# Independent version surfaces (mcp/ground-control/package.json + McpServer, the
+# citation package, dependency/Flyway/schema/pack/domain-record versions) are NOT
+# product mirrors and are deliberately absent from the config's extra-files, so this
+# check never touches them (preflight: do not sweep them into the product bump).
 # ---------------------------------------------------------------------------
 
-CHANGELOG_FRAGMENT_TYPES: tuple[str, ...] = (
-    "security",
-    "added",
-    "changed",
-    "deprecated",
-    "removed",
-    "fixed",
-)
-
-_FRAGMENT_INFRASTRUCTURE_FILES: tuple[str, ...] = (
-    "towncrier.toml",
-    "changelog.d/_template.md.jinja",
-    "changelog.d/README.md",
-)
-
-# Reserved files inside `changelog.d/` that are infrastructure, not fragments.
-# Towncrier itself reads `_template.md.jinja`; `README.md` documents the
-# convention. Neither should be parsed by `parse_fragment_filename`.
-_FRAGMENT_RESERVED_NAMES: frozenset[str] = frozenset({"README.md", "_template.md.jinja"})
-
-# Filename grammar:
-#   <issue>   ::= 1+ ASCII digit
-#   <slug>    ::= "+" then 1+ chars from [a-zA-Z0-9._-]
-#   filename  ::= (<issue> | <slug>) "." <type> ".md"
-_FRAGMENT_ISSUE_RE = re.compile(r"^(\d+)\.([a-z]+)\.md$")
-_FRAGMENT_SLUG_RE = re.compile(r"^(\+[A-Za-z0-9][A-Za-z0-9._-]*)\.([a-z]+)\.md$")
-
-# Path prefixes for diffs that count as "application source" for the
-# diff-signal rule. Anything under these prefixes requires a changelog
-# signal; anything outside (docs, ADRs, skills prose, plan-rules,
-# `.github/workflows/`, repo metadata, tests-for-policy-tooling) does not.
-_SOURCE_PATH_PREFIXES: tuple[str, ...] = (
-    "backend/src/main/",
-    "backend/src/test/",
-    "frontend/src/",
-    "mcp/",
-)
-
-# `tools/` mostly carries policy tooling (which is itself infrastructure for
-# the workflow rather than application source). Subdirectories of `tools/`
-# that exist purely to support `bin/policy` and its tests are not counted
-# as "application source" for the diff-signal rule.
-_TOOLS_NON_SOURCE_PREFIXES: tuple[str, ...] = (
-    "tools/policy/",
-    "tools/tests/",
-)
+RELEASE_PLEASE_CONFIG = "release-please-config.json"
+RELEASE_PLEASE_MANIFEST = ".release-please-manifest.json"
+# The single Ground Control root component's key in both the config and the manifest.
+RELEASE_PLEASE_ROOT_PACKAGE = "."
+# release-please "generic" updater annotation (string-form extra-files), e.g.
+#   version = "1.0.1" // x-release-please-version   (backend/build.gradle.kts)
+_GENERIC_VERSION_ANNOTATION = "x-release-please-version"
+_QUOTED_VERSION_RE = re.compile(r"""["'](\d+\.\d+\.\d+[0-9A-Za-z.\-+]*)["']""")
 
 
-def parse_fragment_filename(name: str) -> tuple[str, str] | None:
-    """Parse a fragment filename against the convention vocabulary.
+def _jsonpath_keys(jsonpath: str) -> list[str] | None:
+    """Tokenize a minimal JSONPath into an ordered key list.
 
-    Returns ``(stem, type)`` for a well-formed fragment name, or ``None``
-    otherwise. The grammar is intentionally narrow: anything that doesn't
-    match exactly is rejected so towncrier can't silently skip a
-    misspelled fragment a contributor thought they had filed.
-
-    Reserved names inside ``changelog.d/`` (``README.md`` and the Jinja
-    template) are not fragments — they return ``None`` too.
+    Supports the forms release-please emits for JSON extra-files: ``$.version``,
+    ``$.a.b``, and bracketed keys including the empty root-package key
+    ``$.packages[''].version`` / ``$.packages[""].version``. Returns ``None`` for a
+    path this resolver cannot parse.
     """
-    if name in _FRAGMENT_RESERVED_NAMES:
-        return None
+    s = jsonpath.strip()
+    if s.startswith("$"):
+        s = s[1:]
+    keys: list[str] = []
+    i, n = 0, len(s)
+    while i < n:
+        c = s[i]
+        if c == ".":
+            i += 1
+            j = i
+            while j < n and s[j] not in ".[":
+                j += 1
+            if j == i:
+                return None
+            keys.append(s[i:j])
+            i = j
+        elif c == "[":
+            close = s.find("]", i)
+            if close == -1:
+                return None
+            inner = s[i + 1 : close].strip()
+            if len(inner) >= 2 and inner[0] in "\"'" and inner[-1] == inner[0]:
+                keys.append(inner[1:-1])
+            else:
+                keys.append(inner)
+            i = close + 1
+        else:
+            j = i
+            while j < n and s[j] not in ".[":
+                j += 1
+            keys.append(s[i:j])
+            i = j
+    return keys or None
 
-    issue_match = _FRAGMENT_ISSUE_RE.match(name)
-    if issue_match:
-        stem, ftype = issue_match.group(1), issue_match.group(2)
-        if ftype in CHANGELOG_FRAGMENT_TYPES:
-            return (stem, ftype)
-        return None
 
-    slug_match = _FRAGMENT_SLUG_RE.match(name)
-    if slug_match:
-        stem, ftype = slug_match.group(1), slug_match.group(2)
-        # Reject the bare ``+`` slug — the slug body must be non-empty.
-        if stem == "+":
+def _extract_json_version(data: object, jsonpath: str) -> str | None:
+    keys = _jsonpath_keys(jsonpath)
+    if keys is None:
+        return None
+    cur: object = data
+    for key in keys:
+        if isinstance(cur, dict) and key in cur:
+            cur = cur[key]
+        else:
             return None
-        if ftype in CHANGELOG_FRAGMENT_TYPES:
-            return (stem, ftype)
-        return None
+    return cur if isinstance(cur, str) else None
 
+
+def _extract_generic_version(text: str) -> str | None:
+    for line in text.splitlines():
+        if _GENERIC_VERSION_ANNOTATION in line:
+            match = _QUOTED_VERSION_RE.search(line)
+            if match:
+                return match.group(1)
     return None
 
 
-def _diff_touches_application_source(changed_files: Iterable[str]) -> bool:
-    for path in changed_files:
-        normalized = normalize_path(path)
-        if normalized.startswith(_SOURCE_PATH_PREFIXES):
-            return True
-        if normalized.startswith("tools/") and not normalized.startswith(
-            _TOOLS_NON_SOURCE_PREFIXES
-        ):
-            return True
-    return False
+def run_version_mirror_consistency_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """Fail when a product-version mirror drifts from the Release Please manifest.
 
+    The set of mirrors is read from the release-please config's ``extra-files`` for
+    the root package (the declarative inventory), so this check never carries its own
+    hard-coded mirror list.
+    """
+    config_path = root / RELEASE_PLEASE_CONFIG
+    manifest_path = root / RELEASE_PLEASE_MANIFEST
 
-def run_changelog_fragment_check(
-    changed_files: list[str], root: Path = REPO_ROOT
-) -> list[Violation]:
-    violations: list[Violation] = []
+    # No Release Please adoption in this repo -> nothing to enforce.
+    if not config_path.exists() and not manifest_path.exists():
+        return []
 
-    changelog_d_dir = root / "changelog.d"
-    if changelog_d_dir.is_dir():
-        missing = [
-            rel
-            for rel in _FRAGMENT_INFRASTRUCTURE_FILES
-            if not (root / rel).exists()
+    if not config_path.exists() or not manifest_path.exists():
+        missing = RELEASE_PLEASE_CONFIG if not config_path.exists() else RELEASE_PLEASE_MANIFEST
+        return [
+            Violation(
+                code="version-mirror-config-missing",
+                message=(
+                    "Release Please version management is partially configured: "
+                    f"{missing} is missing (config and manifest must ship together)."
+                ),
+                details=[],
+            )
         ]
-        if missing:
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [
+            Violation(
+                code="version-mirror-config-invalid",
+                message="release-please config/manifest could not be parsed.",
+                details=[str(exc)],
+            )
+        ]
+
+    manifest_version = manifest.get(RELEASE_PLEASE_ROOT_PACKAGE)
+    if not isinstance(manifest_version, str):
+        return [
+            Violation(
+                code="version-mirror-config-invalid",
+                message=(
+                    f"{RELEASE_PLEASE_MANIFEST} has no string version for the root "
+                    f'package "{RELEASE_PLEASE_ROOT_PACKAGE}".'
+                ),
+                details=[],
+            )
+        ]
+
+    package = (config.get("packages") or {}).get(RELEASE_PLEASE_ROOT_PACKAGE) or {}
+    extra_files = package.get("extra-files") or []
+
+    violations: list[Violation] = []
+    for entry in extra_files:
+        if isinstance(entry, str):
+            path, jsonpath, kind = entry, None, "generic"
+        elif isinstance(entry, dict):
+            path = entry.get("path")
+            jsonpath = entry.get("jsonpath")
+            kind = entry.get("type", "generic")
+        else:
+            continue
+        if not path:
+            continue
+
+        target = root / path
+        if not target.exists():
             violations.append(
                 Violation(
-                    code="changelog-fragment-infrastructure",
-                    message=(
-                        "changelog.d/ exists but the canonical fragment "
-                        "infrastructure is incomplete (towncrier will not run)."
-                    ),
-                    details=[f"missing: {', '.join(missing)}"],
+                    code="version-mirror-drift",
+                    message=f"Release Please version mirror is missing: {path}",
+                    details=[],
                 )
             )
-
-    # Validate any fragments staged in this diff. A fragment with a bad
-    # filename is invisible to towncrier, so the contributor would think
-    # they had filed an entry that never gets collated.
-    #
-    # The signal predicate is "fragment file exists in the working tree
-    # AFTER the diff applies" — not "any valid-looking fragment path is
-    # named anywhere in the diff". `read_changed_files` now includes
-    # deletions (filter `ACDMRTUXB`), so a release-collation commit that
-    # deletes `changelog.d/old.added.md` will list that path in
-    # `changed_files`; without the on-disk check, that deleted path would
-    # count as a "signal" for an unrelated source change in the same PR.
-    fragments_in_diff: list[str] = []
-    invalid_fragment_names: list[str] = []
-    for path in changed_files:
-        normalized = normalize_path(path)
-        if not normalized.startswith("changelog.d/"):
             continue
-        relative = normalized[len("changelog.d/") :]
-        if relative in _FRAGMENT_RESERVED_NAMES:
-            continue
-        # Nested paths (`changelog.d/foo/848.added.md`) are NOT part of the
-        # convention — towncrier won't consume them — and silently skipping
-        # them would let a contributor file a fragment that never lands.
-        # Treat them as invalid so the violation surfaces in `make policy`.
-        if "/" in relative:
-            invalid_fragment_names.append(normalized)
-            continue
-        parsed = parse_fragment_filename(relative)
-        if parsed is None:
-            invalid_fragment_names.append(normalized)
-        elif (root / normalized).is_file():
-            fragments_in_diff.append(normalized)
-        # Else: parsed correctly but absent from the working tree —
-        # i.e. the fragment was deleted. Deleted fragments do not count
-        # as a release-notes signal.
-
-    if invalid_fragment_names:
-        violations.append(
-            Violation(
-                code="changelog-fragment-invalid-name",
-                message=(
-                    "Changelog fragment filename does not match the convention "
-                    "<issue>.<type>.md or +<slug>.<type>.md where <type> is one "
-                    f"of {', '.join(CHANGELOG_FRAGMENT_TYPES)}."
-                ),
-                details=[f"invalid: {name}" for name in invalid_fragment_names],
-            )
-        )
-
-    # Diff-signal rule: source-changing diff MUST carry a valid fragment
-    # under `changelog.d/`. A direct `CHANGELOG.md` edit is intentionally
-    # NOT a substitute for source diffs — that branch would re-open the
-    # rebase-storm pathology this convention exists to prevent. Release-
-    # collation commits touch `CHANGELOG.md` and the fragments they
-    # consume, neither of which counts as application source, so they
-    # fall through the predicate and need no fragment signal.
-    if _diff_touches_application_source(changed_files):
-        if not fragments_in_diff:
+        try:
+            text = target.read_text(encoding="utf-8")
+        except OSError as exc:
             violations.append(
                 Violation(
-                    code="changelog-signal-missing",
+                    code="version-mirror-drift",
+                    message=f"cannot read version mirror {path}",
+                    details=[str(exc)],
+                )
+            )
+            continue
+
+        if kind == "json":
+            resolved_path = jsonpath or "$.version"
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as exc:
+                violations.append(
+                    Violation(
+                        code="version-mirror-drift",
+                        message=f"{path} is not valid JSON",
+                        details=[str(exc)],
+                    )
+                )
+                continue
+            found = _extract_json_version(data, resolved_path)
+            label = f"{path} ({resolved_path})"
+        else:
+            found = _extract_generic_version(text)
+            label = f"{path} (x-release-please-version)"
+
+        if found is None:
+            violations.append(
+                Violation(
+                    code="version-mirror-drift",
+                    message=f"could not read a product version from mirror {label}",
+                    details=[f"expected manifest version: {manifest_version}"],
+                )
+            )
+        elif found != manifest_version:
+            violations.append(
+                Violation(
+                    code="version-mirror-drift",
                     message=(
-                        "Source-changing diff has no valid changelog fragment "
-                        "under changelog.d/. Add a fragment named "
-                        "<issue>.<type>.md (or +<slug>.<type>.md for "
-                        "issue-free entries), type in "
-                        f"{{{','.join(CHANGELOG_FRAGMENT_TYPES)}}}. Editing "
-                        "CHANGELOG.md directly is reserved for release "
-                        "collation and does not satisfy this gate. See "
-                        "changelog.d/README.md."
+                        f"Product-version mirror {label} is {found}, but the Release "
+                        f"Please manifest ({RELEASE_PLEASE_MANIFEST}) says {manifest_version}. "
+                        "Mirrors are updated by the release PR; do not hand-edit them out of sync."
                     ),
                     details=[],
                 )
@@ -3899,7 +3889,7 @@ def check_pr_body(body: str) -> list[Violation]:
 # contract — the canonical tool name, the test-quality reviewer literal,
 # the empty-findings clean cycle case, and a continuation signal. This is
 # the same "parser over a fixed vocabulary" structural-gate pattern as
-# `run_changelog_fragment_check`, not a snapshot of specific prose. Wording
+# `run_version_mirror_consistency_check`, not a snapshot of specific prose. Wording
 # can change; the contract cannot. Section heading the check looks for is
 # `### Step 6.6: Pre-push Test-Quality Review` (the #906 placement). If the
 # step is ever renumbered again, update the `extract_step_section` call
@@ -4534,7 +4524,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_adr_guard(changed_files))
     violations.extend(run_controller_contracts(changed_files))
     violations.extend(run_migration_policy(changed_files, base=args.base))
-    violations.extend(run_changelog_fragment_check(changed_files))
+    violations.extend(run_version_mirror_consistency_check())
     violations.extend(run_ci_strictness_contract())
     violations.extend(run_deploy_compose_credential_passthrough())
     violations.extend(run_ghcr_namespace_drift())
@@ -4597,11 +4587,18 @@ def _resolve_pr_body(args: argparse.Namespace) -> str | None:
     return None
 
 
-# The integration -> release branch pair whose PR aggregates already-merged
-# feature PRs. Such a release PR carries no single requirement/traceability of
-# its own, so the per-PR body contract does not apply to it.
+# Automation PRs that carry no single requirement/traceability of their own, so the
+# per-PR body contract does not apply to them (GC-P027): the dev -> main promotion
+# (aggregate of already-merged feature PRs), the Release Please release PR (head
+# release-please--* targeting main), and the main -> dev back-merge (head
+# sync/main-to-dev targeting dev).
 RELEASE_PR_BASE = "main"
 RELEASE_PR_HEAD = "dev"
+# Release Please opens its release PR from a branch prefixed release-please--.
+RELEASE_PLEASE_PR_HEAD_PREFIX = "release-please--"
+# sync-main-to-dev.yml opens the back-merge PR from this dedicated automation branch.
+SYNC_PR_BASE = "dev"
+SYNC_PR_HEAD = "sync/main-to-dev"
 
 
 def _resolve_pr_refs(args: argparse.Namespace) -> tuple[str | None, str | None]:
@@ -4638,8 +4635,20 @@ def _resolve_pr_refs(args: argparse.Namespace) -> tuple[str | None, str | None]:
 
 
 def _is_release_pr(base_ref: str | None, head_ref: str | None) -> bool:
-    """True for the ``dev`` -> ``main`` release PR (aggregate of merged feature PRs)."""
-    return base_ref == RELEASE_PR_BASE and head_ref == RELEASE_PR_HEAD
+    """True for automation PRs exempt from the per-PR body contract (GC-P027).
+
+    Covers the ``dev`` -> ``main`` promotion, the Release Please release PR, and the
+    ``main`` -> ``dev`` back-merge PR.
+    """
+    if base_ref == RELEASE_PR_BASE and head_ref == RELEASE_PR_HEAD:
+        return True
+    if (
+        base_ref == RELEASE_PR_BASE
+        and head_ref is not None
+        and head_ref.startswith(RELEASE_PLEASE_PR_HEAD_PREFIX)
+    ):
+        return True
+    return base_ref == SYNC_PR_BASE and head_ref == SYNC_PR_HEAD
 
 
 if __name__ == "__main__":

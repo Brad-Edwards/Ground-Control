@@ -184,6 +184,13 @@ Changes to any doc-coverage gate surface - `mcp/ground-control/index.js`,
 `.vale.ini`, or this file - trigger the `doc-coverage-gate-sync` rule per
 ADR-054, which requires this file and ADR-054 to stay current with the gate
 surface they describe.
+
+As of #1399 (GC-P027) Release Please owns `CHANGELOG.md`: contributors do not
+hand-edit it or file `changelog.d/` fragments (that Towncrier convention was
+retired). Changelog entries are generated from Conventional Commit PR titles,
+enforced by `.github/workflows/pr-title.yml`; product-version literals are
+mechanically updated by the release PR and their consistency is enforced by
+`run_version_mirror_consistency_check`.
 Adding a new MCP tool or `gc_admin` action - or changing an existing
 endpoint's request/response shape - does not require new style rules here
 unless it introduces a new doc-shape (a new or changed request/response

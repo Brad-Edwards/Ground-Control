@@ -1,1 +1,0 @@
-Repoint SonarCloud analysis to the `brad-edwards` org / `Brad-Edwards_Ground-Control` project so PR decoration (check run + summary comment) returns after the repo moved off the `KeplerOps` GitHub org (#1079).
