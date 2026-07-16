@@ -70,6 +70,21 @@ Every ambiguity — malformed hook input, unparseable command, detached HEAD,
 unreadable worktree, unresolvable source, configured branch mergeOptions —
 fails closed (deny).
 
+Known residual (issue #1397): the repository-state probes below run the
+PATH-resolved `git` (`subprocess.run(["git", ...])`), while an authorized
+unqualified `git merge origin/dev` is resolved by Bash through shell functions
+and aliases first. A `git` function, alias, or PATH shim can therefore answer
+the probes with one implementation and run the merge with another (a
+probe/execution TOCTOU) — e.g. report a feature branch to the probe, then
+`checkout main` and merge on the real invocation. This gap is accepted, not
+closed: an agent able to install such a shim already bypasses any lexical hook,
+and the authorized merge only ever targets the agent's own feature branch. This
+hook is a pre-execution lexical policy control, NOT an OS sandbox; the required
+control layer for this residual is host filesystem permissions and process
+isolation, which prevent installing the shim in the first place. See
+architecture/notes/merge-guard-base-to-feature-preflight.md
+§ "Trusted Git Execution Disposition (issue #1397)".
+
 Parsing notes:
 
   - The raw command string is normalized so shell control operators (`;`,
