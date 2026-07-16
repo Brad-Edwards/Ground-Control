@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 Canonical, agent-neutral implementation of the Ground Control `/quickfix` workflow. A purpose-built fast lane for **straightforward, lower-risk fixes** that don't warrant the full `/implement` ceremony (preflight, plan post, AI-assisted reviews, final-report tool, requirement transitions). Drops the ceremony designed for requirement-driven multi-clause work; keeps every mechanical guardrail the repo enforces. Runnable from Claude Code, Codex, or Cursor CLI. On Cursor, run `bin/install-skills.sh` once on the host (hard-copy into `~/.cursor/skills/quickfix/`; symlinks fail discovery). See `docs/DEVELOPMENT_WORKFLOW.md § Cursor CLI`.
 
-**Sibling to `skills/implement/SKILL.md`.** This skill cross-references the canonical full workflow at every step rather than duplicating prose - the contract surfaces (branch shape, in-progress signal, changelog fragment, PR-title rules, `gc_render_pr_body`, CI/SonarCloud, no-deferral, user-owns-merge) are identical. The only differences are the dropped ceremony.
+**Sibling to `skills/implement/SKILL.md`.** This skill cross-references the canonical full workflow at every step rather than duplicating prose - the contract surfaces (branch shape, in-progress signal, PR-title rules, `gc_render_pr_body`, CI/SonarCloud, no-deferral, user-owns-merge) are identical. The only differences are the dropped ceremony.
 
 ## When to pick `/quickfix` vs `/implement`
 
@@ -85,14 +85,13 @@ The full TDD discipline from `skills/implement/SKILL.md` Step 4.4 (write failing
 
 ### Step Q6: Completion Gate
 
-**Identical to `skills/implement/SKILL.md` Step 6.** All four checks apply, non-negotiable:
+**Identical to `skills/implement/SKILL.md` Step 6.** All three checks apply, non-negotiable:
 
 1. Completion gate command exits successfully (`cfg.workflow.completion_command` or `cfg.workflow.test_command` fallback).
-2. Changelog fragment present for source-changing diffs (`changelog.d/<issue>.<type>.md`).
-3. Clause/criterion mapping done. For `/quickfix` runs the issue title + body + any user comments are the acceptance contract (`/quickfix` runs are requirement-free by definition - if the issue has a `## Requirements` section, the user should be using `/implement` instead).
-4. Documentation-only carve-out re-validation (path check + content check). Same rules as `/implement`.
+2. Clause/criterion mapping done. For `/quickfix` runs the issue title + body + any user comments are the acceptance contract (`/quickfix` runs are requirement-free by definition - if the issue has a `## Requirements` section, the user should be using `/implement` instead).
+3. Documentation-only carve-out re-validation (path check + content check). Same rules as `/implement`.
 
-Do NOT move to Phase C until all four pass.
+Do NOT move to Phase C until all three pass.
 
 ### Step Q6.5 + Step Q6.6: AI-Assisted Reviews (OFF by default; `--review` to enable)
 
@@ -177,8 +176,7 @@ Every mechanical guardrail the repo enforces. Adding to this list is a `bin/poli
 - **Branch-name shape** (issue #864 amendment to ADR-021): `<issue>-<slug>`, ≤ 50 chars, ASCII-only, `[a-z0-9-]`. Post-check enforced.
 - **In-progress label + pickup comment** (issue #842).
 - **No-defer language** in commit messages, PR body, issue comments (issue #830 PreToolUse hook + `bin/policy`).
-- **Changelog fragment** for source-changing diffs (issue #848). Path-based, no "pure refactor" carve-out.
-- **PR-title rules** (issue #901). Single conventional-commit type + lowercase subject; per-repo override via `workflow.pr_title`.
+- **PR-title rules** (issue #901). Single conventional-commit type + lowercase subject; per-repo override via `workflow.pr_title`. Load-bearing under Release Please (GC-P027, issue #1399): CI (`.github/workflows/pr-title.yml`) enforces the same contract, since Release Please derives `CHANGELOG.md` and the version bump from Conventional Commit history rather than a per-PR fragment.
 - **`gc_render_pr_body`** for the PR body (ADR-036) so `tools/policy/checks.py::check_pr_body` accepts it.
 - **CI + SonarCloud green** before merge handoff.
 - **`make check` + `make policy` clean** before commit (Step Q6 / pre-commit).

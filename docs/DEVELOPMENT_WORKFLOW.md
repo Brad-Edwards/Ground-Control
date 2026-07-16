@@ -145,7 +145,7 @@ flowchart TB
   S5[5 · Post plan as issue comment]
   S6[6 · TDD implementation]
   S7[7 · pre-commit run]
-  S8[8 · Completion gate · make policy + make check + changelog fragment + gc_assert_quality_gates]
+  S8[8 · Completion gate · make policy + make check + gc_assert_quality_gates]
   S8b[8.5 · Pre-push gc_codex_review · core + security · default cap 1 · posts findings record to issue thread]
   S8c[8.6 · Pre-push gc_test_quality_review · default cap 1 · posts findings record to issue thread]
   S9[9 · Stage + commit + push]
@@ -233,7 +233,7 @@ with the prompt on stdin and `ANTHROPIC_API_KEY` **stripped from the subprocess 
 
 The legacy `Skill("review-tests")` path was removed in #884 v2. Existing host installs at `~/.claude/skills/review-tests/` and `~/.codex/prompts/review-tests.md` are orphaned and can be deleted manually; `bin/install-skills.sh` no longer installs them.
 - **Step 15 transitions each in-scope requirement to `ACTIVE`.** This MUST happen BEFORE Step 16's traceability reconciliation: the Ground Control API enforces `IMPLEMENTS-only-on-ACTIVE`, so reconciling first against a still-DRAFT requirement silently fails. Forward-looking requirements (the diff documents/references but does not deliver) stay DRAFT and use `DOCUMENTS` links instead in Step 16.
-- **Step 16 is traceability reconciliation, not link creation.** It walks every added/modified/renamed/deleted file in the diff, finds existing IMPLEMENTS/TESTS links pointing at each, and updates/deletes/creates links so the Ground Control graph matches reality after the change. Runs with zero in-scope requirements still reconcile, because a bug fix may have touched files linked to other requirements whose links are now stale. Deleting the sole implementation of a requirement is escalated to the user rather than silently removing the link. When the diff *finalizes* a requirement (for example, an ADR clarification or changelog fragment that ships the requirement) but the structural implementation lives in pre-existing files shipped under a sibling requirement, Step 16 backfills IMPLEMENTS links onto those pre-existing artifacts of record. The backfill is bounded by the requirement's concrete subject matter - not a whole-repo scan.
+- **Step 16 is traceability reconciliation, not link creation.** It walks every added/modified/renamed/deleted file in the diff, finds existing IMPLEMENTS/TESTS links pointing at each, and updates/deletes/creates links so the Ground Control graph matches reality after the change. Runs with zero in-scope requirements still reconcile, because a bug fix may have touched files linked to other requirements whose links are now stale. Deleting the sole implementation of a requirement is escalated to the user rather than silently removing the link. When the diff *finalizes* a requirement (for example, an ADR clarification or workflow-doc update that ships the requirement) but the structural implementation lives in pre-existing files shipped under a sibling requirement, Step 16 backfills IMPLEMENTS links onto those pre-existing artifacts of record. The backfill is bounded by the requirement's concrete subject matter - not a whole-repo scan.
 - **Step 17** runs the consolidated Phase D completion via `gc_assert_completion`, which sequences the traceability reconciliation assertion and final report post in one deterministic call. These steps run LAST, after every reviewer has signed off, so Ground Control never runs ahead of code that hasn't passed review. Zero in-scope requirements → Step 15 is a no-op; Step 16 still reconciles; Step 17 still asserts and posts the final report.
 - **Every downstream failure loops back to step 9** (stage + commit + push), which is the single re-entry point for fix commits. The completion gate (step 8), the pre-push codex review (step 8.5), and the GC verify (step 17) are the loops that target earlier steps, because they correspond to local-only / pre-PR / GC-only state respectively.
 
@@ -273,10 +273,15 @@ All preflight/review stages operate under the same rule: **fix everything, defer
 
 ## Guardrails
 
-### Deny Rules (`~/.claude/settings.json`)
-- `Bash(gh pr merge*)` - Claude cannot merge PRs
-- `Bash(gh api */merge*)` - Claude cannot merge via API
-- `Bash(git merge *)` - Claude cannot merge branches
+### Merge guardrails (`git-merge-guard.py` PreToolUse hook)
+
+Agent merges are gated by the `.claude/hooks/git-merge-guard.py` PreToolUse hook (see **Git Merge Guard** below), registered on the `Bash` matcher in both `.claude/settings.json` (this repo) and `~/.claude/settings.json` (host). There is **no** `Bash(git merge *)` / `Bash(gh pr merge*)` permission deny in `~/.claude/settings.json`; the hook is the sole decision point, so there is no settings-permission migration to perform.
+
+- `gh pr merge` - blocked; the user (or the `gc_integration_manager` MCP carve-out) owns all pull-request merges
+- `git merge` - conditionally gated: the base-to-feature maintenance merge (`origin/dev` into a non-protected feature branch) is allowed; protected-branch destinations and all other sources/shapes are blocked
+- `git reset --hard` and plain `git push --force` / `-f` - blocked
+
+**Activation.** A change to the hook takes effect in this repo's sessions immediately (the project registration points at `.claude/hooks/`), but is not active for other repos/sessions on the host until `scripts/bootstrap-claude-workflow.sh` re-copies it to `~/.claude/hooks/` (see **Workflow Hooks** below). Run that resync after merging a hook change.
 
 ### Attribution (`~/.claude/settings.json`)
 ```json
@@ -298,18 +303,20 @@ One user-level hook is deliberately NOT in the repo: `~/.claude/hooks/block-brea
 Blocks Claude from completing, but **only when `/implement` was invoked in the current session**. Scoped by process ID (`$PPID`) so concurrent Claude windows on the same branch don't interfere.
 
 Universal checks (all repos):
-- Changelog fragment missing (when source files changed) - the hook requires a valid fragment under `changelog.d/<issue>.<type>.md` (or `+<slug>.<type>.md`), type ∈ `security`/`added`/`changed`/`deprecated`/`removed`/`fixed`. CI-only diffs (only `.github/workflows/`) and docs-only diffs (only docs/architecture/skills/metadata) are skipped. Refactors under application source still file a fragment (no "pure refactor" carve-out - enforcement is path-based). Direct `CHANGELOG.md` edits do NOT satisfy a source-changing diff. The source-path predicate and fragment vocabulary mirror `tools/policy/checks.py` - the `hook-matches-policy-vocabulary` and `hook-gates-on-application-source-predicate` policy tests keep them in sync.
+- The former changelog-fragment check was retired by issue #1399 (GC-P027): Release Please now owns `CHANGELOG.md`, generating it from Conventional Commit history on `main`, so there is no per-PR `changelog.d/` fragment left to enforce. What replaced it runs in CI, not this host-local hook: product-version-mirror consistency (`tools/policy/checks.py::run_version_mirror_consistency_check`, code `version-mirror-drift`) and the Conventional Commit PR-title gate (`.github/workflows/pr-title.yml`). See § Release model below.
 
 Project-specific checks (`.claude/hooks/verify-extra.sh`, sourced if present):
 - shared repo-native policy script (`bin/policy`) over the changed-file set
 
-The hook no longer enforces `/review` and `/security-review` - those were removed from the `/implement` skill in favor of `gc_codex_review` + `gc_test_quality_review`. The `/implement` skill itself is the enforcement point for review coverage; the hook only guards the changelog signal + repo policy.
+The hook no longer enforces `/review` and `/security-review` - those were removed from the `/implement` skill in favor of `gc_codex_review` + `gc_test_quality_review`. The `/implement` skill itself is the enforcement point for review coverage; the hook only guards repo policy (`bin/policy`) now that the changelog signal has moved to CI.
 
 #### Skill Call Logging - `log-skill-call.sh`
 PostToolUse hook on `Skill` - writes JSONL to `/tmp/claude-skill-log/<PID>.jsonl` (per-session, not per-branch). The Stop hook previously read this log to verify `/review` and `/security-review` were actually invoked; it's still wired up for forward compat in case we reintroduce skill-based checks. Stale logs (>24 h) are auto-pruned.
 
 #### Git Merge Guard - `git-merge-guard.py`
-PreToolUse hook on `Bash`. The user owns every actual merge. Blocked unconditionally: `git merge`, `gh pr merge`, `git reset --hard`, and a plain `git push --force` / `git push -f`. A `git push --force-with-lease` to a *feature* branch is allowed (that's the rebase-feature-branch-onto-base-then-update-the-PR flow), but a force-push of any kind to a ref named `main` or `dev` is blocked.
+PreToolUse hook on `Bash`. The user owns every protected-branch merge and every pull-request merge. Blocked unconditionally: `gh pr merge`, `git reset --hard`, and a plain `git push --force` / `git push -f`. A `git push --force-with-lease` to a *feature* branch is allowed (that's the rebase-feature-branch-onto-base-then-update-the-PR flow), but a force-push of any kind to a ref named `main` or `dev` is blocked.
+
+`git merge` is conditionally allowed (issue #1382): one narrow base-to-feature maintenance merge - incorporating the integration branch (`origin/dev`) into the current non-protected feature branch so an open PR stays current, then completed with real conflict resolution plus an ordinary `git commit` - is permitted. It is allowed only as a single, directly inspectable `git merge` (no shell operators; no shell expansion or substitution - `$`, backtick, `<`, `>`, which stay active even inside a double-quoted `-m` value and would otherwise run arbitrary shell after the hook returns; no `env`/`sudo`/`VAR=` wrapper; no git global options), carrying only the closed base-update option set (`--no-edit`, `--no-ff`, `--ff`, `--ff-only`, `-m`/`--message`), with no `branch.<dest>.mergeOptions` configured, naming exactly one source that resolves to the `refs/remotes/origin/dev` ref, while checked out on a branch that is NOT in the hardcoded protected set (`main`, `dev`). The current branch is read from the full symbolic ref so a colliding tag can't disguise a protected destination, and the protected set is a hardcoded constant rather than an agent-writable ref or working-tree file (both `refs/remotes/origin/*` and the working tree are writable with a single command). Everything else fails closed: protected-branch destinations; non-`origin/dev` sources (local `dev`, tags, SHAs, same-OID aliases, names merely containing `dev`); unsupported merge modes (`--squash`, `-s`/`-X`, `--allow-unrelated-histories`, `--no-verify`, `--continue`/`--abort`/`--quit`); a configured `branch.<dest>.mergeOptions`; chained / wrapped / global-option / expansion shapes; and detached HEAD.
 
 ### Repo-Native Policy Layer
 
@@ -405,6 +412,50 @@ Initial coverage is the domain write tools (`gc_risk_governance`, `gc_threat_mod
 next write tool is one inventory row** in `openapi-contract.test.js` (plus an
 exported field array if the adapter lacks one), never a new checker. Anchored by
 requirement GC-O013.
+
+## Release model (GC-P027, issue #1399)
+
+Release Please owns product versioning and `CHANGELOG.md`. The Towncrier
+`changelog.d/` per-PR fragment convention is retired - feature PRs neither edit
+`CHANGELOG.md` nor file a fragment. This replaces the entire "changelog
+fragment" step in the completion gate, the Stop hook, and the PR template with
+the mechanics below.
+
+- **Conventional Commit PR titles are the input.** `.github/workflows/pr-title.yml`
+  (`amannn/action-semantic-pull-request`) enforces a single conventional-commit
+  type with optional scope and a lowercase-leading subject on every PR against
+  `main` or `dev` - the same vocabulary and pattern the `/implement` skill
+  validates locally at Step 9 before `gh pr create` (`skills/implement/steps/step-09-pr-body.md`).
+  A green title check alone only proves the title parses; the signal also has
+  to survive the merge.
+- **Merge topology preserves the signal.** Feature PRs squash-merge into `dev`
+  using the validated PR title as the resulting commit subject. The `dev` to
+  `main` promotion merges with a real merge commit (not squash, not rebase) so
+  the individual Conventional Commit subjects from `dev` remain discoverable
+  on `main`, where Release Please parses history. A promotion that squashed or
+  rewrote those subjects would give Release Please nothing to classify.
+- **The release PR does the mechanical work.** On every push to `main`,
+  `.github/workflows/release-please.yml` (googleapis/release-please-action)
+  maintains a `chore(main): release X.Y.Z` PR that regenerates `CHANGELOG.md`
+  from the Conventional Commit history and bumps the product-version mirrors
+  declared in `release-please-config.json`'s `extra-files` (`backend/build.gradle.kts`,
+  `frontend/package.json`, `frontend/package-lock.json`) to match
+  `.release-please-manifest.json`. A human merges that PR the same way any
+  other PR is merged - releases are cut by merging it, never by hand-tagging
+  or hand-editing `CHANGELOG.md`.
+- **Version-mirror drift is enforced in CI, not locally.** `tools/policy/checks.py::run_version_mirror_consistency_check`
+  (code `version-mirror-drift`) fails `make policy` if a product-version mirror
+  disagrees with `.release-please-manifest.json`. Mirrors are only ever
+  supposed to move via the release PR; a hand-edited mirror trips this check.
+- **`main` to `dev` stays in sync.** `.github/workflows/sync-main-to-dev.yml`
+  opens a back-merge PR after the release PR merges (main is ahead of dev by
+  exactly the release commit); a human merges that too.
+- **Merging the release PR is not a deploy.** Production stays operator-driven
+  through `make deploy` (ADR-030 / ADR-063) - see `docs/deployment/DEPLOYMENT.md`
+  for the deploy-by-digest path, which is unchanged by this section.
+
+See ADR-063 ("2026-07-15 Amendment: Release Please Ownership") for the full
+decision record.
 
 ## /integrate: Approved PR Integration Manager
 

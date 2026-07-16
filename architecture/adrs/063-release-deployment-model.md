@@ -46,7 +46,63 @@ decision record. The architecture preflight for this work is captured in
 [`architecture/notes/release-deployment-model-preflight.md`](../notes/release-deployment-model-preflight.md)
 and its guardrails are binding on the companion mechanism work.
 
-## Decision
+## 2026-07-15 Amendment: Release Please Ownership (issue #1399)
+
+Issue #1399 replaces the operator-assembled release procedure below with a
+Release Please manifest workflow. This amendment is the current contract where
+it conflicts with the original decision; the original text remains as the
+historical rationale for artifact identity, promotion, and rollback.
+
+- Release Please owns the product SemVer, `CHANGELOG.md`, release PR, immutable
+  `vX.Y.Z` tag, and GitHub Release. A release PR is the only normal writer of
+  product-version mirrors and `CHANGELOG.md`; feature and promotion PRs do not
+  edit either surface.
+- There is one root Ground Control component. The manifest records its current
+  released version, while `backend/build.gradle.kts`, `frontend/package.json`,
+  and `frontend/package-lock.json` are mechanically updated mirrors. Spring
+  Boot build info and `/actuator/info` remain the supported runtime lookup; no
+  release API, database entity, or second version registry is introduced.
+- The one-time manifest baseline is `1.0.1`. This is a deliberate continuity
+  decision, not an inference from the disagreeing literals: ADR-063 selected
+  the git-tag lineage and abandoned the `0.116.3` changelog and `0.20.1` backend
+  lineages. The `v1.0.0` and `v1.0.1` tags predate the current Java/React
+  application and describe the repository's former Python/Jira application;
+  preserving that lineage avoids reusing published SemVer coordinates. The
+  bootstrap/dry-run record must make this history visible before the first
+  maintained release is merged.
+- Conventional Commit signals determine the next bump and generated changelog.
+  The PR-title gate and the repository's actual merge topology must preserve
+  those signals across feature PRs into `dev` and the `dev` to `main`
+  promotion. A title-only check that produces unparseable commits is not a
+  release contract.
+- Towncrier fragments cease to be a second changelog authority. The fragment
+  requirement, fragment infrastructure, renderer fields, hooks, templates,
+  policy checks, and workflow prose must be retired together, coordinated with
+  issue #1336. A partially retained hybrid requires a separate explicit
+  decision and a mechanical ownership rule.
+- Publication stays in the Release Please run (or an explicitly invoked
+  reusable workflow) and is gated by `release_created == 'true'`. A tag or
+  release created with `GITHUB_TOKEN` must not be expected to trigger a second
+  workflow. Release publication preserves the existing build, test,
+  integration, contract, Sonar, Docker, and smoke gates and records the exact
+  image digest and source commit in the GitHub Release.
+- The immutable binding remains unchanged:
+  `vX.Y.Z` maps to image tag `X.Y.Z`, one manifest digest, and one source
+  commit. Reruns may fill in missing artifact metadata but must refuse to move
+  an existing SemVer tag or image coordinate to different content.
+- A push to `main` also runs a content-aware `main` to `dev` sync. It exits
+  cleanly when the trees already match; otherwise it updates one dedicated
+  automation branch and one human-merged PR targeting `dev`. Force updates are
+  confined to that branch and never rewrite `main` or `dev`.
+- Release creation still does not deploy production. Promotion and rollback
+  remain operator-driven through `make deploy` and the ADR-030 validated,
+  health-gated, auto-rollback path. `:main`, `:latest`, and build-coordinate
+  tags remain non-release coordinates and never become the production pin.
+
+The repo-wide guardrails and concept boundaries for this amendment are in
+[`architecture/notes/release-please-preflight.md`](../notes/release-please-preflight.md).
+
+## Original Decision (superseded where the amendment conflicts)
 
 Release and deployment are **separate lifecycle events**. Deployment is the
 ADR-030 mechanism (push an image to the host and bring it up). A release is a

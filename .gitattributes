@@ -1,11 +1,5 @@
-# Per ADR-021 Phase B (amended by issue #848): release-time `towncrier build`
-# collates `changelog.d/*.md` fragments into `CHANGELOG.md`. Day-to-day PRs
-# don't edit `CHANGELOG.md` directly, so conflicts there are already rare —
-# this rule covers two remaining failure modes:
-#   1. The release-collation commit on `main` and a still-open feature branch
-#      that landed a fragment can rebase cleanly without a manual merge.
-#   2. A straggler hand-edit (e.g., a one-off correction) that races a
-#      collation commit resolves to the union of both edits.
-# This is a belt-and-suspenders rule, not the primary fix.
-CHANGELOG.md merge=union
+# CHANGELOG.md is owned by Release Please (GC-P027, ADR-063 2026-07-15 amendment).
+# Only the release PR edits it, so there is no cross-PR line-range contention to
+# mitigate; the former `merge=union` rule was removed because a union merge would
+# duplicate release sections on the main -> dev back-merge.
 docs/reference/fair/*.pdf filter=lfs diff=lfs merge=lfs -text

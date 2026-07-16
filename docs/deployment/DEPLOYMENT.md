@@ -582,19 +582,21 @@ Builds the Docker image, starts a fresh PostgreSQL 16 container, runs the app ag
 
 #### CI/CD
 
-The `ci.yml` GitHub Actions workflow automatically builds and pushes the image to GHCR on:
-- Push to `main` or `dev`
-- Semver tags (`v*`)
+The `ci.yml` GitHub Actions workflow automatically builds and pushes branch-coordinate
+images (`:main`, `:dev`, `:sha-<commit>`, and `:latest` on the default branch) to GHCR
+on push to `main` or `dev`. CI (build, test, integration, verify) must pass before the
+image is built. `ci.yml` no longer triggers on tag pushes.
 
-CI (build, test, integration, verify) must pass before the image is built.
-
-On a `vX.Y.Z` tag push, after the image is built the `release` job publishes a
-**GitHub Release** for that tag (ADR-063 §4 step 7): the notes are the collated
-`CHANGELOG.md` section for `X.Y.Z`, extracted by
-`tools/release/extract_changelog_section.py` (no hand-copying), and the release
-names the exact artifact built for that version
-(`ghcr.io/autarchy-ai/ground-control:X.Y.Z` plus the resolved `@sha256:` digest
-and source commit). The operator no longer hand-creates the release.
+**Releases are cut by merging the Release Please PR, not by hand-tagging** (GC-P027,
+issue #1399). `.github/workflows/release-please.yml` maintains a `chore(main): release
+X.Y.Z` PR on every push to `main`, regenerating `CHANGELOG.md` and the product-version
+mirrors from Conventional Commit history. Merging that PR tags `vX.Y.Z` and cuts the
+GitHub Release; the same workflow run's `publish` job (gated on `release_created`)
+builds and pushes the versioned image (`ghcr.io/autarchy-ai/ground-control:X.Y.Z` and
+`:X.Y`), smoke-tests the exact published digest, and records that digest plus the source
+commit in the GitHub Release body. The operator never hand-creates the release, the tag,
+or the release notes. See `docs/DEVELOPMENT_WORKFLOW.md § Release model` and ADR-063
+("2026-07-15 Amendment") for the full mechanics.
 
 ### Resetting
 
