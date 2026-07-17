@@ -8,11 +8,23 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
+import org.hibernate.envers.NotAudited;
 
+/**
+ * {@code @Audited} per ADR-084 §5 (issue #1309): {@code Document} is a mutable, project-scoped
+ * aggregate that feeds the AGE graph projection ({@code DocumentGraphProjectionContributor}).
+ * Recording a graph snapshot's {@code source_revision} while this entity stayed unaudited would
+ * make the snapshot's revision claim false for documents — an edit could change graph contents
+ * without advancing any revision. {@code Project} is {@code @NotAudited} (it is itself unaudited)
+ * per the same convention used across every other audited aggregate's owning-project reference.
+ */
 @Entity
+@Audited
 @Table(name = "document")
 public class Document extends BaseEntity {
 
+    @NotAudited
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "project_id", nullable = false)
     private Project project;

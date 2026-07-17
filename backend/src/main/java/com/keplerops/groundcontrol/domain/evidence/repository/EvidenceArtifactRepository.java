@@ -20,16 +20,6 @@ public interface EvidenceArtifactRepository extends JpaRepository<EvidenceArtifa
     @Query("SELECT e FROM EvidenceArtifact e WHERE e.project.id = :projectId ORDER BY e.derivedAt DESC, e.uid ASC")
     List<EvidenceArtifact> findByProjectIdOrderByDerivedAtDesc(@Param("projectId") UUID projectId);
 
-    /**
-     * Project-scoped artifacts whose {@code derivedAt <= :asOf}. Used by
-     * historical-as-of analyses so future artifacts do not leak into the
-     * result (GC-L007 finding #2).
-     */
-    @Query("SELECT e FROM EvidenceArtifact e WHERE e.project.id = :projectId AND e.derivedAt <= :asOf "
-            + "ORDER BY e.derivedAt DESC, e.uid ASC")
-    List<EvidenceArtifact> findByProjectIdAndDerivedAtLessThanEqualOrderByDerivedAtDesc(
-            @Param("projectId") UUID projectId, @Param("asOf") java.time.Instant asOf);
-
     @Query("SELECT e FROM EvidenceArtifact e WHERE e.project.id = :projectId AND e.evidenceType = :evidenceType"
             + " ORDER BY e.derivedAt DESC, e.uid ASC")
     List<EvidenceArtifact> findByProjectIdAndEvidenceTypeOrderByDerivedAtDesc(

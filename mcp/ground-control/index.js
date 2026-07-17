@@ -130,7 +130,7 @@ import {
   updateRiskControlMapping, deleteRiskControlMapping,
   attachMappingObservation, detachMappingObservation, addMappingEvidenceRef,
   getUnmappedScenarios, getUnmappedRecords, getUnmappedControls, getAssessmentFeed,
-  getUnmappedThreats, getThreatUnmappedControls, getThreatsInsufficientEffectiveness,
+  getUnmappedThreats, getThreatUnmappedControls,
   MAPPING_CONTROL_ROLES,
   createVerificationResult, listVerificationResults, getVerificationResult,
   updateVerificationResult, deleteVerificationResult,
@@ -3311,7 +3311,7 @@ const RISK_CONTROL_MAPPING_ACTIONS = [
   // Coverage queries (risk-side)
   "unmapped-scenarios", "unmapped-records", "unmapped-controls", "assessment-feed",
   // Coverage queries (threat-side, GC-H006)
-  "unmapped-threats", "threat-unmapped-controls", "threats-insufficient-effectiveness",
+  "unmapped-threats", "threat-unmapped-controls",
 ];
 server.tool(
   "gc_risk_control_mapping",
@@ -3348,10 +3348,6 @@ server.tool(
     // Coverage query options
     transitive: z.boolean().optional(),
     assessment_result_id: z.string().uuid().optional(),
-    // Threat-coverage query options (GC-H006)
-    min_effectiveness: z.string().optional(),
-    as_of: z.string().optional(),
-    freshness_window_days: z.number().int().positive().optional(),
   },
   async (args) => {
     try {
@@ -3431,13 +3427,6 @@ server.tool(
           break;
         case "threat-unmapped-controls":
           result = await getThreatUnmappedControls(p);
-          break;
-        case "threats-insufficient-effectiveness":
-          result = await getThreatsInsufficientEffectiveness(p, {
-            minEffectiveness: args.min_effectiveness,
-            asOf: args.as_of,
-            freshnessWindowDays: args.freshness_window_days,
-          });
           break;
         default:
           throw new Error(`Unknown action: ${args.action}`);
