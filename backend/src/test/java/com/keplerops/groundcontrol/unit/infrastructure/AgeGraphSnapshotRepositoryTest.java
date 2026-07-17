@@ -63,20 +63,44 @@ class AgeGraphSnapshotRepositoryTest {
     }
 
     @Test
-    void insertSnapshot_bindsAllColumns() {
-        repository.insertSnapshot(3L, "requirements_v3", "GLOBAL", 12, 5, "alice");
+    void insertSnapshot_bindsAllColumnsIncludingSourceRevision() {
+        repository.insertSnapshot(3L, "requirements_v3", "GLOBAL", 12, 5, 77, "alice");
 
+        // clock_timestamp() (not now(), which is transaction-start time) so published_at
+        // reflects the actual publication instant even for a long-running materialization —
+        // AgeSnapshotCleaner's retirement grace window is measured from this column.
         verify(jdbcTemplate)
                 .update(
                         "INSERT INTO age_graph_snapshot "
-                                + "(version, graph_name, scope, node_count, edge_count, published_at, published_by) "
-                                + "VALUES (?, ?, ?, ?, ?, now(), ?)",
+                                + "(version, graph_name, scope, node_count, edge_count, source_revision, published_at, published_by) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, clock_timestamp(), ?)",
                         3L,
                         "requirements_v3",
                         "GLOBAL",
                         12,
                         5,
+                        77,
                         "alice");
+    }
+
+    @Test
+    void insertSnapshot_bindsNullSourceRevisionWhenNoRevisionResolved() {
+        // No Envers revision has ever been created yet (fresh database) — source_revision must
+        // be recorded as NULL, not a fabricated 0 or -1 coordinate.
+        repository.insertSnapshot(1L, "requirements_v1", "GLOBAL", 0, 0, null, "bootstrap");
+
+        verify(jdbcTemplate)
+                .update(
+                        "INSERT INTO age_graph_snapshot "
+                                + "(version, graph_name, scope, node_count, edge_count, source_revision, published_at, published_by) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, clock_timestamp(), ?)",
+                        1L,
+                        "requirements_v1",
+                        "GLOBAL",
+                        0,
+                        0,
+                        null,
+                        "bootstrap");
     }
 
     @Test

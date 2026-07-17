@@ -22,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.transaction.annotation.Transactional;
 
 @Transactional
@@ -304,5 +305,56 @@ class AgeGraphServiceIntegrationTest extends BaseAgeIntegrationTest {
         // Sanity: the JPA row also has the original title (no DB-side corruption).
         var reloaded = requirementRepository.findById(req.getId()).orElseThrow();
         assertThat(reloaded.getTitle()).isEqualTo(trickyTitle);
+    }
+
+    @Test
+    void materializeGraph_recordsExactlyTheRevisionVisibleToItsProjection() {
+        // ADR-084 §5: the published snapshot's source_revision must be the revision that was
+        // actually current when the projection was built — a real, committed Envers revision (not
+        // a mock), and a fixed point-in-time capture rather than something re-derived later.
+        // TestTransaction commits are required between steps: Envers only assigns a revision at
+        // commit, and everything inside one uncommitted transaction shares a single revision.
+        //
+        // Uses the shared `testProject` ("ground-control"), not a new one: `ProjectService
+        // .resolveProject` treats "exactly one project exists" as the implicit default and throws
+        // a 422 the moment a second project exists, so creating even an isolated project here
+        // breaks every other test in the suite that omits an explicit `project` query parameter.
+        // The two requirements this test permanently commits are deleted again in the `finally`
+        // block by their unique UIDs, so "ground-control"'s requirement count is unchanged for
+        // every other test.
+        try {
+            requirementRepository.save(new Requirement(testProject, "AGE-REV-1", "Rev1", "stmt"));
+            TestTransaction.flagForCommit();
+            TestTransaction.end();
+
+            TestTransaction.start();
+            Integer expectedRevision = jdbcTemplate.queryForObject("SELECT MAX(rev) FROM revinfo", Integer.class);
+            graphClient.materializeGraph();
+            TestTransaction.flagForCommit();
+            TestTransaction.end();
+
+            TestTransaction.start();
+            Integer recorded = jdbcTemplate.queryForObject(
+                    "SELECT source_revision FROM age_graph_snapshot ORDER BY version DESC LIMIT 1", Integer.class);
+            assertThat(recorded).isEqualTo(expectedRevision);
+
+            // A revision created strictly AFTER this materialization must not retroactively change
+            // the already-published snapshot row's recorded coordinate.
+            requirementRepository.save(new Requirement(testProject, "AGE-REV-2", "Rev2", "stmt"));
+            TestTransaction.flagForCommit();
+            TestTransaction.end();
+
+            TestTransaction.start();
+            Integer latestRevisionNow = jdbcTemplate.queryForObject("SELECT MAX(rev) FROM revinfo", Integer.class);
+            Integer stillRecorded = jdbcTemplate.queryForObject(
+                    "SELECT source_revision FROM age_graph_snapshot ORDER BY version DESC LIMIT 1", Integer.class);
+            assertThat(latestRevisionNow).isGreaterThan(expectedRevision);
+            assertThat(stillRecorded).isEqualTo(expectedRevision).isNotEqualTo(latestRevisionNow);
+        } finally {
+            jdbcTemplate.update("DELETE FROM requirement WHERE uid IN ('AGE-REV-1', 'AGE-REV-2')");
+            TestTransaction.flagForCommit();
+            TestTransaction.end();
+            TestTransaction.start();
+        }
     }
 }

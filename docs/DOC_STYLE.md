@@ -428,3 +428,16 @@ changes are recorded in an amendment to ADR-054 and the changelog fragment, not
 a documentation edit; the documentation-coverage classifier, Vale rule set,
 `tools/install-vale.sh`, and `.vale.ini` are unchanged and no new DOC_STYLE.md
 style rule is established.
+
+The `threats-insufficient-effectiveness` action on the `gc_risk_control_mapping`
+tool, and its `as_of` / `min_effectiveness` / `freshness_window_days` parameters,
+were removed from `mcp/ground-control/index.js` and the backing
+`getThreatsInsufficientEffectiveness` helper was removed from
+`mcp/ground-control/lib.js` (issue #1309, ADR-084 §5): the action called a REST
+route that `RiskControlAnalysisController` never exposed (ADR-089/V199 retired
+the composed GRC surface without ever wiring this one), and its `as_of`
+parameter was the last surviving divergent as-of surface in the repo. Per the
+convention above, retiring a dead tool-input surface is recorded in an
+amendment to ADR-054, not a documentation edit; the documentation-coverage
+classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
+unchanged and no new DOC_STYLE.md style rule is established.
