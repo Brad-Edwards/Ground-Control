@@ -165,10 +165,7 @@ validated against the controlled vocabulary.
   evidence versus derived measures, and time - is extracted into a
   companion specification both products consume as domain packs. Because
   both sides use the same artifact shape from the start, extraction is a
-  merge of catalogs, not a rewrite. Ground Control's reconciliation
-  vocabulary (GC-GRC-009 impact/gap/stale, drift machinery) shall be
-  expressible in those delta terms so the convergence claim stays
-  checkable.
+  merge of catalogs, not a rewrite.
 - **Full adoption of ACES SDL as Ground Control's ontology substrate is
   rejected for now** (assessment §3, option B): the semantic core is
   DRAFT, the needed domain families do not exist there, and coupling a
