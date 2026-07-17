@@ -132,7 +132,8 @@ class BaselineServiceTest {
             var command = new CreateBaselineCommand(PROJECT_ID, "v1.0", "First release");
             var result = service.create(command);
 
-            assertThat(result.getRevisionNumber()).isEqualTo(0);
+            // 0 is the Baseline aggregate's origin sentinel, mapped here from Optional.empty().
+            assertThat(result.getRevisionNumber()).isZero();
         }
 
         @Test

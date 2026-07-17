@@ -116,6 +116,9 @@ public class AuditRetentionJob {
      * {@code table} always comes from {@link #discoverAuditTables()} (identifier-validated) or
      * the {@code "revinfo"} literal, never caller/user input.
      */
+    @SuppressWarnings("java:S2077") // A table name cannot be a bind parameter; every interpolated
+    // name comes from pg_catalog and passes validateAuditTableName's strict identifier allowlist.
+    // The cutoff — the only caller-supplied value — is bound, not formatted.
     private int deleteBatched(String table, String whereClause, long cutoffMs) {
         String sql = "DELETE FROM " + table + " WHERE ctid IN (SELECT ctid FROM " + table + " WHERE " + whereClause
                 + " LIMIT " + BATCH_SIZE + ")";

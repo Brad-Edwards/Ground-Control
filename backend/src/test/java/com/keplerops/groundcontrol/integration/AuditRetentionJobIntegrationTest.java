@@ -53,11 +53,12 @@ class AuditRetentionJobIntegrationTest extends BaseIntegrationTest {
 
         Set<String> discovered = new HashSet<>(job.discoverAuditTables());
 
-        assertThat(discovered).containsExactlyInAnyOrderElementsOf(likeNamedTables);
         // document_audit is the newest audit table (#1309, Document joining the spine) — pin it
         // explicitly so a regression that only broke the newest table doesn't slip past the
-        // set-equality check above for the wrong reason.
-        assertThat(discovered).contains("document_audit");
+        // set-equality check for the wrong reason.
+        assertThat(discovered)
+                .containsExactlyInAnyOrderElementsOf(likeNamedTables)
+                .contains("document_audit");
     }
 
     @Test
@@ -67,7 +68,10 @@ class AuditRetentionJobIntegrationTest extends BaseIntegrationTest {
         // error on the first one. The catalog-derived set can never contain a dropped table.
         Set<String> discovered = new HashSet<>(job.discoverAuditTables());
 
+        // isNotEmpty() first: doesNotContain passes vacuously on an empty set, so without it a
+        // discovery query that silently returned nothing would satisfy this test.
         assertThat(discovered)
+                .isNotEmpty()
                 .doesNotContain(
                         "control_effectiveness_assessment_audit",
                         "methodology_profile_audit",

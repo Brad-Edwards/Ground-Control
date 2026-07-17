@@ -100,8 +100,7 @@ class AsOfRevisionResolverConformanceTest extends BaseIntegrationTest
      */
     private int commitRevision(String uid) {
         requirementRepository.save(new Requirement(testProject, uid, "Title " + uid, "Statement " + uid));
-        Integer rev = jdbcTemplate.queryForObject("SELECT MAX(rev) FROM revinfo", Integer.class);
-        return rev;
+        return jdbcTemplate.queryForObject("SELECT MAX(rev) FROM revinfo", Integer.class);
     }
 
     private void pinRevisionTimestamp(int rev, long epochMillis) {
