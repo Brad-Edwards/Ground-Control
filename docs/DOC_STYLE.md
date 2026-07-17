@@ -183,7 +183,10 @@ Changes to any doc-coverage gate surface - `mcp/ground-control/index.js`,
 `mcp/ground-control/lib.js`, `tools/policy/checks.py`, `tools/install-vale.sh`,
 `.vale.ini`, or this file - trigger the `doc-coverage-gate-sync` rule per
 ADR-054, which requires this file and ADR-054 to stay current with the gate
-surface they describe.
+surface they describe. A new policy check in `tools/policy/checks.py` records
+its contract in the ADR that owns the surface it guards (for example, the ACES
+concept-family crosswalk check under ADR-084 §4); this file carries the
+gate-surface trigger inventory above, not per-check contracts.
 
 As of #1399 (GC-P027) Release Please owns `CHANGELOG.md`: contributors do not
 hand-edit it or file `changelog.d/` fragments (that Towncrier convention was
