@@ -8,6 +8,21 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #1309 (2026-07-17, ADR-084 §5 Envers as-of spine):**
+> Removed the dead `threats-insufficient-effectiveness` action (and its
+> `as_of` / `min_effectiveness` / `freshness_window_days` parameters) from the
+> `gc_risk_control_mapping` tool in `mcp/ground-control/index.js`, and the
+> backing `getThreatsInsufficientEffectiveness` helper from
+> `mcp/ground-control/lib.js`. The action called a REST route that
+> `RiskControlAnalysisController` never exposed; it was the last surviving
+> divergent as-of surface (ADR-084 §5: the canonical as-of coordinate is the
+> Envers revision, resolved by the new `AsOfRevisionResolver`—see
+> `docs/architecture/ARCHITECTURE.md` § As-Of Time Semantics). This is a
+> policy-surface removal, not an extension: the documentation-coverage
+> classifier, `outcome_required` mapping, Vale rule set,
+> `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new
+> `docs/DOC_STYLE.md` style rule is established.
+
 > **Sync note for issue #1308 (2026-07-15, graph enum contract):** Added
 > `GraphEntityType` to the existing ADR-034 `ENUM_CONTRACT_INVENTORY`, so
 > `make policy` checks the backend enum against the generated TypeScript union

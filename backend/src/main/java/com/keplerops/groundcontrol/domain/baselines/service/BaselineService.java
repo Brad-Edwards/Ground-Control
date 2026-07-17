@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.domain.baselines.service;
 
 import com.keplerops.groundcontrol.domain.audit.ActorHolder;
+import com.keplerops.groundcontrol.domain.audit.service.AsOfRevisionResolver;
 import com.keplerops.groundcontrol.domain.baselines.model.Baseline;
 import com.keplerops.groundcontrol.domain.baselines.repository.BaselineRepository;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
@@ -31,12 +32,17 @@ public class BaselineService {
     private final BaselineRepository baselineRepository;
     private final ProjectRepository projectRepository;
     private final EntityManager entityManager;
+    private final AsOfRevisionResolver asOfRevisionResolver;
 
     public BaselineService(
-            BaselineRepository baselineRepository, ProjectRepository projectRepository, EntityManager entityManager) {
+            BaselineRepository baselineRepository,
+            ProjectRepository projectRepository,
+            EntityManager entityManager,
+            AsOfRevisionResolver asOfRevisionResolver) {
         this.baselineRepository = baselineRepository;
         this.projectRepository = projectRepository;
         this.entityManager = entityManager;
+        this.asOfRevisionResolver = asOfRevisionResolver;
     }
 
     public Baseline create(CreateBaselineCommand command) {
@@ -49,9 +55,13 @@ public class BaselineService {
                     "Baseline with name '" + command.name() + "' already exists in project " + project.getIdentifier());
         }
 
-        int maxRevision = getMaxRevision();
+        // Optional.empty() means "no revision has ever been created" (a fresh database with
+        // nothing audited yet). Baseline.revisionNumber is a persisted int and
+        // getRequirementsAtRevision(0) is defined to return List.of() — this is the one place
+        // that origin sentinel is minted; the resolver itself never invents a 0 revision.
+        int revisionNumber = asOfRevisionResolver.currentRevision().orElse(0);
 
-        var baseline = new Baseline(project, command.name(), command.description(), maxRevision, ActorHolder.get());
+        var baseline = new Baseline(project, command.name(), command.description(), revisionNumber, ActorHolder.get());
         var saved = baselineRepository.save(baseline);
         log.info(
                 "baseline_created: project={} name={} revision={} id={}",
@@ -135,13 +145,6 @@ public class BaselineService {
                 baselineRepository.findById(id).orElseThrow(() -> new NotFoundException("Baseline not found: " + id));
         baselineRepository.delete(baseline);
         log.info("baseline_deleted: name={} id={}", baseline.getName(), baseline.getId());
-    }
-
-    private int getMaxRevision() {
-        var result = entityManager
-                .createNativeQuery("SELECT COALESCE(MAX(rev), 0) FROM revinfo")
-                .getSingleResult();
-        return ((Number) result).intValue();
     }
 
     @SuppressWarnings("unchecked")
