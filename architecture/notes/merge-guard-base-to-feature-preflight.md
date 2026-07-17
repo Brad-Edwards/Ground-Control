@@ -204,3 +204,62 @@ the shipped hook reflects the corrections:
   protected destination; and deny when `branch.<destination>.mergeOptions` is
   configured, since Git applies it even when the prohibited mode never appears on
   the inspected command line.
+
+## Trusted Git Execution Disposition (issue #1397)
+
+Issue #1397 tracks the probe/execution identity gap the #1382 codex security
+review surfaced and deliberately scoped out. `git-merge-guard.py` probes
+repository state with the PATH-resolved `git` (`subprocess.run(["git", ...])`),
+while the authorized command is the unqualified `git merge origin/dev`. Bash can
+resolve that unqualified `git` to a shell function, alias, or PATH shim that
+differs from the binary the hook probed, so the implementation that answers the
+authorization probes is not guaranteed to be the implementation Bash then runs
+(a probe/execution TOCTOU). A crafted `git` could answer the probes benignly
+(feature branch, no `mergeOptions`, `refs/remotes/origin/dev`) and then, on the
+real invocation, `checkout main` and merge, turning an allowed feature-branch
+merge into a protected-branch merge.
+
+**Selected disposition: option 3, accept the limitation as inherent to a lexical
+hook and document the OS-sandbox boundary as the required control layer. No hook
+behavior, test, bootstrap, or settings change ships for #1397.** This is a
+deliberate, user-authorized decision that supersedes the architecture preflight's
+initial selection of the canonical-trusted-path design (option 1); the reasoning
+below is the durable record.
+
+Why accept rather than harden:
+
+- **It is not an escalation over the existing hook.** An agent able to install a
+  `git` shell function, alias, or PATH shim already bypasses any lexical
+  PreToolUse hook by other means (a differently named wrapper, an edited shell
+  profile, `command git ...`). The authorized merge, moreover, only ever targets
+  the agent's own non-protected *feature* branch, and writing that branch is not
+  an escalation beyond an ordinary commit. The marginal risk this specific TOCTOU
+  adds over the pre-existing "adversarial agent controls its own shell" capability
+  is effectively zero.
+- **A lexical PreToolUse hook cannot close it.** The hook sees only
+  `tool_input.command`; it cannot observe the shell functions and aliases Bash
+  will consult, and it cannot rewrite the command Bash executes. Binding
+  probe == execution is therefore outside what a pre-execution lexical control can
+  achieve, regardless of implementation effort.
+- **Option 1 (canonical absolute trusted-git path) was rejected.** It would deny
+  the ergonomic `git merge origin/dev`, the daily base-to-feature maintenance form
+  #1382 exists to allow, for a near-zero security gain, and it remains partial: it
+  only helps because the trusted path must originate from a non-agent-writable
+  control plane, and even then it defends only the one probe-bearing gate while
+  imposing a host-specific installation parameter on every clone.
+- **Option 2 (privileged MCP merge boundary) was rejected.** Routing a local
+  feature-worktree maintenance merge through a `gc_integration_manager`-style tool
+  is disproportionate infrastructure and conflates two lifecycles: PR integration
+  (owned by the ADR-029 carve-out) versus local branch maintenance that may
+  intentionally stop in a conflict for ordinary resolution.
+
+The required control layer for this residual is therefore the **OS sandbox**:
+host filesystem permissions and process isolation that prevent an untrusted
+agent from installing a `git` shim/function, replacing the real binary, editing
+the shell profile, tampering with the hook registration, or racing the worktree.
+`git-merge-guard.py` is a pre-execution *lexical policy* control that constrains a
+rule-following agent and catches lexical mistakes; it is not, and does not claim
+to be, an OS sandbox. Any newly discovered *direct-command* bypass (an unwrapped,
+non-shim `git`/`gh` invocation shape the parser mishandles) still belongs in the
+same parser and test matrix; accepting the shim TOCTOU does not relax the
+direct-command coverage #1382 already tests.
