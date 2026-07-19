@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.keplerops.groundcontrol.domain.graph.model.GraphEdge;
 import com.keplerops.groundcontrol.domain.graph.model.GraphEntityType;
 import com.keplerops.groundcontrol.domain.graph.model.GraphIds;
 import com.keplerops.groundcontrol.domain.graph.service.WorkflowGraphProjectionContributor;
@@ -105,11 +106,11 @@ class WorkflowGraphProjectionContributorTest {
         assertThat(edges)
                 .allMatch(edge -> edge.sourceId().equals(GraphIds.nodeId(GraphEntityType.WORKFLOW_RUN, run.getId())))
                 .allMatch(edge -> edge.targetId().equals(targetId))
-                .extracting(edge -> edge.edgeType())
+                .extracting(GraphEdge::edgeType)
                 .containsExactlyInAnyOrder("RUN_FOR_WORK_ITEM", "WORKFLOW_PHASE_EVENT", "WORKFLOW_PHASE_EVENT");
         assertThat(edges)
                 .filteredOn(edge -> edge.edgeType().equals("WORKFLOW_PHASE_EVENT"))
-                .extracting(edge -> edge.id())
+                .extracting(GraphEdge::id)
                 .containsExactlyInAnyOrder(
                         first.getId().toString(), second.getId().toString());
         var firstEdge = edges.stream()

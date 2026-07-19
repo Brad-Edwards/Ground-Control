@@ -1101,7 +1101,7 @@ class AgeGraphServiceTest {
                     "durationMs"
                 })
         void workflowProjectionKeyIsApproved(String key) {
-            assertThat(AgeGraphService.APPROVED_PROPERTY_KEYS).contains(key);
+            assertThat(key).isIn(AgeGraphService.APPROVED_PROPERTY_KEYS);
         }
     }
 }

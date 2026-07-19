@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
+import com.keplerops.groundcontrol.domain.graph.model.GraphEdge;
 import com.keplerops.groundcontrol.domain.graph.model.GraphEntityType;
 import com.keplerops.groundcontrol.domain.graph.model.GraphIds;
 import com.keplerops.groundcontrol.domain.graph.service.MixedGraphClient;
@@ -265,7 +266,7 @@ class AgeGraphServiceIntegrationTest extends BaseAgeIntegrationTest {
         assertThat(projection.edges())
                 .filteredOn(edge ->
                         edge.sourceId().equals(runNodeId) && edge.targetId().equals(workItemNodeId))
-                .extracting(edge -> edge.edgeType())
+                .extracting(GraphEdge::edgeType)
                 .containsExactlyInAnyOrder("RUN_FOR_WORK_ITEM", "WORKFLOW_PHASE_EVENT", "WORKFLOW_PHASE_EVENT");
     }
 
