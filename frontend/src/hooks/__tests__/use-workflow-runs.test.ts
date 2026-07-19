@@ -35,6 +35,7 @@ function createWrapper() {
 
 const mockRun: WorkflowRunResponse = {
   id: "run-1",
+  graphNodeId: "WORKFLOW_RUN:run-1",
   project: "ground-control",
   repo: "autarchy-ai/Ground-Control",
   issueNumber: 859,
