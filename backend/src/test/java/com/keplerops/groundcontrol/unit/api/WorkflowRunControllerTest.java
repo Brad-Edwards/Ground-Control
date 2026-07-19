@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.unit.api;
 
+import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
@@ -48,6 +49,7 @@ class WorkflowRunControllerTest {
 
     private static final Instant FROM = Instant.parse("2026-06-01T00:00:00Z");
     private static final Instant TO = Instant.parse("2026-06-02T00:00:00Z");
+    private static final UUID RUN_ID = UUID.fromString("10000000-0000-0000-0000-000000000859");
 
     // ---- POST /api/v1/workflow-runs ------------------------------------------------------------
 
@@ -72,7 +74,8 @@ class WorkflowRunControllerTest {
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.project", is("ground-control")))
-                .andExpect(jsonPath("$.workflowType", is("implement")));
+                .andExpect(jsonPath("$.workflowType", is("implement")))
+                .andExpect(jsonPath("$.graphNodeId", is("WORKFLOW_RUN:" + RUN_ID)));
 
         verify(telemetryService).recordRun(any());
     }
@@ -248,6 +251,7 @@ class WorkflowRunControllerTest {
 
     private static WorkflowRun sampleRun() {
         var run = new WorkflowRun("ground-control", "implement", TelemetryProvenance.ISSUE_THREAD);
+        setField(run, "id", RUN_ID);
         run.setIssueNumber(859);
         run.setBranch("859-feature");
         run.setFinalState(WorkflowRunState.READY_FOR_REVIEW);

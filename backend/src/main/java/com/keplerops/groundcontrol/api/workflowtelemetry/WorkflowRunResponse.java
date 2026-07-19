@@ -1,5 +1,7 @@
 package com.keplerops.groundcontrol.api.workflowtelemetry;
 
+import com.keplerops.groundcontrol.domain.graph.model.GraphEntityType;
+import com.keplerops.groundcontrol.domain.graph.model.GraphIds;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.TelemetryProvenance;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRun;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRunOutcome;
@@ -12,6 +14,7 @@ import java.util.UUID;
 /** Read projection of a {@link WorkflowRun} — the closed, redacted run shape exposed over REST. */
 public record WorkflowRunResponse(
         UUID id,
+        String graphNodeId,
         String project,
         String repo,
         Integer issueNumber,
@@ -38,6 +41,7 @@ public record WorkflowRunResponse(
     public static WorkflowRunResponse from(WorkflowRun run) {
         return new WorkflowRunResponse(
                 run.getId(),
+                GraphIds.nodeId(GraphEntityType.WORKFLOW_RUN, run.getId()),
                 run.getProject(),
                 run.getRepo(),
                 run.getIssueNumber(),

@@ -30,6 +30,12 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRun, UUID> 
     /** Recent runs for one project, newest first; for the active-status table and run list. */
     List<WorkflowRun> findByProjectOrderByCreatedAtDesc(String project, Pageable pageable);
 
+    /** Project-scoped read for the mixed graph, resolving its UUID to the immutable identifier. */
+    @Query("SELECT r FROM WorkflowRun r "
+            + "WHERE r.project = (SELECT p.identifier FROM Project p WHERE p.id = :projectId) "
+            + "ORDER BY r.createdAt DESC, r.id")
+    List<WorkflowRun> findForGraphProjection(@Param("projectId") UUID projectId);
+
     /**
      * Project-scoped run lookup for the run-id write/readback paths (phase events, cost import).
      * A run that exists in a different project resolves to empty, so a foreign caller is treated as

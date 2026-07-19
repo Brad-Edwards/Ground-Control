@@ -261,7 +261,22 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
             "attemptNo",
             "contentHash",
             "kind",
-            "externalIdentifier");
+            "externalIdentifier",
+            // Workflow reporting graph projection (ADR-061 amendment, #1311). Only the bounded
+            // correlation, lifecycle, and phase-event fields needed for traversal are admitted.
+            "repo",
+            "issueNumber",
+            "workflowType",
+            "runtimeDriver",
+            "finalState",
+            "outcome",
+            "provenance",
+            "endedAt",
+            "phase",
+            "eventType",
+            "cycleIndex",
+            "occurredAt",
+            "durationMs");
     // AGE's ag_catalog.cypher() function takes cstring/cstring/agtype. Its first two arguments
     // are parsed at SQL parse time by AGE's parser hook, so they cannot be JDBC bind parameters
     // — they must be SQL literals. The third argument (params agtype) is the user-data carrier

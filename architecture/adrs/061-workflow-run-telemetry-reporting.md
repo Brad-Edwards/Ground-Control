@@ -144,6 +144,43 @@ shape - are unaffected and continue exactly as decided. `TEMPORAL_VISIBILITY`
 remains a defined `provenance` value for historical data recorded before this
 amendment; no active ingestion path writes it going forward.
 
+## Amendment (issue #1311, 2026-07-19): audited context-graph projection
+
+ADR-084 subsequently made Envers revisions the context graph's canonical time
+spine. Its snapshot metadata is only honest when every entity read by a graph
+contributor participates in Envers. Decision 3's original no-audit choice is
+therefore superseded for `WorkflowRun` and `WorkflowPhaseEvent`: both entities
+are audited, and V203 adds their forward-only audit shadows. The unprojected
+`workflow_run_requirement_uid` collection remains `@NotAudited`.
+
+The reporting model joins the registered `workflow-and-process` ontology family
+through a read-only contributor:
+
+- `WORKFLOW_RUN` represents the persisted reporting run and exposes its stable
+  `graphNodeId` on the existing REST response.
+- `WORK_ITEM_REFERENCE` identifies a GitHub issue from the exact persisted
+  `(project, repo, issueNumber)` tuple. Its graph id is a bounded,
+  length-framed digest that includes the project UUID. It is not a new JPA
+  aggregate and does not reuse the requirements-specific `ARTIFACT_REFERENCE`.
+- `RUN_FOR_WORK_ITEM` records the stable association. Each persisted
+  `WorkflowPhaseEvent` becomes a separately identified
+  `WORKFLOW_PHASE_EVENT` edge from the run to the work-item reference, preserving
+  repeated events between the same endpoints.
+- A run with incomplete repository/issue identity remains an isolated run node;
+  the contributor never fabricates a work item or self-loop.
+
+Only the closed correlation, lifecycle, provenance, and phase-event scalars
+needed for traversal are projected. Branches, provider/model economics, local
+JSONL telemetry, prompts, issue bodies, reviewer payloads, and credentials stay
+out of the graph. Project UUIDs resolve to immutable project identifiers inside
+project-scoped repository queries; graph materialization never loads all runs
+and filters them in memory.
+
+This amendment does not revive the Temporal execution model removed by issue
+#1359 or the derivation, boundary, and architecture-model aggregates retired by
+ADR-089/V199. A first-class work-item aggregate, retention policy, or
+revision-stable projection-scope policy requires a separate decision.
+
 ## Relationship to other ADRs
 
 - **ADR-028** (Temporal boundary, superseded #1359): originally specified
@@ -162,3 +199,6 @@ amendment; no active ingestion path writes it going forward.
   cross-project rollup is additionally `ROLE_ADMIN` in `ApiPathMatrix`.
 - **ADR-035** (MCP tool catalog): the two project-scoped read paths join the
   `gc_query` allowlist + README/ADR drift surfaces.
+- **ADR-084** (context-graph authority and time): requires the ontology bindings,
+  audited projection sources, and Envers revision semantics adopted by the
+  issue #1311 amendment.

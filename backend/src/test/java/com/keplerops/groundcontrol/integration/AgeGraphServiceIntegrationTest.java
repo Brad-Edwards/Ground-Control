@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
+import com.keplerops.groundcontrol.domain.graph.model.GraphEdge;
+import com.keplerops.groundcontrol.domain.graph.model.GraphEntityType;
+import com.keplerops.groundcontrol.domain.graph.model.GraphIds;
 import com.keplerops.groundcontrol.domain.graph.service.MixedGraphClient;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
@@ -18,6 +21,15 @@ import com.keplerops.groundcontrol.domain.requirements.state.ArtifactType;
 import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
 import com.keplerops.groundcontrol.domain.requirements.state.RelationType;
 import com.keplerops.groundcontrol.domain.requirements.state.Status;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventType;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.TelemetryProvenance;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowPhaseEvent;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRun;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowPhaseEventRepository;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowRunRepository;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +54,12 @@ class AgeGraphServiceIntegrationTest extends BaseAgeIntegrationTest {
 
     @Autowired
     private TraceabilityLinkRepository traceabilityLinkRepository;
+
+    @Autowired
+    private WorkflowRunRepository workflowRunRepository;
+
+    @Autowired
+    private WorkflowPhaseEventRepository workflowPhaseEventRepository;
 
     @Autowired
     private ProjectRepository projectRepository;
@@ -199,6 +217,57 @@ class AgeGraphServiceIntegrationTest extends BaseAgeIntegrationTest {
                     assertThat(edge.sourceId()).isEqualTo(requirementNode.id());
                     assertThat(edge.targetId()).isEqualTo(artifactNode.id());
                 });
+    }
+
+    @Test
+    void materializeGraphProjectsWorkflowRunAndRepeatedPhaseEvents() {
+        String repo = "autarchy-ai/age-workflow-" + UUID.randomUUID();
+        var run = new WorkflowRun("ground-control", "IMPLEMENT", TelemetryProvenance.ISSUE_THREAD);
+        run.setRepo(repo);
+        run.setIssueNumber(1311);
+        run = workflowRunRepository.saveAndFlush(run);
+
+        var started = new WorkflowPhaseEvent(
+                run.getId(),
+                "ground-control",
+                "ci",
+                PhaseEventType.STARTED,
+                Instant.parse("2026-07-19T12:00:00Z"),
+                null,
+                TelemetryProvenance.ISSUE_THREAD);
+        started.setCycleIndex(1);
+        var completed = new WorkflowPhaseEvent(
+                run.getId(),
+                "ground-control",
+                "ci",
+                PhaseEventType.COMPLETED,
+                Instant.parse("2026-07-19T12:05:00Z"),
+                300_000L,
+                TelemetryProvenance.ISSUE_THREAD);
+        workflowPhaseEventRepository.saveAllAndFlush(List.of(started, completed));
+
+        graphClient.materializeGraph();
+
+        var projection = mixedGraphClient.getVisualization(testProject.getId(), java.util.Set.of());
+        String runNodeId = GraphIds.nodeId(GraphEntityType.WORKFLOW_RUN, run.getId());
+        String workItemNodeId = GraphIds.workflowWorkItemReferenceNodeId(testProject.getId(), repo, 1311);
+        assertThat(projection.nodes())
+                .filteredOn(node -> node.id().equals(runNodeId))
+                .singleElement()
+                .satisfies(node -> assertThat(node.properties())
+                        .containsEntry("workflowType", "IMPLEMENT")
+                        .doesNotContainKeys("branch", "provider", "model"));
+        assertThat(projection.nodes())
+                .filteredOn(node -> node.id().equals(workItemNodeId))
+                .singleElement()
+                .satisfies(node -> assertThat(node.properties())
+                        .containsEntry("repo", repo)
+                        .containsEntry("issueNumber", 1311));
+        assertThat(projection.edges())
+                .filteredOn(edge ->
+                        edge.sourceId().equals(runNodeId) && edge.targetId().equals(workItemNodeId))
+                .extracting(GraphEdge::edgeType)
+                .containsExactlyInAnyOrder("RUN_FOR_WORK_ITEM", "WORKFLOW_PHASE_EVENT", "WORKFLOW_PHASE_EVENT");
     }
 
     @Test

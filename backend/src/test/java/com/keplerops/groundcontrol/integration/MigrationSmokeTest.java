@@ -274,7 +274,10 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         // snapshot to the Envers revision visible to its publishing transaction.
                         "201",
                         // V202 (#1309, ADR-084 §5): document_audit — Document joins the audited spine.
-                        "202");
+                        "202",
+                        // V203 (#1311, ADR-061 amendment): workflow reporting entities join the
+                        // audited graph time spine.
+                        "203");
     }
 
     @Test
@@ -1190,6 +1193,8 @@ class MigrationSmokeTest extends BaseIntegrationTest {
         assertProtocolPlanColumns();
         // V202 (#1309, ADR-084 §5): document_audit — Document joins the audited spine.
         assertDocumentAuditColumns();
+        // V203 (#1311, ADR-061 amendment): workflow reporting joins the audited graph spine.
+        assertWorkflowTelemetryAuditColumns();
     }
 
     /**
@@ -1399,11 +1404,27 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .doesNotThrowAnyException();
     }
 
+    private void assertWorkflowTelemetryAuditColumns() {
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT project, repo, issue_number, pr_number, branch, workflow_type,"
+                                + " runtime_driver, started_at, ended_at, final_state, outcome, provenance, provider,"
+                                + " model, model_invocation_count, wall_clock_minutes, cost_proxy, cost_currency,"
+                                + " token_usage, created_at, updated_at FROM workflow_run_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
+                        .createNativeQuery("SELECT run_id, project, phase, event_type, cycle_index, occurred_at,"
+                                + " duration_ms, outcome, provenance, created_at"
+                                + " FROM workflow_phase_event_audit LIMIT 1")
+                        .getResultList())
+                .doesNotThrowAnyException();
+    }
+
     /**
-     * V142: workflow-run telemetry reporting tables (#859 / ADR-061). Append-only/operational
-     * reporting read-model; no _audit shadow (cf. mcp_tool_event). ddl-auto:validate does not inspect
-     * index predicates or CHECK constraints, so probe them explicitly here. Kept as its own test so
-     * neither this nor auditTablesExist crosses the per-method assertion budget.
+     * V142: workflow-run telemetry reporting tables (#859 / ADR-061). ddl-auto:validate does not
+     * inspect index predicates or CHECK constraints, so probe them explicitly here. Kept as its own
+     * test so neither this nor auditTablesExist crosses the per-method assertion budget. V203 adds
+     * the audit shadows required by the graph projection.
      */
     @Test
     @Transactional

@@ -75,6 +75,14 @@ describe("ENTITY_TYPE_COLORS", () => {
     expect(ENTITY_TYPE_COLORS[entityType]).toBeDefined();
     expect(typeof ENTITY_TYPE_COLORS[entityType]).toBe("string");
   });
+
+  it("gives workflow reporting nodes distinct registered colors", () => {
+    expect(ENTITY_TYPE_COLORS.WORKFLOW_RUN).toBeDefined();
+    expect(ENTITY_TYPE_COLORS.WORK_ITEM_REFERENCE).toBeDefined();
+    expect(ENTITY_TYPE_COLORS.WORKFLOW_RUN).not.toBe(
+      ENTITY_TYPE_COLORS.WORK_ITEM_REFERENCE,
+    );
+  });
 });
 
 describe("getColorMap", () => {

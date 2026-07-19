@@ -72,11 +72,13 @@
       "extension_scope": "Workflow participants, lifecycle records, and process relations not owned by a narrower domain family.",
       "relation_rules": [
         "Process concepts may organize domain artifacts without redefining the artifacts' native meaning.",
-        "Lifecycle relations preserve the declared before, after, and dependency roles."
+        "Lifecycle relations preserve the declared before, after, and dependency roles.",
+        "Workflow reporting runs and phase-event relations remain read models and never become execution authority."
       ],
       "non_ambiguity_constraints": [
         "Workflow state is not evidence, requirement status, or research provenance.",
-        "Process association does not imply implementation, verification, or control effectiveness."
+        "Process association does not imply implementation, verification, or control effectiveness.",
+        "A workflow work-item reference identifies an external issue tuple and is not a first-class work-item aggregate."
       ]
     },
     "contracts-and-invariants": {

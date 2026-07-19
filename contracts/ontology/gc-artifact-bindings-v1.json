@@ -23,6 +23,8 @@
         {"local_value": "RESEARCH_RUN", "term": "node.research-run"},
         {"local_value": "RESEARCH_ARTIFACT", "term": "node.research-artifact"},
         {"local_value": "RESEARCH_PROVENANCE_NODE", "term": "node.research-provenance"},
+        {"local_value": "WORKFLOW_RUN", "term": "node.workflow-run"},
+        {"local_value": "WORK_ITEM_REFERENCE", "term": "node.work-item-reference"},
         {"local_value": "ARTIFACT_REFERENCE", "term": "node.artifact-reference"}
       ]
     },
@@ -259,6 +261,15 @@
         {"local_value": "HAS_OBSERVATION", "term": "edge.has-observation"},
         {"local_value": "SCOPED_IMPL_OF", "term": "edge.scoped-implementation-of"},
         {"local_value": "SCOPED_TO_ASSET", "term": "edge.scoped-to-asset"}
+      ]
+    },
+    {
+      "id": "com.keplerops.groundcontrol.domain.graph.service.WorkflowGraphProjectionContributor",
+      "kind": "graph-contributor",
+      "path": "backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/WorkflowGraphProjectionContributor.java",
+      "bindings": [
+        {"local_value": "RUN_FOR_WORK_ITEM", "term": "edge.workflow-run-for-work-item"},
+        {"local_value": "WORKFLOW_PHASE_EVENT", "term": "edge.workflow-phase-event"}
       ]
     },
     {

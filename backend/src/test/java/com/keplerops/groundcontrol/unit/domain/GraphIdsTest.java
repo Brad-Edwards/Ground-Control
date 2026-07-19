@@ -29,4 +29,24 @@ class GraphIdsTest {
         assertThat(GraphIds.artifactReferenceNodeId(UUID.randomUUID(), ArtifactType.CODE_FILE, longIdentifier))
                 .isNotEqualTo(first);
     }
+
+    @Test
+    void workflowWorkItemReferenceIdentityFramesTheExactProjectRepositoryAndIssueTuple() {
+        UUID projectId = UUID.randomUUID();
+        String repository = "x".repeat(500);
+
+        String first = GraphIds.workflowWorkItemReferenceNodeId(projectId, repository, 1311);
+        String again = GraphIds.workflowWorkItemReferenceNodeId(projectId, repository, 1311);
+
+        assertThat(first)
+                .isEqualTo(again)
+                .startsWith("WORK_ITEM_REFERENCE:")
+                .hasSizeLessThanOrEqualTo(GraphTraversalLimits.MAX_NODE_IDENTIFIER_LENGTH);
+        assertThat(GraphIds.workflowWorkItemReferenceNodeId(projectId, repository + " ", 1311))
+                .isNotEqualTo(first);
+        assertThat(GraphIds.workflowWorkItemReferenceNodeId(projectId, repository, 1312))
+                .isNotEqualTo(first);
+        assertThat(GraphIds.workflowWorkItemReferenceNodeId(UUID.randomUUID(), repository, 1311))
+                .isNotEqualTo(first);
+    }
 }
