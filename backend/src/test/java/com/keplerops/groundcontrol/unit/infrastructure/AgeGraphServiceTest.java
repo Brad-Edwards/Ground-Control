@@ -1078,4 +1078,30 @@ class AgeGraphServiceTest {
             assertThat(approvedKeys).contains(key);
         }
     }
+
+    @Nested
+    class WorkflowContributorPropertyKeyRegression {
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.ValueSource(
+                strings = {
+                    "repo",
+                    "issueNumber",
+                    "workflowType",
+                    "runtimeDriver",
+                    "finalState",
+                    "outcome",
+                    "provenance",
+                    "startedAt",
+                    "endedAt",
+                    "phase",
+                    "eventType",
+                    "cycleIndex",
+                    "occurredAt",
+                    "durationMs"
+                })
+        void workflowProjectionKeyIsApproved(String key) {
+            assertThat(AgeGraphService.APPROVED_PROPERTY_KEYS).contains(key);
+        }
+    }
 }

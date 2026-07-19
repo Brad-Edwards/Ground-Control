@@ -124,7 +124,6 @@ describe("getTooltipTags — RISK_SCENARIO node", () => {
   });
 });
 
-
 describe("getTooltipTags — FINDING node with representative properties", () => {
   it("returns severity, findingType, and status tags", () => {
     expectTagsIncluding(
@@ -317,6 +316,31 @@ describe("getTooltipTags — research projection nodes (ADR-070)", () => {
         externalIdentifier: "doi:10.1/x",
       },
       ["CANDIDATE_SOURCE", STATUS_ACTIVE, "doi:10.1/x"],
+    );
+  });
+});
+
+describe("getTooltipTags — workflow reporting projection nodes", () => {
+  it("returns workflow type, state, and outcome for a WORKFLOW_RUN node", () => {
+    expectExactTags(
+      {
+        entityType: "WORKFLOW_RUN",
+        workflowType: "IMPLEMENT",
+        finalState: "READY_FOR_REVIEW",
+        outcome: "NONE",
+      },
+      ["Workflow: IMPLEMENT", "State: READY_FOR_REVIEW", "Outcome: NONE"],
+    );
+  });
+
+  it("returns repository and issue number for a WORK_ITEM_REFERENCE node", () => {
+    expectExactTags(
+      {
+        entityType: "WORK_ITEM_REFERENCE",
+        repo: "autarchy-ai/Ground-Control",
+        issueNumber: 1311,
+      },
+      ["Repository: autarchy-ai/Ground-Control", "Issue: 1311"],
     );
   });
 });

@@ -128,7 +128,9 @@ function getNodeDescription(node: GraphNodeData): string {
 
 function getTooltipValue(data: Record<string, unknown>, key: string): string {
   const value = data[key];
-  return typeof value === "string" ? value : "";
+  return typeof value === "string" || typeof value === "number"
+    ? String(value)
+    : "";
 }
 
 function firstTooltipString(
@@ -227,6 +229,15 @@ const TOOLTIP_FIELDS_BY_ENTITY_TYPE: Record<
     { label: "Kind", key: "kind" },
     { label: "Status", key: "status" },
     { label: "External ID", key: "externalIdentifier" },
+  ],
+  WORKFLOW_RUN: [
+    { label: "Workflow", key: "workflowType" },
+    { label: "State", key: "finalState" },
+    { label: "Outcome", key: "outcome" },
+  ],
+  WORK_ITEM_REFERENCE: [
+    { label: "Repository", key: "repo" },
+    { label: "Issue", key: "issueNumber" },
   ],
   ARTIFACT_REFERENCE: [
     { label: "Type", key: "artifactType" },

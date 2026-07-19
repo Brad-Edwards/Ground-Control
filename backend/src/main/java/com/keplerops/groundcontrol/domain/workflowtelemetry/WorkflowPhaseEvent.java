@@ -11,17 +11,20 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.envers.Audited;
 
 /**
  * One phase/gate event for a workflow run (issue #859): preflight, plan, completion gate, a Codex
  * review cycle, CI, SonarCloud, a status transition, an escalation, etc.
  *
- * <p>Append-only operational telemetry — rows are never mutated after insert, so (like
- * {@code McpToolEvent} under ADR-059) there is no Envers audit. {@code project} is denormalized from
- * the parent run so phase aggregates scope and index without a join. {@code phase} is a stable
- * machine identifier (never user-visible prose) so reporting keys stay stable across UI wording.
+ * <p>Append-only operational telemetry — rows are never mutated after insert. It participates in
+ * Envers because the workflow graph projection records the revision visible to each materialized
+ * snapshot (ADR-061 amendment for issue #1311). {@code project} is denormalized from the parent run
+ * so phase aggregates scope and index without a join. {@code phase} is a stable machine identifier
+ * (never user-visible prose) so reporting keys stay stable across UI wording.
  */
 @Entity
+@Audited
 @Table(name = "workflow_phase_event")
 public class WorkflowPhaseEvent {
 

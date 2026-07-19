@@ -10,6 +10,12 @@ import org.springframework.data.repository.query.Param;
 
 public interface WorkflowPhaseEventRepository extends JpaRepository<WorkflowPhaseEvent, UUID> {
 
+    /** Project-scoped read for the mixed graph, resolving its UUID to the immutable identifier. */
+    @Query("SELECT e FROM WorkflowPhaseEvent e "
+            + "WHERE e.project = (SELECT p.identifier FROM Project p WHERE p.id = :projectId) "
+            + "ORDER BY e.occurredAt, e.id")
+    List<WorkflowPhaseEvent> findForGraphProjection(@Param("projectId") UUID projectId);
+
     /**
      * Per-phase hot-spot rollup over {@code [from, to)} in the database: event count, failed-gate
      * count, escalation count, p50/p95 duration, and the max cycle index (which surfaces review/CI
