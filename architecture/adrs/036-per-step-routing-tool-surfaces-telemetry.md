@@ -484,3 +484,25 @@ The Phase D completion assertions and final report are consolidated into one det
 **2026-07-11 (issue #1346, ADR-089 reversal of the recommendation clause).** The 2026-06-13 (#1156) amendment above bundled two unrelated changes. Its `plain_english_outcome` requirement on the `final_report` renderer surface remains in force unchanged. Its `next_issue_recommendation` clause is reversed: the `close_issue_after_merge` stage envelope no longer includes `next_issue_recommendation` (advisory, `null`, or otherwise). `gc_close_issue_after_merge` performs only linked-PR resolution, merge-state verification, and idempotent close; no next-issue lookup runs. No routing stage or telemetry schema changes as a result. See ADR-089 for the full retirement decision.
 
 **2026-07-15 (issue #1399, GC-P027 Release Please adoption).** `gc_render_pr_body` gains a `changelog_mode` input (`fragments` default | `release-please`); in `release-please` mode it neither requires nor accepts a `changelog_fragment` (Release Please owns `CHANGELOG.md`, #1336). The workflow passes `release-please` mode for any repo that ships a root `release-please-config.json` (a generic, repo-agnostic signal), rather than special-casing a single repo in prose or adding a `.ground-control.yaml` schema key that would require server/config lockstep. `tools/policy/checks.py` retires `run_changelog_fragment_check` for `run_version_mirror_consistency_check` (code `version-mirror-drift`). The routing table, the step-telemetry contract, and the other durable-record renderer surfaces are unchanged.
+
+**2026-07-25 (issue #1416, execution-boundary tools).** Four MCP surfaces are
+added without introducing a routing stage or changing telemetry:
+`gc_prepare_implement_branch` creates/checks out the issue branch in the
+invocation checkout and verifies repository identity before and after the
+operation; `gc_record_execution_obligation` writes validated durable obligation
+events; `gc_mark_implement_issue_picked_up` owns pickup label/comment writes;
+and `gc_authorize_execution_obligation_wontfix` creates structured authorization
+records from exact, permission-checked source commands. Delegated stages receive the immutable execution contract containing
+the canonical principles digest, invocation root, and `same_checkout` mode.
+Direct branch-development, pickup GitHub commands, and worktree creation are
+outside the `/implement` tool boundary. All mutating surfaces bind their
+caller-supplied path and repository identity to the workspace/origin captured
+when the MCP process launches, so supplying a second checkout or later
+retargeting origin cannot redirect ambient credentials. Branch preparation
+also disables hooks and caller-selected executable Git configuration, compares
+the pinned origin internally, and omits the raw remote URL from its response.
+Because the binding principles are passed verbatim to every routed step,
+risk-proportionate verification is driver-neutral: targeted iteration,
+risk-triggered breadth, one final post-fix completion/policy boundary, and the
+single pre-publish pre-commit gate apply identically to parent and subagent
+routes.

@@ -441,3 +441,21 @@ convention above, retiring a dead tool-input surface is recorded in an
 amendment to ADR-054, not a documentation edit; the documentation-coverage
 classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
 unchanged and no new DOC_STYLE.md style rule is established.
+
+The `/implement` execution-contract policy check added for issue #1416 records
+its workflow contract in ADR-021, ADR-027, ADR-029, ADR-031, ADR-036, and the
+corresponding workflow documentation. Its MCP descriptions must name every
+enforced tool input and remain covered by the live description-parity test.
+This follows the existing convention for policy additions: the owning ADRs
+define behavior, while this document records the documentation obligation.
+
+The issue #1416 review hardening of the same MCP surfaces (launch-time
+workspace/origin binding, sanitized checkout, server-owned pickup writes,
+permission-checked obligation signers, structured `wontfix` authorization, and
+redacted branch results) is documented by the existing ADR-029, ADR-036, and
+ADR-054 amendments plus `docs/DEVELOPMENT_WORKFLOW.md`; it does not add a new
+documentation style rule.
+
+The issue #1416 risk-proportionate verification correction is likewise a
+workflow-contract clarification documented in those workflow ADRs and docs;
+it changes no documentation classification or style rule.

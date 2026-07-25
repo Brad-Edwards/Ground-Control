@@ -48,6 +48,7 @@ from tools.policy.checks import (
     run_traceability_reconciliation_gate_contract,
     run_version_mirror_consistency_check,
     run_workflow_routing_contract,
+    run_implement_execution_contract,
 )
 
 
@@ -60,6 +61,37 @@ class PolicyChecksTest(unittest.TestCase):
     def test_adr_guard_fires_on_canonical_implement_skill_path(self):
         violations = run_adr_guard(["skills/implement/SKILL.md"])
         self.assertTrue(any(item.code == "workflow-guardrail-sync" for item in violations))
+
+    def test_adr_guard_fires_on_delegated_implement_step_and_principles(self):
+        for path in (
+            "skills/implement/steps/step-04.4-tdd.md",
+            "skills/implement/_development-principles.md",
+        ):
+            with self.subTest(path=path):
+                violations = run_adr_guard([path])
+                self.assertTrue(any(item.code == "workflow-guardrail-sync" for item in violations))
+
+    def test_implement_execution_contract_is_structurally_complete(self):
+        self.assertEqual(run_implement_execution_contract(root=REPO_ROOT), [])
+
+    def test_implement_verification_contract_is_proportionate_and_mandatory(self):
+        principles = (
+            REPO_ROOT / "skills/implement/_development-principles.md"
+        ).read_text(encoding="utf-8")
+        review_rules = (
+            REPO_ROOT / "skills/implement/steps/_review-loop-rules.md"
+        ).read_text(encoding="utf-8")
+        step5 = (
+            REPO_ROOT / "skills/implement/steps/step-05-quality-assurance.md"
+        ).read_text(encoding="utf-8")
+        step7 = (
+            REPO_ROOT / "skills/implement/steps/step-07-stage-precommit.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("narrowest tests", principles)
+        self.assertIn("repository-wide completion and policy suites once", principles)
+        self.assertIn("never waives the mandatory", review_rules)
+        self.assertIn("Do not run `pre-commit` here", step5)
+        self.assertIn("single mandatory pre-publish", step7)
 
     def _render_pr_body_via_js(self, input_dict):
         """Invoke `tools/render_pr_body_fixture.mjs` against the JS renderer in

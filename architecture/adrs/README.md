@@ -109,3 +109,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [089](089-retire-grc-product-and-next-issue-recommendation.md) | Retire the GRC Product Surface and Next-Issue Recommendation | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.
+
+Issue #1416 amends ADR-021, ADR-027, ADR-029, ADR-031, and ADR-036 to define
+`/implement` execution principles, same-checkout branch preparation, and
+durable execution-obligation completion gates.
