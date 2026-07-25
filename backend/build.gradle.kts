@@ -21,7 +21,7 @@ plugins {
 }
 
 group = "com.keplerops"
-version = "1.0.1" // x-release-please-version
+version = "1.1.0" // x-release-please-version
 
 sonar {
     properties {
